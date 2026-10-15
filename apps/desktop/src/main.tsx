@@ -5,9 +5,11 @@ import { I18nextProvider } from 'react-i18next';
 import { log } from './utils/logger';
 import { initI18n } from './i18n';
 import { ErrorBoundary } from './kernel/ErrorBoundary';
+import { initializeDesktopHostPolicy } from './kernel/hostPolicy';
 import { markPhaseEnd, markPhaseStart } from './kernel/boot';
 import { purgeRetiredStorage } from './kernel/retiredStorage';
 import { registerAppletElements } from './applet/register-elements';
+import { registerModulesForHost } from './modules';
 import {
   installFrontendRuntimeProfiler,
   teardownFrontendRuntimeProfiler,
@@ -15,7 +17,6 @@ import {
 import { configureFrontendTelemetryUploader } from './kernel/frontendTelemetry';
 import { uploadFrontendTelemetryEvents } from './services/desktop_api';
 import './kernel/events/global-error';
-import './modules';
 import './index.css';
 import App from './App';
 import SharePage from './pages/SharePage';
@@ -31,6 +32,8 @@ declare global {
 // ── Platform Setup (synchronous, before any async work) ──
 
 purgeRetiredStorage();
+initializeDesktopHostPolicy();
+registerModulesForHost();
 registerAppletElements();
 installFrontendRuntimeProfiler();
 configureFrontendTelemetryUploader(uploadFrontendTelemetryEvents);

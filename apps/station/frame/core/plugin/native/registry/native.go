@@ -20,6 +20,7 @@ import (
 	"github.com/multiformats/go-multihash"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
+	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation/locator"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/internal/mdns"
 	"github.com/peers-labs/peers-touch/station/frame/core/registry"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
@@ -145,6 +146,7 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 				"pk":                                  record.PublicKeyValidator{},
 				"ipns":                                ipns.Validator{KeyBook: r.host.Peerstore()},
 				registry.DefaultPeersNetworkNamespace: &NamespaceValidator{},
+				locator.Namespace:                     locator.NewValidator(nil),
 			},
 		),
 		dht.BootstrapPeersFunc(func() []peer.AddrInfo {
@@ -162,15 +164,7 @@ func (r *nativeRegistry) Init(ctx context.Context, opts ...option.Option) error 
 			}
 			act := r.getActiveBootstrapPeers()
 			if len(act) == 0 {
-				var peerBootstrapNodes []peer.AddrInfo
-				for _, addr := range dht.DefaultBootstrapPeers {
-					pi, errIn := peer.AddrInfoFromP2pAddr(addr)
-					if errIn != nil {
-						continue
-					}
-					peerBootstrapNodes = append(peerBootstrapNodes, *pi)
-				}
-				return peerBootstrapNodes
+				return []peer.AddrInfo{}
 			}
 			return act
 		}),

@@ -162,6 +162,67 @@ describe('gateway mutation admission', () => {
       },
     );
   });
+
+  it('maps canonical Moment resources to the typed Rust operations', async () => {
+    const moments = createGatewayTransport(session, 'moments');
+
+    await moments.request({
+      method: 'GET',
+      path: '/api/v1/social/moments/post%2F1',
+    });
+    await moments.request({
+      method: 'POST',
+      path: '/api/v1/social/moments/post%2F1/react',
+      body: { kind: 2 },
+    });
+    await moments.request({
+      method: 'POST',
+      path: '/api/v1/social/moments/post%2F1/unreact',
+      body: { kind: 2 },
+    });
+    await moments.request({
+      method: 'GET',
+      path: '/api/v1/social/moments/post%2F1/comments',
+      query: { cursor: 'next', limit: 15 },
+    });
+    await moments.request({
+      method: 'POST',
+      path: '/api/v1/social/moments/post%2F1/comments',
+      body: {
+        content: 'Reply',
+        reply_to_comment_id: 'comment-root',
+      },
+    });
+
+    expect(executeStationOperation.mock.calls).toEqual([
+      [session, {
+        operationId: 'moments_post_get',
+        post_id: 'post/1',
+      }],
+      [session, {
+        operationId: 'moments_react',
+        post_id: 'post/1',
+        reaction_kind: 2,
+      }],
+      [session, {
+        operationId: 'moments_unreact',
+        post_id: 'post/1',
+        reaction_kind: 2,
+      }],
+      [session, {
+        operationId: 'moments_comments_list',
+        post_id: 'post/1',
+        cursor: 'next',
+        limit: 15,
+      }],
+      [session, {
+        operationId: 'moments_comment_create',
+        post_id: 'post/1',
+        content: 'Reply',
+        reply_to_comment_id: 'comment-root',
+      }],
+    ]);
+  });
 });
 
 function activeAdmission(): MutableAdmissionState {

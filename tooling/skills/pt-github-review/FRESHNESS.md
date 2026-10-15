@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-15
-covered_docs_hash: 0ad66ce94760c57a583e4ac266cdb2f79f1909034c15355f9d17bc9b7fae4489
+covered_docs_hash: 722e7a138d9cdc1441bcfbd3619dad0c15a93598faea32b99a495288620b66f3
 
 covered_docs:
   - AGENTS.md
@@ -33,7 +33,7 @@ Updating this file is a review act, not bookkeeping. Execution Plan files are ex
 
 ## 2026-10-15 Development Operation Authority Review
 
-DWF-D43 and LDCP-D21 make reviewed non-stable Profiles the authority for
+DWF-D47 and LDCP-D21 make reviewed non-stable Profiles the authority for
 routine environment provisioning, deploy, restart, and exact-scope reset.
 Worktree-local Profile creation no longer uses a human authorization receipt,
 and coherent local commits are workflow-owned checkpoints that may precede
@@ -51,18 +51,51 @@ general review fixture is required.
 
 ## 2026-10-14 Lightweight Development Flow Review
 
-DWF-D42 now uses one optional atomic task snapshot, runner-owned Acceptance
+DWF-D46 now uses one optional atomic task snapshot, runner-owned Acceptance
 scope, advisory Hook output, and one public task-close entrypoint. Review keeps
 current-source evidence, real runtime admission, fixture coverage, and Skill
 freshness, but does not require event sourcing, host capture, or cryptographic
 review receipts for trusted internal development.
 
+## 2026-10-14 Cross-Branch Preservation Review
+
+Parallel worktree review exposed a delivery gap: a PR's three-dot diff and green
+checks do not prove that the prospective merge tree preserves behavior already
+landed on its target branch. The GitHub Review Skill now requires overlap
+classification as `PRESERVED`, `INTENTIONALLY_SUPERSEDED`, or `UNPROVEN`, checks
+both coverage loss and unjustified deletion/weakening, and uses `range-diff`
+after an actual rebase or cherry-pick.
+
+This is review judgment over the final merged source. It reuses
+`pt-branch-conflict-guardian` for semantic conflict evidence and
+`pt-code-structure-review` for duplicate-owner and incomplete-cutover findings.
+It does not introduce a new Skill, Plan field, worktree-order model, scheduler,
+PR state, or CI authority. Canonical marker checks in `skill-check.sh` cover the
+new behavior; no generic code fixture is required.
+
+## 2026-10-14 Node Connectivity And Relay Review
+
+The reviewed architecture now replaces the custom WSS/mount data plane with
+standard libp2p Direct/Circuit v2 transport into the canonical Station router.
+Logical `station_peer_id` remains independent from Node PeerID and route
+coordinates. Relay owns only bounded admission and control; Desktop Station
+Access owns route selection and publishes immutable `RouteLease` values to one
+app-scoped `StationRuntime`.
+
+`SKILL.md` gained a dedicated Node Connectivity and Relay checklist because the
+new identity, Host ownership, private-CA health, failover/replay, hard-cut, and
+exact-source proof boundaries are reusable review requirements. Existing NCP
+Gates and hard rules provide executable coverage, so no generic review fixture
+or new knowledge entry is required.
+
 ## 2026-10-15 Public API Documentation Index Review
 
-`docs/README.md` routes external callers to the canonical `docs/api/`
-contracts and defines each public HTTP contract once. Existing single-source,
-API-contract, and documentation-consistency rules cover the change; no generic
-review fixture or additional review rule is required.
+`docs/README.md` now routes external callers to the canonical `docs/api/`
+contracts and states that public HTTP contracts are defined there once. This
+clarifies documentation ownership without changing review severity, evidence
+requirements, or implementation boundaries. Existing single-source,
+API-contract, and documentation-consistency rules already cover the change, so
+no `SKILL.md` update, generic review fixture, or knowledge entry is required.
 
 ## 2026-10-05 Architecture Taxonomy Review
 
@@ -470,7 +503,7 @@ skill check now enforces declaration, functional-fence, first-failure and
 release markers directly.
 
 At that time, Machine Dev used a human-created exact-tuple environment receipt.
-DWF-D43 and LDCP-D21 supersede that receipt in the active workflow while
+DWF-D47 and LDCP-D21 supersede that receipt in the active workflow while
 retaining tracked-clean remote topology and profile-only startup.
 
 ## 2026-09-14 Review

@@ -4,9 +4,13 @@
 > **Created**: 2026-09-13 | **Updated**: 2026-10-15
 > **Owner**: Platform Team
 
-DWF-D42 与 DWF-D43 已确认，定义当前目标设计。被其替代的旧决定在索引和正文中标记为
-`superseded`；保留内容仅用于历史追溯，不再约束新实现。设计接受不代表代码已经
-实施或运行验收通过，也不更新机器旧任务、运行权限或资源状态。
+DWF-D46 与 DWF-D47 已确认，定义当前目标设计（轻量开发流硬切）。被其替代的旧决定在
+索引和正文中标记为 `superseded`；保留内容仅用于历史追溯，不再约束新实现。master 上
+2026-10-07/09 合并的 DWF-D42–D45（stable Plan in-place amendments、Agent 创建 worktree
+的 main-session provenance、单次 OWNER 动作单 workspace、machine-ledger schema 按
+workspace 隔离）所依附的 PlanMount/OWNER/active-work 准入链由同一硬切退役，统一标记
+为 `superseded by DWF-D46`。设计接受不代表代码已经实施或运行验收通过，也不更新机器
+旧任务、运行权限或资源状态。
 
 ---
 
@@ -14,51 +18,55 @@ DWF-D42 与 DWF-D43 已确认，定义当前目标设计。被其替代的旧决
 
 | ID | Decision | Status |
 |---|---|---|
-| DWF-D01 | Keep the outer stage pipeline and add an EXECUTE state machine | superseded by DWF-D42 |
+| DWF-D01 | Keep the outer stage pipeline and add an EXECUTE state machine | superseded by DWF-D46 |
 | DWF-D02 | Make a product Journey the unit of development progress | accepted |
 | DWF-D03 | Require functional pass before formal Acceptance execution | accepted |
 | DWF-D04 | Share business Journey semantics across Dev and Acceptance runners | accepted |
-| DWF-D05 | Use local checkpoint commits for exact-source runtime iteration | superseded by DWF-D43 |
+| DWF-D05 | Use local checkpoint commits for exact-source runtime iteration | superseded by DWF-D47 |
 | DWF-D06 | Separate Development records from Acceptance Evidence | accepted |
 | DWF-D07 | Stop on the first actionable failure under explicit budgets | accepted |
 | DWF-D08 | Keep plans compact and store transient execution state outside Git | accepted |
 | DWF-D09 | Reserve `PROVEN` for formal Acceptance interpretation | accepted |
 | DWF-D10 | Pilot the original control plane in Chat | accepted |
-| DWF-D11 | Publish resource intent to one machine-wide work ledger | superseded by DWF-D42 |
+| DWF-D11 | Publish resource intent to one machine-wide work ledger | superseded by DWF-D46 |
 | DWF-D12 | Upgrade `pt-dev-workflow`; do not add another orchestrator Skill | accepted |
-| DWF-D13 | Make Plan Package + Task Slice the active-plan source | superseded by DWF-D42 |
+| DWF-D13 | Make Plan Package + Task Slice the active-plan source | superseded by DWF-D46 |
 | DWF-D14 | Separate source completion from functional and formal proof | accepted |
-| DWF-D15 | Make a Task-closing Progress Slice the continuation unit | superseded by DWF-D42 |
-| DWF-D16 | Bind tracked declarations to an explicit Plan locator | superseded by DWF-D42 |
+| DWF-D15 | Make a Task-closing Progress Slice the continuation unit | superseded by DWF-D46 |
+| DWF-D16 | Bind tracked declarations to an explicit Plan locator | superseded by DWF-D46 |
 | DWF-D17 | Bind the current worktree, not the sibling inventory | accepted |
 | DWF-D18 | Bind each workspace to one immutable current Plan generation | superseded by DWF-D38 |
-| DWF-D19 | Keep advancing source identity outside tracked Plan content | superseded by DWF-D42 |
+| DWF-D19 | Keep advancing source identity outside tracked Plan content | superseded by DWF-D46 |
 | DWF-D20 | Make an authorized Plan Run continuous across Tasks and agent review gates | accepted |
 | DWF-D21 | Keep orchestration and runtime verification host-neutral | accepted |
 | DWF-D22 | Separate workflow distribution from consuming-worktree runtime state | accepted |
 | DWF-D23 | Keep the internal Development Workflow unversioned | accepted |
-| DWF-D24 | Reopen frozen source through one Plan-declared invalidation owner | superseded by DWF-D42 |
+| DWF-D24 | Reopen frozen source through one Plan-declared invalidation owner | superseded by DWF-D46 |
 | DWF-D25 | Keep user Skill overlays machine-local and interaction-only | accepted |
-| DWF-D26 | Bind workflow enforcement to one immutable conversation execution root | superseded by DWF-D42 |
-| DWF-D27 | Project workflow status through one read-only Workflow Snapshot | superseded by DWF-D42 |
-| DWF-D28 | Require independent current-source Completion Review | superseded by DWF-D42 |
-| DWF-D29 | Derive agent activity from bounded Action Receipts | superseded by DWF-D42 |
-| DWF-D30 | Make documentation claims executable through Workflow Doctor | superseded by DWF-D42 |
+| DWF-D26 | Bind workflow enforcement to one immutable conversation execution root | superseded by DWF-D46 |
+| DWF-D27 | Project workflow status through one read-only Workflow Snapshot | superseded by DWF-D46 |
+| DWF-D28 | Require independent current-source Completion Review | superseded by DWF-D46 |
+| DWF-D29 | Derive agent activity from bounded Action Receipts | superseded by DWF-D46 |
+| DWF-D30 | Make documentation claims executable through Workflow Doctor | superseded by DWF-D46 |
 | DWF-D31 | Advance completed workspace bindings by explicit Plan generation | superseded by DWF-D38 |
-| DWF-D32 | Aggregate module impacts before resource acquisition | superseded by DWF-D42 |
-| DWF-D33 | Root workflow authority in one owner binding with assigned child lineage | superseded by DWF-D42 |
-| DWF-D34 | Separate live integration install from global-idle cleanup | superseded by DWF-D42 |
-| DWF-D35 | Project one canonical TRAE hook into every participating workspace root | superseded by DWF-D42 |
-| DWF-D36 | Bootstrap non-destructive integration projection outside the Hook grant cycle | superseded by DWF-D42 |
-| DWF-D37 | Make Completion Review a repository-native reviewer handoff | superseded by DWF-D42 |
-| DWF-D38 | Separate frozen Plan versions from execution worktree mounts | superseded by DWF-D42 |
+| DWF-D32 | Aggregate module impacts before resource acquisition | superseded by DWF-D46 |
+| DWF-D33 | Root workflow authority in one owner binding with assigned child lineage | superseded by DWF-D46 |
+| DWF-D34 | Separate live integration install from global-idle cleanup | superseded by DWF-D46 |
+| DWF-D35 | Project one canonical TRAE hook into every participating workspace root | superseded by DWF-D46 |
+| DWF-D36 | Bootstrap non-destructive integration projection outside the Hook grant cycle | superseded by DWF-D46 |
+| DWF-D37 | Make Completion Review a repository-native reviewer handoff | superseded by DWF-D46 |
+| DWF-D38 | Separate frozen Plan versions from execution worktree mounts | superseded by DWF-D46 |
 | DWF-D39 | Permit only native Desktop runtime and product proof | accepted |
 | DWF-D40 | Preserve explicit user no-Plan intent | accepted |
-| DWF-D41 | Coordinate Development close with one resumable receipt | superseded by DWF-D42 |
-| DWF-D42 | 普通工作、可选任务记录、真实运行保护分别负责 | accepted |
-| DWF-D43 | Profile 授权开发运行，本地 commit 属于流程内部检查点 | accepted |
+| DWF-D41 | Coordinate Development close with one resumable receipt | superseded by DWF-D46 |
+| DWF-D42 | Keep one stable Plan and record in-place amendments | superseded by DWF-D46 |
+| DWF-D43 | Persist main-session provenance for Agent-created worktrees | superseded by DWF-D46 |
+| DWF-D44 | Select one workspace per mutating OWNER action | superseded by DWF-D46 |
+| DWF-D45 | Isolate machine-ledger schema adoption by workspace | superseded by DWF-D46 |
+| DWF-D46 | 普通工作、可选任务记录、真实运行保护分别负责 | accepted |
+| DWF-D47 | Profile 授权开发运行，本地 commit 属于流程内部检查点 | accepted |
 
-## DWF-D42：普通工作、可选任务记录、真实运行保护分别负责
+## DWF-D46：普通工作、可选任务记录、真实运行保护分别负责
 
 **Status**: accepted
 **Date**: 2026-10-13
@@ -92,7 +100,7 @@ DWF-D42 与 DWF-D43 已确认，定义当前目标设计。被其替代的旧决
 
 ### 替代范围
 
-确认 D42 后，在代码迁移和对应文档更新中明确执行以下替代，不自动重写旧记录：
+确认 D46 后，在代码迁移和对应文档更新中明确执行以下替代，不自动重写旧记录：
 
 - **完整替代 DWF-D01、D11、D16、D26、D33、D38、D41 中的通用准入机制**：
   必选内层状态机、登记、会话 authority、PlanMount 占用与全工作区关闭守卫。
@@ -110,7 +118,7 @@ DWF-D42 与 DWF-D43 已确认，定义当前目标设计。被其替代的旧决
 
 继续保留产品结果导向、功能先验证、正式证据分离、适量预算、宿主可替换、
 工作区明确、用户授权复用、Native Desktop 证明和明确 no-Plan 边界。
-本地 checkpoint 与环境操作权限由后续 DWF-D43 统一澄清。
+本地 checkpoint 与环境操作权限由后续 DWF-D47 统一澄清。
 
 ### Rationale
 
@@ -132,9 +140,9 @@ DWF-D42 与 DWF-D43 已确认，定义当前目标设计。被其替代的旧决
 也不在本次切换范围。
 
 验收必须覆盖无 Hook 工作、多 worktree、记录恢复、真实权限与锁、证据新鲜度和
-选定范围安装。D42 的 proposed 状态及当前草稿不能支持实施完成声明。
+选定范围安装。D46 的 proposed 状态及当前草稿不能支持实施完成声明。
 
-## DWF-D43：Profile 授权开发运行，本地 Commit 属于流程内部检查点
+## DWF-D47：Profile 授权开发运行，本地 Commit 属于流程内部检查点
 
 **Status**: accepted
 **Date**: 2026-10-15
@@ -184,7 +192,7 @@ Agent 能独立完成从实现到 exact-source runtime 验证所需的环境准�
 
 ## DWF-D01: EXECUTE Owns A Mandatory Inner State Machine
 
-**Status**: superseded by DWF-D42
+**Status**: superseded by DWF-D46
 **Date**: 2026-09-13
 
 ### Context
@@ -293,7 +301,7 @@ Existing Gates that mix behavior with provisioning must separate those concerns.
 
 ## DWF-D05: Checkpoint Commits Are Development Infrastructure
 
-**Status**: superseded by DWF-D43
+**Status**: superseded by DWF-D47
 **Date**: 2026-09-13
 
 ### Context
@@ -451,7 +459,7 @@ Generalization requires measured pilot evidence, not speculative abstractions.
 
 ## DWF-D11: Public Resource Declaration Before Development
 
-**Status**: superseded by DWF-D42
+**Status**: superseded by DWF-D46
 **Date**: 2026-09-13
 
 ### Context
@@ -505,7 +513,7 @@ All specialist Skills reference one Development Workflow state model.
 
 ## DWF-D13: Plan Package And Task Slice Are The Active Plan Source
 
-**Status**: superseded by DWF-D42
+**Status**: superseded by DWF-D46
 **Date**: 2026-09-16
 
 ### Context
@@ -696,7 +704,7 @@ iteration without weakening exact-source evidence.
 
 ## DWF-D15: A Progress Slice Is The Continuation Unit
 
-**Status**: superseded by DWF-D42
+**Status**: superseded by DWF-D46
 **Date**: 2026-09-17
 
 ### Context
@@ -750,7 +758,7 @@ without turning each command into a Task or duplicating the plan DAG in chat.
 
 ## DWF-D16: Tracked Declarations Carry An Explicit Plan Locator
 
-**Status**: superseded by DWF-D42
+**Status**: superseded by DWF-D46
 **Date**: 2026-09-17
 
 ### Context
@@ -918,7 +926,7 @@ artifact from silently switching the workspace owner.
 
 ## DWF-D19: Keep Advancing Source Identity Outside Tracked Plan Content
 
-**Status**: superseded by DWF-D42
+**Status**: superseded by DWF-D46
 **Date**: 2026-09-18
 
 ### Context
@@ -1158,7 +1166,7 @@ A single current internal contract avoids compatibility machinery for developmen
 
 ## DWF-D24: Reopen Frozen Source Through One Plan-Declared Invalidation Owner
 
-**Status**: superseded by DWF-D42
+**Status**: superseded by DWF-D46
 **Date**: 2026-09-21
 
 ### Context
@@ -1269,7 +1277,7 @@ without an explicit replacement operation.
 
 ## DWF-D26: Bind Workflow Enforcement To The Conversation
 
-**Status**: superseded by DWF-D42
+**Status**: superseded by DWF-D46
 **Date**: 2026-09-23
 
 ### Context
@@ -1333,7 +1341,7 @@ boundary.
 
 ## DWF-D27: Project Workflow Status Through One Snapshot
 
-**Status**: superseded by DWF-D42
+**Status**: superseded by DWF-D46
 **Date**: 2026-09-26
 
 ### Context
@@ -1363,7 +1371,7 @@ progress from the Plan; activity and freshness remain diagnostic projections.
 
 ## DWF-D28: Completion Requires Independent Current-Source Review
 
-**Status**: superseded by DWF-D42
+**Status**: superseded by DWF-D46
 **Date**: 2026-09-26
 
 ### Context
@@ -1395,7 +1403,7 @@ source-invalidation owner.
 
 ## DWF-D29: Derive Agent Activity From Bounded Action Receipts
 
-**Status**: superseded by DWF-D42
+**Status**: superseded by DWF-D46
 **Date**: 2026-09-26
 
 ### Context
@@ -1425,7 +1433,7 @@ state.
 
 ## DWF-D30: Make Workflow Documentation Executable
 
-**Status**: superseded by DWF-D42
+**Status**: superseded by DWF-D46
 **Date**: 2026-09-26
 
 ### Context
@@ -1506,7 +1514,7 @@ stable owner worktree into disposable infrastructure.
 
 ## DWF-D32: Aggregate Module Impacts Before Resource Acquisition
 
-**Status**: superseded by DWF-D42
+**Status**: superseded by DWF-D46
 **Date**: 2026-09-30
 
 ### Context
@@ -1586,7 +1594,7 @@ resource lifecycle must remain with their existing owners.
 
 ## DWF-D33: Root Workflow Authority In One Owner Binding With Assigned Child Lineage
 
-**Status**: superseded by DWF-D42
+**Status**: superseded by DWF-D46
 **Date**: 2026-10-01
 
 ### Context
@@ -1671,7 +1679,7 @@ heuristic.
 
 ## DWF-D34: Separate Live Integration Install From Global-Idle Cleanup
 
-**Status**: superseded by DWF-D42
+**Status**: superseded by DWF-D46
 **Date**: 2026-10-04
 
 ### Context
@@ -1736,7 +1744,7 @@ worktrees into a global upgrade lock.
 
 ## DWF-D35: Project One Canonical TRAE Hook Into Every Participating Workspace Root
 
-**Status**: superseded by DWF-D42
+**Status**: superseded by DWF-D46
 **Date**: 2026-10-04
 
 ### Context
@@ -1799,7 +1807,7 @@ duplicating workflow truth or weakening exact root selection.
 
 ## DWF-D36: Bootstrap Non-Destructive Integration Projection Outside The Hook Grant Cycle
 
-**Status**: superseded by DWF-D42
+**Status**: superseded by DWF-D46
 **Date**: 2026-10-04
 
 ### Context
@@ -1861,7 +1869,7 @@ retaining strict authority on every destructive path.
 
 ## DWF-D37: Make Completion Review A Repository-Native Reviewer Handoff
 
-**Status**: superseded by DWF-D42
+**Status**: superseded by DWF-D46
 **Date**: 2026-10-04
 
 ### Context
@@ -1935,7 +1943,7 @@ proves delegated assessment provenance, not reviewer independence.
 
 ## DWF-D38: Separate Frozen Plan Versions From Execution Worktree Mounts
 
-**Status**: superseded by DWF-D42
+**Status**: superseded by DWF-D46
 **Date**: 2026-10-04
 **Supersedes**: DWF-D18, DWF-D31
 
@@ -2112,7 +2120,7 @@ review, and cleanup controls.
 
 ## DWF-D41: Coordinate Development Close With One Resumable Receipt
 
-**Status**: superseded by DWF-D42
+**Status**: superseded by DWF-D46
 **Date**: 2026-10-05
 
 ### Context
@@ -2187,3 +2195,357 @@ removes the review/release cycle without weakening final cleanup proof.
   tooling, but normal workflow closure does not call them independently.
 - Tests cover interruption, exact owner checks, standalone/tracked modes,
   cancellation, and deleted-worktree mount recovery.
+
+---
+
+## Master-Era Decisions Retired By The 2026-10-15 Hard Cut
+
+The following sections preserve DWF-D42 through DWF-D45 exactly as merged on
+master (2026-10-07/09). Their PlanMount / OWNER-binding / active-work /
+machine-ledger machinery is retired together by DWF-D46 and DWF-D47. The bodies
+are retained verbatim for historical traceability; they no longer constrain
+new implementation.
+
+## DWF-D42: Keep One Stable Plan And Record In-Place Amendments
+
+**Status**: superseded by DWF-D46 (2026-10-15 hard cut; see DWF-D46)
+**Date**: 2026-10-07
+**Supersedes**: the frozen-version and remount requirements of DWF-D38
+
+### Context
+
+Execution regularly discovers mechanical omissions after a Plan starts:
+missing write paths, stale command paths, incomplete dependency edges, or
+required Gates that were not listed. The frozen `PlanVersion` model treated
+each correction as a new user-visible version and forced cancellation,
+unmount, remount, and reauthorization even when the accepted outcome did not
+change. Mobile Shell demonstrated this failure directly: sequential versions
+represented one Plan whose only differences were execution metadata repairs.
+
+The version number did not protect the product goal. It exposed an internal
+snapshot identity as project intent and made the user approve routine
+bookkeeping that the Agent could validate deterministically.
+
+### Decision
+
+- A Plan has one stable `planId` for its lifetime. It declares a machine-readable
+  `northStar` containing the objective and stable, source-backed success
+  criteria.
+- Plan authoring produces a candidate with `northStarApproval=null`. It cannot
+  mount or execute until `planctl approve-north-star` records an explicit user
+  decision bound to the canonical `planId + northStar` digest.
+- `criterionCoverage` maps each success criterion to exact Task, closure, and
+  Gate IDs. It is mutable execution detail and does not participate in the
+  North Star digest.
+- Scope, Task decomposition/order, dependencies, paths, commands, and
+  Acceptance Gate mappings are mutable execution details.
+- Every accepted edit appends one `PlanAmendment` with actor, time, reason,
+  human-readable changes, affected Task/Gate IDs, approval class, and the
+  before/after content digests.
+- `planctl amend` is the only amendment owner. It validates the complete
+  candidate package, verifies append-only history, writes the audit entry, then
+  advances the Execution Run to a new immutable internal snapshot using CAS.
+- `PlanMount` binds stable `planId + planPath` to one workspace. Amendments do
+  not cancel, unmount, remount, or create another run.
+- A changed/new Task and its transitive dependents are reset to `pending`.
+  Unchanged Task states remain intact. The updated DAG and Acceptance contract
+  are fully revalidated before execution may resume.
+- An Agent may authorize an amendment when `northStar` is unchanged and the
+  operation authorization envelope is not expanded.
+- Changing any accepted `northStar` content makes its prior approval stale.
+  Mount/execution returns `NORTH_STAR_APPROVAL_REQUIRED` until the user
+  explicitly approves the new digest. Publishing that change also requires an
+  owner-approved amendment with the same decision reference; otherwise it
+  returns `OWNER_DECISION_REQUIRED`.
+- Changing Task/Gate mappings or `criterionCoverage` while the North Star
+  digest is unchanged preserves approval. Expanding operation authority remains
+  `OPERATION_AUTHORIZATION_REQUIRED`.
+- Content and snapshot digests are internal integrity/CAS identities. They are
+  observable diagnostics, never Plan versions and never user approval
+  boundaries.
+- Local execution status remains machine-owned. A completed run may publish one
+  immutable repository `completions/<planDigest>.json` attestation. CI validates
+  an explicit Plan and this digest-bound completion record without reading or
+  reconstructing machine-local PlanMount state.
+- Repository Plan sources are converted in the same source hard cut. Machine
+  ledger adoption follows DWF-D45: the selected workspace may migrate while
+  unrelated work remains live, and the bounded mixed envelope converges after
+  the last legacy workspace releases its records.
+
+### Rationale
+
+The stable identity represents user intent; amendments represent how the work
+will reach that intent; snapshots represent exact machine inputs. Keeping those
+three concepts separate preserves reviewability and crash-safe execution
+without turning every correction into a new Plan.
+
+### Alternatives Considered
+
+- Keep immutable versions but auto-approve new versions: rejected because it
+  retains meaningless version churn and unnecessary mount transitions.
+- Mutate Plan files without an amendment log: rejected because the reason and
+  execution impact would be lost.
+- Ask for approval on every amendment: rejected because implementation repair
+  is Agent-owned and only changes to accepted outcomes need product judgment.
+- Treat generated North Star text as implicitly accepted: rejected because
+  Agent-authored distillation is a proposal, not evidence of user consent.
+- Allow normal execution owners to run both Plan source formats: rejected
+  because it creates two active Plan contracts and hides incomplete rollout.
+
+### Consequences
+
+- Plan authoring must state a source-backed North Star, complete criterion
+  coverage, and an initially empty approval.
+- `planctl validate` may report candidate or stale approval, but PlanMount and
+  execution admission fail closed until the current digest is explicitly
+  approved.
+- `planctl status` exposes the current internal digest and amendment count, not
+  a version ID.
+- The mount ledger indexes live work by stable Plan ID.
+- Snapshot history remains immutable while the Execution Run points at the
+  current snapshot.
+- Tests must cover candidate rejection, digest-bound approval, stale approval,
+  ordinary autonomous amendments, North Star escalation, coverage validation,
+  authorization expansion, Task/Gate invalidation, append-only history,
+  restart after an interrupted amendment, and stable mount/run identity.
+
+## DWF-D43: Persist Main-Session Provenance For Agent-Created Worktrees
+
+**Status**: superseded by DWF-D46 (2026-10-15 hard cut; see DWF-D46)
+**Date**: 2026-10-07
+
+### Context
+
+Git worktree metadata records only path, branch, and HEAD. The machine registry
+and Development declaration also used a Git actor label as `owner`, while the
+Workflow Kernel stored only a hash of the host root-chat identity. Another
+Agent could therefore discover a worktree and its Plan/Task but could not
+identify the main session that created or currently owned the work.
+
+### Decision
+
+- The host-native root identity remains canonical: TRAE `chat_session_id`,
+  Cursor `conversation_id`, and Codex `session_id`.
+- OWNER bindings persist that opaque root ID in owner-controlled machine-local
+  storage. The existing hash remains the locator and authority input; adding
+  the raw ID does not change the binding digest or child lineage.
+- An explicitly authorized Agent creates a worktree only through
+  `make worktree-create`. The command consumes the current live OWNER Action
+  Receipt as execution provenance and writes immutable
+  `worktree-creation.json` in the target workspace state. The receipt does not
+  replace the user's explicit authorization.
+- Worktree creation first resolves `START` to an exact commit and publishes an
+  immutable transaction under the source workspace. A retry may finish Git
+  creation or provenance publication only when target path, branch, commit,
+  purpose, and OWNER are unchanged; path reuse and conflicting recovery fail
+  closed.
+- New machine registrations and Development declarations copy a verified
+  `WorkflowOwnerReference`. Development Session and active-work projections
+  carry the same reference.
+- One repository-owned OWNER command policy defines recognized Make targets and
+  CLI action labels. Mutating wrappers accept only a live root OWNER receipt
+  whose `bindingDigest` equals `rootBindingDigest`; child receipts and
+  ownerless state cannot authorize mutation.
+- Workflow Snapshot joins creation provenance, current workflow ownership, and
+  Plan/Task state. Git author/email remains an actor label and never substitutes
+  for a main-session identity.
+- Legacy hash-only OWNER bindings are upgraded in place only when the same host
+  supplies the matching raw root ID. Their binding digest is preserved.
+  Legacy worktree/declaration records without recoverable provenance remain
+  readable but report `WORKFLOW_OWNER_SESSION_MISSING`; tooling does not guess
+  from branch, path, Git identity, or process-global variables.
+
+### Rationale
+
+Git identity answers who authored source, not which user conversation owns the
+work. Persisting a verified machine-local session reference makes creation and
+current execution independently discoverable without weakening the existing
+hash-based authority chain.
+
+### Alternatives Considered
+
+- Keep only `rootChatHash`: rejected because another Agent cannot recover the
+  originating session ID from a one-way hash.
+- Use Git author/email: rejected because it identifies a source actor, not a
+  conversation.
+- Infer from the newest declaration or branch name: rejected because both are
+  mutable and can outlive or be reused across sessions.
+
+### Consequences
+
+- Other Agents can identify both who created a worktree and which main session
+  owns its current Development Run.
+- Raw host IDs remain local to mode-`0600` workflow state and are excluded from
+  Git, telemetry, runtime logs, and Acceptance evidence.
+- Tests cover immutable creation provenance, legacy OWNER upgrade without
+  lineage change, declaration/Session/active-work propagation, and snapshot
+  visibility.
+
+## DWF-D44: Select One Workspace Per Mutating OWNER Action
+
+**Status**: superseded by DWF-D46 (2026-10-15 hard cut; see DWF-D46)
+**Date**: 2026-10-09
+
+### Context
+
+DWF-D26 and the original DWF-D33 wording conflated two different identities:
+the visible chat that owns workflow authority and the worktree selected by one
+tool action. The first mutating action therefore made its worktree the
+conversation's permanent write root. A user could not continue the same chat
+against another worktree or switch to another workspace-local Plan without
+manufacturing a new host Task, even though PlanMount, declaration, Session,
+and active-work are already isolated by `workspaceId`.
+
+### Decision
+
+- The host root-chat identity creates one immutable OWNER lineage. It does not
+  permanently own one worktree.
+- Every mutating OWNER action resolves exactly one action workspace in this
+  order: unique mutation target root, explicit host task root, tool working
+  directory, active editor root, then repository working directory.
+- When the host supplies workspace roots, the selected action workspace must
+  be one of them. One action with mutation targets in multiple worktrees fails
+  closed with `WORKTREE_SELECTION_REQUIRED`.
+- `BindingProjection.executionRoot` and `workspaceId` describe the selected
+  action workspace for an OWNER event. The persisted OWNER binding keeps its
+  original root fields only as a compatible default/origin; they are not
+  permanent mutation authority.
+- A target-less mutating event may use that stored default only when every
+  resolved mutation path remains inside it. Shell actions that switch
+  worktrees must also run with the selected worktree as `cwd`; a foreign cwd
+  plus an absolute target is one multi-root action and is denied.
+- The selected workspace's declaration, source claims, PlanMount,
+  ExecutionRun, Session, active-work, and Git identity are revalidated for that
+  action. Switching workspace never copies or rebinds those records.
+- Cross-worktree reads remain legal. Cross-worktree writes are legal across
+  separate, single-workspace OWNER actions. One action may write only inside
+  its selected workspace and declared claims; escape fails with
+  `ACTION_WORKSPACE_WRITE_DENIED`.
+- Assigned WORKER and REVIEWER children remain fixed to the workspace in their
+  assignment. A child cannot select another action workspace.
+
+### Rationale
+
+The visible chat is the stable authorization principal; a worktree is the
+scope of one mutation. Keeping those identities separate lets one conversation
+move intentionally between independent workspace-local Plans without weakening
+single-action scope, declarations, or child isolation.
+
+### Alternatives Considered
+
+- Bind the chat to whichever worktree mutates first: rejected because host
+  startup order is not durable user intent and forces artificial new Tasks.
+- Rebind the persisted OWNER record on every action: rejected because it would
+  mutate identity lineage and race concurrent child/session state.
+- Permit one command to mutate multiple worktrees: rejected because no single
+  declaration, PlanMount, or write set can authorize that action atomically.
+
+### Consequences
+
+- A user may execute worktree A, then worktree B, then return to A in one
+  visible chat; each mutation independently passes B's or A's local guards.
+- Context and Action Receipts report the selected action workspace, while OWNER
+  and root binding digests remain stable.
+- Tests must prove sequential OWNER switching, target precedence, multi-root
+  rejection, shell cwd confinement, symlink escape denial, and immutable child
+  assignment scope.
+
+## DWF-D45: Isolate Machine-Ledger Schema Adoption By Workspace
+
+**Status**: superseded by DWF-D46 (2026-10-15 hard cut; see DWF-D46)
+**Date**: 2026-10-07
+**Supersedes**: the machine-wide idle migration clause of DWF-D42
+
+### Context
+
+The stable Plan hard cut changed declaration field
+`planVersionDigest -> planDigest` and mount index
+`liveMountsByPlanVersion -> liveMountsByPlan`. Both files are machine-wide
+coordination projections, but their first migration owner required every
+Development declaration and PlanMount on the machine to close before either
+file could advance.
+
+On a machine with independent Mobile Social and Relay work, the current Mobile
+Chat workspace held no conflicting Profile, Station, slot, source branch, or
+Plan. It was still blocked solely because those foreign workspaces were live.
+This conflated global visibility with global lifecycle ownership and
+contradicted DWF-D11's claim-based conflict model.
+
+### Decision
+
+- `work.json` remains the single machine-wide resource-intent projection.
+  Each declaration is independently classified as `legacy` or `stable`; the
+  coordination reader validates the complete exact shape and digest for that
+  record before using its common source/runtime claims.
+- A normal writer creates and mutates only stable declarations owned by its
+  current `workspaceId`. Foreign legacy declarations remain value-equivalent
+  in the enclosing atomic replacement and continue to participate in
+  source/runtime conflict detection.
+- `plan-mounts/ledger.json` has one bounded migration envelope. During adoption
+  it may contain disjoint `liveMountsByPlanVersion` and
+  `liveMountsByPlan` indexes plus the shared workspace/run indexes. A mount ID
+  appears in exactly one Plan index, and the union must equal
+  `liveMountsByWorkspace`.
+- `make plan-state-migrate` derives the selected workspace from its canonical
+  root, acquires the existing short machine locks, rewrites only declarations
+  for that workspace, preserves their lifecycle state, and preserves every
+  foreign record and index entry.
+- A selected pre-DWF-D43 declaration with no `workflowOwner` may adopt only
+  the live OWNER reference carried by the exact Hook action that admitted the
+  migration. Existing ownership must match or migration fails closed; foreign
+  declarations are never adopted by another workspace.
+- A legacy mount remains close-only after adoption. Stable execution never
+  consumes its retired snapshot or trusts its terminal state. Only separately
+  authorized exact-owner `owner-unmount` may close it; close validates the
+  legacy mount/run digests and identity before removing only that workspace's
+  legacy indexes.
+- The migration owner removes `liveMountsByPlanVersion` as soon as its map is
+  empty. That condition is the mandatory removal trigger; the mixed envelope is
+  not a permanent second source of truth.
+- Stable mount admission checks both stable Plan keys and the `projectId +
+  planId` identity of foreign legacy mount records, so the migration window
+  cannot create duplicate execution ownership.
+- All writers retain lock plus compare-and-swap replacement. A stale
+  pre-adoption writer may fail schema validation after another workspace
+  adopts, but it cannot overwrite a newer ledger revision. It must synchronize
+  workflow tooling before its next machine-state mutation.
+- Global idle remains valid only for destructive machine-wide cleanup whose
+  operation explicitly owns all affected records. It is forbidden for
+  non-destructive projection, declaration, migration, status, or install work.
+
+### Rationale
+
+The shared ledger answers which resources and Plans are occupied across
+worktrees. It does not make one workspace the lifecycle owner of another.
+Record-level schema discrimination preserves coordination during rollout;
+workspace-scoped mutation preserves ownership; the short machine lock and CAS
+still serialize one physical file safely.
+
+The bounded mixed envelope is necessary because active legacy mounts already
+exist. Treating it as an explicit state with a mechanical deletion trigger is
+safer than either rewriting foreign live ownership or keeping a hidden
+compatibility reader indefinitely.
+
+### Alternatives Considered
+
+- Keep the all-machine idle hard cut: rejected because unrelated work can
+  prevent any workspace from adopting the current workflow indefinitely.
+- Rewrite every foreign live record from the current workspace: rejected
+  because it transfers lifecycle ownership and can invalidate an active
+  writer's digest.
+- Ignore foreign legacy records during conflict checks: rejected because it can
+  double-allocate source, runtime, workspace, or Plan ownership.
+- Maintain two independent ledgers: rejected because split indexes cannot
+  provide atomic conflict admission.
+
+### Consequences
+
+- Different worktrees no longer block schema adoption merely by being active.
+- Actual same-branch, same-workspace, exclusive runtime, workspace mount, and
+  Plan identity conflicts remain fail-closed.
+- Tests must prove foreign-live migration, foreign-record preservation,
+  selected live-declaration state preservation, close-only legacy mount
+  release, mixed-index disjointness, cross-schema Plan conflict, retry after
+  interruption, and stale-writer CAS rejection.
+- Operational knowledge records the invariant that machine coordination state
+  is global for visibility but workspace-scoped for lifecycle mutation.

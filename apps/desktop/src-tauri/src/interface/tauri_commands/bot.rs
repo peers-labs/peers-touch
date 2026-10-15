@@ -3,7 +3,6 @@ use std::sync::Arc;
 use crate::application::session_resolver;
 use crate::contracts::StubPayload;
 use crate::error::{AppResult, ErrorCode};
-use crate::infrastructure::station_client;
 use crate::model;
 use crate::state::AppState;
 use reqwest::Method;
@@ -66,17 +65,19 @@ pub fn bot_list(state: State<'_, Arc<AppState>>, window: Window) -> AppResult<St
         Ok(t) => t,
         Err(e) => return e,
     };
-    let resp =
-        match station_client::request_proto::<botpb::ListMyBotsRequest, botpb::ListMyBotsResponse>(
+    let resp = match state
+        .station
+        .client()
+        .request_proto::<botpb::ListMyBotsRequest, botpb::ListMyBotsResponse>(
             Method::POST,
             "/bot/list",
             &token,
             None,
             Some(&botpb::ListMyBotsRequest {}),
         ) {
-            Ok(r) => r,
-            Err(e) => return e.into_app_result("Failed to list bots"),
-        };
+        Ok(r) => r,
+        Err(e) => return e.into_app_result("Failed to list bots"),
+    };
     let bots: Vec<Value> = resp.bots.iter().map(|b| bot_to_value(Some(b))).collect();
     stub("bot_list", json!({ "bots": bots }))
 }
@@ -102,11 +103,16 @@ pub fn bot_create(
         name: input.name,
         avatar: input.avatar,
     };
-    let resp = match station_client::request_proto::<
-        botpb::CreateBotRequest,
-        botpb::CreateBotResponse,
-    >(Method::POST, "/bot/create", &token, None, Some(&body))
-    {
+    let resp = match state
+        .station
+        .client()
+        .request_proto::<botpb::CreateBotRequest, botpb::CreateBotResponse>(
+            Method::POST,
+            "/bot/create",
+            &token,
+            None,
+            Some(&body),
+        ) {
         Ok(r) => r,
         Err(e) => return e.into_app_result("Failed to create bot"),
     };
@@ -138,16 +144,16 @@ pub fn bot_rotate_secret(
     let body = botpb::RotateBotSecretRequest {
         bot_ptid: input.bot_ptid,
     };
-    let resp = match station_client::request_proto::<
-        botpb::RotateBotSecretRequest,
-        botpb::RotateBotSecretResponse,
-    >(
-        Method::POST,
-        "/bot/rotate-secret",
-        &token,
-        None,
-        Some(&body),
-    ) {
+    let resp = match state
+        .station
+        .client()
+        .request_proto::<botpb::RotateBotSecretRequest, botpb::RotateBotSecretResponse>(
+            Method::POST,
+            "/bot/rotate-secret",
+            &token,
+            None,
+            Some(&body),
+        ) {
         Ok(r) => r,
         Err(e) => return e.into_app_result("Failed to rotate bot secret"),
     };
@@ -174,11 +180,16 @@ pub fn bot_set_state(
         bot_ptid: input.bot_ptid,
         target_state: input.target_state,
     };
-    let resp = match station_client::request_proto::<
-        botpb::SetBotStateRequest,
-        botpb::SetBotStateResponse,
-    >(Method::POST, "/bot/set-state", &token, None, Some(&body))
-    {
+    let resp = match state
+        .station
+        .client()
+        .request_proto::<botpb::SetBotStateRequest, botpb::SetBotStateResponse>(
+            Method::POST,
+            "/bot/set-state",
+            &token,
+            None,
+            Some(&body),
+        ) {
         Ok(r) => r,
         Err(e) => return e.into_app_result("Failed to set bot state"),
     };
@@ -209,11 +220,16 @@ pub fn bot_set_profile(
         bot_ptid: input.bot_ptid,
         avatar: input.avatar,
     };
-    let resp = match station_client::request_proto::<
-        botpb::SetBotProfileRequest,
-        botpb::SetBotProfileResponse,
-    >(Method::POST, "/bot/set-profile", &token, None, Some(&body))
-    {
+    let resp = match state
+        .station
+        .client()
+        .request_proto::<botpb::SetBotProfileRequest, botpb::SetBotProfileResponse>(
+            Method::POST,
+            "/bot/set-profile",
+            &token,
+            None,
+            Some(&body),
+        ) {
         Ok(r) => r,
         Err(e) => return e.into_app_result("Failed to set bot profile"),
     };
@@ -246,8 +262,9 @@ pub async fn bot_upload_avatar(
             None,
         );
     }
+    let station_client = state.station.client().clone();
     tokio::task::spawn_blocking(move || {
-        let result = match station_client::upload_multipart(
+        let result = match station_client.upload_multipart(
             "/sub-oss/upload",
             &token,
             &input.file_path,

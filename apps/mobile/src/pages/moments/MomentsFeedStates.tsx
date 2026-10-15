@@ -28,7 +28,11 @@ export function MomentsFeedEmpty() {
   const { t } = useMobileI18n();
 
   return (
-    <div className="moments-state moments-state--empty" role="status">
+    <div
+      className="moments-state moments-state--empty"
+      data-product-surface="moments.feed-empty"
+      role="status"
+    >
       <Inbox size={48} strokeWidth={1.5} />
       <Title level={5}>{t('mobile.moments.feed.empty')}</Title>
       <Text type="secondary">{t('mobile.moments.feed.emptyHint')}</Text>
@@ -40,11 +44,19 @@ export function MomentsFeedEmpty() {
 // Loading state
 // ---------------------------------------------------------------------------
 
-export function MomentsFeedLoading() {
+export function MomentsFeedLoading({
+  productSurface = 'moments.feed-loading',
+}: {
+  readonly productSurface?: string;
+} = {}) {
   const { t } = useMobileI18n();
 
   return (
-    <div className="moments-state moments-state--loading" role="status">
+    <div
+      className="moments-state moments-state--loading"
+      data-product-surface={productSurface}
+      role="status"
+    >
       <RefreshCw size={24} className="moments-state__spinner" />
       <Text type="secondary">{t('mobile.moments.feed.loading')}</Text>
     </div>
@@ -64,7 +76,11 @@ export function MomentsFeedError({ message: errorMessage, onRetry }: MomentsFeed
   const { t } = useMobileI18n();
 
   return (
-    <div className="moments-state moments-state--error" role="alert">
+    <div
+      className="moments-state moments-state--error"
+      data-product-surface="moments.feed-error"
+      role="alert"
+    >
       <WifiOff size={36} strokeWidth={1.5} />
       <Title level={5}>{t('mobile.moments.feed.error')}</Title>
       {errorMessage && <Text type="secondary">{errorMessage}</Text>}
@@ -82,13 +98,22 @@ export function MomentsFeedError({ message: errorMessage, onRetry }: MomentsFeed
 interface MomentsUnavailableProps {
   readonly reason?: string;
   readonly onRetry: () => void;
+  readonly productSurface?: string;
 }
 
-export function MomentsUnavailable({ reason, onRetry }: MomentsUnavailableProps) {
+export function MomentsUnavailable({
+  reason,
+  onRetry,
+  productSurface = 'moments.unavailable',
+}: MomentsUnavailableProps) {
   const { t } = useMobileI18n();
 
   return (
-    <div className="moments-state moments-state--unavailable" role="alert">
+    <div
+      className="moments-state moments-state--unavailable"
+      data-product-surface={productSurface}
+      role="alert"
+    >
       <AlertTriangle size={48} strokeWidth={1.5} />
       <Title level={5}>{t('mobile.moments.unavailable.title')}</Title>
       <Text type="secondary">
@@ -107,13 +132,21 @@ export function MomentsUnavailable({ reason, onRetry }: MomentsUnavailableProps)
 
 interface MomentsPolicyViolationProps {
   readonly blocked?: boolean;
+  readonly productSurface?: string;
 }
 
-export function MomentsPolicyViolation({ blocked }: MomentsPolicyViolationProps) {
+export function MomentsPolicyViolation({
+  blocked,
+  productSurface = 'moments.filtered-empty',
+}: MomentsPolicyViolationProps) {
   const { t } = useMobileI18n();
 
   return (
-    <div className="moments-state moments-state--policy" role="alert">
+    <div
+      className="moments-state moments-state--policy"
+      data-product-surface={productSurface}
+      role="alert"
+    >
       <ShieldAlert size={48} strokeWidth={1.5} />
       <Title level={5}>
         {blocked

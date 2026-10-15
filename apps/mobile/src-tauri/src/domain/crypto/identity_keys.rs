@@ -3,6 +3,7 @@ use base64::Engine as _;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use rand::rngs::OsRng;
 use sha2::{Digest, Sha256};
+use zeroize::Zeroizing;
 
 use crate::error::{MobileError, MobileResult};
 use crate::platform::secure_storage::SecureStorage;
@@ -34,7 +35,47 @@ pub fn ensure_identity(
     })
 }
 
+pub(crate) fn replace_identity_seed(
+    storage: &SecureStorage,
+    user_scope: &str,
+    actor_ptid: &str,
+    seed: &[u8; 32],
+) -> MobileResult<Option<Zeroizing<[u8; 32]>>> {
+    let key = identity_key(user_scope, actor_ptid);
+    let previous = storage
+        .get(&key)?
+        .map(|stored| identity_seed_from_b64(&stored))
+        .transpose()?
+        .map(Zeroizing::new);
+    storage.set(&key, &B64.encode(seed))?;
+    Ok(previous)
+}
+
+pub(crate) fn restore_identity_seed(
+    storage: &SecureStorage,
+    user_scope: &str,
+    actor_ptid: &str,
+    seed: Option<&[u8; 32]>,
+) -> MobileResult<()> {
+    let key = identity_key(user_scope, actor_ptid);
+    match seed {
+        Some(seed) => storage.set(&key, &B64.encode(seed))?,
+        None => storage.remove(&key)?,
+    }
+    Ok(())
+}
+
 fn identity_from_seed_b64(seed_b64: &str) -> MobileResult<IdentityKeyPair> {
+    let bytes = identity_seed_from_b64(seed_b64)?;
+    let signing_key = SigningKey::from_bytes(&bytes);
+    let verifying_key = signing_key.verifying_key();
+    Ok(IdentityKeyPair {
+        signing_key,
+        verifying_key,
+    })
+}
+
+fn identity_seed_from_b64(seed_b64: &str) -> MobileResult<[u8; 32]> {
     let seed = B64
         .decode(seed_b64.trim())
         .map_err(|error| MobileError::crypto(format!("identity seed is not base64: {error}")))?;
@@ -46,12 +87,7 @@ fn identity_from_seed_b64(seed_b64: &str) -> MobileResult<IdentityKeyPair> {
     }
     let mut bytes = [0u8; 32];
     bytes.copy_from_slice(&seed);
-    let signing_key = SigningKey::from_bytes(&bytes);
-    let verifying_key = signing_key.verifying_key();
-    Ok(IdentityKeyPair {
-        signing_key,
-        verifying_key,
-    })
+    Ok(bytes)
 }
 
 fn identity_key(user_scope: &str, actor_ptid: &str) -> String {

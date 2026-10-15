@@ -495,21 +495,68 @@ func newFakeBlobRepo() *fakeBlobRepo {
 func blobPK(backend, key string) string { return backend + "|" + key }
 
 func (r *fakeBlobRepo) Touch(_ context.Context, backend, key string, size int64, sha256 string) (*ossmodel.Blob, error) {
+	write, err := r.StageWrite(context.Background(), backend, key, size, sha256)
+	if err != nil {
+		return nil, err
+	}
+	return r.CommitWrite(context.Background(), *write)
+}
+
+func (r *fakeBlobRepo) StageWrite(_ context.Context, backend, key string, size int64, sha256 string) (*ossrepo.BlobWrite, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	now := time.Now()
 	pk := blobPK(backend, key)
 	if existing, ok := r.rows[pk]; ok {
-		existing.RefCount++
-		existing.LastSeenAt = now
-		cp := *existing
-		return &cp, nil
+		if existing.Generation == 0 {
+			existing.Generation = 1
+		}
+		if existing.StorageKey == "" {
+			existing.StorageKey = key
+		}
+		if existing.LifecycleState == "" {
+			existing.LifecycleState = ossmodel.BlobLifecycleLive
+		}
+		requiresWrite := existing.LifecycleState == ossmodel.BlobLifecycleWriting
+		if existing.LifecycleState == ossmodel.BlobLifecycleDeleting {
+			existing.Generation++
+			existing.StorageKey = fmt.Sprintf("%s.generation-%d", key, existing.Generation)
+			existing.LifecycleState = ossmodel.BlobLifecycleWriting
+			existing.RefCount = 0
+			requiresWrite = true
+		}
+		return &ossrepo.BlobWrite{
+			Backend: backend, Key: key, Generation: existing.Generation,
+			StorageKey: existing.StorageKey, Size: size, Sha256: sha256,
+			RequiresWrite: requiresWrite,
+		}, nil
 	}
 	row := &ossmodel.Blob{
 		Backend: backend, Key: key, Size: size, Sha256: sha256,
-		RefCount: 1, LastSeenAt: now, CreatedAt: now,
+		Generation: 1, StorageKey: key, LifecycleState: ossmodel.BlobLifecycleWriting,
+		RefCount: 0, LastSeenAt: now, CreatedAt: now,
 	}
 	r.rows[pk] = row
+	return &ossrepo.BlobWrite{
+		Backend: backend, Key: key, Generation: 1, StorageKey: key,
+		Size: size, Sha256: sha256, RequiresWrite: true,
+	}, nil
+}
+
+func (r *fakeBlobRepo) CommitWrite(_ context.Context, write ossrepo.BlobWrite) (*ossmodel.Blob, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	row := r.rows[blobPK(write.Backend, write.Key)]
+	if row == nil ||
+		row.Generation != write.Generation ||
+		row.StorageKey != write.StorageKey ||
+		(row.LifecycleState != ossmodel.BlobLifecycleWriting &&
+			row.LifecycleState != ossmodel.BlobLifecycleLive) {
+		return nil, ossrepo.ErrBlobGenerationStale
+	}
+	row.LifecycleState = ossmodel.BlobLifecycleLive
+	row.RefCount++
+	row.LastSeenAt = time.Now()
 	cp := *row
 	return &cp, nil
 }
@@ -554,11 +601,57 @@ func (r *fakeBlobRepo) ListGCCandidates(_ context.Context, olderThan time.Time, 
 	return out, nil
 }
 
-func (r *fakeBlobRepo) Delete(_ context.Context, backend, key string) error {
+func (r *fakeBlobRepo) ClaimGC(
+	_ context.Context,
+	candidate ossmodel.Blob,
+	_ time.Time,
+	authority ossrepo.BlobGCAuthority,
+) (*ossrepo.BlobGCClaim, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	delete(r.rows, blobPK(backend, key))
+	row := r.rows[blobPK(candidate.Backend, candidate.Key)]
+	if row == nil || row.RefCount != 0 || row.Generation != candidate.Generation {
+		return nil, ossrepo.ErrBlobGCClaimStale
+	}
+	row.LifecycleState = ossmodel.BlobLifecycleDeleting
+	return &ossrepo.BlobGCClaim{
+		Backend: candidate.Backend, Key: candidate.Key,
+		Generation: row.Generation, StorageKey: row.StorageKey, Size: row.Size,
+		WorkerName:       authority.WorkerName,
+		OwnerNodePeerID:  authority.OwnerNodePeerID,
+		OwnerIncarnation: authority.OwnerIncarnation,
+		FencingToken:     authority.FencingToken,
+	}, nil
+}
+
+func (r *fakeBlobRepo) CompleteGC(_ context.Context, claim ossrepo.BlobGCClaim) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	row := r.rows[blobPK(claim.Backend, claim.Key)]
+	if row == nil ||
+		row.Generation != claim.Generation ||
+		row.StorageKey != claim.StorageKey ||
+		row.LifecycleState != ossmodel.BlobLifecycleDeleting {
+		return ossrepo.ErrBlobGCClaimStale
+	}
+	delete(r.rows, blobPK(claim.Backend, claim.Key))
 	return nil
+}
+
+func (r *fakeBlobRepo) ResolveStorageKey(_ context.Context, backend, key string) (string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	row := r.rows[blobPK(backend, key)]
+	if row == nil {
+		return "", ossrepo.ErrBlobNotFound
+	}
+	if row.LifecycleState != "" && row.LifecycleState != ossmodel.BlobLifecycleLive {
+		return "", ossrepo.ErrBlobWriteInProgress
+	}
+	if row.StorageKey == "" {
+		return row.Key, nil
+	}
+	return row.StorageKey, nil
 }
 
 // svcDeps bundles the collaborators tests poke at after a

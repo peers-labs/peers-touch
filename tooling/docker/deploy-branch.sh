@@ -10,7 +10,7 @@
 #   - Relay is always-on (main branch, separate compose project)
 #   - Each branch gets its own Station + PostgreSQL compose project
 #   - Port allocation: main=18080, others hashed into 18082-18199
-#   - All stations relay-client mount onto the shared Relay
+#   - All stations reserve and publish through the shared Circuit Relay
 #
 # Requires: docker, docker compose, git, curl
 
@@ -138,11 +138,14 @@ PEERS_FEDERATION_DIRECT_INBOUND=true
 
 PEERS_NODE_SERVER_BASEURL=http://192.168.31.24:${STATION_PORT}
 
-RELAY_CLIENT_ENABLED=true
-RELAY_CLIENT_RELAY_URL=http://192.168.31.24:18081
-RELAY_CLIENT_RELAY_STREAM_ADDR=192.168.31.24:4501
-RELAY_CLIENT_INVITE_TOKEN=
-RELAY_CLIENT_LABEL=orangepi-${SAFE_BRANCH}
+STATION_RELAY_ENABLED=true
+STATION_RELAY_PEER_ID=${RELAY_PEER_ID}
+STATION_RELAY_MULTIADDR=${RELAY_BOOTSTRAP_MULTIADDR}
+STATION_RELAY_CONTROL_ORIGIN=https://192.168.31.24:18081
+STATION_RELAY_INVITE_TOKEN=
+STATION_RELAY_LABEL=orangepi-${SAFE_BRANCH}
+STATION_RELAY_TLS_CA_FILE=/app/relay-ca/relay.crt
+STATION_RELAY_CA_FILE_MOUNT=${SCRIPT_DIR}/secrets/relay.crt
 EOF
 
 echo ""

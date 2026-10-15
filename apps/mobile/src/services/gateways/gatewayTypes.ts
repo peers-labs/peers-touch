@@ -42,6 +42,8 @@ export interface GatewayRequestOptions {
   readonly accept?: string;
 }
 
+export type GatewayOperationExecutor = typeof executeStationOperation;
+
 /**
  * Command outcome: every gateway command returns a typed outcome
  * that distinguishes success from domain-level failure, keeping
@@ -114,6 +116,7 @@ export function decodeProtoJsonOutcome<Desc extends DescMessage>(
 export function createGatewayTransport(
   session: MobileAuthSession,
   mutationDomain: MobileMutationDomain,
+  executeOperation: GatewayOperationExecutor = executeStationOperation,
 ) {
   async function request<T>(options: GatewayRequestOptions): Promise<T> {
     const admission = options.admission
@@ -126,7 +129,7 @@ export function createGatewayTransport(
     }
 
     try {
-      const response = await executeStationOperation(
+      const response = await executeOperation(
         session,
         resolveGatewayOperation(options),
       );
@@ -231,7 +234,7 @@ function resolveGatewayOperation(
         operationId: 'actor_search',
         query: requiredString(query.q, 'q'),
       };
-    case 'GET /sub-federation/contexts':
+    case 'GET /sub-federation/federations':
       return { operationId: 'federation_contexts_list' };
     case 'GET /actor/federation/resolve':
       return {
@@ -307,7 +310,10 @@ function resolveGatewayOperation(
     case 'GET /api/v1/social/relationships/status':
       return {
         operationId: 'social_friendship_status',
-        target_ptid: requiredString(query.target_ptid, 'target_ptid'),
+        target_actor_ptid: requiredString(
+          query.target_actor_ptid,
+          'target_actor_ptid',
+        ),
       };
     case 'GET /api/v1/social/timeline':
       return {
@@ -326,7 +332,7 @@ function resolveParameterizedGatewayOperation(
 ): StationTransportOperation {
   const postAction = matchPath(
     options.path,
-    /^\/api\/v1\/social\/posts\/([^/]+)\/(react|unreact)$/,
+    /^\/api\/v1\/social\/moments\/([^/]+)\/(react|unreact)$/,
   );
   if (options.method === 'POST' && postAction) {
     return {
@@ -337,7 +343,7 @@ function resolveParameterizedGatewayOperation(
   }
   const postComments = matchPath(
     options.path,
-    /^\/api\/v1\/social\/posts\/([^/]+)\/comments$/,
+    /^\/api\/v1\/social\/moments\/([^/]+)\/comments$/,
   );
   if (postComments && options.method === 'GET') {
     return {
@@ -355,10 +361,16 @@ function resolveParameterizedGatewayOperation(
       reply_to_comment_id: optionalString(options.body?.reply_to_comment_id),
     };
   }
-  const post = matchPath(options.path, /^\/api\/v1\/social\/posts\/([^/]+)$/);
+  const post = matchPath(options.path, /^\/api\/v1\/social\/moments\/([^/]+)$/);
   if (post && options.method === 'GET') {
     return {
       operationId: 'moments_post_get',
+      post_id: decodePathValue(post[1]),
+    };
+  }
+  if (post && options.method === 'DELETE') {
+    return {
+      operationId: 'moments_delete',
       post_id: decodePathValue(post[1]),
     };
   }

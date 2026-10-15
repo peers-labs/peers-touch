@@ -9,8 +9,10 @@ use messaging_core::proto::social::SocialRelationshipAction;
 use prost::Message;
 use rand::rngs::OsRng;
 use rand::RngCore;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::error::{MobileError, MobileResult};
+use crate::platform::secure_input::request_actor_identity_recovery_phrase;
 use crate::platform::secure_storage::SecureStorage;
 use crate::runtime::command_ledger::entry::{product_state, state_of, ProductCommandState};
 #[cfg(feature = "acceptance-harness")]
@@ -32,6 +34,7 @@ use super::engine::{
     ProjectedMemberAuthority, ATTACHMENT_STAGE_CHUNK_SIZE,
 };
 use super::lifecycle::{MessagingRuntimeStatus, MobileMessagingRuntime};
+use super::recovery::fetch_and_decode_latest;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -46,6 +49,15 @@ pub struct MessagingActivateInput {
 pub struct MessagingAccountInput {
     station_peer_id: String,
     actor_ptid: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessagingIdentityRecoveryInput {
+    station_peer_id: String,
+    actor_ptid: String,
+    session_id: String,
+    lifecycle_generation: u64,
 }
 
 #[derive(Deserialize)]
@@ -768,6 +780,62 @@ pub fn messaging_activate<R: Runtime>(
         session.device_id().to_string(),
         session.access_token().to_string(),
     )
+}
+
+#[tauri::command]
+pub async fn messaging_recover_identity_with_native_input<R: Runtime>(
+    app: AppHandle<R>,
+    runtime: State<'_, MobileMessagingRuntime>,
+    storage: State<'_, SecureStorage>,
+    input: MessagingIdentityRecoveryInput,
+) -> MobileResult<MessagingRuntimeStatus> {
+    let session = authenticated_native_session(
+        &storage,
+        &input.station_peer_id,
+        &input.actor_ptid,
+        &input.session_id,
+    )?;
+    if input.lifecycle_generation == 0
+        || input.lifecycle_generation != session.lifecycle_generation()
+    {
+        return Err(MobileError::coded(
+            "MOBILE_MESSAGING_IDENTITY_RECOVERY_STALE_SCOPE",
+            "actor identity recovery scope is stale",
+        ));
+    }
+    let phrase = request_actor_identity_recovery_phrase(&app, input.lifecycle_generation).await?;
+    let station_origin = session.station_origin().to_string();
+    let access_token = Zeroizing::new(session.access_token().to_string());
+    let actor_ptid = session.actor_ptid().to_string();
+    let decoded = tauri::async_runtime::spawn_blocking(move || {
+        fetch_and_decode_latest(
+            &station_origin,
+            access_token.as_str(),
+            &actor_ptid,
+            phrase.as_str(),
+        )
+    })
+    .await
+    .map_err(|error| MobileError::messaging(format!("join actor identity recovery task: {error}")))?
+    .map_err(|error| MobileError::coded("MOBILE_MESSAGING_IDENTITY_RECOVERY_FAILED", error))?;
+    let data_root = app.path().app_data_dir().map_err(|error| {
+        MobileError::messaging(format!("resolve mobile messaging data directory: {error}"))
+    })?;
+    let mut recovered_seed = decoded.archive.actor_identity_seed;
+    let result = runtime.recover_fresh_install_identity(
+        app,
+        &data_root,
+        &storage,
+        session.station_peer_id().to_string(),
+        session.station_origin().to_string(),
+        session.actor_ptid().to_string(),
+        session.device_id().to_string(),
+        recovered_seed,
+        decoded.archive.actor_profile_version,
+        session.access_token().to_string(),
+    );
+    recovered_seed.zeroize();
+    result
 }
 
 #[tauri::command]

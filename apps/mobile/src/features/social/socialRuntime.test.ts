@@ -30,6 +30,7 @@ const runtimeMocks = vi.hoisted(() => {
   return {
     projectionRuntime,
     createSocialProjectionRuntime: vi.fn(() => projectionRuntime),
+    invalidateCurrentMomentAuthor: vi.fn(async () => undefined),
     startRealtimeStream: vi.fn(
       async (_session, signal, handlers) => new Promise<void>((resolve) => {
         handlers.onConnected?.('cursor-1');
@@ -49,6 +50,7 @@ const callMocks = vi.hoisted(() => ({
 
 vi.mock('../../runtimes/socialProjectionRuntime', () => ({
   createSocialProjectionRuntime: runtimeMocks.createSocialProjectionRuntime,
+  invalidateCurrentMomentAuthor: runtimeMocks.invalidateCurrentMomentAuthor,
   readActiveSocialIngressState: vi.fn(
     () => runtimeMocks.projectionRuntime.ingress.state(),
   ),
@@ -71,7 +73,9 @@ vi.mock('../call/callState', () => ({
   mobileCallManager: callMocks,
 }));
 
+import { wakeActiveMessagingSession } from '../../runtimes/messagingRuntime';
 import {
+  blockSocialUser,
   reconcileSocialRuntime,
   requestSocialBlockedUsers,
   requestSocialCurrentUserProfile,
@@ -114,8 +118,12 @@ describe('social runtime supervisor', () => {
 
     const socialStore = {
       sessionKey: 'station-primary|ptid:alice',
+      friendshipStatus: {
+        'ptid:bob': { revision: 9 },
+      },
       refreshBlockedUsers: vi.fn(async () => undefined),
       sweepTypingPeers: vi.fn(),
+      blockUser: vi.fn(async () => undefined),
       unblockUser: vi.fn(async () => undefined),
     };
     const controller = await startSocialRuntime(
@@ -124,12 +132,14 @@ describe('social runtime supervisor', () => {
     );
 
     expect(runtimeMocks.projectionRuntime.bootstrap).toHaveBeenCalledOnce();
+    expect(wakeActiveMessagingSession).toHaveBeenCalledOnce();
     expect(runtimeMocks.startRealtimeStream).toHaveBeenCalledOnce();
 
     await requestSocialCurrentUserProfile(true);
     await requestSocialPeerProfiles(['ptid:bob', 'ptid:carol']);
     await requestSocialFriendshipStatus('ptid:bob');
     await requestSocialBlockedUsers();
+    await blockSocialUser('ptid:bob');
     await unblockSocialUser('ptid:bob');
     expect(runtimeMocks.projectionRuntime.requestCurrentUserProfile)
       .toHaveBeenCalledWith(true);
@@ -139,6 +149,11 @@ describe('social runtime supervisor', () => {
       .toHaveBeenCalledWith('ptid:bob');
     expect(socialStore.unblockUser).toHaveBeenCalledWith('ptid:bob');
     expect(socialStore.refreshBlockedUsers).toHaveBeenCalledTimes(2);
+    expect(runtimeMocks.invalidateCurrentMomentAuthor).toHaveBeenCalledWith(
+      'ptid:bob',
+      'RECIPIENT_BLOCKED',
+      'relationship-revision:9',
+    );
 
     runtimeMocks.projectionRuntime.suspend.mockClear();
     callMocks.suspend.mockClear();

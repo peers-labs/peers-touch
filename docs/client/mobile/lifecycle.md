@@ -87,7 +87,10 @@ The user must not enter the Station shell without passing the Station-driven acc
 - Debug native Messaging accepts the exact profile origin injected through
   `PT_MOBILE_DEV_STATION_ORIGIN`. Simulator launches forward it with
   `SIMCTL_CHILD_PT_MOBILE_DEV_STATION_ORIGIN`; it is not saved in app preferences.
-  Release builds ignore this permission and require HTTPS. An unrelated host,
+  Production Release builds ignore this permission and require HTTPS. A
+  self-contained Release built with the explicit `acceptance-harness` feature
+  keeps development-origin policy so the installed simulator artifact can use
+  its declared HTTP Station profile without a debug server. An unrelated host,
   port, credential-bearing URL, or non-root path remains rejected.
 
 ### 4.3 Access Gate Chain

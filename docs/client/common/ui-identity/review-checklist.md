@@ -79,6 +79,8 @@ The goal is to catch "functionally correct but visually assembled" UI before it 
 - [ ] Cards/surfaces are not nested without distinct user intent.
 - [ ] Inputs and composite controls have one parent boundary.
 - [ ] Danger actions are scoped, explicit, and recoverable.
+- [ ] User avatars use the shared rounded-square primitive; interactive inputs and buttons do not introduce circular or pill visual language.
+- [ ] The same actor identity renders the same display name, avatar asset, and fallback across parent and child surfaces.
 - [ ] **Every visible control is wired to a real outcome.** No `onClick={() => {}}`
   placeholders and no link-styled text without an action. If a capability is not
   built, remove the control or render it disabled with the reason; a click that

@@ -154,6 +154,7 @@ func socialGroupRecipientSnapshot(
 	}
 
 	return socialdomain.GroupRecipientSnapshot{
+		FederationID:        snapshot.FederationID,
 		ConversationID:      snapshot.ConversationID,
 		AuthorPTID:          snapshot.AuthorPTID,
 		MembershipEpoch:     snapshot.MembershipEpoch,
@@ -178,6 +179,7 @@ func conversationGroupRecipientSnapshot(
 	}
 
 	return ports.GroupRecipientSnapshot{
+		FederationID:        snapshot.FederationID,
 		ConversationID:      snapshot.ConversationID,
 		AuthorPTID:          snapshot.AuthorPTID,
 		MembershipEpoch:     snapshot.MembershipEpoch,

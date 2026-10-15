@@ -123,7 +123,7 @@ Every Desktop Social implementation must capture or manually verify:
 - Narrow desktop window.
 - Station moderation unavailable or not yet projected.
 
-## 11. AI Agent Checklist
+## 11. Review Checklist
 
 - [ ] Does the screenshot have one content rail?
 - [ ] Are tabs and `New Post` part of one header system?

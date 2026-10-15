@@ -1,16 +1,17 @@
 import { ReactNode } from 'react';
 import { Button, Popover, Tooltip, theme } from 'antd';
 import {
-  Heart,
   MessageCircle,
   MoreHorizontal,
-  Smile,
   ThumbsUp,
-  PartyPopper,
-  Eye,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ReactionKind, type ReactionSummary } from '../../../gen/proto/domain/social/post_pb';
+import type { PrivateReactionState } from '../../../services/privateMomentsNative';
+import {
+  REACTION_PRESENTATIONS,
+  reactionPresentation,
+} from '../reactionCatalog';
 
 // SocialActionBar — a compact action row for a single post.
 //
@@ -31,7 +32,7 @@ import { ReactionKind, type ReactionSummary } from '../../../gen/proto/domain/so
 //   - Row height ~ 28px; icon buttons ~ 26px.
 //   - Summaries use the theme primary tone when the viewer reacted;
 //     otherwise tertiary color — never full-fledged cards.
-//   - The picker is a Popover with 4–5 small icon buttons.
+//   - The picker is a compact Popover containing the canonical emoji catalog.
 
 export interface SocialActionBarProps {
   reactions?: ReactionSummary[];
@@ -39,40 +40,12 @@ export interface SocialActionBarProps {
   loading?: boolean;
   onReact?: (kind: ReactionKind) => void;
   onUnreact?: (kind?: ReactionKind) => void;
+  reactionState?: PrivateReactionState;
+  onRetryReaction?: () => void;
   onOpenComments?: () => void;
   extra?: ReactNode;
   compact?: boolean;
 }
-
-interface KindMeta {
-  Icon: typeof Heart;
-  label: string;
-}
-
-function kindMeta(kind: ReactionKind): KindMeta {
-  switch (kind) {
-    case ReactionKind.REACTION_LIKE:
-      return { Icon: ThumbsUp, label: 'moments.reaction.like' };
-    case ReactionKind.REACTION_LOVE:
-      return { Icon: Heart, label: 'moments.reaction.love' };
-    case ReactionKind.REACTION_LAUGH:
-      return { Icon: Smile, label: 'moments.reaction.laugh' };
-    case ReactionKind.REACTION_WOW:
-      return { Icon: Eye, label: 'moments.reaction.wow' };
-    case ReactionKind.REACTION_CELEBRATE:
-      return { Icon: PartyPopper, label: 'moments.reaction.celebrate' };
-    default:
-      return { Icon: ThumbsUp, label: 'moments.reaction.like' };
-  }
-}
-
-const PICKER_KINDS: ReactionKind[] = [
-  ReactionKind.REACTION_LIKE,
-  ReactionKind.REACTION_LOVE,
-  ReactionKind.REACTION_LAUGH,
-  ReactionKind.REACTION_WOW,
-  ReactionKind.REACTION_CELEBRATE,
-];
 
 function viewerReactedKind(reactions: ReactionSummary[]): ReactionKind | undefined {
   return reactions.find((r) => r.reactedByViewer)?.kind;
@@ -84,6 +57,8 @@ export function SocialActionBar({
   loading,
   onReact,
   onUnreact,
+  reactionState,
+  onRetryReaction,
   onOpenComments,
   extra,
   compact,
@@ -94,11 +69,14 @@ export function SocialActionBar({
   const existing = reactions.filter((r) => Number(r.count ?? 0n) > 0);
   const reactedKind = viewerReactedKind(reactions);
   const iconSize = compact ? 13 : 14;
+  const commandPending = reactionState === 'REACTION_PENDING'
+    || reactionState === 'REACTION_RETRYING';
+  const reactionDisabled = loading || commandPending;
 
   const picker = (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-      {PICKER_KINDS.map((kind) => {
-        const meta = kindMeta(kind);
+    <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 2, maxWidth: 240 }}>
+      {REACTION_PRESENTATIONS.map((meta) => {
+        const kind = meta.kind;
         const active = reactedKind === kind;
         return (
           <Tooltip key={kind} title={t(meta.label)}>
@@ -106,8 +84,8 @@ export function SocialActionBar({
               type={active ? 'primary' : 'text'}
               size="small"
               shape="circle"
-              icon={<meta.Icon size={iconSize} color={active ? '#fff' : token.colorTextSecondary} />}
-              disabled={loading}
+              icon={<span aria-hidden>{meta.emoji}</span>}
+              disabled={reactionDisabled}
               onClick={() => (active ? onUnreact?.(kind) : onReact?.(kind))}
               style={{ width: 28, height: 28 }}
             />
@@ -119,15 +97,15 @@ export function SocialActionBar({
 
   const reactionSummary = (() => {
     if (reactedKind) {
-      const meta = kindMeta(reactedKind);
+      const meta = reactionPresentation(reactedKind);
       return (
         <Tooltip title={t(meta.label)}>
           <Button
             type="text"
             size="small"
-            icon={<meta.Icon size={iconSize} color={token.colorPrimary} />}
+            icon={<span aria-hidden>{meta.emoji}</span>}
             onClick={() => onUnreact?.(reactedKind)}
-            disabled={loading}
+            disabled={reactionDisabled}
             style={{
               color: token.colorPrimary,
               background: token.colorPrimaryBg,
@@ -147,13 +125,13 @@ export function SocialActionBar({
     }
     if (existing.length > 0) {
       const top = existing.sort((a, b) => Number(b.count ?? 0n) - Number(a.count ?? 0n))[0];
-      const meta = kindMeta(top.kind);
+      const meta = reactionPresentation(top.kind);
       return (
         <Tooltip title={t(meta.label)}>
           <Button
             type="text"
             size="small"
-            icon={<meta.Icon size={iconSize} color={token.colorTextSecondary} />}
+            icon={<span aria-hidden>{meta.emoji}</span>}
             onClick={() => onReact?.(top.kind)}
             disabled={loading}
             style={{
@@ -177,7 +155,7 @@ export function SocialActionBar({
           type="text"
           size="small"
           icon={<ThumbsUp size={iconSize} />}
-          disabled={loading}
+          disabled={reactionDisabled}
           style={{
             color: token.colorTextSecondary,
             background: token.colorFillQuaternary,
@@ -210,18 +188,41 @@ export function SocialActionBar({
             size="small"
             shape="circle"
             icon={<MoreHorizontal size={iconSize} color={token.colorTextSecondary} />}
-            disabled={loading}
+            disabled={reactionDisabled}
             style={{ width: 28, height: 28 }}
           />
         </Popover>
       )}
       {!existing.length && null /* picker already embedded above */}
+      {reactionState && reactionState !== 'REACTION_COMMITTED' && (
+        <span
+          role="status"
+          style={{
+            color: reactionState === 'REACTION_REJECTED'
+              ? token.colorError
+              : token.colorTextSecondary,
+            fontSize: 12,
+          }}
+        >
+          {t(`moments.reaction.status.${reactionState}`)}
+          {commandPending && onRetryReaction && (
+            <Button
+              type="link"
+              size="small"
+              disabled={loading}
+              onClick={onRetryReaction}
+              style={{ height: 24, paddingInline: 6, fontSize: 12 }}
+            >
+              {t('moments.reaction.retry')}
+            </Button>
+          )}
+        </span>
+      )}
       <Button
         type="text"
         size="small"
         icon={<MessageCircle size={iconSize} color={token.colorTextSecondary} />}
         onClick={onOpenComments}
-        disabled={loading}
         style={{
           color: token.colorTextSecondary,
           borderRadius: 999,

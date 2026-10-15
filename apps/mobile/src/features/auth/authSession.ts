@@ -14,6 +14,7 @@ import {
 import {
   type MobileAuthSession,
 } from './mobileAuthIdentity';
+import { secureRandomUuid } from '../../utils/randomIdentity';
 
 export type { MobileActorRef, MobileAuthSession } from './mobileAuthIdentity';
 
@@ -556,14 +557,7 @@ function gateTypeNumber(type: number | string): number {
 }
 
 function newSubmissionId(): string {
-  const uuid = globalThis.crypto?.randomUUID?.();
-  if (uuid) return uuid;
-  const bytes = new Uint8Array(16);
-  globalThis.crypto?.getRandomValues?.(bytes);
-  if (bytes.some((value) => value !== 0)) {
-    return Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('');
-  }
-  throw new Error('mobile.auth.submissionIdentityUnavailable');
+  return secureRandomUuid('mobile.auth.submissionIdentityUnavailable');
 }
 
 function pendingSubmissionKey(input: {

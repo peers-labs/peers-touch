@@ -1,10 +1,16 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { RuntimeBootstrapStatus, RuntimeEntry } from '../app/lifecycle/types';
+import type {
+  MobileLaunchState,
+  RuntimeBootstrapStatus,
+  RuntimeEntry,
+} from '../app/lifecycle/types';
+import { setMomentsSurfaceFixture } from '../acceptance/momentsSurfaceFixture';
 
 const lifecycle = vi.hoisted(() => ({
+  launchState: 'shell' as MobileLaunchState,
   phase: 'ACTIVE' as const,
   runtimes: new Map<string, RuntimeEntry>(),
 }));
@@ -20,6 +26,13 @@ vi.mock('../app/mobileI18n', () => ({
 }));
 
 import { MobileRouteBoundary } from './MobileRouteBoundary';
+
+const DOMAIN_CONTENT = 'domain-content';
+const DOMAIN_MARKUP = `<span>${DOMAIN_CONTENT}</span>`;
+
+afterEach(() => {
+  setMomentsSurfaceFixture(null);
+});
 
 function entry(id: string, status: RuntimeBootstrapStatus): RuntimeEntry {
   return {
@@ -40,7 +53,9 @@ function render(
   status: RuntimeBootstrapStatus | null,
   routeId = 'tab:chat',
   dependencyStatus?: 'pending' | 'failed',
+  launchState: MobileLaunchState = 'shell',
 ) {
+  lifecycle.launchState = launchState;
   lifecycle.runtimes.clear();
   if (status) {
     let social = entry('social', status);
@@ -55,7 +70,7 @@ function render(
   lifecycle.runtimes.set('auth', entry('auth', 'ready'));
   return renderToStaticMarkup(
     <MobileRouteBoundary routeId={routeId} onBack={() => undefined}>
-      <span>domain-content</span>
+      <span>{DOMAIN_CONTENT}</span>
     </MobileRouteBoundary>,
   );
 }
@@ -69,12 +84,19 @@ describe('Mobile route owner readiness', () => {
     expect(html).toContain('mobile.route.unavailableBody');
     expect(html).toContain('mobile-route-retry');
     expect(html).toContain('data-route-state="unavailable"');
-    expect(html).not.toContain('domain-content');
+    expect(html).not.toContain(DOMAIN_CONTENT);
     expect(html).not.toContain('aria-busy="true"');
   });
 
   it('renders the domain only when its declared owner is ready', () => {
-    expect(render('ready')).toBe('<span>domain-content</span>');
+    expect(render('ready')).toBe(DOMAIN_MARKUP);
+  });
+
+  it('renders an explicit acceptance fixture without weakening production fail-closed state', () => {
+    setMomentsSurfaceFixture('moments.feed');
+    expect(render('failed', 'tab:moments')).toBe(DOMAIN_MARKUP);
+    setMomentsSurfaceFixture(null);
+    expect(render('failed', 'tab:moments')).not.toContain(DOMAIN_CONTENT);
   });
 
   it('shows preparation without mounting domain content', () => {
@@ -84,22 +106,34 @@ describe('Mobile route owner readiness', () => {
     expect(html).toContain('mobile.route.preparingBody');
     expect(html).toContain('data-route-state="preparing"');
     expect(html).not.toContain('mobile-route-retry');
-    expect(html).not.toContain('domain-content');
+    expect(html).not.toContain(DOMAIN_CONTENT);
   });
 
+  it.each([
+    ['suspended', 'background'],
+    ['resuming', 'resume'],
+  ] as const)(
+    'preserves the active tree while the native app is %s',
+    (status, launchState) => {
+      expect(render(status, 'tab:chat', undefined, launchState))
+        .toBe(DOMAIN_MARKUP);
+      expect(render(status)).not.toContain(DOMAIN_CONTENT);
+    },
+  );
+
   it('keeps auth-owned settings available while Social failed', () => {
-    expect(render('failed', 'tab:settings')).toBe('<span>domain-content</span>');
+    expect(render('failed', 'tab:settings')).toBe(DOMAIN_MARKUP);
   });
 
   it('preserves back navigation for an unavailable detail route', () => {
     const html = render('failed', 'detail:contact-profile');
     expect(html).toContain('common.action.back');
-    expect(html).not.toContain('domain-content');
+    expect(html).not.toContain(DOMAIN_CONTENT);
   });
 
   it('fails closed for an absent runtime or unknown route', () => {
-    expect(render(null)).not.toContain('domain-content');
-    expect(render('ready', 'tab:unknown')).not.toContain('domain-content');
+    expect(render(null)).not.toContain(DOMAIN_CONTENT);
+    expect(render('ready', 'tab:unknown')).not.toContain(DOMAIN_CONTENT);
     expect(render(null)).not.toContain('mobile-route-retry');
     expect(render('ready', 'tab:unknown')).not.toContain('mobile-route-retry');
   });
@@ -107,8 +141,8 @@ describe('Mobile route owner readiness', () => {
   it.each(['pending', 'failed'] as const)(
     'does not mount a ready resource with a %s dependency',
     (status) => {
-      expect(render('ready', 'tab:chat', status)).not.toContain('domain-content');
-      expect(render('ready', 'tab:settings', status)).toBe('<span>domain-content</span>');
+      expect(render('ready', 'tab:chat', status)).not.toContain(DOMAIN_CONTENT);
+      expect(render('ready', 'tab:settings', status)).toBe(DOMAIN_MARKUP);
     },
   );
 });

@@ -58,6 +58,10 @@ _GW_OWNER = 4
 
 _SM_CXSCREEN = 0
 _SM_CYSCREEN = 1
+_ENUM_CURRENT_SETTINGS = -1
+_DM_PELSWIDTH = 0x00080000
+_DM_PELSHEIGHT = 0x00100000
+_DISP_CHANGE_SUCCESSFUL = 0
 
 _SRCCOPY = 0x00CC0020
 _DIB_RGB_COLORS = 0
@@ -183,6 +187,81 @@ class _BITMAPINFO(ctypes.Structure):
     ]
 
 
+class _POINTL(ctypes.Structure):
+    _fields_ = [
+        ("x", ctypes.wintypes.LONG),
+        ("y", ctypes.wintypes.LONG),
+    ]
+
+
+class _PRINTER_DEVMODE_FIELDS(ctypes.Structure):
+    _fields_ = [
+        ("dmOrientation", ctypes.c_short),
+        ("dmPaperSize", ctypes.c_short),
+        ("dmPaperLength", ctypes.c_short),
+        ("dmPaperWidth", ctypes.c_short),
+        ("dmScale", ctypes.c_short),
+        ("dmCopies", ctypes.c_short),
+        ("dmDefaultSource", ctypes.c_short),
+        ("dmPrintQuality", ctypes.c_short),
+    ]
+
+
+class _DISPLAY_DEVMODE_FIELDS(ctypes.Structure):
+    _fields_ = [
+        ("dmPosition", _POINTL),
+        ("dmDisplayOrientation", ctypes.wintypes.DWORD),
+        ("dmDisplayFixedOutput", ctypes.wintypes.DWORD),
+    ]
+
+
+class _DEVMODE_FIELDS(ctypes.Union):
+    _fields_ = [
+        ("printer", _PRINTER_DEVMODE_FIELDS),
+        ("display", _DISPLAY_DEVMODE_FIELDS),
+    ]
+
+
+class _DEVMODE_FLAGS(ctypes.Union):
+    _fields_ = [
+        ("dmDisplayFlags", ctypes.wintypes.DWORD),
+        ("dmNup", ctypes.wintypes.DWORD),
+    ]
+
+
+class _DEVMODEW(ctypes.Structure):
+    _anonymous_ = ("fields", "flags")
+    _fields_ = [
+        ("dmDeviceName", ctypes.wintypes.WCHAR * 32),
+        ("dmSpecVersion", ctypes.wintypes.WORD),
+        ("dmDriverVersion", ctypes.wintypes.WORD),
+        ("dmSize", ctypes.wintypes.WORD),
+        ("dmDriverExtra", ctypes.wintypes.WORD),
+        ("dmFields", ctypes.wintypes.DWORD),
+        ("fields", _DEVMODE_FIELDS),
+        ("dmColor", ctypes.c_short),
+        ("dmDuplex", ctypes.c_short),
+        ("dmYResolution", ctypes.c_short),
+        ("dmTTOption", ctypes.c_short),
+        ("dmCollate", ctypes.c_short),
+        ("dmFormName", ctypes.wintypes.WCHAR * 32),
+        ("dmLogPixels", ctypes.wintypes.WORD),
+        ("dmBitsPerPel", ctypes.wintypes.DWORD),
+        ("dmPelsWidth", ctypes.wintypes.DWORD),
+        ("dmPelsHeight", ctypes.wintypes.DWORD),
+        ("flags", _DEVMODE_FLAGS),
+        ("dmDisplayFrequency", ctypes.wintypes.DWORD),
+        ("dmICMMethod", ctypes.wintypes.DWORD),
+        ("dmICMIntent", ctypes.wintypes.DWORD),
+        ("dmMediaType", ctypes.wintypes.DWORD),
+        ("dmDitherType", ctypes.wintypes.DWORD),
+        ("dmReserved1", ctypes.wintypes.DWORD),
+        ("dmReserved2", ctypes.wintypes.DWORD),
+        ("dmPanningWidth", ctypes.wintypes.DWORD),
+        ("dmPanningHeight", ctypes.wintypes.DWORD),
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Win32 API handles
 # ---------------------------------------------------------------------------
@@ -215,6 +294,17 @@ _user32.SendMessageW.argtypes = [
     ctypes.wintypes.LPARAM,
 ]
 _user32.SendMessageW.restype = ctypes.c_ssize_t
+_user32.EnumDisplaySettingsW.argtypes = [
+    ctypes.wintypes.LPCWSTR,
+    ctypes.wintypes.DWORD,
+    ctypes.POINTER(_DEVMODEW),
+]
+_user32.EnumDisplaySettingsW.restype = ctypes.wintypes.BOOL
+_user32.ChangeDisplaySettingsW.argtypes = [
+    ctypes.POINTER(_DEVMODEW),
+    ctypes.wintypes.DWORD,
+]
+_user32.ChangeDisplaySettingsW.restype = ctypes.wintypes.LONG
 
 
 # ---------------------------------------------------------------------------
@@ -296,6 +386,69 @@ class Win32NativeDesktopAdapter(NativeDesktopAdapter):
     @property
     def platform(self) -> str:
         return "win32"
+
+    @staticmethod
+    def display_geometry() -> tuple[int, int]:
+        width = int(_user32.GetSystemMetrics(_SM_CXSCREEN))
+        height = int(_user32.GetSystemMetrics(_SM_CYSCREEN))
+        if width <= 0 or height <= 0:
+            raise DriverError("Win32 Native could not determine screen metrics")
+        return width, height
+
+    def set_display_geometry(
+        self,
+        width: int,
+        height: int,
+        *,
+        timeout: float = 10,
+    ) -> dict[str, object]:
+        if (
+            isinstance(width, bool)
+            or isinstance(height, bool)
+            or width <= 0
+            or height <= 0
+            or width > 16_384
+            or height > 16_384
+        ):
+            raise DriverError("Win32 Native display geometry is invalid")
+        previous_width, previous_height = self.display_geometry()
+        mode = _DEVMODEW()
+        mode.dmSize = ctypes.sizeof(_DEVMODEW)
+        if not _user32.EnumDisplaySettingsW(
+            None,
+            _ENUM_CURRENT_SETTINGS,
+            ctypes.byref(mode),
+        ):
+            raise DriverError("Win32 Native could not read the display mode")
+        mode.dmPelsWidth = width
+        mode.dmPelsHeight = height
+        mode.dmFields |= _DM_PELSWIDTH | _DM_PELSHEIGHT
+        result = int(_user32.ChangeDisplaySettingsW(ctypes.byref(mode), 0))
+        if result != _DISP_CHANGE_SUCCESSFUL:
+            raise DriverError(
+                "Win32 Native display mode change failed "
+                f"with result {result}"
+            )
+        deadline = time.monotonic() + timeout
+        observed = self.display_geometry()
+        while observed != (width, height) and time.monotonic() < deadline:
+            time.sleep(0.1)
+            observed = self.display_geometry()
+        if observed != (width, height):
+            raise DriverError(
+                "Win32 Native display mode did not reach "
+                f"{width}x{height}; observed {observed[0]}x{observed[1]}"
+            )
+        return {
+            "previous": {
+                "width": previous_width,
+                "height": previous_height,
+            },
+            "current": {
+                "width": observed[0],
+                "height": observed[1],
+            },
+        }
 
     # -- window helpers -----------------------------------------------------
 

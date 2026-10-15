@@ -138,6 +138,25 @@ source transport, not publication of a collaboration branch, delivery, or
 permission to push origin/GitHub. Push, PR, merge, release, and history rewrite
 remain separately governed.
 
+## Service Coordination & Troubleshooting
+
+When encountering cross-service issues (Circuit reservation rejected, DHT
+seeds not connecting, federation resolve failing, session kicked after Station
+redeploy), consult:
+
+- **`docs/architecture/platform/runtime/service-coordination.md`** — dependency
+  DAG, credential contracts (Relay invite → node enrollment →
+  reservation/route), bootstrap node requirements, and troubleshooting index.
+
+Key diagnostics:
+
+- `curl <station>/actor/federation/health` — check DHT readiness and seed status.
+- Station logs: inspect Relay enrollment, reservation, and route-publication
+  errors.
+- "Circuit reservation rejected" → verify node enrollment generation, ACL
+  admission, Relay public address, and the current Station route (§6 of the
+  coordination doc).
+
 ## Verification
 
 - `make env-check` and `make config` pass for the selected worktree.

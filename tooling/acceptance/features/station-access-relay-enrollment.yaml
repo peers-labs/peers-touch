@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "id": "station-access-relay-enrollment",
+  "domain": "station-access",
+  "status": "active",
+  "owners": [
+    "apps/station/frame/core/plugin/native/relay/station_control.go",
+    "apps/station/frame/core/plugin/native/subserver/relay/**",
+    "tooling/docker/entrypoint.sh",
+    "tooling/acceptance/gates/station_access/relay_enrollment_e2e.py",
+    "tooling/acceptance/provisioners/station_access_relay_role.py"
+  ],
+  "truth_sources": [
+    "Station libp2p host identity",
+    "Relay invite and node enrollment persistence",
+    "Relay asymmetric credential authority"
+  ],
+  "visible_surfaces": [
+    {
+      "type": "operator",
+      "route": "Relay invite, node credential rotation, revoke, and recovery API"
+    },
+    {
+      "type": "service",
+      "route": "Station standard Circuit reservation and route publication"
+    }
+  ],
+  "required_gates": [
+    "NCP-G07"
+  ],
+  "acceptance": {
+    "service": [
+      "Relay derives station_peer_id only from a verified Station host-key proof",
+      "one-time invite plaintext is returned once and only its keyed digest is persisted",
+      "node credentials are Relay EdDSA tokens bound to audience, scopes, jti, expiry, enrollment, and generation",
+      "rotation requires the current credential and a fresh proof from the enrolled Station key",
+      "same-generation rotation preserves healthy Circuit routes",
+      "revoke advances generation, removes ACL admission, closes Node connections, and rejects refresh and reserve",
+      "a new invite restores a revoked enrollment at a later generation"
+    ],
+    "surface": [
+      "Station publishes a signed route only after Relay enrollment and reservation succeed"
+    ]
+  },
+  "negative": [
+    "X-Station-Peer-ID and label must not establish Station identity",
+    "invite plaintext and credential values must not appear in list responses, logs, or evidence",
+    "Station application JWT secrets must not sign Relay node credentials",
+    "an expired or revoked cached credential must not produce running readiness"
+  ]
+}

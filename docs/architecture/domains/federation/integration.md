@@ -1,113 +1,105 @@
-# Federation Architecture — 集成与映射
+# Federation Architecture - 集成与映射
 
-> **Status**: draft
-> **Version**: v0.1
-> **Created**: 2026-05-31 | **Updated**: 2026-05-31
+> **Status**: active
+> **Version**: v1.1
+> **Created**: 2026-05-31 | **Updated**: 2026-10-10
 > **Owner**: Architecture Team
 
 ---
 
-## 1. 与现有模块的映射
+## 1. Station App/Frame Boundary
 
-### 1.1 Station app/frame
+| Layer | Responsibility | Forbidden |
+|---|---|---|
+| Station app | Federation lifecycle, membership, policy, role, Ledger and business authorization | Relay socket/read loop |
+| Station frame Federation | typed peer transport port, locator, resolver and signing adapter | app policy truth |
+| Node Connectivity | route, enrollment and authenticated opaque transport | Federation membership/business policy |
 
-Federation 落地必须遵守 Station 平台分层：
+App may depend on frame ports. Frame cannot import app business owners or read
+Federation policy tables to decide governance.
 
-| 层 | 责任 | 不允许 |
-|----|------|--------|
-| Station app layer | Federation lifecycle、membership、policy、role、ledger append/replay、materialized state、Plaza API | 直接管理 relay read loop、DHT routing、transport 连接 |
-| Station frame layer | relay、bootstrap、locator、resolver、profile envelope、station signing key、transport、auth middleware | 积累 Federation 业务规则或治理状态 |
+## 2. Station Access
 
-实现时可以在 app layer 增加 Federation subserver；frame 只提供基础设施 primitive。app 可以依赖 frame，frame 不得依赖 app，也不得读取 Federation policy 表来裁决治理权限。
+[Station Access](../../platform/station/access/README.md) owns client access:
 
-### 1.2 Catalog / Resolver
+- one endpoint input and signed Station identity;
+- one station-keyed route-aware binding;
+- Access Gate, Session and Station/Actor/Device scope;
+- Federation context consumption.
 
-`docs/architecture/domains/identity/federation-catalog.md` 解决“如何发现用户”。Federation 文档解决“谁属于哪个 Federation、谁有权治理、治理事实如何持久和验证”。
+Federation does not create a second client registry, Session or access API.
+Relay details are supplied by Node Connectivity.
 
-二者关系：
-
-```text
-Federation membership / policy
-  -> 决定可查询 Station 范围
-  -> Catalog 在该 federation_id 范围内返回可发现 ActorRef
-  -> Resolver hydrate 具体 actor profile
-```
-
-Catalog 不负责 Federation lifecycle，也不负责 Station membership 治理。
-
-### 1.3 ActivityPub
-
-整体架构历史上提到 ActivityPub federation。Federation Ledger 不是 ActivityPub 的简单替代，而是 Peers-Touch 内部治理真源：
-
-- Federation Ledger 管 Station membership、policy、role、sequencer、governance audit。
-- ActivityPub 可作为未来对外互操作协议，承载与外部 fediverse 的 actor / activity 兼容。
-- 内部 Station-to-Station 治理事实必须以 Peers-Touch proto + ledger 为准。
-- 如果 ActivityPub 事件影响 Federation governance，必须被转换为合法 ledger proposal / event 后才生效。
-
----
-
-## 2. 影响面分析
-
-### 2.1 Model / Proto
-
-所有跨 Station wire payload 必须先定义在 `model/domain/federation/*.proto`。Station 内部可以使用数据库表和 materialized state，但不得绕过 proto 语义另起一套对外模型。
-
-需要补充的 proto 方向：
+## 3. Catalog And Resolver
 
 ```text
-model/domain/federation/federation.proto
-model/domain/federation/federation_ledger.proto
-model/domain/federation/federation_membership.proto
-model/domain/federation/federation_policy.proto
-model/domain/federation/federation_manifest.proto
-model/domain/federation/federation_sync.proto
-model/domain/federation/federation_discovery.proto
+Federation membership/policy
+  -> active member Station set
+  -> federation-scoped Catalog
+  -> ActorRef profile resolution
 ```
 
-现有 Catalog proto 方向需要补充 `federation_id`。没有 `federation_id` 的 Catalog API 只能作为 legacy / advanced handle discovery，不能作为 Federation scoped 发现的默认入口。
+Route discovery and Federation Catalog differ:
 
-### 2.2 Client Projection
+- route discovery answers how a Station can currently be reached;
+- Catalog answers which Actors are discoverable in one Federation;
+- route/mount presence does not imply membership;
+- request URL/Host cannot generate `ActorRef.acct`.
 
-普通客户端与 operator surface 都消费 Federation projection，但职责不同：
+## 4. Typed Peer Delivery
 
-- Desktop/Mobile 只缓存 Federation context、scoped Catalog/Resolver 结果与连接状态。
-- 普通客户端不保存 ledger head、membership、policy，也不暴露治理命令。
-- Dashboard/CLI 可以消费治理 projection 并提交 operator intent；最终权限裁决始终在 Station。
-- Desktop/Mobile 使用同一显式 `federation_id` 语义，不改变 Station 作为共享业务真源的边界。
+```text
+Federation/domain caller
+  -> choose target station_peer_id
+  -> build deterministic typed frame
+  -> frame peer transport port
+  -> Node Connectivity route
+  -> target Station authenticates caller
+  -> target Federation/domain policy
+  -> receiver-owned commit/readback
+```
 
-Station Plaza projection 至少包含：
+Direct and Relay routes carry the same frame and produce the same typed
+receiver disposition. Relay cannot select recipients, parse business payload,
+mint Federation claims or convert connectivity into membership.
 
-- `federation_id`、name、description、status、policy summary。
-- current `head_hash`、`head_seq`、sequencer、sync status。
-- 当前 Actor 的 capability：can_invite、can_approve_join、can_update_policy、can_view_ledger。
-- 成员 Station 分页列表。
-- 按 `federation_id` scoped 的 public actor search。
+## 5. Credential Boundary
 
-### 2.3 Relay / Broadcast
+- Station host key proves Station identity.
+- Federation peer authorization is minted/validated by Station owners.
+- Relay operator/mount/grant credentials are Node Connectivity internals.
+- Client Station Session belongs to Station Access and remains inside inner TLS.
 
-Ledger sync 或 discovery 如果新增 relay-mediated topic，必须遵守现有 relay 纪律：
+No credential is accepted outside its issuer/audience/scope. Federation app
+never receives raw Relay operator or mount credentials.
 
-- relay read loop 不得执行阻塞业务逻辑。
-- topic 必须 deny-by-default allow-list。
-- relay 可以 stamp `origin_peer_id`，但不能成为业务权限裁决者。
-- receiver 必须做 origin authority、replay protection、local relevance 检查。
+## 6. ActivityPub
 
----
+ActivityPub remains a future interoperability layer. Any external activity that
+would affect Federation governance must become a valid proposal and pass
+Ledger policy. Transport reachability cannot directly mutate membership,
+sequencer, role or policy.
 
-## 3. 迁移策略
+## 7. Observability
 
-### 3.1 Catalog Scope
+Federation metrics may expose bounded:
 
-现有 Catalog 文档需要补充 `federation_id` 参数和 Federation scoped visibility。未完成补充前，Catalog 只能视为 actor discovery primitive，不能代表完整 Federation scoped discovery。
+- proposal/event/receiver outcomes;
+- Ledger sequence/head/fork state;
+- membership and policy decision classes;
+- peer delivery result classes.
 
-### 3.2 Legacy Handle Resolve
+Transport metrics such as mounts, tunnels, bytes and rate limits belong to Node
+Connectivity. Neither layer logs credentials, Authorization, decrypted payload,
+Actor PII or high-cardinality raw route values.
 
-如果未来保留 handle-only resolve，它只能作为高级路径，并且必须声明 resolve 语境：
+## 8. Verification
 
-- Home Station 已加入 Federation 范围。
-- 用户选择的 Federation。
-- 显式 external resolve。
-
-### 3.3 ActivityPub Interop
-
-ActivityPub 互操作应在 Federation Ledger 真源之后接入。任何外部 activity 影响 governance 前，都必须转换成 proposal 并通过 policy 校验。
+- app/frame dependency checks remain one-way;
+- all discovery/Catalog queries carry explicit Federation scope;
+- peer receiver verifies caller identity, membership, policy and replay;
+- direct and Relay delivery have receiver-visible parity;
+- route/mount changes do not mutate Federation membership;
+- Node Connectivity formal Gate proves transport opacity and cleanup;
+- no active Federation document defines Relay frame, mount credential or role
+  allowlist a second time.

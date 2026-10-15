@@ -16,6 +16,8 @@ from tooling.acceptance.gates.mobile.proof_contracts import GATE_ID
 
 APPIUM_CAPABILITY_ID = "mobile.native.appium-session"
 DEFAULT_OPERATION_TIMEOUT_SECONDS = 60.0
+SESSION_START_TIMEOUT_SECONDS = 600.0
+SESSION_STOP_TIMEOUT_SECONDS = 180.0
 
 
 class AppiumSession:
@@ -31,6 +33,7 @@ class AppiumSession:
         build_attestation: ArtifactRef,
         callback_scheme: str,
         gate_id: str = GATE_ID,
+        installation_trace_field: str = "freshInstallTrace",
     ) -> None:
         if platform not in {"ios", "android"}:
             raise DriverError(
@@ -55,22 +58,38 @@ class AppiumSession:
             raise DriverError("Appium source ArtifactRefs cross proof runs")
         if physical_device_lease.gate_id != gate_id:
             raise DriverError("Appium source ArtifactRefs target the wrong Gate")
+        if installation_trace_field not in {
+            "freshInstallTrace",
+            "installationTrace",
+        }:
+            raise DriverError("Appium installation trace field is invalid")
 
         self.client = client
         self.client_id = client_id
         self.platform = platform
         self.gate_id = gate_id
+        self._installation_trace_field = installation_trace_field
         self.physical_device_lease_ref = physical_device_lease
         self.build_attestation_ref = build_attestation
         self._session_ref = ""
-        self._fresh_install_trace_ref: ArtifactRef | None = None
+        self._installation_trace_ref: ArtifactRef | None = None
         self._installed_build_identity_ref: ArtifactRef | None = None
 
     @property
+    def installation_trace(self) -> ArtifactRef:
+        if self._installation_trace_ref is None:
+            raise DriverError("Appium installation trace is unavailable")
+        return self._installation_trace_ref
+
+    @property
     def fresh_install_trace(self) -> ArtifactRef:
-        if self._fresh_install_trace_ref is None:
+        if self._installation_trace_field != "freshInstallTrace":
+            raise DriverError(
+                "Appium fresh-install trace is unavailable for this Gate"
+            )
+        if self._installation_trace_ref is None:
             raise DriverError("Appium fresh-install trace is unavailable")
-        return self._fresh_install_trace_ref
+        return self._installation_trace_ref
 
     @property
     def installed_build_identity(self) -> ArtifactRef:
@@ -88,42 +107,48 @@ class AppiumSession:
         result = self._invoke(
             "start",
             source_inputs,
-            timeout_seconds=180.0,
+            timeout_seconds=SESSION_START_TIMEOUT_SECONDS,
             include_session=False,
         )
         session_ref = _required_text(result, "sessionRef", "Appium start")
-        fresh_install_trace = self._artifact_ref(
+        installation_trace = self._artifact_ref(
             result,
-            "freshInstallTrace",
+            self._installation_trace_field,
             expected_path=(
                 f"evidence/mobile/runtime/{self.client_id}/install.json"
             ),
         )
         self._session_ref = session_ref
-        self._fresh_install_trace_ref = fresh_install_trace
+        self._installation_trace_ref = installation_trace
         return self
 
     def stop(self) -> None:
         if not self._session_ref:
             return
-        self._invoke("stop", {})
+        self._invoke(
+            "stop",
+            {},
+            timeout_seconds=SESSION_STOP_TIMEOUT_SECONDS,
+        )
         self._session_ref = ""
 
     def verify_installed_build_identity(
         self,
-        fresh_install_trace: ArtifactRef,
+        installation_trace: ArtifactRef,
     ) -> ArtifactRef:
-        if not isinstance(fresh_install_trace, ArtifactRef):
+        if not isinstance(installation_trace, ArtifactRef):
             raise DriverError(
-                "Appium fresh-install evidence must be a typed ArtifactRef"
+                "Appium installation evidence must be a typed ArtifactRef"
             )
-        if fresh_install_trace != self.fresh_install_trace:
+        if installation_trace != self.installation_trace:
             raise DriverError(
-                "Appium fresh-install ArtifactRef differs from start evidence"
+                "Appium installation ArtifactRef differs from start evidence"
             )
         result = self._invoke(
             "verify_build_identity",
-            {"freshInstallTrace": fresh_install_trace.to_dict()},
+            {
+                self._installation_trace_field: installation_trace.to_dict()
+            },
         )
         identity = self._artifact_ref(
             result,
@@ -285,6 +310,25 @@ class AppiumSession:
             or result.get("durationSeconds") != duration
         ):
             raise DriverError("Appium background response is invalid")
+
+    def social_ui(
+        self,
+        action: str,
+        payload: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        if not action or action.strip() != action:
+            raise DriverError("Mobile Social UI action is invalid")
+        result = self._invoke(
+            "social_ui",
+            {
+                "uiAction": action,
+                "input": dict(payload or {}),
+            },
+        )
+        value = result.get("value")
+        if not isinstance(value, Mapping):
+            raise DriverError("Mobile Social UI response is invalid")
+        return dict(value)
 
     def find_element(self, using: str, value: str) -> str:
         result = self._invoke(

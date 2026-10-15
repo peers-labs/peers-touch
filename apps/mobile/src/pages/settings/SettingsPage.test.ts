@@ -23,7 +23,7 @@ const i18nSource = readFileSync(
 );
 
 describe('Settings functional surface contract', () => {
-  it('uses canonical Group and Moments counts without treating friendship cache as a total', () => {
+  it('uses canonical relationship, Group, and Moments projections for counts', () => {
     expect(pageSource).toContain(
       'useSocialStore((state) => state.messagingConversations.reduce',
     );
@@ -33,7 +33,7 @@ describe('Settings functional surface contract', () => {
     expect(pageSource).toContain(
       'const visibleProfile = controller.profileAvailable ? currentUserProfile : null',
     );
-    expect(pageSource).toContain('const friendCount = unavailableLabel');
+    expect(pageSource).toContain('projectAcceptedContacts(');
     expect(pageSource).not.toContain('state.friendshipStatus');
     expect(pageSource).not.toContain('const groupCount = 0');
     expect(pageSource).not.toContain('const momentsCount = 0');

@@ -10,6 +10,7 @@ import http.server
 import inspect
 import json
 import os
+import shutil
 import socket
 import tempfile
 import threading
@@ -26,6 +27,7 @@ from tooling.acceptance.core import (
     ArtifactRef,
     BlockedError,
     DriverError,
+    EphemeralCapabilityBlocked,
     EphemeralLaunchContextState,
     EnvironmentContract,
     EvidenceStore,
@@ -44,24 +46,34 @@ from tooling.acceptance.provisioners.mobile_native import (
     MAX_MOBILE_PAGE_SOURCE_RESPONSE_BYTES,
     MAX_MOBILE_SCREENSHOT_RESPONSE_BYTES,
     MAX_MOBILE_SCREENSHOT_BYTES,
+    MOBILE_NATIVE_ANDROID_INSTALL_TIMEOUT_MS,
+    MOBILE_NATIVE_ANDROID_NEW_COMMAND_TIMEOUT_SECONDS,
     MOBILE_NATIVE_BLOCKED_SCENARIO_DEPENDENCIES,
     MOBILE_NATIVE_CAPABILITIES,
     MOBILE_OAUTH_PROOF_GATE_ID,
     MOBILE_NATIVE_PRODUCT_APPIUM_OPERATIONS,
+    MOBILE_NATIVE_ANDROID_SOCIAL_CLEANUP_RESOURCES,
     MOBILE_NATIVE_PRODUCT_CLEANUP_RESOURCES,
     MOBILE_NATIVE_PRODUCT_HARNESS_ACTIONS,
     MOBILE_NATIVE_PRODUCT_SCENARIOS,
     MOBILE_NATIVE_SCENARIO_GATES,
+    USB_NETWORK_COMPANION_ROOT,
     CommandResult,
+    MobileAndroidPhysicalProvisioner,
     MobileNativeAppiumCapabilityHandler,
     MobileNativeProvisioner,
     MobileNativeProviderAuthorizationHandler,
     MobileNativeSourceArtifactRefs,
     MobileNativeSourceProjection,
     MobileNativeStationFixtureCapabilityHandler,
+    _AndroidUsbNetworkTransport,
+    _AndroidUsbNetworkTool,
+    _AppiumDeadlineExceeded,
+    _ParentAndroidInstallationAdapter,
     _ParentAppiumSession,
     _ParentAppiumTransport,
     _appium_server_version,
+    _validate_harness_action_result,
     _mobile_native_manifest_resources,
     _with_mobile_resources,
     build_mobile_native_source_projection,
@@ -571,6 +583,91 @@ class ParentAppiumTransportTests(unittest.TestCase):
         self.assertEqual(len(observed_deadlines), 5)
         self.assertEqual(observed_deadlines, [deadline] * 5)
 
+    def test_android_session_timeout_covers_confirmed_install_budget(
+        self,
+    ) -> None:
+        session_payloads: list[dict[str, Any]] = []
+
+        class Transport:
+            @staticmethod
+            def request(
+                method: str,
+                path: str,
+                payload: dict[str, Any],
+                **_kwargs: Any,
+            ) -> dict[str, str]:
+                self.assertEqual((method, path), ("POST", "/session"))
+                session_payloads.append(payload)
+                return {"sessionId": "appium-session"}
+
+        class Broker:
+            @staticmethod
+            def with_physical_device(
+                _lease: object,
+                operation: Any,
+                **_kwargs: Any,
+            ) -> object:
+                return operation(
+                    SimpleNamespace(identifier="android-physical")
+                )
+
+        package_ref = parent_artifact_ref(
+            "runtime/mobile/builds/android.apk"
+        )
+        attestation = {
+            "buildIdentity": {
+                "applicationId": "com.peers.touch.mobile",
+            }
+        }
+        session = _ParentAppiumSession(
+            transport=Transport(),
+            client_id="alice-android",
+            platform_name="android",
+            automation_name="UiAutomator2",
+            artifact_reader=SimpleNamespace(
+                resolve=lambda _ref: Path("/tmp/mobile-app.apk")
+            ),
+            device_broker=Broker(),
+            physical_device_lease=parent_artifact_ref(
+                "runtime/mobile/leases/devices/alice-android.json"
+            ),
+            build_attestation=parent_artifact_ref(
+                "runtime/mobile/builds/android.json"
+            ),
+            ports={
+                "system": 8201,
+                "mjpeg": 8202,
+                "webview": 8203,
+            },
+            chromedriver_executable="/verified/chromedriver",
+        )
+
+        with patch(
+            "tooling.acceptance.provisioners.mobile_native."
+            "_load_source_artifact",
+            side_effect=({}, attestation),
+        ), patch(
+            "tooling.acceptance.provisioners.mobile_native."
+            "_resolve_build_package",
+            return_value=package_ref,
+        ), patch.object(
+            _ParentAppiumSession,
+            "_fresh_install",
+            return_value={},
+        ):
+            session.start()
+
+        capabilities = session_payloads[0]["capabilities"]["alwaysMatch"]
+        timeout_seconds = capabilities["appium:newCommandTimeout"]
+        self.assertEqual(
+            timeout_seconds,
+            MOBILE_NATIVE_ANDROID_NEW_COMMAND_TIMEOUT_SECONDS,
+        )
+        self.assertGreater(
+            timeout_seconds * 1000,
+            MOBILE_NATIVE_ANDROID_INSTALL_TIMEOUT_MS,
+        )
+
     def test_is_alive_does_not_swallow_typed_deadline(self) -> None:
         transport = _ParentAppiumTransport("http://appium.invalid")
         session = object.__new__(_ParentAppiumSession)
@@ -597,6 +694,298 @@ class ParentAppiumTransportTests(unittest.TestCase):
             )
 
         self.assertIsInstance(observed.exception, DriverError)
+
+    def test_android_stop_recovers_timed_out_delete_inside_device_lease(
+        self,
+    ) -> None:
+        requests: list[tuple[str, str, float | None]] = []
+        commands: list[tuple[str, ...]] = []
+        forward_inventories = iter(
+            (
+                (
+                    "android-physical tcp:8201 tcp:6790\n"
+                    "android-physical tcp:8202 tcp:7810\n"
+                ),
+                "",
+            )
+        )
+
+        class Transport:
+            @staticmethod
+            def request(
+                method: str,
+                path: str,
+                _payload: Any = None,
+                *,
+                deadline_monotonic: float | None = None,
+                cancellation: threading.Event | None = None,
+            ) -> object:
+                del cancellation
+                requests.append((method, path, deadline_monotonic))
+                if method == "DELETE":
+                    raise _AppiumDeadlineExceeded(
+                        "synthetic DELETE timeout"
+                    )
+                return []
+
+        class Broker:
+            calls = 0
+
+            def with_physical_device(
+                self,
+                _lease: object,
+                operation: Any,
+                **_kwargs: Any,
+            ) -> object:
+                self.calls += 1
+                return operation(
+                    SimpleNamespace(identifier="android-physical")
+                )
+
+        class Executor:
+            @staticmethod
+            def run(
+                command: tuple[str, ...],
+                **_kwargs: Any,
+            ) -> CommandResult:
+                commands.append(tuple(command))
+                if command[-2:] == ("forward", "--list"):
+                    return CommandResult(0, next(forward_inventories))
+                if "pidof" in command:
+                    return CommandResult(1)
+                return CommandResult(0)
+
+        session = object.__new__(_ParentAppiumSession)
+        session.transport = Transport()
+        session.device_broker = Broker()
+        session._device_lease = object()
+        session.session_id = "appium-session"
+        session.platform = "android"
+        session._application_id = "com.peers.touch.mobile"
+        session.ports = {"system": 8201, "mjpeg": 8202}
+        session.command_executor = Executor()
+        started = time.monotonic()
+
+        session.stop(deadline_monotonic=started + 30)
+
+        self.assertEqual(session.device_broker.calls, 1)
+        self.assertEqual(session.session_id, "")
+        self.assertEqual(
+            [(method, path) for method, path, _ in requests],
+            [
+                ("DELETE", "/session/appium-session"),
+                ("GET", "/sessions"),
+            ],
+        )
+        self.assertLessEqual(
+            requests[0][2],
+            started + 10.1,
+        )
+        for package in (
+            "com.peers.touch.mobile",
+            "io.appium.uiautomator2.server",
+            "io.appium.uiautomator2.server.test",
+        ):
+            self.assertIn(
+                (
+                    "adb",
+                    "-s",
+                    "android-physical",
+                    "shell",
+                    "am",
+                    "force-stop",
+                    package,
+                ),
+                commands,
+            )
+        self.assertIn(
+            (
+                "adb",
+                "-s",
+                "android-physical",
+                "forward",
+                "--remove",
+                "tcp:8201",
+            ),
+            commands,
+        )
+        self.assertIn(
+            (
+                "adb",
+                "-s",
+                "android-physical",
+                "forward",
+                "--remove",
+                "tcp:8202",
+            ),
+            commands,
+        )
+
+    def test_active_application_id_reads_android_package(self) -> None:
+        session = object.__new__(_ParentAppiumSession)
+        session.platform = "android"
+        session.session_id = "session-id"
+        cancellation = threading.Event()
+        requests: list[tuple[str, str, object, object]] = []
+
+        def request(
+            method: str,
+            path: str,
+            _payload: Mapping[str, Any] | None = None,
+            *,
+            deadline_monotonic: float | None = None,
+            cancellation: threading.Event | None = None,
+        ) -> str:
+            requests.append(
+                (method, path, deadline_monotonic, cancellation)
+            )
+            return "  com.peers.touch.mobile  "
+
+        session._request = request
+
+        observed = session._active_application_id(
+            deadline_monotonic=123.0,
+            cancellation=cancellation,
+        )
+
+        self.assertEqual(observed, "com.peers.touch.mobile")
+        self.assertEqual(
+            requests,
+            [
+                (
+                    "GET",
+                    "/session/session-id/appium/device/current_package",
+                    123.0,
+                    cancellation,
+                )
+            ],
+        )
+
+    def test_active_application_id_reads_ios_bundle(self) -> None:
+        session = object.__new__(_ParentAppiumSession)
+        session.platform = "ios"
+        scripts: list[str] = []
+        session.execute_script = lambda script, **_kwargs: (
+            scripts.append(script)
+            or {"bundleId": "com.peers.touch.mobile"}
+        )
+
+        observed = session._active_application_id()
+
+        self.assertEqual(observed, "com.peers.touch.mobile")
+        self.assertEqual(scripts, ["mobile: activeAppInfo"])
+
+    def test_active_application_id_rejects_empty_android_package(self) -> None:
+        session = object.__new__(_ParentAppiumSession)
+        session.platform = "android"
+        session.session_id = "session-id"
+        session._request = lambda *_args, **_kwargs: " "
+
+        with self.assertRaisesRegex(
+            DriverError,
+            "Appium active application is unavailable",
+        ):
+            session._active_application_id()
+
+    def test_build_identity_uses_webview_then_restores_native_context(
+        self,
+    ) -> None:
+        session = object.__new__(_ParentAppiumSession)
+        session.source_gate_id = "mobile-social-android-native"
+        session.client_id = "alice-android"
+        session.platform = "android"
+        session.device_descriptor = object()
+        session.build_attestation_ref = parent_artifact_ref(
+            "runtime/mobile/builds/android.json"
+        )
+        installation_ref = parent_artifact_ref(
+            "evidence/mobile/runtime/alice-android/install.json"
+        )
+        installation_trace = {
+            "artifactKind": "mobile-native-scenario-installation-trace"
+        }
+        identity = {
+            "applicationId": "com.peers.touch.mobile",
+            "buildId": "acceptance-build",
+        }
+        digest = "sha256:" + ("a" * 64)
+        session._build_attestation = {
+            "runId": SOURCE_RUN_ID,
+            "buildIdentity": identity,
+            "embeddedIdentitySha256": digest,
+        }
+        session._installation_trace = installation_trace
+        session.artifact_reader = SimpleNamespace(
+            read_json=lambda observed: (
+                installation_trace
+                if observed == installation_ref
+                else self.fail("unexpected installation reference")
+            )
+        )
+        events: list[str] = []
+        session.switch_to_app_webview = lambda **_kwargs: events.append(
+            "webview"
+        )
+        session.call_action = lambda action, **_kwargs: (
+            events.append(f"action:{action}")
+            or {
+                "identity": identity,
+                "embeddedIdentitySha256": digest,
+            }
+        )
+        session.switch_to_native = lambda **_kwargs: events.append("native")
+        session._active_application_id = lambda **_kwargs: (
+            events.append("active-application")
+            or "com.peers.touch.mobile"
+        )
+
+        payload = session.verify_installed_build_identity(installation_ref)
+
+        self.assertEqual(
+            events,
+            [
+                "webview",
+                "action:build.identity",
+                "native",
+                "active-application",
+            ],
+        )
+        self.assertTrue(payload["allIdentitiesMatch"])
+
+    def test_build_identity_restores_native_context_after_harness_failure(
+        self,
+    ) -> None:
+        session = object.__new__(_ParentAppiumSession)
+        session.source_gate_id = "mobile-social-android-native"
+        session.client_id = "alice-android"
+        session.device_descriptor = object()
+        session._build_attestation = {
+            "buildIdentity": {
+                "applicationId": "com.peers.touch.mobile",
+            }
+        }
+        session._installation_trace = {}
+        session.artifact_reader = SimpleNamespace(read_json=lambda _ref: {})
+        events: list[str] = []
+        session.switch_to_app_webview = lambda **_kwargs: events.append(
+            "webview"
+        )
+
+        def reject_action(_action: str, **_kwargs: Any) -> None:
+            events.append("action")
+            raise DriverError("synthetic harness failure")
+
+        session.call_action = reject_action
+        session.switch_to_native = lambda **_kwargs: events.append("native")
+
+        with self.assertRaisesRegex(DriverError, "synthetic harness failure"):
+            session.verify_installed_build_identity(
+                parent_artifact_ref(
+                    "evidence/mobile/runtime/alice-android/install.json"
+                )
+            )
+
+        self.assertEqual(events, ["webview", "action", "native"])
 
     def test_physical_lease_wait_propagates_cancellation_and_deadline(
         self,
@@ -685,6 +1074,11 @@ class FakeCommandExecutor:
         }
         self.android_devices = {"android-alice", "android-bob"}
         self.android_abi = "arm64-v8a"
+        self.android_manufacturer = "OPPO"
+        self.android_model = "PEEM00"
+        self.android_version = "13"
+        self.android_api_level = "33"
+        self.android_fingerprint = "OPPO/PEEM00/device:13/build:user/release-keys"
         self.browser_version = "124.0.6367.82"
         self.chromedriver_version = "124.0.6367.207"
 
@@ -726,6 +1120,16 @@ class FakeCommandExecutor:
             return CommandResult(0, "0\n")
         if command[-2:] == ("getprop", "ro.product.cpu.abi"):
             return CommandResult(0, f"{self.android_abi}\n")
+        if command[-2:] == ("getprop", "ro.product.manufacturer"):
+            return CommandResult(0, f"{self.android_manufacturer}\n")
+        if command[-2:] == ("getprop", "ro.product.model"):
+            return CommandResult(0, f"{self.android_model}\n")
+        if command[-2:] == ("getprop", "ro.build.version.release"):
+            return CommandResult(0, f"{self.android_version}\n")
+        if command[-2:] == ("getprop", "ro.build.version.sdk"):
+            return CommandResult(0, f"{self.android_api_level}\n")
+        if command[-2:] == ("getprop", "ro.build.fingerprint"):
+            return CommandResult(0, f"{self.android_fingerprint}\n")
         if command[-2:] == ("dumpsys", "webviewupdate"):
             return CommandResult(
                 0,
@@ -737,6 +1141,1066 @@ class FakeCommandExecutor:
         if command[-1:] == ("--version",):
             return CommandResult(0, f"ChromeDriver {self.chromedriver_version}\n")
         return CommandResult(1, stderr="unexpected command")
+
+
+class AndroidUsbNetworkTransportTests(unittest.TestCase):
+    class Process:
+        def __init__(self) -> None:
+            self.returncode: int | None = None
+            self.terminated = False
+            self.killed = False
+
+        def poll(self) -> int | None:
+            return self.returncode
+
+        def terminate(self) -> None:
+            self.terminated = True
+            self.returncode = 0
+
+        def kill(self) -> None:
+            self.killed = True
+            self.returncode = -9
+
+        def wait(self, timeout: float | None = None) -> int:
+            del timeout
+            if self.returncode is None:
+                raise TimeoutError("process is still running")
+            return self.returncode
+
+    class Executor:
+        def __init__(
+            self,
+            *,
+            package_installed: bool = True,
+            package_digest: str = "b" * 64,
+            consent_required: bool = False,
+            vpn_consent_hierarchy: str | None = None,
+            install_confirmation_required: bool = False,
+            data_plane_reachable: bool = True,
+        ) -> None:
+            self.package_installed = package_installed
+            self.package_digest = package_digest
+            self.consent_required = consent_required
+            self.consent_granted = not consent_required
+            self.dialog_visible = False
+            self.vpn_consent_hierarchy = vpn_consent_hierarchy
+            self.install_confirmation_required = (
+                install_confirmation_required
+            )
+            self.install_confirmed = not install_confirmation_required
+            self.install_dialog_visible = False
+            self.install_confirmation = threading.Event()
+            self.client_active = False
+            self.route_active = False
+            self.reverse_present = False
+            self.data_plane_reachable = data_plane_reachable
+            self.commands: list[tuple[str, ...]] = []
+
+        def run(
+            self,
+            command: tuple[str, ...] | list[str],
+            *,
+            cwd: Path,
+            env: Mapping[str, str],
+            timeout: float,
+        ) -> CommandResult:
+            del cwd, env, timeout
+            observed = tuple(command)
+            self.commands.append(observed)
+            if observed[-4:] == (
+                "install",
+                "-r",
+                "--no-streaming",
+                "/attested/usb-network-companion.apk",
+            ):
+                if not self.install_confirmed:
+                    self.install_dialog_visible = True
+                    self.install_confirmation.wait(timeout=2)
+                if not self.install_confirmed:
+                    return CommandResult(1, stderr="confirmation unavailable")
+                self.package_installed = True
+                self.package_digest = "b" * 64
+                return CommandResult(0, "Success\n")
+            if observed[-2:] == (
+                "uninstall",
+                "com.peers.touch.acceptance.usbnetwork",
+            ):
+                self.package_installed = False
+                self.client_active = False
+                self.route_active = False
+                return CommandResult(0)
+            if observed[-3:] == (
+                "reverse",
+                "localabstract:gnirehtet",
+                "tcp:49181",
+            ):
+                self.reverse_present = True
+                return CommandResult(0)
+            if observed[-3:] == (
+                "reverse",
+                "--remove",
+                "localabstract:gnirehtet",
+            ):
+                self.reverse_present = False
+                return CommandResult(0)
+            if observed[-2:] == ("reverse", "--list"):
+                output = (
+                    "UsbFfs localabstract:gnirehtet tcp:49181\n"
+                    if self.reverse_present
+                    else ""
+                )
+                return CommandResult(0, output)
+            if (
+                "com.peers.touch.acceptance.usbnetwork.START" in observed
+                and "am" in observed
+            ):
+                if self.consent_granted:
+                    self.client_active = True
+                    self.route_active = True
+                else:
+                    self.dialog_visible = True
+                return CommandResult(0)
+            if (
+                "com.peers.touch.acceptance.usbnetwork.STOP" in observed
+                and "am" in observed
+            ):
+                self.client_active = False
+                self.route_active = False
+                return CommandResult(0)
+            if observed[-3:] == (
+                "am",
+                "force-stop",
+                "com.peers.touch.acceptance.usbnetwork",
+            ):
+                self.client_active = False
+                self.route_active = False
+                return CommandResult(0)
+            if observed[-3:] == (
+                "shell",
+                "pidof",
+                "com.peers.touch.acceptance.usbnetwork",
+            ):
+                return CommandResult(
+                    0 if self.client_active else 1,
+                    "31337\n" if self.client_active else "",
+                )
+            if observed[-4:] == (
+                "shell",
+                "pm",
+                "path",
+                "com.peers.touch.acceptance.usbnetwork",
+            ):
+                return CommandResult(
+                    0 if self.package_installed else 1,
+                    (
+                        "package:/data/app/usb-network/base.apk\n"
+                        if self.package_installed
+                        else ""
+                    ),
+                )
+            if (
+                len(observed) >= 3
+                and observed[-3:-1] == ("shell", "sha256sum")
+            ):
+                return CommandResult(
+                    0 if self.package_installed else 1,
+                    f"{self.package_digest}  {observed[-1]}\n"
+                    if self.package_installed
+                    else "",
+                )
+            if observed[-5:] == (
+                "shell",
+                "ip",
+                "route",
+                "get",
+                "10.37.221.38",
+            ):
+                return CommandResult(
+                    0,
+                    (
+                        "10.37.221.38 dev tun0 src 10.0.0.2 uid 2000\n"
+                        if self.route_active
+                        else "10.37.221.38 dev wlan0 src 192.0.2.2\n"
+                    ),
+                )
+            if (
+                observed[-8:-1]
+                == (
+                    "shell",
+                    "curl",
+                    "--fail",
+                    "--silent",
+                    "--show-error",
+                    "--max-time",
+                    "5",
+                )
+                and observed[-1].endswith("/sub-oss/healthz")
+            ):
+                return CommandResult(
+                    0 if self.data_plane_reachable else 1,
+                    '{"status":"ok"}\n'
+                    if self.data_plane_reachable
+                    else "",
+                )
+            if observed[-4:-1] == (
+                "shell",
+                "uiautomator",
+                "dump",
+            ):
+                path = observed[-1]
+                visible = (
+                    self.install_dialog_visible
+                    if path.endswith("-install.xml")
+                    else self.dialog_visible
+                )
+                return CommandResult(0 if visible else 1)
+            if observed[-3:] == (
+                "exec-out",
+                "cat",
+                "/sdcard/peers-touch-usb-network-consent.xml",
+            ):
+                if not self.dialog_visible:
+                    return CommandResult(1)
+                return CommandResult(
+                    0,
+                    self.vpn_consent_hierarchy
+                    or (
+                        '<hierarchy><node text="Connection request" '
+                        'package="com.android.vpndialogs">'
+                        '<node text="Allow this app to set up a VPN?" '
+                        'package="com.android.vpndialogs"/>'
+                        '<node text="OK" resource-id="android:id/button1" '
+                        'enabled="true" package="com.android.vpndialogs" '
+                        'bounds="[10,20][110,70]"/>'
+                        "</node></hierarchy>"
+                    ),
+                )
+            if observed[-3:] == (
+                "exec-out",
+                "cat",
+                "/sdcard/peers-touch-usb-network-install.xml",
+            ):
+                if not self.install_dialog_visible:
+                    return CommandResult(1)
+                return CommandResult(
+                    0,
+                    (
+                        '<hierarchy><node text="Peers USB Network" '
+                        'resource-id="com.oplus.appdetail:id/app_name" '
+                        'package="com.oplus.appdetail"/>'
+                        '<node text="Continue install" '
+                        'resource-id="com.oplus.appdetail:id/btn_left" '
+                        'enabled="true" clickable="true" '
+                        'package="com.oplus.appdetail" '
+                        'bounds="[10,20][110,70]"/></hierarchy>'
+                    ),
+                )
+            if observed[-4:-1] == ("shell", "rm", "-f"):
+                return CommandResult(0)
+            if observed[-4:-2] == ("input", "tap"):
+                if self.install_dialog_visible:
+                    self.install_confirmed = True
+                    self.install_dialog_visible = False
+                    self.install_confirmation.set()
+                else:
+                    self.consent_granted = True
+                    self.dialog_visible = False
+                    self.client_active = True
+                    self.route_active = True
+                return CommandResult(0)
+            return CommandResult(1, stderr="unexpected command")
+
+    @staticmethod
+    def tool() -> _AndroidUsbNetworkTool:
+        return _AndroidUsbNetworkTool(
+            version="peers-touch-1.0.0+gnirehtet-2.5.1",
+            relay_executable=Path("/attested/gnirehtet"),
+            relay_sha256="a" * 64,
+            companion_apk=Path(
+                "/attested/usb-network-companion.apk"
+            ),
+            companion_apk_sha256="b" * 64,
+            companion_source_sha256="c" * 64,
+            build_root=Path("/attested/companion-build"),
+        )
+
+    def test_transport_preserves_canonical_origin_and_restores_baseline(
+        self,
+    ) -> None:
+        executor = self.Executor()
+        process = self.Process()
+        spawned: list[tuple[tuple[str, ...], Mapping[str, object]]] = []
+
+        def spawn(
+            command: list[str],
+            **options: object,
+        ) -> AndroidUsbNetworkTransportTests.Process:
+            spawned.append((tuple(command), dict(options)))
+            return process
+
+        transport = _AndroidUsbNetworkTransport(
+            "http://10.37.221.38:18080",
+            relay_port=49181,
+            executor=executor,
+            process_factory=spawn,
+            tool=self.tool(),
+        )
+
+        attestation = transport.start("opaque-device")
+
+        self.assertEqual(
+            attestation["canonicalOrigin"],
+            "http://10.37.221.38:18080",
+        )
+        self.assertEqual(attestation["route"], "10.37.221.38/32")
+        self.assertEqual(
+            spawned[0][0],
+            (
+                "/attested/gnirehtet",
+                "relay",
+                "-p",
+                "49181",
+            ),
+        )
+        self.assertIn(
+            (
+                "adb",
+                "-s",
+                "opaque-device",
+                "reverse",
+                "localabstract:gnirehtet",
+                "tcp:49181",
+            ),
+            executor.commands,
+        )
+        self.assertNotIn("GNIREHTET_APK", spawned[0][1]["env"])
+        self.assertEqual(attestation["relaySha256"], "a" * 64)
+        self.assertEqual(attestation["companionApkSha256"], "b" * 64)
+        self.assertEqual(
+            attestation["companionSourceSha256"],
+            "c" * 64,
+        )
+
+        transport.close("opaque-device")
+
+        self.assertFalse(executor.client_active)
+        self.assertFalse(executor.route_active)
+        self.assertFalse(executor.reverse_present)
+        self.assertTrue(executor.package_installed)
+        self.assertTrue(process.terminated)
+        self.assertTrue(attestation["packagePreinstalled"])
+        self.assertFalse(attestation["packageInstalledByRun"])
+        self.assertFalse(
+            any("appops" in command for command in executor.commands)
+        )
+        source = inspect.getsource(_AndroidUsbNetworkTransport)
+        self.assertNotIn("ACTIVATE_VPN", source)
+        self.assertNotIn("appops", source)
+
+    def test_transport_preserves_preinstalled_client_package(self) -> None:
+        executor = self.Executor(package_installed=True)
+        process = self.Process()
+
+        def spawn(
+            _command: list[str],
+            **_options: object,
+        ) -> AndroidUsbNetworkTransportTests.Process:
+            return process
+
+        transport = _AndroidUsbNetworkTransport(
+            "https://10.37.221.38:18443",
+            relay_port=49181,
+            executor=executor,
+            process_factory=spawn,
+            tool=self.tool(),
+        )
+        transport.start("opaque-device")
+        transport.close("opaque-device")
+
+        self.assertTrue(executor.package_installed)
+        self.assertFalse(
+            any("install" in command for command in executor.commands)
+        )
+
+    def test_transport_installs_and_removes_source_built_companion(self) -> None:
+        executor = self.Executor(
+            package_installed=False,
+            install_confirmation_required=True,
+        )
+        process = self.Process()
+
+        def spawn(
+            _command: list[str],
+            **_options: object,
+        ) -> AndroidUsbNetworkTransportTests.Process:
+            return process
+
+        transport = _AndroidUsbNetworkTransport(
+            "http://10.37.221.38:18080",
+            relay_port=49181,
+            executor=executor,
+            process_factory=spawn,
+            tool=self.tool(),
+        )
+
+        attestation = transport.start("opaque-device")
+        self.assertTrue(executor.package_installed)
+        self.assertTrue(executor.install_confirmed)
+        self.assertTrue(attestation["packageInstalledByRun"])
+
+        transport.close("opaque-device")
+
+        self.assertFalse(executor.package_installed)
+        self.assertFalse(executor.route_active)
+        self.assertFalse(executor.reverse_present)
+
+    def test_first_start_accepts_only_the_system_vpn_dialog(self) -> None:
+        executor = self.Executor(
+            package_installed=False,
+            consent_required=True,
+        )
+        process = self.Process()
+
+        def spawn(
+            _command: list[str],
+            **_options: object,
+        ) -> AndroidUsbNetworkTransportTests.Process:
+            return process
+
+        transport = _AndroidUsbNetworkTransport(
+            "http://10.37.221.38:18080",
+            relay_port=49181,
+            executor=executor,
+            process_factory=spawn,
+            tool=self.tool(),
+        )
+
+        transport.start("opaque-device")
+
+        self.assertTrue(executor.consent_granted)
+        self.assertTrue(executor.client_active)
+        self.assertTrue(executor.route_active)
+        self.assertTrue(
+            any(
+                command[-4:-2] == ("input", "tap")
+                for command in executor.commands
+            )
+        )
+        transport.close("opaque-device")
+
+    def test_coloros_system_vpn_dialog_is_accepted(self) -> None:
+        executor = self.Executor(
+            consent_required=True,
+            vpn_consent_hierarchy=(
+                '<hierarchy rotation="0">'
+                '<node text="&#36830;&#25509;&#35831;&#27714;" '
+                'package="com.oplus.wirelesssettings">'
+                '<node text="&quot;Peers USB Network&quot;'
+                '&#24819;&#35201;&#35774;&#32622;&#19968;&#20010; VPN '
+                '&#36830;&#25509;" '
+                'package="com.oplus.wirelesssettings"/>'
+                '<node text="&#20801;&#35768;" '
+                'resource-id="android:id/button1" '
+                'enabled="true" clickable="true" '
+                'package="com.oplus.wirelesssettings" '
+                'bounds="[572,1358][1044,1484]"/>'
+                "</node></hierarchy>"
+            ),
+        )
+        executor.dialog_visible = True
+        transport = _AndroidUsbNetworkTransport(
+            "http://10.37.221.38:18080",
+            relay_port=49181,
+            executor=executor,
+            tool=self.tool(),
+        )
+
+        approved = transport._approve_vpn_consent_if_visible(
+            "opaque-device",
+            deadline_monotonic=time.monotonic() + 5,
+            cancellation=None,
+        )
+
+        self.assertTrue(approved)
+        self.assertTrue(executor.consent_granted)
+        self.assertFalse(executor.dialog_visible)
+
+    def test_transport_requires_device_data_plane_before_ready(self) -> None:
+        executor = self.Executor(data_plane_reachable=False)
+        process = self.Process()
+
+        def spawn(
+            _command: list[str],
+            **_options: object,
+        ) -> AndroidUsbNetworkTransportTests.Process:
+            return process
+
+        transport = _AndroidUsbNetworkTransport(
+            "http://10.37.221.38:18080",
+            relay_port=49181,
+            executor=executor,
+            process_factory=spawn,
+            tool=self.tool(),
+        )
+
+        with self.assertRaisesRegex(
+            ProvisioningError,
+            "did not become ready",
+        ):
+            transport.start(
+                "opaque-device",
+                deadline_monotonic=time.monotonic() + 0.2,
+            )
+
+        self.assertTrue(
+            any(
+                command[-2:]
+                == (
+                    "5",
+                    "http://10.37.221.38:18080/sub-oss/healthz",
+                )
+                for command in executor.commands
+            )
+        )
+        self.assertFalse(executor.client_active)
+        self.assertFalse(executor.route_active)
+        self.assertFalse(executor.reverse_present)
+        self.assertTrue(process.terminated)
+
+    def test_ui_dump_cleanup_ignores_cancelled_interaction(self) -> None:
+        cancellation = threading.Event()
+
+        class CancelAfterDumpExecutor(self.Executor):
+            def run(
+                nested_self,
+                command: tuple[str, ...] | list[str],
+                *,
+                cwd: Path,
+                env: Mapping[str, str],
+                timeout: float,
+            ) -> CommandResult:
+                result = super().run(
+                    command,
+                    cwd=cwd,
+                    env=env,
+                    timeout=timeout,
+                )
+                observed = tuple(command)
+                if observed[-4:-1] == (
+                    "shell",
+                    "uiautomator",
+                    "dump",
+                ):
+                    cancellation.set()
+                return result
+
+        executor = CancelAfterDumpExecutor(consent_required=True)
+        executor.dialog_visible = True
+        transport = _AndroidUsbNetworkTransport(
+            "http://10.37.221.38:18080",
+            relay_port=49181,
+            executor=executor,
+            tool=self.tool(),
+        )
+
+        with self.assertRaisesRegex(ProvisioningError, "cancelled"):
+            transport._read_ui_hierarchy(
+                "opaque-device",
+                "/sdcard/peers-touch-usb-network-consent.xml",
+                deadline_monotonic=time.monotonic() + 5,
+                cancellation=cancellation,
+            )
+
+        self.assertIn(
+            (
+                "adb",
+                "-s",
+                "opaque-device",
+                "shell",
+                "rm",
+                "-f",
+                "/sdcard/peers-touch-usb-network-consent.xml",
+            ),
+            executor.commands,
+        )
+
+    def test_relay_spawn_failure_restores_device_baseline(self) -> None:
+        executor = self.Executor(package_installed=False)
+
+        def spawn(
+            _command: list[str],
+            **_options: object,
+        ) -> AndroidUsbNetworkTransportTests.Process:
+            raise OSError("relay unavailable")
+
+        transport = _AndroidUsbNetworkTransport(
+            "http://10.37.221.38:18080",
+            relay_port=49181,
+            executor=executor,
+            process_factory=spawn,
+            tool=self.tool(),
+        )
+
+        with self.assertRaisesRegex(
+            BlockedError,
+            "process could not start",
+        ):
+            transport.start("opaque-device")
+
+        self.assertFalse(executor.package_installed)
+        self.assertFalse(executor.client_active)
+        self.assertFalse(executor.route_active)
+        self.assertFalse(executor.reverse_present)
+
+    def test_transport_rejects_a_conflicting_preinstalled_package(self) -> None:
+        executor = self.Executor(package_digest="d" * 64)
+        spawned = False
+        build_root = Path(
+            tempfile.mkdtemp(prefix="owned-usb-network-tool-")
+        )
+        self.addCleanup(shutil.rmtree, build_root, ignore_errors=True)
+        tool = dataclasses.replace(self.tool(), build_root=build_root)
+
+        def spawn(
+            _command: list[str],
+            **_options: object,
+        ) -> AndroidUsbNetworkTransportTests.Process:
+            nonlocal spawned
+            spawned = True
+            return self.Process()
+
+        with patch(
+            "tooling.acceptance.provisioners.mobile_native."
+            "_build_android_usb_network_tool",
+            return_value=tool,
+        ):
+            transport = _AndroidUsbNetworkTransport(
+                "http://10.37.221.38:18080",
+                relay_port=49181,
+                executor=executor,
+                process_factory=spawn,
+                tool=None,
+            )
+
+        with self.assertRaisesRegex(
+            BlockedError,
+            "unexpected pre-existing identity",
+        ):
+            transport.start("opaque-device")
+
+        self.assertFalse(spawned)
+        self.assertFalse(build_root.exists())
+        self.assertTrue(executor.package_installed)
+        self.assertEqual(executor.package_digest, "d" * 64)
+        self.assertFalse(
+            any(
+                "com.peers.touch.acceptance.usbnetwork.STOP" in command
+                or command[-3:]
+                == (
+                    "am",
+                    "force-stop",
+                    "com.peers.touch.acceptance.usbnetwork",
+                )
+                for command in executor.commands
+            )
+        )
+
+    def test_startup_cleanup_failure_is_not_hidden(self) -> None:
+        executor = self.Executor(package_digest="d" * 64)
+        build_root = Path(
+            tempfile.mkdtemp(prefix="leaked-usb-network-tool-")
+        )
+        self.addCleanup(shutil.rmtree, build_root, ignore_errors=True)
+        tool = dataclasses.replace(self.tool(), build_root=build_root)
+
+        with patch(
+            "tooling.acceptance.provisioners.mobile_native."
+            "_build_android_usb_network_tool",
+            return_value=tool,
+        ):
+            transport = _AndroidUsbNetworkTransport(
+                "http://10.37.221.38:18080",
+                relay_port=49181,
+                executor=executor,
+                tool=None,
+            )
+
+        with (
+            patch(
+                "tooling.acceptance.provisioners.mobile_native."
+                "shutil.rmtree",
+            ),
+            self.assertRaisesRegex(
+                ProvisioningError,
+                "startup cleanup failed after BlockedError",
+            ),
+        ):
+            transport.start("opaque-device")
+
+    def test_companion_accepts_only_one_station_route(self) -> None:
+        activity = (
+            USB_NETWORK_COMPANION_ROOT
+            / "src/main/java/com/peers/touch/acceptance/usbnetwork/"
+            "GnirehtetActivity.java"
+        ).read_text()
+        service = (
+            USB_NETWORK_COMPANION_ROOT
+            / "src/main/java/com/peers/touch/acceptance/usbnetwork/"
+            "GnirehtetService.java"
+        ).read_text()
+
+        self.assertIn("routes.length != 1", activity)
+        self.assertIn("getPrefixLength() != 32", activity)
+        self.assertIn("dnsServers.length != 0", activity)
+        self.assertIn("routes.length != 1", service)
+        self.assertIn("getPrefixLength() != 32", service)
+        self.assertIn("dnsServers.length != 0", service)
+        self.assertNotIn('builder.addRoute("0.0.0.0", 0)', service)
+        self.assertNotIn('builder.addDnsServer("8.8.8.8")', service)
+
+    def test_transport_rejects_non_origin_or_non_ipv4_station(self) -> None:
+        for value in (
+            "http://station.example:18080",
+            "http://10.37.221.38:18080/path",
+            "http://user@10.37.221.38:18080",
+            "http://[::1]:18080",
+        ):
+            with self.subTest(value=value), self.assertRaisesRegex(
+                BlockedError,
+                "IPv4 HTTP\\(S\\) origin",
+            ):
+                _AndroidUsbNetworkTransport(
+                    value,
+                    relay_port=49181,
+                    tool=self.tool(),
+                )
+
+    def test_handler_keeps_station_action_on_canonical_origin(self) -> None:
+        calls: list[tuple[str, Mapping[str, Any]]] = []
+
+        class Session:
+            def call_action(
+                self,
+                action: str,
+                payload: Mapping[str, Any],
+                **_kwargs: object,
+            ) -> Mapping[str, Any]:
+                calls.append((action, dict(payload)))
+                return {
+                    "activeStationPeerId": "peer-five-arm",
+                    "verifiedStationPeerId": "peer-five-arm",
+                    "canonicalOrigin": "http://10.37.221.38:18080",
+                    "entries": [],
+                }
+
+        handler = MobileNativeAppiumCapabilityHandler(
+            session_factory=lambda _client_id: Session(),
+            artifact_writer=object(),
+            broker=object(),
+            device_leases={},
+            allowed_client_ids=("alice-android",),
+            allowed_operations=("harness_action",),
+            harness_actions=("station.add",),
+        )
+        handler._sessions["alice-android"] = Session()
+        handler._session_refs["alice-android"] = "session-ref"
+
+        handler.invoke(
+            "harness_action",
+            {
+                "clientId": "alice-android",
+                "sessionRef": "session-ref",
+                "action": "station.add",
+                "actionPayload": {
+                    "url": "http://10.37.221.38:18080",
+                },
+            },
+            deadline_monotonic=time.monotonic() + 5,
+            cancellation=threading.Event(),
+        )
+
+        self.assertEqual(
+            calls,
+            [
+                (
+                    "station.add",
+                    {"url": "http://10.37.221.38:18080"},
+                )
+            ],
+        )
+        source = inspect.getsource(MobileNativeAppiumCapabilityHandler)
+        self.assertNotIn("rewrite_station_url", source)
+        self.assertNotIn("station_transports", source)
+
+    def test_android_social_contract_declares_usb_cleanup_owner(self) -> None:
+        spec = load_mobile_native_preflight_spec(
+            ENVIRONMENTS_DIR / "mobile-android-physical-runtime.yaml",
+            gate_id="mobile-social-android-native",
+        )
+
+        self.assertEqual(
+            spec.scenario.cleanup_resources,
+            MOBILE_NATIVE_ANDROID_SOCIAL_CLEANUP_RESOURCES,
+        )
+        self.assertNotEqual(
+            spec.scenario.cleanup_resources,
+            MOBILE_NATIVE_PRODUCT_CLEANUP_RESOURCES,
+        )
+
+
+class ParentAndroidInstallationAdapterTests(unittest.TestCase):
+    def test_adapter_installs_main_apk_without_streaming_and_confirms_coloros(
+        self,
+    ) -> None:
+        commands: list[tuple[str, ...]] = []
+        confirmation = threading.Event()
+        dialog_visible = threading.Event()
+
+        class Executor:
+            @staticmethod
+            def run(
+                command: tuple[str, ...],
+                *,
+                cwd: Path,
+                env: Mapping[str, str],
+                timeout: float,
+            ) -> CommandResult:
+                del cwd, env, timeout
+                commands.append(command)
+                if command[-4:] == (
+                    "install",
+                    "-r",
+                    "--no-streaming",
+                    "/attested/mobile.apk",
+                ):
+                    dialog_visible.set()
+                    confirmation.wait(timeout=2)
+                    return CommandResult(
+                        0 if confirmation.is_set() else 1,
+                        "Success\n" if confirmation.is_set() else "",
+                    )
+                if command[-4:-1] == (
+                    "shell",
+                    "uiautomator",
+                    "dump",
+                ):
+                    return CommandResult(
+                        0 if dialog_visible.is_set() else 1
+                    )
+                if command[-3:] == (
+                    "exec-out",
+                    "cat",
+                    "/sdcard/peers-touch-mobile-install.xml",
+                ):
+                    return CommandResult(
+                        0,
+                        (
+                            '<hierarchy><node text="Peers" '
+                            'resource-id="com.oplus.appdetail:id/app_name" '
+                            'package="com.oplus.appdetail"/>'
+                            '<node text="Continue install" '
+                            'resource-id="com.oplus.appdetail:id/btn_left" '
+                            'enabled="true" clickable="true" '
+                            'package="com.oplus.appdetail" '
+                            'bounds="[10,20][110,70]"/></hierarchy>'
+                        ),
+                    )
+                if command[-4:-1] == ("shell", "rm", "-f"):
+                    return CommandResult(0)
+                if command[-4:-2] == ("input", "tap"):
+                    confirmation.set()
+                    dialog_visible.clear()
+                    return CommandResult(0)
+                return CommandResult(1, stderr="unexpected command")
+
+        class Session:
+            _device_lease = {"opaque": True}
+            device_descriptor = SimpleNamespace(
+                installation=SimpleNamespace(
+                    user_confirmation_on_install=True,
+                )
+            )
+
+            @staticmethod
+            def _with_physical_device(
+                _lease: Mapping[str, object],
+                operation,
+                **_kwargs: object,
+            ):
+                return operation(SimpleNamespace(identifier="process-local"))
+
+            @staticmethod
+            def _request(*_args: object, **_kwargs: object) -> None:
+                raise AssertionError("install must not use Appium")
+
+        adapter = _ParentAndroidInstallationAdapter(
+            Session(),  # type: ignore[arg-type]
+            deadline_monotonic=time.monotonic() + 5,
+            cancellation=threading.Event(),
+            executor=Executor(),
+        )
+
+        adapter.install(Path("/attested/mobile.apk"))
+
+        self.assertTrue(confirmation.is_set())
+        self.assertIn(
+            (
+                "adb",
+                "-s",
+                "process-local",
+                "install",
+                "-r",
+                "--no-streaming",
+                "/attested/mobile.apk",
+            ),
+            commands,
+        )
+
+    def test_adapter_reads_only_base_apk_digest_from_opaque_device_handle(
+        self,
+    ) -> None:
+        commands: list[tuple[str, ...]] = []
+
+        class Executor:
+            @staticmethod
+            def run(
+                command: tuple[str, ...],
+                *,
+                cwd: Path,
+                env: Mapping[str, str],
+                timeout: float,
+            ) -> CommandResult:
+                del cwd, env, timeout
+                commands.append(command)
+                if command[-6:-1] == (
+                    "shell",
+                    "cmd",
+                    "package",
+                    "list",
+                    "packages",
+                ):
+                    return CommandResult(
+                        0,
+                        "package:com.peers.touch.mobile\n",
+                    )
+                if command[-4:-1] == ("shell", "pm", "path"):
+                    return CommandResult(
+                        0,
+                        "package:/data/app/opaque/base.apk\n"
+                        "package:/data/app/opaque/split_config.apk\n",
+                    )
+                if command[-3:-1] == ("shell", "sha256sum"):
+                    return CommandResult(0, f"{'a' * 64}  opaque\n")
+                return CommandResult(1, stderr="unexpected command")
+
+        class Session:
+            _device_lease = {"opaque": True}
+
+            @staticmethod
+            def _with_physical_device(
+                _lease: Mapping[str, object],
+                operation,
+                **_kwargs: object,
+            ):
+                return operation(SimpleNamespace(identifier="process-local"))
+
+        adapter = _ParentAndroidInstallationAdapter(
+            Session(),  # type: ignore[arg-type]
+            deadline_monotonic=time.monotonic() + 5,
+            cancellation=threading.Event(),
+            executor=Executor(),
+        )
+
+        observed = adapter.inspect("com.peers.touch.mobile")
+
+        self.assertTrue(observed.present)
+        self.assertEqual(observed.sha256, "a" * 64)
+        self.assertEqual(commands[0][-1], "com.peers.touch.mobile")
+        self.assertEqual(commands[1][-1], "com.peers.touch.mobile")
+        self.assertEqual(commands[2][-1], "/data/app/opaque/base.apk")
+
+    def test_adapter_reports_absent_package_without_hash_command(self) -> None:
+        commands: list[tuple[str, ...]] = []
+
+        class Executor:
+            @staticmethod
+            def run(
+                command: tuple[str, ...],
+                *,
+                cwd: Path,
+                env: Mapping[str, str],
+                timeout: float,
+            ) -> CommandResult:
+                del cwd, env, timeout
+                commands.append(command)
+                if command[-6:-1] == (
+                    "shell",
+                    "cmd",
+                    "package",
+                    "list",
+                    "packages",
+                ):
+                    return CommandResult(0, "")
+                return CommandResult(1, stderr="unexpected command")
+
+        class Session:
+            _device_lease = {"opaque": True}
+
+            @staticmethod
+            def _with_physical_device(
+                _lease: Mapping[str, object],
+                operation,
+                **_kwargs: object,
+            ):
+                return operation(SimpleNamespace(identifier="process-local"))
+
+        observed = _ParentAndroidInstallationAdapter(
+            Session(),  # type: ignore[arg-type]
+            deadline_monotonic=time.monotonic() + 5,
+            cancellation=threading.Event(),
+            executor=Executor(),
+        ).inspect("com.peers.touch.mobile")
+
+        self.assertFalse(observed.present)
+        self.assertIsNone(observed.sha256)
+        self.assertEqual(len(commands), 1)
+
+    def test_adapter_rejects_failed_package_inventory(self) -> None:
+        class Executor:
+            @staticmethod
+            def run(
+                command: tuple[str, ...],
+                *,
+                cwd: Path,
+                env: Mapping[str, str],
+                timeout: float,
+            ) -> CommandResult:
+                del command, cwd, env, timeout
+                return CommandResult(1, stderr="package service unavailable")
+
+        class Session:
+            _device_lease = {"opaque": True}
+
+            @staticmethod
+            def _with_physical_device(
+                _lease: Mapping[str, object],
+                operation,
+                **_kwargs: object,
+            ):
+                return operation(SimpleNamespace(identifier="process-local"))
+
+        adapter = _ParentAndroidInstallationAdapter(
+            Session(),  # type: ignore[arg-type]
+            deadline_monotonic=time.monotonic() + 5,
+            cancellation=threading.Event(),
+            executor=Executor(),
+        )
+
+        with self.assertRaisesRegex(
+            DriverError,
+            "installed package lookup failed",
+        ):
+            adapter.inspect("com.peers.touch.mobile")
 
 
 class MobileNativeSourceProjectionTests(unittest.TestCase):
@@ -1438,6 +2902,7 @@ class MobileNativeParentIntegrationTests(unittest.TestCase):
             "physicalDevices": {
                 client_id: object() for client_id in EXPECTED_CLIENTS
             },
+            "runtimeCacheRoot": "/tmp/mobile-native-runtime-cache",
             "leaseAuthenticationKey": bytearray(b"l" * 32),
         }
 
@@ -2423,6 +3888,33 @@ class MobileNativeParentIntegrationTests(unittest.TestCase):
                 }
             ],
         }
+        lifecycle_scope = {
+            "generation": 3,
+            "phase": "ACTIVE",
+            "launchState": "shell",
+            "activeStationPeerId": "station-a",
+            "activeActorPtid": "ptid:alice",
+            "runtimeStationPeerId": "station-a",
+            "deviceId": "device-1",
+            "social": {
+                "stationPeerId": "station-a",
+                "actorPtid": "ptid:alice",
+                "sessionCount": 1,
+                "requestCount": 0,
+                "messageThreadCount": 0,
+            },
+            "group": {
+                "stationPeerId": "station-a",
+                "actorPtid": "ptid:alice",
+                "groupCount": 0,
+                "messageThreadCount": 0,
+            },
+            "navigation": {
+                "primaryRouteId": "tab:home",
+                "detailKeys": [],
+                "overlayRouteId": None,
+            },
+        }
         values = {
             "station.add": station,
             "station.replace": station,
@@ -2431,6 +3923,7 @@ class MobileNativeParentIntegrationTests(unittest.TestCase):
             "oauth.status": oauth,
             "oauth.cancel": oauth,
             "lifecycle.restart": {"requested": True, "scope": "webview"},
+            "lifecycle.scope.read": lifecycle_scope,
             "projection.read": {
                 "station": {
                     "activeStationPeerId": "station-a",
@@ -2515,8 +4008,11 @@ class MobileNativeParentIntegrationTests(unittest.TestCase):
                 "friendRequests": [
                     {
                         "requestId": "request-1",
+                        "federationId": "federation-1",
                         "senderPtid": "ptid:alice",
                         "receiverPtid": "ptid:bob",
+                        "senderHomeStationPeerId": "station-a",
+                        "receiverHomeStationPeerId": "station-a",
                         "status": 1,
                     }
                 ],
@@ -2530,6 +4026,14 @@ class MobileNativeParentIntegrationTests(unittest.TestCase):
                 },
                 "peerOnline": {"ptid:bob": True},
                 "lastReconcileAt": 13,
+                "ingress": {
+                    "lifecycle": "active",
+                    "streamCursor": "event-1",
+                    "writeAdmissionOpen": True,
+                    "staleDomains": [],
+                    "dataQueueDepth": 0,
+                    "controlQueueDepth": 0,
+                },
             },
             "cleanup": {
                 "oauthPurge": {
@@ -2583,7 +4087,57 @@ class MobileNativeParentIntegrationTests(unittest.TestCase):
                 deadline_monotonic=float("inf"),
                 cancellation=threading.Event(),
             )
-            self.assertEqual(result["value"], values[action])
+            expected_value = values[action]
+            if action == "lifecycle.scope.read":
+                expected_value = {
+                    key: item
+                    for key, item in lifecycle_scope.items()
+                    if key != "deviceId"
+                }
+            self.assertEqual(result["value"], expected_value)
+
+        for forbidden_field in ("serial", "deviceSerial"):
+            with self.subTest(forbidden_field=forbidden_field):
+                values["lifecycle.scope.read"] = {
+                    **lifecycle_scope,
+                    forbidden_field: "must-not-cross",
+                }
+                with self.assertRaisesRegex(
+                    ValueError,
+                    rf"\$.{forbidden_field}",
+                ):
+                    handler.invoke(
+                        "harness_action",
+                        {
+                            "clientId": "alice-ios",
+                            "sessionRef": "opaque-session",
+                            "action": "lifecycle.scope.read",
+                            "actionPayload": {},
+                        },
+                        deadline_monotonic=float("inf"),
+                        cancellation=threading.Event(),
+                    )
+        values["lifecycle.scope.read"] = lifecycle_scope
+
+        social_projection = values["social.projection.read"]
+        values["social.projection.read"] = {
+            **social_projection,
+            "ingress": None,
+        }
+        self.assertIsNone(
+            handler.invoke(
+                "harness_action",
+                {
+                    "clientId": "alice-ios",
+                    "sessionRef": "opaque-session",
+                    "action": "social.projection.read",
+                    "actionPayload": {},
+                },
+                deadline_monotonic=float("inf"),
+                cancellation=threading.Event(),
+            )["value"]["ingress"]
+        )
+        values["social.projection.read"] = social_projection
 
         for invalid in (
             {},
@@ -3170,6 +4724,85 @@ class MobileNativeParentIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(handler.sessions, {})
 
+    def test_appium_handler_projects_generic_installation_trace_variant(
+        self,
+    ) -> None:
+        writes: list[tuple[str, str | None]] = []
+
+        class Session:
+            physical_device_lease_ref = parent_artifact_ref(
+                "runtime/mobile/leases/devices/alice-android.json"
+            )
+            build_attestation_ref = parent_artifact_ref(
+                "runtime/mobile/builds/android.json"
+            )
+            installation_trace = {
+                "artifactKind": "mobile-native-scenario-installation-trace"
+            }
+            _application_id = "com.peers.touch.mobile"
+
+            @staticmethod
+            def start(**_kwargs: Any) -> None:
+                return None
+
+        class Writer:
+            @staticmethod
+            def write_json(
+                path: str,
+                _value: Mapping[str, object],
+                *,
+                role: str | None,
+                redact: bool,
+            ) -> ArtifactRef:
+                self.assertFalse(redact)
+                writes.append((path, role))
+                return parent_artifact_ref(path)
+
+        handler = MobileNativeAppiumCapabilityHandler(
+            session_factory=lambda _client_id: Session(),
+            artifact_writer=Writer(),
+            broker=object(),
+            device_leases={},
+            installation_trace_field="installationTrace",
+        )
+        result = handler.invoke(
+            "start",
+            {
+                "clientId": "alice-android",
+                "physicalDeviceLease": (
+                    Session.physical_device_lease_ref.to_dict()
+                ),
+                "buildAttestation": Session.build_attestation_ref.to_dict(),
+            },
+            deadline_monotonic=float("inf"),
+            cancellation=threading.Event(),
+        )
+
+        self.assertIn("installationTrace", result)
+        self.assertNotIn("freshInstallTrace", result)
+        self.assertEqual(
+            writes,
+            [
+                (
+                    "evidence/mobile/runtime/alice-android/install.json",
+                    "mobile-native-scenario-installation-trace/alice-android",
+                )
+            ],
+        )
+        projected = handler.project_response(
+            "start",
+            {
+                "requestId": "request-install",
+                "status": "OK",
+                "result": result,
+                "error": None,
+            },
+        )
+        self.assertEqual(
+            projected["result"]["installationTrace"],
+            result["installationTrace"],
+        )
+
     def test_failed_start_with_session_id_retains_cleanup_ownership(
         self,
     ) -> None:
@@ -3500,6 +5133,44 @@ class MobileNativeParentIntegrationTests(unittest.TestCase):
         )
         self.assertNotIn("artifact.close", self.events)
 
+    def test_device_restore_reverifies_without_nested_device_operation(
+        self,
+    ) -> None:
+        calls: list[tuple[dict[str, Any], float, threading.Event]] = []
+        cancellation = threading.Event()
+        lease = {"resourceKey": "physical-device/alice-android"}
+
+        class Broker:
+            @staticmethod
+            def physical_device_baseline_matches(
+                observed_lease: dict[str, Any],
+                *,
+                deadline_monotonic: float,
+                cancellation: threading.Event,
+            ) -> bool:
+                calls.append(
+                    (
+                        observed_lease,
+                        deadline_monotonic,
+                        cancellation,
+                    )
+                )
+                return True
+
+        self.provisioner._lease_broker = Broker()  # type: ignore[assignment]
+
+        result = self.provisioner._restore_device(
+            lease,
+            deadline_monotonic=123.0,
+            cancellation=cancellation,
+        )
+
+        self.assertEqual(calls, [(lease, 123.0, cancellation)])
+        self.assertEqual(
+            result,
+            BaselineRestoreResult(True, True, True),
+        )
+
     def test_cleanup_closes_broker_after_cleanup_deadline_expires(self) -> None:
         self._prepare_with_fakes()
         self.events.clear()
@@ -3824,6 +5495,87 @@ class MobileNativeContractTests(unittest.TestCase):
             ),
         )
 
+    def test_android_social_manifest_resolves_existing_actors_read_only(
+        self,
+    ) -> None:
+        gate_id = "mobile-social-android-native"
+        run_id = SOURCE_RUN_ID
+        writes: list[tuple[str, dict[str, Any], str | None]] = []
+
+        class ArtifactSession:
+            def __init__(self) -> None:
+                self.gate_id = gate_id
+                self.run_id = run_id
+
+            def write_json(
+                self,
+                path: str,
+                payload: Mapping[str, Any],
+                *,
+                role: str | None = None,
+            ) -> ArtifactRef:
+                writes.append((path, dict(payload), role))
+                return ArtifactRef(
+                    workspace_id="a" * 16,
+                    gate_id=self.gate_id,
+                    run_id=self.run_id,
+                    path=path,
+                    sha256="b" * 64,
+                    media_type="application/json",
+                )
+
+        artifact_session = ArtifactSession()
+        provisioner = MobileAndroidPhysicalProvisioner(
+            EnvironmentContract(id="mobile-android-physical")
+        )
+        provisioner.bind_evidence_run(artifact_session)  # type: ignore[arg-type]
+        provisioner._artifact_session = artifact_session  # type: ignore[assignment]
+        provisioner._native_spec = SimpleNamespace()
+        provisioner._manifest = SimpleNamespace(
+            services={
+                "station-primary": SimpleNamespace(
+                    service_kind="station",
+                    endpoint="https://station.example",
+                    deployment_environment="station-three",
+                )
+            }
+        )
+
+        with patch(
+            "tooling.acceptance.provisioners.mobile_native."
+            "resolve_existing_actor_identity",
+            side_effect=lambda _endpoint, role: SimpleNamespace(
+                role=role,
+                account_ref=f"station-account:{role}@p.t",
+                ptid=f"ptid:{role}",
+                device_policy="single-active-session",
+                federated_handle=f"@{role}@station.example",
+                home_station_peer_id="station-peer",
+            ),
+        ) as resolve_actor:
+            reference = provisioner._prepare_android_social_actor_manifest()
+
+        self.assertEqual(
+            [entry.args for entry in resolve_actor.call_args_list],
+            [
+                ("https://station.example", "alice"),
+                ("https://station.example", "bob"),
+                ("https://station.example", "eve"),
+            ],
+        )
+        self.assertEqual(
+            reference["path"],
+            "runtime/mobile-social-android-actors.json",
+        )
+        self.assertEqual(len(writes), 1)
+        payload = writes[0][1]
+        self.assertFalse(payload["reset"]["authorized"])
+        self.assertTrue(
+            payload["stations"]["station-primary"][
+                "existingActorsVerified"
+            ]
+        )
+
     def test_service_bindings_resolve_only_from_runtime_environment(
         self,
     ) -> None:
@@ -4051,7 +5803,83 @@ class MobileNativeContractTests(unittest.TestCase):
 
         self.assertIn('"appium:autoAcceptAlerts"', source)
         self.assertIn('"appium:autoGrantPermissions"', source)
+        self.assertIn('"appium:androidInstallTimeout"', source)
+        self.assertIn('"appium:adbExecTimeout"', source)
+        self.assertNotIn('"appium:installOptions"', source)
+        self.assertIn('"appium:ignoreHiddenApiPolicyError"', source)
         self.assertIn('if self.platform == "ios"', source)
+
+    def test_parent_request_budgets_cover_android_fresh_install(self) -> None:
+        launch_source = inspect.getsource(
+            MobileNativeProvisioner.create_gate_launch_context
+        )
+        session_source = inspect.getsource(
+            MobileNativeProvisioner._new_appium_session
+        )
+
+        self.assertIn(
+            "MOBILE_NATIVE_EPHEMERAL_REQUEST_TIMEOUT_SECONDS",
+            launch_source,
+        )
+        self.assertIn(
+            "MOBILE_NATIVE_APPIUM_REQUEST_TIMEOUT_SECONDS",
+            session_source,
+        )
+        self.assertIn(
+            "MOBILE_NATIVE_EPHEMERAL_QUIESCE_TIMEOUT_SECONDS",
+            launch_source,
+        )
+
+    def test_station_mutation_accepts_closed_session_revocation_projection(
+        self,
+    ) -> None:
+        _validate_harness_action_result(
+            "station.add",
+            {
+                "activeStationPeerId": "station-a",
+                "verifiedStationPeerId": "station-a",
+                "canonicalOrigin": "https://station.example",
+                "entries": [],
+                "sessionRevocation": {
+                    "remoteRevocation": "not-required",
+                },
+            },
+        )
+
+    def test_station_mutation_rejects_revocation_authority_or_invalid_state(
+        self,
+    ) -> None:
+        base = {
+            "activeStationPeerId": "station-a",
+            "verifiedStationPeerId": "station-a",
+            "canonicalOrigin": "https://station.example",
+            "entries": [],
+        }
+        for session_revocation, expected in (
+            (
+                {
+                    "remoteRevocation": "confirmed",
+                    "nativePurge": {},
+                },
+                "invalid field set",
+            ),
+            (
+                {"remoteRevocation": "unknown"},
+                "remoteRevocation is invalid",
+            ),
+        ):
+            with self.subTest(session_revocation=session_revocation):
+                with self.assertRaisesRegex(
+                    EphemeralCapabilityBlocked,
+                    expected,
+                ):
+                    _validate_harness_action_result(
+                        "station.replace",
+                        {
+                            **base,
+                            "sessionRevocation": session_revocation,
+                        },
+                    )
 
     def test_parent_harness_actions_are_exact_and_disjoint(self) -> None:
         for parent_actions in (
@@ -4508,6 +6336,59 @@ class MobileNativeInputPreflightTests(unittest.TestCase):
             result["iosReadiness"]["nativeContext"],
             "NATIVE_APP",
         )
+
+    def test_android_social_preflight_binds_declared_device_strategy(
+        self,
+    ) -> None:
+        scenario_spec = load_mobile_native_preflight_spec(
+            ENVIRONMENTS_DIR / "mobile-android-physical-runtime.yaml",
+            gate_id="mobile-social-android-native",
+        )
+        self.spec = dataclasses.replace(
+            scenario_spec,
+            chromedriver=self.spec.chromedriver,
+        )
+        self.executor.android_devices = {"android-alice"}
+        self._install_harness_actions()
+        with patch.dict(os.environ, self.environment, clear=True), patch(
+            "tooling.acceptance.provisioners.mobile_native."
+            "_appium_server_version",
+            return_value="2.19.0",
+        ):
+            result = self._preflight()
+
+        facts = result["androidDeviceFacts"]["alice-android"]
+        self.assertEqual(facts["manufacturer"], "OPPO")
+        self.assertEqual(facts["model"], "PEEM00")
+        self.assertEqual(facts["deviceDescriptorId"], "oppo-peem00")
+        self.assertEqual(
+            facts["installationStrategy"],
+            "reuse-exact-artifact",
+        )
+        self.assertTrue(facts["userConfirmationOnInstall"])
+
+    def test_android_social_preflight_rejects_descriptor_mismatch(self) -> None:
+        scenario_spec = load_mobile_native_preflight_spec(
+            ENVIRONMENTS_DIR / "mobile-android-physical-runtime.yaml",
+            gate_id="mobile-social-android-native",
+        )
+        self.spec = dataclasses.replace(
+            scenario_spec,
+            chromedriver=self.spec.chromedriver,
+        )
+        self.executor.android_devices = {"android-alice"}
+        self.executor.android_model = "different"
+        self._install_harness_actions()
+        with patch.dict(os.environ, self.environment, clear=True), patch(
+            "tooling.acceptance.provisioners.mobile_native."
+            "_appium_server_version",
+            return_value="2.19.0",
+        ):
+            with self.assertRaisesRegex(
+                BlockedError,
+                "does not match the declared device descriptor",
+            ):
+                self._preflight()
 
     def test_resource_lease_key_is_stable_across_preflight_runs(self) -> None:
         self._install_harness_actions()

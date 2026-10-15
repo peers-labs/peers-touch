@@ -1,8 +1,9 @@
 // PageDescriptor for the Moments page.
 //
-// Moments depends on the long-lived `moments` runtime. It is preloaded
-// during idle and kept alive so feed/detail UI state survives sidebar
-// navigation while projection freshness remains runtime-owned.
+// Moments combines the long-lived Moments, Social relationship, and Messaging
+// conversation projections. It is preloaded during idle and kept alive so
+// feed/detail UI state survives sidebar navigation while freshness remains
+// runtime-owned.
 
 import { registerPage } from '../../kernel/page';
 import { MomentsApp } from './MomentsApp';
@@ -14,6 +15,6 @@ export function registerMomentsPage(): void {
     factory: () => <MomentsApp />,
     preload: 'idle',
     keepAlive: 'forever',
-    runtimes: ['moments'],
+    runtimes: ['moments', 'social', 'messaging'],
   });
 }

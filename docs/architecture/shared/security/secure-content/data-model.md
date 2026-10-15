@@ -1825,6 +1825,11 @@ The manifest's table/predicate pairs are exactly:
 | `social_comments` | `DELETE_WHERE_POST_CLASS_PRIVATE` |
 | `social_reactions` | `DELETE_WHERE_POST_CLASS_PRIVATE` |
 | `social_moment_deliveries` | `CLEAR_TABLE` |
+| `social_remote_private_commands` | `CLEAR_TABLE` |
+| `social_remote_private_envelopes` | `CLEAR_TABLE` |
+| `social_remote_private_resources` | `CLEAR_TABLE` |
+| `social_remote_private_tombstones` | `CLEAR_TABLE` |
+| `social_private_resource_invalidations` | `CLEAR_TABLE` |
 | `social_private_audience_grants` | `DROP_RETIRED_TABLE` |
 | `social_private_posts` | `REBUILD_CANONICAL_PRIVATE_POST_TABLE` after clear |
 

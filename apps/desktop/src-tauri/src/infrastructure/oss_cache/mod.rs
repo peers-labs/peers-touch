@@ -5,8 +5,9 @@
 //
 //   1. **Capabilities** — the JSON document returned by
 //      `GET {origin}/sub-oss/capabilities`. Cached in-memory for the
-//      process lifetime, refreshed lazily on first use per origin and
-//      whenever a caller explicitly requests an `invalidate`. The
+//      process lifetime and refreshed lazily on first use per origin. Bound
+//      Station entries include peer identity and lifecycle generation in the
+//      cache key. The
 //      capabilities payload tells us where to upload, what limits to
 //      pre-validate against, and whether `signed_url` is required to
 //      fetch bytes.
@@ -20,10 +21,9 @@
 //
 // Architectural notes:
 //
-//   * The capabilities map is keyed by the *advertised origin* returned
-//     by the server (`capabilities.host`), not by the URL we used to
-//     fetch it. This is important for federation: when station A holds
-//     a `oss://B/key` URI we resolve B's capabilities, not A's.
+//   * Bound capabilities are keyed by Station identity and lifecycle;
+//     foreign capabilities are keyed by the advertised external origin.
+//     This prevents a `self` entry from surviving a Station switch.
 //
 //   * We do not persist capabilities to disk. The payload is small,
 //     refreshes cheaply, and keeping it in-process avoids stale-cache
@@ -35,12 +35,19 @@
 
 use std::collections::HashMap;
 use std::fs;
+use std::io::Read;
 use std::path::PathBuf;
 use std::sync::{OnceLock, RwLock};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+use tokio_util::sync::CancellationToken;
 
-use crate::infrastructure::station_client;
+use crate::application::station_runtime::client::{
+    ReplayPolicy, StationClient, StationClientError, StationClientErrorKind, StationRequest,
+    StationRequestBody, StationRouteSecurity, TrafficClass,
+};
+use crate::application::station_runtime::resource::{StationResourceHandle, StationResourceRef};
 use crate::infrastructure::storage::{self, StorageKind};
 
 /// Mirrors the JSON shape returned by `/sub-oss/capabilities`. Field
@@ -220,9 +227,9 @@ impl std::fmt::Display for OssCacheError {
 /// Parsed `oss://{origin}/{key}` URI.
 ///
 /// We accept both `oss://` and a bare `key` form (when the caller just
-/// has a key from a legacy upload response) — the latter resolves
-/// against Station's own origin via `station_client::station_base_url`.
-/// `host` is normalized to *not* carry a trailing slash.
+/// has a key from a legacy upload response). Bare keys remain bound to
+/// the lifecycle-relative `self` identity. `host` is normalized to
+/// *not* carry a trailing slash.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OssUri {
     pub origin: String,
@@ -250,7 +257,7 @@ impl OssUri {
         // Treat a leading `/` form as bare key against the local Station.
         let key = trimmed.trim_start_matches('/').to_string();
         Ok(Self {
-            origin: normalize_origin(&station_client::station_base_url()),
+            origin: "self".to_string(),
             key,
         })
     }
@@ -301,30 +308,52 @@ fn canonical_origin_with_bound(origin: &str, bound_origin: &str) -> String {
 }
 
 fn canonical_bound_origin(origin: &str) -> String {
-    canonical_origin_with_bound(origin, &station_client::station_base_url())
+    canonical_origin_with_bound(origin, "self")
 }
 
 // ── capabilities cache ──────────────────────────────────────────────
 
+const MAX_CAPABILITY_ENTRIES: usize = 256;
 static CAPS: OnceLock<RwLock<HashMap<String, OssCapabilities>>> = OnceLock::new();
 
 fn caps_map() -> &'static RwLock<HashMap<String, OssCapabilities>> {
     CAPS.get_or_init(|| RwLock::new(HashMap::new()))
 }
 
-/// Look up cached capabilities for `origin` without performing any I/O.
-pub fn capabilities_lookup(origin: &str) -> Option<OssCapabilities> {
-    let key = canonical_bound_origin(origin);
-    caps_map().read().ok().and_then(|m| m.get(&key).cloned())
+fn capabilities_lookup(key: &str) -> Option<OssCapabilities> {
+    caps_map().read().ok().and_then(|m| m.get(key).cloned())
 }
 
-/// Force-clear the capabilities entry for `origin`. Used on auth
-/// rotation or when an operator changes `host-override` and we need to
-/// refetch.
-pub fn capabilities_invalidate(origin: &str) {
-    let key = canonical_bound_origin(origin);
-    if let Ok(mut m) = caps_map().write() {
-        m.remove(&key);
+fn capabilities_insert(
+    entries: &mut HashMap<String, OssCapabilities>,
+    key: String,
+    capabilities: &OssCapabilities,
+) {
+    if !entries.contains_key(&key) && entries.len() >= MAX_CAPABILITY_ENTRIES {
+        if let Some(expired) = entries.keys().next().cloned() {
+            entries.remove(&expired);
+        }
+    }
+    entries.insert(key, capabilities.clone());
+}
+
+fn capabilities_cache_key(
+    station_client: &StationClient,
+    normalized_origin: &str,
+) -> Result<String, OssCacheError> {
+    if is_bound_station(station_client, normalized_origin) {
+        let scope = station_client
+            .active_scope()
+            .filter(|scope| {
+                !scope.station_peer_id.trim().is_empty() && scope.lifecycle_generation > 0
+            })
+            .ok_or_else(|| OssCacheError::Network("Station scope is unavailable".to_string()))?;
+        Ok(format!(
+            "station:{}:{}",
+            scope.station_peer_id, scope.lifecycle_generation
+        ))
+    } else {
+        Ok(format!("external:{normalized_origin}"))
     }
 }
 
@@ -333,34 +362,48 @@ pub fn capabilities_invalidate(origin: &str) {
 /// requested `origin` when an operator has set `host-override` —
 /// callers should re-key any persistent state on `host` rather than the
 /// origin they queried.
-pub fn capabilities_ensure(origin: &str) -> Result<OssCapabilities, OssCacheError> {
+pub fn capabilities_ensure(
+    station_client: &StationClient,
+    origin: &str,
+) -> Result<OssCapabilities, OssCacheError> {
     let normalized = canonical_bound_origin(origin);
-    if let Some(cached) = capabilities_lookup(&normalized) {
+    let bound = is_bound_station(station_client, &normalized);
+    let scope = station_client.active_scope();
+    let cache_key = capabilities_cache_key(station_client, &normalized)?;
+    if let Some(cached) = capabilities_lookup(&cache_key) {
+        if bound {
+            if let Some(scope) = scope.as_ref() {
+                station_client.bind_resource_origin(scope, &cached.host);
+            }
+        }
         return Ok(cached);
     }
-    if normalized.is_empty() || normalized == "self" {
-        return Err(OssCacheError::InvalidUri(
-            "bound station origin is empty".into(),
-        ));
+    let bytes = if bound {
+        station_get_bytes(station_client, "/sub-oss/capabilities", None)?
+    } else {
+        http_get_bytes(&format!("{normalized}/sub-oss/capabilities"), None)?
+    };
+    let mut caps: OssCapabilities =
+        serde_json::from_slice(&bytes).map_err(|e| OssCacheError::Decode(e.to_string()))?;
+    let requested_origin = if bound { "self" } else { normalized.as_str() };
+    caps.host = canonical_capability_host(requested_origin, &caps.host);
+    if bound {
+        if let Some(scope) = scope.as_ref() {
+            station_client.bind_resource_origin(scope, &caps.host);
+        }
     }
-
-    let url = format!("{}/sub-oss/capabilities", normalized);
-    let resp = reqwest::blocking::get(&url).map_err(|e| OssCacheError::Network(e.to_string()))?;
-    if !resp.status().is_success() {
-        return Err(OssCacheError::Network(format!("status {}", resp.status())));
-    }
-    let mut caps: OssCapabilities = resp
-        .json()
-        .map_err(|e| OssCacheError::Decode(e.to_string()))?;
-    caps.host = canonical_capability_host(&normalized, &caps.host);
 
     if let Ok(mut m) = caps_map().write() {
-        m.insert(normalized.clone(), caps.clone());
+        capabilities_insert(&mut m, cache_key, &caps);
         // Index by the *advertised* host too so `oss://override/key`
         // and `oss://probe-origin/key` resolve to the same entry once
         // the server reports its canonical host.
-        if !caps.host.is_empty() && caps.host != normalized {
-            m.insert(normalize_origin(&caps.host), caps.clone());
+        if !bound && !caps.host.is_empty() && caps.host != normalized {
+            capabilities_insert(
+                &mut m,
+                format!("external:{}", normalize_origin(&caps.host)),
+                &caps,
+            );
         }
     }
     Ok(caps)
@@ -449,33 +492,28 @@ pub fn attachment_invalidate(uri: &OssUri) -> Result<(), OssCacheError> {
 /// `bearer` carries the current local session for private and
 /// chat-scoped objects; public objects also accept an empty token.
 pub fn attachment_ensure(
+    resources: &StationResourceHandle,
     uri: &OssUri,
-    signed_query: Option<&str>,
+    resource: &StationResourceRef,
     bearer: Option<&str>,
 ) -> Result<PathBuf, OssCacheError> {
     let canonical_uri = OssUri {
-        origin: canonical_bound_origin(&uri.origin),
+        origin: format!(
+            "station:{}:{}",
+            resource.station_peer_id(),
+            resource.lifecycle_generation()
+        ),
         key: uri.key.clone(),
     };
     if let Some(path) = attachment_lookup(&canonical_uri) {
         return Ok(path);
     }
-    let caps = capabilities_ensure(&canonical_uri.origin)?;
-    if caps.signed_url && signed_query.is_none() {
-        return Err(OssCacheError::Network(
-            "endpoint requires signed url, none supplied".into(),
-        ));
+    let (bytes, _) = resources
+        .fetch_bytes(resource, bearer)
+        .map_err(|error| OssCacheError::Network(error.to_string()))?;
+    if bytes.is_empty() {
+        return Err(OssCacheError::Network("empty body".to_string()));
     }
-
-    let url = build_file_url(
-        &caps.host,
-        &caps.file_endpoint,
-        &uri.key,
-        None,
-        signed_query,
-    )?;
-
-    let bytes = http_get_bytes(url.as_str(), bearer)?;
     write_to_cache(&canonical_uri, &bytes)
 }
 
@@ -504,6 +542,7 @@ pub fn attachment_ensure(
 /// station; `home_actor_ptid` is the same caller's PTID, embedded in
 /// the foreign GET as `&owner=…`. Both are required.
 pub fn attachment_ensure_federated(
+    station_client: &StationClient,
     uri: &OssUri,
     home_token: &str,
     home_actor_ptid: &str,
@@ -523,7 +562,7 @@ pub fn attachment_ensure_federated(
     // Step 1 — mint at home. The mint endpoint is advertised by the
     // BOUND station's capabilities, never by the foreign one (the
     // foreign side has no business telling us where to mint).
-    let home_caps = capabilities_ensure(&station_client::station_base_url())?;
+    let home_caps = capabilities_ensure(station_client, "self")?;
     let federation = home_caps.federation.clone().ok_or_else(|| {
         OssCacheError::FederationDisabled("bound station has no federation block".into())
     })?;
@@ -541,7 +580,7 @@ pub fn attachment_ensure_federated(
         "target_origin": target_origin,
         "oss_key": uri.key,
     });
-    let mint_resp = match station_client::post_json_with_auth(&mint_path, home_token, mint_body) {
+    let mint_resp = match station_client.post_json_with_auth(&mint_path, home_token, mint_body) {
         Ok(v) => v,
         Err(err) => {
             return Err(map_mint_error(err));
@@ -562,7 +601,7 @@ pub fn attachment_ensure_federated(
     // `file_endpoint`. Failures here are *network* failures (the
     // foreign station is unreachable), distinct from the
     // federation-denied path above.
-    let foreign_caps = capabilities_ensure(&target_origin)?;
+    let foreign_caps = capabilities_ensure(station_client, &target_origin)?;
     let file_endpoint = if foreign_caps.file_endpoint.is_empty() {
         "/sub-oss/file".to_string()
     } else {
@@ -587,8 +626,7 @@ pub fn attachment_ensure_federated(
     write_to_cache(uri, &bytes)
 }
 
-fn map_mint_error(err: station_client::StationClientError) -> OssCacheError {
-    use station_client::StationClientErrorKind;
+fn map_mint_error(err: StationClientError) -> OssCacheError {
     match err.kind {
         StationClientErrorKind::HttpStatus(code) => match code {
             401 | 403 => OssCacheError::FederationDenied(err.message),
@@ -598,6 +636,57 @@ fn map_mint_error(err: station_client::StationClientError) -> OssCacheError {
         StationClientErrorKind::SessionRevoked => OssCacheError::FederationAuthRequired,
         _ => OssCacheError::Network(err.message),
     }
+}
+
+fn station_get_bytes(
+    station_client: &StationClient,
+    path_and_query: &str,
+    bearer: Option<&str>,
+) -> Result<Vec<u8>, OssCacheError> {
+    let expected_scope = station_client
+        .active_scope()
+        .filter(|scope| !scope.station_peer_id.trim().is_empty() && scope.lifecycle_generation > 0)
+        .ok_or_else(|| OssCacheError::Network("Station scope is unavailable".to_string()))?;
+    let mut headers = reqwest::header::HeaderMap::new();
+    if let Some(token) = bearer.filter(|value| !value.trim().is_empty()) {
+        headers.insert(
+            reqwest::header::AUTHORIZATION,
+            reqwest::header::HeaderValue::from_str(&format!("Bearer {token}"))
+                .map_err(|error| OssCacheError::Network(error.to_string()))?,
+        );
+    }
+    let mut response = station_client
+        .execute_raw(StationRequest {
+            method: reqwest::Method::GET,
+            path_and_query: path_and_query.to_string(),
+            headers,
+            body: StationRequestBody::Empty,
+            timeout: Duration::from_secs(30),
+            admission_timeout: Duration::from_secs(30),
+            traffic_class: TrafficClass::Bulk,
+            route_security: StationRouteSecurity::VerifiedRoute,
+            route_policy: crate::application::station_runtime::client::StationRoutePolicy::Auto,
+            replay_policy: ReplayPolicy::SafeRead,
+            cancellation: CancellationToken::new(),
+            expected_scope: Some(expected_scope),
+        })
+        .map_err(|error| OssCacheError::Network(error.to_string()))?;
+    if !(200..300).contains(&response.status) {
+        return Err(match response.status {
+            401 => OssCacheError::FederationAuthRequired,
+            403 => OssCacheError::FederationDenied("bound Station denied the read".to_string()),
+            status => OssCacheError::Network(format!("status {status}")),
+        });
+    }
+    let mut bytes = Vec::new();
+    response
+        .body
+        .read_to_end(&mut bytes)
+        .map_err(|error| OssCacheError::Network(error.to_string()))?;
+    if bytes.is_empty() {
+        return Err(OssCacheError::Network("empty body".to_string()));
+    }
+    Ok(bytes)
 }
 
 /// HTTP GET → bytes helper. Wraps `reqwest::blocking::get` with a
@@ -648,39 +737,6 @@ fn http_get_request(
     req
 }
 
-fn build_file_url(
-    host: &str,
-    file_endpoint: &str,
-    key: &str,
-    owner: Option<&str>,
-    trailing_query: Option<&str>,
-) -> Result<reqwest::Url, OssCacheError> {
-    let canonical_host = canonical_bound_origin(host);
-    let base = reqwest::Url::parse(&canonical_host)
-        .map_err(|e| OssCacheError::Network(format!("invalid OSS host: {e}")))?;
-    let mut url = base
-        .join(file_endpoint)
-        .map_err(|e| OssCacheError::Network(format!("invalid OSS file endpoint: {e}")))?;
-    {
-        let mut query = url.query_pairs_mut();
-        query.append_pair("key", key);
-        if let Some(owner) = owner {
-            query.append_pair("owner", owner);
-        }
-    }
-    if let Some(trailing_query) = trailing_query {
-        let trailing_query = trailing_query.trim_start_matches(['?', '&']);
-        if !trailing_query.is_empty() {
-            let query = match url.query() {
-                Some(existing) => format!("{existing}&{trailing_query}"),
-                None => trailing_query.to_string(),
-            };
-            url.set_query(Some(&query));
-        }
-    }
-    Ok(url)
-}
-
 /// Persist `bytes` to the per-`uri` cache slot and return the path.
 fn write_to_cache(uri: &OssUri, bytes: &[u8]) -> Result<PathBuf, OssCacheError> {
     let dest = cache_path_for(uri)?;
@@ -694,10 +750,28 @@ fn write_to_cache(uri: &OssUri, bytes: &[u8]) -> Result<PathBuf, OssCacheError> 
 /// Returns true when `origin` matches the bound Station after
 /// trailing-slash normalisation. Used by `oss_resolve_url` to
 /// decide between the local and federated download paths.
-pub fn is_bound_station(origin: &str) -> bool {
-    let local = canonical_bound_origin("");
+pub fn is_bound_station(station_client: &StationClient, origin: &str) -> bool {
     let candidate = canonical_bound_origin(origin);
-    candidate == local
+    candidate == "self" || station_client.owns_resource_origin(&candidate)
+}
+
+pub fn scoped_cache_uri(
+    station_client: &StationClient,
+    uri: &OssUri,
+) -> Result<OssUri, OssCacheError> {
+    if !is_bound_station(station_client, &uri.origin) {
+        return Ok(uri.clone());
+    }
+    let scope = station_client
+        .active_scope()
+        .ok_or_else(|| OssCacheError::Network("Station scope is unavailable".to_string()))?;
+    Ok(OssUri {
+        origin: format!(
+            "station:{}:{}",
+            scope.station_peer_id, scope.lifecycle_generation
+        ),
+        key: uri.key.clone(),
+    })
 }
 
 // ── garbage collection ──────────────────────────────────────────────
@@ -928,10 +1002,7 @@ mod tests {
     #[test]
     fn parse_bare_key_uses_local_station() {
         let uri = OssUri::parse("2026/04/26/abc.png").unwrap();
-        assert_eq!(
-            uri.origin,
-            normalize_origin(&station_client::station_base_url())
-        );
+        assert_eq!(uri.origin, "self");
         assert_eq!(uri.key, "2026/04/26/abc.png");
     }
 
@@ -965,6 +1036,62 @@ mod tests {
 
         assert_eq!(advertised_host, "https://foreign.example.test");
         assert_ne!(advertised_host, local_bound);
+    }
+
+    #[test]
+    fn bound_capabilities_cache_is_lifecycle_scoped() {
+        let first = StationClient::testing_scoped("station-a", 7);
+        let next_generation = StationClient::testing_scoped("station-a", 8);
+        let next_station = StationClient::testing_scoped("station-b", 1);
+
+        let first_key = capabilities_cache_key(&first, "self").unwrap();
+        assert_ne!(
+            first_key,
+            capabilities_cache_key(&next_generation, "self").unwrap()
+        );
+        assert_ne!(
+            first_key,
+            capabilities_cache_key(&next_station, "self").unwrap()
+        );
+        assert!(!first_key.contains("http://") && !first_key.contains("https://"));
+    }
+
+    #[test]
+    fn bound_capabilities_cache_hit_rebinds_canonical_origin_to_current_client() {
+        let client = StationClient::testing_scoped("station-cache-rebind", 41);
+        let cache_key = capabilities_cache_key(&client, "self").unwrap();
+        let capabilities: OssCapabilities = serde_json::from_value(serde_json::json!({
+            "version": 3,
+            "host": "https://cached-station.example.test"
+        }))
+        .unwrap();
+        caps_map()
+            .write()
+            .unwrap()
+            .insert(cache_key, capabilities.clone());
+
+        let cached = capabilities_ensure(&client, "self").unwrap();
+
+        assert_eq!(cached.version, capabilities.version);
+        assert_eq!(cached.host, capabilities.host);
+        assert!(client.owns_resource_origin("https://cached-station.example.test"));
+    }
+
+    #[test]
+    fn capabilities_cache_is_bounded() {
+        let capabilities: OssCapabilities =
+            serde_json::from_value(serde_json::json!({ "version": 3, "host": "self" })).unwrap();
+        let mut entries = HashMap::new();
+
+        for index in 0..(MAX_CAPABILITY_ENTRIES + 10) {
+            capabilities_insert(
+                &mut entries,
+                format!("external:https://{index}.example"),
+                &capabilities,
+            );
+        }
+
+        assert_eq!(entries.len(), MAX_CAPABILITY_ENTRIES);
     }
 
     // ── attachment_invalidate ──────────────────────────────────────
@@ -1030,7 +1157,7 @@ mod tests {
             key: format!("tmp/{scope}/removed.bin"),
         };
         let sibling = OssUri {
-            origin: station_client::station_base_url(),
+            origin: "self".to_string(),
             key: format!("tmp/{scope}/sibling.bin"),
         };
         assert_eq!(
@@ -1065,14 +1192,8 @@ mod tests {
         use reqwest::header::AUTHORIZATION;
 
         let client = reqwest::blocking::Client::new();
-        let url = build_file_url(
-            "http://127.0.0.1:18080",
-            "/sub-oss/file",
-            "private/a b.png",
-            None,
-            None,
-        )
-        .expect("absolute file URL should build");
+        let mut url = reqwest::Url::parse("http://127.0.0.1:18080/sub-oss/file").unwrap();
+        url.query_pairs_mut().append_pair("key", "private/a b.png");
         let authenticated = http_get_request(&client, url.as_str(), Some("actor-private-token"))
             .build()
             .expect("authenticated request should build");
@@ -1253,21 +1374,20 @@ mod tests {
 
     #[test]
     fn bound_station_matches_local_after_normalisation() {
-        // PEERS_STATION_URL defaults to http://127.0.0.1:18080 when unset.
-        // We cannot mutate process-wide env safely under cargo's parallel
-        // test runner, so run the assertion against the actual default.
-        let local = station_client::station_base_url();
-        assert!(is_bound_station(&local));
-        assert!(is_bound_station(&format!("{}/", local)));
-        assert!(is_bound_station(""));
-        assert!(is_bound_station("self"));
+        let client = StationClient::testing_unavailable();
+        assert!(is_bound_station(&client, ""));
+        assert!(is_bound_station(&client, "self"));
     }
 
     #[test]
     fn bound_station_rejects_foreign_origins() {
         // Pick a literally-impossible origin so we never collide with
         // a misconfigured PEERS_STATION_URL.
-        assert!(!is_bound_station("https://this-is-foreign.example.invalid"));
+        let client = StationClient::testing_unavailable();
+        assert!(!is_bound_station(
+            &client,
+            "https://this-is-foreign.example.invalid"
+        ));
     }
 
     #[test]
@@ -1290,7 +1410,6 @@ mod tests {
 
     #[test]
     fn map_mint_error_translates_403_to_federation_denied() {
-        use crate::infrastructure::station_client::{StationClientError, StationClientErrorKind};
         let err = StationClientError::new(
             StationClientErrorKind::HttpStatus(403),
             "denied by policy",
@@ -1304,7 +1423,6 @@ mod tests {
 
     #[test]
     fn map_mint_error_translates_501_to_federation_disabled() {
-        use crate::infrastructure::station_client::{StationClientError, StationClientErrorKind};
         let err = StationClientError::new(
             StationClientErrorKind::HttpStatus(501),
             "federation disabled",
@@ -1318,7 +1436,6 @@ mod tests {
 
     #[test]
     fn map_mint_error_translates_session_revoked_to_auth_required() {
-        use crate::infrastructure::station_client::{StationClientError, StationClientErrorKind};
         let err = StationClientError::new(
             StationClientErrorKind::SessionRevoked,
             "session revoked",
@@ -1344,7 +1461,8 @@ mod tests {
             origin: "https://foreign.example".into(),
             key: "cas/aa/abc".into(),
         };
-        let err = attachment_ensure_federated(&uri, "", "did:peer:alice")
+        let client = StationClient::testing_unavailable();
+        let err = attachment_ensure_federated(&client, &uri, "", "did:peer:alice")
             .expect_err("empty token must fail");
         match err {
             OssCacheError::FederationAuthRequired => {}

@@ -1,8 +1,8 @@
-# Station 接入生命周期 - 架构设计
+# Station 统一接入生命周期 - 架构设计
 
 > **Status**: active
-> **Version**: v1.2
-> **Created**: 2026-09-26 | **Updated**: 2026-10-06
+> **Version**: v2.4
+> **Created**: 2026-09-26 | **Updated**: 2026-10-13
 > **Owner**: Identity and Access
 > **Module**: `apps/desktop/`, `apps/mobile/`, `apps/station/frame/touch/`
 
@@ -10,209 +10,217 @@
 
 ## 1. 核心原则
 
-1. URL 只定位连接，签名 `station_peer_id` 才代表 Station identity。
+1. `station_peer_id` 是逻辑 Station identity；物理 Node PeerID、URL 和 Relay route 是连接位置。
 2. Access Gate 是普通客户端唯一准入 owner。
-3. 相同 capability 在双端共享协议、状态、错误和作用域。
-4. Federation governance 与普通客户端 context consumption 分离。
-5. Relay 只存在于 Station/运维基础设施。
-6. 无历史用户，所有替换均为单次硬切。
-7. Session 并发槽由 canonical client class 决定，不由安装实例或运行时标签决定。
+3. 同一 Station 的 direct/Relay route 共享一个 binding、Session scope 和业务 runtime。
+4. Relay 不是账号、Session、Federation 或业务 authority。
+5. Desktop/Mobile 共享 capability、协议、状态、错误和 scope 结果。
+6. Federation governance 与普通客户端 context consumption 分离。
+7. Session 并发槽由 canonical client class 决定，不由安装实例决定。
+8. Relay wire、enrollment、role 和 resource limits 只由
+   [Node Connectivity](../../runtime/node-connectivity/README.md) 定义。
+9. Relay service host 只使用 Node Connectivity `NCP-D11` 定义的 Linux/POSIX
+   runtime；Windows Desktop 仍可作为客户端连接 Linux Relay。
 
 ## 2. 系统架构
 
 ```mermaid
 flowchart LR
     UI["Desktop / Mobile UI"]
-    CAP["Client Access Capability Registry"]
-    HOST["Platform Host Adapter"]
-    ID["Signed Station Identity"]
-    GATE["Access Gate"]
-    SCOPE["Session / Actor / Device Scope"]
-    FED["Federation Context"]
-    DOMAIN["Station Domain APIs"]
-    TRANSPORT["Federation Transport"]
-    RELAY["Relay"]
+    DISC["Signed endpoint discovery"]
+    BIND["Station binding\nkey = station_peer_id"]
+    ROUTE["Verified route"]
+    GATE["Station Access Gate"]
+    SCOPE["Session / Actor / Device scope"]
+    DOMAIN["Station domain APIs"]
+    NODE["Node Connectivity\ndirect or standard Relay Circuit"]
 
-    UI --> CAP
-    CAP --> HOST
-    HOST --> ID
-    ID --> GATE
+    UI --> DISC
+    DISC --> BIND
+    BIND --> ROUTE
+    ROUTE --> NODE
+    NODE --> GATE
     GATE --> SCOPE
-    SCOPE --> FED
     SCOPE --> DOMAIN
-    DOMAIN --> TRANSPORT
-    TRANSPORT --> RELAY
-
-    UI -. forbidden .-> RELAY
-    UI -. forbidden .-> TRANSPORT
 ```
 
-## 3. Ownership
+Node Connectivity returns a verified Station destination and transport. Station
+Access does not parse Circuit frames or own Relay node credentials. Both direct and
+Relay paths enter the same Station identity, Access Gate and canonical router.
 
-| Concern | 真源 | 客户端投影 |
+Node Connectivity 的目标使用独立 Node PeerID、root delegation 和标准 Circuit v2。
+切节点只推进 route revision；同一逻辑 Station 的 Access/OAuth/Session 使用共享
+DBStore 和 Station-scoped keyring。此处不重新定义签名或传输协议。
+
+## 3. Sources Of Truth
+
+| Concern | Source of truth | Client projection |
 |---|---|---|
-| Station identity | 签名 `StationIdentityStatement` | 以 `station_peer_id` 固定的 registry |
-| Access decision | Station Access Gate | 当前 attempt/gate/decision |
-| Actor identity | Station Actor + `ActorRef` | 当前 session/account |
-| Device identity | canonical device registration | 当前 runtime device scope |
-| Session class slot | Station Actor Session | `desktop`、`mobile` 或 `web` 的当前 Session |
-| Federation topology | Station Federation + Ledger | 无 |
-| Federation context | Station 可用 context | 当前选择、名称、状态 |
-| Relay token/mount/routing | Station/Relay operator plane | 仅诊断摘要 |
+| Station identity and route proof | Node Connectivity root identity + authorized node signature | station-keyed binding |
+| Access decision | Station Access Gate | current attempt/gate/decision |
+| Actor identity | Station Actor + `ActorRef` | current account/session |
+| Device identity | canonical device registration | current device scope |
+| Session class slot | Station Actor Session | `desktop`, `mobile`, or `web` |
+| Federation topology | Federation app + Ledger | none |
+| Federation context | Station Federation projection | selected context |
+| Relay control/data plane | Node Connectivity | route kind and bounded diagnosis only |
 
-## 4. Canonical 接入序列
+## 4. Canonical Access Sequence
 
 ```text
-reachability probe
-  -> signed station identity verification
-  -> explicit pin or replace
-  -> access_start
-  -> access_submit / access_cancel / access_decision
-  -> granted session
-  -> runtime bootstrap
+one address or connection material
+  -> verify signed endpoint role
+  -> verify Station identity and route
+  -> pin or explicitly replace station_peer_id
+  -> establish direct or Relay transport
+  -> access.gate.start
+  -> access.gate.submit | access.gate.cancel
+  -> access.gate.decision
+  -> activate canonical Session scope
+  -> start business runtimes
 ```
 
-客户端固定使用：
+The client uses only registry-declared generated protobuf Access Gate
+capabilities. Unknown gate, malformed response, identity mismatch, expired
+attempt or scope mismatch fails closed.
 
-| Endpoint | Request / Response |
-|---|---|
-| `POST /actor/access/start` | `StartAccessAttemptRequest/Response` |
-| `POST /actor/access/submit` | `SubmitAccessGateRequest/Response` |
-| `POST /actor/access/decision` | `GetAccessDecisionRequest/Response` |
-| `POST /actor/access/cancel` | `CancelAccessAttemptRequest/Response` |
+## 5. Route-Aware Station Binding
 
-请求与响应均为 `application/protobuf`，只使用 generated decoder。Dashboard 若需要
-JSON，使用独立 admin adapter，不改变客户端 wire。
-
-## 5. Capability Applicability
-
-`station-api-capabilities.yaml` 继续作为 Station route/owner 唯一真源。客户端
-registry 只记录：
-
-```yaml
-capability_id: client.access.submit
-product_ids: [SAL-C02]
-station_capability_id: access.gate.submit
-contract: peers_touch.model.access_gate.v1.SubmitAccessGateRequest
-platforms: { desktop: required, mobile: required }
-surface: access-gate
+```text
+StationBinding
+  station_peer_id
+  pinned_station_root_public_key
+  routes[]
+  active_route_id
+  active_node_peer_id
+  route_revision
+  lifecycle_generation
 ```
 
-客户端 registry 不复制 method/path。Gate 验证 Station capability 存在、required
-consumer 完整、platform-only 例外有理由、无消费者 wrapper 为零。
+Rules:
 
-## 6. Federation 与 Relay 边界
+- the registry key is `station_peer_id`, never URL;
+- a route must verify to the same Station identity;
+- route refresh/switch increments `route_revision` and rebuilds transport;
+- Station identity replacement increments `lifecycle_generation`, quiesces the
+  prior runtime and clears prior projections;
+- Session, Actor, Device, Federation and business storage never use Relay
+  origin or route ID as identity;
+- direct/Relay switches preserve the complete Access scope.
 
-普通客户端保留：
+Relay endpoint discovery, route attestation, connection grant, inner TLS/SPKI
+and tunnel state are consumed from Node Connectivity and are not redefined here.
 
-- list/select Federation context；
-- scoped search/resolve；
-- 当前 Station/Federation 名称与连接状态。
+### 5.1 Desktop Binding Composition
 
-普通客户端删除：
+Desktop's Tauri `AppState` owns one `StationRuntime`. Station Access retains one
+`StationBindingCoordinator` inside that runtime as the only owner allowed to
+select an active Station, persist route choice, advance `route_revision` or
+advance `lifecycle_generation`.
 
-- Federation create/join/leave/delete/member-station；
-- Relay invite/token/mount/seed/forward endpoint；
-- 登录页中的 Relay 拓扑说明。
+The coordinator publishes an immutable `RouteLease` to the Node Connectivity
+transport owner. It never exposes mutable registry state to request callers.
+The transport may report route failure, cancellation or overload, but it cannot
+select or persist a replacement route.
 
-Actor discoverability 收敛到 Actor Profile canonical visibility。
-`/actor/federation/health` 仅供运维诊断。本设计接受后 supersede Federation D-05
-中“所有用户在 Settings 执行 Join/Leave”的条款。
+Station replacement fences new requests, tears down the old Access scope and
+then commits the new lifecycle generation. Same-Station route failover preserves
+Access scope, revokes only the prior route lease and applies the request's
+explicit replay policy.
+
+Station-owned relative resources project as `StationResourceRef` bound to
+`station_peer_id + lifecycle_generation`; they never embed the active route
+origin. Native loaders use the typed Station client. WebView-visible resources
+use a scope-checked app-local URI. Absolute external/presigned URLs remain a
+separate type and policy.
+
+## 6. Federation Boundary
+
+Ordinary clients may:
+
+- list/select Federation context;
+- search/resolve within an explicit Federation;
+- display current Station/Federation and connection state.
+
+Ordinary clients may not:
+
+- create/join/leave/delete Federation or manage member Stations;
+- manage Relay invite, mount, credential, certificate or quota;
+- infer Federation membership from Relay reachability;
+- use a Relay route to create or alter `ActorRef.acct`.
+
+Federation governance belongs to Dashboard/CLI operator surfaces.
 
 ## 7. Scope Fence
 
-所有接入结果携带或解析到：
+Every committed access result resolves to:
 
 ```text
 station_peer_id + actor_ptid + device_id + lifecycle_generation
 ```
 
-账号或 Station 切换时，前一 runtime 先 quiesce，前一 projection 再清除。异步结果返回
-前重新比较 lifecycle generation；不匹配则丢弃。
+Session, Messaging, Federation context, cache and projections use the same
+tuple. Asynchronous results compare the tuple again before commit. A route
+revision is transport state and does not change the tuple.
 
 ## 8. Client-Class Session Slot
 
-Station 把 Access Attempt `platform` 映射为唯一 `ClientClass`：
+Canonical classes:
 
 ```text
-desktop -> desktop
-mobile  -> mobile
-web     -> web
+desktop
+mobile
+web
 ```
 
-`desktop-native`、窗口 label、设备型号、OS 名称和构建 target 都不是合法类别。
-Desktop 的 Tauri runtime 必须提交 `desktop`，Mobile 必须提交 `mobile`。
+For one actor and class, Station permits one active Session. New same-class
+activation atomically revokes the previous winner as `kicked`; other classes
+remain active. `device_id` identifies an installation and binds downstream
+runtime state but does not create a new concurrency class.
 
-Session 激活事务必须：
+Password Access Gate, OAuth acknowledgement and session takeover share this
+authority. Non-canonical runtime labels fail before credential activation.
 
-1. 验证 `ClientClass` 为 canonical enum；
-2. 在撤销或激活前锁定 actor 持久化行，串行化同一 actor 的 class-slot 变更；
-3. 将同一 actor、同一 class、不同 Session 的全部未撤销记录标记为
-   `revoked_reason=kicked`；
-4. 激活或创建新 Session；
-5. 保留同一 actor 的其他 class Session；
-6. 在提交后只向被替换类别投影 typed revocation。
+## 9. Current Interface Contract
 
-`actor_sessions` 同时以 partial unique index 强制
-`(user_id, device_type) WHERE revoked = false`。Migration 必须先归一
-`desktop-native -> desktop`，再按最新 Session 保留一个 winner 并将同类旧行
-标记为 `kicked`，最后创建 unique index。应用锁负责确定 winner 和 typed
-撤销语义，数据库约束负责在遗漏锁或并发回归时 fail closed。
+Station Access consumes:
 
-密码 Access Gate finalizer、OAuth credential acknowledgement 和
-`/actor/session/takeover` 共用这一 authority。`device_id` 继续绑定具体安装、
-Actor Device、Messaging、OAuth attempt 和 lifecycle generation，但不参与并发
-槽选择。现存非 canonical 类别数据在 schema migration 中一次性归一后删除运行时
-兼容解释；新写入必须 fail closed。
+- `station.identity.verify`;
+- `access.gate.start`;
+- `access.gate.submit`;
+- `access.gate.decision`;
+- `access.gate.cancel`.
 
-## 9. 当前接口约束
-
-- Desktop 与 Mobile 只调用 capability registry 登记的四个 Access Gate 接口。
-- 请求与响应只使用 generated protobuf 类型。
-- 本地账号、Session、runtime 和 projection 均使用完整 scope tuple。
-- Session `device_type` 只持久化 canonical client class。
-- 普通客户端只消费 Federation context，不包含 topology mutation。
-- Relay 信息只以 Station 提供的诊断摘要出现。
-- Actor profile 与 visibility 由一个 profile owner 提供。
-
-任何未登记 route、command、DTO、parser、storage key 或 client wrapper 都是
-contract violation。回滚只通过 Git/deployment 回退整组 closure。
+Method/path/Proto/owner come from
+`station-api-capabilities.yaml`. Client wrappers and runtime adapters must have
+a positive capability owner and a real consumer. Unregistered fallbacks are
+contract violations.
 
 ## 10. Failure Semantics
 
-| Failure | 必须行为 |
+| Failure | Required behavior |
 |---|---|
-| Station identity 无法验证 | 凭据提交前 fail closed |
-| URL 对应 identity 变化 | 要求显式替换 |
-| Access Gate 未知类型 | typed unsupported，不调用其他接入接口 |
-| Attempt 过期 | 重新开始 canonical attempt |
-| Federation context 缺失 | 阻止 scoped action，不猜默认 ID |
-| Scope 切换 | 丢弃前一 scope 的异步结果 |
-| 非 canonical client class | 凭据激活前 fail closed |
-| 同类别新 Session | 原子撤销旧同类 Session；异类 Session 保持有效 |
-| Relay 不可用 | 显示诊断状态，不暴露管理能力 |
+| endpoint/Station identity invalid | fail before credential submission |
+| route attestation or inner SPKI invalid | close transport; preserve no partial Session |
+| route unavailable | preserve Station binding and show typed offline/retry state |
+| route switches for same Station | rebuild transport; preserve Access scope |
+| Station identity changes | explicit replacement and full scope teardown |
+| Access attempt expires | restart canonical attempt |
+| unknown gate or malformed Proto | typed unsupported/invalid; no fallback API |
+| Federation context absent | block scoped action; do not guess a default |
+| stale lifecycle result | discard before projection commit |
+| non-canonical client class | reject before Session activation |
+| same-class new Session | atomically revoke old same-class Session |
 
-## 11. 目标布局
+## 11. Evidence Requirements
 
-```text
-model/domain/
-├── access_gate/
-└── peer/station_identity.proto
+Completion requires both:
 
-apps/desktop/
-├── src/kernel/identity*
-├── src/runtimes/
-└── src-tauri/src/application/{auth,federation}/
+- current-interface inventory proving route, contract, owner and real
+  Desktop/Mobile consumers; and
+- exact-source native Journeys proving direct/Relay access, Session behavior,
+  scope isolation, restart/recovery and receiver-visible business results.
 
-apps/mobile/
-├── src/runtimes/
-├── src/features/auth/
-└── src-tauri/src/runtime/
-
-apps/station/
-├── frame/touch/accessgate/
-├── frame/touch/actor*
-└── app/subserver/federation/
-```
-
-当前状态：`accepted`。
+Relay transport/security proof is supplied by Node Connectivity Gates. Station
+Access may include those Gates in its aggregate completion set but cannot
+replace or duplicate their implementation.

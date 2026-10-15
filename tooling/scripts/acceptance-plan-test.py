@@ -3,17 +3,14 @@
 from __future__ import annotations
 
 import importlib.util
-import io
 import json
 import os
 import subprocess
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import patch
 
 
@@ -124,54 +121,25 @@ class ChangedPathsTests(unittest.TestCase):
                 encoding="utf-8",
             )
             output = root / "projection.json"
-            plan_projection = SimpleNamespace(
-                path=execution_plan,
-                plan_id="PLAN-1",
-                plan_format="stable",
-                status="active",
-                branch="feat/example",
-                workspace_id="1" * 16,
-                initial_head="a" * 40,
-                current_task_id="TASK-1",
-                current_task_path="tasks/TASK-1.md",
-                current_task_write_set=("src",),
-                current_closure="C1",
-                closure_statuses={"C1": "in_progress"},
-                acceptance={
-                    "closures": {"C1": ["cheap-gate"]},
-                    "completion": ["cheap-gate"],
-                    "full": ["cheap-gate", "runtime-gate"],
-                },
-                all_declared_gate_ids=lambda: {"cheap-gate", "runtime-gate"},
-                gate_ids=lambda mode: (
-                    ["cheap-gate", "runtime-gate"]
-                    if mode == "full"
-                    else ["cheap-gate"]
-                ),
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--root",
+                    str(acceptance),
+                    "--execution-plan",
+                    str(execution_plan),
+                    "--changed-file",
+                    "src/example.py",
+                    "--output",
+                    str(output),
+                ],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
             )
-            with (
-                patch.object(MODULE, "load_formal_plan", return_value=plan_projection),
-                patch.object(
-                    sys,
-                    "argv",
-                    [
-                        str(SCRIPT),
-                        "--root",
-                        str(acceptance),
-                        "--execution-plan",
-                        str(execution_plan),
-                        "--changed-file",
-                        "src/example.py",
-                        "--output",
-                        str(output),
-                    ],
-                ),
-                redirect_stdout(io.StringIO()),
-                redirect_stderr(io.StringIO()),
-            ):
-                result = MODULE.main()
 
-            self.assertEqual(result, 0)
+            self.assertEqual(result.returncode, 0, result.stderr)
             projection = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(projection["candidate_gates"], ["cheap-gate", "runtime-gate"])
             self.assertEqual(
@@ -180,29 +148,25 @@ class ChangedPathsTests(unittest.TestCase):
             )
             self.assertEqual(projection["execution"]["mode"], "closure")
 
-            with (
-                patch.object(MODULE, "load_formal_plan", return_value=plan_projection),
-                patch.object(
-                    sys,
-                    "argv",
-                    [
-                        str(SCRIPT),
-                        "--root",
-                        str(acceptance),
-                        "--execution-plan",
-                        str(execution_plan),
-                        "--changed-file",
-                        "src/example.py",
-                        "--full",
-                        "--output",
-                        str(output),
-                    ],
-                ),
-                redirect_stdout(io.StringIO()),
-                redirect_stderr(io.StringIO()),
-            ):
-                full = MODULE.main()
-            self.assertEqual(full, 0)
+            full = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--root",
+                    str(acceptance),
+                    "--execution-plan",
+                    str(execution_plan),
+                    "--changed-file",
+                    "src/example.py",
+                    "--full",
+                    "--output",
+                    str(output),
+                ],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(full.returncode, 0, full.stderr)
             full_projection = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(
                 [gate["id"] for gate in full_projection["selected_gates"]],
@@ -217,31 +181,25 @@ class ChangedPathsTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            plan_projection.all_declared_gate_ids = lambda: {"cheap-gate"}
-            stderr = io.StringIO()
-            with (
-                patch.object(MODULE, "load_formal_plan", return_value=plan_projection),
-                patch.object(
-                    sys,
-                    "argv",
-                    [
-                        str(SCRIPT),
-                        "--root",
-                        str(acceptance),
-                        "--execution-plan",
-                        str(execution_plan),
-                        "--changed-file",
-                        "src/example.py",
-                        "--output",
-                        str(output),
-                    ],
-                ),
-                redirect_stdout(io.StringIO()),
-                redirect_stderr(stderr),
-            ):
-                drift = MODULE.main()
-            self.assertEqual(drift, 2)
-            self.assertIn("ACCEPTANCE_PLAN_DRIFT", stderr.getvalue())
+            drift = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--root",
+                    str(acceptance),
+                    "--execution-plan",
+                    str(execution_plan),
+                    "--changed-file",
+                    "src/example.py",
+                    "--output",
+                    str(output),
+                ],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(drift.returncode, 2)
+            self.assertIn("ACCEPTANCE_PLAN_DRIFT", drift.stderr)
 
     def test_head_includes_untracked_files(self) -> None:
         responses = [
@@ -671,6 +629,10 @@ class BehaviorRuleTests(unittest.TestCase):
         self.assertEqual(
             selected,
             {
+                "mobile-social-android-native",
+                "mobile-social-facade-contract",
+                "mobile-social-ios-native",
+                "mobile-social-search-profile-native",
                 "mobile-simulator-social-convergence-e2e",
                 "mobile-simulator-chat-contacts-e2e",
             },
@@ -682,6 +644,10 @@ class BehaviorRuleTests(unittest.TestCase):
             "mobile-simulator-chat-contacts-e2e",
             "mobile-simulator-moments-e2e",
             "mobile-simulator-settings-e2e",
+            # Native platform gates ride the shared projection owners.
+            "mobile-social-android-native",
+            "mobile-social-facade-contract",
+            "mobile-social-ios-native",
         }
         for path in (
             "apps/mobile/src/runtimes/socialEventIngress.ts",

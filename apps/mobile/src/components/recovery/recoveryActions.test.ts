@@ -3,7 +3,10 @@
 import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
-import { visibleRecoveryStates } from './RecoveryOverlayHost';
+import {
+  bindDeferredCapabilityProjection,
+  visibleRecoveryStates,
+} from './RecoveryOverlayHost';
 
 describe('Mobile reliability recovery surfaces', () => {
   const appSource = readFileSync(
@@ -92,6 +95,63 @@ describe('Mobile reliability recovery surfaces', () => {
       'access-gate-chain',
     )).toEqual([offline]);
     expect(visibleRecoveryStates([expired], 'shell')).toEqual([expired]);
+  });
+
+  it('renders actor identity recovery as the only blocking recovery surface', () => {
+    const identity = {
+      kind: 'actor-identity-recovery',
+      detectedAtMs: 1,
+    } as const;
+    const degraded = {
+      kind: 'deferred-capability',
+      unavailableRuntimes: [],
+    } as const;
+
+    expect(visibleRecoveryStates([identity, degraded], 'shell')).toEqual([identity]);
+  });
+
+  it('keeps deferred capability recovery synchronized with every kernel update', () => {
+    let current = { launchState: 'shell', revision: 1 };
+    let listener: (() => void) | null = null;
+    const observed: unknown[] = [];
+    const unbind = bindDeferredCapabilityProjection(
+      () => current,
+      (next) => {
+        listener = next;
+        return () => {
+          listener = null;
+        };
+      },
+      (state) => observed.push(state),
+    );
+
+    current = { launchState: 'shell', revision: 2 };
+    listener?.();
+
+    expect(observed).toEqual([
+      { launchState: 'shell', revision: 1 },
+      { launchState: 'shell', revision: 2 },
+    ]);
+    unbind();
+    expect(listener).toBeNull();
+  });
+
+  it('keeps shared shell controls at the 44px mobile touch minimum', () => {
+    expect(stylesSource).toMatch(
+      /\.header-action\s*\{[^}]*width:\s*44px;[^}]*height:\s*44px;/s,
+    );
+    expect(stylesSource).toMatch(
+      /\.chat-search-bar \.ant-input-affix-wrapper\s*\{[^}]*height:\s*44px;/s,
+    );
+    expect(stylesSource).toMatch(
+      /\.mobile-notice-close\s*\{[^}]*width:\s*44px;[^}]*height:\s*44px;/s,
+    );
+    expect(stylesSource).toMatch(
+      /\.recovery-btn--compact\s*\{[^}]*min-height:\s*44px;/s,
+    );
+    expect(stylesSource).toMatch(
+      /\.header-title\s*\{[^}]*letter-spacing:\s*0;/s,
+    );
   });
 
   it('keeps routine resume write fencing out of the visible recovery layer', () => {

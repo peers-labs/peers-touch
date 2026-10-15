@@ -79,6 +79,12 @@ export interface SessionMismatchState {
   readonly detectedAtMs: number;
 }
 
+/** Fresh installation must restore the established actor root before enrollment. */
+export interface ActorIdentityRecoveryState {
+  readonly kind: 'actor-identity-recovery';
+  readonly detectedAtMs: number;
+}
+
 /** Event ingress overflow triggered reconciliation for one or more domains. */
 export interface EventOverflowReconcileState {
   readonly kind: 'event-overflow-reconcile';
@@ -118,6 +124,7 @@ export type RecoveryState =
   | CapacityReadOnlyState
   | WriteRevocationState
   | SessionMismatchState
+  | ActorIdentityRecoveryState
   | EventOverflowReconcileState
   | DeferredCapabilityState
   | DeviceLocalFlagState;
@@ -168,6 +175,14 @@ export interface RecoveryProjectionController {
   /** Clear draft restore state after user confirms or dismisses. */
   clearDraftRestore(): void;
 
+  /** Remove one draft claimed or discarded by its active editor. */
+  resolveDraftRestore(
+    stationPeerId: string,
+    actorPtid: string,
+    surfaceKind: DraftProjection['envelope']['surfaceKind'],
+    targetId: string,
+  ): void;
+
   /** Report durable commands requiring status or an explicit recovery action. */
   reportCommandRecovery(commands: readonly CommandProjection[]): void;
 
@@ -204,6 +219,12 @@ export interface RecoveryProjectionController {
   /** Clear session mismatch after the owning trust flow verifies the Station. */
   clearSessionMismatch(): void;
 
+  /** Report that fresh-device enrollment requires actor-root recovery. */
+  reportActorIdentityRecovery(): void;
+
+  /** Clear actor-root recovery after native recovery and enrollment succeed. */
+  clearActorIdentityRecovery(): void;
+
   /** Report stale domains from event overflow. */
   reportEventOverflow(staleDomains: readonly StaleDomainEntry[]): void;
 
@@ -234,13 +255,14 @@ const SEVERITY_ORDER: Record<RecoveryState['kind'], number> = {
   'reliability-reset-recovery': 0,
   'legacy-reliability-recovery': 1,
   'session-mismatch': 2,
-  'write-revocation': 3,
-  'capacity-read-only': 4,
-  'device-local-flag': 5,
-  'event-overflow-reconcile': 6,
-  'command-recovery': 7,
-  'draft-restore-pending': 8,
-  'deferred-capability': 9,
+  'actor-identity-recovery': 3,
+  'write-revocation': 4,
+  'capacity-read-only': 5,
+  'device-local-flag': 6,
+  'event-overflow-reconcile': 7,
+  'command-recovery': 8,
+  'draft-restore-pending': 9,
+  'deferred-capability': 10,
 };
 
 const SHELL_RECOVERY_LAUNCH_STATES = new Set<LifecycleKernelState['launchState']>([
@@ -277,6 +299,7 @@ export function createRecoveryProjection(): RecoveryProjectionController {
   let reliabilityResetRecovery: ReliabilityResetRecoveryState | null = null;
   let writeRevocation: WriteRevocationState | null = null;
   let sessionMismatch: SessionMismatchState | null = null;
+  let actorIdentityRecovery: ActorIdentityRecoveryState | null = null;
   let eventOverflow: EventOverflowReconcileState | null = null;
   let deferredCapability: DeferredCapabilityState | null = null;
   let deviceLocalFlag: DeviceLocalFlagState | null = null;
@@ -292,6 +315,7 @@ export function createRecoveryProjection(): RecoveryProjectionController {
     if (capacityReadOnly) states.push(capacityReadOnly);
     if (writeRevocation) states.push(writeRevocation);
     if (sessionMismatch) states.push(sessionMismatch);
+    if (actorIdentityRecovery) states.push(actorIdentityRecovery);
     if (eventOverflow) states.push(eventOverflow);
     if (deferredCapability) states.push(deferredCapability);
     if (deviceLocalFlag) states.push(deviceLocalFlag);
@@ -302,6 +326,7 @@ export function createRecoveryProjection(): RecoveryProjectionController {
       reliabilityResetRecovery !== null ||
       legacyReliabilityRecovery !== null ||
       sessionMismatch !== null ||
+      actorIdentityRecovery !== null ||
       writeRevocation !== null ||
       capacityReadOnly !== null ||
       deviceLocalFlag !== null;
@@ -339,6 +364,26 @@ export function createRecoveryProjection(): RecoveryProjectionController {
     clearDraftRestore(): void {
       if (!draftRestore) return;
       draftRestore = null;
+      rebuild();
+    },
+
+    resolveDraftRestore(
+      stationPeerId,
+      actorPtid,
+      surfaceKind,
+      targetId,
+    ): void {
+      if (!draftRestore) return;
+      const drafts = draftRestore.drafts.filter((draft) => (
+        draft.envelope.stationPeerId !== stationPeerId
+        || draft.envelope.actorPtid !== actorPtid
+        || draft.envelope.surfaceKind !== surfaceKind
+        || draft.envelope.targetId !== targetId
+      ));
+      if (drafts.length === draftRestore.drafts.length) return;
+      draftRestore = drafts.length > 0
+        ? { ...draftRestore, drafts }
+        : null;
       rebuild();
     },
 
@@ -445,6 +490,21 @@ export function createRecoveryProjection(): RecoveryProjectionController {
     clearSessionMismatch(): void {
       if (!sessionMismatch) return;
       sessionMismatch = null;
+      rebuild();
+    },
+
+    reportActorIdentityRecovery(): void {
+      if (torn || actorIdentityRecovery) return;
+      actorIdentityRecovery = {
+        kind: 'actor-identity-recovery',
+        detectedAtMs: Date.now(),
+      };
+      rebuild();
+    },
+
+    clearActorIdentityRecovery(): void {
+      if (!actorIdentityRecovery) return;
+      actorIdentityRecovery = null;
       rebuild();
     },
 
@@ -557,6 +617,7 @@ export function createRecoveryProjection(): RecoveryProjectionController {
       reliabilityResetRecovery = null;
       writeRevocation = null;
       sessionMismatch = null;
+      actorIdentityRecovery = null;
       eventOverflow = null;
       deferredCapability = null;
       deviceLocalFlag = null;

@@ -10,7 +10,8 @@
 #
 # Overlays produced:
 #   conf/store.docker.yml         — only when PEERS_DB_DSN is set
-#   conf/paths.docker.yml         — always (redirects key files into /app/data)
+#   conf/paths.docker.yml         — always (binds TCP 4001 and redirects keys
+#                                   into /app/data)
 #   conf/federation.docker.yml    — emitted whenever any node-level libp2p
 #                                   federation env var is set. Single overlay
 #                                   for ALL libp2p hosts in the process
@@ -27,13 +28,10 @@
 #                                       (Gater: false ⇒ dial only seeds)
 #                                     - federation.direct-inbound
 #                                       (Gater: false ⇒ accept only from seeds)
-#   conf/relay.docker.yml         — only when RELAY_STREAM_LISTEN_ADDR is set
-#                                   (Relay node only — stations leave it empty so
-#                                    the relay subserver's TCP listener stays dormant)
-#   conf/relay_client.docker.yml  — only when RELAY_CLIENT_ENABLED=true
-#                                   (Station nodes only — turns on the station-side
-#                                    pump that mounts the local Station onto the Relay
-#                                    via /api/v1/relay/register + framed TCP stream)
+#   conf/relay.docker.yml         — relay role only; projects signing and
+#                                   operator policy for Circuit control
+#   conf/relay_pool.docker.yml    — Station role only; configures one standard
+#                                   Circuit Relay target and its control origin
 #   conf/server_host.docker.yml   — only when PEERS_NODE_SERVER_BASEURL is set.
 #                                   Drives:
 #                                     - peers.node.server.baseurl
@@ -44,18 +42,89 @@
 # ─────────────────────────────────────────────────────────────────────────────
 set -e
 
+case "${PEERS_NODE_ROLE:-}" in
+  station|relay)
+    ;;
+  "")
+    echo "[entrypoint] PEERS_NODE_ROLE is required (station or relay)" >&2
+    exit 1
+    ;;
+  *)
+    echo "[entrypoint] invalid PEERS_NODE_ROLE=${PEERS_NODE_ROLE}; expected station or relay" >&2
+    exit 1
+    ;;
+esac
+
+if [ "$PEERS_NODE_ROLE" = "relay" ]; then
+  : "${PEERS_NODE_SERVER_BASEURL:?PEERS_NODE_SERVER_BASEURL is required for relay role}"
+  : "${PEERS_LIBP2P_PUBLIC_ADDRS:?PEERS_LIBP2P_PUBLIC_ADDRS is required for relay role}"
+  : "${RELAY_OPERATOR_KEY_FILE:?RELAY_OPERATOR_KEY_FILE is required for relay role}"
+  : "${RELAY_OPERATOR_ISSUER:?RELAY_OPERATOR_ISSUER is required for relay role}"
+  : "${RELAY_OPERATOR_AUDIENCE:?RELAY_OPERATOR_AUDIENCE is required for relay role}"
+  : "${RELAY_OPERATOR_SCOPE:?RELAY_OPERATOR_SCOPE is required for relay role}"
+fi
+
+if [ "$PEERS_NODE_ROLE" = "station" ] &&
+  [ "${STATION_RELAY_ENABLED:-false}" = "true" ]; then
+  : "${STATION_RELAY_PEER_ID:?STATION_RELAY_PEER_ID is required}"
+  : "${STATION_RELAY_MULTIADDR:?STATION_RELAY_MULTIADDR is required}"
+  : "${STATION_RELAY_CONTROL_ORIGIN:?STATION_RELAY_CONTROL_ORIGIN is required}"
+fi
+
+case "${PEERS_STATION_CLUSTER_MODE:-single}" in
+  single)
+    ;;
+  cluster)
+    case "${PEERS_OSS_BACKEND:-local}" in
+      shared-fs|s3)
+        ;;
+      *)
+        echo "[entrypoint] cluster mode requires PEERS_OSS_BACKEND=shared-fs or s3" >&2
+        exit 1
+        ;;
+    esac
+    ;;
+  *)
+    echo "[entrypoint] invalid PEERS_STATION_CLUSTER_MODE=${PEERS_STATION_CLUSTER_MODE}" >&2
+    exit 1
+    ;;
+esac
+
+validate_runtime_key_path() {
+  key_name="$1"
+  key_path="$2"
+  case "$key_path" in
+    ""|/*|*".."*|*[!A-Za-z0-9._/-]*)
+      echo "[entrypoint] ${key_name} must be a safe path relative to /app" >&2
+      exit 1
+      ;;
+  esac
+}
+
+PEERS_STATION_ROOT_KEY_FILE="${PEERS_STATION_ROOT_KEY_FILE:-data/bootstrap.key}"
+PEERS_STATION_NODE_KEY_FILE="${PEERS_STATION_NODE_KEY_FILE:-data/station-node.key}"
+PEERS_LIBP2P_IDENTITY_KEY_FILE="${PEERS_LIBP2P_IDENTITY_KEY_FILE:-data/libp2pIdentity.key}"
+validate_runtime_key_path PEERS_STATION_ROOT_KEY_FILE "$PEERS_STATION_ROOT_KEY_FILE"
+validate_runtime_key_path PEERS_STATION_NODE_KEY_FILE "$PEERS_STATION_NODE_KEY_FILE"
+validate_runtime_key_path PEERS_LIBP2P_IDENTITY_KEY_FILE "$PEERS_LIBP2P_IDENTITY_KEY_FILE"
+
 # /app/data is a named volume; subdirectories must be created at runtime
 # (mkdir from the Dockerfile would be shadowed by the empty volume mount).
 # Each subdirectory hosts a single concern so the volume layout is greppable:
 #   /app/data/oss                   — OSS local-backend store
 #   /app/data/messaging-attachments — Messaging encrypted attachment blobs
 #   /app/data/social-private-objects — Social encrypted private object blobs
-#   /app/data/libp2pIdentity.key     — transport identity (paths.docker.yml)
-#   /app/data/bootstrap.key          — bootstrap subserver identity (paths.docker.yml)
+#   /app/data/libp2pIdentity.key     — current transport identity (paths.docker.yml)
+#   /app/data/bootstrap.key          — logical Station root identity
+#   /app/data/station-node.key       — bootstrap node identity
 mkdir -p \
   /app/data/oss \
   /app/data/messaging-attachments \
-  /app/data/social-private-objects
+  /app/data/social-private-objects \
+  /app/data/relay-credentials \
+  "$(dirname "/app/$PEERS_STATION_ROOT_KEY_FILE")" \
+  "$(dirname "/app/$PEERS_STATION_NODE_KEY_FILE")" \
+  "$(dirname "/app/$PEERS_LIBP2P_IDENTITY_KEY_FILE")"
 
 # ── Node label pattern injection ──────────────────────────────────────────────
 # Expand ${PEERS_NODE_LABEL} in actor.yml using envsubst.
@@ -108,19 +177,35 @@ EOF
   OVERLAYS="${OVERLAYS}, store.docker.yml"
 fi
 
+# ── oss_backend.docker.yml (explicit object namespace ownership) ────────────
+if [ -n "${PEERS_OSS_BACKEND:-}" ]; then
+  cat > /app/conf/oss_backend.docker.yml <<EOF
+peers:
+  node:
+    server:
+      subserver:
+        oss:
+          backend: ${PEERS_OSS_BACKEND}
+EOF
+  OVERLAYS="${OVERLAYS}, oss_backend.docker.yml"
+fi
+
 # ── paths.docker.yml (libp2p key files persistent under /app/data) ──────────
 # Always emitted so the named volume (`peers_data:/app/data`) preserves
 # Relay/Station PeerIDs across container recreation.
-cat > /app/conf/paths.docker.yml <<'EOF'
+cat > /app/conf/paths.docker.yml <<EOF
 peers:
   node:
     transport:
+      addrs:
+        - /ip4/0.0.0.0/tcp/4001
       native:
-        libp2p-identity-key-file: data/libp2pIdentity.key
+        libp2p-identity-key-file: ${PEERS_LIBP2P_IDENTITY_KEY_FILE}
     server:
       subserver:
         bootstrap:
-          identity-key: data/bootstrap.key
+          station-root-key-file: ${PEERS_STATION_ROOT_KEY_FILE}
+          node-identity-key-file: ${PEERS_STATION_NODE_KEY_FILE}
 EOF
 OVERLAYS="${OVERLAYS}, paths.docker.yml"
 
@@ -184,42 +269,40 @@ if [ -n "$PEERS_BOOTSTRAP_NODES" ] \
   OVERLAYS="${OVERLAYS}, federation.docker.yml"
 fi
 
-# ── relay.docker.yml (Relay subserver TCP stream listener) ──────────────────
-# The relay subserver's TCP listener for station mounts. Emitted only on the
-# Relay node so stations do NOT accidentally accept relay client streams.
-if [ -n "$RELAY_STREAM_LISTEN_ADDR" ]; then
+# ── relay.docker.yml (Relay control policy) ─────────────────────────────────
+if [ "$PEERS_NODE_ROLE" = "relay" ]; then
   cat > /app/conf/relay.docker.yml <<EOF
 peers:
   node:
     server:
       subserver:
         relay:
-          stream-listen-addr: "${RELAY_STREAM_LISTEN_ADDR}"
+          operator-key-file: "${RELAY_OPERATOR_KEY_FILE}"
+          operator-issuer: "${RELAY_OPERATOR_ISSUER}"
+          operator-audience: "${RELAY_OPERATOR_AUDIENCE}"
+          operator-scope: "${RELAY_OPERATOR_SCOPE}"
 EOF
   OVERLAYS="${OVERLAYS}, relay.docker.yml"
 fi
 
-# ── relay_client.docker.yml (Station-side mount onto a remote Relay) ─────────
-# Emitted only when RELAY_CLIENT_ENABLED=true. Stations set this; the Relay
-# itself does NOT — it is the relay endpoint, not a station mounting onto one.
-if [ "$RELAY_CLIENT_ENABLED" = "true" ]; then
-  : "${RELAY_CLIENT_RELAY_URL:?RELAY_CLIENT_RELAY_URL required when RELAY_CLIENT_ENABLED=true}"
-  : "${RELAY_CLIENT_RELAY_STREAM_ADDR:?RELAY_CLIENT_RELAY_STREAM_ADDR required when RELAY_CLIENT_ENABLED=true}"
-  cat > /app/conf/relay_client.docker.yml <<EOF
+# ── relay_pool.docker.yml (Station standard Circuit target) ─────────────────
+if [ "$PEERS_NODE_ROLE" = "station" ] && [ "${STATION_RELAY_ENABLED:-false}" = "true" ]; then
+  cat > /app/conf/relay_pool.docker.yml <<EOF
 peers:
   node:
-    server:
-      subserver:
-        relay-client:
-          enabled: true
-          relay-url: "${RELAY_CLIENT_RELAY_URL}"
-          relay-stream-addr: "${RELAY_CLIENT_RELAY_STREAM_ADDR}"
-          invite-token: "${RELAY_CLIENT_INVITE_TOKEN:-}"
-          label: "${RELAY_CLIENT_LABEL:-}"
-          local-http-port: ${RELAY_CLIENT_LOCAL_HTTP_PORT:-18080}
-          token-store-path: "${RELAY_CLIENT_TOKEN_STORE_PATH:-data/relay_token}"
+    relay-pool:
+      mode: custom
+      relays:
+        - peer-id: "${STATION_RELAY_PEER_ID}"
+          addresses:
+            - "${STATION_RELAY_MULTIADDR}"
+          control-origin: "${STATION_RELAY_CONTROL_ORIGIN}"
+          invite-token: "${STATION_RELAY_INVITE_TOKEN:-}"
+          credential-file: "${STATION_RELAY_CREDENTIAL_FILE:-/app/data/relay-credentials/${STATION_RELAY_PEER_ID}.json}"
+          tls-ca-file: "${STATION_RELAY_TLS_CA_FILE:-}"
+          label: "${STATION_RELAY_LABEL:-station}"
 EOF
-  OVERLAYS="${OVERLAYS}, relay_client.docker.yml"
+  OVERLAYS="${OVERLAYS}, relay_pool.docker.yml"
 fi
 
 # ── server_host.docker.yml (per-deployment baseurl) ─────────────────────────
@@ -242,7 +325,7 @@ fi
 # We only append entries the file does not yet mention. Newly emitted overlays
 # are added to the end so hierarchy-merge applies them last.
 if [ -n "$OVERLAYS" ]; then
-  for overlay in store.docker.yml paths.docker.yml federation.docker.yml relay.docker.yml relay_client.docker.yml server_host.docker.yml; do
+  for overlay in store.docker.yml oss_backend.docker.yml paths.docker.yml federation.docker.yml relay.docker.yml relay_pool.docker.yml server_host.docker.yml; do
     case ",$OVERLAYS," in
       *",$overlay,"*|*", $overlay,"*)
         if ! grep -q "$overlay" /app/conf/peers.yml; then

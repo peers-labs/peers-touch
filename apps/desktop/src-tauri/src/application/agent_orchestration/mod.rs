@@ -1,4 +1,7 @@
 use crate::application::agents as application_agents;
+use crate::application::station_runtime::client::{
+    self as station_client, ReplayPolicy, StationClient,
+};
 use crate::contracts::{
     AgentCollaborationCancelInput, AgentCollaborationCancelTaskInput,
     AgentCollaborationClaimExecutorInput, AgentCollaborationCreateInput,
@@ -8,17 +11,15 @@ use crate::contracts::{
     AgentCollaborationSubmitNodeResultInput, AgentCollaborationSubscribeInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
-use crate::infrastructure::station_client;
-use reqwest::blocking::Client;
-use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use reqwest::Method;
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::io::Read;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Mutex, OnceLock};
+use std::time::Duration;
 use tauri::{AppHandle, Emitter};
+use tokio_util::sync::CancellationToken;
 
 const AGENT_COLLABORATION_EVENT: &str = "agent:collaboration-event";
 
@@ -32,8 +33,8 @@ struct AgentCollaborationEventPayload {
     data: Value,
 }
 
-fn stream_cancel_registry() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {
-    static REGISTRY: OnceLock<Mutex<HashMap<String, Arc<AtomicBool>>>> = OnceLock::new();
+fn stream_cancel_registry() -> &'static Mutex<HashMap<String, CancellationToken>> {
+    static REGISTRY: OnceLock<Mutex<HashMap<String, CancellationToken>>> = OnceLock::new();
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -45,12 +46,13 @@ fn success_payload(command: &str, data: serde_json::Value) -> AppResult<StubPayl
 }
 
 fn resolve_station_agent_ids(
+    station_client: &StationClient,
     agent_ids: &[String],
     token: &str,
     local_actor_ptid: &str,
 ) -> Result<Vec<String>, AppResult<StubPayload>> {
-    let local_agents = local_agents_by_id(local_actor_ptid, token);
-    let mut station_agents = match list_station_agents(token) {
+    let local_agents = local_agents_by_id(station_client, local_actor_ptid, token);
+    let mut station_agents = match list_station_agents(station_client, token) {
         Ok(agents) => agents,
         Err(error) => return Err(error.into_app_result("Failed to list Station Agents")),
     };
@@ -75,7 +77,7 @@ fn resolve_station_agent_ids(
             resolved.push(station_id);
             continue;
         }
-        let created = match create_station_agent_from_local(local_agent, token) {
+        let created = match create_station_agent_from_local(station_client, local_agent, token) {
             Ok(agent) => agent,
             Err(error) => return Err(error.into_app_result("Failed to sync Agent to Station")),
         };
@@ -88,8 +90,12 @@ fn resolve_station_agent_ids(
     Ok(resolved)
 }
 
-fn local_agents_by_id(local_actor_ptid: &str, token: &str) -> HashMap<String, Value> {
-    let result = application_agents::agents_list(local_actor_ptid, token);
+fn local_agents_by_id(
+    station_client: &StationClient,
+    local_actor_ptid: &str,
+    token: &str,
+) -> HashMap<String, Value> {
+    let result = application_agents::agents_list(station_client, local_actor_ptid, token);
     let Some(payload) = result.data else {
         return HashMap::new();
     };
@@ -105,8 +111,11 @@ fn local_agents_by_id(local_actor_ptid: &str, token: &str) -> HashMap<String, Va
         .collect()
 }
 
-fn list_station_agents(token: &str) -> Result<Vec<Value>, station_client::StationClientError> {
-    let result = station_client::request_json(
+fn list_station_agents(
+    station_client: &StationClient,
+    token: &str,
+) -> Result<Vec<Value>, station_client::StationClientError> {
+    let result = station_client.request_json(
         Method::POST,
         "/sub-agent/agent/list",
         token,
@@ -121,6 +130,7 @@ fn list_station_agents(token: &str) -> Result<Vec<Value>, station_client::Statio
 }
 
 fn create_station_agent_from_local(
+    station_client: &StationClient,
     local_agent: &Value,
     token: &str,
 ) -> Result<Value, station_client::StationClientError> {
@@ -132,7 +142,7 @@ fn create_station_agent_from_local(
     let effort = value_string(local_agent, &["effort"]).unwrap_or_else(|| "medium".to_string());
     let config_json = station_agent_config_from_local(local_agent).to_string();
 
-    let result = station_client::request_json(
+    let result = station_client.request_json(
         Method::POST,
         "/sub-agent/agent/create",
         token,
@@ -188,6 +198,7 @@ fn value_string(value: &Value, keys: &[&str]) -> Option<String> {
 }
 
 pub fn agent_collaboration_create(
+    station_client: &StationClient,
     input: AgentCollaborationCreateInput,
     token: &str,
     local_actor_ptid: &str,
@@ -198,11 +209,15 @@ pub fn agent_collaboration_create(
     if input.agent_ids.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "agent_ids is required", None);
     }
-    let station_agent_ids =
-        match resolve_station_agent_ids(&input.agent_ids, token, local_actor_ptid) {
-            Ok(ids) => ids,
-            Err(result) => return result,
-        };
+    let station_agent_ids = match resolve_station_agent_ids(
+        station_client,
+        &input.agent_ids,
+        token,
+        local_actor_ptid,
+    ) {
+        Ok(ids) => ids,
+        Err(result) => return result,
+    };
     let station_judge_agent_id = input
         .judge_agent_id
         .as_deref()
@@ -215,9 +230,14 @@ pub fn agent_collaboration_create(
                 .position(|id| id.trim() == judge_id)
                 .and_then(|index| station_agent_ids.get(index).cloned())
                 .or_else(|| {
-                    resolve_station_agent_ids(&[judge_id.to_string()], token, local_actor_ptid)
-                        .ok()
-                        .and_then(|ids| ids.into_iter().next())
+                    resolve_station_agent_ids(
+                        station_client,
+                        &[judge_id.to_string()],
+                        token,
+                        local_actor_ptid,
+                    )
+                    .ok()
+                    .and_then(|ids| ids.into_iter().next())
                 })
         })
         .unwrap_or_default();
@@ -238,7 +258,7 @@ pub fn agent_collaboration_create(
         }
     });
 
-    match station_client::request_json(
+    match station_client.request_json(
         Method::POST,
         "/sub-agent/agent/collaboration/create",
         token,
@@ -250,10 +270,10 @@ pub fn agent_collaboration_create(
     }
 }
 
-pub fn register_collaboration_stream(stream_id: &str) -> Arc<AtomicBool> {
-    let flag = Arc::new(AtomicBool::new(false));
+pub fn register_collaboration_stream(stream_id: &str) -> CancellationToken {
+    let flag = CancellationToken::new();
     if let Ok(mut registry) = stream_cancel_registry().lock() {
-        registry.insert(stream_id.to_string(), Arc::clone(&flag));
+        registry.insert(stream_id.to_string(), flag.clone());
     }
     flag
 }
@@ -267,7 +287,7 @@ pub fn unregister_collaboration_stream(stream_id: &str) {
 pub fn cancel_collaboration_stream(input: AgentCollaborationCancelInput) -> AppResult<StubPayload> {
     if let Ok(registry) = stream_cancel_registry().lock() {
         if let Some(flag) = registry.get(input.stream_id.trim()) {
-            flag.store(true, Ordering::SeqCst);
+            flag.cancel();
         }
     }
     success_payload(
@@ -277,6 +297,7 @@ pub fn cancel_collaboration_stream(input: AgentCollaborationCancelInput) -> AppR
 }
 
 pub fn agent_collaboration_cancel_task(
+    station_client: &StationClient,
     input: AgentCollaborationCancelTaskInput,
     token: &str,
 ) -> AppResult<StubPayload> {
@@ -284,7 +305,7 @@ pub fn agent_collaboration_cancel_task(
     if task_id.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "task_id is required", None);
     }
-    match station_client::request_json(
+    match station_client.request_json(
         Method::POST,
         "/sub-agent/agent/collaboration/cancel",
         token,
@@ -297,6 +318,7 @@ pub fn agent_collaboration_cancel_task(
 }
 
 pub fn agent_collaboration_resume_task(
+    station_client: &StationClient,
     input: AgentCollaborationResumeTaskInput,
     token: &str,
 ) -> AppResult<StubPayload> {
@@ -304,7 +326,7 @@ pub fn agent_collaboration_resume_task(
     if task_id.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "task_id is required", None);
     }
-    match station_client::request_json(
+    match station_client.request_json(
         Method::POST,
         "/sub-agent/agent/collaboration/resume",
         token,
@@ -317,6 +339,7 @@ pub fn agent_collaboration_resume_task(
 }
 
 pub fn agent_collaboration_submit_node_result(
+    station_client: &StationClient,
     input: AgentCollaborationSubmitNodeResultInput,
     token: &str,
 ) -> AppResult<StubPayload> {
@@ -349,7 +372,7 @@ pub fn agent_collaboration_submit_node_result(
             "source": "desktop.executor"
         }
     });
-    match station_client::request_json(
+    match station_client.request_json(
         Method::POST,
         "/sub-agent/agent/collaboration/node/submit-result",
         token,
@@ -362,6 +385,7 @@ pub fn agent_collaboration_submit_node_result(
 }
 
 pub fn agent_collaboration_claim_executor_task(
+    station_client: &StationClient,
     input: AgentCollaborationClaimExecutorInput,
     token: &str,
 ) -> AppResult<StubPayload> {
@@ -377,7 +401,7 @@ pub fn agent_collaboration_claim_executor_task(
         "nodeId": input.node_id.unwrap_or_default(),
         "capabilities": input.capabilities.unwrap_or_default(),
     });
-    match station_client::request_json(
+    match station_client.request_json(
         Method::POST,
         "/sub-agent/agent/collaboration/executor/claim",
         token,
@@ -390,6 +414,7 @@ pub fn agent_collaboration_claim_executor_task(
 }
 
 pub fn agent_collaboration_heartbeat_executor_lease(
+    station_client: &StationClient,
     input: AgentCollaborationHeartbeatLeaseInput,
     token: &str,
 ) -> AppResult<StubPayload> {
@@ -407,7 +432,7 @@ pub fn agent_collaboration_heartbeat_executor_lease(
         "executorId": executor_id,
         "leaseTtlMs": input.lease_ttl_ms.unwrap_or(0),
     });
-    match station_client::request_json(
+    match station_client.request_json(
         Method::POST,
         "/sub-agent/agent/collaboration/executor/heartbeat",
         token,
@@ -420,6 +445,7 @@ pub fn agent_collaboration_heartbeat_executor_lease(
 }
 
 pub fn agent_collaboration_release_executor_lease(
+    station_client: &StationClient,
     input: AgentCollaborationReleaseLeaseInput,
     token: &str,
 ) -> AppResult<StubPayload> {
@@ -437,7 +463,7 @@ pub fn agent_collaboration_release_executor_lease(
         "executorId": executor_id,
         "status": input.status.unwrap_or_else(|| "released".to_string()),
     });
-    match station_client::request_json(
+    match station_client.request_json(
         Method::POST,
         "/sub-agent/agent/collaboration/executor/release",
         token,
@@ -450,6 +476,7 @@ pub fn agent_collaboration_release_executor_lease(
 }
 
 pub fn agent_collaboration_get(
+    station_client: &StationClient,
     input: AgentCollaborationGetInput,
     token: &str,
 ) -> AppResult<StubPayload> {
@@ -457,7 +484,7 @@ pub fn agent_collaboration_get(
     if task_id.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "task_id is required", None);
     }
-    match station_client::request_json(
+    match station_client.request_json(
         Method::POST,
         "/sub-agent/agent/collaboration/get",
         token,
@@ -470,6 +497,7 @@ pub fn agent_collaboration_get(
 }
 
 pub fn agent_collaboration_list(
+    station_client: &StationClient,
     input: AgentCollaborationListInput,
     token: &str,
 ) -> AppResult<StubPayload> {
@@ -478,7 +506,7 @@ pub fn agent_collaboration_list(
         "page": input.page.unwrap_or(1),
         "pageSize": input.page_size.unwrap_or(20),
     });
-    match station_client::request_json(
+    match station_client.request_json(
         Method::POST,
         "/sub-agent/agent/collaboration/list",
         token,
@@ -491,6 +519,7 @@ pub fn agent_collaboration_list(
 }
 
 pub fn agent_collaboration_list_events(
+    station_client: &StationClient,
     input: AgentCollaborationListEventsInput,
     token: &str,
 ) -> AppResult<StubPayload> {
@@ -503,7 +532,7 @@ pub fn agent_collaboration_list_events(
         "afterEventSeq": input.after_event_seq.unwrap_or(0),
         "pageSize": input.page_size.unwrap_or(100),
     });
-    match station_client::request_json(
+    match station_client.request_json(
         Method::POST,
         "/sub-agent/agent/collaboration/events/list",
         token,
@@ -516,20 +545,22 @@ pub fn agent_collaboration_list_events(
 }
 
 pub fn agent_collaboration_subscribe(
+    station_client: &StationClient,
     app: AppHandle,
     stream_id: String,
     input: AgentCollaborationSubscribeInput,
     token: String,
-    cancel_flag: Arc<AtomicBool>,
+    cancellation: CancellationToken,
 ) {
     if let Err(error) = stream_station_agent_events(
+        station_client,
         &app,
         &stream_id,
         &input.agent_id,
         input.task_id.as_deref(),
         input.after_event_seq.unwrap_or(0),
         &token,
-        &cancel_flag,
+        &cancellation,
     ) {
         emit_collaboration_event(
             &app,
@@ -542,23 +573,15 @@ pub fn agent_collaboration_subscribe(
 }
 
 fn stream_station_agent_events(
+    station_client: &StationClient,
     app: &AppHandle,
     stream_id: &str,
     agent_id: &str,
     task_id: Option<&str>,
     after_event_seq: i64,
     token: &str,
-    cancel_flag: &AtomicBool,
+    cancellation: &CancellationToken,
 ) -> Result<(), String> {
-    let url = format!(
-        "{}{}",
-        station_client::station_base_url(),
-        "/sub-agent/agent/events/subscribe"
-    );
-    let client = Client::builder()
-        .build()
-        .map_err(|error| format!("failed to create Station event client: {error}"))?;
-    let auth = format!("Bearer {}", token.trim());
     let mut body = json!({
         "agent_id": agent_id,
         "after_event_seq": after_event_seq.max(0),
@@ -566,29 +589,32 @@ fn stream_station_agent_events(
     if let Some(task_id) = task_id.map(str::trim).filter(|value| !value.is_empty()) {
         body["task_id"] = json!(task_id);
     }
-    let mut response = client
-        .post(url)
-        .header(CONTENT_TYPE, "application/json")
-        .header(AUTHORIZATION, auth)
-        .header("Accept", "text/event-stream")
-        .json(&body)
-        .send()
+    let mut response = station_client
+        .open_json_stream(
+            "/sub-agent/agent/events/subscribe",
+            token.trim(),
+            &body,
+            Duration::from_secs(24 * 60 * 60),
+            ReplayPolicy::SafeRead,
+            cancellation.clone(),
+        )
         .map_err(|error| format!("Station agent event stream request failed: {error}"))?;
 
-    if !response.status().is_success() {
+    if !(200..300).contains(&response.status) {
         return Err(format!(
             "Station agent event stream returned HTTP {}",
-            response.status()
+            response.status
         ));
     }
 
     let mut bytes = [0_u8; 4096];
     let mut buffer = String::new();
     loop {
-        if cancel_flag.load(Ordering::SeqCst) {
+        if cancellation.is_cancelled() {
             return Ok(());
         }
         let read = response
+            .body
             .read(&mut bytes)
             .map_err(|error| format!("failed to read Station agent event stream: {error}"))?;
         if read == 0 {

@@ -37,7 +37,7 @@ PlanMount 或通用关闭回执；复杂任务可恢复，真实运行保护和�
       "docs/architecture/engineering/development-workflow/module-layout.md",
       "docs/architecture/engineering/development-workflow/integration.md"
     ],
-    "decisions": ["DWF-D42"]
+    "decisions": ["DWF-D46"]
   },
   "scope": {
     "sourceClaims": [

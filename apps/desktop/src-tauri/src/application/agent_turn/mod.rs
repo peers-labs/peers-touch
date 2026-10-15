@@ -5,6 +5,9 @@
 // subserver handler and proto definitions are aligned with the desktop contract.
 // TODO(agent): align `agent.proto` + Station `HandleExecuteTurn` with the full turn payload, then use `request_proto`.
 use crate::application::error_resolver::ProviderKind;
+use crate::application::station_runtime::client::{
+    self as station_client, ReplayPolicy, StationClient,
+};
 use crate::application::{agent_workspace, error_resolver, tools};
 use crate::contracts::{
     AgentConversationArchiveInput, AgentConversationCreateInput, AgentConversationGetInput,
@@ -21,12 +24,8 @@ use crate::contracts::{
     TopicCommentListInput,
 };
 use crate::error::{AppResult, ErrorCode};
-use crate::infrastructure::station_client;
 use crate::model::agent;
-use futures_lite::StreamExt;
 use prost::Message;
-use reqwest::blocking::Client as BlockingClient;
-use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use reqwest::{Client, Method};
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -39,6 +38,7 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::watch;
+use tokio_util::sync::CancellationToken;
 
 const AGENT_TURN_STREAM_EVENT: &str = "agent:turn-stream-event";
 const AGENT_REPLAY_BACKOFF_MS: [u64; 5] = [500, 1_000, 2_000, 4_000, 8_000];
@@ -253,6 +253,7 @@ fn unregister_agent_turn_live_stream(key: &AgentStreamKey, generation: u64) {
     }
 }
 pub fn submit_tool_decision(
+    station_client: &StationClient,
     input: AgentToolDecisionIntentInput,
     token: &str,
 ) -> AppResult<StubPayload> {
@@ -284,17 +285,15 @@ pub fn submit_tool_decision(
         idempotency_key: input.idempotency_key,
         payload_hash,
     };
-    let response = match station_client::request_proto_with_policy::<
-        _,
-        agent::SubmitToolApprovalDecisionResponse,
-    >(
-        Method::POST,
-        TOOL_DECISION_PATH,
-        token,
-        None,
-        Some(&request),
-        tool_decision_transport_policy(),
-    ) {
+    let response = match station_client
+        .request_proto_with_policy::<_, agent::SubmitToolApprovalDecisionResponse>(
+            Method::POST,
+            TOOL_DECISION_PATH,
+            token,
+            None,
+            Some(&request),
+            tool_decision_transport_policy(),
+        ) {
         Ok(response) => response,
         Err(error) => return error.into_app_result("agent.toolDecisionSubmitFailed"),
     };
@@ -365,12 +364,16 @@ fn tool_decision_payload_hash(
     hex::encode(Sha256::digest(canonical.as_bytes()))
 }
 
-pub fn cancel_agent_turn(turn_id: &str, token: &str) -> AppResult<StubPayload> {
+pub fn cancel_agent_turn(
+    station_client: &StationClient,
+    turn_id: &str,
+    token: &str,
+) -> AppResult<StubPayload> {
     let turn_id = turn_id.trim();
     if turn_id.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "turn_id is required", None);
     }
-    match station_client::request_json_auth(
+    match station_client.request_json_auth(
         Method::POST,
         "/sub-agent/agent/turn/cancel",
         token,
@@ -440,30 +443,26 @@ impl CollectedTurn {
     }
 }
 
-fn collect_turn_text_via_stream(body: &Value, token: &str) -> Result<(String, String), String> {
-    let url = format!(
-        "{}{}",
-        station_client::station_base_url(),
-        "/sub-agent/agent/turn/stream"
-    );
-    let client = BlockingClient::builder()
-        .timeout(Duration::from_secs(120))
-        .build()
-        .map_err(|error| format!("failed to create Station stream client: {error}"))?;
-    let auth = format!("Bearer {}", token.trim());
-    let mut response = client
-        .post(&url)
-        .header(CONTENT_TYPE, "application/json")
-        .header(AUTHORIZATION, auth)
-        .header("Accept", "text/event-stream")
-        .json(body)
-        .send()
+fn collect_turn_text_via_stream(
+    station_client: &StationClient,
+    body: &Value,
+    token: &str,
+) -> Result<(String, String), String> {
+    let mut response = station_client
+        .open_json_stream(
+            "/sub-agent/agent/turn/stream",
+            token.trim(),
+            body,
+            Duration::from_secs(120),
+            ReplayPolicy::Never,
+            CancellationToken::new(),
+        )
         .map_err(|error| format!("Station turn stream request failed: {error}"))?;
 
-    if !response.status().is_success() {
+    if !(200..300).contains(&response.status) {
         return Err(format!(
             "Station turn stream returned HTTP {}",
-            response.status()
+            response.status
         ));
     }
 
@@ -473,6 +472,7 @@ fn collect_turn_text_via_stream(body: &Value, token: &str) -> Result<(String, St
 
     loop {
         let read = response
+            .body
             .read(&mut bytes)
             .map_err(|error| format!("failed to read Station turn stream: {error}"))?;
         if read == 0 {
@@ -509,6 +509,7 @@ fn collect_turn_text_via_stream(body: &Value, token: &str) -> Result<(String, St
 }
 
 pub fn agent_execute_turn(
+    station_client: &StationClient,
     mut input: AgentExecuteTurnInput,
     token: &str,
     _actor_id: &str,
@@ -527,7 +528,7 @@ pub fn agent_execute_turn(
 
     let body = build_turn_request_body(input.clone(), true);
 
-    match collect_turn_text_via_stream(&body, token) {
+    match collect_turn_text_via_stream(station_client, &body, token) {
         Ok((content, model_name)) => {
             let effective_model = if model_name.is_empty() {
                 input.model.as_deref().unwrap_or("").to_string()
@@ -571,6 +572,7 @@ pub fn agent_execute_turn(
 }
 
 pub fn agent_turn_trace_list(
+    station_client: &StationClient,
     input: AgentTurnTraceListInput,
     token: &str,
 ) -> AppResult<StubPayload> {
@@ -585,7 +587,7 @@ pub fn agent_turn_trace_list(
         "page_size": input.page_size.unwrap_or(20),
     });
 
-    match station_client::request_json(
+    match station_client.request_json(
         Method::POST,
         "/sub-agent/agent/turn/trace/list",
         token,
@@ -601,6 +603,7 @@ pub fn agent_turn_trace_list(
 }
 
 pub fn agent_turn_queue_list(
+    station_client: &StationClient,
     input: AgentTurnQueueListInput,
     token: &str,
 ) -> AppResult<StubPayload> {
@@ -613,7 +616,7 @@ pub fn agent_turn_queue_list(
         );
     }
     let request = agent::ListQueuedTurnsRequest { conversation_id };
-    match station_client::request_proto::<_, agent::ListQueuedTurnsResponse>(
+    match station_client.request_proto::<_, agent::ListQueuedTurnsResponse>(
         Method::POST,
         "/sub-agent/agent/turn/queue/list",
         token,
@@ -633,6 +636,7 @@ pub fn agent_turn_queue_list(
 }
 
 pub fn agent_turn_queue_cancel(
+    station_client: &StationClient,
     input: AgentTurnQueueCancelInput,
     token: &str,
 ) -> AppResult<StubPayload> {
@@ -642,7 +646,7 @@ pub fn agent_turn_queue_cancel(
         idempotency_key: input.idempotency_key,
         expected_conversation_version: input.expected_conversation_version,
     };
-    match station_client::request_proto::<_, agent::CancelQueuedTurnResponse>(
+    match station_client.request_proto::<_, agent::CancelQueuedTurnResponse>(
         Method::POST,
         "/sub-agent/agent/turn/queue/cancel",
         token,
@@ -661,7 +665,11 @@ pub fn agent_turn_queue_cancel(
     }
 }
 
-pub fn agent_turn_trace_get(input: AgentTurnTraceGetInput, token: &str) -> AppResult<StubPayload> {
+pub fn agent_turn_trace_get(
+    station_client: &StationClient,
+    input: AgentTurnTraceGetInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     let trace_id = input.trace_id.unwrap_or_default().trim().to_string();
     let turn_id = input.turn_id.unwrap_or_default().trim().to_string();
     if trace_id.is_empty() && turn_id.is_empty() {
@@ -676,7 +684,7 @@ pub fn agent_turn_trace_get(input: AgentTurnTraceGetInput, token: &str) -> AppRe
         "turn_id": turn_id,
     });
 
-    match station_client::request_json(
+    match station_client.request_json(
         Method::POST,
         "/sub-agent/agent/turn/trace/get",
         token,
@@ -692,6 +700,7 @@ pub fn agent_turn_trace_get(input: AgentTurnTraceGetInput, token: &str) -> AppRe
 }
 
 pub fn agent_turn_diagnostics_export(
+    station_client: &StationClient,
     input: AgentTurnDiagnosticsInput,
     token: &str,
 ) -> AppResult<Vec<u8>> {
@@ -713,7 +722,7 @@ pub fn agent_turn_diagnostics_export(
     );
     // #endregion
     let request = agent::ExportTurnDiagnosticsRequest { turn_id };
-    match station_client::request_proto::<_, agent::ExportTurnDiagnosticsResponse>(
+    match station_client.request_proto::<_, agent::ExportTurnDiagnosticsResponse>(
         Method::POST,
         "/sub-agent/agent/turn/diagnostics/export",
         token,
@@ -762,6 +771,7 @@ pub fn agent_turn_diagnostics_export(
 }
 
 pub fn agent_execute_turn_stream(
+    station_client: &StationClient,
     app: AppHandle,
     stream_id: String,
     mut input: AgentExecuteTurnInput,
@@ -780,7 +790,8 @@ pub fn agent_execute_turn_stream(
                 }
             }
             let body = build_turn_request_body(input, true);
-            tauri::async_runtime::block_on(stream_station_turn(
+            stream_station_turn(
+                station_client,
                 &app,
                 &window_label,
                 &stream_id,
@@ -789,7 +800,7 @@ pub fn agent_execute_turn_stream(
                 &ptid,
                 &mut cancellation.receiver,
                 provider.as_str(),
-            ))
+            )
         }
     };
     if let Err(error) = result {
@@ -799,6 +810,7 @@ pub fn agent_execute_turn_stream(
 }
 
 pub async fn agent_replay_turn_stream(
+    station_client: &StationClient,
     app: AppHandle,
     window_label: String,
     stream_id: String,
@@ -811,6 +823,7 @@ pub async fn agent_replay_turn_stream(
     mut cancellation: ReplayCancellation,
 ) {
     if let Err(error) = replay_station_turn_events_with_retry(
+        station_client,
         &app,
         &window_label,
         &stream_id,
@@ -896,7 +909,8 @@ fn apply_resolved_agent_workspace(input: &mut AgentExecuteTurnInput) -> Result<(
     Ok(())
 }
 
-async fn stream_station_turn(
+fn stream_station_turn(
+    station_client: &StationClient,
     app: &AppHandle,
     window_label: &str,
     stream_id: &str,
@@ -911,53 +925,45 @@ async fn stream_station_turn(
         .and_then(|v| v.as_str())
         .unwrap_or(provider_id);
 
-    let url = format!(
-        "{}{}",
-        station_client::station_base_url(),
-        "/sub-agent/agent/turn/stream"
-    );
-    let client = Client::builder()
-        .connect_timeout(Duration::from_secs(30))
-        .build()
-        .map_err(|error| format!("failed to create Station stream client: {error}"))?;
-    let auth = format!("Bearer {}", token.trim());
-    let (response, admission_control) = await_stream_admission(
-        client
-            .post(url)
-            .header(CONTENT_TYPE, "application/json")
-            .header(AUTHORIZATION, auth)
-            .header("Accept", "text/event-stream")
-            .json(body)
-            .send(),
-        cancellation,
-        AGENT_STREAM_ADMISSION_TIMEOUT,
-    )
-    .await?;
-    let response =
-        response.map_err(|error| format!("Station turn stream request failed: {error}"))?;
+    let request_cancellation = CancellationToken::new();
+    let response = station_client
+        .open_json_stream(
+            "/sub-agent/agent/turn/stream",
+            token.trim(),
+            body,
+            Duration::from_secs(24 * 60 * 60),
+            ReplayPolicy::Never,
+            request_cancellation.clone(),
+        )
+        .map_err(|error| format!("Station turn stream request failed: {error}"))?;
+    let admission_control = live_stream_control(cancellation);
     let admitted_turn_id = response
-        .headers()
+        .headers
         .get("x-agent-turn-id")
         .and_then(|value| value.to_str().ok())
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .unwrap_or_default()
         .to_string();
-    if !response.status().is_success() {
+    if !(200..300).contains(&response.status) {
         return Err(format!(
             "Station turn stream returned HTTP {}",
-            response.status()
+            response.status
         ));
     }
     if admission_control == LiveStreamControl::CancelTurn {
         if admitted_turn_id.is_empty() {
             return Err("agent.error.streamIdentityMissing".to_string());
         }
-        return cancel_live_stream_turn(&admitted_turn_id, token);
+        return cancel_live_stream_turn(station_client, &admitted_turn_id, token);
     }
     if admission_control == LiveStreamControl::DisconnectTransport && admitted_turn_id.is_empty() {
         return Err("agent.error.streamIdentityMissing".to_string());
     }
+    let _stream_fence =
+        watch_transport_cancellation(cancellation.clone(), request_cancellation, |control| {
+            *control != LiveStreamControl::Active
+        });
 
     let mut error_emitted = false;
     let mut terminal_received = false;
@@ -971,37 +977,37 @@ async fn stream_station_turn(
         .and_then(Value::as_str)
         .unwrap_or_default()
         .to_string();
-    let mut body = response.bytes_stream();
+    let mut body = response.body;
     let mut buffer = Vec::new();
+    let mut chunk_buffer = [0_u8; 4096];
     'stream: loop {
         if transport_disconnect_requested {
             break;
         }
-        let chunk = match next_live_stream_item_or_control(body.next(), cancellation).await {
-            LiveStreamItem::Control(LiveStreamControl::CancelTurn) => {
+        match live_stream_control(cancellation) {
+            LiveStreamControl::CancelTurn => {
                 if turn_id.is_empty() {
                     return Ok(());
                 }
-                return cancel_live_stream_turn(&turn_id, token);
+                return cancel_live_stream_turn(station_client, &turn_id, token);
             }
-            LiveStreamItem::Control(LiveStreamControl::DisconnectTransport) => {
+            LiveStreamControl::DisconnectTransport => {
                 transport_disconnect_requested = true;
                 break;
             }
-            LiveStreamItem::Control(LiveStreamControl::Active) => continue,
-            LiveStreamItem::Item(chunk) => chunk,
-        };
-        let Some(chunk) = chunk else {
-            break;
-        };
-        let chunk = match chunk {
-            Ok(chunk) => chunk,
+            LiveStreamControl::Active => {}
+        }
+        let read = match body.read(&mut chunk_buffer) {
+            Ok(read) => read,
             Err(error) => {
                 transport_error = Some(format!("failed to read Station turn stream: {error}"));
                 break;
             }
         };
-        buffer.extend_from_slice(&chunk);
+        if read == 0 {
+            break;
+        }
+        buffer.extend_from_slice(&chunk_buffer[..read]);
         while let Some((event, data)) = take_sse_frame(&mut buffer)? {
             update_turn_cursor(
                 &data,
@@ -1015,7 +1021,7 @@ async fn stream_station_turn(
                     if turn_id.is_empty() {
                         return Ok(());
                     }
-                    return cancel_live_stream_turn(&turn_id, token);
+                    return cancel_live_stream_turn(station_client, &turn_id, token);
                 }
                 LiveStreamControl::DisconnectTransport => {
                     transport_disconnect_requested = true;
@@ -1089,7 +1095,57 @@ async fn stream_station_turn(
             }),
         );
     }
+    if live_stream_control(cancellation) == LiveStreamControl::CancelTurn && !turn_id.is_empty() {
+        return cancel_live_stream_turn(station_client, &turn_id, token);
+    }
     Ok(())
+}
+
+struct StreamTransportFence(CancellationToken);
+
+impl Drop for StreamTransportFence {
+    fn drop(&mut self) {
+        self.0.cancel();
+    }
+}
+
+fn watch_transport_cancellation<T: Clone + Send + Sync + 'static>(
+    mut receiver: watch::Receiver<T>,
+    transport: CancellationToken,
+    cancelled: fn(&T) -> bool,
+) -> StreamTransportFence {
+    let stop = CancellationToken::new();
+    let stopped = stop.clone();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            if cancelled(&receiver.borrow()) {
+                transport.cancel();
+                return;
+            }
+            tokio::select! {
+                _ = stopped.cancelled() => return,
+                changed = receiver.changed() => {
+                    if changed.is_err() { transport.cancel(); return; }
+                }
+            }
+        }
+    });
+    StreamTransportFence(stop)
+}
+
+fn deadline_transport_cancellation(
+    transport: CancellationToken,
+    timeout: Duration,
+) -> StreamTransportFence {
+    let stop = CancellationToken::new();
+    let stopped = stop.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::select! {
+            _ = stopped.cancelled() => {}
+            _ = tokio::time::sleep(timeout) => transport.cancel(),
+        }
+    });
+    StreamTransportFence(stop)
 }
 
 enum CancellableStreamItem<T> {
@@ -1183,8 +1239,12 @@ where
     }
 }
 
-fn cancel_live_stream_turn(turn_id: &str, token: &str) -> Result<(), String> {
-    let result = cancel_agent_turn(turn_id, token);
+fn cancel_live_stream_turn(
+    station_client: &StationClient,
+    turn_id: &str,
+    token: &str,
+) -> Result<(), String> {
+    let result = cancel_agent_turn(station_client, turn_id, token);
     if result.ok {
         return Ok(());
     }
@@ -1259,6 +1319,7 @@ async fn wait_for_replay_retry(delay: Duration, cancellation: &mut watch::Receiv
 }
 
 async fn replay_station_turn_events_with_retry(
+    station_client: &StationClient,
     app: &AppHandle,
     window_label: &str,
     stream_id: &str,
@@ -1311,20 +1372,34 @@ async fn replay_station_turn_events_with_retry(
                 "seq": after_sequence
             }),
         );
-        match replay_station_turn_events(
-            app,
-            window_label,
-            stream_id,
-            token,
-            ptid,
-            conversation_id,
-            turn_id,
-            attempt_id,
-            after_sequence,
-            cancellation,
-        )
+        let replay_client = station_client.clone();
+        let replay_app = app.clone();
+        let replay_window_label = window_label.to_string();
+        let replay_stream_id = stream_id.to_string();
+        let replay_token = token.to_string();
+        let replay_ptid = ptid.to_string();
+        let replay_conversation_id = conversation_id.to_string();
+        let replay_turn_id = turn_id.to_string();
+        let replay_attempt_id = attempt_id.to_string();
+        let mut replay_cancellation = cancellation.clone();
+        let outcome = tauri::async_runtime::spawn_blocking(move || {
+            replay_station_turn_events(
+                &replay_client,
+                &replay_app,
+                &replay_window_label,
+                &replay_stream_id,
+                &replay_token,
+                &replay_ptid,
+                &replay_conversation_id,
+                &replay_turn_id,
+                &replay_attempt_id,
+                after_sequence,
+                &mut replay_cancellation,
+            )
+        })
         .await
-        {
+        .map_err(|error| format!("Station replay task failed: {error}"))?;
+        match outcome {
             Ok(ReplayOutcome::Terminal | ReplayOutcome::Cancelled) => return Ok(()),
             Err(error) => last_error = Some(error),
         }
@@ -1483,7 +1558,8 @@ fn emit_replay_event(
     closes_stream
 }
 
-async fn replay_station_turn_events(
+fn replay_station_turn_events(
+    station_client: &StationClient,
     app: &AppHandle,
     window_label: &str,
     stream_id: &str,
@@ -1498,44 +1574,29 @@ async fn replay_station_turn_events(
     if conversation_id.trim().is_empty() || turn_id.trim().is_empty() {
         return Err("Station stream closed before turn identity was received".to_string());
     }
-    let url = format!(
-        "{}{}",
-        station_client::station_base_url(),
-        "/sub-agent/agent/conversation/events"
+    if replay_is_cancelled(cancellation) {
+        return Ok(ReplayOutcome::Cancelled);
+    }
+    let transport_cancellation = CancellationToken::new();
+    let _stream_fence = watch_transport_cancellation(
+        cancellation.clone(),
+        transport_cancellation.clone(),
+        |cancelled| *cancelled,
     );
-    let client = Client::builder()
-        .connect_timeout(Duration::from_secs(30))
-        .build()
-        .map_err(|error| format!("failed to create Station replay client: {error}"))?;
-    let response = match next_stream_item_or_cancel(
-        tokio::time::timeout(
-            AGENT_STREAM_ADMISSION_TIMEOUT,
-            client
-                .post(url)
-                .header(CONTENT_TYPE, "application/json")
-                .header(AUTHORIZATION, format!("Bearer {}", token.trim()))
-                .header("Accept", "text/event-stream")
-                .json(&build_replay_request_body(
-                    conversation_id,
-                    turn_id,
-                    attempt_id,
-                    after_sequence,
-                ))
-                .send(),
-        ),
-        cancellation,
-    )
-    .await
-    {
-        CancellableStreamItem::Cancelled => return Ok(ReplayOutcome::Cancelled),
-        CancellableStreamItem::Item(result) => result
-            .map_err(|_| "Station turn replay admission timed out".to_string())?
-            .map_err(|error| format!("Station turn replay request failed: {error}"))?,
-    };
-    if !response.status().is_success() {
+    let mut response = station_client
+        .open_json_stream(
+            "/sub-agent/agent/conversation/events",
+            token.trim(),
+            &build_replay_request_body(conversation_id, turn_id, attempt_id, after_sequence),
+            Duration::from_secs(24 * 60 * 60),
+            ReplayPolicy::SafeRead,
+            transport_cancellation.clone(),
+        )
+        .map_err(|error| format!("Station turn replay request failed: {error}"))?;
+    if !(200..300).contains(&response.status) {
         return Err(format!(
             "Station turn replay returned HTTP {}",
-            response.status()
+            response.status
         ));
     }
     // #region debug-point D:station-replay-response
@@ -1543,37 +1604,39 @@ async fn replay_station_turn_events(
         "D",
         "agent_turn::replay_station_turn_events",
         "Station replay response accepted",
-        json!({ "status": response.status().as_u16() }),
+        json!({ "status": response.status }),
     );
     // #endregion
-    let mut body = response.bytes_stream();
     let mut buffer = Vec::new();
+    let mut chunk = [0_u8; 4096];
     let mut last_sequence = after_sequence;
     let mut live_tail_established = false;
-    let catchup_deadline = tokio::time::Instant::now() + AGENT_STREAM_ADMISSION_TIMEOUT;
+    let mut catchup_fence = Some(deadline_transport_cancellation(
+        transport_cancellation.clone(),
+        AGENT_STREAM_ADMISSION_TIMEOUT,
+    ));
+    let catchup_deadline = Instant::now() + AGENT_STREAM_ADMISSION_TIMEOUT;
     let mut replay_turn_id = turn_id.to_string();
     let mut replay_conversation_id = conversation_id.to_string();
     loop {
-        let chunk = if live_tail_established {
-            next_stream_item_or_cancel(body.next(), cancellation).await
-        } else {
-            tokio::select! {
-                chunk = next_stream_item_or_cancel(body.next(), cancellation) => chunk,
-                _ = tokio::time::sleep_until(catchup_deadline) => {
-                    return Err("Station turn replay catchup timed out".to_string());
-                }
+        if replay_is_cancelled(cancellation) {
+            return Ok(ReplayOutcome::Cancelled);
+        }
+        if !live_tail_established && Instant::now() >= catchup_deadline {
+            return Err("Station turn replay catchup timed out".to_string());
+        }
+        let read = match response.body.read(&mut chunk) {
+            Ok(read) => read,
+            Err(_) if replay_is_cancelled(cancellation) => return Ok(ReplayOutcome::Cancelled),
+            Err(_) if !live_tail_established && transport_cancellation.is_cancelled() => {
+                return Err("Station turn replay catchup timed out".to_string())
             }
+            Err(error) => return Err(format!("failed to read Station turn replay: {error}")),
         };
-        let chunk = match chunk {
-            CancellableStreamItem::Cancelled => return Ok(ReplayOutcome::Cancelled),
-            CancellableStreamItem::Item(chunk) => chunk,
-        };
-        let Some(chunk) = chunk else {
+        if read == 0 {
             break;
-        };
-        let chunk =
-            chunk.map_err(|error| format!("failed to read Station turn replay: {error}"))?;
-        buffer.extend_from_slice(&chunk);
+        }
+        buffer.extend_from_slice(&chunk[..read]);
         while let Some((event, data)) = take_sse_frame(&mut buffer)? {
             if emit_replay_event(
                 app,
@@ -1588,6 +1651,9 @@ async fn replay_station_turn_events(
                 &mut live_tail_established,
             ) {
                 return Ok(ReplayOutcome::Terminal);
+            }
+            if live_tail_established {
+                catchup_fence.take();
             }
         }
     }
@@ -1785,6 +1851,7 @@ fn success_payload(command: &str, data: Value) -> AppResult<StubPayload> {
 }
 
 pub fn agent_conversation_list(
+    station_client: &StationClient,
     input: AgentConversationListInput,
     token: &str,
 ) -> AppResult<StubPayload> {
@@ -1798,7 +1865,7 @@ pub fn agent_conversation_list(
         "page": input.page.unwrap_or(1),
         "page_size": input.page_size.unwrap_or(50),
     });
-    match station_client::request_json(
+    match station_client.request_json(
         Method::POST,
         "/sub-agent/agent/conversation/list",
         token,
@@ -1814,6 +1881,7 @@ pub fn agent_conversation_list(
 }
 
 pub fn agent_conversation_get(
+    station_client: &StationClient,
     input: AgentConversationGetInput,
     token: &str,
 ) -> AppResult<StubPayload> {
@@ -1826,7 +1894,7 @@ pub fn agent_conversation_get(
         );
     }
     let body = json!({ "conversation_id": conversation_id });
-    match station_client::request_json(
+    match station_client.request_json(
         Method::POST,
         "/sub-agent/agent/conversation/get",
         token,
@@ -1842,6 +1910,7 @@ pub fn agent_conversation_get(
 }
 
 pub fn agent_conversation_create(
+    station_client: &StationClient,
     input: AgentConversationCreateInput,
     token: &str,
 ) -> AppResult<StubPayload> {
@@ -1864,7 +1933,7 @@ pub fn agent_conversation_create(
     if let Some(provider) = input.provider_id.filter(|s| !s.trim().is_empty()) {
         body["provider_id"] = json!(provider);
     }
-    match station_client::request_json(
+    match station_client.request_json(
         Method::POST,
         "/sub-agent/agent/conversation/create",
         token,
@@ -1880,6 +1949,7 @@ pub fn agent_conversation_create(
 }
 
 pub fn agent_conversation_messages(
+    station_client: &StationClient,
     input: AgentConversationMessagesInput,
     token: &str,
 ) -> AppResult<StubPayload> {
@@ -1897,7 +1967,7 @@ pub fn agent_conversation_messages(
         "before_seq": input.before_seq.unwrap_or(0),
         "limit": input.limit.unwrap_or(50),
     });
-    match station_client::request_json(
+    match station_client.request_json(
         Method::POST,
         "/sub-agent/agent/conversation/messages",
         token,
@@ -1913,6 +1983,7 @@ pub fn agent_conversation_messages(
 }
 
 pub fn agent_conversation_update(
+    station_client: &StationClient,
     input: AgentConversationUpdateInput,
     token: &str,
 ) -> AppResult<StubPayload> {
@@ -1933,7 +2004,7 @@ pub fn agent_conversation_update(
         "meta": input.meta.unwrap_or_default(),
         "active_branch_message_id": input.active_branch_message_id,
     });
-    match station_client::request_json(
+    match station_client.request_json(
         Method::POST,
         "/sub-agent/agent/conversation/update",
         token,
@@ -1945,7 +2016,11 @@ pub fn agent_conversation_update(
     }
 }
 
-pub fn agent_thread_create(input: AgentThreadCreateInput, token: &str) -> AppResult<StubPayload> {
+pub fn agent_thread_create(
+    station_client: &StationClient,
+    input: AgentThreadCreateInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     let conversation_id = input.conversation_id.trim().to_string();
     let source_message_id = input.source_message_id.trim().to_string();
     if conversation_id.is_empty() || source_message_id.is_empty() {
@@ -1960,7 +2035,7 @@ pub fn agent_thread_create(input: AgentThreadCreateInput, token: &str) -> AppRes
         "source_message_id": source_message_id,
         "title": input.title.unwrap_or_default(),
     });
-    match station_client::request_json(
+    match station_client.request_json(
         Method::POST,
         "/sub-agent/agent/thread/create",
         token,
@@ -1975,7 +2050,11 @@ pub fn agent_thread_create(input: AgentThreadCreateInput, token: &str) -> AppRes
     }
 }
 
-pub fn agent_thread_list(input: AgentThreadListInput, token: &str) -> AppResult<StubPayload> {
+pub fn agent_thread_list(
+    station_client: &StationClient,
+    input: AgentThreadListInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     let conversation_id = input.conversation_id.trim().to_string();
     if conversation_id.is_empty() {
         return AppResult::fail(
@@ -1985,7 +2064,7 @@ pub fn agent_thread_list(input: AgentThreadListInput, token: &str) -> AppResult<
         );
     }
     let body = json!({ "conversation_id": conversation_id });
-    match station_client::request_json(
+    match station_client.request_json(
         Method::POST,
         "/sub-agent/agent/thread/list",
         token,
@@ -2001,6 +2080,7 @@ pub fn agent_thread_list(input: AgentThreadListInput, token: &str) -> AppResult<
 }
 
 pub fn agent_thread_messages(
+    station_client: &StationClient,
     input: AgentThreadMessagesInput,
     token: &str,
 ) -> AppResult<StubPayload> {
@@ -2012,7 +2092,7 @@ pub fn agent_thread_messages(
         "thread_id": thread_id,
         "after_seq": input.after_seq.unwrap_or(0),
     });
-    match station_client::request_json(
+    match station_client.request_json(
         Method::POST,
         "/sub-agent/agent/thread/messages",
         token,
@@ -2031,7 +2111,11 @@ fn agent_group_member_ids_json(ids: Option<Vec<String>>) -> String {
     serde_json::to_string(&ids.unwrap_or_default()).unwrap_or_else(|_| "[]".to_string())
 }
 
-pub fn agent_group_create(input: AgentGroupCreateInput, token: &str) -> AppResult<StubPayload> {
+pub fn agent_group_create(
+    station_client: &StationClient,
+    input: AgentGroupCreateInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     let name = input.name.trim().to_string();
     if name.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "name is required", None);
@@ -2042,7 +2126,7 @@ pub fn agent_group_create(input: AgentGroupCreateInput, token: &str) -> AppResul
         "member_agent_ids": agent_group_member_ids_json(input.member_agent_ids),
         "orchestration_mode": input.orchestration_mode.unwrap_or_else(|| "sequential".to_string()),
     });
-    match station_client::request_json(
+    match station_client.request_json(
         Method::POST,
         "/sub-agent/agent/ecosystem/group/create",
         token,
@@ -2057,7 +2141,11 @@ pub fn agent_group_create(input: AgentGroupCreateInput, token: &str) -> AppResul
     }
 }
 
-pub fn agent_group_update(input: AgentGroupUpdateInput, token: &str) -> AppResult<StubPayload> {
+pub fn agent_group_update(
+    station_client: &StationClient,
+    input: AgentGroupUpdateInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     let id = input.id.trim().to_string();
     if id.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "id is required", None);
@@ -2069,7 +2157,7 @@ pub fn agent_group_update(input: AgentGroupUpdateInput, token: &str) -> AppResul
         "member_agent_ids": agent_group_member_ids_json(input.member_agent_ids),
         "orchestration_mode": input.orchestration_mode.unwrap_or_else(|| "sequential".to_string()),
     });
-    match station_client::request_json(
+    match station_client.request_json(
         Method::POST,
         "/sub-agent/agent/ecosystem/group/update",
         token,
@@ -2084,13 +2172,17 @@ pub fn agent_group_update(input: AgentGroupUpdateInput, token: &str) -> AppResul
     }
 }
 
-pub fn agent_group_delete(input: AgentGroupDeleteInput, token: &str) -> AppResult<StubPayload> {
+pub fn agent_group_delete(
+    station_client: &StationClient,
+    input: AgentGroupDeleteInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     let id = input.id.trim().to_string();
     if id.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "id is required", None);
     }
     let body = json!({ "id": id });
-    match station_client::request_json(
+    match station_client.request_json(
         Method::POST,
         "/sub-agent/agent/ecosystem/group/delete",
         token,
@@ -2105,8 +2197,8 @@ pub fn agent_group_delete(input: AgentGroupDeleteInput, token: &str) -> AppResul
     }
 }
 
-pub fn agent_group_list(token: &str) -> AppResult<StubPayload> {
-    match station_client::request_json(
+pub fn agent_group_list(station_client: &StationClient, token: &str) -> AppResult<StubPayload> {
+    match station_client.request_json(
         Method::POST,
         "/sub-agent/agent/ecosystem/group/list",
         token,
@@ -2121,7 +2213,11 @@ pub fn agent_group_list(token: &str) -> AppResult<StubPayload> {
     }
 }
 
-pub fn topic_comment_create(input: TopicCommentCreateInput, token: &str) -> AppResult<StubPayload> {
+pub fn topic_comment_create(
+    station_client: &StationClient,
+    input: TopicCommentCreateInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     let topic_key = input.topic_key.trim().to_string();
     let content = input.content.trim().to_string();
     if topic_key.is_empty() || content.is_empty() {
@@ -2132,7 +2228,7 @@ pub fn topic_comment_create(input: TopicCommentCreateInput, token: &str) -> AppR
         );
     }
     let body = json!({ "topic_key": topic_key, "content": content });
-    match station_client::request_json(
+    match station_client.request_json(
         Method::POST,
         "/sub-agent/agent/ecosystem/comment/create",
         token,
@@ -2147,7 +2243,11 @@ pub fn topic_comment_create(input: TopicCommentCreateInput, token: &str) -> AppR
     }
 }
 
-pub fn topic_comment_delete(input: TopicCommentDeleteInput, token: &str) -> AppResult<StubPayload> {
+pub fn topic_comment_delete(
+    station_client: &StationClient,
+    input: TopicCommentDeleteInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     let topic_key = input.topic_key.trim().to_string();
     let comment_id = input.comment_id.trim().to_string();
     if topic_key.is_empty() || comment_id.is_empty() {
@@ -2158,7 +2258,7 @@ pub fn topic_comment_delete(input: TopicCommentDeleteInput, token: &str) -> AppR
         );
     }
     let body = json!({ "topic_key": topic_key, "comment_id": comment_id });
-    match station_client::request_json(
+    match station_client.request_json(
         Method::POST,
         "/sub-agent/agent/ecosystem/comment/delete",
         token,
@@ -2173,13 +2273,17 @@ pub fn topic_comment_delete(input: TopicCommentDeleteInput, token: &str) -> AppR
     }
 }
 
-pub fn topic_comment_list(input: TopicCommentListInput, token: &str) -> AppResult<StubPayload> {
+pub fn topic_comment_list(
+    station_client: &StationClient,
+    input: TopicCommentListInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     let topic_key = input.topic_key.trim().to_string();
     if topic_key.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "topic_key is required", None);
     }
     let body = json!({ "topic_key": topic_key });
-    match station_client::request_json(
+    match station_client.request_json(
         Method::POST,
         "/sub-agent/agent/ecosystem/comment/list",
         token,
@@ -2194,7 +2298,11 @@ pub fn topic_comment_list(input: TopicCommentListInput, token: &str) -> AppResul
     }
 }
 
-pub fn agent_task_create(input: AgentTaskCreateInput, token: &str) -> AppResult<StubPayload> {
+pub fn agent_task_create(
+    station_client: &StationClient,
+    input: AgentTaskCreateInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     let title = input.title.trim().to_string();
     let agent_id = input.agent_id.trim().to_string();
     if title.is_empty() || agent_id.is_empty() {
@@ -2211,7 +2319,7 @@ pub fn agent_task_create(input: AgentTaskCreateInput, token: &str) -> AppResult<
         "priority": input.priority.unwrap_or_else(|| "medium".to_string()),
         "topic_key": input.topic_key.unwrap_or_default(),
     });
-    match station_client::request_json(
+    match station_client.request_json(
         Method::POST,
         "/sub-agent/agent/task/create",
         token,
@@ -2226,9 +2334,13 @@ pub fn agent_task_create(input: AgentTaskCreateInput, token: &str) -> AppResult<
     }
 }
 
-pub fn agent_task_list(input: AgentTaskListInput, token: &str) -> AppResult<StubPayload> {
+pub fn agent_task_list(
+    station_client: &StationClient,
+    input: AgentTaskListInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     let body = json!({ "agent_id": input.agent_id.unwrap_or_default() });
-    match station_client::request_json(
+    match station_client.request_json(
         Method::POST,
         "/sub-agent/agent/task/list",
         token,
@@ -2243,7 +2355,11 @@ pub fn agent_task_list(input: AgentTaskListInput, token: &str) -> AppResult<Stub
     }
 }
 
-pub fn agent_task_status(input: AgentTaskStatusInput, token: &str) -> AppResult<StubPayload> {
+pub fn agent_task_status(
+    station_client: &StationClient,
+    input: AgentTaskStatusInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     let id = input.id.trim().to_string();
     let status = input.status.trim().to_string();
     if id.is_empty() || status.is_empty() {
@@ -2259,7 +2375,7 @@ pub fn agent_task_status(input: AgentTaskStatusInput, token: &str) -> AppResult<
         "result": input.result.unwrap_or_default(),
         "error": input.error.unwrap_or_default(),
     });
-    match station_client::request_json(
+    match station_client.request_json(
         Method::POST,
         "/sub-agent/agent/task/status",
         token,
@@ -2274,13 +2390,17 @@ pub fn agent_task_status(input: AgentTaskStatusInput, token: &str) -> AppResult<
     }
 }
 
-pub fn agent_task_delete(input: AgentTaskDeleteInput, token: &str) -> AppResult<StubPayload> {
+pub fn agent_task_delete(
+    station_client: &StationClient,
+    input: AgentTaskDeleteInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     let id = input.id.trim().to_string();
     if id.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "id is required", None);
     }
     let body = json!({ "id": id });
-    match station_client::request_json(
+    match station_client.request_json(
         Method::POST,
         "/sub-agent/agent/task/delete",
         token,
@@ -2296,6 +2416,7 @@ pub fn agent_task_delete(input: AgentTaskDeleteInput, token: &str) -> AppResult<
 }
 
 pub fn agent_task_subtask_add(
+    station_client: &StationClient,
     input: AgentTaskSubtaskAddInput,
     token: &str,
 ) -> AppResult<StubPayload> {
@@ -2309,7 +2430,7 @@ pub fn agent_task_subtask_add(
         );
     }
     let body = json!({ "task_id": task_id, "title": title });
-    match station_client::request_json(
+    match station_client.request_json(
         Method::POST,
         "/sub-agent/agent/task/subtask/add",
         token,
@@ -2325,6 +2446,7 @@ pub fn agent_task_subtask_add(
 }
 
 pub fn agent_task_subtask_complete(
+    station_client: &StationClient,
     input: AgentTaskSubtaskCompleteInput,
     token: &str,
 ) -> AppResult<StubPayload> {
@@ -2338,7 +2460,7 @@ pub fn agent_task_subtask_complete(
         );
     }
     let body = json!({ "task_id": task_id, "subtask_id": subtask_id });
-    match station_client::request_json(
+    match station_client.request_json(
         Method::POST,
         "/sub-agent/agent/task/subtask/complete",
         token,
@@ -2354,6 +2476,7 @@ pub fn agent_task_subtask_complete(
 }
 
 pub fn agent_message_translate(
+    station_client: &StationClient,
     input: AgentMessageTranslateInput,
     token: &str,
 ) -> AppResult<StubPayload> {
@@ -2362,7 +2485,7 @@ pub fn agent_message_translate(
         return AppResult::fail(ErrorCode::InvalidArgument, "message_id is required", None);
     }
     let body = json!({ "message_id": message_id, "translation": input.translation });
-    match station_client::request_json(
+    match station_client.request_json(
         Method::POST,
         "/sub-agent/agent/conversation/message/translate",
         token,
@@ -2378,6 +2501,7 @@ pub fn agent_message_translate(
 }
 
 pub fn agent_conversation_archive(
+    station_client: &StationClient,
     input: AgentConversationArchiveInput,
     token: &str,
 ) -> AppResult<StubPayload> {
@@ -2394,7 +2518,7 @@ pub fn agent_conversation_archive(
         "permanent": input.permanent.unwrap_or(false),
         "expected_version": input.expected_version,
     });
-    match station_client::request_json(
+    match station_client.request_json(
         Method::POST,
         "/sub-agent/agent/conversation/archive",
         token,
@@ -2410,6 +2534,7 @@ pub fn agent_conversation_archive(
 }
 
 pub fn agent_conversation_restore(
+    station_client: &StationClient,
     input: AgentConversationRestoreInput,
     token: &str,
 ) -> AppResult<StubPayload> {
@@ -2425,7 +2550,7 @@ pub fn agent_conversation_restore(
         "conversation_id": conversation_id,
         "expected_version": input.expected_version,
     });
-    match station_client::request_json(
+    match station_client.request_json(
         Method::POST,
         "/sub-agent/agent/conversation/restore",
         token,
@@ -2441,6 +2566,7 @@ pub fn agent_conversation_restore(
 }
 
 pub fn agent_conversation_runtime_reset(
+    station_client: &StationClient,
     input: AgentConversationRuntimeResetInput,
     token: &str,
 ) -> AppResult<StubPayload> {
@@ -2463,7 +2589,7 @@ pub fn agent_conversation_runtime_reset(
         "client_idempotency_key": client_idempotency_key,
         "destructive_confirmed": input.destructive_confirmed,
     });
-    match station_client::request_json(
+    match station_client.request_json(
         Method::POST,
         "/sub-agent/agent/conversation/runtime/reset",
         token,
@@ -2532,6 +2658,7 @@ impl RevisionCommand {
 }
 
 fn revision_command<Input: Serialize>(
+    station_client: &StationClient,
     revision: RevisionCommand,
     input: Input,
     token: &str,
@@ -2547,7 +2674,7 @@ fn revision_command<Input: Serialize>(
             )
         }
     };
-    match station_client::request_json_with_policy(
+    match station_client.request_json_with_policy(
         Method::POST,
         path,
         token,
@@ -2560,36 +2687,59 @@ fn revision_command<Input: Serialize>(
     }
 }
 
-pub fn agent_retry_turn(input: AgentRetryTurnInput, token: &str) -> AppResult<StubPayload> {
-    revision_command(RevisionCommand::RetryTurn, input, token)
+pub fn agent_retry_turn(
+    station_client: &StationClient,
+    input: AgentRetryTurnInput,
+    token: &str,
+) -> AppResult<StubPayload> {
+    revision_command(station_client, RevisionCommand::RetryTurn, input, token)
 }
 
 pub fn agent_regenerate_turn(
+    station_client: &StationClient,
     input: AgentRegenerateTurnInput,
     token: &str,
 ) -> AppResult<StubPayload> {
-    revision_command(RevisionCommand::RegenerateTurn, input, token)
+    revision_command(
+        station_client,
+        RevisionCommand::RegenerateTurn,
+        input,
+        token,
+    )
 }
 
 pub fn agent_edit_and_resend(
+    station_client: &StationClient,
     input: AgentEditAndResendInput,
     token: &str,
 ) -> AppResult<StubPayload> {
-    revision_command(RevisionCommand::EditAndResend, input, token)
+    revision_command(station_client, RevisionCommand::EditAndResend, input, token)
 }
 
 pub fn agent_select_active_branch(
+    station_client: &StationClient,
     input: AgentSelectActiveBranchInput,
     token: &str,
 ) -> AppResult<StubPayload> {
-    revision_command(RevisionCommand::SelectActiveBranch, input, token)
+    revision_command(
+        station_client,
+        RevisionCommand::SelectActiveBranch,
+        input,
+        token,
+    )
 }
 
 pub fn agent_tombstone_message(
+    station_client: &StationClient,
     input: AgentTombstoneMessageInput,
     token: &str,
 ) -> AppResult<StubPayload> {
-    revision_command(RevisionCommand::TombstoneMessage, input, token)
+    revision_command(
+        station_client,
+        RevisionCommand::TombstoneMessage,
+        input,
+        token,
+    )
 }
 
 fn turn_queue_entry_json(entry: &agent::TurnQueueEntry) -> Value {
@@ -2979,6 +3129,28 @@ mod tests {
             read,
             LiveStreamItem::Control(LiveStreamControl::DisconnectTransport)
         ));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn replay_catchup_deadline_cancels_a_silent_transport() {
+        let transport = CancellationToken::new();
+        let _deadline =
+            deadline_transport_cancellation(transport.clone(), Duration::from_millis(10));
+
+        tokio::time::timeout(Duration::from_millis(100), transport.cancelled())
+            .await
+            .expect("catchup deadline must cancel a silent replay");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn established_replay_can_disarm_the_catchup_deadline() {
+        let transport = CancellationToken::new();
+        let deadline =
+            deadline_transport_cancellation(transport.clone(), Duration::from_millis(20));
+        drop(deadline);
+
+        tokio::time::sleep(Duration::from_millis(40)).await;
+        assert!(!transport.is_cancelled());
     }
 
     #[test]

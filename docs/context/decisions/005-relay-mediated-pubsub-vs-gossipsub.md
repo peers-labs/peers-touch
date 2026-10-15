@@ -42,7 +42,8 @@ Pros:
 - The relay is the natural place to **stamp `origin_peer_id`** authoritatively — the publisher's claim is overwritten with the authenticated peer ID before fan-out, so receivers' trust gates have a single, simple check.
 - Topology constraint match: the test bench is one relay + few stations; the relay is by design the rendezvous, and every station on it can see every other through it. No new NAT path.
 - Wire format stays in the existing `protocol/frame.go` codec; topic allow-list is one map check.
-- Receiver-side handler can be wired into the existing `relay-client` read loop with the same pattern as `RequestFrame` (already async-dispatched).
+- Receiver-side handler can be wired into the existing `relay-client` read loop
+  with the same asynchronous handoff used by `TunnelOpenFrame`.
 
 Cons:
 - Single point of failure / bottleneck (mitigated: the existing federation already routes all forwards through the relay; this is not a new dependency, just a new use of an existing one).

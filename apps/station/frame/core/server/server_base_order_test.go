@@ -34,3 +34,21 @@ func TestOrderedStartedSubserverNamesStartsFederationLast(t *testing.T) {
 		t.Fatalf("ordered started subservers = %v, want %v", got, want)
 	}
 }
+
+func TestRegisterSubserverUsesRegistrationName(t *testing.T) {
+	base := &BaseServer{
+		opts: &Options{
+			SubserverInstances: map[string]Subserver{},
+		},
+		subServers: map[string]Subserver{},
+	}
+
+	base.registerSubserver("bootstrap", nil)
+
+	if _, ok := base.subServers["bootstrap"]; !ok {
+		t.Fatal("lifecycle map omitted the registration name")
+	}
+	if _, ok := base.opts.SubserverInstances["bootstrap"]; !ok {
+		t.Fatal("instance map omitted the registration name")
+	}
+}

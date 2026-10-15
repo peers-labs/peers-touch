@@ -58,8 +58,10 @@ export const HISTORICAL_EXCLUSIONS = [
   'docs/knowledge/invariants/development-close-is-coordinated.md',
   'docs/knowledge/invariants/dev-resource-declaration-before-write.md',
   'docs/knowledge/invariants/functional-before-broad-acceptance.md',
+  'docs/knowledge/invariants/machine-ledger-workspace-isolation.md',
   'docs/knowledge/invariants/owner-rooted-workflow-binding.md',
   'docs/knowledge/invariants/plan-mount-is-run-bound.md',
+  'docs/knowledge/invariants/stable-plan-amendments.md',
   'docs/knowledge/invariants/workspace-active-work-is-local.md',
 ];
 

@@ -10,6 +10,7 @@ import hmac
 import ipaddress
 import json
 import os
+import re
 import secrets
 import shutil
 import socket
@@ -21,6 +22,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
@@ -116,6 +118,7 @@ OWNER_ID = runtime_manifest.RUNTIME_OWNER_ID
 PROFILE = "four"
 SLOT = 5
 SOCIAL_ACCEPTANCE_SLOT = 12
+SOCIAL_CROSS_STATION_SLOT = 13
 STATION_ID = "station-four"
 SECONDARY_PROFILE = "fiveArm"
 SECONDARY_STATION_ID = "station-five-arm"
@@ -131,6 +134,13 @@ SOCIAL_ACCEPTANCE_TASK_IDS = frozenset(
     {"SDA-02-desktop-proof", "SDA-03-formal-proof"}
 )
 SOCIAL_ACCEPTANCE_JOURNEY = "SOC-SEC-J01-J09"
+SOCIAL_CROSS_STATION_PLAN_ID = "CROSS-STATION-SOCIAL-NATIVE-20261003"
+SOCIAL_CROSS_STATION_TASK_ID = "CSS-09-final-proof"
+SOCIAL_CROSS_STATION_JOURNEY = "SOC-SEC-J10-J12"
+SOCIAL_CROSS_STATION_RESULT_KIND = "social-cross-station-suite-result"
+SOCIAL_CROSS_STATION_RUNTIME_MANIFEST_KIND = (
+    "social-cross-station-suite-runtime-manifest"
+)
 SOCIAL_ACCEPTANCE_IDS = (
     "SOC-SEC-AS01",
     "SOC-SEC-AS02",
@@ -142,11 +152,11 @@ SOCIAL_ACCEPTANCE_IDS = (
     "SOC-SEC-AS08",
     "SOC-SEC-AS09",
     "SOC-SEC-AS10",
-    "SOC-SEC-AS12",
     "SOC-SEC-AS13",
     "SOC-SEC-AS15",
     "SOC-SEC-AS16",
 )
+SOCIAL_ACCEPTANCE_HISTORICAL_IDS = ("SOC-SEC-AS12",)
 SOCIAL_ACCEPTANCE_RUNTIME_SCENARIOS = (
     "desktop-pre-restart",
     "desktop-continuity",
@@ -196,6 +206,65 @@ SOCIAL_ACCEPTANCE_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
         "requireReceiverVisibleProof": True,
         "allowClientReplacement": True,
     }
+)
+SOCIAL_CROSS_STATION_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
+    {
+        "scope": "suite",
+        "entryCheckId": "focused-social-suite",
+        "scenarioIds": [
+            "AS17",
+            "AS18",
+            "AS19",
+            "AS20",
+            "AS21",
+            "AS22",
+            "AS23",
+            "AS24",
+            "same-station-regression",
+        ],
+        "maxProvisioningRuns": 1,
+        "maxClientLaunches": 3,
+        "minWarmReuseRate": 0.8,
+        "requireAttachOnlyScenarios": True,
+        "requireReceiverVisibleProof": True,
+        "allowClientReplacement": True,
+    }
+)
+SOCIAL_CROSS_STATION_CLIENT_BINDINGS = (
+    ("cross-station-social-alice", "alice", PROFILE, STATION_ID),
+    (
+        "cross-station-social-bob",
+        "bob",
+        SECONDARY_PROFILE,
+        SECONDARY_STATION_ID,
+    ),
+    (
+        "cross-station-social-eve",
+        "eve",
+        SECONDARY_PROFILE,
+        SECONDARY_STATION_ID,
+    ),
+    (
+        "cross-station-social-bob2",
+        "bob",
+        SECONDARY_PROFILE,
+        SECONDARY_STATION_ID,
+    ),
+)
+PRIVATE_PUBLISH_RECONCILING_STATES = frozenset(
+    {
+        "UNKNOWN_COMMIT",
+        "REMOTE_DELIVERY_PENDING",
+        "REMOTE_DELIVERY_RETRYING",
+    }
+)
+SOCIAL_CROSS_STATION_LAUNCHED_CLIENT_IDS = (
+    "cross-station-social-alice",
+    "cross-station-social-bob",
+    "cross-station-social-bob2",
+)
+SOCIAL_CROSS_STATION_FIXTURE_ONLY_CLIENT_IDS = (
+    "cross-station-social-eve",
 )
 W9_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
     {
@@ -696,7 +765,7 @@ W8_SCENARIOS = (
 
 SOCIAL_ACCEPTANCE_SCENARIO_MAP = {
     "private-comment": ("SOC-SEC-AS06", "SOC-SEC-AS16"),
-    "social-expansion": ("SOC-SEC-AS05", "SOC-SEC-AS12", "SOC-SEC-AS13"),
+    "social-expansion": ("SOC-SEC-AS05", "SOC-SEC-AS13"),
     "social-subtype": ("SOC-SEC-AS01",),
     "social-object": ("SOC-SEC-AS07",),
     "social-delete-block": ("SOC-SEC-AS09",),
@@ -707,6 +776,7 @@ SOCIAL_ACCEPTANCE_SCENARIO_MAP = {
 def _social_acceptance_scenario_registry(
     scenario_id: str,
     *,
+    journey_id: str,
     work_item_id: str,
     task_id: str,
 ) -> Mapping[str, ScenarioDefinition]:
@@ -714,7 +784,7 @@ def _social_acceptance_scenario_registry(
     return {
         scenario_id: replace(
             scenario,
-            journey_id=SOCIAL_ACCEPTANCE_JOURNEY,
+            journey_id=journey_id,
             work_item_id=work_item_id,
             result_prefix=Path(task_id),
             result_task_id=task_id,
@@ -785,6 +855,141 @@ def _json_bytes(value: Mapping[str, Any]) -> bytes:
         separators=(",", ":"),
         sort_keys=True,
     ).encode("utf-8")
+
+
+def _proto_varint(value: int) -> bytes:
+    if value < 0:
+        raise ValueError("protobuf varint must be non-negative")
+    encoded = bytearray()
+    while value > 0x7F:
+        encoded.append((value & 0x7F) | 0x80)
+        value >>= 7
+    encoded.append(value)
+    return bytes(encoded)
+
+
+def _proto_bytes(field_number: int, value: bytes | str) -> bytes:
+    payload = value.encode("utf-8") if isinstance(value, str) else value
+    return (
+        _proto_varint((field_number << 3) | 2)
+        + _proto_varint(len(payload))
+        + payload
+    )
+
+
+def _proto_uint(field_number: int, value: int) -> bytes:
+    return _proto_varint(field_number << 3) + _proto_varint(value)
+
+
+def _read_proto_varint(payload: bytes, offset: int) -> tuple[int, int]:
+    value = 0
+    shift = 0
+    while offset < len(payload) and shift < 70:
+        byte = payload[offset]
+        offset += 1
+        value |= (byte & 0x7F) << shift
+        if byte & 0x80 == 0:
+            return value, offset
+        shift += 7
+    raise ValueError("malformed protobuf varint")
+
+
+def _proto_fields(payload: bytes) -> Iterator[tuple[int, int, int | bytes]]:
+    offset = 0
+    while offset < len(payload):
+        key, offset = _read_proto_varint(payload, offset)
+        field_number = key >> 3
+        wire_type = key & 0x07
+        if field_number == 0:
+            raise ValueError("protobuf field number must be positive")
+        if wire_type == 0:
+            value, offset = _read_proto_varint(payload, offset)
+            yield field_number, wire_type, value
+            continue
+        if wire_type == 1:
+            end = offset + 8
+        elif wire_type == 2:
+            length, offset = _read_proto_varint(payload, offset)
+            end = offset + length
+        elif wire_type == 5:
+            end = offset + 4
+        else:
+            raise ValueError(f"unsupported protobuf wire type {wire_type}")
+        if end > len(payload):
+            raise ValueError("truncated protobuf field")
+        yield field_number, wire_type, payload[offset:end]
+        offset = end
+
+
+def _proto_first_bytes(payload: bytes, field_number: int) -> bytes:
+    for candidate, wire_type, value in _proto_fields(payload):
+        if candidate == field_number and wire_type == 2:
+            assert isinstance(value, bytes)
+            return value
+    raise ValueError(f"protobuf field {field_number} is missing")
+
+
+def _decode_peers_payload(payload: bytes) -> bytes:
+    any_message = _proto_first_bytes(payload, 3)
+    return _proto_first_bytes(any_message, 2)
+
+
+def _decode_access_login_gate(payload: bytes) -> dict[str, str | int]:
+    decision = _proto_first_bytes(_decode_peers_payload(payload), 1)
+    attempt_id = _proto_first_bytes(decision, 2).decode("utf-8")
+    current_gate_id = _proto_first_bytes(decision, 3).decode("utf-8")
+    for field_number, wire_type, value in _proto_fields(decision):
+        if field_number != 4 or wire_type != 2:
+            continue
+        assert isinstance(value, bytes)
+        gate_id = _proto_first_bytes(value, 1).decode("utf-8")
+        if gate_id != current_gate_id:
+            continue
+        fields = list(_proto_fields(value))
+        scalar = {
+            field: candidate
+            for field, candidate_wire, candidate in fields
+            if candidate_wire == 0
+        }
+        text = {
+            field: candidate.decode("utf-8")
+            for field, candidate_wire, candidate in fields
+            if candidate_wire == 2 and isinstance(candidate, bytes)
+        }
+        if scalar.get(2) != 2:
+            raise ValueError("current access gate is not AUTH_LOGIN")
+        return {
+            "attempt_id": attempt_id,
+            "gate_id": gate_id,
+            "action_id": text.get(10, ""),
+            "schema_revision": int(scalar.get(11, 0)),
+            "schema_digest": text.get(12, ""),
+        }
+    raise ValueError("current access gate is missing")
+
+
+def _decode_access_login(payload: bytes) -> tuple[str, str]:
+    response = _decode_peers_payload(payload)
+    login = _proto_first_bytes(response, 2)
+    tokens = _proto_first_bytes(login, 1)
+    actor_ref = _proto_first_bytes(login, 4)
+    token = _proto_first_bytes(tokens, 2).decode("utf-8")
+    actor_ptid = _proto_first_bytes(actor_ref, 2).decode("utf-8")
+    return token, actor_ptid
+
+
+def _station_proto_post(url: str, payload: bytes) -> bytes:
+    request = urllib.request.Request(
+        url,
+        data=payload,
+        headers={
+            "Accept": "application/protobuf",
+            "Content-Type": "application/protobuf",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return response.read()
 
 
 def _sha256(value: bytes | str) -> str:
@@ -872,6 +1077,47 @@ def _moments_harness(
     return result
 
 
+_NATIVE_APP_ERROR_CODES = frozenset(
+    {
+        "NOT_IMPLEMENTED",
+        "INVALID_ARGUMENT",
+        "UNAUTHORIZED",
+        "FORBIDDEN",
+        "NOT_FOUND",
+        "CONFLICT",
+        "AGENT_CANVAS_SINGLE_AGENT_NOT_READY",
+        "INTERNAL_ERROR",
+    }
+)
+
+
+def _privacy_safe_native_app_error(app_result: object) -> str:
+    if not isinstance(app_result, Mapping):
+        return "UNKNOWN"
+    error = app_result.get("error")
+    if not isinstance(error, Mapping):
+        return "UNKNOWN"
+    code = error.get("code")
+    safe_code = code if code in _NATIVE_APP_ERROR_CODES else "UNKNOWN"
+    message = error.get("message")
+    if not isinstance(message, str):
+        return safe_code
+    safe_message = re.sub(r"https?://\S+", "<url>", message)
+    safe_message = re.sub(r"ptid:[^\s,;]+", "<ptid>", safe_message)
+    safe_message = re.sub(
+        r"(?<!\w)(?:/[A-Za-z0-9._-]+){2,}",
+        "<path>",
+        safe_message,
+    )
+    safe_message = re.sub(
+        r"\b(?:[A-Fa-f0-9]{24,}|[A-Za-z0-9_-]{32,})\b",
+        "<opaque>",
+        safe_message,
+    )
+    safe_message = " ".join(safe_message.split())[:240]
+    return f"{safe_code}: {safe_message}" if safe_message else safe_code
+
+
 def _native_invoke_json(
     client: FoundationRuntimeClient,
     command: str,
@@ -909,9 +1155,13 @@ def _native_invoke_json(
         or app_result.get("ok") is not True
         or not isinstance(app_result.get("data"), Mapping)
     ):
+        error_summary = _privacy_safe_native_app_error(app_result)
         raise RuntimeOwnerBlocked(
             "FIXTURE_OWNER_UNAVAILABLE",
-            f"Native command {command!r} returned a failed AppResult",
+            (
+                f"Native command {command!r} returned a failed AppResult "
+                f"({error_summary})"
+            ),
             resource=f"fixture-action:{command}",
         )
     status = app_result["data"].get("status")
@@ -1099,12 +1349,15 @@ def _publish_friends_moment(
             "Social Desktop private draft was not retained",
             resource=f"fixture-draft:{draft_id}",
         )
-    for attempt in range(3):
+    for attempt in range(30):
         published = _moments_harness(client, "publishFriendsDraft")
-        if published.get("state") != "UNKNOWN_COMMIT":
+        if (
+            published.get("state")
+            not in PRIVATE_PUBLISH_RECONCILING_STATES
+        ):
             break
-        if attempt < 2:
-            time.sleep(0.25)
+        if attempt < 29:
+            time.sleep(1)
     post_id = published.get("transientPostId")
     if (
         published.get("state") != "PUBLISHED"
@@ -1128,11 +1381,19 @@ def _http_get(
     url: str,
     *,
     authorization: str | None = None,
+    headers: Mapping[str, str] | None = None,
 ) -> tuple[int, bytes]:
-    headers = {"Accept": "application/x-protobuf"}
+    request_headers = {
+        "Accept": "application/x-protobuf",
+        **dict(headers or {}),
+    }
     if authorization is not None:
-        headers["Authorization"] = authorization
-    request = urllib.request.Request(url, headers=headers, method="GET")
+        request_headers["Authorization"] = authorization
+    request = urllib.request.Request(
+        url,
+        headers=request_headers,
+        method="GET",
+    )
     try:
         with urllib.request.urlopen(request, timeout=15) as response:
             return response.status, response.read()
@@ -1144,6 +1405,92 @@ def _http_get(
             "Social Desktop direct HTTP probe failed",
             resource="station:station-four",
         ) from error
+
+
+def _station_login(
+    station_url: str,
+    *,
+    station_peer_id: str,
+    account: str,
+    password: str,
+) -> tuple[str, str]:
+    device_id = f"css09-eve-{secrets.token_hex(8)}"
+    lifecycle_generation = 1
+    client = b"".join(
+        (
+            _proto_bytes(1, "desktop"),
+            _proto_bytes(2, "0.1.0"),
+            _proto_bytes(3, device_id),
+            _proto_uint(5, lifecycle_generation),
+        )
+    )
+    start_request = b"".join(
+        (
+            _proto_bytes(1, station_url),
+            _proto_bytes(2, client),
+            _proto_bytes(4, station_peer_id),
+        )
+    )
+    try:
+        gate = _decode_access_login_gate(
+            _station_proto_post(
+                f"{station_url.rstrip('/')}/actor/access/start",
+                start_request,
+            )
+        )
+        login = b"".join(
+            (
+                _proto_bytes(1, account),
+                _proto_bytes(2, password),
+                _proto_bytes(3, "desktop-native"),
+            )
+        )
+        submit_request = b"".join(
+            (
+                _proto_bytes(1, str(gate["attempt_id"])),
+                _proto_bytes(2, str(gate["gate_id"])),
+                _proto_uint(3, 2),
+                _proto_bytes(4, login),
+                _proto_bytes(7, str(gate["action_id"])),
+                _proto_bytes(8, station_peer_id),
+                _proto_bytes(9, device_id),
+                _proto_uint(10, lifecycle_generation),
+                _proto_uint(11, int(gate["schema_revision"])),
+                _proto_bytes(12, str(gate["schema_digest"])),
+                _proto_bytes(13, str(uuid.uuid4())),
+            )
+        )
+        token, actor_ptid = _decode_access_login(
+            _station_proto_post(
+                f"{station_url.rstrip('/')}/actor/access/submit",
+                submit_request,
+            )
+        )
+    except (
+        urllib.error.HTTPError,
+        urllib.error.URLError,
+        OSError,
+        TimeoutError,
+        UnicodeDecodeError,
+        ValueError,
+    ) as error:
+        raise RuntimeOwnerBlocked(
+            "FIXTURE_OWNER_UNAVAILABLE",
+            "Cross-Station Social fixture login failed",
+            resource="fixture-account:eve",
+        ) from error
+    if (
+        not isinstance(token, str)
+        or not token
+        or not isinstance(actor_ptid, str)
+        or not actor_ptid.startswith("ptid:")
+    ):
+        raise RuntimeOwnerBlocked(
+            "FIXTURE_OWNER_UNAVAILABLE",
+            "Cross-Station Social fixture login returned no canonical identity",
+            resource="fixture-account:eve",
+        )
+    return token, actor_ptid
 
 
 def _run_social_acceptance_pre_restart(
@@ -1491,12 +1838,48 @@ def _prepare_remote_group_fixture(
         created.get("groupUlid"),
         "remote Group ULID",
     )
+
+    def authoritative_local_group() -> Mapping[str, Any] | None:
+        snapshot = _chat_harness(
+            primary_client,
+            "syncGroup",
+            {
+                "groupUlid": group_ulid,
+                "limit": 50,
+                "maxPages": 1,
+            },
+            timeout=15,
+        )
+        members = snapshot.get("memberPtids")
+        if (
+            snapshot.get("groupUlid") == group_ulid
+            and isinstance(members, Sequence)
+            and not isinstance(members, (str, bytes))
+            and local_member_ptid in members
+        ):
+            return snapshot
+        return None
+
+    try:
+        wait_until(
+            authoritative_local_group,
+            "W8 authoritative local Group creation",
+            timeout=120,
+            interval=1,
+        )
+    except Exception as error:
+        raise RuntimeOwnerBlocked(
+            "FIXTURE_OWNER_UNAVAILABLE",
+            "W8 local Group did not become authoritative",
+            resource="fixture:remote-private-recipient-group",
+        ) from error
+
     added = _chat_harness(
         primary_client,
-        "addFederatedGroupMember",
+        "inviteToGroup",
         {
             "groupUlid": group_ulid,
-            "member": {"ptid": remote_actor_ptid},
+            "memberPtids": [remote_actor_ptid],
         },
     )
     if added.get("groupUlid") != group_ulid:
@@ -1509,19 +1892,20 @@ def _prepare_remote_group_fixture(
     def authoritative_membership() -> Mapping[str, Any] | None:
         snapshot = _chat_harness(
             primary_client,
-            "groupLifecycleSnapshot",
-            {"groupUlid": group_ulid},
+            "syncGroup",
+            {
+                "groupUlid": group_ulid,
+                "limit": 50,
+                "maxPages": 1,
+            },
             timeout=15,
         )
-        members = snapshot.get("members")
+        members = snapshot.get("memberPtids")
         if (
-            isinstance(members, Sequence)
+            snapshot.get("groupUlid") == group_ulid
+            and isinstance(members, Sequence)
             and not isinstance(members, (str, bytes))
-            and any(
-                isinstance(member, Mapping)
-                and member.get("ptid") == remote_actor_ptid
-                for member in members
-            )
+            and remote_actor_ptid in members
         ):
             return snapshot
         return None
@@ -1559,6 +1943,18 @@ def _revoke_remote_fixture_device(
             resource=f"fixture-device:{client.spec.profile}",
         )
     return revoked
+
+
+def _revoke_remote_fixture_device_if_pending(
+    client: FoundationRuntimeClient,
+    *,
+    readiness: Mapping[str, Any],
+    state: dict[str, bool],
+) -> None:
+    if state.get("complete") is True:
+        return
+    _revoke_remote_fixture_device(client, readiness=readiness)
+    state["complete"] = True
 
 
 def _prepare_private_content_keys(client: FoundationRuntimeClient) -> None:
@@ -1617,6 +2013,28 @@ def _wait_for_private_moment_state(
     timeout_seconds: float = 30.0,
     poll_seconds: float = 0.25,
 ) -> Mapping[str, Any]:
+    return _wait_for_private_moment_states(
+        client,
+        post_id=post_id,
+        expected_states=(expected_state,),
+        actor_label=actor_label,
+        timeout_seconds=timeout_seconds,
+        poll_seconds=poll_seconds,
+    )
+
+
+def _wait_for_private_moment_states(
+    client: FoundationRuntimeClient,
+    *,
+    post_id: str,
+    expected_states: Sequence[str],
+    actor_label: str,
+    timeout_seconds: float = 30.0,
+    poll_seconds: float = 0.25,
+) -> Mapping[str, Any]:
+    accepted_states = frozenset(expected_states)
+    if not accepted_states:
+        raise ValueError("at least one private Moment state is required")
     deadline = time.monotonic() + max(0.0, timeout_seconds)
     last_projection: Mapping[str, Any] = {}
     while True:
@@ -1625,7 +2043,7 @@ def _wait_for_private_moment_state(
             "readPrivateMoment",
             {"postId": post_id},
         )
-        if last_projection.get("state") == expected_state:
+        if last_projection.get("state") in accepted_states:
             return last_projection
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -1634,7 +2052,8 @@ def _wait_for_private_moment_state(
     raise RuntimeOwnerBlocked(
         "CLIENT_RUNTIME_UNAVAILABLE",
         (
-            f"{actor_label} private Moment did not reach {expected_state} "
+            f"{actor_label} private Moment did not reach one of "
+            f"{sorted(accepted_states)} "
             f"(state={last_projection.get('state')!r}, "
             f"errorCode={last_projection.get('errorCode')!r})"
         ),
@@ -1705,6 +2124,388 @@ def _prepare_accepted_friendship(
         bob,
         target_ptid=alice_ptid,
         actor_label="Bob",
+    )
+
+
+def _prepare_cross_station_social_fixture(
+    alice: FoundationRuntimeClient,
+    bob: FoundationRuntimeClient,
+) -> dict[str, str]:
+    alice_identity = _moments_harness(alice, "federatedActorIdentity")
+    bob_identity = _moments_harness(bob, "federatedActorIdentity")
+    alice_ptid = _required_text(
+        alice_identity.get("actorPtid"),
+        "cross-station Alice PTID",
+    )
+    bob_ptid = _required_text(
+        bob_identity.get("actorPtid"),
+        "cross-station Bob PTID",
+    )
+    alice_station = _required_text(
+        alice_identity.get("homeStationPeerId"),
+        "cross-station Alice Home Station",
+    )
+    bob_station = _required_text(
+        bob_identity.get("homeStationPeerId"),
+        "cross-station Bob Home Station",
+    )
+    if alice_ptid == bob_ptid or alice_station == bob_station:
+        raise RuntimeOwnerBlocked(
+            "FIXTURE_OWNER_UNAVAILABLE",
+            "Cross-Station Social actors did not resolve to distinct identities",
+            resource="fixture:cross-station-social-actors",
+        )
+
+    authority = _moments_harness(alice, "federationJoinAuthority")
+    federation_id = _required_text(
+        authority.get("federationId"),
+        "cross-station Federation ID",
+    )
+    federation_endpoint = _required_text(
+        authority.get("federationEndpoint"),
+        "cross-station Federation endpoint",
+    )
+    members = _moments_harness(
+        alice,
+        "federationMemberStations",
+        {"federationId": federation_id},
+    )
+    station_peer_ids = members.get("stationPeerIds")
+    if not isinstance(station_peer_ids, Sequence) or isinstance(
+        station_peer_ids,
+        (str, bytes),
+    ):
+        raise RuntimeOwnerBlocked(
+            "FIXTURE_OWNER_UNAVAILABLE",
+            "Cross-Station Social Federation membership is invalid",
+            resource="fixture:cross-station-social-federation",
+        )
+    if bob_station not in station_peer_ids:
+        joined = _moments_harness(
+            bob,
+            "joinAcceptanceFederation",
+            {
+                "federationEndpoint": federation_endpoint,
+                "federationId": federation_id,
+            },
+        )
+        if (
+            joined.get("federationId") != federation_id
+            or joined.get("status") != "active"
+        ):
+            raise RuntimeOwnerBlocked(
+                "FIXTURE_OWNER_UNAVAILABLE",
+                "fiveArm did not join the Cross-Station Social Federation",
+                resource="fixture:cross-station-social-federation",
+            )
+    for client, expected_station, label in (
+        (alice, alice_station, "Alice"),
+        (bob, bob_station, "Bob"),
+    ):
+        projected = _moments_harness(
+            client,
+            "federationMemberStations",
+            {"federationId": federation_id},
+        )
+        projected_ids = projected.get("stationPeerIds")
+        if (
+            not isinstance(projected_ids, Sequence)
+            or isinstance(projected_ids, (str, bytes))
+            or alice_station not in projected_ids
+            or bob_station not in projected_ids
+            or expected_station not in projected_ids
+        ):
+            raise RuntimeOwnerBlocked(
+                "FIXTURE_OWNER_UNAVAILABLE",
+                f"{label} does not observe the complete shared Federation",
+                resource="fixture:cross-station-social-federation",
+            )
+    bob_handle = _required_text(
+        bob_identity.get("federatedHandle"),
+        "cross-station Bob handle",
+    )
+    _wait_for_federated_locator(
+        alice,
+        federated_handle=bob_handle,
+        expected_home_station_peer_id=bob_station,
+    )
+    _wait_for_federated_profile(
+        alice,
+        federated_handle=bob_handle,
+        expected_home_station_peer_id=bob_station,
+    )
+    resolved = _wait_for_federated_actor_resolution(
+        alice,
+        federation_id=federation_id,
+        federated_handle=bob_handle,
+    )
+    if (
+        resolved.get("actorPtid") != bob_ptid
+        or resolved.get("homeStationPeerId") != bob_station
+    ):
+        raise RuntimeOwnerBlocked(
+            "FIXTURE_OWNER_UNAVAILABLE",
+            "Alice did not resolve Bob through the shared Federation",
+            resource="fixture:cross-station-social-actors",
+        )
+    sent = _moments_harness(
+        alice,
+        "sendFriendRequest",
+        {
+            "actorPtid": bob_ptid,
+            "federationId": federation_id,
+            "homeStationPeerId": bob_station,
+        },
+    )
+    _required_text(sent.get("requestId"), "cross-station friend request")
+    accepted = _moments_harness(
+        bob,
+        "acceptFriendRequest",
+        {"actorPtid": alice_ptid},
+    )
+    if accepted.get("accepted") is not True:
+        raise RuntimeOwnerBlocked(
+            "FIXTURE_OWNER_UNAVAILABLE",
+            "Bob did not accept the Cross-Station Social friend request",
+            resource="fixture:cross-station-social-friendship",
+        )
+    _wait_for_accepted_friendship_projection(
+        alice,
+        target_ptid=bob_ptid,
+        actor_label="Alice",
+    )
+    _wait_for_accepted_friendship_projection(
+        bob,
+        target_ptid=alice_ptid,
+        actor_label="Bob",
+    )
+    return {
+        "alicePtid": alice_ptid,
+        "aliceStationPeerId": alice_station,
+        "bobPtid": bob_ptid,
+        "bobStationPeerId": bob_station,
+        "federationId": federation_id,
+    }
+
+
+def _wait_for_federated_locator(
+    client: FoundationRuntimeClient,
+    *,
+    federated_handle: str,
+    expected_home_station_peer_id: str,
+    timeout_seconds: float = 300.0,
+    poll_interval_seconds: float = 5.0,
+    monotonic: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+    http_get: Callable[..., tuple[int, bytes]] = _http_get,
+) -> Mapping[str, Any]:
+    query = urllib.parse.urlencode(
+        {
+            "handle": federated_handle,
+            "timeout": "15s",
+        }
+    )
+    url = (
+        f"{client.station_url.rstrip('/')}"
+        f"/sub-bootstrap/locator/lookup?{query}"
+    )
+    deadline = monotonic() + timeout_seconds
+    while True:
+        status, body = http_get(
+            url,
+            headers={"Accept": "application/json"},
+        )
+        if status == 200:
+            try:
+                envelope = json.loads(body.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as error:
+                raise RuntimeOwnerBlocked(
+                    "FIXTURE_OWNER_UNAVAILABLE",
+                    "Cross-Station Social locator probe returned invalid JSON",
+                    resource="fixture:cross-station-social-locator",
+                ) from error
+            data = (
+                envelope.get("data")
+                if isinstance(envelope, Mapping)
+                and isinstance(envelope.get("data"), Mapping)
+                else {}
+            )
+            if (
+                data.get("home_station_peer_id")
+                != expected_home_station_peer_id
+                or not str(data.get("federated_handle") or "").strip()
+            ):
+                raise RuntimeOwnerBlocked(
+                    "FIXTURE_OWNER_UNAVAILABLE",
+                    "Cross-Station Social locator probe returned stale identity",
+                    resource="fixture:cross-station-social-locator",
+                )
+            return data
+        if status != 404:
+            raise RuntimeOwnerBlocked(
+                "FIXTURE_OWNER_UNAVAILABLE",
+                (
+                    "Cross-Station Social locator convergence probe returned "
+                    f"HTTP {status}"
+                ),
+                resource="fixture:cross-station-social-locator",
+            )
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            break
+        sleep(min(poll_interval_seconds, remaining))
+    raise RuntimeOwnerBlocked(
+        "FIXTURE_OWNER_UNAVAILABLE",
+        "Cross-Station Social locator did not converge before the deadline",
+        resource="fixture:cross-station-social-locator",
+    )
+
+
+def _wait_for_federated_actor_resolution(
+    client: FoundationRuntimeClient,
+    *,
+    federation_id: str,
+    federated_handle: str,
+    timeout_seconds: float = 300.0,
+    poll_interval_seconds: float = 5.0,
+    monotonic: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+) -> Mapping[str, Any]:
+    deadline = monotonic() + timeout_seconds
+    while True:
+        result = client.driver.execute_async_script(
+            """
+            const payload = arguments[0];
+            const done = arguments[arguments.length - 1];
+            const harness = window.__PT_ACCEPTANCE__?.moments;
+            if (
+              !harness
+              || typeof harness.resolveFederatedActorIdentity !== 'function'
+            ) {
+              done({
+                ok: false,
+                code: 'HARNESS_UNAVAILABLE',
+              });
+              return;
+            }
+            harness.resolveFederatedActorIdentity(payload)
+              .then((value) => done({ ok: true, value }))
+              .catch((error) => done({
+                ok: false,
+                code: String(error?.code || 'INTERNAL_ERROR'),
+              }));
+            """,
+            {
+                "federationId": federation_id,
+                "federatedHandle": federated_handle,
+            },
+        )
+        if not isinstance(result, Mapping):
+            raise RuntimeOwnerBlocked(
+                "FIXTURE_OWNER_UNAVAILABLE",
+                "Cross-Station Social resolver returned invalid data",
+                resource="fixture:cross-station-social-resolver",
+            )
+        if result.get("ok") is True:
+            value = result.get("value")
+            if isinstance(value, Mapping):
+                return value
+            raise RuntimeOwnerBlocked(
+                "FIXTURE_OWNER_UNAVAILABLE",
+                "Cross-Station Social resolver returned invalid identity",
+                resource="fixture:cross-station-social-resolver",
+            )
+        code = str(result.get("code") or "")
+        if code not in {"NOT_FOUND", "INTERNAL_ERROR"}:
+            raise RuntimeOwnerBlocked(
+                "FIXTURE_OWNER_UNAVAILABLE",
+                (
+                    "Cross-Station Social resolver failed with "
+                    f"{code or 'UNKNOWN'}"
+                ),
+                resource="fixture:cross-station-social-resolver",
+            )
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            break
+        sleep(min(poll_interval_seconds, remaining))
+    raise RuntimeOwnerBlocked(
+        "FIXTURE_OWNER_UNAVAILABLE",
+        "Cross-Station Social resolver did not converge before the deadline",
+        resource="fixture:cross-station-social-resolver",
+    )
+
+
+def _wait_for_federated_profile(
+    client: FoundationRuntimeClient,
+    *,
+    federated_handle: str,
+    expected_home_station_peer_id: str,
+    timeout_seconds: float = 300.0,
+    poll_interval_seconds: float = 5.0,
+    monotonic: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+    http_get: Callable[..., tuple[int, bytes]] = _http_get,
+) -> Mapping[str, Any]:
+    query = urllib.parse.urlencode(
+        {
+            "handle": federated_handle,
+            "timeout": "15s",
+        }
+    )
+    url = (
+        f"{client.station_url.rstrip('/')}"
+        f"/sub-bootstrap/federation/resolve?{query}"
+    )
+    deadline = monotonic() + timeout_seconds
+    while True:
+        status, body = http_get(
+            url,
+            headers={"Accept": "application/json"},
+        )
+        if status == 200:
+            try:
+                envelope = json.loads(body.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as error:
+                raise RuntimeOwnerBlocked(
+                    "FIXTURE_OWNER_UNAVAILABLE",
+                    "Cross-Station Social profile probe returned invalid JSON",
+                    resource="fixture:cross-station-social-profile",
+                ) from error
+            data = (
+                envelope.get("data")
+                if isinstance(envelope, Mapping)
+                and isinstance(envelope.get("data"), Mapping)
+                else {}
+            )
+            if (
+                data.get("home_station_peer_id")
+                != expected_home_station_peer_id
+                or not str(data.get("handle") or "").strip()
+            ):
+                raise RuntimeOwnerBlocked(
+                    "FIXTURE_OWNER_UNAVAILABLE",
+                    "Cross-Station Social profile probe returned stale identity",
+                    resource="fixture:cross-station-social-profile",
+                )
+            return data
+        if status < 500 and status != 404:
+            raise RuntimeOwnerBlocked(
+                "FIXTURE_OWNER_UNAVAILABLE",
+                (
+                    "Cross-Station Social profile convergence probe returned "
+                    f"HTTP {status}"
+                ),
+                resource="fixture:cross-station-social-profile",
+            )
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            break
+        sleep(min(poll_interval_seconds, remaining))
+    raise RuntimeOwnerBlocked(
+        "FIXTURE_OWNER_UNAVAILABLE",
+        "Cross-Station Social profile did not converge before the deadline",
+        resource="fixture:cross-station-social-profile",
     )
 
 
@@ -2316,6 +3117,10 @@ def _require_clean_source(
     return identity
 
 
+_SOCIAL_CROSS_STATION_PLAN_PATH = (
+    "docs/architecture/domains/social/cross-station/execution-plans/"
+    "20261003-native-private-social/plan.md"
+)
 _SOCIAL_ACCEPTANCE_SOURCE_DELTA_PREFIXES = (
     "apps/desktop/src-tauri/src/interface/tauri_commands/messaging_recovery.rs",
     "apps/desktop/src-tauri/src/social/mod.rs",
@@ -2327,6 +3132,7 @@ _SOCIAL_ACCEPTANCE_SOURCE_DELTA_PREFIXES = (
     "docs/architecture/domains/social/core/",
     "tooling/acceptance/",
     "tooling/development/secure_content/",
+    "tooling/devctl/",
     "tooling/scripts/acceptance-run.py",
     "tooling/scripts/acceptance-run-test.py",
     "tooling/skills/pt-github-review/FRESHNESS.md",
@@ -2348,16 +3154,68 @@ def _social_acceptance_source_delta_allowed(paths: Sequence[str]) -> bool:
     )
 
 
+def _social_acceptance_plan_lifecycle_projection(
+    repo_root: Path,
+    runtime_source: str,
+    control_head: str,
+) -> Mapping[str, Any] | None:
+    plan_commits = subprocess.run(
+        [
+            "git",
+            "rev-list",
+            "--reverse",
+            f"{runtime_source}..{control_head}",
+            "--",
+            _SOCIAL_CROSS_STATION_PLAN_PATH,
+        ],
+        cwd=repo_root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    commits = plan_commits.stdout.splitlines()
+    if plan_commits.returncode != 0 or not commits:
+        return None
+    lifecycle_control = commits[-1]
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "tooling/scripts/plan_lifecycle_source.py",
+            "--repo-root",
+            str(repo_root),
+            "--plan",
+            _SOCIAL_CROSS_STATION_PLAN_PATH,
+            "--runtime-source",
+            runtime_source,
+            "--control-head",
+            lifecycle_control,
+        ],
+        cwd=repo_root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    try:
+        projection = json.loads(completed.stdout)
+    except json.JSONDecodeError:
+        return None
+    if (
+        completed.returncode != 0
+        or not isinstance(projection, Mapping)
+        or projection.get("runtimeSourceCommit") != runtime_source
+        or projection.get("controlHead") != lifecycle_control
+        or projection.get("planPath") != _SOCIAL_CROSS_STATION_PLAN_PATH
+        or not isinstance(projection.get("transitionDigest"), str)
+        or projection.get("transitionCount") != len(commits)
+    ):
+        return None
+    return projection
+
+
 def _require_social_acceptance_source(
     repo_root: Path,
     result_root: Path,
 ) -> Mapping[str, str | int]:
-    try:
-        return _require_clean_source(repo_root, result_root)
-    except RuntimeOwnerBlocked as error:
-        if error.code != "SOURCE_IDENTITY_MISMATCH":
-            raise
-
     process = subprocess.run(
         [
             sys.executable,
@@ -2400,12 +3258,28 @@ def _require_social_acceptance_source(
             resource="source:workspace",
         )
 
-    candidates: list[tuple[int, Path, Mapping[str, Any]]] = []
-    for aggregate_path in (
-        Path.home() / ".peers-touch" / "dev" / "workspaces"
-    ).glob(
-        "*/development/secure-content/W12A/activation/*/aggregate/result.json"
-    ):
+    candidates: list[
+        tuple[int, Path, Mapping[str, Any], Mapping[str, Any] | None]
+    ] = []
+    aggregate_paths = {
+        *result_root.glob(
+            "W12A/activation/*/aggregate/result.json"
+        ),
+        *result_root.glob(
+            "CSS-08A/activation/*/aggregate/result.json"
+        ),
+        *(
+            Path.home() / ".peers-touch" / "dev" / "workspaces"
+        ).glob(
+            "*/development/secure-content/W12A/activation/*/aggregate/result.json"
+        ),
+        *(
+            Path.home() / ".peers-touch" / "dev" / "workspaces"
+        ).glob(
+            "*/development/secure-content/CSS-08A/activation/*/aggregate/result.json"
+        ),
+    }
+    for aggregate_path in sorted(aggregate_paths):
         try:
             aggregate = json.loads(aggregate_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
@@ -2453,8 +3327,23 @@ def _require_social_acceptance_source(
             capture_output=True,
             text=True,
         ).stdout.splitlines()
-        if not _social_acceptance_source_delta_allowed(changed):
+        plan_changed = _SOCIAL_CROSS_STATION_PLAN_PATH in changed
+        allowed_delta = tuple(
+            path
+            for path in changed
+            if path != _SOCIAL_CROSS_STATION_PLAN_PATH
+        )
+        if not _social_acceptance_source_delta_allowed(allowed_delta):
             continue
+        plan_projection = None
+        if plan_changed:
+            plan_projection = _social_acceptance_plan_lifecycle_projection(
+                repo_root,
+                generation,
+                str(control_identity["head"]),
+            )
+            if plan_projection is None:
+                continue
         distance = int(
             subprocess.run(
                 [
@@ -2469,7 +3358,9 @@ def _require_social_acceptance_source(
                 text=True,
             ).stdout.strip()
         )
-        candidates.append((distance, aggregate_path, aggregate))
+        candidates.append(
+            (distance, aggregate_path, aggregate, plan_projection)
+        )
 
     if not candidates:
         raise RuntimeOwnerBlocked(
@@ -2477,7 +3368,7 @@ def _require_social_acceptance_source(
             "no reusable exact-product-source schema activation is available",
             resource="source:plan-lifecycle",
         )
-    _distance, aggregate_path, aggregate = min(
+    _distance, aggregate_path, aggregate, plan_projection = min(
         candidates,
         key=lambda item: (item[0], str(item[1])),
     )
@@ -2496,6 +3387,7 @@ def _require_social_acceptance_source(
                             _SOCIAL_ACCEPTANCE_SOURCE_DELTA_PREFIXES
                         ),
                         "controlHead": control_identity["head"],
+                        "planLifecycle": plan_projection,
                         "runtimeSourceCommit": runtime_source,
                     },
                     separators=(",", ":"),
@@ -2504,6 +3396,8 @@ def _require_social_acceptance_source(
             ),
             "sourceEvidenceRoot": str(aggregate_path.parents[4]),
             "sourceEvidenceWorkspaceId": str(aggregate["workspace_id"]),
+            "activationAggregatePath": str(aggregate_path),
+            "activationAggregateDigest": str(aggregate["result_digest"]),
         }
     )
     projected["worktreeSetDigest"] = _sha256(
@@ -2521,6 +3415,33 @@ def _require_social_acceptance_source(
         )
     )
     return projected
+
+
+def _activate_social_desktop_acceptance_journey(
+    repo_root: Path,
+) -> Mapping[str, Any]:
+    try:
+        return _activate_scenario_journey(
+            repo_root,
+            SOCIAL_ACCEPTANCE_JOURNEY,
+            work_item_id=None,
+            task_id=None,
+            plan_id=SOCIAL_ACCEPTANCE_PLAN_ID,
+            allowed_task_ids=SOCIAL_ACCEPTANCE_TASK_IDS,
+        )
+    except RuntimeOwnerBlocked as legacy_error:
+        if legacy_error.code != "DECLARATION_TRANSITION_FAILED":
+            raise
+        try:
+            return _activate_scenario_journey(
+                repo_root,
+                SOCIAL_CROSS_STATION_JOURNEY,
+                work_item_id=SOCIAL_CROSS_STATION_PLAN_ID,
+                task_id=SOCIAL_CROSS_STATION_TASK_ID,
+                plan_id=SOCIAL_CROSS_STATION_PLAN_ID,
+            )
+        except RuntimeOwnerBlocked:
+            raise legacy_error
 
 
 def _free_port(start: int, reserved: set[int]) -> int:
@@ -3721,10 +4642,19 @@ def _resolve_canonical_private_schema_attestation(
 ) -> runtime_manifest.CanonicalPrivateSchemaAttestationBinding:
     roots_by_intent = {
         "FINAL_CUT": (
-            result_root / "W12" / "final-cut" / identity["head"] / profile_id
+            result_root / "W12" / "final-cut" / identity["head"] / profile_id,
         ),
         "SCHEMA_ACTIVATION": (
-            result_root / "W12A" / "activation" / identity["head"] / profile_id
+            result_root
+            / "CSS-08A"
+            / "activation"
+            / identity["head"]
+            / profile_id,
+            result_root
+            / "W12A"
+            / "activation"
+            / identity["head"]
+            / profile_id,
         ),
     }
     if (
@@ -3737,7 +4667,11 @@ def _resolve_canonical_private_schema_attestation(
             "canonical private schema attestation intent policy is invalid",
             resource=f"schema-attestation:{service_id}",
         )
-    roots = tuple(roots_by_intent[intent] for intent in accepted_intents)
+    roots = tuple(
+        root
+        for intent in accepted_intents
+        for root in roots_by_intent[intent]
+    )
     for root in roots:
         candidates = sorted(
             root.glob(
@@ -4018,6 +4952,7 @@ def _wait_for_moments_snapshot(
             if any(
                 marker in message
                 for marker in (
+                    "acceptance harness not mounted",
                     "moments.acceptance.nativeRuntimeIdentityMissing",
                     "Script execution timed out",
                 )
@@ -4047,6 +4982,64 @@ def _wait_for_moments_snapshot(
             resource=f"client:{client.spec.profile}",
         )
     return snapshot
+
+
+def _refresh_and_wait_for_moments_snapshot(
+    client: FoundationRuntimeClient,
+) -> Mapping[str, Any]:
+    driver = client.driver
+    if driver is None:
+        raise RuntimeOwnerBlocked(
+            "CLIENT_RUNTIME_UNAVAILABLE",
+            f"client {client.spec.profile} has no attached WebDriver",
+            resource=f"client:{client.spec.profile}",
+        )
+    marker = secrets.token_hex(32)
+    try:
+        driver.execute_script(
+            "window.__PT_ACCEPTANCE_RELOAD_MARKER__ = arguments[0]",
+            marker,
+        )
+        driver.refresh()
+    except Exception as error:
+        raise RuntimeOwnerBlocked(
+            "CLIENT_RUNTIME_UNAVAILABLE",
+            redact_text(
+                f"client {client.spec.profile} renderer reload failed: {error}"
+            ),
+            resource=f"client:{client.spec.profile}",
+        ) from error
+
+    def reload_complete() -> bool | None:
+        try:
+            return driver.execute_script(
+                """
+                return (
+                  window.__PT_ACCEPTANCE_RELOAD_MARKER__ !== arguments[0]
+                  && document.readyState === 'complete'
+                )
+                """,
+                marker,
+            ) is True
+        except Exception:
+            return None
+
+    try:
+        wait_until(
+            reload_complete,
+            f"{client.spec.profile} renderer reload",
+            timeout=60,
+        )
+    except Exception as error:
+        raise RuntimeOwnerBlocked(
+            "CLIENT_RUNTIME_UNAVAILABLE",
+            redact_text(
+                f"client {client.spec.profile} renderer did not reload: "
+                f"{_error_message_with_cleanup(error)}"
+            ),
+            resource=f"client:{client.spec.profile}",
+        ) from error
+    return _wait_for_moments_snapshot(client)
 
 
 def _receiver_ui_probe(
@@ -4331,6 +5324,34 @@ def _write_receiver_ui_evidence(
     )
 
 
+def _write_social_cross_station_scenario_evidence(
+    owner_root: Path,
+    *,
+    scenario_id: str,
+    run_id: str,
+    source_commit: str,
+    control_commit: str,
+    fixture_epoch: str,
+    observations: Mapping[str, Any],
+) -> Path:
+    artifact: dict[str, Any] = {
+        "artifactKind": "social-cross-station-scenario-evidence",
+        "schemaVersion": 1,
+        "scenarioId": scenario_id,
+        "status": "PASS",
+        "runId": run_id,
+        "sourceCommit": source_commit,
+        "controlCommit": control_commit,
+        "fixtureEpoch": fixture_epoch,
+        "observations": dict(observations),
+    }
+    artifact["artifactDigest"] = runtime_manifest.canonical_digest(artifact)
+    return _write_immutable_json(
+        owner_root / "scenarios" / scenario_id / "result.json",
+        artifact,
+    )
+
+
 def _result_relative_path(
     result: Mapping[str, Any],
     *,
@@ -4602,6 +5623,8 @@ def _manifest_payload(
     fixture_ref: Mapping[str, str],
     fixture_digest: str,
     clients: Sequence[Mapping[str, Any]],
+    controller_profile: str = PROFILE,
+    controller_slot: int = SLOT,
     continuation: Mapping[str, Any] | None = None,
     post_cut_epoch_id: str | None = None,
     final_cut_bindings: Mapping[str, Mapping[str, str]] | None = None,
@@ -4630,7 +5653,10 @@ def _manifest_payload(
         "run_id": run_id,
         "journey_id": journey_id,
         "source": source,
-        "controller_binding": {"profile_id": PROFILE, "slot": SLOT},
+        "controller_binding": {
+            "profile_id": controller_profile,
+            "slot": controller_slot,
+        },
         "services": {
             service_id: dict(service)
             for service_id, service in services.items()
@@ -5431,10 +6457,17 @@ class W7RuntimeOwner:
         *,
         repo_root: Path,
         result_root: Path,
+        runtime_root: Path | None = None,
     ) -> None:
         self.repo_root = repo_root.resolve(strict=True)
         self.result_root = result_root.resolve()
-        self.runtime_root = self.result_root / "runtime-owner"
+        canonical_runtime_root = self.result_root / "runtime-owner"
+        self.runtime_root = (
+            runtime_root.resolve()
+            if runtime_root is not None
+            else canonical_runtime_root
+        )
+        self.shared_identity_root = canonical_runtime_root / "shared"
 
     def preflight(self) -> dict[str, Any]:
         identity = _require_clean_source(self.repo_root, self.result_root)
@@ -6147,6 +7180,1168 @@ class W7RuntimeOwner:
             formal_acceptance=True,
             expected_slot=slot,
         )
+
+    def run_social_cross_station_suite(
+        self,
+        *,
+        slot: int = SOCIAL_CROSS_STATION_SLOT,
+    ) -> dict[str, Any]:
+        if slot != SOCIAL_CROSS_STATION_SLOT:
+            raise RuntimeOwnerBlocked(
+                "CONTROLLER_BINDING_MISMATCH",
+                f"Cross-Station Social requires slot {SOCIAL_CROSS_STATION_SLOT}",
+                resource="profile:four",
+            )
+        identity = _require_social_acceptance_source(
+            self.repo_root,
+            self.result_root,
+        )
+        control_commit = str(identity.get("controlHead") or identity["head"])
+        result_path = (
+            self.result_root
+            / SOCIAL_CROSS_STATION_TASK_ID.removesuffix("-final-proof")
+            / control_commit
+            / "suite"
+            / "result.json"
+        )
+        if result_path.exists():
+            raise RuntimeOwnerBlocked(
+                "RESULT_PUBLICATION_CONFLICT",
+                "Cross-Station Social Suite result already exists",
+                resource="result:social-cross-station",
+            )
+        resolved, profile_env = _resolve_machine_profile(
+            self.repo_root,
+            expected_slot=slot,
+        )
+        _secondary_profile_path, secondary_profile_env = (
+            _resolve_secondary_profile(resolved)
+        )
+        run_id = (
+            f"social-cross-station-{control_commit[:12]}-{os.getpid()}-"
+            f"{time.time_ns()}"
+        )
+        owner_root = self.runtime_root / run_id
+        attestation_store = owner_root / "attestation-store"
+        acceptance_run_id = (
+            datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+            + "-"
+            + _sha256(run_id)[:32]
+        )
+        (
+            attestation_store
+            / str(identity["workspaceId"])
+            / SOCIAL_CROSS_STATION_JOURNEY
+            / acceptance_run_id
+        ).mkdir(parents=True, mode=0o700)
+        transport_stack, station_endpoints = _open_station_tunnels(
+            (
+                (STATION_ID, profile_env),
+                (SECONDARY_STATION_ID, secondary_profile_env),
+            )
+        )
+        station_url = station_endpoints[STATION_ID].transport_url
+        secondary_station_url = station_endpoints[
+            SECONDARY_STATION_ID
+        ].transport_url
+        try:
+            with _environment(
+                {
+                    "PT_ACCEPTANCE_ARTIFACT_ROOT": str(attestation_store),
+                    "PT_ACCEPTANCE_WORKSPACE_ID": str(identity["workspaceId"]),
+                    "PT_ACCEPTANCE_GATE_ID": SOCIAL_CROSS_STATION_JOURNEY,
+                    "PT_ACCEPTANCE_RUN_ID": acceptance_run_id,
+                }
+            ):
+                primary_attestation = produce_station_attestation(
+                    environment_id="cross-station-social-native",
+                    run_id=run_id,
+                    service_id=STATION_ID,
+                    station_url=station_url,
+                    profile_env=profile_env,
+                    require_runtime_identity=True,
+                    remote_source_identity_provider=resolve_remote_source_identity,
+                )
+                secondary_attestation = produce_station_attestation(
+                    environment_id="cross-station-social-native",
+                    run_id=run_id,
+                    service_id=SECONDARY_STATION_ID,
+                    station_url=secondary_station_url,
+                    profile_env=secondary_profile_env,
+                    require_runtime_identity=True,
+                    remote_source_identity_provider=resolve_remote_source_identity,
+                )
+        except Exception as error:
+            _close_runtime_stack(transport_stack, primary_error=error)
+            raise RuntimeOwnerBlocked(
+                "SERVICE_ATTESTATION_UNAVAILABLE",
+                _error_message_with_cleanup(error),
+                resource="station:cross-station-social",
+            ) from error
+        local_proto_digest = source_proto_digest(self.repo_root)
+        if any(
+            (
+                not commits_match(attestation.live_commit, identity["head"])
+                or attestation.protocol_digest != local_proto_digest
+            )
+            for attestation in (primary_attestation, secondary_attestation)
+        ):
+            error = RuntimeOwnerBlocked(
+                "SOURCE_ATTESTATION_MISMATCH",
+                "Cross-Station Social Stations are not on the activated source",
+                resource="station:cross-station-social",
+            )
+            _close_runtime_stack(transport_stack, primary_error=error)
+            raise error
+
+        source_evidence_root = Path(
+            str(identity.get("sourceEvidenceRoot") or self.result_root)
+        )
+        schema_identity = dict(identity)
+        schema_identity["workspaceId"] = str(
+            identity.get("sourceEvidenceWorkspaceId")
+            or identity["workspaceId"]
+        )
+        try:
+            primary_schema = _resolve_canonical_private_schema_attestation(
+                source_evidence_root,
+                self.repo_root,
+                schema_identity,
+                primary_attestation,
+                service_id=STATION_ID,
+                profile_id=PROFILE,
+                attested_endpoint=profile_env["PT_STATION_URL"],
+                accepted_intents=("SCHEMA_ACTIVATION",),
+            )
+            secondary_schema = _resolve_canonical_private_schema_attestation(
+                source_evidence_root,
+                self.repo_root,
+                schema_identity,
+                secondary_attestation,
+                service_id=SECONDARY_STATION_ID,
+                profile_id=SECONDARY_PROFILE,
+                attested_endpoint=secondary_profile_env["PT_STATION_URL"],
+                accepted_intents=("SCHEMA_ACTIVATION",),
+            )
+        except Exception as error:
+            _close_runtime_stack(transport_stack, primary_error=error)
+            raise
+
+        fixture_epoch = "css09-" + _sha256(run_id)[:32]
+        ledger = SuiteRuntimeLedger(
+            SOCIAL_CROSS_STATION_RUNTIME_REUSE,
+            suite_runtime_id=run_id,
+            source_digest=str(identity["head"]),
+            fixture_epoch=fixture_epoch,
+        )
+        ledger.record(
+            SuiteRuntimeAction.PROVISION,
+            resource_id="runtime:social-cross-station",
+        )
+        scenario_results: dict[str, dict[str, Any]] = {}
+        supporting_artifacts: list[str] = []
+        manifest_digests: dict[str, str] = {}
+        max_concurrent_clients = 0
+        with _runtime_cleanup_scope(transport_stack) as stack:
+            suffix = _sha256(f"{run_id}:{secrets.token_hex(16)}")[:10]
+            password = f"Css09Aa1!{suffix}"
+            accounts = {
+                "alice": _register_runtime_account(
+                    station_url,
+                    role="alice",
+                    suffix=suffix,
+                    password=password,
+                ),
+                "bob": _register_runtime_account(
+                    secondary_station_url,
+                    role="bob",
+                    suffix=suffix,
+                    password=password,
+                ),
+                "eve": _register_runtime_account(
+                    secondary_station_url,
+                    role="eve",
+                    suffix=suffix,
+                    password=password,
+                ),
+            }
+            for role in ("alice", "bob", "eve"):
+                ledger.record(
+                    SuiteRuntimeAction.ACCOUNT_PROVISION,
+                    resource_id=f"account:{role}",
+                )
+
+            reserved_ports: set[int] = set()
+            active_client_ids: set[int] = set()
+            clients: dict[str, FoundationRuntimeClient] = {}
+            payloads: dict[str, dict[str, Any]] = {}
+            for index, client_id in enumerate(
+                SOCIAL_CROSS_STATION_LAUNCHED_CLIENT_IDS[:2]
+            ):
+                actor_role = "alice" if index == 0 else "bob"
+                service_id = STATION_ID if index == 0 else SECONDARY_STATION_ID
+                client = _make_client(
+                    repo_root=self.repo_root,
+                    runtime_root=owner_root,
+                    station_url=(
+                        station_url if index == 0 else secondary_station_url
+                    ),
+                    profile_env=(
+                        profile_env if index == 0 else secondary_profile_env
+                    ),
+                    source_commit=str(identity["head"]),
+                    client_id=client_id,
+                    runtime_kind="native-tauri",
+                    port_bases=(
+                        4930 + index * 20,
+                        5110 + index * 20,
+                        5895 + index * 20,
+                    ),
+                    reserved_ports=reserved_ports,
+                )
+                stack.callback(
+                    _stop_client_or_raise,
+                    client,
+                    purpose="Cross-Station Social Suite",
+                    active_client_ids=active_client_ids,
+                )
+                active_client_ids.add(id(client))
+                snapshot = _start_client(
+                    client,
+                    account=accounts[actor_role],
+                    password=password,
+                )
+                _wait_for_device_enrollment(client)
+                _wait_for_mls_readiness(client)
+                _prepare_private_content_keys(client)
+                clients[client_id] = client
+                payloads[client_id] = _client_payload(
+                    client_id,
+                    actor_role,
+                    client,
+                    snapshot,
+                    service_roles={"station": service_id},
+                )
+                ledger.record(
+                    SuiteRuntimeAction.CLIENT_LAUNCH,
+                    resource_id=f"client:{client_id}",
+                )
+                ledger.record(
+                    SuiteRuntimeAction.LOGIN,
+                    resource_id=f"session:{client_id}",
+                )
+                max_concurrent_clients = max(
+                    max_concurrent_clients,
+                    len(active_client_ids),
+                )
+
+            alice = clients[SOCIAL_CROSS_STATION_LAUNCHED_CLIENT_IDS[0]]
+            bob = clients[SOCIAL_CROSS_STATION_LAUNCHED_CLIENT_IDS[1]]
+            recovery_phrase, recovery_preparation = _prepare_portable_recovery(
+                bob
+            )
+            fixture_identity = _prepare_cross_station_social_fixture(alice, bob)
+            eve_token, eve_ptid = _station_login(
+                secondary_station_url,
+                station_peer_id=secondary_attestation.runtime_identity,
+                account=accounts["eve"],
+                password=password,
+            )
+            fixture_payload: dict[str, Any] = {
+                "schema_version": 1,
+                "kind": runtime_manifest.FIXTURE_MANIFEST_KIND,
+                "fixture_set_id": "cross-station-social-actors",
+                "source_checkpoint": str(identity["head"]),
+                "handles": [],
+            }
+            fixture_payload["manifest_digest"] = (
+                runtime_manifest.canonical_digest(fixture_payload)
+            )
+            fixture_path = _write_immutable_json(
+                owner_root / "fixture.json",
+                fixture_payload,
+            )
+            fixture_digest = str(fixture_payload["manifest_digest"])
+            fixture_evidence: dict[str, Any] = {
+                "artifactKind": "social-cross-station-fixture-evidence",
+                "schemaVersion": 1,
+                "fixtureEpoch": fixture_epoch,
+                "sourceCommit": str(identity["head"]),
+                "actors": {
+                    "alice": {
+                        "actorPtidSha256": _sha256(fixture_identity["alicePtid"]),
+                        "serviceId": STATION_ID,
+                    },
+                    "bob": {
+                        "actorPtidSha256": _sha256(fixture_identity["bobPtid"]),
+                        "serviceId": SECONDARY_STATION_ID,
+                    },
+                    "eve": {
+                        "actorPtidSha256": _sha256(eve_ptid),
+                        "serviceId": SECONDARY_STATION_ID,
+                    },
+                },
+                "federationIdSha256": _sha256(
+                    fixture_identity["federationId"]
+                ),
+            }
+            fixture_evidence["artifactDigest"] = (
+                runtime_manifest.canonical_digest(fixture_evidence)
+            )
+            fixture_evidence_path = _write_immutable_json(
+                owner_root / "fixture-evidence.json",
+                fixture_evidence,
+            )
+            supporting_artifacts.append(str(fixture_evidence_path))
+
+            def write_runtime(
+                variant: str,
+                selected_clients: Mapping[str, FoundationRuntimeClient],
+                selected_payloads: Sequence[Mapping[str, Any]],
+            ) -> Path:
+                runtime_dir = owner_root / "runtime-manifests" / variant
+                fixture_ref = self._copy_fixture_into(
+                    fixture_path,
+                    runtime_dir,
+                )
+                primary_ref = _publish_attestation(
+                    runtime_dir,
+                    primary_attestation,
+                    run_id=run_id,
+                    journey_id=SOCIAL_CROSS_STATION_JOURNEY,
+                    service_id=STATION_ID,
+                )
+                secondary_ref = _publish_attestation(
+                    runtime_dir,
+                    secondary_attestation,
+                    run_id=run_id,
+                    journey_id=SOCIAL_CROSS_STATION_JOURNEY,
+                    service_id=SECONDARY_STATION_ID,
+                )
+                primary_schema_ref = (
+                    _publish_canonical_private_schema_attestation(
+                        runtime_dir,
+                        STATION_ID,
+                        primary_schema,
+                    )
+                )
+                secondary_schema_ref = (
+                    _publish_canonical_private_schema_attestation(
+                        runtime_dir,
+                        SECONDARY_STATION_ID,
+                        secondary_schema,
+                    )
+                )
+                attachment: dict[str, Any] = {
+                    "artifactKind": (
+                        "social-cross-station-client-attachment-manifest"
+                    ),
+                    "schemaVersion": 1,
+                    "runId": run_id,
+                    "variant": variant,
+                    "journeyId": SOCIAL_CROSS_STATION_JOURNEY,
+                    "sourceCommit": str(identity["head"]),
+                    "controlCommit": control_commit,
+                    "workspaceId": str(identity["workspaceId"]),
+                    "worktreeSetDigest": str(identity["worktreeSetDigest"]),
+                    "controllerBinding": {
+                        "profileId": PROFILE,
+                        "slot": slot,
+                    },
+                    "fixtureManifestRef": fixture_ref,
+                    "fixtureManifestDigest": fixture_digest,
+                    "services": {
+                        STATION_ID: {
+                            "profileId": PROFILE,
+                            "runtimeIdentitySha256": _sha256(
+                                primary_attestation.runtime_identity
+                            ),
+                            "attestationRef": primary_ref,
+                            "schemaAttestationRef": primary_schema_ref,
+                        },
+                        SECONDARY_STATION_ID: {
+                            "profileId": SECONDARY_PROFILE,
+                            "runtimeIdentitySha256": _sha256(
+                                secondary_attestation.runtime_identity
+                            ),
+                            "attestationRef": secondary_ref,
+                            "schemaAttestationRef": secondary_schema_ref,
+                        },
+                    },
+                    "clients": [
+                        {
+                            **dict(payload),
+                            "automationSessionIdSha256": _sha256(
+                                str(
+                                    selected_clients[str(payload["id"])]
+                                    .driver.session_id
+                                )
+                            ),
+                        }
+                        for payload in selected_payloads
+                    ],
+                }
+                attachment["manifestDigest"] = (
+                    runtime_manifest.canonical_digest(attachment)
+                )
+                path = _write_immutable_json(
+                    runtime_dir / "runtime.json",
+                    attachment,
+                )
+                manifest_digests[variant] = str(
+                    attachment["manifestDigest"]
+                )
+                supporting_artifacts.append(str(path))
+                return path
+
+            write_runtime(
+                "initial",
+                clients,
+                tuple(payloads.values()),
+            )
+            current_bob = bob
+            scenario_state: dict[str, str] = {}
+            media_path = owner_root / "cross-station-private.png"
+            media_path.write_bytes(W7_PNG_BYTES)
+
+            def publish_typed(
+                payload: Mapping[str, Any],
+                *,
+                label: str,
+            ) -> str:
+                staged = _moments_harness(
+                    alice,
+                    "stagePrivateDraft",
+                    payload,
+                )
+                if staged.get("present") is not True:
+                    raise RuntimeOwnerBlocked(
+                        "CLIENT_RUNTIME_UNAVAILABLE",
+                        f"{label} draft was not retained",
+                        resource="client:cross-station-social-alice",
+                    )
+                result: Mapping[str, Any] = {}
+                for attempt in range(30):
+                    result = _moments_harness(
+                        alice,
+                        "publishPrivateDraft",
+                    )
+                    if (
+                        result.get("state")
+                        not in PRIVATE_PUBLISH_RECONCILING_STATES
+                    ):
+                        break
+                    if attempt < 29:
+                        time.sleep(1)
+                post_id = result.get("transientPostId")
+                if (
+                    result.get("state") != "PUBLISHED"
+                    or not isinstance(post_id, str)
+                    or not post_id
+                ):
+                    raise RuntimeOwnerBlocked(
+                        "CLIENT_RUNTIME_UNAVAILABLE",
+                        (
+                            f"{label} did not reach PUBLISHED "
+                            f"(state={result.get('state')!r}, "
+                            f"errorCode={result.get('errorCode')!r})"
+                        ),
+                        resource="client:cross-station-social-alice",
+                    )
+                return post_id
+
+            def record_scenario(
+                scenario_id: str,
+                *,
+                receiver: FoundationRuntimeClient,
+                visible_text: str,
+                observations: Mapping[str, Any],
+                action_text: str | None = None,
+                open_comments: bool = False,
+                absent_texts: Sequence[str] = (),
+            ) -> None:
+                scenario_path = _write_social_cross_station_scenario_evidence(
+                    owner_root,
+                    scenario_id=scenario_id,
+                    run_id=run_id,
+                    source_commit=str(identity["head"]),
+                    control_commit=control_commit,
+                    fixture_epoch=fixture_epoch,
+                    observations=observations,
+                )
+                ui = _receiver_ui_probe(
+                    receiver,
+                    workstream_id=SOCIAL_CROSS_STATION_TASK_ID,
+                    scenario_id=scenario_id,
+                    action_text=action_text,
+                    visible_text=visible_text,
+                    open_comments=open_comments,
+                    absent_texts=absent_texts,
+                )
+                ui_path = _write_receiver_ui_evidence(
+                    owner_root,
+                    workstream_id=SOCIAL_CROSS_STATION_TASK_ID,
+                    suite_runtime_id=run_id,
+                    source_digest=str(identity["head"]),
+                    fixture_epoch=fixture_epoch,
+                    fixture_manifest_digest=fixture_digest,
+                    scenario_id=scenario_id,
+                    variant_id=scenario_id,
+                    receiver_client_id=next(
+                        client_id
+                        for client_id, candidate in clients.items()
+                        if candidate is receiver
+                    ),
+                    evidence=ui,
+                )
+                refs = [
+                    {
+                        "path": str(scenario_path),
+                        "sha256": _sha256(scenario_path.read_bytes()),
+                    },
+                    {
+                        "path": str(ui_path),
+                        "sha256": _sha256(ui_path.read_bytes()),
+                    },
+                ]
+                resource = (
+                    f"artifact:{ui_path.relative_to(owner_root).as_posix()}:"
+                    f"{refs[1]['sha256']}"
+                )
+                ledger.record(
+                    SuiteRuntimeAction.UI_ACTION,
+                    scenario_id=scenario_id,
+                    resource_id=f"{resource}:ui-action",
+                )
+                ledger.record(
+                    SuiteRuntimeAction.RECEIVER_ASSERTION,
+                    scenario_id=scenario_id,
+                    resource_id=f"{resource}:receiver",
+                )
+                ledger.record(
+                    SuiteRuntimeAction.SUPPORTING_OBSERVATION,
+                    scenario_id=scenario_id,
+                    resource_id=(
+                        f"artifact:{scenario_path.relative_to(owner_root)}:"
+                        f"{refs[0]['sha256']}"
+                    ),
+                )
+                ledger.record(
+                    SuiteRuntimeAction.SCENARIO_END,
+                    scenario_id=scenario_id,
+                )
+                scenario_results[scenario_id] = {
+                    "status": "PASS",
+                    "evidenceRefs": refs,
+                }
+                supporting_artifacts.extend(
+                    (str(scenario_path), str(ui_path))
+                )
+
+            station_endpoints.refresh()
+            ledger.record(
+                SuiteRuntimeAction.SCENARIO_START,
+                scenario_id="AS17",
+            )
+            as17_text = "css09-cross-station-private-media"
+            as17_post = publish_typed(
+                {
+                    "draftId": "css09-as17",
+                    "revision": 1,
+                    "text": as17_text,
+                    "audienceKind": "FRIENDS",
+                    "momentKind": "IMAGE",
+                    "files": [{
+                        "intentId": "css09-as17-image",
+                        "filePath": str(media_path),
+                    }],
+                },
+                label="AS17 private media",
+            )
+            as17_read = _wait_for_private_moment_state(
+                current_bob,
+                post_id=as17_post,
+                expected_state="CONTENT_READY",
+                actor_label="Bob",
+            )
+            as17_media = _moments_harness(
+                current_bob,
+                "readPrivateMoment",
+                {"postId": as17_post, "openMedia": True},
+            ).get("media")
+            if (
+                not isinstance(as17_media, list)
+                or len(as17_media) != 1
+                or not isinstance(as17_media[0], Mapping)
+                or as17_media[0].get("state") != "MEDIA_READY"
+                or as17_media[0].get("plaintextSha256")
+                != _sha256(W7_PNG_BYTES)
+            ):
+                raise RuntimeOwnerBlocked(
+                    "CLIENT_RUNTIME_UNAVAILABLE",
+                    "AS17 media did not decrypt on Bob's Home Station",
+                    resource="client:cross-station-social-bob",
+                )
+            recovery_text = "css09-cross-station-never-opened"
+            recovery_post = _publish_friends_moment(
+                alice,
+                draft_id="css09-as23-never-opened",
+                text=recovery_text,
+            )
+            scenario_state["as17Post"] = as17_post
+            scenario_state["recoveryPost"] = recovery_post
+            record_scenario(
+                "AS17",
+                receiver=current_bob,
+                visible_text=as17_text,
+                observations={
+                    "contentReady": as17_read.get("state") == "CONTENT_READY",
+                    "mediaReady": True,
+                    "textSha256": _sha256(as17_text),
+                    "mediaSha256": _sha256(W7_PNG_BYTES),
+                    "sourceGateIds": [
+                        "social-cross-station-contract",
+                        "social-cross-station-prekey",
+                        "social-cross-station-delivery",
+                    ],
+                },
+            )
+
+            station_endpoints.refresh()
+            ledger.record(
+                SuiteRuntimeAction.SCENARIO_START,
+                scenario_id="AS18",
+            )
+            as18_text = "css09-cross-station-custom-allow"
+            as18_post = publish_typed(
+                {
+                    "draftId": "css09-as18",
+                    "revision": 1,
+                    "text": as18_text,
+                    "audienceKind": "CUSTOM_ALLOW",
+                    "actorPtids": [fixture_identity["bobPtid"]],
+                    "momentKind": "TEXT",
+                },
+                label="AS18 remote custom audience",
+            )
+            as18_read = _wait_for_private_moment_state(
+                current_bob,
+                post_id=as18_post,
+                expected_state="CONTENT_READY",
+                actor_label="Bob",
+            )
+            scenario_state["as18Post"] = as18_post
+            record_scenario(
+                "AS18",
+                receiver=current_bob,
+                visible_text=as18_text,
+                observations={
+                    "audienceKind": as18_read.get("audienceKind"),
+                    "deduplicatedRemoteRecipientCount": 1,
+                    "sourceGateIds": [
+                        "social-cross-station-contract",
+                        "social-cross-station-prekey",
+                    ],
+                },
+            )
+
+            station_endpoints.refresh()
+            ledger.record(
+                SuiteRuntimeAction.SCENARIO_START,
+                scenario_id="AS19",
+            )
+            denied_status, denied_body = _http_get(
+                (
+                    f"{secondary_station_url.rstrip('/')}/api/v1/social/"
+                    f"moments/{as18_post}"
+                ),
+                authorization=f"Bearer {eve_token}",
+                headers={"X-Device-ID": "css09-eve-untrusted-device"},
+            )
+            private_markers = (
+                as18_text.encode("utf-8"),
+                fixture_identity["alicePtid"].encode("utf-8"),
+                fixture_identity["bobPtid"].encode("utf-8"),
+            )
+            if (
+                denied_status != 404
+                or any(marker in denied_body for marker in private_markers)
+            ):
+                raise RuntimeOwnerBlocked(
+                    "CLIENT_RUNTIME_UNAVAILABLE",
+                    "AS19 unauthorized fixture exposed private material",
+                    resource="fixture-account:eve",
+                )
+            record_scenario(
+                "AS19",
+                receiver=current_bob,
+                visible_text=as18_text,
+                observations={
+                    "fixtureOnlyActor": "eve",
+                    "uniformDenialStatus": denied_status,
+                    "responseBodySha256": _sha256(denied_body),
+                    "privateMarkerCount": 0,
+                    "sourceGateIds": [
+                        "social-cross-station-delivery",
+                        "social-cross-station-revocation-recovery",
+                    ],
+                },
+            )
+
+            station_endpoints.refresh()
+            ledger.record(
+                SuiteRuntimeAction.SCENARIO_START,
+                scenario_id="AS20",
+            )
+            as20_text = "css09-cross-station-interaction-parent"
+            as20_comment = "css09-cross-station-comment"
+            as20_post = _publish_friends_moment(
+                alice,
+                draft_id="css09-as20",
+                text=as20_text,
+            )
+            _wait_for_private_moment_state(
+                current_bob,
+                post_id=as20_post,
+                expected_state="CONTENT_READY",
+                actor_label="Bob",
+            )
+            comment = _moments_harness(
+                current_bob,
+                "submitPrivateCommentWithRetry",
+                {"postId": as20_post, "text": as20_comment},
+            )
+            reaction = _moments_harness(
+                current_bob,
+                "reactToPrivateMoment",
+                {"postId": as20_post, "kind": "LOVE"},
+            )
+            alice_comments = _moments_harness(
+                alice,
+                "readPrivateComments",
+                {"postId": as20_post, "refresh": True},
+            )
+            if (
+                comment.get("state") != "COMMENT_POSTED"
+                or not any(
+                    isinstance(item, Mapping)
+                    and item.get("textSha256") == _sha256(as20_comment)
+                    for item in alice_comments.get("comments", ())
+                )
+                or not isinstance(reaction.get("reactions"), list)
+            ):
+                raise RuntimeOwnerBlocked(
+                    "CLIENT_RUNTIME_UNAVAILABLE",
+                    "AS20 interaction did not converge at source authority",
+                    resource="client:cross-station-social-alice",
+                )
+            record_scenario(
+                "AS20",
+                receiver=alice,
+                action_text=as20_text,
+                visible_text=as20_comment,
+                open_comments=True,
+                observations={
+                    "commentPosted": True,
+                    "reactionProjected": True,
+                    "commentTextSha256": _sha256(as20_comment),
+                    "sourceGateIds": ["social-cross-station-interaction"],
+                },
+            )
+
+            station_endpoints.refresh()
+            ledger.record(
+                SuiteRuntimeAction.SCENARIO_START,
+                scenario_id="AS21",
+            )
+            as21_text = "css09-cross-station-reconcile-after-reload"
+            as21_post = _publish_friends_moment(
+                alice,
+                draft_id="css09-as21",
+                text=as21_text,
+            )
+            before_reload = _wait_for_moments_snapshot(current_bob)
+            after_reload = _refresh_and_wait_for_moments_snapshot(current_bob)
+            as21_read = _wait_for_private_moment_state(
+                current_bob,
+                post_id=as21_post,
+                expected_state="CONTENT_READY",
+                actor_label="Bob",
+            )
+            record_scenario(
+                "AS21",
+                receiver=current_bob,
+                visible_text=as21_text,
+                observations={
+                    "contentReady": as21_read.get("state") == "CONTENT_READY",
+                    "rendererReloaded": True,
+                    "bootIdentityStable": (
+                        before_reload.get("bootIdentitySha256")
+                        == after_reload.get("bootIdentitySha256")
+                    ),
+                    "sourceGateIds": ["social-cross-station-delivery"],
+                },
+            )
+
+            station_endpoints.refresh()
+            ledger.record(
+                SuiteRuntimeAction.SCENARIO_START,
+                scenario_id="AS22",
+            )
+            as22_text = "css09-cross-station-revoked"
+            as22_post = _publish_friends_moment(
+                alice,
+                draft_id="css09-as22",
+                text=as22_text,
+            )
+            _wait_for_private_moment_state(
+                current_bob,
+                post_id=as22_post,
+                expected_state="CONTENT_READY",
+                actor_label="Bob",
+            )
+            deletion = _moments_harness(
+                alice,
+                "deletePrivateMoment",
+                {"postId": as22_post},
+            )
+            revoked = _wait_for_private_moment_states(
+                current_bob,
+                post_id=as22_post,
+                expected_states=(
+                    "DELETED_OR_REVOKED",
+                    "NOT_FOUND_OR_NOT_AUTHORIZED",
+                ),
+                actor_label="Bob",
+            )
+            if deletion.get("deleted") is not True:
+                raise RuntimeOwnerBlocked(
+                    "CLIENT_RUNTIME_UNAVAILABLE",
+                    "AS22 deletion did not revoke Bob's projection",
+                    resource="client:cross-station-social-bob",
+                )
+            record_scenario(
+                "AS22",
+                receiver=current_bob,
+                visible_text=as17_text,
+                absent_texts=(as22_text,),
+                observations={
+                    "deleteCommitted": True,
+                    "receiverState": revoked.get("state"),
+                    "sourceGateIds": [
+                        "social-cross-station-revocation-recovery"
+                    ],
+                },
+            )
+
+            station_endpoints.refresh()
+            ledger.record(
+                SuiteRuntimeAction.SCENARIO_START,
+                scenario_id="AS23",
+            )
+            _stop_client_or_raise(
+                current_bob,
+                purpose="Cross-Station Social Bob replacement",
+                active_client_ids=active_client_ids,
+            )
+            clients.pop(SOCIAL_CROSS_STATION_LAUNCHED_CLIENT_IDS[1])
+            bob2_id = SOCIAL_CROSS_STATION_LAUNCHED_CLIENT_IDS[2]
+            bob2 = _make_client(
+                repo_root=self.repo_root,
+                runtime_root=owner_root,
+                station_url=secondary_station_url,
+                profile_env=secondary_profile_env,
+                source_commit=str(identity["head"]),
+                client_id=bob2_id,
+                runtime_kind="native-tauri",
+                port_bases=(4970, 5150, 5935),
+                reserved_ports=reserved_ports,
+            )
+            stack.callback(
+                _stop_client_or_raise,
+                bob2,
+                purpose="Cross-Station Social Suite",
+                active_client_ids=active_client_ids,
+            )
+            active_client_ids.add(id(bob2))
+            bob2_snapshot = _start_client(
+                bob2,
+                account=accounts["bob"],
+                password=password,
+            )
+            ledger.record(
+                SuiteRuntimeAction.CLIENT_REPLACEMENT,
+                scenario_id="AS23",
+                resource_id=f"client:{bob2_id}",
+            )
+            before_recovery = _wait_for_private_moment_state(
+                bob2,
+                post_id=recovery_post,
+                expected_state="RECOVERY_REQUIRED",
+                actor_label="Bob2",
+            )
+            restored = _restore_portable_recovery(bob2, recovery_phrase)
+            recovery_phrase = ""
+            _wait_for_device_enrollment(bob2)
+            recovered = _moments_harness(
+                bob2,
+                "recoverPrivateMoment",
+                {"postId": recovery_post},
+            )
+            if (
+                before_recovery.get("state") != "RECOVERY_REQUIRED"
+                or recovered.get("state") != "CONTENT_READY"
+                or recovered.get("textSha256")
+                != _sha256("css09-cross-station-never-opened")
+            ):
+                raise RuntimeOwnerBlocked(
+                    "CLIENT_RUNTIME_UNAVAILABLE",
+                    "AS23 replacement device did not recover exact history",
+                    resource=f"client:{bob2_id}",
+                )
+            _prepare_private_content_keys(bob2)
+            clients[bob2_id] = bob2
+            payloads[bob2_id] = _client_payload(
+                bob2_id,
+                "bob",
+                bob2,
+                bob2_snapshot,
+                service_roles={"station": SECONDARY_STATION_ID},
+            )
+            payloads.pop(SOCIAL_CROSS_STATION_LAUNCHED_CLIENT_IDS[1])
+            current_bob = bob2
+            max_concurrent_clients = max(
+                max_concurrent_clients,
+                len(active_client_ids),
+            )
+            write_runtime(
+                "replacement",
+                clients,
+                tuple(payloads.values()),
+            )
+            record_scenario(
+                "AS23",
+                receiver=current_bob,
+                visible_text=recovery_text,
+                observations={
+                    "beforeRecovery": "RECOVERY_REQUIRED",
+                    "afterRecovery": "CONTENT_READY",
+                    "preparedRecoveryEpoch": recovery_preparation[
+                        "preparedEpoch"
+                    ],
+                    "restoredRecoveryEpoch": restored["recoveryEpoch"],
+                    "replacementDeviceIdSha256": restored[
+                        "deviceIdSha256"
+                    ],
+                    "sourceGateIds": [
+                        "social-cross-station-revocation-recovery"
+                    ],
+                },
+            )
+
+            station_endpoints.refresh()
+            ledger.record(
+                SuiteRuntimeAction.SCENARIO_START,
+                scenario_id="AS24",
+            )
+            first_replay = _moments_harness(
+                current_bob,
+                "readPrivateMoment",
+                {"postId": recovery_post},
+            )
+            second_replay = _moments_harness(
+                current_bob,
+                "readPrivateMoment",
+                {"postId": recovery_post},
+            )
+            if (
+                first_replay.get("state") != "CONTENT_READY"
+                or second_replay != first_replay
+            ):
+                raise RuntimeOwnerBlocked(
+                    "CLIENT_RUNTIME_UNAVAILABLE",
+                    "AS24 exact receiver replay did not remain idempotent",
+                    resource=f"client:{bob2_id}",
+                )
+            record_scenario(
+                "AS24",
+                receiver=current_bob,
+                visible_text=recovery_text,
+                observations={
+                    "exactReplayStable": True,
+                    "projectionDigest": _sha256(
+                        json.dumps(
+                            first_replay,
+                            separators=(",", ":"),
+                            sort_keys=True,
+                        )
+                    ),
+                    "sourceGateIds": [
+                        "social-cross-station-delivery",
+                        "social-cross-station-revocation-recovery",
+                    ],
+                },
+            )
+
+            station_endpoints.refresh()
+            ledger.record(
+                SuiteRuntimeAction.SCENARIO_START,
+                scenario_id="same-station-regression",
+            )
+            public_text = "css09-same-station-public-regression"
+            public = _moments_harness(
+                alice,
+                "publishPublicMoment",
+                {"text": public_text},
+            )
+            public_post_id = _required_text(
+                public.get("transientPostId"),
+                "same-station public Post",
+            )
+            public_status, public_body = _http_get(
+                (
+                    f"{station_url.rstrip('/')}/api/v1/social/"
+                    f"moments/{public_post_id}"
+                )
+            )
+            if public_status != 200 or public_text.encode("utf-8") not in public_body:
+                raise RuntimeOwnerBlocked(
+                    "CLIENT_RUNTIME_UNAVAILABLE",
+                    "same-Station public Social regression failed",
+                    resource="station:station-four",
+                )
+            public_projection = _moments_harness(
+                alice,
+                "findPublicMoment",
+                {"text": public_text},
+            )
+            if (
+                public_projection.get("found") is not True
+                or public_projection.get("textSha256") != _sha256(public_text)
+            ):
+                raise RuntimeOwnerBlocked(
+                    "CLIENT_RUNTIME_UNAVAILABLE",
+                    "same-Station public Social projection did not converge",
+                    resource="client:cross-station-social-alice",
+                )
+            record_scenario(
+                "same-station-regression",
+                receiver=alice,
+                action_text="Public",
+                visible_text=public_text,
+                observations={
+                    "anonymousReadStatus": public_status,
+                    "publicProjectionFound": True,
+                    "publicTextSha256": _sha256(public_text),
+                    "sameStationPrivateGate": "social-private-desktop-e2e",
+                },
+            )
+
+            for client in clients.values():
+                _moments_harness(client, "clearLocalState")
+            eve_token = ""
+            password = ""
+
+        ledger.record(SuiteRuntimeAction.CLEANUP_COMPLETE)
+        suite_report = ledger.require_valid()
+        suite_report_path = _write_immutable_json(
+            owner_root / "suite-runtime.json",
+            suite_report,
+        )
+        supporting_artifacts.append(str(suite_report_path))
+        activation_path = Path(
+            _required_text(
+                identity.get("activationAggregatePath"),
+                "activation aggregate path",
+            )
+        )
+        activation_digest = _required_text(
+            identity.get("activationAggregateDigest"),
+            "activation aggregate digest",
+        )
+        supporting_artifacts.append(str(activation_path))
+        runtime_summary = {
+            "artifactKind": SOCIAL_CROSS_STATION_RUNTIME_MANIFEST_KIND,
+            "schemaVersion": 1,
+            "state": "FIXTURE_READY",
+            "cleanupState": "CLEANED",
+            "runId": run_id,
+            "workspaceId": str(identity["workspaceId"]),
+            "sourceCommit": str(identity["head"]),
+            "controlCommit": control_commit,
+            "worktreeSetDigest": str(identity["worktreeSetDigest"]),
+            "profileBindings": {
+                PROFILE: STATION_ID,
+                SECONDARY_PROFILE: SECONDARY_STATION_ID,
+            },
+            "serviceRuntimeIdentityDigests": {
+                STATION_ID: _sha256(primary_attestation.runtime_identity),
+                SECONDARY_STATION_ID: _sha256(
+                    secondary_attestation.runtime_identity
+                ),
+            },
+            "clientBindings": [
+                {
+                    "clientId": client_id,
+                    "actorRole": actor_role,
+                    "profileId": profile_id,
+                    "serviceId": service_id,
+                    "launched": client_id
+                    in SOCIAL_CROSS_STATION_LAUNCHED_CLIENT_IDS,
+                }
+                for client_id, actor_role, profile_id, service_id
+                in SOCIAL_CROSS_STATION_CLIENT_BINDINGS
+            ],
+            "fixtureEpoch": fixture_epoch,
+            "scenarioManifestDigests": manifest_digests,
+            "suiteRuntimeReportDigest": suite_report["reportDigest"],
+        }
+        result: dict[str, Any] = {
+            "artifactKind": SOCIAL_CROSS_STATION_RESULT_KIND,
+            "schemaVersion": 1,
+            "status": "FUNCTIONAL_PASS",
+            "proofState": "UNPROVEN",
+            "controlCommit": control_commit,
+            "sourceCommit": str(identity["head"]),
+            "workspaceId": str(identity["workspaceId"]),
+            "worktreeSetDigest": str(identity["worktreeSetDigest"]),
+            "runId": run_id,
+            "fixtureEpoch": fixture_epoch,
+            "activation": {
+                "aggregatePath": str(activation_path),
+                "resultDigest": activation_digest,
+                "profiles": [PROFILE, SECONDARY_PROFILE],
+            },
+            "runtimeManifest": runtime_summary,
+            "scenarioResults": scenario_results,
+            "suiteRuntimeReport": str(suite_report_path),
+            "suiteRuntimeReportDigest": suite_report["reportDigest"],
+            "supportingArtifacts": sorted(set(supporting_artifacts)),
+            "resourceReuse": {
+                "provisioningRuns": 1,
+                "clientLaunches": 3,
+                "maxConcurrentNativeClients": max_concurrent_clients,
+                "newAccountRegistrations": 3,
+                "stationBuilds": 0,
+                "stationDeployments": 0,
+                "desktopBuilds": 0,
+                "clientReplacements": ["bob2"],
+                "fixtureOnlyClients": ["eve"],
+            },
+            "cleanup": {
+                "status": "CLEANED",
+                "activeNativeClients": 0,
+                "activeStationTunnels": 0,
+                "credentialsRetained": False,
+            },
+        }
+        result["resultDigest"] = runtime_manifest.canonical_digest(result)
+        _write_immutable_json(result_path, result)
+        return {
+            **result,
+            "runtimeRoot": str(owner_root),
+            "suiteResult": str(result_path),
+        }
 
     def run_w9_suite(self) -> dict[str, Any]:
         return self._run_platform_suite(
@@ -7790,20 +9985,23 @@ class W7RuntimeOwner:
             identity.get("sourceEvidenceWorkspaceId")
             or identity["workspaceId"]
         )
-        declaration = _activate_scenario_journey(
-            self.repo_root,
-            journey_id,
-            work_item_id=None if formal_acceptance else W8_WORK_ITEM_ID,
-            task_id=None if formal_acceptance else W8_TASK_ID,
-            plan_id=plan_id,
-            allowed_task_ids=(
-                SOCIAL_ACCEPTANCE_TASK_IDS
-                if formal_acceptance
-                else None
-            ),
+        declaration = (
+            _activate_social_desktop_acceptance_journey(self.repo_root)
+            if formal_acceptance
+            else _activate_scenario_journey(
+                self.repo_root,
+                journey_id,
+                work_item_id=W8_WORK_ITEM_ID,
+                task_id=W8_TASK_ID,
+                plan_id=plan_id,
+            )
         )
         work_item_id = str(declaration["workItemId"])
         task_id = str(declaration["taskId"])
+        journey_id = _required_text(
+            declaration.get("journeyId"),
+            "Social Desktop owner Journey",
+        )
         resolved, profile_env = _resolve_machine_profile(
             self.repo_root,
             expected_slot=expected_slot,
@@ -8049,8 +10247,7 @@ class W7RuntimeOwner:
             )
             _bind_reusable_actor_identity(
                 remote_client,
-                self.runtime_root
-                / "shared"
+                self.shared_identity_root
                 / W8_REMOTE_IDENTITY_SCOPE
                 / "actor-identity",
             )
@@ -8068,6 +10265,13 @@ class W7RuntimeOwner:
             )
             _wait_for_device_enrollment(remote_client)
             remote_readiness = _wait_for_mls_readiness(remote_client)
+            remote_device_cleanup = {"complete": False}
+            stack.callback(
+                _revoke_remote_fixture_device_if_pending,
+                remote_client,
+                readiness=remote_readiness,
+                state=remote_device_cleanup,
+            )
             ledger.record(
                 SuiteRuntimeAction.CLIENT_LAUNCH,
                 resource_id=f"client:{remote_client_id}",
@@ -8116,9 +10320,10 @@ class W7RuntimeOwner:
                     )
                 )
             )
-            _revoke_remote_fixture_device(
+            _revoke_remote_fixture_device_if_pending(
                 remote_client,
                 readiness=remote_readiness,
+                state=remote_device_cleanup,
             )
             _stop_client_or_raise(
                 remote_client,
@@ -8574,6 +10779,7 @@ class W7RuntimeOwner:
                     registry=(
                         _social_acceptance_scenario_registry(
                             spec.scenario_id,
+                            journey_id=str(declaration["journeyId"]),
                             work_item_id=work_item_id,
                             task_id=task_id,
                         )
@@ -8730,6 +10936,9 @@ class W7RuntimeOwner:
                         "SOC-SEC-AS11",
                         "SOC-SEC-AS14",
                     ],
+                    "historicalScenarios": list(
+                        SOCIAL_ACCEPTANCE_HISTORICAL_IDS
+                    ),
                     "resourceReuse": {
                         "provisioningRuns": 1,
                         "clientLaunches": 5,
@@ -8775,6 +10984,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "run-w7-desktop-suite",
             "run-w8-suite",
             "run-social-desktop-acceptance-suite",
+            "run-social-cross-station-suite",
             "run-w9-suite",
             "run-w2-suite",
             "run-w10-suite",
@@ -8786,16 +10996,16 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--profiles")
     parser.add_argument("--slot", type=int, default=SLOT)
     parser.add_argument("--result-root", type=Path)
+    parser.add_argument("--runtime-root", type=Path)
     return parser.parse_args(argv)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
-    required_slot = (
-        SOCIAL_ACCEPTANCE_SLOT
-        if args.action == "run-social-desktop-acceptance-suite"
-        else SLOT
-    )
+    required_slot = {
+        "run-social-desktop-acceptance-suite": SOCIAL_ACCEPTANCE_SLOT,
+        "run-social-cross-station-suite": SOCIAL_CROSS_STATION_SLOT,
+    }.get(args.action, SLOT)
     if args.profile != PROFILE or args.slot != required_slot:
         blocked = RuntimeOwnerBlocked(
             "CONTROLLER_BINDING_MISMATCH",
@@ -8816,6 +11026,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "run-w7-desktop-suite",
         "run-w8-suite",
         "run-social-desktop-acceptance-suite",
+        "run-social-cross-station-suite",
         "run-w2-suite",
         "run-w10-suite",
         "run-w11-suite",
@@ -8830,6 +11041,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             "run-w8-suite": "runtime:secure-content-w8",
             "run-social-desktop-acceptance-suite": (
                 "runtime:social-private-desktop"
+            ),
+            "run-social-cross-station-suite": (
+                "runtime:social-cross-station"
             ),
             "run-w2-suite": "runtime:secure-content-w2",
             "run-w10-suite": "runtime:secure-content-w10",
@@ -8867,6 +11081,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     owner = W7RuntimeOwner(
         repo_root=repo_root,
         result_root=result_root,
+        runtime_root=args.runtime_root,
     )
     try:
         if args.action == "preflight":
@@ -8877,6 +11092,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             result = owner.run_w8_suite()
         elif args.action == "run-social-desktop-acceptance-suite":
             result = owner.run_social_desktop_acceptance_suite(slot=args.slot)
+        elif args.action == "run-social-cross-station-suite":
+            result = owner.run_social_cross_station_suite(slot=args.slot)
         elif args.action == "run-w9-suite":
             result = owner.run_w9_suite()
         elif args.action == "run-w2-suite":
@@ -8885,8 +11102,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             result = owner.run_w10_suite()
         elif args.action == "run-w11-suite":
             result = owner.run_w11_suite()
-        else:
+        elif args.action == "run-final-suite":
             result = owner.run_final_suite()
+        else:
+            raise RuntimeOwnerBlocked(
+                "RUNTIME_ACTION_UNSUPPORTED",
+                f"unsupported runtime owner action: {args.action}",
+                resource=f"runtime:{args.action}",
+            )
     except RuntimeOwnerBlocked as error:
         print(json.dumps(error.payload(), sort_keys=True), file=sys.stderr)
         return 2

@@ -30,12 +30,12 @@ class GateSpec:
 
 
 PRECEDING_GATES: tuple[GateSpec, ...] = (
-    GateSpec("SAL-G05", "chat-native-multi-device-e2e"),
+    GateSpec("SAL-G08", "chat-native-multi-device-e2e"),
     GateSpec(
-        "SAL-G05",
+        "SAL-G08",
         "chat-lifecycle-mixed-client-multi-device-e2e",
     ),
-    GateSpec("SAL-G05", "mobile-simulator-station-lifecycle-e2e"),
+    GateSpec("SAL-G08", "mobile-simulator-station-lifecycle-e2e"),
 )
 
 
@@ -275,8 +275,8 @@ def build_report(aggregate: AggregateResult) -> dict[str, object]:
         "proofStatus": (
             aggregate.proof_status if aggregate.passed else "UNPROVEN"
         ),
-        "phase": "SAL-G05",
-        "bom": ["SAL-G05"],
+        "phase": "SAL-G08",
+        "bom": ["SAL-G08"],
         "spec": [
             "docs/architecture/platform/station/access/acceptance-matrix.md",
             "docs/architecture/platform/station/access/experience-contract.md",
@@ -307,8 +307,8 @@ def build_report(aggregate: AggregateResult) -> dict[str, object]:
 
 class StationAccessSessionClassGate(AcceptanceGate):
     gate_id = GATE_ID
-    phase = "SAL-G05"
-    bom = ("SAL-G05",)
+    phase = "SAL-G08"
+    bom = ("SAL-G08",)
     report_path = (
         REPO_ROOT / "tooling" / "acceptance" / "reports" / f"{GATE_ID}.json"
     )

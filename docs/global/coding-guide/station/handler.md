@@ -267,16 +267,22 @@ func (s *ossSubServer) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 ```go
 func (h *relayHandler) handlers() []server.Handler {
-    jwt := h.sub.jwtWrapper
+    nodeRotateJWT := h.sub.nodeRotateJWTWrapper
+    routePublishJWT := h.sub.routePublishJWTWrapper
+    operatorJWT := h.sub.operatorJWTWrapper
     logID := serverwrapper.LogID()
 
     return []server.Handler{
         server.NewHTTPHandler("relay-invite-create", "/api/v1/relay/invite", server.POST,
-            h.requireAdmin(h.handleCreateInvite), logID, jwt),
+            h.requireAdmin(h.handleCreateInvite), logID, operatorJWT),
         server.NewHTTPHandler("relay-register", "/api/v1/relay/register", server.POST,
             server.HTTPHandlerFunc(h.handleRegister), logID),
-        server.NewHTTPHandler("relay-forward", "/relay/forward/*path", server.ANY,
-            h.requireNetwork(h.handleForward), logID, jwt),
+        server.NewHTTPHandler("relay-token-refresh", "/api/v1/relay/token/refresh", server.POST,
+            h.requireStation(h.handleTokenRefresh), logID, nodeRotateJWT),
+        server.NewStrictTypedHandler("relay-route-publish", "/api/v1/relay/routes", server.POST,
+            h.handlePublishStationRoute, logID, routePublishJWT),
+        server.NewStrictTypedHandler("relay-grant-register", "/api/v1/relay/grants", server.POST,
+            h.handleRegisterConnectionGrant, logID, routePublishJWT),
     }
 }
 
@@ -288,9 +294,9 @@ func (h *relayHandler) requireAdmin(next http.HandlerFunc) server.EndpointHandle
             writeJSON(w, http.StatusUnauthorized, errorBody("authentication required"))
             return
         }
-        if strings.HasPrefix(subj.ID, domain.SubjectRelayAccess) ||
-            strings.HasPrefix(subj.ID, domain.SubjectRelayClient) {
-            writeJSON(w, http.StatusForbidden, errorBody("relay tokens cannot call admin endpoints"))
+        if subj.Attributes["audience"] != h.sub.opts.OperatorAudience ||
+            subj.Attributes["scope"] != h.sub.opts.OperatorScope {
+            writeJSON(w, http.StatusForbidden, errorBody("relay operator policy rejected credential"))
             return
         }
         next(w, r)

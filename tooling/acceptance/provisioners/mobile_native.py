@@ -4,6 +4,7 @@ import base64
 import binascii
 import dataclasses
 import hashlib
+import ipaddress
 import json
 import math
 import os
@@ -13,11 +14,13 @@ import secrets
 import shutil
 import socket
 import subprocess
+import tempfile
 import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import xml.etree.ElementTree as ET
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -51,7 +54,10 @@ from tooling.acceptance.core.errors import (
     ProvisioningError,
 )
 from tooling.acceptance.core.evidence_store import ArtifactRef
-from tooling.acceptance.core.provisioner import EnvironmentProvisioner
+from tooling.acceptance.core.provisioner import (
+    EnvironmentProvisioner,
+    resolve_machine_profile_environment,
+)
 from tooling.acceptance.core.provisioning import (
     EnvironmentContract,
     ProvisioningState,
@@ -61,6 +67,12 @@ from tooling.acceptance.core.provisioning import (
 from tooling.acceptance.core.redaction import redact_value
 from tooling.acceptance.core.reset_authority import (
     require_station_reset_authority,
+)
+from tooling.acceptance.fixtures.chat_native_reset import (
+    fixture_federation_id_from_station_ids,
+)
+from tooling.acceptance.fixtures.chat_native_actors import (
+    resolve_existing_actor_identity,
 )
 from tooling.acceptance.fixtures.mobile_native_reset import (
     RESET_SCOPE,
@@ -96,6 +108,15 @@ from tooling.acceptance.provisioners.mobile_native_build import (
     produce_build_attestation,
     produce_scenario_build_attestation,
 )
+from tooling.acceptance.provisioners.mobile_installation import (
+    ANDROID_ADB_PACKAGE_SHA256_ADAPTER,
+    AndroidInstalledArtifact,
+    AndroidInstallationExecution,
+    MobileDeviceDescriptor,
+    MobileInstallationError,
+    execute_android_installation,
+    load_mobile_device_descriptor,
+)
 from tooling.acceptance.provisioners.mobile_service_bindings import (
     resolve_mobile_service_bindings,
 )
@@ -105,6 +126,34 @@ from tooling.acceptance.provisioners.remote_source_identity import (
 
 
 EXPECTED_APPIUM_VERSION = "2.19.0"
+GNIREHTET_VERSION = "2.5.1"
+GNIREHTET_DARWIN_ARM64_EXECUTABLE_SHA256 = (
+    "5332243035c8b8a1094b575e653e80a14cf9efeecd96eaa7e8d6aeaeeb45b3c0"
+)
+USB_NETWORK_COMPANION_VERSION = "1.0.0"
+USB_NETWORK_COMPANION_PACKAGE = (
+    "com.peers.touch.acceptance.usbnetwork"
+)
+USB_NETWORK_COMPANION_START_ACTION = (
+    "com.peers.touch.acceptance.usbnetwork.START"
+)
+USB_NETWORK_COMPANION_STOP_ACTION = (
+    "com.peers.touch.acceptance.usbnetwork.STOP"
+)
+USB_NETWORK_COMPANION_COMPONENT = (
+    "com.peers.touch.acceptance.usbnetwork/.GnirehtetActivity"
+)
+USB_NETWORK_COMPANION_REVERSE_SOCKET = "localabstract:gnirehtet"
+USB_NETWORK_COMPANION_ROOT = (
+    REPO_ROOT
+    / "tooling"
+    / "acceptance"
+    / "android"
+    / "usb-network-companion"
+)
+USB_NETWORK_COMPANION_GRADLE = (
+    REPO_ROOT / "apps" / "mobile" / "src-tauri" / "gen" / "android" / "gradlew"
+)
 EXPECTED_DRIVER_IDENTITIES = {
     "ios": ("appium-xcuitest-driver", "xcuitest", "XCUITest", "9.10.5"),
     "android": (
@@ -131,6 +180,9 @@ MOBILE_NATIVE_SCENARIO_GATES = {
     "settings": "mobile-native-settings-e2e",
     "platform": "mobile-native-platform-e2e",
 }
+MOBILE_ANDROID_PHYSICAL_SCENARIO_GATES = {
+    "android-social": "mobile-social-android-native",
+}
 MOBILE_NATIVE_BLOCKED_SCENARIO_DEPENDENCIES = {
     "recovery-ui": "W5-OWNER",
     "social-convergence": "W5-OWNER",
@@ -142,7 +194,11 @@ MOBILE_NATIVE_SERVICE_INDEPENDENT_SCENARIOS = frozenset(
     {"lifecycle", "platform"}
 )
 MOBILE_NATIVE_NON_OAUTH_SCENARIOS = frozenset(
-    set(MOBILE_NATIVE_SCENARIO_GATES) - {"access"}
+    (
+        set(MOBILE_NATIVE_SCENARIO_GATES)
+        | set(MOBILE_ANDROID_PHYSICAL_SCENARIO_GATES)
+    )
+    - {"access"}
 )
 MOBILE_NATIVE_PRODUCT_SCENARIOS = frozenset(
     {
@@ -155,6 +211,36 @@ MOBILE_NATIVE_PRODUCT_SCENARIOS = frozenset(
     }
 )
 MOBILE_NATIVE_PRODUCT_HARNESS_ACTIONS = {
+    "android-social": (
+        "station.add",
+        "access.submit",
+        "lifecycle.restart",
+        "lifecycle.scope.read",
+        "session.logout",
+        "navigation.snapshot",
+        "navigation.apply",
+        "projection.read",
+        "messaging.createDirect",
+        "messaging.createGroup",
+        "messaging.reconcile",
+        "messaging.projection.read",
+        "social.people.search",
+        "social.request.send",
+        "social.request.accept",
+        "social.reconcile",
+        "social.projection.read",
+        "reliability.draft.write",
+        "reliability.draft.read",
+        "reliability.draft.action",
+        "recovery.snapshot",
+        "moments.feed.read",
+        "moments.publish",
+        "moments.private.read",
+        "moments.private.comment.submit",
+        "moments.private.reconcile",
+        "moments.private.snapshot",
+        "cleanup",
+    ),
     "recovery": (
         "station.add",
         "access.submit",
@@ -225,6 +311,16 @@ MAX_MOBILE_PAGE_SOURCE_BYTES = 32 * 1024 * 1024
 MAX_MOBILE_PAGE_SOURCE_RESPONSE_BYTES = 64 * 1024 * 1024
 MOBILE_RESOURCE_LEASE_AUTH_KEY_BYTES = 32
 MOBILE_NATIVE_PARENT_CLEANUP_TIMEOUT_SECONDS = 30.0
+MOBILE_NATIVE_EPHEMERAL_QUIESCE_TIMEOUT_SECONDS = (
+    MOBILE_NATIVE_PARENT_CLEANUP_TIMEOUT_SECONDS + 5.0
+)
+MOBILE_NATIVE_APPIUM_REQUEST_TIMEOUT_SECONDS = 660.0
+MOBILE_NATIVE_APPIUM_STOP_REQUEST_TIMEOUT_SECONDS = 10.0
+MOBILE_NATIVE_EPHEMERAL_REQUEST_TIMEOUT_SECONDS = 660.0
+MOBILE_NATIVE_ANDROID_INSTALL_TIMEOUT_MS = 600_000
+MOBILE_NATIVE_ANDROID_NEW_COMMAND_TIMEOUT_SECONDS = (
+    MOBILE_NATIVE_ANDROID_INSTALL_TIMEOUT_MS // 1000 + 60
+)
 MOBILE_CAPTURE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,95}$")
 MOBILE_CHANNEL_FORBIDDEN_FIELDS = frozenset(
     {
@@ -296,6 +392,7 @@ MOBILE_NATIVE_SCENARIO_APPIUM_OPERATIONS = frozenset(
     (
         *MOBILE_NATIVE_CAPABILITIES["mobile.native.appium-session"],
         "background_app",
+        "social_ui",
     )
 )
 MOBILE_NATIVE_PRODUCT_APPIUM_OPERATIONS = (
@@ -312,6 +409,11 @@ MOBILE_NATIVE_PRODUCT_APPIUM_OPERATIONS = (
     "capture_screenshot",
     "verify_build_identity",
 )
+MOBILE_NATIVE_ANDROID_SOCIAL_APPIUM_OPERATIONS = (
+    *MOBILE_NATIVE_PRODUCT_APPIUM_OPERATIONS[:-1],
+    "social_ui",
+    MOBILE_NATIVE_PRODUCT_APPIUM_OPERATIONS[-1],
+)
 MOBILE_NATIVE_PRODUCT_CLEANUP_RESOURCES = (
     "processes",
     "appium-sessions",
@@ -323,6 +425,29 @@ MOBILE_NATIVE_PRODUCT_CLEANUP_RESOURCES = (
     "correlation-channel",
     "profile-leases",
     "deployment-leases",
+)
+MOBILE_NATIVE_ANDROID_SOCIAL_CLEANUP_RESOURCES = (
+    *MOBILE_NATIVE_PRODUCT_CLEANUP_RESOURCES,
+    "usb-network-transports",
+)
+MOBILE_NATIVE_ANDROID_SOCIAL_CLIENT = "alice-android"
+MOBILE_NATIVE_ANDROID_SOCIAL_FIXTURE = "mobile-social-existing-actors"
+MOBILE_NATIVE_ANDROID_SOCIAL_PROFILE_KEY = "station-a"
+MOBILE_NATIVE_ANDROID_SOCIAL_ROLES = ("alice", "bob", "eve")
+MOBILE_NATIVE_ANDROID_SOCIAL_GENERIC_ACTIONS = frozenset(
+    {
+        "session.logout",
+        "lifecycle.scope.read",
+        "navigation.snapshot",
+        "navigation.apply",
+        "social.people.search",
+        "moments.feed.read",
+        "moments.publish",
+        "moments.private.read",
+        "moments.private.comment.submit",
+        "moments.private.reconcile",
+        "moments.private.snapshot",
+    }
 )
 EXPECTED_PARENT_HARNESS_ACTIONS = frozenset(
     {
@@ -393,6 +518,1071 @@ class SubprocessExecutor:
             stdout=completed.stdout,
             stderr=completed.stderr,
         )
+
+
+@dataclass(frozen=True)
+class _AndroidUsbNetworkTool:
+    version: str
+    relay_executable: Path
+    relay_sha256: str
+    companion_apk: Path
+    companion_apk_sha256: str
+    companion_source_sha256: str
+    build_root: Path
+
+
+def _read_android_ui_hierarchy(
+    run_adb: Callable[..., CommandResult],
+    dump_path: str,
+) -> ET.Element | None:
+    dumped = run_adb("shell", "uiautomator", "dump", dump_path)
+    if dumped.returncode != 0:
+        return None
+    try:
+        content = run_adb("exec-out", "cat", dump_path)
+    finally:
+        removed = run_adb("shell", "rm", "-f", dump_path)
+        if removed.returncode != 0:
+            raise ProvisioningError(
+                "Android UI hierarchy cleanup failed"
+            )
+    if content.returncode != 0:
+        return None
+    try:
+        return ET.fromstring(content.stdout)
+    except ET.ParseError:
+        return None
+
+
+def _tap_android_ui_node(
+    run_adb: Callable[..., CommandResult],
+    nodes: Sequence[ET.Element],
+) -> bool:
+    if len(nodes) != 1:
+        return False
+    coordinates = tuple(
+        int(value)
+        for value in re.findall(
+            r"\d+",
+            nodes[0].attrib.get("bounds", ""),
+        )
+    )
+    if len(coordinates) != 4:
+        return False
+    left, top, right, bottom = coordinates
+    tapped = run_adb(
+        "shell",
+        "input",
+        "tap",
+        str((left + right) // 2),
+        str((top + bottom) // 2),
+    )
+    return tapped.returncode == 0
+
+
+def _approve_oplus_install_confirmation_if_visible(
+    run_adb: Callable[..., CommandResult],
+    *,
+    application_name: str,
+    dump_path: str,
+) -> bool:
+    root = _read_android_ui_hierarchy(run_adb, dump_path)
+    if root is None:
+        return False
+    nodes = tuple(root.iter("node"))
+    if not any(
+        node.attrib.get("resource-id")
+        == "com.oplus.appdetail:id/app_name"
+        and node.attrib.get("text") == application_name
+        for node in nodes
+    ):
+        return False
+    buttons = [
+        node
+        for node in nodes
+        if node.attrib.get("package") == "com.oplus.appdetail"
+        and node.attrib.get("resource-id")
+        == "com.oplus.appdetail:id/btn_left"
+        and node.attrib.get("enabled") == "true"
+        and node.attrib.get("clickable") == "true"
+    ]
+    return _tap_android_ui_node(run_adb, buttons)
+
+
+class _ManagedProcess(Protocol):
+    def poll(self) -> int | None:
+        ...
+
+    def terminate(self) -> None:
+        ...
+
+    def kill(self) -> None:
+        ...
+
+    def wait(self, timeout: float | None = None) -> int:
+        ...
+
+
+def _source_tree_digest(root: Path) -> str:
+    digest = hashlib.sha256()
+    files = sorted(
+        path
+        for path in root.rglob("*")
+        if path.is_file()
+        and not {".gradle", "build"}.intersection(path.relative_to(root).parts)
+    )
+    if not files:
+        raise BlockedError(
+            reason="Android USB network companion source is missing",
+            resource="mobile-runtime:usb-network-transport",
+        )
+    for path in files:
+        relative = path.relative_to(root).as_posix().encode()
+        content = path.read_bytes()
+        digest.update(len(relative).to_bytes(4, "big"))
+        digest.update(relative)
+        digest.update(len(content).to_bytes(8, "big"))
+        digest.update(content)
+    return digest.hexdigest()
+
+
+def _build_android_usb_network_tool(
+    executor: CommandExecutor | None = None,
+) -> _AndroidUsbNetworkTool:
+    launcher = shutil.which("gnirehtet")
+    if not launcher:
+        raise BlockedError(
+            reason="Android USB network transport requires gnirehtet 2.5.1",
+            resource="mobile-runtime:usb-network-transport",
+        )
+    wrapper = Path(launcher).resolve()
+    version_root = wrapper.parent.parent
+    executable = version_root / "libexec" / "gnirehtet"
+    if (
+        platform.system() != "Darwin"
+        or platform.machine().lower() not in {"arm64", "aarch64"}
+        or version_root.name != GNIREHTET_VERSION
+        or not executable.is_file()
+        or not USB_NETWORK_COMPANION_GRADLE.is_file()
+        or not USB_NETWORK_COMPANION_ROOT.is_dir()
+    ):
+        raise BlockedError(
+            reason=(
+                "Android USB network transport requires the reviewed Darwin "
+                "arm64 relay and repository companion source"
+            ),
+            resource="mobile-runtime:usb-network-transport",
+        )
+    relay_sha256 = _artifact_digest(executable)
+    if relay_sha256 != GNIREHTET_DARWIN_ARM64_EXECUTABLE_SHA256:
+        raise BlockedError(
+            reason="Android USB network relay identity is unreviewed",
+            resource="mobile-runtime:usb-network-transport",
+        )
+    sdkmanager = shutil.which("sdkmanager")
+    if not sdkmanager:
+        raise BlockedError(
+            reason="Android USB network companion requires Android SDK tools",
+            resource="mobile-runtime:usb-network-transport",
+        )
+    android_home = Path(sdkmanager).resolve().parents[3]
+    if not (
+        android_home / "platforms" / "android-34" / "android.jar"
+    ).is_file():
+        raise BlockedError(
+            reason="Android USB network companion requires Android API 34",
+            resource="mobile-runtime:usb-network-transport",
+        )
+    build_environment = {
+        **os.environ,
+        "ANDROID_HOME": str(android_home),
+        "ANDROID_SDK_ROOT": str(android_home),
+    }
+    command_executor = executor or SubprocessExecutor()
+    build_root = Path(
+        tempfile.mkdtemp(prefix="peers-touch-usb-network-companion-")
+    )
+    output_root = build_root / "apk-build"
+    try:
+        build = command_executor.run(
+            (
+                str(USB_NETWORK_COMPANION_GRADLE),
+                "-p",
+                str(USB_NETWORK_COMPANION_ROOT),
+                "--project-cache-dir",
+                str(build_root / "project-cache"),
+                f"-PpeersTouchBuildDir={output_root}",
+                "--no-daemon",
+                "--console=plain",
+                "assembleDebug",
+            ),
+            cwd=REPO_ROOT,
+            env=build_environment,
+            timeout=900,
+        )
+        if build.returncode != 0:
+            raise BlockedError(
+                reason="Android USB network companion source build failed",
+                resource="mobile-runtime:usb-network-transport",
+            )
+        artifacts = sorted(
+            (output_root / "outputs" / "apk" / "debug").glob("*.apk")
+        )
+        if len(artifacts) != 1:
+            raise BlockedError(
+                reason=(
+                    "Android USB network companion build output is ambiguous"
+                ),
+                resource="mobile-runtime:usb-network-transport",
+            )
+        companion_apk = artifacts[0]
+        return _AndroidUsbNetworkTool(
+            version=(
+                f"peers-touch-{USB_NETWORK_COMPANION_VERSION}"
+                f"+gnirehtet-{GNIREHTET_VERSION}"
+            ),
+            relay_executable=executable,
+            relay_sha256=relay_sha256,
+            companion_apk=companion_apk,
+            companion_apk_sha256=_artifact_digest(companion_apk),
+            companion_source_sha256=_source_tree_digest(
+                USB_NETWORK_COMPANION_ROOT
+            ),
+            build_root=build_root,
+        )
+    except BaseException:
+        shutil.rmtree(build_root, ignore_errors=True)
+        raise
+
+
+class _AndroidUsbNetworkTransport:
+    """Own one canonical-origin-preserving Android reverse-tether route."""
+
+    def __init__(
+        self,
+        station_url: str,
+        *,
+        relay_port: int,
+        executor: CommandExecutor | None = None,
+        process_factory: Callable[..., _ManagedProcess] = subprocess.Popen,
+        tool: _AndroidUsbNetworkTool | None = None,
+    ) -> None:
+        parsed = urllib.parse.urlsplit(station_url)
+        try:
+            host = str(ipaddress.IPv4Address(parsed.hostname or ""))
+            parsed.port
+        except (ValueError, urllib.error.URLError) as error:
+            raise BlockedError(
+                reason=(
+                    "Android USB network transport requires one IPv4 "
+                    "HTTP(S) origin without credentials or a path"
+                ),
+                resource="mobile-runtime:usb-network-transport",
+            ) from error
+        if (
+            parsed.scheme not in {"http", "https"}
+            or parsed.hostname != host
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.path not in {"", "/"}
+            or parsed.query
+            or parsed.fragment
+            or relay_port <= 0
+            or relay_port > 65535
+        ):
+            raise BlockedError(
+                reason=(
+                    "Android USB network transport requires one IPv4 "
+                    "HTTP(S) origin without credentials or a path"
+                ),
+                resource="mobile-runtime:usb-network-transport",
+            )
+        self.canonical_origin = station_url.rstrip("/")
+        self.route_host = host
+        self.route = f"{host}/32"
+        self.relay_port = relay_port
+        self.executor = executor or SubprocessExecutor()
+        self.process_factory = process_factory
+        self._owns_tool = tool is None
+        self.tool = tool or _build_android_usb_network_tool(self.executor)
+        self._process: _ManagedProcess | None = None
+        self._installed_apk_sha256_before: str | None = None
+        self._package_installed_by_run = False
+        self._started = False
+
+    def start(
+        self,
+        device_identifier: str,
+        *,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
+    ) -> dict[str, Any]:
+        if self._started:
+            raise ProvisioningError(
+                "Android USB network transport is already active"
+            )
+        try:
+            self._installed_apk_sha256_before = (
+                self._installed_package_sha256(
+                    device_identifier,
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                )
+            )
+            if (
+                self._installed_apk_sha256_before is not None
+                and self._installed_apk_sha256_before
+                != self.tool.companion_apk_sha256
+            ):
+                raise BlockedError(
+                    reason=(
+                        "Android USB network companion package has an "
+                        "unexpected pre-existing identity"
+                    ),
+                    resource="mobile-runtime:usb-network-transport",
+                )
+            self._started = True
+            if self._installed_apk_sha256_before is None:
+                self._package_installed_by_run = True
+                install = self._install_companion(
+                    device_identifier,
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                )
+                if install.returncode != 0:
+                    raise ProvisioningError(
+                        "Android USB network companion installation failed"
+                    )
+            installed_apk_sha256 = self._installed_package_sha256(
+                device_identifier,
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+            if installed_apk_sha256 != self.tool.companion_apk_sha256:
+                raise ProvisioningError(
+                    "Android USB network companion identity verification failed"
+                )
+            if self._route_is_active(
+                device_identifier,
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            ):
+                raise ProvisioningError(
+                    "Android USB network route was active before provisioning"
+                )
+            self._process = self.process_factory(
+                [
+                    str(self.tool.relay_executable),
+                    "relay",
+                    "-p",
+                    str(self.relay_port),
+                ],
+                cwd=REPO_ROOT,
+                env=os.environ,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                start_new_session=True,
+            )
+            tunnel = self._adb(
+                device_identifier,
+                "reverse",
+                USB_NETWORK_COMPANION_REVERSE_SOCKET,
+                f"tcp:{self.relay_port}",
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+            if tunnel.returncode != 0:
+                raise ProvisioningError(
+                    "Android USB network tunnel setup failed"
+                )
+            start = self._companion_action(
+                device_identifier,
+                USB_NETWORK_COMPANION_START_ACTION,
+                route=self.route,
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+            if start.returncode != 0:
+                raise ProvisioningError(
+                    "Android USB network client start failed"
+                )
+            readiness_deadline = min(
+                deadline_monotonic
+                if deadline_monotonic is not None
+                else time.monotonic() + 20,
+                time.monotonic() + 20,
+            )
+            while time.monotonic() < readiness_deadline:
+                self._require_active(cancellation)
+                if self._process.poll() is not None:
+                    raise ProvisioningError(
+                        "Android USB network transport exited before ready"
+                    )
+                if not self._client_is_active(
+                    device_identifier,
+                    deadline_monotonic=readiness_deadline,
+                    cancellation=cancellation,
+                ):
+                    self._approve_vpn_consent_if_visible(
+                        device_identifier,
+                        deadline_monotonic=readiness_deadline,
+                        cancellation=cancellation,
+                    )
+                if (
+                    self._reverse_is_present(
+                        device_identifier,
+                        deadline_monotonic=readiness_deadline,
+                        cancellation=cancellation,
+                    )
+                    and self._route_is_active(
+                        device_identifier,
+                        deadline_monotonic=readiness_deadline,
+                        cancellation=cancellation,
+                    )
+                    and self._canonical_origin_is_reachable(
+                        device_identifier,
+                        deadline_monotonic=readiness_deadline,
+                        cancellation=cancellation,
+                    )
+                ):
+                    return {
+                        "artifactKind": "mobile-android-usb-network-transport",
+                        "version": self.tool.version,
+                        "relaySha256": self.tool.relay_sha256,
+                        "companionSourceSha256": (
+                            self.tool.companion_source_sha256
+                        ),
+                        "companionApkSha256": (
+                            self.tool.companion_apk_sha256
+                        ),
+                        "canonicalOrigin": self.canonical_origin,
+                        "route": self.route,
+                        "relayPort": self.relay_port,
+                        "packagePreinstalled": (
+                            self._installed_apk_sha256_before is not None
+                        ),
+                        "packageInstalledByRun": (
+                            self._package_installed_by_run
+                        ),
+                    }
+                time.sleep(0.1)
+            raise ProvisioningError(
+                "Android USB network transport did not become ready"
+            )
+        except BaseException as error:
+            cleanup_error: BaseException | None = None
+            try:
+                if self._started:
+                    self.close(
+                        device_identifier,
+                        deadline_monotonic=time.monotonic() + 30,
+                        cancellation=None,
+                    )
+                else:
+                    self._cleanup_owned_tool()
+            except BaseException as candidate:
+                cleanup_error = candidate
+            if cleanup_error is not None:
+                raise ProvisioningError(
+                    "Android USB network startup cleanup failed after "
+                    f"{type(error).__name__}: "
+                    f"{type(cleanup_error).__name__}"
+                ) from cleanup_error
+            if isinstance(error, OSError):
+                raise BlockedError(
+                    reason=(
+                        "Android USB network transport process could not "
+                        f"start: {type(error).__name__}"
+                    ),
+                    resource="mobile-runtime:usb-network-transport",
+                ) from error
+            raise
+
+    def close(
+        self,
+        device_identifier: str,
+        *,
+        deadline_monotonic: float | None = None,
+        cancellation: threading.Event | None = None,
+    ) -> None:
+        failures: list[str] = []
+
+        def attempt(label: str, action: Callable[[], Any]) -> Any | None:
+            try:
+                return action()
+            except BaseException as error:
+                failures.append(f"{label}: {type(error).__name__}")
+                return None
+
+        installed_apk_sha256 = attempt(
+            "package inventory",
+            lambda: self._installed_package_sha256(
+                device_identifier,
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            ),
+        )
+        if installed_apk_sha256 is not None:
+            result = attempt(
+                "client stop",
+                lambda: self._companion_action(
+                    device_identifier,
+                    USB_NETWORK_COMPANION_STOP_ACTION,
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                ),
+            )
+            if result is not None and result.returncode != 0:
+                failures.append("client stop: non-zero exit")
+            result = attempt(
+                "client force-stop",
+                lambda: self._adb(
+                    device_identifier,
+                    "shell",
+                    "am",
+                    "force-stop",
+                    USB_NETWORK_COMPANION_PACKAGE,
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                ),
+            )
+            if result is not None and result.returncode != 0:
+                failures.append("client force-stop: non-zero exit")
+        reverse_present = attempt(
+            "reverse inventory",
+            lambda: self._reverse_is_present(
+                device_identifier,
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            ),
+        )
+        if reverse_present is True:
+            result = attempt(
+                "reverse remove",
+                lambda: self._adb(
+                    device_identifier,
+                    "reverse",
+                    "--remove",
+                    USB_NETWORK_COMPANION_REVERSE_SOCKET,
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                ),
+            )
+            if result is not None and result.returncode != 0:
+                failures.append("reverse remove: non-zero exit")
+        attempt("relay process", self._terminate_process)
+        self._started = False
+        if self._package_installed_by_run:
+            result = attempt(
+                "companion uninstall",
+                lambda: self._adb(
+                    device_identifier,
+                    "uninstall",
+                    USB_NETWORK_COMPANION_PACKAGE,
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                ),
+            )
+            if result is not None and result.returncode != 0:
+                failures.append("companion uninstall: non-zero exit")
+        route_active = attempt(
+            "route verification",
+            lambda: self._route_is_active(
+                device_identifier,
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            ),
+        )
+        if route_active is True:
+            failures.append("VPN route remained active")
+        client_active = attempt(
+            "process verification",
+            lambda: self._client_is_active(
+                device_identifier,
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            ),
+        )
+        if client_active is True:
+            failures.append("client remained active")
+        reverse_present = attempt(
+            "reverse verification",
+            lambda: self._reverse_is_present(
+                device_identifier,
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            ),
+        )
+        if reverse_present is True:
+            failures.append("reverse remained active")
+        installed_apk_sha256 = attempt(
+            "package baseline verification",
+            lambda: self._installed_package_sha256(
+                device_identifier,
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            ),
+        )
+        if installed_apk_sha256 != self._installed_apk_sha256_before:
+            failures.append("client package baseline mismatch")
+        self._package_installed_by_run = False
+        try:
+            self._cleanup_owned_tool()
+        except BaseException as error:
+            failures.append(
+                f"companion build root: {type(error).__name__}"
+            )
+        if failures:
+            raise ProvisioningError(
+                "Android USB network cleanup failed: "
+                + ", ".join(failures)
+            )
+
+    def _cleanup_owned_tool(self) -> None:
+        if not self._owns_tool:
+            return
+        shutil.rmtree(self.tool.build_root, ignore_errors=True)
+        if self.tool.build_root.exists():
+            raise ProvisioningError(
+                "Android USB network companion build root remained active"
+            )
+
+    def _terminate_process(self) -> None:
+        process = self._process
+        self._process = None
+        if process is None or process.poll() is not None:
+            return
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except (subprocess.TimeoutExpired, TimeoutError):
+            process.kill()
+            process.wait(timeout=5)
+
+    def _installed_package_sha256(
+        self,
+        device_identifier: str,
+        *,
+        deadline_monotonic: float | None,
+        cancellation: threading.Event | None,
+    ) -> str | None:
+        result = self._adb(
+            device_identifier,
+            "shell",
+            "pm",
+            "path",
+            USB_NETWORK_COMPANION_PACKAGE,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        if result.returncode != 0:
+            return None
+        package_paths = [
+            line.removeprefix("package:").strip()
+            for line in result.stdout.splitlines()
+            if line.startswith("package:")
+        ]
+        base_paths = [
+            path for path in package_paths if path.endswith("/base.apk")
+        ]
+        if len(base_paths) != 1:
+            raise ProvisioningError(
+                "Android USB network client package identity is ambiguous"
+            )
+        digest = self._adb(
+            device_identifier,
+            "shell",
+            "sha256sum",
+            base_paths[0],
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        if digest.returncode != 0:
+            raise ProvisioningError(
+                "Android USB network client package hash is unavailable"
+            )
+        value = digest.stdout.split(maxsplit=1)[0].strip().lower()
+        if re.fullmatch(r"[0-9a-f]{64}", value) is None:
+            raise ProvisioningError(
+                "Android USB network client package hash is invalid"
+            )
+        return value
+
+    def _client_is_active(
+        self,
+        device_identifier: str,
+        *,
+        deadline_monotonic: float | None,
+        cancellation: threading.Event | None,
+    ) -> bool:
+        result = self._adb(
+            device_identifier,
+            "shell",
+            "pidof",
+            USB_NETWORK_COMPANION_PACKAGE,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        return result.returncode == 0 and bool(result.stdout.strip())
+
+    def _install_companion(
+        self,
+        device_identifier: str,
+        *,
+        deadline_monotonic: float | None,
+        cancellation: threading.Event | None,
+    ) -> CommandResult:
+        self._require_active(cancellation)
+        install_deadline = min(
+            deadline_monotonic
+            if deadline_monotonic is not None
+            else time.monotonic() + 120,
+            time.monotonic() + 120,
+        )
+        outcome: dict[str, Any] = {}
+
+        def install() -> None:
+            try:
+                outcome["result"] = self.executor.run(
+                    (
+                        "adb",
+                        "-s",
+                        device_identifier,
+                        "install",
+                        "-r",
+                        "--no-streaming",
+                        str(self.tool.companion_apk),
+                    ),
+                    cwd=REPO_ROOT,
+                    env=os.environ,
+                    timeout=max(
+                        1.0,
+                        install_deadline - time.monotonic(),
+                    ),
+                )
+            except BaseException as error:
+                outcome["error"] = error
+
+        worker = threading.Thread(
+            target=install,
+            name="android-usb-network-companion-install",
+            daemon=True,
+        )
+        worker.start()
+        interaction_error: BaseException | None = None
+        try:
+            while worker.is_alive() and time.monotonic() < install_deadline:
+                self._approve_install_confirmation_if_visible(
+                    device_identifier,
+                    deadline_monotonic=install_deadline,
+                    cancellation=cancellation,
+                )
+                worker.join(timeout=0.1)
+        except BaseException as error:
+            interaction_error = error
+        finally:
+            worker.join()
+        if interaction_error is not None:
+            raise interaction_error
+        error = outcome.get("error")
+        if isinstance(error, BaseException):
+            raise error
+        result = outcome.get("result")
+        if not isinstance(result, CommandResult):
+            raise ProvisioningError(
+                "Android USB network companion install result is unavailable"
+            )
+        return result
+
+    def _read_ui_hierarchy(
+        self,
+        device_identifier: str,
+        dump_path: str,
+        *,
+        deadline_monotonic: float | None,
+        cancellation: threading.Event | None,
+    ) -> ET.Element | None:
+        dumped = self._adb(
+            device_identifier,
+            "shell",
+            "uiautomator",
+            "dump",
+            dump_path,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        if dumped.returncode != 0:
+            return None
+        try:
+            content = self._adb(
+                device_identifier,
+                "exec-out",
+                "cat",
+                dump_path,
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+        finally:
+            removed = self._adb(
+                device_identifier,
+                "shell",
+                "rm",
+                "-f",
+                dump_path,
+                deadline_monotonic=time.monotonic() + 5,
+                cancellation=None,
+            )
+            if removed.returncode != 0:
+                raise ProvisioningError(
+                    "Android USB network UI hierarchy cleanup failed"
+                )
+        if content.returncode != 0:
+            return None
+        try:
+            return ET.fromstring(content.stdout)
+        except ET.ParseError:
+            return None
+
+    def _approve_install_confirmation_if_visible(
+        self,
+        device_identifier: str,
+        *,
+        deadline_monotonic: float | None,
+        cancellation: threading.Event | None,
+    ) -> bool:
+        return _approve_oplus_install_confirmation_if_visible(
+            lambda *arguments: self._adb(
+                device_identifier,
+                *arguments,
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            ),
+            application_name="Peers USB Network",
+            dump_path="/sdcard/peers-touch-usb-network-install.xml",
+        )
+
+    def _companion_action(
+        self,
+        device_identifier: str,
+        action: str,
+        *,
+        route: str | None = None,
+        deadline_monotonic: float | None,
+        cancellation: threading.Event | None,
+    ) -> CommandResult:
+        arguments = [
+            "shell",
+            "am",
+            "start",
+            "-W",
+            "-a",
+            action,
+            "-n",
+            USB_NETWORK_COMPANION_COMPONENT,
+        ]
+        if route is not None:
+            arguments.extend(("--esa", "routes", route))
+        return self._adb(
+            device_identifier,
+            *arguments,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+
+    def _approve_vpn_consent_if_visible(
+        self,
+        device_identifier: str,
+        *,
+        deadline_monotonic: float | None,
+        cancellation: threading.Event | None,
+    ) -> bool:
+        root = self._read_ui_hierarchy(
+            device_identifier,
+            "/sdcard/peers-touch-usb-network-consent.xml",
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        if root is None:
+            return False
+        nodes = tuple(root.iter("node"))
+        if not any(
+            "vpn" in (
+                node.attrib.get("text", "")
+                + node.attrib.get("content-desc", "")
+            ).casefold()
+            for node in nodes
+        ):
+            return False
+        buttons = [
+            node
+            for node in nodes
+            if node.attrib.get("resource-id") == "android:id/button1"
+            and node.attrib.get("enabled") == "true"
+            and node.attrib.get("package")
+            in {
+                "com.android.vpndialogs",
+                "com.android.systemui",
+                "com.android.settings",
+                "com.oplus.wirelesssettings",
+            }
+        ]
+        return self._tap_ui_node(
+            device_identifier,
+            buttons,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+
+    def _tap_ui_node(
+        self,
+        device_identifier: str,
+        nodes: Sequence[ET.Element],
+        *,
+        deadline_monotonic: float | None,
+        cancellation: threading.Event | None,
+    ) -> bool:
+        if len(nodes) != 1:
+            return False
+        bounds = re.fullmatch(
+            r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",
+            nodes[0].attrib.get("bounds", ""),
+        )
+        if bounds is None:
+            return False
+        left, top, right, bottom = map(int, bounds.groups())
+        approved = self._adb(
+            device_identifier,
+            "shell",
+            "input",
+            "tap",
+            str((left + right) // 2),
+            str((top + bottom) // 2),
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        if approved.returncode != 0:
+            raise ProvisioningError(
+                "Android USB network UI confirmation interaction failed"
+            )
+        return True
+
+    def _route_is_active(
+        self,
+        device_identifier: str,
+        *,
+        deadline_monotonic: float | None,
+        cancellation: threading.Event | None,
+    ) -> bool:
+        result = self._adb(
+            device_identifier,
+            "shell",
+            "ip",
+            "route",
+            "get",
+            self.route_host,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        return (
+            result.returncode == 0
+            and self.route_host in result.stdout
+            and re.search(r"\bdev\s+tun\d+\b", result.stdout) is not None
+        )
+
+    def _canonical_origin_is_reachable(
+        self,
+        device_identifier: str,
+        *,
+        deadline_monotonic: float | None,
+        cancellation: threading.Event | None,
+    ) -> bool:
+        result = self._adb(
+            device_identifier,
+            "shell",
+            "curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--max-time",
+            "5",
+            f"{self.canonical_origin}/sub-oss/healthz",
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        return result.returncode == 0
+
+    def _reverse_is_present(
+        self,
+        device_identifier: str,
+        *,
+        deadline_monotonic: float | None,
+        cancellation: threading.Event | None,
+    ) -> bool:
+        result = self._adb(
+            device_identifier,
+            "reverse",
+            "--list",
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        if result.returncode != 0:
+            raise ProvisioningError(
+                "Android USB network reverse inventory failed"
+            )
+        expected_remote = f"tcp:{self.relay_port}"
+        return any(
+            line.split()[-2:]
+            == [USB_NETWORK_COMPANION_REVERSE_SOCKET, expected_remote]
+            for line in result.stdout.splitlines()
+            if len(line.split()) >= 2
+        )
+
+    def _adb(
+        self,
+        device_identifier: str,
+        *arguments: str,
+        deadline_monotonic: float | None,
+        cancellation: threading.Event | None,
+    ) -> CommandResult:
+        return self._run(
+            ("adb", "-s", device_identifier, *arguments),
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+            environment=os.environ,
+        )
+
+    def _run(
+        self,
+        command: Sequence[str],
+        *,
+        deadline_monotonic: float | None,
+        cancellation: threading.Event | None,
+        environment: Mapping[str, str],
+    ) -> CommandResult:
+        self._require_active(cancellation)
+        timeout = 30.0
+        if deadline_monotonic is not None:
+            timeout = min(timeout, deadline_monotonic - time.monotonic())
+            if timeout <= 0:
+                raise ProvisioningError(
+                    "Android USB network transport exceeded its deadline"
+                )
+        return self.executor.run(
+            command,
+            cwd=REPO_ROOT,
+            env=environment,
+            timeout=timeout,
+        )
+
+    @staticmethod
+    def _require_active(
+        cancellation: threading.Event | None,
+    ) -> None:
+        if cancellation is not None and cancellation.is_set():
+            raise ProvisioningError(
+                "Android USB network transport was cancelled"
+            )
 
 
 @dataclass(frozen=True)
@@ -472,6 +1662,7 @@ class MobileNativeScenarioSpec:
 @dataclass(frozen=True)
 class MobileNativePreflightSpec:
     scenario: MobileNativeScenarioSpec
+    device_descriptor: MobileDeviceDescriptor | None
     appium_server_url_ref: str
     appium_executable: str
     appium_expected_version: str
@@ -1241,7 +2432,12 @@ def _load_mobile_native_scenario(
         str(scenario_id)
         for scenario_id in scenarios
     }
-    expected_scenario_ids = set(MOBILE_NATIVE_SCENARIO_GATES)
+    scenario_gate_map = (
+        MOBILE_ANDROID_PHYSICAL_SCENARIO_GATES
+        if payload.get("id") == "mobile-android-physical-runtime"
+        else MOBILE_NATIVE_SCENARIO_GATES
+    )
+    expected_scenario_ids = set(scenario_gate_map)
     if scenario_ids != expected_scenario_ids:
         raise BlockedError(
             reason=(
@@ -1262,7 +2458,7 @@ def _load_mobile_native_scenario(
         len(scenario_gate_ids) != len(scenarios)
         or len(set(scenario_gate_ids)) != len(scenario_gate_ids)
         or set(scenario_gate_ids)
-        != set(MOBILE_NATIVE_SCENARIO_GATES.values())
+        != set(scenario_gate_map.values())
     ):
         raise BlockedError(
             reason=(
@@ -1285,7 +2481,7 @@ def _load_mobile_native_scenario(
             resource=f"mobile-contract:scenario:{gate_id}",
         )
     scenario_id, raw = matching[0]
-    if MOBILE_NATIVE_SCENARIO_GATES.get(scenario_id) != gate_id:
+    if scenario_gate_map.get(scenario_id) != gate_id:
         raise BlockedError(
             reason=(
                 f"Mobile native scenario {scenario_id!r} does not own "
@@ -1452,14 +2648,30 @@ def _load_mobile_native_scenario(
                 "physical-session"
             ),
         )
+    if scenario_id == "android-social" and (
+        scenario.client_ids != (MOBILE_NATIVE_ANDROID_SOCIAL_CLIENT,)
+        or scenario.service_ids != ("station-primary",)
+        or scenario.fixture_ids != (MOBILE_NATIVE_ANDROID_SOCIAL_FIXTURE,)
+        or scenario.harness_actions
+        != MOBILE_NATIVE_PRODUCT_HARNESS_ACTIONS["android-social"]
+        or scenario.parent_harness_actions != ("build.identity",)
+        or scenario.appium_operations
+        != MOBILE_NATIVE_ANDROID_SOCIAL_APPIUM_OPERATIONS
+        or not scenario.require_exact_device_count
+        or scenario.cleanup_resources
+        != MOBILE_NATIVE_ANDROID_SOCIAL_CLEANUP_RESOURCES
+    ):
+        raise BlockedError(
+            reason=(
+                "Mobile native Android Social scenario does not match the "
+                "single physical-device session contract"
+            ),
+            resource="mobile-contract:scenario:android-social",
+        )
     return scenario
 
 
-def load_mobile_native_preflight_spec(
-    path: Path = ENVIRONMENTS_DIR / "mobile-native.yaml",
-    *,
-    gate_id: str = MOBILE_OAUTH_PROOF_GATE_ID,
-) -> MobileNativePreflightSpec:
+def _load_mobile_native_contract_payload(path: Path) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
@@ -1467,8 +2679,86 @@ def load_mobile_native_preflight_spec(
             reason=f"Cannot load Mobile native environment contract: {error}",
             resource="mobile-contract:environment",
         ) from error
+    if not isinstance(payload, dict):
+        raise BlockedError(
+            reason="Mobile native environment contract must be an object",
+            resource="mobile-contract:environment",
+        )
+    if payload.get("base_environment") != "mobile-native":
+        return payload
+    if payload.get("id") != "mobile-android-physical-runtime":
+        raise BlockedError(
+            reason="Mobile native environment overlay identity is invalid",
+            resource="mobile-contract:environment",
+        )
+    base_path = path.parent / "mobile-native.yaml"
+    try:
+        base = json.loads(base_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise BlockedError(
+            reason=f"Cannot load Mobile native base environment: {error}",
+            resource="mobile-contract:environment",
+        ) from error
+    if not isinstance(base, dict) or base.get("id") != "mobile-native":
+        raise BlockedError(
+            reason="Mobile native base environment identity is invalid",
+            resource="mobile-contract:environment",
+        )
+    required_overlay_fields = {
+        "id",
+        "base_environment",
+        "device_descriptor_ref",
+        "scenarios",
+        "services",
+        "fixtures",
+    }
+    if set(payload) != required_overlay_fields:
+        raise BlockedError(
+            reason="Mobile native environment overlay shape is invalid",
+            resource="mobile-contract:environment",
+        )
+    return {
+        **base,
+        "id": payload["id"],
+        "device_descriptor_ref": payload["device_descriptor_ref"],
+        "scenarios": payload["scenarios"],
+        "services": payload["services"],
+        "fixtures": payload["fixtures"],
+    }
+
+
+def load_mobile_native_preflight_spec(
+    path: Path = ENVIRONMENTS_DIR / "mobile-native.yaml",
+    *,
+    gate_id: str = MOBILE_OAUTH_PROOF_GATE_ID,
+) -> MobileNativePreflightSpec:
+    payload = _load_mobile_native_contract_payload(path)
 
     scenario = _load_mobile_native_scenario(payload, gate_id)
+    device_descriptor: MobileDeviceDescriptor | None = None
+    if scenario.id == "android-social":
+        descriptor_ref = _required_text(
+            payload,
+            "device_descriptor_ref",
+            "mobile-contract:device-descriptor",
+        )
+        descriptor_root = (ENVIRONMENTS_DIR.parent / "devices").resolve()
+        descriptor_path = (path.parent / descriptor_ref).resolve()
+        if (
+            descriptor_path.parent != descriptor_root
+            or descriptor_path.suffix not in {".json", ".yaml"}
+        ):
+            raise BlockedError(
+                reason="Mobile device descriptor reference is invalid",
+                resource="mobile-contract:device-descriptor",
+            )
+        try:
+            device_descriptor = load_mobile_device_descriptor(descriptor_path)
+        except MobileInstallationError as error:
+            raise BlockedError(
+                reason=f"Mobile device descriptor is invalid: {error}",
+                resource="mobile-contract:device-descriptor",
+            ) from error
     appium = _required_object(payload, "appium", "mobile-contract:appium")
     server = _required_object(appium, "server", "mobile-contract:appium-server")
     drivers = _required_object(appium, "drivers", "mobile-contract:appium-drivers")
@@ -1875,8 +3165,21 @@ def load_mobile_native_preflight_spec(
     clients = tuple(
         clients_by_id[client_id] for client_id in scenario.client_ids
     )
-    if {client.platform for client in clients} != set(
-        EXPECTED_DRIVER_IDENTITIES
+    selected_platforms = {client.platform for client in clients}
+    if (
+        scenario.id == "android-social"
+        and selected_platforms != {"android"}
+    ):
+        raise BlockedError(
+            reason=(
+                "Mobile native Android Social scenario requires exactly one "
+                "Android physical client"
+            ),
+            resource="mobile-contract:scenario:android-social:platforms",
+        )
+    if (
+        scenario.id != "android-social"
+        and selected_platforms != set(EXPECTED_DRIVER_IDENTITIES)
     ):
         raise BlockedError(
             reason=(
@@ -1888,6 +3191,7 @@ def load_mobile_native_preflight_spec(
     leases = _required_object(payload, "leases", "mobile-contract:leases")
     return MobileNativePreflightSpec(
         scenario=scenario,
+        device_descriptor=device_descriptor,
         appium_server_url_ref=_required_text(
             server,
             "url_ref",
@@ -2148,12 +3452,13 @@ def _discover_android_browser(
     repo_root: Path,
     environment: Mapping[str, str],
 ) -> tuple[str, str, int]:
+    device_ref = hashlib.sha256(serial.encode("utf-8")).hexdigest()[:12]
     result = _run_checked(
         executor,
         ("adb", "-s", serial, "shell", "dumpsys", "webviewupdate"),
         repo_root=repo_root,
         environment=environment,
-        resource=f"mobile-runtime:android-webview:{serial}",
+        resource=f"mobile-runtime:android-webview:{device_ref}",
     )
     provider_line = next(
         (
@@ -2171,18 +3476,18 @@ def _discover_android_browser(
     if not provider or version_match is None:
         raise BlockedError(
             reason="Android active WebView provider is missing or ambiguous",
-            resource=f"mobile-runtime:android-webview:{serial}",
+            resource=f"mobile-runtime:android-webview:{device_ref}",
         )
     version, major = _parse_version(
         version_match.group(0),
-        f"mobile-runtime:android-webview:{serial}",
+        f"mobile-runtime:android-webview:{device_ref}",
     )
     package_result = _run_checked(
         executor,
         ("adb", "-s", serial, "shell", "dumpsys", "package", provider),
         repo_root=repo_root,
         environment=environment,
-        resource=f"mobile-runtime:android-browser:{serial}",
+        resource=f"mobile-runtime:android-browser:{device_ref}",
     )
     package_version = re.search(
         r"(?m)^\s*versionName=(\S+)\s*$",
@@ -2191,7 +3496,7 @@ def _discover_android_browser(
     if package_version is None or package_version.group(1) != version:
         raise BlockedError(
             reason="Android WebView provider and package versions do not match",
-            resource=f"mobile-runtime:android-browser:{serial}",
+            resource=f"mobile-runtime:android-browser:{device_ref}",
         )
     return provider, version, major
 
@@ -2414,58 +3719,65 @@ def preflight_mobile_native_inputs(
     android_clients = [
         client for client in spec.clients if client.platform == "android"
     ]
-    ios_inventory = _run_checked(
-        executor,
-        spec.ios_device_inventory_command,
-        repo_root=repo_root,
-        environment=command_environment,
-        resource="mobile-runtime:ios-device-inventory",
-    )
-    connected_ios = _connected_ios_devices(ios_inventory.stdout)
-    ios_count_matches = (
-        len(connected_ios) == len(ios_clients)
-        if spec.scenario.require_exact_device_count
-        else len(connected_ios) >= len(ios_clients)
-    )
-    if not ios_count_matches:
-        reason = (
-            "Mobile native requires exactly two connected physical iOS devices"
-            if spec.scenario.id == "access"
-            else (
-                f"Mobile native scenario {spec.scenario.id!r} requires at "
-                f"least {len(ios_clients)} connected physical iOS device(s)"
+    connected_ios: set[str] = set()
+    if ios_clients:
+        ios_inventory = _run_checked(
+            executor,
+            spec.ios_device_inventory_command,
+            repo_root=repo_root,
+            environment=command_environment,
+            resource="mobile-runtime:ios-device-inventory",
+        )
+        connected_ios = _connected_ios_devices(ios_inventory.stdout)
+        ios_count_matches = (
+            len(connected_ios) == len(ios_clients)
+            if spec.scenario.require_exact_device_count
+            else len(connected_ios) >= len(ios_clients)
+        )
+        if not ios_count_matches:
+            reason = (
+                "Mobile native requires exactly two connected physical iOS devices"
+                if spec.scenario.id == "access"
+                else (
+                    f"Mobile native scenario {spec.scenario.id!r} requires at "
+                    f"least {len(ios_clients)} connected physical iOS device(s)"
+                )
             )
-        )
-        raise BlockedError(
-            reason=reason,
-            resource="mobile-runtime:ios-device-isolation",
-        )
+            raise BlockedError(
+                reason=reason,
+                resource="mobile-runtime:ios-device-isolation",
+            )
 
-    _, ios_wda_bundle_id = _required_env_ref(
-        spec.ios_wda_bundle_id_ref,
-        "mobile-runtime:ios-wda-bundle",
-    )
-    _, ios_webview_bundle_id = _required_env_ref(
-        spec.ios_webview_bundle_id_ref,
-        "mobile-runtime:ios-webview-bundle",
-    )
-    if (
-        spec.ios_native_context != "NATIVE_APP"
-        or not spec.ios_webview_context_prefix.startswith("WEBVIEW")
-    ):
-        raise BlockedError(
-            reason="iOS native and WebView readiness inputs are invalid",
-            resource="mobile-runtime:ios-context-readiness",
+    ios_wda_bundle_id = ""
+    ios_webview_bundle_id = ""
+    if ios_clients:
+        _, ios_wda_bundle_id = _required_env_ref(
+            spec.ios_wda_bundle_id_ref,
+            "mobile-runtime:ios-wda-bundle",
         )
+        _, ios_webview_bundle_id = _required_env_ref(
+            spec.ios_webview_bundle_id_ref,
+            "mobile-runtime:ios-webview-bundle",
+        )
+        if (
+            spec.ios_native_context != "NATIVE_APP"
+            or not spec.ios_webview_context_prefix.startswith("WEBVIEW")
+        ):
+            raise BlockedError(
+                reason="iOS native and WebView readiness inputs are invalid",
+                resource="mobile-runtime:ios-context-readiness",
+            )
 
-    android_inventory = _run_checked(
-        executor,
-        spec.android_device_inventory_command,
-        repo_root=repo_root,
-        environment=command_environment,
-        resource="mobile-runtime:android-device-inventory",
-    )
-    connected_android = _connected_android_devices(android_inventory.stdout)
+    connected_android: set[str] = set()
+    if android_clients:
+        android_inventory = _run_checked(
+            executor,
+            spec.android_device_inventory_command,
+            repo_root=repo_root,
+            environment=command_environment,
+            resource="mobile-runtime:android-device-inventory",
+        )
+        connected_android = _connected_android_devices(android_inventory.stdout)
     android_count_matches = (
         len(connected_android) == len(android_clients)
         if spec.scenario.require_exact_device_count
@@ -2510,6 +3822,7 @@ def preflight_mobile_native_inputs(
         for client in spec.clients
     }
     android_abis: set[str] = set()
+    android_device_facts: dict[str, dict[str, Any]] = {}
     browser_details: dict[str, dict[str, Any]] = {}
     browser_majors: set[int] = set()
     for client in android_clients:
@@ -2547,6 +3860,116 @@ def preflight_mobile_native_inputs(
                 resource=f"mobile-runtime:android-abi:{client.id}",
             )
         android_abis.add(abi)
+        if spec.scenario.id == "android-social":
+            manufacturer = _run_checked(
+                executor,
+                (
+                    "adb",
+                    "-s",
+                    device,
+                    "shell",
+                    "getprop",
+                    "ro.product.manufacturer",
+                ),
+                repo_root=repo_root,
+                environment=command_environment,
+                resource=f"mobile-runtime:android-manufacturer:{client.id}",
+            ).stdout.strip()
+            model = _run_checked(
+                executor,
+                ("adb", "-s", device, "shell", "getprop", "ro.product.model"),
+                repo_root=repo_root,
+                environment=command_environment,
+                resource=f"mobile-runtime:android-model:{client.id}",
+            ).stdout.strip()
+            version = _run_checked(
+                executor,
+                (
+                    "adb",
+                    "-s",
+                    device,
+                    "shell",
+                    "getprop",
+                    "ro.build.version.release",
+                ),
+                repo_root=repo_root,
+                environment=command_environment,
+                resource=f"mobile-runtime:android-version:{client.id}",
+            ).stdout.strip()
+            api_level = _run_checked(
+                executor,
+                (
+                    "adb",
+                    "-s",
+                    device,
+                    "shell",
+                    "getprop",
+                    "ro.build.version.sdk",
+                ),
+                repo_root=repo_root,
+                environment=command_environment,
+                resource=f"mobile-runtime:android-api:{client.id}",
+            ).stdout.strip()
+            fingerprint = _run_checked(
+                executor,
+                (
+                    "adb",
+                    "-s",
+                    device,
+                    "shell",
+                    "getprop",
+                    "ro.build.fingerprint",
+                ),
+                repo_root=repo_root,
+                environment=command_environment,
+                resource=f"mobile-runtime:android-fingerprint:{client.id}",
+            ).stdout.strip()
+            if (
+                not manufacturer
+                or not model
+                or not version
+                or not api_level.isdigit()
+                or not fingerprint
+            ):
+                raise BlockedError(
+                    reason=(
+                        f"Android client {client.id!r} has incomplete physical "
+                        "device facts"
+                    ),
+                    resource=f"mobile-runtime:android-facts:{client.id}",
+                )
+            facts: dict[str, Any] = {
+                "platform": "android",
+                "manufacturer": manufacturer,
+                "model": model,
+                "androidVersion": version,
+                "apiLevel": int(api_level),
+                "abi": abi,
+                "kernelQemu": qemu,
+                "fingerprint": fingerprint,
+                "physical": True,
+                "authorized": True,
+            }
+            descriptor = spec.device_descriptor
+            if descriptor is None or not descriptor.matches(facts):
+                raise BlockedError(
+                    reason=(
+                        "Android physical device does not match the declared "
+                        "device descriptor"
+                    ),
+                    resource=f"mobile-runtime:device-descriptor:{client.id}",
+                )
+            facts.update(
+                {
+                    "deviceDescriptorId": descriptor.id,
+                    "installationAdapter": descriptor.installation.adapter,
+                    "installationStrategy": descriptor.installation.strategy,
+                    "userConfirmationOnInstall": (
+                        descriptor.installation.user_confirmation_on_install
+                    ),
+                }
+            )
+            android_device_facts[client.id] = facts
         provider, version, major = _discover_android_browser(
             spec.chromedriver,
             device,
@@ -2600,6 +4023,10 @@ def preflight_mobile_native_inputs(
         spec.lease_authentication_key_ref,
         command_environment,
     )
+    _, runtime_cache_root = _required_env_ref(
+        spec.chromedriver.cache_root_ref,
+        "mobile-runtime:acceptance-runtime-cache",
+    )
     return {
         "appiumUrl": appium_url,
         "appiumVersion": actual_appium_version,
@@ -2611,9 +4038,13 @@ def preflight_mobile_native_inputs(
             "webviewBundleId": ios_webview_bundle_id,
         },
         "androidBrowsers": browser_details,
+        "androidDeviceFacts": android_device_facts,
         "chromedriver": chromedriver,
         "physicalDevices": physical_devices,
         "storageRoot": storage_root,
+        "runtimeCacheRoot": str(
+            Path(runtime_cache_root).expanduser().resolve()
+        ),
         "leaseAuthenticationKey": lease_authentication_key,
     }
 
@@ -3026,6 +4457,242 @@ class _AppiumDeadlineExceeded(DriverError, TimeoutError):
     """An Appium request exhausted the enclosing capability deadline."""
 
 
+class _ParentAndroidInstallationAdapter:
+    adapter_id = ANDROID_ADB_PACKAGE_SHA256_ADAPTER
+
+    def __init__(
+        self,
+        session: "_ParentAppiumSession",
+        *,
+        deadline_monotonic: float | None,
+        cancellation: threading.Event | None,
+        executor: CommandExecutor | None = None,
+    ) -> None:
+        self.session = session
+        self.deadline_monotonic = deadline_monotonic
+        self.cancellation = cancellation
+        self.executor = executor or SubprocessExecutor()
+
+    def inspect(self, application_id: str) -> AndroidInstalledArtifact:
+        lease = self.session._device_lease
+        if lease is None:
+            raise DriverError(
+                "Android installation adapter has no physical-device authority"
+            )
+        return self.session._with_physical_device(
+            lease,
+            lambda handle: self._inspect_with_handle(
+                handle.identifier,
+                application_id,
+            ),
+            deadline_monotonic=self.deadline_monotonic,
+            cancellation=self.cancellation,
+        )
+
+    def remove(self, application_id: str) -> None:
+        self.session._request(
+            "POST",
+            self.session._path("/appium/device/remove_app"),
+            {"appId": application_id},
+            deadline_monotonic=self.deadline_monotonic,
+            cancellation=self.cancellation,
+        )
+
+    def install(self, package: Path) -> None:
+        lease = self.session._device_lease
+        if lease is None:
+            raise DriverError(
+                "Android installation adapter has no physical-device authority"
+            )
+        self.session._with_physical_device(
+            lease,
+            lambda handle: self._install_with_handle(
+                handle.identifier,
+                package,
+            ),
+            deadline_monotonic=self.deadline_monotonic,
+            cancellation=self.cancellation,
+        )
+
+    def activate(self, application_id: str) -> None:
+        self.session._request(
+            "POST",
+            self.session._path("/appium/device/activate_app"),
+            {"appId": application_id},
+            deadline_monotonic=self.deadline_monotonic,
+            cancellation=self.cancellation,
+        )
+
+    def _inspect_with_handle(
+        self,
+        device_identifier: str,
+        application_id: str,
+    ) -> AndroidInstalledArtifact:
+        inventory_result = self._run_adb(
+            device_identifier,
+            "shell",
+            "cmd",
+            "package",
+            "list",
+            "packages",
+            application_id,
+        )
+        if inventory_result.returncode != 0:
+            raise DriverError("Android installed package lookup failed")
+        exact_package = f"package:{application_id}"
+        if exact_package not in {
+            line.strip() for line in inventory_result.stdout.splitlines()
+        }:
+            return AndroidInstalledArtifact(present=False, sha256=None)
+
+        package_result = self._run_adb(
+            device_identifier,
+            "shell",
+            "pm",
+            "path",
+            application_id,
+        )
+        if package_result.returncode != 0:
+            raise DriverError("Android installed package lookup failed")
+        package_lines = [
+            line.removeprefix("package:").strip()
+            for line in package_result.stdout.splitlines()
+            if line.startswith("package:")
+        ]
+        if not package_lines:
+            return AndroidInstalledArtifact(present=False, sha256=None)
+        base_packages = [
+            path for path in package_lines if path.endswith("/base.apk")
+        ]
+        if len(base_packages) != 1:
+            raise DriverError(
+                "Android installed package has no unique base artifact"
+            )
+        digest_result = self._run_adb(
+            device_identifier,
+            "shell",
+            "sha256sum",
+            base_packages[0],
+        )
+        digest = digest_result.stdout.split(maxsplit=1)[0].lower()
+        if (
+            digest_result.returncode != 0
+            or SHA256_PATTERN.fullmatch(digest) is None
+        ):
+            raise DriverError(
+                "Android installed package SHA-256 readback failed"
+            )
+        return AndroidInstalledArtifact(present=True, sha256=digest)
+
+    def _install_with_handle(
+        self,
+        device_identifier: str,
+        package: Path,
+    ) -> None:
+        if self.cancellation is not None and self.cancellation.is_set():
+            raise _AppiumDeadlineExceeded(
+                "Android installation was cancelled"
+            )
+        deadline = self.deadline_monotonic or (
+            time.monotonic()
+            + MOBILE_NATIVE_ANDROID_INSTALL_TIMEOUT_MS / 1000
+        )
+        if deadline <= time.monotonic():
+            raise _AppiumDeadlineExceeded(
+                "Android installation exceeded its deadline"
+            )
+        outcome: dict[str, Any] = {}
+
+        def install() -> None:
+            try:
+                outcome["result"] = self.executor.run(
+                    (
+                        "adb",
+                        "-s",
+                        device_identifier,
+                        "install",
+                        "-r",
+                        "--no-streaming",
+                        str(package),
+                    ),
+                    cwd=REPO_ROOT,
+                    env=os.environ,
+                    timeout=max(1.0, deadline - time.monotonic()),
+                )
+            except BaseException as error:
+                outcome["error"] = error
+
+        worker = threading.Thread(
+            target=install,
+            name="android-application-install",
+            daemon=True,
+        )
+        worker.start()
+        while worker.is_alive() and time.monotonic() < deadline:
+            if self.cancellation is not None and self.cancellation.is_set():
+                break
+            if (
+                self.session.device_descriptor is not None
+                and self.session.device_descriptor.installation
+                .user_confirmation_on_install
+            ):
+                _approve_oplus_install_confirmation_if_visible(
+                    lambda *arguments: self._run_adb(
+                        device_identifier,
+                        *arguments,
+                    ),
+                    application_name="Peers",
+                    dump_path="/sdcard/peers-touch-mobile-install.xml",
+                )
+            worker.join(timeout=0.1)
+        worker.join()
+        error = outcome.get("error")
+        if isinstance(error, BaseException):
+            raise DriverError(
+                "Android no-streaming installation failed"
+            ) from error
+        result = outcome.get("result")
+        if not isinstance(result, CommandResult):
+            raise DriverError(
+                "Android no-streaming installation result is unavailable"
+            )
+        if result.returncode != 0:
+            raise DriverError(
+                "Android no-streaming installation failed"
+            )
+
+    def _run_adb(
+        self,
+        device_identifier: str,
+        *arguments: str,
+    ) -> CommandResult:
+        if self.cancellation is not None and self.cancellation.is_set():
+            raise _AppiumDeadlineExceeded(
+                "Android installation inspection was cancelled"
+            )
+        timeout_seconds = 30.0
+        if self.deadline_monotonic is not None:
+            timeout_seconds = min(
+                timeout_seconds,
+                self.deadline_monotonic - time.monotonic(),
+            )
+            if timeout_seconds <= 0:
+                raise _AppiumDeadlineExceeded(
+                    "Android installation inspection exceeded its deadline"
+                )
+        try:
+            return self.executor.run(
+                ("adb", "-s", device_identifier, *arguments),
+                cwd=REPO_ROOT,
+                env=os.environ,
+                timeout=timeout_seconds,
+            )
+        except BlockedError as error:
+            raise DriverError(
+                "Android installation inspection command failed"
+            ) from error
+
+
 class _ParentAppiumSession:
     """Raw Appium authority retained exclusively in the Provisioner process."""
 
@@ -3042,9 +4709,15 @@ class _ParentAppiumSession:
         build_attestation: ArtifactRef,
         ports: Mapping[str, int],
         source_gate_id: str = MOBILE_OAUTH_PROOF_GATE_ID,
+        device_descriptor: MobileDeviceDescriptor | None = None,
         auto_accept_alerts: bool = False,
         chromedriver_executable: str = "",
+        command_executor: CommandExecutor | None = None,
     ) -> None:
+        if device_descriptor is not None and platform_name != "android":
+            raise DriverError(
+                "Mobile device installation descriptor requires Android"
+            )
         self.transport = transport
         self.client_id = client_id
         self.platform = platform_name
@@ -3054,20 +4727,32 @@ class _ParentAppiumSession:
         self.physical_device_lease_ref = physical_device_lease
         self.build_attestation_ref = build_attestation
         self.source_gate_id = source_gate_id
+        self.device_descriptor = device_descriptor
         self.auto_accept_alerts = auto_accept_alerts
         self.ports = dict(ports)
         self.chromedriver_executable = chromedriver_executable
+        self.command_executor = command_executor or SubprocessExecutor()
         self.session_id = ""
         self._device_lease: dict[str, Any] | None = None
         self._build_attestation: dict[str, Any] | None = None
         self._application_id = ""
-        self._fresh_install_trace: dict[str, Any] | None = None
+        self._installation_trace: dict[str, Any] | None = None
+
+    @property
+    def installation_trace(self) -> dict[str, Any]:
+        if self._installation_trace is None:
+            raise DriverError("Appium installation trace is unavailable")
+        return json.loads(json.dumps(self._installation_trace))
 
     @property
     def fresh_install_trace(self) -> dict[str, Any]:
-        if self._fresh_install_trace is None:
+        if self.device_descriptor is not None:
+            raise DriverError(
+                "Appium fresh-install trace is unavailable for this strategy"
+            )
+        if self._installation_trace is None:
             raise DriverError("Appium fresh-install trace is unavailable")
-        return json.loads(json.dumps(self._fresh_install_trace))
+        return json.loads(json.dumps(self._installation_trace))
 
     def start(
         self,
@@ -3124,7 +4809,11 @@ class _ParentAppiumSession:
             "platformName": "iOS" if self.platform == "ios" else "Android",
             "appium:automationName": self.automation_name,
             "appium:autoWebview": False,
-            "appium:newCommandTimeout": 180,
+            "appium:newCommandTimeout": (
+                MOBILE_NATIVE_ANDROID_NEW_COMMAND_TIMEOUT_SECONDS
+                if self.platform == "android"
+                else 180
+            ),
         }
         if self.auto_accept_alerts:
             capability = (
@@ -3156,6 +4845,13 @@ class _ParentAppiumSession:
                     "appium:chromedriverPort": self._required_port("webview"),
                     "appium:ensureWebviewsHavePages": True,
                     "appium:chromedriverExecutable": self.chromedriver_executable,
+                    "appium:androidInstallTimeout": (
+                        MOBILE_NATIVE_ANDROID_INSTALL_TIMEOUT_MS
+                    ),
+                    "appium:adbExecTimeout": (
+                        MOBILE_NATIVE_ANDROID_INSTALL_TIMEOUT_MS
+                    ),
+                    "appium:ignoreHiddenApiPolicyError": True,
                 }
             )
 
@@ -3188,11 +4884,41 @@ class _ParentAppiumSession:
             raise DriverError("Appium session response has no session ID")
         self.session_id = session_id
         try:
-            self._fresh_install_trace = self._fresh_install(
-                package,
-                deadline_monotonic=deadline_monotonic,
-                cancellation=cancellation,
-            )
+            if self.device_descriptor is None:
+                self._installation_trace = self._fresh_install(
+                    package,
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                )
+            else:
+                execution = execute_android_installation(
+                    self.device_descriptor.installation,
+                    _ParentAndroidInstallationAdapter(
+                        self,
+                        deadline_monotonic=deadline_monotonic,
+                        cancellation=cancellation,
+                    ),
+                    application_id=self._application_id,
+                    package=package,
+                    expected_sha256=str(
+                        attestation["artifact"]["sha256"]
+                    ).removeprefix("sha256:"),
+                    timestamp=_utc_timestamp,
+                )
+                self._installation_trace = (
+                    self._scenario_installation_trace(execution)
+                )
+        except MobileInstallationError as error:
+            try:
+                self.stop(
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                )
+            except BaseException:
+                pass
+            raise DriverError(
+                f"Android installation strategy failed: {error}"
+            ) from error
         except BaseException:
             try:
                 self.stop(
@@ -3210,15 +4936,183 @@ class _ParentAppiumSession:
         deadline_monotonic: float | None = None,
         cancellation: threading.Event | None = None,
     ) -> None:
-        if self.session_id:
-            session_id = self.session_id
-            self._request(
-                "DELETE",
-                f"/session/{urllib.parse.quote(session_id, safe='')}",
-                deadline_monotonic=deadline_monotonic,
+        if not self.session_id:
+            return
+        if self._device_lease is None:
+            raise DriverError(
+                "Appium physical-device authority is unavailable"
+            )
+        session_id = self.session_id
+        request_deadline = time.monotonic() + (
+            MOBILE_NATIVE_APPIUM_STOP_REQUEST_TIMEOUT_SECONDS
+        )
+        if deadline_monotonic is not None:
+            request_deadline = min(request_deadline, deadline_monotonic)
+
+        def stop_with_handle(
+            handle: ResolvedPhysicalDeviceHandle,
+        ) -> None:
+            try:
+                self.transport.request(
+                    "DELETE",
+                    (
+                        "/session/"
+                        + urllib.parse.quote(session_id, safe="")
+                    ),
+                    deadline_monotonic=request_deadline,
+                    cancellation=cancellation,
+                )
+            except _AppiumDeadlineExceeded:
+                if self.platform != "android":
+                    raise
+                self._force_stop_android_session(
+                    handle.identifier,
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                )
+
+        self._with_physical_device(
+            self._device_lease,
+            stop_with_handle,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        self.session_id = ""
+
+    def _force_stop_android_session(
+        self,
+        device_identifier: str,
+        *,
+        deadline_monotonic: float | None,
+        cancellation: threading.Event | None,
+    ) -> None:
+        deadline = deadline_monotonic or (
+            time.monotonic()
+            + MOBILE_NATIVE_PARENT_CLEANUP_TIMEOUT_SECONDS
+        )
+
+        def run_adb(*arguments: str) -> CommandResult:
+            if cancellation is not None and cancellation.is_set():
+                raise _AppiumDeadlineExceeded(
+                    "Android Appium cleanup was cancelled"
+                )
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise _AppiumDeadlineExceeded(
+                    "Android Appium cleanup exceeded its deadline"
+                )
+            try:
+                return self.command_executor.run(
+                    ("adb", "-s", device_identifier, *arguments),
+                    cwd=REPO_ROOT,
+                    env=os.environ,
+                    timeout=min(10.0, remaining),
+                )
+            except BlockedError as error:
+                raise DriverError(
+                    "Android Appium cleanup command failed"
+                ) from error
+
+        packages = tuple(
+            package
+            for package in (
+                self._application_id,
+                "io.appium.uiautomator2.server",
+                "io.appium.uiautomator2.server.test",
+            )
+            if package
+        )
+        for package in packages:
+            stopped = run_adb(
+                "shell",
+                "am",
+                "force-stop",
+                package,
+            )
+            if stopped.returncode != 0:
+                raise DriverError(
+                    "Android Appium cleanup could not stop a package"
+                )
+
+        forwards = run_adb("forward", "--list")
+        if forwards.returncode != 0:
+            raise DriverError(
+                "Android Appium cleanup could not inspect port forwards"
+            )
+        forwarded_ports = {
+            f"tcp:{port}"
+            for role in ("system", "mjpeg")
+            if isinstance((port := self.ports.get(role)), int) and port > 0
+        }
+        for line in forwards.stdout.splitlines():
+            fields = line.split()
+            if (
+                len(fields) < 2
+                or fields[0] != device_identifier
+                or fields[1] not in forwarded_ports
+            ):
+                continue
+            run_adb(
+                "forward",
+                "--remove",
+                fields[1],
+            )
+        remaining_forwards = run_adb("forward", "--list")
+        if (
+            remaining_forwards.returncode != 0
+            or any(
+                len(fields := line.split()) >= 2
+                and fields[0] == device_identifier
+                and fields[1] in forwarded_ports
+                for line in remaining_forwards.stdout.splitlines()
+            )
+        ):
+            raise DriverError(
+                "Android Appium cleanup left an active port forward"
+            )
+
+        while time.monotonic() < deadline:
+            active = False
+            for package in packages:
+                process = run_adb("shell", "pidof", package)
+                if process.returncode not in {0, 1}:
+                    raise DriverError(
+                        "Android Appium cleanup process check failed"
+                    )
+                active = active or bool(process.stdout.strip())
+            if not active:
+                break
+            _wait_for_appium_poll(
+                min(0.1, max(0.0, deadline - time.monotonic())),
                 cancellation=cancellation,
             )
-            self.session_id = ""
+        else:
+            raise _AppiumDeadlineExceeded(
+                "Android Appium cleanup left active processes"
+            )
+
+        sessions = self.transport.request(
+            "GET",
+            "/sessions",
+            deadline_monotonic=deadline,
+            cancellation=cancellation,
+        )
+        if (
+            not isinstance(sessions, list)
+            or any(
+                isinstance(candidate, Mapping)
+                and str(
+                    candidate.get("id")
+                    or candidate.get("sessionId")
+                    or ""
+                )
+                == self.session_id
+                for candidate in sessions
+            )
+        ):
+            raise DriverError(
+                "Android Appium cleanup left an active server session"
+            )
 
     def wait_for_ready(
         self,
@@ -3560,7 +5454,7 @@ class _ParentAppiumSession:
 
     def verify_installed_build_identity(
         self,
-        fresh_install_trace: ArtifactRef,
+        installation_trace: ArtifactRef,
         *,
         deadline_monotonic: float | None = None,
         cancellation: threading.Event | None = None,
@@ -3575,26 +5469,36 @@ class _ParentAppiumSession:
         if source_gate_id == MOBILE_OAUTH_PROOF_GATE_ID:
             trace = _load_source_artifact(
                 self.artifact_reader,
-                fresh_install_trace,
+                installation_trace,
                 expected_path=(
                     f"evidence/mobile/runtime/{self.client_id}/install.json"
                 ),
                 expected_kind="mobile-fresh-install-trace",
-                expected_workspace_id=fresh_install_trace.workspace_id,
-                expected_run_id=fresh_install_trace.run_id,
+                expected_workspace_id=installation_trace.workspace_id,
+                expected_run_id=installation_trace.run_id,
             )
         else:
             try:
-                trace = self.artifact_reader.read_json(fresh_install_trace)
+                trace = self.artifact_reader.read_json(installation_trace)
             except (EvidenceError, OSError, TypeError, ValueError) as error:
                 raise DriverError(
-                    "Appium scenario fresh-install trace is unavailable"
+                    "Appium scenario installation trace is unavailable"
                 ) from error
-        runtime = self.call_action(
-            "build.identity",
+        self.switch_to_app_webview(
             deadline_monotonic=deadline_monotonic,
             cancellation=cancellation,
         )
+        try:
+            runtime = self.call_action(
+                "build.identity",
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+        finally:
+            self.switch_to_native(
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
         expected = self._build_attestation["buildIdentity"]
         digest = self._build_attestation["embeddedIdentitySha256"]
         if (
@@ -3607,9 +5511,14 @@ class _ParentAppiumSession:
                 cancellation=cancellation,
             )
             != expected["applicationId"]
-            or trace != self._fresh_install_trace
+            or trace != self._installation_trace
         ):
             raise DriverError("installed and attested build identities differ")
+        installation_trace_field = (
+            "installationTrace"
+            if self.device_descriptor is not None
+            else "freshInstallTrace"
+        )
         payload = {
             "artifactKind": (
                 "mobile-installed-build-identity"
@@ -3621,7 +5530,7 @@ class _ParentAppiumSession:
             "clientId": self.client_id,
             "platform": self.platform,
             "buildAttestation": self.build_attestation_ref.to_dict(),
-            "freshInstallTrace": fresh_install_trace.to_dict(),
+            installation_trace_field: installation_trace.to_dict(),
             "buildId": expected["buildId"],
             "activeApplicationId": expected["applicationId"],
             "webEmbeddedIdentitySha256": digest,
@@ -3638,6 +5547,30 @@ class _ParentAppiumSession:
             expected_run_id=self._build_attestation["runId"],
             expected_workspace_id=self.build_attestation_ref.workspace_id,
         )
+
+    def _scenario_installation_trace(
+        self,
+        execution: AndroidInstallationExecution,
+    ) -> dict[str, Any]:
+        if self._build_attestation is None or self.device_descriptor is None:
+            raise DriverError(
+                "Appium scenario installation authority is unavailable"
+            )
+        return {
+            "artifactKind": "mobile-native-scenario-installation-trace",
+            "runId": self._build_attestation["runId"],
+            "gateId": self.source_gate_id,
+            "clientId": self.client_id,
+            "platform": self.platform,
+            "deviceDescriptorId": self.device_descriptor.id,
+            "buildAttestation": self.build_attestation_ref.to_dict(),
+            "applicationId": self._application_id,
+            "artifactSha256": self._build_attestation["artifact"]["sha256"],
+            "installation": execution.to_trace(
+                self.device_descriptor.installation
+            ),
+            "observedAt": _utc_timestamp(),
+        }
 
     def _fresh_install(
         self,
@@ -3758,17 +5691,19 @@ class _ParentAppiumSession:
                 deadline_monotonic=deadline_monotonic,
                 cancellation=cancellation,
             )
-            field = "bundleId"
+            result = (
+                str(value.get("bundleId") or "")
+                if isinstance(value, Mapping)
+                else ""
+            )
         else:
-            value = self.execute_script(
-                "mobile: getCurrentActivity",
+            value = self._request(
+                "GET",
+                self._path("/appium/device/current_package"),
                 deadline_monotonic=deadline_monotonic,
                 cancellation=cancellation,
             )
-            field = "appPackage"
-        result = (
-            str(value.get(field) or "") if isinstance(value, Mapping) else ""
-        )
+            result = value.strip() if isinstance(value, str) else ""
         if not result:
             raise DriverError("Appium active application is unavailable")
         return result
@@ -3950,6 +5885,14 @@ def _assert_mobile_channel_safe(
         raise ValueError(
             f"Mobile Appium response contains forbidden material at {path}"
         )
+
+
+def _project_harness_action_value(action: str, value: object) -> object:
+    if action != "lifecycle.scope.read" or not isinstance(value, Mapping):
+        return value
+    projected = dict(value)
+    projected.pop("deviceId", None)
+    return projected
 
 
 def _closed_mapping(
@@ -4394,6 +6337,7 @@ def _validate_social_projection(value: object) -> None:
             "typingPeers",
             "peerOnline",
             "lastReconcileAt",
+            "ingress",
         },
         label="Social runtime projection",
     )
@@ -4411,13 +6355,27 @@ def _validate_social_projection(value: object) -> None:
     for raw_request in friend_requests:
         request = _closed_mapping(
             raw_request,
-            required={"requestId", "senderPtid", "receiverPtid", "status"},
+            required={
+                "requestId",
+                "federationId",
+                "senderPtid",
+                "receiverPtid",
+                "senderHomeStationPeerId",
+                "receiverHomeStationPeerId",
+                "status",
+            },
             label="Social friend request",
         )
-        _response_nonempty_string(
-            request["requestId"],
-            label="Social friend request requestId",
-        )
+        for field in (
+            "requestId",
+            "federationId",
+            "senderHomeStationPeerId",
+            "receiverHomeStationPeerId",
+        ):
+            _response_nonempty_string(
+                request[field],
+                label=f"Social friend request {field}",
+            )
         _response_ptid(
             request["senderPtid"],
             label="Social friend request senderPtid",
@@ -4486,6 +6444,44 @@ def _validate_social_projection(value: object) -> None:
             _response_integer(
                 entry["lastUpdate"],
                 label="Social runtime typing lastUpdate",
+                minimum=0,
+            )
+    ingress = projection["ingress"]
+    if ingress is not None:
+        ingress = _closed_mapping(
+            ingress,
+            required={
+                "lifecycle",
+                "streamCursor",
+                "writeAdmissionOpen",
+                "staleDomains",
+                "dataQueueDepth",
+                "controlQueueDepth",
+            },
+            label="Social runtime ingress",
+        )
+        if ingress["lifecycle"] not in {"active", "suspended", "torn"}:
+            raise EphemeralCapabilityBlocked(
+                "Social runtime ingress lifecycle is invalid",
+                resource="mobile.native.appium-session:harness-response",
+            )
+        _response_string(
+            ingress["streamCursor"],
+            label="Social runtime ingress streamCursor",
+        )
+        if not isinstance(ingress["writeAdmissionOpen"], bool):
+            raise EphemeralCapabilityBlocked(
+                "Social runtime ingress writeAdmissionOpen must be a boolean",
+                resource="mobile.native.appium-session:harness-response",
+            )
+        _response_string_list(
+            ingress["staleDomains"],
+            label="Social runtime ingress staleDomains",
+        )
+        for field in ("dataQueueDepth", "controlQueueDepth"):
+            _response_integer(
+                ingress[field],
+                label=f"Social runtime ingress {field}",
                 minimum=0,
             )
 
@@ -5082,7 +7078,34 @@ def _validate_permission_result(value: object, *, requested: bool) -> None:
         )
 
 
+def _validate_session_revocation(value: object, *, label: str) -> None:
+    projection = _closed_mapping(
+        value,
+        required={"remoteRevocation"},
+        label=label,
+    )
+    if projection["remoteRevocation"] not in {
+        "confirmed",
+        "unconfirmed",
+        "not-required",
+    }:
+        raise EphemeralCapabilityBlocked(
+            f"{label} remoteRevocation is invalid",
+            resource="mobile.native.appium-session:harness-response",
+        )
+
+
 def _validate_harness_action_result(action: str, value: object) -> None:
+    if action in MOBILE_NATIVE_ANDROID_SOCIAL_GENERIC_ACTIONS:
+        if not isinstance(value, (Mapping, list, tuple)) and value is not None:
+            raise EphemeralCapabilityBlocked(
+                f"{action} response must be structured",
+                resource="mobile.native.appium-session:harness-response",
+            )
+        _assert_mobile_channel_safe(
+            _project_harness_action_value(action, value)
+        )
+        return
     if action in {"station.add", "station.replace"}:
         result = _closed_mapping(
             value,
@@ -5092,6 +7115,7 @@ def _validate_harness_action_result(action: str, value: object) -> None:
                 "canonicalOrigin",
                 "entries",
             },
+            optional={"sessionRevocation"},
             label=action,
         )
         for field in (
@@ -5107,6 +7131,11 @@ def _validate_harness_action_result(action: str, value: object) -> None:
             )
         for entry in result["entries"]:
             _validate_station_entry(entry)
+        if "sessionRevocation" in result:
+            _validate_session_revocation(
+                result["sessionRevocation"],
+                label=f"{action} sessionRevocation",
+            )
         return
     if action == "access.submit":
         result = _closed_mapping(
@@ -5745,10 +7774,16 @@ class MobileNativeAppiumCapabilityHandler(EphemeralCapabilityHandler):
         allowed_operations: Sequence[str] = (
             MOBILE_NATIVE_CAPABILITIES["mobile.native.appium-session"]
         ),
+        installation_trace_field: str = "freshInstallTrace",
         harness_actions: Sequence[str] = (),
         parent_harness_actions: Sequence[str] = (),
         sensitive_values: Sequence[str] = (),
     ) -> None:
+        if installation_trace_field not in {
+            "freshInstallTrace",
+            "installationTrace",
+        }:
+            raise ValueError("Mobile installation trace field is invalid")
         self._session_factory = session_factory
         self._artifact_writer = artifact_writer
         self._broker = broker
@@ -5758,6 +7793,7 @@ class MobileNativeAppiumCapabilityHandler(EphemeralCapabilityHandler):
         }
         self._allowed_client_ids = frozenset(allowed_client_ids)
         self._allowed_operations = tuple(allowed_operations)
+        self._installation_trace_field = installation_trace_field
         self._harness_actions = frozenset(harness_actions)
         self._parent_harness_actions = frozenset(parent_harness_actions)
         self._sensitive_values = tuple(
@@ -5766,7 +7802,7 @@ class MobileNativeAppiumCapabilityHandler(EphemeralCapabilityHandler):
         self._sessions: dict[str, _ParentAppiumSession] = {}
         self._cleanup_sessions: list[_ParentAppiumSession] = []
         self._session_refs: dict[str, str] = {}
-        self._install_refs: dict[str, ArtifactRef] = {}
+        self._installation_refs: dict[str, ArtifactRef] = {}
         self._closed = False
 
     @property
@@ -5842,10 +7878,35 @@ class MobileNativeAppiumCapabilityHandler(EphemeralCapabilityHandler):
             self._sessions[client_id] = session
             self._session_refs[client_id] = session_ref
             try:
+                installation_trace = (
+                    session.installation_trace
+                    if self._installation_trace_field == "installationTrace"
+                    else session.fresh_install_trace
+                )
+                expected_installation_kinds = (
+                    {"mobile-native-scenario-installation-trace"}
+                    if self._installation_trace_field == "installationTrace"
+                    else {
+                        "mobile-fresh-install-trace",
+                        "mobile-native-scenario-fresh-install-trace",
+                    }
+                )
+                if (
+                    installation_trace.get("artifactKind")
+                    not in expected_installation_kinds
+                ):
+                    raise DriverError(
+                        "Mobile installation trace kind does not match its "
+                        "capability field"
+                    )
                 reference = self._artifact_writer.write_json(
                     f"evidence/mobile/runtime/{client_id}/install.json",
-                    session.fresh_install_trace,
-                    role=f"mobile-fresh-install-trace/{client_id}",
+                    installation_trace,
+                    role=(
+                        f"mobile-native-scenario-installation-trace/{client_id}"
+                        if self._installation_trace_field == "installationTrace"
+                        else f"mobile-fresh-install-trace/{client_id}"
+                    ),
                     redact=False,
                 )
             except BaseException:
@@ -5860,12 +7921,12 @@ class MobileNativeAppiumCapabilityHandler(EphemeralCapabilityHandler):
                     self._sessions.pop(client_id, None)
                     self._session_refs.pop(client_id, None)
                 raise
-            self._install_refs[client_id] = reference
+            self._installation_refs[client_id] = reference
             return {
                 "clientId": client_id,
                 "sessionRef": session_ref,
                 "applicationId": session._application_id,
-                "freshInstallTrace": reference.to_dict(),
+                self._installation_trace_field: reference.to_dict(),
             }
 
         session = self._require_session(client_id)
@@ -5941,10 +8002,12 @@ class MobileNativeAppiumCapabilityHandler(EphemeralCapabilityHandler):
                     "Mobile Acceptance Harness action is not allowlisted",
                     resource=f"mobile.native.appium-session:{client_id}",
                 )
-            action_payload = _capability_mapping(
-                payload,
-                "actionPayload",
-                resource=f"mobile.native.appium-session:{client_id}",
+            action_payload = dict(
+                _capability_mapping(
+                    payload,
+                    "actionPayload",
+                    resource=f"mobile.native.appium-session:{client_id}",
+                )
             )
             value = session.call_action(
                 action,
@@ -5955,7 +8018,7 @@ class MobileNativeAppiumCapabilityHandler(EphemeralCapabilityHandler):
             _validate_harness_action_result(action, value)
             return {
                 "clientId": client_id,
-                "value": value,
+                "value": _project_harness_action_value(action, value),
             }
         if operation == "harness_negative_callback":
             if "oauth.negativeCallback" not in self._parent_harness_actions:
@@ -6075,6 +8138,16 @@ class MobileNativeAppiumCapabilityHandler(EphemeralCapabilityHandler):
                 "backgrounded": True,
                 "durationSeconds": float(duration_seconds),
             }
+        if operation == "social_ui":
+            return {
+                "clientId": client_id,
+                "value": _mobile_social_ui_operation(
+                    session,
+                    payload,
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                ),
+            }
         if operation == "find_element":
             element_ref = session.find_element(
                 _capability_text(
@@ -6168,22 +8241,22 @@ class MobileNativeAppiumCapabilityHandler(EphemeralCapabilityHandler):
                     "Mobile build identity action is not parent-authorized",
                     resource=f"mobile.native.appium-session:{client_id}",
                 )
-            install_ref = self._install_refs.get(client_id)
+            install_ref = self._installation_refs.get(client_id)
             if install_ref is None:
                 raise EphemeralCapabilityBlocked(
-                    "Mobile native fresh-install evidence is unavailable",
+                    "Mobile native installation evidence is unavailable",
                     resource=f"mobile.native.appium-session:{client_id}",
                 )
             requested_install_ref = ArtifactRef.from_dict(
                 _capability_mapping(
                     payload,
-                    "freshInstallTrace",
+                    self._installation_trace_field,
                     resource=f"mobile.native.appium-session:{client_id}",
                 )
             )
             if requested_install_ref != install_ref:
                 raise EphemeralCapabilityBlocked(
-                    "Mobile native fresh-install ref does not match the session",
+                    "Mobile native installation ref does not match the session",
                     resource=f"mobile.native.appium-session:{client_id}",
                 )
             identity = session.verify_installed_build_identity(
@@ -6221,7 +8294,7 @@ class MobileNativeAppiumCapabilityHandler(EphemeralCapabilityHandler):
                     "clientId",
                     "sessionRef",
                     "applicationId",
-                    "freshInstallTrace",
+                    self._installation_trace_field,
                 },
                 "stop": {"clientId", "stopped"},
                 "wait_ready": {"clientId", "ready"},
@@ -6237,6 +8310,7 @@ class MobileNativeAppiumCapabilityHandler(EphemeralCapabilityHandler):
                     "backgrounded",
                     "durationSeconds",
                 },
+                "social_ui": {"clientId", "value"},
                 "find_element": {"clientId", "elementRef"},
                 "click": {"clientId", "clicked"},
                 "capture_page_source": {"clientId", "pageSource"},
@@ -6675,6 +8749,378 @@ class MobileNativeStationFixtureCapabilityHandler(EphemeralCapabilityHandler):
         return EphemeralHandlerCleanup(closed=True, secrets_zeroized=True)
 
 
+_SOCIAL_UI_ATTRIBUTES = (
+    "data-acceptance-id",
+    "data-feed-scope",
+    "data-circle-id",
+    "data-comment-visible",
+    "data-post-id",
+    "data-moment-content-kind",
+    "data-actor-ptid",
+    "data-profile-actor-ptid",
+    "data-audience-choice",
+    "aria-label",
+    "value",
+)
+
+
+def _mobile_social_ui_operation(
+    session: _ParentAppiumSession,
+    payload: Mapping[str, object],
+    *,
+    deadline_monotonic: float,
+    cancellation: threading.Event,
+) -> dict[str, Any]:
+    action = _capability_text(
+        payload,
+        "uiAction",
+        resource="mobile.native.appium-session:social-ui",
+    )
+    raw_input = _capability_mapping(
+        payload,
+        "input",
+        resource="mobile.native.appium-session:social-ui",
+    )
+    ui_input = dict(raw_input)
+
+    if action in {"query", "click", "set-value"}:
+        selector = ui_input.get("selector")
+        if (
+            not isinstance(selector, str)
+            or not selector
+            or len(selector) > 512
+            or "data-acceptance-id" not in selector
+        ):
+            raise EphemeralCapabilityBlocked(
+                "Mobile Social UI selector is not acceptance-scoped",
+                resource="mobile.native.appium-session:social-ui",
+            )
+    if action == "query":
+        if set(ui_input) != {"selector"}:
+            raise EphemeralCapabilityBlocked(
+                "Mobile Social query input has an invalid shape",
+                resource="mobile.native.appium-session:social-ui",
+            )
+        value = session.execute_script(
+            """
+const node = document.querySelector(arguments[0]);
+if (!node) return {exists: false, text: '', attributes: {}};
+const names = arguments[1];
+const attributes = {};
+for (const name of names) {
+  const value = name === 'value' ? node.value : node.getAttribute(name);
+  if (typeof value === 'string') attributes[name] = value;
+}
+return {
+  exists: true,
+  text: String(node.textContent || '').slice(0, 8192),
+  attributes,
+};
+""",
+            ui_input["selector"],
+            list(_SOCIAL_UI_ATTRIBUTES),
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+    elif action == "click":
+        if set(ui_input) != {"selector"}:
+            raise EphemeralCapabilityBlocked(
+                "Mobile Social click input has an invalid shape",
+                resource="mobile.native.appium-session:social-ui",
+            )
+        value = session.execute_script(
+            """
+const node = document.querySelector(arguments[0]);
+if (!node) return {clicked: false};
+node.scrollIntoView({block: 'center', inline: 'nearest'});
+node.dispatchEvent(new MouseEvent('click', {
+  bubbles: true,
+  cancelable: true,
+  view: window,
+}));
+return {clicked: true};
+""",
+            ui_input["selector"],
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+    elif action == "set-value":
+        if set(ui_input) != {"selector", "value"}:
+            raise EphemeralCapabilityBlocked(
+                "Mobile Social set-value input has an invalid shape",
+                resource="mobile.native.appium-session:social-ui",
+            )
+        text = ui_input.get("value")
+        if not isinstance(text, str) or len(text) > 4096:
+            raise EphemeralCapabilityBlocked(
+                "Mobile Social input value is invalid",
+                resource="mobile.native.appium-session:social-ui",
+            )
+        value = session.execute_script(
+            """
+const node = document.querySelector(arguments[0]);
+if (!node) return {updated: false};
+const value = arguments[1];
+const proto = node.tagName === 'TEXTAREA'
+  ? HTMLTextAreaElement.prototype
+  : HTMLInputElement.prototype;
+const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+if (setter) setter.call(node, value);
+else node.value = value;
+node.dispatchEvent(new Event('input', {bubbles: true}));
+node.dispatchEvent(new Event('change', {bubbles: true}));
+node.focus();
+return {updated: true};
+""",
+            ui_input["selector"],
+            text,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+    elif action == "select-option":
+        if set(ui_input) != {"selector", "optionValue"}:
+            raise EphemeralCapabilityBlocked(
+                "Mobile Social select-option input has an invalid shape",
+                resource="mobile.native.appium-session:social-ui",
+            )
+        selector = ui_input.get("selector")
+        option_value = ui_input.get("optionValue")
+        if (
+            not isinstance(selector, str)
+            or "data-acceptance-id" not in selector
+            or not isinstance(option_value, int)
+            or isinstance(option_value, bool)
+        ):
+            raise EphemeralCapabilityBlocked(
+                "Mobile Social select-option input is invalid",
+                resource="mobile.native.appium-session:social-ui",
+            )
+        value = session.execute_async_script(
+            """
+const owner = document.querySelector(arguments[0]);
+const done = arguments[arguments.length - 1];
+if (!owner) {
+  done({selected: false});
+  return;
+}
+owner.dispatchEvent(new MouseEvent('click', {
+  bubbles: true,
+  cancelable: true,
+  view: window,
+}));
+const expected = String(arguments[1]);
+const deadline = Date.now() + 3000;
+const select = () => {
+  const options = Array.from(document.querySelectorAll(
+    '.ant-select-dropdown [role="option"]'
+  ));
+  const option = options.find((item) =>
+    item.getAttribute('data-value') === expected ||
+    item.getAttribute('title') === expected ||
+    item.textContent?.trim() === expected
+  );
+  if (option) {
+    option.dispatchEvent(new MouseEvent('click', {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+    }));
+    done({selected: true});
+    return;
+  }
+  if (Date.now() >= deadline) {
+    done({selected: false});
+    return;
+  }
+  setTimeout(select, 50);
+};
+select();
+""",
+            selector,
+            option_value,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+    elif action == "post-query":
+        if set(ui_input) != {"postId"}:
+            raise EphemeralCapabilityBlocked(
+                "Mobile Social post query has an invalid shape",
+                resource="mobile.native.appium-session:social-ui",
+            )
+        post_id = ui_input.get("postId")
+        if not isinstance(post_id, str) or not post_id or len(post_id) > 256:
+            raise EphemeralCapabilityBlocked(
+                "Mobile Social post identity is invalid",
+                resource="mobile.native.appium-session:social-ui",
+            )
+        value = session.execute_script(
+            """
+const postId = arguments[0];
+const cards = Array.from(document.querySelectorAll(
+  '[data-acceptance-id="social-moment-card"]'
+));
+const card = cards.find((item) => item.getAttribute('data-post-id') === postId);
+return card ? {
+  exists: true,
+  postId,
+  text: String(card.textContent || '').slice(0, 8192),
+  contentKind: card.getAttribute('data-moment-content-kind') || '',
+} : {exists: false, postId, text: '', contentKind: ''};
+""",
+            post_id,
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+    elif action == "metrics":
+        if ui_input:
+            raise EphemeralCapabilityBlocked(
+                "Mobile Social metrics input must be empty",
+                resource="mobile.native.appium-session:social-ui",
+            )
+        value = session.execute_script(
+            """
+const page = document.querySelector(
+  '[data-acceptance-id="social-moments-page"]'
+);
+const tablist = page?.querySelector('[role="tablist"]');
+const cards = page?.querySelectorAll(
+  '[data-acceptance-id="social-moment-card"]'
+) || [];
+const pageRect = page?.getBoundingClientRect();
+const scopeRect = page?.querySelector('[role="tablist"]')?.getBoundingClientRect();
+const firstCardStyle = cards[0] ? getComputedStyle(cards[0]) : null;
+const composer = document.querySelector('[data-acceptance-id="social-composer"]');
+const composerStyle = composer ? getComputedStyle(composer) : null;
+const composerBackdrop = composer?.closest('.moments-sheet-backdrop');
+const composerBackdropStyle = composerBackdrop
+  ? getComputedStyle(composerBackdrop)
+  : null;
+const composerRect = composer?.getBoundingClientRect();
+const composerInputRect = composer
+  ?.querySelector('[data-acceptance-id="social-composer-text"]')
+  ?.getBoundingClientRect();
+const composerAudienceRect = composer
+  ?.querySelector('[data-acceptance-id="social-audience-select"]')
+  ?.getBoundingClientRect();
+const composerHeaderRect = composer
+  ?.querySelector('.moments-sheet-header')
+  ?.getBoundingClientRect();
+const composerPublishRect = composer
+  ?.querySelector('[data-acceptance-id="social-composer-publish"]')
+  ?.getBoundingClientRect();
+const tabbarRect = document.querySelector('.mobile-tabbar')
+  ?.getBoundingClientRect();
+const viewport = window.visualViewport;
+return {
+  viewportWidth: Number(viewport?.width || window.innerWidth || 0),
+  viewportHeight: Number(viewport?.height || window.innerHeight || 0),
+  viewportOffsetTop: Number(viewport?.offsetTop || 0),
+  tabCount: tablist?.querySelectorAll('[role="tab"]').length || 0,
+  cardCount: cards.length,
+  searchLabelled: Boolean(
+    page?.querySelector('[data-acceptance-id="social-search-open"][aria-label]')
+  ),
+  circlesLabelled: Boolean(
+    page?.querySelector('[data-acceptance-id="social-circles-open"][aria-label]')
+  ),
+  composerLabelled: Boolean(
+    page?.querySelector('[data-acceptance-id="social-composer-open"][aria-label]')
+  ),
+  scopeWidth: Number(scopeRect?.width || 0),
+  pageWidth: Number(pageRect?.width || 0),
+  flatFeed: !firstCardStyle || (
+    Number.parseFloat(firstCardStyle.borderTopLeftRadius || '0') <= 1
+    && firstCardStyle.boxShadow === 'none'
+  ),
+  composerBottomSheet: !composer || (
+    composerBackdropStyle?.position === 'fixed'
+    && Number.parseFloat(composerStyle?.borderTopLeftRadius || '0') >= 16
+  ),
+  composerInputHeight: Number(composerInputRect?.height || 0),
+  composerAudienceHeight: Number(composerAudienceRect?.height || 0),
+  composerHeaderHeight: Number(composerHeaderRect?.height || 0),
+  composerPublishHeight: Number(composerPublishRect?.height || 0),
+  composerBottomClearance: composerRect
+    ? Number(window.innerHeight - composerRect.bottom)
+    : 0,
+  composerTabbarGap: composerRect && tabbarRect
+    ? Number(tabbarRect.top - composerRect.bottom)
+    : 0,
+  composerInputDominant: Boolean(
+    composerInputRect
+    && composerAudienceRect
+    && composerInputRect.height >= 220
+    && composerInputRect.height >= composerAudienceRect.height * 4
+  ),
+  composerBottomAnchored: Boolean(
+    composerRect
+    && tabbarRect
+    && Math.abs(tabbarRect.top - composerRect.bottom) <= 2
+  ),
+  activeElementAcceptanceId:
+    document.activeElement?.getAttribute?.('data-acceptance-id') || '',
+};
+""",
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+    elif action == "keyboard-state":
+        if ui_input:
+            raise EphemeralCapabilityBlocked(
+                "Mobile keyboard-state input must be empty",
+                resource="mobile.native.appium-session:social-ui",
+            )
+        session.switch_to_native(
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        shown = session.execute_script(
+            "mobile: isKeyboardShown",
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        session.switch_to_app_webview(
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        value = {"shown": bool(shown)}
+    elif action == "system-back":
+        if ui_input:
+            raise EphemeralCapabilityBlocked(
+                "Mobile system-back input must be empty",
+                resource="mobile.native.appium-session:social-ui",
+            )
+        session.switch_to_native(
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        session.execute_script(
+            "mobile: pressKey",
+            {"keycode": 4},
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        session.switch_to_app_webview(
+            deadline_monotonic=deadline_monotonic,
+            cancellation=cancellation,
+        )
+        value = {"pressed": True}
+    else:
+        raise EphemeralCapabilityBlocked(
+            f"Mobile Social UI action is unsupported: {action!r}",
+            resource="mobile.native.appium-session:social-ui",
+        )
+
+    if not isinstance(value, Mapping):
+        raise EphemeralCapabilityBlocked(
+            "Mobile Social UI result must be an object",
+            resource="mobile.native.appium-session:social-ui",
+        )
+    projected = json.loads(json.dumps(dict(value)))
+    _assert_mobile_channel_safe(projected)
+    return projected
+
+
 class MobileNativeProvisioner(EnvironmentProvisioner):
     environment_id = "mobile-native"
 
@@ -6720,6 +9166,11 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
         self._credential_values_by_provider: dict[str, str] = {}
         self._provider_subjects: dict[str, str] = {}
         self._appium_handler: MobileNativeAppiumCapabilityHandler | None = None
+        self._usb_network_transports: dict[
+            str,
+            _AndroidUsbNetworkTransport,
+        ] = {}
+        self._usb_network_tool: _AndroidUsbNetworkTool | None = None
         self._port_reservations: list[_PortReservation] = []
         self._storage_roots: list[Path] = []
         self._cleanup_registered = False
@@ -6730,6 +9181,7 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
         if self._native_spec is None:
             gate_id = self.evidence_run.gate_id
             self._native_spec = load_mobile_native_preflight_spec(
+                self.contract_path,
                 gate_id=gate_id
             )
             self._select_scenario_contract(self._native_spec.scenario)
@@ -6845,6 +9297,11 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
                     "mobile.native.appium-session"
                 ]
             ),
+            installation_trace_field=(
+                "installationTrace"
+                if scenario_id == "android-social"
+                else "freshInstallTrace"
+            ),
             harness_actions=self._native_spec.harness_actions,
             parent_harness_actions=self._native_spec.parent_harness_actions,
             sensitive_values=tuple(
@@ -6857,7 +9314,13 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
             ),
         )
         context = EphemeralGateLaunchContext(
-            required_capabilities=required_capabilities
+            required_capabilities=required_capabilities,
+            request_timeout_seconds=(
+                MOBILE_NATIVE_EPHEMERAL_REQUEST_TIMEOUT_SECONDS
+            ),
+            quiesce_timeout_seconds=(
+                MOBILE_NATIVE_EPHEMERAL_QUIESCE_TIMEOUT_SECONDS
+            ),
         )
         context.register_capability(
             "mobile.native.appium-session",
@@ -6901,7 +9364,10 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
         )
         resources = self._client_resources[client_id]
         return _ParentAppiumSession(
-            _ParentAppiumTransport(str(self._native_inputs["appiumUrl"])),
+            _ParentAppiumTransport(
+                str(self._native_inputs["appiumUrl"]),
+                timeout_seconds=MOBILE_NATIVE_APPIUM_REQUEST_TIMEOUT_SECONDS,
+            ),
             client_id=client_id,
             platform_name=client.platform,
             automation_name=self._native_spec.drivers[
@@ -6921,6 +9387,7 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
                 "gate_id",
                 MOBILE_OAUTH_PROOF_GATE_ID,
             ),
+            device_descriptor=self._native_spec.device_descriptor,
             auto_accept_alerts=(
                 getattr(
                     getattr(self._native_spec, "scenario", None),
@@ -6965,6 +9432,7 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
                 root=REPO_ROOT,
                 platform=platform_name,
                 run_root=runtime_root / "source-builds" / platform_name,
+                runtime_cache=Path(self._native_inputs["runtimeCacheRoot"]),
             )
             _, build_refs[platform_name] = produce_build_attestation(
                 run=self._artifact_session,
@@ -7165,6 +9633,7 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
                 root=REPO_ROOT,
                 platform=platform_name,
                 run_root=runtime_root / "source-builds" / platform_name,
+                runtime_cache=Path(self._native_inputs["runtimeCacheRoot"]),
             )
             _, build_refs[platform_name] = (
                 produce_scenario_build_attestation(
@@ -7397,6 +9866,89 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
         self.register_cleanup("mobile-native-parent-authorities", self._cleanup_parent)
         self._cleanup_registered = True
 
+    def _prepare_android_usb_network_transports(
+        self,
+        station_url: str,
+    ) -> dict[str, dict[str, Any]]:
+        if self._lease_broker is None or self._native_spec is None:
+            raise BlockedError(
+                reason="Android USB network transport has no device authority",
+                resource="mobile-runtime:usb-network-transport",
+            )
+        android_clients = tuple(
+            client
+            for client in self._native_spec.clients
+            if client.platform == "android"
+        )
+        if not android_clients:
+            return {}
+        tool = _build_android_usb_network_tool()
+        self._usb_network_tool = tool
+        attestations: dict[str, dict[str, Any]] = {}
+        for client in android_clients:
+            reservation = _PortReservation()
+            self._port_reservations.append(reservation)
+            relay_port = reservation.port
+            reservation.release()
+            transport = _AndroidUsbNetworkTransport(
+                station_url,
+                relay_port=relay_port,
+                tool=tool,
+            )
+            self._usb_network_transports[client.id] = transport
+            lease = self._device_leases[client.id]
+            attestations[client.id] = self._lease_broker.with_physical_device(
+                lease,
+                lambda handle, transport=transport: transport.start(
+                    handle.identifier
+                ),
+            )
+        return attestations
+
+    def _cleanup_android_usb_network_transports(
+        self,
+        *,
+        deadline_monotonic: float,
+        cancellation: threading.Event,
+    ) -> list[str]:
+        failures: list[str] = []
+        broker = self._lease_broker
+        for client_id, transport in reversed(
+            tuple(self._usb_network_transports.items())
+        ):
+            lease = self._device_leases.get(client_id)
+            if broker is None or lease is None:
+                transport._terminate_process()
+                failures.append(f"{client_id}: device authority unavailable")
+                continue
+            try:
+                _require_cleanup_budget(
+                    deadline_monotonic,
+                    cancellation,
+                )
+                broker.with_physical_device(
+                    lease,
+                    lambda handle, transport=transport: transport.close(
+                        handle.identifier,
+                        deadline_monotonic=deadline_monotonic,
+                        cancellation=cancellation,
+                    ),
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                )
+            except BaseException as error:
+                failures.append(f"{client_id}: {type(error).__name__}")
+            else:
+                self._usb_network_transports.pop(client_id, None)
+        if not self._usb_network_transports and self._usb_network_tool:
+            build_root = self._usb_network_tool.build_root
+            shutil.rmtree(build_root, ignore_errors=True)
+            if build_root.exists():
+                failures.append("companion build root remained active")
+            else:
+                self._usb_network_tool = None
+        return failures
+
     def _zeroize_pending_lease_authentication_key(self) -> bool:
         key = self._native_inputs.pop("leaseAuthenticationKey", None)
         if key is None:
@@ -7446,6 +9998,12 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
                     failures.append("appium sessions")
             except BaseException as error:
                 failures.append(f"appium sessions: {type(error).__name__}")
+        failures.extend(
+            self._cleanup_android_usb_network_transports(
+                deadline_monotonic=deadline,
+                cancellation=cancellation,
+            )
+        )
         if broker is not None:
             failures.extend(
                 self._quarantine_leases(
@@ -7552,11 +10110,8 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
         cancellation: threading.Event,
     ) -> BaselineRestoreResult:
         assert self._lease_broker is not None
-        verified = self._lease_broker.with_physical_device(
+        verified = self._lease_broker.physical_device_baseline_matches(
             lease,
-            lambda handle: (
-                handle.connected and handle.physical and not handle.simulator
-            ),
             deadline_monotonic=deadline_monotonic,
             cancellation=cancellation,
         )
@@ -7591,6 +10146,12 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
                     failures.append("appium sessions")
             except BaseException as error:
                 failures.append(f"appium sessions: {type(error).__name__}")
+        failures.extend(
+            self._cleanup_android_usb_network_transports(
+                deadline_monotonic=deadline,
+                cancellation=cancellation,
+            )
+        )
         broker = self._lease_broker
         if broker is not None:
             if heartbeat_failed:
@@ -7825,10 +10386,70 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
         )
         owner_prefix = f"acceptance:{gate_id}:{manifest.run_id}"
         self.acquire_profile_lease(self.environment_id, owner_prefix)
+        services: dict[str, Any] = {}
+        service_bindings = resolve_mobile_service_bindings(
+            self.contract,
+            self.contract_path,
+            environment=self._scenario_service_environment(),
+        )
+        for deployment_environment in sorted(
+            {
+                binding.deployment_environment
+                for binding in service_bindings.values()
+            }
+        ):
+            self.acquire_profile_lease(
+                deployment_environment,
+                owner_prefix,
+            )
+            self.acquire_remote_git_source_lease(
+                deployment_environment,
+                owner_prefix,
+            )
+        for service_id, binding in service_bindings.items():
+            if not self._station_ready(
+                binding.endpoint,
+                binding.health_endpoint,
+            ):
+                raise BlockedError(
+                    reason=f"Required Mobile service {service_id!r} is unhealthy",
+                    resource=f"service-health:{service_id}",
+                )
+            if binding.kind != "station":
+                raise BlockedError(
+                    reason=(
+                        "Android Social physical proof supports only an "
+                        "attested Station service"
+                    ),
+                    resource=f"service-kind:{service_id}",
+                )
+            attestation = produce_station_attestation(
+                environment_id=self.environment_id,
+                run_id=manifest.run_id,
+                service_id=service_id,
+                station_url=binding.endpoint,
+                profile_env={
+                    "PT_STATION_MODE": "remote",
+                    "PT_STATION_DEPLOY_ENV": (
+                        binding.deployment_environment
+                    ),
+                },
+                require_runtime_identity=True,
+                remote_source_identity_provider=resolve_remote_source_identity,
+            )
+            if attestation.live_commit != manifest.source_commit:
+                raise BlockedError(
+                    reason=(
+                        f"Station {service_id!r} source does not match the "
+                        "Android Social worktree"
+                    ),
+                    resource=f"source-identity:{service_id}",
+                )
+            services[service_id] = attestation
         manifest = dataclasses.replace(
             manifest,
             state=ProvisioningState.PROVISIONED,
-            services={},
+            services=services,
             credential_refs=(),
             cleanup_resources=native_spec.scenario.cleanup_resources,
         )
@@ -7875,8 +10496,32 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
             gate_id=gate_id,
             runtime_root=runtime_root,
         )
+        if native_spec.scenario.id == "android-social":
+            usb_network_attestations = (
+                self._prepare_android_usb_network_transports(
+                    service_bindings["station-primary"].endpoint
+                )
+            )
+            for client_id, attestation in usb_network_attestations.items():
+                client_resources[client_id]["usbNetworkTransport"] = (
+                    attestation
+                )
+        actor_manifest_ref = (
+            self._prepare_android_social_actor_manifest()
+            if native_spec.scenario.id == "android-social"
+            else None
+        )
+        android_device_facts = native_inputs.get("androidDeviceFacts")
+        if not isinstance(android_device_facts, Mapping):
+            android_device_facts = {}
+        for client_id, facts in android_device_facts.items():
+            if client_id in client_resources and isinstance(facts, Mapping):
+                client_resources[client_id]["deviceFacts"] = dict(facts)
         manifest = _with_mobile_resources(
-            manifest,
+            dataclasses.replace(
+                manifest,
+                actor_manifest_ref=actor_manifest_ref,
+            ),
             _mobile_native_scenario_manifest_resources(
                 source_projection,
                 native_spec,
@@ -7888,6 +10533,95 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
         self._manifest = manifest
         return self._ready(manifest)
 
+    def _scenario_service_environment(self) -> Mapping[str, str]:
+        return os.environ
+
+    def _prepare_android_social_actor_manifest(self) -> dict[str, Any]:
+        if (
+            self._artifact_session is None
+            or self._native_spec is None
+            or self._manifest is None
+        ):
+            raise BlockedError(
+                reason="Android Social actor Fixture has no artifact authority",
+                resource="fixture-artifact-authority",
+            )
+        service = self._manifest.services.get("station-primary")
+        if service is None or service.service_kind != "station":
+            raise BlockedError(
+                reason="Android Social actor Fixture requires station-primary",
+                resource="fixture-service:station-primary",
+            )
+        actors = [
+            resolve_existing_actor_identity(
+                service.endpoint,
+                role,
+            )
+            for role in MOBILE_NATIVE_ANDROID_SOCIAL_ROLES
+        ]
+        home_station_ids = {
+            actor.home_station_peer_id for actor in actors
+        }
+        if len(home_station_ids) != 1:
+            raise BlockedError(
+                reason=(
+                    "Android Social actors do not share one canonical "
+                    "Home Station"
+                ),
+                resource="fixture-actors:home-station",
+            )
+        federation_id = fixture_federation_id_from_station_ids(
+            home_station_ids
+        )
+        payload = {
+            "artifactKind": "mobile-social-android-actor-manifest",
+            "fixtureId": MOBILE_NATIVE_ANDROID_SOCIAL_FIXTURE,
+            "environmentId": self.environment_id,
+            "gateId": self.evidence_run.gate_id,
+            "runId": self.evidence_run.run_id,
+            "createdAt": utc_now(),
+            "initialState": "ready",
+            "stations": {
+                "station-primary": {
+                    "targetVerified": False,
+                    "existingActorsVerified": True,
+                    "actors": [
+                        {
+                            "role": actor.role,
+                            "accountRef": actor.account_ref,
+                            "ptid": actor.ptid,
+                            "devicePolicy": actor.device_policy,
+                            "federatedHandle": actor.federated_handle,
+                            "homeStationPeerId": actor.home_station_peer_id,
+                            "federationId": federation_id,
+                        }
+                        for actor in actors
+                    ],
+                }
+            },
+            "clients": [
+                {
+                    "id": MOBILE_NATIVE_ANDROID_SOCIAL_CLIENT,
+                    "platform": "android",
+                    "actors": list(MOBILE_NATIVE_ANDROID_SOCIAL_ROLES),
+                    "serviceId": "station-primary",
+                }
+            ],
+            "reset": {
+                "authorized": False,
+                "targetVerified": False,
+            },
+            "cleanup": {
+                "deterministic": True,
+                "action": "logout and release physical-device authority",
+            },
+        }
+        return self._artifact_session.write_json(
+            "runtime/mobile-social-android-actors.json",
+            payload,
+            role="mobile-social-android-actor-manifest",
+        ).to_dict()
+
     def provision(self, gate_id: str) -> RuntimeManifest:
         native_spec = self._native_spec
         selected_gate_id = getattr(
@@ -7896,7 +10630,10 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
             MOBILE_OAUTH_PROOF_GATE_ID,
         )
         if native_spec is None or selected_gate_id != gate_id:
-            native_spec = load_mobile_native_preflight_spec(gate_id=gate_id)
+            native_spec = load_mobile_native_preflight_spec(
+                self.contract_path,
+                gate_id=gate_id,
+            )
             self._select_scenario_contract(native_spec.scenario)
             self._native_spec = native_spec
         self._manifest = self._new_base_manifest(gate_id)
@@ -8126,3 +10863,73 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
         finally:
             if self._lease_broker is None:
                 self._zeroize_pending_lease_authentication_key()
+
+
+class MobileAndroidPhysicalProvisioner(MobileNativeProvisioner):
+    environment_id = "mobile-android-physical"
+
+    def __init__(
+        self,
+        contract: EnvironmentContract,
+        *,
+        station_profiles: Mapping[str, str] | None = None,
+        contract_path: Path | None = None,
+    ) -> None:
+        super().__init__(
+            contract,
+            contract_path=contract_path
+            or (
+                ENVIRONMENTS_DIR
+                / "mobile-android-physical-runtime.yaml"
+            ),
+        )
+        self._station_profiles = dict(station_profiles or {})
+
+    def _scenario_service_environment(self) -> Mapping[str, str]:
+        if set(self._station_profiles) != {
+            MOBILE_NATIVE_ANDROID_SOCIAL_PROFILE_KEY
+        }:
+            raise BlockedError(
+                reason=(
+                    "Android Social requires exactly one runtime Station "
+                    "binding: --station-profile station-a=PROFILE"
+                ),
+                resource="station-profile-bindings",
+            )
+        selected_profile = self._station_profiles[
+            MOBILE_NATIVE_ANDROID_SOCIAL_PROFILE_KEY
+        ]
+        active_profile, _profile_path, _slot, profile = (
+            resolve_machine_profile_environment(REPO_ROOT)
+        )
+        if selected_profile != active_profile:
+            raise BlockedError(
+                reason=(
+                    f"Android Social selected Station profile "
+                    f"{selected_profile!r} does not match active profile "
+                    f"{active_profile!r}"
+                ),
+                resource="station-profile-bindings",
+            )
+        station_url = profile.get("PT_STATION_URL", "").rstrip("/")
+        deployment_environment = profile.get(
+            "PT_STATION_DEPLOY_ENV",
+            "",
+        ).strip()
+        if (
+            profile.get("PT_STATION_MODE", "").strip() != "remote"
+            or not station_url
+            or not deployment_environment
+        ):
+            raise BlockedError(
+                reason=(
+                    f"Android Social Station profile {active_profile!r} "
+                    "is not a complete remote binding"
+                ),
+                resource=f"station-profile:{active_profile}",
+            )
+        return {
+            **os.environ,
+            "PT_MOBILE_STATION_PRIMARY_URL": station_url,
+            "PT_MOBILE_STATION_PRIMARY_DEPLOY_ENV": deployment_environment,
+        }

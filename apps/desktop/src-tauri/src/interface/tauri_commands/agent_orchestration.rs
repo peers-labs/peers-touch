@@ -24,7 +24,12 @@ pub fn agent_collaboration_create(
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
     let actor_ptid = session_resolver::ptid_for_window(state.inner(), &window).unwrap_or_default();
-    application_agent_orchestration::agent_collaboration_create(input, &token, &actor_ptid)
+    application_agent_orchestration::agent_collaboration_create(
+        state.station.client(),
+        input,
+        &token,
+        &actor_ptid,
+    )
 }
 
 #[tauri::command]
@@ -37,7 +42,7 @@ pub fn agent_collaboration_get(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    application_agent_orchestration::agent_collaboration_get(input, &token)
+    application_agent_orchestration::agent_collaboration_get(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -50,7 +55,7 @@ pub fn agent_collaboration_list(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    application_agent_orchestration::agent_collaboration_list(input, &token)
+    application_agent_orchestration::agent_collaboration_list(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -63,7 +68,11 @@ pub fn agent_collaboration_list_events(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    application_agent_orchestration::agent_collaboration_list_events(input, &token)
+    application_agent_orchestration::agent_collaboration_list_events(
+        state.station.client(),
+        input,
+        &token,
+    )
 }
 
 #[tauri::command]
@@ -89,8 +98,10 @@ pub fn agent_collaboration_subscribe(
         .unwrap_or_else(|| format!("agent-collaboration-{}", ulid::Ulid::new()));
     let cancel_flag = application_agent_orchestration::register_collaboration_stream(&stream_id);
     let stream_id_for_task = stream_id.clone();
+    let station_client = state.station.client().clone();
     tauri::async_runtime::spawn_blocking(move || {
         application_agent_orchestration::agent_collaboration_subscribe(
+            &station_client,
             app,
             stream_id_for_task.clone(),
             input,
@@ -122,7 +133,11 @@ pub fn agent_collaboration_cancel_task(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    application_agent_orchestration::agent_collaboration_cancel_task(input, &token)
+    application_agent_orchestration::agent_collaboration_cancel_task(
+        state.station.client(),
+        input,
+        &token,
+    )
 }
 
 #[tauri::command]
@@ -135,7 +150,11 @@ pub fn agent_collaboration_resume_task(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    application_agent_orchestration::agent_collaboration_resume_task(input, &token)
+    application_agent_orchestration::agent_collaboration_resume_task(
+        state.station.client(),
+        input,
+        &token,
+    )
 }
 
 #[tauri::command]
@@ -148,7 +167,11 @@ pub fn agent_collaboration_submit_node_result(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    application_agent_orchestration::agent_collaboration_submit_node_result(input, &token)
+    application_agent_orchestration::agent_collaboration_submit_node_result(
+        state.station.client(),
+        input,
+        &token,
+    )
 }
 
 #[tauri::command]
@@ -161,7 +184,11 @@ pub fn agent_collaboration_claim_executor_task(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    application_agent_orchestration::agent_collaboration_claim_executor_task(input, &token)
+    application_agent_orchestration::agent_collaboration_claim_executor_task(
+        state.station.client(),
+        input,
+        &token,
+    )
 }
 
 #[tauri::command]
@@ -174,7 +201,11 @@ pub fn agent_collaboration_heartbeat_executor_lease(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    application_agent_orchestration::agent_collaboration_heartbeat_executor_lease(input, &token)
+    application_agent_orchestration::agent_collaboration_heartbeat_executor_lease(
+        state.station.client(),
+        input,
+        &token,
+    )
 }
 
 #[tauri::command]
@@ -187,5 +218,9 @@ pub fn agent_collaboration_release_executor_lease(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    application_agent_orchestration::agent_collaboration_release_executor_lease(input, &token)
+    application_agent_orchestration::agent_collaboration_release_executor_lease(
+        state.station.client(),
+        input,
+        &token,
+    )
 }

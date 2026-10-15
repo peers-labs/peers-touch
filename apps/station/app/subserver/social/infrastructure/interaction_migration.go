@@ -8,8 +8,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// MigrateInteractionSchema widens the shared reaction post identifier so the
-// same table can reference numeric public posts and canonical private ULIDs.
+// MigrateInteractionSchema widens the shared reaction post identifier and
+// reaction enum name so canonical private ULIDs and every known ReactionKind
+// fit existing databases.
 func MigrateInteractionSchema(database *gorm.DB) error {
 	if database == nil {
 		return fmt.Errorf("social: interaction database is required")
@@ -29,7 +30,7 @@ func MigrateInteractionSchema(database *gorm.DB) error {
 			continue
 		}
 		if socialReactionPostIDIsText(columnType.DatabaseTypeName()) {
-			return nil
+			return migrateSocialReactionKindColumn(database)
 		}
 		if err := database.Transaction(func(tx *gorm.DB) error {
 			switch tx.Dialector.Name() {
@@ -43,7 +44,7 @@ USING post_id::text`).Error
 ALTER TABLE social_reactions
 MODIFY COLUMN post_id VARCHAR(128) NOT NULL`).Error
 			case "sqlite":
-				return migrateSQLiteSocialReactionPostID(tx)
+				return migrateSQLiteSocialReactionSchema(tx)
 			default:
 				return fmt.Errorf(
 					"unsupported database dialect %q",
@@ -56,13 +57,55 @@ MODIFY COLUMN post_id VARCHAR(128) NOT NULL`).Error
 				err,
 			)
 		}
-		return validateSocialReactionPostID(database)
+		if err := validateSocialReactionPostID(database); err != nil {
+			return err
+		}
+		return migrateSocialReactionKindColumn(database)
 	}
 
 	return fmt.Errorf("social: social_reactions.post_id is missing")
 }
 
-func migrateSQLiteSocialReactionPostID(database *gorm.DB) error {
+func migrateSocialReactionKindColumn(database *gorm.DB) error {
+	columnTypes, err := database.Migrator().ColumnTypes(
+		&dbmodel.SocialReaction{},
+	)
+	if err != nil {
+		return fmt.Errorf("social: inspect reaction kind schema: %w", err)
+	}
+	for _, columnType := range columnTypes {
+		if !strings.EqualFold(columnType.Name(), "kind") {
+			continue
+		}
+		if socialReactionKindIsWideEnough(columnType) {
+			return nil
+		}
+		if database.Dialector.Name() == "sqlite" {
+			if err := database.Transaction(
+				migrateSQLiteSocialReactionSchema,
+			); err != nil {
+				return fmt.Errorf(
+					"social: widen social_reactions.kind: %w",
+					err,
+				)
+			}
+			return validateSocialReactionKind(database)
+		}
+		if err := database.Migrator().AlterColumn(
+			&dbmodel.SocialReaction{},
+			"Kind",
+		); err != nil {
+			return fmt.Errorf(
+				"social: widen social_reactions.kind: %w",
+				err,
+			)
+		}
+		return validateSocialReactionKind(database)
+	}
+	return fmt.Errorf("social: social_reactions.kind is missing")
+}
+
+func migrateSQLiteSocialReactionSchema(database *gorm.DB) error {
 	const legacyTable = "social_reactions_legacy_post_id"
 	if database.Migrator().HasTable(legacyTable) {
 		return fmt.Errorf("temporary table %s already exists", legacyTable)
@@ -124,4 +167,33 @@ func socialReactionPostIDIsText(databaseType string) bool {
 	default:
 		return false
 	}
+}
+
+func validateSocialReactionKind(database *gorm.DB) error {
+	columnTypes, err := database.Migrator().ColumnTypes(
+		&dbmodel.SocialReaction{},
+	)
+	if err != nil {
+		return fmt.Errorf("social: inspect migrated reaction kind schema: %w", err)
+	}
+	for _, columnType := range columnTypes {
+		if strings.EqualFold(columnType.Name(), "kind") {
+			if socialReactionKindIsWideEnough(columnType) {
+				return nil
+			}
+			return fmt.Errorf(
+				"social: social_reactions.kind remains too narrow after migration",
+			)
+		}
+	}
+	return fmt.Errorf("social: social_reactions.kind is missing")
+}
+
+func socialReactionKindIsWideEnough(columnType gorm.ColumnType) bool {
+	switch strings.ToLower(strings.TrimSpace(columnType.DatabaseTypeName())) {
+	case "text", "longtext":
+		return true
+	}
+	length, ok := columnType.Length()
+	return ok && length >= 32
 }

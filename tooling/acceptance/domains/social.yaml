@@ -1,7 +1,7 @@
 {
   "version": 1,
   "id": "social",
-  "description": "Social is a managed product domain for Public and end-to-end encrypted Private Moments. This profile proves the bounded Native Desktop experience while keeping Mobile parity explicitly unproven.",
+  "description": "Social is a managed product domain for Public and end-to-end encrypted Private Moments. Its required proof covers same-Station and same-Federation cross-Station Native Desktop journeys while Browser Social, Mobile parity, and cross-Federation private delivery remain explicitly unproven.",
   "capabilities": [
     "acceptance-framework-self-consistency",
     "social-private-explicit-audience",

@@ -9,6 +9,10 @@ import {
 } from '../app/lifecycle';
 import { useMobileI18n } from '../app/mobileI18n';
 import { findNavigationDescriptor } from '../app/navigation';
+import { useChatSurfaceFixture } from '../acceptance/chatSurfaceFixture';
+import { useContactsSurfaceFixture } from '../acceptance/contactsSurfaceFixture';
+import { useMomentsSurfaceFixture } from '../acceptance/momentsSurfaceFixture';
+import { useSettingsSurfaceFixture } from '../acceptance/settingsSurfaceFixture';
 
 interface MobileRouteBoundaryProps {
   readonly routeId: string;
@@ -23,10 +27,48 @@ export function MobileRouteBoundary({
 }: MobileRouteBoundaryProps) {
   const { t } = useMobileI18n();
   const lifecycle = useLifecycleKernel();
+  const chatFixture = useChatSurfaceFixture();
+  const contactsFixture = useContactsSurfaceFixture();
+  const momentsFixture = useMomentsSurfaceFixture();
+  const settingsFixture = useSettingsSurfaceFixture();
   const descriptor = findNavigationDescriptor(routeId);
   const status = descriptor
     ? readRuntimeAvailability(lifecycle, descriptor.ownerRuntimeId)?.status
     : undefined;
+  const fixtureOwnsRoute = (
+    Boolean(chatFixture.surfaceId)
+      && (
+        routeId === 'tab:chat'
+        || routeId === 'detail:chat-conversation'
+        || routeId === 'detail:group-conversation'
+      )
+  ) || (
+    Boolean(contactsFixture.surfaceId)
+      && (
+        routeId === 'tab:contacts'
+        || routeId === 'detail:contact-profile'
+      )
+  ) || (
+    Boolean(momentsFixture.surfaceId)
+      && (
+        routeId === 'tab:moments'
+        || routeId.startsWith('detail:moment')
+        || routeId.startsWith('detail:social-')
+      )
+  ) || (
+    Boolean(settingsFixture.surfaceId)
+      && (
+        routeId === 'tab:settings'
+        || routeId === 'detail:setting'
+      )
+  );
+  const nativeTransitionPreservesTree = (
+    lifecycle.launchState === 'background'
+    || lifecycle.launchState === 'resume'
+  ) && (
+    status === 'suspended'
+    || status === 'resuming'
+  );
   const [retrying, setRetrying] = useState(false);
   const [retryFailed, setRetryFailed] = useState(false);
 
@@ -35,7 +77,11 @@ export function MobileRouteBoundary({
     setRetryFailed(false);
   }, [routeId]);
 
-  if (status === 'ready') return children;
+  if (
+    status === 'ready'
+    || fixtureOwnsRoute
+    || nativeTransitionPreservesTree
+  ) return children;
 
   const starting = status === 'pending'
     || status === 'bootstrapping'

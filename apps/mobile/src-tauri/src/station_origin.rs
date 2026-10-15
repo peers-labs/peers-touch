@@ -6,7 +6,7 @@ pub(crate) enum StationOriginPolicy {
 
 impl StationOriginPolicy {
     pub(crate) const fn current_build() -> Self {
-        if cfg!(debug_assertions) {
+        if cfg!(debug_assertions) || cfg!(feature = "acceptance-harness") {
             Self::Development
         } else {
             Self::HttpsOnly
@@ -112,5 +112,21 @@ mod tests {
                 "{value} must be rejected",
             );
         }
+    }
+
+    #[cfg(feature = "acceptance-harness")]
+    #[test]
+    fn acceptance_harness_keeps_explicit_http_station_profiles_available() {
+        assert_eq!(
+            StationOriginPolicy::current_build(),
+            StationOriginPolicy::Development,
+        );
+        assert_eq!(
+            normalize_station_origin(
+                "http://192.0.2.10:18280",
+                StationOriginPolicy::current_build(),
+            ),
+            Ok("http://192.0.2.10:18280".to_string()),
+        );
     }
 }

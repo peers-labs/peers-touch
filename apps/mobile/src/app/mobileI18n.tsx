@@ -10,7 +10,9 @@ import {
 } from 'react';
 
 import enCommon from '../../../../packages/locales/en/common.json';
+import enMoments from '../../../../packages/locales/en/moments.json';
 import zhCommon from '../../../../packages/locales/zh-CN/common.json';
+import zhMoments from '../../../../packages/locales/zh-CN/moments.json';
 import { createMobileAppStorageRuntime } from '../storage/mobileClientStorage';
 
 export type MobileLanguage = 'en' | 'zh-CN';
@@ -41,8 +43,8 @@ const languages: MobileLanguageOption[] = [
 ];
 
 const resources: Record<MobileLanguage, Record<string, string>> = {
-  en: enCommon,
-  'zh-CN': zhCommon,
+  en: { ...enCommon, ...enMoments },
+  'zh-CN': { ...zhCommon, ...zhMoments },
 };
 
 const MobileI18nContext = createContext<MobileI18nContextValue | null>(null);

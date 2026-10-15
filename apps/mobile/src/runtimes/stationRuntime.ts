@@ -1,11 +1,16 @@
 import { useSyncExternalStore } from 'react';
 
 import {
+  activeStationEntry,
+  activeStationRoute,
+  activateStationRoute,
   emptyStationRegistry,
   loadStationRegistry,
   persistStationRegistry,
   type StoredStationRegistry,
 } from '../features/station/stationRegistry';
+import { verifyBoundStationRoute } from '../features/station/stationConnection';
+import { restoreStationRouteBinding } from '../services/mobileCommands';
 import { purgeLegacyMobileIdentityStorage } from '../storage/mobileClientStorage';
 
 interface StationRegistryPersistence {
@@ -89,9 +94,36 @@ export function createStationRegistryRuntime(
 }
 
 const stationRegistryRuntime = createStationRegistryRuntime();
+let nativeRouteBootstrapped = false;
 
-export function bootstrapStationRuntime(): Promise<StoredStationRegistry> {
-  return stationRegistryRuntime.bootstrap();
+export async function bootstrapStationRuntime(): Promise<StoredStationRegistry> {
+  let loaded = await stationRegistryRuntime.bootstrap();
+  if (nativeRouteBootstrapped) return loaded;
+  nativeRouteBootstrapped = true;
+  const station = activeStationEntry(loaded);
+  const route = station ? activeStationRoute(station) : null;
+  if (!station || !route) return loaded;
+  try {
+    await restoreStationRouteBinding({
+      stationPeerId: station.stationPeerId,
+      routeId: route.routeId,
+      routeGeneration: route.routeGeneration,
+      routeRevision: station.routeRevision ?? 1,
+      sourceRef: route.sourceRef,
+      endpointOrigin: route.endpointOrigin,
+    });
+    return loaded;
+  } catch {
+    loaded = await stationRegistryRuntime.update((current) => ({
+      ...current,
+      entries: current.entries.map((entry) => (
+        entry.stationPeerId === station.stationPeerId
+          ? { ...entry, online: false, lastCheckedAt: Date.now() }
+          : entry
+      )),
+    }));
+  }
+  return loaded;
 }
 
 export function readStationRegistryProjection(): Promise<StoredStationRegistry> {
@@ -108,6 +140,45 @@ export function updateStationRegistryProjection(
   updater: (current: StoredStationRegistry) => StoredStationRegistry,
 ): Promise<StoredStationRegistry> {
   return stationRegistryRuntime.update(updater);
+}
+
+export async function selectStationRouteRuntime(
+  stationPeerId: string,
+  routeId: string,
+): Promise<StoredStationRegistry> {
+  const current = await stationRegistryRuntime.read();
+  const station = current.entries.find((entry) => entry.stationPeerId === stationPeerId);
+  const route = station?.routes?.find((candidate) => candidate.routeId === routeId);
+  if (!station || !route) throw new Error('mobile.launch.stationRouteUnavailable');
+  const next = activateStationRoute(current, stationPeerId, routeId);
+  const nextStation = next.entries.find((entry) => entry.stationPeerId === stationPeerId);
+  if (!nextStation || nextStation.activeRouteId !== routeId) {
+    throw new Error('mobile.launch.stationRouteUnavailable');
+  }
+  await verifyBoundStationRoute({
+    stationPeerId,
+    routeId,
+    routeGeneration: route.routeGeneration,
+    routeRevision: nextStation.routeRevision ?? 1,
+    sourceRef: route.sourceRef,
+    endpointOrigin: route.endpointOrigin,
+  });
+  try {
+    return await stationRegistryRuntime.update(() => next);
+  } catch (error) {
+    const previous = activeStationRoute(station);
+    if (previous) {
+      await verifyBoundStationRoute({
+        stationPeerId,
+        routeId: previous.routeId,
+        routeGeneration: previous.routeGeneration,
+        routeRevision: station.routeRevision ?? 1,
+        sourceRef: previous.sourceRef,
+        endpointOrigin: previous.endpointOrigin,
+      });
+    }
+    throw error;
+  }
 }
 
 export function useStationRegistryProjection(): StoredStationRegistry {

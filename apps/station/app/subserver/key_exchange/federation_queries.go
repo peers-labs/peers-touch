@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"reflect"
 	"strings"
 	"time"
@@ -17,7 +16,6 @@ import (
 	kemodel "github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/model"
 	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/auth/scope"
-	nativefed "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -462,7 +460,7 @@ func (p *canonicalFederationPort) executeFederationQuery(
 	if err != nil {
 		return domain.WrapError(domain.ErrorCodeInternal, operation, err)
 	}
-	endpoint, relayToken, viaRelay, err := p.resolveFederationQueryEndpoint(
+	endpoint, viaRelay, err := p.resolveFederationQueryEndpoint(
 		ctx,
 		targetStationID,
 		route,
@@ -481,17 +479,17 @@ func (p *canonicalFederationPort) executeFederationQuery(
 	}
 	httpRequest.Header.Set("Content-Type", "application/protobuf")
 	httpRequest.Header.Set("Accept", "application/protobuf")
+	httpRequest.Header.Set("Authorization", "Bearer "+token)
+	var httpResponse *http.Response
 	if viaRelay {
-		httpRequest.Header.Set("Authorization", "Bearer "+relayToken)
-		httpRequest.Header.Set(
-			nativefed.ForwardAuthorizationHeader,
-			"Bearer "+token,
+		httpResponse, err = p.relay.RoundTrip(
+			ctx,
+			targetStationID,
+			httpRequest,
 		)
 	} else {
-		httpRequest.Header.Set("Authorization", "Bearer "+token)
+		httpResponse, err = p.client.Do(httpRequest)
 	}
-
-	httpResponse, err := p.client.Do(httpRequest)
 	if err != nil {
 		return domain.WrapError(domain.ErrorCodeDependency, operation, err)
 	}
@@ -524,34 +522,25 @@ func (p *canonicalFederationPort) resolveFederationQueryEndpoint(
 	ctx context.Context,
 	targetStationID string,
 	route string,
-) (endpoint string, relayToken string, viaRelay bool, err error) {
-	if p.relay != nil {
-		baseURL := strings.TrimRight(strings.TrimSpace(p.relay.BaseURL()), "/")
-		token := strings.TrimSpace(p.relay.Token())
-		if baseURL != "" && token != "" {
-			return fmt.Sprintf(
-				"%s/relay/forward/%s%s",
-				baseURL,
-				url.PathEscape(targetStationID),
-				route,
-			), token, true, nil
-		}
+) (endpoint string, viaRelay bool, err error) {
+	if p.relay != nil && p.relay.Available() {
+		return "https://station.invalid" + route, true, nil
 	}
 	if p.resolver == nil {
-		return "", "", false, errors.New(
+		return "", false, errors.New(
 			"no direct or Relay Federation route is available",
 		)
 	}
 	baseURL, err := p.resolver.ResolveActiveStationURL(ctx, targetStationID)
 	if err != nil {
-		return "", "", false, err
+		return "", false, err
 	}
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if baseURL == "" {
-		return "", "", false, errors.New("resolved Station URL is empty")
+		return "", false, errors.New("resolved Station URL is empty")
 	}
 
-	return baseURL + route, "", false, nil
+	return baseURL + route, false, nil
 }
 
 func validateRemoteFetchTarget(

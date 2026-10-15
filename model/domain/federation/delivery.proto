@@ -18,6 +18,11 @@ enum FederatedDomainPayloadKind {
   FEDERATED_DOMAIN_PAYLOAD_KIND_CONVERSATION_TYPING = 8;
   FEDERATED_DOMAIN_PAYLOAD_KIND_CONVERSATION_READ_CURSOR = 9;
   FEDERATED_DOMAIN_PAYLOAD_KIND_SOCIAL_RELATIONSHIP_EVENT = 10;
+  FEDERATED_DOMAIN_PAYLOAD_KIND_REALTIME_CALL_SIGNAL = 11;
+  FEDERATED_DOMAIN_PAYLOAD_KIND_SOCIAL_PRIVATE_RESOURCE = 12;
+  FEDERATED_DOMAIN_PAYLOAD_KIND_SOCIAL_PRIVATE_INVALIDATION = 13;
+  FEDERATED_DOMAIN_PAYLOAD_KIND_SOCIAL_PRIVATE_INTERACTION_COMMAND = 14;
+  FEDERATED_DOMAIN_PAYLOAD_KIND_SOCIAL_PRIVATE_INTERACTION_RESULT = 15;
 }
 
 enum FederatedDomainFrameDisposition {
@@ -57,6 +62,7 @@ message FederatedDomainFrameSigningInput {
   google.protobuf.Timestamp issued_at = 12;
   google.protobuf.Timestamp expires_at = 13;
   string signing_key_id = 14;
+  string trace_id = 15;
 }
 
 message FederatedDomainFrame {
@@ -75,6 +81,7 @@ message FederatedDomainFrame {
   google.protobuf.Timestamp expires_at = 13;
   string signing_key_id = 14;
   bytes station_signature = 15;
+  string trace_id = 16;
 }
 
 message DeliverFederatedDomainFrameRequest {

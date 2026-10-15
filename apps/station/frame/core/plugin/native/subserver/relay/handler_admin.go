@@ -8,42 +8,48 @@ package relay
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
+	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/application"
 )
 
 // ---- DTO: Invite ----
 
 type createInviteRequest struct {
-	StationPeerID string `json:"station_peer_id,omitempty"`
-	Label         string `json:"label,omitempty"`
-	MaxClients    int32  `json:"max_clients,omitempty"`
-	ExpiresIn     string `json:"expires_in,omitempty"`
+	StationPeerID  string `json:"station_peer_id,omitempty"`
+	Label          string `json:"label,omitempty"`
+	MaxClients     int32  `json:"max_clients,omitempty"`
+	BandwidthLimit int64  `json:"bandwidth_limit,omitempty"`
+	ExpiresIn      string `json:"expires_in,omitempty"`
 }
 
 type inviteInfo struct {
-	ID            uint64 `json:"id"`
-	Token         string `json:"token"`
-	StationPeerID string `json:"station_peer_id"`
-	Label         string `json:"label"`
-	MaxClients    int32  `json:"max_clients"`
-	Status        int32  `json:"status"`
-	ConsumedBy    string `json:"consumed_by,omitempty"`
-	ExpiresAt     string `json:"expires_at"`
-	CreatedAt     string `json:"created_at"`
+	ID                    uint64 `json:"id"`
+	IntendedStationPeerID string `json:"intended_station_peer_id,omitempty"`
+	Label                 string `json:"label"`
+	MaxClients            int32  `json:"max_clients"`
+	BandwidthLimit        int64  `json:"bandwidth_limit"`
+	Status                int32  `json:"status"`
+	ConsumedBy            string `json:"consumed_by,omitempty"`
+	ExpiresAt             string `json:"expires_at"`
+	CreatedAt             string `json:"created_at"`
 }
 
-// ---- DTO: Mount ----
+// ---- DTO: Enrollment ----
 
-type mountInfo struct {
+type enrollmentInfo struct {
 	StationPeerID string `json:"station_peer_id"`
+	NodePeerID    string `json:"node_peer_id"`
 	Label         string `json:"label"`
 	Status        int32  `json:"status"`
-	LastHeartbeat string `json:"last_heartbeat"`
-	MountedAt     string `json:"mounted_at"`
+	Generation    uint64 `json:"generation"`
+	EnrolledAt    string `json:"enrolled_at"`
+	RevokedAt     string `json:"revoked_at,omitempty"`
 }
 
 // ---- Handlers ----
@@ -67,15 +73,27 @@ func (h *relayHandler) handleCreateInvite(w http.ResponseWriter, r *http.Request
 		expiresIn = d
 	}
 
-	invite, _, err := h.sub.svc.CreateInvite(ctx, req.StationPeerID, req.Label, req.MaxClients, expiresIn)
+	invite, secret, err := h.sub.svc.CreateInvite(
+		ctx,
+		req.StationPeerID,
+		req.Label,
+		req.MaxClients,
+		req.BandwidthLimit,
+		expiresIn,
+	)
 	if err != nil {
+		if errors.Is(err, application.ErrInvalidRequest) {
+			writeJSON(w, http.StatusBadRequest, errorBody("invalid invite request"))
+			return
+		}
 		logger.Errorf(ctx, "[relay] create invite failed: %v", err)
 		writeJSON(w, http.StatusInternalServerError, errorBody("failed to create invite"))
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{
-		"invite_token": invite.Token,
+		"invite_id":    strconv.FormatUint(invite.ID, 10),
+		"invite_token": secret,
 		"expires_at":   invite.ExpiresAt.Format(time.RFC3339),
 	})
 }
@@ -90,15 +108,15 @@ func (h *relayHandler) handleListInvites(w http.ResponseWriter, r *http.Request)
 	result := make([]inviteInfo, 0, len(invites))
 	for _, inv := range invites {
 		result = append(result, inviteInfo{
-			ID:            inv.ID,
-			Token:         inv.Token,
-			StationPeerID: inv.StationPeerID,
-			Label:         inv.Label,
-			MaxClients:    inv.MaxClients,
-			Status:        int32(inv.Status),
-			ConsumedBy:    inv.ConsumedBy,
-			ExpiresAt:     inv.ExpiresAt.Format(time.RFC3339),
-			CreatedAt:     inv.CreatedAt.Format(time.RFC3339),
+			ID:                    inv.ID,
+			IntendedStationPeerID: inv.IntendedStationPeerID,
+			Label:                 inv.Label,
+			MaxClients:            inv.MaxClients,
+			BandwidthLimit:        inv.BandwidthLimit,
+			Status:                int32(inv.Status),
+			ConsumedBy:            inv.ConsumedBy,
+			ExpiresAt:             inv.ExpiresAt.Format(time.RFC3339),
+			CreatedAt:             inv.CreatedAt.Format(time.RFC3339),
 		})
 	}
 
@@ -125,65 +143,76 @@ func (h *relayHandler) handleRevokeInvite(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
 }
 
-func (h *relayHandler) handleListMounts(w http.ResponseWriter, r *http.Request) {
-	mounts, err := h.sub.svc.ListOnlineMounts(r.Context())
+func (h *relayHandler) handleListEnrollments(w http.ResponseWriter, r *http.Request) {
+	enrollments, err := h.sub.svc.ListOnlineEnrollments(r.Context())
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, errorBody("failed to list mounts"))
+		writeJSON(w, http.StatusInternalServerError, errorBody("failed to list enrollments"))
 		return
 	}
 
-	result := make([]mountInfo, 0, len(mounts))
-	for _, m := range mounts {
-		result = append(result, mountInfo{
+	result := make([]enrollmentInfo, 0, len(enrollments))
+	for _, m := range enrollments {
+		revokedAt := ""
+		if m.RevokedAt != nil {
+			revokedAt = m.RevokedAt.Format(time.RFC3339)
+		}
+		result = append(result, enrollmentInfo{
 			StationPeerID: m.StationPeerID,
+			NodePeerID:    m.NodePeerID,
 			Label:         m.Label,
 			Status:        int32(m.Status),
-			LastHeartbeat: m.LastHeartbeat.Format(time.RFC3339),
-			MountedAt:     m.MountedAt.Format(time.RFC3339),
+			Generation:    m.Generation,
+			EnrolledAt:    m.EnrolledAt.Format(time.RFC3339),
+			RevokedAt:     revokedAt,
 		})
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{"mounts": result})
+	writeJSON(w, http.StatusOK, map[string]interface{}{"enrollments": result})
 }
 
-func (h *relayHandler) handleDeleteMount(w http.ResponseWriter, r *http.Request) {
+func (h *relayHandler) handleDeleteEnrollment(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	var req struct {
 		StationPeerID string `json:"station_peer_id"`
+		NodePeerID    string `json:"node_peer_id"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1024)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
 		return
 	}
-	if req.StationPeerID == "" {
-		writeJSON(w, http.StatusBadRequest, errorBody("station_peer_id is required"))
+	if req.StationPeerID == "" || req.NodePeerID == "" {
+		writeJSON(
+			w,
+			http.StatusBadRequest,
+			errorBody("station_peer_id and node_peer_id are required"),
+		)
 		return
 	}
 
-	h.sub.streams.Remove(ctx, req.StationPeerID)
-
-	if err := h.sub.svc.DeleteMount(ctx, req.StationPeerID); err != nil {
-		logger.Errorf(ctx, "[relay] delete mount %s: %v", req.StationPeerID, err)
-		writeJSON(w, http.StatusInternalServerError, errorBody("failed to delete mount"))
+	if _, err := h.sub.svc.RevokeEnrollment(
+		ctx,
+		req.StationPeerID,
+		req.NodePeerID,
+	); err != nil {
+		if errors.Is(err, application.ErrEnrollmentNotFound) {
+			writeJSON(w, http.StatusNotFound, errorBody("enrollment not found"))
+			return
+		}
+		logger.Errorf(ctx, "[relay] revoke enrollment %s: %v", req.StationPeerID, err)
+		writeJSON(w, http.StatusInternalServerError, errorBody("failed to revoke enrollment"))
 		return
 	}
-
-	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
 }
 
 func (h *relayHandler) handleStats(w http.ResponseWriter, r *http.Request) {
-	count, err := h.sub.svc.CountOnlineMounts(r.Context())
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, errorBody("failed to get stats"))
-		return
-	}
+	nodes, routes, permits := h.sub.opts.Admission.Counts()
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"online_stations":   count,
-		"active_streams":    h.sub.streams.Count(),
-		"inflight_forwards": h.sub.streams.Inflight(),
-		"max_stations":      h.sub.opts.MaxStations,
-		"heartbeat_timeout": h.sub.opts.HeartbeatTimeout,
+		"admitted_nodes": nodes,
+		"active_routes":  routes,
+		"active_permits": permits,
+		"max_stations":   h.sub.opts.MaxStations,
 	})
 }

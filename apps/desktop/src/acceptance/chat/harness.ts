@@ -1099,6 +1099,7 @@ export function installAcceptanceHarness(): void {
       return {
         actorPtid: String(device?.actor_ptid ?? ''),
         deviceId,
+        profileRevision: Number(device?.profile_revision ?? 0),
         active,
       };
     },
@@ -1128,7 +1129,9 @@ export function installAcceptanceHarness(): void {
     },
 
     async reconnectRealtime() {
-      await api.realtimeStreamStart();
+      await api.realtimeStreamStart(
+        useSessionStore.getState().sessionEpoch,
+      );
       return { connected: true };
     },
 

@@ -1,4 +1,7 @@
 use crate::application::provider::{remote as provider_remote, station_api as provider_cache};
+use crate::application::station_runtime::client::{
+    self as station_client, ReplayPolicy, StationClient,
+};
 use crate::contracts::{
     AppletActionInput, AppletConfigSetInput, AppletCreateSessionInput, AppletGatewayManifest,
     AppletGatewayService, AppletGatewaySkill, AppletIdInput, AppletInvokeInput, StubPayload,
@@ -9,9 +12,7 @@ use crate::domain::applets::{
     AccessContext, AppletSessionManifestSnapshot,
 };
 use crate::error::{AppResult, ErrorCode};
-use crate::infrastructure::station_client;
 use reqwest::blocking::Client;
-use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use reqwest::Method;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
@@ -24,6 +25,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
+use tokio_util::sync::CancellationToken;
 
 const APPLET_STORAGE_QUOTA_BYTES: usize = 10 * 1024 * 1024;
 const APPLET_FILE_QUOTA_BYTES: usize = 10 * 1024 * 1024;
@@ -948,6 +950,7 @@ pub fn applets_create_session(
 }
 
 pub fn applets_invoke(
+    station_client: &StationClient,
     context: AccessContext,
     input: AppletInvokeInput,
     data_dir: &Path,
@@ -1031,6 +1034,7 @@ pub fn applets_invoke(
 
     let timeout_ms = requested_timeout_ms(&params, limits.capability_timeout_ms);
     let result = dispatch_with_timeout(
+        station_client.clone(),
         context.clone(),
         applet_id.clone(),
         session_id,
@@ -1075,6 +1079,7 @@ pub fn applets_invoke(
 }
 
 fn dispatch_with_timeout(
+    station_client: StationClient,
     context: AccessContext,
     applet_id: String,
     session_id: String,
@@ -1090,6 +1095,7 @@ fn dispatch_with_timeout(
     let timeout_capability = normalized_capability.clone();
     std::thread::spawn(move || {
         let result = dispatch_applet_capability(
+            &station_client,
             &context,
             &applet_id,
             &session_id,
@@ -1115,6 +1121,7 @@ fn dispatch_with_timeout(
 }
 
 fn dispatch_applet_capability(
+    station_client: &StationClient,
     context: &AccessContext,
     applet_id: &str,
     session_id: &str,
@@ -1130,7 +1137,15 @@ fn dispatch_applet_capability(
         "lifecycle" => handle_lifecycle(applet_id, action),
         "navigation" => handle_navigation(action, params),
         "storage" => handle_storage(applet_id, action, params, data_dir),
-        "network" => handle_network(context, applet_id, manifest, action, params, data_dir),
+        "network" => handle_network(
+            station_client,
+            context,
+            applet_id,
+            manifest,
+            action,
+            params,
+            data_dir,
+        ),
         "config" => handle_config(applet_id, action, params, data_dir),
         "system" => handle_system(action),
         "ui" => handle_ui(action, params),
@@ -1138,13 +1153,44 @@ fn dispatch_applet_capability(
         "clipboard" => handle_clipboard(applet_id, session_id, action, params),
         "file" => handle_file(applet_id, action, params, data_dir),
         "events" => handle_events(applet_id, session_id, action, params),
-        "skills" => handle_skills(context, applet_id, session_id, manifest, action, params),
-        "tasks" => handle_tasks(
-            context, applet_id, session_id, manifest, action, params, data_dir,
+        "skills" => handle_skills(
+            station_client,
+            context,
+            applet_id,
+            session_id,
+            manifest,
+            action,
+            params,
         ),
-        "agent" => handle_agent(context, applet_id, session_id, request_id, action, params),
-        "atelier" => handle_atelier(context, applet_id, session_id, action, params, data_dir),
-        "ai" => handle_ai(context, request_id, action, params),
+        "tasks" => handle_tasks(
+            station_client,
+            context,
+            applet_id,
+            session_id,
+            manifest,
+            action,
+            params,
+            data_dir,
+        ),
+        "agent" => handle_agent(
+            station_client,
+            context,
+            applet_id,
+            session_id,
+            request_id,
+            action,
+            params,
+        ),
+        "atelier" => handle_atelier(
+            station_client,
+            context,
+            applet_id,
+            session_id,
+            action,
+            params,
+            data_dir,
+        ),
+        "ai" => handle_ai(station_client, context, request_id, action, params),
         "telemetry" => handle_telemetry(applet_id, session_id, action, params),
         other => Err(format!("Unsupported applet capability: {}", other)),
     }
@@ -1977,6 +2023,7 @@ fn is_session_subscribed_to_event(applet_id: &str, session_id: &str, topic: &str
 // ---------------------------------------------------------------------------
 
 fn handle_network(
+    station_client: &StationClient,
     context: &AccessContext,
     applet_id: &str,
     manifest: &AppletGatewayManifest,
@@ -1989,7 +2036,8 @@ fn handle_network(
     match action {
         "request" => {
             let params = params.ok_or_else(|| "network.request requires params".to_string())?;
-            let response = perform_network_request(context, manifest, &params, "GET")?;
+            let response =
+                perform_network_request(station_client, context, manifest, &params, "GET")?;
             Ok(
                 json!({ "status": response.status, "headers": sanitize_applet_response_headers(response.headers), "body": response.body }),
             )
@@ -2028,7 +2076,8 @@ fn handle_network(
                     }
                 }
             }
-            let response = perform_network_request(context, manifest, &params, "POST")?;
+            let response =
+                perform_network_request(station_client, context, manifest, &params, "POST")?;
             Ok(
                 json!({ "status": response.status, "headers": sanitize_applet_response_headers(response.headers), "body": response.body }),
             )
@@ -2040,7 +2089,8 @@ fn handle_network(
                 .or_else(|| params.get("file_path"))
                 .and_then(Value::as_str)
                 .map(str::to_string);
-            let response = perform_network_request(context, manifest, &params, "GET")?;
+            let response =
+                perform_network_request(station_client, context, manifest, &params, "GET")?;
             let headers = sanitize_applet_response_headers(response.headers);
             if let Some(file_path) = file_path {
                 let safe_path = safe_applet_relative_path(&file_path)?;
@@ -2078,6 +2128,7 @@ fn handle_network(
 }
 
 fn perform_network_request(
+    station_client: &StationClient,
     context: &AccessContext,
     manifest: &AppletGatewayManifest,
     params: &Value,
@@ -2137,7 +2188,7 @@ fn perform_network_request(
     let body = params.get("body").cloned();
     let http_method = parse_http_method(&method)?;
     match service_override {
-        Some(base_url) => station_client::request_json_response_base_url(
+        Some(base_url) => station_client.request_json_response_base_url(
             &base_url,
             http_method,
             &station_path,
@@ -2145,7 +2196,7 @@ fn perform_network_request(
             query.as_deref(),
             body,
         ),
-        None => station_client::request_json_response(
+        None => station_client.request_json_response(
             http_method,
             &station_path,
             &context.token,
@@ -2851,6 +2902,7 @@ fn schedule_task_completion(task_id: String, data_dir: PathBuf, complete_after_m
 }
 
 fn handle_skills(
+    station_client: &StationClient,
     context: &AccessContext,
     applet_id: &str,
     session_id: &str,
@@ -2912,12 +2964,20 @@ fn handle_skills(
             }
             Ok(Value::Array(skills))
         }
-        "invoke" => invoke_skill(context, applet_id, session_id, manifest, params),
+        "invoke" => invoke_skill(
+            station_client,
+            context,
+            applet_id,
+            session_id,
+            manifest,
+            params,
+        ),
         other => Err(format!("Unsupported skills action: {}", other)),
     }
 }
 
 fn invoke_skill(
+    station_client: &StationClient,
     context: &AccessContext,
     applet_id: &str,
     session_id: &str,
@@ -2958,6 +3018,7 @@ fn invoke_skill(
 
     if let Some(network_params) = skill_network_executor_params(&descriptor, &input) {
         return invoke_network_skill(
+            station_client,
             context,
             applet_id,
             session_id,
@@ -2972,6 +3033,7 @@ fn invoke_skill(
 
     if let Some(agent_params) = skill_agent_executor_params(&descriptor, &input) {
         return invoke_agent_skill(
+            station_client,
             context,
             applet_id,
             session_id,
@@ -3024,6 +3086,7 @@ fn invoke_skill(
 }
 
 fn invoke_network_skill(
+    station_client: &StationClient,
     context: &AccessContext,
     applet_id: &str,
     session_id: &str,
@@ -3034,7 +3097,8 @@ fn invoke_network_skill(
     stream: bool,
     network_params: Value,
 ) -> Result<Value, String> {
-    let execution = perform_network_request(context, manifest, &network_params, "POST");
+    let execution =
+        perform_network_request(station_client, context, manifest, &network_params, "POST");
     let (result, terminal_event) = match execution {
         Ok(response) => {
             let output = json!({
@@ -3065,6 +3129,7 @@ fn invoke_network_skill(
 }
 
 fn invoke_agent_skill(
+    station_client: &StationClient,
     context: &AccessContext,
     applet_id: &str,
     session_id: &str,
@@ -3095,14 +3160,15 @@ fn invoke_agent_skill(
         "message": message,
         "metadata": agent_params.get("metadata").cloned().unwrap_or_else(|| json!({})),
     });
-    let execution = station_client::request_json(
-        Method::POST,
-        "/agent/turn/execute",
-        &context.token,
-        None,
-        Some(body),
-    )
-    .map_err(|error| format!("agent skill executor request failed: {}", error));
+    let execution = station_client
+        .request_json(
+            Method::POST,
+            "/agent/turn/execute",
+            &context.token,
+            None,
+            Some(body),
+        )
+        .map_err(|error| format!("agent skill executor request failed: {}", error));
     let (result, terminal_event) = match execution {
         Ok(response) => {
             let output = json!({
@@ -3317,6 +3383,7 @@ fn task_agent_executor_params(params: &Value) -> Option<Value> {
 }
 
 fn handle_tasks(
+    station_client: &StationClient,
     context: &AccessContext,
     applet_id: &str,
     session_id: &str,
@@ -3359,7 +3426,13 @@ fn handle_tasks(
             drop(guard);
 
             if let Some(network_params) = task_network_executor_params(&input) {
-                let execution = perform_network_request(context, manifest, &network_params, "GET");
+                let execution = perform_network_request(
+                    station_client,
+                    context,
+                    manifest,
+                    &network_params,
+                    "GET",
+                );
                 let mut guard = task_store()
                     .lock()
                     .map_err(|_| "applet task store is unavailable".to_string())?;
@@ -3426,16 +3499,17 @@ fn handle_tasks(
                                     .cloned()
                                     .unwrap_or_else(|| json!({})),
                             });
-                            station_client::request_json(
-                                Method::POST,
-                                "/agent/turn/execute",
-                                &context.token,
-                                None,
-                                Some(body),
-                            )
-                            .map_err(|error| {
-                                format!("agent task executor request failed: {}", error)
-                            })
+                            station_client
+                                .request_json(
+                                    Method::POST,
+                                    "/agent/turn/execute",
+                                    &context.token,
+                                    None,
+                                    Some(body),
+                                )
+                                .map_err(|error| {
+                                    format!("agent task executor request failed: {}", error)
+                                })
                         })
                 } else {
                     Err(
@@ -3608,6 +3682,7 @@ fn task_record_json(record: &AppletTaskRecord) -> Value {
 }
 
 fn handle_agent(
+    station_client: &StationClient,
     context: &AccessContext,
     applet_id: &str,
     session_id: &str,
@@ -3633,14 +3708,15 @@ fn handle_agent(
                 "message": message,
                 "metadata": params.get("metadata").cloned().unwrap_or_else(|| json!({})),
             });
-            let response = station_client::request_json(
-                Method::POST,
-                "/agent/turn/execute",
-                &context.token,
-                None,
-                Some(body),
-            )
-            .map_err(|error| format!("agent gateway request failed: {}", error))?;
+            let response = station_client
+                .request_json(
+                    Method::POST,
+                    "/agent/turn/execute",
+                    &context.token,
+                    None,
+                    Some(body),
+                )
+                .map_err(|error| format!("agent gateway request failed: {}", error))?;
             let content = response
                 .get("content")
                 .or_else(|| response.get("message"))
@@ -3673,6 +3749,7 @@ fn handle_agent(
 }
 
 fn handle_atelier(
+    station_client: &StationClient,
     context: &AccessContext,
     applet_id: &str,
     session_id: &str,
@@ -3681,99 +3758,110 @@ fn handle_atelier(
     data_dir: &Path,
 ) -> Result<Value, String> {
     match action.ok_or_else(|| "atelier capability requires an action".to_string())? {
-        "workspace.load" | "workspaceLoad" | "loadWorkspace" => station_client::request_json(
-            Method::POST,
-            "/sub-agent/agent/atelier/workspace/load",
-            &context.token,
-            None,
-            Some(params.unwrap_or_else(|| json!({}))),
-        )
-        .map_err(|error| format!("atelier gateway request failed: {}", error)),
-        "project.createFromGoal" | "project.create_from_goal" | "createProjectFromGoal" => {
-            station_client::request_json(
+        "workspace.load" | "workspaceLoad" | "loadWorkspace" => station_client
+            .request_json(
                 Method::POST,
-                "/sub-agent/agent/atelier/project/create-from-goal",
+                "/sub-agent/agent/atelier/workspace/load",
                 &context.token,
                 None,
                 Some(params.unwrap_or_else(|| json!({}))),
             )
-            .map_err(|error| format!("atelier gateway request failed: {}", error))
+            .map_err(|error| format!("atelier gateway request failed: {}", error)),
+        "project.createFromGoal" | "project.create_from_goal" | "createProjectFromGoal" => {
+            station_client
+                .request_json(
+                    Method::POST,
+                    "/sub-agent/agent/atelier/project/create-from-goal",
+                    &context.token,
+                    None,
+                    Some(params.unwrap_or_else(|| json!({}))),
+                )
+                .map_err(|error| format!("atelier gateway request failed: {}", error))
         }
-        "message.send" | "messageSend" => station_client::request_json(
-            Method::POST,
-            "/sub-agent/agent/atelier/message/send",
-            &context.token,
-            None,
-            Some(params.unwrap_or_else(|| json!({}))),
-        )
-        .map_err(|error| format!("atelier gateway request failed: {}", error)),
-        "escalation.resolve" | "escalationResolve" => station_client::request_json(
-            Method::POST,
-            "/sub-agent/agent/atelier/escalation/resolve",
-            &context.token,
-            None,
-            Some(params.unwrap_or_else(|| json!({}))),
-        )
-        .map_err(|error| format!("atelier gateway request failed: {}", error)),
-        "task.setStatus" | "task.set_status" | "setTaskStatus" => station_client::request_json(
-            Method::POST,
-            "/sub-agent/agent/atelier/task/set-status",
-            &context.token,
-            None,
-            Some(params.unwrap_or_else(|| json!({}))),
-        )
-        .map_err(|error| format!("atelier gateway request failed: {}", error)),
-        "task.purge" | "purgeTask" => station_client::request_json(
-            Method::POST,
-            "/sub-agent/agent/atelier/task/purge",
-            &context.token,
-            None,
-            Some(params.unwrap_or_else(|| json!({}))),
-        )
-        .map_err(|error| format!("atelier gateway request failed: {}", error)),
-        "provider.capabilities" | "providerCapabilities" => station_client::request_json(
-            Method::POST,
-            "/sub-agent/agent/atelier/provider/capabilities",
-            &context.token,
-            None,
-            Some(params.unwrap_or_else(|| json!({}))),
-        )
-        .map_err(|error| format!("atelier gateway request failed: {}", error)),
-        "feedback.submit" | "feedbackSubmit" => station_client::request_json(
-            Method::POST,
-            "/sub-agent/agent/atelier/feedback/submit",
-            &context.token,
-            None,
-            Some(params.unwrap_or_else(|| json!({}))),
-        )
-        .map_err(|error| format!("atelier gateway request failed: {}", error)),
-        "memory.confirmCandidate" | "memoryConfirmCandidate" => station_client::request_json(
-            Method::POST,
-            "/sub-agent/agent/atelier/memory/confirm-candidate",
-            &context.token,
-            None,
-            Some(params.unwrap_or_else(|| json!({}))),
-        )
-        .map_err(|error| format!("atelier gateway request failed: {}", error)),
-        "feedback.confirmRerun" | "feedbackConfirmRerun" => station_client::request_json(
-            Method::POST,
-            "/sub-agent/agent/atelier/feedback/confirm-rerun",
-            &context.token,
-            None,
-            Some(params.unwrap_or_else(|| json!({}))),
-        )
-        .map_err(|error| format!("atelier gateway request failed: {}", error)),
+        "message.send" | "messageSend" => station_client
+            .request_json(
+                Method::POST,
+                "/sub-agent/agent/atelier/message/send",
+                &context.token,
+                None,
+                Some(params.unwrap_or_else(|| json!({}))),
+            )
+            .map_err(|error| format!("atelier gateway request failed: {}", error)),
+        "escalation.resolve" | "escalationResolve" => station_client
+            .request_json(
+                Method::POST,
+                "/sub-agent/agent/atelier/escalation/resolve",
+                &context.token,
+                None,
+                Some(params.unwrap_or_else(|| json!({}))),
+            )
+            .map_err(|error| format!("atelier gateway request failed: {}", error)),
+        "task.setStatus" | "task.set_status" | "setTaskStatus" => station_client
+            .request_json(
+                Method::POST,
+                "/sub-agent/agent/atelier/task/set-status",
+                &context.token,
+                None,
+                Some(params.unwrap_or_else(|| json!({}))),
+            )
+            .map_err(|error| format!("atelier gateway request failed: {}", error)),
+        "task.purge" | "purgeTask" => station_client
+            .request_json(
+                Method::POST,
+                "/sub-agent/agent/atelier/task/purge",
+                &context.token,
+                None,
+                Some(params.unwrap_or_else(|| json!({}))),
+            )
+            .map_err(|error| format!("atelier gateway request failed: {}", error)),
+        "provider.capabilities" | "providerCapabilities" => station_client
+            .request_json(
+                Method::POST,
+                "/sub-agent/agent/atelier/provider/capabilities",
+                &context.token,
+                None,
+                Some(params.unwrap_or_else(|| json!({}))),
+            )
+            .map_err(|error| format!("atelier gateway request failed: {}", error)),
+        "feedback.submit" | "feedbackSubmit" => station_client
+            .request_json(
+                Method::POST,
+                "/sub-agent/agent/atelier/feedback/submit",
+                &context.token,
+                None,
+                Some(params.unwrap_or_else(|| json!({}))),
+            )
+            .map_err(|error| format!("atelier gateway request failed: {}", error)),
+        "memory.confirmCandidate" | "memoryConfirmCandidate" => station_client
+            .request_json(
+                Method::POST,
+                "/sub-agent/agent/atelier/memory/confirm-candidate",
+                &context.token,
+                None,
+                Some(params.unwrap_or_else(|| json!({}))),
+            )
+            .map_err(|error| format!("atelier gateway request failed: {}", error)),
+        "feedback.confirmRerun" | "feedbackConfirmRerun" => station_client
+            .request_json(
+                Method::POST,
+                "/sub-agent/agent/atelier/feedback/confirm-rerun",
+                &context.token,
+                None,
+                Some(params.unwrap_or_else(|| json!({}))),
+            )
+            .map_err(|error| format!("atelier gateway request failed: {}", error)),
         "workspace.open" | "workspaceOpen" => {
             handle_atelier_workspace_open(applet_id, session_id, params)
         }
-        "artifact.body.fetch" | "artifactBodyFetch" => station_client::request_json(
-            Method::POST,
-            "/sub-agent/agent/atelier/artifact/body/fetch",
-            &context.token,
-            None,
-            Some(params.unwrap_or_else(|| json!({}))),
-        )
-        .map_err(|error| format!("atelier gateway request failed: {}", error)),
+        "artifact.body.fetch" | "artifactBodyFetch" => station_client
+            .request_json(
+                Method::POST,
+                "/sub-agent/agent/atelier/artifact/body/fetch",
+                &context.token,
+                None,
+                Some(params.unwrap_or_else(|| json!({}))),
+            )
+            .map_err(|error| format!("atelier gateway request failed: {}", error)),
         "artifact.preview.open" | "artifactPreviewOpen" => {
             handle_atelier_artifact_preview_open(params)
         }
@@ -3800,6 +3888,7 @@ fn handle_atelier(
                 .and_then(Value::as_i64)
                 .unwrap_or(0);
             let subscription = start_atelier_projection_event_stream(
+                station_client.clone(),
                 applet_id.to_string(),
                 session_id.to_string(),
                 agent_id.clone(),
@@ -4094,6 +4183,7 @@ fn atelier_preview_session_component(value: &str) -> String {
 }
 
 fn start_atelier_projection_event_stream(
+    station_client: StationClient,
     applet_id: String,
     session_id: String,
     agent_id: String,
@@ -4125,6 +4215,7 @@ fn start_atelier_projection_event_stream(
                 subscription_for_thread.after_event_seq,
             );
             match stream_atelier_projection_events(
+                &station_client,
                 &subscription_for_thread.key,
                 &subscription_for_thread.cursor_key,
                 &applet_id,
@@ -4164,6 +4255,7 @@ fn start_atelier_projection_event_stream(
 }
 
 fn stream_atelier_projection_events(
+    station_client: &StationClient,
     subscription_key: &str,
     cursor_key: &str,
     applet_id: &str,
@@ -4177,17 +4269,6 @@ fn stream_atelier_projection_events(
     if !is_atelier_projection_subscription_active(subscription_key) {
         return Ok(());
     }
-    let url = format!(
-        "{}{}",
-        station_client::station_base_url(),
-        "/sub-agent/agent/events/subscribe"
-    );
-    let client = Client::builder()
-        .timeout(Duration::from_millis(
-            ATELIER_PROJECTION_STREAM_REQUEST_TIMEOUT_MS,
-        ))
-        .build()
-        .map_err(|error| format!("failed to create Station Atelier event client: {error}"))?;
     let mut body = json!({
         "agent_id": agent_id,
         "after_event_seq": after_event_seq.max(0),
@@ -4195,23 +4276,30 @@ fn stream_atelier_projection_events(
     if let Some(task_id) = task_id.map(str::trim).filter(|value| !value.is_empty()) {
         body["task_id"] = json!(task_id);
     }
-    let mut response = client
-        .post(url)
-        .header(CONTENT_TYPE, "application/json")
-        .header(AUTHORIZATION, format!("Bearer {}", token.trim()))
-        .header("Accept", "text/event-stream")
-        .json(&body)
-        .send()
+    let mut response = station_client
+        .open_json_stream(
+            "/sub-agent/agent/events/subscribe",
+            token.trim(),
+            &body,
+            Duration::from_millis(ATELIER_PROJECTION_STREAM_REQUEST_TIMEOUT_MS),
+            ReplayPolicy::SafeRead,
+            CancellationToken::new(),
+        )
         .map_err(|error| {
-            if error.is_timeout() {
+            if matches!(
+                error.kind,
+                station_client::StationClientErrorKind::Cancelled
+                    | station_client::StationClientErrorKind::Network
+            ) {
                 format!("TIMEOUT Station Atelier event stream request failed: {error}")
             } else {
                 format!("Station Atelier event stream request failed: {error}")
             }
         })?;
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().unwrap_or_default();
+    if !(200..300).contains(&response.status) {
+        let status = response.status;
+        let mut body = String::new();
+        let _ = response.body.read_to_string(&mut body);
         let body = body.trim();
         if body.is_empty() {
             return Err(format!(
@@ -4229,7 +4317,7 @@ fn stream_atelier_projection_events(
         if !is_atelier_projection_subscription_active(subscription_key) {
             break;
         }
-        let read = match response.read(&mut bytes) {
+        let read = match response.body.read(&mut bytes) {
             Ok(read) => read,
             Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {
                 continue;
@@ -4600,19 +4688,21 @@ fn atelier_projection_event_text(data: &Value, payload: &Value) -> String {
 }
 
 fn handle_ai(
+    station_client: &StationClient,
     context: &AccessContext,
     request_id: &str,
     action: Option<&str>,
     params: Option<Value>,
 ) -> Result<Value, String> {
     match action.ok_or_else(|| "ai capability requires an action".to_string())? {
-        "generate" => invoke_ai_generate(&context.token, request_id, params),
-        "chat" => invoke_ai_chat(&context.token, request_id, params),
+        "generate" => invoke_ai_generate(station_client, &context.token, request_id, params),
+        "chat" => invoke_ai_chat(station_client, &context.token, request_id, params),
         other => Err(format!("Unsupported ai action: {}", other)),
     }
 }
 
 fn invoke_ai_generate(
+    station_client: &StationClient,
     token: &str,
     request_id: &str,
     params: Option<Value>,
@@ -4626,7 +4716,7 @@ fn invoke_ai_generate(
         "messages": [{ "role": "user", "content": prompt }],
         "metadata": params.get("metadata").cloned().unwrap_or_else(|| json!({}))
     });
-    let result = invoke_ai_chat(token, request_id, Some(chat))?;
+    let result = invoke_ai_chat(station_client, token, request_id, Some(chat))?;
     let content = result
         .get("message")
         .and_then(|message| message.get("content"))
@@ -4635,7 +4725,12 @@ fn invoke_ai_generate(
     Ok(json!({ "requestId": request_id, "content": content }))
 }
 
-fn invoke_ai_chat(token: &str, request_id: &str, params: Option<Value>) -> Result<Value, String> {
+fn invoke_ai_chat(
+    station_client: &StationClient,
+    token: &str,
+    request_id: &str,
+    params: Option<Value>,
+) -> Result<Value, String> {
     let params = params.ok_or_else(|| "ai.chat requires params".to_string())?;
     let messages = params
         .get("messages")
@@ -4660,7 +4755,7 @@ fn invoke_ai_chat(token: &str, request_id: &str, params: Option<Value>) -> Resul
         .to_string();
 
     let provider_id = if requested_provider.is_empty() {
-        provider_cache::get_providers(token, "")
+        provider_cache::get_providers(station_client, token, "")
             .ok()
             .and_then(|providers| providers.iter().find(|p| p.enabled).map(|p| p.name.clone()))
             .ok_or_else(|| "AI provider not found: no enabled provider is configured".to_string())?
@@ -4668,7 +4763,7 @@ fn invoke_ai_chat(token: &str, request_id: &str, params: Option<Value>) -> Resul
         requested_provider
     };
 
-    let resolved = provider_cache::resolve_credential(token, &provider_id)
+    let resolved = provider_cache::resolve_credential(station_client, token, &provider_id)
         .map_err(|_| format!("AI provider not found or no credential: {}", provider_id))?;
 
     let model_id = params
@@ -5852,6 +5947,7 @@ mod tests {
     }
 
     fn applets_invoke_registered(
+        station_client: &StationClient,
         context: AccessContext,
         input: AppletInvokeInput,
         data_dir: &Path,
@@ -5868,7 +5964,7 @@ mod tests {
         if !create.ok {
             return create;
         }
-        applets_invoke(context, input, data_dir)
+        applets_invoke(station_client, context, input, data_dir)
     }
 
     #[test]
@@ -5891,7 +5987,10 @@ mod tests {
 
     #[test]
     fn rejects_note_network_paths_outside_declared_service_policy() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         let result = perform_network_request(
+            station_client,
             &context(),
             &note_manifest(),
             &json!({ "service": "note", "path": "/api/v1/notebook", "method": "GET" }),
@@ -5926,6 +6025,8 @@ mod tests {
 
     #[test]
     fn note_gateway_reaches_station_bundled_note_service() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         let Ok(base_url) = std::env::var("PEERS_APPLET_NOTE_GATE_BASE_URL") else {
             return;
         };
@@ -5940,6 +6041,7 @@ mod tests {
         let data_dir = temp_data_dir("note-real-product-gate");
         let session_id = unique_session_id("session-note-product");
         let create = applets_invoke_registered(
+            station_client,
             gateway_context.clone(),
             note_invoke(
                 &session_id,
@@ -5970,6 +6072,7 @@ mod tests {
         );
 
         let search = applets_invoke_registered(
+            station_client,
             gateway_context,
             note_invoke(
                 &session_id,
@@ -6005,9 +6108,12 @@ mod tests {
 
     #[test]
     fn atelier_artifact_preview_open_accepts_only_host_sandbox_manifest_intent() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         let data_dir = temp_data_dir("atelier-preview-open");
         let session_id = unique_session_id("session-atelier-preview");
         let preview = applets_invoke_registered(
+            station_client,
             context(),
             atelier_invoke(
                 &session_id,
@@ -6094,6 +6200,7 @@ mod tests {
         assert!(payload.get("html").is_none());
 
         let denied = applets_invoke_registered(
+            station_client,
             context(),
             atelier_invoke(
                 &session_id,
@@ -6117,6 +6224,7 @@ mod tests {
             .is_some_and(|error| error.message.contains("atelier-sandbox://")));
 
         let bad_sandbox_segment = applets_invoke_registered(
+            station_client,
             context(),
             atelier_invoke(
                 &session_id,
@@ -6143,6 +6251,7 @@ mod tests {
             .is_some_and(|error| error.message.contains("canonical atelier-sandbox://")));
 
         let bad_body_segment = applets_invoke_registered(
+            station_client,
             context(),
             atelier_invoke(
                 &session_id,
@@ -6171,6 +6280,8 @@ mod tests {
 
     #[test]
     fn atelier_gateway_reaches_station_bundled_atelier_workspace() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         let Ok(base_url) = std::env::var("PEERS_APPLET_ATELIER_GATE_BASE_URL") else {
             return;
         };
@@ -6190,6 +6301,7 @@ mod tests {
         let data_dir = temp_data_dir("atelier-real-product-gate");
         let session_id = unique_session_id("session-atelier-product");
         let workspace = applets_invoke_registered(
+            station_client,
             gateway_context.clone(),
             atelier_invoke(
                 &session_id,
@@ -6243,6 +6355,7 @@ mod tests {
         );
 
         let subscribe_topic = applets_invoke_registered(
+            station_client,
             gateway_context.clone(),
             atelier_invoke(
                 &session_id,
@@ -6258,6 +6371,7 @@ mod tests {
             subscribe_topic.error
         );
         let subscribe_stream = applets_invoke_registered(
+            station_client,
             gateway_context.clone(),
             atelier_invoke(
                 &session_id,
@@ -6281,6 +6395,7 @@ mod tests {
         for _ in 0..40 {
             std::thread::sleep(Duration::from_millis(100));
             let poll = applets_invoke_registered(
+                station_client,
                 gateway_context.clone(),
                 atelier_invoke(&session_id, "events", "poll", None),
                 &data_dir,
@@ -6355,6 +6470,7 @@ mod tests {
         );
 
         let unsubscribe = applets_invoke_registered(
+            station_client,
             gateway_context.clone(),
             atelier_invoke(
                 &session_id,
@@ -6373,6 +6489,7 @@ mod tests {
         let cursor_session_id = unique_session_id("session-atelier-product-cursor");
         let cursor_data_dir = temp_data_dir("atelier-real-product-gate-cursor");
         let subscribe_cursor_topic = applets_invoke_registered(
+            station_client,
             gateway_context.clone(),
             atelier_invoke(
                 &cursor_session_id,
@@ -6388,6 +6505,7 @@ mod tests {
             subscribe_cursor_topic.error
         );
         let subscribe_cursor_stream = applets_invoke_registered(
+            station_client,
             gateway_context.clone(),
             atelier_invoke(
                 &cursor_session_id,
@@ -6411,6 +6529,7 @@ mod tests {
         for _ in 0..20 {
             std::thread::sleep(Duration::from_millis(100));
             let poll = applets_invoke_registered(
+                station_client,
                 gateway_context.clone(),
                 atelier_invoke(&cursor_session_id, "events", "poll", None),
                 &cursor_data_dir,
@@ -6447,6 +6566,7 @@ mod tests {
         );
 
         let unsubscribe_cursor = applets_invoke_registered(
+            station_client,
             gateway_context,
             atelier_invoke(
                 &cursor_session_id,
@@ -6537,12 +6657,14 @@ mod tests {
     }
 
     fn subscribe_event(
+        station_client: &StationClient,
         session_id: &str,
         topic: &str,
         manifest: AppletGatewayManifest,
         data_dir: &Path,
     ) {
         let result = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 session_id,
@@ -6649,10 +6771,13 @@ mod tests {
 
     #[test]
     fn rejects_invoke_before_explicit_session_creation() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         let data_dir = temp_data_dir("unregistered-session");
         let session_id = "session-not-created";
         remove_session_record_for_test(session_id);
         let result = applets_invoke(
+            station_client,
             context(),
             invoke(
                 session_id,
@@ -6673,8 +6798,11 @@ mod tests {
 
     #[test]
     fn denies_capability_missing_from_manifest_permissions() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         let data_dir = temp_data_dir("permission-denied");
         let result = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 "session-deny",
@@ -6695,10 +6823,13 @@ mod tests {
 
     #[test]
     fn rejects_manifest_permission_escalation_after_session_registration() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         let data_dir = temp_data_dir("manifest-escalation");
         let session_id = "session-manifest-escalation";
         remove_session_record_for_test(session_id);
         let initial = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 session_id,
@@ -6712,6 +6843,7 @@ mod tests {
         assert!(initial.ok);
 
         let escalated = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 session_id,
@@ -6738,8 +6870,11 @@ mod tests {
 
     #[test]
     fn rejects_raw_network_url_before_proxying() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         let data_dir = temp_data_dir("raw-network-url");
         let result = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 "session-raw-url",
@@ -6765,8 +6900,11 @@ mod tests {
 
     #[test]
     fn rejects_network_path_outside_service_binding() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         let data_dir = temp_data_dir("network-path-policy");
         let result = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 "session-service-deny",
@@ -6787,8 +6925,11 @@ mod tests {
 
     #[test]
     fn rejects_oversized_gateway_request_payload() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         let data_dir = temp_data_dir("gateway-payload-limit");
         let result = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 "session-payload-too-large",
@@ -6822,6 +6963,8 @@ mod tests {
 
     #[test]
     fn rejects_session_request_quota_exhaustion() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         let data_dir = temp_data_dir("quota");
         let session_id = unique_session_id("session-quota-exhausted");
         set_quota_record_for_test(
@@ -6830,6 +6973,7 @@ mod tests {
             DEFAULT_GATEWAY_SESSION_QUOTA_PER_MINUTE,
         );
         let result = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 &session_id,
@@ -6850,11 +6994,14 @@ mod tests {
 
     #[test]
     fn allows_lifecycle_destroy_when_session_quota_is_exhausted() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         let data_dir = temp_data_dir("quota-destroy");
         let session_id = unique_session_id("session-quota-destroy");
         let session_manifest = manifest(vec!["app.getContext", "lifecycle.destroy"]);
         remove_session_record_for_test(&session_id);
         let ready = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 &session_id,
@@ -6873,6 +7020,7 @@ mod tests {
             DEFAULT_GATEWAY_SESSION_QUOTA_PER_MINUTE,
         );
         let destroyed = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 &session_id,
@@ -6886,6 +7034,7 @@ mod tests {
         assert!(destroyed.ok);
 
         let after_destroy = applets_invoke_registered(
+            station_client,
             context(),
             invoke(&session_id, "app", "getContext", None, session_manifest),
             &data_dir,
@@ -6921,6 +7070,8 @@ mod tests {
 
     #[test]
     fn rejects_capability_execution_after_requested_timeout() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         use std::io::{Read, Write};
         use std::net::TcpListener;
 
@@ -6950,6 +7101,7 @@ mod tests {
         timeout_manifest.services[0].id = "timeout-api".to_string();
         let data_dir = temp_data_dir("capability-timeout");
         let result = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 "session-timeout",
@@ -7100,9 +7252,12 @@ mod tests {
 
     #[test]
     fn routes_navigation_through_authorized_host_command() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         let session_manifest = manifest(vec!["navigation.navigateTo"]);
         let data_dir = temp_data_dir("navigation-command");
         let result = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 "session-navigation",
@@ -7132,9 +7287,12 @@ mod tests {
 
     #[test]
     fn routes_ui_through_authorized_host_command() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         let session_manifest = manifest(vec!["ui.showModal"]);
         let data_dir = temp_data_dir("ui-command");
         let result = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 "session-ui",
@@ -7252,6 +7410,8 @@ mod tests {
 
     #[test]
     fn enforces_event_subscription_state_and_topic_policy() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         let data_dir = temp_data_dir("event-subscriptions");
         let session_id = unique_session_id("session-events");
         let session_manifest = manifest(vec![
@@ -7261,6 +7421,7 @@ mod tests {
         ]);
 
         let unsubscribed_emit = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 &session_id,
@@ -7277,6 +7438,7 @@ mod tests {
         assert!(unsubscribed_payload.get("__events").is_none());
 
         subscribe_event(
+            station_client,
             &session_id,
             "applet.local",
             session_manifest.clone(),
@@ -7284,6 +7446,7 @@ mod tests {
         );
 
         let subscribed_emit = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 &session_id,
@@ -7303,6 +7466,7 @@ mod tests {
             .is_some());
 
         let reserved_emit = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 &session_id,
@@ -7322,8 +7486,11 @@ mod tests {
 
     #[test]
     fn uses_declared_skills_without_hardcoded_skill_results() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         let data_dir = temp_data_dir("declared-skills");
         let result = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 "session-skills",
@@ -7342,12 +7509,15 @@ mod tests {
 
     #[test]
     fn supports_runtime_skill_register_invoke_and_policy_deny() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         let session_id = unique_session_id("session-skill-runtime");
         remove_session_record_for_test(&session_id);
         let data_dir = temp_data_dir("skill-runtime");
         let session_manifest =
             manifest(vec!["skills.register", "skills.invoke", "events.subscribe"]);
         let register = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 &session_id,
@@ -7362,6 +7532,7 @@ mod tests {
         );
         assert!(register.ok);
         subscribe_event(
+            station_client,
             &session_id,
             "skill.stream",
             session_manifest.clone(),
@@ -7369,6 +7540,7 @@ mod tests {
         );
 
         let invoke_result = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 &session_id,
@@ -7387,6 +7559,7 @@ mod tests {
         assert!(payload.get("__events").and_then(Value::as_array).is_some());
 
         let denied = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 &session_id,
@@ -7403,11 +7576,14 @@ mod tests {
 
     #[test]
     fn rejects_placeholder_skill_when_product_executors_required() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         let session_id = unique_session_id("session-skill-product-required");
         remove_session_record_for_test(&session_id);
         let data_dir = temp_data_dir("skill-product-required");
         let session_manifest = manifest(vec!["skills.register", "skills.invoke"]);
         let register = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 &session_id,
@@ -7423,6 +7599,7 @@ mod tests {
         assert!(register.ok);
 
         let invoke_result = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 &session_id,
@@ -7449,6 +7626,8 @@ mod tests {
 
     #[test]
     fn executes_network_skill_through_gateway_service_policy() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         use std::io::{Read, Write};
         use std::net::TcpListener;
 
@@ -7481,6 +7660,7 @@ mod tests {
             manifest(vec!["skills.register", "skills.invoke", "events.subscribe"]);
         session_manifest.services[0].id = "skill-api".to_string();
         let register = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 &session_id,
@@ -7507,6 +7687,7 @@ mod tests {
         );
         assert!(register.ok);
         subscribe_event(
+            station_client,
             &session_id,
             "skill.stream",
             session_manifest.clone(),
@@ -7514,6 +7695,7 @@ mod tests {
         );
 
         let invoke_result = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 &session_id,
@@ -7579,12 +7761,15 @@ mod tests {
 
     #[test]
     fn fails_network_skill_when_service_policy_denies_request() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         let data_dir = temp_data_dir("skill-network-deny");
         let session_id = unique_session_id("session-skill-network-deny");
         let session_manifest =
             manifest(vec!["skills.register", "skills.invoke", "events.subscribe"]);
 
         let register = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 &session_id,
@@ -7611,6 +7796,7 @@ mod tests {
         );
         assert!(register.ok);
         subscribe_event(
+            station_client,
             &session_id,
             "skill.stream",
             session_manifest.clone(),
@@ -7618,6 +7804,7 @@ mod tests {
         );
 
         let invoke_result = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 &session_id,
@@ -7657,11 +7844,14 @@ mod tests {
 
     #[test]
     fn denies_agent_skill_executor_without_agent_permission() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         let data_dir = temp_data_dir("skill-agent-deny");
         let session_id = unique_session_id("session-skill-agent-deny");
         let session_manifest = manifest(vec!["skills.register", "skills.invoke"]);
 
         let register = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 &session_id,
@@ -7682,6 +7872,7 @@ mod tests {
         assert!(register.ok);
 
         let invoke_result = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 &session_id,
@@ -7709,6 +7900,8 @@ mod tests {
 
     #[test]
     fn keeps_real_task_lifecycle_state() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         let data_dir = temp_data_dir("task-lifecycle");
         let session_id = unique_session_id("session-task");
         let session_manifest = manifest(vec![
@@ -7718,12 +7911,14 @@ mod tests {
             "events.subscribe",
         ]);
         subscribe_event(
+            station_client,
             &session_id,
             "task.event",
             session_manifest.clone(),
             &data_dir,
         );
         let start = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 &session_id,
@@ -7742,6 +7937,7 @@ mod tests {
         assert!(started.get("__events").and_then(Value::as_array).is_some());
 
         let complete = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 &session_id,
@@ -7756,6 +7952,7 @@ mod tests {
         assert!(complete.data.unwrap().status.contains("completed"));
 
         let cancel = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 &session_id,
@@ -7770,6 +7967,7 @@ mod tests {
         assert!(cancel.data.unwrap().status.contains("completed"));
 
         let cancellable = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 &session_id,
@@ -7789,6 +7987,7 @@ mod tests {
             .unwrap();
 
         let cancelled = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 &session_id,
@@ -7804,6 +8003,7 @@ mod tests {
 
         std::thread::sleep(Duration::from_millis(5));
         let after_cancel = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 &session_id,
@@ -7822,10 +8022,13 @@ mod tests {
 
     #[test]
     fn rejects_placeholder_task_when_product_executors_required() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         let data_dir = temp_data_dir("task-product-required");
         let session_id = unique_session_id("session-task-product-required");
         let session_manifest = manifest(vec!["tasks.start", "events.subscribe"]);
         subscribe_event(
+            station_client,
             &session_id,
             "task.event",
             session_manifest.clone(),
@@ -7833,6 +8036,7 @@ mod tests {
         );
 
         let start = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 &session_id,
@@ -7869,6 +8073,8 @@ mod tests {
 
     #[test]
     fn executes_network_task_through_gateway_service_policy() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         use std::io::{Read, Write};
         use std::net::TcpListener;
 
@@ -7899,6 +8105,7 @@ mod tests {
         let mut session_manifest = manifest(vec!["tasks.start", "events.subscribe"]);
         session_manifest.services[0].id = "task-api".to_string();
         subscribe_event(
+            station_client,
             &session_id,
             "task.event",
             session_manifest.clone(),
@@ -7906,6 +8113,7 @@ mod tests {
         );
 
         let start = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 &session_id,
@@ -7976,10 +8184,13 @@ mod tests {
 
     #[test]
     fn fails_network_task_when_service_policy_denies_request() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         let data_dir = temp_data_dir("task-network-deny");
         let session_id = unique_session_id("session-task-network-deny");
         let session_manifest = manifest(vec!["tasks.start"]);
         let start = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 &session_id,
@@ -8013,6 +8224,74 @@ mod tests {
         use std::io::{Read, Write};
         use std::net::TcpListener;
 
+        struct FixtureExecutor {
+            origin: String,
+        }
+
+        impl crate::application::station_runtime::client::StationRequestExecutor for FixtureExecutor {
+            fn execute(
+                &self,
+                request: crate::application::station_runtime::client::StationRequest,
+            ) -> Result<
+                crate::application::station_runtime::client::StationResponse,
+                crate::application::station_runtime::client::StationTransportError,
+            > {
+                let body = match request.body {
+                    crate::application::station_runtime::client::StationRequestBody::Empty => {
+                        Vec::new()
+                    }
+                    crate::application::station_runtime::client::StationRequestBody::Bytes(
+                        bytes,
+                    ) => bytes,
+                    crate::application::station_runtime::client::StationRequestBody::Reader {
+                        ..
+                    } => unreachable!("fixture does not stream request bodies"),
+                };
+                let response = reqwest::blocking::Client::new()
+                    .request(
+                        request.method,
+                        format!("{}{}", self.origin, request.path_and_query),
+                    )
+                    .headers(request.headers)
+                    .body(body)
+                    .send()
+                    .map_err(|error| {
+                        crate::application::station_runtime::client::StationTransportError::new(
+                            crate::application::station_runtime::client::StationTransportErrorKind::Unavailable,
+                            error.to_string(),
+                            false,
+                        )
+                    })?;
+                Ok(
+                    crate::application::station_runtime::client::StationResponse {
+                        status: response.status().as_u16(),
+                        headers: response.headers().clone(),
+                        body: Box::new(response),
+                    },
+                )
+            }
+
+            fn active_station_peer_id(&self) -> Option<String> {
+                Some("fixture-station".to_string())
+            }
+
+            fn active_scope(
+                &self,
+            ) -> Option<crate::application::station_runtime::client::StationRequestScope>
+            {
+                Some(
+                    crate::application::station_runtime::client::StationRequestScope {
+                        station_peer_id: "fixture-station".to_string(),
+                        lifecycle_generation: 1,
+                    },
+                )
+            }
+
+            fn active_endpoint_origin(&self) -> Option<String> {
+                Some(self.origin.clone())
+            }
+        }
+
         let listener = TcpListener::bind("127.0.0.1:0").expect("agent task fixture should bind");
         let address = listener
             .local_addr()
@@ -8030,12 +8309,17 @@ mod tests {
                 let _ = stream.write_all(response.as_bytes());
             }
         });
-        std::env::set_var("PEERS_STATION_URL", format!("http://{}", address));
+        let station_client = crate::application::station_runtime::client::StationClient::new(
+            std::sync::Arc::new(FixtureExecutor {
+                origin: format!("http://{address}"),
+            }),
+        );
 
         let data_dir = temp_data_dir("task-agent");
         let session_id = unique_session_id("session-task-agent");
         let session_manifest = manifest(vec!["tasks.start", "events.subscribe", "agent.stream"]);
         subscribe_event(
+            &station_client,
             &session_id,
             "task.event",
             session_manifest.clone(),
@@ -8043,6 +8327,7 @@ mod tests {
         );
 
         let start = applets_invoke_registered(
+            &station_client,
             context(),
             invoke(
                 &session_id,
@@ -8059,8 +8344,6 @@ mod tests {
             ),
             &data_dir,
         );
-        std::env::remove_var("PEERS_STATION_URL");
-
         assert!(start.ok, "agent task failed: {:?}", start.error);
         let payload: Value = serde_json::from_str(&start.data.unwrap().status).unwrap();
         assert_eq!(
@@ -8097,10 +8380,13 @@ mod tests {
 
     #[test]
     fn fails_agent_task_executor_without_agent_permission() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         let data_dir = temp_data_dir("task-agent-deny");
         let session_id = unique_session_id("session-task-agent-deny");
         let session_manifest = manifest(vec!["tasks.start"]);
         let start = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 &session_id,
@@ -8128,6 +8414,8 @@ mod tests {
 
     #[test]
     fn drains_background_task_events_from_gateway_outbox() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         let data_dir = temp_data_dir("task-outbox");
         let session_id = unique_session_id("session-task-outbox");
         let session_manifest = manifest(vec![
@@ -8137,6 +8425,7 @@ mod tests {
             "events.poll",
         ]);
         subscribe_event(
+            station_client,
             &session_id,
             "task.event",
             session_manifest.clone(),
@@ -8144,6 +8433,7 @@ mod tests {
         );
 
         let start = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 &session_id,
@@ -8160,6 +8450,7 @@ mod tests {
 
         std::thread::sleep(Duration::from_millis(80));
         let polled = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 &session_id,
@@ -8190,6 +8481,7 @@ mod tests {
         }));
 
         let drained = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 &session_id,
@@ -8208,6 +8500,7 @@ mod tests {
             .is_some_and(Vec::is_empty));
 
         let cancellable = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 &session_id,
@@ -8227,6 +8520,7 @@ mod tests {
             .unwrap();
 
         let cancelled = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 &session_id,
@@ -8241,6 +8535,7 @@ mod tests {
 
         std::thread::sleep(Duration::from_millis(90));
         let after_cancel_poll = applets_invoke_registered(
+            station_client,
             context(),
             invoke(&session_id, "events", "poll", None, session_manifest),
             &data_dir,
@@ -8268,9 +8563,12 @@ mod tests {
 
     #[test]
     fn reloads_persisted_task_lifecycle_state() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         let data_dir = temp_data_dir("task-persist");
         let session_manifest = manifest(vec!["tasks.start", "tasks.get"]);
         let start = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 "session-task-persist",
@@ -8294,6 +8592,7 @@ mod tests {
         remove_task_record_for_test(&task_id);
 
         let reloaded = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 "session-task-persist",
@@ -8310,6 +8609,8 @@ mod tests {
 
     #[test]
     fn live_desktop_e2e_chain() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         let Ok(base_url) = std::env::var("PEERS_APPLET_E2E_BASE_URL") else {
             return;
         };
@@ -8335,6 +8636,7 @@ mod tests {
         ]);
 
         let network = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 "session-live",
@@ -8349,6 +8651,7 @@ mod tests {
         assert!(network.data.unwrap().status.contains("e2e-network-ok"));
 
         let network_post = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 "session-live",
@@ -8371,6 +8674,7 @@ mod tests {
         assert!(network_post_status.contains("station-post"));
 
         let network_task = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 "session-live",
@@ -8402,6 +8706,7 @@ mod tests {
         assert!(network_task_status.contains("task-network"));
 
         let agent_task = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 "session-live",
@@ -8425,6 +8730,7 @@ mod tests {
         assert!(agent_task_status.contains("task-agent"));
 
         let skill_register = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 "session-live",
@@ -8455,6 +8761,7 @@ mod tests {
             skill_register.error
         );
         let skill = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 "session-live",
@@ -8474,6 +8781,7 @@ mod tests {
         assert!(skill_status.contains("skill-network"));
 
         let agent_skill_register = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 "session-live",
@@ -8497,6 +8805,7 @@ mod tests {
             agent_skill_register.error
         );
         let agent_skill = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 "session-live",
@@ -8518,6 +8827,7 @@ mod tests {
         assert!(agent_skill.data.unwrap().status.contains("agent-e2e-ok"));
 
         let agent_session = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 "session-live",
@@ -8535,6 +8845,7 @@ mod tests {
         );
 
         let agent = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 "session-live",
@@ -8549,6 +8860,7 @@ mod tests {
         assert!(agent.data.unwrap().status.contains("agent-e2e-ok"));
 
         let ai = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 "session-live",
@@ -8567,6 +8879,8 @@ mod tests {
 
     #[test]
     fn live_provider_protocol_fixture_matrix() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         let Ok(base_url) = std::env::var("PEERS_APPLET_E2E_BASE_URL") else {
             return;
         };
@@ -8601,6 +8915,7 @@ mod tests {
         for (provider_id, protocol, model_id, expected_text) in cases {
             register_e2e_provider(provider_id, protocol, model_id, &base_url);
             let result = applets_invoke_registered(
+                station_client,
                 context(),
                 invoke(
                     &format!("session-live-provider-{}", protocol),
@@ -8624,11 +8939,14 @@ mod tests {
 
     #[test]
     fn rejects_invocation_after_gateway_session_destroy() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         let data_dir = temp_data_dir("session-destroy");
         let session_id = "session-destroy";
         let session_manifest = manifest(vec!["app.getContext", "lifecycle.destroy"]);
         remove_session_record_for_test(session_id);
         let ready = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 session_id,
@@ -8642,6 +8960,7 @@ mod tests {
         assert!(ready.ok);
 
         let destroy = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 session_id,
@@ -8655,6 +8974,7 @@ mod tests {
         assert!(destroy.ok);
 
         let after_destroy = applets_invoke_registered(
+            station_client,
             context(),
             invoke(session_id, "app", "getContext", None, session_manifest),
             &data_dir,
@@ -8672,11 +8992,14 @@ mod tests {
 
     #[test]
     fn reloads_persisted_destroyed_session_state() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         let data_dir = temp_data_dir("session-persist");
         let session_id = "session-persist-destroyed";
         let session_manifest = manifest(vec!["app.getContext", "lifecycle.destroy"]);
         remove_session_record_for_test(session_id);
         let ready = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 session_id,
@@ -8689,6 +9012,7 @@ mod tests {
         );
         assert!(ready.ok);
         let destroyed = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 session_id,
@@ -8704,6 +9028,7 @@ mod tests {
         remove_session_record_for_test(session_id);
 
         let after_restart = applets_invoke_registered(
+            station_client,
             context(),
             invoke(session_id, "app", "getContext", None, session_manifest),
             &data_dir,
@@ -8717,8 +9042,11 @@ mod tests {
 
     #[test]
     fn authorizes_atelier_projection_subscription_from_manifest_permission() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         let data_dir = temp_data_dir("atelier-events-allow");
         let result = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 "session-atelier-events-allow",
@@ -8740,8 +9068,11 @@ mod tests {
 
     #[test]
     fn denies_atelier_projection_subscription_without_manifest_permission() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         let data_dir = temp_data_dir("atelier-events-deny");
         let result = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 "session-atelier-events-deny",
@@ -9137,10 +9468,13 @@ mod tests {
 
     #[test]
     fn captures_gateway_audit_evidence_for_security_paths() {
+        let station_client =
+            &crate::application::station_runtime::client::StationClient::testing_unavailable();
         let _ = drain_audit_records();
         let data_dir = temp_data_dir("audit");
 
         let allowed = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 "session-audit-allow",
@@ -9154,6 +9488,7 @@ mod tests {
         assert!(allowed.ok);
 
         let denied = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 "session-audit-deny",
@@ -9169,6 +9504,7 @@ mod tests {
         let destroy_session_id = "session-audit-destroy";
         let destroy_manifest = manifest(vec!["app.getContext", "lifecycle.destroy"]);
         let ready = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 destroy_session_id,
@@ -9181,6 +9517,7 @@ mod tests {
         );
         assert!(ready.ok);
         let destroyed = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 destroy_session_id,
@@ -9206,6 +9543,7 @@ mod tests {
         let mut audit_manifest = manifest(vec!["network.request"]);
         audit_manifest.services[0].id = "audit-api".to_string();
         let network_allowed = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 "session-audit-network-allow",
@@ -9220,6 +9558,7 @@ mod tests {
         assert!(!network_allowed.ok);
 
         let network_denied = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 "session-audit-network-deny",
@@ -9235,6 +9574,7 @@ mod tests {
         let mut forged_manifest = manifest(vec!["app.getContext"]);
         forged_manifest.id = "forged-applet".to_string();
         let anti_forge = applets_invoke_registered(
+            station_client,
             context(),
             invoke(
                 "session-audit-forge",

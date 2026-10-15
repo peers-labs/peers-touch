@@ -3,7 +3,10 @@ package delivery
 import (
 	"context"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 )
 
 // RetryBackoff bounds exponential retry delay without imposing a loss-causing attempt cap.
@@ -48,12 +51,38 @@ type DispatchReport struct {
 	Expired   int
 }
 
+// DispatchTransition identifies one persisted outbox lifecycle transition.
+type DispatchTransition string
+
+const (
+	DispatchTransitionDelivered DispatchTransition = "delivered"
+	DispatchTransitionRetrying  DispatchTransition = "retrying"
+	DispatchTransitionTerminal  DispatchTransition = "terminal"
+	DispatchTransitionExpired   DispatchTransition = "expired"
+)
+
+// DispatchObservation is emitted only after the corresponding state transition persists.
+type DispatchObservation struct {
+	PayloadKind PayloadKind
+	Transition  DispatchTransition
+	Failure     FailureCode
+	Attempt     uint32
+	Latency     time.Duration
+}
+
+// DispatchObserver receives bounded delivery telemetry for one payload kind.
+type DispatchObserver interface {
+	ObserveDispatch(context.Context, DispatchObservation)
+}
+
 // Dispatcher delivers durable outbox rows with lease fencing until immutable expiry.
 type Dispatcher struct {
 	repository OutboxRepository
 	transport  Transport
 	config     DispatcherConfig
 	clock      Clock
+	observers  map[PayloadKind]DispatchObserver
+	observerMu sync.RWMutex
 }
 
 // NewDispatcher validates dependencies and creates a bounded dispatcher.
@@ -81,7 +110,33 @@ func NewDispatcher(
 		transport:  transport,
 		config:     config,
 		clock:      clock,
+		observers:  make(map[PayloadKind]DispatchObserver),
 	}, nil
+}
+
+// RegisterObserver binds one payload kind to exactly one metrics owner.
+func (d *Dispatcher) RegisterObserver(
+	kind PayloadKind,
+	observer DispatchObserver,
+) error {
+	if kind == PayloadKindUnspecified || isNil(observer) {
+		return NewError(
+			FailureInvalidArgument,
+			"register dispatch observer",
+			errorsText("payload kind and observer are required"),
+		)
+	}
+	d.observerMu.Lock()
+	defer d.observerMu.Unlock()
+	if _, exists := d.observers[kind]; exists {
+		return NewError(
+			FailureInvalidArgument,
+			"register dispatch observer",
+			errorsText("payload kind already has an observer"),
+		)
+	}
+	d.observers[kind] = observer
+	return nil
 }
 
 // DispatchOnce claims at most BatchSize rows and resolves every claim with its lease token.
@@ -135,7 +190,10 @@ func (d *Dispatcher) dispatchClaim(
 ) error {
 	now := d.clock.Now().UTC()
 	if claim.Frame == nil {
-		return d.markTerminal(ctx, claim.Lease, now, FailureInvalidFrame, report)
+		return d.markTerminal(ctx, claim, now, FailureInvalidFrame, report)
+	}
+	if traceID := strings.TrimSpace(claim.Frame.GetTraceId()); traceID != "" {
+		ctx = logger.WithTraceID(ctx, traceID)
 	}
 	expiresAt := claim.Frame.GetExpiresAt()
 	if expiresAt == nil || !expiresAt.AsTime().After(now) {
@@ -143,29 +201,50 @@ func (d *Dispatcher) dispatchClaim(
 			return NewError(FailurePersistence, "mark outbox expired", err)
 		}
 		report.Expired++
+		d.observe(ctx, claim, DispatchTransitionExpired, FailureExpired, now)
 		return nil
 	}
 
 	result, deliveryErr := d.transport.Deliver(ctx, claim.Frame)
+	transitionAt := d.clock.Now().UTC()
 	if deliveryErr != nil {
-		return d.scheduleRetry(ctx, claim, now, FailureTransportUnavailable, report)
+		return d.scheduleRetry(
+			ctx,
+			claim,
+			transitionAt,
+			FailureTransportUnavailable,
+			report,
+		)
 	}
 	if err := validateResult(result); err != nil {
-		return d.scheduleRetry(ctx, claim, now, FailureInvalidResult, report)
+		return d.scheduleRetry(ctx, claim, transitionAt, FailureInvalidResult, report)
 	}
 	switch result.Disposition {
 	case DispositionAccepted, DispositionDuplicate:
-		if err := d.repository.MarkDelivered(ctx, claim.Lease, now); err != nil {
+		if err := d.repository.MarkDelivered(ctx, claim.Lease, transitionAt); err != nil {
 			return NewError(FailurePersistence, "mark outbox delivered", err)
 		}
 		report.Delivered++
+		d.observe(ctx, claim, DispatchTransitionDelivered, "", transitionAt)
 		return nil
 	case DispositionRetryable:
-		return d.scheduleRetry(ctx, claim, now, failureForFrameCode(result.ErrorCode), report)
+		return d.scheduleRetry(
+			ctx,
+			claim,
+			transitionAt,
+			failureForFrameCode(result.ErrorCode),
+			report,
+		)
 	case DispositionTerminal, DispositionPayloadHashConflict:
-		return d.markTerminal(ctx, claim.Lease, now, failureForFrameCode(result.ErrorCode), report)
+		return d.markTerminal(
+			ctx,
+			claim,
+			transitionAt,
+			failureForFrameCode(result.ErrorCode),
+			report,
+		)
 	default:
-		return d.scheduleRetry(ctx, claim, now, FailureInvalidResult, report)
+		return d.scheduleRetry(ctx, claim, transitionAt, FailureInvalidResult, report)
 	}
 }
 
@@ -185,21 +264,52 @@ func (d *Dispatcher) scheduleRetry(
 		return NewError(FailurePersistence, "schedule outbox retry", err)
 	}
 	report.Retried++
+	d.observe(ctx, claim, DispatchTransitionRetrying, failure, now)
 	return nil
 }
 
 func (d *Dispatcher) markTerminal(
 	ctx context.Context,
-	lease Lease,
+	claim Claim,
 	now time.Time,
 	failure FailureCode,
 	report *DispatchReport,
 ) error {
-	if err := d.repository.MarkTerminal(ctx, lease, now, failure); err != nil {
+	if err := d.repository.MarkTerminal(ctx, claim.Lease, now, failure); err != nil {
 		return NewError(FailurePersistence, "mark outbox terminal", err)
 	}
 	report.Terminal++
+	d.observe(ctx, claim, DispatchTransitionTerminal, failure, now)
 	return nil
+}
+
+func (d *Dispatcher) observe(
+	ctx context.Context,
+	claim Claim,
+	transition DispatchTransition,
+	failure FailureCode,
+	transitionAt time.Time,
+) {
+	if claim.Frame == nil {
+		return
+	}
+	d.observerMu.RLock()
+	observer := d.observers[claim.Frame.GetPayloadKind()]
+	d.observerMu.RUnlock()
+	if observer == nil {
+		return
+	}
+	latency := time.Duration(0)
+	if !claim.EnqueuedAt.IsZero() && transitionAt.After(claim.EnqueuedAt) {
+		latency = transitionAt.Sub(claim.EnqueuedAt)
+	}
+	observer.ObserveDispatch(ctx, DispatchObservation{
+		PayloadKind: claim.Frame.GetPayloadKind(),
+		Transition:  transition,
+		Failure:     failure,
+		Attempt:     claim.AttemptCount,
+		Latency:     latency,
+	})
 }
 
 func failureForFrameCode(code FrameErrorCode) FailureCode {

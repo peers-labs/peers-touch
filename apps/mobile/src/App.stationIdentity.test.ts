@@ -5,12 +5,12 @@ const source = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
 
 describe('Mobile App Station identity replacement', () => {
   it('requires destructive confirmation before replacing a saved identity', () => {
-    expect(source).toContain('Modal.confirm({');
-    expect(source).toContain("title: t('mobile.launch.stationReplaceConfirmTitle')");
-    expect(source).toContain("okText: t('mobile.launch.stationReplace')");
-    expect(source).toContain('okButtonProps: { danger: true }');
-    expect(source).toContain('onOk: () => resolve(true)');
-    expect(source).toContain('onCancel: () => resolve(false)');
+    expect(source).toContain('setPendingIdentityReplacement({');
+    expect(source).toContain("t('mobile.launch.stationReplaceConfirmTitle')");
+    expect(source).toContain("t('mobile.launch.stationReplace')");
+    expect(source).toContain('data-product-surface="entry.station-identity-mismatch"');
+    expect(source).toContain('resolveStationIdentityReplacement(true)');
+    expect(source).toContain('resolveStationIdentityReplacement(false)');
   });
 
   it('guards both add and continue replacement paths with that confirmation', () => {
@@ -28,5 +28,14 @@ describe('Mobile App Station identity replacement', () => {
       "reconcileLaunchState('access-granted')",
     );
     expect(source).not.toContain("transitionLaunchState('shell')");
+  });
+
+  it('keeps the Shell mounted while native system surfaces background the app', () => {
+    expect(source).toContain(
+      "renderedLaunchState === 'background'",
+    );
+    expect(source).toMatch(
+      /renderedLaunchState === 'shell'[\s\S]*renderedLaunchState === 'background'[\s\S]*renderedLaunchState === 'resume'[\s\S]*<MobileShell/,
+    );
   });
 });

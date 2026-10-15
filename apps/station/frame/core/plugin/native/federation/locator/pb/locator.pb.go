@@ -47,15 +47,10 @@ type ActorLocatorRecord struct {
 	// Authoritative home station — the only station that may legitimately
 	// sign this handle. Cross-checked against signing_key_pem during TOFU.
 	HomeStationPeerId string `protobuf:"bytes,2,opt,name=home_station_peer_id,proto3" json:"home_station_peer_id,omitempty"`
-	// Stable HTTP origin of the home station, no scheme. Receivers MUST NOT
-	// dial this directly across the federation; instead it is fed through
-	// `/relay/forward/{home_station_peer_id}/...` so NAT-bound stations
-	// remain reachable.
+	// Stable HTTP origin of the home station, no scheme. It is an identity hint,
+	// never a transport target. Receivers resolve `home_station_peer_id` through
+	// the verified Node Connectivity route registry.
 	HomeStationDomain string `protobuf:"bytes,3,opt,name=home_station_domain,proto3" json:"home_station_domain,omitempty"`
-	// Optional list of relay-mount labels through which this actor's home
-	// station is reachable today. Pure hint — the resolver still authoritatively
-	// looks up the live mount table from the relay before forwarding.
-	InboxRelayMounts []string `protobuf:"bytes,4,rep,name=inbox_relay_mounts,proto3" json:"inbox_relay_mounts,omitempty"`
 	// Tombstone flag. When true, the record is a withdrawal: receivers MUST
 	// overwrite any cached entry for this handle and refuse to surface the
 	// actor across the federation. Tombstones are signed exactly like live
@@ -136,13 +131,6 @@ func (x *ActorLocatorRecord) GetHomeStationDomain() string {
 	return ""
 }
 
-func (x *ActorLocatorRecord) GetInboxRelayMounts() []string {
-	if x != nil {
-		return x.InboxRelayMounts
-	}
-	return nil
-}
-
 func (x *ActorLocatorRecord) GetTombstone() bool {
 	if x != nil {
 		return x.Tombstone
@@ -189,19 +177,18 @@ var File_domain_federation_locator_proto protoreflect.FileDescriptor
 
 const file_domain_federation_locator_proto_rawDesc = "" +
 	"\n" +
-	"\x1fdomain/federation/locator.proto\x12\x1fpeers_touch.model.federation.v1\"\xa8\x03\n" +
+	"\x1fdomain/federation/locator.proto\x12\x1fpeers_touch.model.federation.v1\"\xfe\x02\n" +
 	"\x12ActorLocatorRecord\x12*\n" +
 	"\x10federated_handle\x18\x01 \x01(\tR\x10federated_handle\x122\n" +
 	"\x14home_station_peer_id\x18\x02 \x01(\tR\x14home_station_peer_id\x120\n" +
-	"\x13home_station_domain\x18\x03 \x01(\tR\x13home_station_domain\x12.\n" +
-	"\x12inbox_relay_mounts\x18\x04 \x03(\tR\x12inbox_relay_mounts\x12\x1c\n" +
+	"\x13home_station_domain\x18\x03 \x01(\tR\x13home_station_domain\x12\x1c\n" +
 	"\ttombstone\x18\x05 \x01(\bR\ttombstone\x12\x10\n" +
 	"\x03seq\x18\x06 \x01(\x04R\x03seq\x12.\n" +
 	"\x12updated_at_unix_ms\x18\a \x01(\x03R\x12updated_at_unix_ms\x12\x1c\n" +
 	"\tsignature\x18\b \x01(\fR\tsignature\x12(\n" +
 	"\x0fsigning_key_pem\x18\t \x01(\tR\x0fsigning_key_pem\x12(\n" +
 	"\x0fsigning_key_kid\x18\n" +
-	" \x01(\tR\x0fsigning_key_kidB]Z[github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation/locator/pb;pbb\x06proto3"
+	" \x01(\tR\x0fsigning_key_kidJ\x04\b\x04\x10\x05B]Z[github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation/locator/pb;pbb\x06proto3"
 
 var (
 	file_domain_federation_locator_proto_rawDescOnce sync.Once

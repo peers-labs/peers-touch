@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/clusterreadiness"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/query"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
@@ -20,6 +21,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/social_gate"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
+	"gorm.io/gorm"
 )
 
 const (
@@ -36,6 +38,8 @@ type subServer struct {
 	localStation  valueobject.StationID
 	gate          *ConversationGateEvaluator
 	relationships *ConversationRelationshipAdapter
+	database      *gorm.DB
+	attachments   storage.Backend
 
 	cancel context.CancelFunc
 	wait   sync.WaitGroup
@@ -77,13 +81,16 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 			fmt.Errorf("resolve Conversation data directory: %w", err),
 		)
 	}
+	attachmentBackend := clusterreadiness.FilesystemBackend(
+		filepath.Join(dataDirectory, "conversation-attachments"),
+	)
 	realtime := NewProductionRealtimeAdapter()
 	composition, err := NewProductionComposition(
 		ctx,
 		DefaultProductionCompositionConfig(
 			database,
 			localStation,
-			storage.NewLocalBackend(filepath.Join(dataDirectory, "conversation-attachments")),
+			attachmentBackend,
 			realtime,
 		),
 	)
@@ -107,6 +114,8 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	s.jwtWrapper = jwtWrapper
 	s.relationships = relationships
 	s.gate = NewConversationGateEvaluator(relationships, nil, nil)
+	s.database = database
+	s.attachments = attachmentBackend
 	s.mu.Unlock()
 
 	logger.Info(ctx, "Conversation subserver initialized")
@@ -238,6 +247,25 @@ func (s *subServer) Status() server.Status {
 	defer s.mu.RUnlock()
 
 	return s.status
+}
+
+// ClusterReadiness verifies that Conversation metadata and attachment bytes
+// are addressable from every admitted Station node.
+func (s *subServer) ClusterReadiness(ctx context.Context) (string, error) {
+	s.mu.RLock()
+	status := s.status
+	database := s.database
+	attachments := s.attachments
+	s.mu.RUnlock()
+	if status != server.StatusRunning {
+		return "", fmt.Errorf("conversation: cluster runtime is not running")
+	}
+	return clusterreadiness.SharedPostgresAndFilesystem(
+		ctx,
+		"conversation",
+		database,
+		attachments,
+	)
 }
 
 // Handlers returns only canonical client and resource-owner routes. Peer-only

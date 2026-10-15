@@ -68,6 +68,22 @@ grep -Fq 'must never invent, forge, or relabel' \
   tooling/skills/pt-completion-auditor/SKILL.md \
   || fail "completion review must state the trusted Agent honesty rule"
 
+merge_preservation_markers=(
+  "Cross-Branch Preservation Review"
+  "prospective merge tree"
+  "PRESERVED"
+  "INTENTIONALLY_SUPERSEDED"
+  "UNPROVEN"
+  "coverage loss"
+  "false kill"
+  "git range-diff"
+  "pt-branch-conflict-guardian"
+)
+for marker in "${merge_preservation_markers[@]}"; do
+  grep -Fq "$marker" tooling/skills/pt-github-review/SKILL.md \
+    || fail "review skill missing cross-branch preservation marker: $marker"
+done
+
 for marker in \
   'plan-inspect:' \
   'plan-task:' \

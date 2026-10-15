@@ -1,0 +1,1 @@
+-keep class com.peers.touch.mobile.secureinput.** { *; }

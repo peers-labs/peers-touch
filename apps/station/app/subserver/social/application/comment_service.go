@@ -106,7 +106,7 @@ func (s *CommentService) CreateComment(ctx context.Context, req *model.CreateCom
 	}
 
 	if _, err := s.bumpCommentsCount(ctx, parentPostID, postClass, +1); err != nil {
-		logger.Warn(ctx, "comment.create: comments_count bump failed", "post_id", parentPostID, "error", err)
+		logger.Warn(ctx, "comment.create: comments_count bump failed", "error", err)
 	}
 
 	out := s.conv.CommentToProto(d)
@@ -121,7 +121,7 @@ func (s *CommentService) CreateComment(ctx context.Context, req *model.CreateCom
 		}
 	}
 
-	logger.Info(ctx, "comment.created", "post_id", parentPostID, "comment_id", d.ID, "author_ptid", authorPTID)
+	logger.Info(ctx, "comment.created")
 	if s.publisher != nil {
 		s.publisher.PublishCommented(ctx, parentPostID, parent.GetAuthorPtid(), d.ID, authorPTID)
 	}
@@ -147,9 +147,9 @@ func (s *CommentService) DeleteComment(ctx context.Context, commentID uint64, au
 		return err
 	}
 	if _, err := s.bumpCommentsCount(ctx, c.PostID, c.PostClass, -1); err != nil {
-		logger.Warn(ctx, "comment.delete: comments_count decrement failed", "post_id", c.PostID, "error", err)
+		logger.Warn(ctx, "comment.delete: comments_count decrement failed", "error", err)
 	}
-	logger.Info(ctx, "comment.deleted", "comment_id", commentID, "author_ptid", authorPTID)
+	logger.Info(ctx, "comment.deleted")
 	return nil
 }
 

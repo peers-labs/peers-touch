@@ -26,7 +26,7 @@ import {
 const account = {
   stationPeerId: 'station-a',
   actorPtid: 'ptid:alice',
-  deviceId: 'device-a',
+  deviceId: 'device-alice',
   lifecycleGeneration: 1,
 };
 const scopeKey = mobileMutationScopeKey(

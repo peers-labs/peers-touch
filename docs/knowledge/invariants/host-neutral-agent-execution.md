@@ -59,4 +59,4 @@ completion, source and evidence semantics split across editors.
 ## Crosswalks
 
 - DWF-D21 defines the host-neutral adapter boundary.
-- DWF-D42 removes host and workflow bookkeeping from ordinary admission.
+- DWF-D46 removes host and workflow bookkeeping from ordinary admission.

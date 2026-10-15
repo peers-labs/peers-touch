@@ -440,7 +440,10 @@ class RemotePrivateRecipientProvisioner:
         resolved = federation_action(
             primary_client,
             "resolveFederatedActorIdentity",
-            {"federatedHandle": federated_handle},
+            {
+                "federatedHandle": federated_handle,
+                "federationId": federation_id,
+            },
         )
         if (
             _required_text(resolved.get("actorPtid"), "resolved Actor PTID")

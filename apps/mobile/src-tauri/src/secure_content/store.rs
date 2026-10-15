@@ -11,6 +11,7 @@ use crate::secure_content::proto::secure_content::v1::ContentPreKeyKind;
 
 const ENDPOINT_PREKEY_KIND: i64 = ContentPreKeyKind::ContentPrekeyKindEndpoint as i32 as i64;
 const RECOVERY_PREKEY_KIND: i64 = ContentPreKeyKind::ContentPrekeyKindActorRecovery as i32 as i64;
+const MAX_REACTION_RETRY_AFTER_SECONDS: u64 = 300;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(i64)]
@@ -35,6 +36,45 @@ impl TryFrom<i64> for DurableState {
             5 => Ok(Self::Terminal),
             6 => Ok(Self::Prepared),
             _ => Err("private Social durable state is invalid".to_string()),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(i64)]
+pub enum ReactionCommandState {
+    Pending = 1,
+    InFlight = 2,
+    UnknownOutcome = 3,
+    Committed = 4,
+    Retrying = 5,
+    Rejected = 6,
+}
+
+impl ReactionCommandState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "REACTION_PENDING",
+            Self::InFlight | Self::Retrying => "REACTION_RETRYING",
+            Self::UnknownOutcome => "REACTION_UNKNOWN_OUTCOME",
+            Self::Committed => "REACTION_COMMITTED",
+            Self::Rejected => "REACTION_REJECTED",
+        }
+    }
+}
+
+impl TryFrom<i64> for ReactionCommandState {
+    type Error = String;
+
+    fn try_from(value: i64) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Self::Pending),
+            2 => Ok(Self::InFlight),
+            3 => Ok(Self::UnknownOutcome),
+            4 => Ok(Self::Committed),
+            5 => Ok(Self::Retrying),
+            6 => Ok(Self::Rejected),
+            _ => Err("private Reaction command state is invalid".to_string()),
         }
     }
 }
@@ -141,6 +181,26 @@ pub struct StoredSubmission {
     pub session_generation: u64,
     pub post_id: Option<String>,
     pub last_error_code: Option<i32>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StoredReactionCommand {
+    pub command_id: String,
+    pub post_id: String,
+    pub kind: i32,
+    pub remove: bool,
+    pub request_sha256: [u8; 32],
+    pub request_bytes: Vec<u8>,
+    pub result_sha256: Option<[u8; 32]>,
+    pub result_bytes: Option<Vec<u8>>,
+    pub state: ReactionCommandState,
+    pub session_generation: u64,
+    pub lease_generation: u64,
+    pub attempt_count: u32,
+    pub projection_revision: u64,
+    pub error_code: Option<String>,
+    pub retry_after_seconds: Option<u64>,
+    pub retry_not_before_unix_ms: Option<i64>,
 }
 
 impl Drop for StoredSubmission {
@@ -302,7 +362,18 @@ impl PrivateSocialStore {
                 ],
             )
             .map_err(|error| error.to_string())?;
-        Ok(prekeys + submissions)
+        let reactions = connection
+            .execute(
+                "UPDATE mobile_private_social_reaction_commands
+                 SET state = ?1, updated_at_unix_ms = ?2 WHERE state = ?3",
+                params![
+                    ReactionCommandState::UnknownOutcome as i64,
+                    now,
+                    ReactionCommandState::InFlight as i64
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        Ok(prekeys + submissions + reactions)
     }
 
     pub fn reserve_draft(&self, candidate: &StoredDraft) -> Result<StoredDraft, String> {
@@ -1264,6 +1335,315 @@ impl PrivateSocialStore {
         transaction.commit().map_err(|error| error.to_string())
     }
 
+    pub fn persist_reaction_command(
+        &self,
+        command: &StoredReactionCommand,
+    ) -> Result<StoredReactionCommand, String> {
+        if command.command_id.trim().is_empty()
+            || command.post_id.trim().is_empty()
+            || command.kind <= 0
+            || command.request_bytes.is_empty()
+            || Sha256::digest(&command.request_bytes).as_slice() != command.request_sha256
+            || command.state != ReactionCommandState::Pending
+            || command.result_bytes.is_some()
+            || command.result_sha256.is_some()
+            || command.session_generation == 0
+        {
+            return Err("private Reaction command journal input is invalid".to_string());
+        }
+        let mut connection = self.connection()?;
+        self.ensure_session_generation(command.session_generation)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|error| error.to_string())?;
+        let active: Option<String> = transaction
+            .query_row(
+                "SELECT command_id FROM mobile_private_social_reaction_commands
+                 WHERE post_id = ?1 AND state IN (?2, ?3, ?4, ?5)
+                 ORDER BY updated_at_unix_ms DESC LIMIT 1",
+                params![
+                    command.post_id,
+                    ReactionCommandState::Pending as i64,
+                    ReactionCommandState::InFlight as i64,
+                    ReactionCommandState::UnknownOutcome as i64,
+                    ReactionCommandState::Retrying as i64,
+                ],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+        if active
+            .as_deref()
+            .is_some_and(|command_id| command_id != command.command_id)
+        {
+            return Err("private Reaction command is already pending".to_string());
+        }
+        transaction
+            .execute(
+                "INSERT INTO mobile_private_social_reaction_commands(
+                    command_id, post_id, kind, remove_reaction, request_sha256,
+                    request_bytes, result_sha256, result_bytes, state,
+                    session_generation, lease_generation, attempt_count,
+                    projection_revision, error_code, retry_after_seconds,
+                    retry_not_before_unix_ms, updated_at_unix_ms
+                 ) VALUES(?1, ?2, ?3, ?4, ?5, ?6, NULL, NULL, ?7, ?8, 0, 0, 0,
+                          NULL, NULL, NULL, ?9)
+                 ON CONFLICT(command_id) DO NOTHING",
+                params![
+                    command.command_id,
+                    command.post_id,
+                    command.kind,
+                    command.remove,
+                    command.request_sha256.as_slice(),
+                    command.request_bytes,
+                    ReactionCommandState::Pending as i64,
+                    to_i64(command.session_generation, "session generation")?,
+                    now_unix_ms(),
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        let stored = transaction
+            .query_row(
+                "SELECT command_id, post_id, kind, remove_reaction, request_sha256,
+                        request_bytes, result_sha256, result_bytes, state,
+                        session_generation, lease_generation, attempt_count,
+                        projection_revision, error_code, retry_after_seconds,
+                        retry_not_before_unix_ms
+                 FROM mobile_private_social_reaction_commands WHERE command_id = ?1",
+                params![command.command_id],
+                reaction_command_from_row,
+            )
+            .map_err(|error| error.to_string())?;
+        if stored.post_id != command.post_id
+            || stored.kind != command.kind
+            || stored.remove != command.remove
+            || stored.request_sha256 != command.request_sha256
+            || stored.request_bytes != command.request_bytes
+        {
+            return Err("private Reaction command replay conflict".to_string());
+        }
+        transaction.commit().map_err(|error| error.to_string())?;
+        Ok(stored)
+    }
+
+    pub fn reaction_command(
+        &self,
+        command_id: &str,
+    ) -> Result<Option<StoredReactionCommand>, String> {
+        self.connection()?
+            .query_row(
+                "SELECT command_id, post_id, kind, remove_reaction, request_sha256,
+                        request_bytes, result_sha256, result_bytes, state,
+                        session_generation, lease_generation, attempt_count,
+                        projection_revision, error_code, retry_after_seconds,
+                        retry_not_before_unix_ms
+                 FROM mobile_private_social_reaction_commands WHERE command_id = ?1",
+                params![command_id],
+                reaction_command_from_row,
+            )
+            .optional()
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn reaction_commands(&self) -> Result<Vec<StoredReactionCommand>, String> {
+        let connection = self.connection()?;
+        let mut statement = connection
+            .prepare(
+                "SELECT command_id, post_id, kind, remove_reaction, request_sha256,
+                        request_bytes, result_sha256, result_bytes, state,
+                        session_generation, lease_generation, attempt_count,
+                        projection_revision, error_code, retry_after_seconds,
+                        retry_not_before_unix_ms
+                 FROM mobile_private_social_reaction_commands AS command
+                 WHERE command.rowid = (
+                    SELECT MAX(latest.rowid)
+                    FROM mobile_private_social_reaction_commands AS latest
+                    WHERE latest.post_id = command.post_id
+                 )
+                 ORDER BY command.updated_at_unix_ms DESC, command.rowid DESC",
+            )
+            .map_err(|error| error.to_string())?;
+        let commands = statement
+            .query_map([], reaction_command_from_row)
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        Ok(commands)
+    }
+
+    pub fn acquire_reaction_command(
+        &self,
+        command_id: &str,
+        session_generation: u64,
+    ) -> Result<StoredReactionCommand, String> {
+        let mut connection = self.connection()?;
+        self.ensure_session_generation(session_generation)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|error| error.to_string())?;
+        let now = now_unix_ms();
+        let changed = transaction
+            .execute(
+                "UPDATE mobile_private_social_reaction_commands
+                 SET state = ?1, session_generation = ?2,
+                     lease_generation = lease_generation + 1,
+                     attempt_count = attempt_count + 1,
+                     retry_after_seconds = NULL, retry_not_before_unix_ms = NULL,
+                     updated_at_unix_ms = ?3
+                 WHERE command_id = ?4 AND state IN (?5, ?6, ?7)
+                   AND (retry_not_before_unix_ms IS NULL OR retry_not_before_unix_ms <= ?3)",
+                params![
+                    ReactionCommandState::InFlight as i64,
+                    to_i64(session_generation, "session generation")?,
+                    now,
+                    command_id,
+                    ReactionCommandState::Pending as i64,
+                    ReactionCommandState::UnknownOutcome as i64,
+                    ReactionCommandState::Retrying as i64,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed != 1 {
+            return Err("private Reaction command is not retryable yet".to_string());
+        }
+        let command = transaction
+            .query_row(
+                "SELECT command_id, post_id, kind, remove_reaction, request_sha256,
+                        request_bytes, result_sha256, result_bytes, state,
+                        session_generation, lease_generation, attempt_count,
+                        projection_revision, error_code, retry_after_seconds,
+                        retry_not_before_unix_ms
+                 FROM mobile_private_social_reaction_commands WHERE command_id = ?1",
+                params![command_id],
+                reaction_command_from_row,
+            )
+            .map_err(|error| error.to_string())?;
+        transaction.commit().map_err(|error| error.to_string())?;
+        Ok(command)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn mark_reaction_failure(
+        &self,
+        command_id: &str,
+        lease_generation: u64,
+        session_generation: u64,
+        state: ReactionCommandState,
+        error_code: &str,
+        retry_after_seconds: Option<u64>,
+    ) -> Result<bool, String> {
+        if !matches!(
+            state,
+            ReactionCommandState::UnknownOutcome
+                | ReactionCommandState::Retrying
+                | ReactionCommandState::Rejected
+        ) || error_code.trim().is_empty()
+        {
+            return Err("private Reaction failure transition is invalid".to_string());
+        }
+        self.ensure_session_generation(session_generation)?;
+        let retry_after_seconds =
+            retry_after_seconds.map(|seconds| seconds.min(MAX_REACTION_RETRY_AFTER_SECONDS));
+        let updated_at_unix_ms = now_unix_ms();
+        let retry_not_before_unix_ms = retry_after_seconds
+            .and_then(|seconds| {
+                i64::try_from(seconds)
+                    .ok()
+                    .and_then(|seconds| seconds.checked_mul(1_000))
+            })
+            .and_then(|delay| updated_at_unix_ms.checked_add(delay));
+        self.connection()?
+            .execute(
+                "UPDATE mobile_private_social_reaction_commands
+                 SET state = ?1, error_code = ?2, retry_after_seconds = ?3,
+                     retry_not_before_unix_ms = ?4, updated_at_unix_ms = ?5
+                 WHERE command_id = ?6 AND state = ?7
+                   AND lease_generation = ?8 AND session_generation = ?9",
+                params![
+                    state as i64,
+                    error_code,
+                    retry_after_seconds
+                        .map(|value| to_i64(value, "Reaction retry after"))
+                        .transpose()?,
+                    retry_not_before_unix_ms,
+                    updated_at_unix_ms,
+                    command_id,
+                    ReactionCommandState::InFlight as i64,
+                    to_i64(lease_generation, "Reaction lease generation")?,
+                    to_i64(session_generation, "session generation")?,
+                ],
+            )
+            .map(|changed| changed == 1)
+            .map_err(|error| error.to_string())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn mark_reaction_committed(
+        &self,
+        command_id: &str,
+        lease_generation: u64,
+        session_generation: u64,
+        result_bytes: &[u8],
+        result_sha256: &[u8; 32],
+        projection_revision: u64,
+        post_id: &str,
+        projection_json: &[u8],
+    ) -> Result<bool, String> {
+        if result_bytes.is_empty()
+            || Sha256::digest(result_bytes).as_slice() != result_sha256
+            || projection_revision == 0
+            || post_id.trim().is_empty()
+            || projection_json.is_empty()
+        {
+            return Err("private Reaction completion is invalid".to_string());
+        }
+        let mut connection = self.connection()?;
+        self.ensure_session_generation(session_generation)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|error| error.to_string())?;
+        let changed = transaction
+            .execute(
+                "UPDATE mobile_private_social_reaction_commands
+                 SET result_sha256 = ?1, result_bytes = ?2, state = ?3,
+                     projection_revision = ?4, error_code = NULL,
+                     retry_after_seconds = NULL, retry_not_before_unix_ms = NULL,
+                     updated_at_unix_ms = ?5
+                 WHERE command_id = ?6 AND post_id = ?7 AND state = ?8
+                   AND lease_generation = ?9 AND session_generation = ?10",
+                params![
+                    result_sha256.as_slice(),
+                    result_bytes,
+                    ReactionCommandState::Committed as i64,
+                    to_i64(projection_revision, "Reaction projection revision")?,
+                    now_unix_ms(),
+                    command_id,
+                    post_id,
+                    ReactionCommandState::InFlight as i64,
+                    to_i64(lease_generation, "Reaction lease generation")?,
+                    to_i64(session_generation, "session generation")?,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed == 1 {
+            let projection_changed = transaction
+                .execute(
+                    "UPDATE mobile_private_social_read_projections
+                     SET projection_json = ?1, updated_at_unix_ms = ?2
+                     WHERE post_id = ?3",
+                    params![projection_json, now_unix_ms(), post_id],
+                )
+                .map_err(|error| error.to_string())?;
+            if projection_changed != 1 {
+                return Err(
+                    "private Reaction completion has no private Moment projection".to_string(),
+                );
+            }
+        }
+        transaction.commit().map_err(|error| error.to_string())?;
+        Ok(changed == 1)
+    }
+
     pub fn persist_receiver_failure(
         &self,
         expected_session_generation: u64,
@@ -1295,6 +1675,12 @@ impl PrivateSocialStore {
             transaction
                 .execute(
                     "DELETE FROM mobile_private_social_comment_drafts WHERE post_id = ?1",
+                    params![post_id],
+                )
+                .map_err(|error| error.to_string())?;
+            transaction
+                .execute(
+                    "DELETE FROM mobile_private_social_reaction_commands WHERE post_id = ?1",
                     params![post_id],
                 )
                 .map_err(|error| error.to_string())?;
@@ -1530,7 +1916,33 @@ fn migrate(connection: &Connection) -> Result<(), String> {
                generation INTEGER NOT NULL CHECK(generation >= 0),
                projection_json BLOB NOT NULL,
                updated_at_unix_ms INTEGER NOT NULL
+             );
+             CREATE TABLE IF NOT EXISTS mobile_private_social_reaction_commands (
+               command_id TEXT PRIMARY KEY,
+               post_id TEXT NOT NULL,
+               kind INTEGER NOT NULL CHECK(kind > 0),
+               remove_reaction INTEGER NOT NULL CHECK(remove_reaction IN (0, 1)),
+               request_sha256 BLOB NOT NULL CHECK(length(request_sha256) = 32),
+               request_bytes BLOB NOT NULL,
+               result_sha256 BLOB CHECK(result_sha256 IS NULL OR length(result_sha256) = 32),
+               result_bytes BLOB,
+               state INTEGER NOT NULL,
+               session_generation INTEGER NOT NULL,
+               lease_generation INTEGER NOT NULL DEFAULT 0,
+               attempt_count INTEGER NOT NULL DEFAULT 0,
+               projection_revision INTEGER NOT NULL DEFAULT 0,
+               error_code TEXT,
+               retry_after_seconds INTEGER,
+               retry_not_before_unix_ms INTEGER,
+               updated_at_unix_ms INTEGER NOT NULL
              );",
+        )
+        .map_err(|error| error.to_string())?;
+    connection
+        .execute(
+            "CREATE INDEX IF NOT EXISTS idx_mobile_private_social_reactions_post
+             ON mobile_private_social_reaction_commands(post_id, updated_at_unix_ms DESC)",
+            [],
         )
         .map_err(|error| error.to_string())?;
     for column in [
@@ -1654,6 +2066,34 @@ fn prekey_publication_from_row(
         state: DurableState::try_from(row.get::<_, i64>(5)?).map_err(conversion_error)?,
         lease_generation: from_i64(row.get(6)?, "lease generation")?,
         session_generation: from_i64(row.get(7)?, "session generation")?,
+    })
+}
+
+fn reaction_command_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredReactionCommand> {
+    Ok(StoredReactionCommand {
+        command_id: row.get(0)?,
+        post_id: row.get(1)?,
+        kind: row.get(2)?,
+        remove: row.get(3)?,
+        request_sha256: fixed_32(row.get(4)?, "Reaction request hash")?,
+        request_bytes: row.get(5)?,
+        result_sha256: row
+            .get::<_, Option<Vec<u8>>>(6)?
+            .map(|value| fixed_32(value, "Reaction result hash"))
+            .transpose()?,
+        result_bytes: row.get(7)?,
+        state: ReactionCommandState::try_from(row.get::<_, i64>(8)?).map_err(conversion_error)?,
+        session_generation: from_i64(row.get(9)?, "session generation")?,
+        lease_generation: from_i64(row.get(10)?, "Reaction lease generation")?,
+        attempt_count: u32::try_from(row.get::<_, i64>(11)?)
+            .map_err(|_| conversion_error("Reaction attempt count is invalid"))?,
+        projection_revision: from_i64(row.get(12)?, "Reaction projection revision")?,
+        error_code: row.get(13)?,
+        retry_after_seconds: row
+            .get::<_, Option<i64>>(14)?
+            .map(|value| from_i64(value, "Reaction retry after"))
+            .transpose()?,
+        retry_not_before_unix_ms: row.get(15)?,
     })
 }
 
@@ -1842,6 +2282,75 @@ mod tests {
         assert_eq!(
             store.submission("draft-1", 1).unwrap().unwrap().state,
             DurableState::UnknownOutcome
+        );
+    }
+
+    #[test]
+    fn private_social_reaction_command_retries_exact_bytes_and_commits_with_projection() {
+        let store = PrivateSocialStore::in_memory("station-1", "ptid:alice").unwrap();
+        store.bind_session_generation(7).unwrap();
+        store
+            .persist_receiver_failure(7, "post-1", br#"{"state":"CONTENT_READY"}"#, false)
+            .unwrap();
+        let request_bytes = vec![1, 2, 3, 4];
+        let command = StoredReactionCommand {
+            command_id: "reaction-1".to_string(),
+            post_id: "post-1".to_string(),
+            kind: 2,
+            remove: false,
+            request_sha256: Sha256::digest(&request_bytes).into(),
+            request_bytes: request_bytes.clone(),
+            result_sha256: None,
+            result_bytes: None,
+            state: ReactionCommandState::Pending,
+            session_generation: 7,
+            lease_generation: 0,
+            attempt_count: 0,
+            projection_revision: 0,
+            error_code: None,
+            retry_after_seconds: None,
+            retry_not_before_unix_ms: None,
+        };
+        store.persist_reaction_command(&command).unwrap();
+        let first = store.acquire_reaction_command("reaction-1", 7).unwrap();
+        assert_eq!(first.request_bytes, request_bytes);
+        assert!(store
+            .mark_reaction_failure(
+                "reaction-1",
+                first.lease_generation,
+                7,
+                ReactionCommandState::UnknownOutcome,
+                "REACTION_RESULT_UNKNOWN",
+                None,
+            )
+            .unwrap());
+        assert_eq!(
+            store.reaction_command("reaction-1").unwrap().unwrap().state,
+            ReactionCommandState::UnknownOutcome
+        );
+
+        let retry = store.acquire_reaction_command("reaction-1", 7).unwrap();
+        let result_bytes = vec![9, 8, 7];
+        let result_sha256: [u8; 32] = Sha256::digest(&result_bytes).into();
+        let projection = br#"{"state":"CONTENT_READY","reactionRevision":"2"}"#;
+        assert!(store
+            .mark_reaction_committed(
+                "reaction-1",
+                retry.lease_generation,
+                7,
+                &result_bytes,
+                &result_sha256,
+                2,
+                "post-1",
+                projection,
+            )
+            .unwrap());
+        let committed = store.reaction_command("reaction-1").unwrap().unwrap();
+        assert_eq!(committed.state, ReactionCommandState::Committed);
+        assert_eq!(committed.attempt_count, 2);
+        assert_eq!(
+            store.read_projection("post-1").unwrap().unwrap(),
+            projection
         );
     }
 

@@ -162,8 +162,6 @@ class _FakeProductClient:
                 draft_id = str(self.current_draft["draftId"])
             if draft_id in {
                 "w8-audience-custom-deny-public",
-                "w8-audience-remote-explicit",
-                "w8-audience-remote-group",
             }:
                 return {
                     "state": "PRIVATE_UNSUPPORTED",
@@ -264,17 +262,23 @@ class SocialExpansionScenarioTest(unittest.TestCase):
         ]
         self.assertEqual("42", circle["circleId"])
         self.assertEqual(1, _FakeProductClient.group_count)
-        self.assertEqual(2, len(groups))
+        self.assertEqual(1, len(groups))
         self.assertTrue(
             all(payload["groupConversationId"] for payload in groups)
         )
         self.assertEqual(
-            "01JREMOTE",
-            next(
-                payload["groupConversationId"]
-                for payload in groups
-                if payload["draftId"] == "w8-audience-remote-group"
-            ),
+            ("CUSTOM_ALLOW(remote)", "GROUP(remote)"),
+            result["supersededHistoricalAudiences"],
+        )
+        self.assertFalse(
+            any(
+                payload["draftId"]
+                in {
+                    "w8-audience-remote-explicit",
+                    "w8-audience-remote-group",
+                }
+                for payload in _FakeProductClient.staged_payloads
+            )
         )
         self.assertEqual([], _FakeProductClient.cleared_clients)
 
@@ -287,7 +291,10 @@ class SocialExpansionScenarioTest(unittest.TestCase):
             payload: Mapping[str, Any] | None = None,
         ) -> Mapping[str, Any]:
             result = original(method, payload)
-            if method == "publishPrivateDraft":
+            if method in {
+                "publishPrivateDraft",
+                "publishUnsupportedCustomDenyPublic",
+            }:
                 evidence = {
                     **dict(result["rejectionEvidence"]),
                     "receivedPreparePlanCount": 1,
@@ -299,10 +306,12 @@ class SocialExpansionScenarioTest(unittest.TestCase):
         with self.assertRaisesRegex(RunnerError, "Native prepare boundary"):
             social_expansion._stage_rejected_publish(
                 client,
-                draft_id="w8-audience-remote-explicit",
-                text="remote",
-                audience_kind="CUSTOM_ALLOW",
-                actor_ptids=("ptid:remote",),
+                draft_id="w8-audience-custom-deny-public",
+                text="custom-deny-public",
+                audience_kind="CUSTOM_DENY",
+                base_kind="PUBLIC",
+                actor_ptids=("ptid:eve",),
+                acceptance_unsupported_probe=True,
             )
 
 

@@ -78,6 +78,18 @@ function localCommit(root) {
   return commit;
 }
 
+function expectedRemoteCommit(root, environment) {
+  const requested = String(environment.PT_BUILD_SOURCE_COMMIT ?? '').trim();
+  if (!requested) return localCommit(root);
+  if (!/^[0-9a-f]{40,64}$/u.test(requested)) {
+    throw new DevctlError(
+      ERROR_CODES.CHECK_FAILED,
+      'PT_BUILD_SOURCE_COMMIT must be a lowercase Git commit',
+    );
+  }
+  return requested;
+}
+
 async function probeStationBuild(stationUrl, timeoutMs = 3_000) {
   const url = `${stationUrl.replace(/\/+$/u, '')}/app-meta/version`;
   const controller = new AbortController();
@@ -360,7 +372,7 @@ export async function startStation(root, environment = process.env) {
   const resolved = resolveProfile(root, environment);
   const values = stationValues(resolved);
   if (values.mode === 'remote') {
-    const expectedCommit = localCommit(root);
+    const expectedCommit = expectedRemoteCommit(root, environment);
     const existing = await stationStatus(root, environment);
     if (
       existing.health.ok

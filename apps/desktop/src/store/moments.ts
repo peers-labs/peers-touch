@@ -7,6 +7,7 @@ import {
   PostAuthorSchema,
   PostSchema,
   PostType,
+  ReactionKind,
 } from '../gen/proto/domain/social/post_pb';
 import type {
   Audience,
@@ -14,7 +15,6 @@ import type {
   Mention,
   Post,
   PostAuthor,
-  ReactionKind,
   ReactionSummary,
 } from '../gen/proto/domain/social/post_pb';
 import type { Comment } from '../gen/proto/domain/social/comment_pb';
@@ -48,6 +48,7 @@ import type {
   PrivateMomentProjection,
   PrivateMomentPublishIntent,
 } from '../services/privateMomentsNative';
+import { isReadablePrivateMomentProjection } from '../services/privateMomentsNative';
 import { usePrivateMomentsStore } from './privateMoments';
 import { log } from '../utils/logger';
 
@@ -208,6 +209,42 @@ function privateMomentFiles(
     : [];
 }
 
+export function privateMomentPublishIntent(
+  draft: MomentDraft,
+): Omit<PrivateMomentPublishIntent, 'actorPtid' | 'rendererGeneration'> {
+  if (!draft.draftId || draft.draftRevision === undefined) {
+    throw new Error('PRIVATE_DRAFT_IDENTITY_REQUIRED');
+  }
+  return {
+    draftId: draft.draftId,
+    draftRevision: draft.draftRevision,
+    audience: privateMomentAudience(draft.audience),
+    momentKind: privateMomentKind(draft),
+    text: privateMomentText(draft),
+    mentions: (draft.mentions ?? []).map((mention) => ({
+      actorPtid: mention.actorPtid,
+      offset: mention.offset,
+      length: mention.length,
+      display: mention.display,
+    })),
+    files: privateMomentFiles(draft),
+    link: draft.kind === 'link' ? draft.link : undefined,
+    location: draft.kind === 'location' ? draft.location : undefined,
+    poll: draft.kind === 'poll'
+      ? {
+          question: draft.poll.question,
+          options: draft.poll.options,
+          minChoices: draft.poll.minChoices,
+          maxChoices: draft.poll.maxChoices,
+          expiresAtSeconds: draft.poll.expiresAtSeconds,
+        }
+      : undefined,
+    repost: draft.kind === 'repost'
+      ? { sourcePostId: draft.originalPostId }
+      : undefined,
+  };
+}
+
 const PRIVATE_AUDIENCE_KINDS: Record<
   PrivateMomentProjection['audienceKind'],
   Audience_Kind
@@ -263,6 +300,7 @@ function privateMomentPostShell(
     audience: create(AudienceSchema, {
       kind: PRIVATE_AUDIENCE_KINDS[projection.audienceKind],
     }),
+    reactions: projection.reactions ?? [],
   });
 }
 
@@ -272,27 +310,41 @@ function postCreatedAtMillis(post: Post | undefined): number {
     + Math.floor(post.createdAt.nanos / 1_000_000);
 }
 
+function isPrivateMomentMutation(postId: string, post: Post | undefined): boolean {
+  if (usePrivateMomentsStore.getState().postsById[postId]) return true;
+  const audienceKind = post?.audience?.kind;
+  return audienceKind !== undefined
+    && audienceKind !== Audience_Kind.PUBLIC
+    && audienceKind !== Audience_Kind.KIND_UNSPECIFIED;
+}
+
 function projectPrivateMoments(
   state: MomentsState,
   actorPtid: string | null,
   projections: readonly PrivateMomentProjection[],
 ): Partial<MomentsState> {
   if (!actorPtid) return {};
-  const visible = projections
-    .filter((projection) => (
-      projection.state === 'CONTENT_READY'
-      && projection.audienceKind !== 'UNKNOWN'
-    ))
-    .map(privateMomentPostShell);
+  const visible = projections.filter((projection) => (
+    isReadablePrivateMomentProjection(projection)
+    && projection.audienceKind !== 'UNKNOWN'
+  ));
   if (visible.length === 0) return {};
 
   const postsById = { ...state.postsById };
-  for (const post of visible) {
+  const reactions = { ...state.reactions };
+  for (const projection of visible) {
+    const post = privateMomentPostShell(projection);
+    if (!projection.reactionsHydrated) {
+      post.reactions = reactions[post.id] ?? postsById[post.id]?.reactions ?? [];
+    }
     postsById[post.id] = post;
+    if (projection.reactionsHydrated) {
+      reactions[post.id] = post.reactions;
+    }
   }
   const postIds = [
     ...new Set([
-      ...visible.map((post) => post.id),
+      ...visible.map((projection) => projection.postId),
       ...state.feeds.home.postIds,
     ]),
   ];
@@ -304,6 +356,7 @@ function projectPrivateMoments(
   );
   return {
     postsById,
+    reactions,
     feeds: {
       ...state.feeds,
       home: {
@@ -360,6 +413,7 @@ interface MomentsState {
     options?: { refresh?: boolean; sort?: TimelineSort },
   ) => Promise<void>;
   syncProjection: (reason: string) => Promise<void>;
+  hydratePrivateMoments: (projections: readonly PrivateMomentProjection[]) => void;
   loadCircleFeed: (circleId: string, refresh?: boolean) => Promise<void>;
   loadUserFeed: (actorPtid: string, refresh?: boolean) => Promise<void>;
 
@@ -609,6 +663,15 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
     }
   },
 
+  hydratePrivateMoments: (projections) => {
+    const privateState = usePrivateMomentsStore.getState();
+    set((state) => projectPrivateMoments(
+      state,
+      privateState.scope.actorPtid,
+      projections,
+    ));
+  },
+
   loadCircleFeed: async (circleId, refresh = false) => {
     // Backend support for per-circle feed reads ships in P3 — the
     // server-side ActorResolver / GroupMembershipChecker is required
@@ -629,7 +692,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
         },
       },
     }));
-    log.info(TAG, 'loadCircleFeed: noop (P3)', { circleId });
+    log.info(TAG, 'loadCircleFeed: noop (P3)');
   },
 
   loadUserFeed: async (actorPtid, refresh = false) => {
@@ -670,7 +733,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
       });
     } catch (err) {
       if (generation !== storeGeneration) return;
-      log.warn(TAG, 'loadUserFeed failed', { actorPtid, err: String(err) });
+      log.warn(TAG, 'loadUserFeed failed', { err: String(err) });
       set((s) => ({
         userFeeds: {
           ...s.userFeeds,
@@ -704,7 +767,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
       return post;
     } catch (err) {
       if (generation !== storeGeneration) return undefined;
-      log.warn(TAG, 'loadPost failed', { postId, err: String(err) });
+      log.warn(TAG, 'loadPost failed', { err: String(err) });
       throw err;
     }
   },
@@ -715,42 +778,21 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
       draft.audience.kind !== Audience_Kind.PUBLIC
       && draft.audience.kind !== Audience_Kind.KIND_UNSPECIFIED
     ) {
-      if (!draft.draftId || draft.draftRevision === undefined) {
-        throw new Error('PRIVATE_DRAFT_IDENTITY_REQUIRED');
-      }
-      const result = await usePrivateMomentsStore.getState().publishMoment({
-        draftId: draft.draftId,
-        draftRevision: draft.draftRevision,
-        audience: privateMomentAudience(draft.audience),
-        momentKind: privateMomentKind(draft),
-        text: privateMomentText(draft),
-        mentions: (draft.mentions ?? []).map((mention) => ({
-          actorPtid: mention.actorPtid,
-          offset: mention.offset,
-          length: mention.length,
-          display: mention.display,
-        })),
-        files: privateMomentFiles(draft),
-        link: draft.kind === 'link' ? draft.link : undefined,
-        location: draft.kind === 'location' ? draft.location : undefined,
-        poll: draft.kind === 'poll'
-          ? {
-              question: draft.poll.question,
-              options: draft.poll.options,
-              minChoices: draft.poll.minChoices,
-              maxChoices: draft.poll.maxChoices,
-              expiresAtSeconds: draft.poll.expiresAtSeconds,
-            }
-          : undefined,
-        repost: draft.kind === 'repost'
-          ? { sourcePostId: draft.originalPostId }
-          : undefined,
-      });
+      const result = await usePrivateMomentsStore.getState().publishMoment(
+        privateMomentPublishIntent(draft),
+      );
       if (generation !== storeGeneration) {
         throw new Error('MOMENTS_SESSION_STALE');
       }
       const postId = result.postId ?? result.projection?.postId;
-      if (result.state !== 'PUBLISHED' || !postId) {
+      if (
+        ![
+          'PUBLISHED',
+          'REMOTE_DELIVERY_PENDING',
+          'REMOTE_DELIVERY_RETRYING',
+        ].includes(result.state)
+        || !postId
+      ) {
         throw new Error('UNKNOWN_COMMIT');
       }
       const projection = result.projection;
@@ -806,7 +848,6 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
       await usePrivateMomentsStore.getState().purgeMoment(postId);
     } catch (error) {
       log.warn(TAG, 'Native private Moment purge failed after delete', {
-        postId,
         error: String(error),
       });
     }
@@ -866,7 +907,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
       });
     } catch (err) {
       if (generation !== storeGeneration) return;
-      log.warn(TAG, 'loadComments failed', { postId, err: String(err) });
+      log.warn(TAG, 'loadComments failed', { err: String(err) });
       set((s) => ({
         commentsLoading: { ...s.commentsLoading, [postId]: false },
       }));
@@ -918,6 +959,20 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
   reactToPost: async (postId, kind) => {
     const generation = storeGeneration;
     try {
+      const post = get().postsById[postId];
+      if (isPrivateMomentMutation(postId, post)) {
+        const result = await usePrivateMomentsStore
+          .getState()
+          .reactToPost(postId, kind);
+        if (generation !== storeGeneration) return;
+        set((state) => ({
+          reactions: {
+            ...state.reactions,
+            [postId]: result.reactions,
+          },
+        }));
+        return;
+      }
       const resp = await socialReact(postId, kind);
       if (generation !== storeGeneration) return;
       // The server returns the post-wide reaction summary list; trust
@@ -927,7 +982,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
       }));
     } catch (err) {
       if (generation !== storeGeneration) return;
-      log.warn(TAG, 'reactToPost failed', { postId, kind, err: String(err) });
+      log.warn(TAG, 'reactToPost failed', { kind, err: String(err) });
       throw err;
     }
   },
@@ -935,6 +990,23 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
   unreactToPost: async (postId, kind) => {
     const generation = storeGeneration;
     try {
+      const post = get().postsById[postId];
+      if (isPrivateMomentMutation(postId, post)) {
+        const result = await usePrivateMomentsStore
+          .getState()
+          .unreactToPost(
+            postId,
+            kind ?? ReactionKind.REACTION_UNSPECIFIED,
+          );
+        if (generation !== storeGeneration) return;
+        set((state) => ({
+          reactions: {
+            ...state.reactions,
+            [postId]: result.reactions,
+          },
+        }));
+        return;
+      }
       const resp = await socialUnreact(postId, kind);
       if (generation !== storeGeneration) return;
       set((s) => ({
@@ -942,7 +1014,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
       }));
     } catch (err) {
       if (generation !== storeGeneration) return;
-      log.warn(TAG, 'unreactToPost failed', { postId, kind, err: String(err) });
+      log.warn(TAG, 'unreactToPost failed', { kind, err: String(err) });
       throw err;
     }
   },

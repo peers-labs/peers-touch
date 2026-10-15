@@ -1,7 +1,7 @@
 # Social UI Identity
 
-> Status: Canonical module UI identity for Human federated social.
-> Audience: Product designers, client engineers, reviewers, and AI agents.
+> Status: Canonical module UI identity for Human Social.
+> Audience: Product designers, client engineers, and reviewers.
 > Updated: 2026-06-18.
 
 ## 1. Purpose
@@ -12,9 +12,8 @@ It must prove that the shared identity works under incomplete real product capab
 
 Current scope:
 
-- Human federated social activity.
+- Human Social posts and interactions.
 - Feed, public feed, detail thread, composer, reaction, comments, search, circles, profile, follow, and moderation states.
-- Agent, A2A, Applet social are future extension points and must not dominate current Human social UI.
 
 ## 2. Inherited Identity
 
@@ -32,7 +31,7 @@ Social-specific interpretation:
 
 Every Social surface should answer:
 
-- Who authored this activity?
+- Who authored this post?
 - Which station did it come from?
 - Why can I see it?
 - Who is the audience?
@@ -72,6 +71,8 @@ Rules:
 - Do not visually promote station metadata above author/content unless trust is degraded.
 - Do not use strong color for routine protocol metadata.
 - Destructive actions must be secondary until explicitly invoked.
+- Posts, comments, profiles, search results, and Circle members resolve one canonical actor identity and use the same shared rounded-square avatar primitive.
+- A comment authored by the post author must not fall back to a different name, color, or avatar solely because its transport DTO is less complete.
 
 ## 6. Current Incomplete Capability As Validation
 
@@ -79,14 +80,14 @@ Social must validate UI Identity with incomplete capability because real product
 
 Use these incomplete capabilities as methodology tests:
 
-| Capability | Current/possible state | UI Identity requirement |
-| --- | --- | --- |
-| Reaction | implemented but may have runtime/pending states | count, selected state, pending state, rollback are local to reaction group |
-| Comment | partially implemented across list/detail paths | thread remains continuous; empty/pending/error states do not look like broken cards |
-| Station moderation | policy source exists, aggregate notice incomplete | UI never fabricates block state; pending and unavailable states are explicit |
-| Follow/profile relation | may be incomplete across remote actors | relationship reason remains clear; unavailable follow action is explained |
-| Circles | UI exists before full social graph maturity | empty state explains purpose and next action |
-| Search | may return partial/local data | empty, loading, remote unavailable, and permission states are distinct |
+| Capability              | Current/possible state                            | UI Identity requirement                                                             |
+| ----------------------- | ------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Reaction                | implemented but may have runtime/pending states   | count, selected state, pending state, rollback are local to reaction group          |
+| Comment                 | partially implemented across list/detail paths    | thread remains continuous; empty/pending/error states do not look like broken cards |
+| Station moderation      | policy source exists, aggregate notice incomplete | UI never fabricates block state; pending and unavailable states are explicit        |
+| Follow/profile relation | may be incomplete across remote actors            | relationship reason remains clear; unavailable follow action is explained           |
+| Circles                 | UI exists before full social graph maturity       | empty state explains purpose and next action                                        |
+| Search                  | may return partial/local data                     | empty, loading, remote unavailable, and permission states are distinct              |
 
 ## 7. Required Social Documents
 
@@ -111,10 +112,9 @@ Out of scope:
 
 - Backend protocol design.
 - Station policy persistence.
-- Agent/A2A/Applet social interaction beyond future extension points.
 - Exact component implementation details.
 
-## 9. AI Agent Checklist
+## 9. Review Checklist
 
 - [ ] Does the surface answer the six Social product questions?
 - [ ] Does Human content visually dominate protocol metadata?

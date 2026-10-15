@@ -9,7 +9,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Checkbox, Empty, Input, List, Modal, Radio, Spin, Tag, Typography } from 'antd';
-import { ArrowLeft, Ban, Check, ChevronRight, RotateCcw, Search, ShieldCheck, UserPlus, Users, X } from 'lucide-react';
+import { ArrowLeft, Ban, Check, ChevronRight, Globe, RotateCcw, Search, ShieldCheck, UserPlus, Users, X } from 'lucide-react';
 
 import { useMobileI18n } from '../app/mobileI18n';
 import type {
@@ -19,9 +19,16 @@ import type {
 import { MobileAvatar } from '../components/MobileAvatar';
 import { MobileNotice } from '../components/MobileNotice';
 import { BoundedList } from '../components/BoundedList';
+import { useContactsSurfaceFixture } from '../acceptance/contactsSurfaceFixture';
 import { readRouteQuery, saveRouteQuery } from '../app/navigation/scrollRestoration';
 import { formatSocialError, useSocialStore } from '../features/social/socialStore';
-import { projectAcceptedContacts, projectOutgoingRequests, projectPendingInboundRequests, type SocialContact } from '../features/social/socialProjection';
+import {
+  actorDisplayName,
+  projectAcceptedContacts,
+  projectOutgoingRequests,
+  projectPendingInboundRequests,
+  type SocialContact,
+} from '../features/social/socialProjection';
 import {
   requestSocialFriendshipStatus,
   requestSocialPeerProfiles,
@@ -41,6 +48,7 @@ import {
 } from '../features/social/contactCommands';
 import { dispatchBlockUser, dispatchUnblockUser } from '../features/chat/chatCommands';
 import { groupCommandOutcomeKey } from '../features/chat/groupCommandState';
+import { ContactsAcceptanceSurface } from './contacts/ContactsAcceptanceSurface';
 
 const { Text } = Typography;
 /** Maximum contacts mounted in one traversable window. */
@@ -56,7 +64,20 @@ interface ContactsPageProps {
   readonly onBack: () => void;
 }
 
-export function ContactsPage({
+export function ContactsPage(props: ContactsPageProps) {
+  const fixture = useContactsSurfaceFixture();
+  if (fixture.surfaceId) {
+    return (
+      <ContactsAcceptanceSurface
+        key={`${fixture.surfaceId}:${fixture.revision}`}
+        surfaceId={fixture.surfaceId}
+      />
+    );
+  }
+  return <ContactsPageInner {...props} />;
+}
+
+function ContactsPageInner({
   activeContactPtid,
   activeOverlay,
   onOpenChat,
@@ -392,7 +413,12 @@ export function ContactsPage({
 
   if (activeContactPtid) {
     return (
-      <div className="page-container mobile-detail-page">
+      <div
+        className="page-container mobile-detail-page"
+        data-product-surface={selectedContact
+          ? 'contacts.profile'
+          : 'contacts.profile-unavailable'}
+      >
         <header className="page-header">
           <button
             className="header-action"
@@ -417,7 +443,6 @@ export function ContactsPage({
               <div className="contact-profile-copy">
                 <Text strong className="contact-profile-name">{selectedProfile?.displayName || selectedContact.peerName}</Text>
                 {selectedProfile?.acct || selectedProfile?.username ? <Text type="secondary">{selectedProfile.acct || selectedProfile.username}</Text> : null}
-                <Text type="secondary" copyable>{selectedContact.peerPtid}</Text>
                 {selectedProfile?.note ? <Text className="contact-profile-note">{selectedProfile.note}</Text> : null}
                 <Tag color={selectedContact.peerOnline ? 'success' : 'default'}>
                   {selectedContact.peerOnline ? t('mobile.social.online') : t('mobile.social.offline')}
@@ -474,7 +499,7 @@ export function ContactsPage({
   // Render
   // -----------------------------------------------------------------------
   return (
-    <div className="page-container">
+    <div className="page-container" data-product-surface="contacts.list">
       <header className="page-header">
         <h1 className="header-title">{t('mobile.contacts.title')}</h1>
         <button
@@ -538,8 +563,8 @@ export function ContactsPage({
                     ]}
                   >
                     <List.Item.Meta
-                      avatar={<MobileAvatar src={request.senderAvatar}>{displayPeerName(request.senderDisplayName, t).slice(0, 1)}</MobileAvatar>}
-                      title={<Text strong>{displayPeerName(request.senderDisplayName, t)}</Text>}
+                      avatar={<MobileAvatar src={request.senderAvatar}>{displayPeerName(request.senderDisplayName, request.senderPtid, t).slice(0, 1)}</MobileAvatar>}
+                      title={<Text strong>{displayPeerName(request.senderDisplayName, request.senderPtid, t)}</Text>}
                       description={request.message || t('mobile.contacts.defaultRequestMessage')}
                     />
                     {decision ? (
@@ -583,7 +608,17 @@ export function ContactsPage({
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('mobile.contacts.noSearchResults')} />
             ) : (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={
-                <div className="empty-copy"><Text strong>{t('mobile.contacts.emptyTitle')}</Text><Text type="secondary">{t('mobile.contacts.emptySubtitle')}</Text></div>
+                <div className="empty-copy">
+                  <Text strong>{t('mobile.contacts.emptyTitle')}</Text>
+                  <Text type="secondary">{t('mobile.contacts.emptySubtitle')}</Text>
+                  <Button
+                    type="primary"
+                    icon={<UserPlus size={16} />}
+                    onClick={() => onOpenOverlay({ routeId: 'overlay:add-friend' })}
+                  >
+                    {t('mobile.contacts.findPeople')}
+                  </Button>
+                </div>
               } />
             )}
           </div>
@@ -596,8 +631,8 @@ export function ContactsPage({
               {(rows) => <List dataSource={rows} rowKey="requestId" renderItem={(request) => (
                 <List.Item data-scroll-anchor-id={request.requestId} className="contact-item">
                   <List.Item.Meta
-                    avatar={<MobileAvatar src={request.receiverAvatar}>{displayPeerName(request.receiverDisplayName, t).slice(0, 1)}</MobileAvatar>}
-                    title={<Text strong>{displayPeerName(request.receiverDisplayName, t)}</Text>}
+                    avatar={<MobileAvatar src={request.receiverAvatar}>{displayPeerName(request.receiverDisplayName, request.receiverPtid, t).slice(0, 1)}</MobileAvatar>}
+                    title={<Text strong>{displayPeerName(request.receiverDisplayName, request.receiverPtid, t)}</Text>}
                     description={t('mobile.contacts.waitingForAccept')}
                   />
                   <Tag color="processing">{t('mobile.contacts.requestPending')}</Tag>
@@ -616,42 +651,61 @@ export function ContactsPage({
         onCancel={closeFindPeople}
         destroyOnHidden
       >
-        <div className="find-people-modal">
-          <Input.Search
+        <div
+          className="find-people-modal"
+          data-product-surface="contacts.add-friend"
+        >
+          <Input
             value={peopleQuery}
             onChange={(e) => {
               setPeopleQuery(e.target.value);
               setSubmittedPeopleQuery('');
               clearPeopleSearch();
             }}
-            onSearch={(value) => void runPeopleSearch(value)}
+            onPressEnter={() => void runPeopleSearch(peopleQuery)}
+            prefix={<Search size={16} className="people-search-prefix" />}
             placeholder={t('mobile.contacts.findPeoplePlaceholder')}
-            enterButton={t('mobile.contacts.search')}
-            loading={peopleSearching}
             allowClear
+            autoComplete="off"
             disabled={!requestFederationId}
+            suffix={(
+              <Button
+                type="link"
+                size="small"
+                className="people-search-button"
+                loading={peopleSearching}
+                disabled={!peopleQuery.trim() || !requestFederationId}
+                onClick={() => void runPeopleSearch(peopleQuery)}
+              >
+                {t('mobile.contacts.search')}
+              </Button>
+            )}
           />
           {peopleFederationsError ? (
             <MobileNotice tone="error">{t('mobile.contacts.federationsFailed')}</MobileNotice>
           ) : peopleFederations.length === 0 ? (
             <MobileNotice>{t('mobile.contacts.noFederation')}</MobileNotice>
           ) : (
-            <fieldset>
-              <legend>{t('mobile.contacts.federation')}</legend>
-              <Radio.Group
-                value={requestFederationId}
-                onChange={(event) => {
-                  setSelectedFederationId(String(event.target.value));
-                  clearPeopleSearch();
-                }}
-              >
-                {peopleFederations.map((federation) => (
-                  <Radio key={federation.federationId} value={federation.federationId}>
-                    {federation.name || federation.federationId}
-                  </Radio>
-                ))}
-              </Radio.Group>
-            </fieldset>
+            <div className="people-federation-chips" role="group" aria-label={t('mobile.contacts.federation')}>
+              {peopleFederations.map((federation) => {
+                const active = requestFederationId === federation.federationId;
+                return (
+                  <button
+                    key={federation.federationId}
+                    type="button"
+                    className={`people-federation-chip${active ? ' active' : ''}`}
+                    aria-pressed={active}
+                    onClick={() => {
+                      setSelectedFederationId(federation.federationId);
+                      clearPeopleSearch();
+                    }}
+                  >
+                    <Globe size={14} />
+                    <span>{t('mobile.contacts.federation')}: {federation.name || federation.federationId}</span>
+                  </button>
+                );
+              })}
+            </div>
           )}
           {localActionError ? <MobileNotice tone="error">{localActionError}</MobileNotice> : null}
           <Spin spinning={peopleSearching && peopleResults.length === 0}>
@@ -663,25 +717,36 @@ export function ContactsPage({
                   const alreadyPending = pendingTargetPtids.has(receiverPtid);
                   const inboundPending = inboundTargetPtids.has(receiverPtid);
                   const alreadyFriend = contactPtids.has(receiverPtid);
+                  const handle = result.federation?.handle
+                    || (result.username ? `@${result.username}` : receiverPtid);
+                  const stationLabel = result.homeStationPeerId
+                    ? `${result.homeStationPeerId.slice(0, 18)}…`
+                    : '';
                   return (
                     <div className="people-result-card" key={receiverPtid || result.username}>
-                      <MobileAvatar src={result.avatar} size={42}>{(result.displayName || result.username || receiverPtid).slice(0, 1)}</MobileAvatar>
+                      <MobileAvatar src={result.avatar} size={44}>{(result.displayName || result.username || receiverPtid).slice(0, 1)}</MobileAvatar>
                       <div className="people-result-copy">
                         <div className="people-result-title">
                           <Text strong ellipsis>{result.displayName || result.username || receiverPtid}</Text>
                           {result.federation ? (
                             <Tag color="success" icon={<ShieldCheck size={11} />}>{t('mobile.contacts.verified')}</Tag>
                           ) : null}
-                          {result.federation?.isLocal === false ? (
-                            <Tag color="blue">{t('mobile.contacts.federatedTag')}</Tag>
-                          ) : null}
-                          {result.federation?.fromCache ? (
-                            <Tag>{t('mobile.contacts.cachedTag')}</Tag>
-                          ) : null}
                         </div>
-                        <Text type="secondary" ellipsis>{result.federation?.handle || result.username || receiverPtid}</Text>
+                        <Text type="secondary" ellipsis className="people-result-handle">{handle}</Text>
+                        {stationLabel ? (
+                          <Text type="secondary" ellipsis className="people-result-station">
+                            {t('mobile.contacts.station')}: {stationLabel}
+                          </Text>
+                        ) : null}
                       </div>
-                      <Button type="primary" size="small" loading={sendingRequest} disabled={isSelf || alreadyPending || inboundPending || alreadyFriend || peopleSearching || sendingRequest || !requestFederationId || !result.homeStationPeerId} onClick={() => sendRequestToResult(result)}>
+                      <Button
+                        type="primary"
+                        size="small"
+                        className="people-result-action"
+                        loading={sendingRequest}
+                        disabled={isSelf || alreadyPending || inboundPending || alreadyFriend || peopleSearching || sendingRequest || !requestFederationId || !result.homeStationPeerId}
+                        onClick={() => sendRequestToResult(result)}
+                      >
                         {isSelf ? t('mobile.contacts.self')
                           : alreadyFriend ? t('mobile.contacts.alreadyFriend')
                           : alreadyPending ? t('mobile.contacts.requestSent')
@@ -742,7 +807,11 @@ export function ContactsPage({
         }}
         destroyOnHidden
       >
-        <div className="group-create-form" data-acceptance-id="create-group">
+        <div
+          className="group-create-form"
+          data-acceptance-id="create-group"
+          data-product-surface="contacts.create-group"
+        >
           {pendingGroupConversationId ? (
             <MobileNotice>
               {t('mobile.recovery.command.state.pending')}
@@ -792,7 +861,13 @@ export function ContactsPage({
                           </MobileAvatar>
                         )}
                         title={<Text strong>{contact.peerName}</Text>}
-                        description={<Text type="secondary" copyable>{contact.peerPtid}</Text>}
+                        description={(
+                          <Text type="secondary">
+                            {contact.peerOnline
+                              ? t('mobile.social.online')
+                              : t('mobile.social.offline')}
+                          </Text>
+                        )}
                       />
                       <Checkbox
                         aria-label={contact.peerName}
@@ -828,8 +903,12 @@ function ProfileStat({ label, value }: { label: string; value: number }) {
   return <div className="contact-profile-stat"><Text strong>{value}</Text><Text type="secondary">{label}</Text></div>;
 }
 
-function displayPeerName(name: string | undefined, t: (key: string) => string): string {
-  return name?.trim() || t('mobile.contacts.unknownUser');
+function displayPeerName(
+  name: string | undefined,
+  actorPtid: string,
+  t: (key: string) => string,
+): string {
+  return actorDisplayName(name, actorPtid) || t('mobile.contacts.unknownUser');
 }
 
 function SectionTitle({ title, count }: { title: string; count: number }) {

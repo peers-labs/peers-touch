@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	nethttp "net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -116,6 +117,16 @@ type PeerCapabilities interface {
 		string,
 		*kemodel.ClaimMlsKeyPackageRequest,
 	) (*kemodel.ClaimMlsKeyPackageResponse, error)
+	ClaimFederatedContentPreKeys(
+		context.Context,
+		string,
+		*kemodel.ClaimFederatedContentPreKeysRequest,
+	) (*kemodel.ClaimFederatedContentPreKeysResponse, error)
+	ValidateFederatedContentPreKeyClaims(
+		context.Context,
+		string,
+		*kemodel.ValidateFederatedContentPreKeyClaimsRequest,
+	) (*kemodel.ValidateFederatedContentPreKeyClaimsResponse, error)
 }
 
 // Handlers registers only Key Exchange-owned client routes. Federation-owned
@@ -438,6 +449,75 @@ func mapContentPreKeyRouteError(
 		RetryAfter: retryAfter,
 		Cause:      err,
 	}
+}
+
+// FederatedContentPreKeyRouteError projects Key Exchange domain failures onto
+// the canonical protobuf error contract used by the Federation-owned route.
+func FederatedContentPreKeyRouteError(
+	ctx context.Context,
+	err error,
+) error {
+	var handlerError *server.HandlerError
+	if errors.As(err, &handlerError) {
+		if handlerError.ContentType == server.CanonicalProtobufContentType &&
+			len(handlerError.Body) > 0 {
+			return handlerError
+		}
+		code := domain.ErrorCodeInternal
+		switch handlerError.Code {
+		case nethttp.StatusBadRequest:
+			code = domain.ErrorCodeInvalidArgument
+		case nethttp.StatusUnauthorized, nethttp.StatusForbidden:
+			code = domain.ErrorCodeUnauthorized
+		case nethttp.StatusRequestEntityTooLarge:
+			code = domain.ErrorCodePayloadTooLarge
+		case nethttp.StatusTooManyRequests:
+			code = domain.ErrorCodeQuotaExceeded
+		case nethttp.StatusServiceUnavailable:
+			code = domain.ErrorCodeDependency
+		}
+		err = domain.WrapError(
+			code,
+			"key_exchange.federated_content_prekey_route",
+			handlerError,
+		)
+	}
+	mapped := mapContentPreKeyRouteError(
+		ctx,
+		"claim federated Content PreKeys",
+		err,
+	)
+	var routeError *server.RouteError
+	if !errors.As(mapped, &routeError) {
+		return mapped
+	}
+	body, projectErr := projectContentPreKeyRouteError(*routeError)
+	if projectErr != nil {
+		return server.InternalErrorWithCause(
+			"encode federated Content PreKey error response",
+			projectErr,
+		)
+	}
+	headers := map[string]string{}
+	if routeError.RetryAfter > 0 {
+		seconds := int64(routeError.RetryAfter / time.Second)
+		if seconds < 1 {
+			seconds = 1
+		}
+		if seconds > 300 {
+			seconds = 300
+		}
+		headers["Retry-After"] = strconv.FormatInt(seconds, 10)
+	}
+	projectedHandlerError := server.NewHandlerErrorWithResponse(
+		routeError.Status,
+		routeError.Message,
+		server.CanonicalProtobufContentType,
+		body,
+		headers,
+	)
+	projectedHandlerError.Err = routeError.Cause
+	return projectedHandlerError
 }
 
 func (s *subServer) handleUploadDirectKeyBundle(

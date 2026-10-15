@@ -1,11 +1,8 @@
 ---
 kind: invariant
 title: Relay readLoop goroutines must dispatch blocking work asynchronously
-status: active
-owns:
-  - apps/station/frame/core/plugin/native/subserver/relay/stream.go
-  - apps/station/frame/core/plugin/native/subserver/relay/relay.go
-  - apps/station/frame/core/plugin/native/subserver/relay/client/relay_client.go
+status: superseded-by:docs/architecture/platform/runtime/node-connectivity/design.md
+owns: []
 referenced-by:
   - ../pitfalls/c1-tombstone-only-broadcast.md
   - ../playbooks/adding-federation-broadcast-topic.md
@@ -30,7 +27,7 @@ The relay's correctness model rests on three facts about each stream:
 2. **Heartbeats (Ping/Pong) flow on the same TCP stream as application frames.** A blocked readLoop cannot dispatch incoming Pong frames.
 3. **Both ends run a heartbeat reaper** that closes the connection if Pongs stop arriving for `~3 × ping_interval` (default ≈ 30s).
 
-Therefore, any synchronous work in the readLoop directly competes with heartbeat liveness. The failure mode is silent and racy: a slow request handler or a contended `writeMu` on a sibling stream causes the readLoop to miss a Pong window, the reaper fires, and an otherwise healthy connection is recycled. The application sees this as "intermittent station disconnects under load" — diagnosable only by correlating handler latency with reconnect events.
+Therefore, any synchronous work in the readLoop directly competes with heartbeat liveness. The failure mode is silent and racy: a slow tunnel consumer or a contended `writeMu` on a sibling stream causes the readLoop to miss a Pong window, the reaper fires, and an otherwise healthy connection is recycled. The application sees this as "intermittent station disconnects under load" — diagnosable only by correlating tunnel pressure with reconnect events.
 
 The relay-side fan-out has an additional failure mode: when station A publishes a broadcast, A's readLoop runs the fan-out callback. If the callback writes to siblings B / C / D synchronously, A's readLoop is held for the slowest sibling's `writeMu` — meaning A's heartbeats stall whenever any other station has a slow forward in flight. The blast radius is N-1 stations.
 
@@ -41,15 +38,16 @@ The trust model is independent: stamping `origin_peer_id` and applying topic all
 The grep below catches the most common regression — a frame `case` that calls user code without `go`:
 
 ```bash
-rg -n --multiline 'case \*protocol\.(BroadcastFrame|RequestFrame|ResponseFrame).*\n[^g][^o]' \
+rg -n --multiline 'case \*protocol\.(BroadcastFrame|TunnelOpenFrame).*\n[^g][^o]' \
   apps/station/frame/core/plugin/native/subserver/relay/
 ```
 
 Every match should be one of:
 
-- `go c.handleRequest(...)` — RequestFrame on the client side.
+- `go c.handleTunnelOpen(...)` — TunnelOpenFrame on the station side.
 - `go e.onBroadcast(...)` / `go target.handleSomething(...)` — fan-out callbacks.
-- A short, in-memory state update (channel send, atomic store, map lookup).
+- A short, bounded in-memory tunnel update (sequence check, channel send,
+  atomic store, map lookup).
 
 If a match is none of those, it is a bug.
 

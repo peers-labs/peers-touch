@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "binding": {
+    "formatVersion": 1,
+    "federationId": "federation:test",
+    "deliveryId": "federated-resource-0123456789abcdef0123456789abcdef",
+    "sourceStationPeerId": "station-source",
+    "targetStationPeerId": "station-target",
+    "targetActorPtid": "ptid:bob",
+    "resource": {
+      "ownerDomain": "SECURE_CONTENT_OWNER_DOMAIN_SOCIAL",
+      "contentId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+      "generation": 7
+    },
+    "lifecycleRevision": 9,
+    "objectId": "object-01",
+    "descriptorSha256Hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+  },
+  "canonicalBytesHex": "0801120f66656465726174696f6e3a746573741a336665646572617465642d7265736f757263652d3031323334353637383961626364656630313233343536373839616263646566220e73746174696f6e2d736f757263652a0e73746174696f6e2d7461726765743208707469643a626f623a200802121a303141525a334e44454b54535634525246465136394735464156180740094a096f626a6563742d30315220000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "sha256Hex": "a83df011373330c87213dedbd3553e869c897ff6e4120761153c04e494ba187b"
+}

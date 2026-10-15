@@ -31,13 +31,45 @@ import type {
 } from '../runtimes/nativeLifecycleBridge';
 import type { DevicePreferences } from '../runtimes/deviceSettingsRuntime';
 import type { EmbeddedMobileBuildIdentity } from './buildIdentity';
+import type {
+  EntrySurfaceFixtureId,
+  EntrySurfaceFixtureSnapshot,
+} from './entrySurfaceFixture';
+import type {
+  ChatSurfaceFixtureId,
+  ChatSurfaceFixtureSnapshot,
+} from './chatSurfaceFixture';
+import type {
+  ContactsSurfaceFixtureId,
+  ContactsSurfaceFixtureSnapshot,
+} from './contactsSurfaceFixture';
+import type {
+  MomentsSurfaceFixtureId,
+  MomentsSurfaceFixtureSnapshot,
+} from './momentsSurfaceFixture';
+import type {
+  RecoverySurfaceFixtureId,
+  RecoverySurfaceFixtureSnapshot,
+} from './recoverySurfaceFixture';
+import type {
+  SettingsSurfaceFixtureId,
+  SettingsSurfaceFixtureSnapshot,
+} from './settingsSurfaceFixture';
 
 export const MOBILE_ACCEPTANCE_ACTION_NAMES = [
   'build.identity',
   'runtime.prepareActorIdentity',
   'station.add',
   'station.replace',
+  'station.route.select',
+  'station.route.snapshot',
   'station.select',
+  'entry.fixture',
+  'recovery.fixture',
+  'chat.fixture',
+  'contacts.fixture',
+  'moments.fixture',
+  'settings.fixture',
   'access.submit',
   'oauth.start',
   'oauth.status',
@@ -97,9 +129,7 @@ export const MOBILE_ACCEPTANCE_ACTION_NAMES = [
   'moments.private.media.open',
   'moments.private.comment.submit',
   'moments.private.comments.read',
-  'moments.private.storeRecoveryPhrase',
   'moments.private.recover',
-  'moments.private.recoverText',
   'moments.private.reconcile',
   'moments.private.snapshot',
   'moments.feed.read',
@@ -144,12 +174,52 @@ export interface StationSelectInput {
   draftDisposition?: DraftDisposition;
 }
 
+export interface StationRouteSelectInput {
+  stationPeerId: string;
+  routeId: string;
+}
+
+export interface EntrySurfaceFixtureInput {
+  surfaceId: EntrySurfaceFixtureId | null;
+}
+
+export interface RecoverySurfaceFixtureInput {
+  surfaceId: RecoverySurfaceFixtureId | null;
+}
+
+export interface ChatSurfaceFixtureInput {
+  surfaceId: ChatSurfaceFixtureId | null;
+}
+
+export interface ContactsSurfaceFixtureInput {
+  surfaceId: ContactsSurfaceFixtureId | null;
+}
+
+export interface MomentsSurfaceFixtureInput {
+  surfaceId: MomentsSurfaceFixtureId | null;
+}
+
+export interface SettingsSurfaceFixtureInput {
+  surfaceId: SettingsSurfaceFixtureId | null;
+}
+
 export interface PublicStationEntry {
   stationPeerId: string;
   url: string;
   label: string;
   online?: boolean;
   lastCheckedAt?: number;
+  activeRouteId?: string;
+  routeRevision?: number;
+  lifecycleGeneration?: number;
+  routes?: {
+    routeId: string;
+    routeType: 'direct' | 'relay';
+    endpointOrigin: string;
+    relayPeerId?: string;
+    routeGeneration: number;
+    health: 'available' | 'degraded' | 'unavailable' | 'revoked';
+  }[];
 }
 
 export interface StationMutationOutput {
@@ -164,6 +234,16 @@ export interface StationSelectionOutput {
   activeStationPeerId: string;
   entries: PublicStationEntry[];
   sessionRevocation: SessionRevocationProjection;
+  binding?: {
+    stationPeerId: string;
+    routeId: string;
+    routeType: 'direct' | 'relay';
+    endpointOrigin: string;
+    relayPeerId?: string;
+    routeGeneration: number;
+    routeRevision: number;
+    transportOrigin: string;
+  } | null;
 }
 
 export interface SessionRevocationProjection {
@@ -895,6 +975,7 @@ export interface PublicRecoveryState {
     | 'capacity-read-only'
     | 'write-revocation'
     | 'session-mismatch'
+    | 'actor-identity-recovery'
     | 'event-overflow-reconcile'
     | 'deferred-capability'
     | 'device-local-flag';
@@ -994,8 +1075,7 @@ export interface PrivateCommentPageActionOutput {
   hasMore: boolean;
 }
 
-export interface PrivateMomentRecoveryPhraseActionInput {
-  recoveryPhrase: string;
+export interface PrivateMomentRecoveryActionInput extends PrivateMomentReadActionInput {
   recoveryEpoch?: number;
 }
 
@@ -1153,6 +1233,38 @@ export interface MobileAcceptanceActionContract {
   'station.select': {
     input: StationSelectInput;
     output: StationSelectionOutput;
+  };
+  'station.route.select': {
+    input: StationRouteSelectInput;
+    output: StationSelectionOutput;
+  };
+  'station.route.snapshot': {
+    input: undefined;
+    output: StationSelectionOutput;
+  };
+  'entry.fixture': {
+    input: EntrySurfaceFixtureInput;
+    output: EntrySurfaceFixtureSnapshot;
+  };
+  'recovery.fixture': {
+    input: RecoverySurfaceFixtureInput;
+    output: RecoverySurfaceFixtureSnapshot;
+  };
+  'chat.fixture': {
+    input: ChatSurfaceFixtureInput;
+    output: ChatSurfaceFixtureSnapshot;
+  };
+  'contacts.fixture': {
+    input: ContactsSurfaceFixtureInput;
+    output: ContactsSurfaceFixtureSnapshot;
+  };
+  'moments.fixture': {
+    input: MomentsSurfaceFixtureInput;
+    output: MomentsSurfaceFixtureSnapshot;
+  };
+  'settings.fixture': {
+    input: SettingsSurfaceFixtureInput;
+    output: SettingsSurfaceFixtureSnapshot;
   };
   'access.submit': {
     input: AccessSubmitInput;
@@ -1405,16 +1517,8 @@ export interface MobileAcceptanceActionContract {
     input: PrivateCommentReadActionInput;
     output: PrivateCommentPageActionOutput;
   };
-  'moments.private.storeRecoveryPhrase': {
-    input: PrivateMomentRecoveryPhraseActionInput;
-    output: { stored: true; recoveryEpoch: number };
-  };
   'moments.private.recover': {
-    input: PrivateMomentReadActionInput;
-    output: PrivateMomentReadActionOutput;
-  };
-  'moments.private.recoverText': {
-    input: PrivateMomentReadActionInput;
+    input: PrivateMomentRecoveryActionInput;
     output: PrivateMomentReadActionOutput;
   };
   'moments.private.reconcile': {

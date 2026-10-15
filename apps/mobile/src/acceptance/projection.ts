@@ -7,6 +7,7 @@ import type {
   SessionRuntimeSnapshot,
 } from '../runtimes/sessionRuntime';
 import type {
+  AccessSubmitOutput,
   MobilePublicProjection,
   PublicAccessDecision,
   PublicMessagingProjection,
@@ -54,6 +55,16 @@ export function sanitizeAccessDecision(
   };
 }
 
+export function sanitizeAccessSession(
+  session: SessionRuntimeSnapshot['session'],
+): AccessSubmitOutput['session'] {
+  return session ? {
+    stationPeerId: session.stationPeerId,
+    actorPtid: session.actorPtid,
+    expiresAt: session.expiresAt,
+  } : null;
+}
+
 export function sanitizeOAuthProjection(
   snapshot: AuthRuntimeSnapshot,
 ): PublicOAuthProjection {
@@ -87,11 +98,7 @@ export function sanitizeMobileProjection(input: {
     station: sanitizeStationRegistry(input.stationRegistry),
     access: {
       decision: sanitizeAccessDecision(input.access.decision),
-      session: input.session.session ? {
-        stationPeerId: input.session.session.stationPeerId,
-        actorPtid: input.session.session.actorPtid,
-        expiresAt: input.session.session.expiresAt,
-      } : null,
+      session: sanitizeAccessSession(input.session.session),
       loading: input.access.loading,
       errorKey: input.access.errorKey,
       restored: input.access.restored,
@@ -186,6 +193,17 @@ function toPublicStationEntry(
     label: entry.label,
     online: entry.online,
     lastCheckedAt: entry.lastCheckedAt,
+    activeRouteId: entry.activeRouteId,
+    routeRevision: entry.routeRevision,
+    lifecycleGeneration: entry.lifecycleGeneration,
+    routes: entry.routes?.map((route) => ({
+      routeId: route.routeId,
+      routeType: route.routeType,
+      endpointOrigin: route.endpointOrigin,
+      relayPeerId: route.relayPeerId,
+      routeGeneration: route.routeGeneration,
+      health: route.health,
+    })),
   };
 }
 

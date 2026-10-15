@@ -1,511 +1,207 @@
 package native
 
 import (
-	"context"
-	"encoding/json"
+	"crypto/rand"
+	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
-
-	"crypto/rand"
 
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
-	"github.com/libp2p/go-libp2p/core/network"
-	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/transport"
 )
 
-const (
-	// DefaultProtocolID is the libp2p protocol used by the native transport.
-	DefaultProtocolID = "/peers-touch/transport/1.0.0"
-)
+var _ transport.Transport = (*libp2pTransport)(nil)
 
-var (
-	_ transport.Transport = &libp2pTransport{}
-	_ transport.Client    = &libp2pClient{}
-	_ transport.Listener  = &libp2pListener{}
-	_ transport.Socket    = &libp2pSocket{}
-)
-
-// LibP2pTransport exposes the underlying libp2p host for the transport.
+// LibP2pTransport contributes Host construction options and then borrows the
+// process-wide P2P Kernel Host. It owns no stream protocol and cannot close the
+// Host.
 type LibP2pTransport interface {
 	transport.Transport
 	Host() host.Host
+	KernelHostOptions(...option.Option) ([]libp2p.Option, error)
 }
 
 type libp2pTransport struct {
 	host        host.Host
 	opts        *transport.Options
-	protocolID  protocol.ID
 	initialized bool
-	mtx         sync.Mutex
+	lock        sync.Mutex
 }
 
-type libp2pSocket struct {
-	stream network.Stream
-	local  string
-	remote string
-}
-
-type libp2pListener struct {
-	host       host.Host
-	protocolID protocol.ID
-	addr       string
-	closed     chan struct{}
-}
-
-type libp2pClient struct {
-	host       host.Host
-	protocolID protocol.ID
-	remotePeer peer.ID
-	remoteAddr multiaddr.Multiaddr
-	stream     network.Stream
-}
-
-// NewTransport creates a new libp2p transport
 func NewTransport(opts ...option.Option) LibP2pTransport {
-	// Create transport - just like registry does, use GetOptions directly
-	t := &libp2pTransport{
-		protocolID:  DefaultProtocolID,
-		initialized: false,
-		opts:        transport.GetOptions(opts...),
-	}
-
-	return t
+	return &libp2pTransport{opts: transport.GetOptions(opts...)}
 }
 
-// Init initializes the transport and underlying libp2p host.
 func (t *libp2pTransport) Init(opts ...option.Option) error {
-	t.mtx.Lock()
-	defer t.mtx.Unlock()
-
+	t.lock.Lock()
+	defer t.lock.Unlock()
 	if t.initialized {
 		return nil
 	}
-
-	for _, o := range opts {
-		t.opts.Apply(o)
+	for _, value := range opts {
+		t.opts.Apply(value)
 	}
-
-	libp2pOpts := []libp2p.Option{
-		libp2p.EnableNATService(),
-		libp2p.EnableHolePunching(),
+	extended, ok := t.opts.ExtOptions.(*options)
+	if !ok || extended.libp2pHost == nil {
+		return errors.New("P2P Kernel Host must be injected via WithHost")
 	}
-
-	// Safely get extended options
-	var extOpts *options
-	if t.opts.ExtOptions != nil {
-		if opts, ok := t.opts.ExtOptions.(*options); ok {
-			extOpts = opts
-		}
-	}
-
-	if extOpts != nil && extOpts.EnableRelay {
-		libp2pOpts = append(libp2pOpts, libp2p.EnableRelay())
-	}
-
-	// Convert string addresses to multiaddr.Multiaddr
-	if len(t.opts.Addrs) > 0 {
-		var listenAddrs []multiaddr.Multiaddr
-		for _, addr := range t.opts.Addrs {
-			maddr, err := multiaddr.NewMultiaddr(addr)
-			if err != nil {
-				return fmt.Errorf("invalid listen address %s: %w", addr, err)
-			}
-			listenAddrs = append(listenAddrs, maddr)
-		}
-		libp2pOpts = append(libp2pOpts, libp2p.ListenAddrs(listenAddrs...))
-	}
-
-	// Always use secure transport (Noise/TLS)
-	libp2pOpts = append(libp2pOpts, libp2p.DefaultSecurity)
-
-	// Enable ping node for connectivity checking
-	libp2pOpts = append(libp2pOpts, libp2p.Ping(true))
-
-	if ext, ok := t.opts.ExtOptions.(*options); ok {
-		if len(ext.libp2pIdentityKeyFile) > 0 {
-			key, err := loadOrGenerateKey(ext.libp2pIdentityKeyFile)
-			if err != nil {
-				return fmt.Errorf("failed to load identity key: %w", err)
-			}
-			libp2pOpts = append(libp2pOpts, libp2p.Identity(key))
-		}
-	}
-
-	// Node-level libp2p policy (announced public-addrs + ConnectionGater).
-	// Same hook the bootstrap subserver host uses, so a single federation
-	// configuration governs every libp2p host in the process. See
-	// apps/station/frame/core/plugin/native/federation/host_options.go.
-	libp2pOpts = append(libp2pOpts, federation.LibP2PHostOptions()...)
-
-	h, err := libp2p.New(libp2pOpts...)
-	if err != nil {
-		return fmt.Errorf("failed to create libp2p host: %w", err)
-	}
-
-	t.host = h
+	t.host = extended.libp2pHost
 	t.initialized = true
-
 	return nil
 }
 
-// Options returns effective transport options.
+func (t *libp2pTransport) KernelHostOptions(
+	opts ...option.Option,
+) ([]libp2p.Option, error) {
+	for _, value := range opts {
+		t.opts.Apply(value)
+	}
+	libp2pOptions := []libp2p.Option{
+		libp2p.EnableNATService(),
+		libp2p.EnableHolePunching(),
+		libp2p.EnableRelay(),
+	}
+	if len(t.opts.Addrs) > 0 {
+		listenAddrs := make([]multiaddr.Multiaddr, 0, len(t.opts.Addrs))
+		for _, raw := range t.opts.Addrs {
+			address, err := multiaddr.NewMultiaddr(raw)
+			if err != nil {
+				return nil, fmt.Errorf("invalid listen address %s: %w", raw, err)
+			}
+			listenAddrs = append(listenAddrs, address)
+		}
+		libp2pOptions = append(
+			libp2pOptions,
+			libp2p.ListenAddrs(listenAddrs...),
+		)
+	}
+	libp2pOptions = append(
+		libp2pOptions,
+		libp2p.DefaultSecurity,
+		libp2p.Ping(true),
+	)
+	extended, _ := t.opts.ExtOptions.(*options)
+	if extended == nil || strings.TrimSpace(extended.libp2pIdentityKeyFile) == "" {
+		return nil, errors.New("Node identity key file is required")
+	}
+	key, err := loadOrGenerateKey(extended.libp2pIdentityKeyFile)
+	if err != nil {
+		return nil, fmt.Errorf("load Node identity: %w", err)
+	}
+	libp2pOptions = append(
+		libp2pOptions,
+		libp2p.Identity(key),
+	)
+	libp2pOptions = append(
+		libp2pOptions,
+		federation.LibP2PHostOptions()...,
+	)
+	return libp2pOptions, nil
+}
+
 func (t *libp2pTransport) Options() transport.Options {
 	return *t.opts
 }
 
-// Dial connects to a remote peer at addr and returns a transport client.
-func (t *libp2pTransport) Dial(addr string, opts ...transport.DialOption) (transport.Client, error) {
-	if !t.initialized || t.host == nil {
-		return nil, fmt.Errorf("transport not initialized")
-	}
-
-	// Parse multiaddr
-	maddr, err := multiaddr.NewMultiaddr(addr)
-	if err != nil {
-		return nil, fmt.Errorf("invalid multiaddr: %w", err)
-	}
-
-	// Extract addr info and peer ID
-	addrInfo, err := peer.AddrInfoFromP2pAddr(maddr)
-	if err != nil {
-		return nil, fmt.Errorf("invalid peer multiaddr: %w", err)
-	}
-
-	// Apply dial options
-	dialOpts := &transport.DialOptions{}
-	for _, o := range opts {
-		o(dialOpts)
-	}
-	if dialOpts.Context == nil {
-		dialOpts.Context = context.Background()
-	}
-
-	// Determine timeout (default to 30 seconds if not specified)
-	timeout := dialOpts.Timeout
-	if timeout == 0 {
-		timeout = 30 * time.Second
-	}
-
-	// Create context with timeout
-	ctx, cancel := context.WithTimeout(dialOpts.Context, timeout)
-	defer cancel()
-
-	// Connect to peer
-	if err = t.host.Connect(ctx, *addrInfo); err != nil {
-		return nil, fmt.Errorf("failed to connect to peer: %w", err)
-	}
-
-	// Open stream
-	stream, err := t.host.NewStream(ctx, addrInfo.ID, t.protocolID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open stream: %w", err)
-	}
-
-	return &libp2pClient{
-		host:       t.host,
-		protocolID: t.protocolID,
-		remotePeer: addrInfo.ID,
-		remoteAddr: maddr,
-		stream:     stream,
-	}, nil
+func (t *libp2pTransport) Dial(
+	string,
+	...transport.DialOption,
+) (transport.Client, error) {
+	return nil, errors.New(
+		"legacy transport-message dialing was removed; use secure canonical HTTP",
+	)
 }
 
-// Listen verifies the host listens on addr and returns a listener.
-func (t *libp2pTransport) Listen(addr string, opts ...transport.ListenOption) (transport.Listener, error) {
-	_ = opts
-	if !t.initialized || t.host == nil {
-		return nil, fmt.Errorf("transport not initialized")
-	}
-
-	// Parse multiaddr for listening
-	maddr, err := multiaddr.NewMultiaddr(addr)
-	if err != nil {
-		return nil, fmt.Errorf("invalid multiaddr: %w", err)
-	}
-
-	// Ensure the host is listening on this address
-	found := false
-	for _, laddr := range t.host.Addrs() {
-		if laddr.Equal(maddr) {
-			found = true
-
-			break
-		}
-	}
-	if !found {
-		return nil, fmt.Errorf("host not listening on address: %s", addr)
-	}
-
-	return &libp2pListener{
-		host:       t.host,
-		protocolID: t.protocolID,
-		addr:       addr,
-		closed:     make(chan struct{}),
-	}, nil
+func (t *libp2pTransport) Listen(
+	string,
+	...transport.ListenOption,
+) (transport.Listener, error) {
+	return nil, errors.New(
+		"legacy transport-message listening was removed; use secure canonical HTTP ingress",
+	)
 }
 
-// Close shuts down the underlying host.
-func (t *libp2pTransport) Close() error {
-	if t.host != nil {
-		return t.host.Close()
-	}
-
-	return nil
-}
-
-// Host returns the underlying libp2p host.
 func (t *libp2pTransport) Host() host.Host {
 	return t.host
 }
 
-// String returns the transport name.
 func (t *libp2pTransport) String() string {
 	return "libp2p"
 }
 
-// Recv reads a message from the client stream.
-func (c *libp2pClient) Recv(msg *transport.Message) error {
-	if c.stream == nil {
-		return fmt.Errorf("stream closed")
-	}
-
-	return readMessage(c.stream, msg)
-}
-
-// Send writes a message to the client stream.
-func (c *libp2pClient) Send(msg *transport.Message) error {
-	if c.stream == nil {
-		return fmt.Errorf("stream closed")
-	}
-
-	return writeMessage(c.stream, msg)
-}
-
-// Close closes the client stream.
-func (c *libp2pClient) Close() error {
-	if c.stream != nil {
-		return c.stream.Close()
-	}
-
-	return nil
-}
-
-// Local returns the local peer ID.
-func (c *libp2pClient) Local() string {
-	return c.host.ID().String()
-}
-
-// Remote returns the remote peer ID.
-func (c *libp2pClient) Remote() string {
-	return c.remotePeer.String()
-}
-
-// Addr returns the listener address.
-func (l *libp2pListener) Addr() string {
-	return l.addr
-}
-
-// Close stops accepting streams and removes handlers.
-func (l *libp2pListener) Close() error {
-	// Remove stream handler and signal closure
-	l.host.RemoveStreamHandler(l.protocolID)
-	if l.closed != nil {
-		close(l.closed)
-	}
-	return nil
-}
-
-// Accept waits for new streams and invokes fn with a socket.
-func (l *libp2pListener) Accept(fn func(transport.Socket)) error {
-	// Set the actual stream handler
-	l.host.SetStreamHandler(l.protocolID, func(stream network.Stream) {
-		socket := &libp2pSocket{
-			stream: stream,
-			local:  stream.Conn().LocalMultiaddr().String(),
-			remote: stream.Conn().RemoteMultiaddr().String(),
-		}
-
-		fn(socket)
-	})
-
-	// Keep the listener running
-	<-l.closed
-	return nil
-}
-
-// Recv reads a message from the socket.
-func (s *libp2pSocket) Recv(msg *transport.Message) error {
-	return readMessage(s.stream, msg)
-}
-
-// Send writes a message to the socket.
-func (s *libp2pSocket) Send(msg *transport.Message) error {
-	return writeMessage(s.stream, msg)
-}
-
-// Close closes the underlying stream.
-func (s *libp2pSocket) Close() error {
-	return s.stream.Close()
-}
-
-// Local returns local address.
-func (s *libp2pSocket) Local() string {
-	return s.local
-}
-
-// Remote returns remote address.
-func (s *libp2pSocket) Remote() string {
-	return s.remote
-}
-
-// Helper functions for message serialization
-func readMessage(stream io.Reader, msg *transport.Message) error {
-	// Read header length
-	var headerLen uint32
-	if err := readUint32(stream, &headerLen); err != nil {
-		return fmt.Errorf("failed to read header length: %w", err)
-	}
-
-	// Read header
-	headerBuf := make([]byte, headerLen)
-	if _, err := io.ReadFull(stream, headerBuf); err != nil {
-		return fmt.Errorf("failed to read header: %w", err)
-	}
-
-	// Parse header
-	msg.Header = make(map[string]string)
-	if err := json.Unmarshal(headerBuf, &msg.Header); err != nil {
-		return fmt.Errorf("failed to parse header: %w", err)
-	}
-
-	// Read body length
-	var bodyLen uint32
-	if err := readUint32(stream, &bodyLen); err != nil {
-		return fmt.Errorf("failed to read body length: %w", err)
-	}
-
-	// Read body
-	if bodyLen > 0 {
-		msg.Body = make([]byte, bodyLen)
-		if _, err := io.ReadFull(stream, msg.Body); err != nil {
-			return fmt.Errorf("failed to read body: %w", err)
-		}
-	} else {
-		msg.Body = []byte{}
-	}
-
-	return nil
-}
-
-func writeMessage(stream io.Writer, msg *transport.Message) error {
-	// Serialize header
-	headerBuf, err := json.Marshal(msg.Header)
-	if err != nil {
-		return fmt.Errorf("failed to serialize header: %w", err)
-	}
-
-	// Write header length
-	if err := writeUint32(stream, uint32(len(headerBuf))); err != nil {
-		return fmt.Errorf("failed to write header length: %w", err)
-	}
-
-	// Write header
-	if _, err := stream.Write(headerBuf); err != nil {
-		return fmt.Errorf("failed to write header: %w", err)
-	}
-
-	// Write body length
-	if err := writeUint32(stream, uint32(len(msg.Body))); err != nil {
-		return fmt.Errorf("failed to write body length: %w", err)
-	}
-
-	// Write body
-	if len(msg.Body) > 0 {
-		if _, err := stream.Write(msg.Body); err != nil {
-			return fmt.Errorf("failed to write body: %w", err)
-		}
-	}
-
-	return nil
-}
-
-func readUint32(r io.Reader, v *uint32) error {
-	var buf [4]byte
-	if _, err := io.ReadFull(r, buf[:]); err != nil {
-		return err
-	}
-	*v = uint32(buf[0])<<24 | uint32(buf[1])<<16 | uint32(buf[2])<<8 | uint32(buf[3])
-	return nil
-}
-
-func writeUint32(w io.Writer, v uint32) error {
-	var buf [4]byte
-	buf[0] = byte(v >> 24)
-	buf[1] = byte(v >> 16)
-	buf[2] = byte(v >> 8)
-	buf[3] = byte(v)
-	_, err := w.Write(buf[:])
-	return err
-}
-
-// DialAddr builds a dialable multiaddr for a native transport instance
-// It returns "<listen-multiaddr>/p2p/<peerID>"
-func DialAddr(t transport.Transport) (string, error) {
-	tt, ok := t.(*libp2pTransport)
-	if !ok {
-		return "", fmt.Errorf("not a native libp2p transport")
-	}
-	if tt.host == nil {
-		return "", fmt.Errorf("transport not initialized")
-	}
-	addrs := tt.host.Addrs()
-	if len(addrs) == 0 {
-		return "", fmt.Errorf("no listen addresses")
-	}
-	return addrs[0].String() + "/p2p/" + tt.host.ID().String(), nil
-}
-
 func loadOrGenerateKey(keyFilePath string) (crypto.PrivKey, error) {
-	wd, err := os.Getwd()
+	workingDirectory, err := os.Getwd()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get working directory: %w", err)
+		return nil, fmt.Errorf("get working directory: %w", err)
 	}
-	absKeyPath, err := filepath.Abs(keyFilePath)
+	absolutePath, err := filepath.Abs(keyFilePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get absolute path of key file: %w", err)
+		return nil, fmt.Errorf("resolve Node identity path: %w", err)
 	}
-	relPath, err := filepath.Rel(wd, absKeyPath)
+	relativePath, err := filepath.Rel(workingDirectory, absolutePath)
 	if err != nil {
-		return nil, fmt.Errorf("key file path is not under the working directory: %w", err)
+		return nil, fmt.Errorf("validate Node identity path: %w", err)
 	}
-	if strings.HasPrefix(relPath, "..") {
-		return nil, fmt.Errorf("key file path is not under the working directory")
+	if filepath.IsAbs(relativePath) ||
+		relativePath == ".." ||
+		strings.HasPrefix(relativePath, ".."+string(os.PathSeparator)) {
+		return nil, errors.New("Node identity path is outside the working directory")
 	}
-	if data, err := os.ReadFile(keyFilePath); err == nil {
-		return crypto.UnmarshalPrivateKey(data)
+	if data, readErr := os.ReadFile(absolutePath); readErr == nil {
+		key, decodeErr := crypto.UnmarshalPrivateKey(data)
+		if decodeErr != nil {
+			return nil, fmt.Errorf("decode Node identity: %w", decodeErr)
+		}
+		if key.Type() != crypto.Ed25519 {
+			return nil, errors.New("Node identity must use Ed25519")
+		}
+		return key, nil
+	} else if !errors.Is(readErr, os.ErrNotExist) {
+		return nil, fmt.Errorf("read Node identity: %w", readErr)
 	}
-	privKey, _, err := crypto.GenerateEd25519Key(rand.Reader)
+	privateKey, _, err := crypto.GenerateEd25519Key(rand.Reader)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("generate Node identity: %w", err)
 	}
-	data, err := crypto.MarshalPrivateKey(privKey)
+	data, err := crypto.MarshalPrivateKey(privateKey)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("marshal Node identity: %w", err)
 	}
-	if err := os.WriteFile(keyFilePath, data, 0600); err != nil {
-		return nil, err
+	if err := os.MkdirAll(filepath.Dir(absolutePath), 0700); err != nil {
+		return nil, fmt.Errorf("create Node identity directory: %w", err)
 	}
-	return privKey, nil
+	file, err := os.OpenFile(
+		absolutePath,
+		os.O_WRONLY|os.O_CREATE|os.O_EXCL,
+		0600,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create Node identity: %w", err)
+	}
+	cleanup := true
+	defer func() {
+		_ = file.Close()
+		if cleanup {
+			_ = os.Remove(absolutePath)
+		}
+	}()
+	if _, err := file.Write(data); err != nil {
+		return nil, fmt.Errorf("persist Node identity: %w", err)
+	}
+	if err := file.Sync(); err != nil {
+		return nil, fmt.Errorf("sync Node identity: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return nil, fmt.Errorf("close Node identity: %w", err)
+	}
+	cleanup = false
+	return privateKey, nil
 }

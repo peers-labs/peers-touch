@@ -358,17 +358,39 @@ const (
 	ReactionKind_REACTION_LAUGH       ReactionKind = 3
 	ReactionKind_REACTION_WOW         ReactionKind = 4
 	ReactionKind_REACTION_CELEBRATE   ReactionKind = 5
+	ReactionKind_REACTION_CLAP        ReactionKind = 6
+	ReactionKind_REACTION_FIRE        ReactionKind = 7
+	ReactionKind_REACTION_THANKS      ReactionKind = 8
+	ReactionKind_REACTION_SAD         ReactionKind = 9
+	ReactionKind_REACTION_ANGRY       ReactionKind = 10
+	ReactionKind_REACTION_THINKING    ReactionKind = 11
+	ReactionKind_REACTION_HUNDRED     ReactionKind = 12
+	ReactionKind_REACTION_EYES        ReactionKind = 13
+	ReactionKind_REACTION_STRONG      ReactionKind = 14
+	ReactionKind_REACTION_CHECK       ReactionKind = 15
+	ReactionKind_REACTION_HEART_HANDS ReactionKind = 16
 )
 
 // Enum value maps for ReactionKind.
 var (
 	ReactionKind_name = map[int32]string{
-		0: "REACTION_UNSPECIFIED",
-		1: "REACTION_LIKE",
-		2: "REACTION_LOVE",
-		3: "REACTION_LAUGH",
-		4: "REACTION_WOW",
-		5: "REACTION_CELEBRATE",
+		0:  "REACTION_UNSPECIFIED",
+		1:  "REACTION_LIKE",
+		2:  "REACTION_LOVE",
+		3:  "REACTION_LAUGH",
+		4:  "REACTION_WOW",
+		5:  "REACTION_CELEBRATE",
+		6:  "REACTION_CLAP",
+		7:  "REACTION_FIRE",
+		8:  "REACTION_THANKS",
+		9:  "REACTION_SAD",
+		10: "REACTION_ANGRY",
+		11: "REACTION_THINKING",
+		12: "REACTION_HUNDRED",
+		13: "REACTION_EYES",
+		14: "REACTION_STRONG",
+		15: "REACTION_CHECK",
+		16: "REACTION_HEART_HANDS",
 	}
 	ReactionKind_value = map[string]int32{
 		"REACTION_UNSPECIFIED": 0,
@@ -377,6 +399,17 @@ var (
 		"REACTION_LAUGH":       3,
 		"REACTION_WOW":         4,
 		"REACTION_CELEBRATE":   5,
+		"REACTION_CLAP":        6,
+		"REACTION_FIRE":        7,
+		"REACTION_THANKS":      8,
+		"REACTION_SAD":         9,
+		"REACTION_ANGRY":       10,
+		"REACTION_THINKING":    11,
+		"REACTION_HUNDRED":     12,
+		"REACTION_EYES":        13,
+		"REACTION_STRONG":      14,
+		"REACTION_CHECK":       15,
+		"REACTION_HEART_HANDS": 16,
 	}
 )
 
@@ -4972,11 +5005,14 @@ func (x *Mention) GetDisplay() string {
 }
 
 type ReactToPostRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	PostId        string                 `protobuf:"bytes,1,opt,name=post_id,json=postId,proto3" json:"post_id,omitempty"`
-	Kind          ReactionKind           `protobuf:"varint,2,opt,name=kind,proto3,enum=peers_touch.model.social.v1.ReactionKind" json:"kind,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	PostId               string                 `protobuf:"bytes,1,opt,name=post_id,json=postId,proto3" json:"post_id,omitempty"`
+	Kind                 ReactionKind           `protobuf:"varint,2,opt,name=kind,proto3,enum=peers_touch.model.social.v1.ReactionKind" json:"kind,omitempty"`
+	CommandId            string                 `protobuf:"bytes,3,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	ActorSigningKeyId    string                 `protobuf:"bytes,4,opt,name=actor_signing_key_id,json=actorSigningKeyId,proto3" json:"actor_signing_key_id,omitempty"`
+	ActorDeviceSignature []byte                 `protobuf:"bytes,5,opt,name=actor_device_signature,json=actorDeviceSignature,proto3" json:"actor_device_signature,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *ReactToPostRequest) Reset() {
@@ -5023,14 +5059,38 @@ func (x *ReactToPostRequest) GetKind() ReactionKind {
 	return ReactionKind_REACTION_UNSPECIFIED
 }
 
+func (x *ReactToPostRequest) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
+func (x *ReactToPostRequest) GetActorSigningKeyId() string {
+	if x != nil {
+		return x.ActorSigningKeyId
+	}
+	return ""
+}
+
+func (x *ReactToPostRequest) GetActorDeviceSignature() []byte {
+	if x != nil {
+		return x.ActorDeviceSignature
+	}
+	return nil
+}
+
 type ReactToPostResponse struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	Success bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
 	// Updated summary reflecting the viewer's new reaction. May contain
 	// counts for all kinds, not just the one just added.
-	Reactions     []*ReactionSummary `protobuf:"bytes,2,rep,name=reactions,proto3" json:"reactions,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Reactions          []*ReactionSummary `protobuf:"bytes,2,rep,name=reactions,proto3" json:"reactions,omitempty"`
+	CommandId          string             `protobuf:"bytes,3,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	ExactReplay        bool               `protobuf:"varint,4,opt,name=exact_replay,json=exactReplay,proto3" json:"exact_replay,omitempty"`
+	ProjectionRevision uint64             `protobuf:"varint,5,opt,name=projection_revision,json=projectionRevision,proto3" json:"projection_revision,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *ReactToPostResponse) Reset() {
@@ -5077,12 +5137,36 @@ func (x *ReactToPostResponse) GetReactions() []*ReactionSummary {
 	return nil
 }
 
+func (x *ReactToPostResponse) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
+func (x *ReactToPostResponse) GetExactReplay() bool {
+	if x != nil {
+		return x.ExactReplay
+	}
+	return false
+}
+
+func (x *ReactToPostResponse) GetProjectionRevision() uint64 {
+	if x != nil {
+		return x.ProjectionRevision
+	}
+	return 0
+}
+
 type UnreactToPostRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	PostId        string                 `protobuf:"bytes,1,opt,name=post_id,json=postId,proto3" json:"post_id,omitempty"`
-	Kind          ReactionKind           `protobuf:"varint,2,opt,name=kind,proto3,enum=peers_touch.model.social.v1.ReactionKind" json:"kind,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	PostId               string                 `protobuf:"bytes,1,opt,name=post_id,json=postId,proto3" json:"post_id,omitempty"`
+	Kind                 ReactionKind           `protobuf:"varint,2,opt,name=kind,proto3,enum=peers_touch.model.social.v1.ReactionKind" json:"kind,omitempty"`
+	CommandId            string                 `protobuf:"bytes,3,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	ActorSigningKeyId    string                 `protobuf:"bytes,4,opt,name=actor_signing_key_id,json=actorSigningKeyId,proto3" json:"actor_signing_key_id,omitempty"`
+	ActorDeviceSignature []byte                 `protobuf:"bytes,5,opt,name=actor_device_signature,json=actorDeviceSignature,proto3" json:"actor_device_signature,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *UnreactToPostRequest) Reset() {
@@ -5129,12 +5213,36 @@ func (x *UnreactToPostRequest) GetKind() ReactionKind {
 	return ReactionKind_REACTION_UNSPECIFIED
 }
 
+func (x *UnreactToPostRequest) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
+func (x *UnreactToPostRequest) GetActorSigningKeyId() string {
+	if x != nil {
+		return x.ActorSigningKeyId
+	}
+	return ""
+}
+
+func (x *UnreactToPostRequest) GetActorDeviceSignature() []byte {
+	if x != nil {
+		return x.ActorDeviceSignature
+	}
+	return nil
+}
+
 type UnreactToPostResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
-	Reactions     []*ReactionSummary     `protobuf:"bytes,2,rep,name=reactions,proto3" json:"reactions,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Success            bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	Reactions          []*ReactionSummary     `protobuf:"bytes,2,rep,name=reactions,proto3" json:"reactions,omitempty"`
+	CommandId          string                 `protobuf:"bytes,3,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	ExactReplay        bool                   `protobuf:"varint,4,opt,name=exact_replay,json=exactReplay,proto3" json:"exact_replay,omitempty"`
+	ProjectionRevision uint64                 `protobuf:"varint,5,opt,name=projection_revision,json=projectionRevision,proto3" json:"projection_revision,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *UnreactToPostResponse) Reset() {
@@ -5179,6 +5287,27 @@ func (x *UnreactToPostResponse) GetReactions() []*ReactionSummary {
 		return x.Reactions
 	}
 	return nil
+}
+
+func (x *UnreactToPostResponse) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
+func (x *UnreactToPostResponse) GetExactReplay() bool {
+	if x != nil {
+		return x.ExactReplay
+	}
+	return false
+}
+
+func (x *UnreactToPostResponse) GetProjectionRevision() uint64 {
+	if x != nil {
+		return x.ProjectionRevision
+	}
+	return 0
 }
 
 type ListReactionsRequest struct {
@@ -5755,19 +5884,35 @@ const file_domain_social_post_proto_rawDesc = "" +
 	"actor_ptid\x18\x01 \x01(\tR\tactorPtid\x12\x16\n" +
 	"\x06offset\x18\x02 \x01(\x05R\x06offset\x12\x16\n" +
 	"\x06length\x18\x03 \x01(\x05R\x06length\x12\x18\n" +
-	"\adisplay\x18\x04 \x01(\tR\adisplay\"l\n" +
+	"\adisplay\x18\x04 \x01(\tR\adisplay\"\xf2\x01\n" +
 	"\x12ReactToPostRequest\x12\x17\n" +
 	"\apost_id\x18\x01 \x01(\tR\x06postId\x12=\n" +
-	"\x04kind\x18\x02 \x01(\x0e2).peers_touch.model.social.v1.ReactionKindR\x04kind\"{\n" +
+	"\x04kind\x18\x02 \x01(\x0e2).peers_touch.model.social.v1.ReactionKindR\x04kind\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x03 \x01(\tR\tcommandId\x12/\n" +
+	"\x14actor_signing_key_id\x18\x04 \x01(\tR\x11actorSigningKeyId\x124\n" +
+	"\x16actor_device_signature\x18\x05 \x01(\fR\x14actorDeviceSignature\"\xee\x01\n" +
 	"\x13ReactToPostResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12J\n" +
-	"\treactions\x18\x02 \x03(\v2,.peers_touch.model.social.v1.ReactionSummaryR\treactions\"n\n" +
+	"\treactions\x18\x02 \x03(\v2,.peers_touch.model.social.v1.ReactionSummaryR\treactions\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x03 \x01(\tR\tcommandId\x12!\n" +
+	"\fexact_replay\x18\x04 \x01(\bR\vexactReplay\x12/\n" +
+	"\x13projection_revision\x18\x05 \x01(\x04R\x12projectionRevision\"\xf4\x01\n" +
 	"\x14UnreactToPostRequest\x12\x17\n" +
 	"\apost_id\x18\x01 \x01(\tR\x06postId\x12=\n" +
-	"\x04kind\x18\x02 \x01(\x0e2).peers_touch.model.social.v1.ReactionKindR\x04kind\"}\n" +
+	"\x04kind\x18\x02 \x01(\x0e2).peers_touch.model.social.v1.ReactionKindR\x04kind\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x03 \x01(\tR\tcommandId\x12/\n" +
+	"\x14actor_signing_key_id\x18\x04 \x01(\tR\x11actorSigningKeyId\x124\n" +
+	"\x16actor_device_signature\x18\x05 \x01(\fR\x14actorDeviceSignature\"\xf0\x01\n" +
 	"\x15UnreactToPostResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12J\n" +
-	"\treactions\x18\x02 \x03(\v2,.peers_touch.model.social.v1.ReactionSummaryR\treactions\"\x9c\x01\n" +
+	"\treactions\x18\x02 \x03(\v2,.peers_touch.model.social.v1.ReactionSummaryR\treactions\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x03 \x01(\tR\tcommandId\x12!\n" +
+	"\fexact_replay\x18\x04 \x01(\bR\vexactReplay\x12/\n" +
+	"\x13projection_revision\x18\x05 \x01(\x04R\x12projectionRevision\"\x9c\x01\n" +
 	"\x14ListReactionsRequest\x12\x17\n" +
 	"\apost_id\x18\x01 \x01(\tR\x06postId\x12=\n" +
 	"\x04kind\x18\x02 \x01(\x0e2).peers_touch.model.social.v1.ReactionKindR\x04kind\x12\x16\n" +
@@ -5816,14 +5961,26 @@ const file_domain_social_post_proto_rawDesc = "" +
 	"\x0fTIMELINE_PUBLIC\x10\x02*?\n" +
 	"\fTimelineSort\x12\x18\n" +
 	"\x14TIMELINE_SORT_RECENT\x10\x00\x12\x15\n" +
-	"\x11TIMELINE_SORT_HOT\x10\x01*\x8c\x01\n" +
+	"\x11TIMELINE_SORT_HOT\x10\x01*\xf0\x02\n" +
 	"\fReactionKind\x12\x18\n" +
 	"\x14REACTION_UNSPECIFIED\x10\x00\x12\x11\n" +
 	"\rREACTION_LIKE\x10\x01\x12\x11\n" +
 	"\rREACTION_LOVE\x10\x02\x12\x12\n" +
 	"\x0eREACTION_LAUGH\x10\x03\x12\x10\n" +
 	"\fREACTION_WOW\x10\x04\x12\x16\n" +
-	"\x12REACTION_CELEBRATE\x10\x05BCZAgithub.com/peers-labs/peers-touch/station/frame/touch/model;modelb\x06proto3"
+	"\x12REACTION_CELEBRATE\x10\x05\x12\x11\n" +
+	"\rREACTION_CLAP\x10\x06\x12\x11\n" +
+	"\rREACTION_FIRE\x10\a\x12\x13\n" +
+	"\x0fREACTION_THANKS\x10\b\x12\x10\n" +
+	"\fREACTION_SAD\x10\t\x12\x12\n" +
+	"\x0eREACTION_ANGRY\x10\n" +
+	"\x12\x15\n" +
+	"\x11REACTION_THINKING\x10\v\x12\x14\n" +
+	"\x10REACTION_HUNDRED\x10\f\x12\x11\n" +
+	"\rREACTION_EYES\x10\r\x12\x13\n" +
+	"\x0fREACTION_STRONG\x10\x0e\x12\x12\n" +
+	"\x0eREACTION_CHECK\x10\x0f\x12\x18\n" +
+	"\x14REACTION_HEART_HANDS\x10\x10BCZAgithub.com/peers-labs/peers-touch/station/frame/touch/model;modelb\x06proto3"
 
 var (
 	file_domain_social_post_proto_rawDescOnce sync.Once

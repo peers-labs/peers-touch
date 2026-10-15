@@ -327,3 +327,98 @@ func TestVerify_RejectsInboundOversizedTTL(t *testing.T) {
 		t.Fatalf("expected ErrTTLExceedsPolicy on inbound, got %v", err)
 	}
 }
+
+func TestFederatedPrivateObjectSourceReadRejectsInvalidTokenTemporalClaims(
+	t *testing.T,
+) {
+	scopeFixture(t)
+	cache, _ := newCacheWithFreshKey(t)
+	key, err := cache.Get(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	tests := []struct {
+		name       string
+		audience   jwt.ClaimStrings
+		issuedAt   *jwt.NumericDate
+		expiresAt  *jwt.NumericDate
+		wantDetail string
+	}{
+		{
+			name:       "missing issued at",
+			audience:   jwt.ClaimStrings{testAud},
+			expiresAt:  jwt.NewNumericDate(now.Add(30 * time.Second)),
+			wantDetail: "iat",
+		},
+		{
+			name:       "future issued at",
+			audience:   jwt.ClaimStrings{testAud},
+			issuedAt:   jwt.NewNumericDate(now.Add(30 * time.Second)),
+			expiresAt:  jwt.NewNumericDate(now.Add(60 * time.Second)),
+			wantDetail: "future",
+		},
+		{
+			name:       "multiple audiences",
+			audience:   jwt.ClaimStrings{testAud, "did:test:station-C"},
+			issuedAt:   jwt.NewNumericDate(now),
+			expiresAt:  jwt.NewNumericDate(now.Add(30 * time.Second)),
+			wantDetail: "audience",
+		},
+		{
+			name:       "non-positive ttl",
+			audience:   jwt.ClaimStrings{testAud},
+			issuedAt:   jwt.NewNumericDate(now.Add(30 * time.Second)),
+			expiresAt:  jwt.NewNumericDate(now.Add(30 * time.Second)),
+			wantDetail: "TTL",
+		},
+		{
+			name:       "overlong ttl",
+			audience:   jwt.ClaimStrings{testAud},
+			issuedAt:   jwt.NewNumericDate(now),
+			expiresAt:  jwt.NewNumericDate(now.Add(61 * time.Second)),
+			wantDetail: "TTL",
+		},
+		{
+			name:       "expired",
+			audience:   jwt.ClaimStrings{testAud},
+			issuedAt:   jwt.NewNumericDate(now.Add(-time.Minute)),
+			expiresAt:  jwt.NewNumericDate(now.Add(-time.Second)),
+			wantDetail: "expiry",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			claims := Claims{
+				Scope:  testScope,
+				Custom: map[string]string{"oss_key": "k"},
+				RegisteredClaims: jwt.RegisteredClaims{
+					Issuer:    testIss,
+					Subject:   testSub,
+					Audience:  test.audience,
+					IssuedAt:  test.issuedAt,
+					ExpiresAt: test.expiresAt,
+				},
+			}
+			token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
+			token.Header["typ"] = FederationTokenType
+			token.Header["kid"] = key.Kid
+			token.Header[HeaderJWKPEM] = key.PubPEM
+			signed, err := token.SignedString(key.Priv)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			_, err = Verify(
+				context.Background(),
+				NewInMemoryPeerKeyStore(),
+				signed,
+				testScope,
+				testAud,
+			)
+			if err == nil {
+				t.Fatalf("token with invalid %s was accepted", test.wantDetail)
+			}
+		})
+	}
+}

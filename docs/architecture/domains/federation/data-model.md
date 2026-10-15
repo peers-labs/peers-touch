@@ -1,8 +1,8 @@
 # Federation Architecture — 数据模型
 
-> **Status**: accepted
-> **Version**: v0.2
-> **Created**: 2026-05-31 | **Updated**: 2026-07-21
+> **Status**: active
+> **Version**: v1.1
+> **Created**: 2026-05-31 | **Updated**: 2026-10-10
 > **Owner**: Architecture Team
 
 ---
@@ -438,3 +438,15 @@ FederationCatalogSearchRequest
 ```
 
 没有 `federation_id` 的 Catalog API 只能作为 legacy / advanced handle discovery，不能作为 Federation scoped 发现的默认入口。
+
+---
+
+## 13. Transport Boundary
+
+Relay invite、mount credential、route attestation、connection grant 和 opaque
+tunnel state 不属于 Federation 模型。其 canonical 定义见
+[Node Connectivity](../../platform/runtime/node-connectivity/data-model.md).
+
+Federation persists only business/governance identity and delivery state. A
+transport route or mount generation may appear as diagnostic provenance, but
+cannot become membership, role, Ledger or Actor identity truth.

@@ -1,3 +1,5 @@
+use crate::application::station_runtime::client::{self as station_client, StationClient};
+use crate::application::station_runtime::StationRuntime;
 use crate::contracts::{
     AccessDecisionInput, AccessDecisionPayload, AccessDecisionProjection,
     AccessGateActionProjection, AccessGateProjection, AccessSubmitInviteInput,
@@ -9,14 +11,13 @@ use crate::domain::auth::session::{
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::session_store::SessionSource;
 use crate::infrastructure::session_vault::{self, SessionVaultError};
-use crate::infrastructure::station_client;
 use crate::model::access_gate::{
     submit_access_gate_request, AccessDecision, AccessDecisionState, AccessGateClientInfo,
     AccessGateState, AccessGateType, CancelAccessAttemptRequest, CancelAccessAttemptResponse,
     GetAccessDecisionRequest, GetAccessDecisionResponse, StartAccessAttemptRequest,
     StartAccessAttemptResponse, SubmitAccessGateRequest, SubmitAccessGateResponse,
 };
-use crate::model::actor::{ActorProfile, ListActorDevicesRequest, ListActorDevicesResponse};
+use crate::model::actor::{ActorProfile, ListActorDevicesResponse};
 use crate::model::auth::{LoginRequest, LoginResponse};
 use crate::state::AppState;
 use serde_json::json;
@@ -25,17 +26,19 @@ use zeroize::Zeroizing;
 pub(crate) const DESKTOP_SESSION_CLASS: &str = "desktop";
 
 pub(crate) fn takeover_station_session_token(
+    station_client: &StationClient,
     token: &str,
 ) -> Result<String, station_client::StationClientError> {
-    takeover_station_session_token_for_device(token, DESKTOP_SESSION_CLASS)
+    takeover_station_session_token_for_device(station_client, token, DESKTOP_SESSION_CLASS)
 }
 
 pub(crate) fn takeover_station_session_token_for_device(
+    station_client: &StationClient,
     token: &str,
     device_type: &str,
 ) -> Result<String, station_client::StationClientError> {
     let body = json!({ "device_type": device_type });
-    let resp = station_client::request_json_auth(
+    let resp = station_client.request_json_auth(
         reqwest::Method::POST,
         "/actor/session/takeover",
         token,
@@ -90,8 +93,11 @@ fn persist_session_if_unprotected(
     .map_err(session_vault_to_app)
 }
 
-pub(crate) fn canonical_ptid_for_token(token: &str) -> Option<String> {
-    if let Ok(profile) = station_client::request_proto::<(), ActorProfile>(
+pub(crate) fn canonical_ptid_for_token(
+    station_client: &StationClient,
+    token: &str,
+) -> Option<String> {
+    if let Ok(profile) = station_client.request_proto::<(), ActorProfile>(
         reqwest::Method::GET,
         "/api/v1/social/users/me",
         token,
@@ -123,62 +129,141 @@ pub(crate) fn prepare_messaging_profile(
     actor_ptid: &str,
     token: &str,
 ) -> Result<(), String> {
-    if account_id.trim().is_empty() || actor_ptid.trim().is_empty() {
+    if account_id.trim().is_empty() || actor_ptid.trim().is_empty() || token.trim().is_empty() {
         return Err("messaging activation identity is incomplete".to_string());
     }
     if !actor_ptid.starts_with("ptid:") {
         return Err("messaging activation requires canonical actor PTID".to_string());
     }
-    let actor_profile_version = resolve_actor_profile_version(token)?;
-    let identity_key_ref =
-        crate::infrastructure::local_scope::LocalScope::from_actor_ptid(actor_ptid)
-            .identity_key_ref();
-    let actor_identity = crate::domain::crypto::get_or_create_identity(&identity_key_ref)
-        .map_err(|error| format!("messaging actor identity unavailable: {error}"))?;
-    let actor_identity_seed = Zeroizing::new(actor_identity.seed_bytes());
-    let engine = state.messaging_engines.activate_profile(
-        account_id.to_string(),
-        actor_ptid.to_string(),
-        &actor_identity_seed,
-        actor_profile_version,
-    )?;
-    station_client::set_device_id(engine.endpoint().device_id.clone());
-    Ok(())
-}
-
-fn resolve_actor_profile_version(token: &str) -> Result<u64, String> {
-    if token.trim().is_empty() {
-        return Err("messaging activation token is incomplete".to_string());
-    }
-    let response =
-        station_client::request_proto::<ListActorDevicesRequest, ListActorDevicesResponse>(
+    let actor_profile = state
+        .station
+        .client()
+        .request_peers_proto_no_body::<ActorProfile>(
+            reqwest::Method::GET,
+            "/actor/profile",
+            token,
+            None,
+        )
+        .map_err(|error| format!("messaging actor profile unavailable: {error}"))?;
+    let actor_profile_version = canonical_actor_profile_version(&actor_profile, actor_ptid)?;
+    let actor_devices = state
+        .station
+        .client()
+        .request_proto_for_actor::<(), ListActorDevicesResponse>(
             reqwest::Method::GET,
             "/device/list",
             token,
             None,
             None,
         )
-        .map_err(|error| {
-            format!(
-                "messaging actor profile version unavailable: {}",
-                error.message
-            )
-        })?;
-    actor_profile_version_from_devices(&response)
+        .map_err(|error| format!("messaging actor identity continuity unavailable: {error}"))?;
+    let expected_identity_fingerprint =
+        canonical_actor_identity_fingerprint(&actor_devices, actor_ptid)?;
+    let station_identity_continuity_verified = expected_identity_fingerprint.is_some();
+    let canonical_identity_key_ref =
+        crate::infrastructure::local_scope::LocalScope::from_actor_ptid(actor_ptid)
+            .identity_key_ref();
+    let active_entry = state.station.registry().active_entry();
+    let station_peer_id = active_entry
+        .as_ref()
+        .map(|entry| entry.station_peer_id.clone())
+        .or_else(|| state.station.active_station_peer_id());
+    let mut station_origins = active_entry
+        .map(|entry| {
+            entry
+                .routes
+                .into_iter()
+                .map(|route| route.endpoint_origin)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    station_origins.extend(state.station.active_endpoint_origin());
+    station_origins.extend(state.station.registry().discovery_seed());
+    let legacy_identity_key_refs =
+        crate::infrastructure::local_scope::legacy_identity_key_refs_for_actor_at_station(
+            actor_ptid,
+            station_peer_id.as_deref(),
+            &station_origins,
+        );
+    let actor_identity = crate::domain::crypto::get_or_migrate_identity(
+        &canonical_identity_key_ref,
+        &legacy_identity_key_refs,
+        expected_identity_fingerprint.as_ref(),
+    )
+    .map_err(|error| format!("messaging actor identity unavailable: {error}"))?;
+    let actor_identity_seed = Zeroizing::new(actor_identity.seed_bytes());
+    let engine = state.messaging_engines.activate_profile(
+        account_id.to_string(),
+        actor_ptid.to_string(),
+        &actor_identity_seed,
+        actor_profile_version,
+        station_identity_continuity_verified,
+    )?;
+    state
+        .station
+        .client()
+        .set_device_id(engine.endpoint().device_id.clone());
+    Ok(())
 }
 
-fn actor_profile_version_from_devices(response: &ListActorDevicesResponse) -> Result<u64, String> {
-    if response.devices.is_empty() {
-        return Ok(crate::messaging::INITIAL_ACTOR_IDENTITY_PROFILE_VERSION);
+fn canonical_actor_profile_version(
+    profile: &ActorProfile,
+    expected_actor_ptid: &str,
+) -> Result<u64, String> {
+    let profile_ptid = profile
+        .r#ref
+        .as_ref()
+        .map(|actor| actor.ptid.as_str())
+        .filter(|ptid| !ptid.is_empty())
+        .or_else(|| {
+            profile
+                .peers_touch
+                .as_ref()
+                .map(|info| info.network_id.as_str())
+                .filter(|ptid| !ptid.is_empty())
+        })
+        .or_else(|| {
+            profile
+                .id
+                .starts_with("ptid:")
+                .then_some(profile.id.as_str())
+        });
+    if profile_ptid != Some(expected_actor_ptid) {
+        return Err("messaging actor profile identity mismatch".to_string());
     }
+    if profile.profile_revision == 0 {
+        return Err("messaging actor profile revision is unavailable".to_string());
+    }
+    Ok(profile.profile_revision)
+}
 
-    response.devices.iter().try_fold(0, |latest, device| {
-        let version = device.profile_version;
-        if version == 0 || version > i64::MAX as u64 {
-            return Err("Station returned an invalid actor profile version".to_string());
+fn canonical_actor_identity_fingerprint(
+    devices: &ListActorDevicesResponse,
+    expected_actor_ptid: &str,
+) -> Result<Option<[u8; 32]>, String> {
+    let mut canonical = None;
+    for device in &devices.devices {
+        let device_actor_ptid = device
+            .r#ref
+            .as_ref()
+            .and_then(|device_ref| device_ref.actor.as_ref())
+            .map(|actor| actor.ptid.as_str())
+            .filter(|ptid| !ptid.is_empty())
+            .ok_or_else(|| "messaging actor device identity is incomplete".to_string())?;
+        if device_actor_ptid != expected_actor_ptid {
+            return Err("messaging actor device identity mismatch".to_string());
         }
-        Ok(latest.max(version))
-    })
+        let fingerprint: [u8; 32] = device
+            .actor_identity_key_fingerprint
+            .as_slice()
+            .try_into()
+            .map_err(|_| "messaging actor identity fingerprint is invalid".to_string())?;
+        if canonical.is_some_and(|current| current != fingerprint) {
+            return Err("messaging actor identity continuity is inconsistent".to_string());
+        }
+        canonical = Some(fingerprint);
+    }
+    Ok(canonical)
 }
 
 pub(crate) fn activate_messaging_profile_worker(
@@ -202,6 +287,7 @@ pub(crate) fn deactivate_messaging_profile(
 }
 
 fn access_post<Req, Resp, T>(
+    station_client: &StationClient,
     path: &str,
     body: &Req,
     err_code: ErrorCode,
@@ -212,31 +298,33 @@ where
     Resp: prost::Message + Default,
     T: serde::Serialize,
 {
-    station_client::post_peers_proto_no_auth(path, body).map_err(|error| {
-        use station_client::StationClientErrorKind;
-        match error.kind {
-            StationClientErrorKind::HttpStatus(status) => {
-                let code = match status {
-                    400 => ErrorCode::InvalidArgument,
-                    401 => ErrorCode::Unauthorized,
-                    403 => ErrorCode::Forbidden,
-                    404 => ErrorCode::NotFound,
-                    409 => ErrorCode::Conflict,
-                    _ => ErrorCode::InternalError,
-                };
-                AppResult::fail(
-                    code,
+    station_client
+        .post_peers_proto_no_auth(path, body)
+        .map_err(|error| {
+            use station_client::StationClientErrorKind;
+            match error.kind {
+                StationClientErrorKind::HttpStatus(status) => {
+                    let code = match status {
+                        400 => ErrorCode::InvalidArgument,
+                        401 => ErrorCode::Unauthorized,
+                        403 => ErrorCode::Forbidden,
+                        404 => ErrorCode::NotFound,
+                        409 => ErrorCode::Conflict,
+                        _ => ErrorCode::InternalError,
+                    };
+                    AppResult::fail(
+                        code,
+                        format!("{}: {}", context, error.message),
+                        error.details,
+                    )
+                }
+                _ => AppResult::fail(
+                    err_code,
                     format!("{}: {}", context, error.message),
                     error.details,
-                )
+                ),
             }
-            _ => AppResult::fail(
-                err_code,
-                format!("{}: {}", context, error.message),
-                error.details,
-            ),
-        }
-    })
+        })
 }
 
 fn should_resume_access_binding(
@@ -249,22 +337,22 @@ fn should_resume_access_binding(
     )
 }
 
-fn access_scope<T: serde::Serialize>() -> Result<(String, String, u64), AppResult<T>> {
-    let binding_service = crate::application::station_binding::service();
+fn access_scope<T: serde::Serialize>(
+    station: &StationRuntime,
+) -> Result<(String, String, u64), AppResult<T>> {
+    let binding_service = station.binding();
     let mut binding = binding_service.state();
     if should_resume_access_binding(&binding.phase) {
-        binding = binding_service
-            .resume_persisted(station_client::station_registry())
-            .map_err(|error| {
-                AppResult::fail(
-                    ErrorCode::Conflict,
-                    error.message,
-                    Some(json!({
-                        "code": error.code,
-                        "retryable": error.retryable,
-                    })),
-                )
-            })?;
+        binding = station.resume_persisted().map_err(|error| {
+            AppResult::fail(
+                ErrorCode::Conflict,
+                error.message,
+                Some(json!({
+                    "code": error.code,
+                    "retryable": error.retryable,
+                })),
+            )
+        })?;
     }
     if binding.phase != crate::application::station_binding::StationBindingPhase::AccessGate
         && binding.phase != crate::application::station_binding::StationBindingPhase::Bound
@@ -275,14 +363,21 @@ fn access_scope<T: serde::Serialize>() -> Result<(String, String, u64), AppResul
             None,
         ));
     }
-    if binding.bound_url.as_deref() != Some(station_client::station_base_url().as_str()) {
+    let active_entry = station.registry().active_entry();
+    let binding_matches_registry = active_entry.as_ref().is_some_and(|entry| {
+        binding.station_peer_id.as_deref() == Some(entry.station_peer_id.as_str())
+            && binding.active_route_id.as_deref() == Some(entry.active_route_id.as_str())
+            && binding.route_revision == entry.route_revision
+            && binding.lifecycle_generation == entry.lifecycle_generation
+    });
+    if !binding_matches_registry {
         return Err(AppResult::fail(
             ErrorCode::Conflict,
             "Verified Station scope does not match the active Station",
             None,
         ));
     }
-    let station_peer_id = station_client::active_station_peer_id().ok_or_else(|| {
+    let station_peer_id = station.active_station_peer_id().ok_or_else(|| {
         AppResult::fail(
             ErrorCode::Unauthorized,
             "Active Station identity is unavailable",
@@ -297,8 +392,8 @@ fn access_scope<T: serde::Serialize>() -> Result<(String, String, u64), AppResul
                 None,
             )
         })?;
-    station_client::set_device_id(device_id.clone());
-    let generation = binding.generation;
+    station.client().set_device_id(device_id.clone());
+    let generation = binding.lifecycle_generation;
     if generation == 0 {
         return Err(AppResult::fail(
             ErrorCode::Conflict,
@@ -310,12 +405,14 @@ fn access_scope<T: serde::Serialize>() -> Result<(String, String, u64), AppResul
 }
 
 fn start_access_attempt_with_scope<T: serde::Serialize>(
+    station: &StationRuntime,
 ) -> Result<(StartAccessAttemptResponse, (String, String, u64)), AppResult<T>> {
-    let (station_peer_id, device_id, lifecycle_generation) = access_scope::<T>()?;
+    let (station_peer_id, device_id, lifecycle_generation) = access_scope::<T>(station)?;
     let response = access_post::<_, StartAccessAttemptResponse, T>(
+        station.client(),
         "/actor/access/start",
         &StartAccessAttemptRequest {
-            station_url: station_client::station_base_url(),
+            station_url: station.active_endpoint_origin().unwrap_or_default(),
             client: Some(AccessGateClientInfo {
                 platform: "desktop".to_string(),
                 app_version: env!("CARGO_PKG_VERSION").to_string(),
@@ -332,8 +429,10 @@ fn start_access_attempt_with_scope<T: serde::Serialize>(
     Ok((response, (station_peer_id, device_id, lifecycle_generation)))
 }
 
-fn start_access_attempt<T: serde::Serialize>() -> Result<StartAccessAttemptResponse, AppResult<T>> {
-    start_access_attempt_with_scope::<T>().map(|(response, _)| response)
+fn start_access_attempt<T: serde::Serialize>(
+    station: &StationRuntime,
+) -> Result<StartAccessAttemptResponse, AppResult<T>> {
+    start_access_attempt_with_scope::<T>(station).map(|(response, _)| response)
 }
 
 #[derive(Debug, Clone)]
@@ -346,9 +445,10 @@ pub(crate) struct OAuthAccessAttemptBinding {
 }
 
 pub(crate) fn start_oauth_access_attempt<T: serde::Serialize>(
+    station: &StationRuntime,
 ) -> Result<OAuthAccessAttemptBinding, AppResult<T>> {
     let (response, (station_peer_id, device_id, lifecycle_generation)) =
-        start_access_attempt_with_scope::<T>()?;
+        start_access_attempt_with_scope::<T>(station)?;
     let decision = response.decision.ok_or_else(|| {
         AppResult::fail(
             ErrorCode::InternalError,
@@ -396,6 +496,7 @@ pub(crate) fn start_oauth_access_attempt<T: serde::Serialize>(
 }
 
 fn submit_request<T: serde::Serialize>(
+    station: &StationRuntime,
     attempt_id: String,
     gate_id: String,
     gate_type: i32,
@@ -405,8 +506,9 @@ fn submit_request<T: serde::Serialize>(
     submission_id: String,
     action_input: submit_access_gate_request::ActionInput,
 ) -> Result<SubmitAccessGateResponse, AppResult<T>> {
-    let (station_peer_id, device_id, lifecycle_generation) = access_scope::<T>()?;
+    let (station_peer_id, device_id, lifecycle_generation) = access_scope::<T>(station)?;
     access_post::<_, SubmitAccessGateResponse, T>(
+        station.client(),
         "/actor/access/submit",
         &SubmitAccessGateRequest {
             attempt_id,
@@ -426,14 +528,15 @@ fn submit_request<T: serde::Serialize>(
     )
 }
 
-pub fn access_start() -> AppResult<AccessDecisionPayload> {
-    match start_access_attempt::<AccessDecisionPayload>() {
+pub fn access_start(station: &StationRuntime) -> AppResult<AccessDecisionPayload> {
+    match start_access_attempt::<AccessDecisionPayload>(station) {
         Ok(response) => decision_payload("access_start", "ready", response.decision),
         Err(error) => error,
     }
 }
 
 pub fn access_submit_invite_code(
+    station: &StationRuntime,
     input: AccessSubmitInviteInput,
 ) -> AppResult<AccessDecisionPayload> {
     let code = input.invite_code.trim();
@@ -441,6 +544,7 @@ pub fn access_submit_invite_code(
         return AppResult::fail(ErrorCode::InvalidArgument, "Invite code is required", None);
     }
     let response = match submit_request::<AccessDecisionPayload>(
+        station,
         input.attempt_id,
         input.gate_id,
         input.gate_type,
@@ -457,6 +561,7 @@ pub fn access_submit_invite_code(
 }
 
 pub fn access_submit_login(
+    station: &StationRuntime,
     input: AccessSubmitLoginInput,
     state: &AppState,
 ) -> AppResult<AuthSessionPayload> {
@@ -468,6 +573,7 @@ pub fn access_submit_login(
         .as_deref()
         .unwrap_or(DESKTOP_SESSION_CLASS);
     let response = match submit_request::<AuthSessionPayload>(
+        station,
         input.attempt_id,
         input.gate_id,
         input.gate_type,
@@ -501,16 +607,25 @@ pub fn access_submit_login(
             None,
         );
     };
-    finish_login(login_response, state, "access_submit_login")
+    finish_login(
+        station.resources(),
+        login_response,
+        state,
+        "access_submit_login",
+    )
 }
 
-pub fn access_decision(input: AccessDecisionInput) -> AppResult<AccessDecisionPayload> {
+pub fn access_decision(
+    station: &StationRuntime,
+    input: AccessDecisionInput,
+) -> AppResult<AccessDecisionPayload> {
     let (station_peer_id, device_id, lifecycle_generation) =
-        match access_scope::<AccessDecisionPayload>() {
+        match access_scope::<AccessDecisionPayload>(station) {
             Ok(scope) => scope,
             Err(error) => return error,
         };
     match access_post::<_, GetAccessDecisionResponse, AccessDecisionPayload>(
+        station.client(),
         "/actor/access/decision",
         &GetAccessDecisionRequest {
             attempt_id: input.attempt_id,
@@ -526,13 +641,17 @@ pub fn access_decision(input: AccessDecisionInput) -> AppResult<AccessDecisionPa
     }
 }
 
-pub fn access_cancel(input: AccessDecisionInput) -> AppResult<AccessDecisionPayload> {
+pub fn access_cancel(
+    station: &StationRuntime,
+    input: AccessDecisionInput,
+) -> AppResult<AccessDecisionPayload> {
     let (station_peer_id, device_id, lifecycle_generation) =
-        match access_scope::<AccessDecisionPayload>() {
+        match access_scope::<AccessDecisionPayload>(station) {
             Ok(scope) => scope,
             Err(error) => return error,
         };
     match access_post::<_, CancelAccessAttemptResponse, AccessDecisionPayload>(
+        station.client(),
         "/actor/access/cancel",
         &CancelAccessAttemptRequest {
             attempt_id: input.attempt_id,
@@ -674,10 +793,12 @@ fn empty_access_decision() -> AccessDecisionProjection {
 }
 
 fn finish_login(
+    resources: &crate::application::station_runtime::resource::StationResourceHandle,
     data: LoginResponse,
     state: &AppState,
     command: &str,
 ) -> AppResult<AuthSessionPayload> {
+    let station_client = resources.client();
     let token = data
         .tokens
         .as_ref()
@@ -704,13 +825,14 @@ fn finish_login(
         );
     }
 
-    let profile = station_client::request_peers_proto_no_body::<ActorProfile>(
-        reqwest::Method::GET,
-        "/actor/profile",
-        &token,
-        None,
-    )
-    .ok();
+    let profile = station_client
+        .request_peers_proto_no_body::<ActorProfile>(
+            reqwest::Method::GET,
+            "/actor/profile",
+            &token,
+            None,
+        )
+        .ok();
     let name = profile
         .as_ref()
         .map(|profile| profile.display_name.clone())
@@ -723,23 +845,17 @@ fn finish_login(
 
     // Station login response may not include avatar; fetch from profile API.
     let avatar = if avatar.is_empty() && !token.is_empty() {
-        station_client::request_peers_proto_no_body::<ActorProfile>(
-            reqwest::Method::GET,
-            "/actor/profile",
-            &token,
-            None,
-        )
-        .ok()
-        .map(|p| p.avatar)
-        .filter(|s| !s.is_empty())
-        .unwrap_or(avatar)
-    } else {
-        avatar
-    };
-
-    // Resolve relative Station avatar path to absolute URL
-    let avatar = if !avatar.is_empty() && avatar.starts_with('/') {
-        format!("{}{}", station_client::station_base_url(), avatar)
+        station_client
+            .request_peers_proto_no_body::<ActorProfile>(
+                reqwest::Method::GET,
+                "/actor/profile",
+                &token,
+                None,
+            )
+            .ok()
+            .map(|p| p.avatar)
+            .filter(|s| !s.is_empty())
+            .unwrap_or(avatar)
     } else {
         avatar
     };
@@ -774,7 +890,7 @@ fn finish_login(
     // Download avatar to local cache immediately so the account picker shows
     // the correct image on next app start without waiting for sync_user_profile.
     let avatar_local_path = if !avatar.is_empty() {
-        crate::application::profile::sync_avatar_with_download(&access_token, &avatar)
+        crate::application::profile::sync_avatar_with_download(resources, &access_token, &avatar)
             .ok()
             .flatten()
     } else {
@@ -879,14 +995,19 @@ fn run_required_logout_cleanup(
 pub(crate) fn detach_for_station_switch(
     state: &AppState,
 ) -> Result<(), AppResult<AuthSessionPayload>> {
-    if let Err(error) = state.secure_content.shutdown() {
-        tracing::warn!(error = %error, "failed to stop Secure Content for Station switch");
-    }
-    if let Err(error) = state.messaging_engines.deactivate_all() {
-        tracing::warn!(error = %error, "failed to deactivate messaging engines for Station switch");
-    }
+    state
+        .secure_content
+        .shutdown()
+        .map_err(|error| AppResult::fail(ErrorCode::InternalError, error, None))?;
+    state
+        .messaging_engines
+        .deactivate_all()
+        .map_err(|error| AppResult::fail(ErrorCode::InternalError, error, None))?;
     for session in state.sessions.clear() {
-        crate::infrastructure::event_stream::stop(&session.actor.ptid);
+        state
+            .event_streams
+            .stop(&session.actor.ptid)
+            .map_err(|error| AppResult::fail(ErrorCode::InternalError, error, None))?;
     }
     Ok(())
 }
@@ -972,9 +1093,10 @@ pub(crate) fn prepare_account_switch_session(
 }
 
 pub(crate) fn acquire_account_switch_session(
+    station_client: &StationClient,
     prevalidated: PrevalidatedAccountSwitchSession,
 ) -> Result<PreparedAccountSwitchSession, AppResult<AuthSessionPayload>> {
-    let token = takeover_station_session_token(&prevalidated.token)
+    let token = takeover_station_session_token(station_client, &prevalidated.token)
         .map_err(|error| session_takeover_failed(error, Some(&prevalidated.account_id), None))?;
     let session = validate_token(&token).map_err(map_domain_error)?;
     if session.actor_ptid != prevalidated.actor_ptid {
@@ -983,7 +1105,7 @@ pub(crate) fn acquire_account_switch_session(
             json!({ "command": "account_switch", "reason": "actor_ptid_mismatch" }),
         ));
     }
-    probe_session_with_station(&token)?;
+    probe_session_with_station(station_client, &token)?;
 
     let profile =
         crate::infrastructure::auth_identity::find_profile_by_actor_ptid(&session.actor_ptid);
@@ -1026,15 +1148,21 @@ pub(crate) fn persist_prepared_account_switch_session(
     Ok(())
 }
 
-pub fn auth_restore_session(state: &AppState) -> AppResult<AuthSessionPayload> {
-    auth_restore_session_for_device(state, DESKTOP_SESSION_CLASS)
+pub fn auth_restore_session(
+    station_client: &StationClient,
+    state: &AppState,
+) -> AppResult<AuthSessionPayload> {
+    auth_restore_session_for_device(station_client, state, DESKTOP_SESSION_CLASS)
 }
 
 pub(crate) fn auth_restore_session_for_device(
+    station_client: &StationClient,
     state: &AppState,
     device_type: &str,
 ) -> AppResult<AuthSessionPayload> {
-    if let Err(error) = crate::application::oauth2::reconcile_broker_cancellations_after_restart() {
+    if let Err(error) =
+        crate::application::oauth2::reconcile_broker_cancellations_after_restart(station_client)
+    {
         return AppResult::fail(
             ErrorCode::InternalError,
             "oauth cancellation recovery failed",
@@ -1065,8 +1193,10 @@ pub(crate) fn auth_restore_session_for_device(
         Err(error) => return session_vault_to_app(error),
     };
     if blob.source == SessionSource::OauthBridge {
-        match crate::application::oauth2::reconcile_broker_acknowledgement_for_account(&account_id)
-        {
+        match crate::application::oauth2::reconcile_broker_acknowledgement_for_account(
+            station_client,
+            &account_id,
+        ) {
             Ok(crate::application::oauth2::BrokerAcknowledgementRecovery::Ready) => {}
             Ok(crate::application::oauth2::BrokerAcknowledgementRecovery::Pending) => {
                 return unauthorized(
@@ -1100,13 +1230,14 @@ pub(crate) fn auth_restore_session_for_device(
         Ok(session) => session,
         Err(error) => return map_domain_error(error),
     };
-    let token = match takeover_station_session_token_for_device(&blob.token, device_type) {
-        Ok(token) => token,
-        Err(error) => {
-            session_vault::purge_raw_session_for_actor_ptid(&initial_session.actor_ptid);
-            return session_takeover_failed(error, Some(&account_id), None);
-        }
-    };
+    let token =
+        match takeover_station_session_token_for_device(station_client, &blob.token, device_type) {
+            Ok(token) => token,
+            Err(error) => {
+                session_vault::purge_raw_session_for_actor_ptid(&initial_session.actor_ptid);
+                return session_takeover_failed(error, Some(&account_id), None);
+            }
+        };
     let session = match validate_token(&token) {
         Ok(session) => session,
         Err(error) => {
@@ -1121,7 +1252,7 @@ pub(crate) fn auth_restore_session_for_device(
             json!({ "command": "auth_restore_session", "reason": "actor_ptid_mismatch" }),
         );
     }
-    if let Err(error) = verify_session_with_station(&token, &account_id, state) {
+    if let Err(error) = verify_session_with_station(station_client, &token, &account_id, state) {
         return error;
     }
     if let Err(error) =
@@ -1165,6 +1296,7 @@ pub(crate) fn auth_restore_session_for_device(
 }
 
 pub fn auth_validate_token(
+    station_client: &StationClient,
     input: AuthValidateTokenInput,
     state: &AppState,
 ) -> AppResult<AuthSessionPayload> {
@@ -1187,7 +1319,7 @@ pub fn auth_validate_token(
             json!({ "command": "auth_validate_token", "reason": "account_missing" }),
         );
     };
-    if let Err(error) = verify_session_with_station(&token, &account_id, state) {
+    if let Err(error) = verify_session_with_station(station_client, &token, &account_id, state) {
         return error;
     }
     if let Err(error) =
@@ -1276,7 +1408,10 @@ fn mark_account_has_session(account_id: &str, _token: &str) {
 
 /// Load a Station JWT persisted for the **active** account (OAuth bridge) and
 /// mirror it into `AppState` for the BFF.
-pub fn ensure_station_session(state: &AppState) -> AppResult<AuthSessionPayload> {
+pub fn ensure_station_session(
+    station_client: &StationClient,
+    state: &AppState,
+) -> AppResult<AuthSessionPayload> {
     let active_account = session_vault::active_account_id();
     if active_account
         .as_deref()
@@ -1320,7 +1455,10 @@ pub fn ensure_station_session(state: &AppState) -> AppResult<AuthSessionPayload>
         }
         Err(error) => return session_vault_to_app(error),
     };
-    match crate::application::oauth2::reconcile_broker_acknowledgement_for_account(&account_id) {
+    match crate::application::oauth2::reconcile_broker_acknowledgement_for_account(
+        station_client,
+        &account_id,
+    ) {
         Ok(crate::application::oauth2::BrokerAcknowledgementRecovery::Ready) => {}
         Ok(crate::application::oauth2::BrokerAcknowledgementRecovery::Pending) => {
             return unauthorized(
@@ -1352,7 +1490,7 @@ pub fn ensure_station_session(state: &AppState) -> AppResult<AuthSessionPayload>
 
     let actor_ptid = blob.actor_ptid;
     let token = blob.token;
-    if let Err(error) = verify_session_with_station(&token, &account_id, state) {
+    if let Err(error) = verify_session_with_station(station_client, &token, &account_id, state) {
         return error;
     }
     let session = from_station_response(actor_ptid.clone(), token);
@@ -1403,69 +1541,75 @@ pub fn ensure_station_session(state: &AppState) -> AppResult<AuthSessionPayload>
 }
 
 fn verify_session_with_station(
+    station_client: &StationClient,
     token: &str,
     account_id: &str,
     state: &AppState,
 ) -> Result<(), AppResult<AuthSessionPayload>> {
-    station_client::request_peers_proto_no_body::<ActorProfile>(
-        reqwest::Method::GET,
-        "/actor/profile",
-        token,
-        None,
-    )
-    .map(|_| ())
-    .map_err(|error| {
-        if station_verification_rejects_session(&error) {
-            if run_required_logout_cleanup(
-                account_id,
-                crate::infrastructure::auth_identity::clear_account_session,
-                session_vault::purge_raw_session_for_account,
-                |account_id| deactivate_messaging_profile(state, account_id),
-            )
-            .is_err()
-            {
-                tracing::error!(
-                    "failed to fully clean local state after Station rejected the session"
+    station_client
+        .request_peers_proto_no_body::<ActorProfile>(
+            reqwest::Method::GET,
+            "/actor/profile",
+            token,
+            None,
+        )
+        .map(|_| ())
+        .map_err(|error| {
+            if station_verification_rejects_session(&error) {
+                if run_required_logout_cleanup(
+                    account_id,
+                    crate::infrastructure::auth_identity::clear_account_session,
+                    session_vault::purge_raw_session_for_account,
+                    |account_id| deactivate_messaging_profile(state, account_id),
+                )
+                .is_err()
+                {
+                    tracing::error!(
+                        "failed to fully clean local state after Station rejected the session"
+                    );
+                }
+                let mut details = error.details.unwrap_or_else(|| json!({}));
+                if let Some(object) = details.as_object_mut() {
+                    object.insert("code".to_string(), json!("session_revoked"));
+                    object
+                        .entry("reason".to_string())
+                        .or_insert_with(|| json!("station_rejected"));
+                }
+                return AppResult::fail(ErrorCode::Unauthorized, "session revoked", Some(details));
+            } else {
+                tracing::warn!(
+                    error_kind = ?error.kind,
+                    "session validation unavailable; retaining local session"
                 );
             }
-            let mut details = error.details.unwrap_or_else(|| json!({}));
-            if let Some(object) = details.as_object_mut() {
-                object.insert("code".to_string(), json!("session_revoked"));
-                object
-                    .entry("reason".to_string())
-                    .or_insert_with(|| json!("station_rejected"));
-            }
-            return AppResult::fail(ErrorCode::Unauthorized, "session revoked", Some(details));
-        } else {
-            tracing::warn!(
-                error_kind = ?error.kind,
-                "session validation unavailable; retaining local session"
-            );
-        }
-        error.into_app_result("Session validation failed")
-    })
+            error.into_app_result("Session validation failed")
+        })
 }
 
-fn probe_session_with_station(token: &str) -> Result<(), AppResult<AuthSessionPayload>> {
-    station_client::request_peers_proto_no_body::<ActorProfile>(
-        reqwest::Method::GET,
-        "/actor/profile",
-        token,
-        None,
-    )
-    .map(|_| ())
-    .map_err(|error| {
-        if station_verification_rejects_session(&error) {
-            let mut details = error.details.unwrap_or_else(|| json!({}));
-            if let Some(object) = details.as_object_mut() {
-                object.insert("code".to_string(), json!("session_revoked"));
-                object.insert("reason".to_string(), json!("station_rejected"));
+fn probe_session_with_station(
+    station_client: &StationClient,
+    token: &str,
+) -> Result<(), AppResult<AuthSessionPayload>> {
+    station_client
+        .request_peers_proto_no_body::<ActorProfile>(
+            reqwest::Method::GET,
+            "/actor/profile",
+            token,
+            None,
+        )
+        .map(|_| ())
+        .map_err(|error| {
+            if station_verification_rejects_session(&error) {
+                let mut details = error.details.unwrap_or_else(|| json!({}));
+                if let Some(object) = details.as_object_mut() {
+                    object.insert("code".to_string(), json!("session_revoked"));
+                    object.insert("reason".to_string(), json!("station_rejected"));
+                }
+                AppResult::fail(ErrorCode::Unauthorized, "session revoked", Some(details))
+            } else {
+                error.into_app_result("Session validation failed")
             }
-            AppResult::fail(ErrorCode::Unauthorized, "session revoked", Some(details))
-        } else {
-            error.into_app_result("Session validation failed")
-        }
-    })
+        })
 }
 
 fn station_verification_rejects_session(error: &station_client::StationClientError) -> bool {
@@ -1479,14 +1623,17 @@ fn station_verification_rejects_session(error: &station_client::StationClientErr
 #[cfg(test)]
 mod tests {
     use super::{
-        actor_profile_version_from_devices, run_required_logout_cleanup,
-        should_resume_access_binding, station_verification_rejects_session, DESKTOP_SESSION_CLASS,
+        canonical_actor_identity_fingerprint, canonical_actor_profile_version,
+        run_required_logout_cleanup, should_resume_access_binding,
+        station_verification_rejects_session, DESKTOP_SESSION_CLASS,
     };
     use crate::application::station_binding::StationBindingPhase;
+    use crate::application::station_runtime::client::{StationClientError, StationClientErrorKind};
     use crate::contracts::AuthSessionPayload;
     use crate::error::ErrorCode;
-    use crate::infrastructure::station_client::{StationClientError, StationClientErrorKind};
-    use crate::model::actor::{ActorDevice, ListActorDevicesResponse};
+    use crate::model::actor::{
+        ActorDevice, ActorDeviceRef, ActorProfile, ActorRef, ListActorDevicesResponse,
+    };
     use std::cell::Cell;
 
     #[test]
@@ -1495,32 +1642,63 @@ mod tests {
     }
 
     #[test]
-    fn empty_device_list_uses_the_initial_actor_profile_version() {
-        let response = ListActorDevicesResponse::default();
+    fn messaging_enrollment_uses_canonical_profile_revision() {
+        let profile = ActorProfile {
+            id: "ptid:alice".to_string(),
+            profile_revision: 7,
+            ..ActorProfile::default()
+        };
 
         assert_eq!(
-            actor_profile_version_from_devices(&response),
-            Ok(crate::messaging::INITIAL_ACTOR_IDENTITY_PROFILE_VERSION)
+            canonical_actor_profile_version(&profile, "ptid:alice").unwrap(),
+            7
         );
+        assert!(canonical_actor_profile_version(&profile, "ptid:bob").is_err());
+        assert!(canonical_actor_profile_version(
+            &ActorProfile {
+                id: "ptid:alice".to_string(),
+                ..ActorProfile::default()
+            },
+            "ptid:alice",
+        )
+        .is_err());
     }
 
     #[test]
-    fn device_list_uses_the_latest_actor_profile_version() {
-        let response = device_list_with_profile_versions(&[3, 21, 8]);
+    fn messaging_identity_migration_uses_one_station_continuity_fingerprint() {
+        let device = |ptid: &str, fingerprint: u8| ActorDevice {
+            r#ref: Some(ActorDeviceRef {
+                actor: Some(ActorRef {
+                    ptid: ptid.to_string(),
+                    ..ActorRef::default()
+                }),
+                device_id: format!("device-{fingerprint}"),
+            }),
+            actor_identity_key_fingerprint: vec![fingerprint; 32],
+            ..ActorDevice::default()
+        };
+        let devices = ListActorDevicesResponse {
+            devices: vec![device("ptid:alice", 7), device("ptid:alice", 7)],
+        };
 
-        assert_eq!(actor_profile_version_from_devices(&response), Ok(21));
-    }
-
-    #[test]
-    fn device_list_rejects_invalid_actor_profile_versions() {
-        for version in [0, i64::MAX as u64 + 1] {
-            let response = device_list_with_profile_versions(&[version]);
-
-            assert_eq!(
-                actor_profile_version_from_devices(&response),
-                Err("Station returned an invalid actor profile version".to_string())
-            );
-        }
+        assert_eq!(
+            canonical_actor_identity_fingerprint(&devices, "ptid:alice").unwrap(),
+            Some([7; 32]),
+        );
+        assert!(canonical_actor_identity_fingerprint(
+            &ListActorDevicesResponse {
+                devices: vec![device("ptid:alice", 7), device("ptid:alice", 9)],
+            },
+            "ptid:alice",
+        )
+        .is_err());
+        assert!(canonical_actor_identity_fingerprint(
+            &ListActorDevicesResponse {
+                devices: vec![device("ptid:bob", 7)],
+            },
+            "ptid:alice",
+        )
+        .is_err());
     }
 
     #[test]
@@ -1670,18 +1848,6 @@ mod tests {
         for (actual, (operation, message)) in failures.iter().zip(expected_failures) {
             assert_eq!(actual["operation"], *operation);
             assert_eq!(actual["message"], *message);
-        }
-    }
-
-    fn device_list_with_profile_versions(versions: &[u64]) -> ListActorDevicesResponse {
-        ListActorDevicesResponse {
-            devices: versions
-                .iter()
-                .map(|profile_version| ActorDevice {
-                    profile_version: *profile_version,
-                    ..ActorDevice::default()
-                })
-                .collect(),
         }
     }
 }

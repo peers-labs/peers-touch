@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	realtime "github.com/peers-labs/peers-touch/station/frame/touch/model/realtime"
 	"google.golang.org/protobuf/proto"
 	"gorm.io/driver/sqlite"
@@ -47,6 +48,12 @@ func newTestDurableStore(t *testing.T) durableEventStore {
 	if err != nil {
 		t.Fatal(err)
 	}
+	sqlDatabase, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDatabase.SetMaxOpenConns(1)
+	sqlDatabase.SetMaxIdleConns(1)
 	store := newGormEventStore(db)
 	if err := store.AutoMigrate(); err != nil {
 		t.Fatal(err)
@@ -90,8 +97,13 @@ func TestPublishEphemeral_DeliversLiveWithoutReplay(t *testing.T) {
 		t.Fatal(err)
 	}
 	delivered := drainN(t, live, 1, 50*time.Millisecond)
-	if len(delivered) != 1 || delivered[0].GetEventId() != eventID {
-		t.Fatalf("live delivery = %#v, want event_id %q", delivered, eventID)
+	if eventID != "" || len(delivered) != 1 ||
+		delivered[0].GetEventId() != "" {
+		t.Fatalf(
+			"ephemeral event id=%q delivery=%#v, want cursor-neutral event",
+			eventID,
+			delivered,
+		)
 	}
 
 	replayContext, cancelReplay := context.WithCancel(context.Background())
@@ -225,6 +237,107 @@ func TestSubscribe_ReplaysFromDurableStoreAfterRestart(t *testing.T) {
 	}
 }
 
+func TestPublishInTransactionSurvivesPostCommitFanoutFailure(t *testing.T) {
+	dsn := fmt.Sprintf(
+		"file:%s-%d?mode=memory&cache=shared",
+		t.Name(),
+		time.Now().UnixNano(),
+	)
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := newGormEventStore(db)
+	if err := store.AutoMigrate(); err != nil {
+		t.Fatal(err)
+	}
+	bus := newTestBus(t, WithDurableStore(store))
+	cursor, err := bus.Publish("alice", msg("cursor"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var transaction *stagedEventTransaction
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		transaction = &stagedEventTransaction{db: tx}
+		_, publishErr := bus.PublishInTransaction(
+			context.Background(),
+			transaction,
+			"alice",
+			msg("committed"),
+		)
+		return publishErr
+	}); err != nil {
+		t.Fatal(err)
+	}
+	bus.Close()
+	if err := transaction.runAfterCommit(context.Background()); err != nil {
+		t.Fatalf("post-commit wake returned committed-event error: %v", err)
+	}
+
+	restarted := newTestBus(t, WithDurableStore(store))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	subscription, _, err := restarted.Subscribe(ctx, "alice", "device-1", cursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayed := drainN(t, subscription, 1, 50*time.Millisecond)
+	if len(replayed) != 1 ||
+		replayed[0].GetMessage().GetUlid() != "committed" {
+		t.Fatalf("durable staged replay = %#v", replayed)
+	}
+}
+
+func TestPublishInTransactionPersistenceFailureRollsBackDomainWrite(t *testing.T) {
+	dsn := fmt.Sprintf(
+		"file:%s-%d?mode=memory&cache=shared",
+		t.Name(),
+		time.Now().UnixNano(),
+	)
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := newGormEventStore(db)
+	if err := store.AutoMigrate(); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&stagedEventDomainRecord{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrator().DropTable(&realtimeEventModel{}); err != nil {
+		t.Fatal(err)
+	}
+	bus := newTestBus(t, WithDurableStore(store))
+
+	err = db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&stagedEventDomainRecord{
+			ID:    "domain-one",
+			Value: "committed",
+		}).Error; err != nil {
+			return err
+		}
+		_, publishErr := bus.PublishInTransaction(
+			context.Background(),
+			&stagedEventTransaction{db: tx},
+			"alice",
+			msg("wake"),
+		)
+		return publishErr
+	})
+	if err == nil {
+		t.Fatal("missing durable event table did not fail the transaction")
+	}
+	var count int64
+	if err := db.Model(&stagedEventDomainRecord{}).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("domain rows = %d, want rollback", count)
+	}
+}
+
 func TestSubscribe_DurableReplayCanExceedSubscriberQueue(t *testing.T) {
 	store := newTestDurableStore(t)
 	bus1 := newTestBus(t, WithSubscriberQueue(8), WithDurableStore(store))
@@ -317,9 +430,12 @@ func TestSubscribe_DurableReplayDoesNotDuplicateConcurrentPublish(t *testing.T) 
 	subscribeDone := make(chan *Subscription, 1)
 	subscribeErr := make(chan error, 1)
 	go func() {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-		sub, _, err := bus.Subscribe(ctx, "alice", "dev-1", cursor)
+		sub, _, err := bus.Subscribe(
+			context.Background(),
+			"alice",
+			"dev-1",
+			cursor,
+		)
 		if err != nil {
 			subscribeErr <- err
 			return
@@ -327,11 +443,17 @@ func TestSubscribe_DurableReplayDoesNotDuplicateConcurrentPublish(t *testing.T) 
 		subscribeDone <- sub
 	}()
 
+	var sub *Subscription
 	select {
-	case <-subscribeDone:
-		t.Fatal("subscriber replayed while publish held actor lock")
+	case sub = <-subscribeDone:
 	case err := <-subscribeErr:
 		t.Fatalf("subscribe failed: %v", err)
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("subscriber did not capture pre-commit high water")
+	}
+	select {
+	case event := <-sub.Events:
+		t.Fatalf("subscriber observed uncommitted event: %#v", event)
 	case <-time.After(20 * time.Millisecond):
 	}
 
@@ -344,15 +466,6 @@ func TestSubscribe_DurableReplayDoesNotDuplicateConcurrentPublish(t *testing.T) 
 		}
 	case <-time.After(100 * time.Millisecond):
 		t.Fatal("publish did not finish")
-	}
-
-	var sub *Subscription
-	select {
-	case sub = <-subscribeDone:
-	case err := <-subscribeErr:
-		t.Fatalf("subscribe failed: %v", err)
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("subscribe did not finish")
 	}
 
 	got := drainN(t, sub, 2, 50*time.Millisecond)
@@ -388,7 +501,7 @@ func TestPublish_FanOutToMultipleSubscribers(t *testing.T) {
 }
 
 func TestPublishToDevice_TargetsLiveAndReplay(t *testing.T) {
-	bus := newTestBus(t)
+	bus := newTestBus(t, WithDurableStore(newTestDurableStore(t)))
 	floorID, err := bus.Publish("alice", msg("floor"))
 	if err != nil {
 		t.Fatal(err)
@@ -573,15 +686,49 @@ func drainN(t *testing.T, sub *Subscription, n int, perEvent time.Duration) []*r
 
 type blockingReplayStore struct {
 	mu           sync.Mutex
-	events       map[string][]*realtime.StreamEvent
+	events       map[string][]durableEventRecord
 	blockPersist bool
 	persisted    chan struct{}
 	release      chan struct{}
 }
 
+type stagedEventTransaction struct {
+	db        *gorm.DB
+	callbacks []delivery.AfterCommitFunc
+}
+
+type stagedEventDomainRecord struct {
+	ID    string `gorm:"primaryKey"`
+	Value string
+}
+
+func (t *stagedEventTransaction) DB() *gorm.DB {
+	return t.db
+}
+
+func (t *stagedEventTransaction) Outbox() delivery.OutboxWriter {
+	return nil
+}
+
+func (t *stagedEventTransaction) AfterCommit(
+	callback delivery.AfterCommitFunc,
+) error {
+	t.callbacks = append(t.callbacks, callback)
+	return nil
+}
+
+func (t *stagedEventTransaction) runAfterCommit(ctx context.Context) error {
+	for _, callback := range t.callbacks {
+		if err := callback(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func newBlockingReplayStore() *blockingReplayStore {
 	return &blockingReplayStore{
-		events:    make(map[string][]*realtime.StreamEvent),
+		events:    make(map[string][]durableEventRecord),
 		persisted: make(chan struct{}, 1),
 		release:   make(chan struct{}),
 	}
@@ -599,11 +746,21 @@ func (s *blockingReplayStore) releasePersist() {
 	close(s.release)
 }
 
-func (s *blockingReplayStore) Persist(actorID string, ev *realtime.StreamEvent) error {
+func (s *blockingReplayStore) Persist(
+	actorID string,
+	targetDeviceID string,
+	ev *realtime.StreamEvent,
+) (durableEventRecord, error) {
 	cloned := proto.Clone(ev).(*realtime.StreamEvent)
 
 	s.mu.Lock()
-	s.events[actorID] = append(s.events[actorID], cloned)
+	sequence := uint64(len(s.events[actorID]) + 1)
+	cloned.EventId = durableEventID(sequence)
+	record := durableEventRecord{
+		Sequence:       sequence,
+		TargetDeviceID: targetDeviceID,
+		Event:          cloned,
+	}
 	block := s.blockPersist
 	persisted := s.persisted
 	release := s.release
@@ -616,19 +773,32 @@ func (s *blockingReplayStore) Persist(actorID string, ev *realtime.StreamEvent) 
 		persisted <- struct{}{}
 		<-release
 	}
-	return nil
+	s.mu.Lock()
+	s.events[actorID] = append(s.events[actorID], record)
+	s.mu.Unlock()
+	return record, nil
 }
 
-func (s *blockingReplayStore) ReplayAfter(actorID, cursor string, limit int) ([]*realtime.StreamEvent, error) {
+func (s *blockingReplayStore) ReplayRange(
+	actorID string,
+	afterSequence uint64,
+	throughSequence uint64,
+	limit int,
+) ([]durableEventRecord, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	out := make([]*realtime.StreamEvent, 0)
-	for _, ev := range s.events[actorID] {
-		if ev.GetEventId() <= cursor {
+	out := make([]durableEventRecord, 0)
+	for _, record := range s.events[actorID] {
+		if record.Sequence <= afterSequence ||
+			record.Sequence > throughSequence {
 			continue
 		}
-		out = append(out, proto.Clone(ev).(*realtime.StreamEvent))
+		out = append(out, durableEventRecord{
+			Sequence:       record.Sequence,
+			TargetDeviceID: record.TargetDeviceID,
+			Event:          proto.Clone(record.Event).(*realtime.StreamEvent),
+		})
 		if limit > 0 && len(out) >= limit {
 			break
 		}
@@ -636,12 +806,44 @@ func (s *blockingReplayStore) ReplayAfter(actorID, cursor string, limit int) ([]
 	return out, nil
 }
 
-func (s *blockingReplayStore) NewestEventID(actorID string) (string, bool, error) {
+func (s *blockingReplayStore) Head(
+	actorID string,
+) (durableEventHead, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	events := s.events[actorID]
 	if len(events) == 0 {
-		return "", false, nil
+		return durableEventHead{}, false, nil
 	}
-	return events[len(events)-1].GetEventId(), true, nil
+	last := events[len(events)-1]
+	return durableEventHead{
+		Sequence: last.Sequence,
+		EventID:  last.Event.GetEventId(),
+	}, true, nil
+}
+
+func (s *blockingReplayStore) OldestSequence(
+	actorID string,
+) (uint64, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	events := s.events[actorID]
+	if len(events) == 0 {
+		return 0, false, nil
+	}
+	return events[0].Sequence, true, nil
+}
+
+func (s *blockingReplayStore) CursorSequence(
+	actorID string,
+	eventID string,
+) (uint64, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, record := range s.events[actorID] {
+		if record.Event.GetEventId() == eventID {
+			return record.Sequence, true, nil
+		}
+	}
+	return 0, false, nil
 }

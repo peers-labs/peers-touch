@@ -121,8 +121,10 @@ type TurnConfig struct {
 	// TaskID/StepID bind this turn to a Station-owned task step. When TaskID is
 	// set, turn lifecycle events are written to the durable outbox (replayable
 	// source of truth) in addition to the realtime event bus.
-	TaskID string
-	StepID string
+	TaskID            string
+	StepID            string
+	ExecutorLeaseID   string
+	LeaseFencingToken uint64
 
 	AttemptID string
 
@@ -567,6 +569,8 @@ func (s *TurnService) FailAdmittedTurnStart(
 		strings.TrimSpace(turnID),
 		"",
 		"",
+		"",
+		0,
 		strings.TrimSpace(reason),
 		cause,
 	)
@@ -655,6 +659,8 @@ func (s *TurnService) executeAdmittedQueuedTurn(
 			admitted.Admission.GetTurnId(),
 			"",
 			"",
+			"",
+			0,
 			"failed to decode queued runtime budget",
 		); err != nil {
 			logger.Errorf(ctx, "failed to settle queued turn after config decode failure: turn_id=%s err=%v", admitted.Admission.GetTurnId(), err)
@@ -676,13 +682,15 @@ func (s *TurnService) executeAdmittedQueuedTurn(
 				admitted.Admission.GetTurnId(),
 				"",
 				"",
+				"",
+				0,
 				"failed to prepare queued chat task",
 			); settleErr != nil {
 				logger.Errorf(ctx, "failed to settle queued turn after task preparation failure: turn_id=%s err=%v", admitted.Admission.GetTurnId(), settleErr)
 			}
 			return
 		}
-		stepID, err := s.chatTaskService.BeginChatStep(
+		leaseAuthority, err := s.chatTaskService.BeginChatStep(
 			ctx,
 			taskID,
 			request.GetAgentId(),
@@ -695,6 +703,8 @@ func (s *TurnService) executeAdmittedQueuedTurn(
 				admitted.Admission.GetTurnId(),
 				taskID,
 				"",
+				"",
+				0,
 				"failed to begin queued chat step",
 			); settleErr != nil {
 				logger.Errorf(ctx, "failed to settle queued turn after step creation failure: turn_id=%s err=%v", admitted.Admission.GetTurnId(), settleErr)
@@ -702,7 +712,9 @@ func (s *TurnService) executeAdmittedQueuedTurn(
 			return
 		}
 		config.TaskID = taskID
-		config.StepID = stepID
+		config.StepID = leaseAuthority.StepID
+		config.ExecutorLeaseID = leaseAuthority.LeaseID
+		config.LeaseFencingToken = leaseAuthority.FencingToken
 	}
 	if _, err := s.ExecuteTurn(ctx, config, request.GetUserInput()); err != nil {
 		logger.Warnf(
@@ -1196,6 +1208,8 @@ func (s *TurnService) failTurnAfterError(
 		turnID,
 		config.TaskID,
 		config.StepID,
+		config.ExecutorLeaseID,
+		config.LeaseFencingToken,
 		reason,
 		cause,
 	)
@@ -1503,9 +1517,21 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 			config.TaskID,
 			config.StepID,
 			turnID,
+			config.ExecutorLeaseID,
+			config.LeaseFencingToken,
 		); err != nil {
 			return nil, settleRunningFailure("failed to bind chat step to running turn", err)
 		}
+		var stopLeaseMaintenance func()
+		ctx, stopLeaseMaintenance = s.chatTaskService.MaintainChatStepLease(
+			ctx,
+			config.TaskID,
+			config.StepID,
+			config.ExecutorLeaseID,
+			config.LeaseFencingToken,
+		)
+		defer stopLeaseMaintenance()
+		config.ExecutionContext = ctx
 	}
 	trace := &domain.TurnTrace{
 		TraceID: generateID("trace"),
@@ -1911,6 +1937,8 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 				config.TaskID,
 				config.StepID,
 				turnID,
+				config.ExecutorLeaseID,
+				config.LeaseFencingToken,
 			); err != nil {
 				return nil, settleRunningFailure("failed to bind local tool wait step", err)
 			}
@@ -4933,21 +4961,23 @@ func (s *TurnService) interruptTurnWithOutcomeErrorForActor(
 				return err
 			}
 			if strings.TrimSpace(stepID) != "" {
+				if s.chatTaskService == nil {
+					return fmt.Errorf("chat task lease authority is unavailable")
+				}
+				_, err := fenceCurrentChatStepLeaseTx(
+					tx,
+					taskID,
+					stepID,
+				)
+				if err != nil {
+					return err
+				}
 				if err := tx.Model(&persistence.ExecutionStep{}).
 					Where("task_id = ? AND step_id = ? AND status = ?", taskID, stepID, int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING)).
 					Updates(map[string]interface{}{
 						"status":         int32(model.TaskNodeStatus_TASK_NODE_STATUS_FAILED),
 						"result_summary": reasonCode,
 						"ended_at":       now,
-					}).Error; err != nil {
-					return err
-				}
-				if err := tx.Model(&persistence.ExecutorLease{}).
-					Where("step_id = ? AND status = ?", stepID, chatLeaseStatusActive).
-					Updates(map[string]interface{}{
-						"status":       chatLeaseStatusReleased,
-						"heartbeat_at": now,
-						"expires_at":   now,
 					}).Error; err != nil {
 					return err
 				}
@@ -5189,6 +5219,17 @@ func (s *TurnService) ResumeReadyToolContinuation(
 	if err != nil {
 		return false, err
 	}
+	releaseContinuationClaim := true
+	defer func() {
+		if releaseContinuationClaim {
+			_ = s.toolDispatch.ReleaseContinuationClaim(
+				context.WithoutCancel(ctx),
+				continuation.ID,
+				continuation.LeaseID,
+				continuation.FencingToken,
+			)
+		}
+	}()
 
 	db, err := s.getDB(ctx)
 	if err != nil {
@@ -5215,6 +5256,21 @@ func (s *TurnService) ResumeReadyToolContinuation(
 	if err != nil {
 		return true, err
 	}
+	if strings.TrimSpace(batch.StepID) != "" {
+		if s.chatTaskService == nil {
+			return true, fmt.Errorf("chat task lease authority is unavailable")
+		}
+		authority, err := s.chatTaskService.LoadOwnedChatStepLeaseAuthority(
+			ctx,
+			batch.TaskID,
+			batch.StepID,
+		)
+		if err != nil {
+			return true, err
+		}
+		config.ExecutorLeaseID = authority.LeaseID
+		config.LeaseFencingToken = authority.FencingToken
+	}
 	ctx, cancelRuntimeBudget := withRuntimeBudgetDeadline(
 		ctx,
 		config.TurnID,
@@ -5222,6 +5278,18 @@ func (s *TurnService) ResumeReadyToolContinuation(
 		attemptStartedAt,
 	)
 	defer cancelRuntimeBudget()
+	if strings.TrimSpace(batch.StepID) != "" {
+		var stopLeaseMaintenance func()
+		ctx, stopLeaseMaintenance = s.chatTaskService.MaintainChatStepLease(
+			ctx,
+			batch.TaskID,
+			batch.StepID,
+			config.ExecutorLeaseID,
+			config.LeaseFencingToken,
+		)
+		defer stopLeaseMaintenance()
+		config.ExecutionContext = ctx
+	}
 	settleExpiredContinuation := func(operationErr error) (bool, error) {
 		deadlineErr := executionContextError(ctx)
 		reason, exhausted := runtimeBudgetExhaustionReason(deadlineErr)
@@ -5249,6 +5317,8 @@ func (s *TurnService) ResumeReadyToolContinuation(
 			batch.TurnID,
 			batch.TaskID,
 			batch.StepID,
+			config.ExecutorLeaseID,
+			config.LeaseFencingToken,
 			reason,
 			deadlineErr,
 		); settleErr != nil {
@@ -5291,6 +5361,7 @@ func (s *TurnService) ResumeReadyToolContinuation(
 		}
 		return true, err
 	}
+	releaseContinuationClaim = false
 	budgetState, err := s.loadToolLoopBudgetState(ctx, batch.TurnID)
 	if err != nil {
 		if settled, settleErr := settleExpiredContinuation(err); settled {
@@ -5317,6 +5388,8 @@ func (s *TurnService) ResumeReadyToolContinuation(
 			batch.TurnID,
 			batch.TaskID,
 			batch.StepID,
+			config.ExecutorLeaseID,
+			config.LeaseFencingToken,
 			reason,
 			exhaustion,
 		); settleErr != nil {
@@ -5371,6 +5444,8 @@ func (s *TurnService) ResumeReadyToolContinuation(
 			batch.TurnID,
 			batch.TaskID,
 			batch.StepID,
+			config.ExecutorLeaseID,
+			config.LeaseFencingToken,
 			terminalReason,
 		); settleErr != nil {
 			return true, errors.Join(callErr, settleErr)
@@ -5425,6 +5500,8 @@ func (s *TurnService) ResumeReadyToolContinuation(
 			batch.TurnID,
 			batch.TaskID,
 			batch.StepID,
+			config.ExecutorLeaseID,
+			config.LeaseFencingToken,
 			terminalReason,
 		); settleErr != nil {
 			return true, errors.Join(processErr, settleErr)
@@ -5468,20 +5545,6 @@ func (s *TurnService) ResumeReadyToolContinuation(
 				return true, settleErr
 			}
 			return true, err
-		}
-		if s.chatTaskService != nil && batch.StepID != "" {
-			if err := s.chatTaskService.FinishChatStep(
-				ctx,
-				batch.TaskID,
-				batch.StepID,
-				batch.TurnID,
-				nextResponse,
-			); err != nil {
-				if settled, settleErr := settleExpiredContinuation(err); settled {
-					return true, settleErr
-				}
-				return true, err
-			}
 		}
 	}
 
@@ -6976,6 +7039,19 @@ func (s *TurnService) completeTurn(
 				return err
 			}
 			if strings.TrimSpace(config.StepID) != "" {
+				if s.chatTaskService == nil {
+					return fmt.Errorf("chat task lease authority is unavailable")
+				}
+				lease, leaseNow, err := s.chatTaskService.requireOwnedActiveLeaseTx(
+					tx,
+					config.TaskID,
+					config.StepID,
+					config.ExecutorLeaseID,
+					config.LeaseFencingToken,
+				)
+				if err != nil {
+					return err
+				}
 				if err := tx.Model(&persistence.ExecutionStep{}).
 					Where(
 						"task_id = ? AND step_id = ? AND status = ?",
@@ -6991,13 +7067,7 @@ func (s *TurnService) completeTurn(
 					}).Error; err != nil {
 					return err
 				}
-				if err := tx.Model(&persistence.ExecutorLease{}).
-					Where("step_id = ? AND status = ?", config.StepID, chatLeaseStatusActive).
-					Updates(map[string]interface{}{
-						"status":       chatLeaseStatusReleased,
-						"heartbeat_at": now,
-						"expires_at":   now,
-					}).Error; err != nil {
+				if err := s.chatTaskService.releaseLeaseTx(tx, lease, leaseNow); err != nil {
 					return err
 				}
 			}
@@ -7173,8 +7243,27 @@ func (s *TurnService) completeAssistantMessageTx(
 // Helper: failTurn
 // ---------------------------------------------------------------------------
 
-func (s *TurnService) failTurn(ctx context.Context, agentID, turnID, taskID, stepID, reason string) error {
-	_, err := s.failTurnWithEvent(ctx, agentID, turnID, taskID, stepID, reason, nil)
+func (s *TurnService) failTurn(
+	ctx context.Context,
+	agentID,
+	turnID,
+	taskID,
+	stepID,
+	executorLeaseID string,
+	leaseFencingToken uint64,
+	reason string,
+) error {
+	_, err := s.failTurnWithEvent(
+		ctx,
+		agentID,
+		turnID,
+		taskID,
+		stepID,
+		executorLeaseID,
+		leaseFencingToken,
+		reason,
+		nil,
+	)
 	return err
 }
 
@@ -7217,6 +7306,8 @@ func (s *TurnService) failTurnWithEvent(
 	turnID string,
 	taskID string,
 	stepID string,
+	executorLeaseID string,
+	leaseFencingToken uint64,
 	reason string,
 	cause error,
 ) (TurnEvent, error) {
@@ -7356,6 +7447,19 @@ func (s *TurnService) failTurnWithEvent(
 				stepID = boundStep.StepID
 			}
 			if strings.TrimSpace(stepID) != "" {
+				if s.chatTaskService == nil {
+					return fmt.Errorf("chat task lease authority is unavailable")
+				}
+				lease, leaseNow, err := s.chatTaskService.requireOwnedActiveLeaseTx(
+					tx,
+					taskID,
+					stepID,
+					executorLeaseID,
+					leaseFencingToken,
+				)
+				if err != nil {
+					return err
+				}
 				if err := tx.Model(&persistence.ExecutionStep{}).
 					Where("task_id = ? AND step_id = ? AND status = ?", taskID, stepID, int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING)).
 					Updates(map[string]interface{}{
@@ -7365,13 +7469,7 @@ func (s *TurnService) failTurnWithEvent(
 					}).Error; err != nil {
 					return err
 				}
-				if err := tx.Model(&persistence.ExecutorLease{}).
-					Where("step_id = ? AND status = ?", stepID, chatLeaseStatusActive).
-					Updates(map[string]interface{}{
-						"status":       chatLeaseStatusReleased,
-						"heartbeat_at": now,
-						"expires_at":   now,
-					}).Error; err != nil {
+				if err := s.chatTaskService.releaseLeaseTx(tx, lease, leaseNow); err != nil {
 					return err
 				}
 			}
@@ -7597,21 +7695,23 @@ func (s *TurnService) cancelTurnWithResult(
 				stepID = boundStep.StepID
 			}
 			if strings.TrimSpace(stepID) != "" {
+				if s.chatTaskService == nil {
+					return fmt.Errorf("chat task lease authority is unavailable")
+				}
+				_, err := fenceCurrentChatStepLeaseTx(
+					tx,
+					taskID,
+					stepID,
+				)
+				if err != nil {
+					return err
+				}
 				if err := tx.Model(&persistence.ExecutionStep{}).
 					Where("task_id = ? AND step_id = ? AND status = ?", taskID, stepID, int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING)).
 					Updates(map[string]interface{}{
 						"status":         int32(model.TaskNodeStatus_TASK_NODE_STATUS_FAILED),
 						"result_summary": "cancelled_by_user",
 						"ended_at":       now,
-					}).Error; err != nil {
-					return err
-				}
-				if err := tx.Model(&persistence.ExecutorLease{}).
-					Where("step_id = ? AND status = ?", stepID, chatLeaseStatusActive).
-					Updates(map[string]interface{}{
-						"status":       chatLeaseStatusReleased,
-						"heartbeat_at": now,
-						"expires_at":   now,
 					}).Error; err != nil {
 					return err
 				}

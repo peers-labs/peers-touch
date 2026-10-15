@@ -7,11 +7,12 @@ import {
 } from '../src/features/auth/mobileAuthIdentity';
 import {
   activateStationEntry,
-  addStationEntry,
+  addStationRoute,
   emptyStationRegistry,
   parseStoredStationRegistry,
   requireMatchingStationIdentity,
 } from '../src/features/station/stationRegistry';
+import type { NativeStationRouteCandidate } from '../src/services/mobileCommands';
 import {
   mobileStorageScope,
   purgeLegacyMobileIdentityStorage,
@@ -63,16 +64,16 @@ describe('Mobile identity scope hard cut', () => {
   });
 
   it('updates a URL hint without changing the pinned Station identity', () => {
-    const first = addStationEntry(
+    const first = addStationRoute(
       emptyStationRegistry(),
-      { stationPeerId: session.stationPeerId, url: session.stationUrl },
+      verifiedRouteInput(session.stationPeerId, session.stationUrl),
     );
     expect(first.ok).toBe(true);
     if (!first.ok) return;
 
-    const moved = addStationEntry(
+    const moved = addStationRoute(
       first.registry,
-      { stationPeerId: session.stationPeerId, url: 'https://new.example' },
+      verifiedRouteInput(session.stationPeerId, 'https://new.example'),
     );
     expect(moved.ok).toBe(true);
     if (!moved.ok) return;
@@ -82,16 +83,16 @@ describe('Mobile identity scope hard cut', () => {
   });
 
   it('fails closed when a URL or pinned Station identity changes owner', () => {
-    const first = addStationEntry(
+    const first = addStationRoute(
       emptyStationRegistry(),
-      { stationPeerId: session.stationPeerId, url: session.stationUrl },
+      verifiedRouteInput(session.stationPeerId, session.stationUrl),
     );
     expect(first.ok).toBe(true);
     if (!first.ok) return;
 
-    expect(addStationEntry(
+    expect(addStationRoute(
       first.registry,
-      { stationPeerId: '12D3KooWOther', url: session.stationUrl },
+      verifiedRouteInput('12D3KooWOther', session.stationUrl, [9, 9, 9]),
     )).toEqual({ ok: false, error: 'mobile.launch.stationIdentityMismatch' });
     expect(() => requireMatchingStationIdentity(
       first.registry.entries[0]!,
@@ -114,6 +115,32 @@ describe('Mobile identity scope hard cut', () => {
     expect(storage.getItem('peers-touch.client-storage.v1:mobile:12D3KooWStation:ptid_alice:device:scope:process:chat.message:x')).toBe('current');
   });
 });
+
+function verifiedRouteInput(
+  stationPeerId: string,
+  endpointOrigin: string,
+  stationRootPublicKey: number[] = [1, 2, 3],
+) {
+  const route: NativeStationRouteCandidate = {
+    stationPeerId,
+    nodePeerId: `${stationPeerId}-node`,
+    stationRootPublicKey,
+    nodeAuthorizationDigest: new Array(32).fill(2),
+    authorizationEpoch: 1,
+    routeId: `direct:${stationPeerId}:${endpointOrigin}`,
+    routeType: 'direct',
+    transport: 'direct_https',
+    endpointOrigin,
+    routeGeneration: 1,
+    addresses: [endpointOrigin],
+    sourceRef: 'a'.repeat(64),
+  };
+  return {
+    identity: { stationPeerId, url: endpointOrigin },
+    stationRootPublicKey,
+    route,
+  };
+}
 
 class MemoryStorage implements Storage {
   readonly #items = new Map<string, string>();

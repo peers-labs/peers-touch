@@ -1,0 +1,96 @@
+{
+  "id": "cross-station-social-native",
+  "profile": {
+    "required": true,
+    "identity_match": true
+  },
+  "services": {
+    "station-four": {
+      "kind": "station",
+      "required": true,
+      "runtime_identity_required": true,
+      "ready_action": "station",
+      "health_action": "station-check",
+      "status_action": "station-status",
+      "attestation_producer": "station-deployment"
+    },
+    "station-five-arm": {
+      "kind": "station",
+      "required": true,
+      "runtime_identity_required": true,
+      "ready_action": "station",
+      "health_action": "station-check",
+      "status_action": "station-status",
+      "attestation_producer": "station-deployment"
+    }
+  },
+  "clients": [
+    {
+      "id": "alice",
+      "actor": "alice",
+      "runtime": "native-tauri",
+      "required_service_roles": ["station"],
+      "service_bindings": {
+        "station": {
+          "service_id": "station-four",
+          "required_kind": "station"
+        }
+      }
+    },
+    {
+      "id": "bob",
+      "actor": "bob",
+      "runtime": "native-tauri",
+      "required_service_roles": ["station"],
+      "service_bindings": {
+        "station": {
+          "service_id": "station-five-arm",
+          "required_kind": "station"
+        }
+      }
+    },
+    {
+      "id": "eve",
+      "actor": "eve",
+      "runtime": "native-tauri",
+      "required_service_roles": ["station"],
+      "service_bindings": {
+        "station": {
+          "service_id": "station-five-arm",
+          "required_kind": "station"
+        }
+      }
+    },
+    {
+      "id": "bob2",
+      "actor": "bob",
+      "runtime": "native-tauri",
+      "required_service_roles": ["station"],
+      "service_bindings": {
+        "station": {
+          "service_id": "station-five-arm",
+          "required_kind": "station"
+        }
+      }
+    }
+  ],
+  "fixtures": [
+    {
+      "id": "cross-station-social-actors",
+      "authorization_required": true,
+      "authorization_ref": "env:SOCIAL_CROSS_STATION_ACCEPTANCE_RESET"
+    }
+  ],
+  "credentials": [],
+  "cleanup": {
+    "resources": [
+      "processes",
+      "ports",
+      "storage",
+      "sessions",
+      "fixtures",
+      "profile-leases",
+      "deployment-leases"
+    ]
+  }
+}

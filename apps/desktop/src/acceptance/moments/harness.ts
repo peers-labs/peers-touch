@@ -79,6 +79,17 @@ const PRIVATE_REACTION_BY_NAME = {
   CELEBRATE: ReactionKind.REACTION_CELEBRATE,
 } as const;
 
+const PRIVATE_COMMENT_RECONCILING_PUBLICATION_STATES = new Set([
+  'PENDING_PUBLICATION',
+  'UNKNOWN_COMMIT',
+  'COMMITTED_PENDING_READBACK',
+]);
+const PRIVATE_COMMENT_RECONCILING_ERROR_CODES = new Set([
+  'SOCIAL_PRIVATE_DEPENDENCY_FAILURE',
+  'COMMENT_READBACK_PENDING',
+]);
+const PRIVATE_COMMENT_RECONCILE_ATTEMPTS = 30;
+
 function audienceName(kind: Audience_Kind): string {
   return Object.entries(PRIVATE_AUDIENCE_BY_NAME)
     .find(([, value]) => value === kind)?.[0] ?? 'OTHER';
@@ -140,6 +151,7 @@ interface PublicMomentInput {
 }
 
 interface ResolveFederatedActorIdentityInput {
+  federationId: string;
   federatedHandle: string;
 }
 
@@ -814,17 +826,13 @@ export function installAcceptanceHarness(): void {
     async resolveFederatedActorIdentity(
       input: ResolveFederatedActorIdentityInput,
     ) {
+      const federationId = input.federationId?.trim();
       const federatedHandle = input.federatedHandle?.trim();
-      if (!federatedHandle) {
-        throw new Error('moments.acceptance.federatedHandleMissing');
-      }
-      const contexts = await api.federationListContexts();
-      const federationId = contexts.contexts
-        .filter((context) => context.status.trim().toLowerCase() === 'active')
-        .map((context) => context.federationId.trim())
-        .find(Boolean);
       if (!federationId) {
         throw new Error('moments.acceptance.federationIdMissing');
+      }
+      if (!federatedHandle) {
+        throw new Error('moments.acceptance.federatedHandleMissing');
       }
       const resolved = await api.federationResolve(federationId, federatedHandle);
       const actorPtid = resolved.profile?.ref?.ptid.trim();
@@ -1338,6 +1346,63 @@ export function installAcceptanceHarness(): void {
         throw new Error('moments.acceptance.privateCommentProjectionMissing');
       }
       return privateCommentEvidence(comment);
+    },
+
+    async submitPrivateCommentWithRetry(input: {
+      postId: string;
+      text: string;
+      mentions?: PrivateMomentMention[];
+    }) {
+      if (!input?.postId?.trim() || !input?.text?.trim()) {
+        throw new Error('moments.acceptance.privateCommentInvalid');
+      }
+      let lastError: unknown;
+      for (let attempt = 0; attempt < PRIVATE_COMMENT_RECONCILE_ATTEMPTS; attempt += 1) {
+        const store = usePrivateCommentsStore.getState();
+        try {
+          if (attempt === 0) {
+            await store.submitComment(
+              input.postId,
+              input.text,
+              undefined,
+              input.mentions ?? [],
+            );
+          } else {
+            await store.retryComment(input.postId);
+          }
+        } catch (error) {
+          lastError = error;
+        }
+        const current = usePrivateCommentsStore.getState();
+        const thread = selectPrivateCommentThread(current, input.postId);
+        const comment = [...thread.comments]
+          .reverse()
+          .find((candidate) => candidate.text === input.text);
+        if (comment) {
+          return privateCommentEvidence(comment);
+        }
+        const draftId = current.activeDraftByPost[input.postId];
+        const draft = draftId ? current.draftsById[draftId] : undefined;
+        if (
+          !draft
+          || (
+            !PRIVATE_COMMENT_RECONCILING_PUBLICATION_STATES.has(
+              draft.publicationState ?? '',
+            )
+            && !PRIVATE_COMMENT_RECONCILING_ERROR_CODES.has(
+              draft.errorCode ?? '',
+            )
+          )
+        ) {
+          if (lastError instanceof Error) throw lastError;
+          throw new Error('moments.acceptance.privateCommentProjectionMissing');
+        }
+        if (attempt < PRIVATE_COMMENT_RECONCILE_ATTEMPTS - 1) {
+          await new Promise((resolve) => globalThis.setTimeout(resolve, 1_000));
+        }
+      }
+      if (lastError instanceof Error) throw lastError;
+      throw new Error('moments.acceptance.privateCommentReconcileTimeout');
     },
 
     async readPrivateComments(input: {

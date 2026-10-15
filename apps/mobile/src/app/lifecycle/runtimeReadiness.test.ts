@@ -190,7 +190,7 @@ describe('generation-bound runtime readiness', () => {
     const { kernel, begin, status } = fixture();
     await kernel.startRuntimeGraph();
     const update = begin('messaging');
-    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(20_000);
     expect(status('messaging')).toBe('failed');
     expect(update.isCurrent()).toBe(false);
     update.ready();
@@ -294,7 +294,7 @@ describe('session readiness and recovery projection integration', () => {
         expect(kernel.getSnapshot()).toMatchObject({
           phase: 'ACTIVE',
           launchState: 'shell',
-          generation: 1,
+          generation: 2,
           bootOrder,
         });
         expect(calls.filter((call) => call.endsWith(':teardown')))
@@ -347,7 +347,7 @@ describe('session readiness and recovery projection integration', () => {
         } else {
           await kernel.restartRuntimeGraph();
         }
-        expect(kernel.getSnapshot().generation).toBe(1);
+        expect(kernel.getSnapshot().generation).toBe(2);
         expect(status('auth')).toBe('ready');
         expect(status('settings')).toBe('ready');
         expect(recovery.getSnapshot().states).toMatchObject([{
@@ -392,7 +392,7 @@ describe('session readiness and recovery projection integration', () => {
           .rejects.toThrow('mobile.lifecycle.teardownIncomplete');
         expect(kernel.getSnapshot()).toMatchObject({
           phase: 'TEARDOWN_FAILED',
-          generation: 1,
+          generation: 2,
           errorKey: 'mobile.lifecycle.teardownIncomplete',
         });
         expect(calls.filter((call) => call.endsWith(':bootstrap'))).toEqual([]);

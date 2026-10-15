@@ -5,6 +5,7 @@ import (
 	"time"
 
 	domain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
+	"github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	"github.com/peers-labs/peers-touch/station/frame/core/util/id"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"gorm.io/gorm"
@@ -23,7 +24,12 @@ type FollowRepository interface {
 	domain.FollowRepository
 
 	Follow(ctx context.Context, followerPTID, followingPTID string) error
-	Unfollow(ctx context.Context, followerPTID, followingPTID string) error
+	Unfollow(
+		ctx context.Context,
+		followerPTID string,
+		followingPTID string,
+		mutations ...RelationshipMutation,
+	) (bool, error)
 	GetRelationship(ctx context.Context, followerPTID, followingPTID string) (*db.Follow, error)
 	GetFollowers(ctx context.Context, actorPTID string, c domain.Cursor, limit int) ([]*db.Follow, error)
 	GetFollowing(ctx context.Context, actorPTID string, c domain.Cursor, limit int) ([]*db.Follow, error)
@@ -32,6 +38,8 @@ type FollowRepository interface {
 	GetRelationships(ctx context.Context, followerPTID string, targetPTIDs []string) (map[string]*db.Follow, error)
 	GetReverseRelationships(ctx context.Context, followingPTID string, followerPTIDs []string) (map[string]bool, error)
 }
+
+type RelationshipMutation func(context.Context, delivery.Transaction) error
 
 type followRepository struct {
 	db       *gorm.DB
@@ -134,19 +142,29 @@ func (r *followRepository) Follow(ctx context.Context, followerPTID, followingPT
 	})
 }
 
-func (r *followRepository) Unfollow(ctx context.Context, followerPTID, followingPTID string) error {
+func (r *followRepository) Unfollow(
+	ctx context.Context,
+	followerPTID string,
+	followingPTID string,
+	mutations ...RelationshipMutation,
+) (bool, error) {
 	ids, err := r.identity.RequireIDs(ctx, []string{followerPTID, followingPTID})
 	if err != nil {
-		return err
+		return false, err
 	}
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	changed := false
+	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := lockSocialRelationshipAuthority(tx, followingPTID); err != nil {
 			return err
 		}
-		if err := tx.
+		deleted := tx.
 			Where("follower_id = ? AND following_id = ?", ids[0], ids[1]).
-			Delete(&db.Follow{}).Error; err != nil {
-			return err
+			Delete(&db.Follow{})
+		if deleted.Error != nil {
+			return deleted.Error
+		}
+		if deleted.RowsAffected == 0 {
+			return nil
 		}
 		if err := tx.
 			Where(
@@ -160,7 +178,7 @@ func (r *followRepository) Unfollow(ctx context.Context, followerPTID, following
 			Delete(&federatedRelationshipProjectionModel{}).Error; err != nil {
 			return err
 		}
-		return tx.
+		if err := tx.
 			Where(
 				"status = ? AND ((actor_ptid = ? AND peer_ptid = ?) OR "+
 					"(actor_ptid = ? AND peer_ptid = ?))",
@@ -170,8 +188,29 @@ func (r *followRepository) Unfollow(ctx context.Context, followerPTID, following
 				followingPTID,
 				followerPTID,
 			).
-			Delete(&friendshipModel{}).Error
+			Delete(&friendshipModel{}).Error; err != nil {
+			return err
+		}
+		outbox, err := delivery.NewGORMRepository(tx, delivery.SystemClock{})
+		if err != nil {
+			return err
+		}
+		bound := &federatedFriendRequestTransaction{
+			db:     tx,
+			outbox: outbox,
+		}
+		for _, mutate := range mutations {
+			if mutate == nil {
+				continue
+			}
+			if err := mutate(ctx, bound); err != nil {
+				return err
+			}
+		}
+		changed = true
+		return nil
 	})
+	return changed, err
 }
 
 func (r *followRepository) GetRelationship(ctx context.Context, followerPTID, followingPTID string) (*db.Follow, error) {

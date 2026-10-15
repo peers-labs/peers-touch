@@ -200,7 +200,11 @@ class LifecycleRegressionContractTest(unittest.TestCase):
         self.assertNotIn("127.0.0.1:7778/event", social_chat)
         self.assertNotIn("127.0.0.1:7778/event", detail_panel)
         self.assertIn(
-            "Native file chooser owner to become frontmost",
+            "select_native_file(",
+            direct_gate,
+        )
+        self.assertNotIn(
+            "select_file_chooser_path_to_process(",
             direct_gate,
         )
         self.assertIn(

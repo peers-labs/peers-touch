@@ -10,6 +10,7 @@ package events
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	"github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	realtime "github.com/peers-labs/peers-touch/station/frame/touch/model/realtime"
+	"gorm.io/gorm"
 )
 
 var installActorProfileHookOnce sync.Once
@@ -59,6 +61,7 @@ type eventsSubServer struct {
 	status               server.Status
 	addrs                []string
 	bus                  EventBus
+	database             *gorm.DB
 	callResolution       *callResolutionStore
 	callResolutionCancel context.CancelFunc
 	callResolutionDone   chan struct{}
@@ -73,15 +76,16 @@ func (s *eventsSubServer) Init(ctx context.Context, opts ...option.Option) error
 	if err != nil {
 		return err
 	}
-	eventStore := newGormEventStore(rds)
-	if err := eventStore.AutoMigrate(); err != nil {
+	eventBus, err := NewDurableEventBus(rds)
+	if err != nil {
 		return err
 	}
 	callResolution := newCallResolutionStore(rds)
 	if err := callResolution.AutoMigrate(); err != nil {
 		return err
 	}
-	s.bus = NewEventBus(WithDurableStore(eventStore))
+	s.bus = eventBus
+	s.database = rds
 	s.callResolution = callResolution
 	setGlobalBus(s.bus)
 	installActorProfileChangeHook()
@@ -91,6 +95,12 @@ func (s *eventsSubServer) Init(ctx context.Context, opts ...option.Option) error
 func (s *eventsSubServer) Start(ctx context.Context, opts ...option.Option) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.bus != nil {
+		if err := s.bus.Start(ctx); err != nil {
+			s.status = server.StatusError
+			return err
+		}
+	}
 	if s.callResolution != nil && s.callResolutionCancel == nil {
 		reaperContext, cancel := context.WithCancel(context.Background())
 		done := make(chan struct{})
@@ -128,7 +138,28 @@ func (s *eventsSubServer) Type() server.SubserverType { return server.SubserverT
 func (s *eventsSubServer) Address() server.SubserverAddress {
 	return server.SubserverAddress{Address: s.addrs}
 }
-func (s *eventsSubServer) Status() server.Status { return s.status }
+func (s *eventsSubServer) Status() server.Status {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.status
+}
+
+// ClusterReadiness verifies the durable cross-node Events backing and returns
+// its credential-free PostgreSQL identity.
+func (s *eventsSubServer) ClusterReadiness(
+	ctx context.Context,
+) (string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.status != server.StatusRunning || s.bus == nil || s.database == nil {
+		return "", fmt.Errorf("events: cluster runtime is not running")
+	}
+	if !s.database.Migrator().HasTable(&realtimeEventModel{}) ||
+		!s.database.Migrator().HasTable(&actorEventSequenceModel{}) {
+		return "", fmt.Errorf("events: durable cluster schema is incomplete")
+	}
+	return store.PostgresClusterIdentity(ctx, s.database)
+}
 
 func (s *eventsSubServer) reapCallResolutions(ctx context.Context) {
 	ticker := time.NewTicker(callResolutionSweepInterval)

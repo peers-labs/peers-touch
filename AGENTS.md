@@ -3,7 +3,7 @@
 > Single authoritative source for all AI coding agents.
 > `docs/.agent/<platform>.md` is the agent entry layer: use it to find the real source documents, hard constraints, and verification commands.
 >
-> Last updated: 2026-09-19
+> Last updated: 2026-10-15
 
 ---
 
@@ -557,6 +557,7 @@ is authoritative for the current request. It forbids creating a Plan Version
 or substitute task record. The Agent may execute against existing accepted
 product and architecture sources, run focused verification, and deliver the
 authorized result.
+
 If the work cannot be executed safely without a new formal Plan, report that
 boundary instead of silently creating one.
 

@@ -89,15 +89,18 @@ func TestRecoverRunningChatTasksSettlesDirectTurnAndSnapshot(t *testing.T) {
 			StartedAt: now,
 		}},
 		{name: "lease", value: &persistence.ExecutorLease{
-			LeaseID:      "lease-restart",
-			TaskID:       "task-restart",
-			StepID:       "step-restart",
-			ExecutorID:   "station-old",
-			ExecutorKind: int32(model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED),
-			Status:       chatLeaseStatusActive,
-			AcquiredAt:   now,
-			HeartbeatAt:  now,
-			ExpiresAt:    now.Add(time.Minute),
+			LeaseID:          "lease-restart",
+			TaskID:           "task-restart",
+			StepID:           "step-restart",
+			ExecutorID:       "node-a/incarnation-a",
+			ExecutorKind:     int32(model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED),
+			OwnerNodeID:      "node-a",
+			OwnerIncarnation: "incarnation-a",
+			FencingToken:     1,
+			Status:           executorLeaseStatusActive,
+			AcquiredAt:       now,
+			HeartbeatAt:      now,
+			ExpiresAt:        now.Add(-time.Minute),
 		}},
 	}
 	for _, record := range records {
@@ -169,8 +172,20 @@ func TestRecoverRunningChatTasksSettlesDirectTurnAndSnapshot(t *testing.T) {
 	if err := db.First(&lease, "lease_id = ?", "lease-restart").Error; err != nil {
 		t.Fatalf("reload lease: %v", err)
 	}
-	if lease.Status != chatLeaseStatusReleased {
-		t.Fatalf("lease status = %q, want released", lease.Status)
+	if lease.Status != executorLeaseStatusExpired {
+		t.Fatalf("lease status = %q, want expired", lease.Status)
+	}
+	var takeover persistence.ExecutorLease
+	if err := db.First(
+		&takeover,
+		"step_id = ? AND fencing_token = ?",
+		"step-restart",
+		2,
+	).Error; err != nil {
+		t.Fatalf("reload takeover lease: %v", err)
+	}
+	if takeover.Status != executorLeaseStatusReleased {
+		t.Fatalf("takeover lease status = %q, want released", takeover.Status)
 	}
 	var terminalEvent persistence.TurnEvent
 	if err := db.First(&terminalEvent, "turn_id = ? AND event_type = ?", turnID, "error").Error; err != nil {
@@ -301,15 +316,18 @@ func TestRecoverRunningChatTasksCreatesInterruptedAssistantBeforeFirstText(t *te
 			StartedAt: now,
 		},
 		&persistence.ExecutorLease{
-			LeaseID:      "lease-restart-before-text",
-			TaskID:       "task-restart-before-text",
-			StepID:       "step-restart-before-text",
-			ExecutorID:   "station-old",
-			ExecutorKind: int32(model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED),
-			Status:       chatLeaseStatusActive,
-			AcquiredAt:   now,
-			HeartbeatAt:  now,
-			ExpiresAt:    now.Add(time.Minute),
+			LeaseID:          "lease-restart-before-text",
+			TaskID:           "task-restart-before-text",
+			StepID:           "step-restart-before-text",
+			ExecutorID:       "node-a/incarnation-a",
+			ExecutorKind:     int32(model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED),
+			OwnerNodeID:      "node-a",
+			OwnerIncarnation: "incarnation-a",
+			FencingToken:     1,
+			Status:           executorLeaseStatusActive,
+			AcquiredAt:       now,
+			HeartbeatAt:      now,
+			ExpiresAt:        now.Add(-time.Minute),
 		},
 	}
 	for _, record := range records {
@@ -430,15 +448,18 @@ func TestRecoverRunningChatTasksDoesNotCreateAssistantBeforeAdmission(t *testing
 			StartedAt: now,
 		},
 		&persistence.ExecutorLease{
-			LeaseID:      "lease-restart-before-admission",
-			TaskID:       "task-restart-before-admission",
-			StepID:       "step-restart-before-admission",
-			ExecutorID:   "station-old",
-			ExecutorKind: int32(model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED),
-			Status:       chatLeaseStatusActive,
-			AcquiredAt:   now,
-			HeartbeatAt:  now,
-			ExpiresAt:    now.Add(time.Minute),
+			LeaseID:          "lease-restart-before-admission",
+			TaskID:           "task-restart-before-admission",
+			StepID:           "step-restart-before-admission",
+			ExecutorID:       "node-a/incarnation-a",
+			ExecutorKind:     int32(model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED),
+			OwnerNodeID:      "node-a",
+			OwnerIncarnation: "incarnation-a",
+			FencingToken:     1,
+			Status:           executorLeaseStatusActive,
+			AcquiredAt:       now,
+			HeartbeatAt:      now,
+			ExpiresAt:        now.Add(-time.Minute),
 		},
 	}
 	for _, record := range records {
@@ -475,7 +496,7 @@ func TestRecoverRunningChatTasksConvergesAlreadyTerminalTurn(t *testing.T) {
 		&persistence.TurnAttempt{ID: "attempt-terminal", TurnID: "turn-terminal", AttemptIndex: 1, Status: string(domain.TurnStatusCompleted), StartedAt: now, EndedAt: &now},
 		&persistence.TaskRun{TaskID: "task-terminal", Surface: int32(model.TaskSurface_TASK_SURFACE_CHAT), Status: int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING), OwnerActorPTID: "ptid:person:owner", ConversationID: "conversation-terminal", CreatedAt: now, StartedAt: now, UpdatedAt: now},
 		&persistence.ExecutionStep{StepID: "step-terminal", TaskID: "task-terminal", AgentID: "agent-1", TurnID: "turn-terminal", Status: int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING), StartedAt: now},
-		&persistence.ExecutorLease{LeaseID: "lease-terminal", TaskID: "task-terminal", StepID: "step-terminal", ExecutorID: "station-old", ExecutorKind: int32(model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED), Status: chatLeaseStatusActive, AcquiredAt: now, HeartbeatAt: now, ExpiresAt: now.Add(time.Minute)},
+		&persistence.ExecutorLease{LeaseID: "lease-terminal", TaskID: "task-terminal", StepID: "step-terminal", ExecutorID: "node-a/incarnation-a", ExecutorKind: int32(model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED), OwnerNodeID: "node-a", OwnerIncarnation: "incarnation-a", FencingToken: 1, Status: executorLeaseStatusActive, AcquiredAt: now, HeartbeatAt: now, ExpiresAt: now.Add(-time.Minute)},
 	}
 	for _, record := range records {
 		if err := db.Create(record).Error; err != nil {
@@ -508,5 +529,250 @@ func TestRecoverRunningChatTasksConvergesAlreadyTerminalTurn(t *testing.T) {
 	}
 	if terminalEvents != 1 {
 		t.Fatalf("terminal turn recovery event count = %d, want 1", terminalEvents)
+	}
+}
+
+func TestRecoverRunningChatTasksPreservesHealthyForeignLease(t *testing.T) {
+	db := openConversationAuthorityDB(t, "chat_task_healthy_foreign_lease")
+	if err := db.AutoMigrate(persistence.AllModels()...); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	task := &persistence.TaskRun{
+		TaskID:         "task-healthy-foreign",
+		Surface:        int32(model.TaskSurface_TASK_SURFACE_CHAT),
+		Status:         int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		OwnerActorPTID: "ptid:person:owner",
+		ConversationID: "conversation-healthy-foreign",
+		CreatedAt:      now,
+		StartedAt:      now,
+		UpdatedAt:      now,
+	}
+	step := &persistence.ExecutionStep{
+		StepID:    "step-healthy-foreign",
+		TaskID:    task.TaskID,
+		AgentID:   "agent-1",
+		Status:    int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING),
+		StartedAt: now,
+	}
+	lease := &persistence.ExecutorLease{
+		LeaseID:          "lease-healthy-foreign",
+		TaskID:           task.TaskID,
+		StepID:           step.StepID,
+		ExecutorID:       "node-a/incarnation-a",
+		ExecutorKind:     int32(model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED),
+		OwnerNodeID:      "node-a",
+		OwnerIncarnation: "incarnation-a",
+		FencingToken:     7,
+		Status:           executorLeaseStatusActive,
+		AcquiredAt:       now,
+		HeartbeatAt:      now,
+		ExpiresAt:        time.Now().UTC().Add(time.Minute),
+	}
+	for _, record := range []interface{}{task, step, lease} {
+		if err := db.Create(record).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	nodeB := NewChatTaskService(nil, ChatTaskExecutorIdentity{
+		NodeID:      "node-b",
+		Incarnation: "incarnation-b",
+	})
+	if err := nodeB.RecoverRunningChatTasks(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	nodeA := NewChatTaskService(nil, ChatTaskExecutorIdentity{
+		NodeID:      "node-a",
+		Incarnation: "incarnation-a",
+	})
+	if err := nodeA.RecoverRunningChatTasks(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	var reloadedStep persistence.ExecutionStep
+	if err := db.First(&reloadedStep, "step_id = ?", step.StepID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if reloadedStep.Status != int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING) {
+		t.Fatalf("healthy foreign step changed status: %+v", reloadedStep)
+	}
+	var leases []persistence.ExecutorLease
+	if err := db.Where("step_id = ?", step.StepID).Find(&leases).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(leases) != 1 ||
+		leases[0].Status != executorLeaseStatusActive ||
+		leases[0].FencingToken != lease.FencingToken {
+		t.Fatalf("healthy foreign lease was replaced: %+v", leases)
+	}
+}
+
+func TestRecoverRunningChatTasksTakeoverFencesStaleOwnerCompletion(t *testing.T) {
+	db := openConversationAuthorityDB(t, "chat_task_takeover_fencing")
+	if err := db.AutoMigrate(persistence.AllModels()...); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	task := &persistence.TaskRun{
+		TaskID:         "task-takeover",
+		Surface:        int32(model.TaskSurface_TASK_SURFACE_CHAT),
+		Status:         int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+		OwnerActorPTID: "ptid:person:owner",
+		ConversationID: "conversation-takeover",
+		CreatedAt:      now,
+		StartedAt:      now,
+		UpdatedAt:      now,
+	}
+	step := &persistence.ExecutionStep{
+		StepID:    "step-takeover",
+		TaskID:    task.TaskID,
+		AgentID:   "agent-1",
+		TurnID:    "turn-takeover",
+		Status:    int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING),
+		StartedAt: now,
+	}
+	oldLease := &persistence.ExecutorLease{
+		LeaseID:          "lease-takeover-old",
+		TaskID:           task.TaskID,
+		StepID:           step.StepID,
+		ExecutorID:       "node-a/incarnation-a",
+		ExecutorKind:     int32(model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED),
+		OwnerNodeID:      "node-a",
+		OwnerIncarnation: "incarnation-a",
+		FencingToken:     7,
+		Status:           executorLeaseStatusActive,
+		AcquiredAt:       now,
+		HeartbeatAt:      now,
+		ExpiresAt:        time.Now().UTC().Add(-time.Minute),
+	}
+	batch := &persistence.ToolBatch{
+		ID:             "batch-takeover",
+		ActorID:        task.OwnerActorPTID,
+		TurnID:         step.TurnID,
+		AttemptID:      "attempt-takeover",
+		ConversationID: task.ConversationID,
+		AgentID:        step.AgentID,
+		Provider:       "provider-1",
+		Model:          "model-1",
+		SystemPrompt:   "system",
+		Iteration:      1,
+		TaskID:         task.TaskID,
+		StepID:         step.StepID,
+		Status:         persistence.ToolBatchStatusOpen,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	for _, record := range []interface{}{task, step, oldLease, batch} {
+		if err := db.Create(record).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	nodeA := NewChatTaskService(nil, ChatTaskExecutorIdentity{
+		NodeID:      "node-a",
+		Incarnation: "incarnation-a",
+	})
+	nodeB := NewChatTaskService(nil, ChatTaskExecutorIdentity{
+		NodeID:      "node-b",
+		Incarnation: "incarnation-b",
+	})
+	if err := nodeB.RecoverRunningChatTasks(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	var takeover persistence.ExecutorLease
+	if err := db.First(
+		&takeover,
+		"step_id = ? AND status = ?",
+		step.StepID,
+		executorLeaseStatusActive,
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+	if takeover.OwnerNodeID != "node-b" ||
+		takeover.OwnerIncarnation != "incarnation-b" ||
+		takeover.FencingToken != oldLease.FencingToken+1 {
+		t.Fatalf("takeover authority is invalid: %+v", takeover)
+	}
+	if err := nodeA.FinishChatStep(
+		context.Background(),
+		task.TaskID,
+		step.StepID,
+		step.TurnID,
+		"stale",
+		oldLease.LeaseID,
+		oldLease.FencingToken,
+	); err == nil {
+		t.Fatal("stale owner completion succeeded after takeover")
+	}
+	var runningCount int64
+	if err := db.Model(&persistence.ExecutionStep{}).
+		Where(
+			"step_id = ? AND status = ?",
+			step.StepID,
+			int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING),
+		).
+		Count(&runningCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if runningCount != 1 {
+		t.Fatal("stale owner mutated the running step")
+	}
+
+	if err := db.Model(&persistence.ExecutorLease{}).
+		Where("lease_id = ?", takeover.LeaseID).
+		Update("expires_at", time.Now().UTC().Add(-time.Minute)).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := nodeB.RecoverRunningChatTasks(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	var sameIncarnationTakeover persistence.ExecutorLease
+	if err := db.First(
+		&sameIncarnationTakeover,
+		"step_id = ? AND status = ?",
+		step.StepID,
+		executorLeaseStatusActive,
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+	if sameIncarnationTakeover.FencingToken != takeover.FencingToken+1 {
+		t.Fatalf(
+			"same-incarnation takeover token = %d, want %d",
+			sameIncarnationTakeover.FencingToken,
+			takeover.FencingToken+1,
+		)
+	}
+	if err := nodeB.FinishChatStep(
+		context.Background(),
+		task.TaskID,
+		step.StepID,
+		step.TurnID,
+		"superseded same-incarnation completion",
+		takeover.LeaseID,
+		takeover.FencingToken,
+	); err == nil {
+		t.Fatal("superseded same-incarnation token completed the step")
+	}
+	if err := nodeB.FinishChatStep(
+		context.Background(),
+		task.TaskID,
+		step.StepID,
+		step.TurnID,
+		"completed",
+		sameIncarnationTakeover.LeaseID,
+		sameIncarnationTakeover.FencingToken,
+	); err != nil {
+		t.Fatal(err)
+	}
+	var checkpointCount int64
+	if err := db.Model(&persistence.TaskCheckpoint{}).
+		Where("task_id = ?", task.TaskID).
+		Count(&checkpointCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if checkpointCount != 1 {
+		t.Fatalf("terminal domain record count = %d, want 1", checkpointCount)
 	}
 }

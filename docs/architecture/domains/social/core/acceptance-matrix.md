@@ -1,8 +1,8 @@
 # Social Private Moments - Product Acceptance Matrix
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-09-13 | **Updated**: 2026-09-24
+> **Version**: v1.3
+> **Created**: 2026-09-13 | **Updated**: 2026-10-06
 > **Owner**: Social Product
 
 ---
@@ -23,15 +23,21 @@ Native 设备上的当前 source-bound Journey 证明。以下证据不能单独
 | Cell | Actors | Runtime | Claim |
 |---|---|---|---|
 | `SOC-SEC-RC01` | Alice/Bob/Eve | two Native Desktop clients + real Station/OSS | same-Station private publish/read/deny |
-| `SOC-SEC-RC02` | Alice/Bob/Eve | Native Mobile sender/receiver + real Station/OSS | Mobile semantic parity |
+| `SOC-SEC-RC02` | Alice/Bob/Eve | isolated iOS and Android Native sender/receiver + real Station/OSS | required Mobile semantic parity on both operating systems |
 | `SOC-SEC-RC03` | Bob/Bob2 | Native restart and trusted recovery | device recovery and revocation |
 | `SOC-SEC-RC04` | Anonymous/Eve/Bob | direct HTTP/object requests | authentication, IDOR and metadata minimization |
-| `SOC-SEC-RC05` | Alice/Anonymous | Native publisher + Browser/HTTP public reader | public continuity |
-| `SOC-SEC-RC06` | Alice/Remote recipient | Native publisher on `four` + real Actor identity on `fiveArm` | unsupported cross-Station private audience fails before durable admission |
+| `SOC-SEC-RC05` | Alice/Anonymous | Native publisher + unauthenticated HTTP public reader | public continuity without a Browser Social product surface |
+| `SOC-SEC-RC06` | Alice/Remote recipient | Native publisher on `four` + real Actor identity on `fiveArm` | historical v1.1 unsupported-boundary evidence retained for cutover regression only |
+| `SOC-SEC-RC07` | Alice/Bob/Eve | two real Stations + two Native Desktop clients | positive cross-Station private publish/read/deny and viewer-scoped delivery |
+| `SOC-SEC-RC08` | Alice/Bob/Bob2 | two real Stations + Native restart/recovery + injected outage | durable retry, exact replay, recovery and revocation convergence |
+| `SOC-SEC-RC09` | Alice/Bob/Eve | Desktop↔iOS and Desktop↔Android on two real Stations | bidirectional cross-platform private sharing and interaction |
+| `SOC-SEC-RC10` | Alice/Bob/Eve | iOS↔Android on two real Stations | cross-mobile interoperability and equivalent authorization |
 
-Cross-Station private sharing has no positive delivery cell in this version
-because `SOC-SEC-C09` is deferred. `SOC-SEC-RC06` proves only the fail-closed
-boundary; it does not claim cross-Station private delivery support.
+`SOC-SEC-RC06` remains immutable historical evidence for the old locality
+restriction. Desktop cross-Station readiness requires `RC07` and `RC08`; full
+Native readiness additionally requires `RC02`, `RC09` and `RC10`. Deleting the
+old rejection before positive delivery is proven is forbidden. Browser is not
+a runtime cell and must have no Social page/runtime registration.
 
 ## 3. Acceptance Scenarios
 
@@ -47,12 +53,22 @@ boundary; it does not claim cross-Station private delivery support.
 | `SOC-SEC-AS08` | `SOC-SEC-J07` | Bob never opens the Moment; Bob2 before recovery sees recovery-required, then uses the existing recovery phrase and reads the authorized history | Recovery uses the actor recovery envelope; revoked resources and devices receive no new material | `RC03` |
 | `SOC-SEC-AS09` | `SOC-SEC-J08` | Alice deletes or blocks; Bob's new detail/media/recovery requests fail and ordinary cache clears | Station delivery/grant state is revoked; report does not claim malicious-copy deletion | `RC01`, `RC03` |
 | `SOC-SEC-AS10` | `SOC-SEC-J09` | Anonymous reads Alice's explicit PUBLIC Moment after private hard cut | Public table and object path remain readable without private envelopes | `RC05` |
-| `SOC-SEC-AS11` | `SOC-SEC-J01` | Browser attempts private publish/read and is rejected before any plaintext leaves the client | Network capture shows no private publish payload or public media fallback | `RC05` |
-| `SOC-SEC-AS12` | `SOC-SEC-J01` | Alice publishes to a same-Station GROUP and `CUSTOM_DENY(FOLLOWERS)`, then attempts `CUSTOM_DENY(PUBLIC)`, an explicit fiveArm recipient, and a Group containing that recipient | Supported audiences reach intended readers; unsupported cases consume no Content PreKey and commit no partial Post, delivery, object grant or envelope; remote evidence binds the owner-issued handle, expected identity digest, fixture-manifest digest, and result | `RC01`, `RC06` |
+| `SOC-SEC-AS11` | platform boundary | Browser navigation and runtime registries expose no Social product entry | Source scan and Browser route test prove no Social page, runtime, publish or read action is registered | source gate |
+| `SOC-SEC-AS12` | `SOC-SEC-J01` | Historical v1.1 suite attempts an explicit fiveArm recipient and a Group containing that recipient | Immutable evidence proves old code rejected before PreKey claim or partial commit; the new plan replaces this behavior only after `AS17..AS24` pass | `RC06` |
 | `SOC-SEC-AS13` | `SOC-SEC-J02` | Bob response is inspected with multiple recipients/devices in the audience | Only Bob's eligible device envelope is present; author management data uses a separate path | `RC04` |
-| `SOC-SEC-AS14` | all | Same journeys run on Mobile Native with equivalent visible outcomes | Proto identities and Station authorization decisions match Desktop | `RC02` |
+| `SOC-SEC-AS14` | all | The complete Journey/state matrix runs on iOS and Android Native, including all Audience, Explore/Search/Profile/Circles, recovery and revocation outcomes | Proto identities, Station authorization, ciphertext/plaintext boundaries and durable readback match Desktop | `RC02` |
 | `SOC-SEC-AS15` | `SOC-SEC-J01` | Alice selects an audience beyond the actor/slot policy | Publish is rejected before encryption with no truncated recipient set or committed object | `RC01` |
 | `SOC-SEC-AS16` | `SOC-SEC-J05` | Bob prepares two comments for overlapping recipients | Plans expose different one-time public keys/slot IDs and no stable recipient/device identifier | `RC04` |
+| `SOC-SEC-AS17` | `SOC-SEC-J10` | Station A Alice publishes FRIENDS text + image to Station B Bob; Bob opens it from HOME and a direct link | Source commit, Federation frame, receiver projection, envelope and object descriptor hashes form one verified chain; neither Station stores plaintext | `RC07` |
+| `SOC-SEC-AS18` | `SOC-SEC-J10` | Alice publishes to a mixed local/remote `FOLLOWERS`, `CIRCLE`, `GROUP`, `CUSTOM_ALLOW`, and `CUSTOM_DENY(FOLLOWERS)` matrix | Every required recipient is included exactly once; `CUSTOM_DENY(PUBLIC)`, cross-Federation and unresolved recipients fail before Post commit | `RC07` |
+| `SOC-SEC-AS19` | `SOC-SEC-J10` | Eve on Station B has the real Post/Object IDs but no grant | Eve receives uniform not-found/unauthorized responses and no payload, object bytes, device IDs, co-recipient PTIDs or envelopes | `RC07` |
+| `SOC-SEC-AS20` | `SOC-SEC-J11` | Bob comments and reacts from Station B; Alice and Bob observe one committed result after retries/reconnect | Source Station owns parent authorization and canonical interaction truth; duplicate command IDs do not create duplicate rows | `RC07`, `RC08` |
+| `SOC-SEC-AS21` | `SOC-SEC-J10` | Station B is unavailable after Alice's source commit and later recovers | Alice sees pending/retrying; one durable outbox item is replayed; Bob receives one projection without a duplicate Moment | `RC08` |
+| `SOC-SEC-AS22` | `SOC-SEC-J11` | Alice deletes the Moment, removes friendship, or either actor blocks the other | Ordered invalidation suppresses Bob's feed/detail/comment/media/recovery on Station B; reconnect does not resurrect the resource | `RC07`, `RC08` |
+| `SOC-SEC-AS23` | `SOC-SEC-J12` | Bob never opens the Moment, restarts Station B, replaces the Desktop device, and performs trusted recovery | Bob2 verifies Alice Station's retained proof key and reads exact content; revoked devices obtain no new envelope | `RC08` |
+| `SOC-SEC-AS24` | `SOC-SEC-J10`, `SOC-SEC-J11` | Federation frame is duplicated, reordered, expired, hash-conflicted, signed by an untrusted Station, or targets the wrong actor/Station | Receiver applies exactly one valid transition; invalid frames are terminal or retryable as specified and create no partial Social rows | `RC08` |
+| `SOC-SEC-AS25` | all | Desktop publishes/reads/interacts with iOS and Android in both directions across two Stations | Source and receiver proofs converge on one canonical resource/interaction identity | `RC09` |
+| `SOC-SEC-AS26` | all | iOS and Android publish/read/interact in both directions across two Stations | Equivalent visible state, authorization and recovery readback on both Mobile platforms | `RC10` |
 
 ## 4. Failure And Recovery Coverage
 
@@ -66,7 +82,11 @@ boundary; it does not claim cross-Station private delivery support.
 | ciphertext/hash/AEAD failure | integrity failure, zero partial plaintext | best-effort render |
 | new device lacks history key | recovery-required | permanent empty state |
 | relationship revoked | future access denied and ordinary cache cleared | claim remote deletion of saved copies |
-| cross-Station private unsupported | reject before publish | partial delivery or trusted-Station plaintext |
+| remote identity/PreKey unavailable before commit | preserve draft; fail the whole audience | partial publish or silent recipient removal |
+| remote Station unavailable after source commit | durable pending/retrying with one command identity | duplicate Post or optimistic delivered state |
+| duplicate/reordered Federation frame | idempotent replay or ordered wait | second resource or state rollback |
+| invalid remote Station signature/hash/target | terminal rejection and zero projection mutation | best-effort acceptance |
+| Browser Social access | no Social route/runtime/page | private-only warning or public Social fallback |
 | private comment/envelope rate exceeded | preserve comment draft and return typed retry-after | unbounded admission or silent drop |
 
 ## 5. Capability Traceability
@@ -80,8 +100,8 @@ boundary; it does not claim cross-Station private delivery support.
 | `SOC-SEC-C05` | `SOC-SEC-J02`, `SOC-SEC-J03`, `SOC-SEC-J05` | `SOC-SEC-AS03`, `SOC-SEC-AS13`, `SOC-SEC-AS16` |
 | `SOC-SEC-C06` | `SOC-SEC-J07`, `SOC-SEC-J08` | `SOC-SEC-AS08`, `SOC-SEC-AS09` |
 | `SOC-SEC-C07` | `SOC-SEC-J09` | `SOC-SEC-AS10` |
-| `SOC-SEC-C08` | all supported journeys | `SOC-SEC-AS11`, `SOC-SEC-AS14` |
-| `SOC-SEC-C09` | `SOC-SEC-J01` unsupported boundary | `SOC-SEC-AS12` |
+| `SOC-SEC-C08` | all Native journeys | `SOC-SEC-AS01..AS26`; Mobile platform adaptation additionally traces through `MPS-PA01..PA18` |
+| `SOC-SEC-C09` | `SOC-SEC-J10`, `SOC-SEC-J11`, `SOC-SEC-J12` | `SOC-SEC-AS17..AS26`; `SOC-SEC-AS12` retained as historical cutover evidence |
 
 ## 6. Evidence Requirements
 
@@ -93,8 +113,13 @@ Each scenario records:
   digest, and result binding for every remote-identity assertion;
 - product action trace and receiver-visible result;
 - Station authorization/storage and OSS grant/object readback;
-- Key Exchange readback proving unsupported remote and
-  `CUSTOM_DENY(PUBLIC)` attempts consumed no Content PreKey;
+- Key Exchange readback proving `CUSTOM_DENY(PUBLIC)`, cross-Federation and
+  unverifiable-recipient attempts consumed no Content PreKey;
+- per-Station remote Content PreKey claim receipts bound to one source plan;
+- Federation outbox/inbox, source commit, target actor, payload hash, ordering
+  and duplicate-disposition evidence;
+- receiver Home Station projection readback containing only the target actor's
+  encrypted payload, object descriptors and endpoint/recovery envelopes;
 - cleanup result for clients, grants, temporary files and runtime leases;
 - explicit `UNPROVEN` status for unrun Desktop, Mobile, recovery or negative cells.
 
@@ -109,5 +134,10 @@ Security completion additionally requires a negative corpus covering:
 
 Current status: `PRODUCT_READY_FOR_ARCHITECTURE`.
 
-Owner advanced the work to DESIGN on 2026-09-13. Runtime evidence remains
-`UNPROVEN`; product acceptance authorizes architecture work, not readiness claims.
+The v1.1 same-Station Desktop slice is `PROVEN` by
+`SOCIAL-DESKTOP-ACCEPTANCE-20261002`. The Owner advanced Desktop Native
+cross-Station Social to DESIGN on 2026-10-03 and prohibited Browser Social.
+On 2026-10-06 Mobile Native became a required platform through
+`platform/client/mobile/social-parity/`. `SOC-SEC-AS14`, `AS17..AS26` remain
+`UNPROVEN`; this product contract authorizes architecture and future planning,
+not a readiness claim.

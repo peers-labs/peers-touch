@@ -1,7 +1,7 @@
 ---
 kind: playbook
 title: Adding a new federation broadcast topic (relay-mediated pub/sub)
-status: active
+status: superseded-by:docs/architecture/platform/runtime/node-connectivity/design.md
 owns:
   - apps/station/frame/core/plugin/native/subserver/relay/
   - apps/station/frame/touch/federation/

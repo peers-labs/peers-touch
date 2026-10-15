@@ -1,67 +1,78 @@
-# Station 接入生命周期 - 模块目录结构
+# Station 统一接入生命周期 - 模块目录结构
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-09-27 | **Updated**: 2026-10-06
+> **Version**: v2.3
+> **Created**: 2026-09-27 | **Updated**: 2026-10-13
 > **Owner**: Identity and Access
 
 ---
 
-## 1. 目标目录
+## 1. Current Layout
 
 ```text
 model/domain/
-├── access_gate/                 # Access attempt, gate and decision Proto
-└── peer/station_identity.proto  # signed Station identity
+├── access_gate/                    # Access attempt/gate/decision
+└── peer/                           # signed Station identity consumed here
 
 apps/station/
-├── frame/core/facility/session/ # canonical client-class Session slots
-├── frame/touch/accessgate/      # access policy and attempt owner
-├── frame/touch/actor/           # actor and device session owner
-└── app/subserver/federation/    # Federation context and operator API
+├── frame/core/facility/session/    # canonical client-class Session slots
+├── frame/touch/accessgate/         # access policy and attempt owner
+├── frame/touch/actor/              # actor/device Session owner
+└── app/subserver/federation/       # Federation context/operator API
 
 apps/desktop/
-├── src/kernel/                  # identity and startup orchestration
-├── src/runtimes/                # scope-bound runtime lifecycle
-└── src-tauri/src/application/   # typed Host adapters
+├── src-tauri/src/state/mod.rs
+├── src-tauri/src/application/station_binding/
+├── src-tauri/src/application/station_runtime/
+├── src-tauri/src/infrastructure/station_registry.rs
+├── src/components/common/StationPicker.tsx
+└── src/runtimes/
 
 apps/mobile/
-├── src/features/auth/           # Access Gate UI and state
-├── src/runtimes/                # scope-bound runtime lifecycle
-└── src-tauri/src/runtime/       # typed native adapters
-
-docs/architecture/engineering/architecture-governance/
-└── architecture-modules.json    # module governance registry
+├── src/features/station/
+├── src/services/stationTransport.ts
+├── src-tauri/src/runtime/oauth/
+└── src/runtimes/
 ```
+
+Relay route and Circuit transport paths are owned by
+[Node Connectivity](../../runtime/node-connectivity/module-layout.md) and do
+not appear as Station Access implementation owners.
 
 ## 2. Responsibilities
 
-| 路径 | 职责 | 不得承担 |
+| Path | Owns | Must not own |
 |---|---|---|
-| `model/domain/access_gate/` | 跨端 Access Gate wire contract | 平台 UI 或持久化策略 |
-| `frame/core/facility/session/` | Session class slot、撤销与持久化 | 客户端运行时标签或 UI policy |
-| `frame/touch/accessgate/` | gate policy、attempt、decision | 客户端 projection |
-| `frame/touch/actor/` | Actor/Device session truth | Federation topology |
-| `app/subserver/federation/` | Federation context 与 operator 能力 | 普通客户端 UI |
-| `apps/desktop/src/kernel/` | Desktop identity/startup 编排 | Station policy |
-| `apps/mobile/src/features/auth/` | Mobile gate 呈现与输入 | Station policy |
-| 双端 `runtimes/` | scope 生命周期与异步 fence | 共享业务真相 |
+| `model/domain/access_gate/` | cross-end Access Gate contract | UI/persistence |
+| `facility/session/` | class slot, revoke and persistence | client runtime labels |
+| `touch/accessgate/` | gate policy, attempt and decision | client projection |
+| `touch/actor/` | Actor/Device Session truth | route selection |
+| Desktop `station_binding/` | station-keyed binding lifecycle | Station business truth |
+| Desktop `station_registry.rs` | durable Station selection | Relay credential |
+| Desktop `AppState.station` | app-scoped binding/transport composition and lifecycle | binding policy or transport wire |
+| Desktop `station_runtime/resource` | StationResourceRef and scope-checked local projection | route origin as durable resource identity |
+| Mobile `features/station/` | Station selection/presentation | transport protocol |
+| Client runtimes | scope lifecycle and stale-result fencing | shared business truth |
+| Federation app | context and governance projection | client Session |
 
 ## 3. Dependency Direction
 
 ```text
-generated Access Gate / Station Identity contracts
-  <- Station owners
-  <- Desktop and Mobile platform adapters
-  <- client runtime orchestration
-  <- UI projection
+Node Connectivity verified target/route
+  -> AppState-owned Station binding coordinator
+  -> immutable RouteLease
+  -> Access Gate
+  -> Session/Actor/Device scope
+  -> client runtime projections
 
 Station Federation context
-  <- client context consumers
-
-Station / operator Relay state
-  -> read-only client diagnosis
+  -> client context consumers
 ```
 
-客户端不得反向定义 Station identity、Access policy、Federation membership 或
-Relay routing。
+Forbidden:
+
+- UI/business runtime owns Relay admin or mount credentials.
+- URL or Relay PeerID becomes Station identity.
+- client adapter defines an alternative Access Gate route/DTO.
+- route failure mutates ActorRef, Federation context or business storage key.
+- Station Access copies Relay wire, enrollment or resource-limit definitions.

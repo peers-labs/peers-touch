@@ -7,7 +7,10 @@ import (
 	privatecontentpb "github.com/peers-labs/peers-touch/station/frame/touch/model/privatecontent"
 )
 
-const routeSocialRecoverablePrivateContent = "/api/v1/social/moments/recoverable"
+const (
+	routeSocialRecoverablePrivateContent     = "/api/v1/social/moments/recoverable"
+	routeSocialRemotePrivateMomentReferences = "/api/v1/social/moments/remote-private"
+)
 
 func (s *subServer) handleListRecoverablePrivateContent(
 	ctx context.Context,
@@ -34,6 +37,33 @@ func (s *subServer) handleListRecoverablePrivateContent(
 		return nil, privateContentHandlerError(err)
 	}
 
+	return response, nil
+}
+
+func (s *subServer) handleListRemotePrivateMomentReferences(
+	ctx context.Context,
+	request *privatecontentpb.ListRemotePrivateMomentReferencesRequest,
+) (*privatecontentpb.ListRemotePrivateMomentReferencesResponse, error) {
+	actorPTID, ok := getActorPTID(ctx)
+	if !ok {
+		return nil, server.Unauthorized(
+			"authenticated private-content actor required",
+		)
+	}
+	if s.privateContentSvc == nil {
+		return nil, server.InternalError(
+			"Social private-content service is unavailable",
+		)
+	}
+
+	response, err := s.privateContentSvc.ListRemotePrivateMomentReferences(
+		ctx,
+		actorPTID,
+		request,
+	)
+	if err != nil {
+		return nil, privateContentHandlerError(err)
+	}
 	return response, nil
 }
 

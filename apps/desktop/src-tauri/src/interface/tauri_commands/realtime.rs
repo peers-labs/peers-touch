@@ -26,8 +26,6 @@ use tauri::{AppHandle, State, Window};
 use crate::application::session_resolver;
 use crate::contracts::StubPayload;
 use crate::error::{AppResult, ErrorCode};
-use crate::infrastructure::event_stream;
-use crate::infrastructure::station_client;
 use crate::state::AppState;
 
 fn to_stub(command: &str, data: Value) -> AppResult<StubPayload> {
@@ -53,12 +51,25 @@ fn device_id_from(window: &Window) -> String {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RealtimeStreamStartInput {
+    pub session_epoch: u64,
+}
+
 #[tauri::command]
 pub fn realtime_stream_start(
+    input: RealtimeStreamStartInput,
     state: State<'_, Arc<AppState>>,
     window: Window,
     app: AppHandle,
 ) -> AppResult<StubPayload> {
+    if input.session_epoch == 0 {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "session_epoch is required",
+            None,
+        );
+    }
     let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
@@ -67,10 +78,23 @@ pub fn realtime_stream_start(
         return AppResult::fail(ErrorCode::Unauthorized, "no active actor", None);
     };
     let device_id = device_id_from(&window);
-    event_stream::start(app, actor_ptid.clone(), token, device_id.clone());
+    if let Err(error) = state.event_streams.start(
+        state.station.client().clone(),
+        app,
+        actor_ptid.clone(),
+        input.session_epoch,
+        token,
+        device_id.clone(),
+    ) {
+        return AppResult::fail(ErrorCode::InternalError, error, None);
+    }
     to_stub(
         "realtime_stream_start",
-        json!({ "actor_ptid": actor_ptid, "device_id": device_id }),
+        json!({
+            "actor_ptid": actor_ptid,
+            "device_id": device_id,
+            "session_epoch": input.session_epoch,
+        }),
     )
 }
 
@@ -80,7 +104,9 @@ pub fn realtime_stream_stop(
     window: Window,
 ) -> AppResult<StubPayload> {
     if let Some(actor_ptid) = session_resolver::ptid_for_window(state.inner(), &window) {
-        event_stream::stop(&actor_ptid);
+        if let Err(error) = state.event_streams.stop(&actor_ptid) {
+            return AppResult::fail(ErrorCode::InternalError, error, None);
+        }
         return to_stub("realtime_stream_stop", json!({ "actor_ptid": actor_ptid }));
     }
     to_stub("realtime_stream_stop", json!({ "actor_ptid": null }))
@@ -104,7 +130,7 @@ pub fn group_call_join(
     if input.group_ulid.trim().is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "group_ulid is required", None);
     }
-    let response = match station_client::request_json_auth(
+    let response = match state.station.client().request_json_auth(
         Method::POST,
         "/group-call/join",
         &token,
@@ -205,7 +231,7 @@ pub fn realtime_signal_send(
         input.device_id = device_id_from(&window);
     }
     let body = signal_request_body(input);
-    let resp = match station_client::request_json(
+    let resp = match state.station.client().request_json(
         Method::POST,
         "/realtime/signal",
         &token,
@@ -240,7 +266,7 @@ pub fn realtime_call_resolution_get(
             None,
         );
     }
-    match station_client::request_json(
+    match state.station.client().request_json(
         Method::GET,
         "/realtime/call-resolution",
         &token,

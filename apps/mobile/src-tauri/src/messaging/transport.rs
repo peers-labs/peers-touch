@@ -634,7 +634,12 @@ impl DeviceEnrollmentTransport for StationDeviceTransport {
             "/device/enroll",
             request,
         );
-        result.map_err(|error| error.to_string())
+        result.map_err(|error| match error {
+            StationTransportError::HttpStatus { status: 409, .. } => {
+                format!("MOBILE_MESSAGING_IDENTITY_RECOVERY_REQUIRED: {error}")
+            }
+            other => other.to_string(),
+        })
     }
 }
 

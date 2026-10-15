@@ -464,7 +464,7 @@ pub fn applets_store_list_catalog(
             );
         }
     };
-    applet_store::list_catalog(context, input, &data_dir)
+    applet_store::list_catalog(state.station.client(), context, input, &data_dir)
 }
 
 #[tauri::command]
@@ -487,7 +487,7 @@ pub fn applets_store_list_installed(
             );
         }
     };
-    applet_store::list_installed(context, input, &data_dir)
+    applet_store::list_installed(state.station.client(), context, input, &data_dir)
 }
 
 #[tauri::command]
@@ -500,7 +500,7 @@ pub fn applets_store_install(
         Ok(c) => c,
         Err(e) => return e,
     };
-    applet_store::install(context, input)
+    applet_store::install(state.station.client(), context, input)
 }
 
 #[tauri::command]
@@ -513,7 +513,7 @@ pub fn applets_store_uninstall(
         Ok(c) => c,
         Err(e) => return e,
     };
-    applet_store::uninstall(context, input)
+    applet_store::uninstall(state.station.client(), context, input)
 }
 
 #[tauri::command]
@@ -536,7 +536,7 @@ pub fn applets_store_get_version(
             );
         }
     };
-    applet_store::get_version(context, input, &data_dir)
+    applet_store::get_version(state.station.client(), context, input, &data_dir)
 }
 
 #[tauri::command]
@@ -559,7 +559,7 @@ pub fn applets_store_materialize_bundle(
             );
         }
     };
-    applet_store::materialize_bundle(context, input, &data_dir)
+    applet_store::materialize_bundle(state.station.resources(), context, input, &data_dir)
 }
 
 #[tauri::command]
@@ -572,7 +572,7 @@ pub fn applets_store_upload_audit(
         Ok(c) => c,
         Err(e) => return e,
     };
-    applet_store::upload_audit(context, input.device_id)
+    applet_store::upload_audit(state.station.client(), context, input.device_id)
 }
 
 #[tauri::command]
@@ -683,5 +683,5 @@ pub fn applets_invoke(
             );
         }
     };
-    application_applets::applets_invoke(context, input, &data_dir)
+    application_applets::applets_invoke(state.station.client(), context, input, &data_dir)
 }

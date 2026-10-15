@@ -27,6 +27,7 @@ reqwest = { version = "0.12", features = ["blocking", "json", "multipart", "rust
 rusqlite = { version = "0.32", features = ["bundled-sqlcipher-vendored-openssl"] }
 x25519-dalek = { version = "2", features = ["static_secrets"] }
 ed25519-dalek = { version = "2", features = ["pem", "rand_core"] }
+libp2p-identity = { version = "0.3", features = ["ed25519", "peerid", "rand"] }
 data-encoding = "2"
 curve25519-dalek = "4"
 aes-gcm = "0.10"
@@ -47,11 +48,14 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-appender = "0.2"
 rfd = "0.15"
 tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
+tokio-util = "0.7"
 futures-lite = "2"
 ulid = "1.1"
 bip39 = { version = "2", features = ["rand"] }
 messaging-core = { path = "../../../packages/messaging-core" }
 secure-content-core = { path = "../../../packages/secure-content-core" }
+station-trust = { path = "../../../packages/station-trust" }
+station-libp2p-http = { path = "../../../packages/station-libp2p-http" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 dispatch2 = "0.3.1"

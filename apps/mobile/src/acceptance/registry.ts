@@ -44,6 +44,46 @@ export function createMobileAcceptanceHarness(): MobileAcceptanceNamespace {
     registry,
   );
   registerMobileAcceptanceAction(
+    'station.route.select',
+    mobileAcceptanceActions['station.route.select'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'station.route.snapshot',
+    mobileAcceptanceActions['station.route.snapshot'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'entry.fixture',
+    mobileAcceptanceActions['entry.fixture'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'recovery.fixture',
+    mobileAcceptanceActions['recovery.fixture'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'chat.fixture',
+    mobileAcceptanceActions['chat.fixture'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'contacts.fixture',
+    mobileAcceptanceActions['contacts.fixture'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'moments.fixture',
+    mobileAcceptanceActions['moments.fixture'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'settings.fixture',
+    mobileAcceptanceActions['settings.fixture'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
     'access.submit',
     mobileAcceptanceActions['access.submit'],
     registry,
@@ -364,18 +404,8 @@ export function createMobileAcceptanceHarness(): MobileAcceptanceNamespace {
     registry,
   );
   registerMobileAcceptanceAction(
-    'moments.private.storeRecoveryPhrase',
-    mobileAcceptanceActions['moments.private.storeRecoveryPhrase'],
-    registry,
-  );
-  registerMobileAcceptanceAction(
     'moments.private.recover',
     mobileAcceptanceActions['moments.private.recover'],
-    registry,
-  );
-  registerMobileAcceptanceAction(
-    'moments.private.recoverText',
-    mobileAcceptanceActions['moments.private.recoverText'],
     registry,
   );
   registerMobileAcceptanceAction(

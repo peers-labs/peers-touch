@@ -110,7 +110,10 @@ export function MessageActionSheet({
   const unavailable = recalled || metadata.moderated;
 
   return (
-    <div className="chat-action-sheet-shell message-action-sheet-shell">
+    <div
+      className="chat-action-sheet-shell message-action-sheet-shell"
+      data-product-surface="chat.message-actions"
+    >
       <button className="chat-action-sheet-backdrop" type="button" aria-label={t('common.action.close')} onClick={onClose} />
       <aside className="chat-action-sheet message-action-sheet" role="dialog" aria-modal="true" aria-labelledby="message-action-sheet-title">
         <div className="chat-action-sheet-handle" aria-hidden="true" />
@@ -195,19 +198,29 @@ export function ForwardMessageSheet({
   open,
   destinations,
   pendingDestinationId,
+  error = '',
   onClose,
   onSelect,
 }: {
   readonly open: boolean;
   readonly destinations: readonly MessageForwardDestination[];
   readonly pendingDestinationId: string;
+  readonly error?: string;
   readonly onClose: () => void;
   readonly onSelect: (destination: MessageForwardDestination) => void;
 }) {
   const { t } = useMobileI18n();
   if (!open) return null;
+  const productSurface = pendingDestinationId
+    ? 'chat.forward-pending'
+    : error
+      ? 'chat.forward-failed'
+      : 'chat.forward-picker';
   return (
-    <div className="chat-action-sheet-shell">
+    <div
+      className="chat-action-sheet-shell"
+      data-product-surface={productSurface}
+    >
       <button className="chat-action-sheet-backdrop" type="button" aria-label={t('common.action.close')} onClick={onClose} />
       <aside className="chat-action-sheet" role="dialog" aria-modal="true" aria-labelledby="message-forward-sheet-title">
         <div className="chat-action-sheet-handle" aria-hidden="true" />
@@ -216,6 +229,7 @@ export function ForwardMessageSheet({
           <button className="header-action" type="button" aria-label={t('common.action.close')} onClick={onClose}><X size={18} /></button>
         </div>
         <div className="chat-action-list">
+          {error ? <Alert type="error" showIcon title={error} /> : null}
           {destinations.length === 0 ? (
             <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('mobile.chat.forwardEmpty')} />
           ) : (
@@ -303,9 +317,20 @@ export function ChatActionSheet({
   if (!open) return null;
   const settingsBusy = settingsFeedback.phase === 'pending'
     || settingsFeedback.phase === 'retrying';
+  const productSurface = settingsFeedback.phase === 'pending'
+    || settingsFeedback.phase === 'retrying'
+    ? 'chat.conversation-settings-pending'
+    : settingsFeedback.phase === 'committed'
+      ? 'chat.conversation-settings-saved'
+      : settingsFeedback.phase === 'failed'
+        ? 'chat.conversation-settings-failed'
+        : 'chat.conversation-actions';
 
   return (
-    <div className="chat-action-sheet-shell">
+    <div
+      className="chat-action-sheet-shell"
+      data-product-surface={productSurface}
+    >
       <button className="chat-action-sheet-backdrop" type="button" aria-label={t('common.action.close')} onClick={onClose} />
       <aside className="chat-action-sheet" role="dialog" aria-modal="true" aria-labelledby="chat-action-sheet-title">
         <div className="chat-action-sheet-handle" aria-hidden="true" />
@@ -352,6 +377,60 @@ export function ChatActionSheet({
                 : <ChatActionButton icon={<Ban size={18} />} title={t('mobile.contacts.block')} danger onClick={onBlockPeer} />
             ) : null}
           </div>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+export function ChatDestructiveConfirmSheet({
+  open,
+  busy = false,
+  onCancel,
+  onConfirm,
+}: {
+  readonly open: boolean;
+  readonly busy?: boolean;
+  readonly onCancel: () => void;
+  readonly onConfirm: () => void;
+}) {
+  const { t } = useMobileI18n();
+  if (!open) return null;
+
+  return (
+    <div
+      className="chat-action-sheet-shell"
+      data-product-surface="chat.destructive-confirm"
+    >
+      <button
+        className="chat-action-sheet-backdrop"
+        type="button"
+        aria-label={t('common.action.close')}
+        onClick={onCancel}
+      />
+      <aside
+        className="chat-action-sheet chat-confirm-sheet"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="chat-clear-confirm-title"
+        aria-describedby="chat-clear-confirm-description"
+      >
+        <div className="chat-action-sheet-handle" aria-hidden="true" />
+        <div className="chat-confirm-copy">
+          <Text strong id="chat-clear-confirm-title">
+            {t('mobile.chat.clearHistoryConfirmTitle')}
+          </Text>
+          <Text type="secondary" id="chat-clear-confirm-description">
+            {t('mobile.chat.clearHistoryConfirmBody')}
+          </Text>
+        </div>
+        <div className="chat-confirm-actions">
+          <Button block disabled={busy} onClick={onCancel}>
+            {t('common.action.cancel')}
+          </Button>
+          <Button block danger type="primary" loading={busy} onClick={onConfirm}>
+            {t('mobile.chat.quickClearHistory')}
+          </Button>
         </div>
       </aside>
     </div>
@@ -451,7 +530,10 @@ export function GroupManagementModal({
   };
 
   return (
-    <div className="chat-action-sheet-shell">
+    <div
+      className="chat-action-sheet-shell"
+      data-product-surface={!canManage ? 'chat.group-role-denied' : undefined}
+    >
       <button
         className="chat-action-sheet-backdrop"
         type="button"
@@ -478,6 +560,13 @@ export function GroupManagementModal({
           </button>
         </div>
         <div className="chat-action-list group-management-panel">
+          {!canManage ? (
+            <Alert
+              type="info"
+              showIcon
+              title={t('mobile.group.roleDenied')}
+            />
+          ) : null}
           {operationError ? <Alert type="error" showIcon title={operationError} /> : null}
           {visibleGroupOutcome ? (
             <GroupCommandNotice outcome={visibleGroupOutcome} />
@@ -525,6 +614,7 @@ export function GroupManagementModal({
           <div className="group-setting-row">
             <Text>{t('mobile.group.myMuted')}</Text>
             <Switch
+              aria-label={t('mobile.group.myMuted')}
               checked={Boolean(conversationSettings?.isMuted)}
               disabled={Boolean(pendingOperation) || groupCommandBusy}
               onChange={(value) => void runOperation(
@@ -537,6 +627,7 @@ export function GroupManagementModal({
           <div className="group-setting-row">
             <Text>{t('mobile.group.pinned')}</Text>
             <Switch
+              aria-label={t('mobile.group.pinned')}
               checked={Boolean(conversationSettings?.isPinned)}
               disabled={Boolean(pendingOperation) || groupCommandBusy}
               onChange={(value) => void runOperation(
@@ -560,9 +651,10 @@ export function GroupManagementModal({
                   rowKey="ptid"
                   renderItem={(member) => {
                     const profile = peerProfiles[member.ptid];
-                    const memberName = profile?.displayName
-                      || profile?.username
-                      || member.ptid;
+                    const memberName = groupMemberDisplayName(profile, t);
+                    const memberSubtitle = profile?.federatedHandle
+                      || profile?.acct
+                      || groupRoleLabel(member.role, t);
                     const isSelf = member.ptid === currentUserPtid;
                     const canManageTarget = canManage
                       && !isSelf
@@ -677,7 +769,7 @@ export function GroupManagementModal({
                             </MobileAvatar>
                           )}
                           title={<Text strong>{memberName}</Text>}
-                          description={<Text type="secondary" copyable>{member.ptid}</Text>}
+                          description={<Text type="secondary">{memberSubtitle}</Text>}
                         />
                         <Tag>{groupRoleLabel(member.role, t)}</Tag>
                         {member.muted ? <Tag color="warning">{t('mobile.group.memberMuted')}</Tag> : null}
@@ -750,7 +842,11 @@ export function GroupManagementModal({
                             </MobileAvatar>
                           )}
                           title={<Text strong>{candidate.peerName}</Text>}
-                          description={<Text type="secondary" copyable>{candidate.peerPtid}</Text>}
+                          description={(
+                            <Text type="secondary">
+                              {t('mobile.chat.forwardDestinationDirect')}
+                            </Text>
+                          )}
                         />
                         {membershipOutcome ? (
                           <GroupCommandTag outcome={membershipOutcome} />
@@ -807,6 +903,17 @@ export function GroupManagementModal({
       </aside>
     </div>
   );
+}
+
+function groupMemberDisplayName(
+  profile: PeerProfile | null | undefined,
+  t: (key: string) => string,
+): string {
+  return profile?.displayName
+    || profile?.username
+    || profile?.acct
+    || profile?.federatedHandle
+    || t('mobile.group.memberUnavailable');
 }
 
 function GroupCommandNotice({

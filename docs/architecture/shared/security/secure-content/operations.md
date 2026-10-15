@@ -365,8 +365,12 @@ The database mutation is one transaction:
 2. delete only `social_comments` and `social_reactions` rows whose
    `post_class = 'private'`;
 3. clear `social_moment_deliveries`;
-4. drop only `social_private_audience_grants`;
-5. rebuild the emptied `social_private_posts` table to the canonical encrypted
+4. clear `social_remote_private_commands`,
+   `social_remote_private_envelopes`, `social_remote_private_resources`,
+   `social_remote_private_tombstones`, and
+   `social_private_resource_invalidations`;
+5. drop only `social_private_audience_grants`;
+6. rebuild the emptied `social_private_posts` table to the canonical encrypted
    model, removing only the retired columns listed by `SC-D23`.
 
 Before the first activation, the reset owner also admits the exact known hybrid

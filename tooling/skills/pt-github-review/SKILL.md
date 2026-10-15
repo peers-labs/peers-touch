@@ -61,6 +61,55 @@ git diff <base>...<head>
 
 Verify range endpoints before trusting any report derived from them.
 
+### 1.1 Cross-Branch Preservation Review
+
+When the target branch has advanced since the reviewed branch diverged, or when
+the PR overlaps behavior already present on the target, review the prospective merge tree
+rather than treating the PR's three-dot diff as the final product:
+
+```bash
+base_sha="$(gh pr view <pr-number> --json baseRefOid --jq .baseRefOid)"
+head_sha="$(gh pr view <pr-number> --json headRefOid --jq .headRefOid)"
+merge_base="$(git merge-base "$base_sha" "$head_sha")"
+git merge-tree "$merge_base" "$base_sha" "$head_sha"
+git diff --name-status "$merge_base..$base_sha"
+git diff --name-status "$merge_base..$head_sha"
+```
+
+For every overlapping behavior, owner, contract, test, Gate, registry entry, or
+generated source, classify the prospective result as exactly one of:
+
+- `PRESERVED`: the target behavior and its proof remain intact;
+- `INTENTIONALLY_SUPERSEDED`: an accepted higher-level source explicitly
+  replaces it, with complete consumer migration, deletion and regression proof;
+- `UNPROVEN`: preservation or supersession cannot be established from current
+  source and evidence.
+
+The review must detect both directions of integration damage:
+
+- **coverage loss**: a previously landed owner, consumer, failure path, test,
+  Gate, documentation contract, or generated projection is missing from the
+  merged result;
+- **false kill**: code, tests, Gates, registrations, or evidence are deleted,
+  weakened, bypassed, or reverted without an accepted supersession contract.
+
+A clean textual merge is not preservation evidence. Passing checks obtained by
+deleting or weakening the check are blocking findings. Generated artifacts are
+judged from their authoritative source and regenerated result, never by keeping
+both generated variants.
+
+After an actual rebase or cherry-pick, compare the old and rewritten series:
+
+```bash
+git range-diff <old-base>..<old-head> <new-base>..<new-head>
+```
+
+Invoke `pt-branch-conflict-guardian` when the merge map contains semantic
+conflicts or the rewritten series cannot be explained mechanically. Any
+`UNPROVEN` overlap prevents approval. This review applies to tracked and
+standalone PRs; it is review judgment over the final merged source and does not
+create a Plan, infer a global worktree order, or become a scheduler.
+
 ### 2. Collect Quality Evidence
 
 Run the review route first. When it includes `code-structure`, invoke
@@ -367,6 +416,27 @@ Check:
 - handlers do not own domain decisions;
 - errors use typed codes and include context;
 - persistence changes include migration or compatibility reasoning.
+
+### Node Connectivity And Relay Review
+
+Check:
+
+- `station_peer_id` remains logical Station identity; Node PeerID, URL, Direct,
+  and Circuit endpoints remain transport routes;
+- one process owns one libp2p Host and Frame adapts standard Direct/Circuit v2
+  streams into the canonical HTTP/protobuf/SSE router;
+- Relay owns bounded admission and control only, never Station credentials,
+  Session, Federation membership, business APIs, or a custom payload data plane;
+- Desktop `AppState` owns one `StationRuntime`; Station Access alone selects
+  routes and publishes immutable `RouteLease` values to transport;
+- same-Station route changes preserve Session scope, advance route revision,
+  cancel the old lease, and never blindly replay an ambiguous mutation;
+- private Relay TLS health uses the reviewed trust anchor and rejects insecure
+  verification bypass, endpoint drift, and substituted Relay identity;
+- cutovers delete old WSS/mount framing, duplicate route owners, stale runtime
+  docs, registrations, and compatibility fallbacks in the same change;
+- runtime claims use exact-source NCP Gates and preserve explicit unproven
+  cluster or Mobile cells instead of generalizing from source checks.
 
 ### Desktop Review
 

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const gatewayMocks = vi.hoisted(() => ({
   fetchFeed: vi.fn(),
+  fetchPublicFeed: vi.fn(),
   getPost: vi.fn(),
   fetchComments: vi.fn(),
   getCurrentProfile: vi.fn(),
@@ -11,9 +12,14 @@ const gatewayMocks = vi.hoisted(() => ({
   updateNotificationPreferences: vi.fn(),
 }));
 
+const privateRuntimeMocks = vi.hoisted(() => ({
+  invalidate: vi.fn(async () => []),
+}));
+
 vi.mock('../services/gateways/momentsGateway', () => ({
   createMomentsGateway: () => ({
     fetchFeed: gatewayMocks.fetchFeed,
+    fetchPublicFeed: gatewayMocks.fetchPublicFeed,
     getPost: gatewayMocks.getPost,
     fetchComments: gatewayMocks.fetchComments,
   }),
@@ -28,6 +34,14 @@ vi.mock('../services/gateways/profileGateway', () => ({
     updateNotificationPreferences: gatewayMocks.updateNotificationPreferences,
   }),
 }));
+
+vi.mock('./privateMomentsRuntime', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./privateMomentsRuntime')>();
+  return {
+    ...actual,
+    invalidatePrivateMoments: privateRuntimeMocks.invalidate,
+  };
+});
 
 import {
   createSocialProjectionRuntime,
@@ -55,6 +69,7 @@ let releaseSessionAdmission: (() => void) | null = null;
 
 describe('social projection runtime', () => {
   beforeEach(() => {
+    privateRuntimeMocks.invalidate.mockClear();
     releaseSessionAdmission?.();
     releaseSessionAdmission = bindMobileSessionMutationAdmission(() => ({
       scopeKey: mobileAuthScopeKey(session),
@@ -62,6 +77,14 @@ describe('social projection runtime', () => {
       reason: 'session_active',
     }));
     gatewayMocks.fetchFeed.mockReset().mockResolvedValue({
+      ok: true,
+      data: {
+        posts: [],
+        nextCursor: '',
+        hasMore: false,
+      },
+    });
+    gatewayMocks.fetchPublicFeed.mockReset().mockResolvedValue({
       ok: true,
       data: {
         posts: [],
@@ -132,6 +155,7 @@ describe('social projection runtime', () => {
       loadCurrentUserProfile: vi.fn(async () => undefined),
       loadPeerProfile: vi.fn(async () => undefined),
       loadFriendshipStatus: vi.fn(async () => undefined),
+      loadAuthoredPosts: vi.fn(async () => undefined),
       applyTypingState: vi.fn(),
       setPeerOnline: vi.fn(),
     };
@@ -272,10 +296,30 @@ describe('social projection runtime', () => {
       cursor: 'cursor-3',
       timestampMs: 13,
     });
+    runtime.ingestRealtimeEvent({
+      kind: 'social-graph',
+      graphKind: 'unfriended',
+      actorPtid: 'ptid:bob',
+      targetPtid: 'ptid:alice',
+      requestId: '',
+      conversationId: '',
+      cursor: 'cursor-4',
+      timestampMs: 14,
+    });
+    runtime.ingestRealtimeEvent({
+      kind: 'social-graph',
+      graphKind: 'relationship-unblocked',
+      actorPtid: 'ptid:bob',
+      targetPtid: 'ptid:alice',
+      requestId: '',
+      conversationId: '',
+      cursor: 'cursor-5',
+      timestampMs: 15,
+    });
     await runtime.drain();
 
-    expect(gatewayMocks.fetchFeed).toHaveBeenCalledTimes(3);
-    expect(gatewayMocks.getPost).toHaveBeenCalledTimes(3);
+    expect(gatewayMocks.fetchFeed).toHaveBeenCalledTimes(6);
+    expect(gatewayMocks.getPost).toHaveBeenCalledTimes(2);
     expect(gatewayMocks.fetchComments).toHaveBeenCalledTimes(2);
     expect(runtime.moments.feed.state().selectedDetail).toMatchObject({
       postId: 'post-1',
@@ -286,16 +330,35 @@ describe('social projection runtime', () => {
     expect(socialStore.refreshFriendRequests).toHaveBeenCalled();
     expect(socialStore.refreshBlockedUsers).toHaveBeenCalled();
     expect(socialStore.loadFriendshipStatus).toHaveBeenCalledWith('ptid:bob');
+    expect(socialStore.loadAuthoredPosts).toHaveBeenCalledTimes(3);
+    expect(socialStore.loadAuthoredPosts).toHaveBeenCalledWith('ptid:bob');
+    expect(privateRuntimeMocks.invalidate.mock.calls).toEqual([
+      [[{
+        reason: 'RESOURCE_DELETED',
+        sourceCursor: 'cursor-1-delete',
+        postId: 'post-1',
+      }]],
+      [[{
+        reason: 'RECIPIENT_BLOCKED',
+        sourceCursor: 'cursor-3',
+        authorPtid: 'ptid:bob',
+      }]],
+      [[{
+        reason: 'RELATIONSHIP_REVOKED',
+        sourceCursor: 'cursor-4',
+        authorPtid: 'ptid:bob',
+      }]],
+    ]);
     expect(socialStore.refreshNotifications).toHaveBeenCalled();
     expect(socialStore.loadPeerProfile).toHaveBeenCalledWith('ptid:bob', true);
     expect(socialStore.refreshSessions).not.toHaveBeenCalled();
     expect(socialStore.loadConversationSettings).not.toHaveBeenCalled();
-    expect(wakeMessaging).toHaveBeenCalledTimes(3);
+    expect(wakeMessaging).toHaveBeenCalledTimes(5);
     expect(ingestCallSignal).toHaveBeenCalledWith(expect.objectContaining({
       kind: 'call-signal',
       callId: '01K5TCALL00000000000000000',
     }));
-    expect(readActiveSocialIngressState()?.streamCursor).toBe('cursor-3');
+    expect(readActiveSocialIngressState()?.streamCursor).toBe('cursor-5');
 
     await runtime.suspend();
     expect(readActiveSocialIngressState()).toMatchObject({
@@ -311,7 +374,7 @@ describe('social projection runtime', () => {
     )).toThrowError(expect.objectContaining({ reason: 'runtime_suspended' }));
 
     await runtime.resume();
-    expect(wakeMessaging).toHaveBeenCalledTimes(4);
+    expect(wakeMessaging).toHaveBeenCalledTimes(6);
     expect(readActiveSocialIngressState()).toMatchObject({
       lifecycle: 'active',
       writeAdmission: { open: true },
@@ -396,6 +459,7 @@ describe('social projection runtime', () => {
       loadCurrentUserProfile: vi.fn(async () => undefined),
       loadPeerProfile: vi.fn(async () => undefined),
       loadFriendshipStatus: vi.fn(async () => undefined),
+      loadAuthoredPosts: vi.fn(async () => undefined),
       applyTypingState: vi.fn(),
       setPeerOnline: vi.fn(),
     };
@@ -444,6 +508,7 @@ describe('social projection runtime', () => {
       loadCurrentUserProfile: vi.fn(async () => undefined),
       loadPeerProfile: vi.fn(async () => undefined),
       loadFriendshipStatus: vi.fn(async () => undefined),
+      loadAuthoredPosts: vi.fn(async () => undefined),
       applyTypingState: vi.fn(),
       setPeerOnline: vi.fn(),
     };
@@ -464,8 +529,8 @@ describe('social projection runtime', () => {
       ok: false,
       error: { message: 'detail offline' },
     });
-    await expect(runtime.moments.retry()).resolves.toBe(false);
-    expect(runtime.moments.projection.state().availability).toEqual({
+    await expect(runtime.moments.intents.retry()).resolves.toBe(false);
+    expect(runtime.moments.owner.momentsProjection.state().availability).toEqual({
       available: false,
       reason: 'mobile.moments.unavailable',
     });
@@ -478,8 +543,8 @@ describe('social projection runtime', () => {
         explanation: { objectId: 'post-1' },
       },
     });
-    await expect(runtime.moments.retry()).resolves.toBe(true);
-    expect(runtime.moments.projection.state().availability).toEqual({
+    await expect(runtime.moments.intents.retry()).resolves.toBe(true);
+    expect(runtime.moments.owner.momentsProjection.state().availability).toEqual({
       available: true,
     });
 
@@ -510,16 +575,16 @@ describe('social projection runtime', () => {
       vi.spyOn(runtime.moments.feed, 'reconcile').mockResolvedValue(null);
 
       await runtime.reconcile('navigation', ['moments']);
-      expect(runtime.moments.projection.state().availability).toEqual({ available: true });
+      expect(runtime.moments.owner.momentsProjection.state().availability).toEqual({ available: true });
       expect(repairCursor).not.toHaveBeenCalled();
       expect(reopenAdmission).not.toHaveBeenCalled();
       expect(() => requireMobileMutationAdmission(mobileAuthScopeKey(session), 'moments'))
         .not.toThrow();
 
       runtime.ingress.markStale('moments', 'lost-event', 'cursor-1', false);
-      runtime.moments.projection.markUnavailable('offline');
-      await expect(runtime.moments.retry()).resolves.toBe(false);
-      expect(runtime.moments.projection.state().availability).toEqual({
+      runtime.moments.owner.momentsProjection.markUnavailable('offline');
+      await expect(runtime.moments.intents.retry()).resolves.toBe(false);
+      expect(runtime.moments.owner.momentsProjection.state().availability).toEqual({
         available: false, reason: 'offline',
       });
       expect(runtime.ingress.state().staleness.moments.stale).toBe(true);

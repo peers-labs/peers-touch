@@ -1,9 +1,9 @@
+use crate::application::station_runtime::client::{self as station_client, StationClient};
 use crate::contracts::{
     BuiltinSkillIdInput, SkillCreateInput, SkillIdInput, SkillRollbackInput, SkillToggleInput,
     SkillUpdateInput, SkillVersionsInput, SkillsListInput, SkillsSearchInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
-use crate::infrastructure::station_client;
 use crate::model;
 use reqwest::Method;
 use serde_json::{json, Value};
@@ -293,6 +293,7 @@ fn builtin_json() -> Vec<Value> {
 }
 
 fn list_station_skills(
+    station_client: &StationClient,
     agent_id: String,
     token: &str,
 ) -> Result<Vec<model::agent::SkillManifest>, station_client::StationClientError> {
@@ -300,22 +301,27 @@ fn list_station_skills(
         agent_id,
         category: String::new(),
     };
-    station_client::request_proto::<model::agent::ListSkillsRequest, model::agent::ListSkillsResponse>(
-        Method::POST,
-        SKILL_LIST_PATH,
-        token,
-        None,
-        Some(&req),
-    )
-    .map(|resp| resp.skills)
+    station_client
+        .request_proto::<model::agent::ListSkillsRequest, model::agent::ListSkillsResponse>(
+            Method::POST,
+            SKILL_LIST_PATH,
+            token,
+            None,
+            Some(&req),
+        )
+        .map(|resp| resp.skills)
 }
 
-pub fn skills_list(input: SkillsListInput, token: &str) -> AppResult<StubPayload> {
+pub fn skills_list(
+    station_client: &StationClient,
+    input: SkillsListInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
     let source = input.source.unwrap_or_else(|| "all".to_string());
-    let skills = match list_station_skills(agent_id(input.agent_id), token) {
+    let skills = match list_station_skills(station_client, agent_id(input.agent_id), token) {
         Ok(items) => items
             .iter()
             .filter(|_| source == "all" || source == "user" || source == "station")
@@ -329,7 +335,11 @@ pub fn skills_list(input: SkillsListInput, token: &str) -> AppResult<StubPayload
     )
 }
 
-pub fn skills_search(input: SkillsSearchInput, token: &str) -> AppResult<StubPayload> {
+pub fn skills_search(
+    station_client: &StationClient,
+    input: SkillsSearchInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
@@ -338,7 +348,7 @@ pub fn skills_search(input: SkillsSearchInput, token: &str) -> AppResult<StubPay
         return invalid_argument("q is required");
     }
     let limit = input.limit.unwrap_or(20) as usize;
-    let skills = match list_station_skills(agent_id(input.agent_id), token) {
+    let skills = match list_station_skills(station_client, agent_id(input.agent_id), token) {
         Ok(items) => items
             .iter()
             .filter(|item| {
@@ -354,7 +364,11 @@ pub fn skills_search(input: SkillsSearchInput, token: &str) -> AppResult<StubPay
     success_payload("skills_search", json!({ "skills": skills }))
 }
 
-pub fn skills_get(input: SkillIdInput, token: &str) -> AppResult<StubPayload> {
+pub fn skills_get(
+    station_client: &StationClient,
+    input: SkillIdInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
@@ -367,19 +381,17 @@ pub fn skills_get(input: SkillIdInput, token: &str) -> AppResult<StubPayload> {
         file_path: String::new(),
         agent_id: agent_id(input.agent_id),
     };
-    match station_client::request_proto::<
-        model::agent::GetSkillRequest,
-        model::agent::GetSkillResponse,
-    >(
-        Method::GET,
-        SKILL_GET_PATH,
-        token,
-        Some(&[
-            ("skill_id", req.skill_id.clone()),
-            ("agent_id", req.agent_id.clone()),
-        ]),
-        None,
-    ) {
+    match station_client
+        .request_proto::<model::agent::GetSkillRequest, model::agent::GetSkillResponse>(
+            Method::GET,
+            SKILL_GET_PATH,
+            token,
+            Some(&[
+                ("skill_id", req.skill_id.clone()),
+                ("agent_id", req.agent_id.clone()),
+            ]),
+            None,
+        ) {
         Ok(resp) => {
             let Some(skill) = resp.skill else {
                 return AppResult::fail(ErrorCode::NotFound, "Skill not found", None);
@@ -412,7 +424,11 @@ pub fn skills_get_builtin(input: BuiltinSkillIdInput) -> AppResult<StubPayload> 
     )
 }
 
-pub fn skills_create(input: SkillCreateInput, token: &str) -> AppResult<StubPayload> {
+pub fn skills_create(
+    station_client: &StationClient,
+    input: SkillCreateInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
@@ -427,11 +443,14 @@ pub fn skills_create(input: SkillCreateInput, token: &str) -> AppResult<StubPayl
         content: input.content,
         trust_level: "community".to_string(),
     };
-    match station_client::request_proto::<
-        model::agent::InstallSkillRequest,
-        model::agent::InstallSkillResponse,
-    >(Method::POST, SKILL_INSTALL_PATH, token, None, Some(&req))
-    {
+    match station_client
+        .request_proto::<model::agent::InstallSkillRequest, model::agent::InstallSkillResponse>(
+            Method::POST,
+            SKILL_INSTALL_PATH,
+            token,
+            None,
+            Some(&req),
+        ) {
         Ok(resp) => success_payload(
             "skills_create",
             json!({
@@ -446,7 +465,11 @@ pub fn skills_create(input: SkillCreateInput, token: &str) -> AppResult<StubPayl
     }
 }
 
-pub fn skills_update(input: SkillUpdateInput, token: &str) -> AppResult<StubPayload> {
+pub fn skills_update(
+    station_client: &StationClient,
+    input: SkillUpdateInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
@@ -462,11 +485,14 @@ pub fn skills_update(input: SkillUpdateInput, token: &str) -> AppResult<StubPayl
         content: input.content,
         enabled: input.enabled,
     };
-    match station_client::request_proto::<
-        model::agent::UpdateSkillRequest,
-        model::agent::UpdateSkillResponse,
-    >(Method::POST, SKILL_UPDATE_PATH, token, None, Some(&req))
-    {
+    match station_client
+        .request_proto::<model::agent::UpdateSkillRequest, model::agent::UpdateSkillResponse>(
+            Method::POST,
+            SKILL_UPDATE_PATH,
+            token,
+            None,
+            Some(&req),
+        ) {
         Ok(resp) => {
             let skill = resp.skill.map(|item| manifest_list_json(&item));
             success_payload(
@@ -478,7 +504,11 @@ pub fn skills_update(input: SkillUpdateInput, token: &str) -> AppResult<StubPayl
     }
 }
 
-pub fn skills_delete(input: SkillIdInput, token: &str) -> AppResult<StubPayload> {
+pub fn skills_delete(
+    station_client: &StationClient,
+    input: SkillIdInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
@@ -490,18 +520,26 @@ pub fn skills_delete(input: SkillIdInput, token: &str) -> AppResult<StubPayload>
         agent_id: agent_id(input.agent_id),
         skill_id: id.to_string(),
     };
-    match station_client::request_proto::<
-        model::agent::DeleteSkillRequest,
-        model::agent::DeleteSkillResponse,
-    >(Method::POST, SKILL_DELETE_PATH, token, None, Some(&req))
-    {
+    match station_client
+        .request_proto::<model::agent::DeleteSkillRequest, model::agent::DeleteSkillResponse>(
+            Method::POST,
+            SKILL_DELETE_PATH,
+            token,
+            None,
+            Some(&req),
+        ) {
         Ok(resp) => success_payload("skills_delete", json!({ "ok": resp.success })),
         Err(err) => station_error("skills_delete", err),
     }
 }
 
-pub fn skills_toggle(input: SkillToggleInput, token: &str) -> AppResult<StubPayload> {
+pub fn skills_toggle(
+    station_client: &StationClient,
+    input: SkillToggleInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     skills_update(
+        station_client,
         SkillUpdateInput {
             agent_id: input.agent_id,
             id: input.id,
@@ -654,7 +692,11 @@ mod tests {
     }
 }
 
-pub fn skills_versions(input: SkillVersionsInput, token: &str) -> AppResult<StubPayload> {
+pub fn skills_versions(
+    station_client: &StationClient,
+    input: SkillVersionsInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     if input.id.trim().is_empty() {
         return invalid_argument("id is required");
     }
@@ -667,14 +709,17 @@ pub fn skills_versions(input: SkillVersionsInput, token: &str) -> AppResult<Stub
         ("limit", limit),
         ("offset", offset),
     ];
-    match station_client::request_json(Method::GET, SKILL_VERSIONS_PATH, token, Some(&query), None)
-    {
+    match station_client.request_json(Method::GET, SKILL_VERSIONS_PATH, token, Some(&query), None) {
         Ok(resp) => success_payload("skills_versions", normalize_versions_response(resp)),
         Err(err) => station_error("skills_versions", err),
     }
 }
 
-pub fn skills_rollback(input: SkillRollbackInput, token: &str) -> AppResult<StubPayload> {
+pub fn skills_rollback(
+    station_client: &StationClient,
+    input: SkillRollbackInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     if input.id.trim().is_empty() {
         return invalid_argument("id is required");
     }
@@ -686,7 +731,7 @@ pub fn skills_rollback(input: SkillRollbackInput, token: &str) -> AppResult<Stub
         "skill_id": input.id,
         "target_version": input.target_version,
     });
-    match station_client::request_json(Method::POST, SKILL_ROLLBACK_PATH, token, None, Some(body)) {
+    match station_client.request_json(Method::POST, SKILL_ROLLBACK_PATH, token, None, Some(body)) {
         Ok(resp) => success_payload("skills_rollback", normalize_rollback_response(resp)),
         Err(err) => station_error("skills_rollback", err),
     }

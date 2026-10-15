@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from tooling.acceptance.provisioners.windows_desktop_broker import (
     BrokerError,
@@ -259,6 +259,144 @@ class WindowsDesktopBrokerLeaseTest(unittest.TestCase):
                     {"runId": "run-1", "expiresAtEpoch": 1_000}
                 )
 
+    def test_prepare_display_freezes_auto_resize_and_persists_restore_state(
+        self,
+    ) -> None:
+        scheduler = _RecordingScheduler()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "runtime"
+            broker = WindowsDesktopBroker(
+                root,
+                desktop_user="administrator",
+                scheduler=scheduler,  # type: ignore[arg-type]
+                now=lambda: 1_000.0,
+            )
+            broker.acquire({"runId": "run-1", "expiresAtEpoch": 2_000})
+            adapter = Mock(
+                side_effect=(
+                    {"width": 1919, "height": 952},
+                    {
+                        "previous": {"width": 1919, "height": 952},
+                        "current": {"width": 1920, "height": 1080},
+                    },
+                )
+            )
+
+            with (
+                patch.object(broker, "execute_adapter", adapter),
+                patch.object(
+                    broker,
+                    "_service_running",
+                    return_value=True,
+                ),
+                patch.object(broker, "_set_service_running") as service,
+            ):
+                result = broker.prepare_display(
+                    {
+                        "runId": "run-1",
+                        "sourceRoot": r"C:\runtime\source",
+                        "width": 1920,
+                        "height": 1080,
+                    }
+                )
+
+            lease = json.loads(
+                broker.lease_path.read_text(encoding="utf-8")
+            )
+            self.assertTrue(result["prepared"])
+            self.assertEqual(
+                lease["displayLease"]["restoreGeometry"],
+                {"width": 1919, "height": 952},
+            )
+            self.assertEqual(
+                lease["displayLease"]["targetGeometry"],
+                {"width": 1920, "height": 1080},
+            )
+            self.assertTrue(lease["displayLease"]["prepared"])
+            self.assertFalse(lease["displayLease"]["restored"])
+            service.assert_called_once_with("vdservice", False)
+
+    def test_cleanup_restores_display_and_service_before_release(self) -> None:
+        scheduler = _RecordingScheduler()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "runtime"
+            broker = WindowsDesktopBroker(
+                root,
+                desktop_user="administrator",
+                scheduler=scheduler,  # type: ignore[arg-type]
+                now=lambda: 1_000.0,
+            )
+            broker.acquire({"runId": "run-1", "expiresAtEpoch": 2_000})
+            lease = json.loads(
+                broker.lease_path.read_text(encoding="utf-8")
+            )
+            lease["displayLease"] = {
+                "autoResizeService": "vdservice",
+                "serviceWasRunning": True,
+                "sourceRoot": r"C:\runtime\source",
+                "restoreGeometry": {"width": 1919, "height": 952},
+                "targetGeometry": {"width": 1920, "height": 1080},
+                "prepared": True,
+                "restored": False,
+            }
+            broker._write_json(broker.lease_path, lease)
+            adapter = Mock(
+                return_value={
+                    "previous": {"width": 1920, "height": 1080},
+                    "current": {"width": 1919, "height": 952},
+                }
+            )
+
+            with (
+                patch.object(broker, "execute_adapter", adapter),
+                patch.object(
+                    broker,
+                    "_service_running",
+                    side_effect=(False, True),
+                ),
+                patch.object(broker, "_set_service_running") as service,
+            ):
+                result = broker.cleanup({"runId": "run-1"})
+
+            self.assertTrue(result["clean"])
+            self.assertFalse(root.exists())
+            service.assert_called_once_with("vdservice", True)
+            adapter.assert_called_once()
+            self.assertTrue(adapter.call_args.kwargs["allow_expired"])
+            self.assertEqual(
+                adapter.call_args.args[0]["payload"],
+                {"width": 1919, "height": 952},
+            )
+
+    def test_cleanup_retains_lease_when_display_restore_fails(self) -> None:
+        scheduler = _RecordingScheduler()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "runtime"
+            broker = WindowsDesktopBroker(
+                root,
+                desktop_user="administrator",
+                scheduler=scheduler,  # type: ignore[arg-type]
+                now=lambda: 1_000.0,
+            )
+            broker.acquire({"runId": "run-1", "expiresAtEpoch": 2_000})
+
+            with patch.object(
+                broker,
+                "_restore_display",
+                side_effect=BrokerError("restore failed"),
+            ):
+                with self.assertRaisesRegex(
+                    BrokerError,
+                    "display: restore failed",
+                ):
+                    broker.cleanup({"runId": "run-1"})
+
+            self.assertTrue(broker.lease_path.is_file())
+            self.assertNotIn(
+                "PeersTouch-Acceptance-run-1-ttl-cleanup",
+                scheduler.unregistered,
+            )
+
     def test_cleanup_releases_actors_after_lease_expiry(self) -> None:
         scheduler = _RecordingScheduler()
         with tempfile.TemporaryDirectory() as directory:
@@ -495,6 +633,18 @@ class WindowsDesktopBrokerLeaseTest(unittest.TestCase):
         )
         self.assertLess(error_boundary, source_binding)
         self.assertLess(source_binding, adapter_import)
+
+    def test_adapter_worker_exposes_display_geometry_lifecycle(self) -> None:
+        worker = WindowsDesktopBroker._adapter_worker_script()
+        geometry = worker[
+            worker.index('elif operation == "display_geometry":'):
+            worker.index('elif operation == "post_mouse":')
+        ]
+
+        self.assertIn("adapter.display_geometry()", geometry)
+        self.assertIn("adapter.set_display_geometry(", geometry)
+        self.assertIn('int(payload["width"])', geometry)
+        self.assertIn('int(payload["height"])', geometry)
 
     def test_screenshot_probe_compresses_bitmap_control_payload(self) -> None:
         worker = WindowsDesktopBroker._adapter_worker_script()

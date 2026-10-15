@@ -40,6 +40,7 @@ import {
 import { useMobileI18n } from '../../app/mobileI18n';
 import { ChatRetentionPreset } from '../../gen/proto/domain/chat/storage_pb';
 import { MobileNotice } from '../../components/MobileNotice';
+import type { MobileStationRouteCandidate } from '../../features/station/stationRegistry';
 import type {
   DevicePermission,
   DevicePreferences,
@@ -68,12 +69,12 @@ const { Text } = Typography;
 
 export function ProfileSection({
   profile,
-  actorPtid,
+  actorIdentity,
   disabled,
   onPatch,
 }: {
   profile: EditableProfileDraft | null;
-  actorPtid: string | undefined;
+  actorIdentity: string | undefined;
   disabled: boolean;
   onPatch: (patch: Partial<EditableProfileDraft>) => void;
 }) {
@@ -86,7 +87,7 @@ export function ProfileSection({
       </div>
       <div className="settings-row">
         <Text type="secondary">{t('mobile.settings.profile.userId')}</Text>
-        <Text copyable>{actorPtid || t('mobile.settings.notLoggedIn')}</Text>
+        <Text>{actorIdentity || t('mobile.settings.notLoggedIn')}</Text>
       </div>
       <label className="settings-profile-field">
         <Text type="secondary">{t('mobile.settings.profile.displayName')}</Text>
@@ -572,6 +573,21 @@ export function StorageSection({
   const retentionSaving = projection.retention.status === 'saving';
   const retentionPreset = snapshot?.retentionPolicy?.retentionPreset
     ?? ChatRetentionPreset.CHAT_RETENTION_PRESET_FOREVER;
+  const storageProductSurface = confirmingBatchClear
+    ? 'settings.storage-confirm'
+    : batchRunning
+      ? 'settings.storage-progress'
+      : batchResult?.status === 'partial_failure'
+        ? 'settings.storage-partial-failure'
+        : confirmingChatCacheClear
+          ? 'settings.storage-clear-confirm'
+          : projection.cleanup.status === 'failed'
+            ? 'settings.storage-clear-failed'
+            : projection.retention.status === 'succeeded'
+              ? 'settings.storage-retention'
+              : batchMode
+                ? 'settings.storage-manage'
+                : undefined;
 
   const conversations = useMemo(() => {
     if (!snapshot) return [];
@@ -683,6 +699,7 @@ export function StorageSection({
       className="settings-section"
       variant="borderless"
       data-chat-storage-surface
+      data-product-surface={storageProductSurface}
     >
       <div className="settings-section-header">
         <HardDrive size={16} />
@@ -1154,8 +1171,17 @@ export function PermissionsSection({
   onRequest: (kind: DevicePermission['kind']) => Promise<void>;
 }) {
   const { t } = useMobileI18n();
+  const productSurface = loading
+    ? 'settings.permission-loading'
+    : permissions.some((permission) => permission.status === 'denied')
+      ? 'settings.permission-denied'
+      : undefined;
   return (
-    <Card className="settings-section" variant="borderless">
+    <Card
+      className="settings-section"
+      variant="borderless"
+      data-product-surface={productSurface}
+    >
       <div className="settings-section-header">
         <Shield size={16} />
         <Text strong>{t('mobile.settings.section.permissions')}</Text>
@@ -1285,6 +1311,9 @@ export function StationSection({
   stationLabel,
   stationUrl,
   identityVerified,
+  routes = [],
+  activeRouteId = '',
+  onChangeRoute = async () => {},
   onChangeStation,
   onLogout,
   loggingOut,
@@ -1292,6 +1321,9 @@ export function StationSection({
   stationLabel: string;
   stationUrl: string;
   identityVerified: boolean;
+  routes?: MobileStationRouteCandidate[];
+  activeRouteId?: string;
+  onChangeRoute?: (route: MobileStationRouteCandidate) => Promise<void>;
   onChangeStation: () => Promise<void>;
   onLogout: () => void;
   loggingOut: boolean;
@@ -1316,6 +1348,23 @@ export function StationSection({
             ? t('mobile.launch.verified')
             : t('mobile.launch.unverified')}
         </Tag>
+      </div>
+      <div className="settings-station-routes" role="group" aria-label={t('mobile.launch.route')}>
+        {routes.map((route) => (
+          <Button
+            key={route.routeId}
+            size="small"
+            type={route.routeId === activeRouteId ? 'primary' : 'default'}
+            aria-pressed={route.routeId === activeRouteId}
+            data-station-route-id={route.routeId}
+            data-station-route-type={route.routeType}
+            onClick={() => void onChangeRoute(route)}
+          >
+            {route.routeType === 'relay'
+              ? t('mobile.launch.viaRelay')
+              : t('mobile.launch.direct')}
+          </Button>
+        ))}
       </div>
       <div className="settings-station-actions">
         <Button block onClick={() => void onChangeStation()}>
@@ -1353,9 +1402,23 @@ export function DirtyBar({
   const { t } = useMobileI18n();
 
   if (!dirty && !conflict && saveStatus !== 'saved') return null;
+  const productSurface = conflict
+    ? 'settings.detail-conflict'
+    : saveStatus === 'saving'
+      ? 'settings.detail-saving'
+      : saveStatus === 'saved'
+        ? 'settings.detail-saved'
+        : saveStatus === 'error'
+          ? 'settings.detail-failed'
+          : dirty
+            ? 'settings.detail-dirty'
+            : undefined;
 
   return (
-    <div className="settings-dirty-bar">
+    <div
+      className="settings-dirty-bar"
+      data-product-surface={productSurface}
+    >
       {conflict && (
         <div className="settings-dirty-conflict">
           <Text type="warning">{t('mobile.settings.dirty.conflict')}</Text>

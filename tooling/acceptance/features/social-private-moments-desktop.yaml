@@ -39,7 +39,7 @@
       "Alice, Bob and Eve exercise friend, follower-only non-friend, unrelated and blocked authorization states",
       "Bob restart and replacement-device recovery preserve authorized history without creating another account",
       "anonymous and malformed or expired authentication requests reveal no private body, object bytes, recipient PTIDs, device IDs or encrypted keys",
-      "unsupported cross-Station recipients and oversized audiences fail before durable admission or Content PreKey consumption"
+      "CUSTOM_DENY(PUBLIC) and oversized audiences fail before durable admission or Content PreKey consumption"
     ],
     "visible": [
       "Alice publishes private text and media from the Native Desktop Moment composer",
@@ -53,6 +53,6 @@
     "development FUNCTIONAL_PASS artifacts are not treated as formal Acceptance proof",
     "no Scenario may rebuild, redeploy, register an account, or create a fresh Suite Runtime after the one Suite provisioning pass",
     "the Suite may keep at most three Native Desktop clients active concurrently",
-    "cross-Station private delivery remains unsupported and unclaimed"
+    "cross-Station private delivery is proved only by the dedicated cross-Station Social feature and Gate"
   ]
 }

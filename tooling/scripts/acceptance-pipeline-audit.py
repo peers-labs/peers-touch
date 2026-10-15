@@ -25,7 +25,7 @@ TASK_BLOCK_PATTERN = re.compile(
     re.MULTILINE,
 )
 MANIFEST_BLOCK_PATTERN = re.compile(
-    r"^## Plan Package\s*$\s*```json\s*$\s*(\{[\s\S]*?\})\s*```",
+    r"^## (?:Plan|Plan Package)\s*$\s*```json\s*$\s*(\{[\s\S]*?\})\s*```",
     re.MULTILINE,
 )
 

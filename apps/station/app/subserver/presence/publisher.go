@@ -23,7 +23,7 @@ func (eventBusPublisher) PublishPresence(actorPTID string, online bool, recipien
 		},
 	}
 	for _, recipient := range recipients {
-		if _, err := bus.Publish(recipient, ev); err != nil {
+		if _, err := bus.PublishEphemeral(recipient, ev); err != nil {
 			logger.DefaultHelper.Warnf("presence: publish failed actor_ptid=%s recipient_ptid=%s online=%v err=%v", actorPTID, recipient, online, err)
 		}
 	}

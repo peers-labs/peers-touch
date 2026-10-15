@@ -49,6 +49,18 @@ jobs:
           python3 tooling/scripts/acceptance-plan-test.py
           python3 tooling/scripts/acceptance-run-test.py
 
+      - name: Provision shell-quote for agent integration audit
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install shell-quote audit fixture
+        run: |
+          # Keep this version in sync with the shell-quote entry in pnpm-lock.yaml.
+          # --no-save/--no-package-lock provision node_modules only; the manifest
+          # and lockfile stay unchanged because shell-quote is a transitive dep.
+          npm install --no-save --no-package-lock shell-quote@1.10.0
+
       - name: Run review framework gates
         run: |
           tooling/scripts/review/run.sh --range "$REVIEW_RANGE" --strict-knowledge

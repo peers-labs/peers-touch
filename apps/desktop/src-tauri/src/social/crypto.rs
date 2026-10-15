@@ -7,11 +7,14 @@ use sha2::{Digest, Sha256};
 use crate::model::secure_content as wire;
 use crate::secure_content::{SecureContentLease, SecureContentSession};
 
+use super::projection::verify_station_attestation;
+
 const PRIVATE_PLAN_LIFETIME_MS: i64 = 5 * 60 * 1_000;
 const PRIVATE_PLAN_CLOCK_SKEW_MS: i64 = 30_000;
 
 pub(super) fn validate_content_plan(
     plan: &wire::ContentEncryptionPlan,
+    station_attestation: Option<&wire::StationContentSigningKeyAttestation>,
     lease: &SecureContentLease,
     content_id: &str,
     object_count: usize,
@@ -37,7 +40,6 @@ pub(super) fn validate_content_plan(
         || plan.authorization_snapshot_sha256.len() != 32
         || plan.canonical_plan_sha256.len() != 32
         || plan.domain_binding_sha256.len() != 32
-        || plan.station_signing_key_id != lease.session.trusted_station_signing_key.key_id
         || plan.station_signature.len() != 64
         || plan.required_slots.is_empty()
         || plan.required_slots.len() > 1000
@@ -77,10 +79,21 @@ pub(super) fn validate_content_plan(
         .map_err(|_| format!("{resource_label} plan Station signature is invalid"))?;
     let mut signing_input = plan.clone();
     signing_input.station_signature.clear();
-    lease
-        .session
-        .trusted_station_signing_key
-        .verifying_key
+    let plan_verifying_key =
+        if plan.station_signing_key_id == lease.session.trusted_station_signing_key.key_id {
+            lease.session.trusted_station_signing_key.verifying_key
+        } else {
+            let attestation = station_attestation.ok_or_else(|| {
+                format!("{resource_label} remote plan Station attestation is unavailable")
+            })?;
+            if attestation.proof_signing_key_id != plan.station_signing_key_id {
+                return Err(format!(
+                    "{resource_label} remote plan Station attestation is invalid"
+                ));
+            }
+            verify_station_attestation(lease.session.as_ref(), attestation, now_ms / 1_000)?
+        };
+    plan_verifying_key
         .verify(&signing_input.encode_to_vec(), &signature)
         .map_err(|_| format!("{resource_label} plan Station signature is invalid"))?;
     if !plan

@@ -1,7 +1,7 @@
 pub mod error;
 
-// Minimal model re-export so station_client.rs can resolve `crate::model::common::PeersResponse`
-// in the lib crate context. The full model tree lives in the binary crate (main.rs).
+// Minimal model re-export for provider-model tests. The full model tree and all
+// runtime composition live in the binary crate.
 pub mod model {
     pub mod chat {
         pub use messaging_core::proto::chat::*;
@@ -18,6 +18,30 @@ pub mod model {
             pub use messaging_core::proto::common::*;
         }
     }
+
+    pub mod actor {
+        pub mod v1 {
+            include!(concat!(env!("OUT_DIR"), "/peers_touch.model.actor.v1.rs"));
+        }
+        pub use v1::*;
+    }
+
+    pub mod peer {
+        pub mod v1 {
+            include!(concat!(env!("OUT_DIR"), "/peers_touch.model.peer.v1.rs"));
+        }
+        pub use v1::*;
+    }
+
+    pub mod federation {
+        pub mod v1 {
+            include!(concat!(
+                env!("OUT_DIR"),
+                "/peers_touch.model.federation.v1.rs"
+            ));
+        }
+        pub use v1::*;
+    }
 }
 
 pub(crate) use interface::contracts;
@@ -27,10 +51,6 @@ pub mod infrastructure {
     pub mod attachment_blob;
     #[path = "i18n/mod.rs"]
     pub mod i18n;
-    #[path = "station_client.rs"]
-    pub(crate) mod station_client;
-    #[path = "station_registry.rs"]
-    pub(crate) mod station_registry;
     #[path = "storage/mod.rs"]
     pub mod storage;
 }
@@ -52,6 +72,8 @@ pub mod interface {
 }
 
 pub mod application {
-    #[path = "provider/mod.rs"]
-    pub mod provider;
+    pub mod provider {
+        #[path = "remote.rs"]
+        pub mod remote;
+    }
 }

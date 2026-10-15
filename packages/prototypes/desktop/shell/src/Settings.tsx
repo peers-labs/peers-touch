@@ -174,6 +174,30 @@ function Tag({ text, color }: { text: string; color: string }) {
   );
 }
 
+/**
+ * Marks an affordance whose product contract is designed but not yet backed by
+ * Station/proto. It must render visibly disabled/read-only — never a live
+ * control that silently does nothing. Enforced by the geometry gate.
+ */
+function PendingBadge({ label = 'Pending backend', title }: { label?: string; title?: string }) {
+  return (
+    <span
+      data-pending-backend
+      title={title ?? 'Designed capability, backend not shipped yet'}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 4,
+        fontSize: 10, lineHeight: '16px', padding: '0 7px',
+        borderRadius: 6, color: T.textTertiary,
+        backgroundColor: T.surface, border: `1px solid ${T.borderSoft}`,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <Clock size={11} />
+      {label}
+    </span>
+  );
+}
+
 function GhostBtn({ icon: Icon, label, onClick, danger }: {
   icon?: LucideIcon; label: string; onClick: () => void; danger?: boolean;
 }) {
@@ -823,40 +847,76 @@ function AppearanceSection() {
 // SECTION: FEDERATION (General group)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-type FederationStatus = 'active' | 'degraded' | 'unreachable';
+// Membership is a ledger fact (active / left). Richer reachability
+// (degraded / unreachable / fork) is operator telemetry owned by the Station
+// Dashboard, not a user-setting concept.
+type FederationMembership = 'active' | 'left';
+type FederationRole = 'admin' | 'member';
 
 interface JoinedFederation {
   id: string;
   name: string;
   description: string;
-  status: FederationStatus;
+  status: FederationMembership;
+  role: FederationRole;
   stationCount: number;
-  visibleActors: number;
   joinedAt: string;
-  adminPtid: string;
   endpoint: string;
 }
 
 const MOCK_FEDERATIONS: JoinedFederation[] = [
-  { id: 'fed-1', name: 'Peers Social Network', description: 'Primary open federation for social communication', status: 'active', stationCount: 12, visibleActors: 3842, joinedAt: '2026-05-12', adminPtid: 'ptid:alice@local', endpoint: 'https://federation.peers.social' },
-  { id: 'fed-2', name: 'Lab Federation', description: 'Internal testing federation', status: 'active', stationCount: 3, visibleActors: 89, joinedAt: '2026-06-20', adminPtid: 'ptid:bob@local', endpoint: 'https://fed.lab.internal' },
-  { id: 'fed-3', name: 'East Asia Network', description: 'Regional federation for East Asian users', status: 'degraded', stationCount: 7, visibleActors: 1205, joinedAt: '2026-07-01', adminPtid: 'ptid:alice@local', endpoint: 'https://east.peers.network' },
+  { id: 'fed-1', name: 'Peers Social Network', description: 'Primary open federation for social communication', status: 'active', role: 'admin', stationCount: 12, joinedAt: '2026-05-12', endpoint: 'https://federation.peers.social' },
+  { id: 'fed-2', name: 'Lab Federation', description: 'Internal testing federation', status: 'active', role: 'member', stationCount: 3, joinedAt: '2026-06-20', endpoint: 'https://fed.lab.internal' },
+  { id: 'fed-3', name: 'East Asia Network', description: 'Regional federation for East Asian users', status: 'active', role: 'member', stationCount: 7, joinedAt: '2026-07-01', endpoint: 'https://east.peers.network' },
 ];
 
-const CURRENT_ACTOR_PTID = 'ptid:alice@local';
-const STATUS_CONFIG: Record<FederationStatus, { label: string; color: string }> = {
-  active: { label: 'Online', color: '#10b981' },
-  degraded: { label: 'Degraded', color: '#d48806' },
-  unreachable: { label: 'Unreachable', color: '#cf1322' },
+const STATUS_CONFIG: Record<FederationMembership, { label: string; color: string }> = {
+  active: { label: 'Active', color: '#10b981' },
+  left: { label: 'Left', color: T.textQuaternary },
 };
 
+// Discovery persistence (prototype-local; the per-federation matrix and
+// reachability policy are designed contracts pending Station/proto support).
+const DISCOVERY_MASTER_KEY = 'pt.discovery.master';
+const DISCOVERY_FEDS_KEY = 'pt.discovery.federations';
+const DISCOVERY_REACH_KEY = 'pt.discovery.reach';
+
+type ReachPolicy = 'anyone' | 'federations' | 'nobody';
+
+function readDiscoveryMaster(): boolean {
+  if (typeof window === 'undefined') return true;
+  return window.localStorage.getItem(DISCOVERY_MASTER_KEY) !== '0';
+}
+function readDiscoveryFeds(): Record<string, boolean> {
+  if (typeof window === 'undefined') return {};
+  try {
+    return JSON.parse(window.localStorage.getItem(DISCOVERY_FEDS_KEY) || '{}') as Record<string, boolean>;
+  } catch {
+    return {};
+  }
+}
+function readDiscoveryReach(): ReachPolicy {
+  if (typeof window === 'undefined') return 'federations';
+  const v = window.localStorage.getItem(DISCOVERY_REACH_KEY);
+  return v === 'anyone' || v === 'federations' || v === 'nobody' ? v : 'federations';
+}
+
+
 // ── Network · Your Station ──────────────────────────────────────────────────
+const AUTHORIZED_DEVICES = [
+  { id: 'dev-this', name: 'This Mac', meta: 'macOS · current session', current: true },
+  { id: 'dev-phone', name: 'iPhone 15', meta: 'last seen 2h ago', current: false },
+];
+
 function StationSection() {
+  const [confirmSwitch, setConfirmSwitch] = useState(false);
+  const [devices, setDevices] = useState(AUTHORIZED_DEVICES);
   const online = true;
   return (
     <SettingsContainer>
-      <SettingsSection icon={Wifi} title="Your station" subtitle="The personal center that holds your account and routes your messages.">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+      <SettingsSection icon={Wifi} title="Your station"
+        subtitle="The station that hosts your account and routes your messages.">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }} data-station-binding>
           <div style={{
             width: 44, height: 44, borderRadius: 12, flexShrink: 0,
             background: T.primaryWash, color: T.primary,
@@ -869,89 +929,143 @@ function StationSection() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
               <span style={{ width: 8, height: 8, borderRadius: '50%', background: online ? T.success : T.textQuaternary }} />
               <span style={{ fontSize: 12, fontWeight: 600, color: online ? T.success : T.textTertiary }}>
-                {online ? 'Online · working normally' : 'Offline'}
+                {online ? 'Connected' : 'Offline'}
               </span>
             </div>
           </div>
         </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginTop: 16 }}>
-          {[
-            { label: 'Connected peers', value: '24' },
-            { label: 'Seed nodes', value: '3 / 4' },
-            { label: 'Last sync', value: 'just now' },
-          ].map((s) => (
-            <div key={s.label} style={{ background: T.surface, borderRadius: 10, padding: '12px 10px', textAlign: 'center' }}>
-              <div style={{ fontSize: 17, fontWeight: 700, color: T.text }}>{s.value}</div>
-              <div style={{ fontSize: 11, color: T.textTertiary, marginTop: 3 }}>{s.label}</div>
-            </div>
-          ))}
-        </div>
+        <p style={{ margin: '10px 0 0', fontSize: 12, color: T.textTertiary, lineHeight: 1.5 }}>
+          Federated readiness and relay transport are operated in the Station Dashboard.
+        </p>
       </SettingsSection>
 
-      <SettingsSection icon={MonitorSmartphone} title="Authorized devices" subtitle="Devices allowed to run this station.">
-        {[
-          { name: 'This Mac', meta: 'macOS · current session', current: true },
-          { name: 'iPhone 15', meta: 'last seen 2h ago', current: false },
-        ].map((d) => (
-          <SettingsRow key={d.name} label={d.name} desc={d.meta}>
+      <SettingsSection icon={MonitorSmartphone} title="Authorized devices"
+        subtitle="Devices signed in to this account on the station.">
+        {devices.map((d) => (
+          <SettingsRow key={d.id} label={d.name} desc={d.meta}>
             {d.current
               ? <Tag text="This device" color={T.primary} />
-              : <GhostBtn label="Remove" danger onClick={() => {}} />}
+              : <GhostBtn label="Remove" danger onClick={() => setDevices((prev) => prev.filter((x) => x.id !== d.id))} />}
           </SettingsRow>
         ))}
+        {devices.length === 1 ? (
+          <p style={{ margin: '4px 0 0', fontSize: 12, color: T.textTertiary }}>Only this device is signed in.</p>
+        ) : null}
       </SettingsSection>
 
-      <CollapsibleSection icon={Shield} title="Technical details" subtitle="Routing identifiers for advanced troubleshooting.">
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 16px' }}>
+      <DangerZone title="Switch station"
+        desc="Sign out and choose a different station and account. Your conversations on this device are kept.">
+        {confirmSwitch ? (
           <div>
-            <div style={{ fontSize: 11, color: T.textTertiary }}>Actor ID</div>
-            <div style={{ fontSize: 12, fontFamily: 'ui-monospace, Menlo, monospace', color: T.textSecondary }}>{ACCOUNT_IDENTITY.ptid}</div>
-          </div>
-          <div>
-            <div style={{ fontSize: 11, color: T.textTertiary }}>Locator sequence</div>
-            <div style={{ fontSize: 12, fontFamily: 'ui-monospace, Menlo, monospace', color: T.textSecondary }}>seq:00000142</div>
-          </div>
-          <div style={{ gridColumn: '1 / -1' }}>
-            <div style={{ fontSize: 11, color: T.textTertiary, marginBottom: 4 }}>Relay mounts</div>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              <Tag text="relay:east" color="#5b8def" />
-              <Tag text="relay:lab" color="#13a8a8" />
-              <Tag text="mount:social" color="#722ed1" />
+            <p style={{ margin: '0 0 12px', fontSize: 12, color: T.textSecondary, lineHeight: 1.5 }}>
+              You will be signed out and returned to sign-in to pick another station and account.
+              This does not delete your messages.
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <GhostBtn label="Cancel" onClick={() => setConfirmSwitch(false)} />
+              <button type="button" data-switch-station-confirm
+                onClick={() => setConfirmSwitch(false)}
+                style={{ height: 32, padding: '0 14px', borderRadius: 8, border: 'none',
+                  backgroundColor: T.danger, color: T.white, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                Sign out &amp; switch
+              </button>
             </div>
           </div>
-        </div>
-      </CollapsibleSection>
+        ) : (
+          <button type="button" data-switch-station
+            onClick={() => setConfirmSwitch(true)}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 32,
+              padding: '0 4px', border: 'none', background: 'transparent',
+              color: T.danger, fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
+            <LogOut size={14} /> Switch station
+          </button>
+        )}
+      </DangerZone>
     </SettingsContainer>
   );
 }
 
-// ── Network · Discovery ─────────────────────────────────────────────────────
-type DiscoveryMode = 'hidden' | 'by_handle' | 'indexed';
-function DiscoverySection() {
-  const [mode, setMode] = useState<DiscoveryMode>('by_handle');
-  const [inbound, setInbound] = useState<'networks' | 'anyone' | 'nobody'>('networks');
-  const modeDesc: Record<DiscoveryMode, string> = {
-    hidden: 'Invisible unless someone already has your exact handle.',
-    by_handle: 'Found only by your exact handle — not listed in any directory.',
-    indexed: 'Appears in the public directory and keyword search.',
+
+// ── Network · Discovery ────────────────────────────────────────────────────
+function DiscoverySection({ federations }: { federations: JoinedFederation[] }) {
+  const activeFeds = federations.filter((f) => f.status === 'active');
+  // Master gate is the real HIDDEN ↔ federated capability. The per-federation
+  // matrix maps to a future per-federation visibility model (pending backend);
+  // its last values are remembered while hidden and restored on re-show.
+  const [discoverable, setDiscoverable] = useState(readDiscoveryMaster);
+  const [perFed, setPerFed] = useState<Record<string, boolean>>(readDiscoveryFeds);
+  const [reach, setReach] = useState<ReachPolicy>(readDiscoveryReach);
+  // Directory service is an operator switch owned by Station Dashboard.
+  // Prototype assumes it is currently served; flipping it off here only shows
+  // the read-only state users would see.
+  const [directoryServed] = useState(true);
+
+  const persistMaster = (next: boolean) => {
+    setDiscoverable(next);
+    window.localStorage.setItem(DISCOVERY_MASTER_KEY, next ? '1' : '0');
   };
+  const toggleFed = (id: string, next: boolean) => {
+    setPerFed((prev) => {
+      const updated = { ...prev, [id]: next };
+      window.localStorage.setItem(DISCOVERY_FEDS_KEY, JSON.stringify(updated));
+      return updated;
+    });
+  };
+  const changeReach = (next: ReachPolicy) => {
+    setReach(next);
+    window.localStorage.setItem(DISCOVERY_REACH_KEY, next);
+  };
+
+  const directoryEnabled = discoverable && directoryServed;
+
   return (
     <SettingsContainer>
-      <SettingsSection icon={Globe} title="How people find you" subtitle="You stay in control of who can discover and reach you.">
-        <Field label="Discoverable as">
-          <Segmented<DiscoveryMode> value={mode} ariaLabel="Discoverable as"
-            options={[
-              { id: 'hidden', label: 'Hidden' },
-              { id: 'by_handle', label: 'By handle' },
-              { id: 'indexed', label: 'In directory' },
-            ]}
-            onChange={setMode} />
-        </Field>
-        <p style={{ margin: '8px 0 0', fontSize: 12, color: T.textTertiary, lineHeight: 1.5 }}>{modeDesc[mode]}</p>
+      <SettingsSection icon={Globe} title="How people find you"
+        subtitle="You control whether others can discover your account.">
+        <SettingsRow label="Discoverable"
+          desc={discoverable
+            ? 'Your account can be resolved across federations.'
+            : 'Hidden everywhere. Your previous per-federation choices are remembered.'}>
+          <Toggle on={discoverable} onToggle={() => persistMaster(!discoverable)} label="Discoverable" />
+        </SettingsRow>
 
-        <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${T.borderSoft}` }}>
-          <SettingsRow label="Your handle" desc="Share this so others can reach you.">
+        <div data-discovery-federations style={{
+          opacity: directoryEnabled ? 1 : 0.5,
+          pointerEvents: directoryEnabled ? 'auto' : 'none',
+          marginTop: 6, paddingTop: 12, borderTop: `1px solid ${T.borderSoft}`,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>Visible in each federation</span>
+            <PendingBadge title="Per-federation visibility needs a Station/proto model beyond today's single discoverability value" />
+          </div>
+          <p style={{ margin: '0 0 6px', fontSize: 12, color: T.textTertiary, lineHeight: 1.5 }}>
+            On = listed in that federation's directory; off = reachable only by your exact handle.
+          </p>
+          {activeFeds.length === 0 ? (
+            <p style={{ margin: '4px 0 0', fontSize: 12, color: T.textTertiary }}>
+              Join a federation first to choose where you are discoverable.
+            </p>
+          ) : activeFeds.map((f) => (
+            <SettingsRow key={f.id} label={f.name} desc={f.endpoint}>
+              <Toggle on={!!perFed[f.id]} onToggle={() => toggleFed(f.id, !perFed[f.id])}
+                label={`Visible in ${f.name}`} />
+            </SettingsRow>
+          ))}
+        </div>
+
+        {!directoryServed ? (
+          <div data-directory-disabled style={{
+            marginTop: 12, padding: '10px 12px', borderRadius: 8,
+            background: T.surface, border: `1px solid ${T.borderSoft}`,
+            fontSize: 12, color: T.textSecondary, lineHeight: 1.5,
+          }}>
+            Directory service is turned off for this station by its operator. Ask a Station Dashboard
+            administrator to enable it.
+          </div>
+        ) : null}
+
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${T.borderSoft}` }}>
+          <SettingsRow label="Your handle" desc="Share this so others can reach you by exact handle.">
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 500 }}>
               @alice@alpha.peers.social
               <button type="button" aria-label="Copy handle" title="Copy"
@@ -964,20 +1078,25 @@ function DiscoverySection() {
         </div>
       </SettingsSection>
 
-      <SettingsSection icon={Users} title="Who can contact you" subtitle="Incoming friend and group requests.">
-        <Field label="Accept requests from">
-          <Segmented value={inbound} ariaLabel="Accept requests from"
-            options={[
-              { id: 'anyone', label: 'Anyone' },
-              { id: 'networks', label: 'My networks' },
-              { id: 'nobody', label: 'Nobody' },
-            ]}
-            onChange={setInbound} />
-        </Field>
+      <SettingsSection icon={Users} title="Who can contact you"
+        subtitle="Incoming friend and group requests — separate from being discoverable.">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <Field label="Accept requests from">
+            <Segmented<ReachPolicy> value={reach} ariaLabel="Accept requests from"
+              options={[
+                { id: 'anyone', label: 'Anyone' },
+                { id: 'federations', label: 'My federations' },
+                { id: 'nobody', label: 'Nobody' },
+              ]}
+              onChange={changeReach} />
+          </Field>
+          <PendingBadge title="Inbound request policy needs Station enforcement beyond block-list and existing-friend checks" />
+        </div>
       </SettingsSection>
     </SettingsContainer>
   );
 }
+
 
 // ── Network · Federations ───────────────────────────────────────────────────
 function FederationSection({ federations, setFederations }: {
@@ -997,13 +1116,15 @@ function FederationSection({ federations, setFederations }: {
     const id = `fed-${Date.now()}`;
     setFederations((prev) => [...prev, {
       id, name: url.replace(/^https?:\/\//, '').split('/')[0], description: 'Joined federation',
-      status: 'active' as FederationStatus, stationCount: 1, visibleActors: 0,
+      status: 'active' as FederationMembership, role: 'member' as FederationRole, stationCount: 1,
       joinedAt: new Date().toISOString().slice(0, 10),
-      adminPtid: CURRENT_ACTOR_PTID, endpoint: url.startsWith('http') ? url : `https://${url}`,
+      endpoint: url.startsWith('http') ? url : `https://${url}`,
     }]);
     setAddUrl(''); setAddError(''); setAddOpen(false);
   };
 
+  // Leave keeps local conversations and contacts; it only stops routing and
+  // discoverability in that federation (membership becomes ledger "left").
   const handleLeave = (id: string) => {
     setFederations((prev) => prev.filter((f) => f.id !== id));
     setConfirmLeaveId(null);
@@ -1014,9 +1135,9 @@ function FederationSection({ federations, setFederations }: {
     <SettingsContainer>
       <SettingsSection
         icon={Network}
-        title="Joined networks"
-        subtitle="Networks your station participates in. Create a new one from the Station Dashboard."
-        action={<button type="button" aria-label="Join a network" title="Join a network"
+        title="Joined federations"
+        subtitle="Federations your station participates in. Creating and governing them happens in the Station Dashboard."
+        action={<button type="button" aria-label="Join a federation" title="Join a federation"
           onClick={() => setAddOpen((v) => !v)}
           style={{ width: 30, height: 30, borderRadius: 8, border: 'none', backgroundColor: T.primary, color: T.white, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
           <Plus size={15} />
@@ -1024,7 +1145,7 @@ function FederationSection({ federations, setFederations }: {
       >
         {addOpen ? (
           <div style={{ border: `1px solid ${T.borderSoft}`, borderRadius: 10, padding: 12, marginBottom: 12, background: T.surface }}>
-            <Field label="Network endpoint">
+            <Field label="Federation endpoint">
               <input autoFocus value={addUrl} onChange={(e) => { setAddUrl(e.target.value); setAddError(''); }}
                 placeholder="https://federation.example.com" style={inputStyle}
                 onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); if (e.key === 'Escape') setAddOpen(false); }} />
@@ -1041,7 +1162,6 @@ function FederationSection({ federations, setFederations }: {
           {federations.map((f) => {
             const sc = STATUS_CONFIG[f.status];
             const expanded = expandedId === f.id;
-            const admin = f.adminPtid === CURRENT_ACTOR_PTID;
             return (
               <SettingsItemCard key={f.id} onClick={() => setExpandedId(expanded ? null : f.id)} active={expanded}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -1049,47 +1169,57 @@ function FederationSection({ federations, setFederations }: {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{f.name}</span>
                       <span style={{ width: 7, height: 7, borderRadius: '50%', backgroundColor: sc.color, flexShrink: 0 }} title={sc.label} />
-                      {admin ? <Shield size={12} color={T.primary} /> : null}
+                      {f.role === 'admin'
+                        ? <Tag text="Operator" color={T.primary} />
+                        : <Tag text="Member" color={T.textTertiary} />}
                     </div>
                     {f.description ? <div style={{ fontSize: 12, color: T.textTertiary, marginTop: 2 }}>{f.description}</div> : null}
                   </div>
-                  <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexShrink: 0 }}>
-                    <div style={{ textAlign: 'center' }}>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>{f.stationCount}</div>
-                      <div style={{ fontSize: 10, color: T.textTertiary }}>Stations</div>
-                    </div>
-                    <div style={{ width: 1, height: 24, backgroundColor: T.borderSoft }} />
-                    <div style={{ textAlign: 'center' }}>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>{f.visibleActors.toLocaleString()}</div>
-                      <div style={{ fontSize: 10, color: T.textTertiary }}>People</div>
-                    </div>
+                  <div style={{ textAlign: 'center', flexShrink: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>{f.stationCount}</div>
+                    <div style={{ fontSize: 10, color: T.textTertiary }}>Stations</div>
                   </div>
                 </div>
                 {expanded ? (
                   <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${T.borderSoft}` }}>
                     <details>
                       <summary style={{ fontSize: 12, color: T.primary, cursor: 'pointer' }}>Technical details</summary>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px', fontSize: 12, color: T.textSecondary, marginTop: 8, marginBottom: admin ? 12 : 0 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px', fontSize: 12, color: T.textSecondary, marginTop: 8 }}>
                         <div><span style={{ color: T.textTertiary }}>Endpoint</span><div style={{ wordBreak: 'break-all' }}>{f.endpoint}</div></div>
                         <div><span style={{ color: T.textTertiary }}>Joined</span><div>{f.joinedAt}</div></div>
                       </div>
                     </details>
-                    {admin ? (
-                      confirmLeaveId === f.id ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', marginTop: 10, borderRadius: 8, backgroundColor: '#fff2f0', border: '1px solid #ffccc7' }}>
-                          <span style={{ fontSize: 12, color: T.danger, flex: 1 }}>Leave this network? Your station will stop syncing its content.</span>
-                          <button type="button" onClick={(e) => { e.stopPropagation(); handleLeave(f.id); }}
-                            style={{ height: 28, padding: '0 12px', borderRadius: 8, border: 'none', backgroundColor: T.danger, color: T.white, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Leave</button>
-                          <button type="button" onClick={(e) => { e.stopPropagation(); setConfirmLeaveId(null); }}
-                            style={{ height: 28, padding: '0 12px', borderRadius: 8, border: `1px solid ${T.borderSoft}`, backgroundColor: T.bg, color: T.textSecondary, fontSize: 12, cursor: 'pointer' }}>Cancel</button>
-                        </div>
-                      ) : (
-                        <button type="button" onClick={(e) => { e.stopPropagation(); setConfirmLeaveId(f.id); }}
-                          style={{ marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 5, height: 28, padding: '0 4px', border: 'none', background: 'transparent', color: T.danger, fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>
-                          <LogOut size={13} /> Leave this network
+                    {f.role === 'admin' ? (
+                      <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <button type="button" data-federation-manage
+                          onClick={(e) => e.stopPropagation()}
+                          style={{ height: 28, padding: '0 10px', borderRadius: 8, border: `1px solid ${T.borderSoft}`,
+                            background: T.bg, color: T.textSecondary, fontSize: 12, display: 'inline-flex',
+                            alignItems: 'center', gap: 5, cursor: 'pointer' }}>
+                          <Shield size={13} /> Manage in Station Dashboard
                         </button>
-                      )
+                        <PendingBadge title="Operator navigation is wired when the Station Dashboard ships this surface" />
+                      </div>
                     ) : null}
+                    {confirmLeaveId === f.id ? (
+                      <div data-leave-confirm style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', marginTop: 10, borderRadius: 8, backgroundColor: '#fff2f0', border: '1px solid #ffccc7' }}>
+                        <span style={{ fontSize: 12, color: T.danger, flex: 1 }}>
+                          Leave {f.name}? Your conversations and contacts are kept on this device; routing and discoverability in this federation stop.
+                        </span>
+                        <button type="button" data-leave-confirm-button
+                          onClick={(e) => { e.stopPropagation(); handleLeave(f.id); }}
+                          style={{ height: 28, padding: '0 12px', borderRadius: 8, border: 'none', backgroundColor: T.danger, color: T.white, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Leave</button>
+                        <button type="button"
+                          onClick={(e) => { e.stopPropagation(); setConfirmLeaveId(null); }}
+                          style={{ height: 28, padding: '0 12px', borderRadius: 8, border: `1px solid ${T.borderSoft}`, backgroundColor: T.bg, color: T.textSecondary, fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+                      </div>
+                    ) : (
+                      <button type="button" data-leave-federation
+                        onClick={(e) => { e.stopPropagation(); setConfirmLeaveId(f.id); }}
+                        style={{ marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 5, height: 28, padding: '0 4px', border: 'none', background: 'transparent', color: T.danger, fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>
+                        <LogOut size={13} /> Leave federation
+                      </button>
+                    )}
                   </div>
                 ) : null}
               </SettingsItemCard>
@@ -2033,7 +2163,7 @@ const GROUPS: GroupDef[] = [
     sections: [
       { id: 'station', label: 'Your Station', icon: Server },
       { id: 'discovery', label: 'Discovery', icon: Globe },
-      { id: 'federation', label: 'Networks', icon: Network },
+      { id: 'federation', label: 'Federation', icon: Network },
     ],
   },
   {
@@ -2069,7 +2199,7 @@ function renderSection(sectionId: SectionId, onOpenCommandPalette: () => void,
     case 'privacy': return <PrivacySection />;
     case 'appearance': return <AppearanceSection />;
     case 'station': return <StationSection />;
-    case 'discovery': return <DiscoverySection />;
+    case 'discovery': return <DiscoverySection federations={federations} />;
     case 'federation': return <FederationSection federations={federations} setFederations={setFederations} />;
     case 'providers': return <ProvidersSection />;
     case 'models': return <ModelsSection />;

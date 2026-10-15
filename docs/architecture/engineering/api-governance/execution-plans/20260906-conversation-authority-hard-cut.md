@@ -33,10 +33,9 @@ Architecture:
 - `docs/architecture/engineering/api-governance/module-layout.md`
 - `docs/architecture/engineering/api-governance/integration.md`
 - `docs/architecture/domains/chat/messaging/`
-- `docs/architecture/domains/social/federation/decisions.md` (`D-07` only;
-  accepted while the broader module remains draft)
-- `docs/architecture/domains/social/federation/design.md` §4.1
-- `docs/architecture/domains/social/federation/integration.md` §7
+- `docs/architecture/domains/social/cross-station/decisions.md` (`CSS-D01` only)
+- `docs/architecture/domains/social/cross-station/design.md` §3
+- `docs/architecture/domains/social/cross-station/integration.md` §2
 - `docs/architecture/shared/federation/`
 - `docs/architecture/domains/identity/unified-actor-system.md`
 - `docs/global/architecture.md`
@@ -54,7 +53,7 @@ Accepted decisions:
   remote command transport, one committed event truth, signed Social mutation,
   and exact replay for destructive public-material reads;
 - `MP-D09`, `MP-D10`, revised `MP-D30`;
-- Federated Social `D-07`.
+- Cross-Station Social `CSS-D01`.
 
 Product and Acceptance:
 

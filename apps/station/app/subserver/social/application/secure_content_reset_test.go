@@ -67,6 +67,10 @@ func TestSecureContentResetOwnerReplaysCompletedAttestation(t *testing.T) {
 	}
 	models := append(
 		dbmodel.SocialPrivateContentModels(),
+		infrastructure.RemotePrivateContentModels()...,
+	)
+	models = append(
+		models,
 		&dbmodel.SocialPublicPost{},
 		&dbmodel.SocialComment{},
 		&dbmodel.SocialReaction{},
@@ -297,6 +301,10 @@ func TestSecureContentResetOwnerReauditsPostAuditResume(t *testing.T) {
 	}
 	models := append(
 		dbmodel.SocialPrivateContentModels(),
+		infrastructure.RemotePrivateContentModels()...,
+	)
+	models = append(
+		models,
 		&dbmodel.SocialPublicPost{},
 		&dbmodel.SocialComment{},
 		&dbmodel.SocialReaction{},

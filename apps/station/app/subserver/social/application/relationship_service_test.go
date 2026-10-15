@@ -6,7 +6,10 @@ import (
 	"testing"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
+	"github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
+	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
+	privatecontentpb "github.com/peers-labs/peers-touch/station/frame/touch/model/privatecontent"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -188,6 +191,69 @@ func TestRelationshipUnfollowRetiresCanonicalFriendship(t *testing.T) {
 	if relationship.Following {
 		t.Fatal("unfollow kept the caller's follow edge")
 	}
+}
+
+func TestFederatedPrivateInvalidationUnfollowUsesRelationshipTransaction(
+	t *testing.T,
+) {
+	f := newRelationshipFixture(t)
+	ctx := context.Background()
+	alice := "ptid:v1:actor:peers:p:user-1:fingerprint-1"
+	bob := "ptid:v1:actor:peers:p:user-2:fingerprint-2"
+	if err := f.repos.Follows.Follow(ctx, alice, bob); err != nil {
+		t.Fatal(err)
+	}
+	revoker := &recordingPrivateRelationshipRevoker{}
+	f.service.ConfigurePrivateRevocation(revoker, nil)
+
+	if err := f.service.Unfollow(ctx, alice, bob); err != nil {
+		t.Fatal(err)
+	}
+	if revoker.calls != 1 ||
+		revoker.transaction == nil ||
+		revoker.localActorPTID != alice ||
+		revoker.peerActorPTID != bob ||
+		len(revoker.sourceAudienceKinds) != 1 ||
+		revoker.sourceAudienceKinds[0] != model.Audience_FRIENDS ||
+		len(revoker.suppressedAudienceKinds) != 2 ||
+		revoker.reason != privatecontentpb.PrivateResourceInvalidationReason_PRIVATE_RESOURCE_INVALIDATION_REASON_RELATIONSHIP_REVOKED {
+		t.Fatalf("relationship revocation = %+v", revoker)
+	}
+}
+
+type recordingPrivateRelationshipRevoker struct {
+	calls                   int
+	transaction             delivery.Transaction
+	localActorPTID          string
+	peerActorPTID           string
+	sourceAudienceKinds     []model.Audience_Kind
+	suppressedAudienceKinds []model.Audience_Kind
+	reason                  privatecontentpb.PrivateResourceInvalidationReason
+}
+
+func (r *recordingPrivateRelationshipRevoker) RevokePrivateRelationship(
+	_ context.Context,
+	transaction delivery.Transaction,
+	localActorPTID string,
+	peerActorPTID string,
+	sourceAudienceKinds []model.Audience_Kind,
+	suppressedAudienceKinds []model.Audience_Kind,
+	reason privatecontentpb.PrivateResourceInvalidationReason,
+) error {
+	r.calls++
+	r.transaction = transaction
+	r.localActorPTID = localActorPTID
+	r.peerActorPTID = peerActorPTID
+	r.sourceAudienceKinds = append(
+		[]model.Audience_Kind(nil),
+		sourceAudienceKinds...,
+	)
+	r.suppressedAudienceKinds = append(
+		[]model.Audience_Kind(nil),
+		suppressedAudienceKinds...,
+	)
+	r.reason = reason
+	return nil
 }
 
 func TestRelationshipListsHydrateActorProjections(t *testing.T) {

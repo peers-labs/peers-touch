@@ -5,10 +5,10 @@
   "owners": ["apps/mobile/src/**", "apps/mobile/src-tauri/**", "packages/locales/**"],
   "truth_sources": ["native Mobile runtime", "rendered accessibility tree", "interaction-linked runtime telemetry"],
   "visible_surfaces": [{"type": "native-mobile-ios", "route": "all-primary-journeys"}, {"type": "native-mobile-android", "route": "all-primary-journeys"}],
-  "required_gates": ["mobile-ios-simulator-layout-accessibility-e2e", "mobile-simulator-platform-e2e", "mobile-hard-cut-static"],
+  "required_gates": ["mobile-ios-simulator-layout-accessibility-e2e", "mobile-simulator-whole-product-usability-e2e", "mobile-simulator-platform-e2e", "mobile-hard-cut-static"],
   "acceptance": {
-    "product_assertions": ["MS-PA15", "MS-PA24", "MS-PA25", "MS-PA27"],
-    "visible": ["both native platforms satisfy accessibility, localization, performance, security recovery, and capability-honesty gates"]
+    "product_assertions": ["MS-PA15", "MS-PA24", "MS-PA25", "MS-PA27", "MS-PA28", "MS-PA29"],
+    "visible": ["the foreground iOS Simulator walks every registered Mobile surface and proves accessible, localized, non-occluded, human-readable product composition"]
   },
-  "negative": ["iOS Simulator layout evidence is limited to the declared iPhone 17 launch surface and does not prove older generations or alternate viewport sizes", "browser or Prototype evidence must not substitute for simulator runtime proof", "optional physical diagnostics must not change required completion state"]
+  "negative": ["an unvisited registered surface is UNPROVEN", "raw PTIDs, Station URLs, runtime or command IDs, untranslated keys, app-obstructing module notices, clipped text, overlapping controls, and occluded primary actions fail the Gate", "browser or Prototype evidence must not substitute for simulator runtime proof", "optional physical diagnostics must not change required completion state"]
 }

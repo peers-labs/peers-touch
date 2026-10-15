@@ -9,6 +9,7 @@ import {
 import {
   PostDetailOutcome,
   TimelinePageOutcome,
+  TimelineSort,
 } from '../../gen/proto/domain/social/post_pb';
 
 
@@ -49,6 +50,51 @@ function deferred<T>() {
 }
 
 describe('moments feed runtime projection', () => {
+  it('keeps Home and Explore cursors independent and delegates Explore ranking to Station', async () => {
+    const gateway = {
+      fetchFeed: vi.fn(async (cursor: string) => (
+        feedPage([cursor ? 'home-2' : 'home-1'], cursor ? '' : 'home-cursor', Boolean(!cursor))
+      )),
+      fetchPublicFeed: vi.fn(async (
+        cursor: string,
+        _limit: number,
+        sort: TimelineSort,
+      ) => feedPage(
+        [`explore-${sort}-${cursor || 'first'}`],
+        cursor ? '' : 'explore-cursor',
+        Boolean(!cursor),
+      )),
+    };
+    const home = createMomentsFeedStore(gateway);
+    const explore = createMomentsFeedStore(gateway, { scope: 'explore' });
+
+    await Promise.all([home.loadFeed(), explore.loadFeed()]);
+    await Promise.all([home.loadMore(), explore.loadMore()]);
+    expect(home.state().posts.map(({ id }) => id)).toEqual(['home-1', 'home-2']);
+    expect(explore.state().posts.map(({ id }) => id)).toEqual([
+      'explore-0-first',
+      'explore-0-explore-cursor',
+    ]);
+    expect(gateway.fetchPublicFeed).toHaveBeenNthCalledWith(
+      1,
+      '',
+      20,
+      TimelineSort.RECENT,
+    );
+
+    await explore.setSort(TimelineSort.HOT);
+    expect(explore.sort()).toBe(TimelineSort.HOT);
+    expect(gateway.fetchPublicFeed).toHaveBeenLastCalledWith(
+      '',
+      20,
+      TimelineSort.HOT,
+    );
+    expect(home.state().posts.map(({ id }) => id)).toEqual(['home-1', 'home-2']);
+
+    home.teardown();
+    explore.teardown();
+  });
+
   it('keeps the bounded feed alive independently of page mounts', async () => {
     const gateway = {
       fetchFeed: vi.fn(async () => ({
@@ -429,6 +475,7 @@ describe('moments feed runtime projection', () => {
 
   it('projects realtime deletion into retained selected detail', async () => {
     const gateway = {
+      fetchFeed: vi.fn(async () => feedPage(['post-detail'])),
       getPost: vi.fn(async () => ({
         ok: true,
         data: {
@@ -445,6 +492,7 @@ describe('moments feed runtime projection', () => {
 
     await store.ensureMoment('post-detail');
     store.removePost('post-detail');
+    await expect(store.reconcile()).resolves.toBe(true);
 
     expect(store.state().selectedDetail).toEqual({
       postId: 'post-detail',
@@ -453,6 +501,37 @@ describe('moments feed runtime projection', () => {
         post: { ...post('post-detail'), isDeleted: true },
       },
     });
+    expect(store.state().posts).toEqual([]);
+    expect(gateway.getPost).toHaveBeenCalledOnce();
+    expect(gateway.fetchComments).toHaveBeenCalledOnce();
+  });
+
+  it('lets authoritative readback restore a relationship-hidden public post', async () => {
+    const gateway = {
+      fetchFeed: vi.fn(async () => feedPage(['post-policy'])),
+      getPost: vi.fn(async () => ({
+        ok: true,
+        data: {
+          post: post('post-policy'),
+          outcome: PostDetailOutcome.AVAILABLE,
+        },
+      })),
+      fetchComments: vi.fn(async () => ({
+        ok: true,
+        data: { comments: [], nextCursor: '', hasMore: false },
+      })),
+    };
+    const store = createMomentsFeedStore(gateway);
+    await store.loadFeed();
+    await store.ensureMoment('post-policy');
+
+    store.hidePost('post-policy');
+    expect(store.state().posts).toEqual([]);
+    expect(store.state().selectedDetail?.readback.kind).toBe('blocked');
+
+    await expect(store.reconcile()).resolves.toBe(true);
+    expect(store.state().posts.map(({ id }) => id)).toEqual(['post-policy']);
+    expect(store.state().selectedDetail?.readback.kind).toBe('available');
   });
 
   it('reconciles retained selected detail and comments with the feed', async () => {

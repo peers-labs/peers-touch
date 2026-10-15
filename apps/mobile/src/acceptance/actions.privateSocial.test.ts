@@ -7,9 +7,7 @@ const privateMomentMocks = vi.hoisted(() => ({
   openMedia: vi.fn(),
   submitComment: vi.fn(),
   readComments: vi.fn(),
-  recover: vi.fn(),
   recoverMoment: vi.fn(),
-  storeRecoveryPhrase: vi.fn(),
 }));
 
 vi.mock('../runtimes/privateMomentsRuntime', () => ({
@@ -26,9 +24,7 @@ vi.mock('../runtimes/privateMomentsRuntime', () => ({
     readStateHistoryByPostId: {},
   })),
   readPrivateTextMoment: vi.fn(),
-  recoverPrivateTextMoment: privateMomentMocks.recover,
   reconcilePrivateMoments: vi.fn(),
-  storePrivateSocialRecoveryPhrase: privateMomentMocks.storeRecoveryPhrase,
   submitPrivateComment: privateMomentMocks.submitComment,
 }));
 
@@ -38,12 +34,8 @@ const publishPrivateText = mobileAcceptanceActions[
   'moments.private.publishText'
 ] as unknown as (input: unknown) => Promise<unknown>;
 
-const storeRecoveryPhrase = mobileAcceptanceActions[
-  'moments.private.storeRecoveryPhrase'
-] as unknown as (input: unknown) => Promise<unknown>;
-
-const recoverPrivateText = mobileAcceptanceActions[
-  'moments.private.recoverText'
+const recoverPrivate = mobileAcceptanceActions[
+  'moments.private.recover'
 ] as unknown as (input: unknown) => Promise<unknown>;
 
 const publishPrivate = mobileAcceptanceActions[
@@ -154,24 +146,31 @@ describe('Mobile Acceptance private Social audience', () => {
     expect(privateMomentMocks.publish).not.toHaveBeenCalled();
   });
 
-  it('stores recovery input without returning the phrase', async () => {
-    privateMomentMocks.storeRecoveryPhrase.mockResolvedValue(undefined);
+  it('initiates native recovery with only post identity and epoch', async () => {
+    privateMomentMocks.recoverMoment.mockResolvedValue({
+      postId: 'post-1',
+      contentId: 'content-1',
+      generation: '1',
+      authorPtid: 'ptid:alice',
+      audienceKind: 'FRIENDS',
+      state: 'RECOVERY_REQUIRED',
+    });
 
-    const result = await storeRecoveryPhrase({
-      recoveryPhrase: 'abandon '.repeat(23) + 'art',
+    const result = await recoverPrivate({
+      postId: 'post-1',
       recoveryEpoch: 7,
     });
 
-    expect(privateMomentMocks.storeRecoveryPhrase).toHaveBeenCalledWith(
-      'abandon '.repeat(23) + 'art',
+    expect(privateMomentMocks.recoverMoment).toHaveBeenCalledWith(
+      'post-1',
       7,
     );
-    expect(result).toEqual({ stored: true, recoveryEpoch: 7 });
-    expect(JSON.stringify(result)).not.toContain('abandon');
+    expect(result).toMatchObject({ postId: 'post-1', state: 'RECOVERY_REQUIRED' });
+    expect(JSON.stringify(result)).not.toMatch(/phrase|secret|handle/i);
   });
 
   it('sanitizes recovered plaintext into a digest', async () => {
-    privateMomentMocks.recover.mockResolvedValue({
+    privateMomentMocks.recoverMoment.mockResolvedValue({
       postId: 'post-1',
       contentId: 'content-1',
       generation: '1',
@@ -181,7 +180,7 @@ describe('Mobile Acceptance private Social audience', () => {
       content: { kind: 'TEXT', text: 'recovered private text' },
     });
 
-    const result = await recoverPrivateText({ postId: 'post-1' });
+    const result = await recoverPrivate({ postId: 'post-1' });
 
     expect(result).toMatchObject({
       postId: 'post-1',

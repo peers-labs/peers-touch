@@ -3,6 +3,7 @@ use std::sync::Arc;
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine as _;
 use ed25519_dalek::Signer;
+use serde::{Deserialize, Serialize};
 
 use super::identity::{IdentityKeyPair, X25519KeyPair};
 use crate::contracts::CryptoEndpoint;
@@ -15,11 +16,22 @@ use crate::proto::key_exchange::{
 const INITIAL_ONE_TIME_PREKEY_COUNT: i32 = 20;
 const REPLENISH_ONE_TIME_PREKEY_COUNT: i32 = 20;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PendingPreKeyBundle {
     pub signed_prekey_id: i32,
     pub signed_prekey_private: [u8; 32],
     pub one_time_prekeys: Vec<(i32, [u8; 32])>,
+}
+
+/// Durable continuity record for the published prekey bundle. When local
+/// messaging data is lost (e.g. app reinstall) while the Station still holds a
+/// valid bundle, restoring the identical material makes re-publication
+/// idempotent instead of rotating the one-time keys (which the Station
+/// rejects). `store_bundle` upserts/merges entries keyed by prekey id so
+/// replenishment batches accumulate on the same continuity record.
+pub trait PreKeyBundleBackup: Send + Sync {
+    fn load_bundle(&self) -> Result<Option<PendingPreKeyBundle>, String>;
+    fn store_bundle(&self, bundle: &PendingPreKeyBundle) -> Result<(), String>;
 }
 
 pub trait PreKeyRepository: Send + Sync {
@@ -82,12 +94,23 @@ pub trait PreKeyInventoryTransport: Send + Sync {
 pub struct PreKeyPublisher<R> {
     store: Arc<R>,
     endpoint: CryptoEndpoint,
+    backup: Option<Arc<dyn PreKeyBundleBackup>>,
 }
 
 impl<R: PreKeyRepository> PreKeyPublisher<R> {
     pub fn new(store: Arc<R>, endpoint: CryptoEndpoint) -> Result<Self, String> {
         endpoint.validate()?;
-        Ok(Self { store, endpoint })
+        Ok(Self {
+            store,
+            endpoint,
+            backup: None,
+        })
+    }
+
+    /// Attach the durable bundle continuity store used after local data loss.
+    pub fn with_backup(mut self, backup: Arc<dyn PreKeyBundleBackup>) -> Self {
+        self.backup = Some(backup);
+        self
     }
 
     pub fn publish<T: PreKeyTransport>(
@@ -112,6 +135,24 @@ impl<R: PreKeyRepository> PreKeyPublisher<R> {
         if now_unix_ms <= 0 {
             return Err("messaging prekey generation time is invalid".to_string());
         }
+        // Local data was lost. Prefer the durable continuity record so the
+        // Station sees the same bundle (identical signed prekey + one-time
+        // keys) and accepts an idempotent re-publication.
+        if let Some(restored) = self
+            .backup
+            .as_ref()
+            .map(|backup| backup.load_bundle())
+            .transpose()?
+            .flatten()
+        {
+            return self.store.install_fresh_prekey_bundle(
+                restored.signed_prekey_id,
+                &restored.signed_prekey_private,
+                &restored.one_time_prekeys,
+                now_unix_ms,
+            );
+        }
+
         let signed_prekey = X25519KeyPair::generate();
         let signed_prekey_id = i32::try_from(
             now_unix_ms
@@ -128,7 +169,16 @@ impl<R: PreKeyRepository> PreKeyPublisher<R> {
             &signed_prekey.private_bytes(),
             &one_time_prekeys,
             now_unix_ms,
-        )
+        )?;
+
+        if let Some(backup) = &self.backup {
+            backup.store_bundle(&PendingPreKeyBundle {
+                signed_prekey_id,
+                signed_prekey_private: signed_prekey.private_bytes(),
+                one_time_prekeys,
+            })?;
+        }
+        Ok(())
     }
 
     pub fn reconcile<T>(
@@ -214,7 +264,13 @@ impl<R: PreKeyRepository> PreKeyPublisher<R> {
                 .iter()
                 .map(|(id, _)| *id)
                 .collect::<Vec<_>>(),
-        )
+        )?;
+        // Accumulate replenishment batches on the same durable continuity
+        // record so a later data-loss restore cannot re-rotate existing ids.
+        if let Some(backup) = &self.backup {
+            backup.store_bundle(bundle)?;
+        }
+        Ok(())
     }
 }
 

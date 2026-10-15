@@ -82,7 +82,7 @@ func requireCanonicalSchema(db *gorm.DB) error {
 				"federation_id",
 				"authority_epoch",
 			},
-			forbidden:      []string{"current_seq"},
+			forbidden:      []string{"current_seq", "disappear_timer_seconds"},
 			primaryColumns: []string{"conversation_id"},
 		},
 		{
@@ -139,6 +139,11 @@ func requireCanonicalSchema(db *gorm.DB) error {
 				"snapshot_bytes",
 			},
 			primaryColumns: []string{"plan_id"},
+		},
+		{
+			model:          &ConversationMemberSettingsModel{},
+			forbidden:      []string{"cleared_at_unix_ms"},
+			primaryColumns: []string{"conversation_id", "ptid"},
 		},
 		{
 			model:          &ConversationReadCursorModel{},

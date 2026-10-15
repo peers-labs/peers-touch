@@ -9,11 +9,13 @@ import re
 import signal
 import shlex
 import shutil
+import stat
 import subprocess
 import tempfile
 import time
 import uuid
 import zipfile
+import xml.etree.ElementTree as ElementTree
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -31,6 +33,13 @@ from tooling.acceptance.gates.mobile.proof_contracts import validate_contract_pa
 
 
 GATE_ID = "mobile-native-access-e2e"
+SCENARIO_BUILD_ATTESTATION_GATE_IDS = frozenset(
+    {
+        "mobile-native-lifecycle-e2e",
+        "mobile-native-platform-e2e",
+        "mobile-social-android-native",
+    }
+)
 APPLICATION_ID = "com.peers.touch.mobile"
 IOS_CALLBACK_SCHEMES = frozenset({"peers-touch"})
 BUILD_IDENTITY_SCHEMA = "peers-mobile-build-identity"
@@ -42,6 +51,11 @@ ACCEPTANCE_CARGO_FEATURE = "acceptance-harness"
 ENVIRONMENT_POLICY = "empty-base-explicit-allowlist"
 DEPENDENCY_POLICY = "locked-preseeded-offline"
 SIGNING_POLICY = "mobile-acceptance-debug"
+CONTROLLED_BUILD_ROOT_TOKEN = "<controlled-build-root>"
+ANDROID_ACCEPTANCE_SIGNING_ROOT = Path(
+    "mobile-native/android-acceptance-signing"
+)
+ANDROID_ACCEPTANCE_KEYSTORE = "acceptance-debug.keystore"
 ANDROID_GRADLE_LOCK_REQUIREMENTS = {
     "apps/mobile/src-tauri/gen/android/buildscript-gradle.lockfile": (
         "com.android.tools.build:gradle:8.5.1",
@@ -65,9 +79,32 @@ ANDROID_GRADLE_LOCK_REQUIREMENTS = {
     "apps/mobile/src-tauri/gen/android/gradle/dependency-locks/tauri-plugin-opener.lockfile": (
         "org.jetbrains.kotlin:kotlin-stdlib:1.9.25",
     ),
+    "apps/mobile/src-tauri/gen/android/gradle/dependency-locks/tauri-plugin-peers-platform-permissions.lockfile": (
+        "org.jetbrains.kotlin:kotlin-stdlib:1.9.25",
+    ),
     "apps/mobile/src-tauri/gen/android/gradle/dependency-locks/tauri-plugin-peers-secure-storage.lockfile": (
         "org.jetbrains.kotlin:kotlin-stdlib:1.9.25",
     ),
+}
+ANDROID_GRADLE_LOCK_CONFIGURATION_REQUIREMENTS = {
+    "apps/mobile/src-tauri/gen/android/gradle/dependency-locks/app.lockfile": {
+        "androidx.activity:activity-ktx:1.8.2": (
+            "arm64DebugRuntimeClasspath",
+            "arm64ReleaseRuntimeClasspath",
+        ),
+        "androidx.lifecycle:lifecycle-runtime-ktx:2.6.1": (
+            "arm64DebugRuntimeClasspath",
+            "arm64ReleaseRuntimeClasspath",
+        ),
+        "androidx.lifecycle:lifecycle-viewmodel-ktx:2.6.1": (
+            "arm64DebugRuntimeClasspath",
+            "arm64ReleaseRuntimeClasspath",
+        ),
+        "androidx.savedstate:savedstate-ktx:1.2.1": (
+            "arm64DebugRuntimeClasspath",
+            "arm64ReleaseRuntimeClasspath",
+        ),
+    },
 }
 CARGO_CACHE_SUBTREES = (
     "registry/index",
@@ -98,12 +135,26 @@ ANDROID_CARGO_GRADLE_PROJECTS = (
 )
 ANDROID_LOCAL_GRADLE_PROJECTS = (
     (
+        ":tauri-plugin-peers-platform-permissions",
+        "apps/mobile/src-tauri/plugins/platform-permissions/android",
+    ),
+    (
+        ":tauri-plugin-peers-secure-input",
+        "apps/mobile/src-tauri/plugins/secure-input/android",
+    ),
+    (
         ":tauri-plugin-peers-secure-storage",
         "apps/mobile/src-tauri/plugins/secure-storage/android",
     ),
 )
-GRADLE_SETTINGS_SOURCE_EXCLUDED_PARTS = frozenset({"build", ".gradle"})
+GRADLE_SETTINGS_SOURCE_EXCLUDED_PARTS = frozenset(
+    {"build", ".gradle", "jniLibs"}
+)
 GRADLE_GENERATED_SOURCE_FILES = frozenset({"tauri.build.gradle.kts"})
+ANDROID_TAURI_BUILD_CONFIG = '{"build":{"beforeBuildCommand":"","devUrl":null}}'
+ANDROID_TAURI_TRACKED_GENERATED_INPUTS = (
+    "apps/mobile/src-tauri/gen/android/app/src/main/AndroidManifest.xml",
+)
 
 RESOLVER_ARGUMENTS = {
     "android": {
@@ -122,16 +173,22 @@ CONSTRUCTED_BUILD_ENVIRONMENT = frozenset(
     {
         "ANDROID_HOME",
         "ANDROID_SDK_ROOT",
+        "CARGO_BUILD_RUSTC",
+        "CARGO_BUILD_RUSTC_WRAPPER",
         "CARGO_HOME",
         "CARGO_TARGET_DIR",
         "DEVELOPER_DIR",
+        "GRADLE_OPTS",
         "GRADLE_USER_HOME",
         "HOME",
         "JAVA_HOME",
+        "NDK_HOME",
         "PATH",
         "PT_MOBILE_BUILD_IDENTITY_JSON",
         "RUSTUP_HOME",
+        "RUSTUP_TOOLCHAIN",
         "SDKROOT",
+        "TARGET_RANLIB",
         "TMPDIR",
         "VITE_ACCEPTANCE_HARNESS",
     }
@@ -176,6 +233,21 @@ EXCLUDED_BUILD_INPUT_PARTS = frozenset(
         "target",
         "dist",
         "node_modules",
+        "jniLibs",
+    }
+)
+ANDROID_TAURI_GENERATED_BUILD_OUTPUTS = frozenset(
+    {
+        "apps/mobile/src-tauri/gen/android/.tauri",
+        "apps/mobile/src-tauri/gen/android/app/proguard-tauri.pro",
+        "apps/mobile/src-tauri/gen/android/app/src/main/assets/tauri.conf.json",
+        (
+            "apps/mobile/src-tauri/gen/android/app/src/main/java/"
+            "com/peers/touch/mobile/generated"
+        ),
+        "apps/mobile/src-tauri/gen/android/app/tauri.build.gradle.kts",
+        "apps/mobile/src-tauri/gen/android/app/tauri.properties",
+        "apps/mobile/src-tauri/gen/android/tauri.settings.gradle",
     }
 )
 SECRET_BUILD_INPUT_NAMES = frozenset(
@@ -221,7 +293,6 @@ WEB_ACCEPTANCE_HARNESS_MARKERS = (
     b"lifecycle.secureStorageDeleteFailure",
     b"native.deliverDeepLink",
     b"projection.read",
-    b"cleanup",
 )
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 GIT_COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
@@ -406,6 +477,16 @@ class CargoWrapperControl:
 
 
 @dataclass(frozen=True)
+class PnpmShimControl:
+    path: Path
+    sha256: str
+    node_path: Path
+    node_sha256: str
+    real_pnpm_path: Path
+    real_pnpm_sha256: str
+
+
+@dataclass(frozen=True)
 class GradleWrapperControl:
     path: Path
     wrapper_sha256: str
@@ -435,6 +516,7 @@ class SuccessfulBuildReceipt:
         "_gradle_settings",
         "_negative_adapter_scan",
         "_platform",
+        "_pnpm_shim_control",
         "_producer_source_digest",
         "_release_artifact",
         "_release_artifact_sha256",
@@ -442,6 +524,7 @@ class SuccessfulBuildReceipt:
         "_release_cargo_wrapper_control",
         "_release_gradle_wrapper_control",
         "_release_gradle_settings",
+        "_release_pnpm_shim_control",
         "_repository_root",
         "_receipt_id",
         "_seal_digest",
@@ -466,12 +549,14 @@ class SuccessfulBuildReceipt:
         gradle_settings: Path | None,
         negative_adapter_scan: dict[str, Any],
         platform: str,
+        pnpm_shim_control: PnpmShimControl | None,
         producer_source_digest: str,
         release_artifact: Path,
         release_build_identity: dict[str, Any],
         release_cargo_wrapper_control: CargoWrapperControl,
         release_gradle_wrapper_control: GradleWrapperControl | None,
         release_gradle_settings: Path | None,
+        release_pnpm_shim_control: PnpmShimControl | None,
         repository_root: Path,
         source_identity: SourceIdentity,
         toolchain_digest: str,
@@ -535,6 +620,7 @@ class SuccessfulBuildReceipt:
                 "release package scan is not bound to the exact build identity"
             )
         object.__setattr__(self, "_platform", platform)
+        object.__setattr__(self, "_pnpm_shim_control", pnpm_shim_control)
         object.__setattr__(self, "_producer_source_digest", producer_source_digest)
         object.__setattr__(self, "_release_artifact", release_artifact)
         object.__setattr__(
@@ -565,6 +651,11 @@ class SuccessfulBuildReceipt:
             release_gradle_wrapper_control,
         )
         object.__setattr__(self, "_release_gradle_settings", release_gradle_settings)
+        object.__setattr__(
+            self,
+            "_release_pnpm_shim_control",
+            release_pnpm_shim_control,
+        )
         object.__setattr__(self, "_repository_root", repository_root.resolve(strict=True))
         object.__setattr__(self, "_receipt_id", uuid.uuid4().hex)
         object.__setattr__(self, "_source_identity", source_identity)
@@ -631,6 +722,7 @@ class SuccessfulBuildReceipt:
                 if self._gradle_settings is None
                 else _sha256_file(self._gradle_settings)
             ),
+            "pnpmShim": _pnpm_shim_payload(self._pnpm_shim_control),
             "commandDigests": list(self._command_digests),
             "producerSourceDigest": self._producer_source_digest,
             "toolchainDigest": self._toolchain_digest,
@@ -681,6 +773,9 @@ class SuccessfulBuildReceipt:
                 if self._release_gradle_settings is None
                 else _sha256_file(self._release_gradle_settings)
             ),
+            "releasePnpmShim": _pnpm_shim_payload(
+                self._release_pnpm_shim_control
+            ),
             "webBuildProvenance": list(self._web_build_provenance),
         }
 
@@ -699,6 +794,12 @@ class SuccessfulBuildReceipt:
             raise MobileNativeBuildError("successful build receipt seal is invalid")
         _assert_cargo_wrapper_control(self._cargo_wrapper_control)
         _assert_cargo_wrapper_control(self._release_cargo_wrapper_control)
+        for pnpm_shim in (
+            self._pnpm_shim_control,
+            self._release_pnpm_shim_control,
+        ):
+            if pnpm_shim is not None:
+                _assert_pnpm_shim_control(pnpm_shim)
         if self._gradle_wrapper_control is not None:
             _assert_gradle_wrapper_control(self._gradle_wrapper_control)
         if self._release_gradle_wrapper_control is not None:
@@ -813,6 +914,13 @@ def _repository_relative(root: Path, path: Path) -> str:
 
 def _is_excluded_build_input(relative: PurePosixPath) -> bool:
     if any(part in EXCLUDED_BUILD_INPUT_PARTS for part in relative.parts):
+        return True
+    relative_path = relative.as_posix()
+    if any(
+        relative_path == generated
+        or relative_path.startswith(f"{generated}/")
+        for generated in ANDROID_TAURI_GENERATED_BUILD_OUTPUTS
+    ):
         return True
     if relative.name in SECRET_BUILD_INPUT_NAMES:
         return True
@@ -1161,10 +1269,17 @@ def construct_build_environment(
     environment = {
         "PATH": os.pathsep.join(path_entries),
         "HOME": str((run_root / "home").resolve()),
+        "CARGO_BUILD_RUSTC": str(
+            Path(executable_paths["rustc"]).resolve(strict=True)
+        ),
+        "CARGO_BUILD_RUSTC_WRAPPER": "",
         "TMPDIR": str((run_root / "tmp").resolve()),
         "CARGO_HOME": str((run_root / "cargo-home").resolve()),
         "CARGO_TARGET_DIR": str((run_root / "cargo-target").resolve()),
         "RUSTUP_HOME": str((run_root / "rustup-home").resolve()),
+        "RUSTUP_TOOLCHAIN": str(
+            Path(executable_paths["rustc"]).resolve(strict=True).parent.parent
+        ),
     }
     if acceptance_harness:
         environment["VITE_ACCEPTANCE_HARNESS"] = "1"
@@ -1179,9 +1294,44 @@ def construct_build_environment(
             raise MobileNativeBuildError(f"required SDK path is unavailable: {name}")
         environment[name] = str(Path(value).resolve())
     if platform == "android":
+        android_home = Path(environment["ANDROID_HOME"])
+        ndk_roots = sorted(
+            path
+            for path in (android_home / "ndk").iterdir()
+            if path.is_dir() and not path.is_symlink()
+        )
+        if len(ndk_roots) != 1:
+            raise MobileNativeBuildError(
+                "Android build requires exactly one installed NDK"
+            )
+        prebuilt_roots = sorted(
+            path
+            for path in (
+                ndk_roots[0] / "toolchains" / "llvm" / "prebuilt"
+            ).iterdir()
+            if path.is_dir() and not path.is_symlink()
+        )
+        if len(prebuilt_roots) != 1:
+            raise MobileNativeBuildError(
+                "Android NDK requires exactly one host toolchain"
+            )
+        ranlib = prebuilt_roots[0] / "bin" / "llvm-ranlib"
+        try:
+            ranlib.resolve(strict=True)
+        except OSError as error:
+            raise MobileNativeBuildError(
+                "Android NDK ranlib is unavailable"
+            ) from error
         gradle_user_home = run_root / "gradle-home"
         gradle_user_home.mkdir(parents=True, exist_ok=True)
+        environment["GRADLE_OPTS"] = (
+            "-Dorg.gradle.offline=true "
+            "-Dorg.gradle.daemon=false "
+            "-Dkotlin.compiler.execution.strategy=in-process"
+        )
         environment["GRADLE_USER_HOME"] = str(gradle_user_home.resolve())
+        environment["NDK_HOME"] = str(ndk_roots[0].resolve())
+        environment["TARGET_RANLIB"] = str(ranlib.absolute())
     if identity_json is not None:
         identity = (
             parse_build_identity(identity_json)
@@ -1357,6 +1507,97 @@ def _assert_cargo_wrapper_control(control: CargoWrapperControl) -> None:
         raise MobileNativeBuildError("controlled Cargo wrapper feature policy changed")
 
 
+def _install_pnpm_shim(
+    *,
+    run_root: Path,
+    real_pnpm: str,
+    node: str,
+    shell: str,
+) -> PnpmShimControl:
+    resolver_directory = run_root / "resolver-bin"
+    if not resolver_directory.is_dir() or resolver_directory.is_symlink():
+        raise MobileNativeBuildError(
+            "controlled pnpm shim requires the resolver directory"
+        )
+    shim = resolver_directory / "pnpm"
+    real_pnpm_path = Path(real_pnpm).resolve(strict=True)
+    node_path = Path(node).resolve(strict=True)
+    shell_path = Path(shell).resolve(strict=True)
+    if (
+        real_pnpm_path.name != "pnpm.cjs"
+        or not real_pnpm_path.is_file()
+        or not node_path.is_file()
+        or not os.access(node_path, os.X_OK)
+        or not shell_path.is_file()
+        or not os.access(shell_path, os.X_OK)
+    ):
+        raise MobileNativeBuildError(
+            "controlled pnpm shim requires attested pnpm.cjs, node and shell files"
+        )
+    shim.write_text(
+        f"#!{shell_path}\n"
+        f"exec {shlex.quote(str(node_path))} "
+        f"{shlex.quote(str(real_pnpm_path))} \"$@\"\n",
+        encoding="utf-8",
+    )
+    shim.chmod(0o700)
+    control = PnpmShimControl(
+        path=shim,
+        sha256=_sha256_file(shim),
+        node_path=node_path,
+        node_sha256=_sha256_file(node_path),
+        real_pnpm_path=real_pnpm_path,
+        real_pnpm_sha256=_sha256_file(real_pnpm_path),
+    )
+    _assert_pnpm_shim_control(control)
+    return control
+
+
+def _assert_pnpm_shim_control(control: PnpmShimControl) -> None:
+    if (
+        control.path.name != "pnpm"
+        or control.path.is_symlink()
+        or not control.path.is_file()
+        or not os.access(control.path, os.X_OK)
+        or control.real_pnpm_path.name != "pnpm.cjs"
+        or control.real_pnpm_path.is_symlink()
+        or not control.real_pnpm_path.is_file()
+        or control.node_path.is_symlink()
+        or not control.node_path.is_file()
+        or not os.access(control.node_path, os.X_OK)
+    ):
+        raise MobileNativeBuildError("controlled pnpm shim became unsafe")
+    if (
+        _sha256_file(control.path) != control.sha256
+        or _sha256_file(control.real_pnpm_path) != control.real_pnpm_sha256
+        or _sha256_file(control.node_path) != control.node_sha256
+    ):
+        raise MobileNativeBuildError(
+            "controlled pnpm shim changed after installation"
+        )
+    content = control.path.read_text(encoding="utf-8")
+    if (
+        shlex.quote(str(control.node_path)) not in content
+        or shlex.quote(str(control.real_pnpm_path)) not in content
+    ):
+        raise MobileNativeBuildError("controlled pnpm shim target changed")
+
+
+def _pnpm_shim_payload(
+    control: PnpmShimControl | None,
+) -> dict[str, str] | None:
+    if control is None:
+        return None
+    return {
+        "path": str(control.path),
+        "sha256": control.sha256,
+        "nodePath": str(control.node_path),
+        "nodeSha256": control.node_sha256,
+        "realPnpmPath": str(control.real_pnpm_path),
+        "realPnpmSha256": control.real_pnpm_sha256,
+    }
+
+
 def _gradle_distribution_url(properties: Path) -> str:
     try:
         lines = properties.read_text(encoding="utf-8").splitlines()
@@ -1529,6 +1770,7 @@ def _toolchain_digest_with_wrappers(
     toolchain_digest: str,
     cargo: CargoWrapperControl,
     gradle: GradleWrapperControl | None,
+    pnpm: PnpmShimControl | None,
 ) -> str:
     return canonical_value_digest(
         {
@@ -1545,6 +1787,7 @@ def _toolchain_digest_with_wrappers(
                     "distributionSha256": gradle.distribution_sha256,
                 }
             ),
+            "pnpmShim": _pnpm_shim_payload(pnpm),
         }
     )
 
@@ -1555,8 +1798,36 @@ def allowlisted_environment_digest(environment: Mapping[str, str]) -> str:
         raise MobileNativeBuildError(
             f"build environment contains non-allowlisted keys: {sorted(unexpected)}"
         )
+    cargo_home = environment.get("CARGO_HOME")
+    if not cargo_home:
+        raise MobileNativeBuildError(
+            "build environment has no controlled CARGO_HOME"
+        )
+    controlled_root = Path(cargo_home)
+    if controlled_root.name != "cargo-home":
+        raise MobileNativeBuildError(
+            "build environment CARGO_HOME is not run-root scoped"
+        )
+    controlled_root_text = str(controlled_root.parent)
+
+    def normalize_path(value: str) -> str:
+        if value == controlled_root_text:
+            return CONTROLLED_BUILD_ROOT_TOKEN
+        prefix = controlled_root_text + os.sep
+        if value.startswith(prefix):
+            relative = value.removeprefix(prefix).replace(os.sep, "/")
+            return f"{CONTROLLED_BUILD_ROOT_TOKEN}/{relative}"
+        return value
+
     digest_values = {
-        key: value
+        key: (
+            os.pathsep.join(
+                normalize_path(entry)
+                for entry in value.split(os.pathsep)
+            )
+            if key == "PATH"
+            else normalize_path(value)
+        )
         for key, value in environment.items()
         if key != "PT_MOBILE_BUILD_IDENTITY_JSON"
     }
@@ -1601,6 +1872,7 @@ def require_tool_native_offline_controls(
             tool,
             "pnpm.cjs" if tool == "pnpm" else tool,
             "gradlew" if tool == "gradle" else tool,
+            "pnpm" if tool == "gradle" else tool,
             "xcodebuild" if tool == "xcode" else tool,
         }:
             raise MobileNativeBuildError(f"{tool} command uses an unexpected executable")
@@ -1676,6 +1948,30 @@ def create_build_identity(
     }
     parse_build_identity(canonical_json_bytes(identity).decode("ascii"))
     return identity
+
+
+def _content_bound_build_id(
+    *,
+    platform: str,
+    configuration: str,
+    source: SourceIdentity,
+    build_inputs_digest: str,
+    environment_digest: str,
+) -> str:
+    digest = canonical_value_digest(
+        {
+            "schema": BUILD_IDENTITY_SCHEMA,
+            "platform": platform,
+            "configuration": configuration,
+            "sourceCommit": source.source_commit,
+            "workspaceState": source.workspace_state,
+            "workspaceDigest": source.workspace_digest,
+            "buildInputsDigest": build_inputs_digest,
+            "allowlistedEnvironmentDigest": environment_digest,
+            "applicationId": APPLICATION_ID,
+        }
+    )
+    return f"{configuration}-{digest.removeprefix('sha256:')}"
 
 
 def _create_release_build_identity(
@@ -1991,20 +2287,17 @@ def _tauri_embedded_asset_bytes(
         raise MobileNativeBuildError(
             "Tauri Web identity asset path has no file extension"
         )
-    expected_filename = (
-        hashlib.sha256(expected_identity).hexdigest() + asset_suffix
-    )
     candidates = sorted(
         path
         for path in cargo_target_dir.glob(
-            f"**/tauri-codegen-assets/{expected_filename}"
+            f"**/tauri-codegen-assets/*{asset_suffix}"
         )
-        if path.is_file()
+        if path.is_file() and SHA256_PATTERN.fullmatch(path.stem)
     )
     if not candidates:
         raise MobileNativeBuildError(
-            "Tauri codegen metadata is missing the digest-bound Web identity "
-            f"representation {expected_filename}"
+            "Tauri codegen metadata is missing a content-addressed Web identity "
+            "representation"
         )
     if any(candidate.is_symlink() for candidate in candidates):
         raise MobileNativeBuildError(
@@ -2016,7 +2309,8 @@ def _tauri_embedded_asset_bytes(
         raise MobileNativeBuildError(
             "Node.js is required to verify Tauri codegen Web identity metadata"
         )
-    representations: set[bytes] = set()
+    matching_representations: list[bytes] = []
+    mismatched_candidates = 0
     for candidate in candidates:
         representation = candidate.read_bytes()
         try:
@@ -2046,17 +2340,20 @@ def _tauri_embedded_asset_bytes(
                 "Tauri codegen Web identity metadata is structurally malformed"
             )
         if decoded.stdout != expected_identity:
-            raise MobileNativeBuildError(
-                "Tauri codegen Web identity metadata does not map to the exact "
-                "canonical identity bytes"
-            )
-        representations.add(representation)
-    if len(representations) != 1:
+            mismatched_candidates += 1
+            continue
+        matching_representations.append(representation)
+    if not matching_representations and mismatched_candidates:
+        raise MobileNativeBuildError(
+            "Tauri codegen Web identity metadata does not map to the exact "
+            "canonical identity bytes"
+        )
+    if len(matching_representations) != 1:
         raise MobileNativeBuildError(
             "application package omits the Web identity asset or its Tauri build "
             "output does not contain one deterministic representation"
         )
-    return representations.pop()
+    return matching_representations[0]
 
 
 def _scan_packaged_web_identity(
@@ -2585,16 +2882,57 @@ def _require_dependency_manager_locks(root: Path, platform: str) -> None:
         for relative, required_modules in ANDROID_GRADLE_LOCK_REQUIREMENTS.items():
             lockfile = _relative_file(root, relative)
             lines = lockfile.read_text(encoding="utf-8").splitlines()
-            locked_modules = {
-                line.split("=", 1)[0]
+            lock_state = {
+                module: {
+                    configuration
+                    for configuration in configurations.split(",")
+                    if configuration
+                }
                 for line in lines
                 if line and not line.startswith("#") and "=" in line
+                for module, configurations in (line.split("=", 1),)
             }
-            if "empty" not in locked_modules or not set(required_modules).issubset(
-                locked_modules
+            if "empty" not in lock_state or not set(required_modules).issubset(
+                lock_state
             ):
                 raise MobileNativeBuildError(
                     f"Android Gradle dependency lock state is incomplete: {relative}"
+                )
+            for module, required_configurations in (
+                ANDROID_GRADLE_LOCK_CONFIGURATION_REQUIREMENTS.get(
+                    relative,
+                    {},
+                ).items()
+            ):
+                if not set(required_configurations).issubset(
+                    lock_state.get(module, set())
+                ):
+                    raise MobileNativeBuildError(
+                        "Android Gradle dependency lock configuration is incomplete: "
+                        f"{relative} {module}"
+                    )
+            arm64_release_versions: dict[str, set[str]] = {}
+            for module, configurations in lock_state.items():
+                coordinate = module.rsplit(":", 1)
+                if (
+                    len(coordinate) != 2
+                    or not any(
+                        configuration.startswith("arm64Release")
+                        for configuration in configurations
+                    )
+                ):
+                    continue
+                name, version = coordinate
+                arm64_release_versions.setdefault(name, set()).add(version)
+            conflicts = sorted(
+                name
+                for name, versions in arm64_release_versions.items()
+                if len(versions) > 1
+            )
+            if conflicts:
+                raise MobileNativeBuildError(
+                    "Android Gradle arm64 release dependency versions conflict: "
+                    f"{relative} {conflicts}"
                 )
     else:
         raise MobileNativeBuildError(f"unsupported Mobile platform: {platform}")
@@ -2665,7 +3003,7 @@ def resolve_toolchain_identity(
     names.extend(
         ["xcodebuild", "swiftc", "xcode-select", "xcrun", "codesign", "security"]
         if platform == "ios"
-        else ["java", "adb", "apkanalyzer", "apksigner"]
+        else ["java", "keytool", "adb", "apkanalyzer", "apksigner"]
     )
     executable_paths = {name: _resolved_executable(name, search_path) for name in names}
     for rust_tool in ("rustc", "cargo"):
@@ -2769,7 +3107,7 @@ def resolve_toolchain_identity(
     probes.extend(
         [("xcodebuild", "-version"), ("swiftc", "--version")]
         if platform == "ios"
-        else [("java", "-version"), ("adb", "version")]
+        else [("java", "-version"), ("keytool", "-J-version"), ("adb", "version")]
     )
     for probe in probes:
         executable = executable_paths[probe[0]]
@@ -2892,11 +3230,7 @@ def _preseed_cargo_cache(source: Path, destination: Path) -> None:
         _copy_cache_tree_without_symlinks(
             subtree,
             destination.joinpath(*PurePosixPath(relative).parts),
-            excluded_directory_names=(
-                GRADLE_SETTINGS_SOURCE_EXCLUDED_PARTS
-                if relative == "registry/src"
-                else frozenset()
-            ),
+            excluded_directory_names=frozenset(),
         )
         copied_subtrees.append(relative)
     copied_root_files: list[str] = []
@@ -3092,11 +3426,24 @@ def _preseed_dependency_caches(
         elif name == "gradle":
             destination.mkdir(parents=True, exist_ok=False)
             caches = source / "caches"
+            wrapper_distributions = source / "wrapper" / "dists"
             if not caches.is_dir() or caches.is_symlink():
                 raise MobileNativeBuildError(
                     "preseeded Gradle dependency cache is missing or unsafe"
                 )
             shutil.copytree(caches, destination / "caches", symlinks=False)
+            if (
+                not wrapper_distributions.is_dir()
+                or wrapper_distributions.is_symlink()
+            ):
+                raise MobileNativeBuildError(
+                    "preseeded Gradle wrapper distribution is missing or unsafe"
+                )
+            shutil.copytree(
+                wrapper_distributions,
+                destination / "wrapper" / "dists",
+                symlinks=False,
+            )
         else:
             shutil.copytree(source, destination, symlinks=False)
     return destinations
@@ -3109,14 +3456,22 @@ def _producer_commands(
     run_root: Path,
     cache_roots: Mapping[str, Path],
     gradle_wrapper: GradleWrapperControl | None,
-    gradle_settings: Path | None = None,
+    pnpm_shim: PnpmShimControl | None = None,
     *,
     variant: str = ACCEPTANCE_VARIANT,
 ) -> dict[str, list[str]]:
     if variant not in {ACCEPTANCE_VARIANT, RELEASE_VARIANT}:
         raise MobileNativeBuildError(f"unsupported Mobile build variant: {variant}")
     is_acceptance = variant == ACCEPTANCE_VARIANT
-    pnpm = toolchain.executable_paths["pnpm"]
+    if platform == "android":
+        if pnpm_shim is None:
+            raise MobileNativeBuildError("Android build has no controlled pnpm shim")
+        _assert_pnpm_shim_control(pnpm_shim)
+        pnpm = str(pnpm_shim.path)
+    else:
+        if pnpm_shim is not None:
+            raise MobileNativeBuildError("iOS build must not use the Android pnpm shim")
+        pnpm = toolchain.executable_paths["pnpm"]
     cargo = toolchain.executable_paths["cargo"]
     commands = {
         "pnpm": [
@@ -3170,27 +3525,34 @@ def _producer_commands(
             gradle_wrapper is None
             or gradle_cache is None
             or gradle_cache.resolve(strict=True) != gradle_wrapper.gradle_user_home
-            or gradle_settings is None
-            or not gradle_settings.is_file()
-            or gradle_settings.is_symlink()
         ):
             raise MobileNativeBuildError(
-                "Android build has no controlled Gradle wrapper/settings"
+                "Android build has no controlled Gradle cache/distribution"
             )
         commands["gradle"] = [
-            str(gradle_wrapper.path),
-            "--offline",
-            "--no-daemon",
-            "--settings-file",
-            str(gradle_settings.resolve(strict=True)),
-            "--project-dir",
-            str(root / "apps/mobile/src-tauri/gen/android"),
-            (
-                ":app:assembleArm64Debug"
-                if is_acceptance
-                else ":app:assembleArm64Release"
-            ),
+            pnpm,
+            "--dir",
+            str(root / "apps/mobile"),
+            "exec",
+            "tauri",
+            "android",
+            "build",
+            "--ci",
         ]
+        if is_acceptance:
+            commands["gradle"].append("--debug")
+        commands["gradle"].extend(
+            [
+                "--target",
+                "aarch64",
+                "--split-per-abi",
+                "--apk",
+                "--config",
+                ANDROID_TAURI_BUILD_CONFIG,
+                "--",
+                "--offline",
+            ]
+        )
     else:
         commands["xcode"] = [
             toolchain.executable_paths["xcodebuild"],
@@ -3307,6 +3669,118 @@ def _fresh_web_build_provenance(
     }
 
 
+def _xml_shape(value: bytes) -> tuple[Any, ...]:
+    try:
+        root = ElementTree.fromstring(value)
+    except ElementTree.ParseError as error:
+        raise MobileNativeBuildError(
+            "Tauri mutated a tracked Android XML input into invalid XML"
+        ) from error
+
+    def shape(element: ElementTree.Element) -> tuple[Any, ...]:
+        return (
+            element.tag,
+            tuple(sorted(element.attrib.items())),
+            (element.text or "").strip(),
+            tuple(shape(child) for child in element),
+        )
+
+    return shape(root)
+
+
+def _snapshot_tauri_tracked_inputs(root: Path) -> dict[Path, bytes]:
+    return {
+        _relative_file(root, relative): _relative_file(root, relative).read_bytes()
+        for relative in ANDROID_TAURI_TRACKED_GENERATED_INPUTS
+    }
+
+
+def _restore_tauri_tracked_inputs(
+    snapshots: Mapping[Path, bytes],
+) -> list[dict[str, str]]:
+    restored: list[dict[str, str]] = []
+    semantic_changes: list[str] = []
+    for path, original in snapshots.items():
+        if path.is_symlink() or not path.is_file():
+            raise MobileNativeBuildError(
+                f"Tauri removed or replaced tracked Android input: {path}"
+            )
+        generated = path.read_bytes()
+        if generated == original:
+            continue
+        if _xml_shape(generated) != _xml_shape(original):
+            semantic_changes.append(str(path))
+        generated_sha256 = sha256_digest(generated)
+        path.write_bytes(original)
+        restored.append(
+            {
+                "path": str(path),
+                "generatedSha256": generated_sha256,
+                "restoredSha256": sha256_digest(original),
+            }
+        )
+    if semantic_changes:
+        raise MobileNativeBuildError(
+            "Tauri changed tracked Android input semantics: "
+            + ", ".join(semantic_changes)
+        )
+    return restored
+
+
+def _tauri_android_settings_provenance(
+    *,
+    root: Path,
+    cargo_home: Path,
+) -> dict[str, Any]:
+    settings = root / "apps/mobile/src-tauri/gen/android/tauri.settings.gradle"
+    app_dependencies = (
+        root / "apps/mobile/src-tauri/gen/android/app/tauri.build.gradle.kts"
+    )
+    for generated in (settings, app_dependencies):
+        if generated.is_symlink() or not generated.is_file():
+            raise MobileNativeBuildError(
+                "Tauri Android build did not generate safe Gradle source bindings"
+            )
+    settings_content = settings.read_text(encoding="utf-8")
+    dependency_content = app_dependencies.read_text(encoding="utf-8")
+    ambient_cargo = str((Path.home() / ".cargo").resolve())
+    if ambient_cargo in settings_content:
+        raise MobileNativeBuildError(
+            "Tauri Android settings retain an ambient Cargo source path"
+        )
+
+    bindings: list[dict[str, str]] = []
+    for project_id, crate_name, crate_version, relative_project in (
+        ANDROID_CARGO_GRADLE_PROJECTS
+    ):
+        project = _run_scoped_cargo_project(
+            cargo_home,
+            crate_name=crate_name,
+            crate_version=crate_version,
+            relative_project=relative_project,
+        ).resolve(strict=True)
+        bindings.append({"projectId": project_id, "path": str(project)})
+    for project_id, relative_project in ANDROID_LOCAL_GRADLE_PROJECTS:
+        project = (root / relative_project).resolve(strict=True)
+        bindings.append({"projectId": project_id, "path": str(project)})
+
+    for binding in bindings:
+        project_id = binding["projectId"]
+        if (
+            f"include '{project_id}'" not in settings_content
+            or json.dumps(binding["path"]) not in settings_content
+            or f'project("{project_id}")' not in dependency_content
+        ):
+            raise MobileNativeBuildError(
+                f"Tauri Android Gradle binding is incomplete: {project_id}"
+            )
+    return {
+        "settingsFileSha256": _sha256_file(settings),
+        "dependencyFileSha256": _sha256_file(app_dependencies),
+        "settingsSourceDigest": canonical_value_digest(bindings),
+    }
+
+
 def _option_value(command: Sequence[str], option: str) -> str:
     positions = [index for index, value in enumerate(command) if value == option]
     if len(positions) != 1 or positions[0] + 1 >= len(command):
@@ -3322,6 +3796,7 @@ def _validate_variant_command_contract(
     commands: Mapping[str, Sequence[str]],
     environment: Mapping[str, str],
     cargo_wrapper: CargoWrapperControl,
+    pnpm_shim: PnpmShimControl | None = None,
 ) -> None:
     if platform not in RESOLVER_ARGUMENTS:
         raise MobileNativeBuildError(f"unsupported Mobile platform: {platform}")
@@ -3338,6 +3813,16 @@ def _validate_variant_command_contract(
         (ACCEPTANCE_CARGO_FEATURE,) if expected_harness else ()
     )
     _assert_cargo_wrapper_control(cargo_wrapper)
+    if platform == "android":
+        if pnpm_shim is None:
+            raise MobileNativeBuildError(
+                f"{variant} Android build has no controlled pnpm shim"
+            )
+        _assert_pnpm_shim_control(pnpm_shim)
+    elif pnpm_shim is not None:
+        raise MobileNativeBuildError(
+            f"{variant} iOS build has an unexpected pnpm shim"
+        )
     if cargo_wrapper.injected_features != expected_features:
         raise MobileNativeBuildError(
             f"{variant} nested Cargo feature policy is invalid"
@@ -3357,12 +3842,15 @@ def _validate_variant_command_contract(
             f"{variant} Cargo target directory is not variant-isolated"
         )
     web = list(commands["web"])
-    if web[1:] != [
-        "--dir",
-        str(root / "apps/mobile"),
-        "run",
-        "build",
-    ]:
+    if (
+        (pnpm_shim is not None and web[0] != str(pnpm_shim.path))
+        or web[1:] != [
+            "--dir",
+            str(root / "apps/mobile"),
+            "run",
+            "build",
+        ]
+    ):
         raise MobileNativeBuildError(f"{variant} Mobile Web build command is invalid")
     cargo = list(commands["cargo"])
     manifest = str(root / "apps/mobile/src-tauri/Cargo.toml")
@@ -3393,31 +3881,40 @@ def _validate_variant_command_contract(
                 f"{variant} Xcode target/configuration binding is invalid"
             )
     else:
-        expected_task = (
-            ":app:assembleArm64Debug"
-            if expected_harness
-            else ":app:assembleArm64Release"
+        tauri = list(commands["gradle"])
+        expected_tauri = [
+            str(pnpm_shim.path),
+            "--dir",
+            str(root / "apps/mobile"),
+            "exec",
+            "tauri",
+            "android",
+            "build",
+            "--ci",
+        ]
+        if expected_harness:
+            expected_tauri.append("--debug")
+        expected_tauri.extend(
+            [
+                "--target",
+                "aarch64",
+                "--split-per-abi",
+                "--apk",
+                "--config",
+                ANDROID_TAURI_BUILD_CONFIG,
+                "--",
+                "--offline",
+            ]
         )
-        gradle = list(commands["gradle"])
-        settings_file = Path(_option_value(gradle, "--settings-file"))
         if (
             len(cargo) < 2
             or cargo[1] != "fetch"
-            or not settings_file.is_file()
-            or settings_file.is_symlink()
-            or any(argument.startswith("-Pandroid.useAndroidX") for argument in gradle)
-            or str((Path.home() / ".cargo").resolve())
-            in settings_file.read_text(encoding="utf-8")
-            or gradle.count(expected_task) != 1
-            or any(
-                argument.startswith(":app:assemble") and argument != expected_task
-                for argument in gradle
-            )
+            or tauri != expected_tauri
+            or commands["pnpm"][0] != str(pnpm_shim.path)
         ):
             raise MobileNativeBuildError(
                 f"{variant} Android target/configuration binding is invalid"
             )
-        _assert_run_scoped_gradle_properties(settings_file)
 
 
 def _execute_build_variant(
@@ -3429,6 +3926,7 @@ def _execute_build_variant(
     environment: Mapping[str, str],
     identity: Mapping[str, Any],
     cargo_wrapper: CargoWrapperControl,
+    pnpm_shim: PnpmShimControl | None,
     runner: CommandRunner,
 ) -> tuple[tuple[dict[str, Any], ...], dict[str, Any]]:
     platform_tool = "gradle" if platform == "android" else "xcode"
@@ -3439,6 +3937,7 @@ def _execute_build_variant(
         commands=commands,
         environment=environment,
         cargo_wrapper=cargo_wrapper,
+        pnpm_shim=pnpm_shim,
     )
     require_tool_native_offline_controls(
         platform,
@@ -3467,11 +3966,23 @@ def _execute_build_variant(
 
     provenance: list[dict[str, Any]] = []
     web_result: dict[str, Any] | None = None
+    tracked_inputs = (
+        _snapshot_tauri_tracked_inputs(root)
+        if platform == "android"
+        else {}
+    )
     for phase in ("pnpm", "web", "cargo", platform_tool):
         if phase == "web":
             _remove_stale_web_dist(root)
         command = list(commands[phase])
-        result = runner.run(command, cwd=root, env=environment)
+        restored_inputs: list[dict[str, str]] = []
+        try:
+            result = runner.run(command, cwd=root, env=environment)
+        finally:
+            if phase == "gradle":
+                restored_inputs = _restore_tauri_tracked_inputs(
+                    tracked_inputs
+                )
         if result.returncode != 0:
             raise MobileNativeBuildError(
                 f"{variant} {phase} build failed; network fallback is forbidden"
@@ -3490,18 +4001,13 @@ def _execute_build_variant(
                 or ACCEPTANCE_CARGO_FEATURE in ",".join(command)
             )
         if phase == "gradle":
-            settings_file = Path(_option_value(command, "--settings-file"))
-            command_record["settingsFileSha256"] = _sha256_file(settings_file)
-            source_digest_lines = [
-                line.removeprefix("// referencedSourceDigest=")
-                for line in settings_file.read_text(encoding="utf-8").splitlines()
-                if line.startswith("// referencedSourceDigest=")
-            ]
-            if len(source_digest_lines) != 1:
-                raise MobileNativeBuildError(
-                    "run-scoped Gradle settings have no unique source digest"
+            command_record.update(
+                _tauri_android_settings_provenance(
+                    root=root,
+                    cargo_home=Path(environment["CARGO_HOME"]),
                 )
-            command_record["settingsSourceDigest"] = source_digest_lines[0]
+            )
+            command_record["restoredTrackedInputs"] = restored_inputs
         if phase == "web":
             web_result = {
                 **command_record,
@@ -3561,6 +4067,210 @@ def _remove_stale_ios_external_outputs(root: Path) -> None:
         shutil.rmtree(external_root)
 
 
+def _assert_no_symlink_components(path: Path) -> None:
+    absolute = path.expanduser().absolute()
+    current = Path(absolute.anchor)
+    for part in absolute.parts[1:]:
+        current /= part
+        if current.is_symlink():
+            raise MobileNativeBuildError(
+                "Android Acceptance signing path contains a symlink"
+            )
+
+
+def _require_private_signing_directory(path: Path) -> None:
+    _assert_no_symlink_components(path.parent)
+    created = not path.exists()
+    path.mkdir(parents=True, mode=0o700, exist_ok=True)
+    _assert_no_symlink_components(path)
+    if created:
+        path.chmod(0o700)
+    if (
+        not path.is_dir()
+        or stat.S_IMODE(path.stat().st_mode) != 0o700
+    ):
+        raise MobileNativeBuildError(
+            "Android Acceptance signing directory must be owner-only"
+        )
+
+
+def _persistent_android_acceptance_keystore(
+    *,
+    root: Path,
+    runtime_cache: Path,
+    runner: CommandRunner,
+    environment: Mapping[str, str],
+    keytool: str,
+) -> tuple[Path, bool, tuple[str, ...] | None]:
+    repository = root.resolve(strict=True)
+    cache_root = runtime_cache.expanduser().absolute()
+    if cache_root.is_symlink():
+        raise MobileNativeBuildError(
+            "Android Acceptance runtime cache must not be a symlink"
+        )
+    resolved_cache = cache_root.resolve()
+    _assert_no_symlink_components(resolved_cache)
+    if resolved_cache == repository or repository in resolved_cache.parents:
+        raise MobileNativeBuildError(
+            "Android Acceptance runtime cache must be outside the repository"
+        )
+    signing_root = resolved_cache / ANDROID_ACCEPTANCE_SIGNING_ROOT
+    _require_private_signing_directory(signing_root)
+    keystore = signing_root / ANDROID_ACCEPTANCE_KEYSTORE
+
+    generated_command: tuple[str, ...] | None = None
+    reused = keystore.exists() or keystore.is_symlink()
+    if not reused:
+        with tempfile.TemporaryDirectory(
+            prefix=".acceptance-debug-",
+            dir=signing_root,
+        ) as temporary:
+            temporary_root = Path(temporary)
+            temporary_root.chmod(0o700)
+            candidate = temporary_root / ANDROID_ACCEPTANCE_KEYSTORE
+            generated_command = (
+                keytool,
+                "-genkeypair",
+                "-noprompt",
+                "-keystore",
+                str(candidate),
+                "-storepass",
+                "android",
+                "-keypass",
+                "android",
+                "-alias",
+                "androiddebugkey",
+                "-dname",
+                "CN=Android Debug,O=Android,C=US",
+                "-keyalg",
+                "RSA",
+                "-keysize",
+                "2048",
+                "-validity",
+                "10950",
+            )
+            generated = runner.run(
+                generated_command,
+                cwd=root,
+                env=environment,
+            )
+            if (
+                generated.returncode != 0
+                or candidate.is_symlink()
+                or not candidate.is_file()
+            ):
+                raise MobileNativeBuildError(
+                    "controlled Android Acceptance keystore generation failed"
+                )
+            candidate.chmod(0o600)
+            try:
+                os.link(candidate, keystore)
+            except FileExistsError:
+                reused = True
+
+    if (
+        keystore.is_symlink()
+        or not keystore.is_file()
+        or stat.S_IMODE(keystore.stat().st_mode) != 0o600
+    ):
+        raise MobileNativeBuildError(
+            "Android Acceptance keystore must be a private regular file"
+        )
+    return keystore, reused, generated_command
+
+
+def _sign_android_acceptance_output(
+    *,
+    root: Path,
+    run_root: Path,
+    runtime_cache: Path,
+    runner: CommandRunner,
+    environment: Mapping[str, str],
+    executables: Mapping[str, str],
+) -> dict[str, Any]:
+    candidates = [
+        candidate
+        for candidate in sorted(
+            _android_apk_output_root(root).glob("**/debug/*.apk")
+        )
+        if candidate.is_file() and not candidate.is_symlink()
+    ]
+    if len(candidates) != 1:
+        raise MobileNativeBuildError(
+            "controlled Android debug build has no unique APK to sign"
+        )
+    unsigned_apk = candidates[0]
+    signing_root = run_root / "signing"
+    signing_root.mkdir(parents=True, exist_ok=False)
+    signed_apk = signing_root / "mobile-v2-v3.apk"
+    keystore, keystore_reused, keytool_command = (
+        _persistent_android_acceptance_keystore(
+            root=root,
+            runtime_cache=runtime_cache,
+            runner=runner,
+            environment=environment,
+            keytool=executables["keytool"],
+        )
+    )
+    keystore_sha256 = _sha256_file(keystore)
+    sign_command = [
+        executables.get("apksigner", "apksigner"),
+        "sign",
+        "--ks",
+        str(keystore),
+        "--ks-key-alias",
+        "androiddebugkey",
+        "--ks-pass",
+        "pass:android",
+        "--key-pass",
+        "pass:android",
+        "--v1-signing-enabled",
+        "false",
+        "--v2-signing-enabled",
+        "true",
+        "--v3-signing-enabled",
+        "true",
+        "--v4-signing-enabled",
+        "false",
+        "--out",
+        str(signed_apk),
+        "--in",
+        str(unsigned_apk),
+    ]
+    signed = runner.run(
+        sign_command,
+        cwd=root,
+        env=environment,
+    )
+    if (
+        signed.returncode != 0
+        or signed_apk.is_symlink()
+        or not signed_apk.is_file()
+        or not zipfile.is_zipfile(signed_apk)
+    ):
+        raise MobileNativeBuildError(
+            "controlled Android Acceptance APK signing failed"
+        )
+    signed_sha256 = _sha256_file(signed_apk)
+    os.replace(signed_apk, unsigned_apk)
+    return {
+        "variant": ACCEPTANCE_VARIANT,
+        "phase": "signing",
+        "commandDigest": canonical_value_digest(
+            {
+                "keytool": keytool_command,
+                "apksigner": sign_command,
+            }
+        ),
+        "environmentDigest": allowlisted_environment_digest(environment),
+        "keystoreSha256": keystore_sha256,
+        "signedArtifactSha256": signed_sha256,
+        "enabledSigningSchemes": ["v2", "v3"],
+        "keystoreRetained": True,
+        "keystoreReused": keystore_reused,
+    }
+
+
 def _single_controlled_output(
     root: Path,
     run_root: Path,
@@ -3599,6 +4309,7 @@ def orchestrate_source_bound_build(
     root: Path,
     platform: str,
     run_root: Path,
+    runtime_cache: Path,
 ) -> SuccessfulBuildReceipt:
     repository = root.resolve(strict=True)
     resolved_run_root = run_root.resolve()
@@ -3622,36 +4333,14 @@ def orchestrate_source_bound_build(
         release_root,
         toolchain.cache_paths,
     )
-    gradle_settings = (
-        _generate_run_scoped_gradle_settings(
-            root=root,
-            run_root=acceptance_root,
-            cargo_home=acceptance_cache_roots["cargo"],
-        )
-        if platform == "android"
-        else None
-    )
-    release_gradle_settings = (
-        _generate_run_scoped_gradle_settings(
-            root=root,
-            run_root=release_root,
-            cargo_home=release_cache_roots["cargo"],
-        )
-        if platform == "android"
-        else None
-    )
-    input_digest = _combined_build_inputs_digest(
-        canonical_build_inputs_digest(root, platform),
-        gradle_settings,
-    )
-    release_input_digest = _combined_build_inputs_digest(
-        canonical_build_inputs_digest(
-            root,
-            platform,
-            configuration=RELEASE_CONFIGURATION,
-            harness_enabled=False,
-        ),
-        release_gradle_settings,
+    gradle_settings = None
+    release_gradle_settings = None
+    input_digest = canonical_build_inputs_digest(root, platform)
+    release_input_digest = canonical_build_inputs_digest(
+        root,
+        platform,
+        configuration=RELEASE_CONFIGURATION,
+        harness_enabled=False,
     )
     cargo_wrapper = _install_cargo_frozen_wrapper(
         run_root=acceptance_root,
@@ -3663,6 +4352,26 @@ def orchestrate_source_bound_build(
         run_root=release_root,
         real_cargo=toolchain.executable_paths["cargo"],
         shell=toolchain.executable_paths["sh"],
+    )
+    pnpm_shim = (
+        _install_pnpm_shim(
+            run_root=acceptance_root,
+            real_pnpm=toolchain.executable_paths["pnpm"],
+            node=toolchain.executable_paths["node"],
+            shell=toolchain.executable_paths["sh"],
+        )
+        if platform == "android"
+        else None
+    )
+    release_pnpm_shim = (
+        _install_pnpm_shim(
+            run_root=release_root,
+            real_pnpm=toolchain.executable_paths["pnpm"],
+            node=toolchain.executable_paths["node"],
+            shell=toolchain.executable_paths["sh"],
+        )
+        if platform == "android"
+        else None
     )
     gradle_wrapper = (
         _install_offline_gradle_wrapper(
@@ -3713,14 +4422,26 @@ def orchestrate_source_bound_build(
         release_environment_without_identity
     )
     identity = create_build_identity(
-        build_id=uuid.uuid4().hex,
+        build_id=_content_bound_build_id(
+            platform=platform,
+            configuration=BUILD_CONFIGURATION,
+            source=source,
+            build_inputs_digest=input_digest,
+            environment_digest=environment_digest,
+        ),
         platform=platform,
         source=source,
         build_inputs_digest=input_digest,
         environment_digest=environment_digest,
     )
     release_identity = _create_release_build_identity(
-        build_id=f"{identity['buildId']}-release",
+        build_id=_content_bound_build_id(
+            platform=platform,
+            configuration=RELEASE_CONFIGURATION,
+            source=source,
+            build_inputs_digest=release_input_digest,
+            environment_digest=release_environment_digest,
+        ),
         platform=platform,
         source=source,
         build_inputs_digest=release_input_digest,
@@ -3742,7 +4463,7 @@ def orchestrate_source_bound_build(
         acceptance_root,
         acceptance_cache_roots,
         gradle_wrapper,
-        gradle_settings,
+        pnpm_shim,
         variant=ACCEPTANCE_VARIANT,
     )
     release_environment = construct_build_environment(
@@ -3765,7 +4486,7 @@ def orchestrate_source_bound_build(
         release_root,
         release_cache_roots,
         release_gradle_wrapper,
-        release_gradle_settings,
+        release_pnpm_shim,
         variant=RELEASE_VARIANT,
     )
     if platform == "android":
@@ -3780,9 +4501,22 @@ def orchestrate_source_bound_build(
         environment=environment,
         identity=identity,
         cargo_wrapper=cargo_wrapper,
+        pnpm_shim=pnpm_shim,
         runner=command_runner,
     )
-    if platform == "ios":
+    if platform == "android":
+        acceptance_provenance = (
+            *acceptance_provenance,
+            _sign_android_acceptance_output(
+                root=root,
+                run_root=acceptance_root,
+                runtime_cache=runtime_cache,
+                runner=command_runner,
+                environment=environment,
+                executables=toolchain.executable_paths,
+            ),
+        )
+    else:
         _package_ios_archive(acceptance_root)
         _remove_stale_ios_external_outputs(root)
     artifact = _single_controlled_output(
@@ -3824,6 +4558,7 @@ def orchestrate_source_bound_build(
         environment=release_environment,
         identity=release_identity,
         cargo_wrapper=release_cargo_wrapper,
+        pnpm_shim=release_pnpm_shim,
         runner=command_runner,
     )
     if platform == "ios":
@@ -3844,18 +4579,12 @@ def orchestrate_source_bound_build(
         cargo_target_dir=Path(release_environment["CARGO_TARGET_DIR"]),
     )
     final_source = capture_source_identity(root)
-    final_input_digest = _combined_build_inputs_digest(
-        canonical_build_inputs_digest(root, platform),
-        gradle_settings,
-    )
-    final_release_input_digest = _combined_build_inputs_digest(
-        canonical_build_inputs_digest(
-            root,
-            platform,
-            configuration=RELEASE_CONFIGURATION,
-            harness_enabled=False,
-        ),
-        release_gradle_settings,
+    final_input_digest = canonical_build_inputs_digest(root, platform)
+    final_release_input_digest = canonical_build_inputs_digest(
+        root,
+        platform,
+        configuration=RELEASE_CONFIGURATION,
+        harness_enabled=False,
     )
     final_producer_digest = canonical_files_digest(root, PRODUCER_INPUTS)
     if final_source != source:
@@ -3883,12 +4612,14 @@ def orchestrate_source_bound_build(
         gradle_settings=gradle_settings,
         negative_adapter_scan=negative_adapter_scan,
         platform=platform,
+        pnpm_shim_control=pnpm_shim,
         producer_source_digest=producer_digest,
         release_artifact=release_artifact,
         release_build_identity=release_identity,
         release_cargo_wrapper_control=release_cargo_wrapper,
         release_gradle_wrapper_control=release_gradle_wrapper,
         release_gradle_settings=release_gradle_settings,
+        release_pnpm_shim_control=release_pnpm_shim,
         repository_root=repository,
         source_identity=source,
         toolchain_digest=canonical_value_digest(
@@ -3897,11 +4628,13 @@ def orchestrate_source_bound_build(
                     toolchain.digest,
                     cargo_wrapper,
                     gradle_wrapper,
+                    pnpm_shim,
                 ),
                 "releaseToolchainDigest": _toolchain_digest_with_wrappers(
                     toolchain.digest,
                     release_cargo_wrapper,
                     release_gradle_wrapper,
+                    release_pnpm_shim,
                 ),
                 "commandProvenance": [
                     *acceptance_provenance,
@@ -3981,10 +4714,7 @@ def produce_scenario_build_attestation(
 ) -> tuple[dict[str, Any], ArtifactRef]:
     """Project a source-bound build without widening the frozen OAuth schema."""
 
-    if run.gate_id not in {
-        "mobile-native-lifecycle-e2e",
-        "mobile-native-platform-e2e",
-    }:
+    if run.gate_id not in SCENARIO_BUILD_ATTESTATION_GATE_IDS:
         raise MobileNativeBuildError(
             "scenario build attestation requires a non-access physical Gate"
         )

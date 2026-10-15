@@ -8,6 +8,7 @@ CHAT_MIXED_NATIVE_GATE_IDS = frozenset(
         "chat-lifecycle-mixed-client-group-mls-e2e",
         "chat-lifecycle-mixed-client-multi-device-e2e",
         "chat-lifecycle-mixed-client-same-station-e2e",
+        "station-access-session-class-suite-e2e",
     }
 )
 STATION_ACCESS_NATIVE_GATE_IDS = frozenset(
@@ -26,6 +27,7 @@ STATION_LIFECYCLE_CHILD_HARNESS_ACTIONS = frozenset(
         "lifecycle.scope.read",
         "lifecycle.snapshot",
         "lifecycle.suspend",
+        "lifecycle.waitReady",
         "session.logout",
         "settings.device.read",
         "settings.device.update",
@@ -59,6 +61,8 @@ CHAT_MIXED_NATIVE_CHILD_HARNESS_ACTIONS = frozenset(
         "messaging.search",
         "messaging.send",
         "messaging.typing",
+        "navigation.apply",
+        "navigation.snapshot",
         "recovery.snapshot",
         "rejectCall",
         "social.projection.read",

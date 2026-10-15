@@ -11,6 +11,8 @@ package dashboard
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -117,6 +119,34 @@ func (h *dashboardHandler) authWrapper() server.Wrapper {
 // endpoint which needs client IP but has no JWT yet.
 func (h *dashboardHandler) metaWrapper() server.Wrapper {
 	return h.buildContextWrapper(false)
+}
+
+// connectionMaterialResponseWrapper prevents browsers and intermediaries from
+// persisting or forwarding the short-lived connection code.
+func (h *dashboardHandler) connectionMaterialResponseWrapper() server.Wrapper {
+	return func(next server.EndpointHandler) server.EndpointHandler {
+		return func(
+			ctx context.Context,
+			req server.Request,
+			resp server.Response,
+		) error {
+			resp.SetHeader("Cache-Control", "no-store")
+			resp.SetHeader("Referrer-Policy", "no-referrer")
+			err := next(ctx, req, resp)
+			var handlerError *server.HandlerError
+			if !errors.As(err, &handlerError) {
+				return err
+			}
+			body, _ := json.Marshal(map[string]any{
+				"error": handlerError.Message,
+				"code":  handlerError.Code,
+			})
+			resp.SetHeader("Content-Type", "application/json")
+			resp.WriteHeader(handlerError.Code)
+			_, _ = resp.Write(body)
+			return nil
+		}
+	}
 }
 
 // buildContextWrapper is the shared implementation for authWrapper and

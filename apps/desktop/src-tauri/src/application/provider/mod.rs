@@ -1,3 +1,4 @@
+use crate::application::station_runtime::client::StationClient;
 use crate::contracts::{
     ProviderCheckInput, ProviderCreateInput, ProviderIdInput, ProviderUpdateInput, StubPayload,
 };
@@ -41,21 +42,30 @@ fn station_error_to_result(e: station_api::StationApiError) -> AppResult<StubPay
     }
 }
 
-pub fn provider_list(_scope: &str, token: &str) -> AppResult<StubPayload> {
-    let resp = match station_api::list_providers(token) {
+pub fn provider_list(
+    station_client: &StationClient,
+    _scope: &str,
+    token: &str,
+) -> AppResult<StubPayload> {
+    let resp = match station_api::list_providers(station_client, token) {
         Ok(v) => v,
         Err(e) => return station_error_to_result(e),
     };
     success_payload("provider_list", resp)
 }
 
-pub fn provider_get(_scope: &str, token: &str, input: ProviderIdInput) -> AppResult<StubPayload> {
+pub fn provider_get(
+    station_client: &StationClient,
+    _scope: &str,
+    token: &str,
+    input: ProviderIdInput,
+) -> AppResult<StubPayload> {
     let id = input.id.trim();
     if id.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "id is required", None);
     }
 
-    let resp = match station_api::get_provider(token, id) {
+    let resp = match station_api::get_provider(station_client, token, id) {
         Ok(v) => v,
         Err(e) => return station_error_to_result(e),
     };
@@ -70,7 +80,7 @@ pub fn provider_get(_scope: &str, token: &str, input: ProviderIdInput) -> AppRes
         provider["has_api_key"] = json!(is_configured);
 
         if is_configured {
-            if let Ok(cred) = station_api::resolve_credential(token, id) {
+            if let Ok(cred) = station_api::resolve_credential(station_client, token, id) {
                 if !cred.api_key.is_empty() {
                     provider["api_key"] = json!(cred.api_key);
                 }
@@ -91,6 +101,7 @@ pub fn provider_get(_scope: &str, token: &str, input: ProviderIdInput) -> AppRes
 }
 
 pub fn provider_update(
+    station_client: &StationClient,
     _scope: &str,
     token: &str,
     input: ProviderUpdateInput,
@@ -107,6 +118,7 @@ pub fn provider_update(
         .filter(|api_key| !api_key.is_empty());
 
     let resp = match station_api::update_provider_full(
+        station_client,
         token,
         id,
         input.enabled,
@@ -117,7 +129,7 @@ pub fn provider_update(
         Err(e) => return station_error_to_result(e),
     };
     if let Some(api_key) = api_key {
-        if let Err(error) = station_api::set_credential(token, id, &api_key) {
+        if let Err(error) = station_api::set_credential(station_client, token, id, &api_key) {
             return station_error_to_result(error);
         }
     }
@@ -143,6 +155,7 @@ pub fn provider_check(
 }
 
 pub fn provider_create(
+    station_client: &StationClient,
     _scope: &str,
     token: &str,
     input: ProviderCreateInput,
@@ -164,14 +177,21 @@ pub fn provider_create(
 
     let provider_id = name.to_lowercase().replace(' ', "-");
 
-    let provider =
-        match station_api::create_provider(token, &provider_id, name, &base_url, &protocol, None) {
-            Ok(p) => p,
-            Err(e) => return station_error_to_result(e),
-        };
+    let provider = match station_api::create_provider(
+        station_client,
+        token,
+        &provider_id,
+        name,
+        &base_url,
+        &protocol,
+        None,
+    ) {
+        Ok(p) => p,
+        Err(e) => return station_error_to_result(e),
+    };
 
     if let Some(api_key) = parse_key_vault_api_key(&input.key_vaults) {
-        let _ = station_api::set_credential(token, &provider.id, &api_key);
+        let _ = station_api::set_credential(station_client, token, &provider.id, &api_key);
     }
 
     success_payload(
@@ -188,6 +208,7 @@ pub fn provider_create(
 }
 
 pub fn provider_delete(
+    station_client: &StationClient,
     _scope: &str,
     token: &str,
     input: ProviderIdInput,
@@ -197,28 +218,37 @@ pub fn provider_delete(
         return AppResult::fail(ErrorCode::InvalidArgument, "id is required", None);
     }
 
-    let provider = match station_api::get_provider_record(token, id) {
+    let provider = match station_api::get_provider_record(station_client, token, id) {
         Ok(provider) => provider,
         Err(error) => return station_error_to_result(error),
     };
 
-    if let Err(e) = station_api::delete_provider(token, id, provider.version) {
+    if let Err(e) = station_api::delete_provider(station_client, token, id, provider.version) {
         return station_error_to_result(e);
     }
 
     success_payload("provider_delete", json!({ "deleted": true }))
 }
 
-pub fn provider_list_available_models(_scope: &str, token: &str) -> AppResult<StubPayload> {
-    let resp = match station_api::list_available_models(token) {
+pub fn provider_list_available_models(
+    station_client: &StationClient,
+    _scope: &str,
+    token: &str,
+) -> AppResult<StubPayload> {
+    let resp = match station_api::list_available_models(station_client, token) {
         Ok(v) => v,
         Err(e) => return station_error_to_result(e),
     };
     success_payload("provider_list_available_models", resp)
 }
 
-pub fn model_fetch_remote(scope: &str, token: &str, provider_id: &str) -> AppResult<StubPayload> {
-    let resp = match station_api::get_provider(token, provider_id) {
+pub fn model_fetch_remote(
+    station_client: &StationClient,
+    scope: &str,
+    token: &str,
+    provider_id: &str,
+) -> AppResult<StubPayload> {
+    let resp = match station_api::get_provider(station_client, token, provider_id) {
         Ok(v) => v,
         Err(_) => {
             return success_payload("model_fetch_remote", json!({ "ok": true, "models": [] }))
@@ -237,7 +267,7 @@ pub fn model_fetch_remote(scope: &str, token: &str, provider_id: &str) -> AppRes
         .trim();
 
     if runtime_kind == "cli" && !models_command.is_empty() {
-        let models = execute_cli_models_command(models_command, scope, provider_id);
+        let models = execute_cli_models_command(station_client, models_command, scope, provider_id);
         if models.is_empty() {
             return success_payload(
                 "model_fetch_remote",
@@ -261,9 +291,14 @@ pub fn model_fetch_remote(scope: &str, token: &str, provider_id: &str) -> AppRes
     )
 }
 
-fn execute_cli_models_command(command: &str, actor_ptid: &str, provider_id: &str) -> Vec<String> {
+fn execute_cli_models_command(
+    station_client: &StationClient,
+    command: &str,
+    actor_ptid: &str,
+    provider_id: &str,
+) -> Vec<String> {
     let cred_key = credential_env_key_for_provider(provider_id);
-    let env = build_cli_env(actor_ptid, provider_id, "", cred_key);
+    let env = build_cli_env(station_client, actor_ptid, provider_id, "", cred_key);
     let workspace = ensure_actor_workspace(actor_ptid, provider_id);
     let output = run_cli_subprocess(command, &env, &workspace, None);
     match output {
@@ -304,6 +339,7 @@ fn app_data_dir() -> PathBuf {
 // --- WS-3: CLI Env Injection ---
 
 fn build_cli_env(
+    station_client: &StationClient,
     actor_ptid: &str,
     provider_id: &str,
     token: &str,
@@ -330,7 +366,7 @@ fn build_cli_env(
     // WS-4: Credential injection
     if let Some(env_key) = credential_env_key {
         if !env_key.is_empty() && !token.is_empty() {
-            if let Ok(cred) = station_api::resolve_credential(token, provider_id) {
+            if let Ok(cred) = station_api::resolve_credential(station_client, token, provider_id) {
                 if !cred.api_key.is_empty() {
                     env.insert(env_key.to_string(), cred.api_key);
                 }
@@ -468,7 +504,12 @@ fn parse_json_models(json_str: &str) -> Vec<String> {
     }
 }
 
-pub fn model_add(token: &str, provider_id: &str, data: &Value) -> AppResult<StubPayload> {
+pub fn model_add(
+    station_client: &StationClient,
+    token: &str,
+    provider_id: &str,
+    data: &Value,
+) -> AppResult<StubPayload> {
     let model_id = data.get("id").and_then(Value::as_str).unwrap_or("").trim();
     if model_id.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "model id is required", None);
@@ -488,6 +529,7 @@ pub fn model_add(token: &str, provider_id: &str, data: &Value) -> AppResult<Stub
     let capabilities = data.get("capabilities").filter(|value| value.is_object());
 
     match station_api::create_model(
+        station_client,
         token,
         provider_id.trim(),
         model_id,
@@ -502,12 +544,13 @@ pub fn model_add(token: &str, provider_id: &str, data: &Value) -> AppResult<Stub
 }
 
 pub fn model_update(
+    station_client: &StationClient,
     token: &str,
     provider_id: &str,
     model_id: &str,
     data: &Value,
 ) -> AppResult<StubPayload> {
-    let models = match station_api::list_models(token, provider_id) {
+    let models = match station_api::list_models(station_client, token, provider_id) {
         Ok(models) => models,
         Err(error) => return station_error_to_result(error),
     };
@@ -525,6 +568,7 @@ pub fn model_update(
     let capabilities = data.get("capabilities").filter(|value| value.is_object());
 
     match station_api::update_model(
+        station_client,
         token,
         provider_id,
         model_id,
@@ -540,12 +584,13 @@ pub fn model_update(
 }
 
 pub fn model_toggle(
+    station_client: &StationClient,
     token: &str,
     provider_id: &str,
     model_id: &str,
     enabled: bool,
 ) -> AppResult<StubPayload> {
-    let models = match station_api::list_models(token, provider_id) {
+    let models = match station_api::list_models(station_client, token, provider_id) {
         Ok(m) => m,
         Err(e) => return station_error_to_result(e),
     };
@@ -554,6 +599,7 @@ pub fn model_toggle(
         None => return AppResult::fail(ErrorCode::NotFound, "Model not found", None),
     };
     if let Err(e) = station_api::update_model(
+        station_client,
         token,
         provider_id,
         model_id,
@@ -568,8 +614,13 @@ pub fn model_toggle(
     success_payload("model_toggle", json!({ "ok": true, "enabled": enabled }))
 }
 
-pub fn model_delete(token: &str, provider_id: &str, model_id: &str) -> AppResult<StubPayload> {
-    if let Err(e) = station_api::hide_model(token, provider_id, model_id) {
+pub fn model_delete(
+    station_client: &StationClient,
+    token: &str,
+    provider_id: &str,
+    model_id: &str,
+) -> AppResult<StubPayload> {
+    if let Err(e) = station_api::hide_model(station_client, token, provider_id, model_id) {
         return station_error_to_result(e);
     }
     success_payload("model_delete", json!({ "ok": true }))

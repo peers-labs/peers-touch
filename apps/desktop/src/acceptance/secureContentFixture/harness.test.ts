@@ -261,39 +261,82 @@ describe('Secure Content fixture harness', () => {
   it('round-trips the approved Station bindings', async () => {
     mocks.stationList
       .mockResolvedValueOnce({
-        active_url: 'https://station-four.example/',
+        active_station_peer_id: 'station-four-peer',
         binding: {
-          bound_url: 'https://station-four.example',
-          generation: 3,
+          station_peer_id: 'station-four-peer',
+          active_route_id: 'station-four-direct',
+          route_revision: 1,
+          lifecycle_generation: 3,
           phase: 'bound',
         },
         entries: [{
-          peer_id: 'station-four-peer',
-          url: 'https://station-four.example',
+          station_peer_id: 'station-four-peer',
+          active_route_id: 'station-four-direct',
+          routes: [{
+            route_id: 'station-four-direct',
+            endpoint_origin: 'https://station-four.example',
+          }],
         }],
       })
       .mockResolvedValueOnce({
-        active_url: 'https://station-five.example',
+        active_station_peer_id: 'station-four-peer',
         binding: {
-          bound_url: 'https://station-five.example',
-          generation: 4,
+          station_peer_id: 'station-four-peer',
+          active_route_id: 'station-four-direct',
+          route_revision: 1,
+          lifecycle_generation: 3,
           phase: 'bound',
         },
         entries: [{
-          peer_id: 'station-five-peer',
-          url: 'https://station-five.example',
+          station_peer_id: 'station-four-peer',
+          active_route_id: 'station-four-direct',
+          routes: [{
+            route_id: 'station-four-direct',
+            endpoint_origin: 'https://station-four.example',
+          }],
+        }, {
+          station_peer_id: 'station-five-peer',
+          active_route_id: 'station-five-direct',
+          routes: [{
+            route_id: 'station-five-direct',
+            endpoint_origin: 'https://station-five.example',
+          }],
         }],
       })
       .mockResolvedValueOnce({
-        active_url: 'https://station-four.example',
+        active_station_peer_id: 'station-five-peer',
         binding: {
-          bound_url: 'https://station-four.example',
-          generation: 5,
+          station_peer_id: 'station-five-peer',
+          active_route_id: 'station-five-direct',
+          route_revision: 1,
+          lifecycle_generation: 4,
           phase: 'bound',
         },
         entries: [{
-          peer_id: 'station-four-peer',
-          url: 'https://station-four.example',
+          station_peer_id: 'station-five-peer',
+          active_route_id: 'station-five-direct',
+          routes: [{
+            route_id: 'station-five-direct',
+            endpoint_origin: 'https://station-five.example',
+          }],
+        }],
+      })
+      .mockResolvedValueOnce({
+        active_station_peer_id: 'station-four-peer',
+        binding: {
+          station_peer_id: 'station-four-peer',
+          active_route_id: 'station-four-direct',
+          route_revision: 1,
+          lifecycle_generation: 5,
+          phase: 'bound',
+        },
+        entries: [{
+          station_peer_id: 'station-four-peer',
+          active_route_id: 'station-four-direct',
+          routes: [{
+            route_id: 'station-four-direct',
+            endpoint_origin: 'https://station-four.example',
+          }],
         }],
       });
 
@@ -310,11 +353,13 @@ describe('Secure Content fixture harness', () => {
     });
     expect(mocks.stationSetActive).toHaveBeenNthCalledWith(
       1,
-      'https://station-five.example',
+      'station-five-peer',
+      'station-five-direct',
     );
     expect(mocks.stationSetActive).toHaveBeenNthCalledWith(
       2,
-      'https://station-four.example',
+      'station-four-peer',
+      'station-four-direct',
     );
   });
 

@@ -5,10 +5,9 @@ import json
 import subprocess
 import urllib.error
 import urllib.request
-from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Tuple
 
 from ._paths import REPO_ROOT
 from .errors import BlockedError, ProvisioningError
@@ -27,7 +26,8 @@ PROTOCOL_SOURCE_PATHS = (
     ":(glob)apps/desktop/src/gen/proto/**/*.ts",
     ":(glob)apps/station/**/*.pb.go",
 )
-RemoteSourceIdentityProvider = Callable[[str], tuple[str, str, str]]
+RemoteSourceIdentityProvider = Callable[[str], Tuple[str, str, str]]
+RuntimeVersionProvider = Callable[[str], dict[str, Any]]
 
 
 def commits_match(actual: str, expected: str) -> bool:
@@ -155,13 +155,33 @@ def read_service_runtime_identity(service_url: str) -> str:
         ) from error
     data = payload.get("data") if isinstance(payload, dict) else None
     identity = data if isinstance(data, dict) else payload
-    peer_id = str(identity.get("peer_id") or "") if isinstance(identity, dict) else ""
-    if not peer_id:
+    station_peer_id = (
+        str(identity.get("station_peer_id") or "")
+        if isinstance(identity, dict)
+        else ""
+    )
+    node_peer_id = (
+        str(identity.get("node_peer_id") or "")
+        if isinstance(identity, dict)
+        else ""
+    )
+    if not station_peer_id or not node_peer_id:
         raise BlockedError(
-            reason=f"Service runtime identity at {url} has no peer_id",
+            reason=(
+                f"Service runtime identity at {url} must expose independent "
+                "station_peer_id and node_peer_id"
+            ),
             resource=f"service-identity:{url}",
         )
-    return peer_id
+    if station_peer_id == node_peer_id:
+        raise BlockedError(
+            reason=(
+                f"Service runtime identity at {url} reuses one PeerID for "
+                "logical Station and physical Node"
+            ),
+            resource=f"service-identity:{url}",
+        )
+    return station_peer_id
 
 
 def _local_source_identity() -> tuple[str, str, str]:
@@ -218,9 +238,14 @@ def produce_service_attestation(
     producer: str,
     require_runtime_identity: bool = False,
     remote_source_identity_provider: RemoteSourceIdentityProvider | None = None,
+    runtime_version_provider: RuntimeVersionProvider | None = None,
 ) -> ServiceAttestation:
     del run_id
-    version = read_service_version(endpoint)
+    version = (
+        runtime_version_provider(deployment_environment)
+        if runtime_version_provider is not None
+        else read_service_version(endpoint)
+    )
     live_commit = str(version.get("build_commit") or "")
     build_time = str(version.get("build_time") or "")
     runtime_identity = str(

@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   chatInputPanelState,
   createChatBottomOcclusionStyle,
+  shouldResetChatViewport,
   visualKeyboardOverlap,
 } from './chatBottomOcclusion';
 
@@ -25,6 +26,24 @@ describe('Chat bottom occlusion model', () => {
     expect(keyboardClosed['--chat-visual-keyboard-overlap']).toBe('0px');
     expect(keyboardOpen['--chat-visual-keyboard-overlap']).toBe('300px');
     expect(keyboardOpen['--chat-composer-measured-height']).toBe('58px');
+  });
+
+  it('resets only WebKit root scrolling caused by a focused composer', () => {
+    expect(shouldResetChatViewport({
+      composerFocused: true,
+      visualViewportOffsetTop: 376,
+      windowScrollY: 376,
+    })).toBe(true);
+    expect(shouldResetChatViewport({
+      composerFocused: false,
+      visualViewportOffsetTop: 376,
+      windowScrollY: 376,
+    })).toBe(false);
+    expect(shouldResetChatViewport({
+      composerFocused: true,
+      visualViewportOffsetTop: 0,
+      windowScrollY: 0,
+    })).toBe(false);
   });
 
   it('moves emoji and attachment panels through the same measured panel slot', () => {

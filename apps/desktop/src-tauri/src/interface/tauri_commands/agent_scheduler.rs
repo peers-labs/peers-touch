@@ -19,7 +19,7 @@ pub fn agent_scheduler_start(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    agent_scheduler::agent_scheduler_start(input, &token)
+    agent_scheduler::agent_scheduler_start(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -31,7 +31,7 @@ pub fn agent_scheduler_stop(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    agent_scheduler::agent_scheduler_stop(&token)
+    agent_scheduler::agent_scheduler_stop(state.station.client(), &token)
 }
 
 #[tauri::command]
@@ -43,7 +43,7 @@ pub fn agent_scheduler_status(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    agent_scheduler::agent_scheduler_status(&token)
+    agent_scheduler::agent_scheduler_status(state.station.client(), &token)
 }
 
 #[tauri::command]
@@ -56,5 +56,5 @@ pub fn agent_scheduler_add_job(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    agent_scheduler::agent_scheduler_add_job(input, &token)
+    agent_scheduler::agent_scheduler_add_job(state.station.client(), input, &token)
 }

@@ -122,7 +122,7 @@ Reject the UI if:
 - Moderation/block state is inferred locally instead of sourced from Station.
 - The same action has different button styles in feed and detail.
 
-## 7. AI Agent Checklist
+## 7. Review Checklist
 
 - [ ] Did I classify incomplete capability as absent, pending, unavailable, degraded, or implemented?
 - [ ] Did I preserve user input during incomplete/failure states?

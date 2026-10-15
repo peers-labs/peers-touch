@@ -136,6 +136,13 @@ ACCEPTED_ARTIFACT_KINDS = frozenset(
         "mobile-application-build-attestation",
     }
 )
+LEASE_ACQUISITION_ARTIFACT_KINDS = frozenset(
+    {
+        "physical-device-lease",
+        "provider-account-lease",
+        "provider-browser-session-lease",
+    }
+)
 ROLE_PAYLOAD_KINDS = {
     "mobile-proof-contract-catalog": "mobile-proof-contract-catalog",
     "mobile-build-attestation": "mobile-application-build-attestation",
@@ -648,7 +655,11 @@ def _parse_utc_timestamp(value: Any, path: str) -> datetime:
     return parsed
 
 
-def _validate_active_lease(payload: Mapping[str, Any]) -> None:
+def _validate_active_lease(
+    payload: Mapping[str, Any],
+    *,
+    require_freshness: bool,
+) -> None:
     heartbeat = _parse_utc_timestamp(payload["heartbeatAt"], "heartbeatAt")
     renew_before = _parse_utc_timestamp(payload["renewBefore"], "renewBefore")
     expires_at = _parse_utc_timestamp(payload["expiresAt"], "expiresAt")
@@ -657,7 +668,11 @@ def _validate_active_lease(payload: Mapping[str, Any]) -> None:
             "active lease timestamps must satisfy heartbeatAt < renewBefore < expiresAt"
         )
     inactive_states = {"RELEASED", "QUARANTINED", "CLEANUP_FAILED"}
-    if payload["state"] not in inactive_states and expires_at <= datetime.now(timezone.utc):
+    if (
+        require_freshness
+        and payload["state"] not in inactive_states
+        and expires_at <= datetime.now(timezone.utc)
+    ):
         raise ProofContractError("active lease expiresAt must be in the future")
 
 
@@ -706,7 +721,12 @@ def _require_same_run_references(
             raise ProofContractError(f"{ref_path}.workspaceId crosses worktrees")
 
 
-def _validate_kind_semantics(payload: Mapping[str, Any], durable: bool) -> None:
+def _validate_kind_semantics(
+    payload: Mapping[str, Any],
+    durable: bool,
+    *,
+    require_lease_freshness: bool,
+) -> None:
     kind = payload["artifactKind"]
     if kind == "mobile-oauth-fixture-lease":
         service_id = payload["serviceId"]
@@ -719,7 +739,10 @@ def _validate_kind_semantics(payload: Mapping[str, Any], durable: bool) -> None:
             raise ProofContractError(
                 "Fixture acquisition artifact must remain LEASED"
             )
-        _validate_active_lease(payload)
+        _validate_active_lease(
+            payload,
+            require_freshness=require_lease_freshness,
+        )
     elif kind == "mobile-oauth-negative-callback-intent":
         operation = payload["operation"]
         replay_handle = payload["callbackReplayHandle"]
@@ -946,7 +969,10 @@ def _validate_kind_semantics(payload: Mapping[str, Any], durable: bool) -> None:
             raise ProofContractError(
                 "provider account acquisition artifact must remain LEASED"
             )
-        _validate_active_lease(payload)
+        _validate_active_lease(
+            payload,
+            require_freshness=require_lease_freshness,
+        )
     elif kind == "provider-identity-assertion":
         expected_account = f"{payload['provider']}-disposable-account"
         if payload["accountRef"] != expected_account:
@@ -968,7 +994,10 @@ def _validate_kind_semantics(payload: Mapping[str, Any], durable: bool) -> None:
             raise ProofContractError(
                 "physical device acquisition artifact must remain BASELINE_VERIFIED"
             )
-        _validate_active_lease(payload)
+        _validate_active_lease(
+            payload,
+            require_freshness=require_lease_freshness,
+        )
     elif kind == "provider-browser-session-lease":
         client_id = payload["clientId"]
         if client_id not in CLIENTS:
@@ -989,7 +1018,10 @@ def _validate_kind_semantics(payload: Mapping[str, Any], durable: bool) -> None:
             raise ProofContractError(
                 "browser acquisition artifact must remain BASELINE_VERIFIED"
             )
-        _validate_active_lease(payload)
+        _validate_active_lease(
+            payload,
+            require_freshness=require_lease_freshness,
+        )
     elif kind == "mobile-lease-outcome":
         final_state = payload["finalState"]
         failure_code = payload["failureCode"]
@@ -1176,7 +1208,7 @@ def _validate_kind_semantics(payload: Mapping[str, Any], durable: bool) -> None:
             raise ProofContractError("installed Web/Rust/attested identities differ")
 
 
-def validate_contract_payload(
+def _validate_contract_payload(
     payload: Mapping[str, Any],
     *,
     expected_kind: str | None = None,
@@ -1185,9 +1217,8 @@ def validate_contract_payload(
     expected_workspace_id: str | None = None,
     durable: bool = True,
     schema_path: Path = SCHEMA_PATH,
+    require_lease_freshness: bool,
 ) -> dict[str, Any]:
-    """Validate and return a detached typed producer payload."""
-
     if not isinstance(payload, Mapping):
         raise ProofContractError("Mobile proof payload must be an object")
     value = dict(payload)
@@ -1207,8 +1238,63 @@ def validate_contract_payload(
         expected_gate_id,
         expected_workspace_id or evidence_workspace_id(REPO_ROOT),
     )
-    _validate_kind_semantics(value, durable)
+    _validate_kind_semantics(
+        value,
+        durable,
+        require_lease_freshness=require_lease_freshness,
+    )
     return json.loads(json.dumps(value, sort_keys=True))
+
+
+def validate_contract_payload(
+    payload: Mapping[str, Any],
+    *,
+    expected_kind: str | None = None,
+    expected_run_id: str | None = None,
+    expected_gate_id: str = GATE_ID,
+    expected_workspace_id: str | None = None,
+    durable: bool = True,
+    schema_path: Path = SCHEMA_PATH,
+) -> dict[str, Any]:
+    """Validate and return a detached typed producer payload."""
+
+    return _validate_contract_payload(
+        payload,
+        expected_kind=expected_kind,
+        expected_run_id=expected_run_id,
+        expected_gate_id=expected_gate_id,
+        expected_workspace_id=expected_workspace_id,
+        durable=durable,
+        schema_path=schema_path,
+        require_lease_freshness=True,
+    )
+
+
+def validate_historical_lease_acquisition_payload(
+    payload: Mapping[str, Any],
+    *,
+    expected_run_id: str | None = None,
+    expected_gate_id: str = GATE_ID,
+    expected_workspace_id: str | None = None,
+    schema_path: Path = SCHEMA_PATH,
+) -> dict[str, Any]:
+    """Validate immutable lease acquisition history without live freshness."""
+
+    kind = payload.get("artifactKind") if isinstance(payload, Mapping) else None
+    if kind not in LEASE_ACQUISITION_ARTIFACT_KINDS:
+        raise ProofContractError(
+            f"artifact kind {kind!r} is not a lease acquisition"
+        )
+    return _validate_contract_payload(
+        payload,
+        expected_kind=str(kind),
+        expected_run_id=expected_run_id,
+        expected_gate_id=expected_gate_id,
+        expected_workspace_id=expected_workspace_id,
+        durable=True,
+        schema_path=schema_path,
+        require_lease_freshness=False,
+    )
 
 
 validate_payload = validate_contract_payload

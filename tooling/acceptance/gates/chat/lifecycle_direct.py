@@ -9,17 +9,12 @@ from pathlib import Path
 from typing import Any
 
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
 
 from tooling.acceptance.core import AcceptanceGate, GateError, REPO_ROOT
-from tooling.acceptance.drivers.native import (
-    NativeControlSnapshot,
-    NativeDesktopRuntimeBinding,
-    NativeKey,
-    NativeModifier,
-)
+from tooling.acceptance.drivers.native import NativeDesktopRuntimeBinding
 from tooling.acceptance.drivers.native.runtime import NativeLaunchOptions
 from tooling.acceptance.drivers.tauri import TauriSession
+from tooling.acceptance.gates.chat.native_file_picker import select_native_file
 from tooling.acceptance.gates.chat.native_support import (
     async_harness,
     enter_chat_page,
@@ -109,102 +104,19 @@ class LifecycleDirectGate(NativeTwoClientGate):
         source_path: Path,
     ) -> None:
         client = self.clients[actor]
-        if client.process_id is None:
-            raise GateError(f"{actor} Native file chooser has no owning process")
-        selected_path = self.runtime_binding.stage_native_file(
-            actor,
-            source_path.resolve(),
-        )
-        adapter = self.runtime_binding.native_adapter
-        baseline = wait_until(
-            lambda: adapter.activate_and_focused_control(
-                client.process_id or 0
-            ),
-            f"{actor} Native file chooser owner to become frontmost",
-            timeout=10,
-        )
-        client.find_element(trigger_selector, STEP_TIMEOUT).click()
-
-        def panel_ready(_: Any) -> NativeControlSnapshot | None:
-            control = adapter.focused_control(client.process_id or 0)
-            opened = (
-                control.window_count > baseline.window_count
-                or control.dialog_count > baseline.dialog_count
-                or control.kind in {"list", "text-field", "application-dialog"}
-            )
-            return control if opened else None
-
-        WebDriverWait(client.driver, 10).until(panel_ready)
-        selected_control = adapter.select_file_chooser_path_to_process(
-            client.process_id,
-            str(selected_path),
-        )
-        if selected_control is not None:
-            if selected_control.dialog_count:
-                raise GateError(
-                    "Native file chooser selection was not committed"
-                )
-            return
-        if adapter.platform == "win32":
+        trigger = client.find_element(trigger_selector, STEP_TIMEOUT)
+        if not trigger.is_displayed() or not trigger.is_enabled():
             raise GateError(
-                "Native file chooser selection returned no Win32 control"
+                f"{actor} Native file chooser trigger is not actionable"
             )
-
-        adapter.reveal_file_chooser_location_to_process(client.process_id)
-        WebDriverWait(client.driver, 10).until(
-            lambda _: (
-                control
-                if (control := adapter.focused_control(client.process_id or 0)).kind
-                == "text-field"
-                else None
-            )
+        select_native_file(
+            actor=actor,
+            client=client,
+            sessions=tuple(self.clients.values()),
+            runtime_binding=self.runtime_binding,
+            source_path=source_path,
+            trigger=trigger.click,
         )
-        clipboard = adapter.read_clipboard()
-        try:
-            adapter.write_clipboard(str(selected_path).encode("utf-8"))
-            adapter.post_key_to_process(
-                client.process_id,
-                NativeKey.A,
-                modifiers=(NativeModifier.PRIMARY,),
-            )
-            adapter.post_key_to_process(
-                client.process_id,
-                NativeKey.V,
-                modifiers=(NativeModifier.PRIMARY,),
-            )
-            adapter.post_key_to_process(
-                client.process_id,
-                NativeKey.ENTER,
-                private_source=True,
-            )
-        finally:
-            adapter.write_clipboard(clipboard)
-
-        def selection_or_main_window(
-            _: Any,
-        ) -> dict[str, object] | None:
-            control = adapter.focused_control(client.process_id or 0)
-            if (
-                control.main_window
-                and control.frontmost
-                and control.focused_window
-                and control.kind != "application-dialog"
-                and control.window_count <= baseline.window_count
-            ):
-                return {"selected": True, "control": control}
-            if control.kind != "text-field":
-                return {"selected": False, "control": control}
-            return None
-
-        intermediate = WebDriverWait(client.driver, 10).until(
-            selection_or_main_window
-        )
-        if not intermediate["selected"]:
-            adapter.post_key_to_process(
-                client.process_id,
-                NativeKey.ENTER,
-                private_source=True,
-            )
 
     def _conversation_summary(
         self,

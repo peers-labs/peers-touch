@@ -39,6 +39,9 @@ var (
 	// ErrContentProofKeyUnavailable is the typed failure used when a caller
 	// requests an unknown Station, an unknown key, or a non-local Station.
 	ErrContentProofKeyUnavailable = errors.New("STATION_PROOF_KEY_UNAVAILABLE")
+	// ErrContentProofKeyConflict means a trusted Station/key identity was
+	// previously bound to different public-key bytes.
+	ErrContentProofKeyConflict = errors.New("STATION_PROOF_KEY_CONFLICT")
 
 	localKeyLifecycleMu sync.RWMutex
 )
@@ -250,8 +253,7 @@ func (a *ContentProofKeyAuthority) SignWithCurrentKeyInTransaction(
 }
 
 // ResolveContentProofVerificationKey returns the current local public key
-// directly or an older key from append-only history. Foreign Station requests
-// fail closed even if the backing database contains a matching row.
+// directly or a locally trusted key from append-only history.
 func (a *ContentProofKeyAuthority) ResolveContentProofVerificationKey(
 	ctx context.Context,
 	stationPeerID string,
@@ -295,30 +297,36 @@ func (a *ContentProofKeyAuthority) resolveContentProofVerificationKey(
 ) (ed25519.PublicKey, error) {
 	stationPeerID = strings.TrimSpace(stationPeerID)
 	signingKeyID = strings.TrimSpace(signingKeyID)
-	if stationPeerID == "" ||
-		signingKeyID == "" ||
-		stationPeerID != a.localStationPeerID {
+	if stationPeerID == "" || signingKeyID == "" {
 		return nil, contentProofKeyUnavailable(stationPeerID, signingKeyID)
 	}
 
-	var current *LocalKey
 	var err error
-	if transaction == nil {
-		current, err = a.keys.Load(ctx, SlotCurrent)
-	} else {
-		current, err = loadLocalKeyFromDatabase(
-			transaction,
-			SlotCurrent,
-		)
-	}
-	switch {
-	case err == nil && current != nil && current.Kid == signingKeyID:
-		if err := validateLocalKeyPublicIdentity(current); err != nil {
-			return nil, fmt.Errorf("federation: resolve current content proof key: %w", err)
+	if stationPeerID == a.localStationPeerID {
+		var current *LocalKey
+		if transaction == nil {
+			current, err = a.keys.Load(ctx, SlotCurrent)
+		} else {
+			current, err = loadLocalKeyFromDatabase(
+				transaction,
+				SlotCurrent,
+			)
 		}
-		return append(ed25519.PublicKey(nil), current.Pub...), nil
-	case err != nil && !errors.Is(err, ErrNoLocalKey):
-		return nil, fmt.Errorf("federation: resolve current content proof key: %w", err)
+		switch {
+		case err == nil && current != nil && current.Kid == signingKeyID:
+			if err := validateLocalKeyPublicIdentity(current); err != nil {
+				return nil, fmt.Errorf(
+					"federation: resolve current content proof key: %w",
+					err,
+				)
+			}
+			return append(ed25519.PublicKey(nil), current.Pub...), nil
+		case err != nil && !errors.Is(err, ErrNoLocalKey):
+			return nil, fmt.Errorf(
+				"federation: resolve current content proof key: %w",
+				err,
+			)
+		}
 	}
 
 	var publicKey []byte
@@ -345,6 +353,79 @@ func (a *ContentProofKeyAuthority) resolveContentProofVerificationKey(
 		return nil, fmt.Errorf("federation: resolve archived content proof key: %w", err)
 	}
 	return append(ed25519.PublicKey(nil), publicKey...), nil
+}
+
+// TrustImportedContentProofVerificationKeyInTransaction records a remote proof
+// key only after a caller has authenticated the source Station and verified
+// the source-signed attestation that carried the key.
+func (a *ContentProofKeyAuthority) TrustImportedContentProofVerificationKeyInTransaction(
+	ctx context.Context,
+	transaction *gorm.DB,
+	stationPeerID string,
+	signingKeyID string,
+	publicKey []byte,
+	observedAt time.Time,
+) error {
+	stationPeerID = strings.TrimSpace(stationPeerID)
+	signingKeyID = strings.TrimSpace(signingKeyID)
+	if a == nil ||
+		transaction == nil ||
+		stationPeerID == "" ||
+		stationPeerID == a.localStationPeerID ||
+		signingKeyID == "" ||
+		observedAt.IsZero() {
+		return errors.New(
+			"federation: imported content proof key identity is invalid",
+		)
+	}
+	if err := validateContentProofPublicKeyIdentity(
+		publicKey,
+		signingKeyID,
+	); err != nil {
+		return fmt.Errorf(
+			"federation: imported content proof key is invalid: %w",
+			err,
+		)
+	}
+	observedAt = observedAt.UTC()
+	row := contentProofVerificationKeyRow{
+		StationPeerID:    stationPeerID,
+		SigningKeyID:     signingKeyID,
+		Ed25519PublicKey: append([]byte(nil), publicKey...),
+		FirstActiveAt:    observedAt,
+		LastActiveAt:     observedAt,
+		RetiredAt:        observedAt,
+		RetirementReason: "IMPORTED",
+	}
+	create := transaction.WithContext(ctx).
+		Clauses(clause.OnConflict{DoNothing: true}).
+		Create(&row)
+	if create.Error != nil {
+		return fmt.Errorf(
+			"federation: persist imported content proof key: %w",
+			create.Error,
+		)
+	}
+	if create.RowsAffected == 1 {
+		return nil
+	}
+	existing, err := resolveArchivedContentProofVerificationKeyFromDatabase(
+		transaction.WithContext(ctx),
+		stationPeerID,
+		signingKeyID,
+	)
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(existing, publicKey) {
+		return fmt.Errorf(
+			"%w: station_peer_id=%q signing_key_id=%q",
+			ErrContentProofKeyConflict,
+			stationPeerID,
+			signingKeyID,
+		)
+	}
+	return nil
 }
 
 func loadLocalKeyFromDatabase(

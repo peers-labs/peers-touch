@@ -29,6 +29,7 @@ import {
   SyncMomentsProjectionResponseSchema,
   ListPostsResponseSchema,
   ReactToPostResponseSchema,
+  ReactionSummarySchema,
   UpsertStationModerationPolicyResponseSchema,
   DeleteStationModerationPolicyResponseSchema,
   PostType,
@@ -40,7 +41,10 @@ import {
 import {
   CreateCommentResponseSchema,
 } from '../gen/proto/domain/social/comment_pb';
-import { ListMomentCommentsResponseSchema } from '../gen/proto/domain/social/private_content_pb';
+import {
+  GetMomentResourceResponseSchema,
+  ListMomentCommentsResponseSchema,
+} from '../gen/proto/domain/social/private_content_pb';
 import {
   FollowResponseSchema,
 } from '../gen/proto/domain/social/relationship_pb';
@@ -529,6 +533,69 @@ describe('moments store: createPost / deletePost', () => {
       .toBeUndefined();
   });
 
+  it('invalidates stale remote recipient readiness after a draft edit', async () => {
+    const authorPtid = 'ptid:author';
+    installEventWindowStub();
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    useSessionStore.setState({
+      authenticated: true,
+      currentUser: {
+        actorPtid: authorPtid,
+        name: 'author',
+        email: '',
+        loginMethod: 'password',
+      },
+    });
+    usePrivateMomentsStore.getState().reset();
+    usePrivateMomentsStore.getState().activateActor(authorPtid, 1);
+
+    let resolveAdmission!: (value: unknown) => void;
+    let nativeInput: Record<string, unknown> | undefined;
+    enqueueMatch(
+      (cmd, args) => {
+        if (cmd !== 'social_private_moment_publish') return false;
+        nativeInput = (args as { input?: Record<string, unknown> }).input;
+        return true;
+      },
+      new Promise((resolve) => {
+        resolveAdmission = resolve;
+      }),
+    );
+
+    const admission = usePrivateMomentsStore.getState().admitMoment(
+      {
+        draftId: 'draft-remote',
+        draftRevision: 1,
+        audience: { kind: 'FRIENDS' },
+        momentKind: 'TEXT',
+        text: 'before edit',
+        files: [],
+      },
+      'CHECKING_REMOTE_READINESS',
+    );
+    expect(usePrivateMomentsStore.getState().publish).toMatchObject({
+      state: 'CHECKING_REMOTE_READINESS',
+      draftId: 'draft-remote',
+    });
+    expect(nativeInput).toMatchObject({
+      draft_id: 'draft-remote',
+      draft_revision: 1,
+      admission_only: true,
+    });
+
+    usePrivateMomentsStore.getState().clearPublishState();
+    resolveAdmission(statusOk({
+      state: 'READY_PRIVATE',
+      draft_id: 'draft-remote',
+    }));
+
+    await expect(admission).resolves.toMatchObject({
+      state: 'READY_PRIVATE',
+      draftId: 'draft-remote',
+    });
+    expect(usePrivateMomentsStore.getState().publish).toEqual({ state: 'IDLE' });
+  });
+
   it('createPost(private repost) delegates the source identity to Native', async () => {
     const authorPtid = 'ptid:author';
     installEventWindowStub();
@@ -954,6 +1021,47 @@ describe('moments store: createPost / deletePost', () => {
     expect(usePrivateMomentsStore.getState().postsById['private-post']).toBeUndefined();
   });
 
+  it('retains a typed revocation tombstone after Native material is purged', async () => {
+    installEventWindowStub();
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    usePrivateMomentsStore.getState().reset();
+    usePrivateMomentsStore.getState().activateActor('ptid:alice', 9);
+    usePrivateMomentsStore.setState({
+      postsById: {
+        'private-post': {
+          postId: 'private-post',
+          contentId: 'private-post',
+          generation: '1',
+          authorPtid: 'ptid:bob',
+          audienceKind: 'FRIENDS',
+          state: 'CONTENT_READY',
+          mentions: [],
+          content: { kind: 'TEXT', text: 'private' },
+        },
+      },
+    });
+    enqueue('social_private_moment_purge', statusOk({ ok: true }));
+
+    await usePrivateMomentsStore.getState().revokeMoment(
+      'private-post',
+      'RECIPIENT_BLOCKED',
+    );
+
+    expect(usePrivateMomentsStore.getState().postsById['private-post']).toMatchObject({
+      state: 'DELETED_OR_REVOKED',
+      revocationReason: 'RECIPIENT_BLOCKED',
+      content: undefined,
+      errorCode: 'SOCIAL_PRIVATE_RECIPIENT_BLOCKED',
+    });
+    await usePrivateMomentsStore.getState().readMoment('private-post');
+    await usePrivateMomentsStore.getState().recoverMoment('private-post');
+    await usePrivateMomentsStore.getState().openMedia(
+      'private-post',
+      'object-stale',
+    );
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+  });
+
   it('retains a cleanup tombstone when Native purge fails', async () => {
     installEventWindowStub();
     Object.assign(window, { __TAURI_INTERNALS__: {} });
@@ -1151,6 +1259,38 @@ describe('private Moments Native projection', () => {
     expect(projection?.content).toBeUndefined();
   });
 
+  it('keeps verified content visible while a remote source retry is pending', async () => {
+    installEventWindowStub();
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    usePrivateMomentsStore.getState().reset();
+    usePrivateMomentsStore.getState().activateActor('ptid:viewer', 5);
+    enqueue('social_private_moment_read', statusOk({
+      post_id: 'post-private-offline',
+      content_id: 'post-private-offline',
+      generation: '1',
+      author_ptid: 'ptid:author',
+      audience_kind: 'FRIENDS',
+      state: 'REMOTE_SOURCE_UNAVAILABLE',
+      error_code: 'REMOTE_SOURCE_UNAVAILABLE',
+      content: {
+        kind: 'TEXT',
+        text: 'verified offline content',
+      },
+    }));
+
+    await usePrivateMomentsStore.getState().readMoment('post-private-offline');
+    const privateProjection =
+      usePrivateMomentsStore.getState().postsById['post-private-offline'];
+    expect(privateProjection?.content).toEqual({
+      kind: 'TEXT',
+      text: 'verified offline content',
+    });
+
+    useMomentsStore.getState().hydratePrivateMoments([privateProjection!]);
+    expect(useMomentsStore.getState().feeds.home.postIds)
+      .toContain('post-private-offline');
+  });
+
   it('refreshes Native private content and comments for a direct-link detail', async () => {
     installEventWindowStub();
     Object.assign(window, { __TAURI_INTERNALS__: {} });
@@ -1159,7 +1299,7 @@ describe('private Moments Native projection', () => {
     usePrivateCommentsStore.getState().activateActor('ptid:viewer', 6);
     enqueue(
       'social_get_moment',
-      bytesOk(GetPostResponseSchema, {}),
+      bytesOk(GetMomentResourceResponseSchema, { resource: {} }),
     );
     enqueue('social_private_moment_read', {
       ok: true,
@@ -1242,6 +1382,8 @@ describe('private Moments Native projection', () => {
             media: [{
               objectId: 'object-1',
               state: 'MEDIA_READY',
+              accessPath: 'HOME_STATION_LOCAL_OBJECT',
+              retryable: false,
               renderUrl: 'private-media://localhost/01ARZ3NDEKTSV4RRFFQ69G5FAV',
             }],
           },
@@ -2079,6 +2221,463 @@ describe('moments store: reactions', () => {
     expect(useMomentsStore.getState().reactions['p1']?.[0]?.kind).toBe(
       ReactionKind.REACTION_LIKE,
     );
+  });
+
+  it('routes a private Reaction through Native before the Moment shell hydrates', async () => {
+    installEventWindowStub();
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    usePrivateMomentsStore.getState().activateActor('ptid:viewer', 31);
+    usePrivateMomentsStore.setState({
+      postsById: {
+        'private-reaction-post': {
+          postId: 'private-reaction-post',
+          contentId: 'private-reaction-post',
+          generation: '1',
+          authorPtid: 'ptid:author',
+          audienceKind: 'FRIENDS',
+          state: 'CONTENT_READY',
+          mentions: [],
+          reactions: [],
+          reactionRevision: '1',
+          reactionsHydrated: true,
+          content: { kind: 'TEXT', text: 'private' },
+        },
+      },
+    });
+    enqueue('social_private_react', statusOk({
+      command: {
+        command_id: 'reaction-v1-1',
+        post_id: 'private-reaction-post',
+        kind: ReactionKind.REACTION_LIKE,
+        operation: 'REACT',
+        state: 'REACTION_COMMITTED',
+        attempt_count: 1,
+        projection_revision: '2',
+      },
+      reactions: [{
+        kind: ReactionKind.REACTION_LIKE,
+        count: '1',
+        reacted_by_viewer: true,
+      }],
+      projection_revision: '2',
+      exact_replay: false,
+    }));
+
+    await useMomentsStore
+      .getState()
+      .reactToPost('private-reaction-post', ReactionKind.REACTION_LIKE);
+
+    expect(invokeMock).toHaveBeenCalledWith(
+      'social_private_react',
+      expect.objectContaining({
+        input: expect.objectContaining({
+          post_id: 'private-reaction-post',
+          kind: ReactionKind.REACTION_LIKE,
+        }),
+      }),
+    );
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      'social_react',
+      expect.anything(),
+    );
+    expect(
+      useMomentsStore.getState().reactions['private-reaction-post']?.[0],
+    ).toMatchObject({
+      count: 1n,
+      reactedByViewer: true,
+    });
+  });
+
+  it('recovers an existing durable private Reaction before creating another command', async () => {
+    installEventWindowStub();
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    usePrivateMomentsStore.getState().activateActor('ptid:viewer', 36);
+    usePrivateMomentsStore.setState({
+      postsById: {
+        'private-pending-post': {
+          postId: 'private-pending-post',
+          contentId: 'private-pending-post',
+          generation: '1',
+          authorPtid: 'ptid:author',
+          audienceKind: 'FRIENDS',
+          state: 'CONTENT_READY',
+          mentions: [],
+          reactions: [],
+          reactionRevision: '1',
+          reactionsHydrated: true,
+          content: { kind: 'TEXT', text: 'private' },
+        },
+      },
+    });
+    useMomentsStore.setState({
+      postsById: {
+        'private-pending-post': create(PostSchema, {
+          id: 'private-pending-post',
+          audience: create(AudienceSchema, { kind: Audience_Kind.FRIENDS }),
+        }),
+      },
+    });
+    enqueue('social_private_react', {
+      ok: false,
+      error: {
+        code: 'CONFLICT',
+        message: 'secure content Reaction command is already pending',
+        details: {
+          state: 'REACTION_PENDING',
+          native_error_code: 'REACTION_COMMAND_PENDING',
+          retryable: true,
+        },
+      },
+    });
+    enqueue('social_private_moments_bootstrap', statusOk({
+      actor_ptid: 'ptid:viewer',
+      device_id: 'device-1',
+      session_generation: '9',
+      projections: [{
+        post_id: 'private-pending-post',
+        content_id: 'private-pending-post',
+        generation: '1',
+        author_ptid: 'ptid:author',
+        audience_kind: 'FRIENDS',
+        state: 'CONTENT_READY',
+        reactions: [],
+        reaction_revision: '1',
+        reactions_hydrated: true,
+        content: { kind: 'TEXT', text: 'private' },
+      }],
+      reaction_commands: [{
+        command_id: 'reaction-v1-existing',
+        post_id: 'private-pending-post',
+        kind: ReactionKind.REACTION_LOVE,
+        operation: 'REACT',
+        state: 'REACTION_PENDING',
+        attempt_count: 1,
+        projection_revision: '1',
+      }],
+    }));
+    enqueue('social_private_reaction_retry', statusOk({
+      command: {
+        command_id: 'reaction-v1-existing',
+        post_id: 'private-pending-post',
+        kind: ReactionKind.REACTION_LOVE,
+        operation: 'REACT',
+        state: 'REACTION_COMMITTED',
+        attempt_count: 2,
+        projection_revision: '2',
+      },
+      reactions: [{
+        kind: ReactionKind.REACTION_LOVE,
+        count: '1',
+        reacted_by_viewer: true,
+      }],
+      projection_revision: '2',
+      exact_replay: true,
+    }));
+
+    await useMomentsStore
+      .getState()
+      .reactToPost('private-pending-post', ReactionKind.REACTION_LOVE);
+
+    expect(invokeMock).toHaveBeenCalledWith(
+      'social_private_moments_bootstrap',
+      expect.anything(),
+    );
+    expect(invokeMock).toHaveBeenCalledWith(
+      'social_private_reaction_retry',
+      expect.objectContaining({
+        input: expect.objectContaining({
+          command_id: 'reaction-v1-existing',
+        }),
+      }),
+    );
+    expect(
+      useMomentsStore.getState().reactions['private-pending-post']?.[0],
+    ).toMatchObject({
+      count: 1n,
+      reactedByViewer: true,
+    });
+    expect(
+      usePrivateMomentsStore.getState().reactionsByPost['private-pending-post'],
+    ).toBeUndefined();
+  });
+
+  it('preserves known reactions until the private projection is hydrated', () => {
+    usePrivateMomentsStore.getState().activateActor('ptid:viewer', 34);
+    useMomentsStore.setState({
+      postsById: {
+        'private-unhydrated-post': create(PostSchema, {
+          id: 'private-unhydrated-post',
+          audience: create(AudienceSchema, { kind: Audience_Kind.FRIENDS }),
+          reactions: [{
+            kind: ReactionKind.REACTION_LOVE,
+            count: 2n,
+            reactedByViewer: true,
+          }],
+        }),
+      },
+      reactions: {
+        'private-unhydrated-post': [create(ReactionSummarySchema, {
+          kind: ReactionKind.REACTION_LOVE,
+          count: 2n,
+          reactedByViewer: true,
+        })],
+      },
+    });
+
+    useMomentsStore.getState().hydratePrivateMoments([{
+      postId: 'private-unhydrated-post',
+      contentId: 'private-unhydrated-post',
+      generation: '1',
+      authorPtid: 'ptid:author',
+      audienceKind: 'FRIENDS',
+      state: 'CONTENT_READY',
+      mentions: [],
+      reactions: [],
+      reactionRevision: '0',
+      reactionsHydrated: false,
+      content: { kind: 'TEXT', text: 'private' },
+    }]);
+
+    expect(
+      useMomentsStore.getState().reactions['private-unhydrated-post']?.[0],
+    ).toMatchObject({
+      kind: ReactionKind.REACTION_LOVE,
+      count: 2n,
+      reactedByViewer: true,
+    });
+    expect(
+      useMomentsStore.getState().postsById['private-unhydrated-post']?.reactions[0],
+    ).toMatchObject({
+      kind: ReactionKind.REACTION_LOVE,
+      count: 2n,
+      reactedByViewer: true,
+    });
+  });
+
+  it('retries an unknown private Reaction with its durable command ID', async () => {
+    installEventWindowStub();
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    usePrivateMomentsStore.getState().activateActor('ptid:viewer', 32);
+    usePrivateMomentsStore.setState({
+      postsById: {
+        'private-retry-post': {
+          postId: 'private-retry-post',
+          contentId: 'private-retry-post',
+          generation: '1',
+          authorPtid: 'ptid:author',
+          audienceKind: 'FRIENDS',
+          state: 'CONTENT_READY',
+          mentions: [],
+          reactions: [],
+          reactionRevision: '1',
+          reactionsHydrated: true,
+          content: { kind: 'TEXT', text: 'private' },
+        },
+      },
+    });
+    useMomentsStore.setState({
+      postsById: {
+        'private-retry-post': create(PostSchema, {
+          id: 'private-retry-post',
+          audience: create(AudienceSchema, { kind: Audience_Kind.FRIENDS }),
+        }),
+      },
+    });
+    enqueue('social_private_react', statusOk({
+      command: {
+        command_id: 'reaction-v1-stable',
+        post_id: 'private-retry-post',
+        kind: ReactionKind.REACTION_LOVE,
+        operation: 'REACT',
+        state: 'REACTION_PENDING',
+        attempt_count: 1,
+        projection_revision: '1',
+        error_code: 'REACTION_RESULT_UNKNOWN',
+      },
+      reactions: [],
+      projection_revision: '1',
+      exact_replay: false,
+    }));
+    await useMomentsStore
+      .getState()
+      .reactToPost('private-retry-post', ReactionKind.REACTION_LOVE);
+    expect(
+      usePrivateMomentsStore.getState().reactionsByPost['private-retry-post'],
+    ).toMatchObject({
+      commandId: 'reaction-v1-stable',
+      state: 'REACTION_PENDING',
+    });
+
+    enqueue('social_private_reaction_retry', statusOk({
+      command: {
+        command_id: 'reaction-v1-stable',
+        post_id: 'private-retry-post',
+        kind: ReactionKind.REACTION_LOVE,
+        operation: 'REACT',
+        state: 'REACTION_COMMITTED',
+        attempt_count: 2,
+        projection_revision: '2',
+      },
+      reactions: [{
+        kind: ReactionKind.REACTION_LOVE,
+        count: '1',
+        reacted_by_viewer: true,
+      }],
+      projection_revision: '2',
+      exact_replay: true,
+    }));
+    const retried = await usePrivateMomentsStore
+      .getState()
+      .retryReaction('private-retry-post');
+
+    expect(retried.exactReplay).toBe(true);
+    expect(invokeMock).toHaveBeenCalledWith(
+      'social_private_reaction_retry',
+      expect.objectContaining({
+        input: expect.objectContaining({
+          command_id: 'reaction-v1-stable',
+        }),
+      }),
+    );
+    expect(
+      usePrivateMomentsStore.getState().reactionsByPost['private-retry-post'],
+    ).toBeUndefined();
+  });
+
+  it('does not let a late bootstrap resurrect an older private Reaction command', async () => {
+    installEventWindowStub();
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    usePrivateMomentsStore.getState().activateActor('ptid:viewer', 35);
+    usePrivateMomentsStore.setState({
+      scope: {
+        actorPtid: 'ptid:viewer',
+        rendererGeneration: 35,
+        nativeSessionGeneration: '8',
+      },
+      postsById: {
+        'private-bootstrap-reaction': {
+          postId: 'private-bootstrap-reaction',
+          contentId: 'private-bootstrap-reaction',
+          generation: '1',
+          authorPtid: 'ptid:author',
+          audienceKind: 'FRIENDS',
+          state: 'CONTENT_READY',
+          mentions: [],
+          reactions: [],
+          reactionRevision: '1',
+          reactionsHydrated: true,
+          content: { kind: 'TEXT', text: 'private' },
+        },
+      },
+    });
+    let resolveBootstrap: ((value: ReturnType<typeof statusOk>) => void) | undefined;
+    const bootstrapResponse = new Promise<ReturnType<typeof statusOk>>((resolve) => {
+      resolveBootstrap = resolve;
+    });
+    enqueue('social_private_moments_bootstrap', bootstrapResponse);
+    const pendingBootstrap = usePrivateMomentsStore.getState().bootstrap(35);
+    await vi.waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith(
+        'social_private_moments_bootstrap',
+        expect.anything(),
+      );
+    });
+    enqueue('social_private_react', statusOk({
+      command: {
+        command_id: 'reaction-v1-new',
+        post_id: 'private-bootstrap-reaction',
+        kind: ReactionKind.REACTION_LIKE,
+        operation: 'REACT',
+        state: 'REACTION_COMMITTED',
+        attempt_count: 1,
+        projection_revision: '2',
+      },
+      reactions: [{
+        kind: ReactionKind.REACTION_LIKE,
+        count: '1',
+        reacted_by_viewer: true,
+      }],
+      projection_revision: '2',
+      exact_replay: false,
+    }));
+    await usePrivateMomentsStore
+      .getState()
+      .reactToPost('private-bootstrap-reaction', ReactionKind.REACTION_LIKE);
+
+    resolveBootstrap?.(statusOk({
+      actor_ptid: 'ptid:viewer',
+      device_id: 'device-1',
+      session_generation: '9',
+      projections: [{
+        post_id: 'private-bootstrap-reaction',
+        content_id: 'private-bootstrap-reaction',
+        generation: '1',
+        author_ptid: 'ptid:author',
+        audience_kind: 'FRIENDS',
+        state: 'CONTENT_READY',
+        reactions: [],
+        reaction_revision: '1',
+        reactions_hydrated: true,
+        content: { kind: 'TEXT', text: 'private' },
+      }],
+      reaction_commands: [{
+        command_id: 'reaction-v1-old',
+        post_id: 'private-bootstrap-reaction',
+        kind: ReactionKind.REACTION_LOVE,
+        operation: 'REACT',
+        state: 'REACTION_PENDING',
+        attempt_count: 1,
+        projection_revision: '1',
+      }],
+    }));
+    await pendingBootstrap;
+
+    expect(
+      usePrivateMomentsStore.getState().reactionsByPost['private-bootstrap-reaction'],
+    ).toBeUndefined();
+    expect(
+      usePrivateMomentsStore.getState().postsById['private-bootstrap-reaction']
+        ?.reactionRevision,
+    ).toBe('2');
+  });
+
+  it('rejects duplicate private Reaction command histories from Native', async () => {
+    installEventWindowStub();
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    usePrivateMomentsStore.getState().activateActor('ptid:viewer', 33);
+    enqueue('social_private_moments_bootstrap', statusOk({
+      actor_ptid: 'ptid:viewer',
+      device_id: 'device-1',
+      session_generation: '9',
+      projections: [],
+      reaction_commands: [
+        {
+          command_id: 'reaction-v1-new',
+          post_id: 'private-history-post',
+          kind: ReactionKind.REACTION_LIKE,
+          operation: 'REACT',
+          state: 'REACTION_COMMITTED',
+          attempt_count: 2,
+          projection_revision: '4',
+        },
+        {
+          command_id: 'reaction-v1-old',
+          post_id: 'private-history-post',
+          kind: ReactionKind.REACTION_LIKE,
+          operation: 'REACT',
+          state: 'REACTION_REJECTED',
+          attempt_count: 1,
+          projection_revision: '1',
+          error_code: 'REACTION_REJECTED',
+        },
+      ],
+    }));
+
+    await expect(
+      usePrivateMomentsStore.getState().bootstrap(33),
+    ).rejects.toMatchObject({
+      code: 'PRIVATE_PROJECTION_INVALID',
+    });
   });
 });
 

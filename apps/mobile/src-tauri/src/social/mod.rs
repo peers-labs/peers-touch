@@ -1,3 +1,6 @@
+pub mod adapter;
+pub(crate) mod private_reaction;
+
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -18,6 +21,11 @@ use crate::platform::media_picker::{
     materialize_private_moment_media, prepare_private_moment_media,
     purge_private_moment_media_cache,
 };
+use crate::platform::secure_input::{
+    request_private_social_recovery_phrase, validate_private_social_recovery_projection,
+    validate_private_social_recovery_request, validate_private_social_recovery_scope,
+    PrivateSocialRecoveryScope,
+};
 use crate::platform::secure_storage::SecureStorage;
 use crate::secure_content::adapter::{
     build_moment_submission, build_text_submission, prepare_moment_request, prepare_request,
@@ -37,6 +45,7 @@ use crate::secure_content::receiver::{
     repost_source_material_from_response, sender_key_requirement, set_media_projection,
     terminal_projection_for_transport_error, transport_error_is_retryable, DecryptedPrivateMoment,
     PrivateMediaState, PrivateMomentReadProjection, PrivateReadError, PrivateReadFailureKind,
+    PrivateReadState,
 };
 use crate::secure_content::recovery::{
     store_recovery_phrase, INITIAL_SECURE_CONTENT_RECOVERY_EPOCH,
@@ -49,6 +58,14 @@ use crate::secure_content::transport::{
 use crate::secure_content::worker::{PrivateSocialWorker, PrivateSocialWorkerReport};
 use crate::secure_content::{NativeSocialSession, PrivateSocialScope};
 
+use private_reaction::{
+    command_projection as private_reaction_command_projection, reconcile_private_reactions,
+    PrivateReactionCommandProjection,
+};
+pub use private_reaction::{
+    social_private_react, social_private_reaction_retry, social_private_unreact,
+};
+
 const DATABASE_KEY_PREFIX: &str = "secure-content.social.v1.sqlcipher";
 
 #[derive(Debug, Deserialize)]
@@ -56,6 +73,8 @@ const DATABASE_KEY_PREFIX: &str = "secure-content.social.v1.sqlcipher";
 pub struct PrivateSocialActivationInput {
     station_peer_id: String,
     actor_ptid: String,
+    device_id: String,
+    lifecycle_generation: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -64,6 +83,57 @@ pub struct PrivateSocialAccountInput {
     station_peer_id: String,
     actor_ptid: String,
     activation_generation: u64,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum PrivateSocialInvalidationReason {
+    ResourceDeleted,
+    RelationshipRevoked,
+    RecipientBlocked,
+    DeviceRevoked,
+}
+
+impl PrivateSocialInvalidationReason {
+    fn error_code(self) -> &'static str {
+        match self {
+            Self::ResourceDeleted => "RESOURCE_DELETED",
+            Self::RelationshipRevoked => "RELATIONSHIP_REVOKED",
+            Self::RecipientBlocked => "RECIPIENT_BLOCKED",
+            Self::DeviceRevoked => "DEVICE_REVOKED",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PrivateSocialInvalidation {
+    reason: PrivateSocialInvalidationReason,
+    source_cursor: String,
+    #[serde(default)]
+    post_id: String,
+    #[serde(default)]
+    author_ptid: String,
+    #[serde(default)]
+    entire_scope: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrivateSocialReconcileInput {
+    station_peer_id: String,
+    actor_ptid: String,
+    activation_generation: u64,
+    #[serde(default)]
+    invalidations: Vec<PrivateSocialInvalidation>,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PrivateSocialReconcileResult {
+    #[serde(flatten)]
+    pub report: PrivateSocialWorkerReport,
+    pub invalidated_read_projections: Vec<PrivateMomentReadProjection>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -140,22 +210,15 @@ pub struct PrivateSocialCommentListInput {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PrivateSocialRecoveryPhraseInput {
+pub struct PrivateSocialNativeRecoveryInput {
     station_peer_id: String,
     actor_ptid: String,
-    activation_generation: u64,
-    recovery_phrase: String,
-    #[serde(default = "initial_recovery_epoch")]
-    recovery_epoch: u64,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PrivateSocialRecoverTextInput {
-    station_peer_id: String,
-    actor_ptid: String,
+    device_id: String,
+    lifecycle_generation: u64,
     activation_generation: u64,
     post_id: String,
+    #[serde(default = "initial_recovery_epoch")]
+    recovery_epoch: u64,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -195,6 +258,37 @@ pub struct PrivateSocialSnapshot {
     pub read_projections: Vec<PrivateMomentReadProjection>,
     pub comment_drafts: Vec<PrivateCommentDraftProjection>,
     pub comments: Vec<PrivateCommentProjection>,
+    pub reaction_commands: Vec<PrivateReactionCommandProjection>,
+}
+
+struct EphemeralRecoveryStore {
+    store: PrivateSocialStore,
+    path: PathBuf,
+}
+
+impl EphemeralRecoveryStore {
+    fn new(station_peer_id: &str, actor_ptid: &str) -> Result<Self, String> {
+        let path = std::env::temp_dir().join(format!(
+            "peers-touch-private-recovery-{}.sqlite3",
+            ulid::Ulid::new()
+        ));
+        let mut key = Zeroizing::new([0; 32]);
+        OsRng.fill_bytes(key.as_mut());
+        let store = PrivateSocialStore::open(&path, &key, station_peer_id, actor_ptid)?;
+        Ok(Self { store, path })
+    }
+}
+
+impl Drop for EphemeralRecoveryStore {
+    fn drop(&mut self) {
+        for path in [
+            self.path.clone(),
+            PathBuf::from(format!("{}-wal", self.path.display())),
+            PathBuf::from(format!("{}-shm", self.path.display())),
+        ] {
+            let _ = std::fs::remove_file(path);
+        }
+    }
 }
 
 struct PrivateSocialEngine {
@@ -203,6 +297,7 @@ struct PrivateSocialEngine {
     worker: PrivateSocialWorker,
     operation_lock: Mutex<()>,
     activation_generation: u64,
+    lifecycle_generation: u64,
 }
 
 impl PrivateSocialEngine {
@@ -210,6 +305,7 @@ impl PrivateSocialEngine {
         session: NativeSocialSession,
         store: PrivateSocialStore,
         activation_generation: u64,
+        lifecycle_generation: u64,
     ) -> Result<Self, String> {
         let session = Arc::new(session);
         let store = Arc::new(store);
@@ -219,6 +315,7 @@ impl PrivateSocialEngine {
             store,
             operation_lock: Mutex::new(()),
             activation_generation,
+            lifecycle_generation,
         })
     }
 
@@ -683,6 +780,7 @@ impl PrivateSocialEngine {
             .map_err(|_| "private Social operation lock poisoned".to_string())?;
         self.ensure_activation_generation(activation_generation)?;
         self.ensure_current()?;
+        reconcile_private_reactions(self)?;
         self.worker.reconcile()
     }
 
@@ -932,41 +1030,118 @@ impl PrivateSocialEngine {
         Ok(decrypted.projection)
     }
 
-    fn store_recovery_phrase(
+    fn ensure_recovery_request(
         &self,
+        station_peer_id: &str,
+        actor_ptid: &str,
         activation_generation: u64,
-        recovery_epoch: u64,
-        phrase: &str,
-    ) -> Result<(), String> {
-        let _operation = self
-            .operation_lock
-            .lock()
-            .map_err(|_| "private Social operation lock poisoned".to_string())?;
-        self.ensure_activation_generation(activation_generation)?;
-        self.ensure_current()?;
-        store_recovery_phrase(
-            self.store.as_ref(),
-            &self.session.scope.actor_ptid,
-            recovery_epoch,
-            phrase,
-        )
-    }
-
-    fn recover_text(
-        &self,
-        activation_generation: u64,
+        lifecycle_generation: u64,
+        device_id: &str,
         post_id: &str,
-    ) -> MobileResult<PrivateMomentReadProjection> {
-        self.ensure_activation_generation(activation_generation)
-            .map_err(MobileError::social)?;
-        if post_id.trim().is_empty() || post_id != post_id.trim() {
-            return Err(MobileError::social("private Social post ID is invalid"));
-        }
+        recovery_epoch: u64,
+    ) -> MobileResult<()> {
         let _operation = self
             .operation_lock
             .lock()
             .map_err(|_| MobileError::social("private Social operation lock poisoned"))?;
+        self.ensure_recovery_request_locked(
+            station_peer_id,
+            actor_ptid,
+            activation_generation,
+            lifecycle_generation,
+            device_id,
+            post_id,
+            recovery_epoch,
+        )
+    }
+
+    fn ensure_recovery_request_locked(
+        &self,
+        station_peer_id: &str,
+        actor_ptid: &str,
+        activation_generation: u64,
+        lifecycle_generation: u64,
+        device_id: &str,
+        post_id: &str,
+        recovery_epoch: u64,
+    ) -> MobileResult<()> {
+        self.ensure_activation_generation(activation_generation)
+            .map_err(MobileError::social)?;
         self.ensure_current().map_err(MobileError::social)?;
+        validate_private_social_recovery_scope(PrivateSocialRecoveryScope {
+            active_station_peer_id: &self.session.scope.station_peer_id,
+            active_actor_ptid: &self.session.scope.actor_ptid,
+            active_device_id: &self.session.scope.device_id,
+            active_lifecycle_generation: self.lifecycle_generation,
+            active_activation_generation: self.activation_generation,
+            requested_station_peer_id: station_peer_id,
+            requested_actor_ptid: actor_ptid,
+            requested_device_id: device_id,
+            requested_lifecycle_generation: lifecycle_generation,
+            requested_activation_generation: activation_generation,
+        })?;
+        validate_private_social_recovery_request(post_id, recovery_epoch)?;
+        let projection = self
+            .store
+            .read_projection(post_id)
+            .map_err(MobileError::social)?
+            .ok_or_else(|| {
+                MobileError::coded(
+                    "MOBILE_PRIVATE_SOCIAL_RECOVERY_STATE",
+                    "private Social recovery is not required for this post",
+                )
+            })
+            .and_then(|bytes| {
+                PrivateMomentReadProjection::decode(&bytes).map_err(MobileError::social)
+            })?;
+        validate_private_social_recovery_projection(
+            post_id,
+            &projection.post_id,
+            projection.state == PrivateReadState::RecoveryRequired,
+        )
+    }
+
+    fn recover_with_phrase(
+        &self,
+        station_peer_id: &str,
+        actor_ptid: &str,
+        activation_generation: u64,
+        lifecycle_generation: u64,
+        device_id: &str,
+        post_id: &str,
+        recovery_epoch: u64,
+        phrase: &str,
+    ) -> MobileResult<PrivateMomentReadProjection> {
+        let _operation = self
+            .operation_lock
+            .lock()
+            .map_err(|_| MobileError::social("private Social operation lock poisoned"))?;
+        self.ensure_recovery_request_locked(
+            station_peer_id,
+            actor_ptid,
+            activation_generation,
+            lifecycle_generation,
+            device_id,
+            post_id,
+            recovery_epoch,
+        )?;
+        let candidate_store = EphemeralRecoveryStore::new(
+            &self.session.scope.station_peer_id,
+            &self.session.scope.actor_ptid,
+        )
+        .map_err(MobileError::social)?;
+        store_recovery_phrase(
+            &candidate_store.store,
+            &self.session.scope.actor_ptid,
+            recovery_epoch,
+            phrase,
+        )
+        .map_err(|_| {
+            MobileError::coded(
+                "MOBILE_PRIVATE_SOCIAL_RECOVERY_INVALID_INPUT",
+                "private Social recovery input is invalid",
+            )
+        })?;
         let transport =
             NativeSocialTransport::new(self.session.clone()).map_err(MobileError::social)?;
         let mut cursor = String::new();
@@ -1009,18 +1184,11 @@ impl PrivateSocialEngine {
                         );
                     }
                 };
-                if self
-                    .store
-                    .recovery_master(&self.session.scope.actor_ptid, envelope.principal_epoch)
-                    .map_err(MobileError::social)?
-                    .is_none()
-                {
-                    return persist_terminal_read_projection(
-                        self.store.as_ref(),
-                        self.activation_generation,
-                        post_id,
-                        recovery_key_unavailable_projection(post_id),
-                    );
+                if envelope.principal_epoch != recovery_epoch {
+                    return Err(MobileError::coded(
+                        "MOBILE_PRIVATE_SOCIAL_RECOVERY_EPOCH_MISMATCH",
+                        "private Social recovery epoch does not match this post",
+                    ));
                 }
                 let point = match transport.get_private_moment(post_id) {
                     Ok(point) => point,
@@ -1076,13 +1244,19 @@ impl PrivateSocialEngine {
                 };
                 let decrypted = match decrypt_text_projection_with_recovery(
                     self.session.as_ref(),
-                    self.store.as_ref(),
+                    &candidate_store.store,
                     post_id,
                     &point,
                     envelope,
                     &sender_key,
                 ) {
                     Ok(decrypted) => decrypted,
+                    Err(error) if error.kind == PrivateReadFailureKind::RecoveryRequired => {
+                        return Err(MobileError::coded(
+                            "MOBILE_PRIVATE_SOCIAL_RECOVERY_INVALID_INPUT",
+                            "private Social recovery input is invalid",
+                        ))
+                    }
                     Err(error) => {
                         return persist_private_read_error(
                             self.store.as_ref(),
@@ -1099,6 +1273,14 @@ impl PrivateSocialEngine {
                     .map_err(|_| {
                         MobileError::social("private Social recovery generation is invalid")
                     })?;
+                self.ensure_current().map_err(MobileError::social)?;
+                store_recovery_phrase(
+                    self.store.as_ref(),
+                    &self.session.scope.actor_ptid,
+                    recovery_epoch,
+                    phrase,
+                )
+                .map_err(MobileError::social)?;
                 self.store
                     .commit_receiver_projection(
                         self.activation_generation,
@@ -1168,11 +1350,18 @@ impl PrivateSocialEngine {
             .iter()
             .map(|projection| PrivateCommentProjection::decode(projection))
             .collect::<Result<Vec<_>, _>>()?;
+        let reaction_commands = self
+            .store
+            .reaction_commands()?
+            .iter()
+            .map(private_reaction_command_projection)
+            .collect();
         Ok(PrivateSocialSnapshot {
             publish_projections,
             read_projections,
             comment_drafts,
             comments,
+            reaction_commands,
         })
     }
 
@@ -1197,6 +1386,61 @@ impl PrivateSocialEngine {
         self.store
             .invalidate_session_generation(self.activation_generation)
     }
+
+    fn apply_invalidations(
+        &self,
+        activation_generation: u64,
+        invalidations: &[PrivateSocialInvalidation],
+    ) -> Result<Vec<PrivateMomentReadProjection>, String> {
+        let _operation = self
+            .operation_lock
+            .lock()
+            .map_err(|_| "private Social operation lock poisoned".to_string())?;
+        self.ensure_activation_generation(activation_generation)?;
+        self.ensure_current()?;
+
+        let retained = self
+            .store
+            .read_projections()?
+            .iter()
+            .map(|projection| PrivateMomentReadProjection::decode(projection))
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut invalidated = Vec::new();
+
+        for invalidation in invalidations {
+            validate_private_social_invalidation(invalidation)?;
+            let mut post_ids = match invalidation.reason {
+                PrivateSocialInvalidationReason::ResourceDeleted => {
+                    vec![invalidation.post_id.clone()]
+                }
+                PrivateSocialInvalidationReason::RelationshipRevoked
+                | PrivateSocialInvalidationReason::RecipientBlocked => retained
+                    .iter()
+                    .filter(|projection| projection.author_ptid == invalidation.author_ptid)
+                    .map(|projection| projection.post_id.clone())
+                    .collect(),
+                PrivateSocialInvalidationReason::DeviceRevoked => retained
+                    .iter()
+                    .map(|projection| projection.post_id.clone())
+                    .collect(),
+            };
+            post_ids.sort();
+            post_ids.dedup();
+
+            for post_id in post_ids {
+                let projection =
+                    revoked_private_moment_projection(&post_id, invalidation.reason.error_code());
+                self.store.persist_receiver_failure(
+                    activation_generation,
+                    &post_id,
+                    &projection.encode()?,
+                    true,
+                )?;
+                invalidated.push(projection);
+            }
+        }
+        Ok(invalidated)
+    }
 }
 
 struct ActivePrivateSocialRuntime {
@@ -1217,11 +1461,18 @@ impl MobilePrivateSocialRuntime {
         data_root: &Path,
         storage: &SecureStorage,
         identity: SecureContentRuntimeIdentity,
+        expected_device_id: &str,
+        lifecycle_generation: u64,
     ) -> MobileResult<PrivateSocialRuntimeStatus> {
         let _activation = self
             .activation_lock
             .lock()
             .map_err(|_| MobileError::social("private Social activation lock poisoned"))?;
+        if lifecycle_generation == 0 || identity.scope.device_id != expected_device_id {
+            return Err(MobileError::social(
+                "private Social activation device scope is stale",
+            ));
+        }
         let scope = PrivateSocialScope {
             profile_id: private_social_profile_id(
                 &identity.scope.station_peer_id,
@@ -1264,7 +1515,8 @@ impl MobilePrivateSocialRuntime {
         )
         .map_err(MobileError::social)?;
         let engine = Arc::new(
-            PrivateSocialEngine::new(session, store, generation).map_err(MobileError::social)?,
+            PrivateSocialEngine::new(session, store, generation, lifecycle_generation)
+                .map_err(MobileError::social)?,
         );
         let status = status_for_engine(&engine, generation);
         let mut active = self
@@ -1365,7 +1617,13 @@ pub fn social_private_activate<R: Runtime>(
         .path()
         .app_data_dir()
         .map_err(|error| MobileError::social(format!("resolve Mobile data directory: {error}")))?;
-    social.activate(&data_root, &storage, identity)
+    social.activate(
+        &data_root,
+        &storage,
+        identity,
+        &input.device_id,
+        input.lifecycle_generation,
+    )
 }
 
 #[tauri::command]
@@ -1484,51 +1742,42 @@ pub fn social_private_open_media<R: Runtime>(
 }
 
 #[tauri::command]
-pub fn social_private_store_recovery_phrase(
+pub async fn social_private_recover_with_native_input<R: Runtime>(
+    app: AppHandle<R>,
     social: State<'_, MobilePrivateSocialRuntime>,
-    input: PrivateSocialRecoveryPhraseInput,
-) -> MobileResult<()> {
-    let recovery_phrase = Zeroizing::new(input.recovery_phrase);
-    social
-        .active_engine_at_generation(
-            &input.station_peer_id,
-            &input.actor_ptid,
-            input.activation_generation,
-        )?
-        .store_recovery_phrase(
-            input.activation_generation,
-            input.recovery_epoch,
-            recovery_phrase.as_str(),
-        )
-        .map_err(MobileError::social)
-}
-
-#[tauri::command]
-pub fn social_private_recover_text(
-    social: State<'_, MobilePrivateSocialRuntime>,
-    input: PrivateSocialRecoverTextInput,
+    input: PrivateSocialNativeRecoveryInput,
 ) -> MobileResult<PrivateMomentReadProjection> {
-    social
-        .active_engine_at_generation(
-            &input.station_peer_id,
-            &input.actor_ptid,
-            input.activation_generation,
-        )?
-        .recover_text(input.activation_generation, &input.post_id)
-}
-
-#[tauri::command]
-pub fn social_private_recover(
-    social: State<'_, MobilePrivateSocialRuntime>,
-    input: PrivateSocialRecoverTextInput,
-) -> MobileResult<PrivateMomentReadProjection> {
-    social
-        .active_engine_at_generation(
-            &input.station_peer_id,
-            &input.actor_ptid,
-            input.activation_generation,
-        )?
-        .recover_text(input.activation_generation, &input.post_id)
+    let engine = social.active_engine_at_generation(
+        &input.station_peer_id,
+        &input.actor_ptid,
+        input.activation_generation,
+    )?;
+    engine.ensure_recovery_request(
+        &input.station_peer_id,
+        &input.actor_ptid,
+        input.activation_generation,
+        input.lifecycle_generation,
+        &input.device_id,
+        &input.post_id,
+        input.recovery_epoch,
+    )?;
+    let recovery_phrase =
+        request_private_social_recovery_phrase(&app, input.lifecycle_generation).await?;
+    let engine = social.active_engine_at_generation(
+        &input.station_peer_id,
+        &input.actor_ptid,
+        input.activation_generation,
+    )?;
+    engine.recover_with_phrase(
+        &input.station_peer_id,
+        &input.actor_ptid,
+        input.activation_generation,
+        input.lifecycle_generation,
+        &input.device_id,
+        &input.post_id,
+        input.recovery_epoch,
+        recovery_phrase.as_str(),
+    )
 }
 
 #[tauri::command]
@@ -1567,18 +1816,40 @@ pub fn social_private_comments(
 }
 
 #[tauri::command]
-pub fn social_private_reconcile(
+pub fn social_private_reconcile<R: Runtime>(
+    app: AppHandle<R>,
     social: State<'_, MobilePrivateSocialRuntime>,
-    input: PrivateSocialAccountInput,
-) -> MobileResult<PrivateSocialWorkerReport> {
-    social
-        .active_engine_at_generation(
-            &input.station_peer_id,
-            &input.actor_ptid,
-            input.activation_generation,
-        )?
-        .reconcile(input.activation_generation)
-        .map_err(MobileError::social)
+    input: PrivateSocialReconcileInput,
+) -> MobileResult<PrivateSocialReconcileResult> {
+    let engine = social.active_engine_at_generation(
+        &input.station_peer_id,
+        &input.actor_ptid,
+        input.activation_generation,
+    )?;
+    if input.invalidations.is_empty() {
+        return engine
+            .reconcile(input.activation_generation)
+            .map(|report| PrivateSocialReconcileResult {
+                report,
+                invalidated_read_projections: Vec::new(),
+            })
+            .map_err(MobileError::social);
+    }
+
+    let invalidated_read_projections = engine
+        .apply_invalidations(input.activation_generation, &input.invalidations)
+        .map_err(MobileError::social)?;
+    purge_private_moment_media_cache(&app, &input.station_peer_id, &input.actor_ptid)?;
+    Ok(PrivateSocialReconcileResult {
+        report: PrivateSocialWorkerReport {
+            endpoint_prekeys_available: 0,
+            recovery_prekeys_available: None,
+            submissions_processed: 0,
+            submissions_unknown: 0,
+            submissions_terminal: 0,
+        },
+        invalidated_read_projections,
+    })
 }
 
 #[tauri::command]
@@ -1628,6 +1899,64 @@ fn status_for_engine(engine: &PrivateSocialEngine, generation: u64) -> PrivateSo
         device_id: Some(engine.session.scope.device_id.clone()),
         activation_generation: generation,
         worker_mode: "on_demand",
+    }
+}
+
+fn validate_private_social_invalidation(
+    invalidation: &PrivateSocialInvalidation,
+) -> Result<(), String> {
+    if invalidation.source_cursor.trim().is_empty()
+        || invalidation.source_cursor != invalidation.source_cursor.trim()
+        || invalidation.source_cursor.len() > 256
+    {
+        return Err("private Social invalidation cursor is invalid".to_string());
+    }
+    let post_selected = !invalidation.post_id.is_empty();
+    let author_selected = !invalidation.author_ptid.is_empty();
+    if post_selected as u8 + author_selected as u8 + invalidation.entire_scope as u8 != 1 {
+        return Err("private Social invalidation selector is invalid".to_string());
+    }
+    if (post_selected
+        && (invalidation.post_id != invalidation.post_id.trim()
+            || invalidation.post_id.len() > 128))
+        || (author_selected
+            && (invalidation.author_ptid != invalidation.author_ptid.trim()
+                || invalidation.author_ptid.len() > 255))
+    {
+        return Err("private Social invalidation identity is invalid".to_string());
+    }
+    let selector_matches_reason = match invalidation.reason {
+        PrivateSocialInvalidationReason::ResourceDeleted => post_selected,
+        PrivateSocialInvalidationReason::RelationshipRevoked
+        | PrivateSocialInvalidationReason::RecipientBlocked => author_selected,
+        PrivateSocialInvalidationReason::DeviceRevoked => invalidation.entire_scope,
+    };
+    if !selector_matches_reason {
+        return Err("private Social invalidation reason is invalid".to_string());
+    }
+    Ok(())
+}
+
+fn revoked_private_moment_projection(
+    post_id: &str,
+    error_code: &str,
+) -> PrivateMomentReadProjection {
+    PrivateMomentReadProjection {
+        post_id: post_id.to_string(),
+        content_id: format!("unavailable:{post_id}"),
+        generation: "0".to_string(),
+        author_ptid: String::new(),
+        audience_kind: "UNKNOWN".to_string(),
+        state: crate::secure_content::receiver::PrivateReadState::DeletedOrRevoked,
+        mentions: Vec::new(),
+        reactions: Vec::new(),
+        reaction_revision: "0".to_string(),
+        reactions_hydrated: false,
+        content: None,
+        error_code: Some(error_code.to_string()),
+        retry_after_seconds: None,
+        created_at_millis: None,
+        updated_at_millis: None,
     }
 }
 
@@ -1969,6 +2298,50 @@ mod tests {
             PrivateMomentReadProjection::decode(&store.read_projection("post-1").unwrap().unwrap())
                 .unwrap();
         assert_eq!(persisted, projection);
+    }
+
+    #[test]
+    fn ordered_revocation_projection_purges_private_material_and_plaintext() {
+        let store = store_with_ready_receiver_projection();
+        let projection = revoked_private_moment_projection("post-1", "RECIPIENT_BLOCKED");
+
+        store
+            .persist_receiver_failure(1, "post-1", &projection.encode().unwrap(), true)
+            .unwrap();
+
+        assert_eq!(
+            projection.state,
+            crate::secure_content::receiver::PrivateReadState::DeletedOrRevoked
+        );
+        assert_eq!(projection.error_code.as_deref(), Some("RECIPIENT_BLOCKED"));
+        assert!(projection.content.is_none());
+        assert!(projection.author_ptid.is_empty());
+        assert!(store.content_root("post-1", 2).unwrap().is_none());
+        let persisted =
+            PrivateMomentReadProjection::decode(&store.read_projection("post-1").unwrap().unwrap())
+                .unwrap();
+        assert_eq!(persisted, projection);
+    }
+
+    #[test]
+    fn revocation_reason_requires_its_exact_selector() {
+        let invalid = PrivateSocialInvalidation {
+            reason: PrivateSocialInvalidationReason::RecipientBlocked,
+            source_cursor: "cursor-1".to_string(),
+            post_id: "post-1".to_string(),
+            author_ptid: String::new(),
+            entire_scope: false,
+        };
+        assert!(validate_private_social_invalidation(&invalid).is_err());
+
+        let valid = PrivateSocialInvalidation {
+            reason: PrivateSocialInvalidationReason::RecipientBlocked,
+            source_cursor: "cursor-1".to_string(),
+            post_id: String::new(),
+            author_ptid: "ptid:bob".to_string(),
+            entire_scope: false,
+        };
+        assert!(validate_private_social_invalidation(&valid).is_ok());
     }
 
     #[test]

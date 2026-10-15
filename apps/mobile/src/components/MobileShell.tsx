@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Badge } from 'antd';
 import { Image, MessageCircle, User, Users } from 'lucide-react';
 
@@ -20,12 +20,20 @@ import {
 import { ChatPage } from '../pages/ChatPage';
 import { ContactsPage } from '../pages/ContactsPage';
 import { MomentsPage } from '../pages/MomentsPage';
+import { SocialCircleDetailPage } from '../pages/moments/SocialCircleDetailPage';
+import { SocialCircleMemberPickerPage } from '../pages/moments/SocialCircleMemberPickerPage';
+import { SocialCirclesPage } from '../pages/moments/SocialCirclesPage';
+import { SocialProfilePage } from '../pages/moments/SocialProfilePage';
+import { SocialSearchPage } from '../pages/moments/SocialSearchPage';
 import { SettingsPage } from '../pages/SettingsPage';
 import { useAuthStore } from '../features/auth/authStore';
 import type { MobileAuthSession } from '../features/auth/authSession';
 import { projectConversations, projectPendingInboundRequests } from '../features/social/socialProjection';
 import { useSocialStore } from '../features/social/socialStore';
-import type { StoredStationRegistry } from '../features/station/stationRegistry';
+import type {
+  MobileStationRouteCandidate,
+  StoredStationRegistry,
+} from '../features/station/stationRegistry';
 import {
   visibleChatUnread,
 } from '../features/chat/chatActionState';
@@ -58,6 +66,11 @@ function detailRouteToTabId(route: MobileDetailRoute | null): TabId | null {
     case 'detail:contact-profile':
       return 'contacts';
     case 'detail:moment':
+    case 'detail:social-search':
+    case 'detail:social-profile':
+    case 'detail:social-circles':
+    case 'detail:social-circle':
+    case 'detail:social-circle-members':
       return 'moments';
     case 'detail:setting':
       return 'settings';
@@ -72,10 +85,12 @@ function renderPage(
   authSession: MobileAuthSession | null,
   activeDetail: MobileDetailRoute | null,
   activeOverlay: MobileOverlayRoute | null,
+  onStartConversation: () => void,
   onOpenDetail: (route: MobileDetailRoute) => void,
   onOpenOverlay: (route: MobileOverlayRoute) => void,
   onCloseOverlay: () => void,
   onBack: () => void,
+  onMomentsImmersiveVisibilityChange: (visible: boolean) => void,
 ) {
   switch (tabId) {
     case 'chat':
@@ -87,18 +102,74 @@ function renderPage(
               ? activeDetail
               : null
           }
+          onStartConversation={onStartConversation}
           onBack={onBack}
           onOpenConversation={onOpenDetail}
         />
       );
     case 'moments':
+      if (activeDetail?.routeId === 'detail:social-search') {
+        return (
+          <SocialSearchPage
+            onBack={onBack}
+            onOpenProfile={onOpenDetail}
+          />
+        );
+      }
+      if (activeDetail?.routeId === 'detail:social-circles') {
+        return (
+          <SocialCirclesPage
+            onBack={onBack}
+            onOpenCircle={onOpenDetail}
+          />
+        );
+      }
+      if (activeDetail?.routeId === 'detail:social-circle') {
+        return (
+          <SocialCircleDetailPage
+            circleId={activeDetail.circleId}
+            onBack={onBack}
+            onOpenMembers={onOpenDetail}
+          />
+        );
+      }
+      if (activeDetail?.routeId === 'detail:social-circle-members') {
+        return (
+          <SocialCircleMemberPickerPage
+            circleId={activeDetail.circleId}
+            onBack={onBack}
+          />
+        );
+      }
+      if (activeDetail?.routeId === 'detail:social-profile') {
+        return (
+          <SocialProfilePage
+            actorPtid={activeDetail.actorPtid}
+            federationId={activeDetail.federationId}
+            onBack={onBack}
+            onOpenChat={onOpenDetail}
+            onOpenMoment={(postId) => onOpenDetail({
+              routeId: 'detail:moment',
+              postId,
+            })}
+          />
+        );
+      }
       return (
         <MomentsPage
           activePostId={activeDetail?.routeId === 'detail:moment' ? activeDetail.postId : null}
-          onOpenMoment={(postId) => onOpenDetail({
-            routeId: 'detail:moment',
-            postId,
+          onOpenProfile={(actorPtid, federationId) => onOpenDetail({
+            routeId: 'detail:social-profile',
+            actorPtid,
+            federationId,
           })}
+          onOpenSearch={() => onOpenDetail({
+            routeId: 'detail:social-search',
+          })}
+          onOpenCircles={() => onOpenDetail({
+            routeId: 'detail:social-circles',
+          })}
+          onImmersiveVisibilityChange={onMomentsImmersiveVisibilityChange}
           onBack={onBack}
         />
       );
@@ -137,6 +208,7 @@ function renderPage(
           })}
           onBack={onBack}
           onChangeStation={props.onChangeStation}
+          onChangeStationRoute={props.onChangeStationRoute}
           onLogout={props.onLogout}
         />
       );
@@ -146,6 +218,10 @@ function renderPage(
 export interface MobileShellProps {
   stationRegistry: StoredStationRegistry;
   readonly onChangeStation: () => Promise<void>;
+  readonly onChangeStationRoute: (
+    stationPeerId: string,
+    route: MobileStationRouteCandidate,
+  ) => Promise<void>;
   onLogout: () => Promise<void>;
 }
 
@@ -172,6 +248,7 @@ export function MobileShell(props: MobileShellProps) {
   const openOverlay = useMobileNavigationStore((state) => state.openOverlay);
   const closeOverlay = useMobileNavigationStore((state) => state.closeOverlay);
   const contentRef = useRef<HTMLDivElement>(null);
+  const [momentsImmersive, setMomentsImmersive] = useState(false);
 
   const sessions = useSocialStore((state) => state.sessions);
   const currentUserPtid = useSocialStore((state) => state.currentUserPtid);
@@ -242,6 +319,16 @@ export function MobileShell(props: MobileShellProps) {
     });
   }, [navigatePrimary, restoreLocation, saveCurrentLocation]);
 
+  const startConversation = useCallback(() => {
+    const routeId: MobilePrimaryRouteId = 'tab:contacts';
+    requestSettingsExit(() => {
+      saveCurrentLocation();
+      navigatePrimary(routeId);
+      openOverlay({ routeId: 'overlay:add-friend' });
+      restoreLocation(routeId);
+    });
+  }, [navigatePrimary, openOverlay, restoreLocation, saveCurrentLocation]);
+
   const openDetail = useCallback((route: MobileDetailRoute) => {
     saveCurrentLocation();
     pushDetail(route);
@@ -256,10 +343,13 @@ export function MobileShell(props: MobileShellProps) {
     restoreLocation(nextRoute);
   }, [popDetail, restoreLocation, saveCurrentLocation]);
 
-  const hideTabbar = activeDetail !== null;
+  const hideTabbar = activeDetail !== null || momentsImmersive;
 
   return (
-    <div className={`mobile-shell ${hideTabbar ? 'tabbar-hidden' : ''}`}>
+    <div
+      className={`mobile-shell ${hideTabbar ? 'tabbar-hidden' : ''}`}
+      data-product-surface={`shell.${activeTab}-tab`}
+    >
       <div className="mobile-content" ref={contentRef}>
         <MobileRouteBoundary
           routeId={activeDetail?.routeId ?? primaryRouteId}
@@ -271,10 +361,12 @@ export function MobileShell(props: MobileShellProps) {
             authSession,
             activeDetail,
             activeOverlay,
+            startConversation,
             openDetail,
             openOverlay,
             closeOverlay,
             closeDetail,
+            setMomentsImmersive,
           )}
         </MobileRouteBoundary>
       </div>
@@ -290,6 +382,7 @@ export function MobileShell(props: MobileShellProps) {
             <button
               key={tabId}
               className={`tabbar-item ${isActive ? 'active' : ''}`}
+              data-route-id={descriptor.routeId}
               onClick={() => switchTab(tabId)}
               type="button"
             >

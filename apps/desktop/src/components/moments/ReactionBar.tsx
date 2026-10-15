@@ -2,11 +2,15 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@lobehub/ui';
 import { Popover, Space, Tooltip, theme } from 'antd';
-import { Heart, Smile, ThumbsUp, PartyPopper, Eye } from 'lucide-react';
+import { ThumbsUp } from 'lucide-react';
 import {
   ReactionKind,
   type ReactionSummary,
 } from '../../gen/proto/domain/social/post_pb';
+import {
+  REACTION_PRESENTATIONS,
+  reactionPresentation,
+} from './reactionCatalog';
 
 // ReactionBar — the compact summary + picker for a single post.
 //
@@ -15,7 +19,7 @@ import {
 //   [+ React]                — popover with the full kind picker.
 //
 // Why a popover (not always-visible chips):
-//   - Five ReactionKinds inflated as buttons would dominate the
+//   - The full ReactionKind catalog as always-visible buttons would dominate the
 //     post card on mobile-narrow widths. The popover collapses the
 //     picker into one tap surface and only opens when the user
 //     intends to react.
@@ -35,38 +39,6 @@ interface ReactionBarProps {
   onUnreact: (kind?: ReactionKind) => void;
 }
 
-interface KindMeta {
-  Icon: typeof Heart;
-  i18nKey: string;
-  /** Used by the picker — colour the icon when the viewer has reacted. */
-  hue: string;
-}
-
-function kindMeta(kind: ReactionKind, token: ReturnType<typeof theme.useToken>['token']): KindMeta {
-  switch (kind) {
-    case ReactionKind.REACTION_LIKE:
-      return { Icon: ThumbsUp, i18nKey: 'moments.reaction.like', hue: token.colorPrimary };
-    case ReactionKind.REACTION_LOVE:
-      return { Icon: Heart, i18nKey: 'moments.reaction.love', hue: '#e85b81' };
-    case ReactionKind.REACTION_LAUGH:
-      return { Icon: Smile, i18nKey: 'moments.reaction.laugh', hue: '#f5a623' };
-    case ReactionKind.REACTION_WOW:
-      return { Icon: Eye, i18nKey: 'moments.reaction.wow', hue: '#5ac8fa' };
-    case ReactionKind.REACTION_CELEBRATE:
-      return { Icon: PartyPopper, i18nKey: 'moments.reaction.celebrate', hue: '#a36ee5' };
-    default:
-      return { Icon: ThumbsUp, i18nKey: 'moments.reaction.like', hue: token.colorPrimary };
-  }
-}
-
-const PICKABLE_KINDS: ReactionKind[] = [
-  ReactionKind.REACTION_LIKE,
-  ReactionKind.REACTION_LOVE,
-  ReactionKind.REACTION_LAUGH,
-  ReactionKind.REACTION_WOW,
-  ReactionKind.REACTION_CELEBRATE,
-];
-
 export function ReactionBar({ reactions, loading, onReact, onUnreact }: ReactionBarProps) {
   const { t } = useTranslation('moments');
   const { token } = theme.useToken();
@@ -80,16 +52,16 @@ export function ReactionBar({ reactions, loading, onReact, onUnreact }: Reaction
   }, [reactions]);
 
   const picker = (
-    <Space size={8}>
-      {PICKABLE_KINDS.map((k) => {
-        const meta = kindMeta(k, token);
+    <Space size={8} wrap>
+      {REACTION_PRESENTATIONS.map((meta) => {
+        const k = meta.kind;
         const reacted = (reactions ?? []).find((r) => r.kind === k)?.reactedByViewer;
         return (
-          <Tooltip key={k} title={t(meta.i18nKey)}>
+          <Tooltip key={k} title={t(meta.label)}>
             <Button
               size="small"
               type={reacted ? 'primary' : 'text'}
-              icon={<meta.Icon size={16} color={reacted ? '#fff' : meta.hue} />}
+              icon={<span aria-hidden>{meta.emoji}</span>}
               onClick={() => (reacted ? onUnreact(k) : onReact(k))}
               disabled={loading}
               shape="circle"
@@ -103,18 +75,13 @@ export function ReactionBar({ reactions, loading, onReact, onUnreact }: Reaction
   return (
     <Space size={4} wrap>
       {summary.map((r) => {
-        const meta = kindMeta(r.kind, token);
+        const meta = reactionPresentation(r.kind);
         return (
-          <Tooltip key={r.kind} title={t(meta.i18nKey)}>
+          <Tooltip key={r.kind} title={t(meta.label)}>
             <Button
               size="small"
               type="text"
-              icon={
-                <meta.Icon
-                  size={14}
-                  color={meta.hue}
-                />
-              }
+              icon={<span aria-hidden>{meta.emoji}</span>}
               onClick={() => (r.reactedByViewer ? onUnreact(r.kind) : onReact(r.kind))}
               disabled={loading}
               style={{

@@ -49,6 +49,8 @@ const mocks = vi.hoisted(() => ({
   presenceNotify: vi.fn(),
   loadCurrentUserProfile: vi.fn(),
   loadPeerProfile: vi.fn(),
+  initEncryption: vi.fn(),
+  prewarmMessages: vi.fn(),
   resolveActorStations: vi.fn(),
   startEventStream: vi.fn(),
   stopEventStream: vi.fn(),
@@ -125,6 +127,7 @@ vi.mock('../store/socialChat', () => ({
       clearPeerPresence: mocks.clearPeerPresence,
       loadCurrentUserProfile: mocks.loadCurrentUserProfile,
       loadPeerProfile: mocks.loadPeerProfile,
+      initEncryption: mocks.initEncryption,
       sweepTypingPeers: vi.fn(),
     }),
   },
@@ -162,7 +165,10 @@ vi.mock('../store/navigationBadges', () => ({
 
 vi.mock('./mediaRuntime', () => ({
   useMediaRuntimeStore: {
-    getState: () => ({ mediaCallActive: false }),
+    getState: () => ({
+      mediaCallActive: false,
+      prewarmMessages: mocks.prewarmMessages,
+    }),
   },
 }));
 
@@ -212,6 +218,7 @@ describe('social realtime group membership side effects', () => {
     });
     mocks.loadCurrentUserProfile.mockResolvedValue(undefined);
     mocks.loadPeerProfile.mockResolvedValue(undefined);
+    mocks.initEncryption.mockResolvedValue(undefined);
     mocks.resolveActorStations.mockResolvedValue(undefined);
     mocks.startEventStream.mockResolvedValue(undefined);
     mocks.stopEventStream.mockResolvedValue(undefined);
@@ -373,7 +380,6 @@ describe('social realtime group membership side effects', () => {
       username: 'bob',
     }]);
   });
-
   it('does not mutate Messaging-owned projections during social reconciliation', async () => {
     mocks.currentActorPtid = 'ptid:self';
 
@@ -388,18 +394,28 @@ describe('social realtime group membership side effects', () => {
     expect(mocks.loadConversationPreviews).not.toHaveBeenCalled();
   });
 
-  it('restarts the scoped stream after session renewal', async () => {
+  it('restarts the scoped stream after session renewal and Station switch', async () => {
     mocks.currentActorPtid = 'ptid:self';
     mocks.sessionListener?.();
     await vi.waitFor(() => {
-      expect(mocks.startEventStream).toHaveBeenCalledOnce();
+      expect(mocks.startEventStream).toHaveBeenCalledWith(1);
     });
 
     mocks.sessionEpoch = 2;
     mocks.sessionListener?.();
     await vi.waitFor(() => {
       expect(mocks.stopEventStream).toHaveBeenCalledTimes(1);
-      expect(mocks.startEventStream).toHaveBeenCalledTimes(2);
+      expect(mocks.startEventStream).toHaveBeenLastCalledWith(2);
+    });
+
+    eventBus.publish(EVENT.STATION_ACTIVE_CHANGED, {
+      stationPeerId: 'station-b',
+      routeId: 'direct-b',
+    });
+    await vi.waitFor(() => {
+      expect(mocks.stopEventStream).toHaveBeenCalledTimes(2);
+      expect(mocks.startEventStream).toHaveBeenCalledTimes(3);
+      expect(mocks.startEventStream).toHaveBeenLastCalledWith(2);
     });
   });
 

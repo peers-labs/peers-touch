@@ -42,7 +42,7 @@ pub fn provider_list(state: State<'_, Arc<AppState>>, window: Window) -> AppResu
         Ok(auth) => auth,
         Err(error) => return error,
     };
-    application_provider::provider_list(&scope, &token)
+    application_provider::provider_list(state.station.client(), &scope, &token)
 }
 
 #[tauri::command]
@@ -55,7 +55,7 @@ pub fn provider_get(
         Ok(auth) => auth,
         Err(error) => return error,
     };
-    application_provider::provider_get(&scope, &token, input)
+    application_provider::provider_get(state.station.client(), &scope, &token, input)
 }
 
 #[tauri::command]
@@ -68,7 +68,7 @@ pub fn provider_update(
         Ok(auth) => auth,
         Err(error) => return error,
     };
-    application_provider::provider_update(&scope, &token, input)
+    application_provider::provider_update(state.station.client(), &scope, &token, input)
 }
 
 #[tauri::command]
@@ -94,7 +94,7 @@ pub fn provider_create(
         Ok(auth) => auth,
         Err(error) => return error,
     };
-    application_provider::provider_create(&scope, &token, input)
+    application_provider::provider_create(state.station.client(), &scope, &token, input)
 }
 
 #[tauri::command]
@@ -107,7 +107,7 @@ pub fn provider_delete(
         Ok(auth) => auth,
         Err(error) => return error,
     };
-    application_provider::provider_delete(&scope, &token, input)
+    application_provider::provider_delete(state.station.client(), &scope, &token, input)
 }
 
 #[tauri::command]
@@ -136,7 +136,7 @@ pub fn provider_list_available_models(
         Ok(auth) => auth,
         Err(error) => return error,
     };
-    application_provider::provider_list_available_models(&scope, &token)
+    application_provider::provider_list_available_models(state.station.client(), &scope, &token)
 }
 
 #[derive(Debug, Deserialize)]
@@ -155,7 +155,12 @@ pub fn model_fetch_remote(
         Ok(auth) => auth,
         Err(error) => return error,
     };
-    application_provider::model_fetch_remote(&scope, &token, &input.provider_id)
+    application_provider::model_fetch_remote(
+        state.station.client(),
+        &scope,
+        &token,
+        &input.provider_id,
+    )
 }
 
 #[derive(Debug, Deserialize)]
@@ -175,7 +180,13 @@ pub fn model_toggle(
         Ok(auth) => auth,
         Err(error) => return error,
     };
-    application_provider::model_toggle(&token, &input.provider_id, &input.model_id, input.enabled)
+    application_provider::model_toggle(
+        state.station.client(),
+        &token,
+        &input.provider_id,
+        &input.model_id,
+        input.enabled,
+    )
 }
 
 #[derive(Debug, Deserialize)]
@@ -194,7 +205,12 @@ pub fn model_delete(
         Ok(auth) => auth,
         Err(error) => return error,
     };
-    application_provider::model_delete(&token, &input.provider_id, &input.model_id)
+    application_provider::model_delete(
+        state.station.client(),
+        &token,
+        &input.provider_id,
+        &input.model_id,
+    )
 }
 
 #[derive(Debug, Deserialize)]
@@ -213,7 +229,12 @@ pub fn model_add(
         Ok(auth) => auth,
         Err(error) => return error,
     };
-    application_provider::model_add(&token, &input.provider_id, &input.data)
+    application_provider::model_add(
+        state.station.client(),
+        &token,
+        &input.provider_id,
+        &input.data,
+    )
 }
 
 #[derive(Debug, Deserialize)]
@@ -233,5 +254,11 @@ pub fn model_update(
         Ok(auth) => auth,
         Err(error) => return error,
     };
-    application_provider::model_update(&token, &input.provider_id, &input.model_id, &input.data)
+    application_provider::model_update(
+        state.station.client(),
+        &token,
+        &input.provider_id,
+        &input.model_id,
+        &input.data,
+    )
 }

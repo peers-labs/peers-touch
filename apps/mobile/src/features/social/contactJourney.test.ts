@@ -17,6 +17,7 @@ import { messagingCreateDirect } from '../../services/mobileCommands';
 import { createSocialGateway } from '../../services/gateways/socialGateway';
 import { normalizeFriendRequest } from './socialNormalizers';
 import {
+  actorDisplayName,
   projectAcceptedContacts,
   projectOutgoingRequests,
   projectPendingInboundRequests,
@@ -84,6 +85,25 @@ describe('Contacts relationship and Direct journey', () => {
       federationIds: ['fed-a'],
     }]);
     expect(projectOutgoingRequests([accepted], 'ptid:alice')).toEqual([]);
+  });
+
+  it('uses a readable actor handle when relationship data omits a display name', () => {
+    const actorPtid = 'ptid:v1:actor:peers:p:alice:12203e0f255f835ecd0abd93aa0ea6f1';
+    expect(actorDisplayName('', actorPtid)).toBe('Alice');
+    expect(actorDisplayName(actorPtid, actorPtid)).toBe('Alice');
+    expect(actorDisplayName('Alice Chen', actorPtid)).toBe('Alice Chen');
+    expect(projectAcceptedContacts([
+      {
+        ...accepted,
+        senderDisplayName: '',
+        senderPtid: actorPtid,
+      },
+    ], 'ptid:bob', {})).toEqual([
+      expect.objectContaining({
+        peerPtid: actorPtid,
+        peerName: 'Alice',
+      }),
+    ]);
   });
 
   it('keeps inbound and outbound pending requests distinct from contacts', () => {

@@ -1,0 +1,718 @@
+{
+  "evidenceType": "prototype-only",
+  "theme": "light",
+  "captures": [
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "name": "social-parity",
+      "filename": "390-social-parity.png",
+      "state": {
+        "tabbars": 1,
+        "pages": 1,
+        "details": 0,
+        "dialogs": 0,
+        "segmentHeight": 36,
+        "tabHeight": 32,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "name": "comments-default-10",
+      "filename": "390-comments-default-10.png",
+      "state": {
+        "tabbars": 1,
+        "pages": 1,
+        "details": 0,
+        "dialogs": 0,
+        "segmentHeight": 36,
+        "tabHeight": 32,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "name": "comments-expanded",
+      "filename": "390-comments-expanded.png",
+      "state": {
+        "tabbars": 1,
+        "pages": 1,
+        "details": 0,
+        "dialogs": 0,
+        "segmentHeight": 36,
+        "tabHeight": 32,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "name": "comment-composer",
+      "filename": "390-comment-composer.png",
+      "state": {
+        "tabbars": 1,
+        "pages": 1,
+        "details": 0,
+        "dialogs": 0,
+        "segmentHeight": 36,
+        "tabHeight": 32,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "name": "image-overlay",
+      "filename": "390-image-overlay.png",
+      "state": {
+        "tabbars": 1,
+        "pages": 1,
+        "details": 0,
+        "dialogs": 1,
+        "segmentHeight": 36,
+        "tabHeight": 32,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "name": "content-types-primary",
+      "filename": "390-content-types-primary.png",
+      "state": {
+        "tabbars": 1,
+        "pages": 1,
+        "details": 0,
+        "dialogs": 0,
+        "segmentHeight": 36,
+        "tabHeight": 32,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "name": "content-types-secondary",
+      "filename": "390-content-types-secondary.png",
+      "state": {
+        "tabbars": 1,
+        "pages": 1,
+        "details": 0,
+        "dialogs": 0,
+        "segmentHeight": 36,
+        "tabHeight": 32,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "name": "content-types-tertiary",
+      "filename": "390-content-types-tertiary.png",
+      "state": {
+        "tabbars": 1,
+        "pages": 1,
+        "details": 0,
+        "dialogs": 0,
+        "segmentHeight": 36,
+        "tabHeight": 32,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "name": "video-overlay",
+      "filename": "390-video-overlay.png",
+      "state": {
+        "tabbars": 1,
+        "pages": 1,
+        "details": 0,
+        "dialogs": 1,
+        "segmentHeight": 36,
+        "tabHeight": 32,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "name": "explore",
+      "filename": "390-explore.png",
+      "state": {
+        "tabbars": 1,
+        "pages": 1,
+        "details": 0,
+        "dialogs": 0,
+        "segmentHeight": 36,
+        "tabHeight": 32,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "name": "explore-sort",
+      "filename": "390-explore-sort.png",
+      "state": {
+        "tabbars": 1,
+        "pages": 1,
+        "details": 0,
+        "dialogs": 1,
+        "segmentHeight": 36,
+        "tabHeight": 32,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "name": "search",
+      "filename": "390-search.png",
+      "state": {
+        "tabbars": 0,
+        "pages": 0,
+        "details": 1,
+        "dialogs": 0,
+        "segmentHeight": 0,
+        "tabHeight": 0,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "name": "profile",
+      "filename": "390-profile.png",
+      "state": {
+        "tabbars": 0,
+        "pages": 0,
+        "details": 1,
+        "dialogs": 0,
+        "segmentHeight": 0,
+        "tabHeight": 0,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "name": "circles",
+      "filename": "390-circles.png",
+      "state": {
+        "tabbars": 0,
+        "pages": 0,
+        "details": 1,
+        "dialogs": 0,
+        "segmentHeight": 0,
+        "tabHeight": 0,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "name": "composer",
+      "filename": "390-composer.png",
+      "state": {
+        "tabbars": 1,
+        "pages": 1,
+        "details": 0,
+        "dialogs": 1,
+        "segmentHeight": 36,
+        "tabHeight": 32,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "name": "audience",
+      "filename": "390-audience.png",
+      "state": {
+        "tabbars": 1,
+        "pages": 1,
+        "details": 0,
+        "dialogs": 2,
+        "segmentHeight": 36,
+        "tabHeight": 32,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "name": "audience-target",
+      "filename": "390-audience-target.png",
+      "state": {
+        "tabbars": 0,
+        "pages": 0,
+        "details": 1,
+        "dialogs": 0,
+        "segmentHeight": 0,
+        "tabHeight": 0,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "name": "published-feed",
+      "filename": "390-published-feed.png",
+      "state": {
+        "tabbars": 1,
+        "pages": 1,
+        "details": 0,
+        "dialogs": 0,
+        "segmentHeight": 36,
+        "tabHeight": 32,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "name": "social-private-pending",
+      "filename": "390-social-private-pending.png",
+      "state": {
+        "tabbars": 1,
+        "pages": 1,
+        "details": 0,
+        "dialogs": 0,
+        "segmentHeight": 36,
+        "tabHeight": 32,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "name": "social-recovery-required",
+      "filename": "390-social-recovery-required.png",
+      "state": {
+        "tabbars": 1,
+        "pages": 1,
+        "details": 0,
+        "dialogs": 0,
+        "segmentHeight": 36,
+        "tabHeight": 32,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "name": "social-source-unavailable",
+      "filename": "390-social-source-unavailable.png",
+      "state": {
+        "tabbars": 1,
+        "pages": 1,
+        "details": 0,
+        "dialogs": 0,
+        "segmentHeight": 36,
+        "tabHeight": 32,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "name": "social-revoked",
+      "filename": "390-social-revoked.png",
+      "state": {
+        "tabbars": 1,
+        "pages": 1,
+        "details": 0,
+        "dialogs": 0,
+        "segmentHeight": 36,
+        "tabHeight": 32,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "name": "social-parity",
+      "filename": "1440-social-parity.png",
+      "state": {
+        "tabbars": 1,
+        "pages": 1,
+        "details": 0,
+        "dialogs": 0,
+        "segmentHeight": 36,
+        "tabHeight": 32,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "name": "comments-default-10",
+      "filename": "1440-comments-default-10.png",
+      "state": {
+        "tabbars": 1,
+        "pages": 1,
+        "details": 0,
+        "dialogs": 0,
+        "segmentHeight": 36,
+        "tabHeight": 32,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "name": "comments-expanded",
+      "filename": "1440-comments-expanded.png",
+      "state": {
+        "tabbars": 1,
+        "pages": 1,
+        "details": 0,
+        "dialogs": 0,
+        "segmentHeight": 36,
+        "tabHeight": 32,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "name": "comment-composer",
+      "filename": "1440-comment-composer.png",
+      "state": {
+        "tabbars": 1,
+        "pages": 1,
+        "details": 0,
+        "dialogs": 0,
+        "segmentHeight": 36,
+        "tabHeight": 32,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "name": "image-overlay",
+      "filename": "1440-image-overlay.png",
+      "state": {
+        "tabbars": 1,
+        "pages": 1,
+        "details": 0,
+        "dialogs": 1,
+        "segmentHeight": 36,
+        "tabHeight": 32,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "name": "content-types-primary",
+      "filename": "1440-content-types-primary.png",
+      "state": {
+        "tabbars": 1,
+        "pages": 1,
+        "details": 0,
+        "dialogs": 0,
+        "segmentHeight": 36,
+        "tabHeight": 32,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "name": "content-types-secondary",
+      "filename": "1440-content-types-secondary.png",
+      "state": {
+        "tabbars": 1,
+        "pages": 1,
+        "details": 0,
+        "dialogs": 0,
+        "segmentHeight": 36,
+        "tabHeight": 32,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "name": "content-types-tertiary",
+      "filename": "1440-content-types-tertiary.png",
+      "state": {
+        "tabbars": 1,
+        "pages": 1,
+        "details": 0,
+        "dialogs": 0,
+        "segmentHeight": 36,
+        "tabHeight": 32,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "name": "video-overlay",
+      "filename": "1440-video-overlay.png",
+      "state": {
+        "tabbars": 1,
+        "pages": 1,
+        "details": 0,
+        "dialogs": 1,
+        "segmentHeight": 36,
+        "tabHeight": 32,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "name": "social-private-pending",
+      "filename": "1440-social-private-pending.png",
+      "state": {
+        "tabbars": 1,
+        "pages": 1,
+        "details": 0,
+        "dialogs": 0,
+        "segmentHeight": 36,
+        "tabHeight": 32,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "name": "social-recovery-required",
+      "filename": "1440-social-recovery-required.png",
+      "state": {
+        "tabbars": 1,
+        "pages": 1,
+        "details": 0,
+        "dialogs": 0,
+        "segmentHeight": 36,
+        "tabHeight": 32,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "name": "social-source-unavailable",
+      "filename": "1440-social-source-unavailable.png",
+      "state": {
+        "tabbars": 1,
+        "pages": 1,
+        "details": 0,
+        "dialogs": 0,
+        "segmentHeight": 36,
+        "tabHeight": 32,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "name": "social-revoked",
+      "filename": "1440-social-revoked.png",
+      "state": {
+        "tabbars": 1,
+        "pages": 1,
+        "details": 0,
+        "dialogs": 0,
+        "segmentHeight": 36,
+        "tabHeight": 32,
+        "horizontalOverflow": false
+      }
+    }
+  ],
+  "densityAndContinuityAssertions": [
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "flow": "comment-density",
+      "defaultComments": 10,
+      "expandedComments": 12,
+      "state": {
+        "tabbars": 1,
+        "pages": 1,
+        "details": 0,
+        "dialogs": 0,
+        "segmentHeight": 36,
+        "tabHeight": 32,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "flow": "image-overlay",
+      "anchorBefore": 1239,
+      "anchorAfter": 1239,
+      "delta": 0,
+      "state": {
+        "tabbars": 1,
+        "pages": 1,
+        "details": 0,
+        "dialogs": 0,
+        "segmentHeight": 36,
+        "tabHeight": 32,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "flow": "video-overlay",
+      "anchorBefore": 1299,
+      "anchorAfter": 1299,
+      "delta": 0,
+      "state": {
+        "tabbars": 1,
+        "pages": 1,
+        "details": 0,
+        "dialogs": 0,
+        "segmentHeight": 36,
+        "tabHeight": 32,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "flow": "comment-density",
+      "defaultComments": 10,
+      "expandedComments": 12,
+      "state": {
+        "tabbars": 1,
+        "pages": 1,
+        "details": 0,
+        "dialogs": 0,
+        "segmentHeight": 36,
+        "tabHeight": 32,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "flow": "image-overlay",
+      "anchorBefore": 1043,
+      "anchorAfter": 1043,
+      "delta": 0,
+      "state": {
+        "tabbars": 1,
+        "pages": 1,
+        "details": 0,
+        "dialogs": 0,
+        "segmentHeight": 36,
+        "tabHeight": 32,
+        "horizontalOverflow": false
+      }
+    },
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "flow": "video-overlay",
+      "anchorBefore": 1210,
+      "anchorAfter": 1210,
+      "delta": 0,
+      "state": {
+        "tabbars": 1,
+        "pages": 1,
+        "details": 0,
+        "dialogs": 0,
+        "segmentHeight": 36,
+        "tabHeight": 32,
+        "horizontalOverflow": false
+      }
+    }
+  ],
+  "defects": [],
+  "assertionFailures": [],
+  "consoleErrors": []
+}

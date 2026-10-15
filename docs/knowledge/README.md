@@ -152,11 +152,15 @@ Pick one based on intent:
 
 - [`invariants/relay-readloop-discipline.md`](invariants/relay-readloop-discipline.md) — readLoop goroutines must dispatch blocking work asynchronously.
 - [`invariants/locator-publisher-symmetry.md`](invariants/locator-publisher-symmetry.md) — `PublishVisibility` callers split into "user-driven" (broadcast) and "maintenance" (no broadcast); no third category.
+- [`invariants/relay-runtime-role-is-minimal.md`](invariants/relay-runtime-role-is-minimal.md) — Relay composition is deny-by-default and fails closed on missing transport/operator security.
+- [`invariants/circuit-relay-control-plane-boundary.md`](invariants/circuit-relay-control-plane-boundary.md) — Circuit Relay stays an opaque standard data plane with fenced admission and independent reservations.
 - [`invariants/chat-message-boundaries.md`](invariants/chat-message-boundaries.md) — Chat message content must not be covered by actions, metadata, composers, safe areas, or floating layers.
 - [`invariants/mobile-chat-layout-boundaries.md`](invariants/mobile-chat-layout-boundaries.md) — Mobile Chat bottom layers must participate in one bottom clearance model.
 - [`invariants/desktop-chat-layout-boundaries.md`](invariants/desktop-chat-layout-boundaries.md) — Desktop Chat actions must respect conversation pane bounds and collision handling.
 - [`invariants/composite-form-control-boundaries.md`](invariants/composite-form-control-boundaries.md) — composite form controls that represent one semantic input must share one parent frame and state model.
 - [`invariants/desktop-identity-lifecycle-closure.md`](invariants/desktop-identity-lifecycle-closure.md) — Desktop identity/profile/account/avatar projections must close through the identity state machine.
+- [`invariants/desktop-actor-identity-scope-migration.md`](invariants/desktop-actor-identity-scope-migration.md) — Desktop Actor identity scope changes migrate the Station-anchored seed and preserve the local device identity.
+- [`invariants/mobile-user-identity-visual-consistency.md`](invariants/mobile-user-identity-visual-consistency.md) — Mobile user identities use one rounded-square avatar primitive and one canonical actor projection across Social surfaces.
 - [`invariants/access-gate-wire-contract.md`](invariants/access-gate-wire-contract.md) — `AccessDecision` consumers must tolerate snake_case-first keys and match enums by both number and string name across Go→Rust→TS.
 - [`invariants/actor-ref-account-is-persisted-identity.md`](invariants/actor-ref-account-is-persisted-identity.md) — `ActorRef.acct` comes from the persisted federated handle, never request transport.
 - [`invariants/actor-presence-ownership.md`](invariants/actor-presence-ownership.md) — actor presence belongs to the global presence owner, not chat subservers or chat proto models.
@@ -183,6 +187,7 @@ Pick one based on intent:
 - [`pitfalls/acceptance-shared-validator-variant-assumptions.md`](pitfalls/acceptance-shared-validator-variant-assumptions.md) — shared Gate validators must derive journey and topology semantics from the active Gate variant.
 - [`pitfalls/native-chat-gates-require-federation-context.md`](pitfalls/native-chat-gates-require-federation-context.md) — Native Direct and Group creation must pass a Federation shared by every participating client.
 - [`pitfalls/public-api-owner-must-follow-resource-domain.md`](pitfalls/public-api-owner-must-follow-resource-domain.md) — public capabilities must be registered by their resource owner, never by an internal implementation namespace.
+- [`pitfalls/conversation-production-schema-migration-single-source.md`](pitfalls/conversation-production-schema-migration-single-source.md) — Conversation production migration must delegate to the persistence-owned canonical schema instead of copying its model list.
 
 ### Playbooks
 

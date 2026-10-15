@@ -58,7 +58,7 @@ pub fn oauth2_sync_connector_manifests(
     let Some(token) = session_resolver::token_for_window(state.inner(), &window) else {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     };
-    application_oauth2::sync_connector_manifests(&actor_ptid, &token)
+    application_oauth2::sync_connector_manifests(state.station.client(), &actor_ptid, &token)
 }
 
 #[tauri::command]
@@ -85,7 +85,7 @@ pub fn oauth2_disconnect(
     let Some(token) = session_resolver::token_for_window(state.inner(), &window) else {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     };
-    application_oauth2::oauth2_disconnect(&actor_ptid, &token, input)
+    application_oauth2::oauth2_disconnect(state.station.client(), &actor_ptid, &token, input)
 }
 
 #[tauri::command]
@@ -147,20 +147,34 @@ pub fn oauth2_start_loopback(
             )
         }
     };
-    application_oauth2::oauth2_start_loopback(input, state.i18n.clone(), connector_authorization)
+    application_oauth2::oauth2_start_loopback(
+        &state.station,
+        input,
+        state.i18n.clone(),
+        connector_authorization,
+    )
 }
 
 #[tauri::command]
-pub fn oauth2_poll_loopback(input: OAuthLoopbackPollInput) -> AppResult<StubPayload> {
-    application_oauth2::oauth2_poll_loopback(input)
+pub fn oauth2_poll_loopback(
+    input: OAuthLoopbackPollInput,
+    state: State<'_, Arc<AppState>>,
+) -> AppResult<StubPayload> {
+    application_oauth2::oauth2_poll_loopback(state.station.client(), input)
 }
 
 #[tauri::command]
-pub fn oauth2_resume_loopback(input: OAuthLoopbackPollInput) -> AppResult<StubPayload> {
-    application_oauth2::oauth2_resume_loopback(input)
+pub fn oauth2_resume_loopback(
+    input: OAuthLoopbackPollInput,
+    state: State<'_, Arc<AppState>>,
+) -> AppResult<StubPayload> {
+    application_oauth2::oauth2_resume_loopback(state.station.client(), input)
 }
 
 #[tauri::command]
-pub fn oauth2_cancel_loopback(input: OAuthLoopbackPollInput) -> AppResult<StubPayload> {
-    application_oauth2::oauth2_cancel_loopback(input)
+pub fn oauth2_cancel_loopback(
+    input: OAuthLoopbackPollInput,
+    state: State<'_, Arc<AppState>>,
+) -> AppResult<StubPayload> {
+    application_oauth2::oauth2_cancel_loopback(state.station.client(), input)
 }

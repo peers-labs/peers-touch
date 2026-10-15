@@ -31,16 +31,12 @@ message ActorLocatorRecord {
   // sign this handle. Cross-checked against signing_key_pem during TOFU.
   string home_station_peer_id = 2 [json_name = "home_station_peer_id"];
 
-  // Stable HTTP origin of the home station, no scheme. Receivers MUST NOT
-  // dial this directly across the federation; instead it is fed through
-  // `/relay/forward/{home_station_peer_id}/...` so NAT-bound stations
-  // remain reachable.
+  // Stable HTTP origin of the home station, no scheme. It is an identity hint,
+  // never a transport target. Receivers resolve `home_station_peer_id` through
+  // the verified Node Connectivity route registry.
   string home_station_domain = 3 [json_name = "home_station_domain"];
 
-  // Optional list of relay-mount labels through which this actor's home
-  // station is reachable today. Pure hint — the resolver still authoritatively
-  // looks up the live mount table from the relay before forwarding.
-  repeated string inbox_relay_mounts = 4 [json_name = "inbox_relay_mounts"];
+  reserved 4;
 
   // Tombstone flag. When true, the record is a withdrawal: receivers MUST
   // overwrite any cached entry for this handle and refuse to surface the

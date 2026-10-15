@@ -1,8 +1,8 @@
 # Social Architecture
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-06-18 | **Updated**: 2026-10-05
+> **Version**: v1.1
+> **Created**: 2026-06-18 | **Updated**: 2026-10-06
 > **Owner**: Social Product
 > **Module**: `apps/station/app/subserver/social/`, `apps/desktop/`, `apps/mobile/`
 
@@ -22,6 +22,7 @@ domain.
 | [moments.md](./moments.md) | Existing Moments architecture: Audience, Circle, typed reactions, comments, media, and public/private storage separation. |
 | [wechat-grade-moments-runtime-architecture.md](./wechat-grade-moments-runtime-architecture.md) | Runtime-first upgrade target for WeChat-grade trusted relationship Moments. Defines Station truth, Desktop runtime projections, delivery inbox, projection sync, and interaction visibility boundaries. |
 | [`../../../shared/security/secure-content/README.md`](../../../shared/security/secure-content/README.md) | Accepted cross-domain encryption, key-envelope, opaque-object, recovery, and hard-cut architecture used by private Moments and Chat. |
+| [`../../../platform/client/mobile/social-parity/README.md`](../../../platform/client/mobile/social-parity/README.md) | Mobile Native platform adaptation for complete Desktop Social semantic parity and cross-platform evidence. |
 | [prototype/README.md](./prototype/README.md) | Desktop Social Chat private/group chat prototype entry, run instructions, confirmation status, and review scope. |
 | [2026-05-09-wechat-grade-moments-runtime.md](./execution-plans/2026-05-09-wechat-grade-moments-runtime.md) | Phased implementation plan for the runtime-first Moments upgrade. |
 | [20261002 Social Desktop Acceptance](./execution-plans/20261002-social-desktop-acceptance/plan.md) | Desktop-only formal Acceptance plan for Private Moments using one reusable Alice/Bob/Eve Native Suite. |

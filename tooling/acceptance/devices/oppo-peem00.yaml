@@ -1,0 +1,13 @@
+{
+  "id": "oppo-peem00",
+  "match": {
+    "platform": "android",
+    "manufacturer": "OPPO",
+    "model": "PEEM00"
+  },
+  "installation": {
+    "adapter": "android-adb-package-sha256",
+    "strategy": "reuse-exact-artifact",
+    "user_confirmation_on_install": true
+  }
+}

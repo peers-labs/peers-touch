@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
@@ -8,7 +9,10 @@ use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine as _;
 use messaging_core::attachment::AttachmentTransferControl;
 use messaging_core::contracts::ConversationProjection;
-use messaging_core::identity::DeviceEnrollmentRepository;
+use messaging_core::identity::{
+    generate_fresh_device_identity_for_device, DeviceEnrollmentRepository,
+};
+use messaging_core::crypto::prekeys::{PendingPreKeyBundle, PreKeyBundleBackup};
 use messaging_core::inbox::DrainProgress;
 use messaging_core::outbox::CommandDispatchProgress;
 use messaging_core::store::MessagingRepository;
@@ -24,14 +28,146 @@ use crate::error::{MobileError, MobileResult};
 use crate::platform::secure_storage::SecureStorage;
 
 use super::engine::{
-    validate_account_scope, MessageDraftResumeProgress, MobileMessagingEngine,
-    SecureContentRuntimeIdentity,
+    validate_account_scope, DeviceSigningSeedBackup, MessageDraftResumeProgress,
+    MobileMessagingEngine, SecureContentRuntimeIdentity,
 };
 
 const DATABASE_KEY_PREFIX: &str = "messaging.v1.sqlcipher";
 const MAX_CONTINUATION_CYCLES: usize = 8;
 const FAILURE_RETRY_DELAY: Duration = Duration::from_secs(1);
 pub const MOBILE_MESSAGING_PROJECTION_EVENT: &str = "mobile:messaging-projection-changed";
+
+const DEVICE_SEED_PREFIX: &str = "messaging.v1.device-signing-seed";
+
+/// Backs the device signing seed into native secure storage, which (unlike the
+/// wipeable app-data database) preserves the device identity across reinstalls.
+struct StorageDeviceSeedBackup<'a> {
+    storage: &'a SecureStorage,
+    key: String,
+}
+
+impl<'a> StorageDeviceSeedBackup<'a> {
+    fn new(
+        storage: &'a SecureStorage,
+        station_peer_id: &str,
+        actor_ptid: &str,
+        device_id: &str,
+    ) -> Self {
+        let mut hasher = Sha256::new();
+        hasher.update(station_peer_id.as_bytes());
+        hasher.update([0x1f]);
+        hasher.update(actor_ptid.as_bytes());
+        hasher.update([0x1f]);
+        hasher.update(device_id.as_bytes());
+        let digest = hasher.finalize();
+        let suffix: String = digest[..16].iter().map(|b| format!("{b:02x}")).collect();
+        Self {
+            storage,
+            key: format!("{DEVICE_SEED_PREFIX}.{suffix}"),
+        }
+    }
+}
+
+impl DeviceSigningSeedBackup for StorageDeviceSeedBackup<'_> {
+    fn load(&self) -> Result<Option<[u8; 32]>, String> {
+        let stored = self
+            .storage
+            .get(&self.key)
+            .map_err(|e| format!("read device seed backup: {e}"))?;
+        let Some(value) = stored else { return Ok(None) };
+        let bytes = B64
+            .decode(value.trim())
+            .map_err(|e| format!("device seed backup is not base64: {e}"))?;
+        if bytes.len() != 32 {
+            return Err("device seed backup must be 32 bytes".to_string());
+        }
+        let mut seed = [0u8; 32];
+        seed.copy_from_slice(&bytes);
+        Ok(Some(seed))
+    }
+
+    fn store(&self, seed: &[u8; 32]) -> Result<(), String> {
+        self.storage
+            .set(&self.key, &B64.encode(seed))
+            .map_err(|e| format!("write device seed backup: {e}"))
+    }
+}
+
+
+const PREKEY_BUNDLE_PREFIX: &str = "messaging.v1.prekey-bundle";
+
+/// Backs the published Direct prekey bundle into native secure storage so a
+/// reinstall can restore the identical signed prekey + one-time keys instead
+/// of rotating them (the Station rejects a replay that rotates live ids).
+struct StoragePreKeyBundleBackup {
+    storage: SecureStorage,
+    key: String,
+}
+
+impl StoragePreKeyBundleBackup {
+    fn new(
+        storage: SecureStorage,
+        station_peer_id: &str,
+        actor_ptid: &str,
+        device_id: &str,
+    ) -> Arc<Self> {
+        let mut hasher = Sha256::new();
+        hasher.update(station_peer_id.as_bytes());
+        hasher.update([0x1f]);
+        hasher.update(actor_ptid.as_bytes());
+        hasher.update([0x1f]);
+        hasher.update(device_id.as_bytes());
+        let digest = hasher.finalize();
+        let suffix: String = digest[..16].iter().map(|b| format!("{b:02x}")).collect();
+        Arc::new(Self {
+            storage,
+            key: format!("{PREKEY_BUNDLE_PREFIX}.{suffix}"),
+        })
+    }
+}
+
+impl PreKeyBundleBackup for StoragePreKeyBundleBackup {
+    fn load_bundle(&self) -> Result<Option<PendingPreKeyBundle>, String> {
+        let stored = self
+            .storage
+            .get(&self.key)
+            .map_err(|e| format!("read prekey bundle backup: {e}"))?;
+        let Some(value) = stored else { return Ok(None) };
+        let bundle = serde_json::from_str(value.trim())
+            .map_err(|e| format!("prekey bundle backup is invalid: {e}"))?;
+        Ok(Some(bundle))
+    }
+
+    fn store_bundle(&self, bundle: &PendingPreKeyBundle) -> Result<(), String> {
+        // Merge by prekey id so replenishment batches accumulate on the same
+        // continuity record instead of re-rotating existing ids.
+        let mut merged = match self.load_bundle()? {
+            Some(existing) => existing,
+            None => PendingPreKeyBundle {
+                signed_prekey_id: bundle.signed_prekey_id,
+                signed_prekey_private: bundle.signed_prekey_private,
+                one_time_prekeys: Vec::new(),
+            },
+        };
+        if bundle.signed_prekey_id >= merged.signed_prekey_id {
+            merged.signed_prekey_id = bundle.signed_prekey_id;
+            merged.signed_prekey_private = bundle.signed_prekey_private;
+        }
+        let mut by_id: BTreeMap<i32, [u8; 32]> =
+            merged.one_time_prekeys.into_iter().collect();
+        for (id, key) in &bundle.one_time_prekeys {
+            by_id.insert(*id, *key);
+        }
+        merged.one_time_prekeys = by_id.into_iter().collect();
+
+        let encoded = serde_json::to_string(&merged)
+            .map_err(|e| format!("encode prekey bundle backup: {e}"))?;
+        self.storage
+            .set(&self.key, &encoded)
+            .map_err(|e| format!("write prekey bundle backup: {e}"))
+    }
+}
+
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -150,6 +286,18 @@ impl MobileMessagingRuntime {
         });
         let wake_station_peer_id = station_peer_id.clone();
         let wake_actor_ptid = actor_ptid.clone();
+        let seed_backup = StorageDeviceSeedBackup::new(
+            storage,
+            &station_peer_id,
+            &actor_ptid,
+            &device_id,
+        );
+        let prekey_backup: Arc<dyn PreKeyBundleBackup> = StoragePreKeyBundleBackup::new(
+            storage.clone(),
+            &station_peer_id,
+            &actor_ptid,
+            &device_id,
+        );
         let status = self
             .activate_with_material(
                 &database_path,
@@ -162,6 +310,8 @@ impl MobileMessagingRuntime {
                 actor_identity_seed,
                 access_token,
                 event_sink,
+                &seed_backup,
+                prekey_backup,
             )
             .map_err(MobileError::messaging)?;
         self.wake(&wake_station_peer_id, &wake_actor_ptid)?;
@@ -180,6 +330,8 @@ impl MobileMessagingRuntime {
         actor_identity_seed: [u8; 32],
         access_token: String,
         event_sink: ProjectionEventSink,
+        seed_backup: &dyn DeviceSigningSeedBackup,
+        prekey_backup: Arc<dyn PreKeyBundleBackup>,
     ) -> Result<MessagingRuntimeStatus, String> {
         validate_account_scope(&station_peer_id, &station_origin, &actor_ptid)?;
         let mut active = self
@@ -218,6 +370,8 @@ impl MobileMessagingRuntime {
             database_key,
             actor_identity_seed,
             access_token,
+            seed_backup,
+            prekey_backup,
         )?);
         let activation_generation = self
             .next_activation_generation
@@ -247,6 +401,103 @@ impl MobileMessagingRuntime {
             .as_ref()
             .map(|runtime| status_for_active(runtime).map_err(MobileError::messaging))
             .unwrap_or_else(|| Ok(MessagingRuntimeStatus::inactive()))
+    }
+
+    pub fn recover_fresh_install_identity<R: Runtime>(
+        &self,
+        app: AppHandle<R>,
+        data_root: &Path,
+        storage: &SecureStorage,
+        station_peer_id: String,
+        station_origin: String,
+        actor_ptid: String,
+        device_id: String,
+        actor_identity_seed: [u8; 32],
+        actor_profile_version: u64,
+        access_token: String,
+    ) -> MobileResult<MessagingRuntimeStatus> {
+        validate_account_scope(&station_peer_id, &station_origin, &actor_ptid)
+            .map_err(MobileError::messaging)?;
+        if device_id.trim().is_empty() || actor_profile_version == 0 {
+            return Err(MobileError::coded(
+                "MOBILE_MESSAGING_IDENTITY_RECOVERY_INVALID",
+                "recovered messaging identity is incomplete",
+            ));
+        }
+        let recovered = generate_fresh_device_identity_for_device(
+            &actor_ptid,
+            &device_id,
+            actor_identity_seed,
+            actor_profile_version,
+        )
+        .map_err(MobileError::messaging)?;
+        let mut active = self
+            .active
+            .lock()
+            .map_err(|_| MobileError::messaging("mobile messaging runtime lock poisoned"))?;
+        let current = active
+            .as_ref()
+            .ok_or_else(|| MobileError::messaging("mobile messaging runtime is not active"))?;
+        validate_active_scope(&current.engine, &station_peer_id, &actor_ptid)?;
+        if current.engine.scope().device_id != device_id {
+            return Err(MobileError::coded(
+                "MOBILE_MESSAGING_IDENTITY_RECOVERY_STALE_SCOPE",
+                "recovered messaging identity does not match the active Session device",
+            ));
+        }
+        let current = active
+            .take()
+            .ok_or_else(|| MobileError::messaging("mobile messaging runtime is not active"))?;
+        drop(active);
+        current.worker.stop().map_err(MobileError::messaging)?;
+
+        let user_scope = format!("{station_peer_id}|{actor_ptid}");
+        let previous_seed = identity_keys::replace_identity_seed(
+            storage,
+            &user_scope,
+            &actor_ptid,
+            &actor_identity_seed,
+        )?;
+        if let Err(error) = current
+            .engine
+            .store()
+            .replace_fresh_install_identity(&recovered)
+        {
+            let rollback = identity_keys::restore_identity_seed(
+                storage,
+                &user_scope,
+                &actor_ptid,
+                previous_seed.as_deref(),
+            );
+            drop(current.engine);
+            let _ = self.activate(
+                app,
+                data_root,
+                storage,
+                station_peer_id,
+                station_origin,
+                actor_ptid,
+                device_id,
+                access_token,
+            );
+            if let Err(rollback_error) = rollback {
+                return Err(MobileError::messaging(format!(
+                    "{error}; failed to roll back actor identity: {rollback_error}"
+                )));
+            }
+            return Err(MobileError::messaging(error));
+        }
+        drop(current.engine);
+        self.activate(
+            app,
+            data_root,
+            storage,
+            station_peer_id,
+            station_origin,
+            actor_ptid,
+            device_id,
+            access_token,
+        )
     }
 
     pub fn conversations(
@@ -1044,6 +1295,8 @@ mod tests {
                 [8; 32],
                 "token-1".to_string(),
                 discard_events(),
+                &crate::messaging::engine::NoopSeedBackup,
+                crate::messaging::engine::noop_prekey_backup(),
             )
             .unwrap();
         assert!(first.active);
@@ -1061,6 +1314,8 @@ mod tests {
                 [8; 32],
                 "token-2".to_string(),
                 discard_events(),
+                &crate::messaging::engine::NoopSeedBackup,
+                crate::messaging::engine::noop_prekey_backup(),
             )
             .unwrap();
         assert_eq!(repeated.profile_id, first.profile_id);
@@ -1078,6 +1333,8 @@ mod tests {
                 [8; 32],
                 "token-3".to_string(),
                 discard_events(),
+                &crate::messaging::engine::NoopSeedBackup,
+                crate::messaging::engine::noop_prekey_backup(),
             )
             .unwrap();
         assert_eq!(
@@ -1100,6 +1357,8 @@ mod tests {
                 [10; 32],
                 "token-4".to_string(),
                 discard_events(),
+                &crate::messaging::engine::NoopSeedBackup,
+                crate::messaging::engine::noop_prekey_backup(),
             )
             .is_err());
         assert!(runtime.deactivate("station-1", "ptid:bob").is_err());
@@ -1126,6 +1385,8 @@ mod tests {
             &key,
             [12; 32],
             "token-1".to_string(),
+            &crate::messaging::engine::NoopSeedBackup,
+            crate::messaging::engine::noop_prekey_backup(),
         )
         .unwrap();
         let first_device_id = first.scope().device_id.clone();
@@ -1142,6 +1403,8 @@ mod tests {
             &key,
             [12; 32],
             "token-2".to_string(),
+            &crate::messaging::engine::NoopSeedBackup,
+            crate::messaging::engine::noop_prekey_backup(),
         )
         .unwrap();
         assert_eq!(reopened.scope().device_id, first_device_id);

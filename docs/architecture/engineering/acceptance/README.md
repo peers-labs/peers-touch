@@ -91,6 +91,7 @@ AI agent 可以更灵活地分析变更影响，但如果完全依赖临场推�
 | [integration.md](./integration.md) | 现有变量/Profile/Fixture/Gate 到 runtime manifest 的映射与影响面 |
 | [domain-onboarding.md](./domain-onboarding.md) | 产品域接入标准、状态模型和验收标准 |
 | [coverage-report.md](./coverage-report.md) | 当前 Capability / Feature / Gate 覆盖投影与缺口 |
+| [operation-language-design.md](./operation-language-design.md) | 目标机制：以“点哪里、看到什么”的操作语言为唯一源头，机器执行与证据由其派生（accepted） |
 | [execution-plans/phase-2-station-dashboard-domain-onboarding.md](./execution-plans/phase-2-station-dashboard-domain-onboarding.md) | Station Dashboard managed domain 接入计划 |
 | [execution-plans/phase-3-chat-domain-onboarding.md](./execution-plans/phase-3-chat-domain-onboarding.md) | Chat managed domain 接入计划与设计落地反思 |
 | [execution-plans/20260815-tauri-driver-desktop-ui-gate.md](./execution-plans/20260815-tauri-driver-desktop-ui-gate.md) | macOS native Tauri embedded WebDriver DOM Gate 执行计划 |

@@ -46,6 +46,16 @@ pub mod recovery {
     pub use v1::*;
 }
 
+pub mod secure_content {
+    pub mod v1 {
+        include!(concat!(
+            env!("OUT_DIR"),
+            "/peers_touch.model.secure_content.v1.rs"
+        ));
+    }
+    pub use v1::*;
+}
+
 pub mod social {
     pub mod v1 {
         include!(concat!(env!("OUT_DIR"), "/peers_touch.model.social.v1.rs"));

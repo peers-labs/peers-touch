@@ -8,6 +8,7 @@ pub mod native_events;
 pub mod network_bridge;
 pub mod permission_bridge;
 pub mod push_bridge;
+pub mod secure_input;
 pub mod secure_storage;
 
 pub use ios::MobilePlatform;

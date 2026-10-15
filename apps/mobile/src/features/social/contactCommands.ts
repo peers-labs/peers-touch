@@ -1,5 +1,6 @@
 import { useSocialStore } from '../social/socialStore';
 import { wakeActiveMessagingSession } from '../../runtimes/messagingRuntime';
+import { secureRandomUuid } from '../../utils/randomIdentity';
 
 const FRIEND_REQUEST_STATUS_ACCEPTED = 2;
 
@@ -67,7 +68,9 @@ export async function dispatchCreateGroup(input: {
     throw new Error('mobile.group.federationScopeRequired');
   }
   const result = await social.createGroup({
-    conversationId: globalThis.crypto.randomUUID(),
+    conversationId: secureRandomUuid(
+      'mobile.group.conversationIdentityUnavailable',
+    ),
     name: input.name,
     description: input.description,
     memberPtids: input.initialMemberPtids,

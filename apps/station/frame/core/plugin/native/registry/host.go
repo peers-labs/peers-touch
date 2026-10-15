@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 
+	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
@@ -13,6 +14,11 @@ import (
 // GetHost returns the underlying libp2p host.
 func (r *nativeRegistry) GetHost() host.Host {
 	return r.host
+}
+
+// DHT returns the process-wide routing instance borrowed by bootstrap.
+func (r *nativeRegistry) DHT() *dht.IpfsDHT {
+	return r.dht
 }
 
 func (r *nativeRegistry) addListenAddr(ctx context.Context, addr string, protocol string) error {

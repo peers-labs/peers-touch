@@ -50,6 +50,27 @@ describe('MobileLifecycleKernel runtime ownership', () => {
     });
   });
 
+  it('bootstraps generation once when native cold start has not foregrounded', async () => {
+    const calls: string[] = [];
+    const kernel = configuredKernel(
+      () => [descriptor('auth', [], calls)],
+      { current: 0 },
+      calls,
+    );
+
+    const snapshot = await kernel.startRuntimeGraph();
+
+    expect(calls).toEqual([
+      'generation:read',
+      'generation:advance',
+      'auth:bootstrap',
+    ]);
+    expect(snapshot).toMatchObject({
+      phase: 'ACTIVE',
+      generation: 1,
+    });
+  });
+
   it('owns and validates top-level launch-state transitions', () => {
     const kernel = new MobileLifecycleKernel();
     const launchEvents: string[] = [];
@@ -138,6 +159,36 @@ describe('MobileLifecycleKernel runtime ownership', () => {
     });
   });
 
+  it('returns from resume directly to shell without an intermediate unmount state', async () => {
+    const calls: string[] = [];
+    const transitions: string[] = [];
+    const kernel = configuredKernel(
+      () => [descriptor('auth', [], calls)],
+      { current: 4 },
+      calls,
+      async () => 'shell',
+    );
+    kernel.transitionLaunchState('station-selection');
+    kernel.transitionLaunchState('runtime-critical');
+    kernel.transitionLaunchState('shell');
+    await kernel.startRuntimeGraph();
+    kernel.onEvent((event) => {
+      if (event.kind === 'launch-state-changed') {
+        transitions.push(event.launchState);
+      }
+    });
+
+    await kernel.suspend();
+    await kernel.resume('native-resume');
+
+    expect(transitions).toEqual(['background', 'resume', 'shell']);
+    expect(kernel.getSnapshot()).toMatchObject({
+      phase: 'ACTIVE',
+      launchState: 'shell',
+      generation: 5,
+    });
+  });
+
   it('rebuilds failed bootstrap dependencies after fencing on resume', async () => {
     const calls: string[] = [];
     let attempts = 0;
@@ -202,6 +253,29 @@ describe('MobileLifecycleKernel runtime ownership', () => {
     expect(calls.filter((call) => call === 'messaging:bootstrap')).toHaveLength(2);
     expect(calls).not.toContain('social:bootstrap');
     expect(result.runtimes.map(({ status }) => status)).toEqual(['failed', 'failed']);
+  });
+
+  it('preserves structured runtime failure diagnostics', async () => {
+    const calls: string[] = [];
+    const kernel = configuredKernel(
+      () => [{
+        ...descriptor('private-social', [], calls),
+        bootstrap: async () => Promise.reject({
+          code: 'MOBILE_PRIVATE_SOCIAL_PREKEYS_UNAVAILABLE',
+          message: 'content prekeys are unavailable',
+        }),
+      }],
+      { current: 1 },
+      calls,
+    );
+
+    await kernel.startRuntimeGraph();
+
+    expect(kernel.getDiagnosticRuntimeErrors()).toEqual([{
+      runtimeId: 'private-social',
+      error:
+        'MOBILE_PRIVATE_SOCIAL_PREKEYS_UNAVAILABLE: content prekeys are unavailable',
+    }]);
   });
 
   it('blocks resume rebootstrap when failed runtime cleanup is incomplete', async () => {

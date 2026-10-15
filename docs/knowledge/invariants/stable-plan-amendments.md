@@ -1,7 +1,7 @@
 ---
 kind: invariant
 title: Plan identity survives execution amendments
-status: superseded-by:DWF-D42
+status: superseded-by:DWF-D46
 owns: []
 referenced-by:
   - docs/architecture/engineering/development-workflow/decisions.md
@@ -13,10 +13,10 @@ detected: 2026-10-06
 
 # Plan identity survives execution amendments
 
-> Superseded by DWF-D42. Retained as historical context only. Plans are now
-> explicit frozen versions; they are read directly and never mounted into
-> machine-wide execution state. Optional task progress records implementation
-> state independently from Plan identity.
+> Superseded by DWF-D46. Retained as historical context only. The 2026-10-15
+> hard cut retired stable Plan identity, append-only amendments, immutable
+> snapshots, and digest-bound completion attestations; a Plan is an explicit
+> optional versioned input rather than a mounted machine state.
 
 ## What must hold
 
@@ -61,13 +61,23 @@ repository `completions/<planDigest>.json` attestation. Explicit-plan CI reads
 the validated Plan source plus that exact digest-bound record; a missing or
 stale completion record fails closed.
 
-## Historical verification
+## How to verify
 
-The former implementation verified mounted mutable execution snapshots and
-repository completion receipts. Those owners have been deleted. Current Plan
-verification is defined by DWF-D42 and the explicit Plan reader.
+- `node --test tooling/scripts/plan/plan-mount.test.mjs tooling/scripts/plan/planctl.test.mjs`
+  and `node --test tooling/scripts/plan/plan-completion.test.mjs`
+  passes candidate rejection, explicit approval, stale digest, criterion
+  coverage, amendment, task invalidation, and snapshot-history cases.
+- `rg -n 'peers-touch-plan-version|versionId[": ]|\.planVersionDigest|planVersionDigest"\s*:|mountPlanVersion\(|\.liveMountsByPlanVersion|liveMountsByPlanVersion\s*:' tooling AGENTS.md docs/global docs/architecture/engineering --glob '!**/execution-plans/**' | rg -v "stable-plan-state-migration|plan-mount-is-run-bound|development-workflow/decisions.md"`
+  returns only the DWF-D45 mixed-envelope validator/tests in
+  `plan-mount.mjs`, its tests, and migration documentation; no Plan source or
+  execution snapshot consumes the legacy identity.
+- `make plan-validate PLAN=docs/architecture/platform/client/mobile/execution-plans/20260827-mobile-shell-implementation/plan.md`
+  succeeds.
 
 ## Crosswalks
 
 - DWF-D42 in `docs/architecture/engineering/development-workflow/decisions.md`.
+- DWF-D45 and
+  `docs/knowledge/invariants/machine-ledger-workspace-isolation.md` govern
+  machine-state adoption without changing stable Plan identity.
 - Supersedes `docs/knowledge/invariants/plan-mount-is-run-bound.md`.

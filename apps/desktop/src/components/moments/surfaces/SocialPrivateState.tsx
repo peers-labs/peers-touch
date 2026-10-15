@@ -9,16 +9,22 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type {
+  PrivateDeliveryNoticeState,
   PrivatePublishState,
   PrivateReadState,
 } from '../../../services/privateMomentsNative';
+import type { PrivateResourceRevocationReason } from '../../../kernel/events/types';
 
 const { Text } = Typography;
 
-type SocialPrivateStateValue = PrivatePublishState | PrivateReadState;
+type SocialPrivateStateValue =
+  | PrivateDeliveryNoticeState
+  | PrivatePublishState
+  | PrivateReadState;
 
 export interface SocialPrivateStateProps {
   state: SocialPrivateStateValue;
+  revocationReason?: PrivateResourceRevocationReason;
   compact?: boolean;
   onRetry?: () => void;
   onRecover?: () => void;
@@ -26,16 +32,22 @@ export interface SocialPrivateStateProps {
 
 const PROGRESS_STATES = new Set<SocialPrivateStateValue>([
   'CHECKING_PRIVATE_READINESS',
+  'CHECKING_REMOTE_READINESS',
   'PUBLISHING',
   'UNKNOWN_COMMIT',
+  'REMOTE_DELIVERY_PENDING',
+  'REMOTE_DELIVERY_RETRYING',
   'LOADING_AUTHORIZED_RESOURCE',
   'WAITING_FOR_PRIVATE_KEY',
+  'WAITING_FOR_REMOTE_DELIVERY',
   'DECRYPTING',
 ]);
 
 const ERROR_STATES = new Set<SocialPrivateStateValue>([
   'PUBLISH_FAILED',
   'INTEGRITY_FAILURE',
+  'REMOTE_DELIVERY_FAILED',
+  'REMOTE_DELIVERY_EXPIRED',
 ]);
 
 const WARNING_STATES = new Set<SocialPrivateStateValue>([
@@ -44,6 +56,7 @@ const WARNING_STATES = new Set<SocialPrivateStateValue>([
   'AUDIENCE_TOO_LARGE',
   'RECOVERY_REQUIRED',
   'RECOVERY_KEY_UNAVAILABLE',
+  'REMOTE_SOURCE_UNAVAILABLE',
   'AUTHENTICATION_REQUIRED',
   'NOT_FOUND_OR_NOT_AUTHORIZED',
   'PRIVATE_UNSUPPORTED_ON_DEVICE',
@@ -71,6 +84,8 @@ function canRetry(state: SocialPrivateStateValue): boolean {
     'UNKNOWN_COMMIT',
     'PUBLISH_FAILED',
     'WAITING_FOR_PRIVATE_KEY',
+    'WAITING_FOR_REMOTE_DELIVERY',
+    'REMOTE_SOURCE_UNAVAILABLE',
     'RECOVERY_KEY_UNAVAILABLE',
     'INTEGRITY_FAILURE',
   ].includes(state);
@@ -78,6 +93,7 @@ function canRetry(state: SocialPrivateStateValue): boolean {
 
 export function SocialPrivateState({
   state,
+  revocationReason,
   compact = false,
   onRetry,
   onRecover,
@@ -111,6 +127,9 @@ export function SocialPrivateState({
           </Button>
         )
       : undefined;
+  const localePrefix = state === 'DELETED_OR_REVOKED' && revocationReason
+    ? `moments.private.revocation.${revocationReason}`
+    : `moments.private.state.${state}`;
 
   return (
     <Alert
@@ -128,11 +147,11 @@ export function SocialPrivateState({
           <StateIcon state={state} />
           <span>
             <Text strong style={{ fontSize: 13 }}>
-              {t(`moments.private.state.${state}.title`)}
+              {t(`${localePrefix}.title`)}
             </Text>
             <br />
             <Text type="secondary" style={{ fontSize: 12 }}>
-              {t(`moments.private.state.${state}.description`)}
+              {t(`${localePrefix}.description`)}
             </Text>
           </span>
         </Space>

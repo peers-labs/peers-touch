@@ -32,7 +32,6 @@ import {
   CreateRepostRequestSchema,
   CreateLocationPostRequestSchema,
   LocationSchema,
-  GetPostResponseSchema,
   DeletePostResponseSchema,
   ListPostsResponseSchema,
   GetTimelineResponseSchema,
@@ -53,7 +52,6 @@ import {
   StationModerationPolicy_Kind,
   type CreatePostRequest,
   type CreatePostResponse,
-  type GetPostResponse,
   type DeletePostResponse,
   type ListPostsResponse,
   type GetTimelineResponse,
@@ -76,8 +74,10 @@ import {
   type DeleteCommentResponse,
 } from '../gen/proto/domain/social/comment_pb';
 import {
+  GetMomentResourceResponseSchema,
   ListMomentCommentsResponseSchema,
   type CommentResource,
+  type GetMomentResourceResponse,
   type ListMomentCommentsRequest,
   type ListMomentCommentsResponse,
 } from '../gen/proto/domain/social/private_content_pb';
@@ -355,18 +355,18 @@ export async function socialCreateMoment(draft: MomentDraft): Promise<Post | und
 }
 
 export async function socialGetMoment(id: string): Promise<Post | undefined> {
-  const resp = await invokeRustProto<{ id: string }, GetPostResponse>(
+  const resp = await invokeRustProto<{ id: string }, GetMomentResourceResponse>(
     'social_get_moment',
-    GetPostResponseSchema,
+    GetMomentResourceResponseSchema,
     { id },
   );
   return resp.post;
 }
 
-export async function socialGetMomentResponse(id: string): Promise<GetPostResponse> {
-  return invokeRustProto<{ id: string }, GetPostResponse>(
+export async function socialGetMomentResponse(id: string): Promise<GetMomentResourceResponse> {
+  return invokeRustProto<{ id: string }, GetMomentResourceResponse>(
     'social_get_moment',
-    GetPostResponseSchema,
+    GetMomentResourceResponseSchema,
     { id },
   );
 }

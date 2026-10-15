@@ -57,7 +57,7 @@ pub fn agent_capability_manifest_list(
     window: Window,
 ) -> AppResult<Vec<u8>> {
     match authenticated_token(&state, &window) {
-        Ok(token) => capability_authority::list_manifests(input, &token),
+        Ok(token) => capability_authority::list_manifests(state.station.client(), input, &token),
         Err(error) => error,
     }
 }
@@ -69,7 +69,7 @@ pub fn agent_capability_binding_list(
     window: Window,
 ) -> AppResult<Vec<u8>> {
     match authenticated_token(&state, &window) {
-        Ok(token) => capability_authority::list_bindings(input, &token),
+        Ok(token) => capability_authority::list_bindings(state.station.client(), input, &token),
         Err(error) => error,
     }
 }
@@ -85,8 +85,9 @@ pub async fn agent_capability_binding_upsert(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
+    let station_client = state.station.client().clone();
     match tauri::async_runtime::spawn_blocking(move || {
-        capability_authority::upsert_binding(input, &token)
+        capability_authority::upsert_binding(&station_client, input, &token)
     })
     .await
     {
@@ -106,7 +107,7 @@ pub fn agent_capability_binding_delete(
     window: Window,
 ) -> AppResult<Vec<u8>> {
     match authenticated_token(&state, &window) {
-        Ok(token) => capability_authority::delete_binding(input, &token),
+        Ok(token) => capability_authority::delete_binding(state.station.client(), input, &token),
         Err(error) => error,
     }
 }
@@ -118,7 +119,7 @@ pub fn agent_capability_readiness(
     window: Window,
 ) -> AppResult<Vec<u8>> {
     match authenticated_token(&state, &window) {
-        Ok(token) => capability_authority::readiness(input, &token),
+        Ok(token) => capability_authority::readiness(state.station.client(), input, &token),
         Err(error) => error,
     }
 }
@@ -131,7 +132,9 @@ pub fn agent_capability_acceptance_scenario_prepare(
     window: Window,
 ) -> AppResult<Vec<u8>> {
     match authenticated_token(&state, &window) {
-        Ok(token) => capability_authority::prepare_acceptance_scenario(input, &token),
+        Ok(token) => {
+            capability_authority::prepare_acceptance_scenario(state.station.client(), input, &token)
+        }
         Err(error) => error,
     }
 }
@@ -159,7 +162,8 @@ pub fn agent_capability_acceptance_scenario_arm(
         Ok(identity) => identity,
         Err(error) => return error,
     };
-    let response = capability_authority::arm_acceptance_scenario_hook(input, &token);
+    let response =
+        capability_authority::arm_acceptance_scenario_hook(state.station.client(), input, &token);
     if !response.ok {
         return response;
     }
@@ -188,6 +192,7 @@ pub fn agent_capability_acceptance_scenario_arm(
         armed.family,
     ) {
         let _ = capability_authority::cleanup_acceptance_scenario(
+            state.station.client(),
             EncodedRequestInput {
                 request_bytes: CleanupCapabilityAcceptanceScenarioRequest {
                     scenario_handle: request.scenario_handle,
@@ -213,8 +218,9 @@ pub async fn agent_capability_acceptance_scenario_wait(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
+    let station_client = state.station.client().clone();
     match tauri::async_runtime::spawn_blocking(move || {
-        capability_authority::wait_acceptance_scenario_barrier(input, &token)
+        capability_authority::wait_acceptance_scenario_barrier(&station_client, input, &token)
     })
     .await
     {
@@ -235,7 +241,11 @@ pub fn agent_capability_acceptance_scenario_release(
     window: Window,
 ) -> AppResult<Vec<u8>> {
     match authenticated_token(&state, &window) {
-        Ok(token) => capability_authority::release_acceptance_scenario_barrier(input, &token),
+        Ok(token) => capability_authority::release_acceptance_scenario_barrier(
+            state.station.client(),
+            input,
+            &token,
+        ),
         Err(error) => error,
     }
 }
@@ -248,7 +258,11 @@ pub fn agent_capability_acceptance_scenario_clock_advance(
     window: Window,
 ) -> AppResult<Vec<u8>> {
     match authenticated_token(&state, &window) {
-        Ok(token) => capability_authority::advance_acceptance_scenario_clock(input, &token),
+        Ok(token) => capability_authority::advance_acceptance_scenario_clock(
+            state.station.client(),
+            input,
+            &token,
+        ),
         Err(error) => error,
     }
 }
@@ -261,7 +275,11 @@ pub fn agent_capability_acceptance_scenario_interrupt(
     window: Window,
 ) -> AppResult<Vec<u8>> {
     match authenticated_token(&state, &window) {
-        Ok(token) => capability_authority::interrupt_acceptance_scenario_worker(input, &token),
+        Ok(token) => capability_authority::interrupt_acceptance_scenario_worker(
+            state.station.client(),
+            input,
+            &token,
+        ),
         Err(error) => error,
     }
 }
@@ -289,7 +307,8 @@ pub fn agent_capability_acceptance_scenario_cleanup(
         Ok(identity) => identity,
         Err(error) => return error,
     };
-    let response = capability_authority::cleanup_acceptance_scenario(input, &token);
+    let response =
+        capability_authority::cleanup_acceptance_scenario(state.station.client(), input, &token);
     if !response.ok {
         return response;
     }
@@ -306,7 +325,9 @@ pub fn agent_connector_manifest_list(
     window: Window,
 ) -> AppResult<Vec<u8>> {
     match authenticated_token(&state, &window) {
-        Ok(token) => capability_authority::list_connector_manifests(input, &token),
+        Ok(token) => {
+            capability_authority::list_connector_manifests(state.station.client(), input, &token)
+        }
         Err(error) => error,
     }
 }
@@ -318,7 +339,9 @@ pub fn agent_knowledge_descriptor_create(
     window: Window,
 ) -> AppResult<Vec<u8>> {
     match authenticated_token(&state, &window) {
-        Ok(token) => capability_authority::create_knowledge_descriptor(input, &token),
+        Ok(token) => {
+            capability_authority::create_knowledge_descriptor(state.station.client(), input, &token)
+        }
         Err(error) => error,
     }
 }
@@ -330,7 +353,9 @@ pub fn agent_knowledge_descriptor_update(
     window: Window,
 ) -> AppResult<Vec<u8>> {
     match authenticated_token(&state, &window) {
-        Ok(token) => capability_authority::update_knowledge_descriptor(input, &token),
+        Ok(token) => {
+            capability_authority::update_knowledge_descriptor(state.station.client(), input, &token)
+        }
         Err(error) => error,
     }
 }
@@ -342,7 +367,9 @@ pub fn agent_knowledge_descriptor_list(
     window: Window,
 ) -> AppResult<Vec<u8>> {
     match authenticated_token(&state, &window) {
-        Ok(token) => capability_authority::list_knowledge_descriptors(input, &token),
+        Ok(token) => {
+            capability_authority::list_knowledge_descriptors(state.station.client(), input, &token)
+        }
         Err(error) => error,
     }
 }
@@ -354,7 +381,11 @@ pub fn agent_knowledge_descriptor_tombstone(
     window: Window,
 ) -> AppResult<Vec<u8>> {
     match authenticated_token(&state, &window) {
-        Ok(token) => capability_authority::tombstone_knowledge_descriptor(input, &token),
+        Ok(token) => capability_authority::tombstone_knowledge_descriptor(
+            state.station.client(),
+            input,
+            &token,
+        ),
         Err(error) => error,
     }
 }
@@ -366,7 +397,9 @@ pub fn agent_package_export(
     window: Window,
 ) -> AppResult<Vec<u8>> {
     match authenticated_token(&state, &window) {
-        Ok(token) => capability_authority::export_agent_package(input, &token),
+        Ok(token) => {
+            capability_authority::export_agent_package(state.station.client(), input, &token)
+        }
         Err(error) => error,
     }
 }
@@ -378,7 +411,9 @@ pub fn agent_package_import(
     window: Window,
 ) -> AppResult<Vec<u8>> {
     match authenticated_token(&state, &window) {
-        Ok(token) => capability_authority::import_agent_package(input, &token),
+        Ok(token) => {
+            capability_authority::import_agent_package(state.station.client(), input, &token)
+        }
         Err(error) => error,
     }
 }

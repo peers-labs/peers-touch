@@ -981,10 +981,10 @@ def assert_technical_identity(base_url: str, page, shot_dir: Path | None):
     page.set_viewport_size({"width": 1440, "height": 900})
     page.get_by_role("tab", name="Network", exact=True).click()
     check("[identity] Station matches Network", page.get_by_text("alpha.peers.social", exact=True).is_visible())
-    page.get_by_role("button", name="Networks", exact=True).click()
+    page.get_by_role("button", name="Federation", exact=True).click()
     network_names = ("Peers Social Network", "Lab Federation", "East Asia Network")
     check("[identity] federation names match Network", all(page.get_by_text(n, exact=True).is_visible() for n in network_names))
-    page.get_by_role("button", name="Join a network").click()
+    page.get_by_role("button", name="Join a federation").click()
     page.get_by_placeholder("https://federation.example.com").fill("https://identity-test.example")
     page.get_by_role("button", name="Join", exact=True).click()
     page.get_by_role("tab", name="General", exact=True).click()
@@ -992,10 +992,10 @@ def assert_technical_identity(base_url: str, page, shot_dir: Path | None):
     check("[identity] joined federation appears on Account",
           technical.get_by_role("button", name="Copy federation identity-test.example").count() == 1)
     page.get_by_role("tab", name="Network", exact=True).click()
-    page.get_by_role("button", name="Networks", exact=True).click()
+    page.get_by_role("button", name="Federation", exact=True).click()
     page.get_by_text("identity-test.example", exact=True).click()
-    page.get_by_role("button", name="Leave this network", exact=True).click()
-    page.get_by_role("button", name="Leave", exact=True).click()
+    page.locator("[data-leave-federation]").click()
+    page.locator("[data-leave-confirm-button]").click()
     page.get_by_role("tab", name="General", exact=True).click()
     technical.locator("summary").click()
     check("[identity] departed federation removed from Account",
@@ -1115,6 +1115,120 @@ def assert_settings(base_url: str, page, shot_dir: Path | None = None):
     check("[settings] vertical nav kept at narrow width", dn["navVisible"] is True)
     check("[settings] no horizontal section chips at any width", dn["sectionChips"] == 0,
           f"chips={dn['sectionChips']}")
+
+
+def _open_network_section(page, item: str):
+    page.get_by_role("tab", name="Network").click()
+    page.wait_for_timeout(200)
+    page.locator('nav[aria-label="Settings sections"]').get_by_role("button", name=item).click()
+    page.wait_for_timeout(300)
+
+
+def assert_network_design(base_url: str, page):
+    """User-vs-operator separation for the Network group.
+
+    Users own account-level choices in Settings; operator/federation
+    governance lives in the Station Dashboard. Designed-but-unshipped
+    capabilities must render an explicit Pending backend marker, never a
+    silently dead control.
+    """
+    tag = "[network]"
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(base_url, wait_until="networkidle")
+    page.wait_for_timeout(400)
+    page.evaluate("() => localStorage.clear()")
+    page.get_by_role("button", name="设置").click()
+    page.wait_for_timeout(400)
+    page.get_by_role("tab", name="Network").click()
+    page.wait_for_timeout(300)
+
+    items = page.locator('nav[aria-label="Settings sections"] button').all_text_contents()
+    check(f"{tag} group is Your Station / Discovery / Federation",
+          items == ["Your Station", "Discovery", "Federation"], json.dumps(items, ensure_ascii=False))
+
+    # ── Federation ─────────────────────────────────────────────────────────
+    _open_network_section(page, "Federation")
+    check(f"{tag} section titled Joined federations",
+          page.get_by_text("Joined federations").count() == 1)
+    # No fabricated P2P/directory numbers on a user card.
+    check(f"{tag} no fabricated People count on user cards",
+          page.get_by_text("People", exact=True).count() == 0)
+    check(f"{tag} no operator Degraded badge in user settings",
+          page.get_by_text("Degraded").count() == 0)
+
+    # Member federation: every member can leave; governance is operator-only.
+    page.get_by_text("Lab Federation", exact=True).first.click()
+    page.wait_for_timeout(200)
+    check(f"{tag} member federation offers Leave",
+          page.locator("[data-leave-federation]").count() == 1)
+    check(f"{tag} member federation hides operator governance",
+          page.locator("[data-federation-manage]").count() == 0)
+    page.locator("[data-leave-federation]").click()
+    page.wait_for_timeout(150)
+    leave_text = page.locator("[data-leave-confirm]").inner_text()
+    check(f"{tag} leave confirms conversations/contacts are kept",
+          "kept on this device" in leave_text, leave_text)
+    page.locator('[data-leave-confirm] button', has_text="Cancel").click()
+
+    # Operator federation: manage affordance is explicitly pending backend.
+    page.get_by_text("Peers Social Network", exact=True).first.click()
+    page.wait_for_timeout(200)
+    check(f"{tag} operator federation offers dashboard governance",
+          page.locator("[data-federation-manage]").count() == 1)
+    check(f"{tag} operator governance marked pending backend",
+          page.locator("[data-federation-manage]").locator("xpath=..")
+          .locator("[data-pending-backend]").count() == 1)
+
+    # ── Discovery ──────────────────────────────────────────────────────────
+    _open_network_section(page, "Discovery")
+    fed_toggles = page.locator("[data-discovery-federations] [role='switch']")
+    check(f"{tag} one per-federation visibility toggle per active federation",
+          fed_toggles.count() == 3, f"toggles={fed_toggles.count()}")
+    check(f"{tag} unshipped capabilities show pending markers",
+          page.locator("[data-pending-backend]").count() >= 2)
+    check(f"{tag} reach policy uses federations wording (not networks)",
+          page.get_by_role("radio", name="My federations").count() >= 1)
+
+    # Hidden master remembers per-federation choices and restores them.
+    fed_toggles.nth(0).click()
+    page.wait_for_timeout(100)
+    remember = page.evaluate("() => localStorage.getItem('pt.discovery.federations')")
+    master = page.get_by_role("switch", name="Discoverable")
+    master.click()
+    page.wait_for_timeout(150)
+    check(f"{tag} hiding remembers prior per-federation choices",
+          remember == '{"fed-1":true}', remember)
+    check(f"{tag} hidden master dims the federation matrix",
+          float(page.locator("[data-discovery-federations]")
+                .evaluate("el => getComputedStyle(el).opacity")) < 1)
+    master.click()
+    page.wait_for_timeout(150)
+    restored = page.locator(
+        "[data-discovery-federations] [role='switch']").nth(0).get_attribute("aria-checked")
+    check(f"{tag} re-showing restores prior per-federation value",
+          restored == "true", restored)
+
+    # ── Your Station ───────────────────────────────────────────────────────
+    _open_network_section(page, "Your Station")
+    check(f"{tag} no fabricated P2P peer/seed metrics",
+          page.get_by_text("Connected peers").count() == 0
+          and page.get_by_text("Seed nodes").count() == 0)
+    check(f"{tag} relay mounts not exposed to ordinary users",
+          page.get_by_text("Relay mounts").count() == 0)
+    check(f"{tag} authorized devices present",
+          page.get_by_text("Authorized devices").count() == 1)
+    page.locator("[data-switch-station]").click()
+    page.wait_for_timeout(150)
+    check(f"{tag} switch station requires confirmation",
+          page.locator("[data-switch-station-confirm]").count() == 1)
+    confirm_text = page.locator("[data-switch-station-confirm]") \
+        .evaluate("el => el.closest('section').innerText")
+    check(f"{tag} switch is sign-out and keeps local messages",
+          "does not delete your messages" in confirm_text, confirm_text)
+
+    page.evaluate(
+        "() => ['pt.discovery.master','pt.discovery.federations','pt.discovery.reach']"
+        ".forEach(k => localStorage.removeItem(k))")
 
 
 FOCUS_STATE_PROBE = r"""
@@ -1303,6 +1417,7 @@ def main():
         assert_focus_normalization(args.base_url, page)
         assert_settings(args.base_url, page, shot_dir)
         assert_technical_identity(args.base_url, page, shot_dir)
+        assert_network_design(args.base_url, page)
 
         check("zero console/page errors across run", len(errors) == 0, json.dumps(errors[:5]))
         browser.close()

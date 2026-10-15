@@ -45,6 +45,8 @@ export const PROTO_INPUTS = Object.freeze([
   'domain/social/circle.proto',
   'domain/social/relationship.proto',
   'domain/social/private_content.proto',
+  'domain/social/private_federation.proto',
+  'domain/federation/delivery.proto',
   'domain/key_exchange/key_exchange.proto',
 ]);
 
@@ -59,6 +61,7 @@ const ALLOWED_PROTO_ROOTS = Object.freeze([
   'domain/error',
   'domain/secure_content',
   'domain/social',
+  'domain/federation',
   'domain/key_exchange',
 ]);
 
@@ -75,6 +78,8 @@ const GO_OUTPUT_DIRECTORIES = Object.freeze({
   'domain/social/circle.proto': 'frame/touch/model',
   'domain/social/relationship.proto': 'frame/touch/model',
   'domain/social/private_content.proto': 'frame/touch/model/privatecontent',
+  'domain/social/private_federation.proto': 'frame/touch/model/privatecontent',
+  'domain/federation/delivery.proto': 'frame/core/federation/model',
   'domain/key_exchange/key_exchange.proto': 'app/subserver/key_exchange/model',
 });
 
@@ -91,6 +96,8 @@ const GO_PACKAGE_NAMES = Object.freeze({
   'domain/social/circle.proto': 'model',
   'domain/social/relationship.proto': 'model',
   'domain/social/private_content.proto': 'privatecontent',
+  'domain/social/private_federation.proto': 'privatecontent',
+  'domain/federation/delivery.proto': 'model',
   'domain/key_exchange/key_exchange.proto': 'model',
 });
 

@@ -43,6 +43,45 @@
       }
     },
     {
+      "id": "agent-cross-node-executor-fencing",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "initial_proof_status": "UNPROVEN",
+      "features": [
+        "node-connectivity-agent-fencing"
+      ],
+      "required_gates": [
+        "NCP-G06-AGENT"
+      ],
+      "synthetic_paths": [
+        "apps/station/app/subserver/agent/service/chat_task_service.go",
+        "apps/station/app/subserver/agent/infrastructure/persistence/executor_lease.go",
+        "model/domain/agent/orchestration.proto"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "shared PostgreSQL Agent lease, Chat task, step, checkpoint, and durable external-effect recovery rows"
+        ],
+        "surfaces": [
+          "Station Agent execution and recovery lifecycle"
+        ],
+        "proven_by": [
+          "NCP-G06-AGENT"
+        ],
+        "proven_scope": [
+          "healthy foreign lease exclusion during peer boot",
+          "database-time expired takeover with monotonic fencing token",
+          "stale owner completion rejection and one terminal domain record",
+          "durable external-effect recovery state preservation"
+        ],
+        "unproven_scope": [
+          "exactly-once external provider effects",
+          "Native Desktop and Mobile Agent rendering",
+          "OSS fencing, which is owned by NCP-G06-OSS"
+        ]
+      }
+    },
+    {
       "id": "agent-core-lifecycle",
       "domain": "agent",
       "direction": "acceptance_validates_product",

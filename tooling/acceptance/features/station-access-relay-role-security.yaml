@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "id": "station-access-relay-role-security",
+  "domain": "station-access",
+  "status": "active",
+  "owners": [
+    "apps/station/app/conf/sub_relay.yml",
+    "apps/station/app/main.go",
+    "apps/station/app/subserver/events/bus.go",
+    "apps/station/frame/core/federation/transport.go",
+    "apps/station/frame/core/plugin/native/node/**",
+    "apps/station/frame/core/plugin/native/subserver/relay/**",
+    "apps/station/frame/core/runtime/role/**",
+    "apps/station/frame/peers.go",
+    "tooling/docker/.env.example",
+    "tooling/docker/README.md",
+    "tooling/docker/compose.yml",
+    "tooling/docker/entrypoint.sh",
+    "tooling/scripts/local-dev/relay-check.sh",
+    "tooling/scripts/local-dev/station-dev.sh"
+  ],
+  "truth_sources": [
+    "explicit process runtime role",
+    "Relay role composition allowlist",
+    "Relay Host identity, finite Circuit resources, and admission ACL"
+  ],
+  "visible_surfaces": [
+    {"type": "operator", "route": "Relay startup, health, metrics, and admin API"}
+  ],
+  "required_gates": [
+    "relay-role-security-contract"
+  ],
+  "acceptance": {
+    "service": [
+      "one Station binary requires an explicit station or relay role",
+      "relay role excludes Touch, Station application subservers, and every native plugin except relay",
+      "Relay control identity is the persistent libp2p Host identity used by Circuit Relay v2",
+      "Relay startup enables finite Circuit resources and a deny-by-default reservation and connection ACL",
+      "Relay startup fails closed without a public libp2p address, dedicated operator policy, or positive Circuit quotas",
+      "Relay operator credentials use a key, issuer, audience, and scope independent from Station application JWTs"
+    ],
+    "surface": [
+      "Relay exposes its own public health endpoint and operator-protected metrics endpoint"
+    ]
+  },
+  "negative": [
+    "Relay role must not expose Actor, OAuth, Conversation, Social, Agent, OSS, or Federation governance handlers",
+    "ordinary Station application JWTs must not authorize Relay operator routes",
+    "Relay must not expose the removed WSS listener, mount framing, signing-key file, or custom heartbeat configuration",
+    "Circuit resources must not use infinite limits",
+    "Station source must not contain undeclared hardcoded debug egress"
+  ]
+}

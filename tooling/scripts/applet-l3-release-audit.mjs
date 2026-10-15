@@ -11,6 +11,13 @@ const rootDir = process.cwd();
 const outputDir = path.join(appletArtifactRoot, 'release');
 const outputPath = path.join(outputDir, 'l3-readiness-audit-output.txt');
 const candidateOnly = process.argv.includes('--candidate-only');
+const stationRuntimeInputs = [
+  'apps/desktop/src-tauri/src/application/station_runtime',
+  'apps/desktop/src-tauri/src/application/station_binding',
+  'apps/desktop/src-tauri/src/infrastructure/station',
+  'apps/desktop/src-tauri/src/infrastructure/station_registry.rs',
+  'packages/station-libp2p-http/src',
+];
 
 mkdirSync(outputDir, { recursive: true });
 
@@ -173,7 +180,9 @@ function newestMtimeMs(dir) {
 
 function newestInputMtimeMs(inputs, failures) {
   let newest = 0;
-  for (const input of inputs) {
+  const completeInputs = inputs.some((input) => input.includes('/station_runtime/'))
+    ? [...inputs, ...stationRuntimeInputs] : inputs;
+  for (const input of new Set(completeInputs)) {
     const absolute = path.resolve(input);
     if (!existsSync(absolute)) {
       failures.push(`platform check input is missing: ${input}`);
@@ -535,7 +544,7 @@ function currentDesktopProductHostFreshnessCheck() {
       'apps/desktop/src-tauri/Cargo.toml',
       'apps/desktop/src-tauri/Cargo.lock',
       'apps/desktop/src-tauri/src/application/applets',
-      'apps/desktop/src-tauri/src/infrastructure/station_client.rs',
+      'apps/desktop/src-tauri/src/application/station_runtime/client.rs',
       'apps/desktop/src-tauri/src/interface/http_gateway',
       'tooling/scripts/applet-desktop-product-host-gate.mjs',
       'tooling/fixtures/applets/packages/generic-complex-applet',
@@ -564,7 +573,7 @@ function currentDesktopProductShellFreshnessCheck() {
       'apps/desktop/src-tauri/Cargo.toml',
       'apps/desktop/src-tauri/Cargo.lock',
       'apps/desktop/src-tauri/src/application/applets',
-      'apps/desktop/src-tauri/src/infrastructure/station_client.rs',
+      'apps/desktop/src-tauri/src/application/station_runtime/client.rs',
       'apps/desktop/src-tauri/src/interface/http_gateway',
       'tooling/scripts/applet-desktop-product-host-gate.mjs',
       'tooling/fixtures/applets/packages/generic-complex-applet',
@@ -607,7 +616,7 @@ function currentDesktopLiveE2eFreshnessCheck() {
       'apps/desktop/src-tauri/Cargo.toml',
       'apps/desktop/src-tauri/Cargo.lock',
       'apps/desktop/src-tauri/src/application/applets',
-      'apps/desktop/src-tauri/src/infrastructure/station_client.rs',
+      'apps/desktop/src-tauri/src/application/station_runtime/client.rs',
       'tooling/scripts/applet-desktop-e2e.mjs',
       'tooling/scripts/applet-validate.mjs',
       'tooling/scripts/applet-contract-test.mjs',
@@ -626,7 +635,7 @@ function currentProductCapabilityServiceFreshnessCheck() {
       'apps/desktop/src-tauri/Cargo.toml',
       'apps/desktop/src-tauri/Cargo.lock',
       'apps/desktop/src-tauri/src/application/applets',
-      'apps/desktop/src-tauri/src/infrastructure/station_client.rs',
+      'apps/desktop/src-tauri/src/application/station_runtime/client.rs',
       'tooling/scripts/applet-product-capability-service-gate.mjs',
       '.artifacts/applet-readiness/desktop/live-e2e-output.txt',
     ],

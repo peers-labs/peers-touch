@@ -38,6 +38,85 @@ func NewGORMPrivateAudienceAuthority(
 	return &GORMPrivateAudienceAuthority{db: db}, nil
 }
 
+// ResolveAcceptedFriendFederation returns the immutable Federation identity
+// carried by the accepted Social relationship between two remote peers.
+func (a *GORMPrivateAudienceAuthority) ResolveAcceptedFriendFederation(
+	ctx context.Context,
+	authorPTID string,
+	recipientPTID string,
+	sourceStationPeerID string,
+	targetStationPeerID string,
+) (string, error) {
+	const operation = "social.private_content.resolve_friend_federation"
+	for field, value := range map[string]string{
+		"author_ptid":                    authorPTID,
+		"recipient_ptid":                 recipientPTID,
+		"source_home_station_peer_id":    sourceStationPeerID,
+		"recipient_home_station_peer_id": targetStationPeerID,
+	} {
+		if strings.TrimSpace(value) == "" || value != strings.TrimSpace(value) {
+			return "", socialdomain.NewPrivateContentError(
+				socialdomain.PrivateContentInvalidArgument,
+				operation,
+				field,
+				"must be canonical",
+			)
+		}
+	}
+	var relationship federatedRelationshipProjectionModel
+	if err := a.db.WithContext(ctx).
+		Where("owner_ptid = ? AND peer_ptid = ?", authorPTID, recipientPTID).
+		First(&relationship).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", socialdomain.NewPrivateContentError(
+				socialdomain.PrivateContentUnauthorized,
+				operation,
+				"recipient_ptid",
+				"is not an accepted friend",
+			)
+		}
+		return "", err
+	}
+	var request federatedFriendRequestProjectionModel
+	if err := a.db.WithContext(ctx).
+		Where(
+			"request_id = ? AND state = ? AND authority_confirmed = ?",
+			relationship.RequestID,
+			friendRequestPolicyRelationshipAccepted,
+			true,
+		).
+		First(&request).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", socialdomain.NewPrivateContentError(
+				socialdomain.PrivateContentUnauthorized,
+				operation,
+				"friend_request",
+				"is not authoritatively accepted",
+			)
+		}
+		return "", err
+	}
+	direct := request.SenderPTID == authorPTID &&
+		request.ReceiverPTID == recipientPTID &&
+		request.SenderHomeStationPeerID == sourceStationPeerID &&
+		request.ReceiverHomeStationPeerID == targetStationPeerID
+	reverse := request.ReceiverPTID == authorPTID &&
+		request.SenderPTID == recipientPTID &&
+		request.ReceiverHomeStationPeerID == sourceStationPeerID &&
+		request.SenderHomeStationPeerID == targetStationPeerID
+	if (!direct && !reverse) ||
+		strings.TrimSpace(request.FederationID) == "" ||
+		request.FederationID != strings.TrimSpace(request.FederationID) {
+		return "", socialdomain.NewPrivateContentError(
+			socialdomain.PrivateContentConflict,
+			operation,
+			"friend_request",
+			"does not bind the selected actor and Station pair",
+		)
+	}
+	return request.FederationID, nil
+}
+
 func (a *GORMPrivateAudienceAuthority) ResolveFriendsPostSnapshot(
 	ctx context.Context,
 	transaction federationdelivery.Transaction,
@@ -200,7 +279,7 @@ func (a *GORMPrivateAudienceAuthority) ResolvePrivateCommentSnapshot(
 			)
 	}
 
-	friendSnapshot, err := loadFriendsSnapshot(
+	friendSnapshot, err := loadFriendsSnapshotAllowEmpty(
 		ctx,
 		database,
 		commentAuthorPTID,
@@ -893,6 +972,25 @@ func loadFriendsSnapshot(
 	database *gorm.DB,
 	authorPTID string,
 ) (socialdomain.FriendsSnapshot, error) {
+	snapshot, err := loadFriendsSnapshotAllowEmpty(
+		ctx,
+		database,
+		authorPTID,
+	)
+	if err != nil {
+		return socialdomain.FriendsSnapshot{}, err
+	}
+	return requireNonEmptyAudienceSnapshot(
+		"social.private_content.friends_snapshot",
+		snapshot,
+	)
+}
+
+func loadFriendsSnapshotAllowEmpty(
+	ctx context.Context,
+	database *gorm.DB,
+	authorPTID string,
+) (socialdomain.FriendsSnapshot, error) {
 	authorPTID = strings.TrimSpace(authorPTID)
 	if authorPTID == "" {
 		return socialdomain.FriendsSnapshot{}, fmt.Errorf(
@@ -930,15 +1028,6 @@ func loadFriendsSnapshot(
 		writeSnapshotField(head, row.AcceptedEventID)
 		writeSnapshotBytes(head, row.AcceptedEventHash)
 		writeSnapshotField(head, row.AcceptedAt.UTC().Format(time.RFC3339Nano))
-	}
-	if len(recipients) == 0 {
-		return socialdomain.FriendsSnapshot{},
-			socialdomain.NewPrivateContentError(
-				socialdomain.PrivateContentInvalidArgument,
-				"social.private_content.friends_snapshot",
-				"recipients",
-				"contains no accepted, unblocked FRIENDS recipients",
-			)
 	}
 	return socialdomain.FriendsSnapshot{
 		Audience:         &actormodel.Audience{Kind: actormodel.Audience_FRIENDS},
@@ -1086,7 +1175,9 @@ func loadGroupSnapshot(
 	group socialdomain.GroupRecipientSnapshot,
 ) (socialdomain.FriendsSnapshot, error) {
 	const operation = "social.private_content.group_snapshot"
-	if strings.TrimSpace(group.ConversationID) == "" ||
+	if strings.TrimSpace(group.FederationID) == "" ||
+		group.FederationID != strings.TrimSpace(group.FederationID) ||
+		strings.TrimSpace(group.ConversationID) == "" ||
 		group.ConversationID != strings.TrimSpace(group.ConversationID) ||
 		group.AuthorPTID != authorPTID ||
 		group.MembershipEpoch == 0 ||
@@ -1137,13 +1228,15 @@ func loadGroupSnapshot(
 			)
 	}
 	for _, member := range group.Members {
-		if member.HomeStationPeerID != authorHomeStationPeerID {
+		remote := member.HomeStationPeerID != authorHomeStationPeerID
+		if (!remote && member.FederationID != "") ||
+			(remote && member.FederationID != group.FederationID) {
 			return socialdomain.FriendsSnapshot{},
 				socialdomain.NewPrivateContentError(
-					socialdomain.PrivateContentUnsupported,
+					socialdomain.PrivateContentConflict,
 					operation,
-					"recipient_home_station_peer_id",
-					"v1 private content requires every active Group member on the author Home Station",
+					"group_snapshot.members",
+					"must bind each remote member to the Group Federation",
 				)
 		}
 	}
@@ -1159,6 +1252,7 @@ func loadGroupSnapshot(
 
 	head := sha256.New()
 	writeSnapshotField(head, "group")
+	writeSnapshotField(head, group.FederationID)
 	writeSnapshotField(head, group.ConversationID)
 	writeSnapshotField(head, authorPTID)
 	writeSnapshotField(head, strconv.FormatUint(group.MembershipEpoch, 10))

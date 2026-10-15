@@ -2043,6 +2043,10 @@ func openSecureContentResetStore(
 	}
 	models := append(
 		dbmodel.SocialPrivateContentModels(),
+		RemotePrivateContentModels()...,
+	)
+	models = append(
+		models,
 		&dbmodel.SocialPublicPost{},
 		&dbmodel.SocialComment{},
 		&dbmodel.SocialReaction{},
