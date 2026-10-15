@@ -355,21 +355,6 @@ def load_formal_plan(path: Path) -> FormalExecutionPlan:
         closure_statuses=statuses,
         acceptance=acceptance,
     )
-
-
-def discover_active_plan(
-    root: Path,
-    *,
-    branch: str | None = None,
-    validate_workspace: bool = True,
-) -> FormalExecutionPlan:
-    del root, branch, validate_workspace
-    raise ExecutionPlanError(
-        PLAN_INPUT_REQUIRED,
-        "select a Plan explicitly; active Plan discovery is not supported",
-    )
-
-
 def changed_paths_for_plan(
     root: Path,
     plan: FormalExecutionPlan,

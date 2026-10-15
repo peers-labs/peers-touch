@@ -297,8 +297,9 @@ Scripts are evidence producers:
 - `knowledge-match.sh` finds knowledge entries that must be read and delegates
   changed-path architecture validation to the shared module-governance parser.
 - The formal execution plan schedules Acceptance Gates.
-- `acceptance-plan.py --active-plan` validates actual diff impact and projects
-  the current or completion Gate set without becoming a second plan.
+- `acceptance-plan.py` validates actual diff impact; when a Plan is explicitly
+  selected, `--execution-plan <path>` projects its closure or completion Gates
+  without becoming a second plan.
 - `acceptance-validate.py` validates acceptance structure and, with
   `--require-proven`, latest gate evidence.
 - `skill-check.sh` proves review skill structure and fixtures.

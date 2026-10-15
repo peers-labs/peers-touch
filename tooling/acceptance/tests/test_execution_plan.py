@@ -15,7 +15,6 @@ from tooling.acceptance.core.execution_plan import (
     ExecutionPlanError,
     changed_paths_for_plan,
     closure_status_is_complete,
-    discover_active_plan,
     load_formal_plan,
     workspace_id,
 )
@@ -546,15 +545,6 @@ class ExecutionPlanTest(unittest.TestCase):
         with self.assertRaises(ExecutionPlanError) as raised:
             plan.gate_ids("closure")
         self.assertEqual(raised.exception.code, PLAN_COMPLETE)
-
-    def test_active_plan_discovery_requires_an_explicit_plan(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            with self.assertRaises(ExecutionPlanError) as missing:
-                discover_active_plan(root)
-
-        self.assertEqual(missing.exception.code, PLAN_INPUT_REQUIRED)
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -48,13 +48,13 @@ class ExecutionPlanCliTests(unittest.TestCase):
         if error is not None:
             resolver = patch.object(
                 MODULE,
-                "discover_active_plan",
+                "load_formal_plan",
                 side_effect=error,
             )
         else:
             resolver = patch.object(
                 MODULE,
-                "discover_active_plan",
+                "load_formal_plan",
                 return_value=plan,
             )
         with (
@@ -66,13 +66,9 @@ class ExecutionPlanCliTests(unittest.TestCase):
             result = MODULE.main()
         return result, stdout.getvalue(), stderr.getvalue()
 
-    def test_allows_standalone_pr_when_mount_is_absent(self) -> None:
+    def test_allows_standalone_pr_without_an_explicit_plan(self) -> None:
         result, stdout, stderr = self.run_cli(
             ["--require-complete", "--allow-untracked"],
-            error=MODULE.ExecutionPlanError(
-                MODULE.PLAN_BINDING_REQUIRED,
-                "workspace has no live Plan mount",
-            ),
         )
 
         self.assertEqual(result, 0, stderr)
@@ -85,19 +81,15 @@ class ExecutionPlanCliTests(unittest.TestCase):
             },
         )
 
-    def test_mount_absence_still_fails_without_explicit_opt_in(self) -> None:
+    def test_missing_plan_fails_without_explicit_standalone_opt_in(self) -> None:
         result, _stdout, stderr = self.run_cli(
             ["--require-complete"],
-            error=MODULE.ExecutionPlanError(
-                MODULE.PLAN_BINDING_REQUIRED,
-                "workspace has no live Plan mount",
-            ),
         )
 
         self.assertEqual(result, 2)
         self.assertEqual(
             json.loads(stderr)["error"]["code"],
-            MODULE.PLAN_BINDING_REQUIRED,
+            MODULE.PLAN_INPUT_REQUIRED,
         )
 
     def test_ci_cannot_use_standalone_mode_without_explicit_plan(self) -> None:
@@ -111,12 +103,17 @@ class ExecutionPlanCliTests(unittest.TestCase):
             MODULE.PLAN_INPUT_REQUIRED,
         )
 
-    def test_mount_identity_failure_cannot_select_standalone_mode(self) -> None:
+    def test_explicit_plan_failure_cannot_select_standalone_mode(self) -> None:
         result, _stdout, stderr = self.run_cli(
-            ["--require-complete", "--allow-untracked"],
+            [
+                "--plan",
+                "plans/fixture/plan.md",
+                "--require-complete",
+                "--allow-untracked",
+            ],
             error=MODULE.ExecutionPlanError(
                 MODULE.PLAN_INVALID,
-                "mounted Plan identity is invalid",
+                "explicit Plan identity is invalid",
             ),
         )
 
@@ -128,7 +125,12 @@ class ExecutionPlanCliTests(unittest.TestCase):
 
     def test_incomplete_tracked_plan_cannot_downgrade_to_standalone(self) -> None:
         result, _stdout, stderr = self.run_cli(
-            ["--require-complete", "--allow-untracked"],
+            [
+                "--plan",
+                "plans/fixture/plan.md",
+                "--require-complete",
+                "--allow-untracked",
+            ],
             plan=tracked_plan("in_progress"),
         )
 
@@ -138,9 +140,14 @@ class ExecutionPlanCliTests(unittest.TestCase):
             MODULE.PLAN_INVALID,
         )
 
-    def test_reports_tracked_mode_for_complete_mounted_plan(self) -> None:
+    def test_reports_tracked_mode_for_complete_explicit_plan(self) -> None:
         result, stdout, stderr = self.run_cli(
-            ["--require-complete", "--allow-untracked"],
+            [
+                "--plan",
+                "plans/fixture/plan.md",
+                "--require-complete",
+                "--allow-untracked",
+            ],
             plan=tracked_plan("done"),
         )
 

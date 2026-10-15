@@ -26,6 +26,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from tooling.acceptance.core.errors import EvidenceError  # noqa: E402
+from tooling.acceptance.core.execution_plan import (  # noqa: E402
+    ExecutionPlanError,
+    changed_paths_for_plan,
+    load_formal_plan,
+)
 
 SCAN_TYPE_TO_GATE = {
     "path-absent": "chat-w11-forbidden-scan",

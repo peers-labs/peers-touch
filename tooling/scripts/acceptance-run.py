@@ -785,9 +785,7 @@ def load_plan(
         sys.executable,
         "tooling/scripts/acceptance-plan.py",
     ]
-    if execution_plan_path is None:
-        command.append("--active-plan")
-    else:
+    if execution_plan_path is not None:
         command.extend(["--execution-plan", str(execution_plan_path)])
     if execution_mode == "completion":
         command.append("--completion")
@@ -811,7 +809,7 @@ def load_plan(
         if generated.returncode != 0:
             detail = generated.stderr.strip() or generated.stdout.strip()
             raise SystemExit(
-                "active execution plan projection failed with exit code "
+                "acceptance impact projection failed with exit code "
                 f"{generated.returncode}: {detail}"
             )
         plan = json.loads(projection_path.read_text(encoding="utf-8"))

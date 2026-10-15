@@ -63,7 +63,7 @@ acceptance-cell-stop:
 	python3 tooling/scripts/acceptance-cell.py stop --cell "$(CELL)"
 
 acceptance-plan:
-	python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --active-plan $(ACCEPTANCE_PLAN_OUTPUT_ARG)
+	python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance $(ACCEPTANCE_PLAN_OUTPUT_ARG)
 
 acceptance-plan-self:
 	python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --self-check $(ACCEPTANCE_PLAN_OUTPUT_ARG)

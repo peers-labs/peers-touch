@@ -18,7 +18,6 @@ from tooling.acceptance.core.execution_plan import (  # noqa: E402
     PLAN_INVALID,
     ExecutionPlanError,
     closure_status_is_complete,
-    discover_active_plan,
     load_formal_plan,
 )
 
@@ -26,7 +25,6 @@ from tooling.acceptance.core.execution_plan import (  # noqa: E402
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--plan")
-    parser.add_argument("--branch")
     parser.add_argument("--ci", action="store_true")
     parser.add_argument("--require-complete", action="store_true")
     parser.add_argument("--allow-untracked", action="store_true")
@@ -39,13 +37,12 @@ def main() -> int:
                 PLAN_INPUT_REQUIRED,
                 "CI must provide --plan or PT_EXECUTION_PLAN; branch discovery is forbidden",
             )
-        if explicit_plan:
-            plan = load_formal_plan(Path(explicit_plan))
-        else:
-            plan = discover_active_plan(
-                REPO_ROOT,
-                branch=args.branch,
+        if not explicit_plan:
+            raise ExecutionPlanError(
+                PLAN_INPUT_REQUIRED,
+                "select a Plan explicitly with --plan or PT_EXECUTION_PLAN",
             )
+        plan = load_formal_plan(Path(explicit_plan))
         try:
             relative_plan = plan.path.relative_to(REPO_ROOT).as_posix()
         except ValueError as error:

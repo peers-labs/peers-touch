@@ -87,10 +87,20 @@ with open(sys.argv[1], encoding="utf-8") as handle:
 print("1" if result.get("tracked") is True else "0")
 PY
 )"
+explicit_plan="$(
+  python3 - "$plan_resolution" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    result = json.load(handle)
+print(result.get("plan") or "")
+PY
+)"
 if [[ "$tracked" == "1" ]]; then
   python3 tooling/scripts/acceptance-plan.py \
     --root tooling/acceptance \
-    --active-plan \
+    --execution-plan "$explicit_plan" \
     --completion \
     --output "$scope_plan" >/dev/null
 else
@@ -139,7 +149,7 @@ fi
 make acceptance-coverage-report
 if [[ "$tracked" == "1" ]]; then
   python3 tooling/scripts/acceptance-plan.py \
-    --active-plan \
+    --execution-plan "$explicit_plan" \
     --completion
 else
   python3 tooling/scripts/acceptance-plan.py \
