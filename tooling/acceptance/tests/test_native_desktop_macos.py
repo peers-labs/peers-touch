@@ -920,6 +920,40 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
 
         self.assertEqual(run.call_count, 2)
 
+    def test_process_targeted_mouse_waits_for_exact_process_focus(
+        self,
+    ) -> None:
+        process_id = 42
+        actions = (
+            MouseAction.MOVE,
+            MouseAction.LEFT_DOWN,
+            MouseAction.LEFT_UP,
+        )
+        point = (640.0, 400.0)
+        focused = NativeControlSnapshot(
+            window_count=1,
+            frontmost=True,
+            actual_frontmost_pid=process_id,
+        )
+        adapter = MacOSNativeDesktopAdapter()
+
+        with (
+            patch.object(
+                adapter,
+                "activate_and_focused_control",
+                return_value=focused,
+            ) as activate,
+            patch.object(adapter, "post_mouse") as post_mouse,
+        ):
+            adapter.post_mouse_to_process(
+                process_id,
+                actions,
+                point,
+            )
+
+        activate.assert_called_once_with(process_id)
+        post_mouse.assert_called_once_with(actions, point)
+
     def test_file_chooser_reactivates_exact_process_before_selection(
         self,
     ) -> None:

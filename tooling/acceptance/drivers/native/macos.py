@@ -1218,6 +1218,15 @@ class MacOSNativeDesktopAdapter(NativeDesktopAdapter):
             core_graphics.CGEventPost(0, event)
             core_foundation.CFRelease(event)
 
+    def post_mouse_to_process(
+        self,
+        process_id: int,
+        actions: tuple[MouseAction, ...],
+        point: tuple[float, float],
+    ) -> None:
+        self.activate_and_focused_control(process_id)
+        self.post_mouse(actions, point)
+
     def post_key(
         self,
         key: NativeKey,
