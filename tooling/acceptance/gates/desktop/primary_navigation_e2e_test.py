@@ -37,6 +37,12 @@ class DesktopPrimaryNavigationAcceptanceTests(unittest.TestCase):
                 session,
                 "cron_list_jobs",
             )
+            DesktopPrimaryNavigationGate._wait_for_app_log_text(
+                session,
+                "cron_list_jobs OK",
+                "test command completion",
+                timeout=0.1,
+            )
 
         self.assertEqual(count, 2)
 

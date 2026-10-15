@@ -327,6 +327,11 @@ class DesktopPrimaryNavigationGate(AcceptanceGate):
             raise GateError(
                 "Desktop navigation actor login did not authenticate"
             )
+        self._wait_for_app_log_text(
+            session,
+            "firstPaint:end",
+            "authenticated Native Desktop first paint",
+        )
         self._wait(
             session,
             "document.querySelectorAll('[data-pt-primary-nav]').length > 0",
@@ -366,6 +371,29 @@ class DesktopPrimaryNavigationGate(AcceptanceGate):
             f"timed out waiting for {description}: "
             f"observed {cls._app_log_invocation_count(session, command)}"
         )
+
+    @staticmethod
+    def _wait_for_app_log_text(
+        session: TauriSession,
+        expected: str,
+        description: str,
+        timeout: float = 45,
+    ) -> None:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            log_path = session.log_path
+            if (
+                log_path is not None
+                and log_path.is_file()
+                and expected
+                in log_path.read_text(
+                    encoding="utf-8",
+                    errors="replace",
+                )
+            ):
+                return
+            time.sleep(0.1)
+        raise GateError(f"timed out waiting for {description}")
 
     def _run_journey(
         self,
