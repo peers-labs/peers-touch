@@ -1316,6 +1316,7 @@ class MacOSNativeDesktopAdapter(NativeDesktopAdapter):
             raise DriverError(
                 "Native file chooser target must be staged under the user home"
             ) from error
+        self.activate_process(process_id)
         owner = self.focused_control(process_id)
         if (
             not owner.frontmost

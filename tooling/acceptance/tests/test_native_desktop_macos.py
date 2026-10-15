@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import inspect
+import json
 import subprocess
 import tempfile
 import unittest
@@ -918,6 +919,55 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
             adapter.activate_process(42)
 
         self.assertEqual(run.call_count, 2)
+
+    def test_file_chooser_reactivates_exact_process_before_selection(
+        self,
+    ) -> None:
+        process_id = 42
+        focused = NativeControlSnapshot(
+            kind="list",
+            window_count=1,
+            frontmost=True,
+            actual_frontmost_pid=process_id,
+        )
+        adapter = MacOSNativeDesktopAdapter(
+            NativeInputMode.EXCLUSIVE_NATIVE_INPUT
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "fixture.png"
+            target.write_bytes(b"fixture")
+            completed = Mock(
+                returncode=0,
+                stdout=json.dumps({
+                    "selected": True,
+                    "path": str(target.resolve()),
+                }),
+                stderr="",
+            )
+            with (
+                patch.object(adapter, "activate_process") as activate,
+                patch.object(
+                    adapter,
+                    "focused_control",
+                    side_effect=(focused, focused),
+                ),
+                patch(
+                    "tooling.acceptance.drivers.native.macos.Path.home",
+                    return_value=Path(directory),
+                ),
+                patch(
+                    "tooling.acceptance.drivers.native.macos.subprocess.run",
+                    return_value=completed,
+                ),
+            ):
+                selected = adapter.select_file_chooser_path_to_process(
+                    process_id,
+                    str(target),
+                )
+
+        activate.assert_called_once_with(process_id)
+        self.assertEqual(selected.value, str(target.resolve()))
+        self.assertEqual(selected.actual_frontmost_pid, process_id)
 
     def test_focus_wait_retries_until_exact_process_owns_focus(self) -> None:
         wrong = NativeControlSnapshot(
