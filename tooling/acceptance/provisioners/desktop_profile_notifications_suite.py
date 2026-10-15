@@ -55,7 +55,9 @@ def read_native_source_identity(
     )
     process_id = source.get("processId")
     checks = {
-        "embeddedRenderer": session.get_current_url() == EXPECTED_URL,
+        "embeddedRenderer": session.execute_script(
+            "return location.href",
+        ) == EXPECTED_URL,
         "processId": type(process_id) is int and process_id > 0 and process_id == session.process_id,
         "sourceCommit": source.get("sourceCommit") == source_commit,
         "driverSourceCommit": binary["sourceCommit"] == source_commit,

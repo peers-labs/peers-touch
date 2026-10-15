@@ -110,7 +110,7 @@ class NativeSourceIdentityTest(unittest.TestCase):
     def setUp(self) -> None:
         self.session = MagicMock()
         self.session.process_id = 321
-        self.session.get_current_url.return_value = EXPECTED_URL
+        self.session.execute_script.return_value = EXPECTED_URL
         self.binding = MagicMock()
         self.binding.binary_identity.return_value = {
             "sourceCommit": "a" * 40, "sha256": "b" * 64,
@@ -132,10 +132,18 @@ class NativeSourceIdentityTest(unittest.TestCase):
         )
 
     def test_browser_renderer_is_rejected_by_the_native_url_contract(self) -> None:
-        self.session.get_current_url.return_value = "http://localhost/"
+        self.session.execute_script.return_value = "http://localhost/"
         with patch(f"{MODULE}.call_async_harness", return_value=self.identity):
             with self.assertRaisesRegex(GateError, "embeddedRenderer"):
                 read_native_source_identity(self.session, self.binding, "a" * 40)
+
+    def test_renderer_identity_reads_the_live_page_location(self) -> None:
+        with patch(f"{MODULE}.call_async_harness", return_value=self.identity):
+            read_native_source_identity(self.session, self.binding, "a" * 40)
+        self.session.execute_script.assert_called_once_with(
+            "return location.href",
+        )
+        self.session.get_current_url.assert_not_called()
 
     def test_stale_source_wrong_process_and_wrong_binary_are_rejected(self) -> None:
         for field, value in (
