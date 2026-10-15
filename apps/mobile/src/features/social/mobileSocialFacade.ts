@@ -285,7 +285,7 @@ export function createMobileSocialFacade(
           const result = await completeCurrent(
             () => setPrivateMomentReaction(postId, reactionKind, !active),
           );
-          return result.command.state === 'REACTION_COMMITTED';
+          return result.command.state !== 'REACTION_REJECTED';
         }
         const targetFeed = feedForPost(postId);
         const transaction = targetFeed.beginReaction(postId, reactionKind);
