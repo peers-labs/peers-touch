@@ -364,6 +364,20 @@ class SimulatorSocialGateTests(unittest.TestCase):
             source.index('social-explore-sort-hot'),
         )
 
+    def test_ios_searches_use_product_submit_selectors(self) -> None:
+        source = "\n".join((
+            inspect.getsource(
+                SimulatorSocialGate._run_ios_search_profile
+            ),
+            inspect.getsource(
+                SimulatorSocialGate._run_ios_circles_publish
+            ),
+        ))
+
+        self.assertIn('social-search-submit', source)
+        self.assertIn('social-circle-member-search-submit', source)
+        self.assertNotIn('ant-input-search-button', source)
+
     def test_failed_ios_scenario_ends_before_suite_cleanup(self) -> None:
         gate = SimulatorSocialGate("ios-social-parity")
         with (

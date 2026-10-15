@@ -910,8 +910,7 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
         )
         self._click_ui(
             session,
-            '[data-acceptance-id="social-search-input"] '
-            ".ant-input-search-button",
+            '[data-acceptance-id="social-search-submit"]',
             "Social Search submit",
         )
         result_selector = (
@@ -1032,8 +1031,7 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
         )
         self._click_ui(
             sender_session,
-            '[data-acceptance-id="social-circle-member-search"] '
-            ".ant-input-search-button",
+            '[data-acceptance-id="social-circle-member-search-submit"]',
             "Circle member search submit",
         )
         candidate_selector = (

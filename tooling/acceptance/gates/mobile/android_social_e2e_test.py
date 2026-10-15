@@ -192,6 +192,20 @@ class AndroidSocialGateTests(unittest.TestCase):
             source.index('social-explore-sort-hot'),
         )
 
+    def test_android_searches_use_product_submit_selectors(self) -> None:
+        source = "\n".join((
+            inspect.getsource(
+                AndroidSocialGate._run_ios_search_profile
+            ),
+            inspect.getsource(
+                AndroidSocialGate._run_ios_circles_publish
+            ),
+        ))
+
+        self.assertIn('social-search-submit', source)
+        self.assertIn('social-circle-member-search-submit', source)
+        self.assertNotIn('ant-input-search-button', source)
+
     def test_android_social_consumes_generic_installation_evidence(self) -> None:
         source = inspect.getsource(AndroidSocialGate._start_physical_session)
 

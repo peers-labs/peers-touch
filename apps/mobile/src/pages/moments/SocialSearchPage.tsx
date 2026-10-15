@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Empty, Input, Radio, Spin, Tag, Typography } from 'antd';
+import { Button, Empty, Input, Radio, Spin, Tag, Typography } from 'antd';
 import { ArrowLeft, ChevronRight, ShieldCheck } from 'lucide-react';
 
 import { useMobileI18n } from '../../app/mobileI18n';
@@ -116,7 +116,14 @@ export function SocialSearchPage({
           data-acceptance-id="social-search-input"
           data-focus-id="social-search-input"
           placeholder={t('mobile.contacts.findPeoplePlaceholder')}
-          enterButton={t('common.action.search')}
+          enterButton={(
+            <Button
+              data-acceptance-id="social-search-submit"
+              disabled={!federationId}
+            >
+              {t('common.action.search')}
+            </Button>
+          )}
           loading={loading}
           disabled={!federationId}
           allowClear

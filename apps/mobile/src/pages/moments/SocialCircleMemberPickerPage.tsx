@@ -116,7 +116,13 @@ export function SocialCircleMemberPickerPage({
         <Input.Search
           value={query}
           data-acceptance-id="social-circle-member-search"
-          enterButton={<Search size={16} />}
+          enterButton={(
+            <Button
+              data-acceptance-id="social-circle-member-search-submit"
+              aria-label={t('mobile.social.circles.search')}
+              icon={<Search size={16} />}
+            />
+          )}
           loading={loading}
           placeholder={t('mobile.social.circles.search')}
           onChange={(event) => {
