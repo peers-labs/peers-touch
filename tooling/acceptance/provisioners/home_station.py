@@ -1868,13 +1868,20 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                         resource=f"station:{station_url}",
                     )
 
+            station_requirement = self.contract.services.get("station")
             attestation = produce_station_attestation(
                 environment_id=self.environment_id,
                 run_id=manifest.run_id,
                 service_id="station",
                 station_url=station_url,
                 profile_env=profile_env,
-                require_runtime_identity=gate_id == MESSAGE_PUBLISHING_GATE,
+                require_runtime_identity=bool(
+                    gate_id == MESSAGE_PUBLISHING_GATE
+                    or (
+                        station_requirement
+                        and station_requirement.runtime_identity_required
+                    )
+                ),
                 remote_source_identity_provider=resolve_remote_source_identity,
             )
             local_proto_digest = source_proto_digest(REPO_ROOT)

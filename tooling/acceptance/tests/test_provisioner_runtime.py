@@ -759,6 +759,84 @@ class ProvisionerBlockingTests(unittest.TestCase):
             },
         )
 
+    def test_home_station_requests_required_station_runtime_identity(self):
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "desktop-primary-navigation-native.yaml"
+        )
+        provisioner = get_provisioner(contract)
+        attestation = dataclasses.replace(
+            self._station_attestation(),
+            environment_id=contract.id,
+            runtime_identity="station-peer-id",
+        )
+        actor_ref = {
+            "artifactKind": "acceptance-artifact-ref",
+            "workspaceId": "0" * 16,
+            "gateId": "desktop-primary-navigation-e2e",
+            "runId": "20260817T000000000000Z-" + "0" * 32,
+            "path": "runtime/actors.json",
+            "sha256": "0" * 64,
+            "mediaType": "application/json",
+        }
+
+        with patch.object(
+            provisioner,
+            "_resolve_active_profile",
+            return_value=self._one_profile(),
+        ), patch.object(
+            provisioner,
+            "_git_commit",
+            return_value="abc1234",
+        ), patch.object(
+            provisioner,
+            "_git_workspace_digest",
+            return_value="clean",
+        ), patch.object(
+            provisioner,
+            "_station_ready",
+            return_value=True,
+        ), patch.object(
+            provisioner,
+            "_resolve_credentials",
+            return_value=(("auto:uuid",), {}),
+        ), patch.object(
+            provisioner,
+            "_clients",
+            return_value=(),
+        ), patch.object(
+            provisioner,
+            "acquire_profile_lease",
+        ), patch.object(
+            provisioner,
+            "acquire_remote_git_source_lease",
+        ), patch(
+            "tooling.acceptance.provisioners.home_station."
+            "produce_station_attestation",
+            return_value=attestation,
+        ) as produce_attestation, patch(
+            "tooling.acceptance.provisioners.home_station."
+            "source_proto_digest",
+            return_value="proto-digest",
+        ), patch(
+            "tooling.acceptance.provisioners.home_station."
+            "produce_actor_manifest",
+            return_value=(None, None, actor_ref),
+        ), patch.dict(
+            os.environ,
+            {"CHAT_ACCEPTANCE_RESET": "1"},
+            clear=True,
+        ):
+            manifest = provisioner.provision(
+                "desktop-primary-navigation-e2e"
+            )
+
+        self.assertEqual(manifest.state, ProvisioningState.FIXTURE_READY)
+        self.assertTrue(
+            produce_attestation.call_args.kwargs[
+                "require_runtime_identity"
+            ]
+        )
+
     def test_agent_v2_scenario_control_uses_parent_run_and_restores_station(
         self,
     ):
