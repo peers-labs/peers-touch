@@ -3212,15 +3212,15 @@ type canonicalIndexExpectation struct {
 }
 
 type postgresCanonicalIndexRow struct {
-	IndexName        string  `gorm:"column:index_name"`
-	ColumnName       *string `gorm:"column:column_name"`
-	Ordinal          int     `gorm:"column:ordinal"`
-	IsUnique         bool    `gorm:"column:is_unique"`
-	IsPrimary        bool    `gorm:"column:is_primary"`
-	IsPartial        bool    `gorm:"column:is_partial"`
-	PartialPredicate string  `gorm:"column:partial_predicate"`
-	IsValid          bool    `gorm:"column:is_valid"`
-	IsReady          bool    `gorm:"column:is_ready"`
+	IndexName                string  `gorm:"column:index_name"`
+	ColumnName               *string `gorm:"column:column_name"`
+	Ordinal                  int     `gorm:"column:ordinal"`
+	IsUnique                 bool    `gorm:"column:is_unique"`
+	IsPrimary                bool    `gorm:"column:is_primary"`
+	IsPartial                bool    `gorm:"column:is_partial"`
+	PartialPredicateApproved bool    `gorm:"column:partial_predicate_approved"`
+	IsValid                  bool    `gorm:"column:is_valid"`
+	IsReady                  bool    `gorm:"column:is_ready"`
 }
 
 func validateCanonicalPrivateContentSchema(database *gorm.DB) error {
@@ -3624,13 +3624,20 @@ SELECT
   index_definition.indisunique AS is_unique,
   index_definition.indisprimary AS is_primary,
   index_definition.indpred IS NOT NULL AS is_partial,
-  COALESCE(
-    pg_catalog.pg_get_expr(
-      index_definition.indpred,
-      index_definition.indrelid
-    ),
-    ''
-  ) AS partial_predicate,
+  CASE
+    WHEN index_definition.indpred IS NULL THEN TRUE
+    WHEN index_relation.relname = 'uidx_social_private_post_id' THEN
+      pg_catalog.pg_get_expr(
+        index_definition.indpred,
+        index_definition.indrelid
+      ) = ?
+    WHEN index_relation.relname = 'uidx_social_private_post_content' THEN
+      pg_catalog.pg_get_expr(
+        index_definition.indpred,
+        index_definition.indrelid
+      ) = ?
+    ELSE FALSE
+  END AS partial_predicate_approved,
   index_definition.indisvalid AS is_valid,
   index_definition.indisready AS is_ready
 FROM pg_catalog.pg_index AS index_definition
@@ -3652,7 +3659,11 @@ WHERE table_namespace.nspname = current_schema()
   AND table_constraint.oid IS NULL
   AND index_column.ordinality <= index_definition.indnkeyatts
 ORDER BY index_relation.relname, index_column.ordinality
-`, table).Scan(&rows).Error; err != nil {
+`,
+		canonicalPostgresPrivateIndexPredicate("post_id"),
+		canonicalPostgresPrivateIndexPredicate("content_id"),
+		table,
+	).Scan(&rows).Error; err != nil {
 		return nil, resetError(
 			ResetCodeSchemaTargetUnreviewed,
 			"inspect canonical indexes for %s: %v",
@@ -3677,10 +3688,10 @@ ORDER BY index_relation.relname, index_column.ordinality
 				row.IndexName,
 			)
 		}
-		if row.IsPartial != (row.PartialPredicate != "") {
+		if row.IsPartial && !row.PartialPredicateApproved {
 			return nil, resetError(
 				ResetCodeSchemaTargetUnreviewed,
-				"index %s.%s has inconsistent partial-index metadata",
+				"index %s.%s has an unreviewed partial predicate",
 				table,
 				row.IndexName,
 			)
@@ -3696,17 +3707,22 @@ ORDER BY index_relation.relname, index_column.ordinality
 		}
 		index.Unique = row.IsUnique
 		index.Columns = append(index.Columns, strings.ToLower(*row.ColumnName))
-		if row.PartialPredicate != "" {
-			predicate := normalizePostgresIndexPredicate(row.PartialPredicate)
-			if found && index.PartialPredicate != predicate {
+		if row.IsPartial {
+			switch row.IndexName {
+			case "uidx_social_private_post_id":
+				index.PartialPredicate =
+					canonicalPostgresPrivateIndexPredicate("post_id")
+			case "uidx_social_private_post_content":
+				index.PartialPredicate =
+					canonicalPostgresPrivateIndexPredicate("content_id")
+			default:
 				return nil, resetError(
 					ResetCodeSchemaTargetUnreviewed,
-					"index %s.%s has inconsistent partial predicates",
+					"index %s.%s is an unreviewed partial index",
 					table,
 					row.IndexName,
 				)
 			}
-			index.PartialPredicate = predicate
 		}
 		result[row.IndexName] = index
 		ordinals[row.IndexName] = row.Ordinal
@@ -3721,10 +3737,6 @@ func canonicalPostgresPrivateIndexPredicate(column string) string {
 		column,
 		column,
 	)
-}
-
-func normalizePostgresIndexPredicate(predicate string) string {
-	return strings.Join(strings.Fields(predicate), " ")
 }
 
 func primaryKeyColumns(
