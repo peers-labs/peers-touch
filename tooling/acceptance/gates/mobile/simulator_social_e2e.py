@@ -1028,14 +1028,13 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             '[data-acceptance-id="social-circle-member-picker"]',
             "Circle member picker",
         )
-        self._click_ui(
+        self._select_antd_option(
             sender_session,
             '[data-acceptance-id="social-circle-member-federation"]',
-            "Circle member Federation selector",
-        )
-        self._click_ui(
-            sender_session,
-            '[data-acceptance-id="social-circle-member-federation-option"]',
+            (
+                '[data-acceptance-id="social-circle-member-federation-option"]'
+                f'[data-federation-id="{sender.federation_id}"]'
+            ),
             "Circle member Federation option",
         )
         self._set_ui_value(
@@ -1531,32 +1530,46 @@ return node.value === value;
     def _select_antd_option(
         session: Any,
         selector: str,
-        option_index: int,
+        option_selector: str,
         label: str,
     ) -> None:
-        SimulatorSocialGate._click_ui(
-            session,
-            f"{selector} .ant-select-selector",
+        SimulatorSocialGate._wait_for_value(
+            lambda: session.execute_script(
+                """
+const owner = document.querySelector(arguments[0]);
+const select = owner?.querySelector('.ant-select-selector');
+if (!select) return null;
+select.scrollIntoView({block: 'center', inline: 'nearest'});
+select.dispatchEvent(new MouseEvent('mousedown', {
+  bubbles: true,
+  cancelable: true,
+  view: window,
+}));
+select.click();
+return true;
+""",
+                selector,
+            ),
             f"{label} selector",
         )
 
         def select() -> bool | None:
             selected = session.execute_script(
                 """
-const index = arguments[0];
+const selector = arguments[0];
 const dropdowns = Array.from(document.querySelectorAll(
   '.ant-select-dropdown:not(.ant-select-dropdown-hidden)'
 ));
 const dropdown = dropdowns.at(-1);
-const options = dropdown
-  ? Array.from(dropdown.querySelectorAll('.ant-select-item-option'))
-  : [];
-const option = options[index];
-if (!option) return null;
+const label = dropdown?.querySelector(selector);
+const option = label?.closest(
+  '[role="option"], .ant-select-item-option'
+) || label;
+if (!option || option.getAttribute('aria-disabled') === 'true') return null;
 option.click();
 return true;
 """,
-                option_index,
+                option_selector,
             )
             return True if selected is True else None
 
