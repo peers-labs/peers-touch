@@ -250,11 +250,13 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
                 return_value=("one", Path("/profile"), 0, profile),
             ),
             patch.object(provisioner, "_station_ready", return_value=True),
-            patch.object(provisioner, "acquire_profile_lease"),
-            patch.object(
+            patch.multiple(
                 provisioner,
-                "_activate_direct_station_proxy",
-                return_value="https://station-proxy.example",
+                acquire_profile_lease=Mock(),
+                _activate_direct_station_proxy=Mock(
+                    return_value="https://station-proxy.example"
+                ),
+                _prepare_native_relay_fixture=Mock(),
             ),
             patch(
                 "tooling.acceptance.provisioners.station_access_relay_role."
@@ -387,11 +389,13 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
                 return_value=("one", Path("/profile"), 0, profile),
             ),
             patch.object(provisioner, "_station_ready", return_value=True),
-            patch.object(provisioner, "acquire_profile_lease"),
-            patch.object(
+            patch.multiple(
                 provisioner,
-                "_activate_direct_station_proxy",
-                return_value="https://station-proxy.example",
+                acquire_profile_lease=Mock(),
+                _activate_direct_station_proxy=Mock(
+                    return_value="https://station-proxy.example"
+                ),
+                _prepare_native_relay_fixture=Mock(),
             ),
             patch(
                 "tooling.acceptance.provisioners.station_access_relay_role."

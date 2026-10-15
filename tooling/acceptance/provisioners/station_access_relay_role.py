@@ -59,6 +59,7 @@ from tooling.acceptance.provisioners.posix_service_runtime import (
     PosixServiceRuntimeConfig,
     audit_posix_relay_security,
     inspect_posix_runtime,
+    mint_posix_relay_operator_token,
     resolve_posix_relay_trust_anchor,
 )
 ROLE_SECURITY_GATE_ID = "relay-role-security-contract"
@@ -783,6 +784,63 @@ def _relay_peer_identity(
     return peer_id
 
 
+def _json_request(
+    url: str,
+    *,
+    method: str,
+    body: Mapping[str, object] | None = None,
+    token: str = "",
+    trust_anchor: bytes | None = None,
+) -> tuple[int, dict[str, Any]]:
+    headers = {"Accept": "application/json"}
+    payload: bytes | None = None
+    if body is not None:
+        headers["Content-Type"] = "application/json"
+        payload = json.dumps(dict(body), separators=(",", ":")).encode(
+            "utf-8"
+        )
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    request = urllib.request.Request(
+        url,
+        data=payload,
+        headers=headers,
+        method=method,
+    )
+    context: ssl.SSLContext | None = None
+    if trust_anchor is not None:
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.minimum_version = ssl.TLSVersion.TLSv1_3
+        context.check_hostname = True
+        context.verify_mode = ssl.CERT_REQUIRED
+        context.load_verify_locations(cadata=trust_anchor.decode("ascii"))
+    try:
+        with urllib.request.urlopen(
+            request,
+            context=context,
+            timeout=30,
+        ) as response:
+            raw = response.read(1 << 20)
+            status = response.status
+    except urllib.error.HTTPError as error:
+        raw = error.read(1 << 20)
+        status = error.code
+    try:
+        value = json.loads(raw.decode("utf-8")) if raw else {}
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise BlockedError(
+            reason=f"Runtime API returned invalid JSON at {url}",
+            resource="relay-attachment-fixture",
+        ) from error
+    if not isinstance(value, dict):
+        raise BlockedError(
+            reason=f"Runtime API returned no object at {url}",
+            resource="relay-attachment-fixture",
+        )
+    data = value.get("data")
+    return status, dict(data) if isinstance(data, Mapping) else value
+
+
 class StationAccessRelayRoleProvisioner(EnvironmentProvisioner):
     """Attach Station Access Gates to existing Station and Relay runtimes."""
 
@@ -1016,6 +1074,323 @@ server {
             time.sleep(1)
         raise RuntimeError("Station did not recover after origin restoration")
 
+    def _install_station_relay_ca(
+        self,
+        config: PosixServiceRuntimeConfig,
+        trust_anchor: bytes,
+    ) -> None:
+        status = inspect_posix_runtime(config)
+        container = str(status["containerId"])
+        transport = config.transport()
+        home = self._remote_home(config)
+        remote_certificate = (
+            f"{home}/.peers-touch/runtime/"
+            f"ncp-relay-ca-{self._manifest.run_id}.crt"
+        )
+        container_certificate = (
+            "/usr/local/share/ca-certificates/"
+            "ncp-relay-acceptance.crt"
+        )
+        transport.run_argv(
+            ("sh", "-lc", f"cat > {remote_certificate}"),
+            timeout=15,
+            check=True,
+            input_text=trust_anchor.decode("ascii"),
+        )
+        try:
+            transport.run_argv(
+                (
+                    "docker",
+                    "cp",
+                    remote_certificate,
+                    f"{container}:{container_certificate}",
+                ),
+                timeout=30,
+                check=True,
+            )
+            transport.run_argv(
+                (
+                    "docker",
+                    "exec",
+                    container,
+                    "update-ca-certificates",
+                ),
+                timeout=60,
+                check=True,
+            )
+        finally:
+            transport.run_argv(
+                ("rm", "-f", remote_certificate),
+                timeout=15,
+                check=False,
+            )
+
+        def remove_certificate() -> None:
+            current = inspect_posix_runtime(config)
+            current_container = str(current["containerId"])
+            current_transport = config.transport()
+            current_transport.run_argv(
+                (
+                    "docker",
+                    "exec",
+                    current_container,
+                    "rm",
+                    "-f",
+                    container_certificate,
+                ),
+                timeout=30,
+                check=True,
+            )
+            current_transport.run_argv(
+                (
+                    "docker",
+                    "exec",
+                    current_container,
+                    "update-ca-certificates",
+                ),
+                timeout=60,
+                check=True,
+            )
+
+        self.register_cleanup(
+            f"station-relay-ca:{config.environment_name}",
+            remove_certificate,
+        )
+
+    @staticmethod
+    def _dashboard_token(station_url: str) -> str:
+        status, result = _json_request(
+            station_url.rstrip("/") + "/dashboard/api/auth/login",
+            method="POST",
+            body={"username": "peers", "password": "peers"},
+        )
+        token = str(result.get("token") or "")
+        if status != 200 or token.count(".") != 2:
+            raise BlockedError(
+                reason="Station Dashboard fixture login failed",
+                resource="relay-attachment-fixture",
+            )
+        return token
+
+    @staticmethod
+    def _attachment_items(
+        station_url: str,
+        dashboard_token: str,
+    ) -> list[dict[str, Any]]:
+        status, result = _json_request(
+            station_url.rstrip("/")
+            + "/dashboard/api/relay/attachments",
+            method="GET",
+            token=dashboard_token,
+        )
+        items = result.get("items")
+        if status != 200 or not isinstance(items, list) or any(
+            not isinstance(item, Mapping) for item in items
+        ):
+            raise BlockedError(
+                reason="Station Relay attachment readback is invalid",
+                resource="relay-attachment-fixture",
+            )
+        return [dict(item) for item in items]
+
+    @staticmethod
+    def _wait_attachment_state(
+        station_url: str,
+        dashboard_token: str,
+        relay_peer_id: str,
+        *,
+        present: bool,
+        timeout_seconds: float = 120,
+    ) -> dict[str, Any] | None:
+        deadline = time.monotonic() + timeout_seconds
+        latest: dict[str, Any] | None = None
+        while time.monotonic() < deadline:
+            items = StationAccessRelayRoleProvisioner._attachment_items(
+                station_url,
+                dashboard_token,
+            )
+            latest = next(
+                (
+                    item
+                    for item in items
+                    if item.get("relay_peer_id") == relay_peer_id
+                ),
+                None,
+            )
+            if (
+                present
+                and latest is not None
+                and latest.get("state") == "active"
+                and latest.get("enabled") is True
+            ):
+                return latest
+            if not present and latest is None:
+                return None
+            time.sleep(1)
+        raise BlockedError(
+            reason=(
+                "Station Relay attachment did not converge: "
+                f"relay={relay_peer_id} present={present} latest={latest}"
+            ),
+            resource="relay-attachment-fixture",
+        )
+
+    def _detach_fixture_relay(
+        self,
+        station_url: str,
+        relay_peer_id: str,
+    ) -> None:
+        dashboard_token = self._dashboard_token(station_url)
+        encoded = urllib.parse.quote(relay_peer_id, safe="")
+        status, result = _json_request(
+            station_url.rstrip("/")
+            + f"/dashboard/api/relay/attachments/{encoded}",
+            method="DELETE",
+            token=dashboard_token,
+        )
+        if status != 200:
+            raise RuntimeError(
+                "Station Relay attachment cleanup failed: "
+                f"HTTP {status} {result}"
+            )
+        if result.get("cleanup_pending") is True:
+            status, result = _json_request(
+                station_url.rstrip("/")
+                + f"/dashboard/api/relay/attachments/{encoded}/retry",
+                method="POST",
+                body={},
+                token=dashboard_token,
+            )
+            if status != 200:
+                raise RuntimeError(
+                    "Station Relay attachment cleanup retry failed: "
+                    f"HTTP {status} {result}"
+                )
+        self._wait_attachment_state(
+            station_url,
+            dashboard_token,
+            relay_peer_id,
+            present=False,
+        )
+
+    def _ensure_fixture_relay(
+        self,
+        *,
+        manifest: RuntimeManifest,
+        station_url: str,
+        relay_url: str,
+        relay_peer_id: str,
+        relay_config: PosixServiceRuntimeConfig,
+        trust_anchor: bytes,
+    ) -> None:
+        dashboard_token = self._dashboard_token(station_url)
+        current = next(
+            (
+                item
+                for item in self._attachment_items(
+                    station_url,
+                    dashboard_token,
+                )
+                if item.get("relay_peer_id") == relay_peer_id
+            ),
+            None,
+        )
+        if current is not None:
+            if current.get("state") != "active":
+                encoded = urllib.parse.quote(relay_peer_id, safe="")
+                _json_request(
+                    station_url.rstrip("/")
+                    + f"/dashboard/api/relay/attachments/{encoded}/retry",
+                    method="POST",
+                    body={},
+                    token=dashboard_token,
+                )
+                self._wait_attachment_state(
+                    station_url,
+                    dashboard_token,
+                    relay_peer_id,
+                    present=True,
+                )
+            return
+
+        operator_token = mint_posix_relay_operator_token(relay_config)
+        station_peer_id = read_service_runtime_identity(station_url)
+        status, created = _json_request(
+            relay_url.rstrip("/") + "/api/v1/relay/invite",
+            method="POST",
+            body={
+                "station_peer_id": station_peer_id,
+                "label": f"ncp-{manifest.run_id}",
+                "max_clients": 8,
+                "bandwidth_limit": 1 << 30,
+            },
+            token=operator_token,
+            trust_anchor=trust_anchor,
+        )
+        invitation = created.get("invitation")
+        if (
+            status != 200
+            or not isinstance(invitation, Mapping)
+            or invitation.get("relay_peer_id") != relay_peer_id
+            or not invitation.get("invite_token")
+        ):
+            raise BlockedError(
+                reason="Relay invitation fixture is invalid",
+                resource="relay-attachment-fixture",
+            )
+        status, result = _json_request(
+            station_url.rstrip("/")
+            + "/dashboard/api/relay/attachments",
+            method="POST",
+            body=dict(invitation),
+            token=dashboard_token,
+        )
+        if status != 200:
+            raise BlockedError(
+                reason=(
+                    "Station Relay attachment fixture import failed: "
+                    f"HTTP {status} {result}"
+                ),
+                resource="relay-attachment-fixture",
+            )
+        self._wait_attachment_state(
+            station_url,
+            dashboard_token,
+            relay_peer_id,
+            present=True,
+        )
+        self.register_cleanup(
+            f"relay-attachment:{relay_peer_id}",
+            lambda: self._detach_fixture_relay(
+                station_url,
+                relay_peer_id,
+            ),
+        )
+
+    def _prepare_native_relay_fixture(
+        self,
+        *,
+        manifest: RuntimeManifest,
+        station_config: PosixServiceRuntimeConfig,
+        station_url: str,
+        relay_url: str,
+        relay_peer_id: str,
+        relay_config: PosixServiceRuntimeConfig,
+        trust_anchor: bytes,
+    ) -> None:
+        self._install_station_relay_ca(
+            station_config,
+            trust_anchor,
+        )
+        self._ensure_fixture_relay(
+            manifest=manifest,
+            station_url=station_url,
+            relay_url=relay_url,
+            relay_peer_id=relay_peer_id,
+            relay_config=relay_config,
+            trust_anchor=trust_anchor,
+        )
+
     def provision(self, gate_id: str) -> RuntimeManifest:
         self._manifest = self._new_base_manifest(gate_id)
         try:
@@ -1151,6 +1526,15 @@ server {
                     manifest=manifest,
                     station_config=station_config,
                     station_url=station_url,
+                    relay_config=relay_config,
+                    trust_anchor=trust_anchor,
+                )
+                self._prepare_native_relay_fixture(
+                    manifest=manifest,
+                    station_config=station_config,
+                    station_url=station_url,
+                    relay_url=relay_url,
+                    relay_peer_id=relay_peer_id,
                     relay_config=relay_config,
                     trust_anchor=trust_anchor,
                 )
