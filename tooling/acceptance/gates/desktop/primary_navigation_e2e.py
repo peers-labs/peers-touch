@@ -329,8 +329,8 @@ class DesktopPrimaryNavigationGate(AcceptanceGate):
             )
         self._wait_for_app_log_text(
             session,
-            "firstPaint:end",
-            "authenticated Native Desktop first paint",
+            "pages:prewarm:end",
+            "authenticated Native Desktop page prewarm",
         )
         self._wait(
             session,
