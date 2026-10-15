@@ -7,7 +7,6 @@ use crate::application::session_resolver;
 use crate::contracts::StubPayload;
 use crate::error::AppResult;
 use crate::error::ErrorCode;
-use crate::infrastructure::station_client;
 use crate::state::AppState;
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
@@ -23,7 +22,7 @@ pub fn agent_growth_snapshot(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    app::agent_growth_snapshot(input, &token)
+    app::agent_growth_snapshot(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -36,7 +35,7 @@ pub fn agent_memory_list(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    app::agent_memory_list(input, &token)
+    app::agent_memory_list(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -49,7 +48,7 @@ pub fn agent_skill_list(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    app::agent_skill_list(input, &token)
+    app::agent_skill_list(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -62,7 +61,7 @@ pub fn agent_submit_feedback(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    app::agent_submit_feedback(input, &token)
+    app::agent_submit_feedback(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -75,7 +74,7 @@ pub fn agent_list_turn_feedback(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    app::agent_list_turn_feedback(input, &token)
+    app::agent_list_turn_feedback(state.station.client(), input, &token)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -98,7 +97,7 @@ pub fn agent_quick_completion(
         "agent_id": input.agent_id,
         "prompt": input.prompt,
     });
-    match station_client::request_json_auth(
+    match state.station.client().request_json_auth(
         Method::POST,
         "/agent/quick-completion",
         &token,

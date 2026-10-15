@@ -23,8 +23,7 @@ It does not perform that owner's work.
 God View owns:
 
 - intent classification;
-- explicit tracked versus no-Plan request policy;
-- tracked versus standalone determination;
+- explicit Plan versus no-Plan request policy;
 - stage and specialist routing;
 - ambiguity detection;
 - one concise explanation of the selected route.
@@ -33,8 +32,7 @@ God View does not:
 
 - edit repository files;
 - create or amend plans;
-- update workspace active-work, Task state, `session.json`, or evidence;
-- publish Development declarations or acquire runtime resources;
+- update optional task progress or evidence;
 - build Ready/Parked queues or choose concurrency lanes;
 - execute implementation, verification, Acceptance, commit, or delivery;
 - reproduce the operating procedure of a dispatched Skill.
@@ -64,11 +62,8 @@ whose owner is already obvious.
 2. Resolve explicit user Plan policy before task-size or stage classification.
    `no plan`, `不要 plan`, and equivalent instructions select standalone work
    and forbid PLAN analysis/persistence for the current request.
-3. Resolve the workspace's stable PlanMount and current snapshot. Ignore
-   other active Plans synchronized into the same repository or PR; never
-   replace an existing binding. Explicit no-Plan intent plus a live mount
-   returns `PLAN_POLICY_CONFLICT`; it does not silently unmount or downgrade
-   tracked work.
+3. If a Plan path or taskId is explicit, preserve that selection. Never infer
+   either from branch, mtime, nearby files, old active-work, or chat history.
 4. Classify intent:
    - `STATUS_OR_HANDOFF`
    - `NON_TRIVIAL_MUTATION`
@@ -108,13 +103,12 @@ before the first write or runtime acquisition.
 ## Resume And Status
 
 - `status` routes to `pt-context-anchor`; God View does not reconstruct state
-  from chat or inspect plan internals itself.
+  from chat.
 - `continue` or `resume` routes to `pt-dev-workflow`; the workflow verifies
-  physical identity, resolves durable state, and resumes the authorized Plan
-  Run across dependency-ready Tasks and internal review gates.
+  current source and resumes the explicit request or selected optional task.
 - A resume must not pause merely to print the Anchor. The workflow emits the
   read-only projection at the next meaningful report boundary.
-- Ambiguous tracked work returns `TRACKED_WORK_SELECTION_REQUIRED` with the
+- Ambiguous task progress returns `TASK_SELECTION_REQUIRED` with the
   minimum identifiers needed to choose.
 
 ## Stage Routing
@@ -153,7 +147,7 @@ After dispatch, the owning Skill controls all further output.
 - Exactly one primary owner is selected.
 - Explicit no-Plan intent is preserved through dispatch.
 - No repository or durable workflow state was mutated by God View.
-- No queue, plan, Task, Session, Acceptance, or delivery procedure was copied
+- No queue, task, Acceptance, or delivery procedure was copied
   into the facade.
 - Resume/status routing does not use chat history as truth.
 - Worktree ambiguity is surfaced, never guessed.

@@ -222,14 +222,10 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             )
             if suite_report is not None:
                 suite_report_ref = artifacts.write_json(
-                    f"mobile-simulator-social/{self.scenario}/"
+                    "mobile-simulator-social/ios-social-parity/"
                     "suite-runtime.json",
                     suite_report,
-                    role=(
-                        "mobile-social-ios-suite-runtime"
-                        if self.scenario == "ios-social-parity"
-                        else "mobile-simulator-moments-suite-runtime"
-                    ),
+                    role="mobile-social-ios-suite-runtime",
                 )
                 result["suiteRuntime"] = {
                     "report": (
@@ -3543,7 +3539,6 @@ return {
             post_id,
             text,
         )
-
         reactions = receiver_session.call_action(
             "moments.react",
             {"postId": post_id, "reactionKind": 1, "active": True},
@@ -3564,7 +3559,6 @@ return {
             comment.get("commentId"),
             "Moment comment ID",
         )
-
         reply = self._mapping(
             sender_session.call_action(
                 "moments.comment",

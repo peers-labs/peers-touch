@@ -15,20 +15,30 @@ import {
   type StationLoginInput,
 } from '../features/auth/authSession';
 import { useAuthStore } from '../features/auth/authStore';
-import { probeStation, verifyStationIdentity } from '../features/station/stationConnection';
+import {
+  activateAndVerifyStationRoute,
+  discoverStationConnection,
+  verifyBoundStationRoute,
+} from '../features/station/stationConnection';
 import {
   activateStationEntry,
+  activeStationRoute,
   activeStationEntry,
-  addStationEntry,
-  buildStationUrl,
+  addStationRoute,
+  buildStationAccessInput,
   removeStationEntry,
-  replaceStationEntryIdentity,
   requireMatchingStationIdentity,
   stationEntryAtUrl,
+  stationRoutes,
   updateStationEntryStatus,
   type MobileStationEntry,
+  type MobileStationRouteCandidate,
   type StoredStationRegistry,
 } from '../features/station/stationRegistry';
+import {
+  removeStationRouteBinding,
+  type NativeStationRouteCandidate,
+} from '../services/mobileCommands';
 import {
   applyAccessGateRuntimeResult,
   cancelAccessAttemptForActiveStation,
@@ -50,6 +60,7 @@ import { activateNativeSessionRuntime, logoutSessionRuntime } from './sessionRun
 import {
   readStationRegistryProjection,
   replaceStationRegistryProjection,
+  selectStationRouteRuntime,
   subscribeStationRegistryProjection,
   updateStationRegistryProjection,
 } from './stationRuntime';
@@ -71,6 +82,7 @@ export interface MobileEntryProjection {
   readonly rememberedAccounts: RememberedLoginAccount[];
   readonly pendingScopeExit: EntryScopeExitProjection | null;
   readonly pendingIdentityReplacement: MobileStationEntry | null;
+  readonly pendingRouteChoices: readonly NativeStationRouteCandidate[];
 }
 
 /**
@@ -87,6 +99,7 @@ export function createMobileEntryRuntime() {
     rememberedAccounts: [],
     pendingScopeExit: null,
     pendingIdentityReplacement: null,
+    pendingRouteChoices: [],
   };
   const listeners = new Set<() => void>();
   const verifiedSelectionKeys = new Set<string>();
@@ -218,7 +231,10 @@ export function createMobileEntryRuntime() {
   }
 
   async function probeEntry(entry: MobileStationEntry, revision: number) {
-    const key = `${entry.stationPeerId}\u0000${entry.url}`;
+    const route = activeStationRoute(entry);
+    const key = route
+      ? `${entry.stationPeerId}\u0000${route.routeId}\u0000${entry.routeRevision ?? 1}`
+      : `${entry.stationPeerId}\u0000missing`;
     if (verifiedSelectionKeys.has(key)) return;
     verifiedSelectionKeys.add(key);
     publish({
@@ -227,15 +243,18 @@ export function createMobileEntryRuntime() {
     });
     let online = false;
     let checkedAt = Date.now();
-    let label: string | undefined;
     try {
-      const probe = await probeStation(entry.url);
-      checkedAt = probe.checkedAt;
-      label = probe.label;
-      if (probe.online) {
-        const identity = await verifyStationIdentity(entry.url);
-        online = identity.stationPeerId === entry.stationPeerId;
-      }
+      if (!route) throw new Error('mobile.launch.stationRouteUnavailable');
+      const identity = await verifyBoundStationRoute({
+        stationPeerId: entry.stationPeerId,
+        routeId: route.routeId,
+        routeGeneration: route.routeGeneration,
+        routeRevision: entry.routeRevision ?? 1,
+        sourceRef: route.sourceRef,
+        endpointOrigin: route.endpointOrigin,
+      });
+      checkedAt = identity.verifiedAt;
+      online = identity.stationPeerId === entry.stationPeerId;
     } catch {
       online = false;
     }
@@ -245,7 +264,7 @@ export function createMobileEntryRuntime() {
         candidate.stationPeerId === entry.stationPeerId && candidate.url === entry.url
       ));
       return currentEntry
-        ? updateStationEntryStatus(current, entry.stationPeerId, { checkedAt, label, online })
+        ? updateStationEntryStatus(current, entry.stationPeerId, { checkedAt, online })
         : current;
     }).catch((error: unknown) => {
       publish({ stationError: errorKey(error, 'mobile.launch.stationUnavailable') });
@@ -296,6 +315,19 @@ export function createMobileEntryRuntime() {
     }
   }
 
+  async function verifyStationEntry(station: MobileStationEntry) {
+    const route = activeStationRoute(station);
+    if (!route) throw new Error('mobile.launch.stationRouteUnavailable');
+    return verifyBoundStationRoute({
+      stationPeerId: station.stationPeerId,
+      routeId: route.routeId,
+      routeGeneration: route.routeGeneration,
+      routeRevision: station.routeRevision ?? 1,
+      sourceRef: route.sourceRef,
+      endpointOrigin: route.endpointOrigin,
+    });
+  }
+
   async function startAccessGateChainFor(station: MobileStationEntry) {
     const requestRevision = ++accessRevision;
     const kernel = getMobileLifecycleKernel();
@@ -305,7 +337,7 @@ export function createMobileEntryRuntime() {
     auth.setError(null);
     let observedStationPeerId: string | null = null;
     try {
-      const verified = await verifyStationIdentity(station.url);
+      const verified = await verifyStationEntry(station);
       observedStationPeerId = verified.stationPeerId;
       requireMatchingStationIdentity(station, verified.stationPeerId);
       if (requestRevision !== accessRevision) return;
@@ -383,43 +415,159 @@ export function createMobileEntryRuntime() {
     }
   }
 
-  async function addStation(stationUrl: string): Promise<boolean> {
+  async function restorePreviousRoute(
+    registry: StoredStationRegistry,
+    rejectedRoute: NativeStationRouteCandidate,
+  ): Promise<void> {
+    const previousStation = activeStationEntry(registry);
+    const previousRoute = previousStation
+      ? activeStationRoute(previousStation)
+      : null;
+    if (previousStation && previousRoute) {
+      await verifyBoundStationRoute({
+        stationPeerId: previousStation.stationPeerId,
+        routeId: previousRoute.routeId,
+        routeGeneration: previousRoute.routeGeneration,
+        routeRevision: previousStation.routeRevision ?? 1,
+        sourceRef: previousRoute.sourceRef,
+        endpointOrigin: previousRoute.endpointOrigin,
+      });
+      return;
+    }
+    await removeStationRouteBinding({
+      stationPeerId: rejectedRoute.stationPeerId,
+      routeId: rejectedRoute.routeId,
+      sourceRef: rejectedRoute.sourceRef,
+    });
+  }
+
+  async function addDiscoveredRoute(
+    route: NativeStationRouteCandidate,
+  ): Promise<boolean> {
+    const current = await readStationRegistryProjection();
+    const existing = current.entries.find(
+      (entry) => entry.stationPeerId === route.stationPeerId,
+    );
+    const nextRevision = existing
+      ? (existing.routeRevision ?? 1) + (
+        activeStationRoute(existing)?.routeId === route.routeId ? 0 : 1
+      )
+      : 1;
+    const identity = await activateAndVerifyStationRoute(
+      route,
+      nextRevision,
+    );
+    const input = {
+      identity: {
+        stationPeerId: identity.stationPeerId,
+        url: identity.canonicalOrigin,
+      },
+      stationRootPublicKey: route.stationRootPublicKey,
+      route,
+    };
+    let next = addStationRoute(current, input, {
+      checkedAt: identity.verifiedAt,
+      online: true,
+    });
+    if (!next.ok) {
+      const conflictingStation = route.routeType === 'direct'
+        ? stationEntryAtUrl(current, route.endpointOrigin)
+        : null;
+      if (
+        next.error !== 'mobile.launch.stationIdentityMismatch'
+        || !conflictingStation
+        || !await confirmStationIdentityReplacement(conflictingStation)
+      ) {
+        await restorePreviousRoute(current, route);
+        throw new Error(next.error);
+      }
+      const previousRoutes = stationRoutes(conflictingStation);
+      next = addStationRoute(
+        removeStationEntry(current, conflictingStation.stationPeerId),
+        input,
+        {
+          checkedAt: identity.verifiedAt,
+          online: true,
+        },
+      );
+      if (!next.ok) {
+        await restorePreviousRoute(current, route);
+        throw new Error(next.error);
+      }
+      try {
+        await commitStationScope(next.registry);
+      } catch (error) {
+        await restorePreviousRoute(current, route);
+        throw error;
+      }
+      await Promise.all(previousRoutes.map((previousRoute) => (
+        removeStationRouteBinding({
+          stationPeerId: conflictingStation.stationPeerId,
+          routeId: previousRoute.routeId,
+          sourceRef: previousRoute.sourceRef,
+        })
+      )));
+      return true;
+    }
+    try {
+      await commitStationScope(next.registry);
+    } catch (error) {
+      await restorePreviousRoute(current, route);
+      throw error;
+    }
+    verifiedSelectionKeys.add(
+      `${identity.stationPeerId}\u0000${route.routeId}\u0000${nextRevision}`,
+    );
+    publish({
+      checkedStationUrls: [
+        ...new Set([
+          ...snapshot.checkedStationUrls,
+          identity.canonicalOrigin,
+        ]),
+      ],
+      stationError: null,
+    });
+    return true;
+  }
+
+  async function addStation(stationInput: string): Promise<boolean> {
     if (snapshot.stationChecking) return false;
-    const normalizedUrl = buildStationUrl(stationUrl);
-    if (!normalizedUrl) {
+    const normalizedInput = buildStationAccessInput(stationInput);
+    if (!normalizedInput) {
       publish({ stationError: 'mobile.launch.validAddressHint' });
       return false;
     }
     publish({ stationChecking: true, stationError: null });
     try {
-      const probe = await probeStation(normalizedUrl);
-      if (!probe.online) throw new Error(probe.error ?? 'mobile.launch.stationUnavailable');
-      const identity = await verifyStationIdentity(normalizedUrl);
-      const current = await readStationRegistryProjection();
-      let next = addStationEntry(
-        current,
-        { stationPeerId: identity.stationPeerId, url: normalizedUrl },
-        { checkedAt: probe.checkedAt, label: probe.label, online: true },
-        identity.identityVerified,
-      );
-      if (!next.ok) {
-        const conflictingStation = stationEntryAtUrl(current, normalizedUrl);
-        if (
-          next.error !== 'mobile.launch.stationIdentityMismatch'
-          || !conflictingStation
-          || !await confirmStationIdentityReplacement(conflictingStation)
-        ) throw new Error(next.error);
-        next = replaceStationEntryIdentity(
-          await readStationRegistryProjection(), conflictingStation.stationPeerId,
-          { stationPeerId: identity.stationPeerId, url: normalizedUrl },
-          { checkedAt: probe.checkedAt, label: probe.label, online: true },
-        );
+      const discovery = await discoverStationConnection(normalizedInput);
+      if (discovery.routes.length > 1) {
+        publish({ pendingRouteChoices: discovery.routes });
+        return true;
       }
-      if (!next.ok) throw new Error(next.error);
-      await commitStationScope(next.registry);
-      return true;
+      return await addDiscoveredRoute(discovery.routes[0]);
     } catch (error) {
       publish({ stationError: errorKey(error, 'mobile.launch.stationUnavailable') });
+      return false;
+    } finally {
+      publish({ stationChecking: false });
+    }
+  }
+
+  async function chooseDiscoveredRoute(
+    route: NativeStationRouteCandidate,
+  ): Promise<boolean> {
+    if (snapshot.stationChecking) return false;
+    publish({
+      pendingRouteChoices: [],
+      stationChecking: true,
+      stationError: null,
+    });
+    try {
+      return await addDiscoveredRoute(route);
+    } catch (error) {
+      publish({
+        stationError: errorKey(error, 'mobile.launch.stationUnavailable'),
+      });
       return false;
     } finally {
       publish({ stationChecking: false });
@@ -432,31 +580,24 @@ export function createMobileEntryRuntime() {
     if (!station) return;
     publish({ stationChecking: true, stationError: null });
     try {
-      const probe = await probeStation(station.url);
-      publish({ checkedStationUrls: [...new Set([...snapshot.checkedStationUrls, station.url])] });
-      if (!probe.online) throw new Error(probe.error ?? 'mobile.launch.stationUnavailable');
-      const identity = await verifyStationIdentity(station.url);
-      let current = await readStationRegistryProjection();
+      const identity = await verifyStationEntry(station);
+      publish({
+        checkedStationUrls: [
+          ...new Set([...snapshot.checkedStationUrls, station.url]),
+        ],
+      });
+      const current = await readStationRegistryProjection();
       if (current.activeStationPeerId !== station.stationPeerId) return;
-      let verifiedStation = station;
-      if (identity.stationPeerId !== station.stationPeerId) {
-        if (!await confirmStationIdentityReplacement(station)) return;
-        const replacement = replaceStationEntryIdentity(
-          await readStationRegistryProjection(), station.stationPeerId,
-          { stationPeerId: identity.stationPeerId, url: station.url },
-          { checkedAt: probe.checkedAt, label: probe.label, online: true },
-        );
-        if (!replacement.ok) throw new Error(replacement.error);
-        await commitStationScope(replacement.registry);
-        current = replacement.registry;
-        verifiedStation = activeStationEntry(current)!;
-      } else {
-        requireMatchingStationIdentity(station, identity.stationPeerId);
-      }
-      const next = activateStationEntry(current, verifiedStation.stationPeerId, {
-        checkedAt: probe.checkedAt, label: probe.label, online: true,
+      requireMatchingStationIdentity(station, identity.stationPeerId);
+      const next = activateStationEntry(current, station.stationPeerId, {
+        checkedAt: identity.verifiedAt,
+        online: true,
       });
       await replaceStationRegistryProjection(next);
+      const verifiedStation = activeStationEntry(next);
+      if (!verifiedStation) {
+        throw new Error('mobile.launch.stationIdentityInvalid');
+      }
       await startAccessGateChainFor(verifiedStation);
     } catch (error) {
       publish({ stationError: errorKey(error, 'mobile.launch.stationUnavailable') });
@@ -482,7 +623,7 @@ export function createMobileEntryRuntime() {
     if (!station || station.stationPeerId !== expectedStationPeerId) {
       throw new Error('mobile.launch.stationIdentityMismatch');
     }
-    const verified = await verifyStationIdentity(station.url);
+    const verified = await verifyStationEntry(station);
     requireMatchingStationIdentity(station, verified.stationPeerId);
     await getMobileLifecycleKernel().transitionScope(
       'revocation', logoutSessionRuntime, { draftDisposition: 'retain' },
@@ -493,6 +634,10 @@ export function createMobileEntryRuntime() {
   const actions = {
     reAuthenticatePin: reauthenticateStation,
     addStation,
+    chooseDiscoveredRoute,
+    cancelRouteChoice() {
+      publish({ pendingRouteChoices: [] });
+    },
     continueStation,
     showStationSelection,
     resolveStationIdentityReplacement,
@@ -504,9 +649,29 @@ export function createMobileEntryRuntime() {
       publish({ stationError: null });
       await commitStationScope(activateStationEntry(await readStationRegistryProjection(), stationPeerId));
     },
+    async selectStationRoute(
+      stationPeerId: string,
+      route: MobileStationRouteCandidate,
+    ) {
+      publish({ stationError: null });
+      await selectStationRouteRuntime(stationPeerId, route.routeId);
+    },
     async removeStation(stationPeerId: string) {
       publish({ stationError: null });
-      await commitStationScope(removeStationEntry(await readStationRegistryProjection(), stationPeerId));
+      const current = await readStationRegistryProjection();
+      const removing = current.entries.find(
+        (entry) => entry.stationPeerId === stationPeerId,
+      );
+      const next = removeStationEntry(current, stationPeerId);
+      if (next === current) return;
+      await commitStationScope(next);
+      await Promise.all((removing ? stationRoutes(removing) : []).map((route) => (
+        removeStationRouteBinding({
+          stationPeerId,
+          routeId: route.routeId,
+          sourceRef: route.sourceRef,
+        })
+      )));
     },
     login(input: Omit<StationLoginInput, 'stationPeerId' | 'stationUrl'>) {
       return submitGate(
@@ -569,9 +734,7 @@ export function createMobileEntryRuntime() {
       } else {
         const station = await selectedStation();
         if (!station) throw new Error('mobile.auth.activeStationRequired');
-        const probe = await probeStation(station.url);
-        if (!probe.online) throw new Error('mobile.launch.stationUnavailable');
-        const verified = await verifyStationIdentity(station.url);
+        const verified = await verifyStationEntry(station);
         requireMatchingStationIdentity(station, verified.stationPeerId);
         await kernel.restartRuntimeGraph('app-resume');
       }

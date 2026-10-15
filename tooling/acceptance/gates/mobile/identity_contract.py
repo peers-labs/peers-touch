@@ -216,10 +216,18 @@ def validate_identity_contract() -> None:
         "repeated string capabilities = 4;",
         "int64 issued_at_unix_ms = 5;",
         "int64 expires_at_unix_ms = 6;",
+        "bytes node_authorization_digest = 7;",
+        "message StationNodeAuthorizationStatement",
+        "string node_peer_id = 2;",
+        "bytes node_public_key = 3;",
+        "uint64 authorization_epoch = 4;",
+        "message StationNodeAuthorization",
+        "bytes station_root_public_key = 2;",
+        "bytes root_signature = 3;",
         "message StationIdentityResponse",
         "bytes statement_bytes = 1;",
-        "bytes host_public_key = 2;",
-        "bytes signature = 3;",
+        "bytes node_signature = 2;",
+        "StationNodeAuthorization node_authorization = 3;",
     )
     missing_tokens = [
         token for token in required_tokens if token not in identity_proto
@@ -232,13 +240,13 @@ def validate_identity_contract() -> None:
 
     station_command = MOBILE_STATION_COMMAND.read_text(encoding="utf-8")
     verifier_tokens = (
-        "PublicKey::try_decode_protobuf",
-        "public_key.to_peer_id()",
-        "public_key.verify",
-        "STATION_IDENTITY_CHALLENGE_SIZE",
-        "STATION_IDENTITY_MAX_LIFETIME_MS",
-        "STATION_IDENTITY_CLOCK_SKEW_MS",
-        "capabilities.binary_search",
+        "verify_station_identity_response_bytes",
+        "verified.station_peer_id",
+        "verified.node_peer_id",
+        "verified.station_root_public_key",
+        "verified.authorization_digest",
+        "verified.authorization_epoch",
+        "verified.capabilities",
     )
     missing_verifier_tokens = [
         token for token in verifier_tokens if token not in station_command

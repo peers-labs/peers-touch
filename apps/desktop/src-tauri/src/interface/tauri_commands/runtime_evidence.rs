@@ -29,7 +29,11 @@ pub fn agent_runtime_profile_effective(
     window: Window,
 ) -> AppResult<StubPayload> {
     match authenticated_token(state.inner(), &window) {
-        Ok(token) => application_runtime_evidence::effective_runtime_profile(input, &token),
+        Ok(token) => application_runtime_evidence::effective_runtime_profile(
+            state.station.client(),
+            input,
+            &token,
+        ),
         Err(error) => error,
     }
 }
@@ -40,7 +44,10 @@ pub fn agent_capability_sessions(
     window: Window,
 ) -> AppResult<StubPayload> {
     match authenticated_token(state.inner(), &window) {
-        Ok(token) => application_runtime_evidence::station_capability_sessions(&token),
+        Ok(token) => application_runtime_evidence::station_capability_sessions(
+            state.station.client(),
+            &token,
+        ),
         Err(error) => error,
     }
 }
@@ -79,7 +86,11 @@ pub fn agent_runtime_activity_station(
     window: Window,
 ) -> AppResult<StubPayload> {
     match authenticated_token(state.inner(), &window) {
-        Ok(token) => application_runtime_evidence::station_runtime_activity(input, &token),
+        Ok(token) => application_runtime_evidence::station_runtime_activity(
+            state.station.client(),
+            input,
+            &token,
+        ),
         Err(error) => error,
     }
 }
@@ -91,7 +102,11 @@ pub fn agent_runtime_activity_local(
     window: Window,
 ) -> AppResult<StubPayload> {
     match authenticated_token(state.inner(), &window) {
-        Ok(token) => application_runtime_evidence::local_runtime_activity(input, &token),
+        Ok(token) => application_runtime_evidence::local_runtime_activity(
+            state.station.client(),
+            input,
+            &token,
+        ),
         Err(error) => error,
     }
 }

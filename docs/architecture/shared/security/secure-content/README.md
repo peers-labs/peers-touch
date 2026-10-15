@@ -111,10 +111,11 @@ former Browser observation branch is retired by `DWF-D39`.
 Development manifest, exact product evidence boundaries, canonical
 `four`/`fiveArm` profiles, and the allowlisted public-preserving W12 reset.
 Implementation and destructive execution remain governed by the plan,
-declarations, exact profile/scope authorization, leases, and evidence gates.
+exact source bindings, profile/scope authorization, leases, and evidence gates.
 `SC-D30` adds only the reviewed `chat-native-five` Development target and
 `chat-native-five-social-private` scope for the Mobile whole-product frontier.
-It reuses SC-D23 unchanged and authorizes no alias, final cut, or broader reset.
+Its source binding is derived from the reviewed Profile, workspace capability,
+and current Git source; it authorizes no alias, final cut, or broader reset.
 `SC-D24` was accepted by the Owner on 2026-09-19 after exact-source W7 evidence
 proved that the canonical private Post writer cannot run before SC-D23 removes
 retained plaintext-era `NOT NULL` columns. It authorizes a mechanical plan

@@ -267,7 +267,8 @@ func (s *ossSubServer) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 ```go
 func (h *relayHandler) handlers() []server.Handler {
-    mountJWT := h.sub.mountJWTWrapper
+    nodeRotateJWT := h.sub.nodeRotateJWTWrapper
+    routePublishJWT := h.sub.routePublishJWTWrapper
     operatorJWT := h.sub.operatorJWTWrapper
     logID := serverwrapper.LogID()
 
@@ -276,10 +277,12 @@ func (h *relayHandler) handlers() []server.Handler {
             h.requireAdmin(h.handleCreateInvite), logID, operatorJWT),
         server.NewHTTPHandler("relay-register", "/api/v1/relay/register", server.POST,
             server.HTTPHandlerFunc(h.handleRegister), logID),
-        server.NewHTTPHandler("relay-heartbeat", "/api/v1/relay/heartbeat", server.POST,
-            h.requireStation(h.handleHeartbeat), logID, mountJWT),
-        server.NewHertzHandler("relay-opaque-tunnel",
-            "/.well-known/peers-touch/tunnel", server.GET, h.handleTunnel),
+        server.NewHTTPHandler("relay-token-refresh", "/api/v1/relay/token/refresh", server.POST,
+            h.requireStation(h.handleTokenRefresh), logID, nodeRotateJWT),
+        server.NewStrictTypedHandler("relay-route-publish", "/api/v1/relay/routes", server.POST,
+            h.handlePublishStationRoute, logID, routePublishJWT),
+        server.NewStrictTypedHandler("relay-grant-register", "/api/v1/relay/grants", server.POST,
+            h.handleRegisterConnectionGrant, logID, routePublishJWT),
     }
 }
 

@@ -477,6 +477,7 @@ export function SessionList({
       {/* Search */}
       <div style={{ padding: `${T.space2}px ${T.space3}px`, position: 'relative' }}>
         <div
+          data-focus-boundary
           style={{
             height: 32,
             borderRadius: T.radiusMd,

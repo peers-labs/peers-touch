@@ -205,13 +205,16 @@ const PREVIEW_LIMIT = 4;
 const PAGE_SIZE = 6;
 
 export function NotificationPanel({
-  items, mode, anchorRef, onShowAll, onClose, onMarkAllRead, ...actions
+  items, mode, anchorRef, keyboardAutoFocus, onShowAll, onClose,
+  onRestoreFocus, onMarkAllRead, ...actions
 }: NotificationActions & {
   items: NotifItem[];
   mode: 'preview' | 'all';
   anchorRef: RefObject<HTMLButtonElement | null>;
+  keyboardAutoFocus: boolean;
   onShowAll: () => void;
   onClose: () => void;
+  onRestoreFocus: () => void;
   onMarkAllRead: () => void;
 }) {
   const [query, setQuery] = useState('');
@@ -251,9 +254,10 @@ export function NotificationPanel({
   }, [currentPage, query, mode]);
 
   useEffect(() => {
-    if (mode !== 'preview') return;
+    if (mode !== 'preview' || !keyboardAutoFocus) return;
+    // Pointer openers retain the bell; keyboard openers enter the focus trap.
     previewRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
-  }, [mode]);
+  }, [mode, keyboardAutoFocus]);
 
   const markRead = (
     <Button
@@ -272,7 +276,8 @@ export function NotificationPanel({
       <Modal
         open centered enableResponsive={false} width={760} footer={null}
         transitionName="" maskTransitionName=""
-        title="All notifications" onCancel={onClose} destroyOnHidden
+        title="All notifications" destroyOnHidden
+        onCancel={() => { onClose(); onRestoreFocus(); }}
         afterOpenChange={(open) => { if (open) searchRef.current?.focus(); }}
         styles={{
           container: { borderRadius: T.radiusLg, padding: 20 },
@@ -304,6 +309,7 @@ export function NotificationPanel({
             <Pagination
               current={currentPage} pageSize={PAGE_SIZE} total={filtered.length}
               showSizeChanger={false} hideOnSinglePage={false} onChange={setPage}
+              styles={{ item: { width: 40, minWidth: 40, height: 40 } }}
             />
           </div>
         </div>
@@ -313,14 +319,21 @@ export function NotificationPanel({
 
   return (
     <>
-      <div aria-hidden onClick={onClose} onWheel={onClose}
+      <div
+        aria-hidden
+        onClick={() => { onClose(); onRestoreFocus(); }}
+        onWheel={() => { onClose(); onRestoreFocus(); }}
         style={{ position: 'fixed', inset: 0, zIndex: 55 }} />
       <div
         ref={previewRef} role="dialog" aria-label="Notifications" aria-modal="true"
         data-shell-notifications data-notification-mode="preview"
         data-floating-anchor-label="通知" data-floating-align="bottom"
         onKeyDown={(e) => {
-          if (e.key === 'Escape') { e.stopPropagation(); onClose(); }
+          if (e.key === 'Escape') {
+            e.stopPropagation();
+            onClose();
+            onRestoreFocus();
+          }
           if (e.key === 'Tab') {
             const buttons = [...(previewRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])];
             const first = buttons[0], last = buttons[buttons.length - 1];

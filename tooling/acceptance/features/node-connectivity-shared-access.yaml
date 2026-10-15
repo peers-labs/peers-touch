@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "id": "node-connectivity-shared-access",
+  "domain": "station-access",
+  "status": "active",
+  "owners": [
+    "apps/station/frame/core/auth/**",
+    "apps/station/frame/core/facility/session/**",
+    "apps/station/frame/touch/accessgate/**",
+    "apps/station/frame/touch/auth/**",
+    "apps/station/frame/touch/model/db/access_gate.go",
+    "apps/station/app/subserver/oauth/**",
+    "tooling/acceptance/environments/node-connectivity-shared-access.yaml",
+    "tooling/acceptance/provisioners/node_connectivity_postgres.py",
+    "tooling/acceptance/provisioners/node_connectivity_shared_access.py",
+    "tooling/scripts/node-connectivity-journey.py"
+  ],
+  "truth_sources": [
+    "shared PostgreSQL Access attempts and OAuth acknowledgement rows",
+    "shared PostgreSQL actor_sessions with canonical client-class row locking",
+    "Station-scoped auth_station_access_keys keyring with explicit key IDs"
+  ],
+  "visible_surfaces": [
+    {
+      "type": "station",
+      "route": "canonical Access Gate and OAuth acknowledgement handlers"
+    }
+  ],
+  "required_gates": [
+    "NCP-G05"
+  ],
+  "acceptance": {
+    "service": [
+      "an Access attempt started on node A can be finalized and acknowledged on node B",
+      "idempotent acknowledgement preserves one logical Session ID",
+      "a JWT issued on one node validates on another through the persisted key ID",
+      "two concurrent same-class activations leave one active winner",
+      "other canonical client classes remain active",
+      "revocation committed on one node is enforced by another node"
+    ],
+    "surface": []
+  },
+  "negative": [
+    "a node with mismatched configured key material fails initialization",
+    "an unsupported keyring schema revision fails initialization",
+    "external OAuth provider or Mobile runtime behavior is not claimed"
+  ]
+}

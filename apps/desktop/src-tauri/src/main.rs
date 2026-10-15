@@ -53,6 +53,30 @@ use tauri::{Emitter, Manager};
 const MESSAGING_PROJECTION_CHANGED_EVENT: &str = "messaging:projection-changed";
 
 #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
+fn configure_acceptance_window_level(window: &tauri::WebviewWindow) -> std::io::Result<()> {
+    use dispatch2::DispatchQueue;
+    use objc2_app_kit::{NSScreenSaverWindowLevel, NSWindow, NSWindowCollectionBehavior};
+
+    let ns_window = window.ns_window().map_err(|error| {
+        std::io::Error::other(format!("acceptance native window lookup failed: {error}"))
+    })? as usize;
+    DispatchQueue::main().exec_async(move || {
+        let ns_window = unsafe { &*(ns_window as *mut NSWindow) };
+        let collection_behavior = ns_window.collectionBehavior()
+            | NSWindowCollectionBehavior::CanJoinAllSpaces
+            | NSWindowCollectionBehavior::FullScreenAuxiliary;
+        ns_window.setCollectionBehavior(collection_behavior);
+        ns_window.setLevel(NSScreenSaverWindowLevel);
+    });
+    Ok(())
+}
+
+#[cfg(all(feature = "acceptance-webdriver", not(target_os = "macos")))]
+fn configure_acceptance_window_level(_window: &tauri::WebviewWindow) -> std::io::Result<()> {
+    Ok(())
+}
+
+#[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
 #[tauri::command]
 fn acceptance_yield_activation(target_pid: i32) -> error::AppResult<serde_json::Value> {
     use objc2::MainThreadMarker;
@@ -81,11 +105,9 @@ fn acceptance_yield_activation(target_pid: i32) -> error::AppResult<serde_json::
 #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
 #[tauri::command]
 #[allow(deprecated)]
-fn acceptance_request_activation(
-    window: tauri::WebviewWindow,
-) -> error::AppResult<serde_json::Value> {
+fn acceptance_request_activation() -> error::AppResult<serde_json::Value> {
     use objc2::MainThreadMarker;
-    use objc2_app_kit::{NSApplication, NSRunningApplication};
+    use objc2_app_kit::NSApplication;
 
     let Some(main_thread) = MainThreadMarker::new() else {
         return error::AppResult::fail(
@@ -95,33 +117,8 @@ fn acceptance_request_activation(
         );
     };
 
-    if let Err(error) = window.show() {
-        return error::AppResult::fail(
-            error::ErrorCode::InternalError,
-            format!("acceptance window show failed: {error}"),
-            None,
-        );
-    }
-    if let Err(error) = window.unminimize() {
-        return error::AppResult::fail(
-            error::ErrorCode::InternalError,
-            format!("acceptance window unminimize failed: {error}"),
-            None,
-        );
-    }
-    let process_id = NSRunningApplication::currentApplication().processIdentifier();
     NSApplication::sharedApplication(main_thread).activateIgnoringOtherApps(true);
-    if let Err(error) = window.set_focus() {
-        return error::AppResult::fail(
-            error::ErrorCode::InternalError,
-            format!("acceptance window focus failed: {error}"),
-            None,
-        );
-    }
-    error::AppResult::success(serde_json::json!({
-        "processId": process_id,
-        "requested": true,
-    }))
+    error::AppResult::success(serde_json::json!({ "requested": true }))
 }
 
 #[cfg(feature = "acceptance-webdriver")]
@@ -318,6 +315,10 @@ fn configure_acceptance_window(
     window.show().map_err(|error| {
         std::io::Error::other(format!("acceptance window show failed: {error}"))
     })?;
+    window.set_always_on_top(true).map_err(|error| {
+        std::io::Error::other(format!("acceptance window layering failed: {error}"))
+    })?;
+    configure_acceptance_window_level(window)?;
     Ok(())
 }
 
@@ -393,7 +394,9 @@ fn main() {
         application::desktop_executor_worker::CapabilityWorkerSupervisor::new(app_state.clone()),
     );
 
-    let presence_supervisor = Arc::new(application::presence::PresenceSupervisor::new());
+    let presence_supervisor = Arc::new(application::presence::PresenceSupervisor::new(
+        app_state.station.client().clone(),
+    ));
 
     let builder = tauri::Builder::default()
         .register_uri_scheme_protocol("private-media", |context, request| {
@@ -436,6 +439,53 @@ fn main() {
                     .header(tauri::http::header::CACHE_CONTROL, "no-store")
                     .body(Vec::new())
                     .expect("private media not-found response"),
+            }
+        })
+        .register_uri_scheme_protocol("station-resource", |context, request| {
+            if request.method() != tauri::http::Method::GET {
+                return tauri::http::Response::builder()
+                    .status(tauri::http::StatusCode::METHOD_NOT_ALLOWED)
+                    .body(Vec::new())
+                    .expect("Station resource method response");
+            }
+            let state = context.app_handle().state::<Arc<state::AppState>>();
+            let uri = request.uri().to_string();
+            let resource = match state.station.resources().resolve(&uri) {
+                Ok(resource) => resource,
+                Err(_) => {
+                    return tauri::http::Response::builder()
+                        .status(tauri::http::StatusCode::NOT_FOUND)
+                        .header(tauri::http::header::CACHE_CONTROL, "no-store")
+                        .body(Vec::new())
+                        .expect("Station resource scope response");
+                }
+            };
+            let token = state
+                .sessions
+                .get(context.webview_label())
+                .map(|session| session.jwt);
+            match state
+                .station
+                .resources()
+                .fetch_bytes(&resource, token.as_deref())
+            {
+                Ok((bytes, headers)) => {
+                    let content_type = headers
+                        .get(tauri::http::header::CONTENT_TYPE)
+                        .and_then(|value| value.to_str().ok())
+                        .unwrap_or("application/octet-stream");
+                    tauri::http::Response::builder()
+                        .status(tauri::http::StatusCode::OK)
+                        .header(tauri::http::header::CONTENT_TYPE, content_type)
+                        .header(tauri::http::header::CACHE_CONTROL, "no-store")
+                        .body(bytes)
+                        .expect("Station resource response")
+                }
+                Err(_) => tauri::http::Response::builder()
+                    .status(tauri::http::StatusCode::BAD_GATEWAY)
+                    .header(tauri::http::header::CACHE_CONTROL, "no-store")
+                    .body(Vec::new())
+                    .expect("Station resource transport response"),
             }
         })
         .plugin(tauri_plugin_deep_link::init())
@@ -593,6 +643,8 @@ fn main() {
             auth::auth_logout,
             #[cfg(feature = "acceptance-webdriver")]
             auth::acceptance_logout_window_session,
+            #[cfg(feature = "acceptance-webdriver")]
+            auth::acceptance_window_session_identity,
             auth::auth_restore_session,
             auth::auth_validate_token,
             auth::ensure_station_session,
@@ -1031,6 +1083,12 @@ fn main() {
             notification::notification_preferences,
             notification::notification_preferences_update,
             host_events::desktop_native_event_emit,
+            #[cfg(feature = "acceptance-webdriver")]
+            station::acceptance_station_route_probe,
+            #[cfg(feature = "acceptance-webdriver")]
+            station::acceptance_station_transport_diagnostics,
+            #[cfg(feature = "acceptance-webdriver")]
+            station::acceptance_station_direct_route_override,
             station::station_list,
             station::station_set_active,
             station::station_binding_complete,
@@ -1175,6 +1233,30 @@ fn main() {
                         remaining = pending.len(),
                         "presence: AppShutdown deadline reached, abandoning remaining reconciles"
                     );
+                }
+                let event_stream_shutdown_failed =
+                    if let Err(error) = state.event_streams.stop_all() {
+                        tracing::warn!(
+                            error = %error,
+                            "event stream runtime did not drain before transport shutdown"
+                        );
+                        true
+                    } else {
+                        false
+                    };
+                if let Err(error) = state.station.shutdown() {
+                    tracing::warn!(
+                        error = %error,
+                        "Station runtime shutdown failed"
+                    );
+                }
+                if event_stream_shutdown_failed {
+                    if let Err(error) = state.event_streams.stop_all() {
+                    tracing::warn!(
+                        error = %error,
+                            "event stream runtime shutdown failed after transport drain"
+                    );
+                    }
                 }
             }
         });

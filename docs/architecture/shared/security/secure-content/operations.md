@@ -322,9 +322,9 @@ Accepted `SC-D24` defines two reset intents over the same closed operation:
   run the complete product matrix against newly populated canonical state.
 
 The reset owner accepts intent as a typed manifest field, not a free-form CLI
-flag. Each intent requires its own reset ID, immutable manifest, exact
-declaration, scope authorization, and lease. An activation journal cannot be
-relabelled as final-cut evidence.
+flag. Each intent requires its own reset ID, immutable manifest, exact source
+authorization, scope authorization, and lease. An activation journal cannot
+be relabelled as final-cut evidence.
 
 SC-D24 replaces only SC-D23's W12-exclusive task restriction.
 Both intents still use exactly the accepted profiles and destructive scopes.
@@ -336,10 +336,10 @@ through the reviewed deploy transport. The local SSH transport is a direct
 child of the generic `machine-dev` lease wrapper, which retains the inherited
 `station.reset` lock for the full operation. The reset owner passes a typed
 `SecureContentResetInvocationV1` over SSH stdin. The CLI validates source,
-environment, scope, intent, reset-manifest digest, declaration digest, and
-expiry, then acquires a database advisory lock keyed by deployment environment
-and destructive scope. It exposes no network route and accepts no durable
-bearer credential.
+environment, scope, intent, reset-manifest digest, and the wire-compatible
+source-authorization digest, then acquires a database advisory lock keyed by
+deployment environment and destructive scope. It exposes no network route and
+accepts no durable bearer credential.
 
 Before reset:
 
@@ -440,9 +440,10 @@ the first invocation for the fresh source may atomically transition the old
 journal to terminal `SUPERSEDED` and create the new `PREPARED` journal. This
 requires the same workspace, profile, deployment environment, destructive
 scope, and intent, a different source commit, the new exact-source declaration
-and lease, and the same remote advisory lock. Same-source conflicts and every
-post-commit state remain non-supersedable. A superseded reset cannot resume or
-produce successful evidence.
+or Profile/current-source authorization binding and lease, and the same remote
+advisory lock. Same-source conflicts and every post-commit state remain
+non-supersedable. A superseded reset cannot resume or produce successful
+evidence.
 
 Accepted `SC-D26` handles only two verified source-invalidated boundaries:
 an unfailed `OBJECTS_DELETED` deployment handoff, or `STATION_DEPLOYED`

@@ -21,9 +21,9 @@ use super::{
     StationMlsLeaveIntentTransport, StationPreKeyTransport, StationQueueTransport,
     SupersededInteractionIntent, ThreadCountProjection,
 };
+use crate::application::station_runtime::client::{self as station_client, StationClient};
 use crate::domain::crypto::IdentityKeyPair;
 use crate::infrastructure::attachment_blob::FilesystemAttachmentBlob;
-use crate::infrastructure::station_client;
 use crate::infrastructure::storage::{self, StorageKind};
 use crate::model::chat::{
     chat_command, ActorReadCursor, AttachmentContentKind, AttachmentTransferState, ChatCommand,
@@ -42,9 +42,12 @@ use crate::model::chat::{
 };
 use messaging_core::codec::verification::{verify_authority_event, verify_direct_genesis_event};
 use messaging_core::contracts::CryptoEndpoint as CoreCryptoEndpoint;
+use messaging_core::identity::enrollment::{
+    generate_device_identity_for_device_from_parts, generate_fresh_device_identity_from_seed,
+    load_or_create_device_identity_from_seed,
+};
 use messaging_core::identity::{
-    generate_fresh_device_identity_for_device, is_stale_endpoint_error,
-    load_or_create_device_identity_for_device, DeviceEnrollmentManager, FreshDeviceEnrollment,
+    is_stale_endpoint_error, DeviceEnrollmentManager, FreshDeviceEnrollment,
     FreshDeviceIdentityState,
 };
 use messaging_core::mls::actor_device_identity::ActorDeviceIdentity;
@@ -307,6 +310,7 @@ fn direct_authority_checkpoint_projection(
 }
 
 fn fetch_direct_authority_events(
+    station_client: &StationClient,
     token: &str,
     device_id: &str,
     target: &DirectAuthorityCheckpointTarget,
@@ -336,7 +340,7 @@ fn fetch_direct_authority_events(
             ("after_seq", after_sequence.to_string()),
             ("limit", limit.to_string()),
         ];
-        let response = station_client::request_proto_for_device::<
+        let response = station_client.request_proto_for_device::<
             ListConversationEventsRequest,
             ListConversationEventsResponse,
         >(
@@ -433,6 +437,7 @@ fn pending_direct_receiver_checkpoint(
 }
 
 fn checkpoint_fresh_direct_receiver(
+    station_client: &StationClient,
     store: &MessagingStore,
     endpoint: &EngineEndpoint,
     token: &str,
@@ -441,7 +446,8 @@ fn checkpoint_fresh_direct_receiver(
     let Some(target) = pending_direct_receiver_checkpoint(store, endpoint, item)? else {
         return Ok(false);
     };
-    let events = fetch_direct_authority_events(token, &endpoint.device_id, &target)?;
+    let events =
+        fetch_direct_authority_events(station_client, token, &endpoint.device_id, &target)?;
     let bootstrapped =
         apply_direct_authority_checkpoint(store, &endpoint.ptid, &target, &events, now_unix_ms())?;
     Ok(bootstrapped)
@@ -479,6 +485,7 @@ where
 }
 
 pub struct MessagingEngine {
+    station_client: StationClient,
     profile_id: String,
     endpoint: EngineEndpoint,
     consumer_id: String,
@@ -499,11 +506,17 @@ pub struct MessagingEngine {
 }
 
 impl MessagingEngine {
+    pub(crate) fn station_client(&self) -> &StationClient {
+        &self.station_client
+    }
+
     pub fn open_profile(
+        station_client: StationClient,
         profile_id: String,
         ptid: String,
         actor_identity_seed: &[u8; 32],
         actor_profile_version: u64,
+        station_identity_continuity_verified: bool,
     ) -> Result<Self, String> {
         if profile_id.trim().is_empty() || ptid.trim().is_empty() || actor_profile_version == 0 {
             return Err(
@@ -512,28 +525,36 @@ impl MessagingEngine {
         }
         let store = Arc::new(MessagingStore::open(&profile_id)?);
         Self::from_profile_store(
+            station_client,
             profile_id,
             ptid,
             actor_identity_seed,
             actor_profile_version,
+            station_identity_continuity_verified,
             store,
         )
     }
 
     fn from_profile_store(
+        station_client: StationClient,
         profile_id: String,
         ptid: String,
         actor_identity_seed: &[u8; 32],
         actor_profile_version: u64,
+        station_identity_continuity_verified: bool,
         store: Arc<MessagingStore>,
     ) -> Result<Self, String> {
-        let device_id = crate::application::key_exchange::device_install::get_or_create_device_id()
-            .map_err(|error| format!("load canonical installation device identity: {error}"))?;
-        let enrollment = load_or_create_device_identity_for_device(
+        Self::refresh_stored_device_identity(
             store.as_ref(),
             &ptid,
-            &device_id,
-            *actor_identity_seed,
+            actor_identity_seed,
+            actor_profile_version,
+            station_identity_continuity_verified,
+        )?;
+        let enrollment = load_or_create_device_identity_from_seed(
+            store.as_ref(),
+            &ptid,
+            actor_identity_seed,
             actor_profile_version,
         )?;
         let device = enrollment
@@ -546,6 +567,7 @@ impl MessagingEngine {
             device_id: device.device_id.clone(),
         };
         Self::from_store_with_identity(
+            station_client,
             profile_id,
             endpoint,
             store,
@@ -553,27 +575,91 @@ impl MessagingEngine {
         )
     }
 
-    pub fn open(profile_id: String, endpoint: EngineEndpoint) -> Result<Self, String> {
+    fn refresh_stored_device_identity(
+        store: &MessagingStore,
+        ptid: &str,
+        actor_identity_seed: &[u8; 32],
+        actor_profile_version: u64,
+        station_identity_continuity_verified: bool,
+    ) -> Result<(), String> {
+        let Some(enrollment) = store.device_enrollment()? else {
+            return Ok(());
+        };
+        let actor_identity = IdentityKeyPair::from_seed(actor_identity_seed);
+        let actor_identity_matches = enrollment.certificate.actor_identity_public_key
+            == actor_identity.verifying_key().as_bytes()
+            && enrollment.certificate.actor_identity_key_fingerprint
+                == Sha256::digest(actor_identity.verifying_key().as_bytes()).as_slice();
+        if enrollment.certificate.observed_profile_version > actor_profile_version {
+            return Err("messaging device identity profile version regressed".to_string());
+        }
+        if actor_identity_matches
+            && enrollment.certificate.observed_profile_version == actor_profile_version
+        {
+            return Ok(());
+        }
+        if !actor_identity_matches && !station_identity_continuity_verified {
+            return Err("messaging device identity continuity mismatch".to_string());
+        }
+        let device_id = enrollment
+            .certificate
+            .device
+            .as_ref()
+            .map(|device| device.device_id.as_str())
+            .filter(|device_id| !device_id.is_empty())
+            .ok_or_else(|| "messaging device identity has no endpoint".to_string())?;
+        let (device_signing_seed, signing_key_id) = store
+            .device_signing_seed()?
+            .ok_or_else(|| "messaging device signing key is unavailable".to_string())?;
+        if enrollment.certificate.signing_key_id != signing_key_id {
+            return Err("messaging device signing key identity is inconsistent".to_string());
+        }
+        let device_signing_seed: [u8; 32] = device_signing_seed
+            .as_slice()
+            .try_into()
+            .map_err(|_| "messaging device signing seed must be 32 bytes".to_string())?;
+        let refreshed = generate_device_identity_for_device_from_parts(
+            ptid,
+            device_id,
+            actor_identity_seed,
+            actor_profile_version,
+            Some(&device_signing_seed),
+        )?;
+        store.refresh_device_identity(&refreshed, station_identity_continuity_verified)
+    }
+
+    pub fn open(
+        station_client: StationClient,
+        profile_id: String,
+        endpoint: EngineEndpoint,
+    ) -> Result<Self, String> {
         validate_identity(&profile_id, &endpoint)?;
         let store = Arc::new(MessagingStore::open(&profile_id)?);
-        Self::from_store(profile_id, endpoint, store)
+        Self::from_store(station_client, profile_id, endpoint, store)
     }
 
     #[cfg(test)]
     pub(super) fn in_memory(profile_id: String, endpoint: EngineEndpoint) -> Result<Self, String> {
         validate_identity(&profile_id, &endpoint)?;
-        Self::from_store(profile_id, endpoint, Arc::new(MessagingStore::in_memory()?))
+        Self::from_store(
+            StationClient::testing_unavailable(),
+            profile_id,
+            endpoint,
+            Arc::new(MessagingStore::in_memory()?),
+        )
     }
 
     fn from_store(
+        station_client: StationClient,
         profile_id: String,
         endpoint: EngineEndpoint,
         store: Arc<MessagingStore>,
     ) -> Result<Self, String> {
-        Self::from_store_with_identity(profile_id, endpoint, store, None)
+        Self::from_store_with_identity(station_client, profile_id, endpoint, store, None)
     }
 
     fn from_store_with_identity(
+        station_client: StationClient,
         profile_id: String,
         endpoint: EngineEndpoint,
         store: Arc<MessagingStore>,
@@ -604,6 +690,7 @@ impl MessagingEngine {
             now_unix_ms,
         )?);
         Ok(Self {
+            station_client,
             profile_id,
             endpoint,
             consumer_id: format!("desktop-engine:{}", Ulid::new()),
@@ -1068,6 +1155,7 @@ impl MessagingEngine {
         token: String,
     ) -> Result<AttachmentTransferWorker, String> {
         let transport = StationAttachmentTransferTransport::new(
+            self.station_client.clone(),
             token,
             CryptoEndpoint {
                 ptid: self.endpoint.ptid.clone(),
@@ -1417,7 +1505,7 @@ impl MessagingEngine {
         for conversation in &archive.conversations {
             let conversation_id = &conversation.conversation_id;
             let query = [("conversation_id", conversation_id.clone())];
-            let response = station_client::request_proto_for_actor::<
+            let response = self.station_client.request_proto_for_actor::<
                 GetConversationPublicHeadRequest,
                 GetConversationPublicHeadResponse,
             >(
@@ -1436,41 +1524,14 @@ impl MessagingEngine {
                     "messaging recovery reconciliation authority snapshot source is invalid"
                         .to_string()
                 })?;
-            let authority_url = if source == ConversationPublicHeadSource::Follower {
-                let matches = station_client::station_registry()
-                    .list()
-                    .into_iter()
-                    .filter(|entry| entry.station_peer_id == conversation.authority_station_id)
-                    .collect::<Vec<_>>();
-                if matches.len() != 1 {
-                    return Err(
-                        "messaging recovery authority Station route is unavailable".to_string()
-                    );
-                }
-                let authority_url = matches[0]
-                    .active_route()
-                    .map(|route| route.endpoint_origin.clone())
-                    .ok_or_else(|| {
-                        "messaging recovery authority Station route is unavailable".to_string()
-                    })?;
-                let authority_pin = station_client::station_registry()
-                    .federation_signing_key_pin(&conversation.authority_station_id)
-                    .map_err(|error| {
-                        format!("messaging recovery authority Station pin is invalid: {error}")
-                    })?
-                    .ok_or_else(|| {
-                        "messaging recovery authority Station route is not pinned".to_string()
-                    })?;
-                if authority_pin.station_peer_id != conversation.authority_station_id {
-                    return Err(
-                        "messaging recovery authority Station pin binding mismatch".to_string()
-                    );
-                }
-                let authority_response = station_client::request_proto_for_actor_at::<
-                    GetConversationPublicHeadRequest,
-                    GetConversationPublicHeadResponse,
-                >(
-                    &authority_url,
+            let authority_station_id = if source == ConversationPublicHeadSource::Follower {
+                let authority_response = self
+                    .station_client
+                    .request_proto_for_actor_at_station::<
+                        GetConversationPublicHeadRequest,
+                        GetConversationPublicHeadResponse,
+                    >(
+                    &conversation.authority_station_id,
                     Method::GET,
                     "/conversation/public-head",
                     token,
@@ -1486,7 +1547,7 @@ impl MessagingEngine {
                 source = ConversationPublicHeadSource::try_from(target.source).map_err(|_| {
                     "messaging recovery authority Station snapshot source is invalid".to_string()
                 })?;
-                Some(authority_url)
+                Some(conversation.authority_station_id.clone())
             } else {
                 None
             };
@@ -1518,19 +1579,21 @@ impl MessagingEngine {
                         ("after_seq", after_sequence.to_string()),
                         ("limit", limit.to_string()),
                     ];
-                    let response = match authority_url.as_deref() {
-                        Some(authority_url) => station_client::request_proto_for_actor_at::<
-                            ListConversationEventsRequest,
-                            ListConversationEventsResponse,
-                        >(
-                            authority_url,
+                    let response = match authority_station_id.as_deref() {
+                        Some(authority_station_id) => self
+                            .station_client
+                            .request_proto_for_actor_at_station::<
+                                ListConversationEventsRequest,
+                                ListConversationEventsResponse,
+                            >(
+                            authority_station_id,
                             Method::GET,
                             "/conversation/events",
                             token,
                             Some(&query),
                             None,
                         ),
-                        None => station_client::request_proto_for_actor::<
+                        None => self.station_client.request_proto_for_actor::<
                             ListConversationEventsRequest,
                             ListConversationEventsResponse,
                         >(
@@ -1578,6 +1641,7 @@ impl MessagingEngine {
         let (cursor, _) = self.store.lane_checkpoint()?;
         let consumer_epoch = self.runtime_consumer_epoch.load(Ordering::Acquire);
         let transport = StationQueueTransport::new(
+            self.station_client.clone(),
             token.to_string(),
             actor_device_ref(&self.endpoint.ptid, &self.endpoint.device_id),
         )?;
@@ -1591,8 +1655,10 @@ impl MessagingEngine {
         let checkpoint_store = self.store.clone();
         let checkpoint_endpoint = self.endpoint.clone();
         let checkpoint_token = token.to_string();
+        let checkpoint_station_client = self.station_client.clone();
         drain = drain.with_before_consume_hook(Arc::new(move |item| {
             checkpoint_fresh_direct_receiver(
+                &checkpoint_station_client,
                 checkpoint_store.as_ref(),
                 &checkpoint_endpoint,
                 &checkpoint_token,
@@ -1614,9 +1680,11 @@ impl MessagingEngine {
             let actor_ptid = self.endpoint.ptid.clone();
             let device_id = self.endpoint.device_id.clone();
             let home_station_peer_id =
-                station_client::active_station_peer_id().ok_or_else(|| {
-                    "messaging projection Home Station identity is unavailable".to_string()
-                })?;
+                self.station_client
+                    .active_station_peer_id()
+                    .ok_or_else(|| {
+                        "messaging projection Home Station identity is unavailable".to_string()
+                    })?;
             drain = drain.with_acknowledged_item_observer(Arc::new(move |item| {
                 let (kind, message_id, message_removed_from_projection) =
                     projection_change_metadata(item, &actor_ptid);
@@ -1729,8 +1797,12 @@ impl MessagingEngine {
         if consumer.ptid != self.endpoint.ptid || consumer.device_id != self.endpoint.device_id {
             return Err("messaging delivery receipt endpoint mismatch".to_string());
         }
-        StationDeliveryReceiptTransport::new(token.to_string(), self.endpoint.device_id.clone())?
-            .submit(&receipt)?;
+        StationDeliveryReceiptTransport::new(
+            self.station_client.clone(),
+            token.to_string(),
+            self.endpoint.device_id.clone(),
+        )?
+        .submit(&receipt)?;
         self.store
             .mark_delivery_receipt_submitted(&entry.receipt_id, &entry.receipt_bytes)?;
         Ok(true)
@@ -1760,7 +1832,11 @@ impl MessagingEngine {
             self.store.clone(),
             self.mls_manager.clone(),
             self.endpoint.clone(),
-            StationCommandTransport::new(token.to_string(), self.endpoint.device_id.clone())?,
+            StationCommandTransport::new(
+                self.station_client.clone(),
+                token.to_string(),
+                self.endpoint.device_id.clone(),
+            )?,
         )?
         .reconcile_once(now_unix_ms)
     }
@@ -1775,20 +1851,26 @@ impl MessagingEngine {
             .dispatch_lock
             .lock()
             .map_err(|_| "messaging command dispatch lock poisoned".to_string())?;
-        let home_station_peer_id = station_client::active_station_peer_id()
+        let home_station_peer_id = self
+            .station_client
+            .active_station_peer_id()
             .ok_or_else(|| "messaging command Home Station identity is unavailable".to_string())?;
         let (signing_key_id, signing_key) = self.device_signing_identity()?.ok_or_else(|| {
             "messaging command device signing identity is unavailable".to_string()
         })?;
         let progress = CommandOutboxWorker::new(
             self.store.clone(),
-            StationCommandTransport::new(token.to_string(), self.endpoint.device_id.clone())?
-                .with_remote_command_identity(
-                    self.endpoint.ptid.clone(),
-                    home_station_peer_id,
-                    signing_key_id,
-                    signing_key,
-                )?,
+            StationCommandTransport::new(
+                self.station_client.clone(),
+                token.to_string(),
+                self.endpoint.device_id.clone(),
+            )?
+            .with_remote_command_identity(
+                self.endpoint.ptid.clone(),
+                home_station_peer_id,
+                signing_key_id,
+                signing_key,
+            )?,
             retry_policy,
         )?
         .dispatch_once(now_unix_ms)?;
@@ -1825,16 +1907,20 @@ impl MessagingEngine {
         let authority_station_id = self
             .store
             .conversation_authority_station_id(conversation_id)?;
-        StationCommandTransport::new(token.to_string(), self.endpoint.device_id.clone())?
-            .prepare_send(&PrepareConversationCommandRequest {
-                conversation_id: conversation_id.to_string(),
-                sender: Some(actor_device_ref(
-                    &self.endpoint.ptid,
-                    &self.endpoint.device_id,
-                )),
-                authority_station_peer_id: authority_station_id,
-                command_kind: command_kind as i32,
-            })
+        StationCommandTransport::new(
+            self.station_client.clone(),
+            token.to_string(),
+            self.endpoint.device_id.clone(),
+        )?
+        .prepare_send(&PrepareConversationCommandRequest {
+            conversation_id: conversation_id.to_string(),
+            sender: Some(actor_device_ref(
+                &self.endpoint.ptid,
+                &self.endpoint.device_id,
+            )),
+            authority_station_peer_id: authority_station_id,
+            command_kind: command_kind as i32,
+        })
     }
 
     pub fn prepare_direct_text(
@@ -2120,6 +2206,7 @@ impl MessagingEngine {
                             &plan.required_endpoints,
                             now_unix_ms,
                             &StationKeyBundleTransport::new(
+                                self.station_client.clone(),
                                 token.to_string(),
                                 self.endpoint.device_id.clone(),
                             )?,
@@ -2259,6 +2346,7 @@ impl MessagingEngine {
                     &plan.required_endpoints,
                     intent.client_timestamp_unix_ms,
                     &StationKeyBundleTransport::new(
+                        self.station_client.clone(),
                         token.to_string(),
                         self.endpoint.device_id.clone(),
                     )?,
@@ -2318,7 +2406,12 @@ impl MessagingEngine {
             return Err("messaging Direct authority checkpoint send plan is invalid".to_string());
         }
         let target = DirectAuthorityCheckpointTarget::from(plan);
-        let events = fetch_direct_authority_events(token, &self.endpoint.device_id, &target)?;
+        let events = fetch_direct_authority_events(
+            &self.station_client,
+            token,
+            &self.endpoint.device_id,
+            &target,
+        )?;
         let bootstrapped = apply_direct_authority_checkpoint(
             self.store.as_ref(),
             &self.endpoint.ptid,
@@ -2494,7 +2587,7 @@ impl MessagingEngine {
         federation_id: &str,
         command_id: &str,
     ) -> Result<String, String> {
-        let response = crate::infrastructure::station_client::request_proto_for_device::<
+        let response = self.station_client.request_proto_for_device::<
             CreateDirectConversationRequest,
             CreateDirectConversationResponse,
         >(
@@ -2587,6 +2680,7 @@ impl MessagingEngine {
                     &plan.required_endpoints,
                     now,
                     &StationKeyBundleTransport::new(
+                        self.station_client.clone(),
                         token.to_string(),
                         self.endpoint.device_id.clone(),
                     )?,
@@ -2653,21 +2747,25 @@ impl MessagingEngine {
             return Err("messaging typing conversation ID is required".to_string());
         }
         let now = now_unix_ms();
-        StationCommandTransport::new(token.to_string(), self.endpoint.device_id.clone())?
-            .submit_typing(&SubmitConversationTypingRequest {
-                conversation_id: conversation_id.to_string(),
-                sender: Some(actor_device_ref(
-                    &self.endpoint.ptid,
-                    &self.endpoint.device_id,
-                )),
-                pulse_generation: u64::try_from(now)
-                    .map_err(|_| "messaging typing generation is invalid".to_string())?,
-                expires_at: Some(prost_types::Timestamp {
-                    seconds: now.saturating_add(5_000).div_euclid(1_000),
-                    nanos: (now.saturating_add(5_000).rem_euclid(1_000) * 1_000_000) as i32,
-                }),
-                is_typing,
-            })
+        StationCommandTransport::new(
+            self.station_client.clone(),
+            token.to_string(),
+            self.endpoint.device_id.clone(),
+        )?
+        .submit_typing(&SubmitConversationTypingRequest {
+            conversation_id: conversation_id.to_string(),
+            sender: Some(actor_device_ref(
+                &self.endpoint.ptid,
+                &self.endpoint.device_id,
+            )),
+            pulse_generation: u64::try_from(now)
+                .map_err(|_| "messaging typing generation is invalid".to_string())?,
+            expires_at: Some(prost_types::Timestamp {
+                seconds: now.saturating_add(5_000).div_euclid(1_000),
+                nanos: (now.saturating_add(5_000).rem_euclid(1_000) * 1_000_000) as i32,
+            }),
+            is_typing,
+        })
     }
 
     pub fn submit_read_cursor(
@@ -2684,7 +2782,7 @@ impl MessagingEngine {
             return Err("messaging read cursor exceeds local authority head".to_string());
         }
         let now = now_unix_ms();
-        crate::infrastructure::station_client::request_proto_for_device::<
+        self.station_client.request_proto_for_device::<
             SubmitConversationReadCursorRequest,
             SubmitConversationReadCursorResponse,
         >(
@@ -2794,8 +2892,11 @@ impl MessagingEngine {
         member_ptids: &[String],
         federation_id: &str,
     ) -> Result<PreparedGroupConversation, station_client::StationClientError> {
-        let transport =
-            StationGroupGenesisTransport::new(token.to_string(), self.endpoint.clone())?;
+        let transport = StationGroupGenesisTransport::new(
+            self.station_client.clone(),
+            token.to_string(),
+            self.endpoint.clone(),
+        )?;
         let plan = transport.prepare(conversation_id, name, member_ptids, federation_id)?;
         let command = GroupGenesisPreparer::new(
             self.store.clone(),
@@ -2847,8 +2948,11 @@ impl MessagingEngine {
                 role: input.role.clone(),
                 created_at_unix_ms,
             })?;
-        let transport =
-            StationMembershipTransitionTransport::new(token.to_string(), self.endpoint.clone())?;
+        let transport = StationMembershipTransitionTransport::new(
+            self.station_client.clone(),
+            token.to_string(),
+            self.endpoint.clone(),
+        )?;
         let plan = transport.prepare(input)?;
         MembershipTransitionPreparer::new(
             self.store.clone(),
@@ -2881,8 +2985,11 @@ impl MessagingEngine {
             role: intent.role,
             leave_intent: None,
         };
-        let transport =
-            StationMembershipTransitionTransport::new(token.to_string(), self.endpoint.clone())?;
+        let transport = StationMembershipTransitionTransport::new(
+            self.station_client.clone(),
+            token.to_string(),
+            self.endpoint.clone(),
+        )?;
         let plan = transport.prepare(&input)?;
         MembershipTransitionPreparer::new(
             self.store.clone(),
@@ -3123,18 +3230,17 @@ impl MessagingEngine {
         conversation_id: &str,
     ) -> Result<Conversation, String> {
         let query = [("conversation_id", conversation_id.to_string())];
-        let response = station_client::request_proto_for_device::<
-            GetConversationRequest,
-            GetConversationResponse,
-        >(
-            Method::GET,
-            "/conversation/get",
-            token,
-            Some(&query),
-            None,
-            &self.endpoint.device_id,
-        )
-        .map_err(|error| error.to_string())?;
+        let response = self
+            .station_client
+            .request_proto_for_device::<GetConversationRequest, GetConversationResponse>(
+                Method::GET,
+                "/conversation/get",
+                token,
+                Some(&query),
+                None,
+                &self.endpoint.device_id,
+            )
+            .map_err(|error| error.to_string())?;
         response
             .conversation
             .filter(|conversation| conversation.conversation_id == conversation_id)
@@ -3150,7 +3256,9 @@ impl MessagingEngine {
         if conversation.owner_ptid == self.endpoint.ptid {
             return Err("Conversation owner must transfer ownership or dissolve first".to_string());
         }
-        let home_station_peer_id = station_client::active_station_peer_id()
+        let home_station_peer_id = self
+            .station_client
+            .active_station_peer_id()
             .ok_or_else(|| "messaging Home Station identity is unavailable".to_string())?;
         self.submit_mls_leave_intent(
             token,
@@ -3174,6 +3282,7 @@ impl MessagingEngine {
         input: &MlsLeaveIntentInput,
     ) -> Result<MlsLeaveIntent, String> {
         let transport = StationMlsLeaveIntentTransport::new(
+            self.station_client.clone(),
             token.to_string(),
             self.endpoint.device_id.clone(),
         )?;
@@ -3204,6 +3313,7 @@ impl MessagingEngine {
         conversation_id: &str,
     ) -> Result<Vec<MlsLeaveIntent>, String> {
         let transport = StationMlsLeaveIntentTransport::new(
+            self.station_client.clone(),
             token.to_string(),
             self.endpoint.device_id.clone(),
         )?;
@@ -3245,8 +3355,11 @@ impl MessagingEngine {
             role: String::new(),
             leave_intent: Some(leave_intent),
         };
-        let transport =
-            StationMembershipTransitionTransport::new(token.to_string(), self.endpoint.clone())?;
+        let transport = StationMembershipTransitionTransport::new(
+            self.station_client.clone(),
+            token.to_string(),
+            self.endpoint.clone(),
+        )?;
         let plan = transport.prepare(&input)?;
         MembershipTransitionPreparer::new(
             self.store.clone(),
@@ -3271,7 +3384,11 @@ impl MessagingEngine {
         )?
         .enroll_pending(
             label,
-            &StationDeviceTransport::new(token.to_string(), self.endpoint.device_id.clone())?,
+            &StationDeviceTransport::new(
+                self.station_client.clone(),
+                token.to_string(),
+                self.endpoint.device_id.clone(),
+            )?,
         )
     }
 
@@ -3320,8 +3437,11 @@ impl MessagingEngine {
             },
         )?;
         let now = now_unix_ms();
-        let transport =
-            StationPreKeyTransport::new(token.to_string(), self.endpoint.device_id.clone())?;
+        let transport = StationPreKeyTransport::new(
+            self.station_client.clone(),
+            token.to_string(),
+            self.endpoint.device_id.clone(),
+        )?;
         publisher
             .publish(actor_identity.as_ref(), now, &transport)
             .and_then(|_| {
@@ -3349,6 +3469,7 @@ impl MessagingEngine {
         .publish(
             now_unix_ms(),
             &StationMlsKeyPackageTransport::new(
+                self.station_client.clone(),
                 token.to_string(),
                 self.endpoint.device_id.clone(),
             )?,
@@ -3375,14 +3496,30 @@ impl Drop for MessagingEngine {
     }
 }
 
-#[derive(Default)]
 pub struct EngineRegistry {
+    station_client: StationClient,
     engines: Mutex<HashMap<String, Arc<MessagingEngine>>>,
     workers: Mutex<HashMap<String, MessagingLifecycleWorker>>,
     projection_notifier: Mutex<Option<MessagingProjectionNotifier>>,
 }
 
+#[cfg(test)]
+impl Default for EngineRegistry {
+    fn default() -> Self {
+        Self::new(StationClient::testing_unavailable())
+    }
+}
+
 impl EngineRegistry {
+    pub fn new(station_client: StationClient) -> Self {
+        Self {
+            station_client,
+            engines: Mutex::new(HashMap::new()),
+            workers: Mutex::new(HashMap::new()),
+            projection_notifier: Mutex::new(None),
+        }
+    }
+
     pub fn get(&self, profile_id: &str) -> Result<Option<Arc<MessagingEngine>>, String> {
         self.engines
             .lock()
@@ -3403,6 +3540,7 @@ impl EngineRegistry {
         ptid: String,
         actor_identity_seed: &[u8; 32],
         actor_profile_version: u64,
+        station_identity_continuity_verified: bool,
     ) -> Result<Arc<MessagingEngine>, String> {
         let notifier = self
             .projection_notifier
@@ -3420,10 +3558,12 @@ impl EngineRegistry {
             return Ok(existing.clone());
         }
         let engine = Arc::new(MessagingEngine::open_profile(
+            self.station_client.clone(),
             profile_id.clone(),
             ptid,
             actor_identity_seed,
             actor_profile_version,
+            station_identity_continuity_verified,
         )?);
         engine.set_projection_notifier(notifier)?;
         engines.insert(profile_id, engine.clone());
@@ -3450,7 +3590,11 @@ impl EngineRegistry {
             }
             return Ok(existing.clone());
         }
-        let engine = Arc::new(MessagingEngine::open(profile_id.clone(), endpoint)?);
+        let engine = Arc::new(MessagingEngine::open(
+            self.station_client.clone(),
+            profile_id.clone(),
+            endpoint,
+        )?);
         engine.set_projection_notifier(notifier)?;
         engines.insert(profile_id, engine.clone());
         Ok(engine)
@@ -3635,13 +3779,15 @@ impl EngineRegistry {
         };
         let preserve_device_continuity =
             previous_seed.as_slice() == archive.actor_identity_seed.as_slice();
-        let device_identity = recovery_device_identity(
-            current_device_identity,
-            &archive.ptid,
-            archive.actor_identity_seed,
-            archive.actor_profile_version,
-            preserve_device_continuity,
-        )?;
+        let device_identity = if preserve_device_continuity {
+            current_device_identity
+        } else {
+            generate_fresh_device_identity_from_seed(
+                &archive.ptid,
+                &archive.actor_identity_seed,
+                archive.actor_profile_version,
+            )?
+        };
         let (worker, worker_token) = {
             let mut workers = self
                 .workers
@@ -3698,20 +3844,24 @@ impl EngineRegistry {
         ) {
             Ok(enrollment) => {
                 let engine = Arc::new(MessagingEngine::open_profile(
+                    self.station_client.clone(),
                     profile_id.to_string(),
                     archive.ptid.clone(),
                     &archive.actor_identity_seed,
                     archive.actor_profile_version,
+                    false,
                 )?);
                 self.install_profile_runtime(profile_id, engine, worker_token)?;
                 Ok(enrollment)
             }
             Err(error) => {
                 let rollback = MessagingEngine::open_profile(
+                    self.station_client.clone(),
                     profile_id.to_string(),
                     previous_ptid,
                     &previous_seed,
                     previous_profile_version,
+                    false,
                 )
                 .and_then(|engine| {
                     self.install_profile_runtime(profile_id, Arc::new(engine), worker_token)
@@ -4205,32 +4355,6 @@ fn timestamp(unix_ms: i64) -> prost_types::Timestamp {
         seconds: unix_ms.div_euclid(1_000),
         nanos: (unix_ms.rem_euclid(1_000) * 1_000_000) as i32,
     }
-}
-
-fn recovery_device_identity(
-    current: FreshDeviceIdentityState,
-    ptid: &str,
-    actor_identity_seed: [u8; 32],
-    actor_profile_version: u64,
-    preserve_device_continuity: bool,
-) -> Result<FreshDeviceIdentityState, String> {
-    if preserve_device_continuity {
-        return Ok(current);
-    }
-    let device_id = current
-        .enrollment
-        .certificate
-        .device
-        .as_ref()
-        .ok_or_else(|| "messaging replacement recovery device endpoint is unavailable".to_string())?
-        .device_id
-        .clone();
-    generate_fresh_device_identity_for_device(
-        ptid,
-        &device_id,
-        actor_identity_seed,
-        actor_profile_version,
-    )
 }
 
 #[cfg(test)]
@@ -4816,6 +4940,7 @@ mod tests {
     fn engine_reopens_same_device_bound_mls_identity() {
         let store = Arc::new(MessagingStore::in_memory().unwrap());
         let first = MessagingEngine::from_store(
+            StationClient::testing_unavailable(),
             "alice-profile".to_string(),
             endpoint("device-1"),
             store.clone(),
@@ -4829,6 +4954,7 @@ mod tests {
         drop(first);
 
         let reopened = MessagingEngine::from_store(
+            StationClient::testing_unavailable(),
             "alice-profile".to_string(),
             endpoint("device-1"),
             store.clone(),
@@ -4843,6 +4969,7 @@ mod tests {
             first_identity
         );
         assert!(MessagingEngine::from_store(
+            StationClient::testing_unavailable(),
             "alice-profile".to_string(),
             endpoint("device-2"),
             store,
@@ -4854,6 +4981,7 @@ mod tests {
     fn engine_rehydrates_pending_mls_transition_after_restart() {
         let store = Arc::new(MessagingStore::in_memory().unwrap());
         let first = MessagingEngine::from_store(
+            StationClient::testing_unavailable(),
             "alice-profile".to_string(),
             endpoint("alice-device"),
             store.clone(),
@@ -4893,6 +5021,7 @@ mod tests {
         drop(first);
 
         let reopened = MessagingEngine::from_store(
+            StationClient::testing_unavailable(),
             "alice-profile".to_string(),
             endpoint("alice-device"),
             store,
@@ -4949,93 +5078,76 @@ mod tests {
 
     #[test]
     fn profile_engine_owns_stable_cross_signed_endpoint_identity() {
-        let canonical_device_id =
-            crate::application::key_exchange::device_install::get_or_create_device_id().unwrap();
         let store = Arc::new(MessagingStore::in_memory().unwrap());
         let first = MessagingEngine::from_profile_store(
+            StationClient::testing_unavailable(),
             "alice-profile".to_string(),
             "ptid:alice".to_string(),
             &[17; 32],
             3,
+            false,
             store.clone(),
         )
         .unwrap();
         let device_id = first.endpoint().device_id.clone();
-        assert_eq!(device_id, canonical_device_id);
+        assert!(!device_id.is_empty());
         let pending = store.pending_device_enrollment().unwrap().unwrap();
         let pending_device = pending.certificate.device.as_ref().unwrap();
+        let signing_key_id = pending.certificate.signing_key_id.clone();
         assert_eq!(actor_device_ptid(pending_device).unwrap(), "ptid:alice");
         assert_eq!(pending_device.device_id, device_id);
         assert_eq!(pending.certificate.observed_profile_version, 3);
         drop(first);
 
         let reopened = MessagingEngine::from_profile_store(
+            StationClient::testing_unavailable(),
             "alice-profile".to_string(),
             "ptid:alice".to_string(),
             &[17; 32],
             3,
+            false,
             store.clone(),
         )
         .unwrap();
         assert_eq!(reopened.endpoint().device_id, device_id);
         drop(reopened);
 
-        assert!(MessagingEngine::from_profile_store(
-            "alice-profile".to_string(),
-            "ptid:alice".to_string(),
-            &[18; 32],
-            3,
-            store.clone(),
-        )
-        .is_err());
-        assert!(MessagingEngine::from_profile_store(
+        let refreshed = MessagingEngine::from_profile_store(
+            StationClient::testing_unavailable(),
             "alice-profile".to_string(),
             "ptid:alice".to_string(),
             &[17; 32],
             4,
+            false,
+            store.clone(),
+        )
+        .unwrap();
+        assert_eq!(refreshed.endpoint().device_id, device_id);
+        let pending = store.pending_device_enrollment().unwrap().unwrap();
+        assert_eq!(pending.certificate.observed_profile_version, 4);
+        assert_eq!(pending.certificate.signing_key_id, signing_key_id);
+        drop(refreshed);
+
+        assert!(MessagingEngine::from_profile_store(
+            StationClient::testing_unavailable(),
+            "alice-profile".to_string(),
+            "ptid:alice".to_string(),
+            &[18; 32],
+            3,
+            false,
+            store.clone(),
+        )
+        .is_err());
+        assert!(MessagingEngine::from_profile_store(
+            StationClient::testing_unavailable(),
+            "alice-profile".to_string(),
+            "ptid:alice".to_string(),
+            &[17; 32],
+            3,
+            false,
             store,
         )
         .is_err());
-
-        let mismatched_store = Arc::new(MessagingStore::in_memory().unwrap());
-        load_or_create_device_identity_for_device(
-            mismatched_store.as_ref(),
-            "ptid:alice",
-            &format!("mismatched-{canonical_device_id}"),
-            [17; 32],
-            3,
-        )
-        .unwrap();
-        assert_eq!(
-            MessagingEngine::from_profile_store(
-                "alice-profile".to_string(),
-                "ptid:alice".to_string(),
-                &[17; 32],
-                3,
-                mismatched_store,
-            )
-            .err()
-            .as_deref(),
-            Some("messaging device identity does not match authenticated session")
-        );
-    }
-
-    #[test]
-    fn recovery_rotates_signing_material_without_rotating_session_device_id() {
-        let current =
-            generate_fresh_device_identity_for_device("ptid:alice", "session-device", [17; 32], 3)
-                .unwrap();
-        let current_signing_key_id = current.enrollment.certificate.signing_key_id.clone();
-
-        let recovered =
-            recovery_device_identity(current, "ptid:alice", [18; 32], 4, false).unwrap();
-        let recovered_device = recovered.enrollment.certificate.device.as_ref().unwrap();
-
-        assert_eq!(recovered_device.device_id, "session-device");
-        assert_ne!(
-            recovered.enrollment.certificate.signing_key_id,
-            current_signing_key_id
-        );
     }
 
     #[test]
@@ -5043,10 +5155,12 @@ mod tests {
         let registry = EngineRegistry::default();
         let engine = Arc::new(
             MessagingEngine::from_profile_store(
+                StationClient::testing_unavailable(),
                 "alice-profile".to_string(),
                 "ptid:alice".to_string(),
                 &[17; 32],
                 3,
+                false,
                 Arc::new(MessagingStore::in_memory().unwrap()),
             )
             .unwrap(),
@@ -5090,10 +5204,12 @@ mod tests {
         let registry = EngineRegistry::default();
         let engine = Arc::new(
             MessagingEngine::from_profile_store(
+                StationClient::testing_unavailable(),
                 "alice-profile".to_string(),
                 "ptid:alice".to_string(),
                 &[17; 32],
                 3,
+                false,
                 Arc::new(MessagingStore::in_memory().unwrap()),
             )
             .unwrap(),
@@ -5138,10 +5254,12 @@ mod tests {
         let registry = EngineRegistry::default();
         let engine = Arc::new(
             MessagingEngine::from_profile_store(
+                StationClient::testing_unavailable(),
                 "alice-profile".to_string(),
                 "ptid:alice".to_string(),
                 &[17; 32],
                 3,
+                false,
                 Arc::new(MessagingStore::in_memory().unwrap()),
             )
             .unwrap(),

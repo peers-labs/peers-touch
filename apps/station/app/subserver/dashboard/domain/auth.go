@@ -11,12 +11,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"net"
-
-	"golang.org/x/crypto/bcrypt"
 )
-
-// BcryptCost defines the bcrypt hashing cost (work-factor).
-const BcryptCost = 12
 
 // ---------------------------------------------------------------------------
 // JWT claims
@@ -35,25 +30,6 @@ type DashboardClaims struct {
 	Username  string `json:"username"`
 	Role      string `json:"role"`
 	SessionID string `json:"session_id"`
-}
-
-// ---------------------------------------------------------------------------
-// Password helpers
-// ---------------------------------------------------------------------------
-
-// HashPassword generates a bcrypt hash for the given plain-text password.
-func HashPassword(password string) (string, error) {
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), BcryptCost)
-	if err != nil {
-		return "", err
-	}
-	return string(hash), nil
-}
-
-// CheckPassword compares a bcrypt hash with a plain-text password.
-// Returns true when they match.
-func CheckPassword(hash, password string) bool {
-	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
 }
 
 // ---------------------------------------------------------------------------

@@ -1,3 +1,5 @@
+#[cfg(feature = "acceptance-webdriver")]
+use crate::contracts::StubPayload;
 use crate::contracts::{
     AccessDecisionInput, AccessDecisionPayload, AccessSubmitInviteInput, AccessSubmitLoginInput,
     AuthSessionPayload, AuthValidateTokenInput,
@@ -9,6 +11,8 @@ use crate::infrastructure::session_revocation::SESSION_KICKED_EVENT;
 use crate::state::AppState;
 #[cfg(feature = "acceptance-webdriver")]
 use serde::Deserialize;
+#[cfg(feature = "acceptance-webdriver")]
+use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State, Window};
 
@@ -157,7 +161,7 @@ fn is_session_revoked(result: &AppResult<AuthSessionPayload>) -> bool {
 fn unbind_for_logout(state: &Arc<AppState>, window: &Window) -> Result<(), String> {
     if let Some(session) = state.sessions.unbind(window.label()) {
         let teardown = state.secure_content.teardown_actor(&session.actor.ptid);
-        crate::infrastructure::event_stream::stop(&session.actor.ptid);
+        state.event_streams.stop(&session.actor.ptid)?;
         teardown?;
     }
     Ok(())
@@ -196,8 +200,8 @@ fn secure_content_teardown_failure(error: String) -> AppResult<AuthSessionPayloa
 /// decision. This is a pre-login step in the gate chain — no session is
 /// produced, so no window binding or identity broadcast is performed.
 #[tauri::command]
-pub fn access_start() -> AppResult<AccessDecisionPayload> {
-    auth_service::access_start()
+pub fn access_start(state: State<'_, Arc<AppState>>) -> AppResult<AccessDecisionPayload> {
+    auth_service::access_start(&state.station)
 }
 
 /// Redeem a self-service invite code against a live attempt and return the
@@ -206,18 +210,25 @@ pub fn access_start() -> AppResult<AccessDecisionPayload> {
 #[tauri::command]
 pub fn access_submit_invite_code(
     input: AccessSubmitInviteInput,
+    state: State<'_, Arc<AppState>>,
 ) -> AppResult<AccessDecisionPayload> {
-    auth_service::access_submit_invite_code(input)
+    auth_service::access_submit_invite_code(&state.station, input)
 }
 
 #[tauri::command]
-pub fn access_decision(input: AccessDecisionInput) -> AppResult<AccessDecisionPayload> {
-    auth_service::access_decision(input)
+pub fn access_decision(
+    input: AccessDecisionInput,
+    state: State<'_, Arc<AppState>>,
+) -> AppResult<AccessDecisionPayload> {
+    auth_service::access_decision(&state.station, input)
 }
 
 #[tauri::command]
-pub fn access_cancel(input: AccessDecisionInput) -> AppResult<AccessDecisionPayload> {
-    auth_service::access_cancel(input)
+pub fn access_cancel(
+    input: AccessDecisionInput,
+    state: State<'_, Arc<AppState>>,
+) -> AppResult<AccessDecisionPayload> {
+    auth_service::access_cancel(&state.station, input)
 }
 
 /// Submit the login credential gate for a live attempt. On grant this lands
@@ -233,7 +244,7 @@ pub fn access_submit_login(
         state.inner(),
         &app,
         &window,
-        auth_service::access_submit_login(input, state.inner()),
+        auth_service::access_submit_login(&state.station, input, state.inner()),
     );
     broadcast_identity(&app, IdentityChangeReason::Login, &result);
     result
@@ -319,6 +330,48 @@ pub fn acceptance_logout_window_session(
     auth_logout(state, app, window)
 }
 
+#[cfg(feature = "acceptance-webdriver")]
+#[tauri::command]
+pub fn acceptance_window_session_identity(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let Some(session) = state.sessions.get(window.label()) else {
+        return AppResult::fail(
+            ErrorCode::Unauthorized,
+            "Window has no committed session",
+            Some(serde_json::json!({
+                "command": "acceptance_window_session_identity",
+                "reason": "window_session_missing"
+            })),
+        );
+    };
+    let session_id = match crate::secure_content::adapter::jwt_session_id(&session.jwt) {
+        Ok(session_id) => session_id,
+        Err(error) => {
+            return AppResult::fail(
+                ErrorCode::Unauthorized,
+                "Window session has no canonical session identity",
+                Some(serde_json::json!({
+                    "command": "acceptance_window_session_identity",
+                    "reason": "jwt_session_id_invalid",
+                    "cause": error,
+                })),
+            )
+        }
+    };
+    AppResult::success(StubPayload {
+        command: "acceptance_window_session_identity".to_string(),
+        status: serde_json::json!({
+            "actor_ptid": session.actor.ptid,
+            "account_scope_sha256": hex::encode(Sha256::digest(session.account_id.as_bytes())),
+            "session_id_sha256": hex::encode(Sha256::digest(session_id.as_bytes())),
+            "session_binding_sha256": hex::encode(Sha256::digest(session.jwt.as_bytes())),
+        })
+        .to_string(),
+    })
+}
+
 #[tauri::command]
 pub fn auth_restore_session(
     state: State<'_, Arc<AppState>>,
@@ -329,7 +382,7 @@ pub fn auth_restore_session(
         state.inner(),
         &app,
         &window,
-        auth_service::auth_restore_session(state.inner()),
+        auth_service::auth_restore_session(state.station.client(), state.inner()),
     )
 }
 
@@ -352,7 +405,7 @@ pub fn auth_validate_token(
         state.inner(),
         &app,
         &window,
-        auth_service::auth_validate_token(input, state.inner()),
+        auth_service::auth_validate_token(state.station.client(), input, state.inner()),
     )
 }
 
@@ -367,7 +420,7 @@ pub fn ensure_station_session(
         state.inner(),
         &app,
         &window,
-        auth_service::ensure_station_session(state.inner()),
+        auth_service::ensure_station_session(state.station.client(), state.inner()),
     );
     broadcast_identity(&app, IdentityChangeReason::OauthBridge, &result);
     result

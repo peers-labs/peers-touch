@@ -23,7 +23,13 @@ import {
 import { setRecoverySurfaceFixture, useRecoverySurfaceFixture } from './acceptance/recoverySurfaceFixture';
 import { EntryProgressScreen } from './features/station/EntryProgressScreen';
 import { StationLaunchScreen } from './features/station/StationLaunchScreen';
-import { activeStationEntry, emptyStationRegistry, type StoredStationRegistry } from './features/station/stationRegistry';
+import {
+  activeStationEntry,
+  activeStationRoute,
+  emptyStationRegistry,
+  type MobileStationRouteCandidate,
+  type StoredStationRegistry,
+} from './features/station/stationRegistry';
 import type { AuthRuntimeSnapshot } from './runtimes/authRuntime';
 import { mobileEntryActions, useMobileEntryProjection } from './runtimes/entryRuntime';
 import { useStationRegistryProjection } from './runtimes/stationRuntime';
@@ -90,6 +96,31 @@ function MobileAppRoot() {
       setEntrySurfaceFixture('entry.station-selection');
     }
   };
+  const changeStationRoute = async (
+    stationPeerId: string,
+    route: MobileStationRouteCandidate,
+  ) => {
+    const station = stationRegistry.entries.find(
+      (entry) => entry.stationPeerId === stationPeerId,
+    );
+    const previous = station ? activeStationRoute(station) : null;
+    if (!previous || previous.routeId === route.routeId) return;
+    if (previous.routeType !== route.routeType) {
+      const confirmed = await new Promise<boolean>((resolve) => {
+        Modal.confirm({
+          title: t('mobile.launch.routeSwitchConfirmTitle'),
+          content: t('mobile.launch.routeSwitchConfirmBody'),
+          okText: t('mobile.launch.switchRoute'),
+          cancelText: t('common.action.cancel'),
+          okButtonProps: { 'data-station-route-confirm': 'true' },
+          onOk: () => resolve(true),
+          onCancel: () => resolve(false),
+        });
+      });
+      if (!confirmed) return;
+    }
+    await mobileEntryActions.selectStationRoute(stationPeerId, route);
+  };
 
   function renderWithRecovery(content: ReactNode) {
     const replacementStation = entry.pendingIdentityReplacement
@@ -101,7 +132,8 @@ function MobileAppRoot() {
       || recoveryFixture.surfaceId === 'recovery.scope-exit';
     const applicationBlocked = recoveryBlocking
       || scopeExitVisible
-      || replacementStation !== null;
+      || replacementStation !== null
+      || entry.pendingRouteChoices.length > 0;
     return (
       <>
         <MobileApplicationSurface blocked={applicationBlocked}>
@@ -147,6 +179,29 @@ function MobileAppRoot() {
             </div>
           </section>
         </Modal>
+        <Modal
+          title={t('mobile.launch.chooseRelayStation')}
+          open={entry.pendingRouteChoices.length > 0}
+          footer={null}
+          onCancel={mobileEntryActions.cancelRouteChoice}
+          destroyOnHidden
+        >
+          <div className="station-route-candidate-list">
+            {entry.pendingRouteChoices.map((route) => (
+              <button
+                key={`${route.stationPeerId}:${route.routeId}`}
+                type="button"
+                className="station-route-candidate"
+                onClick={() => {
+                  void mobileEntryActions.chooseDiscoveredRoute(route);
+                }}
+              >
+                <span>{t('mobile.launch.station')}</span>
+                <code>{route.stationPeerId}</code>
+              </button>
+            ))}
+          </div>
+        </Modal>
       </>
     );
   }
@@ -160,6 +215,7 @@ function MobileAppRoot() {
       <MobileShell
         stationRegistry={stationRegistry}
         onChangeStation={mobileEntryActions.leaveCurrentStationForSelection}
+        onChangeStationRoute={changeStationRoute}
         onLogout={mobileEntryActions.logout}
       />,
     );

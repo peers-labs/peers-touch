@@ -1,7 +1,7 @@
 ---
 kind: pitfall
 title: Naive "broadcast on every PublishVisibility success" turns periodic republisher into a relay traffic generator
-status: active
+status: superseded-by:docs/architecture/platform/runtime/node-connectivity/design.md
 owns:
   - apps/station/frame/touch/federation/republisher/
   - apps/station/frame/touch/actor/locator_hook.go

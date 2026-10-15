@@ -8,6 +8,7 @@ import (
 	ossmodel "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/model"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // MetaRepository is a thin wrapper around the `oss_meta` KV table
@@ -99,20 +100,17 @@ func (r *metaRepo) Set(ctx context.Context, key, value string, now time.Time) er
 	if err != nil {
 		return err
 	}
-	res := db.Model(&ossmodel.Meta{}).
-		Where("key = ?", key).
-		Updates(map[string]any{"value": value, "updated_at": now})
-	if res.Error != nil {
-		return res.Error
-	}
-	if res.RowsAffected == 0 {
-		return db.Create(&ossmodel.Meta{
-			Key:       key,
-			Value:     value,
-			UpdatedAt: now,
-		}).Error
-	}
-	return nil
+	return db.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "key"}},
+		DoUpdates: clause.Assignments(map[string]any{
+			"value":      value,
+			"updated_at": now,
+		}),
+	}).Create(&ossmodel.Meta{
+		Key:       key,
+		Value:     value,
+		UpdatedAt: now,
+	}).Error
 }
 
 func (r *metaRepo) Delete(ctx context.Context, keys ...string) (int64, error) {
@@ -133,23 +131,19 @@ func (r *metaRepo) SetCapabilityVersion(ctx context.Context, now time.Time) (str
 		return "", err
 	}
 	value := newULID(now)
-	res := db.Model(&ossmodel.Meta{}).
-		Where("key = ?", ossmodel.MetaKeyCapabilityVersion).
-		Updates(map[string]any{"value": value, "updated_at": now})
-	if res.Error != nil {
-		return "", res.Error
-	}
-	if res.RowsAffected == 0 {
-		// First reach — bootstrap should have seeded this row, but
-		// we fall back to insert so the PATCH path is robust to an
-		// older deployment / a fresh test DB.
-		if err := db.Create(&ossmodel.Meta{
-			Key:       ossmodel.MetaKeyCapabilityVersion,
-			Value:     value,
-			UpdatedAt: now,
-		}).Error; err != nil {
-			return "", err
-		}
+	err = db.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "key"}},
+		DoUpdates: clause.Assignments(map[string]any{
+			"value":      value,
+			"updated_at": now,
+		}),
+	}).Create(&ossmodel.Meta{
+		Key:       ossmodel.MetaKeyCapabilityVersion,
+		Value:     value,
+		UpdatedAt: now,
+	}).Error
+	if err != nil {
+		return "", err
 	}
 	return value, nil
 }

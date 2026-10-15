@@ -3,8 +3,12 @@ package native
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
 
 	"github.com/peers-labs/peers-touch/station/frame/core/client"
@@ -24,7 +28,11 @@ var (
 )
 
 type native struct {
-	opts *node.Options
+	opts            *node.Options
+	kernel          *p2pKernel
+	nodeIncarnation string
+	cluster         *stationClusterAdmission
+	clusterAdmitted atomic.Bool
 	node.AbstractService
 }
 
@@ -60,11 +68,19 @@ func (s *native) Start(ctx context.Context) error {
 			return err
 		}
 	}
+	if err := s.kernel.Start(ctx); err != nil {
+		return errors.Join(err, s.kernel.Close())
+	}
+	s.clusterAdmitted.Store(s.cluster == nil)
 
 	ready := make(chan interface{})
 	// Start server in a goroutine
 	go func() {
-		if err := s.opts.Server.Start(ctx, server.WithReadyChan(ready)); err != nil {
+		if err := s.opts.Server.Start(
+			ctx,
+			server.WithReadyChan(ready),
+			server.WithGlobalWrappers(s.clusterAdmissionWrapper),
+		); err != nil {
 			logger.Errorf(ctx, "server start failed: %v", err)
 			return
 		}
@@ -78,9 +94,23 @@ func (s *native) Start(ctx context.Context) error {
 		return ctx.Err()
 	}
 
+	if err := s.cluster.Admit(ctx); err != nil {
+		return errors.Join(
+			fmt.Errorf("Station cluster admission failed: %w", err),
+			s.opts.Server.Stop(ctx),
+			s.kernel.Close(),
+		)
+	}
+	s.clusterAdmitted.Store(true)
+
 	// register node
 	if err := s.opts.Registry.Register(ctx, s.toPeer()); err != nil {
-		return err
+		return errors.Join(
+			err,
+			s.cluster.Stop(ctx),
+			s.opts.Server.Stop(ctx),
+			s.kernel.Close(),
+		)
 	}
 
 	// todo start achievement, but now it's blocked by Start
@@ -100,6 +130,7 @@ func (s *native) Start(ctx context.Context) error {
 // Stop runs stop hooks, stops server, closes config and runs post-stop hooks.
 func (s *native) Stop(ctx context.Context) error {
 	var gerr error
+	s.clusterAdmitted.Store(false)
 
 	logger.Infof(ctx, "stop native peers' node. begin to execute before stop hooks")
 
@@ -111,13 +142,19 @@ func (s *native) Stop(ctx context.Context) error {
 
 	logger.Infof(ctx, "stop native peers' node. begin to execute stop hooks")
 
+	if err := s.cluster.Stop(ctx); err != nil {
+		gerr = errors.Join(gerr, err)
+	}
 	if err := s.opts.Server.Stop(ctx); err != nil {
-		return err
+		gerr = errors.Join(gerr, err)
+	}
+	if err := s.kernel.Close(); err != nil {
+		gerr = errors.Join(gerr, err)
 	}
 
 	logger.Infof(ctx, "stop native peers' node. begin to execute config close")
 	if err := s.opts.Config.Close(); err != nil {
-		return err
+		gerr = errors.Join(gerr, err)
 	}
 
 	logger.Infof(ctx, "stop native peers' node. begin to execute after stop hooks")
@@ -147,6 +184,11 @@ func (s *native) Run() error {
 		signal.Notify(ch, syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT)
 	}
 
+	var clusterFailure <-chan error
+	if s.cluster != nil {
+		clusterFailure = s.cluster.Failure()
+	}
+	var runErr error
 	select {
 	// wait on kill signal
 	case <-ch:
@@ -154,9 +196,33 @@ func (s *native) Run() error {
 	case <-ctx.Done():
 		// todo, try to store canceled context data for logger
 		logger.Infof(context.Background(), "[%s] server stopped", s.Name())
+	case err := <-clusterFailure:
+		s.clusterAdmitted.Store(false)
+		runErr = fmt.Errorf(
+			"Station cluster readiness withdrawn: %w",
+			err,
+		)
+		logger.Errorf(ctx, "%v", runErr)
 	}
 
-	return s.Stop(ctx)
+	return errors.Join(runErr, s.Stop(ctx))
+}
+
+func (s *native) clusterAdmissionWrapper(
+	next server.EndpointHandler,
+) server.EndpointHandler {
+	return func(
+		ctx context.Context,
+		req server.Request,
+		resp server.Response,
+	) error {
+		if !s.clusterAdmitted.Load() {
+			resp.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = resp.Write([]byte("Station cluster admission is pending"))
+			return nil
+		}
+		return next(ctx, req, resp)
+	}
 }
 
 // todo, update to one node supports multiple peers

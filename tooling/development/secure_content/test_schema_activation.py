@@ -28,13 +28,14 @@ from tooling.development.secure_content.schema_activation import (
     MOBILE_USABILITY_OWNER,
     PLAN_ID,
     PLAN_PATH,
+    PROFILE_OPERATION_BINDING_KIND,
     PROFILE_ORDER,
     PROFILE_TARGETS,
     SCHEMA_VERSION,
     SECURE_CONTENT_OWNER,
     ArtifactConflict,
     BoundaryUnavailable,
-    DevelopmentSessionSourceCheckpointRunner,
+    CurrentSourceCheckpointRunner,
     LeaseWrappedSSHMaintenanceBoundary,
     ResetIncomplete,
     SchemaActivationOwner,
@@ -44,6 +45,7 @@ from tooling.development.secure_content.schema_activation import (
     _require_timestamp,
     _resume_skips_quiescence,
     _timestamp,
+    _validate_declaration,
     canonical_digest,
     validate_completed_journal,
     validate_reset_invocation,
@@ -686,46 +688,25 @@ class SchemaActivationOwnerTest(unittest.TestCase):
             self.source_runner.requests[0]["declaration_digest"],
         )
 
-    def test_source_checkpoint_accepts_a_deployed_canonical_session(self) -> None:
+    def test_source_checkpoint_reads_current_git_source(self) -> None:
         commands: list[list[str]] = []
+        workspace_id = hashlib.sha256(
+            str(self.repo_root.resolve()).encode("utf-8")
+        ).hexdigest()[:16]
 
         def command_runner(
             command: list[str],
             **_: Any,
         ) -> subprocess.CompletedProcess[str]:
             commands.append(command)
-            return subprocess.CompletedProcess(
-                command,
-                0,
-                stdout=json.dumps(
-                    {
-                        "status": "PASS",
-                        "session": {
-                            "eventDigest": "9" * 64,
-                            "state": {
-                                "state": "DEPLOYED",
-                                "sessionId": "w12d-source-checkpoint",
-                                "workItemId": "secure-content-w12d",
-                                "planId": PLAN_ID,
-                                "taskId": "W12D",
-                                "workspaceId": WORKSPACE_ID,
-                                "branch": "feat/federation",
-                                "source": {
-                                    "commit": COMMIT,
-                                    "tree": "8" * 40,
-                                    "branch": "feat/federation",
-                                    "clean": True,
-                                    "purpose": "development-runtime",
-                                    "createdAt": timestamp(),
-                                },
-                            },
-                        },
-                    }
-                ),
-                stderr="",
+            stdout = (
+                f"# branch.oid {COMMIT}\n# branch.head feat/federation\n"
+                if command[1] == "status"
+                else f"{'8' * 40}\n"
             )
+            return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
 
-        receipt = DevelopmentSessionSourceCheckpointRunner(
+        receipt = CurrentSourceCheckpointRunner(
             repo_root=self.repo_root,
             command_runner=command_runner,
         )(
@@ -734,7 +715,7 @@ class SchemaActivationOwnerTest(unittest.TestCase):
                 "plan_id": PLAN_ID,
                 "task_id": "W12D",
                 "work_item_id": "secure-content-w12d",
-                "workspace_id": WORKSPACE_ID,
+                "workspace_id": workspace_id,
                 "branch": "feat/federation",
                 "source_commit": COMMIT,
                 "declaration_digest": "c" * 64,
@@ -744,15 +725,18 @@ class SchemaActivationOwnerTest(unittest.TestCase):
 
         self.assertEqual(
             [
-                "make",
-                "dev-session-status",
-                "WORK_ITEM=secure-content-w12d",
+                "git",
+                "status",
+                "--porcelain=v2",
+                "--branch",
+                "--untracked-files=normal",
             ],
             commands[0],
         )
+        self.assertEqual(["git", "rev-parse", "HEAD^{tree}"], commands[1])
         self.assertEqual(COMMIT, receipt["source_commit"])
         self.assertEqual("8" * 40, receipt["source_tree"])
-        self.assertEqual("9" * 64, receipt["session_event_digest"])
+        self.assertRegex(receipt["session_event_digest"], r"^[0-9a-f]{64}$")
         self.assertNotIn("source_generation", receipt)
         self.assertNotIn("schema_version", receipt)
 
@@ -877,7 +861,7 @@ class SchemaActivationOwnerTest(unittest.TestCase):
                 budget_seconds=3600,
             )
 
-    def test_mobile_usability_owner_reuses_one_exact_active_declaration(
+    def test_mobile_usability_owner_reuses_one_exact_profile_binding(
         self,
     ) -> None:
         descriptor = MOBILE_USABILITY_OWNER
@@ -930,6 +914,104 @@ class SchemaActivationOwnerTest(unittest.TestCase):
         self.assertEqual(
             descriptor.plan_id,
             source_runner.requests[0]["plan_id"],
+        )
+
+    def test_mobile_profile_binding_comes_from_profile_and_current_source(
+        self,
+    ) -> None:
+        descriptor = MOBILE_USABILITY_OWNER
+        binding = descriptor.activation_bindings["chat-native-five"]
+        command_runner = mock.Mock(
+            return_value=subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout=json.dumps(
+                    {
+                        "authority": "machine-control-plane",
+                        "binding": {
+                            "allowedCapabilities": [
+                                "station.connect",
+                                "station.deploy",
+                                "station.reset",
+                            ],
+                            "branch": self.identity["branch"],
+                            "canonicalRoot": str(self.repo_root.resolve()),
+                            "profile": "chat-native-five",
+                            "workspaceId": WORKSPACE_ID,
+                        },
+                        "profile": {
+                            "profile": "chat-native-five",
+                            "resetPolicy": "agent-resettable",
+                            "sourceState": "tracked-clean",
+                            "stationDeployEnvironment": "chat-native-five",
+                            "stationMode": "remote",
+                        },
+                        "source": {
+                            "branch": self.identity["branch"],
+                            "head": COMMIT,
+                        },
+                    }
+                ),
+                stderr="",
+            )
+        )
+        owner = SchemaActivationOwner(
+            repo_root=self.repo_root,
+            result_root=self.result_root,
+            owner_descriptor=descriptor,
+            identity_loader=lambda: copy.deepcopy(self.identity),
+            command_runner=command_runner,
+        )
+
+        value = owner._load_declaration(binding.work_item_id)
+
+        self.assertEqual(PROFILE_OPERATION_BINDING_KIND, value["kind"])
+        self.assertEqual("machine-control-plane", value["authority"])
+        self.assertEqual(
+            canonical_digest(
+                {
+                    key: item
+                    for key, item in value.items()
+                    if key != "declarationDigest"
+                }
+            ),
+            value["declarationDigest"],
+        )
+        _validate_declaration(
+            value,
+            identity=self.identity,
+            work_item_id=binding.work_item_id,
+            task_id=binding.task_id,
+            generation_id=COMMIT,
+            target=None,
+            owner=descriptor,
+        )
+        _validate_declaration(
+            value,
+            identity=self.identity,
+            work_item_id=binding.work_item_id,
+            task_id=binding.task_id,
+            generation_id=COMMIT,
+            target=PROFILE_TARGETS["chat-native-five"],
+            owner=descriptor,
+        )
+        command = command_runner.call_args.args[0]
+        self.assertEqual(
+            [
+                "node",
+                "tooling/scripts/local-dev/machine-dev.mjs",
+                "check",
+            ],
+            command[:3],
+        )
+        self.assertNotIn("dev-check", command)
+        self.assertEqual(
+            "chat-native-five",
+            command[command.index("--profile") + 1],
+        )
+        self.assertEqual(
+            "station.connect,station.deploy,station.reset",
+            command[command.index("--capabilities") + 1],
         )
 
     def test_cross_station_owner_rejects_secure_content_declaration(self) -> None:

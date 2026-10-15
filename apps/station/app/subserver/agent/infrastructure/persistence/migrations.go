@@ -546,6 +546,95 @@ func MigrateFencedClientExecution(db *gorm.DB) error {
 	})
 }
 
+// MigrateExecutorLeaseFencing invalidates authority created before node-bound
+// fencing and guarantees one active owner for each durable execution step.
+func MigrateExecutorLeaseFencing(db *gorm.DB) error {
+	if db == nil {
+		return fmt.Errorf("executor lease fencing migration requires database")
+	}
+	if !db.Migrator().HasTable(&ExecutorLease{}) {
+		return nil
+	}
+
+	return db.Transaction(func(tx *gorm.DB) error {
+		hasLegacyOwner := tx.Migrator().HasColumn(
+			"agent_executor_leases",
+			"owner_node_peer_id",
+		)
+		hasCurrentOwner := tx.Migrator().HasColumn(
+			"agent_executor_leases",
+			"owner_node_id",
+		)
+		if hasLegacyOwner && !hasCurrentOwner {
+			if err := tx.Migrator().RenameColumn(
+				"agent_executor_leases",
+				"owner_node_peer_id",
+				"owner_node_id",
+			); err != nil {
+				return fmt.Errorf(
+					"rename agent executor lease owner node: %w",
+					err,
+				)
+			}
+		} else if hasLegacyOwner {
+			if err := tx.Exec(`
+				UPDATE agent_executor_leases
+				SET owner_node_id = owner_node_peer_id
+				WHERE owner_node_id = '' AND owner_node_peer_id <> ''
+			`).Error; err != nil {
+				return fmt.Errorf(
+					"copy legacy agent executor lease owner node: %w",
+					err,
+				)
+			}
+			if err := tx.Migrator().DropColumn(
+				"agent_executor_leases",
+				"owner_node_peer_id",
+			); err != nil {
+				return fmt.Errorf(
+					"drop legacy agent executor lease owner node: %w",
+					err,
+				)
+			}
+		}
+		for column, field := range map[string]string{
+			"owner_node_id":     "OwnerNodeID",
+			"owner_incarnation": "OwnerIncarnation",
+			"fencing_token":     "FencingToken",
+		} {
+			if tx.Migrator().HasColumn("agent_executor_leases", column) {
+				continue
+			}
+			if err := tx.Migrator().AddColumn(&ExecutorLease{}, field); err != nil {
+				return fmt.Errorf(
+					"add agent_executor_leases.%s: %w",
+					column,
+					err,
+				)
+			}
+		}
+		if err := tx.Model(&ExecutorLease{}).
+			Where(
+				"status = ? AND (owner_node_id = '' OR owner_incarnation = '' OR fencing_token = 0)",
+				"active",
+			).
+			Updates(map[string]interface{}{
+				"status":       "expired",
+				"heartbeat_at": gorm.Expr("CURRENT_TIMESTAMP"),
+			}).Error; err != nil {
+			return fmt.Errorf("expire unfenced executor leases: %w", err)
+		}
+		if err := tx.Exec(`
+			CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_executor_leases_active_step
+			ON agent_executor_leases (step_id)
+			WHERE status = 'active' AND step_id <> ''
+		`).Error; err != nil {
+			return fmt.Errorf("create active executor lease fence: %w", err)
+		}
+		return nil
+	})
+}
+
 func migrateClientCapabilityLeaseColumns(tx *gorm.DB) error {
 	if !tx.Migrator().HasTable(&ClientCapabilityLease{}) {
 		return nil

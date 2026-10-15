@@ -892,17 +892,18 @@ Add exactly one Development target:
 
 This target reuses the complete SC-D23 database/object allowlist, transaction,
 public snapshot, journal, quiescence, deployment, post-audit, lease, and
-failure contract. The current tracked declaration may own source checkpoint,
-deploy, and reset claims together; it must name exactly this profile,
-environment, and scope. `FINAL_CUT`, aliases, other profiles, broader deletion,
-direct SQL/DDL, and an HTTP reset route remain forbidden.
+failure contract. Its source checkpoint and reset authorization are derived
+from the reviewed `chat-native-five` Profile, current workspace capabilities,
+and current Git source; the binding must name exactly this profile,
+environment, and scope. `FINAL_CUT`, aliases, other profiles, broader
+deletion, direct SQL/DDL, and an HTTP reset route remain forbidden.
 
 ### Rationale
 
 Reusing the canonical reset owner removes the retained mixed schema without
 adding a compatibility writer or a second migration path. Exact Plan, Task,
-profile, environment, scope, source, declaration, and lease binding preserves
-the fail-closed boundary.
+profile, environment, scope, current source, capability, and lease binding
+preserves the fail-closed boundary.
 
 ### Alternatives Considered
 

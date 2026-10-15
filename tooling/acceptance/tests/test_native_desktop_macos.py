@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+import inspect
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -59,6 +62,61 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
         lifecycle = get_runtime_cell_lifecycle("desktop-macos-native")
         self.assertIsInstance(lifecycle, NativeDesktopMacOSProvisioner)
 
+    def test_source_identity_builds_binary_before_attesting_current_commit(
+        self,
+    ) -> None:
+        commit = "a" * 40
+        tree = "b" * 40
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binary = root / "peers-touch-desktop"
+            binary.write_bytes(b"exact-source-binary")
+            lifecycle = NativeDesktopMacOSProvisioner(
+                source_root=root,
+                state_root=root / "state",
+            )
+            clean = subprocess.CompletedProcess(
+                args=("git", "status"),
+                returncode=0,
+                stdout="",
+                stderr="",
+            )
+            built = subprocess.CompletedProcess(
+                args=("make", "acceptance-driver-build"),
+                returncode=0,
+                stdout="built",
+                stderr="",
+            )
+            with (
+                patch.object(
+                    lifecycle,
+                    "_git",
+                    side_effect=(commit, tree),
+                ),
+                patch(
+                    "tooling.acceptance.provisioners."
+                    "native_desktop_macos.subprocess.run",
+                    side_effect=(clean, built, clean),
+                ) as run,
+                patch(
+                    "tooling.acceptance.provisioners."
+                    "native_desktop_macos.find_app_binary",
+                    return_value=str(binary),
+                ),
+            ):
+                source = lifecycle._source_identity()
+
+        self.assertEqual(source.commit, commit)
+        self.assertEqual(
+            source.binary_sha256,
+            hashlib.sha256(b"exact-source-binary").hexdigest(),
+        )
+        self.assertEqual(
+            run.call_args_list[1].args[0],
+            ("make", "acceptance-driver-build"),
+        )
+        self.assertEqual(run.call_args_list[1].kwargs["cwd"], root.resolve())
+
     def test_probe_launcher_places_window_on_primary_display(self) -> None:
         launcher = Mock(log_path=None)
         session = Mock()
@@ -95,6 +153,23 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
             },
         )
         session.stop.assert_called_once_with()
+
+    def test_probe_repositions_window_before_native_point_checks(self) -> None:
+        source = inspect.getsource(
+            NativeDesktopMacOSProvisioner._probe_native_adapter
+        )
+
+        self.assertLess(
+            source.index("session.driver.set_window_rect(x=100, y=100)"),
+            source.index("bounds = self._await_window_bounds(process_id)"),
+        )
+
+    def test_window_bounds_wait_uses_native_startup_budget(self) -> None:
+        default = inspect.signature(
+            NativeDesktopMacOSProvisioner._await_window_bounds
+        ).parameters["timeout_seconds"].default
+
+        self.assertEqual(default, 30.0)
 
     def test_window_bounds_wait_retries_transient_visibility(self) -> None:
         transient = BlockedError(

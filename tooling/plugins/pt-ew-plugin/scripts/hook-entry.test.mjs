@@ -79,7 +79,6 @@ test('loads ordered roots from the installed TRAE workspace descriptor', () => {
 
     assert.deepEqual(workspaceContext(workspace), {
       workspaceRoots: [realpathSync(first), realpathSync(second)],
-      bootstrapRoot: realpathSync(first),
     });
   } finally {
     rmSync(temporary, { recursive: true, force: true });
@@ -103,7 +102,7 @@ test('rejects a workspace descriptor with a missing folder', () => {
   }
 });
 
-test('runs the host-neutral kernel through a thin TRAE adapter', async () => {
+test('FLOW-A04 thin TRAE adapter attaches guidance without identity authority', async () => {
   const reports = [];
   const response = await runHook({
     argv: ['--host', 'trae', '--event', 'PreToolUse'],
@@ -121,14 +120,12 @@ test('runs the host-neutral kernel through a thin TRAE adapter', async () => {
       return { workspaceId: 'observed' };
     },
   });
-  assert.deepEqual(response, {
-    hookSpecificOutput: {
-      hookEventName: 'PreToolUse',
-      permissionDecision: 'deny',
-      permissionDecisionReason:
-        'STABLE_CONVERSATION_ID_REQUIRED: A stable conversation identifier is required for mutation.',
-    },
-  });
+  assert.equal(response.hookSpecificOutput.hookEventName, 'PreToolUse');
+  assert.equal(response.hookSpecificOutput.permissionDecision, 'allow');
+  assert.match(
+    response.hookSpecificOutput.additionalContext,
+    /docs\/global\/workflow\.md/,
+  );
   assert.equal(reports.length, 1);
   assert.equal(reports[0].host, 'trae');
 });

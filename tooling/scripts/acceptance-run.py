@@ -21,11 +21,6 @@ from typing import Any, Mapping
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from tooling.scripts.plan.acceptance_admission import (  # noqa: E402
-    AcceptanceAdmissionError,
-    require_acceptance_admission,
-)
-
 RUN_ARTIFACT_KIND = "acceptance-run"
 RESULT_ARTIFACT_KIND = "acceptance-gate-result"
 AGENT_V2_SCHEMA_ROOT = REPO_ROOT / "tooling/acceptance/schemas/agent-v2"
@@ -1977,7 +1972,6 @@ def main() -> int:
     parser.add_argument("--work-item")
     parser.add_argument("--development-journey-id")
     parser.add_argument("--development-manifest-out")
-    parser.add_argument("--session")
     parser.add_argument(
         "--station-profile",
         action="append",
@@ -2012,7 +2006,6 @@ def main() -> int:
                 args.work_item,
                 args.development_journey_id,
                 args.development_manifest_out,
-                args.session,
             )
         ):
             raise SystemExit("--allocate-run-id cannot be combined with execution options")
@@ -2053,11 +2046,10 @@ def main() -> int:
             or args.dry_run
             or candidate_mode
             or args.run_id
-            or args.session
         ):
             raise SystemExit(
                 "development execution forbids completion/full, dry-run, "
-                "candidate handoff, formal --run-id, and --session"
+                "candidate handoff, and formal --run-id"
             )
         if args.development_manifest_out or args.development_journey_id:
             if (
@@ -2098,26 +2090,6 @@ def main() -> int:
             raise SystemExit(
                 "--run-id requires one explicit formal --gate invocation"
             )
-    broad_acceptance = (
-        args.execution_policy == "acceptance"
-        and not args.gate
-        and not args.dry_run
-    )
-    if args.session and not broad_acceptance:
-        raise SystemExit(
-            "--session is valid only for non-dry-run broad Acceptance"
-        )
-    if broad_acceptance:
-        try:
-            require_acceptance_admission(
-                REPO_ROOT,
-                args.session,
-                "acceptance",
-            )
-        except AcceptanceAdmissionError as error:
-            print(f"Acceptance admission failed: {error}", file=sys.stderr)
-            return 2
-
     try:
         if args.execution_policy == "development":
             store = EvidenceStore(
@@ -2145,6 +2117,13 @@ def main() -> int:
                 selected_execution_mode,
                 Path(args.execution_plan) if args.execution_plan else None,
             )
+        definitions = load_gate_definitions(Path(args.gates))
+        gates = resolve_requested_gates(plan, definitions, args.gate)
+        gates = filter_gates_by_tier(gates, args.tier)
+        if not gates:
+            raise EvidenceError(
+                "selected Acceptance scope contains no executable Gates"
+            )
         aggregate_source = source_identity(REPO_ROOT)
         aggregate_run = store.begin_run(
             (
@@ -2160,10 +2139,6 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
-
-    definitions = load_gate_definitions(Path(args.gates))
-    gates = resolve_requested_gates(plan, definitions, args.gate)
-    gates = filter_gates_by_tier(gates, args.tier)
 
     results: list[dict[str, Any]] = []
     print(

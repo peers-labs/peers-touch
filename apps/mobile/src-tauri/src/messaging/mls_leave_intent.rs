@@ -6,9 +6,7 @@ use messaging_core::proto::chat::{
 };
 use zeroize::Zeroizing;
 
-use super::transport::{
-    get_proto, post_proto, validate_transport_scope, StationTransportError,
-};
+use super::transport::{get_proto, post_proto, validate_transport_scope, StationTransportError};
 
 pub struct StationMlsLeaveIntentTransport {
     station_origin: String,

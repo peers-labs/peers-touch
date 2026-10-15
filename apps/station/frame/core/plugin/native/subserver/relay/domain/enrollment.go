@@ -17,7 +17,7 @@ func BindEnrollmentChallenge(challenge EnrollmentChallenge) []byte {
 	writeChallengeString(&payload, challenge.InviteDigest)
 	writeChallengeString(&payload, challenge.RelayPeerID)
 	writeChallengeString(&payload, challenge.StationPeerID)
-	_ = binary.Write(&payload, binary.BigEndian, challenge.MountID)
+	_ = binary.Write(&payload, binary.BigEndian, challenge.EnrollmentID)
 	_ = binary.Write(&payload, binary.BigEndian, challenge.Generation)
 	writeChallengeString(&payload, challenge.CredentialJTI)
 	writeChallengeString(&payload, challenge.Label)

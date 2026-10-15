@@ -175,6 +175,90 @@ func TestFindOrRegisterOAuthActorReusesSyntheticEmailAfterBindingFailure(t *test
 	}
 }
 
+func TestFindOrRegisterOAuthActorConflictsOnVerifiedEmailInsteadOfMerging(t *testing.T) {
+	existingActor := &db.Actor{
+		ID:                7,
+		PTID:              "ptid:v1:actor:peers:p:original:fingerprint",
+		PreferredUsername: "original",
+		Email:             "shared@example.test",
+	}
+	identity := &coreauth.OAuth2Identity{
+		ProviderID:     "google",
+		ProviderUserID: "999",
+		Username:       "someone",
+		Email:          "shared@example.test",
+		EmailVerified:  true,
+	}
+	signups := 0
+	findByEmail := func(_ context.Context, email string) (*db.Actor, error) {
+		if email == "shared@example.test" {
+			return existingActor, nil
+		}
+		return nil, gorm.ErrRecordNotFound
+	}
+	signUp := func(context.Context, *model.ActorSignRequest, string) error {
+		signups++
+		return nil
+	}
+
+	_, err := findOrRegisterOAuthActorWith(
+		context.Background(),
+		identity,
+		"https://station.test",
+		findByEmail,
+		func(_ context.Context, base string) (string, error) { return base, nil },
+		signUp,
+	)
+	var errResp *model.ErrorResponse
+	if !errors.As(err, &errResp) || errResp.Code != model.ErrorCode_ERROR_CODE_ACTOR_EXISTS {
+		t.Fatalf("expected ACTOR_EXISTS conflict, got %v", err)
+	}
+	if signups != 0 {
+		t.Fatalf("conflict must not create an actor, signups=%d", signups)
+	}
+}
+
+func TestFindOrRegisterOAuthActorCreatesIndependentActorWhenEmailFree(t *testing.T) {
+	identity := &coreauth.OAuth2Identity{
+		ProviderID:     "google",
+		ProviderUserID: "999",
+		Username:       "brand-new",
+		Email:          "fresh@example.test",
+		EmailVerified:  true,
+	}
+	var stored *db.Actor
+	findByEmail := func(_ context.Context, email string) (*db.Actor, error) {
+		if stored == nil || stored.Email != email {
+			return nil, gorm.ErrRecordNotFound
+		}
+		return stored, nil
+	}
+	signUp := func(_ context.Context, req *model.ActorSignRequest, _ string) error {
+		stored = &db.Actor{
+			ID:                99,
+			PTID:              "ptid:v1:actor:peers:p:brand-new:fingerprint",
+			PreferredUsername: req.GetName(),
+			Email:             req.GetEmail(),
+		}
+		return nil
+	}
+
+	created, err := findOrRegisterOAuthActorWith(
+		context.Background(),
+		identity,
+		"https://station.test",
+		findByEmail,
+		func(_ context.Context, base string) (string, error) { return base, nil },
+		signUp,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.ID != 99 || created.Email != "fresh@example.test" {
+		t.Fatalf("independent actor was not created: %#v", created)
+	}
+}
+
 func TestNormalizedOAuthUsernameFitsStationHandleContract(t *testing.T) {
 	cases := []struct {
 		name string

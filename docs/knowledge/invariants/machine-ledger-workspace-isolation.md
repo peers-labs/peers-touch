@@ -1,12 +1,8 @@
 ---
 kind: invariant
 title: Machine ledgers coordinate without owning workspaces
-status: active
-owns:
-  - tooling/scripts/local-dev/dev-work-ledger.mjs
-  - tooling/scripts/local-dev/dev-work-schema.mjs
-  - tooling/scripts/plan/plan-mount.mjs
-  - tooling/scripts/plan/stable-plan-state-migration.mjs
+status: superseded-by:DWF-D46
+owns: []
 referenced-by:
   - docs/knowledge/invariants/dev-resource-declaration-before-write.md
   - docs/knowledge/invariants/stable-plan-amendments.md
@@ -16,6 +12,12 @@ detected: 2026-10-07
 ---
 
 # Machine ledgers coordinate without owning workspaces
+
+> Superseded by DWF-D46. Retained as historical context only. The 2026-10-15
+> hard cut removed the machine-wide work and Plan-mount ledgers
+> (`dev-work-ledger`, schema adoption, mixed-envelope migration); optional
+> task progress is local, and real resource guards live at runtime entry
+> points instead.
 
 ## What must hold
 

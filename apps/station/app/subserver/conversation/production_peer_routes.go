@@ -8,7 +8,6 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -751,7 +750,7 @@ func (s *subServer) handleFederatedAttachmentObject(
 	); err != nil {
 		return err
 	}
-	start, end, partial, err := productionAttachmentRange(
+	start, end, _, err := productionAttachmentRange(
 		productionRequestHeader(request, "Range"),
 	)
 	if err != nil {
@@ -771,7 +770,12 @@ func (s *subServer) handleFederatedAttachmentObject(
 	if err != nil {
 		return mapProductionConversationError(ctx, err)
 	}
-	defer body.Close()
+	bodyTransferred := false
+	defer func() {
+		if !bodyTransferred {
+			_ = body.Close()
+		}
+	}()
 	encodedMetadata, err := deterministicProductionProto(metadata)
 	if err != nil {
 		return err
@@ -786,39 +790,24 @@ func (s *subServer) handleFederatedAttachmentObject(
 		"ETag",
 		`"`+hex.EncodeToString(metadata.GetResponse().GetEtagSha256())+`"`,
 	)
-	actualStart := start
-	actualEnd := end
-	if !partial {
-		actualStart = 0
-		actualEnd = int64(
+	_, _, responseLength, responseStatus, contentRange, err :=
+		productionAttachmentResponseBounds(
+			productionRequestHeader(request, "Range"),
 			metadata.GetResponse().GetTotalCiphertextSize(),
-		) - 1
-	} else if actualEnd < 0 {
-		actualEnd = int64(
-			metadata.GetResponse().GetTotalCiphertextSize(),
-		) - 1
+		)
+	if err != nil {
+		return err
 	}
 	response.SetHeader(
 		"Content-Length",
-		strconv.FormatInt(actualEnd-actualStart+1, 10),
+		strconv.FormatInt(responseLength, 10),
 	)
-	if partial {
-		response.SetHeader(
-			"Content-Range",
-			fmt.Sprintf(
-				"bytes %d-%d/%d",
-				actualStart,
-				actualEnd,
-				metadata.GetResponse().GetTotalCiphertextSize(),
-			),
-		)
-		response.WriteHeader(http.StatusPartialContent)
-	} else {
-		response.WriteHeader(http.StatusOK)
+	if responseStatus == http.StatusPartialContent {
+		response.SetHeader("Content-Range", contentRange)
 	}
-	_, err = io.Copy(productionResponseWriter{response: response}, body)
-
-	return err
+	response.WriteHeader(responseStatus)
+	bodyTransferred = true
+	return productionWriteAttachmentBody(response, body, responseLength)
 }
 
 func (s *subServer) validateFederatedAttachmentClaims(

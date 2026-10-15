@@ -150,7 +150,7 @@ async function bootstrap() {
             theme={{
               token: {
                 colorPrimaryBorder: '#6f87f5',
-                lineWidthFocus: 2,
+                lineWidthFocus: 0,
               },
             }}
           >

@@ -7,21 +7,25 @@ use reqwest::blocking::Client;
 use reqwest::redirect::Policy;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
+use station_trust::{verify_node_authorization_bytes, verify_station_route_attestation_bytes};
+use std::net::IpAddr;
+#[cfg(any(test, feature = "acceptance-webdriver"))]
+use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use crate::infrastructure::station::TransportIdentityScope;
 use crate::model::peer::{
     AccessEndpointOutcome, AccessEndpointRequest, AccessEndpointResponse, AccessEndpointRole,
-    StationConnectionEnvelope, StationRouteAttestation, StationRouteStatement,
-    StationRouteVisibility,
+    AccessEndpointSourceProof, AccessEndpointSourceProofStatement, StationConnectionEnvelope,
+    StationConnectionGrantStatement, StationRouteAttestation, StationRouteStatement,
 };
 
 const ACCESS_PATH: &str = "/.well-known/peers-touch/access";
 const ACCESS_ENDPOINT_DOMAIN: &[u8] = b"peers-touch/access-endpoint/v1\0";
-const STATION_ROUTE_DOMAIN: &[u8] = b"peers-touch/station-route/v1\0";
+const ACCESS_ENDPOINT_SOURCE_PROOF_DOMAIN: &[u8] = b"peers-touch/access-endpoint-source-proof/v1\0";
 const ACCESS_PROTOCOL_VERSION: u32 = 1;
 const DISCOVERY_CHALLENGE_SIZE: usize = 32;
 const CLOCK_SKEW_MS: i64 = 60_000;
-const MAX_ROUTE_LIFETIME_MS: i64 = 24 * 60 * 60 * 1_000;
 const MAX_DISCOVERY_RESPONSE_BYTES: usize = 64 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -43,12 +47,16 @@ pub struct VerifiedEndpoint {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VerifiedStationRoute {
     pub station_peer_id: String,
-    pub station_host_public_key: Vec<u8>,
+    pub node_peer_id: String,
+    pub station_root_public_key: Vec<u8>,
+    pub node_authorization_digest: [u8; 32],
+    pub authorization_epoch: u64,
     pub route_id: String,
     pub route_generation: u64,
     pub endpoint_origin: String,
     pub relay_peer_id: Option<String>,
     pub inner_tls_spki_sha256: Option<[u8; 32]>,
+    pub addresses: Vec<String>,
     pub attestation_bytes: Option<Vec<u8>>,
     pub connection_grant: Option<Vec<u8>>,
     pub expires_at_unix_ms: Option<i64>,
@@ -71,27 +79,62 @@ impl StationDiscoveryError {
     }
 }
 
-pub fn discover_station_input(input: &str) -> Result<VerifiedEndpoint, StationDiscoveryError> {
+pub fn discover_station_input<F>(
+    input: &str,
+    sign_source_proof: F,
+) -> Result<VerifiedEndpoint, StationDiscoveryError>
+where
+    F: FnOnce(TransportIdentityScope, &[u8]) -> Result<(Vec<u8>, Vec<u8>), String>,
+{
     let parsed = parse_input(input)?;
     let mut challenge = [0_u8; DISCOVERY_CHALLENGE_SIZE];
     rand::thread_rng().fill_bytes(&mut challenge);
+    let source_proof = match (
+        parsed.connection_grant.as_deref(),
+        parsed.relay_peer_id.as_deref(),
+    ) {
+        (Some(grant), Some(relay_peer_id)) => {
+            let statement = AccessEndpointSourceProofStatement {
+                challenge: challenge.to_vec(),
+                connection_grant_digest: Sha256::digest(grant).to_vec(),
+                relay_peer_id: relay_peer_id.to_string(),
+                client_protocol_version: ACCESS_PROTOCOL_VERSION,
+            };
+            let statement_bytes = statement.encode_to_vec();
+            let mut signed = Vec::with_capacity(
+                ACCESS_ENDPOINT_SOURCE_PROOF_DOMAIN.len() + statement_bytes.len(),
+            );
+            signed.extend_from_slice(ACCESS_ENDPOINT_SOURCE_PROOF_DOMAIN);
+            signed.extend_from_slice(&statement_bytes);
+            let (source_public_key, source_signature) =
+                sign_source_proof(parsed.identity_scope.clone(), &signed).map_err(|error| {
+                    StationDiscoveryError::new(
+                        "station_discovery_unavailable",
+                        format!("Could not sign the scoped Station transport identity: {error}"),
+                        true,
+                    )
+                })?;
+            Some(AccessEndpointSourceProof {
+                statement_bytes,
+                source_public_key,
+                source_signature,
+            })
+        }
+        (None, None) => None,
+        _ => {
+            return Err(invalid_discovery(
+                "Private Station connection material has inconsistent Relay identity",
+            ))
+        }
+    };
     let request = AccessEndpointRequest {
         challenge: challenge.to_vec(),
         connection_grant: parsed.connection_grant.clone().unwrap_or_default(),
         client_protocol_version: ACCESS_PROTOCOL_VERSION,
+        source_proof,
     };
     let endpoint = format!("{}{}", parsed.origin, ACCESS_PATH);
-    let response = Client::builder()
-        .timeout(Duration::from_secs(10))
-        .redirect(Policy::none())
-        .build()
-        .map_err(|error| {
-            StationDiscoveryError::new(
-                "station_discovery_unavailable",
-                format!("Could not initialize endpoint discovery: {error}"),
-                true,
-            )
-        })?
+    let response = discovery_client()?
         .post(endpoint)
         .header("Accept", "application/protobuf")
         .header("Content-Type", "application/protobuf")
@@ -141,6 +184,44 @@ pub fn discover_station_input(input: &str) -> Result<VerifiedEndpoint, StationDi
     )
 }
 
+fn discovery_client() -> Result<Client, StationDiscoveryError> {
+    let builder = Client::builder()
+        .use_rustls_tls()
+        .timeout(Duration::from_secs(10))
+        .redirect(Policy::none());
+    #[cfg(any(test, feature = "acceptance-webdriver"))]
+    let builder = if let Some(path) = std::env::var_os("PT_ACCEPTANCE_RELAY_TLS_CA_FILE") {
+        if path.as_os_str().is_empty() {
+            return Err(acceptance_tls_root_error(
+                "Acceptance Relay trust anchor path is empty",
+            ));
+        }
+        builder.add_root_certificate(load_acceptance_tls_root(Path::new(&path))?)
+    } else {
+        builder
+    };
+    builder.build().map_err(|error| {
+        StationDiscoveryError::new(
+            "station_discovery_unavailable",
+            format!("Could not initialize endpoint discovery: {error}"),
+            true,
+        )
+    })
+}
+
+#[cfg(any(test, feature = "acceptance-webdriver"))]
+fn load_acceptance_tls_root(path: &Path) -> Result<reqwest::Certificate, StationDiscoveryError> {
+    let pem = std::fs::read(path)
+        .map_err(|_| acceptance_tls_root_error("Acceptance Relay trust anchor is unavailable"))?;
+    reqwest::Certificate::from_pem(&pem)
+        .map_err(|_| acceptance_tls_root_error("Acceptance Relay trust anchor is invalid"))
+}
+
+#[cfg(any(test, feature = "acceptance-webdriver"))]
+fn acceptance_tls_root_error(message: impl Into<String>) -> StationDiscoveryError {
+    StationDiscoveryError::new("station_discovery_unavailable", message, false)
+}
+
 fn verify_discovery_response(
     requested_origin: &str,
     connection_grant: Option<Vec<u8>>,
@@ -183,41 +264,102 @@ fn verify_discovery_response(
 
     match endpoint_role {
         Some(AccessEndpointRole::DirectStation) => {
-            if response.outcome != AccessEndpointOutcome::Ready as i32
-                || !response.station_routes.is_empty()
-                || connection_grant.is_some()
+            if response.outcome != AccessEndpointOutcome::Ready as i32 || connection_grant.is_some()
             {
                 return Err(invalid_discovery(
                     "Direct Station discovery outcome is invalid",
                 ));
             }
-            let route_id = direct_route_id(&statement.endpoint_peer_id, requested_origin);
+            let node_authorization = response
+                .node_authorization
+                .as_ref()
+                .ok_or_else(|| invalid_discovery("Direct Station node authorization is missing"))?;
+            let verified_authorization = verify_node_authorization_bytes(
+                &node_authorization.encode_to_vec(),
+                now_unix_ms,
+            )
+            .map_err(|_| invalid_discovery("Direct Station node authorization is invalid"))?;
+            if verified_authorization.node_peer_id != statement.endpoint_peer_id
+                || verified_authorization.node_public_key != endpoint_public_key
+                || statement.node_authorization_digest
+                    != verified_authorization.authorization_digest
+            {
+                return Err(invalid_discovery(
+                    "Direct Station endpoint does not match its node authorization",
+                ));
+            }
+            let mut routes = Vec::with_capacity(response.station_routes.len());
+            let mut direct_routes = 0;
+            for attestation in &response.station_routes {
+                let advertised =
+                    StationRouteStatement::decode(attestation.statement_bytes.as_slice())
+                        .map_err(|_| invalid_discovery("Station route statement is invalid"))?;
+                let kind = crate::model::peer::StationRouteKind::try_from(advertised.kind).ok();
+                let expected_relay_peer_id = match kind {
+                    Some(crate::model::peer::StationRouteKind::Direct) => {
+                        direct_routes += 1;
+                        None
+                    }
+                    Some(crate::model::peer::StationRouteKind::Circuit)
+                        if !advertised.relay_peer_id.trim().is_empty() =>
+                    {
+                        Some(advertised.relay_peer_id.as_str())
+                    }
+                    _ => {
+                        return Err(invalid_discovery(
+                            "Station route kind or Relay identity is invalid",
+                        ))
+                    }
+                };
+                let route = verify_route_attestation(
+                    attestation,
+                    expected_relay_peer_id,
+                    &canonical_origin,
+                    None,
+                    now_unix_ms,
+                )?;
+                if route.station_peer_id != verified_authorization.station_peer_id
+                    || route.node_peer_id != verified_authorization.node_peer_id
+                    || route.station_root_public_key
+                        != verified_authorization.station_root_public_key
+                    || route.node_authorization_digest
+                        != verified_authorization.authorization_digest
+                    || route.authorization_epoch != verified_authorization.authorization_epoch
+                {
+                    return Err(invalid_discovery(
+                        "Circuit route does not belong to the responding Station Node",
+                    ));
+                }
+                routes.push(route);
+            }
+            if direct_routes != 1 {
+                return Err(invalid_discovery(
+                    "Direct Station must publish exactly one signed Direct route",
+                ));
+            }
+            routes.sort_by_key(|route| route.relay_peer_id.is_some());
             Ok(VerifiedEndpoint {
                 role: VerifiedEndpointRole::DirectStation,
                 endpoint_peer_id: statement.endpoint_peer_id.clone(),
                 canonical_origin: canonical_origin.clone(),
-                endpoint_public_key: endpoint_public_key.clone(),
-                routes: vec![VerifiedStationRoute {
-                    station_peer_id: statement.endpoint_peer_id,
-                    station_host_public_key: endpoint_public_key,
-                    route_id,
-                    route_generation: 1,
-                    endpoint_origin: canonical_origin,
-                    relay_peer_id: None,
-                    inner_tls_spki_sha256: None,
-                    attestation_bytes: None,
-                    connection_grant: None,
-                    expires_at_unix_ms: None,
-                }],
+                endpoint_public_key,
+                routes,
             })
         }
         Some(AccessEndpointRole::Relay) => {
+            if response.node_authorization.is_some()
+                || !statement.node_authorization_digest.is_empty()
+            {
+                return Err(invalid_discovery(
+                    "Relay endpoint must not carry a Station node authorization",
+                ));
+            }
             verify_relay_outcome(&response)?;
             let mut routes = Vec::with_capacity(response.station_routes.len());
             for attestation in &response.station_routes {
                 routes.push(verify_route_attestation(
                     attestation,
-                    &statement.endpoint_peer_id,
+                    Some(&statement.endpoint_peer_id),
                     &canonical_origin,
                     connection_grant.clone(),
                     now_unix_ms,
@@ -267,6 +409,11 @@ fn verify_relay_outcome(response: &AccessEndpointResponse) -> Result<(), Station
             "The Relay returned an invalid Station route",
             false,
         )),
+        Some(AccessEndpointOutcome::SourceProofInvalid) => Err(StationDiscoveryError::new(
+            "station_source_proof_invalid",
+            "The Relay rejected the scoped transport identity proof",
+            false,
+        )),
         _ => Err(invalid_discovery(
             "Relay discovery outcome does not match its route candidates",
         )),
@@ -275,56 +422,33 @@ fn verify_relay_outcome(response: &AccessEndpointResponse) -> Result<(), Station
 
 fn verify_route_attestation(
     attestation: &StationRouteAttestation,
-    relay_peer_id: &str,
-    relay_origin: &str,
+    expected_relay_peer_id: Option<&str>,
+    endpoint_origin: &str,
     connection_grant: Option<Vec<u8>>,
     now_unix_ms: i64,
 ) -> Result<VerifiedStationRoute, StationDiscoveryError> {
-    let statement = StationRouteStatement::decode(attestation.statement_bytes.as_slice())
-        .map_err(|_| invalid_discovery("Station route statement cannot be decoded"))?;
-    if statement.encode_to_vec() != attestation.statement_bytes
-        || statement.station_peer_id.trim().is_empty()
-        || statement.relay_peer_id != relay_peer_id
-        || statement.route_id.trim().is_empty()
-        || statement.route_generation == 0
-        || statement.inner_tls_spki_sha256.len() != 32
-        || statement.capabilities_digest.len() != 32
-        || !matches!(
-            StationRouteVisibility::try_from(statement.visibility).ok(),
-            Some(StationRouteVisibility::Public | StationRouteVisibility::GrantOnly)
-        )
-        || statement.issued_at_unix_ms > now_unix_ms + CLOCK_SKEW_MS
-        || statement.expires_at_unix_ms <= now_unix_ms
-        || statement.expires_at_unix_ms <= statement.issued_at_unix_ms
-        || statement.expires_at_unix_ms - statement.issued_at_unix_ms > MAX_ROUTE_LIFETIME_MS
-    {
-        return Err(invalid_discovery(
-            "Station route statement fields are invalid",
-        ));
-    }
-    let station_host_public_key = verify_signed_statement(
-        &attestation.host_public_key,
-        &attestation.signature,
-        STATION_ROUTE_DOMAIN,
-        &attestation.statement_bytes,
-        &statement.station_peer_id,
-    )?;
-    let spki: [u8; 32] = statement
-        .inner_tls_spki_sha256
-        .as_slice()
-        .try_into()
-        .map_err(|_| invalid_discovery("Station route SPKI pin is malformed"))?;
+    let attestation_bytes = attestation.encode_to_vec();
+    let verified = verify_station_route_attestation_bytes(
+        &attestation_bytes,
+        expected_relay_peer_id,
+        now_unix_ms,
+    )
+    .map_err(|_| invalid_discovery("Station route attestation is invalid"))?;
     Ok(VerifiedStationRoute {
-        station_peer_id: statement.station_peer_id,
-        station_host_public_key,
-        route_id: statement.route_id,
-        route_generation: statement.route_generation,
-        endpoint_origin: relay_origin.to_string(),
-        relay_peer_id: Some(relay_peer_id.to_string()),
-        inner_tls_spki_sha256: Some(spki),
-        attestation_bytes: Some(attestation.encode_to_vec()),
+        station_peer_id: verified.station_peer_id,
+        node_peer_id: verified.node_peer_id,
+        station_root_public_key: verified.station_root_public_key,
+        node_authorization_digest: verified.authorization_digest,
+        authorization_epoch: verified.authorization_epoch,
+        route_id: verified.route_id,
+        route_generation: verified.route_generation,
+        endpoint_origin: endpoint_origin.to_string(),
+        relay_peer_id: verified.relay_peer_id,
+        inner_tls_spki_sha256: Some(verified.inner_tls_spki_sha256),
+        addresses: verified.addresses,
+        attestation_bytes: Some(attestation_bytes),
         connection_grant,
-        expires_at_unix_ms: Some(statement.expires_at_unix_ms),
+        expires_at_unix_ms: Some(verified.expires_at_unix_ms),
     })
 }
 
@@ -354,6 +478,8 @@ fn verify_signed_statement(
 struct ParsedInput {
     origin: String,
     connection_grant: Option<Vec<u8>>,
+    relay_peer_id: Option<String>,
+    identity_scope: TransportIdentityScope,
 }
 
 fn parse_input(input: &str) -> Result<ParsedInput, StationDiscoveryError> {
@@ -379,41 +505,52 @@ fn parse_input(input: &str) -> Result<ParsedInput, StationDiscoveryError> {
         let grant = envelope
             .connection_grant
             .as_ref()
-            .map(Message::encode_to_vec);
+            .ok_or_else(|| invalid_discovery("Private Station connection grant is missing"))?;
+        let grant_statement =
+            StationConnectionGrantStatement::decode(grant.statement_bytes.as_slice())
+                .map_err(|_| invalid_discovery("Private Station connection grant is malformed"))?;
+        if grant_statement.relay_peer_id.trim().is_empty() {
+            return Err(invalid_discovery(
+                "Private Station connection grant has no Relay identity",
+            ));
+        }
         return Ok(ParsedInput {
             origin: normalize_origin(&envelope.relay_origin)?,
-            connection_grant: grant,
+            connection_grant: Some(grant.encode_to_vec()),
+            relay_peer_id: Some(grant_statement.relay_peer_id.clone()),
+            identity_scope: TransportIdentityScope::Relay(grant_statement.relay_peer_id),
         });
     }
+    let origin = normalize_origin(value)?;
     Ok(ParsedInput {
-        origin: normalize_origin(value)?,
+        identity_scope: TransportIdentityScope::ProvisionalEndpointOrigin(origin.clone()),
+        origin,
         connection_grant: None,
+        relay_peer_id: None,
     })
 }
 
 fn normalize_origin(value: &str) -> Result<String, StationDiscoveryError> {
     let url = reqwest::Url::parse(value)
         .map_err(|_| invalid_discovery("A valid Station or Relay origin is required"))?;
-    if !matches!(url.scheme(), "http" | "https")
-        || url.host_str().is_none()
+    let host = url
+        .host_str()
+        .ok_or_else(|| invalid_discovery("A valid Station or Relay origin is required"))?;
+    let loopback = host.eq_ignore_ascii_case("localhost")
+        || host
+            .parse::<IpAddr>()
+            .map(|address| address.is_loopback())
+            .unwrap_or(false);
+    if !(url.scheme() == "https" || (url.scheme() == "http" && loopback))
         || url.query().is_some()
         || url.fragment().is_some()
         || (url.path() != "/" && !url.path().is_empty())
     {
         return Err(invalid_discovery(
-            "Station or Relay input must be an HTTP(S) origin",
+            "Station or Relay input must be an HTTPS origin or loopback HTTP origin",
         ));
     }
     Ok(value.trim().trim_end_matches('/').to_string())
-}
-
-fn direct_route_id(station_peer_id: &str, origin: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(b"peers-touch/direct-route/v1\0");
-    hasher.update(station_peer_id.as_bytes());
-    hasher.update([0]);
-    hasher.update(origin.as_bytes());
-    format!("direct-{}", hex::encode(hasher.finalize()))
 }
 
 fn unix_ms() -> i64 {
@@ -430,8 +567,15 @@ fn invalid_discovery(message: impl Into<String>) -> StationDiscoveryError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::peer::{AccessEndpointStatement, StationRouteStatement};
+    use crate::model::peer::{
+        AccessEndpointStatement, StationNodeAuthorization, StationNodeAuthorizationStatement,
+        StationRouteKind, StationRouteVisibility,
+    };
     use libp2p_identity::Keypair;
+    use sha2::{Digest, Sha256};
+
+    const NODE_AUTHORIZATION_DOMAIN: &[u8] = b"peers-touch/station-node-authorization/v1\0";
+    const STATION_ROUTE_DOMAIN: &[u8] = b"peers-touch/station-route/v1\0";
 
     fn sign(key: &Keypair, domain: &[u8], payload: &[u8]) -> Vec<u8> {
         let mut message = domain.to_vec();
@@ -440,41 +584,94 @@ mod tests {
     }
 
     fn direct_response(
-        key: &Keypair,
+        root: &Keypair,
+        node: &Keypair,
         challenge: &[u8],
         origin: &str,
         now: i64,
     ) -> AccessEndpointResponse {
+        let capabilities = vec![
+            "endpoint-discovery".to_string(),
+            "station-identity".to_string(),
+        ];
+        let capabilities_digest =
+            station_trust::station_capabilities_digest(&capabilities).unwrap();
+        let authorization_statement = StationNodeAuthorizationStatement {
+            station_peer_id: root.public().to_peer_id().to_string(),
+            node_peer_id: node.public().to_peer_id().to_string(),
+            node_public_key: node.public().encode_protobuf(),
+            authorization_epoch: 1,
+            capabilities_digest: capabilities_digest.to_vec(),
+            issued_at_unix_ms: now,
+            expires_at_unix_ms: now + 60 * 60 * 1_000,
+        };
+        let authorization_statement_bytes = authorization_statement.encode_to_vec();
+        let authorization = StationNodeAuthorization {
+            statement_bytes: authorization_statement_bytes.clone(),
+            station_root_public_key: root.public().encode_protobuf(),
+            root_signature: sign(
+                root,
+                NODE_AUTHORIZATION_DOMAIN,
+                &authorization_statement_bytes,
+            ),
+        };
+        let authorization_digest: [u8; 32] = Sha256::digest(authorization.encode_to_vec()).into();
         let statement = AccessEndpointStatement {
             challenge: challenge.to_vec(),
             endpoint_role: AccessEndpointRole::DirectStation as i32,
-            endpoint_peer_id: key.public().to_peer_id().to_string(),
+            endpoint_peer_id: node.public().to_peer_id().to_string(),
             canonical_origin: origin.to_string(),
             protocol_versions: vec![ACCESS_PROTOCOL_VERSION],
             capabilities: vec!["endpoint-discovery".to_string()],
             issued_at_unix_ms: now,
             expires_at_unix_ms: now + 60_000,
+            node_authorization_digest: authorization_digest.to_vec(),
         };
         let bytes = statement.encode_to_vec();
+        let route_statement = StationRouteStatement {
+            station_peer_id: authorization_statement.station_peer_id,
+            route_id: format!("direct-{}", authorization_statement.node_peer_id),
+            route_generation: authorization_statement.authorization_epoch,
+            inner_tls_spki_sha256: vec![0x33; 32],
+            capabilities_digest: capabilities_digest.to_vec(),
+            visibility: StationRouteVisibility::Public as i32,
+            issued_at_unix_ms: now,
+            expires_at_unix_ms: now + 60_000,
+            node_peer_id: authorization_statement.node_peer_id.clone(),
+            node_authorization_digest: authorization_digest.to_vec(),
+            kind: StationRouteKind::Direct as i32,
+            addresses: vec![format!(
+                "/ip4/127.0.0.1/tcp/4001/p2p/{}",
+                authorization_statement.node_peer_id
+            )],
+            ..Default::default()
+        };
+        let route_statement_bytes = route_statement.encode_to_vec();
         AccessEndpointResponse {
             outcome: AccessEndpointOutcome::Ready as i32,
             endpoint_statement_bytes: bytes.clone(),
-            endpoint_public_key: key.public().encode_protobuf(),
-            endpoint_signature: sign(key, ACCESS_ENDPOINT_DOMAIN, &bytes),
-            station_routes: Vec::new(),
+            endpoint_public_key: node.public().encode_protobuf(),
+            endpoint_signature: sign(node, ACCESS_ENDPOINT_DOMAIN, &bytes),
+            station_routes: vec![StationRouteAttestation {
+                statement_bytes: route_statement_bytes.clone(),
+                node_signature: sign(node, STATION_ROUTE_DOMAIN, &route_statement_bytes),
+                node_authorization: Some(authorization.clone()),
+            }],
+            node_authorization: Some(authorization),
         }
     }
 
     #[test]
-    fn verifies_direct_station_identity_before_building_route() {
-        let key = Keypair::generate_ed25519();
+    fn direct_station_route_uses_root_identity_and_independent_node() {
+        let root = Keypair::generate_ed25519();
+        let node = Keypair::generate_ed25519();
         let challenge = [7_u8; DISCOVERY_CHALLENGE_SIZE];
         let now = unix_ms();
         let verified = verify_discovery_response(
             "https://station.example",
             None,
             &challenge,
-            direct_response(&key, &challenge, "https://station.example", now),
+            direct_response(&root, &node, &challenge, "https://station.example", now),
             now,
         )
         .unwrap();
@@ -483,18 +680,93 @@ mod tests {
         assert_eq!(verified.routes.len(), 1);
         assert_eq!(
             verified.routes[0].station_peer_id,
-            key.public().to_peer_id().to_string()
+            root.public().to_peer_id().to_string()
+        );
+        assert_eq!(
+            verified.routes[0].node_peer_id,
+            node.public().to_peer_id().to_string()
         );
         assert!(verified.routes[0].route_id.starts_with("direct-"));
+        assert_eq!(verified.routes[0].inner_tls_spki_sha256, Some([0x33; 32]));
+        assert!(verified.routes[0].attestation_bytes.is_some());
+        assert!(verified.routes[0].addresses[0].starts_with("/ip4/127.0.0.1/tcp/4001/p2p/"));
+        assert_eq!(verified.routes[0].expires_at_unix_ms, Some(now + 60_000));
+    }
+
+    #[test]
+    fn direct_station_rejects_missing_signed_route_and_remote_http_origin() {
+        let root = Keypair::generate_ed25519();
+        let node = Keypair::generate_ed25519();
+        let challenge = [8_u8; DISCOVERY_CHALLENGE_SIZE];
+        let now = unix_ms();
+        let mut response =
+            direct_response(&root, &node, &challenge, "https://station.example", now);
+        response.station_routes.clear();
+
+        let error =
+            verify_discovery_response("https://station.example", None, &challenge, response, now)
+                .unwrap_err();
+        assert_eq!(error.code, "station_discovery_invalid");
+        assert!(normalize_origin("http://station.example").is_err());
+        assert_eq!(
+            normalize_origin("http://127.0.0.1:18080").unwrap(),
+            "http://127.0.0.1:18080"
+        );
+    }
+
+    #[test]
+    fn direct_station_rejects_route_from_a_different_authorization_epoch() {
+        let root = Keypair::generate_ed25519();
+        let node = Keypair::generate_ed25519();
+        let challenge = [0x18_u8; DISCOVERY_CHALLENGE_SIZE];
+        let now = unix_ms();
+        let mut response =
+            direct_response(&root, &node, &challenge, "https://station.example", now);
+        let route = response.station_routes.first_mut().unwrap();
+        let mut authorization_statement = StationNodeAuthorizationStatement::decode(
+            route
+                .node_authorization
+                .as_ref()
+                .unwrap()
+                .statement_bytes
+                .as_slice(),
+        )
+        .unwrap();
+        authorization_statement.authorization_epoch += 1;
+        let authorization_statement_bytes = authorization_statement.encode_to_vec();
+        let authorization = StationNodeAuthorization {
+            statement_bytes: authorization_statement_bytes.clone(),
+            station_root_public_key: root.public().encode_protobuf(),
+            root_signature: sign(
+                &root,
+                NODE_AUTHORIZATION_DOMAIN,
+                &authorization_statement_bytes,
+            ),
+        };
+        let authorization_digest: [u8; 32] = Sha256::digest(authorization.encode_to_vec()).into();
+        let mut route_statement =
+            StationRouteStatement::decode(route.statement_bytes.as_slice()).unwrap();
+        route_statement.route_generation = authorization_statement.authorization_epoch;
+        route_statement.node_authorization_digest = authorization_digest.to_vec();
+        route.statement_bytes = route_statement.encode_to_vec();
+        route.node_signature = sign(&node, STATION_ROUTE_DOMAIN, &route.statement_bytes);
+        route.node_authorization = Some(authorization);
+
+        let error =
+            verify_discovery_response("https://station.example", None, &challenge, response, now)
+                .unwrap_err();
+        assert_eq!(error.code, "station_discovery_invalid");
     }
 
     #[test]
     fn rejects_endpoint_signature_from_another_identity() {
-        let key = Keypair::generate_ed25519();
+        let root = Keypair::generate_ed25519();
+        let node = Keypair::generate_ed25519();
         let attacker = Keypair::generate_ed25519();
         let challenge = [9_u8; DISCOVERY_CHALLENGE_SIZE];
         let now = unix_ms();
-        let mut response = direct_response(&key, &challenge, "https://station.example", now);
+        let mut response =
+            direct_response(&root, &node, &challenge, "https://station.example", now);
         response.endpoint_signature = sign(
             &attacker,
             ACCESS_ENDPOINT_DOMAIN,
@@ -508,81 +780,23 @@ mod tests {
     }
 
     #[test]
-    fn verifies_relay_and_station_route_as_distinct_identities() {
-        let relay = Keypair::generate_ed25519();
-        let station = Keypair::generate_ed25519();
-        let challenge = [3_u8; DISCOVERY_CHALLENGE_SIZE];
-        let now = unix_ms();
-        let route_statement = StationRouteStatement {
-            station_peer_id: station.public().to_peer_id().to_string(),
-            relay_peer_id: relay.public().to_peer_id().to_string(),
-            route_id: "route-1".to_string(),
-            route_generation: 4,
-            inner_tls_spki_sha256: vec![5; 32],
-            capabilities_digest: vec![6; 32],
-            visibility: StationRouteVisibility::Public as i32,
-            issued_at_unix_ms: now,
-            expires_at_unix_ms: now + 600_000,
-        };
-        let route_bytes = route_statement.encode_to_vec();
-        let route = StationRouteAttestation {
-            statement_bytes: route_bytes.clone(),
-            host_public_key: station.public().encode_protobuf(),
-            signature: sign(&station, STATION_ROUTE_DOMAIN, &route_bytes),
-        };
-        let endpoint_statement = AccessEndpointStatement {
-            challenge: challenge.to_vec(),
-            endpoint_role: AccessEndpointRole::Relay as i32,
-            endpoint_peer_id: relay.public().to_peer_id().to_string(),
-            canonical_origin: "https://relay.example".to_string(),
-            protocol_versions: vec![ACCESS_PROTOCOL_VERSION],
-            capabilities: vec!["opaque-tunnel-v1".to_string()],
-            issued_at_unix_ms: now,
-            expires_at_unix_ms: now + 60_000,
-        };
-        let endpoint_bytes = endpoint_statement.encode_to_vec();
-        let response = AccessEndpointResponse {
-            outcome: AccessEndpointOutcome::Ready as i32,
-            endpoint_statement_bytes: endpoint_bytes.clone(),
-            endpoint_public_key: relay.public().encode_protobuf(),
-            endpoint_signature: sign(&relay, ACCESS_ENDPOINT_DOMAIN, &endpoint_bytes),
-            station_routes: vec![route],
-        };
-
-        let verified = verify_discovery_response(
-            "http://relay-discovery.internal:18081",
-            None,
-            &challenge,
-            response,
-            now,
-        )
-        .unwrap();
-        assert_eq!(verified.role, VerifiedEndpointRole::Relay);
-        assert_eq!(verified.routes[0].endpoint_origin, "https://relay.example");
-        assert_eq!(
-            verified.routes[0].station_peer_id,
-            station.public().to_peer_id().to_string()
-        );
-        assert_eq!(
-            verified.routes[0].relay_peer_id.as_deref(),
-            Some(relay.public().to_peer_id().to_string().as_str())
-        );
-    }
-
-    #[test]
     fn parses_both_private_connection_material_forms() {
         let envelope = StationConnectionEnvelope {
             protocol_version: ACCESS_PROTOCOL_VERSION,
             relay_origin: "https://relay.example".to_string(),
             route_attestation: Some(StationRouteAttestation {
                 statement_bytes: vec![1],
-                host_public_key: vec![2],
-                signature: vec![3],
+                node_signature: vec![2],
+                node_authorization: None,
             }),
             connection_grant: Some(crate::model::peer::StationConnectionGrant {
-                statement_bytes: vec![4],
-                host_public_key: vec![5],
-                signature: vec![6],
+                statement_bytes: StationConnectionGrantStatement {
+                    relay_peer_id: "relay-test".to_string(),
+                    ..Default::default()
+                }
+                .encode_to_vec(),
+                node_signature: vec![5],
+                node_authorization: None,
             }),
         };
         let encoded = URL_SAFE_NO_PAD.encode(envelope.encode_to_vec());
@@ -594,5 +808,20 @@ mod tests {
             assert_eq!(parsed.origin, "https://relay.example");
             assert!(parsed.connection_grant.is_some());
         }
+    }
+
+    #[test]
+    fn acceptance_tls_root_loader_fails_closed_for_missing_material() {
+        let path = std::env::temp_dir().join(format!(
+            "peers-touch-missing-relay-ca-{}",
+            std::process::id()
+        ));
+        let error = match load_acceptance_tls_root(&path) {
+            Ok(_) => panic!("missing trust anchor must be rejected"),
+            Err(error) => error,
+        };
+        assert_eq!(error.code, "station_discovery_unavailable");
+        assert!(!error.retryable);
+        assert!(!error.message.contains(path.to_string_lossy().as_ref()));
     }
 }

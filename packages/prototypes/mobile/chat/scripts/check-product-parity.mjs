@@ -108,7 +108,7 @@ async function readMobile(page) {
   await page.goto(`${mobileUrl}/?scenario=journey`);
   await chooseSite(page, 'mobile');
   const device = page.getByRole('region', { name: 'Mobile device preview', exact: true });
-  await device.getByRole('button', { name: 'Continue', exact: true }).click();
+  await device.locator('[data-product-action="station-continue"]').click();
   const authCard = device.locator('.mp-auth-card');
   const auth = {
     cardCount: await authCard.count(),

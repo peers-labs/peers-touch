@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -822,7 +823,7 @@ func (s *subServer) handleAttachmentObject(
 	if err != nil {
 		return mapProductionConversationError(ctx, err)
 	}
-	defer result.Body.Close()
+	responseLength := result.End - result.Start + 1
 	response.SetHeader("Accept-Ranges", "bytes")
 	response.SetHeader("Content-Type", "application/octet-stream")
 	response.SetHeader(
@@ -831,7 +832,7 @@ func (s *subServer) handleAttachmentObject(
 	)
 	response.SetHeader(
 		"Content-Length",
-		strconv.FormatInt(result.End-result.Start+1, 10),
+		strconv.FormatInt(responseLength, 10),
 	)
 	if partial {
 		response.SetHeader(
@@ -847,9 +848,7 @@ func (s *subServer) handleAttachmentObject(
 	} else {
 		response.WriteHeader(http.StatusOK)
 	}
-	_, err = io.Copy(productionResponseWriter{response: response}, result.Body)
-
-	return err
+	return productionWriteAttachmentBody(response, result.Body, responseLength)
 }
 
 func (s *subServer) forwardBeginAttachmentUpload(
@@ -1119,7 +1118,12 @@ func (s *subServer) forwardAttachmentObject(
 	if err != nil {
 		return mapProductionConversationError(ctx, err)
 	}
-	defer peerResponse.Body.Close()
+	bodyTransferred := false
+	defer func() {
+		if !bodyTransferred {
+			_ = peerResponse.Body.Close()
+		}
+	}()
 	wireResponse := &chatmodel.GetFederatedConversationAttachmentObjectResponse{}
 	if err := productionDecodeAttachmentMetadataValue(
 		peerResponse.Headers.Get(productionAttachmentMetadataHeader),
@@ -1142,34 +1146,42 @@ func (s *subServer) forwardAttachmentObject(
 	if err != nil || !bytes.Equal(responseETag, result.GetEtagSha256()) {
 		return fmt.Errorf("remote attachment object ETag is invalid")
 	}
-	expectedStatus := http.StatusOK
-	if rangeHeader != "" {
-		expectedStatus = http.StatusPartialContent
+	_, _, expectedLength, expectedStatus, expectedContentRange, err :=
+		productionAttachmentResponseBounds(
+			rangeHeader,
+			result.GetTotalCiphertextSize(),
+		)
+	if err != nil {
+		return err
 	}
+	expectedContentLength := strconv.FormatInt(expectedLength, 10)
 	if peerResponse.StatusCode != expectedStatus ||
 		!strings.HasPrefix(
 			strings.ToLower(peerResponse.Headers.Get("Content-Type")),
 			"application/octet-stream",
 		) ||
-		strings.TrimSpace(peerResponse.Headers.Get("Content-Length")) == "" {
+		peerResponse.Headers.Get("Content-Length") != expectedContentLength {
 		return fmt.Errorf("remote attachment object response is invalid")
 	}
 
 	response.SetHeader("Accept-Ranges", "bytes")
 	response.SetHeader("Content-Type", "application/octet-stream")
 	response.SetHeader("ETag", peerResponse.Headers.Get("ETag"))
-	response.SetHeader("Content-Length", peerResponse.Headers.Get("Content-Length"))
+	response.SetHeader("Content-Length", expectedContentLength)
 	if expectedStatus == http.StatusPartialContent {
 		contentRange := peerResponse.Headers.Get("Content-Range")
-		if strings.TrimSpace(contentRange) == "" {
-			return fmt.Errorf("remote attachment object range metadata is missing")
+		if contentRange != expectedContentRange {
+			return fmt.Errorf("remote attachment object range metadata is invalid")
 		}
 		response.SetHeader("Content-Range", contentRange)
 	}
 	response.WriteHeader(peerResponse.StatusCode)
-	_, err = io.Copy(productionResponseWriter{response: response}, peerResponse.Body)
-
-	return err
+	bodyTransferred = true
+	return productionWriteAttachmentBody(
+		response,
+		peerResponse.Body,
+		expectedLength,
+	)
 }
 
 func (s *subServer) callAttachmentPeerProto(
@@ -1512,6 +1524,39 @@ func productionAttachmentRange(value string) (int64, int64, bool, error) {
 	return start, end, true, nil
 }
 
+func productionAttachmentResponseBounds(
+	rangeHeader string,
+	totalSize uint64,
+) (start int64, end int64, length int64, status int, contentRange string, err error) {
+	if totalSize == 0 || totalSize > uint64(math.MaxInt64) {
+		return 0, 0, 0, 0, "", fmt.Errorf(
+			"attachment response total size is invalid",
+		)
+	}
+	start, end, partial, err := productionAttachmentRange(rangeHeader)
+	if err != nil {
+		return 0, 0, 0, 0, "", err
+	}
+	total := int64(totalSize)
+	if !partial {
+		start = 0
+		end = total - 1
+		return start, end, total, http.StatusOK, "", nil
+	}
+	if start >= total {
+		return 0, 0, 0, 0, "", fmt.Errorf(
+			"attachment response range is not satisfiable",
+		)
+	}
+	if end < 0 || end >= total {
+		end = total - 1
+	}
+	length = end - start + 1
+	contentRange = fmt.Sprintf("bytes %d-%d/%d", start, end, total)
+
+	return start, end, length, http.StatusPartialContent, contentRange, nil
+}
+
 func productionWriteProto(
 	response server.Response,
 	status int,
@@ -1538,6 +1583,48 @@ type productionResponseWriter struct {
 
 func (w productionResponseWriter) Write(value []byte) (int, error) {
 	return w.response.Write(value)
+}
+
+type productionAttachmentReadCloser struct {
+	io.Reader
+	io.Closer
+}
+
+func productionWriteAttachmentBody(
+	response server.Response,
+	body io.ReadCloser,
+	size int64,
+) error {
+	if body == nil || size < 0 {
+		if body != nil {
+			_ = body.Close()
+		}
+		return fmt.Errorf("attachment response body is invalid")
+	}
+	bounded := &productionAttachmentReadCloser{
+		Reader: io.LimitReader(body, size),
+		Closer: body,
+	}
+	if streaming, ok := response.(server.StreamingResponse); ok {
+		if err := streaming.SetBodyStream(bounded, size); err != nil {
+			_ = bounded.Close()
+			return err
+		}
+		return nil
+	}
+	defer bounded.Close()
+	written, err := io.Copy(
+		productionResponseWriter{response: response},
+		bounded,
+	)
+	if err != nil {
+		return err
+	}
+	if written != size {
+		return io.ErrUnexpectedEOF
+	}
+
+	return nil
 }
 
 func (s *subServer) forwardPrepareCommand(

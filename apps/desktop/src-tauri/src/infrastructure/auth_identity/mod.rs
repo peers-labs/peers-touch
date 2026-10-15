@@ -1,6 +1,5 @@
 use crate::domain::auth::session::validate_token;
 use crate::domain::pin_lock::{self, EncryptedSession, PinProtection};
-use crate::infrastructure::avatar_cache;
 use crate::infrastructure::local_scope;
 use crate::infrastructure::storage::{self, StorageKind};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
@@ -66,11 +65,10 @@ fn encrypted_session_actor_ptid(
 }
 
 pub fn account_identity_path() -> Result<PathBuf, String> {
-    let station_scope = crate::infrastructure::local_scope::active_station_scope();
     storage::app_file_path(
         "desktop",
         StorageKind::Data,
-        &["account", &station_scope, "identities.json"],
+        &["account", "identities.json"],
     )
     .map_err(|err| format!("failed to resolve account identity path: {err:?}"))
 }
@@ -158,7 +156,7 @@ fn upsert_oauth_state(
         return Err("canonical actor PTID is required".to_string());
     }
     let mut state = read_state()?;
-    let account_id = oauth_account_id(provider, provider_user_id);
+    let account_id = oauth_account_id(actor_ptid, provider, provider_user_id);
     let now = unix_to_rfc3339(chrono_like_now_unix());
     if let Some(existing) = state.accounts.iter_mut().find(|item| item.id == account_id) {
         existing.actor_ptid = actor_ptid.to_string();
@@ -209,11 +207,11 @@ fn upsert_oauth_state(
     Ok(account_id)
 }
 
-pub fn oauth_account_id(provider: &str, provider_user_id: &str) -> String {
-    let station_scope = local_scope::active_station_scope();
+pub fn oauth_account_id(actor_ptid: &str, provider: &str, provider_user_id: &str) -> String {
+    let actor_scope = storage::resolve_user_scope(actor_ptid);
     let provider_scope = storage::sanitize_storage_segment(provider);
     let provider_user_scope = storage::sanitize_storage_segment(provider_user_id);
-    format!("station:{station_scope}:{provider_scope}:{provider_user_scope}")
+    format!("actor:{actor_scope}:{provider_scope}:{provider_user_scope}")
 }
 
 fn chrono_like_now_unix() -> i64 {
@@ -542,6 +540,165 @@ pub fn list_restorable_accounts() -> Result<Vec<AccountIdentity>, String> {
 }
 
 // ---------------------------------------------------------------------------
+// Per-actor (person) canonical view
+// ---------------------------------------------------------------------------
+//
+// One Station actor can authenticate through several providers (GitHub,
+// Google, password) that all prove the same verified email. Each login is
+// persisted as its own provider-scoped AccountIdentity row, but the account
+// picker must present exactly one row per *person*. These helpers collapse the
+// raw rows into a stable per-actor view without mutating persisted
+// credentials: the canonical id is kept on the row that owns a usable PIN (its
+// encrypted session is AAD-bound to that id), otherwise on the earliest
+// created row. Profile presentation (name/avatar/email) follows the most recent
+// login.
+
+fn actor_group_key(account: &AccountIdentity) -> String {
+    let ptid = account.actor_ptid.trim();
+    if ptid.is_empty() {
+        account.id.clone()
+    } else {
+        ptid.to_string()
+    }
+}
+
+fn is_usable_pin_row(account: &AccountIdentity) -> bool {
+    account.pin_protection.is_some() && account.encrypted_session.is_some()
+}
+
+/// Index of the stable row whose id represents the person. Usable-PIN rows win
+/// (their ciphertext is AAD-bound to that id); otherwise the earliest-created
+/// row, with lexicographic id as the deterministic tie-break.
+fn canonical_member_index(members: &[AccountIdentity]) -> usize {
+    let mut best = 0usize;
+    for idx in 1..members.len() {
+        let candidate = &members[idx];
+        let current = &members[best];
+        let candidate_rank = (
+            is_usable_pin_row(candidate),
+            candidate.pin_protection.is_some(),
+        );
+        let current_rank = (is_usable_pin_row(current), current.pin_protection.is_some());
+        if candidate_rank > current_rank {
+            best = idx;
+        } else if candidate_rank == current_rank
+            && (candidate.created_at < current.created_at
+                || (candidate.created_at == current.created_at && candidate.id < current.id))
+        {
+            best = idx;
+        }
+    }
+    best
+}
+
+/// Index of the row whose freshest profile should be presented.
+fn latest_login_index(members: &[AccountIdentity]) -> usize {
+    let mut best = 0usize;
+    for idx in 1..members.len() {
+        let candidate = &members[idx];
+        let current = &members[best];
+        let after = candidate
+            .last_login_at
+            .cmp(&current.last_login_at)
+            .then_with(|| candidate.created_at.cmp(&current.created_at))
+            .then_with(|| current.id.cmp(&candidate.id));
+        if after.is_gt() {
+            best = idx;
+        }
+    }
+    best
+}
+
+fn collapse_actor_group(members: &[AccountIdentity]) -> AccountIdentity {
+    let canonical_idx = canonical_member_index(members);
+    let display_idx = latest_login_index(members);
+    let canonical = members[canonical_idx].clone();
+    let display = members[display_idx].clone();
+
+    let prefer_non_empty = |value: &str, fallback: &str| {
+        if value.trim().is_empty() {
+            fallback.to_string()
+        } else {
+            value.to_string()
+        }
+    };
+
+    let created_at = members
+        .iter()
+        .map(|account| account.created_at.as_str())
+        .filter(|value| !value.trim().is_empty())
+        .min()
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| canonical.created_at.clone());
+
+    let avatar_local_path = display
+        .avatar_local_path
+        .clone()
+        .or_else(|| canonical.avatar_local_path.clone())
+        .or_else(|| {
+            members
+                .iter()
+                .find_map(|account| account.avatar_local_path.clone())
+        });
+
+    AccountIdentity {
+        id: canonical.id.clone(),
+        actor_ptid: canonical.actor_ptid.clone(),
+        provider: canonical.provider.clone(),
+        provider_user_id: canonical.provider_user_id.clone(),
+        name: prefer_non_empty(&display.name, &canonical.name),
+        email: prefer_non_empty(&display.email, &canonical.email),
+        avatar_url: prefer_non_empty(&display.avatar_url, &canonical.avatar_url),
+        avatar_local_path,
+        profile_url: prefer_non_empty(&display.profile_url, &canonical.profile_url),
+        created_at,
+        last_login_at: prefer_non_empty(&display.last_login_at, &canonical.last_login_at),
+        pin_protection: canonical.pin_protection.clone(),
+        encrypted_session: canonical.encrypted_session.clone(),
+        session_expires_at: canonical.session_expires_at,
+        has_session: members.iter().any(|account| account.has_session),
+    }
+}
+
+/// Collapse raw provider-scoped rows into one entry per actor (person),
+/// ordered by most-recent login first.
+pub fn canonical_accounts(accounts: &[AccountIdentity]) -> Vec<AccountIdentity> {
+    let mut groups: std::collections::BTreeMap<String, Vec<AccountIdentity>> =
+        std::collections::BTreeMap::new();
+    for account in accounts {
+        groups
+            .entry(actor_group_key(account))
+            .or_default()
+            .push(account.clone());
+    }
+    let mut collapsed: Vec<AccountIdentity> = groups
+        .into_values()
+        .map(|members| collapse_actor_group(&members))
+        .collect();
+    collapsed.sort_by(|a, b| {
+        b.last_login_at
+            .cmp(&a.last_login_at)
+            .then_with(|| actor_group_key(a).cmp(&actor_group_key(b)))
+            .then_with(|| a.id.cmp(&b.id))
+    });
+    collapsed
+}
+
+/// Map any provider-scoped `account_id` to the stable canonical id for the
+/// person it belongs to. Returns None when the id is not a known account.
+pub fn canonical_account_id(accounts: &[AccountIdentity], account_id: &str) -> Option<String> {
+    let target = accounts.iter().find(|account| account.id == account_id)?;
+    let key = actor_group_key(target);
+    let members: Vec<AccountIdentity> = accounts
+        .iter()
+        .filter(|account| actor_group_key(account) == key)
+        .cloned()
+        .collect();
+    let idx = canonical_member_index(&members);
+    Some(members[idx].id.clone())
+}
+
+// ---------------------------------------------------------------------------
 // Avatar metadata sync
 // ---------------------------------------------------------------------------
 //
@@ -561,13 +718,13 @@ pub fn update_active_avatar_local_path(local_path: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Sync user profile metadata into `identities.json` and warm the avatar
-/// cache (best-effort). Returns the cached avatar path if available.
+/// Sync user profile metadata and a separately materialized avatar path.
 pub fn sync_profile_locally(
     account_id: &str,
     name: Option<&str>,
     email: Option<&str>,
     avatar_url: Option<&str>,
+    avatar_local_path: Option<&str>,
     profile_url: Option<&str>,
 ) -> Result<Option<String>, String> {
     let mut state = read_state()?;
@@ -587,13 +744,12 @@ pub fn sync_profile_locally(
         account.profile_url = p.to_string();
     }
 
-    let mut local_path: Option<String> = None;
     if let Some(url) = avatar_url.filter(|v| !v.is_empty()) {
         account.avatar_url = url.to_string();
-        local_path = avatar_cache::try_ensure_local_string(url);
-        account.avatar_local_path = local_path.clone();
+        account.avatar_local_path = avatar_local_path.map(str::to_string);
     }
 
+    let local_path = account.avatar_local_path.clone();
     write_state(&state)?;
     Ok(local_path)
 }
@@ -617,4 +773,156 @@ fn extract_jwt_exp(token: &str) -> Option<u64> {
     let decoded = URL_SAFE_NO_PAD.decode(payload_b64).ok()?;
     let v: serde_json::Value = serde_json::from_slice(&decoded).ok()?;
     v.get("exp").and_then(|e| e.as_u64())
+}
+
+#[cfg(test)]
+mod canonical_tests {
+    use super::{canonical_account_id, canonical_accounts, AccountIdentity};
+    use crate::domain::pin_lock::EncryptedSession;
+
+    fn provider_row(
+        id: &str,
+        actor: &str,
+        provider: &str,
+        name: &str,
+        created_at: &str,
+        last_login_at: &str,
+        has_session: bool,
+    ) -> AccountIdentity {
+        AccountIdentity {
+            id: id.to_string(),
+            actor_ptid: actor.to_string(),
+            provider: provider.to_string(),
+            provider_user_id: id.to_string(),
+            name: name.to_string(),
+            email: "printfcoder@gmail.com".to_string(),
+            created_at: created_at.to_string(),
+            last_login_at: last_login_at.to_string(),
+            has_session,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn same_actor_multiple_providers_collapse_to_one() {
+        let accounts = vec![
+            provider_row(
+                "station:s:github:20906540",
+                "ptid:1",
+                "github",
+                "Shu xian",
+                "2026-09-20T00:00:00Z",
+                "2026-09-20T00:00:00Z",
+                false,
+            ),
+            provider_row(
+                "station:s:google:117",
+                "ptid:1",
+                "google",
+                "Xian pi",
+                "2026-09-24T00:00:00Z",
+                "2026-09-24T00:00:00Z",
+                true,
+            ),
+        ];
+
+        let collapsed = canonical_accounts(&accounts);
+        assert_eq!(collapsed.len(), 1);
+        let person = &collapsed[0];
+        // Earliest stable row keeps the id when no PIN.
+        assert_eq!(person.id, "station:s:github:20906540");
+        // Freshest login supplies the profile presentation.
+        assert_eq!(person.name, "Xian pi");
+        // Session availability is aggregated across providers.
+        assert!(person.has_session);
+        assert_eq!(person.actor_ptid, "ptid:1");
+    }
+
+    #[test]
+    fn pin_row_keeps_canonical_identity() {
+        let earlier = provider_row(
+            "station:s:github:20906540",
+            "ptid:1",
+            "github",
+            "Shu xian",
+            "2026-09-20T00:00:00Z",
+            "2026-09-20T00:00:00Z",
+            false,
+        );
+        let mut later = provider_row(
+            "station:s:google:117",
+            "ptid:1",
+            "google",
+            "Xian pi",
+            "2026-09-24T00:00:00Z",
+            "2026-09-24T00:00:00Z",
+            true,
+        );
+        later.pin_protection = Some(Default::default());
+        later.encrypted_session = Some(EncryptedSession {
+            ciphertext: "00".to_string(),
+            nonce: "00".to_string(),
+            account_id: later.id.clone(),
+            actor_ptid: "ptid:1".to_string(),
+        });
+
+        let collapsed = canonical_accounts(&[earlier, later]);
+        assert_eq!(collapsed.len(), 1);
+        assert_eq!(collapsed[0].id, "station:s:google:117");
+        assert!(collapsed[0].encrypted_session.is_some());
+    }
+
+    #[test]
+    fn distinct_actors_stay_separate() {
+        let accounts = vec![
+            provider_row(
+                "station:s:github:a",
+                "ptid:1",
+                "github",
+                "A",
+                "2026-09-20T00:00:00Z",
+                "2026-09-20T00:00:00Z",
+                true,
+            ),
+            provider_row(
+                "station:s:github:b",
+                "ptid:2",
+                "github",
+                "B",
+                "2026-09-21T00:00:00Z",
+                "2026-09-21T00:00:00Z",
+                true,
+            ),
+        ];
+        assert_eq!(canonical_accounts(&accounts).len(), 2);
+    }
+
+    #[test]
+    fn provider_alias_resolves_to_canonical_id() {
+        let accounts = vec![
+            provider_row(
+                "station:s:github:20906540",
+                "ptid:1",
+                "github",
+                "Shu xian",
+                "2026-09-20T00:00:00Z",
+                "2026-09-20T00:00:00Z",
+                false,
+            ),
+            provider_row(
+                "station:s:google:117",
+                "ptid:1",
+                "google",
+                "Xian pi",
+                "2026-09-24T00:00:00Z",
+                "2026-09-24T00:00:00Z",
+                true,
+            ),
+        ];
+        assert_eq!(
+            canonical_account_id(&accounts, "station:s:google:117"),
+            Some("station:s:github:20906540".to_string())
+        );
+        assert_eq!(canonical_account_id(&accounts, "unknown"), None);
+    }
 }

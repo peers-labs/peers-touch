@@ -36,9 +36,15 @@ Rules:
 
 ## 3. Peers Touch UI ID
 
-Peers Touch uses **Quiet Protocol Minimalism**:
+Peers Touch uses **Structured Expressive Minimalism** as its product-level
+north star. **Quiet Protocol Minimalism** is the default expression for dense,
+recurring workflow surfaces:
 
-- Quiet: low-noise surfaces, calm motion, disciplined accent colors.
+- Structured: hierarchy, boundaries, actions, and trust semantics stay stable.
+- Expressive: each module has a declared, Peers-owned signature and appropriate
+  expression strength.
+- Quiet: recurring workflows use low-noise surfaces, calm motion, and
+  disciplined accent colors.
 - Protocol: identity, station, audience, trust, and privacy states are visible when they affect user decisions.
 - Minimalism: structure is clear without heavy borders, dashboard chrome, or decorative density.
 - Human-first: social and collaboration flows prioritize readable human activity before system metadata.
@@ -52,10 +58,12 @@ Peers Touch uses **Quiet Protocol Minimalism**:
 4. [components.md](./components.md) — shared component anatomy and style constraints.
 5. [interaction.md](./interaction.md) — state, feedback, loading, failure, and optimistic interaction rules.
 6. [accessibility.md](./accessibility.md) — focus, keyboard, contrast, hover, and reduced-motion requirements.
-7. [frontend-component-tree.md](./frontend-component-tree.md) — Frontend component tree, alive policy, render boundary, and jank-prevention standard.
-8. [frontend-component-tree-registry.md](./frontend-component-tree-registry.md) — Alive / non-alive / lazy / LRU registry for primary modules, settings, applets, and large content surfaces.
-9. [review-checklist.md](./review-checklist.md) — UI review checklist for humans and AI agents.
-10. [new-identity.md](./new-identity.md) — 全新的 UI Identity 总纲草案，用于解决“统一但平、约束强生成弱、模块自由度模型不清晰”的问题。
+7. [craft-quality.md](./craft-quality.md) — evidence-backed craft calibration,
+   accessibility/performance baseline, and findings-first review gate.
+8. [frontend-component-tree.md](./frontend-component-tree.md) — Frontend component tree, alive policy, render boundary, and jank-prevention standard.
+9. [frontend-component-tree-registry.md](./frontend-component-tree-registry.md) — Alive / non-alive / lazy / LRU registry for primary modules, settings, applets, and large content surfaces.
+10. [review-checklist.md](./review-checklist.md) — UI review checklist for humans and AI agents.
+11. [new-identity.md](./new-identity.md) — Structured Expressive Minimalism 的方向来源与迁移背景；规范性工艺要求已收敛到 `craft-quality.md`。
 
 ## 5. Module Contracts
 
@@ -93,6 +101,8 @@ Patterns are reusable surface contracts across modules:
 - Do not define raw visual values in page code when a token or shared component rule exists.
 - Do not make user-facing UI text outside the i18n system.
 - Do not hide trust, audience, station, or privacy state when it changes what the user can safely do.
+- Do not claim award readiness or report a self-assigned craft score; use
+  rendered, dynamic, accessibility, and performance evidence.
 - Do not change a page, tab, provider editor, applet runtime, overlay, or large list lifetime without checking [frontend-component-tree.md](./frontend-component-tree.md) and updating [frontend-component-tree-registry.md](./frontend-component-tree-registry.md) when needed.
 
 ## 8. AI Agent Checklist
@@ -102,9 +112,13 @@ Before editing client UI:
 - [ ] Read this file.
 - [ ] Read the closest module contract under `modules/`.
 - [ ] Read the closest shared pattern under `patterns/`.
+- [ ] Read `craft-quality.md` and declare the surface type, product thesis,
+  positive calibration, and negative calibration.
 - [ ] Read `frontend-component-tree.md` and check whether the surface has a row in `frontend-component-tree-registry.md`.
 - [ ] Identify the page's content bounds, action bounds, and trust-state bounds.
 - [ ] Identify the surface's alive category, runtime/store owner, and hidden-render risk.
 - [ ] Confirm LobeUI-first implementation or document why antd is required.
 - [ ] Validate normal, loading, disabled, empty, error, overflow, and narrow-window states.
+- [ ] Validate material keyboard, touch, assistive-technology,
+  localization-expansion, reduced-motion, and performance paths.
 - [ ] If a screenshot reveals a reusable issue, follow `docs/knowledge/playbooks/ux-case-to-contract.md`.

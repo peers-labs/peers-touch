@@ -70,7 +70,7 @@ func TestAuditTrim_ZeroDeletedQuiet(t *testing.T) {
 		Retention: 90 * 24 * time.Hour,
 		Now:       func() time.Time { return now },
 	})
-	if err := at.RunOnce(context.Background()); err != nil {
+	if err := at.RunOnce(testWorkerContext(context.Background(), at.Name())); err != nil {
 		t.Fatalf("RunOnce: %v", err)
 	}
 	if audit.trimCalled != 1 {
@@ -93,7 +93,7 @@ func TestAuditTrim_DeletedAudits(t *testing.T) {
 		Retention: 30 * 24 * time.Hour,
 		Now:       func() time.Time { return now },
 	})
-	if err := at.RunOnce(context.Background()); err != nil {
+	if err := at.RunOnce(testWorkerContext(context.Background(), at.Name())); err != nil {
 		t.Fatalf("RunOnce: %v", err)
 	}
 	rows := audit.snapshot()
@@ -111,7 +111,7 @@ func TestAuditTrim_DeletedAudits(t *testing.T) {
 func TestAuditTrim_TrimErrorAuditedAndPropagates(t *testing.T) {
 	audit := &trimFakeAudit{trimErr: errors.New("disk full")}
 	at, _ := NewAuditTrim(AuditTrimConfig{Audit: audit})
-	if err := at.RunOnce(context.Background()); err == nil {
+	if err := at.RunOnce(testWorkerContext(context.Background(), at.Name())); err == nil {
 		t.Fatalf("trim error should propagate so the scheduler emits an error heartbeat")
 	}
 	rows := audit.snapshot()

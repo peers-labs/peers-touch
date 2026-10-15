@@ -6,6 +6,7 @@ import {
   createDesignTokenCssVariables,
 } from '../../../../shared/design-tokens';
 import { SocialChatPrototype } from './SocialChatPrototype';
+import '../../../shared/focus.css';
 
 const cssVariables = createDesignTokenCssVariables('light');
 

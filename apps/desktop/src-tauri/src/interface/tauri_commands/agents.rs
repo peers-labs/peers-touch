@@ -24,7 +24,7 @@ fn token_for_cmd(state: &State<'_, Arc<AppState>>, window: &Window) -> String {
 pub fn agents_list(state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
     let actor_ptid = actor_ptid_for_cmd(&state, &window);
     let token = token_for_cmd(&state, &window);
-    application_agents::agents_list(&actor_ptid, &token)
+    application_agents::agents_list(state.station.client(), &actor_ptid, &token)
 }
 
 #[tauri::command]
@@ -73,7 +73,7 @@ pub fn agents_get(
 ) -> AppResult<StubPayload> {
     let actor_ptid = actor_ptid_for_cmd(&state, &window);
     let token = token_for_cmd(&state, &window);
-    application_agents::agents_get(&actor_ptid, &token, input)
+    application_agents::agents_get(state.station.client(), &actor_ptid, &token, input)
 }
 
 #[tauri::command]
@@ -84,7 +84,7 @@ pub fn agents_create(
 ) -> AppResult<StubPayload> {
     let actor_ptid = actor_ptid_for_cmd(&state, &window);
     let token = token_for_cmd(&state, &window);
-    application_agents::agents_create(&actor_ptid, &token, input)
+    application_agents::agents_create(state.station.client(), &actor_ptid, &token, input)
 }
 
 #[tauri::command]
@@ -95,7 +95,7 @@ pub fn agents_update(
 ) -> AppResult<StubPayload> {
     let actor_ptid = actor_ptid_for_cmd(&state, &window);
     let token = token_for_cmd(&state, &window);
-    application_agents::agents_update(&actor_ptid, &token, input)
+    application_agents::agents_update(state.station.client(), &actor_ptid, &token, input)
 }
 
 #[tauri::command]
@@ -106,7 +106,7 @@ pub fn agents_delete(
 ) -> AppResult<StubPayload> {
     let actor_ptid = actor_ptid_for_cmd(&state, &window);
     let token = token_for_cmd(&state, &window);
-    application_agents::agents_delete(&actor_ptid, &token, input)
+    application_agents::agents_delete(state.station.client(), &actor_ptid, &token, input)
 }
 
 #[tauri::command]
@@ -117,7 +117,7 @@ pub fn agents_duplicate(
 ) -> AppResult<StubPayload> {
     let actor_ptid = actor_ptid_for_cmd(&state, &window);
     let token = token_for_cmd(&state, &window);
-    application_agents::agents_duplicate(&actor_ptid, &token, input)
+    application_agents::agents_duplicate(state.station.client(), &actor_ptid, &token, input)
 }
 
 #[tauri::command]

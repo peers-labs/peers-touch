@@ -1,4 +1,5 @@
 import { api } from '../services/desktop_api';
+import type { StationRouteCandidate } from '../services/desktop_api';
 
 type StationAccessApi = Pick<
   typeof api,
@@ -20,6 +21,31 @@ function normalizeStationUrl(value: string | null | undefined): string | null {
   return normalized || null;
 }
 
+function freshestRoute(
+  routes: StationRouteCandidate[],
+): StationRouteCandidate | undefined {
+  return routes.reduce<StationRouteCandidate | undefined>((selected, route) => {
+    if (!selected) return route;
+    const routeRank = [
+      route.attestation_expires_at_unix_ms ?? 0,
+      route.last_verified_at,
+      route.route_generation,
+      route.route_id,
+    ] as const;
+    const selectedRank = [
+      selected.attestation_expires_at_unix_ms ?? 0,
+      selected.last_verified_at,
+      selected.route_generation,
+      selected.route_id,
+    ] as const;
+    for (let index = 0; index < routeRank.length; index += 1) {
+      if (routeRank[index] === selectedRank[index]) continue;
+      return routeRank[index] > selectedRank[index] ? route : selected;
+    }
+    return selected;
+  }, undefined);
+}
+
 export async function configureAcceptanceStation(
   stationApi: StationAccessApi,
   stationUrl: string,
@@ -35,9 +61,14 @@ export async function configureAcceptanceStation(
   }
   const expectedRouteOrigin = normalizeStationUrl(probed.canonical_origin);
   const discoveredEntry = probed.entries[0];
-  const discoveredRoute = discoveredEntry?.routes.find(
-    (route) => normalizeStationUrl(route.endpoint_origin) === expectedRouteOrigin,
-  ) ?? discoveredEntry?.routes[0];
+  const availableRoutes = discoveredEntry?.routes.filter(
+    (route) => route.health === 'available',
+  ) ?? [];
+  const discoveredRoute = freshestRoute(
+    availableRoutes.filter(
+      (route) => normalizeStationUrl(route.endpoint_origin) === expectedRouteOrigin,
+    ),
+  ) ?? (availableRoutes.length === 1 ? availableRoutes[0] : undefined);
   if (!discoveredEntry || !discoveredRoute || !expectedRouteOrigin) {
     throw new Error('acceptance.stationAccess.stationRouteRequired');
   }

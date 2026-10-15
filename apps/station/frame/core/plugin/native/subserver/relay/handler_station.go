@@ -63,13 +63,13 @@ func challengeResponse(
 }
 
 func credentialResponse(
-	credential *domain.MountCredential,
+	credential *domain.NodeCredential,
 ) map[string]interface{} {
 	return map[string]interface{}{
 		"relay_token":     credential.Token,
 		"relay_peer_id":   credential.RelayPeerID,
 		"station_peer_id": credential.StationPeerID,
-		"mount_id":        credential.MountID,
+		"enrollment_id":   credential.EnrollmentID,
 		"generation":      credential.Generation,
 		"expires_at":      credential.ExpiresAt.Format(time.RFC3339),
 	}
@@ -108,7 +108,7 @@ func (h *relayHandler) handleRotationChallenge(
 ) {
 	token, ok := bearerToken(r.Header.Get("Authorization"))
 	if !ok {
-		writeJSON(w, http.StatusUnauthorized, errorBody("valid Relay mount credential required"))
+		writeJSON(w, http.StatusUnauthorized, errorBody("valid Relay enrollment credential required"))
 		return
 	}
 	challenge, err := h.sub.svc.BeginRotationChallenge(r.Context(), token)
@@ -142,8 +142,6 @@ func (h *relayHandler) handleRegister(w http.ResponseWriter, r *http.Request) {
 		h.writeEnrollmentError(w, ctx, err)
 		return
 	}
-	h.sub.streams.Remove(ctx, result.Credential.StationPeerID)
-
 	iceServers := h.sub.svc.BuildICEServers(application.TurnConfig{
 		Enabled:    h.sub.opts.TurnEnabled,
 		PublicIP:   h.sub.opts.TurnPublicIP,
@@ -203,31 +201,6 @@ func (h *relayHandler) writeEnrollmentError(
 	}
 }
 
-// ---- Station: Heartbeat ----
-
-func (h *relayHandler) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	peerID, ok := stationPeerIDFromRequest(r)
-	if !ok {
-		writeJSON(w, http.StatusUnauthorized, errorBody("missing relay access subject"))
-		return
-	}
-
-	identity, ok := mountIdentityFromRequest(r)
-	if !ok || identity.StationPeerID != peerID {
-		writeJSON(w, http.StatusUnauthorized, errorBody("invalid Relay mount identity"))
-		return
-	}
-	if err := h.sub.svc.UpdateHeartbeat(ctx, identity); err != nil {
-		logger.Errorf(ctx, "[relay] heartbeat failed for %s: %v", peerID, err)
-		writeJSON(w, http.StatusUnauthorized, errorBody("Relay enrollment required"))
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-}
-
 // ---- Station: Token refresh ----
 
 func (h *relayHandler) handleTokenRefresh(w http.ResponseWriter, r *http.Request) {
@@ -241,7 +214,7 @@ func (h *relayHandler) handleTokenRefresh(w http.ResponseWriter, r *http.Request
 
 	token, ok := bearerToken(r.Header.Get("Authorization"))
 	if !ok {
-		writeJSON(w, http.StatusUnauthorized, errorBody("valid Relay mount credential required"))
+		writeJSON(w, http.StatusUnauthorized, errorBody("valid Relay enrollment credential required"))
 		return
 	}
 	var req rotateCredentialRequest
@@ -255,6 +228,5 @@ func (h *relayHandler) handleTokenRefresh(w http.ResponseWriter, r *http.Request
 		h.writeEnrollmentError(w, ctx, err)
 		return
 	}
-	h.sub.streams.Remove(ctx, peerID)
 	writeJSON(w, http.StatusOK, credentialResponse(credential))
 }

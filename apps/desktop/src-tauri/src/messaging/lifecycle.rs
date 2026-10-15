@@ -1,7 +1,6 @@
 use super::{
     CommandRetryPolicy, ConversationMemberProjection, ConversationProjection, MessagingEngine,
 };
-use crate::infrastructure::station_client;
 use crate::model::chat::{
     GetConversationMembersRequest, GetConversationMembersResponse, ListConversationsRequest,
     ListConversationsResponse, MemberStatus,
@@ -300,6 +299,7 @@ pub(crate) fn hydrate_projections_from_station(
     engine: &MessagingEngine,
     token: &str,
 ) -> Result<usize, String> {
+    let station_client = engine.station_client();
     let current_projections = engine.store().conversation_projections()?;
     if !current_projections.is_empty()
         && current_projections.iter().all(|projection| {
@@ -308,18 +308,16 @@ pub(crate) fn hydrate_projections_from_station(
     {
         return Ok(0);
     }
-    let response = station_client::request_proto_for_device::<
-        ListConversationsRequest,
-        ListConversationsResponse,
-    >(
-        Method::GET,
-        "/conversation/list",
-        token,
-        None,
-        Some(&ListConversationsRequest {}),
-        &engine.endpoint().device_id,
-    )
-    .map_err(|error| format!("fetch conversation list: {error}"))?;
+    let response = station_client
+        .request_proto_for_device::<ListConversationsRequest, ListConversationsResponse>(
+            Method::GET,
+            "/conversation/list",
+            token,
+            None,
+            Some(&ListConversationsRequest {}),
+            &engine.endpoint().device_id,
+        )
+        .map_err(|error| format!("fetch conversation list: {error}"))?;
     if response.conversations.is_empty() {
         return Ok(0);
     }
@@ -342,7 +340,7 @@ pub(crate) fn hydrate_projections_from_station(
             ));
         }
         let member_query = [("conversation_id", conversation_id.clone())];
-        let member_response = station_client::request_proto_for_device::<
+        let member_response = station_client.request_proto_for_device::<
             GetConversationMembersRequest,
             GetConversationMembersResponse,
         >(

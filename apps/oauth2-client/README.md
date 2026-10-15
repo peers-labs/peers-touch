@@ -52,7 +52,17 @@ apps/oauth2-client
 - `GET /api/oauth/google/callback`
 - `GET /api/oauth/weixin/start`
 - `GET /api/oauth/weixin/callback`
-- `GET /api/healthz`
+- `GET /api/healthz` — 返回 `{"status":"ok","version":"0.1.0"}`
+
+## 版本号
+
+`internal/version/VERSION` 是唯一真源，采用三段式语义版本 `major.minor.patch`。
+每次发布前执行一次补丁版本自增（+0.0.1）：
+
+```bash
+make oauth-version-bump     # 0.1.0 -> 0.1.1
+make oauth-version-check    # 仅校验格式
+```
 
 ## 回调返回字段
 

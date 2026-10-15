@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import base64
 import dataclasses
 import hashlib
 import json
@@ -77,6 +78,7 @@ from tooling.acceptance.provisioners.mobile_simulator import (
     load_mobile_station_lifecycle_simulator_spec,
 )
 from tooling.acceptance.provisioners.mobile_service_bindings import (
+    MobileServiceBinding,
     resolve_mobile_service_bindings,
 )
 
@@ -1182,6 +1184,48 @@ class MobileSimulatorContractTests(unittest.TestCase):
         )
         self.assertEqual(active["PT_RELAY_DEPLOY_ENV"], "relay")
 
+    def test_mobile_relay_embeds_reviewed_trust_anchor_for_build(self) -> None:
+        path = ENVIRONMENTS_DIR / "mobile-social-simulator.yaml"
+        contract = EnvironmentContract.from_yaml(path)
+        certificate = (
+            b"-----BEGIN CERTIFICATE-----\n"
+            b"YWJj\n"
+            b"-----END CERTIFICATE-----\n"
+        )
+        digest = "sha256:" + hashlib.sha256(certificate).hexdigest()
+        provisioner = MobileSocialSimulatorProvisioner(
+            contract,
+            relay_trust_anchor_provider=lambda _: (certificate, digest),
+        )
+        environment, trust = provisioner._resolve_transport_trust(
+            "station-access-mobile-relay-native-e2e",
+            {
+                "relay": MobileServiceBinding(
+                    service_id="relay",
+                    kind="relay",
+                    endpoint="https://relay.example:18081",
+                    deployment_environment="relay-1",
+                    producer="relay-deployment",
+                )
+            },
+        )
+
+        self.assertEqual(
+            base64.b64decode(
+                environment["PT_ACCEPTANCE_RELAY_CA_DER_B64"]
+            ),
+            b"abc",
+        )
+        self.assertEqual(
+            environment["PT_ACCEPTANCE_RELAY_CA_SHA256"],
+            digest,
+        )
+        self.assertEqual(trust["relay"]["sha256"], digest)
+        self.assertEqual(
+            trust["relay"]["mechanism"],
+            "embedded-rustls-root",
+        )
+
     def test_social_simulator_preserves_base_harness_actions(self) -> None:
         path = ENVIRONMENTS_DIR / "mobile-social-simulator.yaml"
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -1323,6 +1367,12 @@ class MobileSimulatorContractTests(unittest.TestCase):
                 "remote_source_identity_provider"
             ],
             mobile_simulator_module.resolve_remote_source_identity,
+        )
+        self.assertIs(
+            service_producer.call_args.kwargs[
+                "runtime_version_provider"
+            ],
+            mobile_simulator_module.resolve_service_version,
         )
 
     def test_social_actor_fixture_resolves_each_role_in_its_deployment(

@@ -1,0 +1,123 @@
+{
+  "id": "mobile-relay-simulator",
+  "base_environment": "mobile-simulator",
+  "profile": {
+    "required": false,
+    "identity_match": false
+  },
+  "source_identity": {
+    "commit_required": true,
+    "workspace_digest_required": true
+  },
+  "services": {
+    "station-primary": {
+      "kind": "station",
+      "required": true,
+      "runtime_identity_required": true,
+      "endpoint_ref": "env:PT_MOBILE_STATION_PRIMARY_URL",
+      "deployment_environment_ref": "env:PT_MOBILE_STATION_PRIMARY_DEPLOY_ENV",
+      "health_action": "station-check",
+      "status_action": "station-status",
+      "attestation_producer": "station-deployment"
+    },
+    "station-secondary": {
+      "kind": "station",
+      "required": true,
+      "runtime_identity_required": true,
+      "endpoint_ref": "env:PT_MOBILE_STATION_SECONDARY_URL",
+      "deployment_environment_ref": "env:PT_MOBILE_STATION_SECONDARY_DEPLOY_ENV",
+      "health_action": "station-check",
+      "status_action": "station-status",
+      "attestation_producer": "station-deployment"
+    },
+    "relay": {
+      "kind": "relay",
+      "required": true,
+      "runtime_identity_required": true,
+      "endpoint_ref": "env:PT_RELAY_URL",
+      "deployment_environment_ref": "env:PT_RELAY_DEPLOY_ENV",
+      "health_endpoint_ref": "env:PT_RELAY_HEALTH_URL",
+      "health_action": "relay-check",
+      "status_action": "relay-status",
+      "attestation_producer": "relay-deployment"
+    }
+  },
+  "fixtures": [
+    {
+      "id": "mobile-relay-simulator-actors",
+      "authorization_required": false,
+      "target_assertion": "both Stations are reviewed remote profiles and no Station reset is performed",
+      "initial_assertion": "the Relay proof actor uses parent-owned persistent identity material resolved through real Access login"
+    }
+  ],
+  "credentials": [],
+  "clients": [
+    {
+      "id": "sim-ios",
+      "actor": "charlie",
+      "runtime": "tauri-ios-simulator",
+      "required_service_roles": ["station"],
+      "service_bindings": {
+        "station": {
+          "service_id": "station-primary",
+          "required_kind": "station"
+        }
+      }
+    },
+    {
+      "id": "sim-ios-peer",
+      "actor": "bob",
+      "runtime": "tauri-ios-simulator",
+      "required_service_roles": ["station"],
+      "service_bindings": {
+        "station": {
+          "service_id": "station-secondary",
+          "required_kind": "station"
+        }
+      }
+    }
+  ],
+  "harness": {
+    "namespace": "__PEERS_MOBILE_ACCEPTANCE__",
+    "required_actions": [
+      "runtime.prepareActorIdentity",
+      "station.add",
+      "station.route.select",
+      "station.route.snapshot",
+      "access.submit",
+      "lifecycle.restart",
+      "lifecycle.waitReady",
+      "lifecycle.scope.read",
+      "settings.profile.read",
+      "cleanup"
+    ],
+    "policy": "production actions only; actor identity material remains parent-owned and is never returned to the Gate"
+  },
+  "proof_scope": {
+    "proves": [
+      "one isolated iOS Simulator client",
+      "source-attested Direct Station and Relay bindings",
+      "parent-owned persistent actor identity continuity across isolated runs",
+      "same-Station route switching preserves Session and business runtimes",
+      "Relay route recovery survives WebView restart"
+    ],
+    "does_not_prove": [
+      "physical-device behavior",
+      "cross-Station messaging",
+      "Android Relay behavior"
+    ]
+  },
+  "cleanup": {
+    "resources": [
+      "appium-process",
+      "app-installations",
+      "ports",
+      "storage",
+      "simulator-boot",
+      "actor-fixture",
+      "profile-leases",
+      "deployment-leases"
+    ],
+    "deterministic": true
+  }
+}

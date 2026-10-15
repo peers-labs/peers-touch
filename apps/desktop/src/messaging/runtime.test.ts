@@ -46,6 +46,7 @@ import {
   messagingConversations,
   messagingDomainRuntime,
 } from './runtime';
+import { EVENT, eventBus } from '../kernel/events';
 
 describe('DesktopMessagingDomainRuntime', () => {
   const lifecycle = {
@@ -59,6 +60,7 @@ describe('DesktopMessagingDomainRuntime', () => {
     messagingDomainRuntime.teardown();
     vi.useFakeTimers();
     vi.clearAllMocks();
+    vi.stubGlobal('window', new EventTarget());
     mocks.actorPtid = 'ptid:actor:alice';
     mocks.accountGetActive.mockResolvedValue({ id: 'profile-alice' });
     const homeIdentity = { home_station_peer_id: 'station-a' };
@@ -71,6 +73,7 @@ describe('DesktopMessagingDomainRuntime', () => {
 
   afterEach(() => {
     messagingDomainRuntime.teardown();
+    vi.unstubAllGlobals();
     vi.useRealTimers();
   });
 
@@ -107,6 +110,21 @@ describe('DesktopMessagingDomainRuntime', () => {
       messageId: '',
       messageRemovedFromProjection: false,
     })).toBe(true);
+  });
+
+  it('preserves the Messaging scope across a same-Station route switch', async () => {
+    await messagingDomainRuntime.bootstrap('ptid:actor:alice');
+    const before = messagingDomainRuntime.captureScope();
+    const resetsBeforeSwitch = lifecycle.resetProjection.mock.calls.length;
+
+    eventBus.publish(EVENT.STATION_ACTIVE_CHANGED, {
+      stationPeerId: 'station-a',
+      routeId: 'relay-a',
+    });
+    await Promise.resolve();
+
+    expect(messagingDomainRuntime.captureScope()).toEqual(before);
+    expect(lifecycle.resetProjection).toHaveBeenCalledTimes(resetsBeforeSwitch);
   });
 
   it('rejects an async command result after the active scope is invalidated', async () => {

@@ -139,7 +139,9 @@ class ProfileLeaseTests(unittest.TestCase):
         station_source = (
             REPO_ROOT / "tooling" / "scripts" / "local-dev" / "station-dev.sh"
         ).read_text(encoding="utf-8")
-        self.assertIn("--owner-action make.station", station_source)
+        self.assertNotIn("--owner-action", station_source)
+        self.assertIn("--resource-kind station.deploy", station_source)
+        self.assertIn("verify-held", station_source)
 
     def test_deploy_script_forwards_only_valid_acceptance_runtime_environment(
         self,
@@ -188,6 +190,23 @@ class ProfileLeaseTests(unittest.TestCase):
 
 
 class RemoteGitSourceLeaseTests(unittest.TestCase):
+    def test_remote_lease_decodes_non_utf8_diagnostics_lossily(self) -> None:
+        lease = RemoteGitSourceLease(
+            "sixwin-station",
+            "gate-owner",
+            host="windows.example",
+            user="acceptance",
+            deploy_path="station",
+        )
+        with patch(
+            "tooling.acceptance.core.lease.subprocess.Popen",
+            side_effect=OSError("unavailable"),
+        ) as popen, self.assertRaises(RemoteGitSourceLeaseUnavailable):
+            lease.acquire()
+
+        self.assertEqual(popen.call_args.kwargs["encoding"], "utf-8")
+        self.assertEqual(popen.call_args.kwargs["errors"], "replace")
+
     def test_deployment_environment_resolver_uses_reviewed_authority(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -2,18 +2,18 @@ package bootstrap
 
 import (
 	"context"
-	"fmt"
+	"crypto/rand"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/libp2p/go-libp2p"
+	dht "github.com/libp2p/go-libp2p-kad-dht"
+	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/libp2p/go-libp2p/p2p/muxer/yamux"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
-	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	"github.com/stretchr/testify/assert"
 	"gorm.io/driver/sqlite"
@@ -54,23 +54,30 @@ func TestBootstrapServer_StartAndConnect(t *testing.T) {
 	// 1. Setup Mock Store
 	err := setupMockStore()
 	assert.NoError(t, err)
-	federation.SetForTest(federation.Policy{
-		DirectOutbound: true,
-		DirectInbound:  true,
-	})
 
 	// 2. Initialize SubServer
-	// Random port
-	port := 0 // Let OS choose
-	listenAddr := fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", port)
+	serverHost, err := libp2p.New(
+		libp2p.ListenAddrStrings("/ip4/127.0.0.1/tcp/0"),
+	)
+	assert.NoError(t, err)
+	defer serverHost.Close()
+	routing, err := dht.New(
+		context.Background(),
+		serverHost,
+		dht.Mode(dht.ModeServer),
+	)
+	assert.NoError(t, err)
+	defer routing.Close()
+	rootKey, _, err := crypto.GenerateEd25519Key(rand.Reader)
+	assert.NoError(t, err)
 
 	// Init options
 	initOpts := []option.Option{
 		option.WithRootCtx(context.Background()),
 		WithEnabled(true),
-		WithListenAddrs([]string{listenAddr}),
+		WithKernel(serverHost, routing),
+		WithStationRootKey(rootKey),
 		WithMDNS(false), // Disable mDNS for unit test to avoid network noise
-		WithLibp2pInsecure(true),
 		WithDHTRefreshInterval(10 * time.Second),
 	}
 
@@ -95,10 +102,7 @@ func TestBootstrapServer_StartAndConnect(t *testing.T) {
 	t.Logf("Server Addresses: %v", serverAddrs)
 
 	// 4. Create Client Host
-	clientHost, err := libp2p.New(
-		libp2p.NoSecurity,
-		libp2p.Muxer(yamux.ID, yamux.DefaultTransport),
-	)
+	clientHost, err := libp2p.New()
 	assert.NoError(t, err)
 	defer clientHost.Close()
 

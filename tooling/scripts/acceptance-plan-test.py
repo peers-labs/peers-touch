@@ -609,6 +609,12 @@ class BehaviorRuleTests(unittest.TestCase):
             selected,
             {
                 "chat-lifecycle-tree-zero-reference-e2e",
+                # Master-era native mobile gates (#141 carryover) govern the
+                # shared social gateway alongside the simulator journeys.
+                "mobile-social-android-native",
+                "mobile-social-facade-contract",
+                "mobile-social-ios-native",
+                "mobile-social-search-profile-native",
                 "mobile-simulator-social-convergence-e2e",
                 "mobile-simulator-chat-contacts-e2e",
             },
@@ -621,6 +627,10 @@ class BehaviorRuleTests(unittest.TestCase):
             "mobile-simulator-chat-contacts-e2e",
             "mobile-simulator-moments-e2e",
             "mobile-simulator-settings-e2e",
+            # Native platform gates ride the shared projection owners.
+            "mobile-social-android-native",
+            "mobile-social-facade-contract",
+            "mobile-social-ios-native",
         }
         for path in (
             "apps/mobile/src/runtimes/socialEventIngress.ts",

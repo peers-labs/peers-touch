@@ -26,7 +26,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/infrastructure"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
-	relayclient "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay-client"
+	nativeRelay "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/relay"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	gate "github.com/peers-labs/peers-touch/station/frame/touch/accessgate"
 	gatepb "github.com/peers-labs/peers-touch/station/frame/touch/model/accessgate"
@@ -428,8 +428,8 @@ func (h *dashboardHandler) handleListActors(ctx context.Context, _ *domain.Empty
 }
 
 // handleGetActor — GET /dashboard/api/actors/:ptid
-func (h *dashboardHandler) handleGetActor(ctx context.Context, _ *domain.EmptyRequest) (*domain.ActorDetail, error) {
-	actorPTID := strings.TrimSpace(pathParam(ctx, "ptid"))
+func (h *dashboardHandler) handleGetActor(ctx context.Context, req *domain.ActorPathRequest) (*domain.ActorDetail, error) {
+	actorPTID := strings.TrimSpace(req.PTID)
 	if actorPTID == "" {
 		return nil, server.BadRequest("actor PTID is required")
 	}
@@ -443,8 +443,8 @@ func (h *dashboardHandler) handleGetActor(ctx context.Context, _ *domain.EmptyRe
 }
 
 // handleGetActorSessions — GET /dashboard/api/actors/:ptid/sessions
-func (h *dashboardHandler) handleGetActorSessions(ctx context.Context, _ *domain.EmptyRequest) (*domain.ActorSessionsResponse, error) {
-	actorPTID := strings.TrimSpace(pathParam(ctx, "ptid"))
+func (h *dashboardHandler) handleGetActorSessions(ctx context.Context, req *domain.ActorPathRequest) (*domain.ActorSessionsResponse, error) {
+	actorPTID := strings.TrimSpace(req.PTID)
 	if actorPTID == "" {
 		return nil, server.BadRequest("actor PTID is required")
 	}
@@ -462,7 +462,7 @@ func (h *dashboardHandler) handleGetActorSessions(ctx context.Context, _ *domain
 func (h *dashboardHandler) handleResetActorPassword(ctx context.Context, req *domain.ResetPasswordRequest) (*domain.MessageResponse, error) {
 	claims := getClaims(ctx)
 
-	actorPTID := strings.TrimSpace(pathParam(ctx, "ptid"))
+	actorPTID := strings.TrimSpace(req.PTID)
 	if actorPTID == "" {
 		return nil, server.BadRequest("actor PTID is required")
 	}
@@ -483,14 +483,14 @@ func (h *dashboardHandler) handleResetActorPassword(ctx context.Context, req *do
 }
 
 // handleRevokeActorSession — POST /dashboard/api/actors/:ptid/sessions/:sid/revoke
-func (h *dashboardHandler) handleRevokeActorSession(ctx context.Context, _ *domain.EmptyRequest) (*domain.MessageResponse, error) {
+func (h *dashboardHandler) handleRevokeActorSession(ctx context.Context, req *domain.ActorRevokeSessionRequest) (*domain.MessageResponse, error) {
 	claims := getClaims(ctx)
 
-	actorPTID := strings.TrimSpace(pathParam(ctx, "ptid"))
+	actorPTID := strings.TrimSpace(req.PTID)
 	if actorPTID == "" {
 		return nil, server.BadRequest("actor PTID is required")
 	}
-	sid := pathParam(ctx, "sid")
+	sid := strings.TrimSpace(req.SessionID)
 	if sid == "" {
 		return nil, server.BadRequest("session id is required")
 	}
@@ -748,8 +748,8 @@ func (h *dashboardHandler) handleRevokeInviteCode(ctx context.Context, _ *domain
 	return &gatepb.RevokeInviteCodeResponse{InviteCode: gate.ToProtoInviteCode(row)}, nil
 }
 
-// handleIssueRelayConnectionMaterial exposes the relay-client's narrow
-// Station-owned issuance capability to authenticated Dashboard operators.
+// handleIssueRelayConnectionMaterial exposes the Station Relay runtime's
+// narrow issuance capability to authenticated Dashboard operators.
 func (h *dashboardHandler) handleIssueRelayConnectionMaterial(
 	ctx context.Context,
 	req *peerpb.IssueStationConnectionMaterialRequest,
@@ -770,16 +770,8 @@ func (h *dashboardHandler) handleIssueRelayConnectionMaterial(
 
 	material, err := issuer.IssueConnectionMaterial(
 		ctx,
-		relayclient.ConnectionMaterialRequest{
+		nativeRelay.ConnectionMaterialRequest{
 			RouteID: routeID,
-			InnerTLSSPKISHA256: append(
-				[]byte(nil),
-				req.GetInnerTlsSpkiSha256()...,
-			),
-			CapabilitiesDigest: append(
-				[]byte(nil),
-				req.GetCapabilitiesDigest()...,
-			),
 			RouteLifetime: time.Duration(req.GetRouteLifetimeSeconds()) *
 				time.Second,
 			GrantLifetime: time.Duration(req.GetGrantLifetimeSeconds()) *
@@ -790,7 +782,7 @@ func (h *dashboardHandler) handleIssueRelayConnectionMaterial(
 	if err != nil {
 		if errors.Is(
 			err,
-			relayclient.ErrInvalidConnectionMaterialRequest,
+			nativeRelay.ErrInvalidConnectionMaterialRequest,
 		) {
 			return nil, server.BadRequest(
 				"Relay connection material request is invalid",

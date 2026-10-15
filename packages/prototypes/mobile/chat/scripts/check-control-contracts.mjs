@@ -199,12 +199,12 @@ try {
 
   await open('journey');
   await inspectSurface('launch');
-  await device.getByRole('button', { name: 'Continue', exact: true }).click();
+  await device.locator('[data-product-action="station-continue"]').click();
   await inspectSurface('auth-quick');
   await device.getByRole('button', { name: 'Email Login', exact: true }).click();
   await inspectSurface('auth-email');
   await device.getByPlaceholder('Email address', { exact: true }).fill('alice@peers.social');
-  await device.getByPlaceholder('Passport', { exact: true }).fill('1');
+  await device.getByPlaceholder('Password', { exact: true }).fill('1');
   await device.getByRole('button', { name: 'Sign In', exact: true }).click();
   await device.locator('[data-prototype-page="chats"]').waitFor();
   await inspectSurface('chats');

@@ -1,28 +1,37 @@
-use crate::infrastructure::station_client;
-use crate::infrastructure::station_client::{StationClientError, StationClientErrorKind};
+use crate::application::station_runtime::client::{
+    StationClient, StationClientError, StationClientErrorKind,
+};
 use crate::model::error::ErrorCode as CanonicalErrorCode;
 use crate::model::key_exchange::{
     CountMlsKeyPackagesRequest, CountMlsKeyPackagesResponse, UploadMlsKeyPackageRequest,
     UploadMlsKeyPackageResponse,
 };
 use messaging_core::mls::key_packages::MlsKeyPackageTransport;
-use messaging_core::proto::actor::ActorDeviceRef;
-use messaging_core::proto::actor_device_ptid;
+use messaging_core::proto::{actor::ActorDeviceRef, actor_device_ptid};
 use reqwest::Method;
 
 pub struct StationMlsKeyPackageTransport {
+    station_client: StationClient,
     token: String,
     device_id: String,
 }
 
 impl StationMlsKeyPackageTransport {
-    pub fn new(token: String, device_id: String) -> Result<Self, String> {
+    pub fn new(
+        station_client: StationClient,
+        token: String,
+        device_id: String,
+    ) -> Result<Self, String> {
         if token.trim().is_empty() || device_id.trim().is_empty() {
             return Err(
                 "messaging MLS KeyPackage transport requires token and device ID".to_string(),
             );
         }
-        Ok(Self { token, device_id })
+        Ok(Self {
+            station_client,
+            token,
+            device_id,
+        })
     }
 }
 
@@ -56,17 +65,20 @@ impl MlsKeyPackageTransport for StationMlsKeyPackageTransport {
         if device.device_id != self.device_id || request.key_package.is_empty() {
             return Err("messaging MLS KeyPackage endpoint binding mismatch".to_string());
         }
-        complete_mls_key_package_upload(station_client::request_proto_for_device::<
-            UploadMlsKeyPackageRequest,
-            UploadMlsKeyPackageResponse,
-        >(
-            Method::POST,
-            "/key-exchange/mls/key-package/upload",
-            &self.token,
-            None,
-            Some(request),
-            &self.device_id,
-        ))
+        complete_mls_key_package_upload(
+            self.station_client
+                .request_proto_for_device::<
+                    UploadMlsKeyPackageRequest,
+                    UploadMlsKeyPackageResponse,
+                >(
+                Method::POST,
+                "/key-exchange/mls/key-package/upload",
+                &self.token,
+                None,
+                Some(request),
+                &self.device_id,
+            ),
+        )
     }
 
     fn available_count(&self, device: &ActorDeviceRef) -> Result<u64, String> {
@@ -74,20 +86,19 @@ impl MlsKeyPackageTransport for StationMlsKeyPackageTransport {
         if device.device_id != self.device_id {
             return Err("messaging MLS KeyPackage count endpoint binding mismatch".to_string());
         }
-        let response = station_client::request_proto_for_device::<
-            CountMlsKeyPackagesRequest,
-            CountMlsKeyPackagesResponse,
-        >(
-            Method::GET,
-            "/key-exchange/mls/key-package/count",
-            &self.token,
-            None,
-            Some(&CountMlsKeyPackagesRequest {
-                device: Some(device.clone()),
-            }),
-            &self.device_id,
-        )
-        .map_err(|error| error.to_string())?;
+        let response = self
+            .station_client
+            .request_proto_for_device::<CountMlsKeyPackagesRequest, CountMlsKeyPackagesResponse>(
+                Method::GET,
+                "/key-exchange/mls/key-package/count",
+                &self.token,
+                None,
+                Some(&CountMlsKeyPackagesRequest {
+                    device: Some(device.clone()),
+                }),
+                &self.device_id,
+            )
+            .map_err(|error| error.to_string())?;
         u64::try_from(response.count)
             .map_err(|_| "messaging MLS KeyPackage count is negative".to_string())
     }

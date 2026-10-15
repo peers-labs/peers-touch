@@ -1,6 +1,6 @@
 ---
-name: "pt-skill-author"
-description: "Guides Peers-Touch project skill creation and cleanup. Invoke when adding, renaming, reviewing, or updating any pt-* project skill."
+name: pt-skill-author
+description: Governs Peers-Touch project skill creation and cleanup. Use when adding, renaming, reviewing, or updating any pt-* project skill.
 ---
 
 # PT Skill Author
@@ -56,6 +56,23 @@ When a skill is added, renamed, or removed, update all relevant references:
 - Architecture docs, execution plans, quality gates, scripts, fixtures, and
   evidence files that mention the skill name or path.
 
+## Product And Craft Skill Governance
+
+When a `pt-*` skill creates, reviews, or implements user-facing experience:
+
+- Reference `docs/client/common/ui-identity/craft-quality.md` instead of
+  embedding a second craft framework.
+- Require evidence-backed positive and negative calibration.
+- Cover keyboard, touch, assistive technology, localization expansion,
+  reduced motion, visible states, recovery, layout stability, and available
+  performance evidence.
+- Use findings and explicit `UNPROVEN` cells. Never instruct the agent to
+  promise an award, label work "FWA-level", or produce an averaged self-score.
+- Keep design authority in product/UI contracts and prototypes. A review Skill
+  evaluates evidence; it does not invent a parallel visual system.
+- Keep component/token specifics in UI Identity or module contracts. Do not
+  freeze transient pixel values inside a methodology Skill.
+
 ## Verification
 
 Run these checks before reporting:
@@ -64,6 +81,8 @@ Run these checks before reporting:
   discoverable runtime location without introducing a second tracked copy.
 - `git diff --check -- tooling/skills AGENTS.md`
 - Search for stale unprefixed names when renaming a skill.
+- For product/craft skills, search for duplicated award language, numeric
+  self-scoring, and hardcoded visual tables outside owning UI contracts.
 
 Report only the exact scope changed and any remaining stale references.
 
@@ -76,3 +95,6 @@ Never:
 - Edit a host-private projection instead of `tooling/skills`.
 - Add long background sections that do not change agent behavior.
 - Hide a skill rename from scripts or quality gates that hardcode the old path.
+- Duplicate the client craft contract in another Skill.
+- Treat award criteria, benchmark brands, or checklist totals as a readiness
+  verdict.

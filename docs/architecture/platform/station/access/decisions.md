@@ -1,8 +1,8 @@
 # Station 接入生命周期 - 设计决策
 
 > **Status**: active
-> **Version**: v2.0
-> **Created**: 2026-09-26 | **Updated**: 2026-10-06
+> **Version**: v2.4
+> **Created**: 2026-09-26 | **Updated**: 2026-10-13
 > **Owner**: Identity and Access
 
 ---
@@ -19,10 +19,83 @@
 | SAL-D06 | 完整 E2E 与当前接口完整性共同决定完成 | accepted |
 | SAL-D07 | 一个接入地址自动识别 Station 或 Relay | accepted |
 | SAL-D08 | Station binding 以身份为主键、route 为候选 | accepted |
-| SAL-D09 | Relay 只转发端到端加密 opaque tunnel | accepted |
-| SAL-D10 | Station enrollment 必须证明 host-key possession | accepted |
-| SAL-D11 | Relay 使用显式最小运行角色 | accepted |
+| SAL-D09 | Relay 只转发端到端加密 opaque tunnel | superseded by NCP-D03 |
+| SAL-D10 | Station enrollment 必须证明 host-key possession | superseded by NCP-D06 |
+| SAL-D11 | Relay 使用显式最小运行角色 | superseded by NCP-D02 |
 | SAL-D12 | 一个 actor 每个 canonical client class 只保留一个 active Session | accepted |
+| SAL-D13 | Relay 服务宿主仅支持 Linux/POSIX | superseded by NCP-D11 |
+| SAL-D14 | Desktop binding 通过 AppState-owned coordinator 发布 RouteLease | accepted |
+| SAL-D15 | Station-owned resource identity 独立于 active route origin | accepted |
+
+Superseded 条目只保留历史上下文。当前逻辑 Station / Node delegation、Circuit v2、
+Frame ingress、renewal/revocation 和集群目标统一由 Node Connectivity 定义。
+
+## SAL-D14：Desktop Binding 发布不可变 RouteLease
+
+**Status**: accepted
+**Date**: 2026-10-12
+
+### Context
+
+Desktop registry、binding 和 transport 当前由多个 process-global accessor
+间接连接。Transport 在请求过程中读取并修改 active route，使 binding 转换和
+网络失败处理缺少一个明确 application owner。
+
+### Decision
+
+Desktop Tauri `AppState` 持有一个 `StationRuntime`。其中
+`StationBindingCoordinator` 是 active Station、route revision 和 lifecycle
+generation 的唯一 mutation owner，并向 Node Connectivity transport 发布不可变
+`RouteLease`。Transport 只执行 lease，不修改 registry。
+
+### Rationale
+
+接入生命周期与传输执行保持不同 owner，同时通过一个 app-scoped composition
+boundary 协同，避免 route 状态、线程生命周期和业务 scope 互相反向依赖。
+
+### Alternatives Considered
+
+- transport 在失败时直接 CAS registry：拒绝，会让 adapter 成为 binding owner。
+- registry/binding 继续使用全局 singleton：拒绝，关闭、测试和多实例隔离不可证明。
+
+### Consequences
+
+所有 Desktop Station consumer 必须从注入的 runtime/client 获取 route lease。
+同 Station failover 只撤销旧 lease；Station replacement 先完成 scope teardown
+再提交新 lifecycle generation。
+
+## SAL-D15：Station Resource Identity 独立于 Active Route
+
+**Status**: accepted
+**Date**: 2026-10-13
+
+### Context
+
+头像、OSS、Profile 与 Applet Bundle 当前把 Station-relative path 拼到
+`station_base_url()`。Relay 下该值是 Desktop localhost proxy，既不是资源身份，
+也不能在删除 proxy 后继续供 WebView 使用。
+
+### Decision
+
+客户端以 `StationResourceRef` 保存 Station-owned relative path，并绑定逻辑
+Station 与 lifecycle generation。Native loader 通过 typed Station client 获取；
+WebView 只消费 app-owned local URI。外部 absolute/presigned URL 使用独立类型。
+
+### Rationale
+
+资源身份不随 Direct/Circuit route 变化，也不要求保留通用 localhost proxy。
+
+### Alternatives Considered
+
+- 把当前 route origin 写入缓存或业务模型：拒绝，会污染 scope 并在 failover 后失效。
+- 把 private Relay path 改写为公开 URL：拒绝，会泄漏拓扑并绕过 typed transport。
+
+### Consequences
+
+Avatar、OSS cache、Profile media、Attachment 和 Applet Bundle consumer 必须纳入
+同一迁移 inventory，并通过 Direct/Circuit resource projection Gate。任何以
+`self` 表示的资源 metadata cache 必须同时按逻辑 Station 与 lifecycle
+generation 隔离，切换 Station 后不得复用旧 scope 的 metadata。
 
 ## SAL-D01：双端统一按语义和结果衡量
 
@@ -265,8 +338,11 @@ Desktop URL-keyed registry 必须硬切；Mobile 现有 `station_peer_id` regist
 
 ## SAL-D09：Relay 只转发端到端加密 opaque tunnel
 
-**Status**: accepted
+**Status**: superseded by NCP-D03
 **Date**: 2026-10-06
+
+当前协议真源见
+[`NCP-D03`](../../runtime/node-connectivity/decisions.md#ncp-d03-circuit-v2-and-station-tls)。
 
 ### Context
 
@@ -299,8 +375,11 @@ backpressure；旧 transparent forward 在迁移完成后删除。
 
 ## SAL-D10：Station enrollment 必须证明 host-key possession
 
-**Status**: accepted
+**Status**: superseded by NCP-D06
 **Date**: 2026-10-06
+
+当前 enrollment 真源见
+[`NCP-D06`](../../runtime/node-connectivity/decisions.md#ncp-d06-delegated-enrollment-and-epoch)。
 
 ### Context
 
@@ -333,8 +412,11 @@ invite 只存 hash 且明文只返回一次；注册、刷新、撤销和恢复�
 
 ## SAL-D11：Relay 使用显式最小运行角色
 
-**Status**: accepted
+**Status**: superseded by NCP-D02
 **Date**: 2026-10-06
+
+当前 role 真源见
+[`NCP-D02`](../../runtime/node-connectivity/decisions.md#ncp-d02-two-roles-and-existing-frame-ingress)。
 
 ### Context
 
@@ -344,8 +426,9 @@ subserver。网络边界上的 Relay 不应拥有 Station 业务攻击面。
 ### Decision
 
 保留同一代码库和 binary，通过显式 `relay` role allowlist 只装配 health、discovery、
-operator admin、mount control、opaque tunnel 和 metrics。生产 Relay 缺少 TLS、
-signing key、operator policy 或配额时启动失败。
+operator admin、mount control、opaque tunnel 和 metrics。生产 Relay 缺少经评审的
+外层 TLS boundary、signing key、operator policy 或配额时部署失败；使用外部
+terminator 时，Relay 明文 upstream 只能绑定共享网络命名空间的 loopback。
 
 ### Rationale
 
@@ -411,3 +494,54 @@ fail closed。既有 `desktop-native` 行在迁移时一次性归一，不保留
 
 只有新的多实例产品合同明确允许同类并发，并同时定义 device picker、winner、
 通知、写入冲突和撤销语义时，才可替换该策略。
+
+---
+
+## SAL-D13：Relay 服务宿主仅支持 Linux/POSIX
+
+**Status**: superseded by NCP-D11
+**Date**: 2026-10-08
+
+本决策保留为 Station Access 历史。Relay service-host 支持矩阵现由唯一
+Relay 架构 owner [Node Connectivity](../../runtime/node-connectivity/README.md)
+的 `NCP-D11` 定义；Station Access 只消费该部署与传输结果。
+
+### Context
+
+Relay 是长期运行的公网或内网基础设施服务。为 Windows Relay 单独维护 service
+adapter、构建路径、部署 profile、密钥 ACL 和 Acceptance 会形成第二套服务端运行
+合同，而 canonical Relay 环境及反向代理、证书、观测和运维设施均基于 Linux。
+
+### Decision
+
+Relay service host 的支持矩阵仅包含遵循 POSIX runtime contract 的 Linux 部署。
+Windows 不作为 Relay 服务宿主选项，不实现 Windows Relay service adapter，不创建
+Windows Relay deploy profile，不设置 Windows Relay 编译门，也不接受 Windows
+Relay 运行证据。
+
+Windows Desktop 继续作为客户端平台，并通过 Linux Relay 完成同一 discovery、
+binding 和 tunnel journey。Windows Station 的支持边界由 Station 模块独立裁决，
+不能成为扩展 Relay host 矩阵的依据。
+
+### Rationale
+
+单一 Linux 服务端合同可以复用成熟的进程监管、NGINX/Web PKI 终止、文件权限、
+日志、指标和容量治理，避免为低概率部署形态长期维护分叉的安全与运维实现。
+
+### Alternatives Considered
+
+- 同时支持 Linux 与 Windows Relay：拒绝，会产生两套服务端部署和安全证明。
+- 保留 Windows Relay 代码但不宣称支持：拒绝，死路径会继续扩大维护与误用风险。
+- Windows 仅用于本地 Relay 模拟：拒绝，内网模拟也必须复用生产 Linux 行为。
+
+### Consequences
+
+- 所有当前执行 Plan、部署清单和 Acceptance 都必须删除 Windows Relay 宿主范围。
+- canonical Relay 运行与证明绑定到已评审的 Linux profile。
+- Windows Desktop Relay E2E 继续保留，但它证明的是 Windows 客户端连接 Linux
+  Relay，不是 Windows 服务端兼容性。
+
+### Reversal Trigger
+
+只有新的产品合同明确要求 Windows Relay 宿主，并同时承担完整的部署、安全、升级、
+观测和 Acceptance 长期成本时，才能通过新的架构决策替换本约束。

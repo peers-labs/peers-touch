@@ -14,9 +14,9 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	actoridentity "github.com/peers-labs/peers-touch/station/frame/touch/activitypub/identity"
 	actorservice "github.com/peers-labs/peers-touch/station/frame/touch/actor"
+	"github.com/peers-labs/peers-touch/station/frame/touch/crypto"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
-	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
@@ -40,6 +40,17 @@ const DefaultSessionDuration = 30 * 24 * time.Hour
 var sessionManager *session.Manager
 
 func InitSessionManager(ctx context.Context) {
+	rds, err := store.GetRDS(ctx)
+	if err != nil {
+		panic(fmt.Errorf("station access keyring database unavailable: %v", err))
+	}
+	if err := coreauth.InitializeConfiguredStationAccessKeyring(
+		ctx,
+		rds,
+	); err != nil {
+		panic(fmt.Errorf("station access keyring initialization failed: %v", err))
+	}
+
 	dbStore := session.NewDBStore(func(ctx context.Context) (*gorm.DB, error) {
 		return store.GetRDS(ctx)
 	}, DefaultSessionDuration)
@@ -282,7 +293,7 @@ func AuthenticatePassword(ctx context.Context, credentials *Credentials) (*db.Ac
 	if err := rds.WithContext(ctx).Where("email = ?", credentials.Email).First(&user).Error; err != nil {
 		return nil, ErrUserNotFound
 	}
-	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(credentials.Password)); err != nil {
+	if !crypto.VerifyPassword(user.PasswordHash, credentials.Password) {
 		return nil, ErrInvalidCredentials
 	}
 
@@ -544,17 +555,44 @@ func ChangePassword(ctx context.Context, userID uint64, oldPassword, newPassword
 		return ErrUserNotFound
 	}
 
-	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(oldPassword)); err != nil {
+	if !crypto.VerifyPassword(user.PasswordHash, oldPassword) {
 		return ErrInvalidCredentials
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	hash, err := crypto.HashPassword(newPassword)
 	if err != nil {
-		return fmt.Errorf("hash password failed: %w", err)
+		return err
 	}
 
-	if err := rds.WithContext(ctx).Model(&db.Actor{}).Where("id = ?", userID).Update("password_hash", string(hash)).Error; err != nil {
-		return fmt.Errorf("update password failed: %w", err)
+	if err := rds.WithContext(ctx).Model(&db.Actor{}).Where("id = ?", userID).Update("password_hash", hash).Error; err != nil {
+		return fmt.Errorf("update password: %w", err)
+	}
+
+	return nil
+}
+
+// ResetActorPassword overwrites an actor's password without requiring the old
+// one. It is the single canonical admin/Dashboard reset path: it resolves the
+// actor by PTID, hashes through the shared crypto helper, and writes the same
+// password_hash column verified by AuthenticatePassword.
+func ResetActorPassword(ctx context.Context, actorPTID, newPassword string) error {
+	rds, err := store.GetRDS(ctx)
+	if err != nil {
+		return err
+	}
+
+	var user db.Actor
+	if err := rds.WithContext(ctx).Where("ptid = ?", actorPTID).First(&user).Error; err != nil {
+		return ErrUserNotFound
+	}
+
+	hash, err := crypto.HashPassword(newPassword)
+	if err != nil {
+		return err
+	}
+
+	if err := rds.WithContext(ctx).Model(&db.Actor{}).Where("id = ?", user.ID).Update("password_hash", hash).Error; err != nil {
+		return fmt.Errorf("reset password: %w", err)
 	}
 
 	return nil

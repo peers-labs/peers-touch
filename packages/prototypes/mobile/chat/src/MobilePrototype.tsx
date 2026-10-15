@@ -45,6 +45,7 @@ type EvidenceScenario =
   | 'journey'
   | 'chat-delivery-recovery'
   | 'station-removal'
+  | 'station-offline'
   | 'session-revoked'
   | 'long-lists'
   | 'search-controlled'
@@ -73,6 +74,7 @@ const evidenceScenarioOptions: Array<{ label: string; value: EvidenceScenario }>
   { label: 'Default journey', value: 'journey' },
   { label: 'Chat / delivery recovery', value: 'chat-delivery-recovery' },
   { label: 'Station removal confirmation', value: 'station-removal' },
+  { label: 'Station selection / offline', value: 'station-offline' },
   { label: 'Station identity mismatch', value: 'station-identity-mismatch' },
   { label: 'OAuth expired', value: 'oauth-expired' },
   { label: 'Session revoked', value: 'session-revoked' },
@@ -85,6 +87,12 @@ const evidenceScenarioOptions: Array<{ label: string; value: EvidenceScenario }>
   { label: 'Find People / active Federation', value: 'find-people-member' },
   { label: 'Accepted contact / Direct opening', value: 'contact-direct' },
   { label: 'Friend request / unknown outcome', value: 'request-unknown' },
+  { label: 'Social parity / complete navigation', value: 'social-parity' },
+  { label: 'Social parity / content types', value: 'social-content-types' },
+  { label: 'Social private / remote delivery pending', value: 'social-private-pending' },
+  { label: 'Social private / recovery required', value: 'social-recovery-required' },
+  { label: 'Social private / source unavailable', value: 'social-source-unavailable' },
+  { label: 'Social private / deleted or revoked', value: 'social-revoked' },
   { label: 'Long lists / sample data only', value: 'long-lists' },
   { label: 'Search / controlled outcomes', value: 'search-controlled' },
   { label: 'UI / clean default shell', value: 'chat-default' },
@@ -248,6 +256,10 @@ export function MobilePrototype() {
     setEvidenceScenario(scenario);
     dispatchSocialDemo({ type: 'reset', scenario });
     dispatchSearch({ type: 'reset' });
+    if (scenario === 'station-removal' || scenario === 'station-offline') {
+      setLaunchState('station-selection');
+      setScenes(['Launch']);
+    }
   }
 
   function handleSelectStation(url: string) {
@@ -363,6 +375,7 @@ export function MobilePrototype() {
           onAddStation={handleAddStation}
           onContinue={handleContinue}
           showRemovalConfirmation={evidenceScenario === 'station-removal'}
+          offline={evidenceScenario === 'station-offline'}
         />
       );
     }

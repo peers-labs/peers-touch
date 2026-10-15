@@ -47,6 +47,7 @@ export interface MessageReply {
 }
 
 export type ReactionKind = 'like' | 'love' | 'laugh' | 'wow' | 'celebrate';
+export type MomentReactionKind = 'love';
 
 export interface MessageReaction {
   kind: ReactionKind;
@@ -102,6 +103,9 @@ export interface Moment {
   avatarGradient: string;
   time: string;
   text: string;
+  source?: string;
+  reason?: string;
+  remote?: boolean;
   images?: string[];
   audience?: MomentAudience;
   circleId?: string;

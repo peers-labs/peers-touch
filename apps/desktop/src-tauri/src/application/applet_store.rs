@@ -1,3 +1,5 @@
+use crate::application::station_runtime::client::{self as station_client, StationClient};
+use crate::application::station_runtime::resource::{ResourceReference, StationResourceHandle};
 use crate::contracts::{
     AppletStoreGetVersionInput, AppletStoreInstallInput, AppletStoreListCatalogInput,
     AppletStoreListInstalledInput, AppletStoreMaterializeBundleInput, AppletStoreUninstallInput,
@@ -5,12 +7,12 @@ use crate::contracts::{
 };
 use crate::domain::applets::{drain_audit_records, requeue_audit_records, AccessContext};
 use crate::error::{AppResult, ErrorCode};
-use crate::infrastructure::station_client;
 use reqwest::Method;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 const STORE_BASE: &str = "/api/v1/applets";
 
@@ -127,27 +129,23 @@ fn station_error(
     }
 }
 
-fn station_bundle_url(bundle_url: &str) -> Result<String, String> {
+fn bundle_reference(bundle_url: &str) -> Result<String, String> {
     let trimmed = bundle_url.trim();
     if trimmed.is_empty() {
         return Err("bundleUrl is required".to_string());
     }
-    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
-        let base = station_client::station_base_url();
-        if !trimmed.starts_with(&base) {
-            return Err("bundleUrl must belong to the active Station".to_string());
-        }
-        return Ok(trimmed.to_string());
+    if !trimmed.starts_with('/')
+        && !trimmed.starts_with("http://")
+        && !trimmed.starts_with("https://")
+    {
+        return Err("bundleUrl must be a Station path or external HTTP(S) URL".to_string());
     }
-    if !trimmed.starts_with('/') {
-        return Err("bundleUrl must be an absolute Station path".to_string());
-    }
-    Ok(format!("{}{}", station_client::station_base_url(), trimmed))
+    Ok(trimmed.to_string())
 }
 
-fn station_asset_url(bundle_url: &str, entry: &str, asset_path: &str) -> Result<String, String> {
+fn asset_reference(bundle_url: &str, entry: &str, asset_path: &str) -> Result<String, String> {
     if asset_path == entry {
-        return station_bundle_url(bundle_url);
+        return bundle_reference(bundle_url);
     }
     let trimmed = bundle_url.trim();
     let marker = "path=";
@@ -175,7 +173,7 @@ fn station_asset_url(bundle_url: &str, entry: &str, asset_path: &str) -> Result<
         asset_storage_path,
         &trimmed[path_end..]
     );
-    station_bundle_url(&next)
+    bundle_reference(&next)
 }
 
 fn sha256_digest(bytes: &[u8]) -> String {
@@ -184,42 +182,62 @@ fn sha256_digest(bytes: &[u8]) -> String {
     format!("sha256:{}", hex::encode(hasher.finalize()))
 }
 
-fn download_station_asset(
+fn download_asset(
+    resources: &StationResourceHandle,
     context: &AccessContext,
-    url: &str,
+    reference: &ResourceReference,
 ) -> Result<Vec<u8>, (ErrorCode, String, Value)> {
-    let response = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .and_then(|client| client.get(url).bearer_auth(&context.token).send())
-        .map_err(|error| {
-            (
-                ErrorCode::InternalError,
-                "download applet package asset".to_string(),
-                json!({ "error": error.to_string() }),
-            )
-        })?;
-    let status = response.status();
-    if !status.is_success() {
-        return Err((
-            ErrorCode::InternalError,
-            "download applet package asset".to_string(),
-            json!({ "status": status.as_u16() }),
-        ));
+    match reference {
+        ResourceReference::Station(resource) => resources
+            .fetch_bytes(resource, Some(&context.token))
+            .map(|(bytes, _)| bytes)
+            .map_err(|error| {
+                (
+                    ErrorCode::InternalError,
+                    "download Station applet package asset".to_string(),
+                    json!({ "error": error.to_string() }),
+                )
+            }),
+        ResourceReference::External(url) => {
+            let response = reqwest::blocking::Client::builder()
+                .timeout(Duration::from_secs(30))
+                .build()
+                .and_then(|client| client.get(url.as_str()).send())
+                .map_err(|error| {
+                    (
+                        ErrorCode::InternalError,
+                        "download external applet package asset".to_string(),
+                        json!({ "error": error.to_string() }),
+                    )
+                })?;
+            if !response.status().is_success() {
+                return Err((
+                    ErrorCode::InternalError,
+                    "download external applet package asset".to_string(),
+                    json!({ "status": response.status().as_u16() }),
+                ));
+            }
+            response
+                .bytes()
+                .map(|bytes| bytes.to_vec())
+                .map_err(|error| {
+                    (
+                        ErrorCode::InternalError,
+                        "read external applet package asset".to_string(),
+                        json!({ "error": error.to_string() }),
+                    )
+                })
+        }
+        ResourceReference::Inline(_) => Err((
+            ErrorCode::InvalidArgument,
+            "inline applet package assets are not supported".to_string(),
+            json!({ "reason": "inline_resource_not_supported" }),
+        )),
     }
-    response
-        .bytes()
-        .map(|bytes| bytes.to_vec())
-        .map_err(|error| {
-            (
-                ErrorCode::InternalError,
-                "read applet package asset".to_string(),
-                json!({ "error": error.to_string() }),
-            )
-        })
 }
 
 pub fn list_catalog(
+    station_client: &StationClient,
     context: AccessContext,
     input: AppletStoreListCatalogInput,
     data_dir: &Path,
@@ -242,7 +260,7 @@ pub fn list_catalog(
         ("offset", input.offset.unwrap_or(0).to_string()),
     ];
 
-    match station_client::request_json_auth(
+    match station_client.request_json_auth(
         Method::GET,
         &format!("{}/catalog", STORE_BASE),
         &context.token,
@@ -262,6 +280,7 @@ pub fn list_catalog(
 }
 
 pub fn list_installed(
+    station_client: &StationClient,
     context: AccessContext,
     input: AppletStoreListInstalledInput,
     data_dir: &Path,
@@ -278,7 +297,7 @@ pub fn list_installed(
         ),
     ];
 
-    match station_client::request_json_auth(
+    match station_client.request_json_auth(
         Method::GET,
         &format!("{}/installed", STORE_BASE),
         &context.token,
@@ -301,7 +320,11 @@ pub fn list_installed(
     }
 }
 
-pub fn install(context: AccessContext, input: AppletStoreInstallInput) -> AppResult<StubPayload> {
+pub fn install(
+    station_client: &StationClient,
+    context: AccessContext,
+    input: AppletStoreInstallInput,
+) -> AppResult<StubPayload> {
     let applet_id = input.applet_id.trim();
     if applet_id.is_empty() {
         return invalid_argument("applets_store_install", "appletId is required");
@@ -315,7 +338,7 @@ pub fn install(context: AccessContext, input: AppletStoreInstallInput) -> AppRes
         "channel": channel(input.channel),
         "config": input.config.unwrap_or_else(|| json!({})),
     });
-    match station_client::request_json_auth(
+    match station_client.request_json_auth(
         Method::POST,
         &format!("{}/install", STORE_BASE),
         &context.token,
@@ -331,6 +354,7 @@ pub fn install(context: AccessContext, input: AppletStoreInstallInput) -> AppRes
 }
 
 pub fn uninstall(
+    station_client: &StationClient,
     context: AccessContext,
     input: AppletStoreUninstallInput,
 ) -> AppResult<StubPayload> {
@@ -344,7 +368,7 @@ pub fn uninstall(
         "device_id": device_id(input.device_id),
         "applet_id": applet_id,
     });
-    match station_client::request_json_auth(
+    match station_client.request_json_auth(
         Method::POST,
         &format!("{}/uninstall", STORE_BASE),
         &context.token,
@@ -360,6 +384,7 @@ pub fn uninstall(
 }
 
 pub fn get_version(
+    station_client: &StationClient,
     context: AccessContext,
     input: AppletStoreGetVersionInput,
     data_dir: &Path,
@@ -376,7 +401,7 @@ pub fn get_version(
         ("version", input.version.unwrap_or_default()),
         ("channel", channel(input.channel)),
     ];
-    match station_client::request_json_auth(
+    match station_client.request_json_auth(
         Method::GET,
         &format!("{}/version", STORE_BASE),
         &context.token,
@@ -396,6 +421,7 @@ pub fn get_version(
 }
 
 pub fn materialize_bundle(
+    resources: &StationResourceHandle,
     context: AccessContext,
     input: AppletStoreMaterializeBundleInput,
     data_dir: &Path,
@@ -448,11 +474,20 @@ pub fn materialize_bundle(
                 )
             }
         };
-        let url = match station_asset_url(&input.bundle_url, &entry, &asset_path) {
+        let reference = match asset_reference(&input.bundle_url, &entry, &asset_path) {
             Ok(value) => value,
             Err(message) => return invalid_argument("applets_store_materialize_bundle", &message),
         };
-        let bytes = match download_station_asset(&context, &url) {
+        let reference = match resources.reference(reference, Some(asset.sha256.clone())) {
+            Ok(value) => value,
+            Err(error) => {
+                return invalid_argument(
+                    "applets_store_materialize_bundle",
+                    &format!("invalid bundle resource: {error}"),
+                )
+            }
+        };
+        let bytes = match download_asset(resources, &context, &reference) {
             Ok(value) => value,
             Err((code, message, details)) => return AppResult::fail(code, message, Some(details)),
         };
@@ -511,7 +546,11 @@ pub fn materialize_bundle(
     )
 }
 
-pub fn upload_audit(context: AccessContext, device: Option<String>) -> AppResult<StubPayload> {
+pub fn upload_audit(
+    station_client: &StationClient,
+    context: AccessContext,
+    device: Option<String>,
+) -> AppResult<StubPayload> {
     let records = drain_audit_records();
     if records.is_empty() {
         return success_payload(
@@ -549,7 +588,7 @@ pub fn upload_audit(context: AccessContext, device: Option<String>) -> AppResult
         })
         .collect::<Vec<_>>();
     let body = json!({ "records": body_records });
-    match station_client::request_json_auth(
+    match station_client.request_json_auth(
         Method::POST,
         &format!("{}/audit/ingest", STORE_BASE),
         &context.token,
@@ -564,5 +603,35 @@ pub fn upload_audit(context: AccessContext, device: Option<String>) -> AppResult
             requeue_audit_records(records);
             error.into_app_result("applets_store_upload_audit")
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{asset_reference, ResourceReference, StationResourceHandle};
+    use crate::application::station_runtime::client::StationClient;
+
+    #[test]
+    fn applet_station_asset_keeps_lifecycle_scoped_reference() {
+        let resources = StationResourceHandle::new(StationClient::testing_scoped("station", 7));
+        let value = asset_reference(
+            "/api/v1/applets/bundle?path=release/main.js&applet=notes",
+            "main.js",
+            "styles.css",
+        )
+        .unwrap();
+
+        let reference = resources
+            .reference(value, Some("sha256:asset".to_string()))
+            .unwrap();
+
+        assert!(matches!(
+            reference,
+            ResourceReference::Station(ref resource)
+                if resource.station_peer_id() == "station"
+                    && resource.lifecycle_generation() == 7
+                    && resource.path_and_query()
+                        == "/api/v1/applets/bundle?path=release/styles.css&applet=notes"
+        ));
     }
 }

@@ -538,6 +538,7 @@ def produce_bound_actor_manifest(
     role_targets: Mapping[str, tuple[str, str]],
     credential_ref: str,
     reset_authorized: bool,
+    fixture_id: str = "chat-native-actors",
 ) -> tuple[ActorManifest, Path, dict[str, str]]:
     unique_roles = tuple(dict.fromkeys(role_targets))
     if not reset_authorized:
@@ -573,7 +574,7 @@ def produce_bound_actor_manifest(
     )
     prepare_bound_friendships(role_targets, actors)
     manifest = ActorManifest(
-        fixture_id="chat-native-actors",
+        fixture_id=fixture_id,
         environment_id=environment_id,
         run_id=run_id,
         created_at=utc_now(),

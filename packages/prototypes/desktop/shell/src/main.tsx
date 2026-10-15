@@ -6,6 +6,7 @@ import {
   createDesignTokenCssVariables,
 } from '../../../shared/design-tokens';
 import { DesktopShell } from './Shell';
+import '../../shared/focus.css';
 
 const antdTheme = createAntdTokenTheme('light');
 const cssVariables = createDesignTokenCssVariables('light');

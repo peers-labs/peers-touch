@@ -22,11 +22,6 @@ import { evaluationRuntime } from '../runtimes/evaluationRuntime';
 import { callRuntime } from '../runtimes/callRuntime';
 import { chatStorageRuntime } from '../runtimes/chatStorageRuntime';
 import { getDesktopHostPolicy } from '../kernel/hostPolicy';
-import {
-  EVENT,
-  eventBus,
-  onWindowStationActiveChanged,
-} from '../kernel/events';
 import { log } from '../utils/logger';
 
 // Register kernel-managed runtimes once. The legacy bridges
@@ -59,7 +54,6 @@ export function registerKernelRuntimes(): void {
 }
 
 let installed = false;
-let teardownStationLifecycleBridge: (() => void) | null = null;
 let deferredInstalled = false;
 let deferredInstallInFlight: Promise<void> | null = null;
 let criticalInstallInFlight: {
@@ -98,12 +92,6 @@ export function installAppRuntime(): void {
 
   installIdentityChangedBridge();
   installNavigationBadgeProjection();
-  teardownStationLifecycleBridge = onWindowStationActiveChanged((detail) => {
-    eventBus.publish(EVENT.STATION_ACTIVE_CHANGED, {
-      stationUrl: detail.url,
-      label: detail.label,
-    });
-  });
 
   installRuntime(socialRuntime.id);
   installRuntime(appletsRuntime.id);
@@ -191,8 +179,6 @@ export function teardownAppRuntime(): void {
   teardownRuntime(evaluationRuntime.id);
   teardownMediaRuntime();
   teardownNavigationBadgeProjection();
-  teardownStationLifecycleBridge?.();
-  teardownStationLifecycleBridge = null;
   teardownSessionKickBridge();
   teardownEventStreamBridge();
   teardownPresenceBridge();

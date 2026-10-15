@@ -388,11 +388,22 @@ func findOrRegisterOAuthActorWith(
 	signUp func(context.Context, *model.ActorSignRequest, string) error,
 ) (*db.Actor, error) {
 	email := strings.TrimSpace(identity.Email)
-	if !identity.EmailVerified || email == "" {
+	verified := identity.EmailVerified && email != ""
+	if !verified {
 		email = syntheticOAuthEmail(identity.ProviderID, identity.ProviderUserID)
 	}
+
 	existing, err := findByEmail(ctx, email)
 	if err == nil && existing != nil {
+		if verified {
+			// Identity is keyed by the provider's identity ID, never by an
+			// email. A different provider identity that resolves to an email
+			// already owned by an actor is a conflict, never a silent merge.
+			return nil, newOAuthEmailConflict()
+		}
+		// Unverified identity uses a provider-scoped synthetic email; an
+		// existing row is this same identity's actor (e.g. its binding row was
+		// lost), so reuse it — idempotent recovery, not cross-provider merge.
 		return existing, nil
 	}
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -435,6 +446,13 @@ func findOrRegisterOAuthActorWith(
 	}
 
 	if err := signUp(ctx, signReq, baseURL); err != nil {
+		// Concurrent registrations can race for the same verified email. If a
+		// row now exists, report that conflict rather than a raw signup error.
+		if verified {
+			if racer, lookupErr := findByEmail(ctx, email); lookupErr == nil && racer != nil {
+				return nil, newOAuthEmailConflict()
+			}
+		}
 		return nil, fmt.Errorf("signup: %w", err)
 	}
 
@@ -443,6 +461,18 @@ func findOrRegisterOAuthActorWith(
 		return nil, fmt.Errorf("load registered actor: %w", err)
 	}
 	return registered, nil
+}
+
+// newOAuthEmailConflict builds the typed error returned when a brand-new
+// provider identity's verified email is already owned by another actor. Peers
+// identifies users by the provider's identity ID and never auto-links
+// providers, so this collision must be surfaced to the user instead of logging
+// them into an existing account.
+func newOAuthEmailConflict() error {
+	return model.NewErrorResponse(
+		model.ErrorCode_ERROR_CODE_ACTOR_EXISTS,
+		"oauth email is already used by another actor",
+	)
 }
 
 func syntheticOAuthEmail(provider coreauth.OAuth2ProviderID, providerUserID string) string {

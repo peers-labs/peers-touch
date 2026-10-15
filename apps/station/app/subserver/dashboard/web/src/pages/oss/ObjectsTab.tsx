@@ -24,7 +24,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert, Badge, Button, Card, DatePicker, Descriptions, Drawer, Form,
-  Input as AntdInput, message, Modal, Pagination, Popconfirm, Segmented,
+  Input as AntdInput, message, Pagination, Popconfirm, Segmented,
   Space, Table, Tag, Tooltip, Typography,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
@@ -74,9 +74,7 @@ export function ObjectsTab() {
   const [drawerLoading, setDrawerLoading] = useState(false);
   const [busyID, setBusyID] = useState<string | null>(null);
 
-  const [patchOpen, setPatchOpen] = useState(false);
-  const [patchTarget, setPatchTarget] =
-    useState<ossApi.OSSObjectSummary | ossApi.OSSObjectAdminDetail | null>(null);
+  const [patchMode, setPatchMode] = useState(false);
   const [patchForm, setPatchForm] = useState<PatchFormState>(EMPTY_PATCH);
   const [patching, setPatching] = useState(false);
 
@@ -119,14 +117,17 @@ export function ObjectsTab() {
     }
   }, []);
 
-  const openPatch = useCallback((row: ossApi.OSSObjectSummary | ossApi.OSSObjectAdminDetail) => {
-    setPatchTarget(row);
+  const startPatch = useCallback(() => {
     setPatchForm(EMPTY_PATCH);
-    setPatchOpen(true);
+    setPatchMode(true);
+  }, []);
+
+  const closePatch = useCallback(() => {
+    setPatchMode(false);
   }, []);
 
   const onPatchSubmit = useCallback(async () => {
-    if (!patchTarget) return;
+    if (!drawerTarget) return;
     const req: ossApi.OSSObjectAdminPatchRequest = {};
     if (patchForm.visibility !== 'leave') {
       req.visibility = patchForm.visibility;
@@ -161,22 +162,19 @@ export function ObjectsTab() {
     }
     setPatching(true);
     try {
-      await ossApi.adminPatchObject(patchTarget.id, req);
+      await ossApi.adminPatchObject(drawerTarget.id, req);
       message.success('Object patched');
-      setPatchOpen(false);
-      setPatchTarget(null);
+      setPatchMode(false);
       await load();
-      if (drawerTarget?.id === patchTarget.id) {
-        const refreshed = await ossApi.getObject(patchTarget.id);
-        setDrawerTarget(refreshed);
-      }
+      const refreshed = await ossApi.getObject(drawerTarget.id);
+      setDrawerTarget(refreshed);
     } catch (err: any) {
       log.error('oss', 'Admin patch failed');
       message.error(err?.response?.data?.message || err?.message || 'Patch failed');
     } finally {
       setPatching(false);
     }
-  }, [patchTarget, patchForm, load, drawerTarget]);
+  }, [drawerTarget, patchForm, load]);
 
   const onAdminDelete = useCallback(async (row: ossApi.OSSObjectSummary) => {
     setBusyID(row.id);
@@ -277,14 +275,6 @@ export function ObjectsTab() {
           <Space size={4}>
             <Button size="small" icon={<FileText size={14} />} onClick={() => openInspect(r.id)}>
               Inspect
-            </Button>
-            <Button
-              size="small"
-              icon={<EyeOff size={14} />}
-              disabled={busy}
-              onClick={() => openPatch(r)}
-            >
-              Patch
             </Button>
             <Popconfirm
               title="Force-delete this object?"
@@ -401,16 +391,16 @@ export function ObjectsTab() {
       <Drawer
         title={drawerTarget ? `Object · ${drawerTarget.name || drawerTarget.id}` : 'Object detail'}
         open={!!drawerTarget || drawerLoading}
-        onClose={() => setDrawerTarget(null)}
+        onClose={() => { setDrawerTarget(null); setPatchMode(false); }}
         width={520}
         loading={drawerLoading}
         extra={
-          drawerTarget && !drawerTarget.deleted_at ? (
+          drawerTarget && !drawerTarget.deleted_at && !patchMode ? (
             <Space>
               <Button
                 size="small"
                 icon={<EyeOff size={14} />}
-                onClick={() => openPatch(drawerTarget)}
+                onClick={startPatch}
               >
                 Patch
               </Button>
@@ -429,6 +419,81 @@ export function ObjectsTab() {
         }
       >
         {drawerTarget ? (
+          patchMode ? (
+            <Form layout="vertical" disabled={patching}>
+              <Alert
+                type="info"
+                showIcon
+                message="Admin override — bypasses owner permission, audited as admin_visibility_override."
+                style={{ marginBottom: 16 }}
+              />
+              <Form.Item label="Visibility">
+                <Segmented
+                  value={patchForm.visibility}
+                  onChange={(v) => setPatchForm({ ...patchForm, visibility: v as PatchFormState['visibility'] })}
+                  options={[
+                    { label: 'Leave', value: 'leave' },
+                    { label: 'public', value: 'public' },
+                    { label: 'chat', value: 'chat' },
+                    { label: 'private', value: 'private' },
+                  ]}
+                />
+              </Form.Item>
+              <Form.Item label="Chat session id">
+                <Flexbox gap={6}>
+                  <Segmented
+                    value={patchForm.chat_session_id_mode}
+                    onChange={(v) => setPatchForm({ ...patchForm, chat_session_id_mode: v as PatchFormState['chat_session_id_mode'] })}
+                    options={[
+                      { label: 'Leave', value: 'leave' },
+                      { label: 'Set', value: 'set' },
+                      { label: 'Clear', value: 'clear' },
+                    ]}
+                  />
+                  {patchForm.chat_session_id_mode === 'set' ? (
+                    <AntdInput
+                      value={patchForm.chat_session_id}
+                      onChange={(e) => setPatchForm({ ...patchForm, chat_session_id: e.target.value })}
+                      placeholder="session ULID — required when visibility=chat"
+                    />
+                  ) : null}
+                  {patchForm.visibility === 'chat' && patchForm.chat_session_id_mode === 'clear' ? (
+                    <Text type="warning">Setting visibility=chat without a session id will be rejected.</Text>
+                  ) : null}
+                </Flexbox>
+              </Form.Item>
+              <Form.Item label="Expiry">
+                <Flexbox gap={6}>
+                  <Segmented
+                    value={patchForm.expires_mode}
+                    onChange={(v) => setPatchForm({ ...patchForm, expires_mode: v as PatchFormState['expires_mode'] })}
+                    options={[
+                      { label: 'Leave', value: 'leave' },
+                      { label: 'Set', value: 'set' },
+                      { label: 'Clear', value: 'clear' },
+                    ]}
+                  />
+                  {patchForm.expires_mode === 'set' ? (
+                    <DatePicker
+                      showTime
+                      value={patchForm.expires_at}
+                      onChange={(d) => setPatchForm({ ...patchForm, expires_at: d })}
+                      style={{ width: '100%' }}
+                    />
+                  ) : null}
+                  {patchForm.expires_mode === 'clear' ? (
+                    <Paragraph type="secondary" style={{ marginBottom: 0 }}>
+                      Will null out the existing expiry — file becomes permanent.
+                    </Paragraph>
+                  ) : null}
+                </Flexbox>
+              </Form.Item>
+              <Space style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <Button onClick={closePatch} disabled={patching}>Cancel</Button>
+                <Button type="primary" onClick={onPatchSubmit} loading={patching}>Apply</Button>
+              </Space>
+            </Form>
+          ) : (
           <Flexbox gap={12}>
             {drawerTarget.deleted_at ? (
               <Alert
@@ -471,7 +536,7 @@ export function ObjectsTab() {
               <Descriptions.Item label="SHA256">
                 {drawerTarget.sha256
                   ? <Tooltip title={drawerTarget.sha256}>
-                      <Text code copyable={{ text: drawerTarget.sha256 }}>
+                      <Text code copyable={{ text: drawerTarget.sha256}}>
                         {shortHash(drawerTarget.sha256, 16, 8)}
                       </Text>
                     </Tooltip>
@@ -491,90 +556,9 @@ export function ObjectsTab() {
               </Descriptions.Item>
             </Descriptions>
           </Flexbox>
+          )
         ) : null}
       </Drawer>
-
-      <Modal
-        title={patchTarget ? `Patch object · ${patchTarget.name || patchTarget.id}` : 'Patch object'}
-        open={patchOpen}
-        onCancel={() => setPatchOpen(false)}
-        onOk={onPatchSubmit}
-        confirmLoading={patching}
-        okText="Apply"
-        destroyOnHidden
-      >
-        {patchTarget ? (
-          <Form layout="vertical" disabled={patching}>
-            <Alert
-              type="info"
-              showIcon
-              message="Admin override — bypasses owner permission, audited as admin_visibility_override."
-              style={{ marginBottom: 16 }}
-            />
-            <Form.Item label="Visibility">
-              <Segmented
-                value={patchForm.visibility}
-                onChange={(v) => setPatchForm({ ...patchForm, visibility: v as PatchFormState['visibility'] })}
-                options={[
-                  { label: 'Leave', value: 'leave' },
-                  { label: 'public', value: 'public' },
-                  { label: 'chat', value: 'chat' },
-                  { label: 'private', value: 'private' },
-                ]}
-              />
-            </Form.Item>
-            <Form.Item label="Chat session id">
-              <Flexbox gap={6}>
-                <Segmented
-                  value={patchForm.chat_session_id_mode}
-                  onChange={(v) => setPatchForm({ ...patchForm, chat_session_id_mode: v as PatchFormState['chat_session_id_mode'] })}
-                  options={[
-                    { label: 'Leave', value: 'leave' },
-                    { label: 'Set', value: 'set' },
-                    { label: 'Clear', value: 'clear' },
-                  ]}
-                />
-                {patchForm.chat_session_id_mode === 'set' ? (
-                  <AntdInput
-                    value={patchForm.chat_session_id}
-                    onChange={(e) => setPatchForm({ ...patchForm, chat_session_id: e.target.value })}
-                    placeholder="session ULID — required when visibility=chat"
-                  />
-                ) : null}
-                {patchForm.visibility === 'chat' && patchForm.chat_session_id_mode === 'clear' ? (
-                  <Text type="warning">Setting visibility=chat without a session id will be rejected.</Text>
-                ) : null}
-              </Flexbox>
-            </Form.Item>
-            <Form.Item label="Expiry">
-              <Flexbox gap={6}>
-                <Segmented
-                  value={patchForm.expires_mode}
-                  onChange={(v) => setPatchForm({ ...patchForm, expires_mode: v as PatchFormState['expires_mode'] })}
-                  options={[
-                    { label: 'Leave', value: 'leave' },
-                    { label: 'Set', value: 'set' },
-                    { label: 'Clear', value: 'clear' },
-                  ]}
-                />
-                {patchForm.expires_mode === 'set' ? (
-                  <DatePicker
-                    showTime
-                    value={patchForm.expires_at}
-                    onChange={(d) => setPatchForm({ ...patchForm, expires_at: d })}
-                    style={{ width: '100%' }}
-                  />
-                ) : null}
-                {patchForm.expires_mode === 'clear' ? (
-                  <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-                    Will null out the existing expiry — file becomes permanent.
-                  </Paragraph>
-                ) : null}
-              </Flexbox>
-            </Form.Item>
-          </Form>
-        ) : null}
-      </Modal>
     </Flexbox>
   );
 }

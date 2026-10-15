@@ -11,7 +11,6 @@ import (
 	identity "github.com/peers-labs/peers-touch/station/frame/touch/activitypub/identity"
 	"github.com/peers-labs/peers-touch/station/frame/touch/crypto"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
-	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
@@ -90,7 +89,7 @@ func SeedPresetActors(ctx context.Context, presets []PresetActorConfig) error {
 		if pw == "" {
 			pw = "1"
 		}
-		hash, _ := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
+		hash, _ := crypto.HashPassword(pw)
 
 		pubPEM, privPEM, _ := crypto.GenerateRSAKeyPair(2048)
 

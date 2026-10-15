@@ -140,7 +140,7 @@ function RailIcon({
   active?: boolean;
   title: string;
   badge?: number;
-  onClick: () => void;
+  onClick: (pointer: boolean) => void;
   buttonRef?: RefObject<HTMLButtonElement | null>;
 }) {
   const [hover, setHover] = useState(false);
@@ -151,7 +151,7 @@ function RailIcon({
       title={title}
       aria-label={title}
       aria-pressed={active}
-      onClick={onClick}
+      onClick={(event) => onClick(event.detail > 0)}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       style={{
@@ -201,7 +201,7 @@ function SideNav({
   onNavigate: (p: string) => void;
   notifOpen: boolean;
   unreadCount: number;
-  onToggleNotifications: () => void;
+  onToggleNotifications: (pointer: boolean) => void;
   notificationButtonRef: RefObject<HTMLButtonElement | null>;
 }) {
   return (
@@ -667,7 +667,12 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [notificationView, setNotificationView] = useState<'closed' | 'preview' | 'all'>('closed');
   const notificationButtonRef = useRef<HTMLButtonElement>(null);
+  // Whether the current preview was opened by pointer (mouse/touch); pointer
+  // openers keep focus on the bell, keyboard openers move focus into the panel.
+  const notificationPointerOpen = useRef(false);
   const notifOpen = notificationView !== 'closed';
+  const notificationViewRef = useRef(notificationView);
+  notificationViewRef.current = notificationView;
   const [notifications, setNotifications] = useState<NotifItem[]>(INITIAL_NOTIFICATIONS);
   const [authPrototypeComplete, setAuthPrototypeComplete] = useState(false);
   const unreadCount = notifications.filter((n) => !n.read).length;
@@ -704,6 +709,11 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
         setPaletteOpen((v) => !v);
       } else if (e.key === 'Escape') {
         setPaletteOpen(false);
+        if (notificationViewRef.current !== 'closed') {
+          setNotificationView('closed');
+          // Restore the bell after the dialog's own close/focus teardown.
+          window.setTimeout(() => notificationButtonRef.current?.focus(), 0);
+        }
       }
     };
     window.addEventListener('keydown', onKey);
@@ -764,17 +774,31 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
         notifOpen={notifOpen}
         unreadCount={unreadCount}
         notificationButtonRef={notificationButtonRef}
-        onToggleNotifications={() => setNotificationView((v) => v === 'closed' ? 'preview' : 'closed')}
+        onToggleNotifications={(pointer) => {
+          setNotificationView((v) => {
+            if (v === 'closed') {
+              notificationPointerOpen.current = pointer;
+              return 'preview';
+            }
+            return 'closed';
+          });
+          // A pointer click on an already keyboard-focused element keeps the
+          // :focus-visible ring in Chromium; pointer-openers leave the bell
+          // without a visible ring.
+          if (pointer) requestAnimationFrame(() => notificationButtonRef.current?.blur());
+        }}
       />
       {notifOpen ? (
           <NotificationPanel
             mode={notificationView === 'all' ? 'all' : 'preview'}
             anchorRef={notificationButtonRef}
+            keyboardAutoFocus={!notificationPointerOpen.current}
             onShowAll={() => setNotificationView('all')}
-            onClose={() => {
-              setNotificationView('closed');
-              requestAnimationFrame(() => notificationButtonRef.current?.focus());
-            }}
+            onClose={() => setNotificationView('closed')}
+            // Defer past the dialog's own trigger-focus restoration, which
+            // targets an element that has already unmounted.
+            onRestoreFocus={() => window.setTimeout(
+              () => notificationButtonRef.current?.focus(), 0)}
             items={notifications}
             onMarkAllRead={() => setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))}
             onOpenItem={openNotification}

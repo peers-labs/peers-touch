@@ -6,16 +6,13 @@
 // tick returns. This is intentionally finer-grained than a
 // "leader for life" model — it tolerates rolling restarts (the
 // new instance picks up work on the next tick) and crashes (the
-// timeout-based Postgres advisory lock or the in-process MemLock
-// release path drops the lock without operator intervention).
+// database-time lease expires without operator intervention).
 //
 // Two implementations:
 //
-//   - MemLock          : in-process; the right choice for
-//     single-instance deployments and unit tests.
-//   - PgAdvisoryLock   : (S12) cluster-wide via pg_try_advisory_lock.
-//     Lives in a follow-up slice so this one stays
-//     focused on the worker scaffolding.
+//   - MemLock: in-process test implementation.
+//   - DBLeaderLock: shared production lease with node identity,
+//     incarnation, renewal, and monotonic fencing.
 //
 // LeaderLock is the one place where multi-instance correctness
 // gets enforced; the workers themselves are stateless and can be
@@ -24,41 +21,90 @@ package worker
 
 import (
 	"context"
-	"hash/fnv"
 	"sync"
+	"time"
 )
 
 // LeaderLock is the coordination primitive the Scheduler uses to
 // decide whether THIS instance should run a given worker tick.
 type LeaderLock interface {
-	// TryAcquire attempts to acquire the lock for `name`.
-	//
-	// Returns:
-	//   - held=true with a release func when this caller is now
-	//     the leader. The caller MUST invoke release exactly
-	//     once (the scheduler `defer release()`s).
-	//   - held=false with a no-op release when another holder
-	//     currently owns the lock. Callers should NOT call
-	//     release (calling it is harmless but logs a warning
-	//     in some implementations).
-	//   - err != nil only on transport / driver failure.
-	//     Held-or-not is conveyed via `held`; missing locks are
-	//     not errors.
-	TryAcquire(ctx context.Context, name string) (held bool, release func(), err error)
+	TryAcquire(ctx context.Context, name string) (*LeaseAuthority, func(), error)
+	Renew(ctx context.Context, authority LeaseAuthority) (*LeaseAuthority, error)
+	Validate(ctx context.Context, authority LeaseAuthority) error
 }
 
-// MemLock is an in-process LeaderLock. Use it for single-instance
-// stations, tests, and the SQLite test backend (where Postgres
-// advisory locks are unavailable). It is safe for concurrent use
-// across goroutines but does NOT cross process boundaries.
+// LeaseAuthority is the immutable authority carried into one worker
+// tick. Durable worker effects bind this tuple, not merely the worker
+// name.
+type LeaseAuthority struct {
+	WorkerName       string
+	OwnerNodePeerID  string
+	OwnerIncarnation string
+	FencingToken     uint64
+	ExpiresAt        time.Time
+}
+
+type leaseAuthorityContextKey struct{}
+type leaseValidatorContextKey struct{}
+
+type leaseValidator func(context.Context, LeaseAuthority) error
+
+func withLeaseAuthority(ctx context.Context, authority LeaseAuthority) context.Context {
+	return context.WithValue(ctx, leaseAuthorityContextKey{}, authority)
+}
+
+func withLeaseValidator(
+	ctx context.Context,
+	validate leaseValidator,
+) context.Context {
+	return context.WithValue(ctx, leaseValidatorContextKey{}, validate)
+}
+
+// LeaseAuthorityFromContext returns the authority of the current
+// scheduler tick. Workers that create durable external effects must
+// reject a missing authority.
+func LeaseAuthorityFromContext(ctx context.Context) (LeaseAuthority, bool) {
+	authority, ok := ctx.Value(leaseAuthorityContextKey{}).(LeaseAuthority)
+	return authority, ok
+}
+
+func ValidateLeaseAuthority(
+	ctx context.Context,
+	workerName string,
+) (LeaseAuthority, error) {
+	authority, ok := LeaseAuthorityFromContext(ctx)
+	if !ok ||
+		authority.WorkerName != workerName ||
+		authority.OwnerNodePeerID == "" ||
+		authority.OwnerIncarnation == "" ||
+		authority.FencingToken == 0 {
+		return LeaseAuthority{}, ErrStaleWorkerLease
+	}
+	if validate, ok := ctx.Value(
+		leaseValidatorContextKey{},
+	).(leaseValidator); ok && validate != nil {
+		if err := validate(ctx, authority); err != nil {
+			return LeaseAuthority{}, err
+		}
+	}
+	return authority, nil
+}
+
+// MemLock is an in-process LeaderLock for tests and SQLite fixtures.
+// It is safe for concurrent use across goroutines but does NOT cross
+// process boundaries and is never selected by production OSS wiring.
 type MemLock struct {
 	mu    sync.Mutex
 	owned map[string]struct{}
+	token map[string]uint64
 }
 
 // NewMemLock builds a fresh MemLock with an empty ownership map.
 func NewMemLock() *MemLock {
-	return &MemLock{owned: make(map[string]struct{})}
+	return &MemLock{
+		owned: make(map[string]struct{}),
+		token: make(map[string]uint64),
+	}
 }
 
 // TryAcquire honours the LeaderLock contract over an in-process
@@ -66,16 +112,18 @@ func NewMemLock() *MemLock {
 // idempotent — calling it twice is a no-op (we cannot detect
 // double-release without a per-lock token, and false alarms
 // would be worse than the silent drop).
-func (l *MemLock) TryAcquire(_ context.Context, name string) (bool, func(), error) {
+func (l *MemLock) TryAcquire(_ context.Context, name string) (*LeaseAuthority, func(), error) {
 	if name == "" {
-		return false, func() {}, nil
+		return nil, func() {}, nil
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if _, taken := l.owned[name]; taken {
-		return false, func() {}, nil
+		return nil, func() {}, nil
 	}
 	l.owned[name] = struct{}{}
+	l.token[name]++
+	token := l.token[name]
 	released := false
 	release := func() {
 		l.mu.Lock()
@@ -86,22 +134,32 @@ func (l *MemLock) TryAcquire(_ context.Context, name string) (bool, func(), erro
 		released = true
 		delete(l.owned, name)
 	}
-	return true, release, nil
+	return &LeaseAuthority{
+		WorkerName:       name,
+		OwnerNodePeerID:  "in-process",
+		OwnerIncarnation: "mem-lock",
+		FencingToken:     token,
+		ExpiresAt:        time.Now().Add(24 * time.Hour),
+	}, release, nil
 }
 
-// nameToLockKey is a deterministic int64 derived from a worker
-// name. The pg advisory-lock implementation (S12) will use it as
-// the lock identifier; we expose the helper here so MemLock and
-// future PgAdvisoryLock agree on the key derivation, making test
-// assertions portable.
-//
-// FNV-1a 64 bit is good enough — the worker name space is small
-// (single-digit) and the function is collision-resistant within
-// that range. We coerce to int64 by chopping the high bit so the
-// pgconn driver does not have to sign-extend.
-func nameToLockKey(name string) int64 {
-	h := fnv.New64a()
-	_, _ = h.Write([]byte(name))
-	v := int64(h.Sum64() &^ (1 << 63))
-	return v
+func (l *MemLock) Renew(_ context.Context, authority LeaseAuthority) (*LeaseAuthority, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if _, held := l.owned[authority.WorkerName]; !held ||
+		l.token[authority.WorkerName] != authority.FencingToken {
+		return nil, ErrStaleWorkerLease
+	}
+	authority.ExpiresAt = time.Now().Add(24 * time.Hour)
+	return &authority, nil
+}
+
+func (l *MemLock) Validate(_ context.Context, authority LeaseAuthority) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if _, held := l.owned[authority.WorkerName]; !held ||
+		l.token[authority.WorkerName] != authority.FencingToken {
+		return ErrStaleWorkerLease
+	}
+	return nil
 }

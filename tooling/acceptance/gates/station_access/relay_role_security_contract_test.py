@@ -21,15 +21,11 @@ from tooling.acceptance.gates.station_access.relay_role_security_contract import
 def _protected_file(name: str) -> dict[str, object]:
     return {
         "name": name,
-        "exists": True,
+        "path": f"/app/data/{name}",
+        "mode": "0600" if name.endswith(".key") else "0644",
+        "uid": 1001,
+        "gid": 1001,
         "nonEmpty": True,
-        "aclProtected": True,
-        "principals": [
-            "SIXWIN\\Administrator",
-            "NT AUTHORITY\\SYSTEM",
-        ],
-        "unexpectedPrincipals": [],
-        "expectedPrincipalsPresent": True,
         "protected": True,
     }
 
@@ -59,20 +55,25 @@ class RelayRoleSecurityContractTest(unittest.TestCase):
         evidence = _validate_runtime_evidence(manifest, attestation)
 
         self.assertEqual(evidence["sourceCommit"], "a" * 40)
-        self.assertEqual(evidence["streamEndpoint"], "tls://relay.example:4501")
+        self.assertEqual(
+            evidence["circuitEndpoint"],
+            "/dns4/relay.example/tcp/4001",
+        )
 
-    def test_runtime_evidence_rejects_shared_process(self) -> None:
+    def test_runtime_evidence_rejects_shared_runtime_owner(self) -> None:
         manifest, attestation = self._runtime_evidence()
-        attestation["runtimeSecurity"]["relayRuntime"]["processIds"] = [101]
+        attestation["runtimeSecurity"]["relayRuntime"]["runtimeOwner"] = (
+            attestation["runtimeSecurity"]["stationRuntime"]["runtimeOwner"]
+        )
 
         with self.assertRaisesRegex(GateError, "security is incomplete"):
             _validate_runtime_evidence(manifest, attestation)
 
-    def test_runtime_evidence_rejects_unexpected_secret_principal(self) -> None:
+    def test_runtime_evidence_rejects_shared_data_owner(self) -> None:
         manifest, attestation = self._runtime_evidence()
         attestation["runtimeSecurity"]["relayStorageSecurity"][
-            "unexpectedPrincipals"
-        ] = ["BUILTIN\\Users"]
+            "relayDataOwner"
+        ] = "pt-station_peers_data"
 
         with self.assertRaisesRegex(GateError, "security is incomplete"):
             _validate_runtime_evidence(manifest, attestation)
@@ -82,13 +83,24 @@ class RelayRoleSecurityContractTest(unittest.TestCase):
         file_evidence = attestation["runtimeSecurity"][
             "relayStorageSecurity"
         ]["requiredProtectedFiles"][3]
-        file_evidence["aclProtected"] = False
+        file_evidence["mode"] = "0666"
         file_evidence["protected"] = False
 
         with self.assertRaisesRegex(
             GateError,
             "protected-file evidence is incomplete",
         ):
+            _validate_runtime_evidence(manifest, attestation)
+
+    def test_runtime_evidence_rejects_split_file_ownership(self) -> None:
+        manifest, attestation = self._runtime_evidence()
+        file_evidence = attestation["runtimeSecurity"][
+            "relayStorageSecurity"
+        ]["requiredProtectedFiles"][3]
+        file_evidence["uid"] = 0
+        file_evidence["gid"] = 0
+
+        with self.assertRaisesRegex(GateError, "split ownership"):
             _validate_runtime_evidence(manifest, attestation)
 
     def test_runtime_evidence_survives_canonical_redaction(self) -> None:
@@ -138,7 +150,7 @@ class RelayRoleSecurityContractTest(unittest.TestCase):
             ),
         ]
 
-        evidence = _probe_tls_with_openssl("relay.example", 4501)
+        evidence = _probe_tls_with_openssl("relay.example", 18443)
 
         self.assertEqual(evidence["protocol"], "TLSv1.3")
         self.assertEqual(evidence["tls12"], "rejected")
@@ -174,7 +186,7 @@ class RelayRoleSecurityContractTest(unittest.TestCase):
         ]
 
         with self.assertRaisesRegex(GateError, "accepted forbidden TLS 1.2"):
-            _probe_tls_with_openssl("relay.example", 4501)
+            _probe_tls_with_openssl("relay.example", 18443)
 
     @patch(
         "tooling.acceptance.gates.station_access."
@@ -205,7 +217,7 @@ class RelayRoleSecurityContractTest(unittest.TestCase):
         ]
 
         with self.assertRaisesRegex(GateError, "was inconclusive"):
-            _probe_tls_with_openssl("relay.example", 4501)
+            _probe_tls_with_openssl("relay.example", 18443)
 
     @patch(
         "tooling.acceptance.gates.station_access."
@@ -231,7 +243,7 @@ class RelayRoleSecurityContractTest(unittest.TestCase):
         ]
 
         with self.assertRaisesRegex(GateError, "rejection probe failed"):
-            _probe_tls_with_openssl("relay.example", 4501)
+            _probe_tls_with_openssl("relay.example", 18443)
 
     @staticmethod
     def _runtime_evidence() -> tuple[dict[str, object], dict[str, object]]:
@@ -262,7 +274,7 @@ class RelayRoleSecurityContractTest(unittest.TestCase):
                     "liveCommit": commit,
                     "workspaceDigest": "clean",
                     "protocolDigest": "p" * 64,
-                    "endpoint": "http://relay.example",
+                    "endpoint": "https://relay.example:18081",
                     "attestationArtifact": artifact,
                 },
             },
@@ -274,34 +286,46 @@ class RelayRoleSecurityContractTest(unittest.TestCase):
             "commit": commit,
             "runtimeSecurity": {
                 "attachmentMode": "existing-owner-managed",
-                "streamEndpoint": "tls://relay.example:4501",
+                "circuitEndpoint": "/dns4/relay.example/tcp/4001",
+                "publicEndpoint": "https://relay.example:18081",
+                "tlsTrustAnchor": {
+                    "sha256": "sha256:" + "4" * 64,
+                    "artifact": {
+                        **artifact,
+                        "path": "runtime/services/relay/tls-ca.pem",
+                        "mediaType": "application/x-pem-file",
+                    },
+                },
                 "stationRuntime": {
+                    "platform": "linux",
                     "role": "station",
-                    "taskName": "station-task",
+                    "runtimeOwner": "docker-compose:pt-station/station",
                     "runtimePath": "station-runtime",
                     "processIds": [101],
                 },
                 "relayRuntime": {
+                    "platform": "linux",
                     "role": "relay",
-                    "taskName": "relay-task",
+                    "runtimeOwner": "docker-compose:pt-relay/relay",
                     "runtimePath": "relay-runtime",
                     "processIds": [202],
                 },
                 "relayStorageSecurity": {
-                    "rootAclProtected": True,
-                    "unexpectedPrincipals": [],
+                    "platform": "linux",
                     "processBinaryMatches": True,
-                    "stationDatabasePath": "station/data/station.db",
-                    "stationDatabaseExists": True,
-                    "relayDatabasePath": "relay/data/relay.db",
-                    "relayDatabaseExists": True,
+                    "stationDataOwner": "pt-station_peers_data",
+                    "relayDataOwner": "pt-relay_peers_data",
                     "requiredProtectedFiles": [
-                        _protected_file("auth-secret"),
                         _protected_file("relay-operator.key"),
-                        _protected_file("relay-signing.key"),
+                        _protected_file("relay-ca.crt"),
                         _protected_file("relay-tls.key"),
                         _protected_file("relay.crt"),
                     ],
+                },
+                "tlsTermination": {
+                    "implementation": "nginx",
+                    "runtimeOwner": "docker-compose:pt-relay/relay-proxy",
+                    "upstream": "http://127.0.0.1:18080",
                 },
             },
         }

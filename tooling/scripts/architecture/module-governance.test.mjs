@@ -162,6 +162,7 @@ test('current repository satisfies the module registry', () => {
     'development-workflow',
     'local-dev-control-plane',
     'mobile-social-parity',
+    'node-connectivity',
     'oauth-login-broker',
     'secure-content',
     'station-access-lifecycle',
@@ -173,6 +174,9 @@ test('current repository satisfies the module registry', () => {
     'chat.storage.device-governance',
     'mobile.social.native-parity',
     'oauth.login.broker',
+    'relay.control.enrollment',
+    'relay.transport.circuit',
+    'station.connectivity.node-authorization',
   ]);
 });
 

@@ -4,4 +4,5 @@ pub mod oauth;
 pub mod pin;
 pub mod reliability;
 pub mod reliability_proto;
+pub mod station_route;
 pub mod station_transport;

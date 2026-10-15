@@ -139,8 +139,18 @@ type fakeBlobs struct {
 
 func newFakeBlobs() *fakeBlobs { return &fakeBlobs{releases: map[string]int{}} }
 
-func (b *fakeBlobs) Touch(context.Context, string, string, int64, string) (*ossmodel.Blob, error) {
-	return nil, nil
+func (b *fakeBlobs) StageWrite(_ context.Context, backend, key string, size int64, digest string) (*ossrepo.BlobWrite, error) {
+	return &ossrepo.BlobWrite{
+		Backend: backend, Key: key, Generation: 1, StorageKey: key,
+		Size: size, Sha256: digest, RequiresWrite: true,
+	}, nil
+}
+func (b *fakeBlobs) CommitWrite(_ context.Context, write ossrepo.BlobWrite) (*ossmodel.Blob, error) {
+	return &ossmodel.Blob{
+		Backend: write.Backend, Key: write.Key, Generation: write.Generation,
+		StorageKey: write.StorageKey, Size: write.Size, Sha256: write.Sha256,
+		LifecycleState: ossmodel.BlobLifecycleLive, RefCount: 1,
+	}, nil
 }
 func (b *fakeBlobs) Release(_ context.Context, _ string, key string) (int64, bool, error) {
 	if b.releaseErr != nil {
@@ -153,7 +163,15 @@ func (b *fakeBlobs) Get(context.Context, string, string) (*ossmodel.Blob, error)
 func (b *fakeBlobs) ListGCCandidates(context.Context, time.Time, int) ([]ossmodel.Blob, error) {
 	return nil, nil
 }
-func (b *fakeBlobs) Delete(context.Context, string, string) error { return nil }
+func (b *fakeBlobs) ClaimGC(context.Context, ossmodel.Blob, time.Time, ossrepo.BlobGCAuthority) (*ossrepo.BlobGCClaim, error) {
+	return nil, ossrepo.ErrBlobGCClaimStale
+}
+func (b *fakeBlobs) CompleteGC(context.Context, ossrepo.BlobGCClaim) error {
+	return ossrepo.ErrBlobGCClaimStale
+}
+func (b *fakeBlobs) ResolveStorageKey(_ context.Context, _, key string) (string, error) {
+	return key, nil
+}
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -204,7 +222,7 @@ func TestTTLSweeper_RunOnce_DeletesExpiredAndAudits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTTLSweeper: %v", err)
 	}
-	if err := sweeper.RunOnce(context.Background()); err != nil {
+	if err := sweeper.RunOnce(testWorkerContext(context.Background(), sweeper.Name())); err != nil {
 		t.Fatalf("RunOnce: %v", err)
 	}
 
@@ -263,7 +281,7 @@ func TestTTLSweeper_LostRaceIsBenign(t *testing.T) {
 		BackendName: "local",
 		Now:         func() time.Time { return now },
 	})
-	if err := sweeper.RunOnce(context.Background()); err != nil {
+	if err := sweeper.RunOnce(testWorkerContext(context.Background(), sweeper.Name())); err != nil {
 		t.Fatalf("RunOnce: %v", err)
 	}
 	if buckets.debits["b1"] != 0 {
@@ -285,7 +303,7 @@ func TestTTLSweeper_ListExpiredErrorPropagates(t *testing.T) {
 		Audit:       &recordingAudit{},
 		BackendName: "local",
 	})
-	if err := sweeper.RunOnce(context.Background()); err == nil {
+	if err := sweeper.RunOnce(testWorkerContext(context.Background(), sweeper.Name())); err == nil {
 		t.Fatalf("ListExpired error should propagate")
 	}
 }

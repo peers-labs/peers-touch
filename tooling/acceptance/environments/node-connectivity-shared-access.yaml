@@ -1,0 +1,48 @@
+{
+  "id": "node-connectivity-shared-access",
+  "profile": {
+    "required": false,
+    "identity_match": false
+  },
+  "services": {
+    "access-postgres": {
+      "kind": "postgres",
+      "required": true,
+      "runtime_identity_required": true,
+      "health_action": "pg_isready",
+      "status_action": "postmaster.pid",
+      "attestation_producer": "node-connectivity-shared-access-provisioner"
+    }
+  },
+  "fixtures": [],
+  "credentials": [],
+  "clients": [
+    {
+      "id": "access-node-a",
+      "actor": "alice",
+      "runtime": "go-test-process",
+      "required_service_roles": ["database"],
+      "service_bindings": {
+        "database": {
+          "service_id": "access-postgres",
+          "required_kind": "postgres"
+        }
+      }
+    },
+    {
+      "id": "access-node-b",
+      "actor": "alice",
+      "runtime": "go-test-process",
+      "required_service_roles": ["database"],
+      "service_bindings": {
+        "database": {
+          "service_id": "access-postgres",
+          "required_kind": "postgres"
+        }
+      }
+    }
+  ],
+  "cleanup": {
+    "resources": ["processes", "ports", "storage"]
+  }
+}

@@ -11,7 +11,7 @@ peers:
       mastodon: true
       social: true
   run-mode: 2
-  includes: federation.yml, store.yml, store.local.yml, sub_aichat.yml, sub_bootstrap.yml, sub_turn.yml, sub_signaling.yml, log.yml, actor.yml, server.host.local.yml, sub_oss.yml, oauth.yml, sub_relay.yml, sub_relay_client.yml, metrics.yml, sub_dashboard.yml, sub_agent.yml
+  includes: federation.yml, store.yml, store.local.yml, sub_aichat.yml, sub_bootstrap.yml, sub_turn.yml, sub_signaling.yml, log.yml, actor.yml, server.host.local.yml, sub_oss.yml, oauth.yml, sub_relay.yml, metrics.yml, sub_dashboard.yml, sub_agent.yml
   config:
     hierarchy-merge: true
   node:
@@ -19,7 +19,22 @@ peers:
       name: native
       native:
         enable-relay: true
-        libp2p-identity-key-file: libp2pIdentity.key
+        libp2p-identity-key-file: station-node.key
+    relay-service:
+      reservation-ttl-seconds: 3600
+      max-reservations: 256
+      max-circuits-per-peer: 64
+      max-bytes-per-direction: 268435456
+      max-circuit-duration-seconds: 3600
+      max-reservations-per-ip: 8
+      max-reservations-per-asn: 32
+      buffer-size: 32768
+    relay-pool:
+      mode: "off"
+      renew-before-seconds: 1200
+      retry-min-seconds: 1
+      retry-max-seconds: 60
+      relays: []
     server:
       name: hertz
       address: :18080

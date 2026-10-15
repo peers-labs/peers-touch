@@ -46,7 +46,7 @@ SOURCE_ROOTS = (
     "apps/desktop/src/components/chat",
     "apps/desktop/src-tauri/src/application/key_exchange",
     "apps/desktop/src-tauri/src/domain/crypto",
-    "apps/desktop/src-tauri/src/infrastructure/station_client.rs",
+    "apps/desktop/src-tauri/src/application/station_runtime/client.rs",
     "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs",
     "apps/desktop/src-tauri/src/interface/tauri_commands/conversation.rs",
     "apps/desktop/src-tauri/src/interface/tauri_commands/crypto.rs",

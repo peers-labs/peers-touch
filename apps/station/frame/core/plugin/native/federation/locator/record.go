@@ -56,11 +56,6 @@ type SignInput struct {
 	// HomeStationDomain is the DNS-style HTTP origin (no scheme).
 	HomeStationDomain string
 
-	// InboxRelayMounts (optional) lists relay-mount labels through which
-	// this station is reachable. Pure hint for receivers — left empty
-	// when we have no relay mounts to advertise.
-	InboxRelayMounts []string
-
 	// Tombstone, when true, marks this publish as a withdrawal.
 	Tombstone bool
 
@@ -99,7 +94,6 @@ func Sign(in SignInput) (*pb.ActorLocatorRecord, []byte, error) {
 		FederatedHandle:   canonHandle,
 		HomeStationPeerId: in.HomeStationPeerID,
 		HomeStationDomain: in.HomeStationDomain,
-		InboxRelayMounts:  append([]string(nil), in.InboxRelayMounts...),
 		Tombstone:         in.Tombstone,
 		Seq:               in.Seq,
 		UpdatedAtUnixMs:   in.Now.UnixMilli(),

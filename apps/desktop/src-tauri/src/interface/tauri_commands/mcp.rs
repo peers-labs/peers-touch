@@ -28,7 +28,9 @@ fn authenticated_actor(
 #[tauri::command]
 pub fn mcp_list_servers(state: State<'_, Arc<AppState>>, window: Window) -> AppResult<StubPayload> {
     match authenticated_actor(&state, &window) {
-        Ok((actor_ptid, token)) => application_mcp::mcp_station_list_servers(&actor_ptid, &token),
+        Ok((actor_ptid, token)) => {
+            application_mcp::mcp_station_list_servers(state.station.client(), &actor_ptid, &token)
+        }
         Err(error) => error,
     }
 }
@@ -40,9 +42,12 @@ pub fn mcp_get_server(
     window: Window,
 ) -> AppResult<StubPayload> {
     match authenticated_actor(&state, &window) {
-        Ok((actor_ptid, token)) => {
-            application_mcp::mcp_station_get_server(&actor_ptid, &token, input)
-        }
+        Ok((actor_ptid, token)) => application_mcp::mcp_station_get_server(
+            state.station.client(),
+            &actor_ptid,
+            &token,
+            input,
+        ),
         Err(error) => error,
     }
 }
@@ -57,7 +62,7 @@ pub fn mcp_create_server(
         Ok(identity) => identity,
         Err(error) => return error,
     };
-    application_mcp::mcp_station_create_server(&actor_ptid, &token, input)
+    application_mcp::mcp_station_create_server(state.station.client(), &actor_ptid, &token, input)
 }
 
 #[tauri::command]
@@ -70,7 +75,7 @@ pub fn mcp_update_server(
         Ok(identity) => identity,
         Err(error) => return error,
     };
-    application_mcp::mcp_station_update_server(&actor_ptid, &token, input)
+    application_mcp::mcp_station_update_server(state.station.client(), &actor_ptid, &token, input)
 }
 
 #[tauri::command]
@@ -83,7 +88,7 @@ pub fn mcp_delete_server(
         Ok(identity) => identity,
         Err(error) => return error,
     };
-    application_mcp::mcp_station_delete_server(&actor_ptid, &token, input)
+    application_mcp::mcp_station_delete_server(state.station.client(), &actor_ptid, &token, input)
 }
 
 #[tauri::command]
@@ -96,7 +101,7 @@ pub fn mcp_toggle_server(
         Ok(identity) => identity,
         Err(error) => return error,
     };
-    application_mcp::mcp_station_toggle_server(&actor_ptid, &token, input)
+    application_mcp::mcp_station_toggle_server(state.station.client(), &actor_ptid, &token, input)
 }
 
 #[tauri::command]
@@ -109,7 +114,7 @@ pub fn mcp_refresh_server(
         Ok(identity) => identity,
         Err(error) => return error,
     };
-    application_mcp::mcp_station_refresh_server(&actor_ptid, &token, input)
+    application_mcp::mcp_station_refresh_server(state.station.client(), &actor_ptid, &token, input)
 }
 
 #[tauri::command]
@@ -119,7 +124,9 @@ pub fn agent_capability_operation_get(
     window: Window,
 ) -> AppResult<Vec<u8>> {
     match authenticated_actor(&state, &window) {
-        Ok((_, token)) => capability_authority::get_operation(input, &token),
+        Ok((_, token)) => {
+            capability_authority::get_operation(state.station.client(), input, &token)
+        }
         Err(error) => AppResult {
             ok: error.ok,
             data: None,
@@ -135,7 +142,9 @@ pub fn agent_capability_operation_cancel(
     window: Window,
 ) -> AppResult<Vec<u8>> {
     match authenticated_actor(&state, &window) {
-        Ok((_, token)) => capability_authority::cancel_operation(input, &token),
+        Ok((_, token)) => {
+            capability_authority::cancel_operation(state.station.client(), input, &token)
+        }
         Err(error) => AppResult {
             ok: error.ok,
             data: None,
@@ -151,7 +160,9 @@ pub fn agent_capability_operation_reconcile(
     window: Window,
 ) -> AppResult<Vec<u8>> {
     match authenticated_actor(&state, &window) {
-        Ok((_, token)) => capability_authority::reconcile_operation(input, &token),
+        Ok((_, token)) => {
+            capability_authority::reconcile_operation(state.station.client(), input, &token)
+        }
         Err(error) => AppResult {
             ok: error.ok,
             data: None,
@@ -167,7 +178,9 @@ pub fn agent_capability_operation_takeover(
     window: Window,
 ) -> AppResult<Vec<u8>> {
     match authenticated_actor(&state, &window) {
-        Ok((_, token)) => capability_authority::take_over_operation(input, &token),
+        Ok((_, token)) => {
+            capability_authority::take_over_operation(state.station.client(), input, &token)
+        }
         Err(error) => AppResult {
             ok: error.ok,
             data: None,
@@ -183,7 +196,9 @@ pub fn agent_capability_operation_cleanup_takeover(
     window: Window,
 ) -> AppResult<Vec<u8>> {
     match authenticated_actor(&state, &window) {
-        Ok((_, token)) => capability_authority::take_over_operation_cleanup(input, &token),
+        Ok((_, token)) => {
+            capability_authority::take_over_operation_cleanup(state.station.client(), input, &token)
+        }
         Err(error) => AppResult {
             ok: error.ok,
             data: None,

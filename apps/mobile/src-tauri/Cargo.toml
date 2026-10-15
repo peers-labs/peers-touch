@@ -18,9 +18,12 @@ base64 = "0.22"
 bip39 = "2"
 ed25519-dalek = { version = "2", features = ["pem", "rand_core"] }
 hkdf = "0.12"
+hex = "0.4"
 libp2p-identity = { version = "=0.3.0", features = ["ed25519", "peerid"] }
 messaging-core = { path = "../../../packages/messaging-core", features = ["sqlite-recovery"] }
 secure-content-core = { path = "../../../packages/secure-content-core" }
+station-libp2p-http = { path = "../../../packages/station-libp2p-http" }
+station-trust = { path = "../../../packages/station-trust" }
 prost = "=0.14.3"
 prost-types = "=0.14.3"
 log = "0.4"

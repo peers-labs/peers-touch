@@ -1,8 +1,8 @@
 # Federation Architecture — 设计决策
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-05-31 | **Updated**: 2026-10-06
+> **Version**: v1.1
+> **Created**: 2026-05-31 | **Updated**: 2026-10-11
 > **Owner**: Architecture Team
 
 ---
@@ -22,11 +22,15 @@
 | D-09 | 跨站身份复用 ActorRef，不新增 Account wire identity | accepted |
 | D-10 | Federation 业务归 Station app subserver，relay/locator 归 frame | accepted |
 | D-11 | Federation Ledger 是内部治理真源，ActivityPub 只作为互操作层 | accepted |
-| D-12 | Relay 是不可信传输，不是 Station 或 Federation authority | accepted |
-| D-13 | Station enrollment 绑定 host-key proof 与 generation revocation | accepted |
-| D-14 | Relay directory 只发布 Station 签名 route attestation | accepted |
-| D-15 | Relay 数据面使用端到端 TLS 的 opaque tunnel | accepted |
-| D-16 | Relay 复用 Station binary 但使用最小 role allowlist | accepted |
+| D-12 | Relay 是不可信传输，不是 Station 或 Federation authority | superseded by NCP-D04 |
+| D-13 | Station enrollment 绑定 host-key proof 与 generation revocation | superseded by NCP-D06 |
+| D-14 | Relay directory 只发布 Station 签名 route attestation | superseded by NCP-D07 |
+| D-15 | Relay 数据面使用端到端 TLS 的 opaque tunnel | superseded by NCP-D03 |
+| D-16 | Relay 复用 Station binary 但使用最小 role allowlist | superseded by NCP-D02 |
+
+Superseded transport 条目只保留历史上下文。当前逻辑 Station / Node delegation、
+Circuit v2、Frame ingress 与 admission 目标统一引用 Node Connectivity。
+同一逻辑 Station 的多个 Node 不创建多个 Federation membership。
 
 ---
 
@@ -347,8 +351,11 @@ Ledger 能提供 Peers-Touch 所需的 permissioned governance、replay、audit 
 
 ## D-12: Relay 是不可信传输，不是 Station 或 Federation authority
 
-**Status**: accepted
+**Status**: superseded by NCP-D04
 **Date**: 2026-10-06
+
+当前 authority 边界见
+[`NCP-D04`](../../platform/runtime/node-connectivity/decisions.md#ncp-d04-relay-admission-only)。
 
 ### Context
 
@@ -379,8 +386,11 @@ Station 身份声明。
 
 ## D-13: Station enrollment 绑定 host-key proof 与 generation revocation
 
-**Status**: accepted
+**Status**: superseded by NCP-D06
 **Date**: 2026-10-06
+
+当前 enrollment 真源见
+[`NCP-D06`](../../platform/runtime/node-connectivity/decisions.md#ncp-d06-delegated-enrollment-and-epoch)。
 
 ### Context
 
@@ -413,8 +423,11 @@ operator recovery Journey。
 
 ## D-14: Relay directory 只发布 Station 签名 route attestation
 
-**Status**: accepted
+**Status**: superseded by NCP-D07
 **Date**: 2026-10-06
+
+当前 route 真源见
+[`NCP-D07`](../../platform/runtime/node-connectivity/decisions.md#ncp-d07-signed-node-routes)。
 
 ### Context
 
@@ -446,8 +459,11 @@ Acceptance attack surface。
 
 ## D-15: Relay 数据面使用端到端 TLS 的 opaque tunnel
 
-**Status**: accepted
+**Status**: superseded by NCP-D03
 **Date**: 2026-10-06
+
+当前数据面真源见
+[`NCP-D03`](../../platform/runtime/node-connectivity/decisions.md#ncp-d03-circuit-v2-and-station-tls)。
 
 ### Context
 
@@ -480,8 +496,11 @@ Station canonical HTTP/protobuf router。
 
 ## D-16: Relay 复用 Station binary 但使用最小 role allowlist
 
-**Status**: accepted
+**Status**: superseded by NCP-D02
 **Date**: 2026-10-06
+
+当前 role 真源见
+[`NCP-D02`](../../platform/runtime/node-connectivity/decisions.md#ncp-d02-two-roles-and-existing-frame-ingress)。
 
 ### Context
 

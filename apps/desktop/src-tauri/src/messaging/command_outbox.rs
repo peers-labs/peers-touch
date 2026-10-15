@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CommandSubmitFailure {
+    Ambiguous,
     Retryable {
         code: String,
     },
@@ -88,6 +89,16 @@ impl<T: CommandTransport> CommandOutboxWorker<T> {
             return Ok(CommandDispatchProgress::Idle);
         };
         match self.transport.submit(&command.command_bytes) {
+            Err(CommandSubmitFailure::Ambiguous) => {
+                self.store.mark_command_submitted(
+                    &command.command_id,
+                    &command.command_bytes,
+                    command.attempt_count,
+                )?;
+                Ok(CommandDispatchProgress::Submitted {
+                    command_id: command.command_id,
+                })
+            }
             Ok(()) => {
                 self.store.mark_command_submitted(
                     &command.command_id,
@@ -321,6 +332,39 @@ mod tests {
                 .unwrap()
                 .unwrap(),
             ("draft survives".to_string(), "failed".to_string())
+        );
+        assert!(store.next_command(1_000).unwrap().is_none());
+    }
+
+    #[test]
+    fn ambiguous_submission_stays_submitted_for_authority_reconciliation() {
+        let store = Arc::new(MessagingStore::in_memory().unwrap());
+        prepare(&store, "command-ambiguous");
+        let worker = CommandOutboxWorker::new(
+            store.clone(),
+            RecordingTransport {
+                outcomes: Mutex::new(VecDeque::from([Err(CommandSubmitFailure::Ambiguous)])),
+                submitted: Mutex::new(Vec::new()),
+            },
+            CommandRetryPolicy {
+                initial_delay_ms: 10,
+                maximum_delay_ms: 100,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            worker.dispatch_once(100).unwrap(),
+            CommandDispatchProgress::Submitted {
+                command_id: "command-ambiguous".to_string(),
+            }
+        );
+        assert_eq!(
+            store
+                .pending_sender_projection("command-ambiguous")
+                .unwrap()
+                .unwrap(),
+            ("draft survives".to_string(), "submitted".to_string())
         );
         assert!(store.next_command(1_000).unwrap().is_none());
     }

@@ -103,7 +103,7 @@ pub fn account_get_device_id(
         );
     }
     let device_id = engine.endpoint().device_id.clone();
-    crate::infrastructure::station_client::set_device_id(device_id.clone());
+    state.station.client().set_device_id(device_id.clone());
     AppResult::success(StubPayload {
         command: "account_get_device_id".to_string(),
         status: serde_json::json!({ "device_id": device_id }).to_string(),
@@ -139,14 +139,20 @@ pub fn account_switch(
                     .map_err(|error| {
                         account_transition_failure("detach_old_secure_content", error)
                     })?;
-                crate::infrastructure::event_stream::stop(&previous.actor.ptid);
+                state
+                    .event_streams
+                    .stop(&previous.actor.ptid)
+                    .map_err(|error| {
+                        account_transition_failure("detach_old_event_stream", error)
+                    })?;
                 auth_service::deactivate_messaging_profile(state.inner(), &previous.account_id)
                     .map_err(|error| account_transition_failure("detach_old_messaging", error))?;
             }
             Ok(())
         },
         |prevalidated| {
-            auth_service::acquire_account_switch_session(prevalidated).map_err(auth_failure_to_stub)
+            auth_service::acquire_account_switch_session(state.station.client(), prevalidated)
+                .map_err(auth_failure_to_stub)
         },
         |prepared| {
             let result = application_account::account_switch(input);
@@ -161,6 +167,7 @@ pub fn account_switch(
                 state.inner(),
                 &prepared.account_id,
                 &prepared.actor_ptid,
+                &prepared.token,
             )
             .map_err(|error| account_transition_failure("prepare_new_messaging", error))?;
 
@@ -186,7 +193,12 @@ pub fn account_switch(
                 &prepared.token,
             ) {
                 state.sessions.unbind(window.label());
-                crate::infrastructure::event_stream::stop(&prepared.actor_ptid);
+                if let Err(stop_error) = state.event_streams.stop(&prepared.actor_ptid) {
+                    tracing::warn!(
+                        error = %stop_error,
+                        "event stream teardown failed after messaging activation failure"
+                    );
+                }
                 let _ =
                     auth_service::deactivate_messaging_profile(state.inner(), &prepared.account_id);
                 return Err(account_transition_failure("activate_new_messaging", error));
@@ -330,16 +342,17 @@ pub fn account_unlock(
     //
     // We probe `/actor/profile` because every authenticated actor has it
     // and the cost is one cheap GET.
-    use crate::infrastructure::station_client::{
-        request_peers_proto_no_body, StationClientErrorKind,
-    };
+    use crate::application::station_runtime::client::StationClientErrorKind;
     use crate::model::actor::ActorProfile;
-    let probe = request_peers_proto_no_body::<ActorProfile>(
-        reqwest::Method::GET,
-        "/actor/profile",
-        &token,
-        None,
-    );
+    let probe = state
+        .station
+        .client()
+        .request_peers_proto_no_body::<ActorProfile>(
+            reqwest::Method::GET,
+            "/actor/profile",
+            &token,
+            None,
+        );
     if let Err(err) = probe {
         // Stale token: drop the encrypted_session so the picker won't try
         // PIN unlock again, and surface a structured error so the frontend
@@ -381,7 +394,7 @@ pub fn account_unlock(
         );
     }
 
-    let token = match auth_service::takeover_station_session_token(&token) {
+    let token = match auth_service::takeover_station_session_token(state.station.client(), &token) {
         Ok(token) => token,
         Err(err) => {
             let _ = crate::infrastructure::auth_identity::clear_account_session(&account_id_clone);

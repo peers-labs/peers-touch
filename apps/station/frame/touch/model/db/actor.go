@@ -44,7 +44,7 @@ type Actor struct {
 	// HomeStationPeerID is the libp2p PeerID of the authoritative station.
 	// For local actors it equals this station's PeerID; for remote_cached
 	// it is the source-of-truth station's PeerID. Used as the routing
-	// target when opening a scoped opaque Relay tunnel to the Home Station.
+	// target when resolving the Home Station through Node Connectivity.
 	HomeStationPeerID string `gorm:"column:home_station_peer_id;size:100"`
 	// HomeStationDomain is the DNS-style HTTP origin of the home station,
 	// without scheme. Stable per-actor (preserved across station-domain

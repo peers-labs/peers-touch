@@ -10,6 +10,30 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+function verifiedRoute(stationPeerId: string, endpointOrigin: string) {
+  return {
+    identity: {
+      stationPeerId,
+      url: endpointOrigin,
+    },
+    stationRootPublicKey: [1, 2, 3],
+    route: {
+      stationPeerId,
+      stationRootPublicKey: [1, 2, 3],
+      nodePeerId: `${stationPeerId}-node`,
+      nodeAuthorizationDigest: Array(32).fill(4),
+      authorizationEpoch: 1,
+      routeId: `${stationPeerId}-direct`,
+      routeType: 'direct' as const,
+      transport: 'direct_https' as const,
+      endpointOrigin,
+      routeGeneration: 1,
+      addresses: ['/dns4/station.example/tcp/443/tls/http'],
+      sourceRef: 'station-registry-test',
+    },
+  };
+}
+
 describe('Station registry trust boundary', () => {
   it('accepts only a complete credential-free root HTTP origin', () => {
     expect(buildStationUrl('https://station.example/')).toBe('https://station.example');
@@ -51,10 +75,7 @@ describe('Station registry trust boundary', () => {
     const result = replaceStationEntryIdentity(
       registry,
       'station-old',
-      {
-        stationPeerId: 'station-new',
-        url: 'https://station.example/',
-      },
+      verifiedRoute('station-new', 'https://station.example/'),
       {
         checkedAt: 29,
         label: 'Replacement Station',
@@ -76,6 +97,24 @@ describe('Station registry trust boundary', () => {
             lastCheckedAt: 29,
             online: true,
             identityVerified: true,
+            pinnedStationRootPublicKey: [1, 2, 3],
+            routes: [{
+              nodePeerId: 'station-new-node',
+              nodeAuthorizationDigest: Array(32).fill(4),
+              authorizationEpoch: 1,
+              routeId: 'station-new-direct',
+              routeType: 'direct',
+              transport: 'direct_https',
+              endpointOrigin: 'https://station.example',
+              routeGeneration: 1,
+              addresses: ['/dns4/station.example/tcp/443/tls/http'],
+              sourceRef: 'station-registry-test',
+              lastVerifiedAt: 30,
+              health: 'available',
+            }],
+            activeRouteId: 'station-new-direct',
+            routeRevision: 1,
+            lifecycleGeneration: 1,
           },
           registry.entries[1],
         ],
@@ -98,10 +137,7 @@ describe('Station registry trust boundary', () => {
     expect(replaceStationEntryIdentity(
       registry,
       'station-old',
-      {
-        stationPeerId: 'station-new',
-        url: 'https://other.example',
-      },
+      verifiedRoute('station-new', 'https://other.example'),
     )).toEqual({
       ok: false,
       error: 'mobile.launch.stationIdentityInvalid',

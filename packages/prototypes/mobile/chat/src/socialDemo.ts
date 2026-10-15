@@ -2,6 +2,12 @@ import { demoContacts, demoConversations } from './data';
 import type { Contact, Conversation } from './types';
 
 export type SocialEvidenceScenario =
+  | 'social-parity'
+  | 'social-content-types'
+  | 'social-private-pending'
+  | 'social-recovery-required'
+  | 'social-source-unavailable'
+  | 'social-revoked'
   | 'social-unavailable'
   | 'social-detail-unavailable'
   | 'find-people-no-membership'
@@ -10,6 +16,12 @@ export type SocialEvidenceScenario =
   | 'request-unknown';
 
 export const socialEvidenceScenarios: SocialEvidenceScenario[] = [
+  'social-parity',
+  'social-content-types',
+  'social-private-pending',
+  'social-recovery-required',
+  'social-source-unavailable',
+  'social-revoked',
   'social-unavailable',
   'social-detail-unavailable',
   'find-people-no-membership',

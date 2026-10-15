@@ -72,6 +72,7 @@ making the device a business authority.
 | MS-C12 | One-to-one voice/video call | required | Start or receive audio/video from a Direct conversation; ring, accept/reject, resolve one winning device, connect, mute, toggle camera, reconnect, and end without losing Chat context. |
 | MS-C13 | Chat Docs custom tab | deferred | No enabled tab until a shared-document domain and product journey are accepted. |
 | MS-C14 | Local message flag | degraded | May remain device-local if clearly labeled and never presented as cross-device truth. |
+| MS-C15 | Whole-product usability | required | Every reachable Mobile surface is understandable, operable, accessible, and visually coherent in the foreground iOS runtime; technical identifiers and module failures never replace or obstruct the user's primary task. |
 
 ## 6. Platform Matrix
 

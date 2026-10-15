@@ -16,7 +16,7 @@ pub fn agent_home_projection_get(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    home::get_projection(input, &token)
+    home::get_projection(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -29,7 +29,7 @@ pub fn agent_home_chat_submit(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    home::submit_chat(input, &token)
+    home::submit_chat(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -42,5 +42,5 @@ pub fn agent_home_task_submit(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    home::submit_task(input, &token)
+    home::submit_task(state.station.client(), input, &token)
 }

@@ -10,11 +10,13 @@ use ulid::Ulid;
 use zeroize::Zeroizing;
 
 use crate::application::session_resolver;
+use crate::application::station_runtime::client::{
+    StationClient, StationClientError, StationClientErrorKind,
+};
 use crate::contracts::StubPayload;
 use crate::domain::crypto;
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::session_vault;
-use crate::infrastructure::station_client::{self, StationClientErrorKind};
 use crate::messaging::{
     decode_recovery_revision, encode_recovery_revision, MessagingEngine,
     INITIAL_ACTOR_IDENTITY_PROFILE_VERSION,
@@ -142,11 +144,11 @@ fn identity_json(engine: &MessagingEngine) -> Result<serde_json::Value, String> 
     }))
 }
 
-fn latest_revision(session: &RecoverySession) -> Result<
-    ReadLatestRecoveryRevisionResponse,
-    crate::infrastructure::station_client::StationClientError,
-> {
-    let revision: ReadLatestRecoveryRevisionResponse = station_client::request_proto_for_actor(
+fn latest_revision(
+    station_client: &StationClient,
+    session: &RecoverySession,
+) -> Result<ReadLatestRecoveryRevisionResponse, StationClientError> {
+    let revision: ReadLatestRecoveryRevisionResponse = station_client.request_proto_for_actor(
         Method::GET,
         "/recovery/latest",
         &session.token,
@@ -254,17 +256,18 @@ pub fn messaging_recovery_create_revision(
         encrypted_archive: encoded.bytes,
         encrypted_archive_sha256: encoded.sha256.to_vec(),
     };
-    let response: StoreRecoveryRevisionResponse = match station_client::request_proto_for_device(
-        Method::POST,
-        "/recovery/revision",
-        &session.token,
-        None,
-        Some(&request),
-        &engine.endpoint().device_id,
-    ) {
-        Ok(response) => response,
-        Err(error) => return error.into_app_result("failed to upload recovery revision"),
-    };
+    let response: StoreRecoveryRevisionResponse =
+        match state.station.client().request_proto_for_device(
+            Method::POST,
+            "/recovery/revision",
+            &session.token,
+            None,
+            Some(&request),
+            &engine.endpoint().device_id,
+        ) {
+            Ok(response) => response,
+            Err(error) => return error.into_app_result("failed to upload recovery revision"),
+        };
     if let Err(error) = store_secure_content_recovery_master(
         &session.actor_ptid,
         encoded.recovery_epoch,
@@ -347,7 +350,7 @@ pub fn messaging_recovery_restore_latest(
         }
         Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
     };
-    let revision = match latest_revision(&session) {
+    let revision = match latest_revision(state.station.client(), &session) {
         Ok(revision) => revision,
         Err(error) => return error.into_app_result("failed to fetch latest recovery revision"),
     };
@@ -455,7 +458,10 @@ pub fn messaging_recovery_restore_latest(
             );
         }
     };
-    station_client::set_device_id(restored_device_id.clone());
+    state
+        .station
+        .client()
+        .set_device_id(restored_device_id.clone());
     let restored_identity = crypto::IdentityKeyPair::from_seed(&archive.actor_identity_seed);
     to_stub(
         "messaging_recovery_restore_latest",
@@ -499,7 +505,7 @@ pub fn messaging_recovery_status(
         Ok(identity) => identity,
         Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
     };
-    match latest_revision(&session) {
+    match latest_revision(state.station.client(), &session) {
         Ok(revision) => to_stub(
             "messaging_recovery_status",
             json!({ "identity": identity, "exists": true, "latest": revision_json(&revision) }),
@@ -534,7 +540,7 @@ pub fn messaging_recovery_list_revisions(
         }
         Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
     };
-    match latest_revision(&session) {
+    match latest_revision(state.station.client(), &session) {
         Ok(revision) => to_stub(
             "messaging_recovery_list_revisions",
             json!({ "backups": [revision_json(&revision)] }),

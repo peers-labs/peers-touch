@@ -115,6 +115,9 @@ func (w *TTLSweeper) Interval() time.Duration { return w.cfg.Interval }
 // logged and the sweep continues so a single corrupted row
 // cannot wedge the worker.
 func (w *TTLSweeper) RunOnce(ctx context.Context) error {
+	if _, err := ValidateLeaseAuthority(ctx, w.Name()); err != nil {
+		return err
+	}
 	now := w.now()
 	rows, err := w.cfg.Files.ListExpired(ctx, now, w.cfg.BatchSize)
 	if err != nil {
@@ -137,6 +140,10 @@ func (w *TTLSweeper) RunOnce(ctx context.Context) error {
 // exactly so audit reconciliation does not have to special-case
 // TTL deletes.
 func (w *TTLSweeper) processOne(ctx context.Context, row *ossmodel.FileMeta, now time.Time) {
+	if _, err := ValidateLeaseAuthority(ctx, w.Name()); err != nil {
+		log.Warnf(ctx, "[oss-worker] ttl lease lost before mutation: %v", err)
+		return
+	}
 	// 1. Mark the row deleted. Lost races surface as
 	//    ErrFileAlreadyDeleted — the row is already in the
 	//    target state; do not double-debit.

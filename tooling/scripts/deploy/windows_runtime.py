@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Windows-native runtime adapter for the canonical remote deploy command."""
+"""Windows-native Station adapter for the canonical remote deploy command."""
 
 from __future__ import annotations
 
@@ -29,7 +29,6 @@ from tooling.acceptance.transports.ssh import SshTarget, SshTransport
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 _RELATIVE_PATH = re.compile(r"^[A-Za-z0-9._/-]+$")
 _HEALTH_PATH = re.compile(r"^/[A-Za-z0-9._~!$&'()*+,;=:@%/-]+$")
-_ROLE = {"station", "relay"}
 
 
 def _rotate_service_log(
@@ -138,9 +137,9 @@ class WindowsRuntimeConfig:
     role: str
     profile: str
     http_port: int
+    public_port: int
     health_path: str
     public_base_url: str
-    stream_port: int | None
     task_name: str
     firewall_remote_address: str
 
@@ -158,13 +157,14 @@ class WindowsRuntimeConfig:
                 f"PT_DEPLOY_PLATFORM must be windows in {environment_path}"
             )
         role = _required(values, "PT_DEPLOY_ROLE", environment_path).lower()
-        if role not in _ROLE:
+        if role != "station":
             raise ProvisioningError(
-                f"PT_DEPLOY_ROLE must be station or relay in {environment_path}"
+                "Windows is supported for Station only; Relay service hosts "
+                "must use Linux/POSIX"
             )
         health_path = values.get(
             "PT_DEPLOY_HEALTH_PATH",
-            "/healthz" if role == "relay" else "/sub-oss/healthz",
+            "/sub-oss/healthz",
         ).strip()
         if not _HEALTH_PATH.fullmatch(health_path):
             raise ProvisioningError("PT_DEPLOY_HEALTH_PATH is invalid")
@@ -174,7 +174,7 @@ class WindowsRuntimeConfig:
             environment_path,
         )
         parsed_base_url = urlparse(public_base_url)
-        required_scheme = "https" if role == "relay" else "http"
+        required_scheme = "http"
         if (
             parsed_base_url.scheme.lower() != required_scheme
             or not parsed_base_url.hostname
@@ -182,6 +182,13 @@ class WindowsRuntimeConfig:
             raise ProvisioningError(
                 f"{role} PT_DEPLOY_PUBLIC_BASE_URL must use {required_scheme}"
             )
+        try:
+            public_port = parsed_base_url.port or 80
+        except ValueError as error:
+            raise ProvisioningError(
+                "PT_DEPLOY_PUBLIC_BASE_URL has an invalid port in "
+                f"{environment_path}"
+            ) from error
         task_name = _required(values, "PT_DEPLOY_TASK_NAME", environment_path)
         if not _IDENTIFIER.fullmatch(task_name):
             raise ProvisioningError("PT_DEPLOY_TASK_NAME is invalid")
@@ -200,11 +207,6 @@ class WindowsRuntimeConfig:
             raise ProvisioningError(
                 "PT_DEPLOY_FIREWALL_REMOTE_ADDRESS is invalid"
             )
-        stream_port = (
-            _port(values, "PT_DEPLOY_STREAM_PORT", environment_path)
-            if role == "relay"
-            else None
-        )
         return cls(
             environment_name=environment_name,
             host=_required(values, "PT_DEPLOY_HOST", environment_path),
@@ -225,9 +227,9 @@ class WindowsRuntimeConfig:
             role=role,
             profile=profile,
             http_port=_port(values, "PT_DEPLOY_HTTP_PORT", environment_path),
+            public_port=public_port,
             health_path=health_path,
             public_base_url=public_base_url,
-            stream_port=stream_port,
             task_name=task_name,
             firewall_remote_address=firewall_remote_address,
         )
@@ -240,9 +242,9 @@ class WindowsRuntimeConfig:
             "role": self.role,
             "profile": self.profile,
             "httpPort": self.http_port,
+            "publicPort": self.public_port,
             "healthPath": self.health_path,
             "publicBaseUrl": self.public_base_url,
-            "streamPort": self.stream_port,
             "taskName": self.task_name,
             "firewallRemoteAddress": self.firewall_remote_address,
             "branch": branch,
@@ -256,7 +258,6 @@ def _remote_runtime_script() -> str:
         r"""
         import getpass
         import hashlib
-        import ipaddress
         import json
         import os
         import pathlib
@@ -467,39 +468,6 @@ def _remote_runtime_script() -> str:
             if not path.is_file() or not path.read_text(encoding="utf-8").strip():
                 path.write_text(secrets.token_hex(32) + "\n", encoding="utf-8")
 
-        def generate_tls(cert_path, key_path):
-            if cert_path.is_file() and key_path.is_file():
-                return
-            host = cfg["publicBaseUrl"].split("://", 1)[1].split(":", 1)[0]
-            try:
-                ipaddress.ip_address(host)
-                san = "IP:" + host
-            except ValueError:
-                san = "DNS:" + host
-            run(
-                [
-                    "openssl",
-                    "req",
-                    "-x509",
-                    "-newkey",
-                    "rsa:2048",
-                    "-sha256",
-                    "-nodes",
-                    "-config",
-                    "NUL",
-                    "-keyout",
-                    str(key_path),
-                    "-out",
-                    str(cert_path),
-                    "-days",
-                    "365",
-                    "-subj",
-                    "/CN=" + host,
-                    "-addext",
-                    "subjectAltName=" + san,
-                ]
-            )
-
         def apply_secret_acl():
             username = os.environ.get("USERNAME") or getpass.getuser()
             run(
@@ -513,16 +481,9 @@ def _remote_runtime_script() -> str:
                 ]
             )
             secret_paths = [secret_root / "auth-secret"]
-            if role == "relay":
-                secret_paths.extend(
-                    [
-                        secret_root / "relay-operator.key",
-                        secret_root / "relay-signing.key",
-                        secret_root / "relay-tls.key",
-                        secret_root / "relay.crt",
-                    ]
-                )
             for secret_path in secret_paths:
+                if not secret_path.is_file():
+                    continue
                 run(
                     [
                         "icacls.exe",
@@ -542,7 +503,7 @@ def _remote_runtime_script() -> str:
             if config_root.exists():
                 shutil.rmtree(config_root)
             shutil.copytree(source_conf, config_root)
-            database = yaml_path(data_root / (role + ".db"))
+            database = yaml_path(data_root / "station.db")
             store = config_root / "store.sqlite.yml"
             store.write_text(
                 store.read_text(encoding="utf-8").replace(
@@ -552,18 +513,12 @@ def _remote_runtime_script() -> str:
                 encoding="utf-8",
             )
             main = config_path.read_text(encoding="utf-8")
-            if role == "relay":
-                includes = (
-                    "store.sqlite.yml, sub_relay.yml, log.yml, "
-                    "server.host.local.yml, runtime.windows.yml"
-                )
-            else:
-                match = re.search(r"(?m)^  includes: (.+)$", main)
-                if match is None:
-                    raise RuntimeError("peers-sqlite.yml has no includes declaration")
-                includes = match.group(1)
-                if "runtime.windows.yml" not in includes:
-                    includes += ", runtime.windows.yml"
+            match = re.search(r"(?m)^  includes: (.+)$", main)
+            if match is None:
+                raise RuntimeError("peers-sqlite.yml has no includes declaration")
+            includes = match.group(1)
+            if "runtime.windows.yml" not in includes:
+                includes += ", runtime.windows.yml"
             main = re.sub(
                 r"(?m)^  includes: .+$",
                 "  includes: " + includes,
@@ -594,27 +549,6 @@ def _remote_runtime_script() -> str:
                 "        oss:",
                 "          store-path: " + json.dumps(yaml_path(runtime / "oss")),
             ]
-            if role == "relay":
-                overlay.extend(
-                    [
-                        "        relay:",
-                        "          enabled: true",
-                        "          stream-listen-addr: :"
-                        + str(cfg["streamPort"]),
-                        "          tls-cert-file: "
-                        + json.dumps(yaml_path(secret_root / "relay.crt")),
-                        "          tls-key-file: "
-                        + json.dumps(yaml_path(secret_root / "relay-tls.key")),
-                        "          allow-insecure-loopback: false",
-                        "          signing-key-file: "
-                        + json.dumps(yaml_path(secret_root / "relay-signing.key")),
-                        "          operator-key-file: "
-                        + json.dumps(yaml_path(secret_root / "relay-operator.key")),
-                        "          operator-issuer: peers-relay-operator",
-                        "          operator-audience: peers-relay-admin",
-                        "          operator-scope: relay.admin",
-                    ]
-                )
             (config_root / "runtime.windows.yml").write_text(
                 "\n".join(overlay) + "\n",
                 encoding="utf-8",
@@ -778,8 +712,6 @@ def _remote_runtime_script() -> str:
 
         def configure_firewall():
             ports = [cfg["httpPort"]]
-            if cfg["streamPort"] is not None:
-                ports.append(cfg["streamPort"])
             group = "PeersTouch-" + cfg["environmentName"]
             commands = [
                 "$ErrorActionPreference='Stop'",
@@ -827,13 +759,6 @@ def _remote_runtime_script() -> str:
                 directory.mkdir(parents=True, exist_ok=True)
             auth_secret = secret_root / "auth-secret"
             ensure_secret(auth_secret)
-            if role == "relay":
-                ensure_secret(secret_root / "relay-signing.key")
-                ensure_secret(secret_root / "relay-operator.key")
-                generate_tls(
-                    secret_root / "relay.crt",
-                    secret_root / "relay-tls.key",
-                )
             apply_secret_acl()
             prepare_config()
             stop_owned()
@@ -924,7 +849,7 @@ def _remote_runtime_script() -> str:
                 "runtimePath": str(runtime),
                 "healthUrl": health_url,
                 "httpPort": cfg["httpPort"],
-                "streamPort": cfg["streamPort"],
+                "publicPort": cfg["publicPort"],
                 "deployedAt": datetime.now(timezone.utc).isoformat(),
             }
             temporary = manifest_path.with_suffix(".json.tmp")
@@ -1015,7 +940,7 @@ def execute(
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Operate a reviewed Windows-native Station or Relay runtime"
+        description="Operate a reviewed Windows-native Station runtime"
     )
     parser.add_argument("action", choices=("deploy", "status", "logs", "stop"))
     parser.add_argument("environment")

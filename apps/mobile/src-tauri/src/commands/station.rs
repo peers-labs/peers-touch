@@ -1,23 +1,11 @@
 use std::net::{TcpStream, ToSocketAddrs};
 use std::time::Duration;
 
-use libp2p_identity::{KeyType, PublicKey};
-use prost::Message;
 use serde::{Deserialize, Serialize};
+use station_trust::verify_station_identity_response_bytes;
 
 use crate::error::{MobileError, MobileResult};
 use crate::station_origin::{normalize_station_origin, StationOriginPolicy};
-
-mod station_identity_proto {
-    include!(concat!(env!("OUT_DIR"), "/peers_touch.model.peer.v1.rs"));
-}
-
-use station_identity_proto::StationIdentityStatement;
-
-const STATION_IDENTITY_CHALLENGE_SIZE: usize = 32;
-const STATION_IDENTITY_MAX_LIFETIME_MS: i64 = 60_000;
-const STATION_IDENTITY_CLOCK_SKEW_MS: i64 = 60_000;
-const STATION_IDENTITY_DOMAIN: &[u8] = b"peers-touch/station-identity/v1\0";
 
 #[derive(Debug, Serialize)]
 pub struct StationProbeResult {
@@ -30,21 +18,23 @@ pub struct StationProbeResult {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VerifyStationIdentityProofInput {
-    requested_origin: String,
-    challenge: Vec<u8>,
-    statement_bytes: Vec<u8>,
-    host_public_key: Vec<u8>,
-    signature: Vec<u8>,
-    required_capabilities: Vec<String>,
+    pub(crate) requested_origin: String,
+    pub(crate) challenge: Vec<u8>,
+    pub(crate) response_bytes: Vec<u8>,
+    pub(crate) required_capabilities: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VerifiedStationIdentity {
-    station_peer_id: String,
-    canonical_origin: String,
-    capabilities: Vec<String>,
-    verified_at: u64,
+    pub(crate) station_peer_id: String,
+    pub(crate) node_peer_id: String,
+    pub(crate) station_root_public_key: Vec<u8>,
+    pub(crate) node_authorization_digest: [u8; 32],
+    pub(crate) authorization_epoch: u64,
+    pub(crate) canonical_origin: String,
+    pub(crate) capabilities: Vec<String>,
+    pub(crate) verified_at: u64,
 }
 
 #[tauri::command]
@@ -77,77 +67,35 @@ pub fn station_identity_verify(
     verify_station_identity_proof(input, current_unix_millis() as i64)
 }
 
-fn verify_station_identity_proof(
+pub(crate) fn verify_station_identity_proof(
     input: VerifyStationIdentityProofInput,
     now_unix_ms: i64,
 ) -> MobileResult<VerifiedStationIdentity> {
-    if input.challenge.len() != STATION_IDENTITY_CHALLENGE_SIZE {
-        return Err(identity_error("invalidChallenge"));
-    }
-    let statement = StationIdentityStatement::decode(input.statement_bytes.as_slice())
-        .map_err(|_| identity_error("invalidStatement"))?;
-    if statement.challenge != input.challenge {
-        return Err(identity_error("challengeMismatch"));
-    }
-
-    let public_key = PublicKey::try_decode_protobuf(&input.host_public_key)
-        .map_err(|_| identity_error("invalidPublicKey"))?;
-    if public_key.key_type() != KeyType::Ed25519 {
-        return Err(identity_error("unsupportedKeyType"));
-    }
-    let derived_peer_id = public_key.to_peer_id().to_string();
-    if statement.station_peer_id != derived_peer_id {
-        return Err(identity_error("peerIdMismatch"));
-    }
-
-    let mut signature_input =
-        Vec::with_capacity(STATION_IDENTITY_DOMAIN.len() + input.statement_bytes.len());
-    signature_input.extend_from_slice(STATION_IDENTITY_DOMAIN);
-    signature_input.extend_from_slice(&input.statement_bytes);
-    if !public_key.verify(&signature_input, &input.signature) {
-        return Err(identity_error("signatureInvalid"));
-    }
-
-    if statement.expires_at_unix_ms <= statement.issued_at_unix_ms
-        || statement.expires_at_unix_ms - statement.issued_at_unix_ms
-            > STATION_IDENTITY_MAX_LIFETIME_MS
-        || statement.issued_at_unix_ms > now_unix_ms + STATION_IDENTITY_CLOCK_SKEW_MS
-        || statement.expires_at_unix_ms < now_unix_ms - STATION_IDENTITY_CLOCK_SKEW_MS
-    {
-        return Err(identity_error("expired"));
-    }
-
     let origin_policy = StationOriginPolicy::current_build();
-    let canonical_origin = normalize_station_origin(&statement.canonical_origin, origin_policy)
-        .map_err(|_| identity_error("invalidCanonicalOrigin"))?;
-    if canonical_origin != statement.canonical_origin {
-        return Err(identity_error("nonCanonicalOrigin"));
-    }
     let requested_origin = normalize_station_origin(&input.requested_origin, origin_policy)
         .map_err(|_| identity_error("invalidRequestedOrigin"))?;
-    if canonical_origin != requested_origin {
-        return Err(identity_error("canonicalOriginMismatch"));
-    }
-
-    if statement
-        .capabilities
-        .windows(2)
-        .any(|pair| pair[0] >= pair[1])
-    {
-        return Err(identity_error("capabilitiesNotCanonical"));
-    }
-    if input
+    let required: Vec<&str> = input
         .required_capabilities
         .iter()
-        .any(|required| statement.capabilities.binary_search(required).is_err())
-    {
-        return Err(identity_error("capabilityMismatch"));
-    }
+        .map(String::as_str)
+        .collect();
+    let verified = verify_station_identity_response_bytes(
+        &input.response_bytes,
+        &input.challenge,
+        &requested_origin,
+        &required,
+        now_unix_ms,
+    )
+    .map_err(|error| identity_error(error.code))?;
 
     Ok(VerifiedStationIdentity {
-        station_peer_id: statement.station_peer_id,
-        canonical_origin,
-        capabilities: statement.capabilities,
+        station_peer_id: verified.station_peer_id,
+        node_peer_id: verified.node_peer_id,
+        station_root_public_key: verified.station_root_public_key,
+        node_authorization_digest: verified.authorization_digest,
+        authorization_epoch: verified.authorization_epoch,
+        canonical_origin: requested_origin,
+        capabilities: verified.capabilities,
         verified_at: now_unix_ms as u64,
     })
 }
@@ -220,96 +168,12 @@ fn current_unix_millis() -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use ed25519_dalek::{Signer, SigningKey};
-    use rand::rngs::OsRng;
-
     use super::*;
 
-    fn signed_input(now_unix_ms: i64) -> (VerifyStationIdentityProofInput, String) {
-        let signing_key = SigningKey::generate(&mut OsRng);
-        let libp2p_key = libp2p_identity::ed25519::PublicKey::try_from_bytes(
-            signing_key.verifying_key().as_bytes(),
-        )
-        .expect("valid Ed25519 public key");
-        let public_key = PublicKey::from(libp2p_key);
-        let station_peer_id = public_key.to_peer_id().to_string();
-        let challenge = vec![0x2a; STATION_IDENTITY_CHALLENGE_SIZE];
-        let statement = StationIdentityStatement {
-            challenge: challenge.clone(),
-            station_peer_id: station_peer_id.clone(),
-            canonical_origin: "https://station.example:443".to_string(),
-            capabilities: vec![
-                "access-gate".to_string(),
-                "actor-ptid".to_string(),
-                "station-identity".to_string(),
-            ],
-            issued_at_unix_ms: now_unix_ms,
-            expires_at_unix_ms: now_unix_ms + STATION_IDENTITY_MAX_LIFETIME_MS,
-        };
-        let statement_bytes = statement.encode_to_vec();
-        let mut signature_input =
-            Vec::with_capacity(STATION_IDENTITY_DOMAIN.len() + statement_bytes.len());
-        signature_input.extend_from_slice(STATION_IDENTITY_DOMAIN);
-        signature_input.extend_from_slice(&statement_bytes);
-        let signature = signing_key.sign(&signature_input).to_bytes().to_vec();
-
-        (
-            VerifyStationIdentityProofInput {
-                requested_origin: "https://station.example".to_string(),
-                challenge,
-                statement_bytes,
-                host_public_key: public_key.encode_protobuf(),
-                signature,
-                required_capabilities: vec![
-                    "actor-ptid".to_string(),
-                    "station-identity".to_string(),
-                ],
-            },
-            station_peer_id,
-        )
-    }
-
     #[test]
-    fn verifies_host_key_bound_station_identity() {
-        let now = 1_800_000_000_000;
-        let (input, expected_peer_id) = signed_input(now);
-        let verified = verify_station_identity_proof(input, now).expect("proof must verify");
-        assert_eq!(verified.station_peer_id, expected_peer_id);
-        assert_eq!(verified.canonical_origin, "https://station.example:443");
-    }
-
-    #[test]
-    fn rejects_tampered_statement() {
-        let now = 1_800_000_000_000;
-        let (mut input, _) = signed_input(now);
-        input.statement_bytes.push(0);
-        assert!(verify_station_identity_proof(input, now).is_err());
-    }
-
-    #[test]
-    fn rejects_expired_statement() {
-        let now = 1_800_000_000_000;
-        let (input, _) = signed_input(now);
-        assert!(verify_station_identity_proof(
-            input,
-            now + STATION_IDENTITY_MAX_LIFETIME_MS + STATION_IDENTITY_CLOCK_SKEW_MS + 1,
-        )
-        .is_err());
-    }
-
-    #[test]
-    fn rejects_missing_required_capability() {
-        let now = 1_800_000_000_000;
-        let (mut input, _) = signed_input(now);
-        input.required_capabilities = vec!["unsupported-capability".to_string()];
-        assert!(verify_station_identity_proof(input, now).is_err());
-    }
-
-    #[test]
-    fn rejects_a_valid_proof_for_another_origin() {
-        let now = 1_800_000_000_000;
-        let (mut input, _) = signed_input(now);
-        input.requested_origin = "https://other.example".to_string();
-        assert!(verify_station_identity_proof(input, now).is_err());
+    fn parses_station_target_with_default_https_port() {
+        let target = parse_station_target("https://station.example").expect("Station target");
+        assert_eq!(target.host, "station.example");
+        assert_eq!(target.port, 443);
     }
 }

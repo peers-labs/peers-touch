@@ -28,7 +28,7 @@ describe('LoginPage OAuth lifecycle contract', () => {
     expect(source).toContain('resetOAuthAction(true)');
   });
 
-  it('keeps OAuth recovery focus on retry and normalizes visible button focus', () => {
+  it('keeps OAuth recovery focus on retry', () => {
     expect(formViewSource).toContain(
       "if (['opening', 'waiting'].includes(oauthActionState))",
     );
@@ -39,22 +39,26 @@ describe('LoginPage OAuth lifecycle contract', () => {
       "?.querySelector<HTMLElement>('[data-pt-login-oauth-provider]')",
     );
     expect(formViewSource).not.toContain('oauthButtonRefs');
-    expect(globalStyles).toContain(
-      ':where(button, [role="button"], a[href]):focus-visible',
-    );
-    expect(globalStyles).toContain('--pt-focus-ring-color: #6f87f5');
-    expect(globalStyles).toContain(
-      'outline: 2px solid var(--pt-focus-ring-color)',
-    );
-    expect(globalStyles).toContain('outline-offset: 2px');
-    expect(mainSource).toContain("colorPrimaryBorder: '#6f87f5'");
-    expect(mainSource).toContain('lineWidthFocus: 2');
   });
 
-  it('gives the icon-only email submit action an accessible name', () => {
-    expect(formViewSource).toMatch(
-      /aria-label=\{t\('auth\.login\.submit'\)\}[\s\S]*data-login-submit/,
+  it('normalizes button focus globally without border rings', () => {
+    expect(globalStyles).toContain(
+      ':where(button, [role="button"]):focus-visible',
     );
+    expect(globalStyles).toContain(
+      'outline: none !important',
+    );
+    expect(globalStyles).toContain(
+      'box-shadow: inset 0 0 0 9999px color-mix(in srgb, currentColor 8%, transparent) !important',
+    );
+    expect(globalStyles).toContain(
+      ':where(.ant-btn-text, .ant-btn-link)',
+    );
+    expect(globalStyles).toContain('border-color: transparent !important');
+    expect(globalStyles).not.toContain('--pt-focus-ring-color');
+    expect(globalStyles).not.toContain('outline: 2px solid');
+    expect(mainSource).toContain("colorPrimaryBorder: '#6f87f5'");
+    expect(mainSource).toContain('lineWidthFocus: 0');
   });
 
   it('keeps invalid credential transport details out of the login error', () => {

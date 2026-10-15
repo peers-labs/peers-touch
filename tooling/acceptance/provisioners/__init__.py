@@ -22,6 +22,7 @@ from .mobile_simulator import (
     ChatMixedNativeProvisioner,
     MobileDirectSimulatorProvisioner,
     MobileIOSLayoutSimulatorProvisioner,
+    MobileRelaySimulatorProvisioner,
     MobileSimulatorProvisioner,
     MobileSocialIOSSimulatorProvisioner,
     MobileSocialSimulatorProvisioner,
@@ -37,6 +38,21 @@ from .native_tauri_embedded_webdriver import (
 )
 from .native_tauri_current_profile import (
     NativeTauriCurrentProfileProvisioner,
+)
+from .node_connectivity_agent_fencing import (
+    NodeConnectivityAgentFencingProvisioner,
+)
+from .node_connectivity_cluster import (
+    NodeConnectivityClusterProvisioner,
+)
+from .node_connectivity_durable_events import (
+    NodeConnectivityDurableEventsProvisioner,
+)
+from .node_connectivity_oss_fencing import (
+    NodeConnectivityOSSFencingProvisioner,
+)
+from .node_connectivity_shared_access import (
+    NodeConnectivitySharedAccessProvisioner,
 )
 from .oauth2_client_local import (
     OAuth2ClientLocalBrowserProvisioner,
@@ -68,6 +84,9 @@ _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
     MobileIOSLayoutSimulatorProvisioner.environment_id: (
         MobileIOSLayoutSimulatorProvisioner
     ),
+    MobileRelaySimulatorProvisioner.environment_id: (
+        MobileRelaySimulatorProvisioner
+    ),
     MobileSimulatorProvisioner.environment_id: MobileSimulatorProvisioner,
     MobileSocialIOSSimulatorProvisioner.environment_id: (
         MobileSocialIOSSimulatorProvisioner
@@ -89,6 +108,21 @@ _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
     ),
     NativeTauriEmbeddedWebDriverProvisioner.environment_id: NativeTauriEmbeddedWebDriverProvisioner,
     NativeTauriCurrentProfileProvisioner.environment_id: NativeTauriCurrentProfileProvisioner,
+    NodeConnectivityAgentFencingProvisioner.environment_id: (
+        NodeConnectivityAgentFencingProvisioner
+    ),
+    NodeConnectivityClusterProvisioner.environment_id: (
+        NodeConnectivityClusterProvisioner
+    ),
+    NodeConnectivityDurableEventsProvisioner.environment_id: (
+        NodeConnectivityDurableEventsProvisioner
+    ),
+    NodeConnectivityOSSFencingProvisioner.environment_id: (
+        NodeConnectivityOSSFencingProvisioner
+    ),
+    NodeConnectivitySharedAccessProvisioner.environment_id: (
+        NodeConnectivitySharedAccessProvisioner
+    ),
     OAuth2ClientLocalBrowserProvisioner.environment_id: (
         OAuth2ClientLocalBrowserProvisioner
     ),
@@ -150,6 +184,7 @@ def get_provisioner(
     if provisioner_class in {
         ChatMixedNativeProvisioner,
         MobileDirectSimulatorProvisioner,
+        MobileRelaySimulatorProvisioner,
         MobileSocialIOSSimulatorProvisioner,
         MobileSocialSimulatorProvisioner,
         StationAccessNativeProvisioner,
@@ -191,6 +226,7 @@ __all__ = [
     "MobileIOSLayoutSimulatorProvisioner",
     "MobileAndroidPhysicalProvisioner",
     "MobileNativeProvisioner",
+    "MobileRelaySimulatorProvisioner",
     "MobileSimulatorProvisioner",
     "MobileSocialIOSSimulatorProvisioner",
     "MobileSocialSimulatorProvisioner",
@@ -203,6 +239,10 @@ __all__ = [
     "NativeDesktopWindowsProvisioner",
     "NativeTauriEmbeddedWebDriverProvisioner",
     "NativeTauriCurrentProfileProvisioner",
+    "NodeConnectivityAgentFencingProvisioner",
+    "NodeConnectivityDurableEventsProvisioner",
+    "NodeConnectivityOSSFencingProvisioner",
+    "NodeConnectivitySharedAccessProvisioner",
     "OAuth2ClientLocalBrowserProvisioner",
     "OAuth2ClientLocalServiceProvisioner",
     "get_provisioner",

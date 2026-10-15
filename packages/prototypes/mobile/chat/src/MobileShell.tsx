@@ -33,6 +33,7 @@ import { ContactDetailView } from './components/ContactDetailView';
 import { GroupDetailView } from './components/GroupDetailView';
 import { SettingDetailView } from './components/SettingDetailView';
 import { FindPeopleSheet } from './components/FindPeopleSheet';
+import { CreateGroupSheet } from './components/CreateGroupSheet';
 import {
   RequestRecoveryNotice,
   ShellRecoverySheet,
@@ -104,6 +105,7 @@ export function MobileShell({
     socialScenario === 'find-people-member' || socialScenario === 'find-people-no-membership'
       || socialScenario === 'request-unknown',
   );
+  const [createGroupOpen, setCreateGroupOpen] = useState(false);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(() => (
     callScenario
       ? demoConversations.find((conversation) => conversation.key === 'alice') ?? null
@@ -289,7 +291,13 @@ export function MobileShell({
   }
 
   function handleAddContact() {
+    setCreateGroupOpen(false);
     setFindPeopleOpen(true);
+  }
+
+  function handleCreateGroup() {
+    setFindPeopleOpen(false);
+    setCreateGroupOpen(true);
   }
 
   function refreshMomentsProjection() {
@@ -453,7 +461,8 @@ export function MobileShell({
         requests={longLists ? longListRequests : undefined}
         listMemory={listMemory} request={socialDemo.request}
         avatarState={uiEvidence.avatarState}
-        onContactClick={handleContactClick} onGroupClick={handleGroupClick} onAddContact={handleAddContact} />;
+        onContactClick={handleContactClick} onGroupClick={handleGroupClick}
+        onAddContact={handleAddContact} onCreateGroup={handleCreateGroup} />;
       case 'profile': return <ProfilePage avatarState={uiEvidence.avatarState}
         settingsState={settingsState}
         themeMode={themeMode}
@@ -466,7 +475,7 @@ export function MobileShell({
     && !(activeTab === 'moments' && momentAuthor)
     && !(activeTab === 'moments' && socialDetailOpen)
     && !(activeTab === 'profile' && selectedSetting);
-  const overlayOpen = findPeopleOpen || Boolean(callSnapshot);
+  const overlayOpen = findPeopleOpen || createGroupOpen || Boolean(callSnapshot);
 
   return (
     <div className="mp-shell">
@@ -492,6 +501,7 @@ export function MobileShell({
                 onClick={() => {
                   dispatchSocialDemo({ type: 'close-direct' });
                   setFindPeopleOpen(false);
+                  setCreateGroupOpen(false);
                   setActiveTab(tab.id);
                   setSelectedConversation(null);
                   setSelectedContact(null);
@@ -517,6 +527,16 @@ export function MobileShell({
       {findPeopleOpen && socialDemo.runtime === 'ready' && (
         <FindPeopleSheet state={socialDemo} dispatch={dispatchSocialDemo}
           onClose={() => setFindPeopleOpen(false)} />
+      )}
+      {createGroupOpen && socialDemo.runtime === 'ready' && (
+        <CreateGroupSheet
+          contacts={socialDemo.contacts}
+          onClose={() => setCreateGroupOpen(false)}
+          onCreate={(name) => {
+            setCreateGroupOpen(false);
+            showShellToast(`${name} ${copy['mobile.group.create'].toLowerCase()}`);
+          }}
+        />
       )}
       {recoveryScenario && (
         <ShellRecoverySheet

@@ -3187,13 +3187,15 @@ func validatePrivatePostIndexes(database *gorm.DB, allowRetired bool) error {
 					Unique:  false,
 				},
 			}
-			allowedPartialIndexes = map[string]string{
-				"uidx_social_private_post_id": canonicalPostgresPrivateIndexPredicate(
-					"post_id",
-				),
-				"uidx_social_private_post_content": canonicalPostgresPrivateIndexPredicate(
-					"content_id",
-				),
+			if database.Dialector.Name() == "postgres" {
+				allowedPartialIndexes = map[string]string{
+					"uidx_social_private_post_id": canonicalPostgresPrivateIndexPredicate(
+						"post_id",
+					),
+					"uidx_social_private_post_content": canonicalPostgresPrivateIndexPredicate(
+						"content_id",
+					),
+				}
 			}
 		}
 	}

@@ -214,12 +214,15 @@
   （active；定义 Social/Conversation 共用的 Native 加密、endpoint key envelope、
   opaque object 协议、stateless validation、恢复与 hard-cut 边界；不新建业务 authority）
 - 服务协调（Relay/Station/Desktop/Mobile 依赖 DAG 与凭据契约）：`architecture/platform/runtime/service-coordination.md`
+- Node Connectivity：`architecture/platform/runtime/node-connectivity/README.md`
+  （active；已评审的逻辑 Station/Node 身份、Frame 内置接入、libp2p Circuit v2、
+  canonical HTTP/protobuf 与集群就绪目标；候选执行计划待批准，运行时未证明）
 - 本机多 worktree 开发控制面：`architecture/engineering/local-dev/README.md`
   （active；定义 `~/.peers-touch/dev/` 机器级注册表、独立 worktree 绑定、slot 与
   Station capability lease，当前仅有 observed snapshot，尚未接管运行时）
 - 开发工作流控制面：`architecture/engineering/development-workflow/README.md`
-  （active；定义从首次写入前资源声明到 `EXECUTE` 内以 Journey 为单位的产品优先开发循环、checkpoint
-  授权、exact-source 功能验证与 Acceptance 晋级边界）
+  （active；以北极星和用户选定 worktree 为上游，定义轻量普通工作、可选复杂任务
+  恢复、提示降级、真实运行保护、当前源码验证与 Acceptance 晋级边界）
 - 架构模块治理：`architecture/engineering/architecture-governance/README.md`
   （active；定义架构模块内容完整性、正向能力登记、编辑前上下文回执，以及
   Plan、Review、CI 共享的 fail-closed 校验）
@@ -231,11 +234,11 @@
   恢复的唯一产品完成口径与当前执行计划）
 - Station 接入生命周期：`architecture/platform/station/access/README.md`
   （active；定义同一接入地址自动识别直连 Station 或 Relay、签名 Station identity、
-  route-aware binding、protobuf Access Gate 与 scope 隔离；统一 Relay 接入 Plan
-  待批准）
-- Federation 与安全 Relay transport：`architecture/shared/federation/README.md`
-  （active；定义 Federation governance，以及不可信 Relay 的 Station enrollment、
-  signed route attestation、opaque tunnel、最小运行角色和资源边界）
+  route-aware binding、protobuf Access Gate 与 scope 隔离；Relay transport
+  内部合同由 Node Connectivity 定义）
+- Federation 虚拟网络与治理账本：`architecture/domains/federation/README.md`
+  （active；定义 Federation membership、Ledger、policy 与跨站业务授权；
+  Node Connectivity 提供无业务 authority 的传输）
 - OAuth Login Broker：`architecture/domains/identity/oauth-login-broker/README.md`
   （active；定义 Vercel 跨实例 OAuth 事务、GitHub 私有仓库存储、
   AES-256-GCM 凭据、Provider refresh 与只读管理面）
@@ -268,7 +271,6 @@
   （product-accepted / design-accepted；包含 LobeHub benchmark disposition、
   产品旅程/状态/验收，以及 Station 单一真源下跨 Desktop/未来 Mobile 的运行时契约）
 - Actor 隔离环境平面：`architecture/platform/station/actor-isolation.md`
-- Federation 虚拟网络与治理账本：`architecture/domains/federation/README.md`
 - 质量保证闭环：`architecture/engineering/quality/README.md`
 - 产品验收框架：`architecture/engineering/acceptance/README.md`
 - Human 联邦社交活动层：`architecture/domains/social/federation/README.md`

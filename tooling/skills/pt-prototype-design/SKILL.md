@@ -1,6 +1,6 @@
 ---
-name: "pt-prototype-design"
-description: "原型设计规范与工作流。当用户要求创建、修改、审查架构原型（UI/交互 web demo）时调用，确保遵循项目的原型技术栈、总账登记、确认门与目录约定。"
+name: pt-prototype-design
+description: 创建、修改和审查 Peers-Touch UI/交互原型。用户要求原型或 web demo 时使用，负责技术栈、工艺证据、总账和确认门。
 ---
 
 # 原型设计（Prototype Design）
@@ -49,20 +49,45 @@ description: "原型设计规范与工作流。当用户要求创建、修改、
 3. `docs/client/common/ui-identity/tokens.md`
 4. `docs/client/common/ui-identity/layout.md`
 5. `docs/client/common/ui-identity/components.md`
-6. 最近的模块 UI Identity：`docs/client/common/ui-identity/modules/<module>/`（没有则明确说明“当前无模块 UI ID，复用 shared UI ID”）
-7. 最近的平台/模块合同，例如 Desktop Applet Launcher 必读 `docs/client/desktop/applet-launcher-ux-contract.md`
-8. 若截图或评审暴露可复用 UX 问题，按 `docs/knowledge/playbooks/ux-case-to-contract.md` 检查是否需要补合同，而不是在原型里私自定风格。
+6. `docs/client/common/ui-identity/craft-quality.md`
+7. 最近的模块 UI Identity：`docs/client/common/ui-identity/modules/<module>/`（没有则明确说明“当前无模块 UI ID，复用 shared UI ID”）
+8. 最近的平台/模块合同，例如 Desktop Applet Launcher 必读 `docs/client/desktop/applet-launcher-ux-contract.md`
+9. 若截图或评审暴露可复用 UX 问题，按 `docs/knowledge/playbooks/ux-case-to-contract.md` 检查是否需要补合同，而不是在原型里私自定风格。
 
 执行纪律：
 
 - **UI ID 高于参考图**：用户给的截图只能作为信息结构、交互关系、密度或排序参考；不能覆盖 Peers Touch UI Identity。
-- **Quiet Protocol Minimalism** 是默认风格基线：低噪声、清晰边界、克制 accent、少装饰、少重阴影、少仿系统 UI。
+- **Structured Expressive Minimalism** 是产品北极星；
+  **Quiet Protocol Minimalism** 是高频工作流的默认表达。模块只能在已声明的
+  expression envelope 内使用一个由产品意义驱动的 signature feature。
 - **Token role 先于 raw CSS**：颜色、边框、阴影、圆角、间距、字体必须能解释成 `surface.*` / `text.*` / `action.*` / `border.*` / `radius.*` / `type.*` 等角色；不得随手写“看起来像”的 raw value。
 - **组件库默认值不等于 UI ID**：LobeUI / antd 必须被归一到 Peers Touch 的 token 和组件角色；不能混用多个库的默认视觉。
 - **边界先于样式**：先声明 page canvas、content rail、action rail、floating layer、recovery layer，再决定搜索框、菜单、弹窗、tile 的视觉。
 - **模块合同优先**：若存在模块 UI ID 或平台 UX contract，原型必须实现其信息层级和禁用模式；若没有，必须在 README 的“已知差异 / 待补”里写明。
 
-### 3.2 LobeHub-style Visual Evidence Gate
+### 3.2 Craft Quality Gate
+
+每个 material UI 原型在写界面前必须记录：
+
+- 产品论点、surface type、main subject、主动作。
+- inherited rules、可调 expression envelope、一个 signature feature。
+- positive calibration：要保留的行为及其用户价值。
+- negative calibration：明确拒绝的 benchmark imitation、generic card
+  grid、装饰动效、截图式完成、不可达状态等模式。
+- keyboard、touch、assistive technology、localization expansion、
+  reduced motion、state completeness、performance/layout stability 的证据要求。
+
+执行规则：
+
+- 不写“FWA-level”“award-ready”或自评分；只记录 evidence、finding 和
+  `UNPROVEN`。
+- 动效必须解释 continuity、causality 或 spatial ownership；否则删除。
+- Desktop/Mobile/Dashboard 保持同一 Journey 语义，但按平台适配交互，不做
+  像素级强行一致。
+- 完整门槛以
+  `docs/client/common/ui-identity/craft-quality.md` 为准。
+
+### 3.3 Visual And Dynamic Evidence Gate
 
 借鉴 LobeHub `ux-audit` 的 L1/L2/L3 分层：原型确认前，凡涉及按钮主次、边距、密度、视觉层级、暗色/亮色、响应式、空/加载/错误态的结论，**不能只从代码或口头判断**，必须有渲染截图证据。
 
@@ -70,15 +95,18 @@ description: "原型设计规范与工作流。当用户要求创建、修改、
 
 | Layer | 证据 | 可判定内容 | 何时必跑 |
 |-------|------|------------|----------|
-| L1 Static | 源码 / `file:line` | 组件选型、状态分支、token role、是否存在 empty/loading/error/retry | 每个客户端 UI 原型 |
+| L1 Contract | 源码 / `file:line` | Journey、组件选型、状态分支、token/module ownership、i18n、component tree | 每个客户端 UI 原型 |
 | L2 Visual | 已打开确认过的截图 | 按钮是否真为视觉主操作、边距/对齐/密度、层级、截断、dark/light、窄宽度表现 | 进入 `pending-review` 前；进入 `confirmed` 前必须无阻断项 |
-| L3 Dynamic | 真实点击 / 录屏 / runtime capture | 键盘/focus、流程推进、错误态注入、动效与卡顿 | 复杂交互流、状态机密集、或 Owner 对行为有疑问时 |
+| L3 Dynamic | 真实点击 / 录屏 / runtime capture | 成功、错误恢复、draft preservation、键盘/focus、Mobile touch、reduced motion、动效与卡顿 | 所有 material interaction flow |
+| L4 Runtime Quality | 语义树 / accessibility / performance evidence | name-role-value、status、contrast、target、长列表、lab/runtime metrics 与未证明边界 | 进入 `confirmed` 前按 claim 范围执行 |
 
 截图纪律：
 
 - 截图必须来自 Prototype Portal 或目标原型页面的真实渲染，不接受只看源码推断视觉结论。
 - 截图必须被 agent 实际打开检查后才能作为 Evidence；只保存路径、未查看内容，不算证据。
 - 默认截图集合：default、关键 empty/loading/error 态、desktop 宽度、一个窄宽度或 mobile 宽度；如支持 dark/light，至少覆盖两种主题。
+- Material UI 还必须覆盖长内容或 localization expansion；Mobile 需覆盖
+  touch path，Desktop 需覆盖 keyboard path。
 - 每个视觉结论必须写清：截图路径 / 状态 / 视口 / 主题 / 判定项。
 - 若某状态无法触达，不能默认为通过；在原型 README 的“已知差异 / 待补”标记 `L2 blocked` 或 `L3 required`。
 
@@ -90,8 +118,9 @@ L2 可直接判定的问题：
 - border、shadow、radius、accent 是否克制，是否偏离 Quiet Protocol Minimalism。
 - empty/loading/error/retry 是否像真实页面状态，而不是空白、占位或调试态。
 - 长文案、长标题、数字、列表是否截断或溢出。
+- Signature feature 是否强化产品论点，是否退化为无关装饰。
 
-### 3.3 布局稳定性（Layout Stability）
+### 3.4 布局稳定性（Layout Stability）
 
 原型交互过程中**禁止出现非预期的布局跳动**——用户切换 Tab、展开/折叠面板、加载内容时，周围元素不得位移或抖动。
 
@@ -148,7 +177,7 @@ packages/prototypes/
 原型登记和 Portal 展示必须按一级站点归属组织：
 
 ```text
-desktop            # Native Desktop App / embedded renderer / applet 容器内体验
+desktop            # Desktop App / desktop-web / applet 容器内体验
 mobile             # Mobile 端体验
 dashboard          # Station Dashboard / 管理台 / 运维台
 ```
@@ -160,7 +189,7 @@ dashboard          # Station Dashboard / 管理台 / 运维台
 每个模块的原型在架构文档侧有对应入口：
 
 ```
-docs/architecture/<taxonomy>/<module>/prototype/README.md
+docs/architecture/<module>/prototype/README.md
 ```
 
 该文件只写：原型在哪、怎么跑、对应哪版设计、做到什么程度、已知差异。**不复制源码**。
@@ -219,7 +248,7 @@ drafting → pending-review → confirmed → landed
 
 规则：
 1. 新原型登记进总账，初始 `drafting`
-2. 原型「能跑能点」、可对回设计编号，并完成 L1 Static + 必要 L2 Visual 截图证据后 → `pending-review`，提请 Owner 确认
+2. 原型「能跑能点」、可对回设计编号，并完成 L1 Contract、L2 Visual 和 material L3 Dynamic 证据后 → `pending-review`，提请 Owner 确认
 3. Owner 确认且无 L2 阻断项后 → `confirmed`——**只有 confirmed 的原型才允许进入落地实现**
 4. 功能落地后 → `landed`；设计大改导致原型失效 → `superseded`（新建原型重走门）
 
@@ -263,20 +292,25 @@ Prototype Portal 支持 worktree / branch 切换：
 - [ ] 源码在 `packages/prototypes/<site>/<area>/<id>/`，物理目录没有把 applet / feature 放成一级站点
 - [ ] `make run-prototype` 能跑，浏览器能打开
 - [ ] Prototype Portal 的 Live Preview 已选中并渲染目标原型：右上角标题必须是目标 prototype title，正文不能是 `Desktop Shell` / kernel placeholder / “原型未细化”占位页
-- [ ] `docs/architecture/<taxonomy>/<module>/prototype/README.md` 已创建/更新
+- [ ] `docs/architecture/<module>/prototype/README.md` 已创建/更新
 - [ ] `docs/architecture/engineering/prototypes/README.md` 总账已登记
 - [ ] 原型区域能对回设计文档编号
 - [ ] 客户端 UI 原型已读取 `docs/client/common/ui-identity/README.md` 及 foundations / tokens / layout / components
+- [ ] 已读取 `craft-quality.md`，并记录 thesis / surface type / main subject / expression envelope / signature
 - [ ] 已读取最近的模块 UI ID；若不存在，已在原型 README 标注“当前无模块 UI ID，复用 shared UI ID”
 - [ ] Desktop Applet Launcher 类原型已读取 `docs/client/desktop/applet-launcher-ux-contract.md`
 - [ ] 参考图只被用作结构/交互参考，没有覆盖 Peers Touch UI Identity
 - [ ] 颜色、字体、边框、圆角、阴影、间距能对回 UI Identity token roles，未用任意 raw CSS 私定风格
 - [ ] 已声明页面的 content rail、action rail、floating layer、recovery layer，未用装饰性边框/阴影弥补边界不清
-- [ ] 已完成 L1 Static 检查：组件选型、状态分支、token role、empty/loading/error/retry 覆盖有源码证据
+- [ ] 已完成 L1 Contract 检查：Journey、组件选型、状态分支、token/module ownership、i18n、empty/loading/error/retry 覆盖有源码证据
 - [ ] 已完成 L2 Visual 截图检查：至少覆盖 default、关键状态、desktop 宽度、窄宽度或 mobile 宽度；如支持 dark/light，覆盖两种主题
 - [ ] 每张 L2 截图已实际打开确认，Evidence 记录包含截图路径 / 状态 / 视口 / 主题 / 判定项
 - [ ] 按钮主次、按钮类型、边距、密度、视觉层级、截断、空/加载/错误态等视觉结论均来自 L2 截图，而不是只从代码推断
 - [ ] 无法触达的视觉状态已在原型 README 标记 `L2 blocked` 或 `L3 required`，没有默认为通过
+- [ ] 已完成 material L3 Dynamic：success、failure/recovery、draft preservation、keyboard、Mobile touch、reduced motion
+- [ ] 已记录 L4 Runtime Quality：semantics/AT、contrast、target size、long list、performance；缺失项为 `UNPROVEN`
+- [ ] 已记录 positive/negative calibration；未使用 award guarantee 或 numeric self-score
+- [ ] 动效均能解释 continuity / causality / spatial ownership
 - [ ] 使用 LobeUI / antd / lucide-react，未引入额外基础组件库
 - [ ] 未碰 Lynx / applet SDK / 非 web 运行时
 - [ ] mock 数据驱动，未依赖后端接口
@@ -296,4 +330,5 @@ Prototype Portal 支持 worktree / branch 切换：
 - UI Identity tokens：`docs/client/common/ui-identity/tokens.md`
 - UI Identity layout：`docs/client/common/ui-identity/layout.md`
 - UI Identity components：`docs/client/common/ui-identity/components.md`
+- UI Craft Quality：`docs/client/common/ui-identity/craft-quality.md`
 - Desktop Applet Launcher 合同：`docs/client/desktop/applet-launcher-ux-contract.md`

@@ -42,7 +42,8 @@ COMPOSER_PROBE = r"""
     return {x:Math.round(x.x), y:Math.round(x.y), w:Math.round(x.width), h:Math.round(x.height),
             left:Math.round(x.left), right:Math.round(x.right), top:Math.round(x.top), bottom:Math.round(x.bottom)}; };
   const cs = el => getComputedStyle(el);
-  const toolbar = ta.parentElement.querySelector('div:last-child');
+  const tools = field.querySelector('[data-chat-composer-tools]');
+  const sendTrack = field.querySelector('[data-chat-composer-send]');
   const expand = document.querySelector('button[aria-label="Expand input"],button[aria-label="Collapse input"]');
   const send = document.querySelector('[data-chat-send]');
   const divider = field.querySelector('span[aria-hidden="true"]');
@@ -57,7 +58,8 @@ COMPOSER_PROBE = r"""
     field: {...r(field), bg: cs(field).backgroundColor, radius: cs(field).borderRadius, shadow: cs(field).boxShadow},
     textarea: {...r(ta), contentH: Math.round(r(ta).h - pad(ta,'Top') - pad(ta,'Bottom')),
                scrollH: ta.scrollHeight, minH: cs(ta).minHeight, maxH: cs(ta).maxHeight},
-    toolbar: {...r(toolbar), h: Math.round(toolbar.getBoundingClientRect().height)},
+    tools: {...r(tools), h: Math.round(tools.getBoundingClientRect().height)},
+    sendTrack: {...r(sendTrack), h: Math.round(sendTrack.getBoundingClientRect().height)},
     expand: expand ? {...r(expand), color: cs(expand).color, pressed: expand.getAttribute('aria-pressed'),
                      label: expand.getAttribute('aria-label')} : null,
     send: send ? {...r(send), bg: cs(send).backgroundColor, disabled: send.disabled} : null,
@@ -155,28 +157,36 @@ def assert_composer(p, page, w: int, shot_dir: Path | None):
           max(insets.values()) - min(insets.values()) <= 1,
           f"insets={insets}")
     check(f"{tag} dock soft-gray, fully rounded 12px, hairline border, no resting shadow",
-          d["field"]["bg"] == "rgb(245, 245, 245)" and d["field"]["radius"] == "12px"
+          d["field"]["bg"] == "rgb(243, 245, 248)" and d["field"]["radius"] == "12px"
           and d["field"]["shadow"] == "none",
           f"{d['field']['bg']} {d['field']['radius']} {d['field']['shadow']}")
-    # Textarea border box: frame + dock border 1 + dock padding 6 (glyphs sit a
-    # further 8px inside via textarea padding).
-    ta_inset = frame + 7
-    check(f"{tag} textarea left inset == {ta_inset}",
-          approx(d["textarea"]["left"] - d["bar"]["left"], ta_inset, 2),
-          f"got {d['textarea']['left'] - d['bar']['left']}")
-    check(f"{tag} textarea right inset == {ta_inset}",
-          approx(d["bar"]["right"] - d["textarea"]["right"], ta_inset, 2),
-          f"got {d['bar']['right'] - d['textarea']['right']}")
-    check(f"{tag} toolbar bottom inset == frame+4",
-          approx(HEIGHT - d["toolbar"]["bottom"], frame + 4, 2),
-          f"got {HEIGHT - d['toolbar']['bottom']}")
-    # Proportions: comfortable single-line text region, single-row toolbar.
-    check(f"{tag} textarea content box >= 32px", d["textarea"]["contentH"] >= 32,
+    # Compact composer is one grid row: tools | flexible input | send actions.
+    # The stable tracks keep controls from squeezing or overlapping the input.
+    check(f"{tag} tools/input gap == 2",
+          approx(d["textarea"]["left"] - d["tools"]["right"], 2, 1),
+          f"got {d['textarea']['left'] - d['tools']['right']}")
+    check(f"{tag} input/send gap == 2",
+          approx(d["sendTrack"]["left"] - d["textarea"]["right"], 2, 1),
+          f"got {d['sendTrack']['left'] - d['textarea']['right']}")
+    check(f"{tag} tools and send tracks respect dock padding",
+          approx(d["tools"]["left"] - d["field"]["left"], 3, 1)
+          and approx(d["field"]["right"] - d["sendTrack"]["right"], 3, 1),
+          f"left={d['tools']['left'] - d['field']['left']} "
+          f"right={d['field']['right'] - d['sendTrack']['right']}")
+    check(f"{tag} controls align to dock bottom",
+          approx(d["field"]["bottom"] - d["tools"]["bottom"], 3, 1)
+          and approx(d["field"]["bottom"] - d["sendTrack"]["bottom"], 3, 1),
+          f"tools={d['field']['bottom'] - d['tools']['bottom']} "
+          f"send={d['field']['bottom'] - d['sendTrack']['bottom']}")
+    # Proportions: readable single-line input and stable one-row chrome.
+    check(f"{tag} textarea content box >= 20px", d["textarea"]["contentH"] >= 20,
           f"contentH={d['textarea']['contentH']}")
     check(f"{tag} collapsed single-line textarea 40-52", 40 <= d["textarea"]["h"] <= 52,
           f"h={d['textarea']['h']}")
-    check(f"{tag} toolbar height == 34", d["toolbar"]["h"] == 34, f"h={d['toolbar']['h']}")
-    check(f"{tag} dock height 86-104 (single-line)", 86 <= d["field"]["h"] <= 104,
+    check(f"{tag} composer tracks are 44px high",
+          d["tools"]["h"] == 44 and d["sendTrack"]["h"] == 44,
+          f"tools={d['tools']['h']} send={d['sendTrack']['h']}")
+    check(f"{tag} dock height == 50 (single-line)", d["field"]["h"] == 50,
           f"h={d['field']['h']}")
     # Expand affordance: own hit target + 1px divider, reachable.
     check(f"{tag} expand button 34x34 reachable",
@@ -185,7 +195,7 @@ def assert_composer(p, page, w: int, shot_dir: Path | None):
     check(f"{tag} divider before expand 1x18",
           d["divider"] is not None and d["divider"]["w"] == 1 and d["divider"]["h"] == 18,
           json.dumps(d["divider"]))
-    check(f"{tag} send button 34x34", d["send"]["w"] == 34 and d["send"]["h"] == 34)
+    check(f"{tag} send button 40x40", d["send"]["w"] == 40 and d["send"]["h"] == 40)
     check(f"{tag} no document-level horizontal overflow", d["docOverflow"] <= 0,
           f"overflow={d['docOverflow']}")
 
@@ -819,8 +829,13 @@ def assert_notifications(base_url: str, page, shot_dir, collected):
           and page.locator("[data-shell-notification]").count() == 0)
     page.keyboard.press("Escape")
     page.wait_for_timeout(300)
-    page.get_by_role("button", name="通知", exact=True).click()
-    check("[notifications] empty preview focuses enabled More control",
+    # Keyboard-opened empty preview moves focus to the enabled More control;
+    # pointer openers keep focus on the bell (covered by the focus gate).
+    bell = page.get_by_role("button", name="通知", exact=True)
+    bell.evaluate("el => el.focus()")
+    page.keyboard.press("Enter")
+    page.wait_for_timeout(200)
+    check("[notifications] empty keyboard preview focuses enabled More control",
           page.get_by_role("button", name="More notifications").evaluate("el => el === document.activeElement"))
     assert_visual_system("[notifications-empty-preview]", page)
     if shot_dir:
@@ -976,10 +991,10 @@ def assert_technical_identity(base_url: str, page, shot_dir: Path | None):
     page.set_viewport_size({"width": 1440, "height": 900})
     page.get_by_role("tab", name="Network", exact=True).click()
     check("[identity] Station matches Network", page.get_by_text("alpha.peers.social", exact=True).is_visible())
-    page.get_by_role("button", name="Networks", exact=True).click()
+    page.get_by_role("button", name="Federation", exact=True).click()
     network_names = ("Peers Social Network", "Lab Federation", "East Asia Network")
     check("[identity] federation names match Network", all(page.get_by_text(n, exact=True).is_visible() for n in network_names))
-    page.get_by_role("button", name="Join a network").click()
+    page.get_by_role("button", name="Join a federation").click()
     page.get_by_placeholder("https://federation.example.com").fill("https://identity-test.example")
     page.get_by_role("button", name="Join", exact=True).click()
     page.get_by_role("tab", name="General", exact=True).click()
@@ -987,10 +1002,10 @@ def assert_technical_identity(base_url: str, page, shot_dir: Path | None):
     check("[identity] joined federation appears on Account",
           technical.get_by_role("button", name="Copy federation identity-test.example").count() == 1)
     page.get_by_role("tab", name="Network", exact=True).click()
-    page.get_by_role("button", name="Networks", exact=True).click()
+    page.get_by_role("button", name="Federation", exact=True).click()
     page.get_by_text("identity-test.example", exact=True).click()
-    page.get_by_role("button", name="Leave this network", exact=True).click()
-    page.get_by_role("button", name="Leave", exact=True).click()
+    page.locator("[data-leave-federation]").click()
+    page.locator("[data-leave-confirm-button]").click()
     page.get_by_role("tab", name="General", exact=True).click()
     technical.locator("summary").click()
     check("[identity] departed federation removed from Account",
@@ -1112,6 +1127,272 @@ def assert_settings(base_url: str, page, shot_dir: Path | None = None):
           f"chips={dn['sectionChips']}")
 
 
+def _open_network_section(page, item: str):
+    page.get_by_role("tab", name="Network").click()
+    page.wait_for_timeout(200)
+    page.locator('nav[aria-label="Settings sections"]').get_by_role("button", name=item).click()
+    page.wait_for_timeout(300)
+
+
+def assert_network_design(base_url: str, page):
+    """User-vs-operator separation for the Network group.
+
+    Users own account-level choices in Settings; operator/federation
+    governance lives in the Station Dashboard. Designed-but-unshipped
+    capabilities must render an explicit Pending backend marker, never a
+    silently dead control.
+    """
+    tag = "[network]"
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(base_url, wait_until="networkidle")
+    page.wait_for_timeout(400)
+    page.evaluate("() => localStorage.clear()")
+    page.get_by_role("button", name="设置").click()
+    page.wait_for_timeout(400)
+    page.get_by_role("tab", name="Network").click()
+    page.wait_for_timeout(300)
+
+    items = page.locator('nav[aria-label="Settings sections"] button').all_text_contents()
+    check(f"{tag} group is Your Station / Discovery / Federation",
+          items == ["Your Station", "Discovery", "Federation"], json.dumps(items, ensure_ascii=False))
+
+    # ── Federation ─────────────────────────────────────────────────────────
+    _open_network_section(page, "Federation")
+    check(f"{tag} section titled Joined federations",
+          page.get_by_text("Joined federations").count() == 1)
+    # No fabricated P2P/directory numbers on a user card.
+    check(f"{tag} no fabricated People count on user cards",
+          page.get_by_text("People", exact=True).count() == 0)
+    check(f"{tag} no operator Degraded badge in user settings",
+          page.get_by_text("Degraded").count() == 0)
+
+    # Member federation: every member can leave; governance is operator-only.
+    page.get_by_text("Lab Federation", exact=True).first.click()
+    page.wait_for_timeout(200)
+    check(f"{tag} member federation offers Leave",
+          page.locator("[data-leave-federation]").count() == 1)
+    check(f"{tag} member federation hides operator governance",
+          page.locator("[data-federation-manage]").count() == 0)
+    page.locator("[data-leave-federation]").click()
+    page.wait_for_timeout(150)
+    leave_text = page.locator("[data-leave-confirm]").inner_text()
+    check(f"{tag} leave confirms conversations/contacts are kept",
+          "kept on this device" in leave_text, leave_text)
+    page.locator('[data-leave-confirm] button', has_text="Cancel").click()
+
+    # Operator federation: manage affordance is explicitly pending backend.
+    page.get_by_text("Peers Social Network", exact=True).first.click()
+    page.wait_for_timeout(200)
+    check(f"{tag} operator federation offers dashboard governance",
+          page.locator("[data-federation-manage]").count() == 1)
+    check(f"{tag} operator governance marked pending backend",
+          page.locator("[data-federation-manage]").locator("xpath=..")
+          .locator("[data-pending-backend]").count() == 1)
+
+    # ── Discovery ──────────────────────────────────────────────────────────
+    _open_network_section(page, "Discovery")
+    fed_toggles = page.locator("[data-discovery-federations] [role='switch']")
+    check(f"{tag} one per-federation visibility toggle per active federation",
+          fed_toggles.count() == 3, f"toggles={fed_toggles.count()}")
+    check(f"{tag} unshipped capabilities show pending markers",
+          page.locator("[data-pending-backend]").count() >= 2)
+    check(f"{tag} reach policy uses federations wording (not networks)",
+          page.get_by_role("radio", name="My federations").count() >= 1)
+
+    # Hidden master remembers per-federation choices and restores them.
+    fed_toggles.nth(0).click()
+    page.wait_for_timeout(100)
+    remember = page.evaluate("() => localStorage.getItem('pt.discovery.federations')")
+    master = page.get_by_role("switch", name="Discoverable")
+    master.click()
+    page.wait_for_timeout(150)
+    check(f"{tag} hiding remembers prior per-federation choices",
+          remember == '{"fed-1":true}', remember)
+    check(f"{tag} hidden master dims the federation matrix",
+          float(page.locator("[data-discovery-federations]")
+                .evaluate("el => getComputedStyle(el).opacity")) < 1)
+    master.click()
+    page.wait_for_timeout(150)
+    restored = page.locator(
+        "[data-discovery-federations] [role='switch']").nth(0).get_attribute("aria-checked")
+    check(f"{tag} re-showing restores prior per-federation value",
+          restored == "true", restored)
+
+    # ── Your Station ───────────────────────────────────────────────────────
+    _open_network_section(page, "Your Station")
+    check(f"{tag} no fabricated P2P peer/seed metrics",
+          page.get_by_text("Connected peers").count() == 0
+          and page.get_by_text("Seed nodes").count() == 0)
+    check(f"{tag} relay mounts not exposed to ordinary users",
+          page.get_by_text("Relay mounts").count() == 0)
+    check(f"{tag} authorized devices present",
+          page.get_by_text("Authorized devices").count() == 1)
+    page.locator("[data-switch-station]").click()
+    page.wait_for_timeout(150)
+    check(f"{tag} switch station requires confirmation",
+          page.locator("[data-switch-station-confirm]").count() == 1)
+    confirm_text = page.locator("[data-switch-station-confirm]") \
+        .evaluate("el => el.closest('section').innerText")
+    check(f"{tag} switch is sign-out and keeps local messages",
+          "does not delete your messages" in confirm_text, confirm_text)
+
+    page.evaluate(
+        "() => ['pt.discovery.master','pt.discovery.federations','pt.discovery.reach']"
+        ".forEach(k => localStorage.removeItem(k))")
+
+
+FOCUS_STATE_PROBE = r"""
+() => {
+  const el = document.activeElement;
+  if (!el || el === document.body) return null;
+  const cs = getComputedStyle(el);
+  const cls = typeof el.className === 'string' ? el.className : '';
+  return {tag: el.tagName, cls, aria: el.getAttribute('aria-label'),
+          fv: el.matches(':focus-visible'), ostyle: cs.outlineStyle,
+          ow: cs.outlineWidth, ocolor: cs.outlineColor};
+}
+"""
+
+UA_FOCUS_BLUE = {"rgb(0, 95, 204)", "rgb(22, 119, 255)", "rgb(16, 113, 232)"}
+BRAND_RING = "rgb(107, 91, 214)"
+
+
+def _focus_state(page):
+    return page.evaluate(FOCUS_STATE_PROBE)
+
+
+def _tab_until(page, wanted_aria: str, limit: int = 25) -> dict | None:
+    for _ in range(limit):
+        state = _focus_state(page)
+        if state and state.get("aria") == wanted_aria:
+            return state
+        page.keyboard.press("Tab")
+        page.wait_for_timeout(40)
+    return _focus_state(page)
+
+
+def assert_focus_normalization(base_url: str, page):
+    """Class invariant: the browser's thick blue UA focus outline is forbidden.
+
+    Pointer interaction leaves no ring; keyboard focus shows exactly one 2px
+    brand ring on plain controls; antd composites keep their token ring;
+    composite text fields show one parent boundary ring.
+    """
+    tag = "[focus]"
+    page.set_viewport_size({"width": 1280, "height": 860})
+    page.goto(base_url, wait_until="networkidle")
+    page.wait_for_timeout(400)
+
+    # Keyboard: first rail target through the bell must carry the brand ring.
+    bell = _tab_until(page, "通知")
+    check(f"{tag} keyboard reaches bell via tab", bell is not None and bell["aria"] == "通知",
+          json.dumps(bell, ensure_ascii=False))
+    check(f"{tag} keyboard focus shows 2px brand ring (no UA blue)",
+          bool(bell and bell["fv"] and bell["ostyle"] == "solid"
+               and int(float(bell["ow"].replace('px',''))) == 2 and bell["ocolor"] == BRAND_RING),
+          json.dumps(bell, ensure_ascii=False))
+
+    # Pointer: clicking the bell leaves no ring and no :focus-visible state.
+    page.get_by_role("button", name="通知", exact=True).click()
+    page.wait_for_timeout(200)
+    bell_after = _focus_state(page)
+    check(f"{tag} pointer click leaves no focus ring",
+          bool(bell_after is None
+               or (bell_after.get("aria") == "通知"
+                   and not bell_after["fv"] and bell_after["ostyle"] == "none")),
+          json.dumps(bell_after, ensure_ascii=False))
+
+    # Full keyboard traversal: no UA 'auto' outline and no UA blue anywhere.
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(150)
+    blue_stops: list[dict] = []
+    auto_stops: list[dict] = []
+    visited: set[str] = set()
+    for _ in range(70):
+        page.keyboard.press("Tab")
+        page.wait_for_timeout(30)
+        state = _focus_state(page)
+        if not state:
+            break
+        key = state["tag"] + "|" + state["cls"] + "|" + str(state["aria"])
+        if key in visited:
+            break
+        visited.add(key)
+        if state["fv"] and state["ocolor"] in UA_FOCUS_BLUE:
+            blue_stops.append(state)
+        if state["fv"] and state["ostyle"] == "auto":
+            auto_stops.append(state)
+    check(f"{tag} no UA blue focus color across tab order", not blue_stops,
+          json.dumps(blue_stops[:5], ensure_ascii=False))
+    check(f"{tag} no UA auto focus outline across tab order", not auto_stops,
+          json.dumps(auto_stops[:5], ensure_ascii=False))
+
+    # Notifications viewer: plain reject button gets brand ring; antd close
+    # keeps its token ring, neither is UA blue.
+    page.get_by_role("button", name="通知", exact=True).click()
+    page.wait_for_timeout(200)
+    page.get_by_role("button", name="More notifications", exact=True).click()
+    page.wait_for_timeout(400)
+    page.keyboard.press("Shift+Tab")  # search -> close
+    page.wait_for_timeout(100)
+    close_state = _focus_state(page)
+    check(f"{tag} antd modal close focus is not UA blue",
+          bool(close_state and close_state["fv"]
+               and close_state["ostyle"] in ("solid", "none")
+               and close_state["ocolor"] not in UA_FOCUS_BLUE),
+          json.dumps(close_state, ensure_ascii=False))
+    # Forward through the trap: search -> mark-all -> row actions lands on the
+    # first reject button.
+    reject_state = _tab_until(page, "Reject Sarah Kim", limit=20)
+    check(f"{tag} reject action keyboard ring is 2px brand",
+          bool(reject_state and reject_state["fv"] and reject_state["ostyle"] == "solid"
+               and int(float(reject_state["ow"].replace('px', ''))) == 2
+               and reject_state["ocolor"] == BRAND_RING),
+          json.dumps(reject_state, ensure_ascii=False))
+
+    # Negative control: a UA-blue override must be detected, then removal
+    # must restore the brand ring — the gate cannot pass a native blue ring.
+    neg_style = page.add_style_tag(
+        content="button:focus-visible{outline:1px solid rgb(0,95,204)!important}")
+    page.wait_for_timeout(100)
+    neg_state = _focus_state(page)
+    check(f"{tag} negative control detects UA-blue regression",
+          bool(neg_state and neg_state["ocolor"] in UA_FOCUS_BLUE),
+          json.dumps(neg_state, ensure_ascii=False))
+    neg_style.evaluate("el=>el.remove()")
+    page.wait_for_timeout(100)
+    restored = _focus_state(page)
+    check(f"{tag} brand ring restored after removing bad override",
+          bool(restored and restored["ostyle"] == "solid" and restored["ocolor"] == BRAND_RING),
+          json.dumps(restored, ensure_ascii=False))
+
+    # Composite search field: one parent boundary ring, child has no outline.
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(200)
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(200)
+    boundary = page.evaluate(r"""() => {
+      const input = document.querySelector('[data-chat-session-search]');
+      if (!input) return null;
+      const box = input.closest('[data-focus-boundary]');
+      if (!box) return {present:false};
+      input.focus();
+      const bs = getComputedStyle(box);
+      const is = getComputedStyle(input);
+      return {present:true, childOutline:is.outlineStyle,
+              boundaryShadow:bs.boxShadow,
+              shadowBrand:bs.boxShadow.includes('107, 91, 214')};
+    }""")
+    check(f"{tag} session search declares one focus boundary",
+          bool(boundary and boundary.get("present")), json.dumps(boundary, ensure_ascii=False))
+    check(f"{tag} composite child shows no own outline",
+          bool(boundary and boundary.get("childOutline") == "none"),
+          json.dumps(boundary, ensure_ascii=False))
+    check(f"{tag} focus boundary carries brand ring",
+          bool(boundary and boundary.get("shadowBrand")),
+          json.dumps(boundary, ensure_ascii=False))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--base-url", default="http://localhost:3107")
@@ -1143,8 +1424,10 @@ def main():
         assert_contacts_entity_controls(args.base_url, page, collected)
         assert_notifications(args.base_url, page, shot_dir, collected)
         assert_cross_surface_entities(collected)
+        assert_focus_normalization(args.base_url, page)
         assert_settings(args.base_url, page, shot_dir)
         assert_technical_identity(args.base_url, page, shot_dir)
+        assert_network_design(args.base_url, page)
 
         check("zero console/page errors across run", len(errors) == 0, json.dumps(errors[:5]))
         browser.close()
