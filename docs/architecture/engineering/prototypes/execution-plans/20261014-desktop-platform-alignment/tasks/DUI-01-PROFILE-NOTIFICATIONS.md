@@ -29,7 +29,9 @@
     "docs/architecture/engineering/prototypes/execution-plans/20261014-desktop-platform-alignment",
     "tooling/acceptance",
     "tooling/scripts/local-dev/workflow-tool-intent.mjs",
-    "tooling/scripts/local-dev/workflow-tool-intent.test.mjs"
+    "tooling/scripts/local-dev/workflow-tool-intent.test.mjs",
+    "tooling/scripts/acceptance-pipeline-audit.py",
+    "tooling/scripts/acceptance-pipeline-audit-test.py"
   ],
   "readSet": [
     "docs/architecture/domains/notification/notification-architecture.md",
