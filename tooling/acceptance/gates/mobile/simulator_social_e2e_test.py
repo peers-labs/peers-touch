@@ -420,6 +420,43 @@ class SimulatorSocialGateTests(unittest.TestCase):
             '[data-federation-id="federation-1"]',
         )
 
+    def test_circle_create_retries_only_after_write_admission_reopens(
+        self,
+    ) -> None:
+        class Session:
+            def __init__(self) -> None:
+                self.clicks = 0
+                self.reads = 0
+                self.admission_reads = 0
+
+            def execute_script(self, script: str, *_args: object) -> object:
+                if "const detail = document.querySelector" in script:
+                    self.reads += 1
+                    if self.reads == 1:
+                        return {
+                            "circleId": "",
+                            "errorKey": "mobile.recovery.writeRevocation.body",
+                        }
+                    return {"circleId": "42", "errorKey": ""}
+                if "button.click()" in script or "node.click()" in script:
+                    self.clicks += 1
+                    return True
+                raise AssertionError(script)
+
+            def call_action(self, action: str) -> object:
+                if action != "recovery.snapshot":
+                    raise AssertionError(action)
+                self.admission_reads += 1
+                return {"writeAdmission": {"open": True, "reason": None}}
+
+        session = Session()
+
+        circle_id = SimulatorSocialGate._submit_circle_create(session)
+
+        self.assertEqual(circle_id, "42")
+        self.assertEqual(session.clicks, 2)
+        self.assertEqual(session.admission_reads, 1)
+
     def test_failed_ios_scenario_ends_before_suite_cleanup(self) -> None:
         gate = SimulatorSocialGate("ios-social-parity")
         with (

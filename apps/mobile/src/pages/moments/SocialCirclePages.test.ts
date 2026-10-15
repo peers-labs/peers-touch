@@ -32,4 +32,14 @@ describe('Social Circle page selectors', () => {
     expect(detail).not.toContain('{member.actorPtid}</Text>');
     expect(picker).not.toContain('actor.federation?.handle || actor.ptid');
   });
+
+  it('preserves a typed create failure for exact UI recovery', () => {
+    const source = readFileSync(
+      new URL('./SocialCirclesPage.tsx', import.meta.url),
+      'utf8',
+    );
+
+    expect(source).toContain('data-acceptance-id="social-circle-create-form"');
+    expect(source).toContain('data-error-key={createError || undefined}');
+  });
 });

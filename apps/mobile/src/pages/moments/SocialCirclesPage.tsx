@@ -149,7 +149,11 @@ export function SocialCirclesPage({
           if (!creating) setCreateOpen(false);
         }}
       >
-        <div className="circle-form">
+        <div
+          className="circle-form"
+          data-acceptance-id="social-circle-create-form"
+          data-error-key={createError || undefined}
+        >
           <Input
             autoFocus
             value={name}
