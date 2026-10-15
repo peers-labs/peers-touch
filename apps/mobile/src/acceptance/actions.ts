@@ -2324,6 +2324,9 @@ async function sanitizePrivateMomentRead(
       }
       : {}),
     mentionCount: value.mentions?.length ?? 0,
+    reactions: (value.reactions ?? []).map((reaction) => ({ ...reaction })),
+    reactionRevision: value.reactionRevision ?? '0',
+    reactionsHydrated: value.reactionsHydrated ?? false,
     ...(value.errorCode ? { errorCode: value.errorCode } : {}),
     ...(value.retryAfterSeconds === undefined
       ? {}
@@ -2380,6 +2383,22 @@ function sanitizePrivateMomentSnapshot(
     actorPtid: value.actorPtid,
     publish,
     reads,
+    reactionCommands: value.reactionCommands.map((command) => ({
+      commandId: command.commandId,
+      postId: command.postId,
+      kind: command.kind,
+      operation: command.operation,
+      state: command.state,
+      attemptCount: command.attemptCount,
+      projectionRevision: command.projectionRevision,
+      ...(command.errorCode ? { errorCode: command.errorCode } : {}),
+      ...(command.retryAfterSeconds === undefined
+        ? {}
+        : { retryAfterSeconds: command.retryAfterSeconds }),
+      ...(command.retryNotBeforeUnixMs === undefined
+        ? {}
+        : { retryNotBeforeUnixMs: command.retryNotBeforeUnixMs }),
+    })),
     publishStateHistory: [...value.publishStateHistory],
     readStateHistoryByPostId: Object.fromEntries(
       Object.entries(value.readStateHistoryByPostId)

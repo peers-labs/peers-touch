@@ -1091,8 +1091,28 @@ export interface PrivateMomentReadActionOutput {
   textSha256?: string;
   mentionCount?: number;
   mediaStates?: string[];
+  reactions: Array<{
+    kind: number;
+    count: string;
+    reactedByViewer: boolean;
+  }>;
+  reactionRevision: string;
+  reactionsHydrated: boolean;
   errorCode?: string;
   retryAfterSeconds?: number;
+}
+
+export interface PrivateReactionCommandActionOutput {
+  commandId: string;
+  postId: string;
+  kind: number;
+  operation: 'REACT' | 'UNREACT';
+  state: string;
+  attemptCount: number;
+  projectionRevision: string;
+  errorCode?: string;
+  retryAfterSeconds?: number;
+  retryNotBeforeUnixMs?: number;
 }
 
 export interface PrivateMomentSnapshotActionOutput {
@@ -1102,6 +1122,7 @@ export interface PrivateMomentSnapshotActionOutput {
   actorPtid: string | null;
   publish: PrivateMomentPublishActionOutput[];
   reads: PrivateMomentReadActionOutput[];
+  reactionCommands: PrivateReactionCommandActionOutput[];
   publishStateHistory: PrivateSocialVisiblePublishState[];
   readStateHistoryByPostId: Record<string, PrivateSocialVisibleReadState[]>;
   report: {

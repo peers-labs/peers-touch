@@ -92,6 +92,7 @@ class AndroidSocialGateTests(unittest.TestCase):
         self.assertIn('data-reaction-picker-item', source)
         self.assertIn('[aria-pressed="true"]', source)
         self.assertIn('Reaction kind {reaction_kind} readback', source)
+        self.assertIn('_wait_private_reaction_readback(', source)
         self.assertNotIn('social-reaction-choice', source)
 
     def test_active_scenario_cleanup_preserves_failed_suite_report(self) -> None:

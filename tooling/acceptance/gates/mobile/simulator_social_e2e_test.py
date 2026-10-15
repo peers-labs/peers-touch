@@ -402,7 +402,40 @@ class SimulatorSocialGateTests(unittest.TestCase):
         self.assertIn('data-reaction-picker-item', source)
         self.assertIn('[aria-pressed="true"]', source)
         self.assertIn('Reaction kind {reaction_kind} readback', source)
+        self.assertIn('_wait_private_reaction_readback(', source)
         self.assertNotIn('social-reaction-choice', source)
+
+    def test_private_reaction_readback_requires_command_and_projection(self) -> None:
+        session = Mock()
+        session.call_action.return_value = {
+            "reactionCommands": [{
+                "commandId": "reaction-1",
+                "postId": "post-1",
+                "kind": 2,
+                "operation": "REACT",
+                "state": "REACTION_COMMITTED",
+                "attemptCount": 2,
+                "projectionRevision": "1",
+            }],
+            "reads": [{
+                "postId": "post-1",
+                "reactions": [{
+                    "kind": 2,
+                    "count": "1",
+                    "reactedByViewer": True,
+                }],
+            }],
+        }
+
+        result = SimulatorSocialGate._wait_private_reaction_readback(
+            session,
+            "post-1",
+            2,
+            "Reaction kind 2",
+        )
+
+        self.assertEqual(result["command"]["commandId"], "reaction-1")
+        self.assertEqual(result["read"]["postId"], "post-1")
 
     def test_antd_option_selection_opens_the_control_before_clicking_option(
         self,

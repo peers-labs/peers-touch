@@ -1270,6 +1270,12 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
                 choice_selector,
                 f"Reaction kind {reaction_kind}",
             )
+            self._wait_private_reaction_readback(
+                session,
+                post_id,
+                reaction_kind,
+                f"Reaction kind {reaction_kind}",
+            )
             self._wait_ui(
                 session,
                 (
@@ -1437,6 +1443,70 @@ return {
             "nativeAxBytes": len(native_source.encode("utf-8")),
             "screenshotBytes": len(screenshot),
         }
+
+    @staticmethod
+    def _wait_private_reaction_readback(
+        session: Any,
+        post_id: str,
+        reaction_kind: int,
+        label: str,
+    ) -> dict[str, Any]:
+        deadline = time.monotonic() + 30.0
+        last_command: dict[str, Any] | None = None
+        last_read: dict[str, Any] | None = None
+        while time.monotonic() < deadline:
+            snapshot = session.call_action("moments.private.snapshot")
+            if not isinstance(snapshot, Mapping):
+                time.sleep(0.25)
+                continue
+            commands = snapshot.get("reactionCommands")
+            if isinstance(commands, list):
+                command = next((
+                    dict(item)
+                    for item in reversed(commands)
+                    if isinstance(item, Mapping)
+                    and item.get("postId") == post_id
+                    and item.get("kind") == reaction_kind
+                ), None)
+                if command is not None:
+                    last_command = command
+                    if command.get("state") == "REACTION_REJECTED":
+                        raise GateError(
+                            f"{label} rejected: "
+                            f"{json.dumps(command, sort_keys=True)}"
+                        )
+            reads = snapshot.get("reads")
+            if isinstance(reads, list):
+                read = next((
+                    dict(item)
+                    for item in reads
+                    if isinstance(item, Mapping)
+                    and item.get("postId") == post_id
+                ), None)
+                if read is not None:
+                    last_read = read
+                    reactions = read.get("reactions")
+                    if (
+                        last_command is not None
+                        and last_command.get("state") == "REACTION_COMMITTED"
+                        and isinstance(reactions, list)
+                        and any(
+                            isinstance(item, Mapping)
+                            and item.get("kind") == reaction_kind
+                            and item.get("reactedByViewer") is True
+                            for item in reactions
+                        )
+                    ):
+                        return {
+                            "command": last_command,
+                            "read": last_read,
+                        }
+            time.sleep(0.25)
+        raise GateError(
+            f"{label} private readback did not converge: "
+            f"command={json.dumps(last_command, sort_keys=True)} "
+            f"read={json.dumps(last_read, sort_keys=True)}"
+        )
 
     @staticmethod
     def _wait_ui(
