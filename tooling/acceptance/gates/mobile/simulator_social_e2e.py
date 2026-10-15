@@ -1209,17 +1209,16 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             {"kind": "primary", "routeId": "tab:moments"},
         )
         self._wait_post_visible(session, post_id, "")
-        self._click_ui_for_post(
-            session,
-            post_id,
-            "social-thread-open",
-            "Moment thread",
-        )
         thread_selector = (
             '[data-acceptance-id="social-moment-thread"]'
             f'[data-post-id="{post_id}"]'
         )
-        self._wait_ui(session, thread_selector, "Moment thread")
+        self._open_moment_thread(
+            session,
+            post_id,
+            thread_selector,
+            "Moment thread",
+        )
         self._wait_ui_attribute(
             session,
             f"{thread_selector} [data-comment-total]",
@@ -1489,6 +1488,40 @@ return true;
             return True if value is True else None
 
         SimulatorSocialGate._wait_for_value(click, label)
+
+    @staticmethod
+    def _open_moment_thread(
+        session: Any,
+        post_id: str,
+        thread_selector: str,
+        label: str,
+    ) -> None:
+        SimulatorSocialGate._click_ui_for_post(
+            session,
+            post_id,
+            "social-thread-open",
+            label,
+        )
+        try:
+            SimulatorSocialGate._wait_for_value(
+                lambda: session.execute_script(
+                    "return Boolean(document.querySelector(arguments[0]));",
+                    thread_selector,
+                )
+                or None,
+                label,
+                timeout_seconds=2.0,
+            )
+            return
+        except GateError:
+            pass
+        SimulatorSocialGate._click_ui_for_post(
+            session,
+            post_id,
+            "social-thread-open",
+            f"{label} retry",
+        )
+        SimulatorSocialGate._wait_ui(session, thread_selector, label)
 
     @staticmethod
     def _set_ui_value(
