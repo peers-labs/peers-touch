@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from tooling.acceptance.core import GateError
+from tooling.acceptance.core import GateError, REPO_ROOT
 from tooling.acceptance.core.errors import DriverError
 from tooling.acceptance.core.suite_runtime import SuiteRuntimeAction
 from tooling.acceptance.drivers.native.base import NativeControlSnapshot
@@ -62,6 +62,29 @@ class DesktopProfileNotificationsGateTest(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=True):
             with self.assertRaisesRegex(GateError, "PT_ACCEPTANCE_RUNTIME_MANIFEST is required"):
                 DesktopProfileNotificationsGate().run()
+
+
+class PrototypeTruthfulnessTest(unittest.TestCase):
+    def test_shell_notifications_require_an_injected_projection(self) -> None:
+        notifications = (
+            REPO_ROOT
+            / "packages/prototypes/desktop/shell/src/Notifications.tsx"
+        ).read_text(encoding="utf-8")
+        shell = (
+            REPO_ROOT
+            / "packages/prototypes/desktop/shell/src/Shell.tsx"
+        ).read_text(encoding="utf-8")
+
+        self.assertNotIn("INITIAL_NOTIFICATIONS", notifications)
+        self.assertNotIn("Prototype-local mock data", notifications)
+        self.assertIn(
+            "initialNotifications?: readonly NotifItem[]",
+            shell,
+        )
+        self.assertIn(
+            "initialNotifications?.map((item) => ({ ...item })) ?? []",
+            shell,
+        )
 
 
 class NativePointerDeliveryTest(unittest.TestCase):

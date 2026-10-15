@@ -46,7 +46,7 @@ import { SocialChatPage } from '../../features/social-chat/src/pages/SocialChatP
 import { Page as AgentFeaturePage } from '../../features/agent/src/Page';
 import { AgentChatPage } from './AgentChatPage';
 import { SettingsPage } from './Settings';
-import { INITIAL_NOTIFICATIONS, NotificationPanel, type NotifItem } from './Notifications';
+import { NotificationPanel, type NotifItem } from './Notifications';
 import { T } from './theme';
 import { ToastHost } from '../../shared/Toast';
 import { ModernChatReview } from '../../features/modern-chat-agent/src/ModernChatReview';
@@ -637,6 +637,7 @@ function CommandPalette({
 export interface DesktopShellProps {
   pages?: Record<string, () => React.ReactNode>;
   initialPage?: string;
+  initialNotifications?: readonly NotifItem[];
 }
 
 type AgentSurfaceId = 'agent' | 'agent-atelier' | 'agent-orchestration';
@@ -648,7 +649,11 @@ function getAgentSurfaceId(page: string): AgentSurfaceId | null {
   return null;
 }
 
-export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
+export function DesktopShell({
+  pages,
+  initialPage,
+  initialNotifications,
+}: DesktopShellProps = {}) {
   // page mirrors the real router: kernel ids (search/chat/agent/settings),
   // `applets` for the applets center, or `applet:<id>` for an applet surface.
   // Default lands on the applets center to show: rail ▦ → list → enter applet.
@@ -675,7 +680,9 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
   const notifOpen = notificationView !== 'closed';
   const notificationViewRef = useRef(notificationView);
   notificationViewRef.current = notificationView;
-  const [notifications, setNotifications] = useState<NotifItem[]>(INITIAL_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState<NotifItem[]>(
+    () => initialNotifications?.map((item) => ({ ...item })) ?? [],
+  );
   const [authPrototypeComplete, setAuthPrototypeComplete] = useState(false);
   const unreadCount = notifications.filter((n) => !n.read).length;
   const [visitedAgentSurfaces, setVisitedAgentSurfaces] = useState<Set<AgentSurfaceId>>(() => {

@@ -82,11 +82,18 @@ second profile or notification authority.
 
 ## Current Snapshot
 
-- C1-C6 use the canonical profile store with explicit Save/Discard and native OSS upload.
-- C7 has post-commit Social notification production; current-source native proof remains required.
-- C8 reads redacted push registrations; registration mutations remain Mobile-owned.
-- C9 reconciles authoritative counts through the Social runtime.
-- C1-C9 remain formally open.
+- C1-C6 use the canonical revision-fenced profile store with explicit
+  Save/Discard, Native OSS upload, conflict preservation, and authoritative
+  reload.
+- C7 consumes post-commit Social notifications through trusted Native pointer
+  actions, inline decisions, search, and pagination.
+- C8 persists all category preferences and reads redacted push registrations;
+  registration mutations remain correctly Mobile-owned.
+- C9 reconciles authoritative unread counts through the Social runtime and
+  proves sender/receiver visibility.
+- The shell prototype accepts an injected notification projection and defaults
+  to the truthful empty state; it contains no embedded notification fixtures.
+- C1-C9 are closed by current-source functional and formal Native Acceptance.
 
 ## Runtime Proof
 
@@ -101,3 +108,11 @@ Make selects Python 3.11 or newer, rebuilds an incompatible cached environment,
 installs the pinned Acceptance requirements, and places that interpreter first
 in the Gate subprocess PATH. The context bootstrap continues to reject system
 Python and user site packages.
+
+The completion boundary requires `desktop-profile-notifications-e2e` to emit
+`PASS/DONE/PROVEN` with `phase=DUI-C1-C9`, exact source and binary identity,
+two distinct authenticated actors, one Suite provisioning run, two client
+launches, a 0.5 warm-reuse rate, receiver-visible assertions for both
+scenarios, immutable screenshots, secret scan, and terminal cleanup. Static,
+API-only, screenshot-only, or lifecycle-only evidence cannot satisfy this
+Task.

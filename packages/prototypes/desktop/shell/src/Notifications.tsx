@@ -2,10 +2,10 @@
  * Desktop shell — Notifications popover.
  *
  * One panel aligned to the rail bell, expanded on intent into a centered dialog.
- * Prototype-local mock data
- * with real outcomes (read state, per-item dismiss, invite decisions,
- * click-through navigation). Single-instance: the caller owns open state and
- * closes it on outside click / Escape / navigation.
+ * The caller injects the projection snapshot; this module owns only transient
+ * presentation state, search, pagination, focus, and interaction callbacks.
+ * Single-instance: the caller owns open state and closes it on outside click /
+ * Escape / navigation.
  *
  * Relationship decisions (friend requests / group invites) reuse the canonical
  * RequestDecisionButtons from social-chat — the notification center never
@@ -34,59 +34,6 @@ export interface NotifItem {
   /** kernel page the item jumps to when opened */
   targetPage?: string;
 }
-
-export const INITIAL_NOTIFICATIONS: NotifItem[] = [
-  {
-    id: 'n-1', kind: 'group_invite', title: 'Sarah Kim',
-    body: 'Invited you to join “Release Room”.', time: '2m', read: false,
-    initials: 'SK', avatarBg: '#d69e2e', pending: true, targetPage: 'chat',
-  },
-  {
-    id: 'n-2', kind: 'reply', title: 'Emma Wang',
-    body: 'Replied to you in Design Review: “updated the mocks”.', time: '18m', read: false,
-    initials: 'EW', avatarBg: '#38a169', targetPage: 'chat',
-  },
-  {
-    id: 'n-3', kind: 'friend', title: 'David Liu',
-    body: 'Accepted your friend request.', time: '1h', read: false,
-    initials: 'DL', avatarBg: '#3182ce', targetPage: 'chat',
-  },
-  {
-    id: 'n-4', kind: 'reaction', title: 'Bob',
-    body: 'Reacted 👍 to “Sprint planning moved to Friday”.', time: '3h', read: true,
-    initials: 'BO', avatarBg: '#6b5bd6', targetPage: 'chat',
-  },
-  {
-    id: 'n-5', kind: 'reply', title: 'Carol',
-    body: 'Replied in Release Room: “The desktop build is ready for review. Please check the release notes, the cross-station invitation flow, and keyboard navigation before tomorrow’s release. I added the latest screenshots to the review thread”.', time: 'Yesterday', read: true,
-    initials: 'CA', avatarBg: '#3182ce', targetPage: 'chat',
-  },
-  {
-    id: 'n-6', kind: 'friend', title: 'Dana Park',
-    body: 'Accepted your friend request.', time: 'Yesterday', read: true,
-    initials: 'DP', avatarBg: '#38a169', targetPage: 'chat',
-  },
-  {
-    id: 'n-7', kind: 'reaction', title: 'Emma Wang',
-    body: 'Reacted ❤️ to your Design Review update.', time: '2d', read: true,
-    initials: 'EW', avatarBg: '#38a169', targetPage: 'chat',
-  },
-  {
-    id: 'n-8', kind: 'reply', title: 'Sarah Kim',
-    body: 'Mentioned you in Release Room: “Can you check the release notes?”', time: '2d', read: true,
-    initials: 'SK', avatarBg: '#d69e2e', targetPage: 'chat',
-  },
-  {
-    id: 'n-9', kind: 'reply', title: 'David Liu',
-    body: 'Replied to your message about the network connection.', time: '3d', read: true,
-    initials: 'DL', avatarBg: '#3182ce', targetPage: 'chat',
-  },
-  {
-    id: 'n-10', kind: 'reaction', title: 'Bob',
-    body: 'Reacted 👍 to your project update.', time: '3d', read: true,
-    initials: 'BO', avatarBg: '#6b5bd6', targetPage: 'chat',
-  },
-];
 
 interface NotificationActions {
   onOpenItem: (item: NotifItem) => void;
