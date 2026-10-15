@@ -139,6 +139,7 @@ class MobileSocialCirclesNativeGate(AcceptanceGate):
                 "searchPickerPeople",
                 "addMembers(circleId, [...selected])",
                 "refreshMembers(circleId)",
+                'data-acceptance-id="social-circle-member-search-submit"',
             ),
             "Circle member picker",
         )
