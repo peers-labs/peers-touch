@@ -540,19 +540,49 @@ def _create_fixture(
         shutil.rmtree(temporary, ignore_errors=True)
 
 
+def _fixture_fingerprint_from_import(
+    *,
+    migration_source: Path | None,
+    expected_key_name: str,
+    resource: str,
+) -> tuple[Path, str]:
+    source = migration_source
+    if source is None:
+        raw_source = os.environ.get(ACTOR_IDENTITY_IMPORT_ENV, "").strip()
+        source = Path(raw_source) if raw_source else None
+    if source is None:
+        raise _blocked(
+            (
+                "Preset actor identity fixture is missing and no reviewed "
+                f"one-time import was supplied through {ACTOR_IDENTITY_IMPORT_ENV}"
+            ),
+            resource,
+        )
+    source = source.expanduser()
+    if not source.is_absolute():
+        source = Path.cwd() / source
+    if source.name != expected_key_name:
+        raise _blocked(
+            "Preset actor identity import is not the expected scoped key",
+            resource,
+        )
+    return source, _seed_fingerprint(source, resource=resource)
+
+
 def ensure_preset_actor_identity_fixture(
     *,
     role: str,
     station_peer_id: str,
     actor_ptid: str,
     actor_identity_fingerprint: str,
+    authority_state: str = "established",
     machine_root: Path = MACHINE_FIXTURE_ROOT,
     migration_source: Path | None = None,
 ) -> RetainedRuntimeFixture:
     resource = f"fixture-identity:{role}"
-    if re.fullmatch(r"[0-9a-f]{64}", actor_identity_fingerprint) is None:
+    if authority_state not in {"established", "absent"}:
         raise _blocked(
-            "Station returned an invalid actor identity fingerprint",
+            "Station returned an invalid actor identity authority state",
             resource,
         )
     identity_root = actor_identity_fixture_root(
@@ -560,25 +590,56 @@ def ensure_preset_actor_identity_fixture(
         actor_ptid,
         machine_root=machine_root,
     )
-    if not identity_root.exists():
-        source = migration_source
-        if source is None:
-            raw_source = os.environ.get(ACTOR_IDENTITY_IMPORT_ENV, "").strip()
-            source = Path(raw_source) if raw_source else None
-        if source is None:
+    expected_key_name = actor_identity_key_name(
+        station_peer_id,
+        actor_ptid,
+    )
+    fingerprint = actor_identity_fingerprint
+    source = migration_source
+    if authority_state == "established":
+        if re.fullmatch(r"[0-9a-f]{64}", fingerprint) is None:
             raise _blocked(
-                (
-                    "Preset actor identity fixture is missing and no reviewed "
-                    f"one-time import was supplied through {ACTOR_IDENTITY_IMPORT_ENV}"
-                ),
+                "Station returned an invalid actor identity fingerprint",
                 resource,
             )
+    elif identity_root.exists():
+        metadata_path = _fixture_metadata_path(identity_root)
+        try:
+            metadata = json.loads(
+                metadata_path.read_text(encoding="utf-8")
+            )
+        except (OSError, json.JSONDecodeError) as error:
+            raise _blocked(
+                "Preset actor identity fixture metadata is unavailable",
+                resource,
+            ) from error
+        fingerprint = str(
+            metadata.get("actorIdentityFingerprint") or ""
+        )
+    else:
+        source, fingerprint = _fixture_fingerprint_from_import(
+            migration_source=migration_source,
+            expected_key_name=expected_key_name,
+            resource=resource,
+        )
+    if not identity_root.exists():
+        if source is None:
+            source, source_fingerprint = _fixture_fingerprint_from_import(
+                migration_source=migration_source,
+                expected_key_name=expected_key_name,
+                resource=resource,
+            )
+            if source_fingerprint != fingerprint:
+                raise _blocked(
+                    "Preset actor identity import does not match Station authority",
+                    resource,
+                )
         _create_fixture(
             identity_root=identity_root,
             migration_source=source,
             station_peer_id=station_peer_id,
             actor_ptid=actor_ptid,
-            actor_identity_fingerprint=actor_identity_fingerprint,
+            actor_identity_fingerprint=fingerprint,
             machine_root=machine_root.expanduser(),
             resource=resource,
         )
@@ -586,7 +647,7 @@ def ensure_preset_actor_identity_fixture(
         identity_root=identity_root,
         station_peer_id=station_peer_id,
         actor_ptid=actor_ptid,
-        actor_identity_fingerprint=actor_identity_fingerprint,
+        actor_identity_fingerprint=fingerprint,
         resource=resource,
     )
     return RetainedRuntimeFixture(
@@ -651,6 +712,9 @@ def resolve_existing_preset_actor_identity(
         observed_station_peer_id = str(
             session.get("stationPeerId") or ""
         )
+        authority_state = str(
+            session.get("actorIdentityAuthority") or ""
+        )
         fingerprint = str(
             session.get("actorIdentityFingerprint") or ""
         )
@@ -664,6 +728,7 @@ def resolve_existing_preset_actor_identity(
             station_peer_id=station_peer_id,
             actor_ptid=actor.ptid,
             actor_identity_fingerprint=fingerprint,
+            authority_state=authority_state,
             machine_root=machine_root,
             migration_source=migration_source,
         )
@@ -681,6 +746,14 @@ def resolve_existing_preset_actor_identity(
     return ResolvedPresetActorIdentity(
         actor=actor,
         station_peer_id=station_peer_id,
-        actor_identity_fingerprint=fingerprint,
+        actor_identity_fingerprint=(
+            fingerprint
+            if fingerprint
+            else json.loads(
+                _fixture_metadata_path(Path(fixture.root)).read_text(
+                    encoding="utf-8"
+                )
+            )["actorIdentityFingerprint"]
+        ),
         fixture=fixture,
     )

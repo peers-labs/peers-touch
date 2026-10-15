@@ -25,7 +25,7 @@ func activeDevice(
 	}
 }
 
-func TestActiveActorIdentityFingerprintAcceptsOneAuthority(t *testing.T) {
+func TestActorIdentityAuthorityAcceptsOneEstablishedIdentity(t *testing.T) {
 	response := &authpb.ListActorDevicesResponse{
 		Devices: []*authpb.ActorDevice{
 			activeDevice("ptid:alice", 'a'),
@@ -36,25 +36,45 @@ func TestActiveActorIdentityFingerprintAcceptsOneAuthority(t *testing.T) {
 				},
 				Status: authpb.ActorDeviceStatus_ACTOR_DEVICE_STATUS_REVOKED,
 				ActorIdentityKeyFingerprint: []byte(
-					strings.Repeat("b", 32),
+					strings.Repeat("a", 32),
 				),
 			},
 		},
 	}
 
-	fingerprint, err := activeActorIdentityFingerprint(
+	authority, fingerprint, err := actorIdentityAuthority(
 		response,
 		"ptid:alice",
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if authority != "established" {
+		t.Fatalf("authority = %q", authority)
+	}
 	if fingerprint != strings.Repeat("61", 32) {
 		t.Fatalf("fingerprint = %q", fingerprint)
 	}
 }
 
-func TestActiveActorIdentityFingerprintRejectsAmbiguity(t *testing.T) {
+func TestActorIdentityAuthorityReportsAbsentIdentity(t *testing.T) {
+	authority, fingerprint, err := actorIdentityAuthority(
+		&authpb.ListActorDevicesResponse{},
+		"ptid:alice",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if authority != "absent" || fingerprint != "" {
+		t.Fatalf(
+			"authority = %q, fingerprint = %q",
+			authority,
+			fingerprint,
+		)
+	}
+}
+
+func TestActorIdentityAuthorityRejectsAmbiguity(t *testing.T) {
 	response := &authpb.ListActorDevicesResponse{
 		Devices: []*authpb.ActorDevice{
 			activeDevice("ptid:alice", 'a'),
@@ -62,7 +82,7 @@ func TestActiveActorIdentityFingerprintRejectsAmbiguity(t *testing.T) {
 		},
 	}
 
-	if _, err := activeActorIdentityFingerprint(
+	if _, _, err := actorIdentityAuthority(
 		response,
 		"ptid:alice",
 	); err == nil || !strings.Contains(err.Error(), "ambiguous") {
@@ -70,14 +90,14 @@ func TestActiveActorIdentityFingerprintRejectsAmbiguity(t *testing.T) {
 	}
 }
 
-func TestActiveActorIdentityFingerprintRejectsActorMismatch(t *testing.T) {
+func TestActorIdentityAuthorityRejectsActorMismatch(t *testing.T) {
 	response := &authpb.ListActorDevicesResponse{
 		Devices: []*authpb.ActorDevice{
 			activeDevice("ptid:bob", 'a'),
 		},
 	}
 
-	if _, err := activeActorIdentityFingerprint(
+	if _, _, err := actorIdentityAuthority(
 		response,
 		"ptid:alice",
 	); err == nil || !strings.Contains(err.Error(), "another actor") {

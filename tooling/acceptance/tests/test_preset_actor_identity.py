@@ -166,6 +166,55 @@ class PresetActorIdentityFixtureTests(unittest.TestCase):
                     migration_source=source,
                 )
 
+    def test_fixture_bootstraps_when_station_authority_is_absent(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = self._source(root)
+            with patch(
+                "tooling.acceptance.provisioners.preset_actor."
+                "_seed_fingerprint",
+                return_value=FINGERPRINT,
+            ):
+                fixture = ensure_preset_actor_identity_fixture(
+                    role="alice",
+                    station_peer_id=STATION_PEER_ID,
+                    actor_ptid=ACTOR_PTID,
+                    actor_identity_fingerprint="",
+                    authority_state="absent",
+                    machine_root=root / "fixtures",
+                    migration_source=source,
+                )
+
+            self.assertTrue(Path(fixture.root).is_dir())
+
+    def test_existing_fixture_survives_absent_station_authority(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = self._source(root)
+            with patch(
+                "tooling.acceptance.provisioners.preset_actor."
+                "_seed_fingerprint",
+                return_value=FINGERPRINT,
+            ):
+                created = ensure_preset_actor_identity_fixture(
+                    role="alice",
+                    station_peer_id=STATION_PEER_ID,
+                    actor_ptid=ACTOR_PTID,
+                    actor_identity_fingerprint=FINGERPRINT,
+                    machine_root=root / "fixtures",
+                    migration_source=source,
+                )
+                reused = ensure_preset_actor_identity_fixture(
+                    role="alice",
+                    station_peer_id=STATION_PEER_ID,
+                    actor_ptid=ACTOR_PTID,
+                    actor_identity_fingerprint="",
+                    authority_state="absent",
+                    machine_root=root / "fixtures",
+                )
+
+            self.assertEqual(created, reused)
+
     def test_fixture_rejects_symlink_and_non_private_source(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

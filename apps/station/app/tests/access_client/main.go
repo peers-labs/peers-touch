@@ -43,6 +43,7 @@ type loginOutput struct {
 	Token                    string `json:"token"`
 	PTID                     string `json:"ptid"`
 	StationPeerID            string `json:"stationPeerId,omitempty"`
+	ActorIdentityAuthority   string `json:"actorIdentityAuthority,omitempty"`
 	ActorIdentityFingerprint string `json:"actorIdentityFingerprint,omitempty"`
 }
 
@@ -155,7 +156,7 @@ func login(
 		); err != nil {
 			return nil, fmt.Errorf("list actor devices: %w", err)
 		}
-		fingerprint, err := activeActorIdentityFingerprint(
+		authority, fingerprint, err := actorIdentityAuthority(
 			devices,
 			result.PTID,
 		)
@@ -163,37 +164,41 @@ func login(
 			return nil, err
 		}
 		result.StationPeerID = stationPeerID
+		result.ActorIdentityAuthority = authority
 		result.ActorIdentityFingerprint = fingerprint
 	}
 	return result, nil
 }
 
-func activeActorIdentityFingerprint(
+func actorIdentityAuthority(
 	response *authpb.ListActorDevicesResponse,
 	actorPTID string,
-) (string, error) {
+) (string, string, error) {
 	fingerprints := map[string]struct{}{}
 	for _, device := range response.GetDevices() {
-		if device.GetStatus() != authpb.ActorDeviceStatus_ACTOR_DEVICE_STATUS_ACTIVE {
-			continue
-		}
 		if device.GetRef().GetActor().GetPtid() != actorPTID {
-			return "", errors.New("Station returned an active device for another actor")
+			return "", "", errors.New(
+				"Station returned a device lifecycle for another actor",
+			)
 		}
 		fingerprint := device.GetActorIdentityKeyFingerprint()
 		if len(fingerprint) != 32 {
-			return "", errors.New("Station returned an invalid active actor identity fingerprint")
+			return "", "", errors.New(
+				"Station returned an invalid actor identity fingerprint",
+			)
 		}
 		fingerprints[hex.EncodeToString(fingerprint)] = struct{}{}
 	}
 	if len(fingerprints) == 0 {
-		return "", errors.New("Station returned no active actor identity fingerprint")
+		return "absent", "", nil
 	}
 	if len(fingerprints) != 1 {
-		return "", errors.New("Station returned ambiguous active actor identity fingerprints")
+		return "", "", errors.New(
+			"Station returned ambiguous actor identity fingerprints",
+		)
 	}
 	for fingerprint := range fingerprints {
-		return fingerprint, nil
+		return "established", fingerprint, nil
 	}
 	panic("unreachable")
 }
