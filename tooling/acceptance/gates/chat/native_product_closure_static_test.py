@@ -16,7 +16,10 @@ from selenium.webdriver.common.by import By
 
 from tooling.acceptance.core import GateError
 from tooling.acceptance.core.evidence import new_report
-from tooling.acceptance.drivers.native.base import NativeControlSnapshot
+from tooling.acceptance.drivers.native.base import (
+    NativeControlSnapshot,
+    NativeInputMode,
+)
 from tooling.acceptance.drivers.native.macos import MacOSNativeDesktopAdapter
 from tooling.acceptance.drivers.native.runtime import LocalMacOSRuntimeBinding
 from tooling.acceptance.gates.chat.native_product_closure_runner import (
@@ -1719,7 +1722,9 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             self.assertNotIn(forbidden, self.source)
 
     def test_macos_file_chooser_selection_binds_exact_staged_path(self) -> None:
-        adapter = MacOSNativeDesktopAdapter()
+        adapter = MacOSNativeDesktopAdapter(
+            NativeInputMode.EXCLUSIVE_NATIVE_INPUT
+        )
         owner = NativeControlSnapshot(
             kind="list",
             window_count=1,

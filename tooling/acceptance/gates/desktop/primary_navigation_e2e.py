@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 
 from tooling.acceptance.core import (
@@ -23,6 +24,7 @@ from tooling.acceptance.core import (
 )
 from tooling.acceptance.drivers.native import (
     MouseAction,
+    NativeInputMode,
     NativeKey,
     resolve_native_desktop_runtime,
 )
@@ -97,8 +99,10 @@ class DesktopPrimaryNavigationGate(AcceptanceGate):
             source_commit=str(source["commit"]),
         )
         self.runtime_binding.set_runtime_manifest(self.manifest)
+        self.input_mode = self.runtime_binding.input_mode
         self.actor = self._load_actor()
         self.report.manifest = self.manifest
+        self.report.runtime["desktopInputMode"] = self.input_mode.value
 
     def _load_actor(self) -> dict[str, Any]:
         actor_ref = self.manifest.get("actorManifest")
@@ -171,6 +175,15 @@ class DesktopPrimaryNavigationGate(AcceptanceGate):
             raise GateError(
                 "Native Desktop process identity is unavailable"
             )
+        element = session.find_element(selector, 30)
+        if self.input_mode is NativeInputMode.SEMANTIC_NON_INTRUSIVE:
+            session.semantic_click(element)
+            return {
+                "adapter": "embedded-webdriver",
+                "dispatchMode": self.input_mode.value,
+                "processId": process_id,
+                "selector": selector,
+            }
         self.runtime_binding.request_cooperative_activation(
             session,
             (session,),
@@ -180,7 +193,6 @@ class DesktopPrimaryNavigationGate(AcceptanceGate):
             "document.hasFocus()",
             "Native Desktop focus",
         )
-        element = session.find_element(selector, 30)
         geometry = session.execute_script(
             """
             const rect = arguments[0].getBoundingClientRect();
@@ -457,11 +469,15 @@ class DesktopPrimaryNavigationGate(AcceptanceGate):
             "command_palette_uses_one_global_overlay",
             len(session.find_elements(".command-menu-modal")) == 1,
         )
-        self.runtime_binding.native_adapter.post_key_to_process(
-            int(session.process_id or 0),
-            NativeKey.ESCAPE,
-            private_source=True,
-        )
+        if self.input_mode is NativeInputMode.SEMANTIC_NON_INTRUSIVE:
+            active_element = session.driver.switch_to.active_element
+            session.semantic_key_sequence(active_element, Keys.ESCAPE)
+        else:
+            self.runtime_binding.native_adapter.post_key_to_process(
+                int(session.process_id or 0),
+                NativeKey.ESCAPE,
+                private_source=True,
+            )
         self._wait(
             session,
             "!document.querySelector('.command-menu-modal')",

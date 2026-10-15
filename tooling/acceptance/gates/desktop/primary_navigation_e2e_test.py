@@ -51,7 +51,7 @@ class DesktopPrimaryNavigationAcceptanceTests(unittest.TestCase):
         )
         self.assertEqual(gate["tier"], "env-evidence")
 
-    def test_journey_uses_native_process_input_and_screenshot_evidence(
+    def test_journey_supports_non_intrusive_and_native_input_evidence(
         self,
     ) -> None:
         source = (
@@ -64,6 +64,8 @@ class DesktopPrimaryNavigationAcceptanceTests(unittest.TestCase):
         for contract in (
             "resolve_native_desktop_runtime",
             "create_bound_session",
+            "NativeInputMode.SEMANTIC_NON_INTRUSIVE",
+            "session.semantic_click",
             "adapter.post_mouse",
             "native_adapter.capture_screenshot",
             "desktop-primary-navigation-native-screenshot",

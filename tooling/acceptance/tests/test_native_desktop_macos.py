@@ -22,6 +22,7 @@ from tooling.acceptance.core.errors import BlockedError, DriverError
 from tooling.acceptance.drivers.native.base import (
     MouseAction,
     NativeControlSnapshot,
+    NativeInputMode,
     NativeWindowBounds,
     NativeWindowSnapshot,
     NativeWindowStack,
@@ -131,7 +132,13 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
         session.start.side_effect = RuntimeError("stop after launch")
         lifecycle = NativeDesktopMacOSProvisioner()
 
-        with patch(
+        with patch.dict(
+            "os.environ",
+            {
+                "PT_ACCEPTANCE_DESKTOP_INPUT_MODE": "exclusive-native-input",
+                "PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION": "isolated-gui-session",
+            },
+        ), patch(
             "tooling.acceptance.provisioners.native_desktop_macos."
             "resolve_smoke_port",
             return_value=45123,
@@ -158,6 +165,8 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
             environment={
                 "PT_ACCEPTANCE_WINDOW_SLOT": "0",
                 "PT_ACCEPTANCE_WINDOW_COUNT": "1",
+                "PT_ACCEPTANCE_DESKTOP_INPUT_MODE": "exclusive-native-input",
+                "PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION": "isolated-gui-session",
             },
         )
         session.stop.assert_called_once_with()
@@ -340,7 +349,9 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
     def test_media_permission_targets_positive_webkit_action_by_process(
         self,
     ) -> None:
-        adapter = MacOSNativeDesktopAdapter()
+        adapter = MacOSNativeDesktopAdapter(
+            NativeInputMode.EXCLUSIVE_NATIVE_INPUT
+        )
         completed = Mock(returncode=0, stdout="pressed\n", stderr="")
 
         with patch(
@@ -356,6 +367,34 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
         self.assertIn("unix id is 42", command[2])
         self.assertIn('"action-button-1"', command[2])
         self.assertNotIn('button "Allow"', command[2])
+
+    def test_default_adapter_blocks_global_input_before_activation(self) -> None:
+        adapter = MacOSNativeDesktopAdapter()
+
+        with self.assertRaisesRegex(
+            BlockedError,
+            "NATIVE_INPUT_ISOLATION_REQUIRED",
+        ):
+            adapter.activate_process(42)
+        with self.assertRaisesRegex(
+            BlockedError,
+            "NATIVE_INPUT_ISOLATION_REQUIRED",
+        ):
+            adapter.post_mouse((MouseAction.MOVE,), (100.0, 200.0))
+
+    def test_exclusive_adapter_keeps_native_input_available(self) -> None:
+        adapter = MacOSNativeDesktopAdapter(
+            NativeInputMode.EXCLUSIVE_NATIVE_INPUT
+        )
+        completed = Mock(returncode=0, stdout="true\n", stderr="")
+
+        with patch(
+            "tooling.acceptance.drivers.native.macos.subprocess.run",
+            return_value=completed,
+        ) as run:
+            adapter.activate_process(42)
+
+        self.assertEqual(run.call_count, 2)
 
     def test_focus_wait_retries_until_exact_process_owns_focus(self) -> None:
         wrong = NativeControlSnapshot(

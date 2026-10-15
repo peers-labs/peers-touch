@@ -16,10 +16,11 @@ from pathlib import Path
 from typing import Any, Callable, Generator, Mapping, Optional, Protocol
 
 from selenium import webdriver
+from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.common.by import By
 from selenium.common.exceptions import TimeoutException
 
 from tooling.acceptance.core import (
@@ -921,6 +922,48 @@ class TauriSession(DomDriver):
 
     def find_elements(self, selector: str) -> list[Any]:
         return self._connected_driver().find_elements(selector)
+
+    def semantic_click(self, element: Any) -> None:
+        element.click()
+
+    def semantic_hover(self, element: Any) -> None:
+        self.execute_script(
+            """
+            const element = arguments[0];
+            element.scrollIntoView({ block: 'center', inline: 'nearest' });
+            const rect = element.getBoundingClientRect();
+            const init = {
+              bubbles: true,
+              cancelable: true,
+              clientX: rect.left + rect.width / 2,
+              clientY: rect.top + rect.height / 2,
+              pointerId: 1,
+              pointerType: 'mouse',
+            };
+            element.dispatchEvent(new PointerEvent('pointerover', init));
+            element.dispatchEvent(new PointerEvent('pointerenter', init));
+            element.dispatchEvent(new MouseEvent('mouseover', init));
+            element.dispatchEvent(new MouseEvent('mouseenter', init));
+            element.dispatchEvent(new MouseEvent('mousemove', init));
+            """,
+            element,
+        )
+
+    def semantic_replace_text(self, element: Any, text: str) -> None:
+        element.clear()
+        if text:
+            element.send_keys(text)
+
+    def semantic_key_sequence(
+        self,
+        element: Any,
+        *keys: str,
+    ) -> None:
+        self.execute_script(
+            "arguments[0].focus({ preventScroll: true });",
+            element,
+        )
+        ActionChains(self.driver).send_keys(*keys).perform()
 
     def save_screenshot(self, path: str | Path) -> None:
         self._connected_driver().save_screenshot(path)

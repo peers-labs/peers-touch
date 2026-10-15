@@ -24,6 +24,7 @@ from tooling.acceptance.core import (
 )
 from tooling.acceptance.drivers.native import (
     MouseAction,
+    NativeInputMode,
     resolve_native_desktop_runtime,
 )
 from tooling.acceptance.drivers.tauri import TauriSession
@@ -217,6 +218,9 @@ class DesktopOAuthNativeGate(AcceptanceGate):
             source_commit=source_commit,
         )
         self.runtime_binding.set_runtime_manifest(self.manifest)
+        self.report.runtime["desktopInputMode"] = (
+            self.runtime_binding.input_mode.value
+        )
 
     def run(self) -> dict[str, Any]:
         client = self._client()
@@ -655,6 +659,17 @@ class DesktopOAuthNativeGate(AcceptanceGate):
         process_id = session.process_id
         if process_id is None:
             raise GateError("Find People tooltip proof has no native process")
+        if (
+            self.runtime_binding.input_mode
+            is NativeInputMode.SEMANTIC_NON_INTRUSIVE
+        ):
+            session.semantic_hover(element)
+            return self._wait_for_tooltip_text(
+                session,
+                element,
+                expected_text,
+                timeout=timeout,
+            )
         if not bool(session.execute_script("return document.hasFocus()")):
             cooperatively_activated = self.runtime_binding.request_cooperative_activation(
                 session,
@@ -723,6 +738,21 @@ class DesktopOAuthNativeGate(AcceptanceGate):
                 content_origin[1] + float(element_center["y"]),
             ),
         )
+        return self._wait_for_tooltip_text(
+            session,
+            element,
+            expected_text,
+            timeout=timeout,
+        )
+
+    def _wait_for_tooltip_text(
+        self,
+        session: TauriSession,
+        element: Any,
+        expected_text: str,
+        *,
+        timeout: float,
+    ) -> str:
         deadline = time.monotonic() + timeout
         latest_render_states: list[dict[str, Any]] = []
         while time.monotonic() < deadline:

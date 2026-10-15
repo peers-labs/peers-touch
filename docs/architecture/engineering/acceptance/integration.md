@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v2.2
-> **Created**: 2026-08-15 | **Updated**: 2026-09-13
+> **Created**: 2026-08-15 | **Updated**: 2026-10-16
 
 
 > **Owner**: Architecture Team
@@ -115,6 +115,7 @@ test-only path不能成为production fallback。
 | `TauriDriver._launch_app()` | 本机 launch 与 W3C client 耦合 | Acceptance Infra | launcher-neutral `TauriDriver` |
 | `127.0.0.1:<port>` | 默认等同 orchestrator localhost | Acceptance Infra | run-scoped endpoint/tunnel lease |
 | macOS AppKit/CoreGraphics methods 位于 Chat runner | 平台机制污染业务 Gate | Desktop platform injection | `NativeDesktopAdapter` |
+| 本机 development Gate 无条件激活 app 并发布 global HID | 抢占用户鼠标、键盘和 frontmost app | Desktop input policy | 默认 `semantic-nonintrusive`；隔离 cell 才允许 `exclusive-native-input` |
 | 本机 `.local/acceptance/bin` | 无远端 source/binary identity | Desktop platform injection | source staging + binary attestation |
 | `deploy.sh` 内嵌 source push/fetch | Git 增量同步能力与 Station/Relay role lifecycle 耦合 | Deployment/Acceptance Infra | role-neutral remote source-sync contract |
 | 本机 process/storage cleanup | 无远端 crash/SSH disconnect 回收 | Acceptance Infra + cell injection | remote lease + TTL reaper + cleanup audit |
@@ -141,12 +142,27 @@ Gate Catalog
 
 | Cell | WebView | Native input/window backend | Platform-only evidence |
 |---|---|---|---|
-| `desktop-macos-native` | WKWebView | AppKit + CoreGraphics + Accessibility | Spaces、frontmost PID、AX focus |
+| `desktop-macos-native` | WKWebView semantic input | AppKit + CoreGraphics + Accessibility（exclusive only） | Spaces、frontmost PID、AX focus |
 | `desktop-linux-native` | WebKitGTK | X11 XTest + EWMH | active window、stack/point owner、X11 focus |
 | `desktop-windows-native` | WebView2 | Win32 `SendInput` + UI Automation | foreground HWND、process/window ownership |
 
 Business Gate 只能依赖 adapter interface。平台实现不得 import Chat Gate，也不得改变
 selector、actor journey、timeout budget 或 success assertion。
+
+本机开发默认调用链：
+
+```text
+Business Gate
+  -> TauriSession semantic action
+  -> embedded WebDriver loopback
+  -> WKWebView evaluateJavaScript
+  -> visible product result
+```
+
+该路径不得调用 `activate_process`、`CGEventPost` 或 always-on-top window level。
+需要 native file panel、permission sheet、physical hover/drag 或 native-focus proof
+时，Gate 进入 `exclusive-native-input`；本地执行必须同时声明
+`isolated-gui-session`，否则在 OS mutation 前 fail closed。
 
 ### 1.6 Linux Candidate Cell Preflight Baseline
 

@@ -39,7 +39,13 @@ Do not use hard packaged `.app` debugging by default. Packaging is only the righ
 
 2. **Keep the loop live** — Reproduce, inspect logs, and iterate against the live dev runtime.
    - Prefer fixing lifecycle/runtime contracts in source and reloading the dev runtime.
-   - Use the repository native driver or native accessibility tooling for UI interaction.
+   - Use embedded WebDriver semantic actions for routine UI interaction.
+   - Local development defaults to `semantic-nonintrusive`; it must not
+     activate the Desktop process, move the system pointer, redirect keyboard
+     focus, or force the window above the operator's current application.
+   - Native file panels, permission sheets, physical hover/drag and focus
+     claims require `exclusive-native-input` in an `isolated-gui-session`.
+     A shared user session must fail closed before global input.
 
 3. **Separate acceptance tiers** — Treat package gates as a different evidence tier.
    - Local lifecycle and runtime gates may run during debugging.
@@ -55,6 +61,8 @@ Do not use hard packaged `.app` debugging by default. Packaging is only the righ
 - [ ] `make desktop` was used for Desktop app debugging, or the report explains why packaging was explicitly required.
 - [ ] No new debugging script requires `tauri build` or manual `.app` execution unless it is a package/release gate.
 - [ ] Acceptance reports distinguish dev-runtime evidence from packaged-bundle evidence.
+- [ ] Semantic reports do not claim physical native-input or native-focus proof.
+- [ ] Any exclusive input run identifies its isolated GUI session.
 - [ ] Final report does not claim product readiness from a gate that was not run in the selected runtime.
 
 ## Crosswalks

@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v2.3
-> **Created**: 2026-08-15 | **Updated**: 2026-09-29
+> **Created**: 2026-08-15 | **Updated**: 2026-10-16
 
 
 > **Owner**: Architecture Team
@@ -172,9 +172,9 @@ tooling/acceptance/
 | `core/drivers/base.py` | BaseDriver 定义生命周期；DomDriver 定义 DOM/JS/截图能力 |
 | `core/drivers/launcher.py` | 定义 launcher metadata、start/stop/alive 资源所有权契约 |
 | `core/fixtures/base.py` | BaseFixture 抽象基类，定义 setup/teardown/reset 接口 |
-| `drivers/tauri.py` | 纯 W3C client、local/provisioned launcher 与 TauriSession 组合；只连接 local 或 forwarded loopback endpoint |
-| `drivers/native/base.py` | Native input、focus、window stack、point ownership 与 screenshot primitive contract |
-| `drivers/native/macos.py` | AppKit/CoreGraphics/Accessibility adapter |
+| `drivers/tauri.py` | 纯 W3C client、local/provisioned launcher、TauriSession 与 non-intrusive semantic actions；只连接 local 或 forwarded loopback endpoint |
+| `drivers/native/base.py` | Native input mode、isolation admission、focus、window stack、point ownership 与 screenshot primitive contract |
+| `drivers/native/macos.py` | AppKit/CoreGraphics/Accessibility adapter；global input 只允许 explicit exclusive mode |
 | `drivers/native/linux_x11.py` | X11 XTest/EWMH adapter |
 | `drivers/native/windows.py` | Win32 SendInput/UI Automation adapter |
 | `transports/ssh.py` | SSH host-key verification、bounded command、run-scoped port forward、cancel 与 teardown |
