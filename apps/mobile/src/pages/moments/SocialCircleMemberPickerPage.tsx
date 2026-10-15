@@ -105,12 +105,21 @@ export function SocialCircleMemberPickerPage({
         <Text type="secondary">{t('mobile.social.circles.pickerHint')}</Text>
         <Select
           allowClear
+          data-acceptance-id="social-circle-member-federation"
           value={federationId || undefined}
           placeholder={t('mobile.social.circles.localAndRemote')}
           options={federations.map((federation) => ({
             label: federation.name || federation.federationId,
             value: federation.federationId,
           }))}
+          optionRender={(option) => (
+            <span
+              data-acceptance-id="social-circle-member-federation-option"
+              data-federation-id={String(option.value)}
+            >
+              {option.label}
+            </span>
+          )}
           onChange={(value) => setFederationId(value ?? '')}
         />
         <Input.Search

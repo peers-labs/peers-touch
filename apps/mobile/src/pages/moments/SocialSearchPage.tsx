@@ -158,6 +158,8 @@ export function SocialSearchPage({
                 <Radio
                   key={federation.federationId}
                   value={federation.federationId}
+                  data-acceptance-id="social-search-federation"
+                  data-federation-id={federation.federationId}
                 >
                   {federation.name || federation.federationId}
                 </Radio>
