@@ -103,6 +103,41 @@ class DesktopPrimaryNavigationAcceptanceTests(unittest.TestCase):
             1,
         )
 
+    def test_primary_navigation_selectors_mark_interactive_commands(
+        self,
+    ) -> None:
+        source = (
+            REPO_ROOT
+            / "apps"
+            / "desktop"
+            / "src"
+            / "components"
+            / "AppSideNav.tsx"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            "return cloneElement(children, { "
+            "'data-pt-primary-nav': pageId });",
+            source,
+        )
+        self.assertNotIn("<span data-pt-primary-nav", source)
+        for anchor in (
+            '<PrimaryNavAnchor pageId="search">',
+            '<PrimaryNavAnchor pageId="chat">',
+            "<PrimaryNavAnchor key={m.id} pageId={m.id}>",
+            '<PrimaryNavAnchor pageId="settings">',
+        ):
+            with self.subTest(anchor=anchor):
+                anchor_start = source.index(anchor)
+                anchor_end = source.index(
+                    "</PrimaryNavAnchor>",
+                    anchor_start,
+                )
+                self.assertIn(
+                    "<ActionIcon",
+                    source[anchor_start:anchor_end],
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

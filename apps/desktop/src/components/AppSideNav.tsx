@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, type ReactNode } from 'react';
+import { cloneElement, useCallback, useEffect, useMemo, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ActionIcon, SideNav } from '@lobehub/ui';
 import { Badge, theme } from 'antd';
@@ -31,12 +31,18 @@ interface AppSideNavProps {
   appletPins: AppletPins;
 }
 
-function PrimaryNavAnchor({ pageId, children }: { readonly pageId: string; readonly children: ReactNode }) {
-  return (
-    <span data-pt-primary-nav={pageId} style={{ display: 'contents' }}>
-      {children}
-    </span>
-  );
+interface PrimaryNavMarkerProps {
+  'data-pt-primary-nav'?: string;
+}
+
+function PrimaryNavAnchor({
+  pageId,
+  children,
+}: {
+  readonly pageId: string;
+  readonly children: ReactElement<PrimaryNavMarkerProps>;
+}) {
+  return cloneElement(children, { 'data-pt-primary-nav': pageId });
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -209,13 +215,13 @@ export function AppSideNav({ page, navigation, appletPins }: AppSideNavProps) {
                 </PrimaryNavAnchor>
               );
             })}
-            <PrimaryNavAnchor pageId="chat">
-              <span
-                data-pt-navigation-badge="chat"
-                data-pt-unread-count={chatUnreadTotal}
-                style={{ display: 'contents' }}
-              >
-                <Badge count={chatUnreadTotal} size="small" offset={[-2, 2]}>
+            <span
+              data-pt-navigation-badge="chat"
+              data-pt-unread-count={chatUnreadTotal}
+              style={{ display: 'contents' }}
+            >
+              <Badge count={chatUnreadTotal} size="small" offset={[-2, 2]}>
+                <PrimaryNavAnchor pageId="chat">
                   <ActionIcon
                     icon={MessageCircle}
                     size="large"
@@ -223,9 +229,9 @@ export function AppSideNav({ page, navigation, appletPins }: AppSideNavProps) {
                     onClick={() => navigatePrimary('chat')}
                     title={t('layout.nav.chat')}
                   />
-                </Badge>
-              </span>
-            </PrimaryNavAnchor>
+                </PrimaryNavAnchor>
+              </Badge>
+            </span>
             <PrimaryNavAnchor pageId="agent">
               <ActionIcon
                 icon={Bot}
