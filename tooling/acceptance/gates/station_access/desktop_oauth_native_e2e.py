@@ -403,12 +403,17 @@ class DesktopOAuthNativeGate(AcceptanceGate):
                 json.dumps(identity_projection, sort_keys=True),
             )
 
+            self._wait_for_app_log_text(
+                session,
+                "pages:prewarm:end",
+                "authenticated Native Desktop page prewarm",
+            )
             call_async_harness(
                 session,
                 "openAccountIdentity",
                 {},
                 namespace="stationAccess",
-                script_timeout=10,
+                script_timeout=120,
             )
             account_avatar = self._wait_for_displayed(
                 session,
@@ -561,6 +566,29 @@ class DesktopOAuthNativeGate(AcceptanceGate):
         raise GateError(
             f"Desktop OAuth element did not become visible: {selector}{suffix}"
         )
+
+    @staticmethod
+    def _wait_for_app_log_text(
+        session: TauriSession,
+        expected: str,
+        description: str,
+        timeout: float = 45,
+    ) -> None:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            log_path = session.log_path
+            if (
+                log_path is not None
+                and log_path.is_file()
+                and expected
+                in log_path.read_text(
+                    encoding="utf-8",
+                    errors="replace",
+                )
+            ):
+                return
+            time.sleep(0.1)
+        raise GateError(f"timed out waiting for {description}")
 
     def _find_people_scope_evidence(
         self,

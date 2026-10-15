@@ -3,9 +3,11 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import tempfile
 import threading
 import time
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 
@@ -156,6 +158,22 @@ class _FakeHoverRuntimeBinding:
 
 
 class DesktopOAuthNativeGateTest(unittest.TestCase):
+    def test_authenticated_shell_waits_for_prewarm_log_fence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            log_path = Path(directory) / "desktop.log"
+            log_path.write_text(
+                "[frontend] pages:prewarm:end\n",
+                encoding="utf-8",
+            )
+            session = SimpleNamespace(log_path=log_path)
+
+            DesktopOAuthNativeGate._wait_for_app_log_text(
+                session,
+                "pages:prewarm:end",
+                "test prewarm",
+                timeout=0.1,
+            )
+
     def test_chat_navigation_targets_the_interactive_command(self) -> None:
         self.assertEqual(
             CHAT_NAV_SELECTOR,
