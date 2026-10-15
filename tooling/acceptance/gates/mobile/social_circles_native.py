@@ -77,7 +77,9 @@ class MobileSocialCirclesNativeGate(AcceptanceGate):
         navigation = self._read(
             "apps/mobile/src/app/navigation/navigationStore.ts"
         )
-        shell = self._read("apps/mobile/src/components/MobileShell.tsx")
+        page_host = self._read(
+            "apps/mobile/src/components/MobilePageHost.tsx"
+        )
         picker = self._read(
             "apps/mobile/src/pages/moments/SocialCircleMemberPickerPage.tsx"
         )
@@ -123,13 +125,13 @@ class MobileSocialCirclesNativeGate(AcceptanceGate):
             "navigation route state",
         )
         self._require_markers(
-            shell,
+            page_host,
             (
                 "<SocialCirclesPage",
                 "<SocialCircleDetailPage",
                 "<SocialCircleMemberPickerPage",
             ),
-            "Mobile shell",
+            "Mobile page host",
         )
         self._require_markers(
             picker,

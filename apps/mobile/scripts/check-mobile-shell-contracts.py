@@ -469,6 +469,9 @@ def validate_auth_ui_identity(repo_root: Path = REPO_ROOT) -> None:
         / "recovery"
         / "RecoveryOverlayHost.tsx"
     ).read_text(encoding="utf-8")
+    shell_source = (
+        mobile_root / "src" / "components" / "MobileShell.tsx"
+    ).read_text(encoding="utf-8")
     route_boundary_source = (
         mobile_root / "src" / "components" / "MobileRouteBoundary.tsx"
     ).read_text(encoding="utf-8")
@@ -535,21 +538,20 @@ def validate_auth_ui_identity(repo_root: Path = REPO_ROOT) -> None:
     required_recovery_tokens = (
         "launchState !== 'access-gate-chain'",
         "state.reason === 'session-expired'",
-        "state.kind === 'event-overflow-reconcile'",
+        "case 'event-overflow-reconcile':",
         "state.kind === 'deferred-capability'",
-        "data-tabbar-visible={tabBarVisible}",
+        "recoverySurfacePresentation(",
+        "presentation.shellStatusStates.map(renderState)",
+        "presentation.overlayStates.map(renderState)",
     )
     if any(token not in recovery_source for token in required_recovery_tokens):
         raise ValueError(
             "Mobile recovery composition must keep route and passive sync states "
             "out of the global overlay"
         )
-    if (
-        ".recovery-overlay-host[data-launch-state='shell']"
-        "[data-tabbar-visible='true']"
-    ) not in mobile_css:
+    if "data-recovery-status-slot" not in shell_source:
         raise ValueError(
-            "Mobile recovery overlays must use the active navigation tab-bar state"
+            "Mobile shell must own the passive recovery status slot"
         )
     forbidden_recovery_copy = (
         "mobile.recovery.command.commandId",
@@ -565,11 +567,11 @@ def validate_auth_ui_identity(repo_root: Path = REPO_ROOT) -> None:
         )
     if (
         "draft.key" in draft_recovery_source
-        or "mobile.recovery.draftRestore.chatCount" not in draft_recovery_source
-        or "mobile.recovery.draftRestore.momentsCount" not in draft_recovery_source
+        or "mobile.recovery.draftRestore.body" not in draft_recovery_source
+        or "{ count: state.drafts.length }" not in draft_recovery_source
     ):
         raise ValueError(
-            "Mobile draft recovery must summarize draft kinds without scope keys"
+            "Mobile draft recovery must summarize drafts without scope keys"
         )
     required_route_recovery_tokens = (
         'data-acceptance-id="mobile-route-unavailable"',

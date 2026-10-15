@@ -57,7 +57,7 @@ class MobileSocialFeedNativeGate(AcceptanceGate):
                 "canonical Post ID composition for authorized private content",
                 "Station-owned Recent and Hot Explore ranking",
                 "scope-specific bounded-list anchors",
-                "36px Home/Explore segment with 32px controls",
+                "44px Home, Explore, and Circles scope toolbar",
                 "explicit text, image, video, link, poll, repost, and location kinds",
                 "bounded loading, empty, filtered, error, and unavailable states",
             ],
@@ -76,8 +76,12 @@ class MobileSocialFeedNativeGate(AcceptanceGate):
         )
         gateway = self._read("apps/mobile/src/services/gateways/momentsGateway.ts")
         page = self._read("apps/mobile/src/pages/MomentsPage.tsx")
+        scope_header = self._read(
+            "apps/mobile/src/pages/moments/MomentsScopeHeader.tsx"
+        )
         item = self._read("apps/mobile/src/pages/moments/MomentFeedItem.tsx")
-        styles = self._read("apps/mobile/src/styles.css")
+        content = self._read("apps/mobile/src/pages/moments/MomentContent.tsx")
+        styles = self._read("apps/mobile/src/pages/moments/Moments.css")
 
         self._require_markers(
             facade,
@@ -127,23 +131,48 @@ class MobileSocialFeedNativeGate(AcceptanceGate):
             page,
             (
                 "surfaceKey={`moments:feed:${feedScope}`}",
-                "className=\"moments-scope-segment\"",
+                "<MomentsScopeHeader",
                 "projection?.[feedScope]",
             ),
             "Moments page",
         )
         self._require_markers(
+            scope_header,
+            (
+                'className="moments-scope"',
+                "(['home', 'explore'] as const)",
+                'data-acceptance-id="social-circles-open"',
+            ),
+            "Moments scope header",
+        )
+        self._require_markers(
             item,
-            ("data-moment-content-kind={contentKind}", "renderStructuredContent()"),
+            (
+                "data-moment-content-kind={post.content.case ?? 'unknown'}",
+                "<MomentContent post={post} onOpenMedia={onOpenMedia}",
+            ),
             "Moment feed item",
+        )
+        self._require_markers(
+            content,
+            (
+                "post.content.case === 'textPost'",
+                "post.content.case === 'imagePost'",
+                "post.content.case === 'videoPost'",
+                "post.content.case === 'linkPost'",
+                "post.content.case === 'pollPost'",
+                "post.content.case === 'repostPost'",
+                "post.content.case === 'locationPost'",
+            ),
+            "Moment content renderer",
         )
         self._require_markers(
             styles,
             (
-                ".moments-scope-segment",
-                "height: 36px;",
-                ".moments-scope-control",
-                "height: 32px;",
+                ".moments-scope {",
+                "grid-template-columns: repeat(3, minmax(0, 1fr));",
+                "min-height: 44px;",
+                ".moments-scope button {",
             ),
             "Moments feed styles",
         )

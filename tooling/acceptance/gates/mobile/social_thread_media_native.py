@@ -84,6 +84,7 @@ class MobileSocialThreadMediaNativeGate(AcceptanceGate):
             "apps/mobile/src/pages/moments/MomentCommentsSection.tsx"
         )
         item = self._read("apps/mobile/src/pages/moments/MomentFeedItem.tsx")
+        content = self._read("apps/mobile/src/pages/moments/MomentContent.tsx")
         overlay = self._read(
             "apps/mobile/src/pages/moments/MomentMediaOverlay.tsx"
         )
@@ -103,16 +104,25 @@ class MobileSocialThreadMediaNativeGate(AcceptanceGate):
             comments,
             (
                 "INITIAL_COMMENT_COUNT = 10",
-                "privateRoute ? null : facade?.feed",
-                "intents.readPrivateComments",
-                "intents.submitPrivateComment",
+                "privateRoute ? null : (facade?.feed ?? null)",
+                ".readPrivateComments(",
+                ".submitPrivateComment(",
             ),
             "Moment comments",
         )
         self._require_markers(
             item,
-            ("onOpenComments(post.id)", "onOpenMedia?.(", "onOpenAuthor?.("),
+            (
+                "onOpenComments(post.id)",
+                "<MomentContent post={post} onOpenMedia={onOpenMedia}",
+                "onOpenAuthor?.(",
+            ),
             "Moment feed item",
+        )
+        self._require_markers(
+            content,
+            ("onOpenMedia?.(", 'data-acceptance-id="social-media-open"'),
+            "Moment content renderer",
         )
         self._require_markers(
             overlay,
