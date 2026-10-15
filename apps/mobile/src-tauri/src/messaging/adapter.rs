@@ -34,9 +34,9 @@ use messaging_core::proto::chat::AttachmentContentKind;
 use messaging_core::proto::chat::{
     chat_command, AttachmentPlaintextMetadata, AttachmentTransferState, ChatCommand,
     ChatRetentionPreset, ChatStorageOperationState, ChatStoragePolicy, ChatStorageScope,
-    ConversationCommandKind, ConversationMemberAuthorityAction, ConversationMemberAuthorityCommand,
-    DeviceConsumptionReceipt, EncryptedObjectDescriptor, EncryptedObjectUploadSpec,
-    VoiceNoteMetadata,
+    ConversationCommandKind, ConversationKind, ConversationMemberAuthorityAction,
+    ConversationMemberAuthorityCommand, DeviceConsumptionReceipt, EncryptedObjectDescriptor,
+    EncryptedObjectUploadSpec, MemberRole, VoiceNoteMetadata,
 };
 use messaging_core::storage_governance::cache::{
     cleanup_file_physical_identity, failed_file_cleanup_item, immutable_file_cleanup_item,
@@ -3305,52 +3305,148 @@ impl MobileMessagingStore {
         })
     }
 
-    pub(crate) fn reconcile_conversation_authority_scope(
+    pub(crate) fn bootstrap_conversation_projection(
         &self,
-        conversation_id: &str,
-        authority_station_id: &str,
-        federation_id: &str,
+        projection: &ConversationProjection,
     ) -> Result<bool, String> {
-        if conversation_id.trim().is_empty()
-            || authority_station_id.trim().is_empty()
-            || federation_id.trim().is_empty()
-        {
-            return Err("mobile messaging conversation authority scope is incomplete".to_string());
-        }
-        let connection = self
-            .connection
-            .lock()
-            .map_err(|_| "mobile messaging store lock poisoned".to_string())?;
-        let existing = connection
-            .query_row(
-                "SELECT authority_station_id, federation_id
-                 FROM messaging_conversations
-                 WHERE conversation_id = ?1",
-                params![conversation_id],
-                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
-            )
-            .optional()
-            .map_err(|error| error.to_string())?;
-        let Some((stored_authority, stored_federation)) = existing else {
-            return Ok(false);
-        };
-        if (!stored_authority.is_empty() && stored_authority != authority_station_id)
-            || (!stored_federation.is_empty() && stored_federation != federation_id)
-        {
-            return Err(
-                "mobile messaging conversation authority scope conflicts with Station".to_string(),
-            );
-        }
-        let changed = connection
-            .execute(
-                "UPDATE messaging_conversations
-                 SET authority_station_id = ?2, federation_id = ?3
-                 WHERE conversation_id = ?1
-                   AND (authority_station_id = '' OR federation_id = '')",
-                params![conversation_id, authority_station_id, federation_id],
-            )
-            .map_err(|error| error.to_string())?;
-        Ok(changed == 1)
+        validate_bootstrap_conversation_projection(projection)?;
+        self.with_transaction(|transaction| {
+            let existing = transaction
+                .query_row(
+                    "SELECT authority_station_id, federation_id, kind, name,
+                            description, avatar_object_id, owner_ptid,
+                            membership_epoch, mls_epoch, active
+                     FROM messaging_conversations
+                     WHERE conversation_id = ?1",
+                    params![projection.conversation_id],
+                    |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, i32>(2)?,
+                            row.get::<_, String>(3)?,
+                            row.get::<_, String>(4)?,
+                            row.get::<_, String>(5)?,
+                            row.get::<_, String>(6)?,
+                            row.get::<_, i64>(7)?,
+                            row.get::<_, i64>(8)?,
+                            row.get::<_, bool>(9)?,
+                        ))
+                    },
+                )
+                .optional()
+                .map_err(|error| error.to_string())?;
+            let conversation_changed = match existing {
+                Some((
+                    authority_station_id,
+                    federation_id,
+                    kind,
+                    name,
+                    description,
+                    avatar_object_id,
+                    owner_ptid,
+                    membership_epoch,
+                    mls_epoch,
+                    active,
+                )) => {
+                    if (!authority_station_id.is_empty()
+                        && authority_station_id != projection.authority_station_id)
+                        || (!federation_id.is_empty()
+                            && federation_id != projection.federation_id)
+                        || kind != projection.kind
+                        || name != projection.name
+                        || description != projection.description
+                        || avatar_object_id != projection.avatar_object_id
+                        || owner_ptid != projection.owner_ptid
+                        || membership_epoch != projection.membership_epoch
+                        || mls_epoch != projection.mls_epoch
+                        || active != projection.active
+                    {
+                        return Err(
+                            "mobile messaging Conversation bootstrap conflicts with local projection"
+                                .to_string(),
+                        );
+                    }
+                    transaction
+                        .execute(
+                            "UPDATE messaging_conversations
+                             SET authority_station_id = ?2, federation_id = ?3
+                             WHERE conversation_id = ?1
+                               AND (authority_station_id = '' OR federation_id = '')",
+                            params![
+                                projection.conversation_id,
+                                projection.authority_station_id,
+                                projection.federation_id
+                            ],
+                        )
+                        .map_err(|error| error.to_string())?
+                        == 1
+                }
+                None => {
+                    transaction
+                        .execute(
+                            "INSERT INTO messaging_conversations(
+                                conversation_id, authority_station_id, federation_id,
+                                kind, name, description, avatar_object_id, owner_ptid,
+                                membership_epoch, mls_epoch, active, updated_at_unix_ms
+                             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                            params![
+                                projection.conversation_id,
+                                projection.authority_station_id,
+                                projection.federation_id,
+                                projection.kind,
+                                projection.name,
+                                projection.description,
+                                projection.avatar_object_id,
+                                projection.owner_ptid,
+                                projection.membership_epoch,
+                                projection.mls_epoch,
+                                projection.active,
+                                projection.updated_at_unix_ms
+                            ],
+                        )
+                        .map_err(|error| error.to_string())?
+                        == 1
+                }
+            };
+            let active_member_count = transaction
+                .query_row(
+                    "SELECT COUNT(*)
+                     FROM messaging_conversation_members
+                     WHERE conversation_id = ?1 AND active = 1",
+                    params![projection.conversation_id],
+                    |row| row.get::<_, i64>(0),
+                )
+                .map_err(|error| error.to_string())?;
+            let members_backfilled = active_member_count == 0;
+            if members_backfilled {
+                for member in &projection.members {
+                    transaction
+                        .execute(
+                            "INSERT INTO messaging_conversation_members(
+                                conversation_id, ptid, role, home_station_peer_id,
+                                muted, muted_until_unix_ms, active
+                             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1)
+                             ON CONFLICT(conversation_id, ptid) DO UPDATE SET
+                                role=excluded.role,
+                                home_station_peer_id=excluded.home_station_peer_id,
+                                muted=excluded.muted,
+                                muted_until_unix_ms=excluded.muted_until_unix_ms,
+                                active=1",
+                            params![
+                                projection.conversation_id,
+                                member.ptid,
+                                member.role,
+                                member.home_station_peer_id,
+                                member.muted,
+                                member.muted_until_unix_ms
+                            ],
+                        )
+                        .map_err(|error| error.to_string())?;
+                }
+            }
+            Ok(conversation_changed || members_backfilled)
+        })
     }
 
     fn with_transaction<T>(
@@ -8973,6 +9069,68 @@ fn persist_local_command(
             ],
         )
         .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+fn validate_bootstrap_conversation_projection(
+    projection: &ConversationProjection,
+) -> Result<(), String> {
+    let kind = ConversationKind::try_from(projection.kind)
+        .map_err(|_| "mobile messaging Conversation bootstrap kind is invalid".to_string())?;
+    if projection.conversation_id.trim().is_empty()
+        || projection.authority_station_id.trim().is_empty()
+        || projection.federation_id.trim().is_empty()
+        || kind == ConversationKind::Unspecified
+        || projection.owner_ptid.trim().is_empty()
+        || projection.members.len() < 2
+        || projection.membership_epoch < 0
+        || projection.mls_epoch < 0
+        || !projection.active
+        || projection.updated_at_unix_ms <= 0
+    {
+        return Err("mobile messaging Conversation bootstrap is incomplete".to_string());
+    }
+    let mut previous_ptid: Option<&str> = None;
+    for member in &projection.members {
+        if member.ptid.trim().is_empty()
+            || !matches!(
+                MemberRole::try_from(member.role),
+                Ok(MemberRole::Member | MemberRole::Admin | MemberRole::Owner)
+            )
+            || previous_ptid.is_some_and(|previous| previous >= member.ptid.as_str())
+        {
+            return Err("mobile messaging Conversation bootstrap members are invalid".to_string());
+        }
+        previous_ptid = Some(member.ptid.as_str());
+    }
+    match kind {
+        ConversationKind::Direct => {
+            if projection.members.len() != 2
+                || projection.members[0].ptid != projection.owner_ptid
+                || projection
+                    .members
+                    .iter()
+                    .any(|member| member.role != MemberRole::Member as i32)
+            {
+                return Err("mobile messaging Direct bootstrap membership is invalid".to_string());
+            }
+        }
+        ConversationKind::Group => {
+            if projection
+                .members
+                .iter()
+                .filter(|member| member.role == MemberRole::Owner as i32)
+                .count()
+                != 1
+                || !projection.members.iter().any(|member| {
+                    member.ptid == projection.owner_ptid && member.role == MemberRole::Owner as i32
+                })
+            {
+                return Err("mobile messaging Group bootstrap owner is invalid".to_string());
+            }
+        }
+        ConversationKind::Unspecified => unreachable!(),
+    }
     Ok(())
 }
 

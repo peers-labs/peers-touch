@@ -975,13 +975,13 @@ fn run_engine_cycle(
     if !worker_is_running(state) {
         return Ok(None);
     }
-    let repaired_projection_scopes = messaging_cycle_stage(
-        "Conversation authority hydration",
-        engine.hydrate_conversation_authority_scopes(),
+    let hydrated_projections = messaging_cycle_stage(
+        "Conversation projection hydration",
+        engine.hydrate_conversation_projections(),
     )?;
-    if repaired_projection_scopes > 0 {
+    if hydrated_projections > 0 {
         log::info!(
-            "mobile messaging repaired {repaired_projection_scopes} Conversation authority scopes"
+            "mobile messaging hydrated {hydrated_projections} authoritative Conversation projections"
         );
     }
     if !worker_is_running(state) {

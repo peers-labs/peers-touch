@@ -14,8 +14,8 @@ use messaging_core::attachment::{
 };
 use messaging_core::codec::verification::{verify_authority_event, verify_device_event_delivery};
 use messaging_core::contracts::{
-    CommandStatusProjection, ConversationMessageProjection, ConversationProjection,
-    CryptoEndpoint as CoreCryptoEndpoint,
+    CommandStatusProjection, ConversationAuthorityMemberProjection, ConversationMessageProjection,
+    ConversationProjection, CryptoEndpoint as CoreCryptoEndpoint,
 };
 use messaging_core::crypto::identity::IdentityKeyPair;
 use messaging_core::crypto::prekeys::{PendingPreKeyBundle, PreKeyBundleBackup, PreKeyPublisher};
@@ -59,10 +59,10 @@ use messaging_core::proto::chat::{
     chat_command, conversation_event, ActorReadCursor, AttachmentContentKind,
     AttachmentTransferState, ChatCommand, ChatStorageOperationState, ChatStoragePolicy,
     ChatStorageResult, ChatStorageScope, ChatStorageSnapshot, Conversation,
-    ConversationCommandKind, ConversationKind, ConversationMemberAuthorityAction,
-    ConversationMemberAuthorityCommand, ConversationStatus, CryptoEndpoint,
-    DeviceConsumptionReceipt, DeviceInboxPayloadType, DissolveConversationIntent,
-    DurableDeviceInboxItem, MemberRole, MessagingMembershipAction, MlsLeaveIntent,
+    ConversationCommandKind, ConversationKind, ConversationMember,
+    ConversationMemberAuthorityAction, ConversationMemberAuthorityCommand, ConversationStatus,
+    CryptoEndpoint, DeviceConsumptionReceipt, DeviceInboxPayloadType, DissolveConversationIntent,
+    DurableDeviceInboxItem, MemberRole, MemberStatus, MessagingMembershipAction, MlsLeaveIntent,
     PrepareConversationCommandRequest, PrepareConversationCommandResponse,
     PreparedEndpointPayloadKind, PublicEventMarker, SubmitConversationReadCursorRequest,
     SubmitConversationTypingRequest, UpdateConversationIntent, VoiceNoteMetadata,
@@ -1302,42 +1302,47 @@ impl MobileMessagingEngine {
         self.store.mobile_conversation_projections()
     }
 
-    pub fn hydrate_conversation_authority_scopes(&self) -> Result<usize, String> {
-        let incomplete_conversation_ids = self
-            .store
-            .conversation_projections()?
+    pub fn hydrate_conversation_projections(&self) -> Result<usize, String> {
+        let local_conversations = self.store.conversation_projections()?;
+        let hydrate_all = local_conversations.is_empty();
+        let incomplete_conversation_ids = local_conversations
             .into_iter()
             .filter(|conversation| {
-                conversation.active && conversation.federation_id.trim().is_empty()
+                conversation.active
+                    && (conversation.authority_station_id.trim().is_empty()
+                        || conversation.federation_id.trim().is_empty()
+                        || conversation.members.is_empty())
             })
             .map(|conversation| conversation.conversation_id)
             .collect::<Vec<_>>();
-        if incomplete_conversation_ids.is_empty() {
+        if !hydrate_all && incomplete_conversation_ids.is_empty() {
             return Ok(0);
         }
-        let response = StationConversationTransport::new(
+        let transport = StationConversationTransport::new(
             self.scope.station_origin.clone(),
             self.access_token()?,
             self.scope.device_id.clone(),
             self.proto_endpoint(),
-        )?
-        .list_conversations()?;
-        let mut repaired = 0;
+        )?;
+        let response = transport.list_conversations()?;
+        let mut hydrated = 0;
         for conversation in response.conversations {
-            if !incomplete_conversation_ids.contains(&conversation.conversation_id) {
+            if conversation.status != ConversationStatus::Active as i32
+                || (!hydrate_all
+                    && !incomplete_conversation_ids.contains(&conversation.conversation_id))
+            {
                 continue;
             }
-            let (authority_station_id, federation_id) =
-                conversation_authority_scope(&conversation)?;
-            if self.store.reconcile_conversation_authority_scope(
-                &conversation.conversation_id,
-                authority_station_id,
-                federation_id,
-            )? {
-                repaired += 1;
+            let members = transport
+                .get_conversation_members(&conversation.conversation_id)?
+                .members;
+            let projection =
+                station_conversation_projection(&conversation, members, now_unix_ms())?;
+            if self.store.bootstrap_conversation_projection(&projection)? {
+                hydrated += 1;
             }
         }
-        Ok(repaired)
+        Ok(hydrated)
     }
 
     pub fn reconcile_conversation_membership_visibility(&self) -> Result<usize, String> {
@@ -1695,13 +1700,13 @@ impl MobileMessagingEngine {
         federation_id: &str,
         command_id: &str,
     ) -> Result<PreparedDirectConversation, String> {
-        let response = StationConversationTransport::new(
+        let transport = StationConversationTransport::new(
             self.scope.station_origin.clone(),
             self.access_token()?,
             self.scope.device_id.clone(),
             self.proto_endpoint(),
-        )?
-        .create_direct(peer_ptid, federation_id, command_id)?;
+        )?;
+        let response = transport.create_direct(peer_ptid, federation_id, command_id)?;
         let conversation = response.conversation.ok_or_else(|| {
             "mobile messaging Station returned no direct conversation".to_string()
         })?;
@@ -1713,12 +1718,7 @@ impl MobileMessagingEngine {
         {
             return Err("mobile messaging direct conversation response is invalid".to_string());
         }
-        self.store.reconcile_conversation_authority_scope(
-            &conversation.conversation_id,
-            &conversation.authority_station_peer_id,
-            &conversation.federation_id,
-        )?;
-        let conversation_id = conversation.conversation_id;
+        let conversation_id = conversation.conversation_id.clone();
         // Reopening an existing deterministic Direct does not commit a new event.
         if let Some(event) = response.event {
             if event.command_id != command_id || event.conversation_id != conversation_id {
@@ -1727,6 +1727,11 @@ impl MobileMessagingEngine {
                 );
             }
         }
+        let members = transport
+            .get_conversation_members(&conversation_id)?
+            .members;
+        let projection = station_conversation_projection(&conversation, members, now_unix_ms())?;
+        self.store.bootstrap_conversation_projection(&projection)?;
         Ok(PreparedDirectConversation {
             conversation_id,
             command_id: command_id.to_string(),
@@ -4857,19 +4862,61 @@ impl RelationshipResolverTransport for MobileMessagingEngine {
     }
 }
 
-fn conversation_authority_scope(conversation: &Conversation) -> Result<(&str, &str), String> {
+fn station_conversation_projection(
+    conversation: &Conversation,
+    members: Vec<ConversationMember>,
+    observed_at_unix_ms: i64,
+) -> Result<ConversationProjection, String> {
     if conversation.conversation_id.trim().is_empty()
         || conversation.authority_station_peer_id.trim().is_empty()
         || conversation.federation_id.trim().is_empty()
+        || conversation.status != ConversationStatus::Active as i32
+        || observed_at_unix_ms <= 0
     {
         return Err(
             "mobile messaging Station returned an incomplete Conversation projection".to_string(),
         );
     }
-    Ok((
-        conversation.authority_station_peer_id.as_str(),
-        conversation.federation_id.as_str(),
-    ))
+    let mut members = members
+        .into_iter()
+        .filter(|member| member.member_status == MemberStatus::Active as i32)
+        .map(|member| {
+            if member.conversation_id != conversation.conversation_id {
+                return Err(
+                    "mobile messaging Station returned a member for another Conversation"
+                        .to_string(),
+                );
+            }
+            Ok(ConversationAuthorityMemberProjection {
+                ptid: member.ptid,
+                role: member.role,
+                home_station_peer_id: member.actor_home_station_peer_id,
+                muted: member.muted,
+                muted_until_unix_ms: member.muted_until.as_ref().map(|value| {
+                    value
+                        .seconds
+                        .saturating_mul(1_000)
+                        .saturating_add(i64::from(value.nanos) / 1_000_000)
+                }),
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    members.sort_by(|left, right| left.ptid.cmp(&right.ptid));
+    Ok(ConversationProjection {
+        conversation_id: conversation.conversation_id.clone(),
+        authority_station_id: conversation.authority_station_peer_id.clone(),
+        federation_id: conversation.federation_id.clone(),
+        kind: conversation.kind,
+        name: conversation.name.clone(),
+        description: conversation.description.clone(),
+        avatar_object_id: conversation.avatar_cid.clone(),
+        owner_ptid: conversation.owner_ptid.clone(),
+        members,
+        membership_epoch: conversation.membership_epoch,
+        mls_epoch: conversation.mls_epoch,
+        active: true,
+        updated_at_unix_ms: observed_at_unix_ms,
+    })
 }
 
 fn reconcile_authority_plan<Prepare, ReadHead, Drain, Wait>(
@@ -5524,19 +5571,75 @@ mod tests {
     }
 
     #[test]
-    fn dissolved_conversation_scope_remains_repairable() {
+    fn existing_direct_response_bootstraps_fresh_local_projection_without_authority_history() {
+        let (engine, root) = test_engine("existing-direct-bootstrap");
         let conversation = Conversation {
-            conversation_id: "conversation-1".to_string(),
+            conversation_id: "direct-existing".to_string(),
+            kind: ConversationKind::Direct as i32,
             authority_station_peer_id: "station-authority".to_string(),
+            membership_epoch: 1,
+            status: ConversationStatus::Active as i32,
+            owner_ptid: "ptid:alice".to_string(),
             federation_id: "federation-1".to_string(),
-            status: ConversationStatus::Dissolved as i32,
             ..Default::default()
         };
+        let members = vec![
+            ConversationMember {
+                conversation_id: conversation.conversation_id.clone(),
+                ptid: "ptid:bob".to_string(),
+                role: MemberRole::Member as i32,
+                member_status: MemberStatus::Active as i32,
+                actor_home_station_peer_id: "station-b".to_string(),
+                ..Default::default()
+            },
+            ConversationMember {
+                conversation_id: conversation.conversation_id.clone(),
+                ptid: "ptid:alice".to_string(),
+                role: MemberRole::Member as i32,
+                member_status: MemberStatus::Active as i32,
+                actor_home_station_peer_id: "station-a".to_string(),
+                ..Default::default()
+            },
+        ];
 
+        let projection = station_conversation_projection(&conversation, members, 100).unwrap();
+        assert!(engine
+            .store
+            .bootstrap_conversation_projection(&projection)
+            .unwrap());
+        assert!(!engine
+            .store
+            .bootstrap_conversation_projection(&projection)
+            .unwrap());
+
+        let persisted = engine.conversations().unwrap();
+        assert_eq!(persisted.len(), 1);
+        assert_eq!(persisted[0].conversation_id, "direct-existing");
+        assert_eq!(persisted[0].federation_id, "federation-1");
         assert_eq!(
-            conversation_authority_scope(&conversation).unwrap(),
-            ("station-authority", "federation-1")
+            persisted[0]
+                .members
+                .iter()
+                .map(|member| member.ptid.as_str())
+                .collect::<Vec<_>>(),
+            vec!["ptid:alice", "ptid:bob"]
         );
+        assert_eq!(
+            MessagingRepository::authority_head(engine.store.as_ref(), "direct-existing").unwrap(),
+            (0, Vec::new())
+        );
+        assert_eq!(
+            MessagingRepository::lane_checkpoint(engine.store.as_ref()).unwrap(),
+            (0, 0)
+        );
+        assert!(engine
+            .store
+            .next_device_consumption_receipt()
+            .unwrap()
+            .is_none());
+
+        drop(engine);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

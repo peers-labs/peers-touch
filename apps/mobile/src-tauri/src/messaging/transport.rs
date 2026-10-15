@@ -32,7 +32,8 @@ use messaging_core::proto::chat::{
     ConversationMembershipAction, ConversationPublicHead, ConversationPublicHeadSource,
     CreateDirectConversationRequest, CreateDirectConversationResponse,
     CreateGroupConversationRequest, CreateGroupConversationResponse, CryptoEndpoint,
-    DeviceConsumptionReceipt, EncryptedObjectDescriptor, GetConversationPublicHeadRequest,
+    DeviceConsumptionReceipt, EncryptedObjectDescriptor, GetConversationMembersRequest,
+    GetConversationMembersResponse, GetConversationPublicHeadRequest,
     GetConversationPublicHeadResponse, GetConversationRequest, GetConversationResponse,
     ListConversationEventsRequest, ListConversationEventsResponse, ListConversationsRequest,
     ListConversationsResponse, MemberRole, MessagingMembershipAction,
@@ -1169,6 +1170,25 @@ impl StationConversationTransport {
             return Err("mobile messaging Station returned another Conversation".to_string());
         }
         Ok(conversation)
+    }
+
+    pub fn get_conversation_members(
+        &self,
+        conversation_id: &str,
+    ) -> Result<GetConversationMembersResponse, String> {
+        if conversation_id.trim().is_empty() {
+            return Err("mobile messaging Conversation ID is required".to_string());
+        }
+        get_proto(
+            &self.station_origin,
+            self.access_token.as_str(),
+            &self.device_id,
+            "/conversation/members",
+            &GetConversationMembersRequest {
+                conversation_id: conversation_id.to_string(),
+            },
+        )
+        .map_err(|error| error.to_string())
     }
 
     pub fn list_events(
