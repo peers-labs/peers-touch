@@ -393,6 +393,15 @@ class SimulatorSocialGateTests(unittest.TestCase):
             source.index('social-circle-member-search-submit'),
         )
 
+    def test_ios_reuses_the_open_product_reaction_picker(self) -> None:
+        source = inspect.getsource(
+            SimulatorSocialGate._run_ios_thread_reaction
+        )
+
+        self.assertEqual(source.count('"social-reaction-open"'), 1)
+        self.assertIn('data-reaction-picker-item', source)
+        self.assertNotIn('social-reaction-choice', source)
+
     def test_antd_option_selection_opens_the_control_before_clicking_option(
         self,
     ) -> None:

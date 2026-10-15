@@ -83,6 +83,15 @@ class AndroidSocialGateTests(unittest.TestCase):
         self.assertIn('data-circle-id="{circle_id}"', source)
         self.assertNotIn('social-audience-target-done', source)
 
+    def test_android_reuses_the_open_product_reaction_picker(self) -> None:
+        source = inspect.getsource(
+            AndroidSocialGate._run_ios_thread_reaction
+        )
+
+        self.assertEqual(source.count('"social-reaction-open"'), 1)
+        self.assertIn('data-reaction-picker-item', source)
+        self.assertNotIn('social-reaction-choice', source)
+
     def test_active_scenario_cleanup_preserves_failed_suite_report(self) -> None:
         gate = AndroidSocialGate()
         ledger = SuiteRuntimeLedger(

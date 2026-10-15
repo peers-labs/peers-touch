@@ -1143,18 +1143,19 @@ class AndroidSocialGate(AcceptanceGate):
             f"MPS11A UI comment {journey_id}",
             "Android inline comment readback",
         )
+        self._click_ui_for_post(
+            session,
+            post_id,
+            "social-reaction-open",
+            "Android Reaction picker",
+        )
         for reaction_kind in range(1, 6):
-            self._click_ui_for_post(
-                session,
-                post_id,
-                "social-reaction-open",
-                "Android Reaction picker",
-            )
             self._click_ui(
                 session,
                 (
-                    '[data-acceptance-id="social-reaction-choice"]'
-                    f'[data-reaction-kind="{reaction_kind}"]'
+                    '[data-reaction-picker] '
+                    '[data-reaction-picker-item]'
+                    f':nth-child({reaction_kind})'
                 ),
                 f"Android Reaction kind {reaction_kind}",
             )
