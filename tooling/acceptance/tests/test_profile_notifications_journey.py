@@ -9,6 +9,7 @@ from tooling.acceptance.gates.desktop.profile_notifications_journey import (
     NOTIFICATION_TRIGGER_SELECTOR,
     _resume_receiver_notification_preview,
     focus_native_session,
+    open_notification_preview,
 )
 
 
@@ -128,6 +129,32 @@ class ProfileNotificationsJourneyTests(unittest.TestCase):
                 self.binding,
                 (self.receiver, self.sender),
             )
+
+    def test_open_preview_normalizes_an_existing_open_state(self) -> None:
+        trigger = self.receiver.find_element.return_value
+        trigger.get_attribute.side_effect = ("true", "false", "true")
+        close_input = {"events": [{"type": "click", "trusted": True}]}
+        open_input = {"events": [{"type": "click", "trusted": True}]}
+
+        with patch(
+            "tooling.acceptance.gates.desktop.profile_notifications_journey."
+            "native_click",
+            side_effect=(close_input, open_input),
+        ) as native_click, patch(
+            "tooling.acceptance.gates.desktop.profile_notifications_journey."
+            "wait",
+            side_effect=lambda _session, predicate, _description: predicate(),
+        ):
+            result = open_notification_preview(
+                self.receiver,
+                self.binding,
+                (self.receiver, self.sender),
+            )
+
+        self.assertEqual(native_click.call_count, 2)
+        self.assertTrue(result["closedExistingPreview"])
+        self.assertEqual(result["closeInput"], close_input)
+        self.assertEqual(result["events"], open_input["events"])
 
 
 if __name__ == "__main__":

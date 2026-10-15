@@ -203,6 +203,22 @@ def open_notification_preview(
     binding: NativeDesktopRuntimeBinding,
     sessions: tuple[TauriSession, ...],
 ) -> dict[str, Any]:
+    trigger = session.find_element(NOTIFICATION_TRIGGER_SELECTOR, 30)
+    close_input: dict[str, Any] | None = None
+    if trigger.get_attribute("aria-expanded") == "true":
+        close_input = native_click(
+            session,
+            binding,
+            NOTIFICATION_TRIGGER_SELECTOR,
+            sessions,
+        )
+        wait(
+            session,
+            lambda: session.find_element(
+                NOTIFICATION_TRIGGER_SELECTOR,
+            ).get_attribute("aria-expanded") == "false",
+            "existing notification preview closes before Native reopen",
+        )
     pointer = native_click(
         session,
         binding,
@@ -214,7 +230,11 @@ def open_notification_preview(
     ).get_attribute(
         "aria-expanded",
     ) == "true", "notification preview opens after Native click")
-    return pointer
+    return {
+        **pointer,
+        "closedExistingPreview": close_input is not None,
+        "closeInput": close_input,
+    }
 
 
 def _resume_receiver_notification_preview(
