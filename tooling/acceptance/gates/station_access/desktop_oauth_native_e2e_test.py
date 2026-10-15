@@ -478,6 +478,37 @@ class DesktopOAuthNativeGateTest(unittest.TestCase):
         self.assertIn("unset PEERS_OAUTH_BRIDGE_SECRET", disabled)
         self.assertNotIn("-f - up -d station", disabled)
 
+    def test_station_restart_preserves_safe_station_up_flags(self) -> None:
+        command = (
+            "RELAY_CLIENT_ENABLED=false docker compose "
+            "--env-file $HOME/station.env -p pt-station "
+            "-f $HOME/repo/tooling/docker/compose.yml --profile station "
+            "--profile infra up -d --no-deps station"
+        )
+
+        enabled = _station_restart_script(
+            "repo",
+            command,
+            enable_bridge_secret=True,
+        )
+        disabled = _station_restart_script(
+            "repo",
+            command,
+            enable_bridge_secret=False,
+        )
+
+        self.assertIn("-f - up -d --no-deps station", enabled)
+        self.assertIn("up -d --no-deps station", disabled)
+        self.assertNotIn("-f - up -d --no-deps station", disabled)
+
+    def test_station_restart_rejects_additional_compose_service(self) -> None:
+        with self.assertRaisesRegex(ValueError, "Station-only"):
+            _station_restart_script(
+                "repo",
+                "docker compose up -d postgres station",
+                enable_bridge_secret=True,
+            )
+
     def test_rejects_unauthorized_pre_authentication_start(self) -> None:
         session = _FakeSession(
             {

@@ -4,6 +4,7 @@ import dataclasses
 import hashlib
 import hmac
 import re
+import shlex
 import shutil
 import socket
 import tempfile
@@ -51,6 +52,55 @@ SIGNER_CAPABILITY_ID = "station-access.oauth-bridge-signer"
 SIGN_OPERATION = "sign"
 SECRET_CREDENTIAL_ID = "oauth-bridge-secret"
 _SAFE_REMOTE_PATH = re.compile(r"^[A-Za-z0-9._/-]+$")
+_SAFE_STATION_UP_FLAGS = frozenset({"-d", "--detach", "--no-deps"})
+
+
+def _station_compose_override_command(restart_command: str) -> str:
+    try:
+        tokens = shlex.split(restart_command)
+    except ValueError as error:
+        raise ValueError(
+            "Desktop OAuth Station restart command is not valid shell syntax"
+        ) from error
+    compose_indexes = [
+        index
+        for index, token in enumerate(tokens[:-1])
+        if token == "docker" and tokens[index + 1] == "compose"
+    ]
+    up_indexes = [
+        index
+        for index, token in enumerate(tokens)
+        if token == "up"
+    ]
+    if len(compose_indexes) != 1 or len(up_indexes) != 1:
+        raise ValueError(
+            "Desktop OAuth Station restart must contain one docker compose up"
+        )
+    up_index = up_indexes[0]
+    up_arguments = tokens[up_index + 1 :]
+    if (
+        len(up_arguments) < 2
+        or up_arguments[-1] != "station"
+        or not {"-d", "--detach"}.intersection(up_arguments[:-1])
+        or any(
+            argument not in _SAFE_STATION_UP_FLAGS
+            for argument in up_arguments[:-1]
+        )
+    ):
+        raise ValueError(
+            "Desktop OAuth Station restart must be a detached Station-only compose up"
+        )
+    up_matches = list(re.finditer(r"(?<!\S)up(?!\S)", restart_command))
+    if len(up_matches) != 1:
+        raise ValueError(
+            "Desktop OAuth Station restart command has ambiguous up syntax"
+        )
+    match = up_matches[0]
+    return (
+        restart_command[: match.start()]
+        + "-f - "
+        + restart_command[match.start() :]
+    )
 
 
 def oauth_bridge_signature_message(
@@ -80,12 +130,7 @@ def _station_restart_script(
     prefix = f'set -eu\ncd "$HOME/{deploy_path}"\n'
     if not enable_bridge_secret:
         return prefix + f"unset PEERS_OAUTH_BRIDGE_SECRET\n{restart_command}\n"
-    marker = " up -d station"
-    if restart_command.count(marker) != 1 or not restart_command.endswith(marker):
-        raise ValueError(
-            "Desktop OAuth Station restart must end with 'up -d station'"
-        )
-    command_with_override = restart_command[: -len(marker)] + " -f - up -d station"
+    command_with_override = _station_compose_override_command(restart_command)
     return (
         prefix
         + 'IFS= read -r PEERS_OAUTH_BRIDGE_SECRET\n'
