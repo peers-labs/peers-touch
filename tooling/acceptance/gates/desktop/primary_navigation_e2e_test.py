@@ -1,9 +1,15 @@
 from __future__ import annotations
 
 import json
+import tempfile
 import unittest
+from pathlib import Path
+from types import SimpleNamespace
 
 from tooling.acceptance.core import ENVIRONMENTS_DIR, EnvironmentContract
+from tooling.acceptance.gates.desktop.primary_navigation_e2e import (
+    DesktopPrimaryNavigationGate,
+)
 from tooling.acceptance.provisioners import (
     DesktopPrimaryNavigationNativeProvisioner,
     get_provisioner,
@@ -16,6 +22,24 @@ REPO_ROOT = ENVIRONMENTS_DIR.parents[2]
 
 
 class DesktopPrimaryNavigationAcceptanceTests(unittest.TestCase):
+    def test_live_app_log_counts_native_command_invocations(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            log_path = Path(tmpdir) / "desktop.log"
+            log_path.write_text(
+                "[frontend] → cron_list_jobs\n"
+                "[frontend] ← cron_list_jobs OK\n"
+                "[frontend] → cron_list_jobs deferred\n",
+                encoding="utf-8",
+            )
+            session = SimpleNamespace(log_path=log_path)
+
+            count = DesktopPrimaryNavigationGate._app_log_invocation_count(
+                session,
+                "cron_list_jobs",
+            )
+
+        self.assertEqual(count, 2)
+
     def test_environment_resolves_registered_native_provisioner(self) -> None:
         contract = EnvironmentContract.from_yaml(
             ENVIRONMENTS_DIR / f"{ENVIRONMENT_ID}.yaml"

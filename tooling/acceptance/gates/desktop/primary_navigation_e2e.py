@@ -339,47 +339,37 @@ class DesktopPrimaryNavigationGate(AcceptanceGate):
         )
         return login
 
-    def _install_observer(self, session: TauriSession) -> None:
-        installed = session.execute_script(
-            """
-            const internals = window.__TAURI_INTERNALS__;
-            if (!internals || typeof internals.invoke !== 'function') {
-              return false;
-            }
-            if (window.__PT_NATIVE_NAV_INVOCATIONS__) return true;
-            const counts = Object.create(null);
-            const original = internals.invoke.bind(internals);
-            internals.invoke = (command, args, options) => {
-              counts[command] = (counts[command] || 0) + 1;
-              return original(command, args, options);
-            };
-            Object.defineProperty(window, '__PT_NATIVE_NAV_INVOCATIONS__', {
-              configurable: false,
-              value: counts,
-              writable: false,
-            });
-            return true;
-            """
-        )
-        if installed is not True:
-            raise GateError(
-                "Native Desktop invocation observer could not be installed"
-            )
-
     @staticmethod
-    def _invocation_count(
+    def _app_log_invocation_count(
         session: TauriSession,
         command: str,
     ) -> int:
-        return int(
-            session.execute_script(
-                """
-                return Number(
-                  window.__PT_NATIVE_NAV_INVOCATIONS__?.[arguments[0]] || 0
-                );
-                """,
-                command,
-            )
+        log_path = session.log_path
+        if log_path is None or not log_path.is_file():
+            return 0
+        return log_path.read_text(
+            encoding="utf-8",
+            errors="replace",
+        ).count(f"→ {command}")
+
+    @classmethod
+    def _wait_for_app_log_invocation(
+        cls,
+        session: TauriSession,
+        command: str,
+        minimum: int,
+        description: str,
+        timeout: float = 30,
+    ) -> int:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            count = cls._app_log_invocation_count(session, command)
+            if count >= minimum:
+                return count
+            time.sleep(0.1)
+        raise GateError(
+            f"timed out waiting for {description}: "
+            f"observed {cls._app_log_invocation_count(session, command)}"
         )
 
     def _run_journey(
@@ -388,7 +378,6 @@ class DesktopPrimaryNavigationGate(AcceptanceGate):
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         assertions: dict[str, bool] = {}
         self._login(session)
-        self._install_observer(session)
 
         session.execute_script(
             "location.hash = '#/notes/legacy-document'"
@@ -510,16 +499,11 @@ class DesktopPrimaryNavigationGate(AcceptanceGate):
                 "New Job",
             ),
         )
-        self._wait(
-            session,
-            "Number("
-            "window.__PT_NATIVE_NAV_INVOCATIONS__?.cron_list_jobs || 0"
-            ") >= 1",
-            "Cron Settings initial jobs load",
-        )
-        cron_count = self._invocation_count(
+        cron_count = self._wait_for_app_log_invocation(
             session,
             "cron_list_jobs",
+            1,
+            "Cron Settings initial jobs load",
         )
         self.assert_condition(
             "cron_jobs_loaded_in_selected_section",
@@ -548,7 +532,7 @@ class DesktopPrimaryNavigationGate(AcceptanceGate):
         time.sleep(15.5)
         self.assert_condition(
             "selected_only_stops_hidden_cron_polling",
-            self._invocation_count(
+            self._app_log_invocation_count(
                 session,
                 "cron_list_jobs",
             )
