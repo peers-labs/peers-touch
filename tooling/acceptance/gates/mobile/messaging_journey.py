@@ -408,15 +408,31 @@ class MobileMessagingJourney:
             sender_session,
             f"{sender.client_id} contact Direct write admission",
         )
-        conversation = self._mapping(
-            sender_session.call_action(
-                "social.contact.open",
-                {
-                    "peerPtid": receiver.ptid,
-                    "federationId": federation_id,
-                },
-            ),
-            "Contact Direct creation",
+        conversation: dict[str, Any] = {}
+
+        def conversation_ready() -> bool:
+            nonlocal conversation
+            try:
+                opened = sender_session.call_action(
+                    "social.contact.open",
+                    {
+                        "peerPtid": receiver.ptid,
+                        "federationId": federation_id,
+                    },
+                )
+            except DriverError as error:
+                if "mobile.contacts.conversationPreparing" in str(error):
+                    return False
+                raise
+            conversation = self._mapping(
+                opened,
+                "Contact Direct creation",
+            )
+            return isinstance(conversation.get("conversationId"), str)
+
+        self._await_condition(
+            conversation_ready,
+            f"{sender.client_id} contact Direct projection",
         )
         conversation_id = self._text(
             conversation.get("conversationId"),
