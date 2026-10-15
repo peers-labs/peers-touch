@@ -2,7 +2,7 @@
 
 .PHONY: acceptance-plan acceptance-plan-self acceptance-run acceptance-run-completion acceptance-run-full acceptance-run-ci acceptance-run-local-evidence \
         acceptance-run-env-evidence acceptance-run-nightly acceptance-report acceptance acceptance-validate acceptance-infra-validate \
-        acceptance-driver-build acceptance-driver-smoke \
+        acceptance-python-setup acceptance-driver-build acceptance-driver-smoke \
         acceptance-cell-ready acceptance-cell-status acceptance-cell-logs acceptance-cell-stop \
         acceptance-coverage-report acceptance-chat acceptance-chat-domain-validation \
         acceptance-chat-native-static acceptance-chat-native-two-client \
@@ -29,10 +29,43 @@ ACCEPTANCE_RANGE ?= HEAD
 ACCEPTANCE_PLAN ?=
 ACCEPTANCE_PLAN_OUTPUT_ARG = $(if $(ACCEPTANCE_PLAN),--output "$(ACCEPTANCE_PLAN)",)
 ACCEPTANCE_RUN_PLAN_ARG = $(if $(PLAN),--plan "$(PLAN)",$(if $(ACCEPTANCE_PLAN),--plan "$(ACCEPTANCE_PLAN)",))
+ACCEPTANCE_PYTHON_ENV := $(CURDIR)/.local/acceptance/python-venv
+ACCEPTANCE_PYTHON := $(ACCEPTANCE_PYTHON_ENV)/bin/python3
+ACCEPTANCE_PYTHON_BOOTSTRAP ?= $(shell \
+	for candidate in /opt/homebrew/bin/python3 /usr/local/bin/python3 python3.13 python3.12 python3.11 python3; do \
+		resolved=$$(command -v "$$candidate" 2>/dev/null) || continue; \
+		"$$resolved" -c 'import sys; raise SystemExit(sys.version_info < (3, 11))' >/dev/null 2>&1 || continue; \
+		printf '%s' "$$resolved"; \
+		break; \
+	done)
+ACCEPTANCE_PYTHON_VERSION_STAMP := $(ACCEPTANCE_PYTHON_ENV)/.python-3.11-or-newer
 ACCEPTANCE_DRIVER_BINARY ?= .local/acceptance/bin/peers-touch-desktop
 CELL ?= desktop-linux-native
 CELL_GATE ?= runtime-cell-preflight
 RUNTIME_CELL ?= desktop-macos-native
+
+# Context-enabled Gates use -I -S and load only this environment's packages.
+# Target-specific PATH takes precedence over the root Makefile's system PATH.
+acceptance-% dev-functional-result: export PATH := $(ACCEPTANCE_PYTHON_ENV)/bin:$(PATH)
+dev-functional-result acceptance-run acceptance-run-completion acceptance-run-full \
+acceptance-run-ci acceptance-run-local-evidence acceptance-run-env-evidence \
+acceptance-run-nightly acceptance: acceptance-python-setup
+
+acceptance-python-setup: $(ACCEPTANCE_PYTHON_ENV)/.requirements-installed
+	@"$(ACCEPTANCE_PYTHON)" -c 'import sys; raise SystemExit(sys.version_info < (3, 11))'
+
+$(ACCEPTANCE_PYTHON_VERSION_STAMP):
+	@if [ -z "$(ACCEPTANCE_PYTHON_BOOTSTRAP)" ]; then \
+		echo "Acceptance requires Python 3.11 or newer"; \
+		exit 1; \
+	fi
+	@rm -rf "$(ACCEPTANCE_PYTHON_ENV)"
+	"$(ACCEPTANCE_PYTHON_BOOTSTRAP)" -m venv "$(ACCEPTANCE_PYTHON_ENV)"
+	@touch "$@"
+
+$(ACCEPTANCE_PYTHON_ENV)/.requirements-installed: tooling/acceptance/requirements.txt $(ACCEPTANCE_PYTHON_VERSION_STAMP)
+	"$(ACCEPTANCE_PYTHON)" -m pip install -r tooling/acceptance/requirements.txt
+	@touch "$@"
 
 acceptance-driver-build:
 	VITE_ACCEPTANCE_HARNESS=1 pnpm --dir apps/desktop run build

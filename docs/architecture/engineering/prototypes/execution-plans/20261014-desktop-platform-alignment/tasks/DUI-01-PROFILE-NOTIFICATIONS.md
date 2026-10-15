@@ -30,6 +30,7 @@
     "tooling/acceptance",
     "tooling/scripts/local-dev/workflow-tool-intent.mjs",
     "tooling/scripts/local-dev/workflow-tool-intent.test.mjs",
+    "tooling/make/acceptance.mk",
     "tooling/scripts/acceptance-pipeline-audit.py",
     "tooling/scripts/acceptance-pipeline-audit-test.py"
   ],
@@ -44,6 +45,7 @@
     {"id":"dui-profile-notification-unit","command":"pnpm --dir apps/desktop exec vitest run src/components/settings/accountIdentityPresentation.test.ts src/kernel/identityRuntime.test.ts src/runtimes/settingsRuntime.test.ts src/store/settings.test.ts src/store/relationships.test.ts src/store/profile.test.ts src/store/notification.test.ts src/store/pushDevices.test.ts","verificationClass":"SOURCE_CHECK"},
     {"id":"dui-profile-notification-contract","command":"make acceptance-validate DOMAIN=station-access","verificationClass":"SOURCE_CHECK"},
     {"id":"dui-profile-notification-suite-source","command":"python3 tooling/acceptance/gates/desktop/profile_notifications_suite_test.py","verificationClass":"SOURCE_CHECK"},
+    {"id":"dui-profile-notification-python-environment","command":"make acceptance-python-setup","verificationClass":"SOURCE_CHECK"},
     {"id":"dui-profile-notification-functional","command":"python3 tooling/acceptance/gates/desktop/profile_notifications_journey.py","verificationClass":"FUNCTIONAL_CHECK"},
     {"id":"dui-profile-notification-proof","command":"python3 tooling/scripts/acceptance-run.py --gate desktop-profile-notifications-e2e","verificationClass":"ACCEPTANCE_PROOF"}
   ],
@@ -94,3 +96,8 @@ reset, prepares two persistent fixture installations, and launches and logs in
 each client once after the Native runtime cell is leased. Both scenarios attach
 to that Suite. Native actions, receiver-visible assertions, source bindings and
 terminal cleanup precede publication of the complete result generation.
+
+Make selects Python 3.11 or newer, rebuilds an incompatible cached environment,
+installs the pinned Acceptance requirements, and places that interpreter first
+in the Gate subprocess PATH. The context bootstrap continues to reject system
+Python and user site packages.
