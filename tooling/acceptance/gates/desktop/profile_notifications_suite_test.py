@@ -12,6 +12,7 @@ from unittest.mock import MagicMock, patch
 from tooling.acceptance.core import GateError
 from tooling.acceptance.core.errors import DriverError
 from tooling.acceptance.core.suite_runtime import SuiteRuntimeAction
+from tooling.acceptance.drivers.native.base import NativeControlSnapshot
 from tooling.acceptance.drivers.tauri import EXPECTED_URL
 from tooling.acceptance.gates.desktop.profile_notifications_e2e import (
     DesktopProfileNotificationsGate,
@@ -19,6 +20,7 @@ from tooling.acceptance.gates.desktop.profile_notifications_e2e import (
 from tooling.acceptance.gates.desktop.profile_notifications_journey import (
     _reject_pending_friend_request,
     _request_has_status,
+    focus_native_session,
     native_click,
 )
 from tooling.acceptance.provisioners.desktop_profile_notifications_suite import (
@@ -63,6 +65,39 @@ class DesktopProfileNotificationsGateTest(unittest.TestCase):
 
 
 class NativePointerDeliveryTest(unittest.TestCase):
+    def test_focus_readback_retries_transient_empty_window_list(self) -> None:
+        session = MagicMock()
+        session.process_id = 42
+        binding = MagicMock()
+        binding.request_cooperative_activation.return_value = True
+        binding.native_adapter.focused_control.side_effect = (
+            NativeControlSnapshot(
+                frontmost=True,
+                actual_frontmost_pid=42,
+                window_count=0,
+            ),
+            NativeControlSnapshot(
+                frontmost=True,
+                actual_frontmost_pid=42,
+                window_count=1,
+            ),
+        )
+
+        with patch(f"{JOURNEY_MODULE}.time.sleep") as sleep:
+            control = focus_native_session(
+                session,
+                binding,
+                (session,),
+            )
+
+        self.assertEqual(control["actualFrontmostPid"], 42)
+        self.assertEqual(control["windowCount"], 1)
+        self.assertEqual(
+            binding.native_adapter.focused_control.call_count,
+            2,
+        )
+        sleep.assert_called_once()
+
     def test_native_click_retries_only_until_a_trusted_trigger_click(self) -> None:
         missed = {
             "events": [{

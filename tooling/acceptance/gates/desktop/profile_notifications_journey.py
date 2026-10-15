@@ -34,6 +34,8 @@ PROFILE_FIELDS = ("display_name", "note", "region", "timezone", "tags", "links",
 REPO_ROOT = Path(__file__).resolve().parents[4]
 NATIVE_CLICK_MAX_ATTEMPTS = 3
 NATIVE_CLICK_EVENT_TIMEOUT_SECONDS = 2.0
+NATIVE_FOCUS_READBACK_TIMEOUT_SECONDS = 5.0
+NATIVE_FOCUS_READBACK_INTERVAL_SECONDS = 0.1
 NOTIFICATION_TRIGGER_SELECTOR = '[role="button"][aria-haspopup="dialog"]'
 
 
@@ -90,22 +92,29 @@ def focus_native_session(
         session,
         sessions,
     )
-    control = (
-        binding.native_adapter.focused_control(process_id)
-        if cooperatively_activated
-        else binding.native_adapter.activate_and_focused_control(process_id)
-    )
-    if (
-        control.error
-        or not control.frontmost
-        or control.actual_frontmost_pid != process_id
-        or control.window_count <= 0
-    ):
-        raise GateError(
-            "Native focus did not converge for exact process "
-            f"{process_id}: {control.to_dict()}"
+    if not cooperatively_activated:
+        return binding.native_adapter.activate_and_focused_control(
+            process_id
+        ).to_dict()
+
+    deadline = time.monotonic() + NATIVE_FOCUS_READBACK_TIMEOUT_SECONDS
+    while True:
+        control = binding.native_adapter.focused_control(process_id)
+        if (
+            not control.error
+            and control.frontmost
+            and control.actual_frontmost_pid == process_id
+            and control.window_count > 0
+        ):
+            return control.to_dict()
+        if time.monotonic() >= deadline:
+            raise GateError(
+                "Native focus did not converge for exact process "
+                f"{process_id}: {control.to_dict()}"
+            )
+        time.sleep(
+            NATIVE_FOCUS_READBACK_INTERVAL_SECONDS
         )
-    return control.to_dict()
 
 
 def _native_click_once(
