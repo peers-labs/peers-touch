@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+import hashlib
 import json
 import subprocess
 import sys
@@ -14,6 +15,7 @@ from tooling.acceptance.drivers.native.base import (
     NativeControlSnapshot,
     NativeDesktopAdapter,
     NativeInputMode,
+    NativeInputStateSnapshot,
     NativeKey,
     NativeModifier,
     NativeWindowBounds,
@@ -316,6 +318,33 @@ sys.stdout.write(
                 else -1
             ),
         }
+    )
+)
+"""
+
+_SYSTEM_INPUT_STATE_PROBE = r"""
+import json
+
+import AppKit
+import Quartz
+
+frontmost = AppKit.NSWorkspace.sharedWorkspace().frontmostApplication()
+event = Quartz.CGEventCreate(None)
+if event is None:
+    raise SystemExit("cannot create pointer-location event")
+point = Quartz.CGEventGetLocation(event)
+print(
+    json.dumps(
+        {
+            "frontmostPid": (
+                int(frontmost.processIdentifier())
+                if frontmost is not None
+                else -1
+            ),
+            "pointerX": float(point.x),
+            "pointerY": float(point.y),
+        },
+        sort_keys=True,
     )
 )
 """
@@ -920,6 +949,62 @@ class MacOSNativeDesktopAdapter(NativeDesktopAdapter):
     @property
     def input_mode(self) -> NativeInputMode:
         return self._input_mode
+
+    def input_state_snapshot(self) -> NativeInputStateSnapshot:
+        completed = subprocess.run(
+            (sys.executable, "-c", _SYSTEM_INPUT_STATE_PROBE),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=2,
+        )
+        if completed.returncode != 0:
+            raise DriverError(
+                "macOS input-state probe failed: "
+                f"{completed.stderr.strip() or completed.stdout.strip()}"
+            )
+        try:
+            state = json.loads(completed.stdout)
+            frontmost_pid = int(state["frontmostPid"])
+            pointer_x = float(state["pointerX"])
+            pointer_y = float(state["pointerY"])
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
+            raise DriverError(
+                "macOS input-state probe returned invalid state"
+            ) from error
+        if frontmost_pid <= 0:
+            raise DriverError(
+                "macOS input-state probe has no frontmost application"
+            )
+        focus = self.focused_control(frontmost_pid)
+        if focus.error:
+            raise DriverError(
+                "macOS keyboard-focus probe failed: "
+                f"{focus.to_dict()}"
+            )
+        focus_payload = {
+            "frontmostPid": frontmost_pid,
+            "focusedWindow": focus.focused_window,
+            "kind": focus.kind,
+            "mainWindow": focus.main_window,
+            "platformRole": focus.platform_role,
+            "platformSubrole": focus.platform_subrole,
+            "title": focus.title,
+            "value": focus.value,
+        }
+        focus_sha256 = hashlib.sha256(
+            json.dumps(
+                focus_payload,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        return NativeInputStateSnapshot(
+            frontmost_pid=frontmost_pid,
+            pointer_x=pointer_x,
+            pointer_y=pointer_y,
+            keyboard_focus_sha256=focus_sha256,
+        )
 
     @property
     def platform(self) -> str:

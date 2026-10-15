@@ -391,6 +391,11 @@ fn configure_acceptance_window(
         slot,
         count,
     )?;
+    window
+        .set_focusable(exclusive_native_input)
+        .map_err(|error| {
+            std::io::Error::other(format!("acceptance window focus policy failed: {error}"))
+        })?;
     window.show().map_err(|error| {
         std::io::Error::other(format!("acceptance window show failed: {error}"))
     })?;

@@ -14,12 +14,15 @@ from tooling.acceptance.core import (
     EphemeralCapabilityBlocked,
     GateError,
 )
+from tooling.acceptance.drivers.native import MouseAction, NativeInputMode
 from tooling.acceptance.gates.station_access.desktop_oauth_native_e2e import (
     ACCOUNT_IDENTITY_SUMMARY_SELECTOR,
     ACCOUNT_LOGIN_PROVIDER_SELECTOR,
+    CHAT_NAV_SELECTOR,
     DesktopOAuthNativeGate,
     LEGACY_ACCOUNT_LOGIN_PROVIDER_FIELD_SELECTOR,
     OAUTH_AVATAR_URL,
+    find_people_scopes_are_distinct,
     is_native_tauri_url,
 )
 from tooling.acceptance.provisioners.station_access_desktop_oauth_native import (
@@ -83,7 +86,82 @@ class _FakeCapabilityClient:
         return self.response
 
 
+class _FakeNativeAdapter:
+    def __init__(self) -> None:
+        self.mouse_calls: list[tuple[tuple[MouseAction, ...], tuple[float, float]]] = []
+
+    def content_origin(self, process_id: int) -> tuple[float, float]:
+        self.process_id = process_id
+        return 100.0, 200.0
+
+    def post_mouse(
+        self,
+        actions: tuple[MouseAction, ...],
+        point: tuple[float, float],
+    ) -> None:
+        self.mouse_calls.append((actions, point))
+
+
+class _FakeHoverElement:
+    text = "tooltip"
+
+    def is_displayed(self) -> bool:
+        return True
+
+
+class _FakeHoverSession:
+    process_id = 42
+
+    def __init__(self, *, focused: bool = True, rendered: bool = True) -> None:
+        self.focused = focused
+        self.rendered = rendered
+
+    def execute_script(self, script: str, *args: object) -> object:
+        if "document.hasFocus" in script:
+            return self.focused
+        if "style.visibility" in script:
+            self.visibility_script = script
+            self.visibility_args = args
+            return {"visible": self.rendered}
+        if "getBoundingClientRect" in script:
+            return {"x": 5.0, "y": 7.0}
+        return None
+
+    def find_elements(self, selector: str) -> list[_FakeHoverElement]:
+        self.selector = selector
+        return [_FakeHoverElement()]
+
+    def semantic_hover(self, element: object) -> None:
+        self.semantic_hover_element = element
+
+
+class _FakeHoverRuntimeBinding:
+    def __init__(
+        self,
+        adapter: _FakeNativeAdapter,
+        input_mode: NativeInputMode = NativeInputMode.EXCLUSIVE_NATIVE_INPUT,
+    ) -> None:
+        self.native_adapter = adapter
+        self.input_mode = input_mode
+        self.activation_requested = False
+
+    def request_cooperative_activation(
+        self,
+        target: _FakeHoverSession,
+        sessions: tuple[_FakeHoverSession, ...],
+    ) -> bool:
+        self.activation_requested = sessions == (target,)
+        target.focused = True
+        return True
+
+
 class DesktopOAuthNativeGateTest(unittest.TestCase):
+    def test_chat_navigation_targets_the_interactive_command(self) -> None:
+        self.assertEqual(
+            CHAT_NAV_SELECTOR,
+            '[data-pt-primary-nav="chat"]',
+        )
+
     def test_account_provider_targets_the_compact_identity_summary(self) -> None:
         self.assertEqual(
             ACCOUNT_IDENTITY_SUMMARY_SELECTOR,
@@ -98,7 +176,132 @@ class DesktopOAuthNativeGateTest(unittest.TestCase):
             '[data-pt-account-identity="login-provider"]',
         )
 
-        self.assertTrue(is_native_tauri_url("tauri://localhost"))
+    def test_accepts_distinct_same_name_scope_evidence(self) -> None:
+        self.assertTrue(
+            find_people_scopes_are_distinct(
+                {
+                    "federation": {
+                        "name": "local",
+                        "label": "Federation: local",
+                        "ariaLabel": (
+                            "Search every discoverable person in the local federation."
+                        ),
+                        "tooltip": (
+                            "Search every discoverable person in the local federation."
+                        ),
+                    },
+                    "station": {
+                        "name": "local",
+                        "label": "Station: local",
+                        "ariaLabel": (
+                            "Search only people whose Home Station is local."
+                        ),
+                        "tooltip": (
+                            "Search only people whose Home Station is local."
+                        ),
+                    },
+                }
+            )
+        )
+
+    def test_rejects_ambiguous_same_name_scope_evidence(self) -> None:
+        self.assertFalse(
+            find_people_scopes_are_distinct(
+                {
+                    "federation": {
+                        "name": "local",
+                        "label": "local",
+                        "ariaLabel": "local",
+                        "tooltip": "local",
+                    },
+                    "station": {
+                        "name": "local",
+                        "label": "local",
+                        "ariaLabel": "local",
+                        "tooltip": "local",
+                    },
+                }
+            )
+        )
+
+    def test_hover_tooltip_uses_native_pointer_coordinates(self) -> None:
+        gate = object.__new__(DesktopOAuthNativeGate)
+        adapter = _FakeNativeAdapter()
+        gate.runtime_binding = _FakeHoverRuntimeBinding(adapter)
+        session = _FakeHoverSession()
+
+        tooltip = gate._hover_tooltip(
+            session,
+            object(),
+            "tooltip",
+            timeout=0.1,
+        )
+
+        self.assertEqual(tooltip, "tooltip")
+        self.assertEqual(session.selector, '[role="tooltip"]')
+        self.assertEqual(
+            adapter.mouse_calls,
+            [
+                ((MouseAction.MOVE,), (102.0, 202.0)),
+                ((MouseAction.MOVE,), (105.0, 207.0)),
+            ],
+        )
+
+    def test_hover_tooltip_focuses_native_window_before_pointer_move(self) -> None:
+        gate = object.__new__(DesktopOAuthNativeGate)
+        adapter = _FakeNativeAdapter()
+        runtime_binding = _FakeHoverRuntimeBinding(adapter)
+        gate.runtime_binding = runtime_binding
+        session = _FakeHoverSession(focused=False)
+
+        tooltip = gate._hover_tooltip(
+            session,
+            object(),
+            "tooltip",
+            timeout=0.1,
+        )
+
+        self.assertEqual(tooltip, "tooltip")
+        self.assertTrue(runtime_binding.activation_requested)
+
+    def test_hover_tooltip_uses_semantic_input_without_native_pointer(self) -> None:
+        gate = object.__new__(DesktopOAuthNativeGate)
+        adapter = _FakeNativeAdapter()
+        gate.runtime_binding = _FakeHoverRuntimeBinding(
+            adapter,
+            NativeInputMode.SEMANTIC_NON_INTRUSIVE,
+        )
+        session = _FakeHoverSession(focused=False)
+        trigger = object()
+
+        tooltip = gate._hover_tooltip(
+            session,
+            trigger,
+            "tooltip",
+            timeout=0.1,
+        )
+
+        self.assertEqual(tooltip, "tooltip")
+        self.assertIs(session.semantic_hover_element, trigger)
+        self.assertEqual(adapter.mouse_calls, [])
+
+    def test_tooltip_visibility_uses_rendered_layout(self) -> None:
+        session = _FakeHoverSession(rendered=False)
+        trigger = object()
+        tooltip = object()
+
+        self.assertFalse(
+            DesktopOAuthNativeGate._element_is_visibly_rendered(
+                session,
+                trigger,
+                tooltip,
+            )
+        )
+        self.assertEqual(session.visibility_args, (trigger, tooltip))
+        self.assertIn("aria-describedby", session.visibility_script)
+        self.assertIn("effectiveOpacity >= 0.99", session.visibility_script)
+
+    def test_accepts_routed_native_tauri_url(self) -> None:
         self.assertTrue(is_native_tauri_url("tauri://localhost"))
         self.assertTrue(
             is_native_tauri_url("tauri://localhost/settings?tab=account#identity")

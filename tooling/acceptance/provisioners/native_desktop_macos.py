@@ -373,8 +373,7 @@ class NativeDesktopMacOSProvisioner:
         self,
     ) -> tuple[CellAdapterIdentity, int]:
         input_mode = admit_local_native_input_mode(
-            os.environ.get("PT_ACCEPTANCE_DESKTOP_INPUT_MODE")
-            or NativeInputMode.EXCLUSIVE_NATIVE_INPUT.value,
+            os.environ.get("PT_ACCEPTANCE_DESKTOP_INPUT_MODE"),
             os.environ.get("PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION"),
         )
         webdriver_port = resolve_smoke_port(0)
@@ -420,9 +419,9 @@ class NativeDesktopMacOSProvisioner:
                 session_stopped = True
                 non_interference_probe = non_interference.unchanged()
                 probes = CellAdapterIdentity(
-                    input_backend=self.contract.native_adapter.input,
+                    input_backend="embedded-webdriver-semantic",
                     window_backend=self.contract.native_adapter.window,
-                    screenshot_backend=self.contract.native_adapter.screenshot,
+                    screenshot_backend="embedded-webdriver",
                     input_probe=False,
                     focus_probe=False,
                     point_ownership_probe=False,
@@ -433,6 +432,20 @@ class NativeDesktopMacOSProvisioner:
                     semantic_screenshot_probe=semantic_screenshot_probe,
                     non_interference_probe=non_interference_probe,
                     non_interference=non_interference,
+                    frontmost_unchanged=(
+                        non_interference.frontmost_pid_before
+                        == non_interference.frontmost_pid_after
+                    ),
+                    pointer_unchanged=(
+                        non_interference.pointer_x_before
+                        == non_interference.pointer_x_after
+                        and non_interference.pointer_y_before
+                        == non_interference.pointer_y_after
+                    ),
+                    keyboard_focus_unchanged=(
+                        non_interference.keyboard_focus_before_sha256
+                        == non_interference.keyboard_focus_after_sha256
+                    ),
                 )
                 if not (
                     probes.semantic_action_probe

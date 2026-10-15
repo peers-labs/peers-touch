@@ -673,6 +673,9 @@ class NativeProductClosureGate(AcceptanceGate):
         trigger_selector: str,
         file_path: Path,
     ) -> dict[str, Any]:
+        self.native_adapter.require_exclusive_input(
+            "select file through native chooser"
+        )
         client = self.focus_actor_window(actor)
         result = select_native_file(
             actor=actor,

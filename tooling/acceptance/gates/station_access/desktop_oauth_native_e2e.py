@@ -23,7 +23,11 @@ from tooling.acceptance.core import (
     call_async_harness,
     load_runtime_manifest,
 )
-from tooling.acceptance.drivers.native import resolve_native_desktop_runtime
+from tooling.acceptance.drivers.native import (
+    MouseAction,
+    NativeInputMode,
+    resolve_native_desktop_runtime,
+)
 from tooling.acceptance.drivers.tauri import TauriSession
 
 
@@ -33,6 +37,7 @@ SIGNER_CAPABILITY_ID = "station-access.oauth-bridge-signer"
 SIGN_OPERATION = "sign"
 PROVIDERS = ("github", "google")
 OAUTH_AVATAR_URL = "https://avatars.githubusercontent.com/u/583231?v=4"
+CHAT_NAV_SELECTOR = '[data-pt-primary-nav="chat"]'
 ACCOUNT_IDENTITY_SUMMARY_SELECTOR = "[data-pt-account-identity-summary]"
 ACCOUNT_LOGIN_PROVIDER_SELECTOR = "[data-pt-account-login-provider]"
 LEGACY_ACCOUNT_LOGIN_PROVIDER_FIELD_SELECTOR = (
@@ -52,6 +57,7 @@ REQUIRED_ASSERTIONS = frozenset(
         "oauth_callback_restores_authenticated_identity",
         "oauth_identity_projection_is_consistent",
         "account_identity_ui_shows_provider_and_ptid",
+        "find_people_scope_labels_and_tooltips_are_distinct",
         "native_runtime_is_source_bound",
         "native_runtime_cleanup",
     }
@@ -70,6 +76,28 @@ def is_native_tauri_url(value: str) -> bool:
         and parsed.username is None
         and parsed.password is None
         and port is None
+    )
+
+
+def find_people_scopes_are_distinct(evidence: Mapping[str, object]) -> bool:
+    federation = evidence.get("federation")
+    station = evidence.get("station")
+    if not isinstance(federation, Mapping) or not isinstance(station, Mapping):
+        return False
+    federation_label = str(federation.get("label") or "").strip()
+    station_label = str(station.get("label") or "").strip()
+    federation_aria = str(federation.get("ariaLabel") or "").strip()
+    station_aria = str(station.get("ariaLabel") or "").strip()
+    return (
+        federation.get("name") == station.get("name") == "local"
+        and federation_label == "Federation: local"
+        and station_label == "Station: local"
+        and federation_label != station_label
+        and bool(federation_aria)
+        and bool(station_aria)
+        and federation_aria != station_aria
+        and federation.get("tooltip") == federation_aria
+        and station.get("tooltip") == station_aria
     )
 
 
@@ -191,11 +219,15 @@ class DesktopOAuthNativeGate(AcceptanceGate):
             source_commit=source_commit,
         )
         self.runtime_binding.set_runtime_manifest(self.manifest)
+        self.report.runtime["desktopInputMode"] = (
+            self.runtime_binding.input_mode.value
+        )
 
     def run(self) -> dict[str, Any]:
         client = self._client()
         session: TauriSession | None = None
         cleanup: dict[str, Any] = {}
+        find_people_scopes: dict[str, Any] = {}
         try:
             session = self.runtime_binding.create_bound_session(CLIENT_ID)
             login_card = self._wait_for_displayed(
@@ -438,6 +470,15 @@ class DesktopOAuthNativeGate(AcceptanceGate):
             self.save_screenshot(session, "desktop-oauth-authenticated")
             self.save_dom(session, "desktop-oauth-authenticated")
 
+            find_people_scopes = self._find_people_scope_evidence(session)
+            self.assert_condition(
+                "find_people_scope_labels_and_tooltips_are_distinct",
+                find_people_scopes_are_distinct(find_people_scopes),
+                json.dumps(find_people_scopes, sort_keys=True),
+            )
+            self.save_screenshot(session, "desktop-oauth-find-people-scopes")
+            self.save_dom(session, "desktop-oauth-find-people-scopes")
+
             source_identity = self._source_identity()
             document_url = session.get_current_url()
             self.assert_condition(
@@ -481,6 +522,7 @@ class DesktopOAuthNativeGate(AcceptanceGate):
             "runtimeCell": "desktop-macos-native",
             "journey": "station-access-desktop-oauth-preauth",
             "providers": providers,
+            "findPeopleScopes": find_people_scopes,
             "sourceIdentity": source_identity,
             "cleanup": cleanup,
         }
@@ -519,6 +561,302 @@ class DesktopOAuthNativeGate(AcceptanceGate):
         raise GateError(
             f"Desktop OAuth element did not become visible: {selector}{suffix}"
         )
+
+    def _find_people_scope_evidence(
+        self,
+        session: TauriSession,
+    ) -> dict[str, Any]:
+        session.find_element(
+            CHAT_NAV_SELECTOR,
+            timeout=20,
+        ).click()
+        self._wait_for_displayed(
+            session,
+            "[data-chat-new-menu]",
+            timeout=20,
+        ).click()
+        self._wait_for_displayed(
+            session,
+            "[data-chat-find-people-menu]",
+            timeout=10,
+        ).click()
+        self._wait_for_displayed(
+            session,
+            "[data-chat-find-people]",
+            timeout=20,
+        )
+
+        federation = self._wait_for_displayed_with_text(
+            session,
+            '[data-chat-find-people-scope="federation"]',
+            "Federation: local",
+            timeout=20,
+        )
+        federation_aria = str(federation.get_attribute("aria-label") or "").strip()
+        federation_tooltip = self._hover_tooltip(
+            session,
+            federation,
+            federation_aria,
+            timeout=10,
+        )
+        federation.click()
+        station = self._wait_for_displayed_with_text(
+            session,
+            '[data-chat-find-people-scope="station"]',
+            "Station: local",
+            timeout=30,
+        )
+
+        station_aria = str(station.get_attribute("aria-label") or "").strip()
+        station_tooltip = self._hover_tooltip(
+            session,
+            station,
+            station_aria,
+            timeout=10,
+        )
+        return {
+            "federation": {
+                "name": "local",
+                "label": federation.text.strip(),
+                "ariaLabel": federation_aria,
+                "tooltip": federation_tooltip,
+            },
+            "station": {
+                "name": "local",
+                "label": station.text.strip(),
+                "ariaLabel": station_aria,
+                "tooltip": station_tooltip,
+            },
+        }
+
+    @staticmethod
+    def _wait_for_displayed_with_text(
+        session: TauriSession,
+        selector: str,
+        expected_text: str,
+        *,
+        timeout: float,
+    ) -> Any:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            for element in session.find_elements(selector):
+                if element.is_displayed() and element.text.strip() == expected_text:
+                    return element
+            time.sleep(0.1)
+        raise GateError(
+            "Desktop OAuth element did not become visible with expected text: "
+            f"{selector}={expected_text!r}"
+        )
+
+    def _hover_tooltip(
+        self,
+        session: TauriSession,
+        element: Any,
+        expected_text: str,
+        *,
+        timeout: float,
+    ) -> str:
+        if not expected_text:
+            raise GateError("Find People scope aria-label is empty")
+        process_id = session.process_id
+        if process_id is None:
+            raise GateError("Find People tooltip proof has no native process")
+        if (
+            self.runtime_binding.input_mode
+            is NativeInputMode.SEMANTIC_NON_INTRUSIVE
+        ):
+            session.semantic_hover(element)
+            return self._wait_for_tooltip_text(
+                session,
+                element,
+                expected_text,
+                timeout=timeout,
+            )
+        if not bool(session.execute_script("return document.hasFocus()")):
+            cooperatively_activated = self.runtime_binding.request_cooperative_activation(
+                session,
+                (session,),
+            )
+            if not cooperatively_activated:
+                self.runtime_binding.native_adapter.activate_process(process_id)
+            focus_deadline = time.monotonic() + 5
+            while time.monotonic() < focus_deadline:
+                if bool(session.execute_script("return document.hasFocus()")):
+                    break
+                time.sleep(0.05)
+            else:
+                raise GateError(
+                    "Find People tooltip proof could not focus the native "
+                    "Desktop document"
+                )
+        element_center = self._mapping(
+            session.execute_script(
+                """
+                const rect = arguments[0].getBoundingClientRect();
+                return {
+                  x: rect.left + rect.width / 2,
+                  y: rect.top + rect.height / 2,
+                };
+                """,
+                element,
+            ),
+            "Find People scope element center",
+        )
+        content_origin = self.runtime_binding.native_adapter.content_origin(
+            process_id
+        )
+        if content_origin is None:
+            window = session.driver.get_window_rect()
+            viewport = self._mapping(
+                session.execute_script(
+                    "return { width: innerWidth, height: innerHeight };"
+                ),
+                "Desktop viewport",
+            )
+            scale = float(
+                session.execute_script("return window.devicePixelRatio || 1")
+            )
+            if scale <= 0:
+                raise GateError(f"Desktop window scale is invalid: {scale}")
+            window_left = float(window["x"]) / scale
+            window_top = float(window["y"]) / scale
+            window_width = float(window["width"]) / scale
+            window_height = float(window["height"]) / scale
+            content_origin = (
+                window_left
+                + max(0.0, (window_width - float(viewport["width"])) / 2),
+                window_top
+                + max(0.0, window_height - float(viewport["height"])),
+            )
+        self.runtime_binding.native_adapter.post_mouse(
+            (MouseAction.MOVE,),
+            (content_origin[0] + 2.0, content_origin[1] + 2.0),
+        )
+        time.sleep(0.1)
+        self.runtime_binding.native_adapter.post_mouse(
+            (MouseAction.MOVE,),
+            (
+                content_origin[0] + float(element_center["x"]),
+                content_origin[1] + float(element_center["y"]),
+            ),
+        )
+        return self._wait_for_tooltip_text(
+            session,
+            element,
+            expected_text,
+            timeout=timeout,
+        )
+
+    def _wait_for_tooltip_text(
+        self,
+        session: TauriSession,
+        element: Any,
+        expected_text: str,
+        *,
+        timeout: float,
+    ) -> str:
+        deadline = time.monotonic() + timeout
+        latest_render_states: list[dict[str, Any]] = []
+        while time.monotonic() < deadline:
+            latest_render_states = []
+            for tooltip in session.find_elements('[role="tooltip"]'):
+                tooltip_text = tooltip.text.strip()
+                if tooltip_text != expected_text:
+                    continue
+                render_state = self._element_render_state(
+                    session,
+                    element,
+                    tooltip,
+                )
+                latest_render_states.append(render_state)
+                if render_state.get("visible") is True:
+                    return tooltip_text
+            time.sleep(0.1)
+        raise GateError(
+            "Find People scope tooltip did not become visible with expected text: "
+            f"{expected_text!r}; render states: "
+            f"{json.dumps(latest_render_states, sort_keys=True)}"
+        )
+
+    @staticmethod
+    def _element_render_state(
+        session: TauriSession,
+        trigger: Any,
+        element: Any,
+    ) -> dict[str, Any]:
+        state = session.execute_script(
+                """
+                const trigger = arguments[0];
+                const tooltip = arguments[1];
+                const describedBy = (trigger.getAttribute('aria-describedby') || '')
+                  .split(/\\s+/)
+                  .filter(Boolean);
+                const rect = tooltip.getBoundingClientRect();
+                let effectiveOpacity = 1;
+                const ancestors = [];
+                let stylesVisible = true;
+                for (
+                  let current = tooltip;
+                  current instanceof Element;
+                  current = current.parentElement
+                ) {
+                  const style = getComputedStyle(current);
+                  ancestors.push({
+                    tag: current.tagName,
+                    id: current.id || '',
+                    className: String(current.className || ''),
+                    display: style.display,
+                    visibility: style.visibility,
+                    opacity: style.opacity,
+                  });
+                  if (style.display === 'none' || style.visibility === 'hidden') {
+                    stylesVisible = false;
+                  }
+                  effectiveOpacity *= Number.parseFloat(style.opacity || '1');
+                  if (current === document.body) break;
+                }
+                const associated = Boolean(
+                  tooltip.id && describedBy.includes(tooltip.id)
+                );
+                const visible = Boolean(
+                  associated
+                  &&
+                  rect.width > 0
+                  && rect.height > 0
+                  && stylesVisible
+                  && effectiveOpacity >= 0.99
+                );
+                return {
+                  ancestors,
+                  associated,
+                  describedBy,
+                  effectiveOpacity,
+                  rect: {
+                    height: rect.height,
+                    width: rect.width,
+                  },
+                  tooltipId: tooltip.id || '',
+                  visible,
+                };
+                """,
+                trigger,
+                element,
+            )
+        if not isinstance(state, Mapping):
+            return {"visible": False, "error": "render state is not an object"}
+        return dict(state)
+
+    @staticmethod
+    def _element_is_visibly_rendered(
+        session: TauriSession,
+        trigger: Any,
+        element: Any,
+    ) -> bool:
+        return DesktopOAuthNativeGate._element_render_state(
+            session,
+            trigger,
+            element,
+        ).get("visible") is True
 
     def _source_identity(self) -> dict[str, Any]:
         source = self._mapping(self.manifest.get("source"), "runtime source")

@@ -587,6 +587,9 @@ class CellAdapterIdentity:
     semantic_screenshot_probe: bool = False
     non_interference_probe: bool = False
     non_interference: CellNonInterferenceIdentity | None = None
+    frontmost_unchanged: bool = False
+    pointer_unchanged: bool = False
+    keyboard_focus_unchanged: bool = False
 
 
 @dataclass(frozen=True)
@@ -638,14 +641,43 @@ class RuntimeCellManifest:
             raise ProvisioningError(
                 f"runtime cell {self.cell_id}: source mode mismatch"
             )
+        if self.native_adapter.input_mode not in {
+            "semantic-nonintrusive",
+            "exclusive-native-input",
+        }:
+            raise ProvisioningError(
+                f"runtime cell {self.cell_id}: input mode is invalid"
+            )
+        semantic_input = (
+            self.native_adapter.input_mode == "semantic-nonintrusive"
+        )
+        expected_input_backend = (
+            "embedded-webdriver-semantic"
+            if semantic_input
+            else contract.native_adapter.input
+        )
+        expected_screenshot_backend = (
+            "embedded-webdriver"
+            if semantic_input
+            else contract.native_adapter.screenshot
+        )
         if (
-            self.native_adapter.input_backend != contract.native_adapter.input
+            self.native_adapter.input_backend != expected_input_backend
             or self.native_adapter.window_backend != contract.native_adapter.window
             or self.native_adapter.screenshot_backend
-            != contract.native_adapter.screenshot
+            != expected_screenshot_backend
         ):
             raise ProvisioningError(
                 f"runtime cell {self.cell_id}: native adapter identity mismatch"
+            )
+        if semantic_input and not (
+            self.native_adapter.frontmost_unchanged
+            and self.native_adapter.pointer_unchanged
+            and self.native_adapter.keyboard_focus_unchanged
+        ):
+            raise ProvisioningError(
+                f"runtime cell {self.cell_id}: semantic input changed host focus "
+                "or pointer state"
             )
         if contract.isolation.image_digest_required and not _SHA256_PATTERN.fullmatch(
             self.platform.image_digest
@@ -849,6 +881,7 @@ class RuntimeCellManifest:
                 "nativeAdapter": {
                     "inputMode": self.native_adapter.input_mode,
                     "inputBackend": self.native_adapter.input_backend,
+                    "inputMode": self.native_adapter.input_mode,
                     "windowBackend": self.native_adapter.window_backend,
                     "screenshotBackend": self.native_adapter.screenshot_backend,
                     "inputProbe": self.native_adapter.input_probe,
@@ -871,6 +904,13 @@ class RuntimeCellManifest:
                         self.native_adapter.non_interference.to_dict()
                         if self.native_adapter.non_interference is not None
                         else None
+                    ),
+                    "frontmostUnchanged": (
+                        self.native_adapter.frontmost_unchanged
+                    ),
+                    "pointerUnchanged": self.native_adapter.pointer_unchanged,
+                    "keyboardFocusUnchanged": (
+                        self.native_adapter.keyboard_focus_unchanged
                     ),
                 },
                 "lease": {

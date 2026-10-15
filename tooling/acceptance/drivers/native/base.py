@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass
 from enum import Enum
 from pathlib import Path
 
-from tooling.acceptance.core.errors import NativeInputBlocked
+from tooling.acceptance.core.errors import DriverError, NativeInputBlocked
 
 
 class NativeInputMode(str, Enum):
@@ -17,6 +17,24 @@ class NativeInputMode(str, Enum):
 class NativeInputIsolation(str, Enum):
     SHARED_USER_SESSION = "shared-user-session"
     ISOLATED_GUI_SESSION = "isolated-gui-session"
+
+
+@dataclass(frozen=True)
+class NativeInputStateSnapshot:
+    frontmost_pid: int
+    pointer_x: float
+    pointer_y: float
+    keyboard_focus_sha256: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "frontmostPid": self.frontmost_pid,
+            "pointer": {
+                "x": self.pointer_x,
+                "y": self.pointer_y,
+            },
+            "keyboardFocusSha256": self.keyboard_focus_sha256,
+        }
 
 
 def resolve_native_input_mode(value: str | None) -> NativeInputMode:
@@ -183,6 +201,11 @@ class NativeDesktopAdapter(ABC):
             operation,
             "global focus, keyboard, or pointer injection is forbidden in "
             f"{self.input_mode.value!r} mode",
+        )
+
+    def input_state_snapshot(self) -> NativeInputStateSnapshot:
+        raise DriverError(
+            f"{self.platform} does not expose a non-intrusive input snapshot"
         )
 
     @property
