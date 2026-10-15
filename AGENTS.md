@@ -3,7 +3,7 @@
 > Single authoritative source for all AI coding agents.
 > `docs/.agent/<platform>.md` is the agent entry layer: use it to find the real source documents, hard constraints, and verification commands.
 >
-> Last updated: 2026-10-15
+> Last updated: 2026-10-16
 
 ---
 
@@ -137,16 +137,22 @@ Example:
 8. **UI Identity first** — For any UI/UX design, visual refactor, screenshot review, layout issue, button/style issue, or client UI code change, first read `docs/client/common/ux-design-methodology.md`, `docs/client/common/ui-identity/README.md`, and the closest module contract under `docs/client/common/ui-identity/modules/`. Do not rely on ad-hoc component-library defaults.
 9. **Service coordination first** — For cross-service issues (relay mount, DHT bootstrap, federation resolve failures, Station↔Relay↔Desktop connectivity), consult `docs/architecture/platform/runtime/service-coordination.md` before debugging. It defines the dependency DAG, credential lifecycle, and troubleshooting index.
 10. **Acceptance Infra ownership first** — Acceptance Core, planner, validator, runner, Evidence Store, lifecycle, and framework tooling work MUST use `pt-acceptance-infra-engineering`. Infra defines and validates injection contracts; it MUST NOT create, repair, weaken, or complete business Domain injection. Business Acceptance onboarding and proof remain with `pt-acceptance-engineering`.
-11. **Acceptance Suite reuse first** — Multi-scenario runtime Tasks MUST keep
+11. **Acceptance execution is scope-progressive** — Each verification pass uses
+    exactly one mode: `DEVELOPMENT_ITERATION`, `CLOSURE`, `COMPLETION`, or
+    `FULL_RELEASE`. Development runs affected source checks plus one focused
+    exact-source Journey. Completion runs only at delivery; full/release
+    requires an explicit current user request. Unrun Gates remain `UNPROVEN`
+    and never trigger automatic backfill.
+12. **Acceptance Suite reuse first** — Multi-scenario runtime Tasks MUST keep
     build, deploy, account, client, device, storage, and login ownership at Task
     or Suite scope. Scenarios are attach-only and own only namespaced data,
     reset, real product actions, and receiver-visible assertions. Declare
     `runtimeReuse` and audit it with `pt-acceptance-pipeline-auditor`.
-12. **Explicit worktree first** — A skill source path never selects the
+13. **Explicit worktree first** — A skill source path never selects the
     execution worktree. Use the canonical worktree explicitly selected for the
     request. Creating, switching, removing, or pruning a worktree requires the
     user's explicit request for that operation.
-13. **Records are optional; real guards are mandatory** — Ordinary source work
+14. **Records are optional; real guards are mandatory** — Ordinary source work
     requires no declaration, OWNER, PlanMount, Session, or close receipt.
     Complex tasks may use an explicit `.dev-workflow/tasks/<taskId>` record.
     Runtime operations still require reviewed Profile, capability, exact
@@ -415,7 +421,8 @@ Error code ranges: `10000s` (business), `20000s` (protocol), `30000s` (content).
 
 **Completion criteria**: Implementation complete + focused source checks +
 required exact-source Journeys at `FUNCTIONAL_PASS` + required formal
-Acceptance proof + explicit disposition of resources owned by the request.
+Acceptance proof for the selected delivery scope + explicit disposition of
+resources owned by the request.
 
 ---
 
@@ -607,18 +614,26 @@ boundary instead of silently creating one.
 10. **Functional fence**: focused source checks and one exact-source Journey
    precede Acceptance expansion. `SOURCE_CHECK`, `STRUCTURAL_CHECK`, `UX_REVIEW`,
    Gate count and test count cannot establish `FUNCTIONAL_PASS`.
-11. **Acceptance scenario selection**: derive scenarios from product states,
+11. **Acceptance execution modes**: one pass selects exactly one of
+    `DEVELOPMENT_ITERATION`, `CLOSURE`, `COMPLETION`, or `FULL_RELEASE`.
+    Development does not invoke formal proof or `--require-proven`; closure
+    executes its explicit Gates once; completion starts only at delivery; and
+    full/release requires an explicit current user request. Tier-specific
+    targets and unfiltered `acceptance-run` are alternatives, never a sequence
+    that reruns the same Gates. Unrun Gates remain `UNPROVEN` and do not trigger
+    automatic backfill.
+12. **Acceptance scenario selection**: derive scenarios from product states,
     changed failure semantics, receiver outcomes, and concrete architecture
     risks; never require a generic five-variant matrix for every closure.
-12. **Anchor boundary**: Context Anchor may project any explicit request.
+13. **Anchor boundary**: Context Anchor may project any explicit request.
     Without task progress it reports no selected task; it does not create one.
-13. **Continuous Plan Run**: one explicit `continue`, `resume`, `execute the
+14. **Continuous Plan Run**: one explicit `continue`, `resume`, `execute the
     plan`, or equivalent request authorizes `pt-dev-workflow` to continue across
     Task closures, successor activation, internal review gates, and context
     compaction within the accepted Plan and authorization envelope. Goal Slice
     remains a single-Task internal scheduling unit. Do not ask `Continue?`
     after a Task, review, or Context Anchor while dependency-ready work remains.
-14. **Host-neutral execution**: project Skills own scheduling, runtime
+15. **Host-neutral execution**: project Skills own scheduling, runtime
     verification, and evidence semantics. Detect TRAE, Cursor,
     Codex, or another host only when selecting an optional tool transport.
     `pt-goal-orchestrator` projects the capability request; after Guardian
@@ -661,7 +676,11 @@ boundary instead of silently creating one.
 9. Current-source evidence must bind the current commit and workspace digest.
    Source changes invalidate prior evidence. Caller-authored PASS values do not
    become formal proof.
-10. Completion review consumes explicit obligations, current source, and current
+10. Verification does not auto-escalate. Development, closure, completion, and
+    full/release are mutually exclusive modes for one pass. Missing evidence
+    stays `UNPROVEN`; impact discovery, Gap output, and available environments
+    do not schedule automatic proof backfill.
+11. Completion review consumes explicit obligations, current source, and current
    evidence. Closing affects only the selected task and resources it actually
    owns; it never seals the worktree.
 
