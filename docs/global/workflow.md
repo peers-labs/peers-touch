@@ -97,6 +97,14 @@ Agent 先调用相关方法论和评审 Skill 检查方案。需要用户确认�
 
 方案确定后，核对当前 worktree、分支和已有改动，明确本次可以修改的路径。IDE 当前打开的文件、技能所在目录和终端默认目录都不能替代任务指定的工作区。
 
+写报告或生成产物前，必须从本次选定 worktree 执行
+`git rev-parse --show-toplevel` 确认归属。中间草稿、原始日志和一次性脚本写入
+`/tmp/<repo>_<session>/`；面向用户且属于当前仓库任务的报告写入
+`<selected-worktree>/.artifacts/reports/<report-name>/`；正式 Acceptance 证据只写入
+外部 Evidence Store；长期有效的产品、架构和工程结论写入对应 `docs/`。
+`.artifacts/` 是 gitignored 的本地交付区，不是正式证据。不得因 IDE 根目录顺序、
+流程 Skill 来源或便利性，把产物写入另一个 worktree。
+
 默认只读取和处理本次目标 worktree，不把目标外 worktree 的实现或报错作为当前事实。
 只有用户明确要求跨分支比较、合并或冲突处理时，才读取指定的其他 worktree；
 写文件、生成代码和提交始终留在本次指定工作区。已有的无关改动保留，不能清理、

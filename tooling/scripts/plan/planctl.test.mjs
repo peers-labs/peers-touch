@@ -90,20 +90,3 @@ test('retired execution commands fail closed', async (t) => {
     },
   );
 });
-
-test('completion candidate digest covers the complete candidate run', () => {
-  const resolved = {
-    snapshot: {
-      planDigest: 'plan-digest',
-      recordDigest: 'snapshot-digest',
-    },
-    run: { runId: 'run-id', revision: 7 },
-  };
-  const candidate = {
-    currentTaskId: 'TASK-02',
-    exhaustion: null,
-  };
-  const expected = digestCompletionCandidate(candidate);
-
-  assert.equal(digestRunCompletionCandidate(resolved, candidate), expected);
-});

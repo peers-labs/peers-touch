@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-15
-covered_docs_hash: 0c9e68f8d5f2707ed28da28947433c81b771ed7711e910faafc8fc3207e0d81a
+covered_docs_hash: 9c0ba5c730d8dae423cbe13828a868505907067079b6e0c956adf2ae1d8ccc22
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,55 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-10-14 Cross-Branch Preservation Review
+
+Parallel worktree review exposed a delivery gap: a PR's three-dot diff and green
+checks do not prove that the prospective merge tree preserves behavior already
+landed on its target branch. The GitHub Review Skill now requires overlap
+classification as `PRESERVED`, `INTENTIONALLY_SUPERSEDED`, or `UNPROVEN`, checks
+both coverage loss and unjustified deletion/weakening, and uses `range-diff`
+after an actual rebase or cherry-pick.
+
+This is review judgment over the final merged source. It reuses
+`pt-branch-conflict-guardian` for semantic conflict evidence and
+`pt-code-structure-review` for duplicate-owner and incomplete-cutover findings.
+It does not introduce a new Skill, Plan field, worktree-order model, scheduler,
+PR state, or CI authority. Canonical marker checks in `skill-check.sh` cover the
+new behavior; no generic code fixture is required.
+
+## 2026-10-14 Node Connectivity And Relay Review
+
+The reviewed architecture replaces the custom WSS/mount data plane with
+standard libp2p Direct/Circuit v2 transport into the canonical Station router.
+Logical `station_peer_id` remains independent from Node PeerID and route
+coordinates. Relay owns only bounded admission and control; Desktop Station
+Access owns route selection and publishes immutable `RouteLease` values to one
+app-scoped `StationRuntime`.
+
+`SKILL.md` carries the corresponding identity, Host ownership, private-CA
+health, failover/replay, hard-cut, and exact-source proof checklist. Existing
+NCP Gates and hard rules provide executable coverage, so no generic review
+fixture or new knowledge entry is required.
+
+## 2026-10-07 Canonical Chat Ownership Review
+
+Desktop and Station coding guides reflect the completed Chat hard cut:
+`messagingRuntime` and the Device Messaging Engine own Chat lifecycle and
+projection freshness, `socialRealtime` is limited to Social projections, and
+Conversation-owned persistence replaces the retired Friend/Group store
+families. The governing runtime-projection Skill carries the same boundary.
+
+Existing GitHub Review rules already require one business truth, proto-first
+contracts, generated-output integrity, runtime-owned freshness, and complete
+consumer migration. The Chat zero-reference Gate provides the specific
+old-path regression coverage.
+
+## 2026-10-06 Knowledge Index Review
+
+The Knowledge index links the Conversation production schema migration
+single-source pitfall. The entry documents Station migration ownership and
+does not change review behavior, severity, or evidence contracts.
 
 ## 2026-10-15 Development Operation Authority Review
 

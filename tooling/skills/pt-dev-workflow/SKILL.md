@@ -93,6 +93,15 @@ Verify canonical root, branch, current HEAD, dirty state, and allowed paths.
 Preserve unrelated changes. Prepare only runtime resources needed for the next
 verification slice.
 
+Derive every generated artifact's owner from that verified root. Keep drafts,
+raw logs, and disposable scripts under `/tmp/<repo>_<session>/`; put
+user-facing task reports under
+`<selected-worktree>/.artifacts/reports/<report-name>/`; write formal
+Acceptance evidence only through the external Evidence Store; persist durable
+conclusions in the governing `docs/` source. `.artifacts/` is a gitignored
+delivery area, not proof. Never choose a sibling destination from IDE ordering,
+the Skill source repository, or a hardcoded path.
+
 ### 5. Implement
 
 Invoke `pt-read-before-edit` and applicable coding/domain Skills. Keep changes

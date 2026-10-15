@@ -6,7 +6,6 @@ import {
   PlanPackageError,
   isDirectInvocation,
   loadPlanPackage,
-  recordNorthStarApproval,
   summarizePlanPackage,
 } from './plan-package.mjs';
 
@@ -79,50 +78,6 @@ function taskProjection(plan, task) {
   };
 }
 
-export async function amendPlan(_planPath, options) {
-  const result = await amendMountedPlan({
-    ...mountOptions(options),
-    plan: requireOption(options, 'plan'),
-    actor: requireOption(options, 'actor'),
-    reason: requireOption(options, 'reason'),
-    changes: options.change ?? [],
-    approval: options.approval ?? 'agent',
-    decisionRef: options['decision-ref'],
-    amendmentId: options['amendment-id'],
-  });
-  return {
-    ...summarizeExecution(result),
-    amended: result.amended,
-    amendment: result.amendment,
-    affectedTaskIds: result.affectedTaskIds,
-  };
-}
-
-export async function approveNorthStar(_planPath, options) {
-  const planPackage = await loadPlanPackage(
-    explicitPlanPath({
-      ...options,
-      plan: requireOption(options, 'plan'),
-    }),
-    {
-      repoRoot: options['repo-root'],
-      allowUnrecordedAmendment: true,
-    },
-  );
-  const approvedAt = (
-    options.now instanceof Date ? options.now : new Date()
-  ).toISOString();
-  const approved = await recordNorthStarApproval(planPackage, {
-    approvedBy: requireOption(options, 'actor'),
-    approvedAt,
-    decisionRef: requireOption(options, 'decision-ref'),
-  });
-  return {
-    ...summarizePlanPackage(approved),
-    approvalRecorded: approved !== planPackage,
-  };
-}
-
 async function validateCommand(options) {
   assertAllowedOptions(options, READ_OPTIONS);
   const plan = await loadExplicitPlan(options);
@@ -162,28 +117,6 @@ async function taskCommand(options) {
   };
 }
 
-async function amendCommand(options) {
-  assertAllowedOptions(options, [
-    ...READ_OPTIONS,
-    'actor',
-    'reason',
-    'change',
-    'approval',
-    'decision-ref',
-    'amendment-id',
-  ]);
-  return amendPlan(options.plan, options);
-}
-
-async function approveNorthStarCommand(options) {
-  assertAllowedOptions(options, [
-    ...READ_OPTIONS,
-    'actor',
-    'decision-ref',
-  ]);
-  return approveNorthStar(options.plan, options);
-}
-
 export async function runPlanctl(argv = process.argv.slice(2)) {
   const { command, options } = parseArguments(argv);
   if (command === 'validate') return validateCommand(options);
@@ -197,11 +130,6 @@ export async function runPlanctl(argv = process.argv.slice(2)) {
 
 export async function main(argv = process.argv.slice(2)) {
   try {
-    const { command, options } = parseArguments(argv);
-    resolveWorkflowOwnerCommandContext('planctl', command, {
-      home: options.home,
-      workspaceRoot: options['repo-root'] ?? process.cwd(),
-    });
     const result = await runPlanctl(argv);
     process.stdout.write(`${JSON.stringify(result)}\n`);
   } catch (error) {

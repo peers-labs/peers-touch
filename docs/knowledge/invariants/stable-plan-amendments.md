@@ -1,15 +1,8 @@
 ---
 kind: invariant
 title: Plan identity survives execution amendments
-status: active
-owns:
-  - AGENTS.md
-  - tooling/acceptance/core/execution_plan.py
-  - tooling/scripts/local-dev/
-  - tooling/scripts/plan/
-  - tooling/skills/pt-dev-workflow/
-  - tooling/skills/pt-execution-plan-guardian/
-  - tooling/skills/pt-plan-and-document/
+status: superseded-by:DWF-D42
+owns: []
 referenced-by:
   - docs/architecture/engineering/development-workflow/decisions.md
 related:
@@ -19,6 +12,10 @@ detected: 2026-10-06
 ---
 
 # Plan identity survives execution amendments
+
+> Superseded by DWF-D42. Retained as historical context only. Current Plans are
+> explicit frozen inputs; they do not own machine mounts or mutable execution
+> state.
 
 ## What must hold
 

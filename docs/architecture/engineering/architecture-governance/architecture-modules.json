@@ -193,8 +193,6 @@
         "tooling/scripts/local-dev/worktree-observation-store.test.mjs",
         "tooling/scripts/local-dev/worktree-observe.mjs",
         "tooling/scripts/plan/planctl.mjs",
-        "tooling/scripts/plan/stable-plan-state-migration.mjs",
-        "tooling/scripts/plan/stable-plan-state-migration.test.mjs",
         "tooling/skills/pt-acceptance-gap-detector",
         "tooling/skills/pt-agent-development",
         "tooling/skills/pt-completion-auditor",

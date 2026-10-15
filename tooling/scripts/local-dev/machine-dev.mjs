@@ -19,10 +19,6 @@ import {
   validateLeaseRequest,
   verifyHeldLease,
 } from './machine-dev-registry.mjs';
-import {
-  resolveWorkflowOwnerCommandContext,
-} from './workflow-owner-context.mjs';
-import { readWorktreeCreation } from './worktree-create.mjs';
 
 const OPTION_NAMES = new Map([
   ['workspace-root', 'workspaceRoot'],
@@ -178,30 +174,9 @@ const SIGNAL_EXIT_CODES = {
   SIGTERM: 143,
 };
 
-export async function runCli(argv, io = {}) {
+export async function runCli(argv) {
   const { action, options } = parseArguments(argv);
-  const write = io.output ?? output;
-  const dependencies = io.dependencies ?? {};
   options.envRepo ??= process.env.PT_ENV_REPO;
-  const resolveOwnerCommand =
-    dependencies.resolveWorkflowOwnerCommandContext ??
-    resolveWorkflowOwnerCommandContext;
-  resolveOwnerCommand('machine-dev', action, {
-    home: options.home,
-    workspaceRoot: options.workspaceRoot ?? process.cwd(),
-    resolveCurrentWorkflowOwnerContext:
-      dependencies.resolveCurrentWorkflowOwnerContext,
-  });
-  if (['register', 'select', 'update'].includes(action)) {
-    const workspaceRoot = options.workspaceRoot ?? process.cwd();
-    const creation = (
-      dependencies.readWorktreeCreation ?? readWorktreeCreation
-    )({
-      home: options.home,
-      workspaceRoot,
-    });
-    options.createdBy = creation?.createdBy;
-  }
   switch (action) {
     case 'register':
       for (const key of [
@@ -213,27 +188,27 @@ export async function runCli(argv, io = {}) {
       ]) {
         requireOption(options, key);
       }
-      write(registerWorkspace(options));
+      output(registerWorkspace(options));
       return 0;
     case 'select':
       for (const key of ['profile', 'owner']) {
         requireOption(options, key);
       }
-      write(selectWorkspaceProfile(options));
+      output(selectWorkspaceProfile(options));
       return 0;
     case 'update':
-      write(updateWorkspace(options));
+      output(updateWorkspace(options));
       return 0;
     case 'unregister':
       requireOption(options, 'owner');
-      write(
+      output(
         options.workspaceId === undefined
           ? unregisterWorkspace(options)
           : unregisterWorkspaceByIdentity(options),
       );
       return 0;
     case 'check':
-      write(checkWorkspace(options));
+      output(checkWorkspace(options));
       return 0;
     case 'resolve': {
       const resolved = checkWorkspace(options);
@@ -245,18 +220,18 @@ export async function runCli(argv, io = {}) {
           'format must be json or shell',
         );
       } else {
-        write(resolved);
+        output(resolved);
       }
       return 0;
     }
     case 'status-all':
-      write(statusAll(options));
+      output(statusAll(options));
       return 0;
     case 'validate-lease':
-      write(validateLeaseRequest(options));
+      output(validateLeaseRequest(options));
       return 0;
     case 'verify-held':
-      write(verifyHeldLease(options));
+      output(verifyHeldLease(options));
       return 0;
     case 'lease':
       return runLease(options);
