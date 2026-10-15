@@ -3,6 +3,7 @@ package infrastructure
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
@@ -3614,8 +3615,7 @@ func postgresCanonicalModelIndexes(
 	database *gorm.DB,
 	table string,
 ) (map[string]canonicalIndexExpectation, error) {
-	var rows []postgresCanonicalIndexRow
-	if err := database.Raw(`
+	rows, err := database.Raw(`
 SELECT
   index_relation.relname AS index_name,
   table_column.attname AS column_name,
@@ -3661,7 +3661,8 @@ ORDER BY index_relation.relname, index_column.ordinality
 		canonicalPostgresPrivateIndexPredicate("post_id"),
 		canonicalPostgresPrivateIndexPredicate("content_id"),
 		table,
-	).Scan(&rows).Error; err != nil {
+	).Rows()
+	if err != nil {
 		return nil, resetError(
 			ResetCodeSchemaTargetUnreviewed,
 			"inspect canonical indexes for %s: %v",
@@ -3669,10 +3670,35 @@ ORDER BY index_relation.relname, index_column.ordinality
 			err,
 		)
 	}
+	defer func() {
+		_ = rows.Close()
+	}()
 
 	result := make(map[string]canonicalIndexExpectation)
 	ordinals := make(map[string]int)
-	for _, row := range rows {
+	for rows.Next() {
+		var row postgresCanonicalIndexRow
+		var columnName sql.NullString
+		if err := rows.Scan(
+			&row.IndexName,
+			&columnName,
+			&row.Ordinal,
+			&row.IsUnique,
+			&row.IsPrimary,
+			&row.PartialPredicateApproved,
+			&row.IsValid,
+			&row.IsReady,
+		); err != nil {
+			return nil, resetError(
+				ResetCodeSchemaTargetUnreviewed,
+				"scan canonical index for %s: %v",
+				table,
+				err,
+			)
+		}
+		if columnName.Valid {
+			row.ColumnName = &columnName.String
+		}
 		if row.IsPrimary {
 			continue
 		}
@@ -3725,6 +3751,14 @@ ORDER BY index_relation.relname, index_column.ordinality
 		}
 		result[row.IndexName] = index
 		ordinals[row.IndexName] = row.Ordinal
+	}
+	if err := rows.Err(); err != nil {
+		return nil, resetError(
+			ResetCodeSchemaTargetUnreviewed,
+			"iterate canonical indexes for %s: %v",
+			table,
+			err,
+		)
 	}
 
 	return result, nil
