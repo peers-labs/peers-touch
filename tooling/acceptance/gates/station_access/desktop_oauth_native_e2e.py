@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -280,9 +281,9 @@ class DesktopOAuthNativeGate(AcceptanceGate):
                 )
 
             signature_failures: dict[str, Any] = {}
-            for failure_name, signature in (
-                ("missing", None),
-                ("incorrect", "0" * 64),
+            for failure_name, signature, expected_error in (
+                ("missing", None, "invalid OAuth bridge request"),
+                ("incorrect", "0" * 64, "invalid HMAC signature"),
             ):
                 failed_start = self._start_oauth_via_product(session, "github")
                 failed_callback = self._send_callback(
@@ -310,13 +311,14 @@ class DesktopOAuthNativeGate(AcceptanceGate):
                     failed_callback["statusCode"] == 200
                     and failed_result["completed"] is True
                     and failed_result["status"] == "failed"
-                    and bool(failed_result["error"])
+                    and expected_error in failed_result["error"]
                     and product_failure["rejected"] is True,
                     json.dumps(signature_failures[failure_name], sort_keys=True),
                 )
 
             login_start = self._start_oauth_via_product(session, "github")
             signed_callback = self._sign_callback(
+                callback_url=login_start["callbackUrl"],
                 provider_id="github",
                 provider_user_id="acceptance-native-oauth",
                 email="oauth.acceptance@test.invalid",
@@ -328,6 +330,7 @@ class DesktopOAuthNativeGate(AcceptanceGate):
                 email="oauth.acceptance@test.invalid",
                 timestamp=signed_callback["timestamp"],
                 signature=signed_callback["signature"],
+                assertion_id=signed_callback["assertionId"],
             )
             callback_result = self._poll_oauth_terminal(
                 session,
@@ -996,6 +999,7 @@ class DesktopOAuthNativeGate(AcceptanceGate):
         email: str,
         timestamp: str,
         signature: str | None,
+        assertion_id: str | None = None,
     ) -> str:
         parsed = urlparse(callback_url)
         query = {
@@ -1004,15 +1008,14 @@ class DesktopOAuthNativeGate(AcceptanceGate):
             if values
         }
         query.update(
-            {
-                "provider": provider_id,
-                "provider_user_id": provider_user_id,
-                "username": "oauthacceptance",
-                "display_name": "OAuth Acceptance",
-                "email": email,
-                "avatar_url": OAUTH_AVATAR_URL,
-                "ts": timestamp,
-            }
+            DesktopOAuthNativeGate._signed_callback_fields(
+                callback_url,
+                provider_id=provider_id,
+                provider_user_id=provider_user_id,
+                email=email,
+                timestamp=timestamp,
+                assertion_id=assertion_id,
+            )
         )
         if signature is None:
             query.pop("sig", None)
@@ -1030,6 +1033,7 @@ class DesktopOAuthNativeGate(AcceptanceGate):
         email: str,
         signature: str | None,
         timestamp: str | None = None,
+        assertion_id: str | None = None,
     ) -> dict[str, Any]:
         timestamp = timestamp or datetime.now(timezone.utc).isoformat(
             timespec="seconds"
@@ -1041,6 +1045,7 @@ class DesktopOAuthNativeGate(AcceptanceGate):
             email=email,
             timestamp=timestamp,
             signature=signature,
+            assertion_id=assertion_id,
         )
         try:
             opener = build_opener(ProxyHandler({}))
@@ -1108,6 +1113,7 @@ class DesktopOAuthNativeGate(AcceptanceGate):
     def _sign_callback(
         self,
         *,
+        callback_url: str,
         provider_id: str,
         provider_user_id: str,
         email: str,
@@ -1115,15 +1121,17 @@ class DesktopOAuthNativeGate(AcceptanceGate):
         timestamp = datetime.now(timezone.utc).isoformat(
             timespec="seconds"
         ).replace("+00:00", "Z")
+        fields = self._signed_callback_fields(
+            callback_url,
+            provider_id=provider_id,
+            provider_user_id=provider_user_id,
+            email=email,
+            timestamp=timestamp,
+        )
         response = self.capability_client.invoke(
             SIGNER_CAPABILITY_ID,
             SIGN_OPERATION,
-            {
-                "provider": provider_id,
-                "providerUserId": provider_user_id,
-                "email": email,
-                "timestamp": timestamp,
-            },
+            {"fields": fields},
             timeout_seconds=10,
         )
         signature = str(response.get("signature") or "")
@@ -1132,7 +1140,62 @@ class DesktopOAuthNativeGate(AcceptanceGate):
             or re.fullmatch(r"[0-9a-f]{64}", signature) is None
         ):
             raise GateError("OAuth bridge signer returned an invalid signature")
-        return {"timestamp": timestamp, "signature": signature}
+        return {
+            "timestamp": timestamp,
+            "assertionId": fields["assertion_id"],
+            "signature": signature,
+        }
+
+    @staticmethod
+    def _signed_callback_fields(
+        callback_url: str,
+        *,
+        provider_id: str,
+        provider_user_id: str,
+        email: str,
+        timestamp: str,
+        assertion_id: str | None = None,
+    ) -> dict[str, str]:
+        parsed = urlparse(callback_url)
+        callback_query = {
+            key: values[-1]
+            for key, values in parse_qs(
+                parsed.query,
+                keep_blank_values=True,
+            ).items()
+            if values
+        }
+        receiver_id = callback_query.get("session_id", "")
+        purpose = callback_query.get("purpose", "")
+        receiver_challenge = callback_query.get("receiver_challenge", "")
+        if not receiver_id or not purpose or not receiver_challenge:
+            raise GateError(
+                "OAuth loopback callback is missing its receiver contract"
+            )
+        assertion_id = assertion_id or hashlib.sha256(
+            (
+                "acceptance-oauth-bridge\0"
+                f"{receiver_id}\0{purpose}\0{receiver_challenge}\0{timestamp}"
+            ).encode("utf-8")
+        ).hexdigest()
+        if re.fullmatch(r"[0-9a-f]{64}", assertion_id) is None:
+            raise GateError("OAuth bridge assertion ID is invalid")
+        return {
+            "bridge_version": "v1",
+            "site_id": "default",
+            "purpose": purpose,
+            "assertion_id": assertion_id,
+            "receiver_id": receiver_id,
+            "receiver_challenge": receiver_challenge,
+            "provider": provider_id,
+            "provider_user_id": provider_user_id,
+            "username": "oauthacceptance",
+            "display_name": "OAuth Acceptance",
+            "email": email,
+            "email_verified": "true",
+            "avatar_url": OAUTH_AVATAR_URL,
+            "ts": timestamp,
+        }
 
     @staticmethod
     def _complete_oauth_failure_via_product(

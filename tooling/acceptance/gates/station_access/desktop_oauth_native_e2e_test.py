@@ -9,7 +9,11 @@ import unittest
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 
-from tooling.acceptance.core import BlockedError, GateError
+from tooling.acceptance.core import (
+    BlockedError,
+    EphemeralCapabilityBlocked,
+    GateError,
+)
 from tooling.acceptance.drivers.native import MouseAction, NativeInputMode
 from tooling.acceptance.gates.station_access.desktop_oauth_native_e2e import (
     ACCOUNT_IDENTITY_SUMMARY_SELECTOR,
@@ -350,8 +354,13 @@ class DesktopOAuthNativeGateTest(unittest.TestCase):
         self.assertEqual(session.provider_id, "github")
 
     def test_builds_deterministic_loopback_callback(self) -> None:
+        callback_base = (
+            "http://127.0.0.1:49152/callback?"
+            "session_id=lp-123&purpose=account_login&"
+            "receiver_challenge=challenge-123"
+        )
         callback_url = DesktopOAuthNativeGate._build_callback_url(
-            "http://127.0.0.1:49152/callback?session_id=lp-123",
+            callback_base,
             provider_id="github",
             provider_user_id="fixture-user",
             email="fixture@test.invalid",
@@ -360,17 +369,37 @@ class DesktopOAuthNativeGateTest(unittest.TestCase):
         )
 
         query = parse_qs(urlparse(callback_url).query)
+        expected_assertion_id = hashlib.sha256(
+            "\0".join(
+                (
+                    "acceptance-oauth-bridge",
+                    "lp-123",
+                    "account_login",
+                    "challenge-123",
+                    "2026-09-29T15:30:00Z",
+                )
+            ).encode()
+        ).hexdigest()
         self.assertEqual(query["session_id"], ["lp-123"])
+        self.assertEqual(query["bridge_version"], ["v1"])
+        self.assertEqual(query["site_id"], ["default"])
+        self.assertEqual(query["purpose"], ["account_login"])
+        self.assertEqual(query["assertion_id"], [expected_assertion_id])
+        self.assertEqual(query["receiver_id"], ["lp-123"])
+        self.assertEqual(query["receiver_challenge"], ["challenge-123"])
         self.assertEqual(query["provider"], ["github"])
         self.assertEqual(query["provider_user_id"], ["fixture-user"])
         self.assertEqual(query["email"], ["fixture@test.invalid"])
+        self.assertEqual(query["email_verified"], ["true"])
         self.assertEqual(query["avatar_url"], [OAUTH_AVATAR_URL])
         self.assertEqual(query["ts"], ["2026-09-29T15:30:00Z"])
         self.assertEqual(query["sig"], ["a" * 64])
 
     def test_omits_missing_loopback_signature(self) -> None:
         callback_url = DesktopOAuthNativeGate._build_callback_url(
-            "http://127.0.0.1:49152/callback?session_id=lp-123&sig=stale",
+            "http://127.0.0.1:49152/callback?"
+            "session_id=lp-123&purpose=account_login&"
+            "receiver_challenge=challenge-123&sig=stale",
             provider_id="github",
             provider_user_id="fixture-user",
             email="fixture@test.invalid",
@@ -378,24 +407,57 @@ class DesktopOAuthNativeGateTest(unittest.TestCase):
             signature=None,
         )
 
-        self.assertNotIn("sig", parse_qs(urlparse(callback_url).query))
+        query = parse_qs(urlparse(callback_url).query)
+        self.assertNotIn("sig", query)
+        self.assertEqual(query["receiver_id"], ["lp-123"])
+        self.assertEqual(query["purpose"], ["account_login"])
+        self.assertRegex(query["assertion_id"][0], r"^[0-9a-f]{64}$")
 
     def test_signer_matches_oauth_client_canonical_message(self) -> None:
-        secret = "isolated-native-oauth-secret"
-        timestamp = "2026-09-29T15:30:00Z"
+        secret = "bridge-secret"
+        fields = {
+            "bridge_version": "v1",
+            "site_id": "default",
+            "purpose": "account_login",
+            "assertion_id": "a" * 64,
+            "receiver_id": "lp-test",
+            "receiver_challenge": (
+                "YldFvi9dnPnO1KMwjEHki8bjxSoF5-7xwsrPIniWNjs"
+            ),
+            "provider": "github",
+            "provider_user_id": "42",
+            "union_id": "union-42",
+            "username": "alice",
+            "display_name": "Alice Example",
+            "email": "alice@example.test",
+            "email_verified": "true",
+            "avatar_url": "https://example.test/avatar.png",
+            "ts": "2026-10-01T00:00:00Z",
+        }
         handler = OAuthBridgeSignerCapabilityHandler(secret)
         response = handler.invoke(
             "sign",
-            {
-                "provider": "github",
-                "providerUserId": "fixture-user",
-                "email": "fixture@test.invalid",
-                "timestamp": timestamp,
-            },
+            {"fields": fields},
             deadline_monotonic=time.monotonic() + 1,
             cancellation=threading.Event(),
         )
-        expected_message = "github:fixture-user:fixture@test.invalid:" + timestamp
+        expected_message = (
+            f"assertion_id={'a' * 64}"
+            "&avatar_url=https%3A%2F%2Fexample.test%2Favatar.png"
+            "&bridge_version=v1"
+            "&display_name=Alice+Example"
+            "&email=alice%40example.test"
+            "&email_verified=true"
+            "&provider=github"
+            "&provider_user_id=42"
+            "&purpose=account_login"
+            "&receiver_challenge=YldFvi9dnPnO1KMwjEHki8bjxSoF5-7xwsrPIniWNjs"
+            "&receiver_id=lp-test"
+            "&site_id=default"
+            "&ts=2026-10-01T00%3A00%3A00Z"
+            "&union_id=union-42"
+            "&username=alice"
+        )
         expected = hmac.new(
             secret.encode(),
             expected_message.encode(),
@@ -403,15 +465,29 @@ class DesktopOAuthNativeGateTest(unittest.TestCase):
         ).hexdigest()
 
         self.assertEqual(
-            oauth_bridge_signature_message(
-                "github",
-                "fixture-user",
-                "fixture@test.invalid",
-                timestamp,
-            ),
+            oauth_bridge_signature_message(fields),
             expected_message,
         )
+        self.assertEqual(
+            response["signature"],
+            "490b711f99b1d8842f252b1ca09bc2784de89797aebc744d013012b70ee35867",
+        )
         self.assertEqual(response["signature"], expected)
+        self.assertTrue(handler.close().secrets_zeroized)
+
+    def test_signer_rejects_noncanonical_field_sets(self) -> None:
+        handler = OAuthBridgeSignerCapabilityHandler(
+            "isolated-native-oauth-secret"
+        )
+
+        with self.assertRaises(EphemeralCapabilityBlocked):
+            handler.invoke(
+                "sign",
+                {"fields": {"provider": "github"}},
+                deadline_monotonic=time.monotonic() + 1,
+                cancellation=threading.Event(),
+            )
+
         self.assertTrue(handler.close().secrets_zeroized)
 
     def test_gate_requests_signature_without_receiving_secret(self) -> None:
@@ -422,6 +498,11 @@ class DesktopOAuthNativeGateTest(unittest.TestCase):
         gate.capability_client = client
 
         signed = gate._sign_callback(
+            callback_url=(
+                "http://127.0.0.1:49152/callback?"
+                "session_id=lp-123&purpose=account_login&"
+                "receiver_challenge=challenge-123"
+            ),
             provider_id="google",
             provider_user_id="fixture-user",
             email="fixture@test.invalid",
@@ -431,6 +512,12 @@ class DesktopOAuthNativeGateTest(unittest.TestCase):
         self.assertEqual(client.capability_id, "station-access.oauth-bridge-signer")
         self.assertEqual(client.operation, "sign")
         self.assertNotIn("secret", client.payload)
+        fields = client.payload["fields"]
+        self.assertEqual(fields["assertion_id"], signed["assertionId"])
+        self.assertEqual(fields["receiver_id"], "lp-123")
+        self.assertEqual(fields["purpose"], "account_login")
+        self.assertEqual(fields["receiver_challenge"], "challenge-123")
+        self.assertEqual(fields["ts"], signed["timestamp"])
 
     def test_signer_capability_rejects_mismatched_run_identity(self) -> None:
         provisioner = object.__new__(

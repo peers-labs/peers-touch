@@ -12,6 +12,7 @@ import threading
 import time
 from collections.abc import Mapping
 from pathlib import Path
+from urllib.parse import urlencode
 
 from tooling.acceptance.core import (
     EphemeralCapabilityHandler,
@@ -53,6 +54,29 @@ SIGN_OPERATION = "sign"
 SECRET_CREDENTIAL_ID = "oauth-bridge-secret"
 _SAFE_REMOTE_PATH = re.compile(r"^[A-Za-z0-9._/-]+$")
 _SAFE_STATION_UP_FLAGS = frozenset({"-d", "--detach", "--no-deps"})
+_OAUTH_BRIDGE_REQUIRED_SIGNED_FIELDS = frozenset(
+    {
+        "assertion_id",
+        "bridge_version",
+        "email_verified",
+        "provider",
+        "provider_user_id",
+        "purpose",
+        "receiver_challenge",
+        "receiver_id",
+        "site_id",
+        "ts",
+    }
+)
+_OAUTH_BRIDGE_OPTIONAL_SIGNED_FIELDS = frozenset(
+    {
+        "avatar_url",
+        "display_name",
+        "email",
+        "union_id",
+        "username",
+    }
+)
 
 
 def _station_compose_override_command(restart_command: str) -> str:
@@ -104,12 +128,9 @@ def _station_compose_override_command(restart_command: str) -> str:
 
 
 def oauth_bridge_signature_message(
-    provider: str,
-    provider_user_id: str,
-    email: str,
-    timestamp: str,
+    fields: Mapping[str, str],
 ) -> str:
-    return f"{provider}:{provider_user_id}:{email}:{timestamp}"
+    return urlencode(sorted(fields.items()))
 
 
 def _station_restart_script(
@@ -181,21 +202,32 @@ class OAuthBridgeSignerCapabilityHandler(EphemeralCapabilityHandler):
                 "Desktop OAuth bridge signer is unavailable",
                 resource=SIGNER_CAPABILITY_ID,
             )
-        fields = {
-            name: payload.get(name)
-            for name in ("provider", "providerUserId", "email", "timestamp")
-        }
-        if any(not isinstance(value, str) or not value for value in fields.values()):
+        raw_fields = payload.get("fields")
+        field_names = set(raw_fields) if isinstance(raw_fields, Mapping) else set()
+        if (
+            set(payload) != {"fields"}
+            or not isinstance(raw_fields, Mapping)
+            or not _OAUTH_BRIDGE_REQUIRED_SIGNED_FIELDS.issubset(field_names)
+            or not field_names.issubset(
+                _OAUTH_BRIDGE_REQUIRED_SIGNED_FIELDS
+                | _OAUTH_BRIDGE_OPTIONAL_SIGNED_FIELDS
+            )
+            or any(
+                not isinstance(key, str)
+                or not isinstance(value, str)
+                or not value
+                for key, value in raw_fields.items()
+            )
+        ):
             raise EphemeralCapabilityBlocked(
                 "Desktop OAuth bridge signing fields are incomplete",
                 resource=SIGNER_CAPABILITY_ID,
             )
-        message = oauth_bridge_signature_message(
-            str(fields["provider"]),
-            str(fields["providerUserId"]),
-            str(fields["email"]),
-            str(fields["timestamp"]),
-        )
+        fields = {
+            str(key): str(value)
+            for key, value in raw_fields.items()
+        }
+        message = oauth_bridge_signature_message(fields)
         signature = hmac.new(
             bytes(self._secret),
             message.encode("utf-8"),
