@@ -11,6 +11,7 @@ from unittest import mock
 from tooling.development.secure_content.activation_transport import (
     ActivationTransportError,
     ReviewedSchemaActivationTransport,
+    _compose_command,
     _install_attestation,
     _quiesce,
 )
@@ -345,7 +346,7 @@ class ReviewedSchemaActivationTransportTest(unittest.TestCase):
             "_run_checked",
             side_effect=completed,
         ) as run:
-            _quiesce(Path("/repo"))
+            _quiesce(Path("/repo"), "four")
 
         self.assertEqual(
             ["docker", "compose", "stop", "-t", "30", "station"],
@@ -362,6 +363,29 @@ class ReviewedSchemaActivationTransportTest(unittest.TestCase):
                 "station",
             ],
             run.call_args_list[1].args[0],
+        )
+
+    def test_chat_native_five_uses_its_reviewed_compose_project(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "peers-touch"
+            repo_root = root / "acceptance/chat-native-five/repo"
+            repo_root.mkdir(parents=True)
+            (repo_root / "tooling/docker").mkdir(parents=True)
+            (repo_root / "tooling/docker/compose.yml").write_text(
+                "services: {}\n",
+                encoding="utf-8",
+            )
+            (root / "chat-native-five.env").write_text(
+                "PEERS_DB_PASSWORD=test-only\n",
+                encoding="utf-8",
+            )
+
+            command = _compose_command(repo_root, "chat-native-five")
+
+        self.assertIn(str(root / "chat-native-five.env"), command)
+        self.assertEqual(
+            "pt-chat-native-five",
+            command[command.index("-p") + 1],
         )
 
     def test_station_image_owns_the_maintenance_binary(self) -> None:
