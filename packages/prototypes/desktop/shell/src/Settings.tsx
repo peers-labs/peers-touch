@@ -828,31 +828,28 @@ function PrivacySection() {
   );
 }
 
-// ── General · Appearance & Language ──────────────────────────────────────────
-function AppearanceSection() {
-  const [theme, setTheme] = useState<'system' | 'light' | 'dark'>('system');
-  const [language, setLanguage] = useState('zh-CN');
-  const [density, setDensity] = useState<'comfortable' | 'compact'>('comfortable');
+// ── General · Language ───────────────────────────────────────────────────────
+const PROTOTYPE_LANGUAGE_KEY = 'pt.prototype.desktop.language';
+
+function LanguageSection() {
+  const [language, setLanguage] = useState(() => (
+    typeof window !== 'undefined'
+    && window.localStorage.getItem(PROTOTYPE_LANGUAGE_KEY) === 'zh-CN'
+      ? 'zh-CN'
+      : 'en'
+  ));
+
+  useEffect(() => {
+    window.localStorage.setItem(PROTOTYPE_LANGUAGE_KEY, language);
+  }, [language]);
+
   return (
     <SettingsContainer>
-      <SettingsSection icon={Eye} title="Appearance" subtitle="Make Peers Touch feel right on this screen.">
-        <SettingsRow label="Theme" desc="Match system, or choose light or dark.">
-          <Segmented value={theme} ariaLabel="Theme"
-            options={[{ id: 'system', label: 'System' }, { id: 'light', label: 'Light' }, { id: 'dark', label: 'Dark' }]}
-            onChange={setTheme} />
-        </SettingsRow>
-        <SettingsRow label="Message density" desc="Compact fits more messages on screen.">
-          <Segmented value={density} ariaLabel="Message density"
-            options={[{ id: 'comfortable', label: 'Comfortable' }, { id: 'compact', label: 'Compact' }]}
-            onChange={setDensity} />
-        </SettingsRow>
-      </SettingsSection>
-      <SettingsSection icon={Globe} title="Language" subtitle="Interface language.">
+      <SettingsSection icon={Globe} title="Language" subtitle="Choose from the locale packs shipped with Desktop.">
         <SettingsRow label="Display language">
           <Select value={language} ariaLabel="Display language" width={200} options={[
-            { id: 'zh-CN', label: '简体中文' },
             { id: 'en', label: 'English' },
-            { id: 'ja', label: '日本語' },
+            { id: 'zh-CN', label: '简体中文' },
           ]} onChange={setLanguage} />
         </SettingsRow>
       </SettingsSection>
@@ -2157,7 +2154,7 @@ function CommandPaletteSection({ onOpen }: { onOpen: () => void }) {
 
 type GroupId = 'general' | 'network' | 'ai' | 'advanced';
 type SectionId =
-  | 'account' | 'notifications' | 'privacy' | 'appearance'
+  | 'account' | 'notifications' | 'privacy' | 'language'
   | 'station' | 'discovery' | 'federation'
   | 'providers' | 'models' | 'memory' | 'skills' | 'mcp'
   | 'storage' | 'channels' | 'applets' | 'statistics' | 'cron' | 'command-menu' | 'logs' | 'about';
@@ -2172,7 +2169,7 @@ const GROUPS: GroupDef[] = [
       { id: 'account', label: 'Account', icon: User },
       { id: 'notifications', label: 'Notifications', icon: Bell },
       { id: 'privacy', label: 'Privacy & Security', icon: Lock },
-      { id: 'appearance', label: 'Appearance & Language', icon: Sliders },
+      { id: 'language', label: 'Language', icon: Globe },
     ],
   },
   {
@@ -2214,7 +2211,7 @@ function renderSection(sectionId: SectionId, onOpenCommandPalette: () => void,
     case 'account': return <AccountSection federations={federations} />;
     case 'notifications': return <NotificationsSettingsSection />;
     case 'privacy': return <PrivacySection />;
-    case 'appearance': return <AppearanceSection />;
+    case 'language': return <LanguageSection />;
     case 'station': return <StationSection />;
     case 'discovery': return <DiscoverySection federations={federations} />;
     case 'federation': return <FederationSection federations={federations} setFederations={setFederations} />;

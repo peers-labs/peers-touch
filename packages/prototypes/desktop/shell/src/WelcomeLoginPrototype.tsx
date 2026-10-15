@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Check, ChevronRight, Globe2, KeyRound, Loader2, Mail, Server, ShieldCheck, UserRound } from 'lucide-react';
+import { ArrowLeft, Check, ChevronRight, KeyRound, Loader2, ShieldCheck, UserRound } from 'lucide-react';
+import { AuthUtilityBarPrototype } from './AuthUtilityBarPrototype';
 
-type ViewMode = 'pin' | 'pinRecovery' | 'accounts' | 'signin';
+type ViewMode = 'pin' | 'pinRecovery' | 'accounts';
 type FlowKind = 'message' | 'image' | 'file' | 'video';
 
 const PIN_LENGTH = 6;
@@ -40,11 +41,6 @@ const flows = [
 ] as const;
 
 const css = `
-@keyframes pt-login-drift {
-  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
-  50% { transform: translate3d(-8px, 6px, 0) scale(1.01); }
-}
-
 @keyframes pt-spin {
   to { transform: rotate(360deg); }
 }
@@ -55,10 +51,7 @@ const css = `
   position: relative;
   overflow: hidden;
   color: #1f2433;
-  background:
-    radial-gradient(circle at 20% 24%, rgba(110, 129, 255, .13), transparent 34%),
-    radial-gradient(circle at 74% 18%, rgba(160, 136, 255, .10), transparent 32%),
-    linear-gradient(135deg, #fbfcff 0%, #f6f8ff 56%, #eef2fb 100%);
+  background: #f6f7fb;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
@@ -69,35 +62,8 @@ const css = `
 .pt-login-bg {
   position: absolute;
   inset: -4%;
-  pointer-events: auto;
-  opacity: 1;
-  animation: pt-login-drift 18s ease-in-out infinite;
-  will-change: transform;
-}
-
-.pt-login-bg::before,
-.pt-login-bg::after {
-  content: "";
-  position: absolute;
-  border-radius: 999px;
-  filter: blur(36px);
-  opacity: .42;
-}
-
-.pt-login-bg::before {
-  width: 440px;
-  height: 440px;
-  left: 11%;
-  top: 28%;
-  background: rgba(108, 126, 234, .16);
-}
-
-.pt-login-bg::after {
-  width: 360px;
-  height: 360px;
-  right: 7%;
-  bottom: 2%;
-  background: rgba(132, 106, 216, .11);
+  pointer-events: none;
+  opacity: .82;
 }
 
 .pt-login-svg {
@@ -105,7 +71,7 @@ const css = `
   inset: 0;
   width: 100%;
   height: 100%;
-  pointer-events: auto;
+  pointer-events: none;
 }
 
 .pt-login-station-name {
@@ -457,125 +423,6 @@ const css = `
   color: rgba(58, 65, 99, .50);
 }
 
-.pt-oauth-row {
-  display: flex;
-  gap: 10px;
-  margin-top: 24px;
-}
-
-.pt-oauth-btn {
-  flex: 1;
-  height: 44px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border: 1px solid rgba(71, 80, 125, .13);
-  border-radius: 13px;
-  background: rgba(255, 255, 255, .58);
-  color: #2d3352;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background .15s, border-color .15s, box-shadow .15s;
-}
-
-.pt-oauth-btn:hover:not([disabled]) {
-  background: rgba(255, 255, 255, .88);
-  border-color: rgba(71, 80, 125, .22);
-  box-shadow: 0 6px 18px rgba(43, 50, 91, .06);
-}
-
-.pt-oauth-btn[disabled] {
-  opacity: .56;
-  cursor: default;
-}
-
-.pt-oauth-wechat:hover:not([disabled]) {
-  border-color: rgba(7, 193, 96, .32);
-}
-
-.pt-oauth-github:hover:not([disabled]) {
-  border-color: rgba(36, 41, 47, .28);
-}
-
-.pt-oauth-google:hover:not([disabled]) {
-  border-color: rgba(66, 133, 244, .28);
-}
-
-.pt-signin-divider {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 20px 0 4px;
-  color: rgba(57, 63, 94, .36);
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.pt-signin-divider::before,
-.pt-signin-divider::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background: rgba(71, 80, 125, .10);
-}
-
-.pt-signin-form {
-  display: grid;
-  gap: 12px;
-  margin-top: 16px;
-}
-
-.pt-signin-form label {
-  display: grid;
-  gap: 7px;
-  font-size: 12px;
-  font-weight: 650;
-  color: rgba(51, 57, 88, .58);
-}
-
-.pt-signin-form input {
-  height: 46px;
-  border: 1px solid rgba(71, 80, 125, .13);
-  border-radius: 15px;
-  outline: 0;
-  background: rgba(255, 255, 255, .64);
-  padding: 0 14px;
-  color: #20263b;
-  font-size: 14px;
-}
-
-.pt-login-status {
-  position: absolute;
-  left: clamp(24px, 6vw, 72px);
-  bottom: 28px;
-  display: flex;
-  gap: 10px;
-}
-
-.pt-status-pill {
-  height: 32px;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 12px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, .76);
-  background: rgba(255, 255, 255, .58);
-  color: rgba(49, 55, 83, .58);
-  font-size: 12px;
-  backdrop-filter: blur(14px);
-}
-
-.pt-status-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #46c36f;
-  box-shadow: 0 0 0 5px rgba(70, 195, 111, .12);
-}
-
 @media (max-width: 900px) {
   .pt-login-card {
     left: 24px;
@@ -587,8 +434,12 @@ const css = `
     opacity: .56;
   }
 
-  .pt-login-status {
-    left: 24px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pt-login-flow-chip,
+  .pt-spin {
+    animation: none !important;
   }
 }
 `;
@@ -1034,54 +885,12 @@ function AccountsView() {
   );
 }
 
-function SignInView({ loading, onUnlock }: { loading: boolean; onUnlock: () => void }) {
-  return (
-    <>
-      <div className="pt-login-avatar">
-        <Mail size={27} strokeWidth={1.8} />
-      </div>
-      <div className="pt-login-title">Sign in to Peers</div>
-      <div className="pt-login-subtitle">Choose a provider or sign in with email.</div>
-      <div className="pt-oauth-row">
-        <button className="pt-oauth-btn pt-oauth-github" type="button" onClick={onUnlock} disabled={loading}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
-          GitHub
-        </button>
-        <button className="pt-oauth-btn pt-oauth-google" type="button" onClick={onUnlock} disabled={loading}>
-          <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
-          Google
-        </button>
-        <button className="pt-oauth-btn pt-oauth-wechat" type="button" onClick={onUnlock} disabled={loading}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="#07C160"><path d="M8.69 2C4.18 2 .53 4.96.53 8.62c0 2.12 1.2 4 3.07 5.22L2.9 16.4l2.86-1.43c.83.23 1.72.36 2.65.38-.07-.37-.11-.75-.11-1.14 0-3.42 3.32-6.19 7.42-6.19.26 0 .51.01.76.04C15.8 4.54 12.6 2 8.69 2zm-2.8 3.8a.96.96 0 110 1.92.96.96 0 010-1.92zm5.6 0a.96.96 0 110 1.92.96.96 0 010-1.92zm4.27 4.13c-3.5 0-6.34 2.35-6.34 5.25s2.84 5.25 6.34 5.25c.73 0 1.43-.1 2.08-.3l2.3 1.15-.62-1.93c1.58-1.05 2.58-2.62 2.58-4.17 0-2.9-2.84-5.25-6.34-5.25zm-2.1 2.93a.77.77 0 110 1.54.77.77 0 010-1.54zm4.2 0a.77.77 0 110 1.54.77.77 0 010-1.54z"/></svg>
-          WeChat
-        </button>
-      </div>
-      <div className="pt-signin-divider"><span>or</span></div>
-      <div className="pt-signin-form">
-        <label>
-          Email
-          <input defaultValue="mira@example.com" />
-        </label>
-        <label>
-          Password
-          <input defaultValue="••••••••" type="password" />
-        </label>
-      </div>
-      <button className="pt-card-action" disabled={loading} onClick={onUnlock} type="button">
-        {loading ? <Loader2 className="pt-spin" size={16} /> : <ShieldCheck size={16} />}
-        {loading ? 'Signing in...' : 'Continue'}
-      </button>
-    </>
-  );
-}
-
 export function WelcomeLoginPrototype() {
   const [mode, setMode] = useState<ViewMode>('pin');
   const [loading, setLoading] = useState(false);
 
   const title = useMemo(() => {
     if (mode === 'accounts') return 'Account picker prototype';
-    if (mode === 'signin') return 'Re-auth prototype';
     if (mode === 'pinRecovery') return 'PIN recovery prototype';
     return 'PIN unlock prototype';
   }, [mode]);
@@ -1104,7 +913,6 @@ export function WelcomeLoginPrototype() {
           <div className="pt-login-modebar" aria-label="Prototype states">
             <button data-active={mode === 'pin'} onClick={() => setMode('pin')} type="button">PIN</button>
             <button data-active={mode === 'accounts'} onClick={() => setMode('accounts')} type="button">Accounts</button>
-            <button data-active={mode === 'signin'} onClick={() => setMode('signin')} type="button">Sign in</button>
           </div>
         </div>
         {mode === 'pin' ? (
@@ -1116,19 +924,8 @@ export function WelcomeLoginPrototype() {
         ) : null}
         {mode === 'pinRecovery' ? <PinRecoveryView onCancel={() => setMode('pin')} /> : null}
         {mode === 'accounts' ? <AccountsView /> : null}
-        {mode === 'signin' ? <SignInView loading={loading} onUnlock={runLoading} /> : null}
       </section>
-      <div className="pt-login-status">
-        <div className="pt-status-pill">
-          <Server size={14} />
-          Aspen Station
-          <span className="pt-status-dot" />
-        </div>
-        <div className="pt-status-pill">
-          <Globe2 size={14} />
-          en
-        </div>
-      </div>
+      <AuthUtilityBarPrototype />
     </main>
   );
 }

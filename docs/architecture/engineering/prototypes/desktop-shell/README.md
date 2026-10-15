@@ -2,7 +2,7 @@
 
 > **Status**: draft
 > **Version**: v0.1
-> **Created**: 2026-06-22 | **Updated**: 2026-06-22
+> **Created**: 2026-06-22 | **Updated**: 2026-10-15
 > **落地目标**: Desktop 容器外壳（`apps/desktop`）；**原型本身只是 React web 展示**，不碰真实 store / kernel / tauri
 > **总账状态**: drafting（见 [原型总账](../README.md)）
 > **Owner**: Peers-Touch Agent Team
@@ -62,6 +62,84 @@ pnpm dev            # Vite，浏览器打开 localhost:3105
 - 继承 shared UI Identity 与 Social Desktop 合同；保持安静的连续列表、单一强调色、方形头像和统一决策按钮。拒绝独立通知页面、重复实体控件、装饰动效和全部历史行同时挂载。
 - 验证入口：`packages/prototypes/desktop/features/social-chat/qa/geometry_checks.py`，覆盖宽窄窗口、对齐、搜索无结果及恢复、分页、决策、标记已读、删除末页、键盘关闭与回焦。数据为本地 mock，无网络加载和服务端失败态；生产状态同步、高数据量搜索性能与读屏器实测为 UNPROVEN。
 
+## Login 与 General Settings（DUI-03）
+
+本轮对齐 C19-C24。Settings 属于高频工作流，复用 shared UI Identity 的
+Quiet Protocol Minimalism；当前没有独立 Settings module UI ID。Auth 继承
+`ui-identity/modules/auth/`，保持一个稳定登录卡片、一个 Station/trust
+utility rail 和局部恢复反馈。
+
+- C19：General 只保留已交付的亮色界面，不展示 System/Light/Dark 或消息密度控制。
+- C20：语言只列出实际打包的 `en` 与 `zh-CN`，并使用与 Auth utility bar
+  相同的 prototype-local persisted preference。
+- C21：OAuth 卡片消费 Shell 注入的 broker provider projection；组件内不声明
+  provider 可用性。`auth-oauth-empty/opening/waiting/initializing/success/error`
+  覆盖空态、固定槽位进度、取消和失败重试。
+- C22：Email 登录字段为空且不预填示例凭据；提交只推进 prototype-local
+  Journey，不伪造生产会话。
+- C23：`auth-gate-invite/terms/custom/blocked/maintenance/unknown` 可直接打开。
+  unknown gate 明确 fail closed，不进入 Shell。
+- C24：左下 Station picker 覆盖 add/select/remove/probe；宽窗使用锚定
+  Popover，窄窗使用 bottom Drawer；未知状态不显示装饰性灰点。
+
+Craft contract：
+
+- Product thesis：进入产品前，用户明确知道使用哪个 Station、可用哪种登录方式，
+  且 Access policy 不被客户端猜测。
+- Main subject：登录或当前 Access Gate；Station/trust context 为次级决策信息。
+- Boundary model：Auth card 是 content/action/recovery layer；底部 utility rail
+  是 trust source；Popover/Drawer 是 floating layer。
+- Signature：Station 所有权持续可见，但只在 picker 与 Access Gate 决策点提升权重。
+- Positive calibration：provider 进度留在原按钮、卡片几何稳定、错误保留输入、
+  unknown gate fail closed、浮层关闭回焦。
+- Negative calibration：无 fake credentials、无 hardcoded provider availability、
+  无未交付主题/密度/locale、无 dashboard card grid、无装饰 motion。
+
+Review URLs：
+
+```text
+?state=auth-login
+?state=auth-login-email
+?state=auth-oauth-empty
+?state=auth-oauth-error
+?state=auth-gate-invite
+?state=auth-gate-terms
+?state=auth-gate-custom
+?state=auth-gate-blocked
+?state=auth-gate-maintenance
+?state=auth-gate-unknown
+?state=auth-recovery
+```
+
+L2 evidence（light）：
+
+- [`20261015-auth-login-wide.png`](./evidence-l2/20261015-auth-login-wide.png):
+  1440×900，provider projection、固定 auth card、Station/language trust rail。
+- [`20261015-auth-oauth-error-wide.png`](./evidence-l2/20261015-auth-oauth-error-wide.png):
+  1440×900，provider-local retry 与固定 trailing cancel。
+- [`20261015-access-custom-filled-wide.png`](./evidence-l2/20261015-access-custom-filled-wide.png):
+  1440×900，Station-authored generic schema 与唯一 primary action。
+- [`20261015-access-unknown-narrow.png`](./evidence-l2/20261015-access-unknown-narrow.png):
+  900×720，unsupported gate fail-closed recovery。
+- [`20261015-station-picker-narrow.png`](./evidence-l2/20261015-station-picker-narrow.png):
+  900×720，窄窗 Drawer、stable status/action slots、无非预期重叠。
+- [`20261015-settings-language-wide.png`](./evidence-l2/20261015-settings-language-wide.png)
+  与 [`20261015-settings-language-narrow.png`](./evidence-l2/20261015-settings-language-narrow.png):
+  1440×900 / 900×720，仅显示两套 shipped locale pack。
+
+L3 dynamic：
+
+- OAuth provider action 在 idle → opening → waiting 间保持相同 x/y/width/height；
+  cancel 后焦点回到原 provider。
+- Station picker invalid URL 保留输入并显示局部错误；add/select/remove/probe 与
+  local persistence 已真实点击；Drawer/Popover 关闭后焦点回到触发器。
+- Language picker 仅有 `en` / `zh-CN`，选择后回焦。
+- 六类 Access Gate 均可达；custom schema 只有必填字段完成后启用主动作。
+
+L4：name/role/value、icon accessible name、keyboard focus、无横向 overflow 已检查。
+真实 screen reader、Native window、broker/Station 网络、field performance 仍由正式
+Acceptance 证明；prototype mock 不构成 runtime 证据。
+
 ## Atelier 是容器里的一个 applet
 
 - 左栏 Atelier pin（Blocks 图标）→ 进入 `applet:atelier` → 内容区渲染 `@peers-touch/prototype-desktop-atelier` 的 `AtelierPage`。
@@ -85,3 +163,5 @@ drafting（见 [原型总账](../README.md)）。
 - 二级侧栏（真实工程 agent 页的 `DraggablePanel`）未复刻。
 - 命令面板为 mock 跳转，未接真实快捷键全集与命令注册表。
 - applet 进入/退出未做 keep-alive / 生命周期（真实 `PageRouter` 对 agent 页 keep-alive）；原型为简单挂载/卸载。
+- Auth 的 provider、Access Gate 和 Station probe 是可交互 scenario fixtures；
+  生产权威仍在 OAuth broker、Station Access Gate 与 Native Station registry。

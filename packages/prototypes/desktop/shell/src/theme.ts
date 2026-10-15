@@ -1,3 +1,5 @@
+import type { CSSProperties } from 'react';
+
 /**
  * Legacy color constants for existing prototype pages (Shell, Settings).
  * New/migrated pages should use `theme.useToken()` from antd ConfigProvider instead.
@@ -32,6 +34,17 @@ export const T = {
   shadowSm: '0 1px 2px rgba(15,23,42,0.04)',
   shadowMd: '0 4px 18px rgba(15,23,42,0.04)',
 } as const;
+
+/** Normalize antd v6's CSS-variable button anatomy to the Peers action token. */
+export const ANTD_PRIMARY_BUTTON_STYLE = {
+  '--ant-btn-bg-color': T.primary,
+  '--ant-btn-hover-bg-color': T.primaryHover,
+  '--ant-btn-text-color': T.white,
+  '--ant-btn-hover-text-color': T.white,
+  backgroundColor: T.primary,
+  borderColor: T.primary,
+  color: T.white,
+} as CSSProperties;
 
 /**
  * Additional design-system color literals not covered by antd tokens.

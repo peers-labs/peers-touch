@@ -51,7 +51,10 @@ import { T } from './theme';
 import { ToastHost } from '../../shared/Toast';
 import { ModernChatReview } from '../../features/modern-chat-agent/src/ModernChatReview';
 import { V2ProductReview } from '../../features/modern-chat-agent/src/V2ProductReview';
-import { OAuthLoginPrototype } from './OAuthLoginPrototype';
+import {
+  OAuthLoginPrototype,
+  type OAuthProviderProjection,
+} from './OAuthLoginPrototype';
 import { WelcomeLoginPrototype } from './WelcomeLoginPrototype';
 
 /** An installed applet (mirrors RuntimeAppletInfo.manifest + status). */
@@ -642,6 +645,33 @@ export interface DesktopShellProps {
 
 type AgentSurfaceId = 'agent' | 'agent-atelier' | 'agent-orchestration';
 
+const AUTH_PROVIDER_FIXTURES: Record<string, OAuthProviderProjection> = {
+  github: {
+    id: 'github',
+    name: 'GitHub',
+    color: '#24292f',
+    icon: 'github',
+    enabled: true,
+  },
+  google: {
+    id: 'google',
+    name: 'Google',
+    color: '#4285f4',
+    icon: 'google',
+    enabled: true,
+  },
+};
+
+function authProviderProjection(state: string): OAuthProviderProjection[] {
+  if (state === 'auth-oauth-empty') return [];
+  if (typeof window === 'undefined') return [];
+  const params = new URLSearchParams(window.location.search);
+  const requested = params.has('providers')
+    ? (params.get('providers') ?? '').split(',').map(value => value.trim()).filter(Boolean)
+    : ['github', 'google'];
+  return requested.flatMap(id => AUTH_PROVIDER_FIXTURES[id] ? [AUTH_PROVIDER_FIXTURES[id]] : []);
+}
+
 function getAgentSurfaceId(page: string): AgentSurfaceId | null {
   if (page === 'agent' || page === 'agent-profile') return 'agent';
   if (page === 'agent-atelier') return 'agent-atelier';
@@ -662,8 +692,14 @@ export function DesktopShell({
     : new URLSearchParams(window.location.search).get('state') ?? '';
   const showModernChatReview = modernChatState.startsWith('modern-');
   const showV2ProductReview = modernChatState.startsWith('v2-');
-  const showAuthPrototype = modernChatState.startsWith('auth-oauth-');
+  const showAuthPrototype = modernChatState.startsWith('auth-oauth-')
+    || modernChatState.startsWith('auth-gate-')
+    || modernChatState.startsWith('auth-login');
   const showIdentityRecoveryPrototype = modernChatState === 'auth-recovery';
+  const authProviders = useMemo(
+    () => authProviderProjection(modernChatState),
+    [modernChatState],
+  );
   const requestedSurface = typeof window === 'undefined'
     ? ''
     : new URLSearchParams(window.location.search).get('surface') ?? '';
@@ -730,7 +766,12 @@ export function DesktopShell({
   }, []);
 
   if (showAuthPrototype && !authPrototypeComplete) {
-    return <OAuthLoginPrototype onComplete={() => setAuthPrototypeComplete(true)} />;
+    return (
+      <OAuthLoginPrototype
+        onComplete={() => setAuthPrototypeComplete(true)}
+        providers={authProviders}
+      />
+    );
   }
   if (showIdentityRecoveryPrototype) {
     return <WelcomeLoginPrototype />;

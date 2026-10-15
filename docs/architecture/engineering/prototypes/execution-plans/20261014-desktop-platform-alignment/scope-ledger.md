@@ -13,7 +13,7 @@
 - `NOT_STARTED`: no alignment delta for this ledger item is present in the current worktree.
 - Every row remains `OPEN` until its owning Task closes production behavior, prototype truthfulness, focused checks, and required receiver-side proof.
 
-Current source-side count: `73 IMPLEMENTED/UNPROVEN`, `11 PARTIAL`, `18 NOT_STARTED`, `9/111 formally closed`.
+Current source-side count: `74 IMPLEMENTED/UNPROVEN`, `10 PARTIAL`, `18 NOT_STARTED`, `9/111 formally closed`.
 
 ## Shell, identity, and login
 
@@ -37,12 +37,12 @@ Current source-side count: `73 IMPLEMENTED/UNPROVEN`, `11 PARTIAL`, `18 NOT_STAR
 | C16 | List authorized devices and support real remote revoke | IMPLEMENTED/UNPROVEN | Reviewed: `FederationTab.tsx` confirms and invokes `revokeDevice(deviceId, profileVersion)` with loading/error feedback | DUI-02 |
 | C17 | Switch Station through remote logout, unbind/remove, and account picker | IMPLEMENTED/UNPROVEN | Reviewed: `identityRuntime.switchStation()` performs logout, active `stationRemove`, then account-gate projection; incomplete logout skips detach | DUI-02 |
 | C18 | Present real multi-account picker, not mock device rows | IMPLEMENTED/UNPROVEN | Reviewed: production uses the restorable account registry; prototype fixtures remain account-shaped mock data, not device rows; no change required | DUI-02 |
-| C19 | Remove unshipped dark theme and density controls | PARTIAL | production correctly ships one light theme; prototype still exposes System/Light/Dark and density | DUI-03 |
-| C20 | Offer only shipped locale packs and bind persisted language | IMPLEMENTED/UNPROVEN | production `LanguageSwitcher` uses shipped packs; prototype still advertises Japanese | DUI-03 |
-| C21 | Render server-driven OAuth providers and real loopback lifecycle | IMPLEMENTED/UNPROVEN | `useOAuth2Store` loads providers and owns start/poll/cancel/resume; prototype remains hardcoded | DUI-03 |
-| C22 | Remove fake credentials and use canonical Access login gate | IMPLEMENTED/UNPROVEN | password login runs `accessStart` and typed login submission; prototype still contains fake credentials | DUI-03 |
-| C23 | Render invite, terms, custom, blocked, and maintenance Access gates | IMPLEMENTED/UNPROVEN | `LoginPage`, `LoginFormView`, and `accessGate.ts` render typed invite/generic/blocked/maintenance states | DUI-03 |
-| C24 | Bind Station picker add/select/remove/probe lifecycle | IMPLEMENTED/UNPROVEN | `StationPicker.tsx` implements list, probe, add, select, remove, and copy; prototype remains static | DUI-03 |
+| C19 | Remove unshipped dark theme and density controls | IMPLEMENTED/UNPROVEN | production and prototype expose no theme or density controls; prototype contract test prevents their return | DUI-03 |
+| C20 | Offer only shipped locale packs and bind persisted language | IMPLEMENTED/UNPROVEN | production and prototype expose only `en`/`zh-CN`; both Auth and Settings model the persisted language preference | DUI-03 |
+| C21 | Render server-driven OAuth providers and real loopback lifecycle | IMPLEMENTED/UNPROVEN | `useOAuth2Store` owns provider load/start/poll/cancel/resume; prototype consumes an injected broker projection and covers empty/progress/error geometry | DUI-03 |
+| C22 | Remove fake credentials and use canonical Access login gate | IMPLEMENTED/UNPROVEN | password login runs `accessStart` and typed submission; prototype fields are empty and no credential/provider success is fabricated | DUI-03 |
+| C23 | Render invite, terms, custom, blocked, and maintenance Access gates | IMPLEMENTED/UNPROVEN | production renders typed schema outcomes and fails unknown gates closed; prototype exposes invite/terms/custom/blocked/maintenance/unknown review states | DUI-03 |
+| C24 | Bind Station picker add/select/remove/probe lifecycle | IMPLEMENTED/UNPROVEN | production registry and prototype picker both cover add/select/remove/probe; narrow Drawer and wide Popover preserve status slots and focus return | DUI-03 |
 | C25 | Expose forgot-PIN and encrypted-message recovery journeys | IMPLEMENTED/UNPROVEN | Reviewed: production paths are live; prototype now exposes interactive PIN replacement and 24-word encrypted-key restore states | DUI-02 |
 
 ## Social chat

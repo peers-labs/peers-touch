@@ -13,5 +13,8 @@ account has entered the product.
 
 ## Current Snapshot
 
-- C23 is partial.
-- C19-C22 and C24 have no alignment delta.
+- C19-C24 production ownership and prototype capability boundaries are aligned.
+- Prototype build, contract checks, wide/narrow L2 evidence, and material L3
+  interactions pass.
+- Formal Native OAuth and primary-navigation Acceptance remain required before
+  this Task and its six ledger rows can close.
