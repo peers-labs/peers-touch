@@ -207,6 +207,7 @@ export function MomentCommentsSection({
             replyToCommentId,
           );
       if (accepted) {
+        setExpanded(true);
         setCommentText('');
         setReplyTarget(null);
       } else {
