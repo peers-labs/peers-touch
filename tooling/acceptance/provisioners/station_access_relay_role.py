@@ -809,11 +809,15 @@ class StationAccessRelayRoleProvisioner(EnvironmentProvisioner):
         compose_file = (
             f"{home}/{config.deploy_path}/tooling/docker/compose.yml"
         )
+        environment = [
+            f"PEERS_NODE_SERVER_BASEURL={canonical_origin}",
+        ]
+        if config.libp2p_port is not None:
+            environment.append(f"LIBP2P_PORT={config.libp2p_port}")
         completed = config.transport().run_argv(
             (
                 "env",
-                f"PEERS_NODE_SERVER_BASEURL={canonical_origin}",
-                f"LIBP2P_PORT={config.libp2p_port or 4001}",
+                *environment,
                 "docker",
                 "compose",
                 "--env-file",

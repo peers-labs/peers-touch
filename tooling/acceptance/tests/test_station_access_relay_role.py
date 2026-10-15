@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -19,6 +20,9 @@ from tooling.acceptance.core.errors import BlockedError
 from tooling.acceptance.provisioners import (
     StationAccessRelayRoleProvisioner,
     get_provisioner,
+)
+from tooling.acceptance.provisioners.posix_service_runtime import (
+    PosixServiceRuntimeConfig,
 )
 from tooling.acceptance.provisioners.station_access_relay_role import (
     DESKTOP_RELAY_NATIVE_GATE_ID,
@@ -48,9 +52,14 @@ def _config(role: str) -> SimpleNamespace:
         user="operator",
         ssh_port=22,
         known_hosts_file="",
+        deploy_path=f"peers-touch/{role}",
+        runtime_path=f".peers-touch/runtime/{role}",
         http_port=http_port,
         public_port=18080 if role == "station" else 18081,
         libp2p_port=4001 if role == "relay" else None,
+        public_base_url=f"http://{role}.example:{http_port}",
+        compose_project=f"pt-{role}",
+        compose_service=role,
         data_volume=f"pt-{role}_peers_data",
     )
 
@@ -683,6 +692,59 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
         self.assertEqual(
             env_file,
             "/home/operator/peers-touch/branches/chat/.env",
+        )
+
+    def test_disposable_station_restart_keeps_env_owned_libp2p_port(
+        self,
+    ) -> None:
+        config = _config("station")
+        transport = Mock()
+        transport.run_argv.return_value = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="",
+            stderr="",
+        )
+        config.transport = Mock(return_value=transport)
+        with (
+            patch.object(
+                PosixServiceRuntimeConfig,
+                "transport",
+                return_value=transport,
+            ),
+            patch.object(
+                StationAccessRelayRoleProvisioner,
+                "_remote_home",
+                return_value="/home/operator",
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "resolve_deployment_environment_path",
+                return_value=Path("/tmp/station.env"),
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "load_env_file",
+                return_value={
+                    "PT_DEPLOY_RESTART_CMD": (
+                        "docker compose --env-file "
+                        "$HOME/peers-touch/station.env up -d station"
+                    )
+                },
+            ),
+        ):
+            StationAccessRelayRoleProvisioner._restart_station_origin(
+                config,
+                "https://station.example",
+            )
+
+        argv = transport.run_argv.call_args.args[0]
+        self.assertIn(
+            "PEERS_NODE_SERVER_BASEURL=https://station.example",
+            argv,
+        )
+        self.assertFalse(
+            any(value.startswith("LIBP2P_PORT=") for value in argv)
         )
 
     def test_runtime_status_rejects_source_drift(self) -> None:
