@@ -800,13 +800,24 @@ class IdentityRuntime {
     try {
       await useAccountIdentityStore.getState().load();
       if (!isCurrent()) return false;
-      if (useAccountIdentityStore.getState().error) {
-        throw new Error(useAccountIdentityStore.getState().error);
+      const accountState = useAccountIdentityStore.getState();
+      if (accountState.error) {
+        throw new Error(accountState.error);
+      }
+      const activeAccount = accountState.accounts.find(
+        (account) => account.id === accountState.activeAccountId,
+      );
+      if (activeAccount?.provider) {
+        useSessionStore.getState().updateLoginProvider(activeAccount.provider);
       }
       const refreshedAccounts = await loadKnownAccountUsers();
       if (!isCurrent()) return false;
       this.knownAccounts = refreshedAccounts.length > 0 ? refreshedAccounts : [reconciledUser];
-      const latestUser = currentSessionUser() ?? reconciledUser;
+      const sessionUser = currentSessionUser();
+      const latestUser = sessionUser?.provider
+        ? { ...reconciledUser, provider: sessionUser.provider }
+        : reconciledUser;
+      this.restoredUser = latestUser;
       this.dispatch({ type: 'ACCOUNT_CACHE_REFRESH_SUCCEEDED', user: latestUser });
     } catch (error) {
       if (!isCurrent()) return false;

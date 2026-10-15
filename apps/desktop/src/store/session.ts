@@ -67,6 +67,8 @@ interface SessionStore {
   logout: () => Promise<void>;
   activateAuthenticatedSession: (response: AuthSessionResponse) => void;
   activateAppletLaunchSession: (user: CurrentUser) => void;
+  /** Converge session provenance with the active account registry row. */
+  updateLoginProvider: (provider: string) => void;
   /** Update the current actor profile projection after identity reconciliation. */
   updateProfile: (profile: Partial<Pick<CurrentUser, 'name' | 'email' | 'avatarUrl'>>) => void;
   /** Update the remote avatar URL after upload or profile sync. */
@@ -309,6 +311,18 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
       restoring: false,
       sessionEpoch: state.sessionEpoch + 1,
     }));
+  },
+
+  updateLoginProvider: (provider) => {
+    set((state) => {
+      if (!state.currentUser) return state;
+      return {
+        currentUser: {
+          ...state.currentUser,
+          loginProvider: provider,
+        },
+      };
+    });
   },
 
   updateProfile: (profile) => {

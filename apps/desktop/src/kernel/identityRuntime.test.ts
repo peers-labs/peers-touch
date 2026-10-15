@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => {
       name: string;
       email: string;
       loginMethod: string;
+      loginProvider?: string;
     } | null,
   };
   return {
@@ -27,8 +28,11 @@ const mocks = vi.hoisted(() => {
     stationSetActive: vi.fn(),
     accountListRestorable: vi.fn(),
     accountLoad: vi.fn(),
+    accountIdentities: [] as Array<{ id: string; provider: string }>,
+    activeAccountId: undefined as string | undefined,
     syncUserProfile: vi.fn(),
     updateProfile: vi.fn(),
+    updateLoginProvider: vi.fn(),
     accessStart: vi.fn(),
     accessSubmitLogin: vi.fn(),
     accessSubmitGeneric: vi.fn(),
@@ -55,7 +59,12 @@ vi.stubGlobal('window', {
 
 vi.mock('../store/accountIdentity', () => ({
   useAccountIdentityStore: {
-    getState: () => ({ load: mocks.accountLoad }),
+    getState: () => ({
+      load: mocks.accountLoad,
+      accounts: mocks.accountIdentities,
+      activeAccountId: mocks.activeAccountId,
+      error: undefined,
+    }),
   },
 }));
 
@@ -89,6 +98,15 @@ vi.mock('../store/session', () => ({
       loginWithOAuth: mocks.loginWithOAuth,
       restoreSession: mocks.restoreSession,
       updateProfile: mocks.updateProfile,
+      updateLoginProvider: (provider: string) => {
+        mocks.updateLoginProvider(provider);
+        if (mocks.session.currentUser) {
+          mocks.session.currentUser = {
+            ...mocks.session.currentUser,
+            loginProvider: provider,
+          };
+        }
+      },
       logout: mocks.logout,
       reset: mocks.resetSession,
     }),
@@ -197,6 +215,8 @@ describe('identityRuntime account switch ordering', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.order.length = 0;
+    mocks.accountIdentities = [];
+    mocks.activeAccountId = undefined;
     mocks.session.authenticated = true;
     mocks.session.sessionEpoch = 1;
     mocks.syncUserProfile.mockResolvedValue({ name: 'New', email: '', avatar_url: '' });
@@ -492,13 +512,20 @@ describe('identityRuntime account switch ordering', () => {
   it('routes OAuth through the session lifecycle before accepting the actor', async () => {
     mocks.session.currentUser = null;
     mocks.session.authenticated = false;
+    mocks.accountIdentities = [{
+      id: 'station:local:github:fixture-user',
+      provider: 'github',
+    }];
+    mocks.activeAccountId = 'station:local:github:fixture-user';
 
     await identityRuntime.loginWithOAuthBridge();
 
     expect(mocks.loginWithOAuth).toHaveBeenCalledWith('oauth');
+    expect(mocks.updateLoginProvider).toHaveBeenCalledWith('github');
     expect(identityRuntime.getSnapshot().phase.kind).toBe('authenticatedPendingCompletion');
     expect(mocks.session.currentUser).toMatchObject({
       actorPtid: 'ptid:person:new',
+      loginProvider: 'github',
     });
   });
 

@@ -322,6 +322,16 @@ describe('session authentication convergence', () => {
     expect(useSessionStore.getState().authenticated).toBe(false);
   });
 
+  it('converges the session login provider from the active account', () => {
+    useSessionStore.getState().updateLoginProvider('github');
+
+    expect(useSessionStore.getState().currentUser).toMatchObject({
+      actorPtid: 'ptid:person:alice',
+      loginMethod: 'password',
+      loginProvider: 'github',
+    });
+  });
+
   it('clears the renderer identity even when native logout reports cleanup failure', async () => {
     const cleanupError = new Error('logout cleanup failed');
     mocks.authLogout.mockRejectedValueOnce(cleanupError);
