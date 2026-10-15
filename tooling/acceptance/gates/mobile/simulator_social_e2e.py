@@ -1244,18 +1244,19 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             f"MPS09 UI comment {journey_id}",
             "Inline comment readback",
         )
+        self._click_ui_for_post(
+            session,
+            post_id,
+            "social-reaction-open",
+            "Reaction picker",
+        )
         for reaction_kind in range(1, 6):
-            self._click_ui_for_post(
-                session,
-                post_id,
-                "social-reaction-open",
-                "Reaction picker",
-            )
             self._click_ui(
                 session,
                 (
-                    '[data-acceptance-id="social-reaction-choice"]'
-                    f'[data-reaction-kind="{reaction_kind}"]'
+                    '[data-reaction-picker] '
+                    '[data-reaction-picker-item]'
+                    f':nth-child({reaction_kind})'
                 ),
                 f"Reaction kind {reaction_kind}",
             )
