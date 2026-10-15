@@ -260,11 +260,6 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
                         or "https://station-proxy.example"
                     ),
                 ),
-                _install_station_relay_ca=Mock(
-                    side_effect=lambda *_: lifecycle_order.append(
-                        "relay-ca"
-                    )
-                ),
                 _prepare_native_relay_fixture=Mock(
                     side_effect=lambda **_: lifecycle_order.append(
                         "relay-fixture"
@@ -361,7 +356,7 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
         )
         self.assertEqual(
             lifecycle_order,
-            ["relay-ca", "station-restart", "relay-fixture"],
+            ["station-restart", "relay-fixture"],
         )
         self.assertTrue(manifest.cleanup_registered)
         self.assertEqual(
@@ -415,11 +410,6 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
                         lifecycle_order.append("station-restart")
                         or "https://station-proxy.example"
                     ),
-                ),
-                _install_station_relay_ca=Mock(
-                    side_effect=lambda *_: lifecycle_order.append(
-                        "relay-ca"
-                    )
                 ),
                 _prepare_native_relay_fixture=Mock(
                     side_effect=lambda **_: lifecycle_order.append(
@@ -564,7 +554,7 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
         )
         self.assertEqual(
             lifecycle_order,
-            ["relay-ca", "station-restart", "relay-fixture"],
+            ["station-restart", "relay-fixture"],
         )
         prepare_storage.assert_called_once()
         self.assertEqual(len(provisioner.cleanup()), 0)
@@ -823,6 +813,56 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
         self.assertFalse(
             any(value.startswith("LIBP2P_PORT=") for value in argv)
         )
+
+    def test_relay_ca_install_restarts_the_same_station_container(self) -> None:
+        provisioner = StationAccessRelayRoleProvisioner(self.contract)
+        provisioner._manifest = SimpleNamespace(run_id="run-1")
+        config = _config("station")
+        transport = Mock()
+        transport.run_argv.return_value = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="",
+            stderr="",
+        )
+        config.transport = Mock(return_value=transport)
+        runtime_status = {
+            "containerId": "station-container",
+            "healthy": True,
+        }
+        with (
+            patch.object(
+                provisioner,
+                "_wait_posix_runtime",
+                side_effect=(runtime_status, runtime_status),
+            ) as wait_runtime,
+            patch.object(
+                provisioner,
+                "_remote_home",
+                return_value="/home/operator",
+            ),
+        ):
+            provisioner._install_station_relay_ca(
+                config,
+                b"certificate",
+            )
+
+        commands = [
+            call.args[0] for call in transport.run_argv.call_args_list
+        ]
+        update_index = commands.index(
+            (
+                "docker",
+                "exec",
+                "station-container",
+                "update-ca-certificates",
+            )
+        )
+        restart_index = commands.index(
+            ("docker", "restart", "station-container")
+        )
+        self.assertLess(update_index, restart_index)
+        self.assertEqual(wait_runtime.call_count, 2)
 
     def test_runtime_status_rejects_source_drift(self) -> None:
         status = _status("relay", 202)

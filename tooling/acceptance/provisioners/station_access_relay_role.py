@@ -1123,6 +1123,12 @@ server {
                 timeout=60,
                 check=True,
             )
+            transport.run_argv(
+                ("docker", "restart", container),
+                timeout=120,
+                check=True,
+            )
+            self._wait_posix_runtime(config)
         finally:
             transport.run_argv(
                 ("rm", "-f", remote_certificate),
@@ -1398,12 +1404,18 @@ server {
         self,
         *,
         manifest: RuntimeManifest,
+        station_config: PosixServiceRuntimeConfig,
         station_url: str,
         relay_url: str,
         relay_peer_id: str,
         relay_config: PosixServiceRuntimeConfig,
         trust_anchor: bytes,
     ) -> None:
+        self._install_station_relay_ca(
+            station_config,
+            trust_anchor,
+        )
+        self._wait_station_origin(station_url)
         self._ensure_fixture_relay(
             manifest=manifest,
             station_url=station_url,
@@ -1544,10 +1556,6 @@ server {
                 owner = f"acceptance:{gate_id}:{manifest.run_id}"
                 self.acquire_profile_lease(station_deployment, owner)
                 self.acquire_profile_lease(relay_deployment, owner)
-                self._install_station_relay_ca(
-                    station_config,
-                    trust_anchor,
-                )
                 station_endpoint = self._activate_direct_station_proxy(
                     manifest=manifest,
                     station_config=station_config,
@@ -1557,6 +1565,7 @@ server {
                 )
                 self._prepare_native_relay_fixture(
                     manifest=manifest,
+                    station_config=station_config,
                     station_url=station_url,
                     relay_url=relay_url,
                     relay_peer_id=relay_peer_id,
