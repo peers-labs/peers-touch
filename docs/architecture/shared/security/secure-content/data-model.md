@@ -1,8 +1,8 @@
 # Secure Content - Data Model
 
 > **Status**: active
-> **Version**: v2.0
-> **Created**: 2026-09-13 | **Updated**: 2026-09-24
+> **Version**: v2.1
+> **Created**: 2026-09-13 | **Updated**: 2026-10-15
 > **Owner**: Architecture Team
 > **Module**: `model/domain/secure_content/`, `model/domain/social/`, `model/domain/key_exchange/`
 
@@ -401,6 +401,15 @@ key:     PENDING_PUBLICATION -> PUBLISHED -> ROOT_COMMITTED
 Only the exact key whose envelope root key committed may enter
 `ROOT_COMMITTED`. Orphaned send leases become `UNKNOWN_COMMIT` at bootstrap.
 Endpoint keys are not deleted heuristically while Station may reference them.
+
+Mobile 的 24-word recovery record 由 native secure storage 按
+`(station_peer_id, actor_ptid)` 持久化，并且必须包含非零 recovery epoch。派生出的
+Secure Content recovery master 留在 actor-scoped SQLCipher store，不进入 renderer。
+如果 app-data 丢失但 secure record 仍存在，Private Social activation 必须先验证
+record 的 base64/protobuf/mnemonic/epoch，再从 phrase 重建同一 recovery master；
+随后既有 worker 才能对 Station 缺失或耗尽的 actor-recovery PreKey pool 执行规范化
+republication。损坏、跨 Station、跨 actor 或 epoch-zero record 均 fail closed，不得
+生成替代 master。
 
 ### Proposed Recovery PreKey Derivation
 

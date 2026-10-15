@@ -16,6 +16,7 @@ use zeroize::Zeroizing;
 use crate::error::{MobileError, MobileResult};
 use crate::messaging::engine::SecureContentRuntimeIdentity;
 use crate::messaging::lifecycle::MobileMessagingRuntime;
+use crate::messaging::recovery::load_secure_mobile_recovery_record;
 use crate::platform::media_picker::{
     consume_private_moment_media_handle, discard_private_moment_ciphertext,
     materialize_private_moment_media, prepare_private_moment_media,
@@ -1539,6 +1540,18 @@ impl MobilePrivateSocialRuntime {
             &scope.actor_ptid,
         )
         .map_err(MobileError::social)?;
+        if let Some(record) =
+            load_secure_mobile_recovery_record(storage, &scope.station_peer_id, &scope.actor_ptid)
+                .map_err(MobileError::social)?
+        {
+            store_recovery_phrase(
+                &store,
+                &scope.actor_ptid,
+                record.recovery_epoch(),
+                record.phrase(),
+            )
+            .map_err(MobileError::social)?;
+        }
         store
             .bind_session_generation(generation)
             .map_err(MobileError::social)?;
