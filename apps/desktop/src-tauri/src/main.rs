@@ -612,6 +612,21 @@ fn main() {
             application::window_lifecycle::handle_window_event(window, event);
         })
         .setup(|app| {
+            #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
+            if std::env::var_os("PT_ACCEPTANCE_WINDOW_SLOT").is_some() {
+                let exclusive_native_input = acceptance_input_mode_is_exclusive(
+                    std::env::var("PT_ACCEPTANCE_DESKTOP_INPUT_MODE")
+                        .ok()
+                        .as_deref(),
+                    std::env::var("PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION")
+                        .ok()
+                        .as_deref(),
+                )
+                .map_err(std::io::Error::other)?;
+                if !exclusive_native_input {
+                    app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+                }
+            }
             app.state::<Arc<state::AppState>>()
                 .secure_content
                 .bind_app_handle(app.handle().clone());
