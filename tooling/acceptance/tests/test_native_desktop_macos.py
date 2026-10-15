@@ -117,7 +117,7 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
         )
         self.assertEqual(run.call_args_list[1].kwargs["cwd"], root.resolve())
 
-    def test_probe_launcher_uses_app_owned_acceptance_window_placement(
+    def test_probe_launcher_places_probe_window_on_main_display(
         self,
     ) -> None:
         launcher = Mock(log_path=None)
@@ -208,7 +208,10 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
                 "PT_ACCEPTANCE_WINDOW_COUNT": "1",
             },
         )
-        adapter.position_main_window.assert_not_called()
+        adapter.position_main_window.assert_called_once_with(
+            42,
+            (100.0, 100.0),
+        )
         session.invoke_app_result.assert_called_once_with(
             "acceptance_request_activation"
         )

@@ -2,7 +2,7 @@
 
 Review the frozen Plan Version at
 `docs/architecture/domains/chat/messaging/execution-plans/20261015-message-publishing-acceptance-v5/plan.md`
-and its four Task Slices.
+and its six Task Slices.
 
 Use these sources:
 
@@ -47,6 +47,8 @@ Check:
    Station identity, without weakening Desktop discovery.
 10. The generic pipeline-audit change recognizes canonical `## Plan Version`
     packages without encoding Message Publishing product semantics.
+11. The macOS runtime-cell probe moves only its temporary probe window onto the
+    main display and preserves every fail-closed native adapter assertion.
 
 Return findings first, ordered by severity with file and contract references,
 then one verdict: `PASS`, `CONDITIONAL_PASS`, or `CHANGES_REQUIRED`.

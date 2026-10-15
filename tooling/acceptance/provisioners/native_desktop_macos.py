@@ -415,8 +415,9 @@ class NativeDesktopMacOSProvisioner:
                     "macOS runtime-cell probe process identity is unavailable"
                 )
             adapter = MacOSNativeDesktopAdapter()
-            bounds = self._await_window_bounds(process_id)
             session.invoke_app_result("acceptance_request_activation")
+            adapter.position_main_window(process_id, (100.0, 100.0))
+            bounds = self._await_window_bounds(process_id)
             point, pointer, stack, input_probe, attempted_points = (
                 self._probe_owned_point(
                     adapter,
