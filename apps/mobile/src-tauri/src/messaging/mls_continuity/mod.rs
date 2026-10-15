@@ -48,11 +48,20 @@ pub struct MlsContinuityKeyPackage {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MlsContinuityPendingGenesis {
+    pub conversation_id: String,
+    pub transition_id: String,
+    pub command_id: String,
+    pub state: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MlsContinuityState {
     pub scope: MlsContinuityScope,
     pub actor_identity_state: Vec<u8>,
     pub provider_pool: Option<MlsContinuityProviderPool>,
     pub key_packages: Vec<MlsContinuityKeyPackage>,
+    pub pending_genesis_transitions: Vec<MlsContinuityPendingGenesis>,
 }
 
 pub trait MlsContinuityBackup: Send + Sync {

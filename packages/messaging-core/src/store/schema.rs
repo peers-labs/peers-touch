@@ -125,6 +125,13 @@ CREATE TABLE IF NOT EXISTS messaging_mls_pending_transitions (
     command_id TEXT NOT NULL,
     transition_state BLOB NOT NULL
 );
+CREATE TABLE IF NOT EXISTS messaging_mls_continuity_restored_transitions (
+    conversation_id TEXT PRIMARY KEY,
+    transition_id TEXT NOT NULL,
+    command_id TEXT NOT NULL,
+    FOREIGN KEY(conversation_id)
+        REFERENCES messaging_mls_pending_transitions(conversation_id) ON DELETE CASCADE
+);
 CREATE TABLE IF NOT EXISTS messaging_mls_actor_identity (
     id INTEGER PRIMARY KEY CHECK(id = 1),
     ptid TEXT NOT NULL,

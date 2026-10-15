@@ -1,7 +1,7 @@
 # Messaging Platform — 数据模型
 
 > **Status**: active
-> **Version**: v1.4
+> **Version**: v1.5
 > **Created**: 2026-08-08 | **Updated**: 2026-10-15
 > **Owner**: Messaging Platform Team
 
@@ -245,14 +245,23 @@ Resetting the Station cannot recreate private material consumed on the device.
 
 Mobile 的 app-data SQLCipher 数据库可被重装清除，因此 native secure storage 必须按
 `(station_peer_id, actor_ptid, device_id)` 保存 MLS actor identity、pending join
-provider pool，以及完整 KeyPackage publication history（bytes、state、created_at）。
-只有三张本地 continuity 表全部为空时才允许恢复；scope、identity、provider bytes、
-package hash、state 和唯一性必须先校验。新包必须在上传前完成安全备份，Welcome
-消费后的 provider pool 必须在 queue ACK 前完成安全备份；备份失败保持 item
-可重放。publisher 以 `min(Station available count, local private provider count)` 计算
-可用库存缺口。Station 优先选择最新 available KeyPackage，使修复前遗留、但本机已
-无对应 private provider 的有限历史库存不会先于当前设备新发布的有效批次被领取；
-published history 在本地恢复后仍保持 `published`，不得重新上传。
+provider pool、完整 KeyPackage publication history（bytes、state、created_at），以及
+尚未收到 authority marker 的 epoch-0 pending Genesis OpenMLS state。只有所有本地
+continuity 表均为空时才允许恢复；scope、identity、provider bytes、package hash、
+state、唯一性，以及 Genesis transition/command binding 必须先校验。非 Genesis
+membership transition 不进入 app-data-loss backup，因为其恢复依赖已建立 group
+session。
+
+Genesis command outbox 在安全备份完成前保持不可发送；新包也必须在上传前完成安全
+备份。Welcome 消费后的 provider pool，以及 sender marker 消费后移除的 pending
+Genesis，都必须在 queue ACK 前同步到安全备份；备份失败保持 item 可重放。空库恢复
+为 pending Genesis 写入显式 continuity provenance。sender commit 只接受完整的三张
+本地 command bookkeeping 行，或带该 provenance 的零 bookkeeping；任意 partial
+组合 fail closed。publisher 以
+`min(Station available count, local private provider count)` 计算可用库存缺口。
+Station 优先选择最新 available KeyPackage，使修复前遗留、但本机已无对应 private
+provider 的有限历史库存不会先于当前设备新发布的有效批次被领取；published history
+在本地恢复后仍保持 `published`，不得重新上传。
 
 ### 3.2 Device Queue
 

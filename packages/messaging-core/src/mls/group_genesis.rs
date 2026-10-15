@@ -153,10 +153,12 @@ impl<R: MlsTransitionRepository> GroupGenesisPreparer<R> {
             command_bytes: &command_bytes,
             pending_transition_state: &pending_state,
             created_at_unix_ms,
+            from_mls_epoch: prepared.from_mls_epoch,
         }) {
             self.manager.discard_pending_transition(conversation_id);
             return Err(error);
         }
+        self.store.persist_mls_continuity()?;
         Ok(command)
     }
 }

@@ -8,8 +8,8 @@ use sha2::{Digest, Sha256};
 use crate::platform::secure_storage::SecureStorage;
 
 use super::{
-    MlsContinuityBackup, MlsContinuityKeyPackage, MlsContinuityProviderPool, MlsContinuityScope,
-    MlsContinuityState,
+    MlsContinuityBackup, MlsContinuityKeyPackage, MlsContinuityPendingGenesis,
+    MlsContinuityProviderPool, MlsContinuityScope, MlsContinuityState,
 };
 
 const MLS_CONTINUITY_PREFIX: &str = "messaging.v1.mls-continuity";
@@ -37,6 +37,8 @@ struct PersistedMlsContinuityPayload {
     actor_identity_state: String,
     provider_pool: Option<PersistedMlsContinuityProviderPool>,
     key_packages: Vec<PersistedMlsContinuityKeyPackage>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pending_genesis_transitions: Vec<PersistedMlsContinuityPendingGenesis>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -53,6 +55,15 @@ struct PersistedMlsContinuityKeyPackage {
     data: String,
     state: String,
     created_at_unix_ms: i64,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PersistedMlsContinuityPendingGenesis {
+    conversation_id: String,
+    transition_id: String,
+    command_id: String,
+    state: String,
 }
 
 impl StorageMlsContinuityBackup {
@@ -160,6 +171,16 @@ impl PersistedMlsContinuityPayload {
                     created_at_unix_ms: package.created_at_unix_ms,
                 })
                 .collect(),
+            pending_genesis_transitions: state
+                .pending_genesis_transitions
+                .iter()
+                .map(|transition| PersistedMlsContinuityPendingGenesis {
+                    conversation_id: transition.conversation_id.clone(),
+                    transition_id: transition.transition_id.clone(),
+                    command_id: transition.command_id.clone(),
+                    state: B64.encode(&transition.state),
+                })
+                .collect(),
         }
     }
 
@@ -188,11 +209,27 @@ impl PersistedMlsContinuityPayload {
                 })
             })
             .collect::<Result<Vec<_>, String>>()?;
+        let pending_genesis_transitions = self
+            .pending_genesis_transitions
+            .into_iter()
+            .map(|transition| {
+                Ok(MlsContinuityPendingGenesis {
+                    conversation_id: transition.conversation_id,
+                    transition_id: transition.transition_id,
+                    command_id: transition.command_id,
+                    state: decode_mls_continuity_bytes(
+                        "pending genesis transition",
+                        &transition.state,
+                    )?,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
         Ok(MlsContinuityState {
             scope,
             actor_identity_state,
             provider_pool,
             key_packages,
+            pending_genesis_transitions,
         })
     }
 }

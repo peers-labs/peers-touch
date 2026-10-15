@@ -512,6 +512,7 @@ impl<R: MlsInboundRepository> MlsSenderTransitionProcessor<R> {
                 self.manager
                     .import_session_state(&item.conversation_id, &state)?;
             }
+            self.store.persist_mls_continuity()?;
             return Ok(());
         }
 
@@ -605,6 +606,7 @@ impl<R: MlsInboundRepository> MlsSenderTransitionProcessor<R> {
             self.manager
                 .discard_pending_transition(&event.conversation_id);
         }
+        self.store.persist_mls_continuity()?;
         Ok(())
     }
 }
