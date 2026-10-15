@@ -259,6 +259,46 @@ class RetiredMobileChatRouteTest(unittest.TestCase):
 
         self.assertEqual(references, [])
 
+
+class RetiredStationTransportTest(unittest.TestCase):
+    def test_reports_retired_transport_only_from_production_source(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            mobile_root = Path(directory)
+            source_root = mobile_root / "src"
+            source_root.mkdir(parents=True)
+            (source_root / "station.ts").write_text(
+                "const transport = 'direct_https';\n",
+                encoding="utf-8",
+            )
+            (source_root / "station.test.ts").write_text(
+                "expect(transport).not.toBe('direct_https');\n",
+                encoding="utf-8",
+            )
+
+            references = CHECKER.retired_station_transport_references(
+                mobile_root
+            )
+
+        self.assertEqual(references, ["src/station.ts:1"])
+
+    def test_accepts_standard_transport_for_direct_routes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            mobile_root = Path(directory)
+            source_root = mobile_root / "src"
+            source_root.mkdir(parents=True)
+            (source_root / "station.ts").write_text(
+                "const transport = 'libp2p_http_v1';\n",
+                encoding="utf-8",
+            )
+
+            references = CHECKER.retired_station_transport_references(
+                mobile_root
+            )
+
+        self.assertEqual(references, [])
+
+
+class GenericGroupLedgerTest(unittest.TestCase):
     def test_reports_group_administration_in_generic_ledger(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             mobile_root = Path(directory)

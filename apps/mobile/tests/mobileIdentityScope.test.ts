@@ -129,10 +129,11 @@ function verifiedRouteInput(
     authorizationEpoch: 1,
     routeId: `direct:${stationPeerId}:${endpointOrigin}`,
     routeType: 'direct',
-    transport: 'direct_https',
+    transport: 'libp2p_http_v1',
     endpointOrigin,
     routeGeneration: 1,
-    addresses: [endpointOrigin],
+    innerTlsSpkiSha256: new Array(32).fill(3),
+    addresses: [`/dns4/station.example/tcp/4001/p2p/${stationPeerId}-node`],
     sourceRef: 'a'.repeat(64),
   };
   return {

@@ -660,7 +660,9 @@ def retired_mobile_chat_route_references(mobile_root: Path) -> list[str]:
             not path.is_file()
             or path.suffix not in MOBILE_PRODUCTION_SOURCE_SUFFIXES
             or "gen" in path.relative_to(source_root).parts
-            or path.name.endswith((".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx"))
+            or path.name.endswith(
+                (".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx")
+            )
         ):
             continue
         for line_number, line in enumerate(
@@ -670,6 +672,29 @@ def retired_mobile_chat_route_references(mobile_root: Path) -> list[str]:
             if RETIRED_CHAT_ROUTE_PATTERN.search(line):
                 references.append(
                     f"{display_mobile_source_path(path, mobile_root)}:{line_number}"
+                )
+    return references
+
+
+def retired_station_transport_references(mobile_root: Path) -> list[str]:
+    source_root = mobile_root / "src"
+    references: list[str] = []
+    for path in sorted(source_root.rglob("*")):
+        if (
+            not path.is_file()
+            or path.suffix not in MOBILE_PRODUCTION_SOURCE_SUFFIXES
+            or "gen" in path.relative_to(source_root).parts
+            or path.name.endswith((".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx"))
+        ):
+            continue
+        for line_number, line in enumerate(
+            path.read_text(encoding="utf-8").splitlines(),
+            start=1,
+        ):
+            if "direct_https" in line:
+                references.append(
+                    f"{display_mobile_source_path(path, mobile_root)}:"
+                    f"{line_number}"
                 )
     return references
 
@@ -922,6 +947,12 @@ def validate_hard_cut() -> None:
         raise ValueError(
             "retired Mobile Chat route callers remain: "
             + ", ".join(retired_routes)
+        )
+    retired_station_transports = retired_station_transport_references(mobile_root)
+    if retired_station_transports:
+        raise ValueError(
+            "retired Mobile direct HTTPS transport remains: "
+            + ", ".join(retired_station_transports)
         )
     generic_group_commands = generic_group_ledger_references(mobile_root)
     if generic_group_commands:
