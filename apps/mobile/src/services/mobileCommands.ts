@@ -1496,7 +1496,7 @@ export interface NativeStationRouteCandidate {
   authorizationEpoch: number;
   routeId: string;
   routeType: StationRouteType;
-  transport: 'direct_https' | 'libp2p_http_v1';
+  transport: 'libp2p_http_v1';
   endpointOrigin: string;
   relayPeerId?: string;
   routeGeneration: number;

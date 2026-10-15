@@ -25,7 +25,7 @@ export interface MobileStationRouteCandidate {
   authorizationEpoch: number;
   routeId: string;
   routeType: StationRouteType;
-  transport: 'direct_https' | 'libp2p_http_v1';
+  transport: 'libp2p_http_v1';
   endpointOrigin: string;
   relayPeerId?: string;
   routeGeneration: number;
@@ -365,10 +365,6 @@ function normalizeRouteCandidate(
   const routeId = value.routeId?.trim();
   const nodePeerId = value.nodePeerId?.trim();
   const endpointOrigin = normalizeVerifiedStationUrl(value.endpointOrigin);
-  const transportValid = (
-    (value.routeType === 'direct' && value.transport === 'direct_https')
-    || (value.routeType === 'relay' && value.transport === 'libp2p_http_v1')
-  );
   const addresses = value.addresses
     ?.map((address) => address.trim())
     .filter(Boolean) ?? [];
@@ -377,20 +373,17 @@ function normalizeRouteCandidate(
     || !nodePeerId
     || !endpointOrigin
     || !['direct', 'relay'].includes(value.routeType)
-    || !transportValid
+    || value.transport !== 'libp2p_http_v1'
     || value.nodeAuthorizationDigest?.length !== 32
     || !Number.isSafeInteger(value.authorizationEpoch)
     || value.authorizationEpoch < 1
     || !Number.isSafeInteger(value.routeGeneration)
     || value.routeGeneration < 1
+    || value.innerTlsSpkiSha256?.length !== 32
     || addresses.length === 0
-    || (
-      value.routeType === 'relay'
-      && (
-        value.innerTlsSpkiSha256?.length !== 32
-        || !addresses.some((address) => address.includes('/p2p-circuit/'))
-      )
-    )
+    || !addresses.some((address) => (
+      address.includes('/p2p-circuit/') === (value.routeType === 'relay')
+    ))
   ) {
     return null;
   }
