@@ -95,9 +95,11 @@ class DesktopPrimaryNavigationAcceptanceTests(unittest.TestCase):
         for contract in (
             "resolve_native_desktop_runtime",
             "create_bound_session",
+            "post_key_to_process",
             "NativeInputMode.SEMANTIC_NON_INTRUSIVE",
             "session.semantic_click",
-            "adapter.post_mouse",
+            "session.semantic_key_sequence",
+            '"physicalNativeInput": False',
             "native_adapter.capture_screenshot",
             "desktop-primary-navigation-native-screenshot",
             "official_note_applet_command_enabled",

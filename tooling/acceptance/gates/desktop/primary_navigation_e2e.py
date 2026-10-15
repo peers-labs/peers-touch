@@ -22,7 +22,6 @@ from tooling.acceptance.core import (
     load_runtime_manifest,
 )
 from tooling.acceptance.drivers.native import (
-    MouseAction,
     NativeInputMode,
     NativeKey,
     resolve_native_desktop_runtime,
@@ -141,10 +140,10 @@ class DesktopPrimaryNavigationGate(AcceptanceGate):
     @staticmethod
     def _click(session: TauriSession, selector: str) -> None:
         element = session.find_element(selector, 30)
-        element.click()
+        session.semantic_click(element)
 
-    @staticmethod
     def _click_visible_renderer_command(
+        self,
         session: TauriSession,
         selector: str,
     ) -> dict[str, Any]:
@@ -170,29 +169,46 @@ class DesktopPrimaryNavigationGate(AcceptanceGate):
             );
             if (index < 0) {
               return {
-                afterHash: window.location.hash,
                 beforeHash: window.location.hash,
-                clicked: false,
+                selectedIndex: -1,
                 snapshots,
               };
             }
-            const beforeHash = window.location.hash;
-            candidates[index].click();
             return {
-              afterHash: window.location.hash,
-              beforeHash,
-              clicked: true,
+              beforeHash: window.location.hash,
               selectedIndex: index,
               snapshots,
             };
             """,
             selector,
         )
-        if not isinstance(result, dict) or result.get("clicked") is not True:
+        selected_index = (
+            int(result.get("selectedIndex", -1))
+            if isinstance(result, dict)
+            else -1
+        )
+        candidates = session.find_elements(selector)
+        if (
+            not isinstance(result, dict)
+            or selected_index < 0
+            or selected_index >= len(candidates)
+        ):
             raise GateError(
                 "No visible enabled renderer command matched "
                 f"{selector}: {json.dumps(result, sort_keys=True)}"
             )
+        session.semantic_click(candidates[selected_index])
+        result.update(
+            {
+                "adapter": "embedded-webdriver",
+                "afterHash": session.execute_script(
+                    "return window.location.hash"
+                ),
+                "configuredMode": self.input_mode.value,
+                "dispatchMode": "semantic-webview",
+                "physicalNativeInput": False,
+            }
+        )
         return result
 
     @staticmethod
@@ -211,100 +227,6 @@ class DesktopPrimaryNavigationGate(AcceptanceGate):
                 expected,
             )
         )
-
-    def _native_click(
-        self,
-        session: TauriSession,
-        selector: str,
-    ) -> dict[str, Any]:
-        process_id = session.process_id
-        if process_id is None:
-            raise GateError(
-                "Native Desktop process identity is unavailable"
-            )
-        element = session.find_element(selector, 30)
-        if self.input_mode is NativeInputMode.SEMANTIC_NON_INTRUSIVE:
-            session.semantic_click(element)
-            return {
-                "adapter": "embedded-webdriver",
-                "dispatchMode": self.input_mode.value,
-                "processId": process_id,
-                "selector": selector,
-            }
-        self.runtime_binding.request_cooperative_activation(
-            session,
-            (session,),
-        )
-        self._wait(
-            session,
-            "document.hasFocus()",
-            "Native Desktop focus",
-        )
-        geometry = session.execute_script(
-            """
-            const rect = arguments[0].getBoundingClientRect();
-            return {
-              element: {
-                left: rect.left,
-                top: rect.top,
-                width: rect.width,
-                height: rect.height,
-              },
-              viewport: {
-                width: window.innerWidth,
-                height: window.innerHeight,
-                devicePixelRatio: window.devicePixelRatio,
-              },
-            };
-            """,
-            element,
-        )
-        driver_window = session.driver.get_window_rect()
-        ratio = float(geometry["viewport"]["devicePixelRatio"])
-        native_window = {
-            "left": float(driver_window["x"]) / ratio,
-            "top": float(driver_window["y"]) / ratio,
-            "width": float(driver_window["width"]) / ratio,
-            "height": float(driver_window["height"]) / ratio,
-        }
-        origin = self.runtime_binding.native_adapter.content_origin(
-            process_id
-        )
-        if origin is None:
-            origin = (
-                native_window["left"]
-                + max(
-                    0.0,
-                    (
-                        native_window["width"]
-                        - float(geometry["viewport"]["width"])
-                    )
-                    / 2,
-                ),
-                native_window["top"]
-                + max(
-                    0.0,
-                    native_window["height"]
-                    - float(geometry["viewport"]["height"]),
-                ),
-            )
-        point = (
-            origin[0]
-            + float(geometry["element"]["left"])
-            + float(geometry["element"]["width"]) / 2,
-            origin[1]
-            + float(geometry["element"]["top"])
-            + float(geometry["element"]["height"]) / 2,
-        )
-        adapter = self.runtime_binding.native_adapter
-        adapter.post_mouse((MouseAction.LEFT_DOWN,), point)
-        adapter.post_mouse((MouseAction.LEFT_UP,), point)
-        return {
-            "adapter": adapter.platform,
-            "processId": process_id,
-            "selector": selector,
-            "point": {"x": point[0], "y": point[1]},
-        }
 
     def _login(self, session: TauriSession) -> dict[str, Any]:
         account_ref = str(self.actor.get("accountRef") or "")
@@ -492,7 +414,7 @@ class DesktopPrimaryNavigationGate(AcceptanceGate):
         assertions["official_note_applet_command_enabled"] = True
         assertions["official_note_applet_launchable"] = True
 
-        native_input = self._native_click(
+        settings_click = self._click_visible_renderer_command(
             session,
             '[data-pt-primary-nav="settings"]',
         )
@@ -572,15 +494,39 @@ class DesktopPrimaryNavigationGate(AcceptanceGate):
             "command_palette_uses_one_global_overlay",
             len(session.find_elements(".command-menu-modal")) == 1,
         )
+        process_id = int(session.process_id or 0)
+        if process_id <= 0:
+            raise GateError(
+                "Native Desktop process identity is unavailable"
+            )
         if self.input_mode is NativeInputMode.SEMANTIC_NON_INTRUSIVE:
             active_element = session.driver.switch_to.active_element
             session.semantic_key_sequence(active_element, Keys.ESCAPE)
+            key_input = {
+                "adapter": "embedded-webdriver",
+                "dispatchMode": "semantic-webview",
+                "key": "Escape",
+                "physicalNativeInput": False,
+            }
         else:
             self.runtime_binding.native_adapter.post_key_to_process(
-                int(session.process_id or 0),
+                process_id,
                 NativeKey.ESCAPE,
                 private_source=True,
             )
+            key_input = {
+                "adapter": self.runtime_binding.native_adapter.platform,
+                "dispatchMode": self.input_mode.value,
+                "key": NativeKey.ESCAPE.value,
+                "physicalNativeInput": True,
+                "privateSource": True,
+            }
+        input_evidence = {
+            "configuredMode": self.input_mode.value,
+            "keySequence": key_input,
+            "processId": process_id,
+            "settingsCommand": settings_click,
+        }
         self._wait(
             session,
             "!document.querySelector('.command-menu-modal')",
@@ -635,7 +581,7 @@ class DesktopPrimaryNavigationGate(AcceptanceGate):
             ),
         )
         assertions["channel_management_controls_available_in_settings"] = True
-        return assertions, native_input
+        return assertions, input_evidence
 
     def run(self) -> dict[str, Any]:
         session: TauriSession | None = None
@@ -648,7 +594,7 @@ class DesktopPrimaryNavigationGate(AcceptanceGate):
                 CLIENT_ID,
                 NativeLaunchOptions(),
             )
-            assertions, native_input = self._run_journey(session)
+            assertions, input_evidence = self._run_journey(session)
             evidence["rendererScreenshot"] = self.save_screenshot(
                 session,
                 "desktop-primary-navigation-renderer",
@@ -679,7 +625,7 @@ class DesktopPrimaryNavigationGate(AcceptanceGate):
                 "environment": ENVIRONMENT_ID,
                 "journey": self.phase,
                 "runtimeCell": self.runtime_binding.runtime_identity(),
-                "nativeInput": native_input,
+                "inputEvidence": input_evidence,
                 "assertions": assertions,
                 "evidence": evidence,
             }
