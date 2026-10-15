@@ -41,6 +41,7 @@ from tooling.acceptance.provisioners.home_station import (
     GATE_ROLES,
     HOME_SINGLE_NATIVE_GATES,
     MESSAGE_PUBLISHING_GATE,
+    attach_source_bound_relay_services,
     agent_native_requires_disposable_fixture,
     agent_native_requires_provider,
     agent_profile_for_gate,
@@ -1070,7 +1071,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
         self.assertEqual(
             client.service_bindings["station"],
             ClientServiceBinding(
-                service_id="station",
+                service_id="station-via-relay",
                 required_kind="station",
             ),
         )
@@ -1091,6 +1092,172 @@ class ProvisionerBlockingTests(unittest.TestCase):
         self.assertIn(
             "require_runtime_identity=gate_id == MESSAGE_PUBLISHING_GATE",
             source,
+        )
+
+    def test_message_publishing_attaches_optional_source_bound_relay_services(
+        self,
+    ):
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "home-station.yaml"
+        )
+        provisioner = HomeStationProvisioner(contract)
+        with patch.object(
+            provisioner,
+            "_git_commit",
+            return_value="abc1234",
+        ), patch.object(
+            provisioner,
+            "_git_workspace_digest",
+            return_value="clean",
+        ):
+            manifest = provisioner._new_base_manifest(
+                MESSAGE_PUBLISHING_GATE
+            )
+        station = dataclasses.replace(
+            self._station_attestation(),
+            runtime_identity="station-peer-one",
+        )
+        relay = dataclasses.replace(
+            station,
+            service_id="relay",
+            service_kind="relay",
+            endpoint="https://relay.example:18081",
+            runtime_identity="relay-peer-one",
+        )
+        station_via_relay = dataclasses.replace(
+            station,
+            service_id="station-via-relay",
+            endpoint="https://relay.example:18081",
+        )
+        expected = {
+            "station": station,
+            "relay": relay,
+            "station-via-relay": station_via_relay,
+        }
+        self.assertFalse(contract.services["relay"].required)
+        self.assertFalse(contract.services["station-via-relay"].required)
+        with patch(
+            "tooling.acceptance.provisioners.home_station."
+            "attach_source_bound_relay_services",
+            return_value=expected,
+        ) as attach:
+            services = provisioner._services_for_gate(
+                gate_id=MESSAGE_PUBLISHING_GATE,
+                manifest=manifest,
+                profile_name="one",
+                profile_env={
+                    "PT_STATION_MODE": "remote",
+                    "PT_RELAY_MODE": "remote",
+                },
+                station_attestation=station,
+            )
+
+        self.assertEqual(services, expected)
+        attach.assert_called_once_with(
+            environment_id="home-station",
+            source_commit="abc1234",
+            profile_name="one",
+            profile_env={
+                "PT_STATION_MODE": "remote",
+                "PT_RELAY_MODE": "remote",
+            },
+            station_attestation=station,
+        )
+
+    def test_message_publishing_reuses_relay_attestation_primitives(self):
+        station = dataclasses.replace(
+            self._station_attestation(),
+            runtime_identity="station-peer-one",
+        )
+        relay = dataclasses.replace(
+            station,
+            service_id="relay",
+            service_kind="relay",
+            endpoint="https://relay.example:18081",
+            runtime_identity="relay-peer-one",
+        )
+        station_via_relay = dataclasses.replace(
+            station,
+            service_id="station-via-relay",
+            endpoint="https://relay.example:18081",
+        )
+        station_config = MagicMock(environment_name="one-station")
+        relay_config = MagicMock(environment_name="one-relay")
+        station_runtime = {
+            "runtimeOwner": "docker-compose:station",
+            "dataOwner": "station-data",
+        }
+        relay_runtime = {
+            "runtimeOwner": "docker-compose:relay",
+            "dataOwner": "relay-data",
+            "publicPort": 18081,
+        }
+        profile_env = {
+            "PT_RELAY_MODE": "remote",
+            "PT_STATION_DEPLOY_ENV": "one-station",
+            "PT_RELAY_DEPLOY_ENV": "one-relay",
+            "PT_RELAY_URL": "https://relay.example:18081",
+            "PT_RELAY_HEALTH_URL": "https://relay.example:18081/healthz",
+        }
+        with patch(
+            "tooling.acceptance.provisioners.home_station."
+            "PosixServiceRuntimeConfig.load",
+            side_effect=(station_config, relay_config),
+        ), patch(
+            "tooling.acceptance.provisioners.home_station."
+            "resolve_remote_source_identity",
+            return_value=("abc1234", "clean", "proto-digest"),
+        ), patch(
+            "tooling.acceptance.provisioners.home_station."
+            "_service_source_compatibility",
+            return_value={"mode": "exact-commit"},
+        ), patch(
+            "tooling.acceptance.provisioners.home_station."
+            "source_proto_digest",
+            return_value="proto-digest",
+        ), patch(
+            "tooling.acceptance.provisioners.home_station."
+            "inspect_posix_runtime",
+            side_effect=({"role": "station"}, {"role": "relay"}),
+        ), patch(
+            "tooling.acceptance.provisioners.home_station."
+            "_validate_runtime_status",
+            side_effect=(station_runtime, relay_runtime),
+        ), patch(
+            "tooling.acceptance.provisioners.home_station."
+            "audit_posix_relay_security",
+            return_value={"rootAclProtected": True},
+        ), patch(
+            "tooling.acceptance.provisioners.home_station."
+            "resolve_posix_relay_trust_anchor",
+            return_value=(b"certificate", "trust-digest"),
+        ), patch(
+            "tooling.acceptance.provisioners.home_station."
+            "_relay_peer_identity",
+            return_value="relay-peer-one",
+        ), patch(
+            "tooling.acceptance.provisioners.home_station."
+            "_persist_relay_attestation",
+            return_value=relay,
+        ), patch(
+            "tooling.acceptance.provisioners.home_station."
+            "_persist_station_route_attestation",
+            return_value=station_via_relay,
+        ):
+            services = attach_source_bound_relay_services(
+                environment_id="home-station",
+                source_commit="abc1234",
+                profile_name="one",
+                profile_env=profile_env,
+                station_attestation=station,
+            )
+
+        self.assertIs(services["station"], station)
+        self.assertIs(services["relay"], relay)
+        self.assertIs(services["station-via-relay"], station_via_relay)
+        self.assertEqual(
+            services["station-via-relay"].runtime_identity,
+            services["station"].runtime_identity,
         )
 
     def test_message_publishing_records_and_retains_actor_identity_fixture(
@@ -1115,10 +1282,18 @@ class ProvisionerBlockingTests(unittest.TestCase):
             self._station_attestation(),
             runtime_identity="station-peer-one",
         )
+        station_via_relay = dataclasses.replace(
+            attestation,
+            service_id="station-via-relay",
+            endpoint="https://relay.example:18081",
+        )
         manifest = dataclasses.replace(
             manifest,
             profile_slot=1,
-            services={"station": attestation},
+            services={
+                "station": attestation,
+                "station-via-relay": station_via_relay,
+            },
         )
         actor = ActorIdentity(
             role="alice",

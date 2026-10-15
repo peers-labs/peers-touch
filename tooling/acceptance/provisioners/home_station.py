@@ -18,7 +18,7 @@ from tooling.acceptance.core.attestation import (
     produce_station_attestation,
     source_proto_digest,
 )
-from tooling.acceptance.core.errors import BlockedError
+from tooling.acceptance.core.errors import BlockedError, ProvisioningError
 from tooling.acceptance.core.provisioner import EnvironmentProvisioner
 from tooling.acceptance.core.provisioning import (
     ActorIdentity,
@@ -28,6 +28,7 @@ from tooling.acceptance.core.provisioning import (
     EnvironmentContract,
     ProvisioningState,
     RuntimeManifest,
+    ServiceAttestation,
     utc_now,
 )
 from tooling.acceptance.fixtures.chat_native_actors import (
@@ -42,6 +43,21 @@ from tooling.acceptance.gates.agent.external_runtime_fixture import (
 from tooling.acceptance.provisioners.remote_source_identity import (
     reviewed_remote_transport,
     resolve_remote_source_identity,
+)
+from tooling.acceptance.provisioners.posix_service_runtime import (
+    PosixServiceRuntimeConfig,
+    audit_posix_relay_security,
+    inspect_posix_runtime,
+    resolve_posix_relay_trust_anchor,
+)
+from tooling.acceptance.provisioners.station_access_relay_role import (
+    _persist_relay_attestation,
+    _persist_station_route_attestation,
+    _relay_discovery_endpoint,
+    _relay_peer_identity,
+    _required,
+    _service_source_compatibility,
+    _validate_runtime_status,
 )
 from tooling.acceptance.provisioners.preset_actor import (
     ResolvedPresetActorIdentity,
@@ -290,6 +306,118 @@ def resolve_existing_actor_identity(
         password=password,
         device_policy="ephemeral-acceptance",
     )
+
+
+def attach_source_bound_relay_services(
+    *,
+    environment_id: str,
+    source_commit: str,
+    profile_name: str,
+    profile_env: dict[str, str],
+    station_attestation: ServiceAttestation,
+) -> dict[str, ServiceAttestation]:
+    if _required(profile_env, "PT_RELAY_MODE") != "remote":
+        raise BlockedError(
+            reason="Message Publishing requires the approved remote Relay",
+            resource=f"profile:{profile_name}",
+        )
+    if (
+        station_attestation.service_id != "station"
+        or station_attestation.service_kind != "station"
+        or not station_attestation.runtime_identity
+    ):
+        raise BlockedError(
+            reason="Message Publishing Relay route requires Station identity",
+            resource="service-identity:station",
+        )
+
+    station_deployment = _required(
+        profile_env,
+        "PT_STATION_DEPLOY_ENV",
+    )
+    relay_deployment = _required(profile_env, "PT_RELAY_DEPLOY_ENV")
+    relay_url = _required(profile_env, "PT_RELAY_URL").rstrip("/")
+    relay_health = _required(profile_env, "PT_RELAY_HEALTH_URL")
+    station_config = PosixServiceRuntimeConfig.load(
+        station_deployment,
+        expected_role="station",
+    )
+    relay_config = PosixServiceRuntimeConfig.load(
+        relay_deployment,
+        expected_role="relay",
+    )
+    relay_identity = resolve_remote_source_identity(relay_deployment)
+    if (
+        _service_source_compatibility(relay_identity[0], source_commit) is None
+        or relay_identity[1] != "clean"
+        or relay_identity[2] != source_proto_digest(REPO_ROOT)
+    ):
+        raise BlockedError(
+            reason=(
+                f"Relay deployment {relay_deployment} does not match the "
+                "clean local source and protocol"
+            ),
+            resource=f"source-identity:{relay_deployment}",
+        )
+
+    station_runtime = _validate_runtime_status(
+        inspect_posix_runtime(station_config),
+        config=station_config,
+        source_commit=source_commit,
+    )
+    relay_runtime = _validate_runtime_status(
+        inspect_posix_runtime(relay_config),
+        config=relay_config,
+        source_commit=source_commit,
+    )
+    if (
+        station_runtime["runtimeOwner"] == relay_runtime["runtimeOwner"]
+        or station_runtime["dataOwner"] == relay_runtime["dataOwner"]
+    ):
+        raise BlockedError(
+            reason="Station and Relay runtime ownership is not isolated",
+            resource=f"runtime-isolation:{profile_name}",
+        )
+    runtime_security = audit_posix_relay_security(
+        relay_config,
+        station_runtime=station_runtime,
+        relay_runtime=relay_runtime,
+    )
+    trust_anchor, trust_anchor_digest = resolve_posix_relay_trust_anchor(
+        relay_deployment
+    )
+    relay_peer_id = _relay_peer_identity(
+        relay_url,
+        relay_health,
+        trust_anchor,
+    )
+    relay_attestation = _persist_relay_attestation(
+        environment_id=environment_id,
+        relay_url=relay_url,
+        relay_deployment=relay_deployment,
+        relay_identity=relay_identity,
+        station_runtime=station_runtime,
+        relay_runtime=relay_runtime,
+        runtime_security=runtime_security,
+        trust_anchor=trust_anchor,
+        trust_anchor_digest=trust_anchor_digest,
+        relay_peer_id=relay_peer_id,
+    )
+    station_route_attestation = _persist_station_route_attestation(
+        environment_id=environment_id,
+        relay_locator=relay_url,
+        relay_discovery_endpoint=_relay_discovery_endpoint(
+            relay_url,
+            relay_runtime,
+        ),
+        station_attestation=station_attestation,
+        relay_attestation=relay_attestation,
+    )
+    return {
+        "station": station_attestation,
+        "relay": relay_attestation,
+        "station-via-relay": station_route_attestation,
+    }
 
 
 class HomeStationProvisioner(EnvironmentProvisioner):
@@ -907,11 +1035,56 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             required_service_roles=("station",),
             service_bindings={
                 "station": ClientServiceBinding(
-                    service_id="station",
+                    service_id="station-via-relay",
                     required_kind="station",
                 )
             },
         )
+
+    def _services_for_gate(
+        self,
+        *,
+        gate_id: str,
+        manifest: RuntimeManifest,
+        profile_name: str,
+        profile_env: dict[str, str],
+        station_attestation: ServiceAttestation,
+    ) -> dict[str, ServiceAttestation]:
+        services = {"station": station_attestation}
+        if gate_id != MESSAGE_PUBLISHING_GATE:
+            return services
+        for service_id, expected_kind in (
+            ("relay", "relay"),
+            ("station-via-relay", "station"),
+        ):
+            requirement = self.contract.services.get(service_id)
+            if (
+                requirement is None
+                or requirement.required
+                or requirement.kind != expected_kind
+            ):
+                raise BlockedError(
+                    reason=(
+                        "home-station must declare optional source-bound "
+                        f"{service_id!r} service kind {expected_kind!r}"
+                    ),
+                    resource=f"gate-environment:{MESSAGE_PUBLISHING_GATE}",
+                )
+        try:
+            return attach_source_bound_relay_services(
+                environment_id=self.environment_id,
+                source_commit=manifest.source_commit,
+                profile_name=profile_name,
+                profile_env=profile_env,
+                station_attestation=station_attestation,
+            )
+        except BlockedError:
+            raise
+        except (OSError, ProvisioningError, RuntimeError, ValueError) as error:
+            raise BlockedError(
+                reason=f"Message Publishing Relay attachment failed: {error}",
+                resource="service-attestation:station-via-relay",
+            ) from error
 
     def _export_profile_credential_refs(
         self,
@@ -1798,7 +1971,13 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             manifest = dataclasses.replace(
                 manifest,
                 state=ProvisioningState.PROVISIONED,
-                services={attestation.service_id: attestation},
+                services=self._services_for_gate(
+                    gate_id=gate_id,
+                    manifest=manifest,
+                    profile_name=profile_name,
+                    profile_env=profile_env,
+                    station_attestation=attestation,
+                ),
             )
             self._manifest = manifest
             if gate_id == AGENT_V2_FOUNDATION_GATE:

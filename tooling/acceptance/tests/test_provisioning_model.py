@@ -147,11 +147,19 @@ class EnvironmentContractTests(unittest.TestCase):
         self.assertEqual(contract.id, "home-station")
         self.assertTrue(contract.profile.required)
         self.assertTrue(contract.profile.identity_match)
-        self.assertIn("station", contract.services)
-        self.assertTrue(contract.services["station"].required)
-        self.assertTrue(
-            all(service.kind == "station" for service in contract.services.values())
+        self.assertEqual(
+            set(contract.services),
+            {"station", "relay", "station-via-relay"},
         )
+        self.assertTrue(contract.services["station"].required)
+        self.assertEqual(contract.services["station"].kind, "station")
+        self.assertEqual(contract.services["relay"].kind, "relay")
+        self.assertFalse(contract.services["relay"].required)
+        self.assertEqual(
+            contract.services["station-via-relay"].kind,
+            "station",
+        )
+        self.assertFalse(contract.services["station-via-relay"].required)
         self.assertEqual(len(contract.credentials), 1)
         self.assertEqual(contract.credentials[0].id, "evidence-leak-canary")
         self.assertTrue(contract.credentials[0].generated_if_missing)

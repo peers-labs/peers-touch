@@ -18,6 +18,7 @@ from tooling.acceptance.core import (
     SuiteRuntimeAction,
     SuiteRuntimeLedger,
     call_async_harness,
+    require_runtime_service,
 )
 from tooling.acceptance.drivers.native.runtime import (
     NativeDesktopRuntimeBinding,
@@ -31,7 +32,6 @@ from tooling.acceptance.gates.chat.native_support import (
     enter_chat_page,
     native_runtime_source_identity,
     read_station_version,
-    runtime_station_service,
     selected_native_runtime,
     wait_until,
 )
@@ -100,7 +100,7 @@ class MessagePublishingNativeGate(AcceptanceGate):
         self.actor_manifest = actor_manifest
         self.runtime_binding = runtime_binding
         self.report.manifest = manifest
-        station = runtime_station_service(manifest, "alice")
+        station = require_runtime_service(manifest, "station", "station")
         self.station_url = str(station.get("endpoint") or "").rstrip("/")
         self.report.station_url = self.station_url
         if not self.station_url:

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import ast
+import shutil
 import unittest
 from pathlib import Path
+from unittest.mock import MagicMock
 
 from tooling.acceptance.core import (
     SuiteRuntimeAction,
@@ -13,6 +15,7 @@ from tooling.acceptance.gates.chat.message_publishing_native_e2e import (
     GATE_ID,
     RUNTIME_CONTRACT,
     SCENARIO_IDS,
+    MessagePublishingNativeGate,
     _field,
     _unwrap_data,
 )
@@ -58,6 +61,60 @@ class MessagePublishingNativeGateTests(unittest.TestCase):
         self.assertTrue(RUNTIME_CONTRACT.require_attach_only_scenarios)
         self.assertTrue(RUNTIME_CONTRACT.require_receiver_visible_proof)
         self.assertFalse(RUNTIME_CONTRACT.allow_client_replacement)
+
+    def test_management_http_uses_direct_station_while_native_uses_relay(
+        self,
+    ) -> None:
+        manifest = {
+            "runId": "message-publishing-test",
+            "source": {"commit": "a" * 40},
+            "services": {
+                "station": {
+                    "kind": "station",
+                    "endpoint": "http://station.example:18080",
+                    "runtimeIdentity": "station-peer-one",
+                },
+                "relay": {
+                    "kind": "relay",
+                    "endpoint": "https://relay.example:18081",
+                    "runtimeIdentity": "relay-peer-one",
+                },
+                "station-via-relay": {
+                    "kind": "station",
+                    "endpoint": "https://relay.example:18081",
+                    "runtimeIdentity": "station-peer-one",
+                },
+            },
+            "clients": [
+                {
+                    "id": "alice",
+                    "required_service_roles": ["station"],
+                    "service_bindings": {
+                        "station": {
+                            "service_id": "station-via-relay",
+                            "required_kind": "station",
+                        }
+                    },
+                }
+            ],
+        }
+        actor_manifest = {
+            "runId": "message-publishing-test",
+            "actors": [{"role": "alice", "ptid": "ptid:alice"}],
+        }
+
+        gate = MessagePublishingNativeGate(
+            manifest=manifest,
+            actor_manifest=actor_manifest,
+            runtime_binding=MagicMock(),
+        )
+        self.addCleanup(shutil.rmtree, gate.fixture_root, ignore_errors=True)
+
+        self.assertEqual(gate.station_url, "http://station.example:18080")
+        self.assertEqual(
+            manifest["clients"][0]["service_bindings"]["station"]["service_id"],
+            "station-via-relay",
+        )
 
     def test_suite_ledger_accepts_one_login_and_pre_scenario_restart(self) -> None:
         ledger = SuiteRuntimeLedger(
