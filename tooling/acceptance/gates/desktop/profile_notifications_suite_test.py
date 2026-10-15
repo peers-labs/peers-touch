@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from tooling.acceptance.core import GateError
+from tooling.acceptance.core.errors import DriverError
 from tooling.acceptance.core.suite_runtime import SuiteRuntimeAction
 from tooling.acceptance.drivers.tauri import EXPECTED_URL
 from tooling.acceptance.gates.desktop.profile_notifications_e2e import (
@@ -114,6 +115,22 @@ class NotificationFixtureRecoveryTest(unittest.TestCase):
             "ok": False,
             "error": {"code": "CONFLICT"},
         }
+        with patch(
+            f"{JOURNEY_MODULE}.call_async_harness",
+            return_value={"requests": [{"id": "request-1", "status": 3}]},
+        ):
+            _reject_pending_friend_request(
+                receiver,
+                "ptid:sender",
+                {"home_station_peer_id": "station-1"},
+                "request-1",
+                "federation-1",
+                "recovery failed",
+            )
+
+    def test_command_error_is_recovered_when_authority_is_terminal(self) -> None:
+        receiver = MagicMock()
+        receiver.invoke_app_result.side_effect = DriverError("CONFLICT")
         with patch(
             f"{JOURNEY_MODULE}.call_async_harness",
             return_value={"requests": [{"id": "request-1", "status": 3}]},

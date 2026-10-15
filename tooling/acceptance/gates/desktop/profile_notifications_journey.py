@@ -14,6 +14,7 @@ from typing import Any, Callable
 from selenium.webdriver.support.ui import WebDriverWait
 
 from tooling.acceptance.core import GateError, call_async_harness, workspace_id
+from tooling.acceptance.core.errors import DriverError
 from tooling.acceptance.core.redaction import redact_text_with_values, redact_value_with_values
 from tooling.acceptance.drivers.native import MouseAction, NativeKey
 from tooling.acceptance.drivers.native.runtime import (
@@ -446,12 +447,15 @@ def _reject_pending_friend_request(
     federation_id: str,
     failure_message: str,
 ) -> None:
-    response = receiver.invoke_app_result("social_friend_request_reject", {"input": {
-        "request_id": request_id,
-        "sender_ptid": sender_ptid,
-        "sender_home_station_peer_id": sender_profile["home_station_peer_id"],
-        "federation_id": federation_id,
-    }})
+    try:
+        response = receiver.invoke_app_result("social_friend_request_reject", {"input": {
+            "request_id": request_id,
+            "sender_ptid": sender_ptid,
+            "sender_home_station_peer_id": sender_profile["home_station_peer_id"],
+            "federation_id": federation_id,
+        }})
+    except DriverError as error:
+        response = {"error": str(error)}
     if response.get("ok") is True:
         return
     refreshed = call_async_harness(receiver, "refreshOnboardingProjection", {

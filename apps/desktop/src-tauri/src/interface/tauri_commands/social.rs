@@ -111,6 +111,14 @@ pub(crate) struct FriendRequestCommandInput {
     pub federation_id: String,
 }
 
+fn friend_request_command_id(action: model::social::FriendRequestAction) -> String {
+    format!(
+        "friend-request:{}:{}",
+        action.as_str_name().to_ascii_lowercase(),
+        Ulid::new(),
+    )
+}
+
 pub(crate) fn sign_friend_request_command(
     station_client: &StationClient,
     state: &AppState,
@@ -182,11 +190,7 @@ pub(crate) fn sign_friend_request_command(
         .map_err(|_| "friend request command timestamp exceeds i64".to_string())?;
     let body = model::social::FriendRequestCommandBody {
         format_version: FRIEND_REQUEST_COMMAND_FORMAT_VERSION,
-        command_id: format!(
-            "friend-request:{}:{}",
-            input.action.as_str_name().to_ascii_lowercase(),
-            input.request_id
-        ),
+        command_id: friend_request_command_id(input.action),
         request_id: input.request_id,
         action: input.action as i32,
         sender: Some(person_actor_ref(input.sender_ptid)),
@@ -1687,4 +1691,24 @@ pub fn social_friend_request_list(
         Err(e) => return station_error_proto(e, "list friend requests failed"),
     };
     AppResult::success(resp.encode_to_vec())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn friend_request_command_ids_are_unique_per_intent() {
+        let action = model::social::FriendRequestAction::Reject;
+        let first = friend_request_command_id(action);
+        let second = friend_request_command_id(action);
+        let prefix = format!(
+            "friend-request:{}:",
+            action.as_str_name().to_ascii_lowercase(),
+        );
+
+        assert_ne!(first, second);
+        assert!(first.starts_with(&prefix));
+        assert!(second.starts_with(&prefix));
+    }
 }
