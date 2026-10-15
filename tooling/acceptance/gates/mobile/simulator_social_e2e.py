@@ -1457,10 +1457,13 @@ return {
         while time.monotonic() < deadline:
             root_error = session.execute_script(
                 """
+const detail = document.querySelector(
+  '.root-error-message > span'
+)?.textContent || '';
 const stack = document.querySelector(
   '[data-acceptance-root-error-stack]'
-);
-return stack?.textContent || '';
+)?.textContent || '';
+return [detail, stack].filter(Boolean).join('\\n');
 """
             )
             if isinstance(root_error, str) and root_error.strip():
