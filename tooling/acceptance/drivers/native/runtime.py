@@ -1638,25 +1638,44 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
             raise DriverError(
                 "Native activation target process is unavailable"
             )
+        target_process_id = target.process_id
+        current_control = self.native_adapter.focused_control(
+            target_process_id
+        )
+        if current_control.error:
+            raise DriverError(
+                "Native activation source inspection failed: "
+                f"{current_control.to_dict()}"
+            )
         source = next(
             (
                 session
                 for session in sessions
-                if session.process_id not in (None, target.process_id)
-                and bool(
-                    session.driver.execute_script(
-                        "return document.hasFocus()"
-                    )
-                )
+                if session.process_id == current_control.actual_frontmost_pid
+                and session.process_id != target_process_id
             ),
             None,
         )
         if source is not None:
             source.invoke_app_result(
                 "acceptance_yield_activation",
-                {"targetPid": target.process_id},
+                {"targetPid": target_process_id},
             )
         target.invoke_app_result("acceptance_request_activation")
+        focused_control = self.native_adapter.activate_and_focused_control(
+            target_process_id
+        )
+        if (
+            focused_control.error
+            or not focused_control.frontmost
+            or focused_control.actual_frontmost_pid != target_process_id
+            or focused_control.window_count <= 0
+        ):
+            raise DriverError(
+                "Native actor focus did not converge after cooperative "
+                f"activation for exact process {target_process_id}: "
+                f"{focused_control.to_dict()}"
+            )
         return True
 
     def binary_identity(self) -> dict[str, str]:

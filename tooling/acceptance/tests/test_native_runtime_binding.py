@@ -18,6 +18,7 @@ from tooling.acceptance.core.evidence_store import workspace_id
 from tooling.acceptance.core.errors import ClientBindingError, DriverError
 from tooling.acceptance.drivers.native.base import (
     MouseAction,
+    NativeControlSnapshot,
     NativeDesktopAdapter,
     NativeInputMode,
     NativeKey,
@@ -1511,6 +1512,123 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
         self.assertEqual(session.launcher.port, 4447)
         self.assertEqual(session.launcher.renderer_port, 3410)
         self.assertEqual(session.launcher.profile, "chat-native-alice")
+
+    def test_macos_activation_yields_actual_frontmost_actor(self) -> None:
+        with patch.dict(
+            "os.environ",
+            {"PT_ACCEPTANCE_NATIVE_DEV": "1"},
+        ):
+            binding = LocalMacOSRuntimeBinding()
+        target = Mock(spec=TauriSession)
+        target.process_id = 49712
+        source = Mock(spec=TauriSession)
+        source.process_id = 49629
+        stale_dom_source = Mock(spec=TauriSession)
+        stale_dom_source.process_id = 49546
+        source.driver.execute_script.return_value = False
+        stale_dom_source.driver.execute_script.return_value = True
+        target.invoke_app_result.return_value = {"ok": True}
+        source.invoke_app_result.return_value = {"ok": True}
+        converged = NativeControlSnapshot(
+            window_count=1,
+            frontmost=True,
+            actual_frontmost_pid=49712,
+        )
+
+        with patch.object(
+            binding.native_adapter,
+            "focused_control",
+            return_value=NativeControlSnapshot(
+                window_count=1,
+                actual_frontmost_pid=49629,
+            ),
+        ), patch.object(
+            binding.native_adapter,
+            "activate_and_focused_control",
+            return_value=converged,
+        ) as activate:
+            activated = binding.request_cooperative_activation(
+                target,
+                (target, source, stale_dom_source),
+            )
+
+        self.assertTrue(activated)
+        source.invoke_app_result.assert_called_once_with(
+            "acceptance_yield_activation",
+            {"targetPid": 49712},
+        )
+        stale_dom_source.invoke_app_result.assert_not_called()
+        source.driver.execute_script.assert_not_called()
+        stale_dom_source.driver.execute_script.assert_not_called()
+        target.invoke_app_result.assert_called_once_with(
+            "acceptance_request_activation"
+        )
+        activate.assert_called_once_with(49712)
+
+    def test_macos_activation_rejected_yield_fails_closed(self) -> None:
+        with patch.dict(
+            "os.environ",
+            {"PT_ACCEPTANCE_NATIVE_DEV": "1"},
+        ):
+            binding = LocalMacOSRuntimeBinding()
+        target = Mock(spec=TauriSession)
+        target.process_id = 49712
+        source = Mock(spec=TauriSession)
+        source.process_id = 49629
+        source.invoke_app_result.side_effect = DriverError("yield rejected")
+
+        with patch.object(
+            binding.native_adapter,
+            "focused_control",
+            return_value=NativeControlSnapshot(
+                window_count=1,
+                actual_frontmost_pid=49629,
+            ),
+        ), patch.object(
+            binding.native_adapter,
+            "activate_and_focused_control",
+        ) as activate:
+            with self.assertRaisesRegex(DriverError, "yield rejected"):
+                binding.request_cooperative_activation(
+                    target,
+                    (target, source),
+                )
+
+        target.invoke_app_result.assert_not_called()
+        activate.assert_not_called()
+
+    def test_macos_activation_rejected_request_fails_closed(self) -> None:
+        with patch.dict(
+            "os.environ",
+            {"PT_ACCEPTANCE_NATIVE_DEV": "1"},
+        ):
+            binding = LocalMacOSRuntimeBinding()
+        target = Mock(spec=TauriSession)
+        target.process_id = 49712
+        target.invoke_app_result.side_effect = DriverError("request rejected")
+        source = Mock(spec=TauriSession)
+        source.process_id = 49629
+        source.invoke_app_result.return_value = {"ok": True}
+
+        with patch.object(
+            binding.native_adapter,
+            "focused_control",
+            return_value=NativeControlSnapshot(
+                window_count=1,
+                actual_frontmost_pid=49629,
+            ),
+        ), patch.object(
+            binding.native_adapter,
+            "activate_and_focused_control",
+        ) as activate:
+            with self.assertRaisesRegex(DriverError, "request rejected"):
+                binding.request_cooperative_activation(
+                    target,
+                    (target, source),
+                )
+
+        source.invoke_app_result.assert_called_once()
+        activate.assert_not_called()
 
     def test_make_launcher_uses_allocated_ports_after_managed_handoff(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
