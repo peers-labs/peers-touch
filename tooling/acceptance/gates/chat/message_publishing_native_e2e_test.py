@@ -234,6 +234,20 @@ class MessagePublishingNativeGateTests(unittest.TestCase):
             self.source,
         )
 
+    def test_receiver_snapshot_does_not_overlap_timed_out_native_calls(
+        self,
+    ) -> None:
+        method = next(
+            node
+            for node in ast.walk(self.tree)
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_receiver_snapshot"
+        )
+        source = ast.get_source_segment(self.source, method) or ""
+
+        self.assertIn("timeout=timeout", source)
+        self.assertNotIn("timeout=20", source)
+
     def test_runtime_setup_is_inside_cleanup_envelope(self) -> None:
         run_method = next(
             node

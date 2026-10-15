@@ -531,7 +531,7 @@ class MessagePublishingNativeGate(AcceptanceGate):
                     "conversationId": conversation_id,
                     "messageId": message_id,
                 },
-                timeout=20,
+                timeout=timeout,
             )
             if not isinstance(snapshot, dict):
                 return None
