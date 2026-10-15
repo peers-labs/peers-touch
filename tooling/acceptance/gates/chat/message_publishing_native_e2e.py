@@ -307,9 +307,22 @@ class MessagePublishingNativeGate(AcceptanceGate):
     def _relaunch_client(self) -> None:
         if self.client is None:
             raise GateError("Native client is unavailable")
-        client = self.client
-        storage_root = client.storage_root
-        self.lifecycles.stop_preserving_session(client)
+        predecessor = self.client
+        storage_root = predecessor.storage_root
+        self.lifecycles.stop_preserving_session(predecessor)
+        client = self.runtime_binding.create_bound_session(
+            "alice",
+            NativeLaunchOptions(
+                window_slot=0,
+                window_count=1,
+                restore_session=True,
+            ),
+        )
+        self.clients.append(client)
+        self.register_driver(client)
+        self.lifecycles.register(client, self.owner_ptid)
+        self.lifecycles.transfer_preserved_session(predecessor, client)
+        self.client = client
         attempt = {
             "sequence": len(self.runtime_launches) + 1,
             "client": "alice",

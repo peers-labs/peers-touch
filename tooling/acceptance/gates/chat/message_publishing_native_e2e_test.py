@@ -183,7 +183,12 @@ class MessagePublishingNativeGateTests(unittest.TestCase):
         self.assertIn('len(manifest.get("clients", [])) != 1', self.source)
         self.assertEqual(
             self.source.count('create_bound_session(\n            "alice"'),
-            1,
+            2,
+        )
+        self.assertIn("restore_session=True", self.source)
+        self.assertIn(
+            "self.lifecycles.transfer_preserved_session(predecessor, client)",
+            self.source,
         )
         self.assertEqual(
             self.source.count("SuiteRuntimeAction.LOGIN,"),
