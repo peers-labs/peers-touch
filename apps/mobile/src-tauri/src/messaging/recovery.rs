@@ -2,6 +2,7 @@ use std::io::Read;
 use std::time::Duration;
 
 use argon2::{Algorithm, Argon2, Params, Version};
+use base64::{engine::general_purpose::STANDARD, Engine};
 use bip39::{Language, Mnemonic};
 use messaging_core::proto::recovery::{
     ReadLatestRecoveryRevisionRequest, ReadLatestRecoveryRevisionResponse,
@@ -13,7 +14,11 @@ use rand::{rngs::OsRng, RngCore};
 use reqwest::blocking::{Client, RequestBuilder};
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
+
+use crate::platform::secure_storage::SecureStorage;
+use crate::runtime::reliability_proto::peers_touch::model::mobile::v1::MobileRecoveryRecord;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
@@ -23,6 +28,92 @@ const ARGON2_TIME_COST: u32 = 3;
 const ARGON2_PARALLELISM: u32 = 1;
 const BACKUP_KEY_BYTES: usize = 32;
 const BACKUP_SALT_BYTES: usize = 16;
+
+pub(crate) struct SecureMobileRecoveryRecord {
+    phrase: Zeroizing<String>,
+    recovery_epoch: u64,
+}
+
+impl SecureMobileRecoveryRecord {
+    pub(crate) fn phrase(&self) -> &str {
+        self.phrase.as_str()
+    }
+
+    pub(crate) fn recovery_epoch(&self) -> u64 {
+        self.recovery_epoch
+    }
+}
+
+fn secure_mobile_recovery_record_key(station_peer_id: &str, actor_ptid: &str) -> String {
+    let hash = Sha256::digest(format!("{station_peer_id}\u{1f}{actor_ptid}"));
+    format!(
+        "mobile.security.recovery.{}",
+        hash.iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    )
+}
+
+fn decode_secure_mobile_recovery_record(
+    encoded: &str,
+) -> Result<SecureMobileRecoveryRecord, String> {
+    let bytes = Zeroizing::new(
+        STANDARD
+            .decode(encoded)
+            .map_err(|_| "mobile recovery record is not base64".to_string())?,
+    );
+    let mut record = MobileRecoveryRecord::decode(bytes.as_slice())
+        .map_err(|_| "mobile recovery record is invalid".to_string())?;
+    if record.recovery_epoch == 0 {
+        return Err("mobile recovery record epoch is invalid".to_string());
+    }
+    MobileRecoveryKdf.validate_mnemonic(&record.phrase)?;
+    let phrase = Zeroizing::new(std::mem::take(&mut record.phrase));
+    Ok(SecureMobileRecoveryRecord {
+        phrase,
+        recovery_epoch: record.recovery_epoch,
+    })
+}
+
+pub(crate) fn load_secure_mobile_recovery_record(
+    storage: &SecureStorage,
+    station_peer_id: &str,
+    actor_ptid: &str,
+) -> Result<Option<SecureMobileRecoveryRecord>, String> {
+    storage
+        .get(&secure_mobile_recovery_record_key(
+            station_peer_id,
+            actor_ptid,
+        ))
+        .map_err(|error| error.to_string())?
+        .map(|encoded| decode_secure_mobile_recovery_record(&encoded))
+        .transpose()
+}
+
+pub(crate) fn store_secure_mobile_recovery_record(
+    storage: &SecureStorage,
+    station_peer_id: &str,
+    actor_ptid: &str,
+    phrase: &str,
+    recovery_epoch: u64,
+) -> Result<(), String> {
+    if recovery_epoch == 0 {
+        return Err("mobile recovery record epoch is invalid".to_string());
+    }
+    MobileRecoveryKdf.validate_mnemonic(phrase)?;
+    let mut record = MobileRecoveryRecord {
+        phrase: phrase.to_string(),
+        recovery_epoch,
+    };
+    let bytes = Zeroizing::new(record.encode_to_vec());
+    let result = storage.set(
+        &secure_mobile_recovery_record_key(station_peer_id, actor_ptid),
+        &STANDARD.encode(bytes.as_slice()),
+    );
+    use zeroize::Zeroize;
+    record.phrase.zeroize();
+    result.map_err(|error| error.to_string())
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MobileRecoveryKdfParameters {
@@ -293,5 +384,29 @@ mod tests {
         .unwrap();
 
         assert_eq!(decoded.archive, archive);
+    }
+
+    #[test]
+    fn secure_recovery_record_is_scope_bound_and_restores_phrase_and_epoch() {
+        let encoded = STANDARD.encode(
+            MobileRecoveryRecord {
+                phrase: PHRASE.to_string(),
+                recovery_epoch: 7,
+            }
+            .encode_to_vec(),
+        );
+
+        let record = decode_secure_mobile_recovery_record(&encoded).unwrap();
+
+        assert_eq!(record.phrase(), PHRASE);
+        assert_eq!(record.recovery_epoch(), 7);
+        assert_ne!(
+            secure_mobile_recovery_record_key("station-1", "ptid:alice"),
+            secure_mobile_recovery_record_key("station-1", "ptid:bob"),
+        );
+        assert_ne!(
+            secure_mobile_recovery_record_key("station-1", "ptid:alice"),
+            secure_mobile_recovery_record_key("station-2", "ptid:alice"),
+        );
     }
 }

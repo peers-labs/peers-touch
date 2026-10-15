@@ -1,14 +1,15 @@
 //! Native recovery application service. The renderer receives counters only.
-use base64::{engine::general_purpose::STANDARD, Engine};
 use bip39::{Language, Mnemonic};
 use prost::Message;
 use rand::{rngs::OsRng, RngCore};
-use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager, Runtime};
 use zeroize::Zeroizing;
 
 use super::lifecycle::MobileMessagingRuntime;
-use super::recovery::{MobileRecoveryKdf, RecoveryTransport};
+use super::recovery::{
+    load_secure_mobile_recovery_record, store_secure_mobile_recovery_record, MobileRecoveryKdf,
+    RecoveryTransport,
+};
 use crate::error::{MobileError, MobileResult};
 use crate::platform::secure_input::{
     confirm_actor_backup_phrase, request_actor_identity_recovery_phrase,
@@ -16,7 +17,7 @@ use crate::platform::secure_input::{
 use crate::platform::secure_storage::SecureStorage;
 use crate::runtime::oauth::session::{authenticated_native_session, AuthenticatedNativeSession};
 use crate::runtime::reliability_proto::peers_touch::model::mobile::v1::{
-    MobileRecoveryAction, MobileRecoveryRecord, MobileRecoveryRequest, MobileRecoveryResult,
+    MobileRecoveryAction, MobileRecoveryRequest, MobileRecoveryResult,
 };
 use crate::social::MobilePrivateSocialRuntime;
 use messaging_core::proto::recovery::{
@@ -25,17 +26,6 @@ use messaging_core::proto::recovery::{
 
 fn error(detail: impl Into<String>) -> MobileError {
     MobileError::coded("MOBILE_RECOVERY_FAILED", detail)
-}
-
-fn record_key(request: &MobileRecoveryRequest) -> String {
-    let hash = Sha256::digest(format!(
-        "{}\u{1f}{}",
-        request.station_peer_id, request.actor_ptid
-    ));
-    format!(
-        "mobile.security.recovery.{}",
-        hash.iter().map(|b| format!("{b:02x}")).collect::<String>()
-    )
 }
 
 fn session(
@@ -71,23 +61,6 @@ fn projection(revision: &ReadLatestRecoveryRevisionResponse) -> MobileRecoveryRe
     }
 }
 
-fn save_record(
-    storage: &SecureStorage,
-    request: &MobileRecoveryRequest,
-    phrase: &str,
-    epoch: u64,
-) -> MobileResult<()> {
-    let mut record = MobileRecoveryRecord {
-        phrase: phrase.into(),
-        recovery_epoch: epoch,
-    };
-    let bytes = Zeroizing::new(record.encode_to_vec());
-    let result = storage.set(&record_key(request), &STANDARD.encode(bytes.as_slice()));
-    use zeroize::Zeroize;
-    record.phrase.zeroize();
-    result
-}
-
 pub(crate) async fn execute<R: Runtime>(
     app: AppHandle<R>,
     request: MobileRecoveryRequest,
@@ -116,21 +89,15 @@ pub(crate) async fn execute<R: Runtime>(
     let epoch;
     match action {
         MobileRecoveryAction::Create => {
-            let stored = storage
-                .get(&record_key(&request))?
-                .map(|value| {
-                    let bytes = Zeroizing::new(
-                        STANDARD
-                            .decode(value)
-                            .map_err(|_| error("recovery record invalid"))?,
-                    );
-                    MobileRecoveryRecord::decode(bytes.as_slice())
-                        .map_err(|_| error("recovery record invalid"))
-                })
-                .transpose()?;
-            if let Some(mut record) = stored {
-                phrase = Zeroizing::new(std::mem::take(&mut record.phrase));
-                epoch = record.recovery_epoch;
+            let stored = load_secure_mobile_recovery_record(
+                &storage,
+                &request.station_peer_id,
+                &request.actor_ptid,
+            )
+            .map_err(error)?;
+            if let Some(record) = stored {
+                phrase = Zeroizing::new(record.phrase().to_string());
+                epoch = record.recovery_epoch();
             } else {
                 let mut entropy = Zeroizing::new([0; 32]);
                 OsRng.fill_bytes(entropy.as_mut());
@@ -205,7 +172,14 @@ pub(crate) async fn execute<R: Runtime>(
         .await
         .map_err(|_| error("recovery create task failed"))??;
         session(&storage, &request)?;
-        save_record(&storage, &request, phrase.as_str(), epoch)?;
+        store_secure_mobile_recovery_record(
+            &storage,
+            &request.station_peer_id,
+            &request.actor_ptid,
+            phrase.as_str(),
+            epoch,
+        )
+        .map_err(error)?;
         app.state::<MobilePrivateSocialRuntime>()
             .store_recovery_master(
                 &data_root,
@@ -264,7 +238,14 @@ pub(crate) async fn execute<R: Runtime>(
                 &reconciliation,
                 scope.access_token().into(),
             )?;
-        save_record(&storage, &request, phrase.as_str(), decoded.recovery_epoch)?;
+        store_secure_mobile_recovery_record(
+            &storage,
+            &request.station_peer_id,
+            &request.actor_ptid,
+            phrase.as_str(),
+            decoded.recovery_epoch,
+        )
+        .map_err(error)?;
         restore_app
             .state::<MobilePrivateSocialRuntime>()
             .store_recovery_master(
