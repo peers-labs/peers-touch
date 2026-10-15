@@ -1687,27 +1687,26 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
                 self.native_adapter.activate_process(target_process_id)
             except DriverError as error:
                 last_activation_error = str(error)
-            if source is None:
-                activation_point = (
-                    self.native_adapter.process_owned_activation_point(
-                        target_process_id,
-                    )
+            activation_point = (
+                self.native_adapter.process_owned_activation_point(
+                    target_process_id,
                 )
-                if activation_point is None:
-                    last_activation_error = (
-                        f"{last_activation_error}; "
-                        if last_activation_error
-                        else ""
-                    ) + "no verified process-owned title-bar point"
-                else:
-                    self.native_adapter.post_mouse(
-                        (
-                            MouseAction.MOVE,
-                            MouseAction.LEFT_DOWN,
-                            MouseAction.LEFT_UP,
-                        ),
-                        activation_point,
-                    )
+            )
+            if activation_point is None:
+                last_activation_error = (
+                    f"{last_activation_error}; "
+                    if last_activation_error
+                    else ""
+                ) + "no verified process-owned title-bar point"
+            else:
+                self.native_adapter.post_mouse(
+                    (
+                        MouseAction.MOVE,
+                        MouseAction.LEFT_DOWN,
+                        MouseAction.LEFT_UP,
+                    ),
+                    activation_point,
+                )
             time.sleep(_MACOS_COOPERATIVE_ACTIVATION_INTERVAL_SECONDS)
             last_control = self.native_adapter.focused_control(
                 target_process_id

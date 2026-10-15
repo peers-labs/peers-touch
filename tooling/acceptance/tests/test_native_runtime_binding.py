@@ -1548,7 +1548,14 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
         ), patch.object(
             binding.native_adapter,
             "activate_process",
-        ) as activate:
+        ) as activate, patch.object(
+            binding.native_adapter,
+            "process_owned_activation_point",
+            return_value=(432.0, 45.0),
+        ) as activation_point, patch.object(
+            binding.native_adapter,
+            "post_mouse",
+        ) as post_mouse:
             activated = binding.request_cooperative_activation(
                 target,
                 (target, source, stale_dom_source),
@@ -1566,6 +1573,15 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             "acceptance_request_activation"
         )
         activate.assert_called_once_with(49712)
+        activation_point.assert_called_once_with(49712)
+        post_mouse.assert_called_once_with(
+            (
+                MouseAction.MOVE,
+                MouseAction.LEFT_DOWN,
+                MouseAction.LEFT_UP,
+            ),
+            (432.0, 45.0),
+        )
 
     def test_macos_activation_clicks_verified_title_bar_for_external_frontmost(
         self,
@@ -1707,7 +1723,14 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
         ), patch.object(
             binding.native_adapter,
             "activate_process",
-        ) as activate, patch(
+        ) as activate, patch.object(
+            binding.native_adapter,
+            "process_owned_activation_point",
+            return_value=(432.0, 45.0),
+        ) as activation_point, patch.object(
+            binding.native_adapter,
+            "post_mouse",
+        ) as post_mouse, patch(
             "tooling.acceptance.drivers.native.runtime.time.sleep",
         ):
             activated = binding.request_cooperative_activation(
@@ -1740,6 +1763,31 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             activate.call_args_list,
             [call(49712), call(49712)],
         )
+        self.assertEqual(
+            activation_point.call_args_list,
+            [call(49712), call(49712)],
+        )
+        self.assertEqual(
+            post_mouse.call_args_list,
+            [
+                call(
+                    (
+                        MouseAction.MOVE,
+                        MouseAction.LEFT_DOWN,
+                        MouseAction.LEFT_UP,
+                    ),
+                    (432.0, 45.0),
+                ),
+                call(
+                    (
+                        MouseAction.MOVE,
+                        MouseAction.LEFT_DOWN,
+                        MouseAction.LEFT_UP,
+                    ),
+                    (432.0, 45.0),
+                ),
+            ],
+        )
 
     def test_macos_activation_fails_closed_after_cooperative_timeout(
         self,
@@ -1767,7 +1815,14 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
         ), patch.object(
             binding.native_adapter,
             "activate_process",
-        ) as activate, patch(
+        ) as activate, patch.object(
+            binding.native_adapter,
+            "process_owned_activation_point",
+            return_value=(432.0, 45.0),
+        ), patch.object(
+            binding.native_adapter,
+            "post_mouse",
+        ) as post_mouse, patch(
             "tooling.acceptance.drivers.native.runtime."
             "_MACOS_COOPERATIVE_ACTIVATION_TIMEOUT_SECONDS",
             0,
@@ -1790,6 +1845,7 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             "acceptance_request_activation"
         )
         activate.assert_called_once_with(49712)
+        post_mouse.assert_called_once()
 
     def test_macos_activation_rejected_yield_fails_closed(self) -> None:
         with patch.dict(
