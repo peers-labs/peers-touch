@@ -686,7 +686,7 @@ class SchemaActivationOwnerTest(unittest.TestCase):
             self.source_runner.requests[0]["declaration_digest"],
         )
 
-    def test_source_checkpoint_reads_the_canonical_development_session(self) -> None:
+    def test_source_checkpoint_accepts_a_deployed_canonical_session(self) -> None:
         commands: list[list[str]] = []
 
         def command_runner(
@@ -703,7 +703,7 @@ class SchemaActivationOwnerTest(unittest.TestCase):
                         "session": {
                             "eventDigest": "9" * 64,
                             "state": {
-                                "state": "CHECKPOINTED",
+                                "state": "DEPLOYED",
                                 "sessionId": "w12d-source-checkpoint",
                                 "workItemId": "secure-content-w12d",
                                 "planId": PLAN_ID,

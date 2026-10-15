@@ -1565,7 +1565,7 @@ class DevelopmentSessionSourceCheckpointRunner:
             not isinstance(session, Mapping)
             or not isinstance(state, Mapping)
             or not isinstance(source, Mapping)
-            or state.get("state") != "CHECKPOINTED"
+            or state.get("state") not in {"CHECKPOINTED", "DEPLOYING", "DEPLOYED"}
             or state.get("workItemId") != request["work_item_id"]
             or state.get("planId") != request["plan_id"]
             or state.get("taskId") != request["task_id"]
