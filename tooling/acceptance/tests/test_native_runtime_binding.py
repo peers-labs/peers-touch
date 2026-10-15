@@ -566,6 +566,38 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             "http://station.example/sub-oss/healthz",
         )
 
+    def test_macos_session_injects_declared_actor_identity_root(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            identity_root = Path(directory) / "actor-identity"
+            identity_root.mkdir()
+            with patch.dict(
+                "os.environ",
+                {"PT_ACCEPTANCE_NATIVE_DEV": "1"},
+            ):
+                binding = LocalMacOSRuntimeBinding()
+                session = binding._create_session(
+                    "alice",
+                    {
+                        "worktree": str(Path.cwd()),
+                        "webdriver_port": 4447,
+                        "gateway_port": 3140,
+                        "renderer_port": 3410,
+                        "profile": "chat-native-alice",
+                        "storage_root": "/tmp/chat-native-alice",
+                        "actor_identity_root": str(identity_root),
+                    },
+                    {"PT_STATION_URL": "http://station.example"},
+                )
+
+            self.assertEqual(
+                session.launcher.environment["PEERS_ACTOR_IDENTITY_ROOT"],
+                str(identity_root),
+            )
+            self.assertNotEqual(
+                session.launcher.environment["PEERS_ACTOR_IDENTITY_ROOT"],
+                session.storage_root,
+            )
+
     def test_bound_session_uses_client_id_for_same_actor_devices(self) -> None:
         lifecycle = SyntheticRemoteNativeLifecycle("/tmp/fixture.png")
         binding = LinuxNativeDesktopRuntimeBinding(

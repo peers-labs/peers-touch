@@ -44,7 +44,9 @@ from tooling.acceptance.provisioners.remote_source_identity import (
     resolve_remote_source_identity,
 )
 from tooling.acceptance.provisioners.preset_actor import (
+    ResolvedPresetActorIdentity,
     resolve_existing_preset_actor,
+    resolve_existing_preset_actor_identity,
 )
 
 
@@ -261,6 +263,28 @@ def resolve_existing_actor(
         )
     return resolve_existing_preset_actor(
         station_url=station_url,
+        role=role,
+        account=account,
+        password=password,
+        device_policy="ephemeral-acceptance",
+    )
+
+
+def resolve_existing_actor_identity(
+    station_url: str,
+    station_peer_id: str,
+    role: str,
+    password: str,
+) -> ResolvedPresetActorIdentity:
+    account = ACTOR_ACCOUNTS.get(role)
+    if not account:
+        raise BlockedError(
+            reason=f"Unsupported Agent native actor role: {role}",
+            resource=f"fixture-actor:{role}",
+        )
+    return resolve_existing_preset_actor_identity(
+        station_url=station_url,
+        station_peer_id=station_peer_id,
         role=role,
         account=account,
         password=password,
@@ -1456,6 +1480,8 @@ class HomeStationProvisioner(EnvironmentProvisioner):
         else:
             credential_refs = ("profile:CHAT_NATIVE_DEMO_PASSWORD",)
         roles = GATE_ROLES[gate_id]
+        retained_fixtures = ()
+        identity_resolution = None
         if requires_reset:
             _, _, actor_ref = produce_actor_manifest(
                 environment_id=self.environment_id,
@@ -1467,14 +1493,27 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 reset_authorized=True,
             )
         else:
-            actors = tuple(
-                resolve_existing_actor(
+            if gate_id == MESSAGE_PUBLISHING_GATE:
+                station_peer_id = manifest.services[
+                    "station"
+                ].runtime_identity
+                identity_resolution = resolve_existing_actor_identity(
                     station_url,
-                    role,
+                    station_peer_id,
+                    roles[0],
                     profile_env["CHAT_NATIVE_DEMO_PASSWORD"],
                 )
-                for role in roles
-            )
+                actors = (identity_resolution.actor,)
+                retained_fixtures = (identity_resolution.fixture,)
+            else:
+                actors = tuple(
+                    resolve_existing_actor(
+                        station_url,
+                        role,
+                        profile_env["CHAT_NATIVE_DEMO_PASSWORD"],
+                    )
+                    for role in roles
+                )
             _, _, actor_ref = persist_actor_manifest(
                 ActorManifest(
                     fixture_id="chat-native-existing-actors",
@@ -1518,6 +1557,14 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 manifest.profile_slot,
                 profile_env,
             )
+            if identity_resolution is None:
+                raise RuntimeError(
+                    "Message Publishing actor identity fixture was not resolved"
+                )
+            client = dataclasses.replace(
+                client,
+                actor_identity_root=identity_resolution.fixture.root,
+            )
         else:
             client = self._agent_stream_client(
                 manifest.run_id,
@@ -1530,6 +1577,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             actor_manifest_ref=actor_ref,
             credential_refs=credential_refs,
             clients=(client,),
+            retained_fixtures=retained_fixtures,
             cleanup_resources=self.contract.cleanup.resources,
         )
 

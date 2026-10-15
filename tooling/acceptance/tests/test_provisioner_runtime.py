@@ -24,6 +24,7 @@ from tooling.acceptance.core import (
     EnvironmentProvisioner,
     ProvisioningError,
     ProvisioningState,
+    RetainedRuntimeFixture,
     ServiceAttestation,
 )
 from tooling.acceptance.core._paths import ENVIRONMENTS_DIR
@@ -47,6 +48,7 @@ from tooling.acceptance.provisioners.home_station import (
     resolve_existing_actor,
 )
 from tooling.acceptance.provisioners.preset_actor import (
+    ResolvedPresetActorIdentity,
     resolve_existing_preset_actor,
 )
 
@@ -1090,6 +1092,108 @@ class ProvisionerBlockingTests(unittest.TestCase):
             "require_runtime_identity=gate_id == MESSAGE_PUBLISHING_GATE",
             source,
         )
+
+    def test_message_publishing_records_and_retains_actor_identity_fixture(
+        self,
+    ):
+        provisioner = HomeStationProvisioner(
+            EnvironmentContract(id="home-station")
+        )
+        with patch.object(
+            provisioner,
+            "_git_commit",
+            return_value="abc1234",
+        ), patch.object(
+            provisioner,
+            "_git_workspace_digest",
+            return_value="clean",
+        ):
+            manifest = provisioner._new_base_manifest(
+                MESSAGE_PUBLISHING_GATE
+            )
+        attestation = dataclasses.replace(
+            self._station_attestation(),
+            runtime_identity="station-peer-one",
+        )
+        manifest = dataclasses.replace(
+            manifest,
+            profile_slot=1,
+            services={"station": attestation},
+        )
+        actor = ActorIdentity(
+            role="alice",
+            account_ref="station-account:alice@p.t",
+            ptid="ptid:alice",
+            device_policy="ephemeral-acceptance",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            identity_root = Path(directory) / "actor-identity"
+            identity_root.mkdir()
+            fixture = RetainedRuntimeFixture(
+                fixture_id="preset-actor-identity-alice",
+                kind="actor-identity",
+                root=str(identity_root),
+                lifecycle="machine-retained",
+                scope_digest="f" * 64,
+            )
+            resolution = ResolvedPresetActorIdentity(
+                actor=actor,
+                station_peer_id="station-peer-one",
+                actor_identity_fingerprint="a" * 64,
+                fixture=fixture,
+            )
+            actor_ref = {
+                "artifactKind": "acceptance-artifact-ref",
+                "path": "runtime/actors.json",
+                "sha256": "0" * 64,
+                "mediaType": "application/json",
+            }
+            with patch(
+                "tooling.acceptance.provisioners.home_station."
+                "resolve_existing_actor_identity",
+                return_value=resolution,
+            ) as resolve, patch(
+                "tooling.acceptance.provisioners.home_station."
+                "persist_actor_manifest",
+                return_value=(None, None, actor_ref),
+            ), patch.dict(
+                "os.environ",
+                {"PT_MESSAGE_PUBLISHING_WEBDRIVER_PORT": "14449"},
+                clear=True,
+            ), patch.object(
+                provisioner,
+                "_assert_client_ports_available",
+            ):
+                prepared = provisioner._agent_native_manifest(
+                    manifest,
+                    gate_id=MESSAGE_PUBLISHING_GATE,
+                    station_url="http://station.example:18080",
+                    deployment_environment="station-one",
+                    profile_env={
+                        "CHAT_NATIVE_DEMO_PASSWORD": "fixture-password",
+                        "PT_DESKTOP_APP_GATEWAY_PORT": "13331",
+                        "PT_DESKTOP_APP_WEB_PORT": "13511",
+                    },
+                )
+
+            self.assertEqual(
+                prepared.clients[0].actor_identity_root,
+                str(identity_root),
+            )
+            self.assertEqual(prepared.retained_fixtures, (fixture,))
+            self.assertEqual(
+                prepared.to_dict()["retainedFixtures"],
+                [fixture.to_dict()],
+            )
+            resolve.assert_called_once_with(
+                "http://station.example:18080",
+                "station-peer-one",
+                "alice",
+                "fixture-password",
+            )
+            cleanup = provisioner.cleanup()
+            self.assertTrue(identity_root.is_dir())
+            self.assertEqual(cleanup, ())
 
     def test_agent_core_lifecycle_uses_reviewed_two_profile(self):
         provisioner = HomeStationProvisioner(

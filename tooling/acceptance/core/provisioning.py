@@ -633,6 +633,47 @@ class ClientRuntime:
     id: str = ""
     required_service_roles: tuple[str, ...] = ()
     service_bindings: dict[str, ClientServiceBinding] = field(default_factory=dict)
+    actor_identity_root: str = ""
+
+
+@dataclass(frozen=True)
+class RetainedRuntimeFixture:
+    fixture_id: str
+    kind: str
+    root: str
+    lifecycle: str
+    scope_digest: str
+
+    def __post_init__(self) -> None:
+        if not SERVICE_ID_PATTERN.fullmatch(self.fixture_id):
+            raise ProvisioningError(
+                f"invalid retained fixture id: {self.fixture_id!r}"
+            )
+        if not SERVICE_ID_PATTERN.fullmatch(self.kind):
+            raise ProvisioningError(
+                f"invalid retained fixture kind: {self.kind!r}"
+            )
+        if self.lifecycle != "machine-retained":
+            raise ProvisioningError(
+                "retained fixture lifecycle must be machine-retained"
+            )
+        if not Path(self.root).is_absolute():
+            raise ProvisioningError(
+                "retained fixture root must be absolute"
+            )
+        if re.fullmatch(r"[0-9a-f]{64}", self.scope_digest) is None:
+            raise ProvisioningError(
+                "retained fixture scope digest must be lowercase SHA-256"
+            )
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "fixtureId": self.fixture_id,
+            "kind": self.kind,
+            "root": self.root,
+            "lifecycle": self.lifecycle,
+            "scopeDigest": self.scope_digest,
+        }
 
 
 @dataclass(frozen=True)
@@ -796,6 +837,7 @@ class RuntimeManifest:
     actor_manifest_ref: dict[str, Any] | None = None
     credential_refs: tuple[str, ...] = ()
     clients: tuple[ClientRuntime, ...] = ()
+    retained_fixtures: tuple[RetainedRuntimeFixture, ...] = ()
     cleanup_registered: bool = False
     cleanup_resources: tuple[str, ...] = ()
     blocked_reason: str | None = None
@@ -823,6 +865,9 @@ class RuntimeManifest:
             "services": {},
             "credentialRefs": list(self.credential_refs),
             "clients": [asdict(client) for client in self.clients],
+            "retainedFixtures": [
+                fixture.to_dict() for fixture in self.retained_fixtures
+            ],
             "cleanup": {
                 "registered": self.cleanup_registered,
                 "resources": list(self.cleanup_resources),

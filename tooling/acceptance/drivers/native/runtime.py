@@ -1113,6 +1113,17 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
         client_spec: Mapping[str, Any],
         environment: Mapping[str, str],
     ) -> TauriSession:
+        environment = dict(environment)
+        actor_identity_root = str(
+            client_spec.get("actor_identity_root") or ""
+        ).strip()
+        if actor_identity_root:
+            identity_root = Path(actor_identity_root).expanduser()
+            if not identity_root.is_absolute() or not identity_root.is_dir():
+                raise DriverError(
+                    f"client {client_role!r} actor identity root is invalid"
+                )
+            environment["PEERS_ACTOR_IDENTITY_ROOT"] = str(identity_root)
         if self._use_make:
             return TauriSession(
                 MakeDesktopLauncher(
