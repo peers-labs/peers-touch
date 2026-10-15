@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import MagicMock
 from unittest.mock import patch
 
-from tooling.acceptance.drivers.tauri import resolve_smoke_port
+from tooling.acceptance.drivers.tauri import TauriSession, resolve_smoke_port
 
 
 class TauriSmokePortTests(unittest.TestCase):
@@ -22,6 +23,53 @@ class TauriSmokePortTests(unittest.TestCase):
             with self.subTest(port=port):
                 with self.assertRaises(ValueError):
                     resolve_smoke_port(port)
+
+
+class TauriSessionSemanticActionTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.session = TauriSession(MagicMock())
+        self.native_driver = MagicMock()
+        self.session._driver = self.native_driver
+        self.element = MagicMock()
+
+    def test_semantic_click_uses_element_click(self) -> None:
+        self.session.semantic_click(self.element)
+
+        self.element.click.assert_called_once_with()
+
+    def test_semantic_hover_dispatches_webview_pointer_events(self) -> None:
+        self.session.semantic_hover(self.element)
+
+        script, element = self.native_driver.execute_script.call_args.args
+        self.assertIs(element, self.element)
+        self.assertIn("new PointerEvent('pointerover'", script)
+        self.assertIn("new MouseEvent('mouseenter'", script)
+
+    def test_semantic_replace_text_clears_before_typing(self) -> None:
+        self.session.semantic_replace_text(self.element, "replacement")
+
+        self.element.clear.assert_called_once_with()
+        self.element.send_keys.assert_called_once_with("replacement")
+
+    def test_semantic_key_sequence_targets_webview_focus(self) -> None:
+        with patch(
+            "tooling.acceptance.drivers.tauri.ActionChains"
+        ) as action_chains:
+            chain = action_chains.return_value
+            chain.send_keys.return_value = chain
+
+            self.session.semantic_key_sequence(
+                self.element,
+                "ENTER",
+                "TAB",
+            )
+
+        script, element = self.native_driver.execute_script.call_args.args
+        self.assertIs(element, self.element)
+        self.assertIn("focus({ preventScroll: true })", script)
+        action_chains.assert_called_once_with(self.native_driver.driver)
+        chain.send_keys.assert_called_once_with("ENTER", "TAB")
+        chain.perform.assert_called_once_with()
 
 
 if __name__ == "__main__":
