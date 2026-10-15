@@ -666,6 +666,7 @@ class MobileMessagingJourney:
                 ):
                     return False
                 raise
+            social = scope.get("social")
             return (
                 scope.get("phase") == "ACTIVE"
                 and scope.get("activeStationPeerId")
@@ -673,6 +674,9 @@ class MobileMessagingJourney:
                 and scope.get("runtimeStationPeerId")
                 == actor.station_peer_id
                 and scope.get("activeActorPtid") == actor.ptid
+                and isinstance(social, Mapping)
+                and social.get("stationPeerId") == actor.station_peer_id
+                and social.get("actorPtid") == actor.ptid
             )
 
         return self._await_condition(
@@ -753,6 +757,8 @@ class MobileMessagingJourney:
         session: MessagingJourneySession,
         actor: MessagingActor,
     ) -> None:
+        self._await_authenticated_runtime_scope(session, actor)
+
         restart = self._mapping(
             session.call_action("lifecycle.restart"),
             f"{actor.client_id} post-login restart",
