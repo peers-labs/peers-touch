@@ -1,0 +1,1641 @@
+{
+  "evidenceType": "prototype-only",
+  "captures": [
+    {
+      "state": "default",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "filename": "1440-default.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "auth-session-revoked",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "filename": "1440-auth-session-revoked.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": {
+          "cardCount": 1,
+          "brandInsideCard": true,
+          "logoWidth": 72,
+          "logoHeight": 72,
+          "blankGap": 0,
+          "recoveryCount": 0,
+          "hasMobileKicker": false,
+          "hasRawStationAddress": false,
+          "clientHeight": 788,
+          "scrollHeight": 788,
+          "verticallyScrollable": false
+        }
+      }
+    },
+    {
+      "state": "unavailable",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "filename": "1440-unavailable.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "social-unavailable",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "filename": "1440-social-unavailable.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "me-unavailable",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "filename": "1440-me-unavailable.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "retry-pending",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "filename": "1440-retry-pending.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "retry-failed",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "filename": "1440-retry-failed.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "conversation-unavailable",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "filename": "1440-conversation-unavailable.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "no-membership",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "filename": "1440-no-membership.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "member",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "filename": "1440-member.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "request-pending",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "filename": "1440-request-pending.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "request-unknown",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "filename": "1440-request-unknown.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "request-checking",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "filename": "1440-request-checking.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "request-accepted",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "filename": "1440-request-accepted.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "contact",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "filename": "1440-contact.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [
+          {
+            "clientHeight": 202,
+            "scrollHeight": 202
+          }
+        ],
+        "auth": null
+      }
+    },
+    {
+      "state": "direct-preparing",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "filename": "1440-direct-preparing.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [
+          {
+            "clientHeight": 202,
+            "scrollHeight": 202
+          }
+        ],
+        "auth": null
+      }
+    },
+    {
+      "state": "direct-failed",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "filename": "1440-direct-failed.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [
+          {
+            "clientHeight": 202,
+            "scrollHeight": 202
+          }
+        ],
+        "auth": null
+      }
+    },
+    {
+      "state": "direct-info-scrolled",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "filename": "1440-direct-info-scrolled.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [
+          {
+            "clientHeight": 202,
+            "scrollHeight": 202
+          }
+        ],
+        "auth": null
+      }
+    },
+    {
+      "state": "direct-empty",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "filename": "1440-direct-empty.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "social-home",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "filename": "1440-social-home.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "social-public",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "filename": "1440-social-public.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "social-search",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "filename": "1440-social-search.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "social-circles",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "filename": "1440-social-circles.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "social-inline-comment",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "filename": "1440-social-inline-comment.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "social-detail",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "filename": "1440-social-detail.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "settings-home",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "filename": "1440-settings-home.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "settings-station",
+      "viewport": {
+        "width": 1440,
+        "height": 1100
+      },
+      "filename": "1440-settings-station.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "default",
+      "viewport": {
+        "width": 554,
+        "height": 954
+      },
+      "filename": "554-default.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "auth-session-revoked",
+      "viewport": {
+        "width": 554,
+        "height": 954
+      },
+      "filename": "554-auth-session-revoked.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": {
+          "cardCount": 1,
+          "brandInsideCard": true,
+          "logoWidth": 72,
+          "logoHeight": 72,
+          "blankGap": 0,
+          "recoveryCount": 0,
+          "hasMobileKicker": false,
+          "hasRawStationAddress": false,
+          "clientHeight": 788,
+          "scrollHeight": 788,
+          "verticallyScrollable": false
+        }
+      }
+    },
+    {
+      "state": "unavailable",
+      "viewport": {
+        "width": 554,
+        "height": 954
+      },
+      "filename": "554-unavailable.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "social-unavailable",
+      "viewport": {
+        "width": 554,
+        "height": 954
+      },
+      "filename": "554-social-unavailable.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "me-unavailable",
+      "viewport": {
+        "width": 554,
+        "height": 954
+      },
+      "filename": "554-me-unavailable.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "retry-pending",
+      "viewport": {
+        "width": 554,
+        "height": 954
+      },
+      "filename": "554-retry-pending.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "retry-failed",
+      "viewport": {
+        "width": 554,
+        "height": 954
+      },
+      "filename": "554-retry-failed.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "conversation-unavailable",
+      "viewport": {
+        "width": 554,
+        "height": 954
+      },
+      "filename": "554-conversation-unavailable.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "no-membership",
+      "viewport": {
+        "width": 554,
+        "height": 954
+      },
+      "filename": "554-no-membership.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "member",
+      "viewport": {
+        "width": 554,
+        "height": 954
+      },
+      "filename": "554-member.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "request-pending",
+      "viewport": {
+        "width": 554,
+        "height": 954
+      },
+      "filename": "554-request-pending.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "request-unknown",
+      "viewport": {
+        "width": 554,
+        "height": 954
+      },
+      "filename": "554-request-unknown.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "request-checking",
+      "viewport": {
+        "width": 554,
+        "height": 954
+      },
+      "filename": "554-request-checking.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "request-accepted",
+      "viewport": {
+        "width": 554,
+        "height": 954
+      },
+      "filename": "554-request-accepted.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "contact",
+      "viewport": {
+        "width": 554,
+        "height": 954
+      },
+      "filename": "554-contact.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [
+          {
+            "clientHeight": 202,
+            "scrollHeight": 202
+          }
+        ],
+        "auth": null
+      }
+    },
+    {
+      "state": "direct-preparing",
+      "viewport": {
+        "width": 554,
+        "height": 954
+      },
+      "filename": "554-direct-preparing.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [
+          {
+            "clientHeight": 202,
+            "scrollHeight": 202
+          }
+        ],
+        "auth": null
+      }
+    },
+    {
+      "state": "direct-failed",
+      "viewport": {
+        "width": 554,
+        "height": 954
+      },
+      "filename": "554-direct-failed.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [
+          {
+            "clientHeight": 202,
+            "scrollHeight": 202
+          }
+        ],
+        "auth": null
+      }
+    },
+    {
+      "state": "direct-info-scrolled",
+      "viewport": {
+        "width": 554,
+        "height": 954
+      },
+      "filename": "554-direct-info-scrolled.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [
+          {
+            "clientHeight": 202,
+            "scrollHeight": 202
+          }
+        ],
+        "auth": null
+      }
+    },
+    {
+      "state": "direct-empty",
+      "viewport": {
+        "width": 554,
+        "height": 954
+      },
+      "filename": "554-direct-empty.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "social-home",
+      "viewport": {
+        "width": 554,
+        "height": 954
+      },
+      "filename": "554-social-home.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "social-public",
+      "viewport": {
+        "width": 554,
+        "height": 954
+      },
+      "filename": "554-social-public.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "social-search",
+      "viewport": {
+        "width": 554,
+        "height": 954
+      },
+      "filename": "554-social-search.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "social-circles",
+      "viewport": {
+        "width": 554,
+        "height": 954
+      },
+      "filename": "554-social-circles.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "social-inline-comment",
+      "viewport": {
+        "width": 554,
+        "height": 954
+      },
+      "filename": "554-social-inline-comment.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "social-detail",
+      "viewport": {
+        "width": 554,
+        "height": 954
+      },
+      "filename": "554-social-detail.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "settings-home",
+      "viewport": {
+        "width": 554,
+        "height": 954
+      },
+      "filename": "554-settings-home.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "settings-station",
+      "viewport": {
+        "width": 554,
+        "height": 954
+      },
+      "filename": "554-settings-station.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 390,
+        "height": 844,
+        "scrollWidth": 378,
+        "clientWidth": 378,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "default",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "filename": "390-default.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 324,
+        "height": 776.46875,
+        "scrollWidth": 312,
+        "clientWidth": 312,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "auth-session-revoked",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "filename": "390-auth-session-revoked.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 324,
+        "height": 776.46875,
+        "scrollWidth": 312,
+        "clientWidth": 312,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": {
+          "cardCount": 1,
+          "brandInsideCard": true,
+          "logoWidth": 72,
+          "logoHeight": 72,
+          "blankGap": 0,
+          "recoveryCount": 0,
+          "hasMobileKicker": false,
+          "hasRawStationAddress": false,
+          "clientHeight": 720,
+          "scrollHeight": 720,
+          "verticallyScrollable": false
+        }
+      }
+    },
+    {
+      "state": "unavailable",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "filename": "390-unavailable.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 324,
+        "height": 776.46875,
+        "scrollWidth": 312,
+        "clientWidth": 312,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "social-unavailable",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "filename": "390-social-unavailable.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 324,
+        "height": 776.46875,
+        "scrollWidth": 312,
+        "clientWidth": 312,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "me-unavailable",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "filename": "390-me-unavailable.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 324,
+        "height": 776.46875,
+        "scrollWidth": 312,
+        "clientWidth": 312,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "retry-pending",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "filename": "390-retry-pending.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 324,
+        "height": 776.46875,
+        "scrollWidth": 312,
+        "clientWidth": 312,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "retry-failed",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "filename": "390-retry-failed.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 324,
+        "height": 776.46875,
+        "scrollWidth": 312,
+        "clientWidth": 312,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "conversation-unavailable",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "filename": "390-conversation-unavailable.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 324,
+        "height": 776.46875,
+        "scrollWidth": 312,
+        "clientWidth": 312,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "no-membership",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "filename": "390-no-membership.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 324,
+        "height": 776.46875,
+        "scrollWidth": 312,
+        "clientWidth": 312,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "member",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "filename": "390-member.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 324,
+        "height": 776.46875,
+        "scrollWidth": 312,
+        "clientWidth": 312,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "request-pending",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "filename": "390-request-pending.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 324,
+        "height": 776.46875,
+        "scrollWidth": 312,
+        "clientWidth": 312,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "request-unknown",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "filename": "390-request-unknown.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 324,
+        "height": 776.46875,
+        "scrollWidth": 312,
+        "clientWidth": 312,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "request-checking",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "filename": "390-request-checking.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 324,
+        "height": 776.46875,
+        "scrollWidth": 312,
+        "clientWidth": 312,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "request-accepted",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "filename": "390-request-accepted.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 324,
+        "height": 776.46875,
+        "scrollWidth": 312,
+        "clientWidth": 312,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "contact",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "filename": "390-contact.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 324,
+        "height": 776.46875,
+        "scrollWidth": 312,
+        "clientWidth": 312,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [
+          {
+            "clientHeight": 202,
+            "scrollHeight": 202
+          }
+        ],
+        "auth": null
+      }
+    },
+    {
+      "state": "direct-preparing",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "filename": "390-direct-preparing.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 324,
+        "height": 776.46875,
+        "scrollWidth": 312,
+        "clientWidth": 312,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [
+          {
+            "clientHeight": 202,
+            "scrollHeight": 202
+          }
+        ],
+        "auth": null
+      }
+    },
+    {
+      "state": "direct-failed",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "filename": "390-direct-failed.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 324,
+        "height": 776.46875,
+        "scrollWidth": 312,
+        "clientWidth": 312,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [
+          {
+            "clientHeight": 202,
+            "scrollHeight": 202
+          }
+        ],
+        "auth": null
+      }
+    },
+    {
+      "state": "direct-info-scrolled",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "filename": "390-direct-info-scrolled.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 324,
+        "height": 776.46875,
+        "scrollWidth": 312,
+        "clientWidth": 312,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [
+          {
+            "clientHeight": 202,
+            "scrollHeight": 202
+          }
+        ],
+        "auth": null
+      }
+    },
+    {
+      "state": "direct-empty",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "filename": "390-direct-empty.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 324,
+        "height": 776.46875,
+        "scrollWidth": 312,
+        "clientWidth": 312,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "social-home",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "filename": "390-social-home.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 324,
+        "height": 776.46875,
+        "scrollWidth": 312,
+        "clientWidth": 312,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "social-public",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "filename": "390-social-public.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 324,
+        "height": 776.46875,
+        "scrollWidth": 312,
+        "clientWidth": 312,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "social-search",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "filename": "390-social-search.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 324,
+        "height": 776.46875,
+        "scrollWidth": 312,
+        "clientWidth": 312,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "social-circles",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "filename": "390-social-circles.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 324,
+        "height": 776.46875,
+        "scrollWidth": 312,
+        "clientWidth": 312,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "social-inline-comment",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "filename": "390-social-inline-comment.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 324,
+        "height": 776.46875,
+        "scrollWidth": 312,
+        "clientWidth": 312,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "social-detail",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "filename": "390-social-detail.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 324,
+        "height": 776.46875,
+        "scrollWidth": 312,
+        "clientWidth": 312,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "settings-home",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "filename": "390-settings-home.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 324,
+        "height": 776.46875,
+        "scrollWidth": 312,
+        "clientWidth": 312,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    },
+    {
+      "state": "settings-station",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "filename": "390-settings-station.png",
+      "theme": "light-only",
+      "geometry": {
+        "width": 324,
+        "height": 776.46875,
+        "scrollWidth": 312,
+        "clientWidth": 312,
+        "pageOverflow": false,
+        "scenarioOverlaps": false,
+        "sections": [],
+        "auth": null
+      }
+    }
+  ],
+  "defects": []
+}

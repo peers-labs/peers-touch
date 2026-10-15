@@ -1,0 +1,184 @@
+{
+  "status": "passed",
+  "results": [
+    {
+      "platform": "desktop",
+      "reactions": [
+        {
+          "left": 842.546875,
+          "right": 885.546875,
+          "top": 814,
+          "bottom": 842,
+          "width": 43,
+          "height": 28,
+          "visualHeight": 28,
+          "radius": 999
+        },
+        {
+          "left": 887.546875,
+          "right": 915.546875,
+          "top": 814,
+          "bottom": 842,
+          "width": 28,
+          "height": 28,
+          "visualHeight": 28,
+          "radius": 999
+        }
+      ]
+    },
+    {
+      "platform": "desktop",
+      "sourceIdentity": {
+        "quote": true,
+        "forwardPreview": true,
+        "search": "unchanged"
+      }
+    },
+    {
+      "platform": "desktop",
+      "clusters": "passed",
+      "private": "passed"
+    },
+    {
+      "platform": "mobile",
+      "reactions": [
+        {
+          "left": 715,
+          "right": 759,
+          "top": 389,
+          "bottom": 433,
+          "width": 44,
+          "height": 44,
+          "visualHeight": 28,
+          "radius": 999
+        },
+        {
+          "left": 759,
+          "right": 803,
+          "top": 389,
+          "bottom": 433,
+          "width": 44,
+          "height": 44,
+          "visualHeight": 28,
+          "radius": 999
+        },
+        {
+          "left": 803,
+          "right": 847,
+          "top": 389,
+          "bottom": 433,
+          "width": 44,
+          "height": 44,
+          "visualHeight": 28,
+          "radius": 999
+        }
+      ]
+    },
+    {
+      "platform": "mobile",
+      "sourceIdentity": {
+        "quote": true,
+        "forwardPreview": true,
+        "search": true
+      }
+    },
+    {
+      "platform": "mobile",
+      "clusters": "passed",
+      "private": "passed"
+    },
+    {
+      "comments": {
+        "feedRetained": true,
+        "home": true,
+        "public": true,
+        "drafts": true,
+        "keyboard": true,
+        "ime": true
+      }
+    },
+    {
+      "longMessageActions": {
+        "outsideBody": true,
+        "inViewport": true
+      }
+    },
+    {
+      "platform": "desktop",
+      "chatInteractions": {
+        "replyCounts": [
+          0,
+          3,
+          10,
+          11
+        ],
+        "more": "in-place",
+        "sharedReplyMutation": true,
+        "pins": "swipe-keyboard-add-unpin-recall",
+        "mobileTransientLayers": "not-applicable",
+        "compact": {
+          "inputHeight": 44,
+          "dockHeight": 50,
+          "width": 449,
+          "border": 0,
+          "background": "rgba(0, 0, 0, 0)",
+          "sameRow": true,
+          "inputFits": true
+        },
+        "multilineHeight": 65,
+        "ime": "preserved",
+        "negativeControl": "stacked-composer-rejected"
+      }
+    },
+    {
+      "platform": "mobile",
+      "chatInteractions": {
+        "replyCounts": [
+          0,
+          3,
+          10,
+          11
+        ],
+        "more": "in-place",
+        "sharedReplyMutation": true,
+        "pins": "swipe-keyboard-add-unpin-recall",
+        "mobileTransientLayers": "emoji-attachment-actions-forward-dismissed",
+        "compact": {
+          "inputHeight": 40,
+          "dockHeight": 46,
+          "width": 234,
+          "border": 0,
+          "background": "rgba(0, 0, 0, 0)",
+          "sameRow": true,
+          "inputFits": true
+        },
+        "multilineHeight": 40.640625,
+        "ime": "preserved",
+        "negativeControl": "stacked-composer-rejected"
+      }
+    },
+    {
+      "mobileTransientLayers": {
+        "composerPanels": "focus-outside/escape/mutual-exclusion",
+        "messageActions": "escape",
+        "forwarding": "escape",
+        "findPeople": "escape/outside-press",
+        "newPost": "escape",
+        "commandPalette": "focus-outside/escape",
+        "dangerConfirmation": "focus-trap/background-inert/escape/focus-return",
+        "intentionalExceptions": [
+          "blocking recovery",
+          "active call"
+        ]
+      }
+    },
+    {
+      "negativeControls": [
+        "repeated-private-senders",
+        "group-title-as-actor",
+        "oversized-reaction-tags"
+      ]
+    }
+  ],
+  "errors": []
+}
