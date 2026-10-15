@@ -383,9 +383,35 @@ class SimulatorSocialGateTests(unittest.TestCase):
             source.index('social-search-federation'),
             source.index('social-search-submit'),
         )
+        self.assertIn('_select_antd_option(', source)
+        self.assertIn('sender.federation_id', source)
         self.assertLess(
             source.index('social-circle-member-federation-option'),
             source.index('social-circle-member-search-submit'),
+        )
+
+    def test_antd_option_selection_opens_the_control_before_clicking_option(
+        self,
+    ) -> None:
+        session = Mock()
+        session.execute_script.side_effect = [True, True]
+
+        SimulatorSocialGate._select_antd_option(
+            session,
+            '[data-acceptance-id="federation"]',
+            '[data-federation-id="federation-1"]',
+            "Federation",
+        )
+
+        self.assertEqual(session.execute_script.call_count, 2)
+        open_script, owner_selector = session.execute_script.call_args_list[0].args
+        option_script, option_selector = session.execute_script.call_args_list[1].args
+        self.assertIn("MouseEvent('mousedown'", open_script)
+        self.assertEqual(owner_selector, '[data-acceptance-id="federation"]')
+        self.assertIn("closest(", option_script)
+        self.assertEqual(
+            option_selector,
+            '[data-federation-id="federation-1"]',
         )
 
     def test_failed_ios_scenario_ends_before_suite_cleanup(self) -> None:
