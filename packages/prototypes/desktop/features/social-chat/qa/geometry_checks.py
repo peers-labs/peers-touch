@@ -924,7 +924,7 @@ def assert_technical_identity(base_url: str, page, shot_dir: Path | None):
     values = fields.locator("[data-identity-value]").all_text_contents()
     check("[identity] full PTID and Station shown",
           "ptid:01HQX7K3M9VDGF2N8PWJRST6YZ" in values and "alpha.peers.social" in values)
-    check("[identity] all joined federations shown", fields.count() == 5, f"fields={fields.count()}")
+    check("[identity] all joined federations shown", fields.count() == 6, f"fields={fields.count()}")
     for field in fields.all():
         button = field.get_by_role("button")
         expected = field.locator("[data-identity-value]").inner_text()
@@ -1030,61 +1030,25 @@ def assert_settings(base_url: str, page, shot_dir: Path | None = None):
           d["coverChange"] == 1 and d["profileWord"] is False)
     check("[settings] chat wallpaper not duplicated in settings", d["wallpaperCard"] is False)
 
-    default_rings = {}
     for w in (1440, 1024, 760):
         page.set_viewport_size({"width": w, "height": 900})
-        default_rings[w] = assert_painted_boundaries(
+        assert_painted_boundaries(
             f"[settings-default-{w}]", page,
             page.locator("[data-profile-identity]"), shot_dir)
     page.set_viewport_size({"width": 1440, "height": 900})
 
-    # Compare the same foreground content before/after the menu paints.
-    menu_reference = page.screenshot()
-    # Change menu opens: upload new + recent history only after an upload exists
-    page.locator('[data-profile-cover-change]').click()
-    page.wait_for_timeout(200)
-    check("[settings] change menu opens with Upload new",
-          page.locator('[data-profile-cover-menu]').count() == 1
-          and page.locator('[data-profile-cover-menu] [role="menuitem"]', has_text="Upload new").count() == 1)
-    check("[settings] recent history hidden with only the default",
-          page.locator('[data-profile-cover-menu] [role="menuitemradio"]').count() == 0)
-    assert_painted_boundaries("[settings-menu-1440]", page,
-                              page.locator("[data-profile-identity]"), shot_dir,
-                              interaction_blocked=True, reference_png=menu_reference)
-    page.keyboard.press("Escape"); page.wait_for_timeout(150)
-
-    # A contrasting PNG exercises the actual file/read/history path and makes
-    # cover pixels distinguishable from the white separation ring.
-    png = io.BytesIO()
-    Image.new("RGB", (320, 160), (25, 90, 70)).save(png, format="PNG")
-    page.locator('[data-profile-identity] input[type=file]').set_input_files({
-        "name": "contour-cover.png", "mimeType": "image/png", "buffer": png.getvalue(),
-    })
-    page.wait_for_timeout(400)
-    for w in (1440, 1024, 760):
-        page.set_viewport_size({"width": w, "height": 900})
-        uploaded = assert_painted_boundaries(
-            f"[settings-upload-{w}]", page,
-            page.locator("[data-profile-identity]"), shot_dir)
-        check(f"[settings-upload-{w}] cover change preserves avatar geometry",
-              [r["rect"] for r in uploaded] == [r["rect"] for r in default_rings[w]])
-    page.set_viewport_size({"width": 1440, "height": 900})
-    page.locator('[data-profile-cover-change]').click()
-    page.wait_for_timeout(200)
-    thumbs = page.locator('[data-profile-cover-menu] [role="menuitemradio"]')
-    check("[settings] recent shows uploaded + default (2)", thumbs.count() == 2,
-          f"thumbs={thumbs.count()}")
-    thumbs.nth(thumbs.count() - 1).click()
-    page.wait_for_timeout(200)
-    stored = page.evaluate("() => localStorage.getItem('pt.profile.cover')")
-    check("[settings] history can restore default", stored in (None, ""))
-    assert_painted_boundaries("[settings-restored-1440]", page,
-                              page.locator("[data-profile-identity]"), shot_dir)
-    page.evaluate("() => { localStorage.removeItem('pt.profile.cover'); localStorage.removeItem('pt.profile.cover.history'); }")
+    cover_change = page.locator('[data-profile-cover-change]')
+    check("[settings] cover change is visibly delegated to Desktop",
+          cover_change.is_disabled()
+          and cover_change.get_attribute("title")
+          == "Native image picker and OSS upload are available in Desktop.")
+    check("[settings] prototype owns no local cover upload state",
+          page.locator('[data-profile-cover-menu]').count() == 0
+          and page.locator('[data-profile-identity] input[type=file]').count() == 0)
     check("[settings] no second horizontal section tab strip", d["sectionChips"] == 0, f"chips={d['sectionChips']}")
     general_sections = page.locator('nav[aria-label="Settings sections"] button').all_text_contents()
     check("[settings] General contains the four current sections",
-          general_sections == ["Account", "Notifications", "Privacy & Security", "Appearance & Language"],
+          general_sections == ["Account", "Notifications", "Privacy & Security", "Language"],
           json.dumps(general_sections))
     check("[settings] AI Defaults removed from General",
           page.get_by_role("button", name="AI Defaults", exact=True).count() == 0)

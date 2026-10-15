@@ -5,6 +5,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CHAT_AREA = ROOT / "src" / "components" / "ChatArea.tsx"
 STATE = ROOT / "src" / "state.ts"
+ENTRY = ROOT / "src" / "SocialChatPrototype.tsx"
 
 
 def require(source: str, values: tuple[str, ...], label: str) -> None:
@@ -22,6 +23,7 @@ def forbid(source: str, values: tuple[str, ...], label: str) -> None:
 def main() -> None:
     chat_area = CHAT_AREA.read_text(encoding="utf-8")
     state = STATE.read_text(encoding="utf-8")
+    entry = ENTRY.read_text(encoding="utf-8")
 
     forbid(
         chat_area,
@@ -67,6 +69,14 @@ def main() -> None:
             "forwardMessage",
         ),
         "prototype runtime adapter",
+    )
+    require(
+        entry,
+        (
+            "NOTIFICATION_PROJECTION_FIXTURE",
+            "initialNotifications={NOTIFICATION_PROJECTION_FIXTURE}",
+        ),
+        "SocialChatPrototype",
     )
 
     print("social-chat interaction projection contract: PASS")
