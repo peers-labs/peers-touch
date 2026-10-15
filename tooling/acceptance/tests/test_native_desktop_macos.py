@@ -33,6 +33,8 @@ from tooling.acceptance.drivers.native.macos import (
 )
 from tooling.acceptance.provisioners import get_runtime_cell_lifecycle
 from tooling.acceptance.provisioners.native_desktop_macos import (
+    NATIVE_FOCUS_READY_TIMEOUT_SECONDS,
+    NATIVE_WINDOW_READY_TIMEOUT_SECONDS,
     NativeDesktopMacOSProvisioner,
     _WINDOW_BOUNDS_PROBE,
 )
@@ -61,6 +63,12 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
     def test_registry_resolves_macos_lifecycle(self) -> None:
         lifecycle = get_runtime_cell_lifecycle("desktop-macos-native")
         self.assertIsInstance(lifecycle, NativeDesktopMacOSProvisioner)
+
+    def test_focus_budget_matches_native_window_readiness_budget(self) -> None:
+        self.assertEqual(
+            NATIVE_FOCUS_READY_TIMEOUT_SECONDS,
+            NATIVE_WINDOW_READY_TIMEOUT_SECONDS,
+        )
 
     def test_source_identity_builds_binary_before_attesting_current_commit(
         self,
