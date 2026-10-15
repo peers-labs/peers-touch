@@ -332,11 +332,7 @@ class DesktopPrimaryNavigationGate(AcceptanceGate):
             "pages:prewarm:end",
             "authenticated Native Desktop page prewarm",
         )
-        self._wait(
-            session,
-            "document.querySelectorAll('[data-pt-primary-nav]').length > 0",
-            "authenticated Native Desktop shell",
-        )
+        session.find_element('[data-pt-primary-nav="search"]', 30)
         return login
 
     @staticmethod
