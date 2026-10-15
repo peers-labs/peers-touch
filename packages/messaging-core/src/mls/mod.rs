@@ -54,6 +54,8 @@ mod test_support {
         default_authority_head: (i64, Vec<u8>),
         transition: Mutex<Option<PersistedTransition>>,
         state: Mutex<TestRepositoryState>,
+        fail_next_continuity_persist: Mutex<bool>,
+        continuity_persist_count: Mutex<usize>,
     }
 
     impl TestMlsRepository {
@@ -62,6 +64,8 @@ mod test_support {
                 default_authority_head: (authority_sequence, authority_hash),
                 transition: Mutex::new(None),
                 state: Mutex::new(TestRepositoryState::default()),
+                fail_next_continuity_persist: Mutex::new(false),
+                continuity_persist_count: Mutex::new(0),
             }
         }
 
@@ -149,6 +153,14 @@ mod test_support {
                 .unwrap()
                 .retired_conversations
                 .contains(conversation_id)
+        }
+
+        pub fn fail_next_continuity_persist(&self) {
+            *self.fail_next_continuity_persist.lock().unwrap() = true;
+        }
+
+        pub fn continuity_persist_count(&self) -> usize {
+            *self.continuity_persist_count.lock().unwrap()
         }
 
         fn commit_item(
@@ -424,6 +436,16 @@ mod test_support {
                 );
             }
             Ok(result)
+        }
+
+        fn persist_mls_continuity(&self) -> Result<(), String> {
+            *self.continuity_persist_count.lock().unwrap() += 1;
+            let mut fail = self.fail_next_continuity_persist.lock().unwrap();
+            if *fail {
+                *fail = false;
+                return Err("test MLS continuity persistence failed".to_string());
+            }
+            Ok(())
         }
     }
 

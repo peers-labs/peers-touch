@@ -288,6 +288,7 @@ func TestCanonicalMLSFetchReservationAndClaimAreOneTime(t *testing.T) {
 	if got := countMLS(t, fixture, bob); got != 1 {
 		t.Fatalf("MLS count after one-time fetch = %d, want 1", got)
 	}
+	consumedMaterial := fetched.GetReservation().GetKeyPackage()
 
 	_, err = fixture.api.UploadMLSKeyPackage(
 		ctx,
@@ -295,7 +296,7 @@ func TestCanonicalMLSFetchReservationAndClaimAreOneTime(t *testing.T) {
 		bob.GetDeviceId(),
 		&kemodel.UploadMlsKeyPackageRequest{
 			Device:     bob,
-			KeyPackage: firstMaterial,
+			KeyPackage: consumedMaterial,
 		},
 	)
 	if !domain.IsCode(err, domain.ErrorCodeStaleMaterial) {

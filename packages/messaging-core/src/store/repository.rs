@@ -167,6 +167,10 @@ pub trait MlsKeyPackageRepository: Send + Sync {
     fn pending_mls_key_packages(&self) -> Result<Vec<PendingMlsKeyPackage>, String>;
 
     fn complete_mls_key_package_publication(&self, package_id: &str) -> Result<(), String>;
+
+    fn persist_mls_continuity(&self) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 pub trait MlsStartupRepository: Send + Sync {
@@ -233,6 +237,10 @@ pub trait MlsInboundRepository: Send + Sync {
         &self,
         commit: &MlsRetirementReceiveCommit<'_>,
     ) -> Result<ReceiveCommitResult, String>;
+
+    fn persist_mls_continuity(&self) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 pub trait MessagingRepository: Send + Sync {

@@ -43,16 +43,17 @@ impl<R: MlsKeyPackageRepository> MlsKeyPackagePublisher<R> {
     ) -> Result<(), String> {
         // Welcome receive and publication both replace the persisted provider pool.
         let _transaction = self.manager.lock_recipient_transitions();
-        if !self.store.has_mls_key_packages()? {
-            self.generate_fresh_batch(INITIAL_MLS_KEY_PACKAGE_COUNT, now_unix_ms)?;
-        }
+        self.store.persist_mls_continuity()?;
         self.publish_pending(transport)?;
         let endpoint = actor_device_ref(&self.endpoint.ptid, &self.endpoint.device_id);
         let available = transport.available_count(&endpoint)?;
         let target = u64::try_from(INITIAL_MLS_KEY_PACKAGE_COUNT)
             .map_err(|_| "messaging MLS KeyPackage target count is invalid".to_string())?;
-        if available < target {
-            let missing = usize::try_from(target - available)
+        let local_private = u64::try_from(self.manager.pending_join_provider_count())
+            .map_err(|_| "messaging MLS KeyPackage local count is invalid".to_string())?;
+        let usable = available.min(local_private);
+        if usable < target {
+            let missing = usize::try_from(target - usable)
                 .map_err(|_| "messaging MLS KeyPackage deficit is invalid".to_string())?;
             self.generate_fresh_batch(missing, now_unix_ms)?;
             self.publish_pending(transport)?;
@@ -71,6 +72,7 @@ impl<R: MlsKeyPackageRepository> MlsKeyPackagePublisher<R> {
             })?;
             self.store
                 .complete_mls_key_package_publication(&package.package_id)?;
+            self.store.persist_mls_continuity()?;
         }
         Ok(())
     }
@@ -97,7 +99,7 @@ impl<R: MlsKeyPackageRepository> MlsKeyPackagePublisher<R> {
                 })?;
             return Err(error);
         }
-        Ok(())
+        self.store.persist_mls_continuity()
     }
 }
 
@@ -310,6 +312,24 @@ mod tests {
 
         assert_eq!(*transport.available.lock().unwrap(), 5);
         assert_eq!(store.state.lock().unwrap().packages.len(), 10);
+        assert!(store.pending_mls_key_packages().unwrap().is_empty());
+    }
+
+    #[test]
+    fn mls_keypackage_publisher_replenishes_when_station_only_has_stale_inventory() {
+        let store = Arc::new(TestKeyPackageRepository::new(true));
+        let (publisher, manager) = publisher(store.clone(), [14; 32]);
+        let transport = RecordingTransport {
+            requests: Mutex::new(Vec::new()),
+            fail_first: Mutex::new(false),
+            available: Mutex::new(55),
+        };
+
+        publisher.publish(10_000, &transport).unwrap();
+
+        assert_eq!(manager.pending_join_provider_count(), 5);
+        assert_eq!(transport.requests.lock().unwrap().len(), 5);
+        assert_eq!(*transport.available.lock().unwrap(), 60);
         assert!(store.pending_mls_key_packages().unwrap().is_empty());
     }
 

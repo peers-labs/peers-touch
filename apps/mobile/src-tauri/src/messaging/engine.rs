@@ -115,6 +115,7 @@ use super::adapter::{
     PendingAttachmentUpload, PendingMembershipIntent, PendingMessageDraft,
 };
 use super::attachment_blob::FilesystemAttachmentBlob;
+use super::mls_continuity::{MlsContinuityBackup, MlsContinuityScope};
 use super::mls_leave_intent::StationMlsLeaveIntentTransport;
 use super::transport::{
     fetch_actor_identity_key, StationAttachmentTransferTransport, StationCommandTransport,
@@ -621,13 +622,22 @@ impl MobileMessagingEngine {
         access_token: String,
         seed_backup: &dyn DeviceSigningSeedBackup,
         prekey_backup: Arc<dyn PreKeyBundleBackup>,
+        mls_continuity_backup: Arc<dyn MlsContinuityBackup>,
     ) -> Result<Self, String> {
         validate_account_scope(&station_peer_id, &station_origin, &actor_ptid)?;
         if profile_id.trim().is_empty() || access_token.trim().is_empty() {
             return Err("mobile messaging runtime credentials are incomplete".to_string());
         }
         let actor_identity_seed = Zeroizing::new(actor_identity_seed);
-        let store = Arc::new(MobileMessagingStore::open(database_path, database_key)?);
+        let mls_continuity_scope =
+            MlsContinuityScope::new(&station_peer_id, &actor_ptid, &device_id)?;
+        let store = Arc::new(MobileMessagingStore::open_with_mls_continuity(
+            database_path,
+            database_key,
+            mls_continuity_scope,
+            mls_continuity_backup,
+        )?);
+        store.restore_mls_continuity_if_empty()?;
         store.reconcile_completed_attachment_uploads()?;
         let attachment_root = database_path
             .parent()
@@ -702,6 +712,7 @@ impl MobileMessagingEngine {
         }
         let mls_manager = Arc::new(MlsGroupManager::with_actor_identity(mls_identity));
         restore_persisted_mls_state(mls_manager.as_ref(), store.as_ref())?;
+        store.persist_mls_continuity_backup()?;
 
         let endpoint = CoreCryptoEndpoint {
             ptid: scope.actor_ptid.clone(),
@@ -5358,6 +5369,7 @@ mod tests {
             "token".to_string(),
             &NoopSeedBackup,
             noop_prekey_backup(),
+            crate::messaging::mls_continuity::noop_mls_continuity_backup(),
         )
         .unwrap();
         (engine, root)

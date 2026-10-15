@@ -29,8 +29,6 @@ use messaging_core::inbox::CommandResultRepository;
 use messaging_core::outbox::{
     CommandOutboxEntry, MetadataInteractionCommit, MetadataInteractionRepository, OutboxStore,
 };
-#[cfg(test)]
-use messaging_core::proto::chat::AttachmentContentKind;
 use messaging_core::proto::chat::{
     chat_command, AttachmentPlaintextMetadata, AttachmentTransferState, ChatCommand,
     ChatRetentionPreset, ChatStorageOperationState, ChatStoragePolicy, ChatStorageScope,
@@ -68,6 +66,8 @@ use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use sha2::{Digest, Sha256};
 #[cfg(any(test, feature = "acceptance-harness"))]
 use ulid::Ulid;
+
+use super::mls_continuity::MlsContinuityBinding;
 
 struct RusqliteMessagingSchema<'a>(&'a Connection);
 
@@ -1897,8 +1897,9 @@ pub struct AcceptanceConversationClearFixture {
 }
 
 pub struct MobileMessagingStore {
-    connection: Mutex<Connection>,
+    pub(super) connection: Mutex<Connection>,
     database_path: Option<PathBuf>,
+    pub(super) mls_continuity: Option<MlsContinuityBinding>,
 }
 
 struct PreparedMessageRedactionCleanup {
@@ -2809,9 +2810,6 @@ impl MobileMessagingStore {
                 );
             }
             transaction
-                .execute("DELETE FROM messaging_mls_actor_identity", [])
-                .map_err(|error| error.to_string())?;
-            transaction
                 .execute("DELETE FROM messaging_recovery_state WHERE id = 1", [])
                 .map_err(|error| error.to_string())?;
             transaction
@@ -3053,6 +3051,7 @@ impl MobileMessagingStore {
         Ok(Self {
             connection: Mutex::new(connection),
             database_path,
+            mls_continuity: None,
         })
     }
 
@@ -3449,7 +3448,7 @@ impl MobileMessagingStore {
         })
     }
 
-    fn with_transaction<T>(
+    pub(super) fn with_transaction<T>(
         &self,
         operation: impl FnOnce(&Transaction<'_>) -> Result<T, String>,
     ) -> Result<T, String> {
@@ -8470,6 +8469,10 @@ impl MlsKeyPackageRepository for MobileMessagingStore {
         }
         Ok(())
     }
+
+    fn persist_mls_continuity(&self) -> Result<(), String> {
+        self.persist_mls_continuity_backup()
+    }
 }
 
 impl MlsStartupRepository for MobileMessagingStore {
@@ -9032,6 +9035,10 @@ impl MlsInboundRepository for MobileMessagingStore {
             )?;
             Ok(result)
         })
+    }
+
+    fn persist_mls_continuity(&self) -> Result<(), String> {
+        self.persist_mls_continuity_backup()
     }
 }
 
@@ -11033,6 +11040,7 @@ mod tests {
         generate_fresh_device_identity, generate_fresh_device_identity_for_device,
     };
     use messaging_core::inbox::{ClaimedItemConsumer, PublicEventProcessor};
+    use messaging_core::mls::actor_device_identity::ActorDeviceIdentity;
     use messaging_core::proto::actor_device_from_chat_endpoint;
     use messaging_core::proto::chat::{
         conversation_event, AttachmentContentKind, AttachmentEncryptionSuite,
@@ -15159,8 +15167,11 @@ mod tests {
             generate_fresh_device_identity_for_device("ptid:alice", "session-device", [3; 32], 1)
                 .unwrap();
         DeviceEnrollmentRepository::install_fresh_device_identity(&store, &pending).unwrap();
+        let mls_identity = ActorDeviceIdentity::new();
+        mls_identity.init("ptid:alice", "session-device").unwrap();
+        let mls_identity_state = mls_identity.export("ptid:alice", "session-device").unwrap();
         store
-            .save_mls_actor_identity("ptid:alice", "session-device", b"temporary")
+            .save_mls_actor_identity("ptid:alice", "session-device", &mls_identity_state)
             .unwrap();
 
         let recovered =
@@ -15176,7 +15187,10 @@ mod tests {
                 .unwrap(),
             recovered.enrollment
         );
-        assert!(store.load_mls_actor_identity().unwrap().is_none());
+        assert_eq!(
+            store.load_mls_actor_identity().unwrap().unwrap().2,
+            mls_identity_state
+        );
     }
 
     #[test]

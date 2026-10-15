@@ -272,6 +272,7 @@ impl<R: MlsInboundRepository> MlsTransitionProcessor<R> {
             .consumption_marker_matches(&item.item_id, &item.payload_sha256)?
         {
             self.load_committed_state(&item.conversation_id)?;
+            self.store.persist_mls_continuity()?;
             return Ok(());
         }
 
@@ -463,6 +464,7 @@ impl<R: MlsInboundRepository> MlsTransitionProcessor<R> {
             self.manager
                 .install_received_state(&event.conversation_id, &prepared)?;
         }
+        self.store.persist_mls_continuity()?;
         Ok(())
     }
 }
@@ -1679,6 +1681,50 @@ mod tests {
                 .plaintext,
             b"post-welcome plaintext"
         );
+    }
+
+    #[test]
+    fn welcome_continuity_failure_blocks_success_until_replay_persists_backup() {
+        let alice = Arc::new(MlsGroupManager::new());
+        let bob = Arc::new(MlsGroupManager::new());
+        alice
+            .actor_identity()
+            .init("ptid:alice", "alice-device")
+            .unwrap();
+        bob.actor_identity().init("ptid:bob", "bob-device").unwrap();
+        let key_package = bob.generate_key_package().unwrap();
+        let created = alice
+            .create_group(
+                "group-welcome",
+                &[MlsMemberKeyPackage {
+                    ptid: "ptid:bob".to_string(),
+                    device_id: "bob-device".to_string(),
+                    key_package,
+                }],
+            )
+            .unwrap();
+        let store = Arc::new(TestMlsRepository::new(0, Vec::new()));
+        store.save_mls_join_provider_pool(bob.export_pending_join_providers().unwrap());
+        store.fail_next_continuity_persist();
+        let processor = MlsTransitionProcessor::new(
+            bob.clone(),
+            store.clone(),
+            endpoint("ptid:bob", "bob-device"),
+            now,
+        )
+        .unwrap();
+        let item = genesis_welcome_queue_item(&created.transition_id, created.welcome_bytes);
+
+        assert_eq!(
+            processor.consume(&item, 1).unwrap_err(),
+            "test MLS continuity persistence failed"
+        );
+        assert!(bob.has_session("group-welcome"));
+        assert!(store.mls_session_state("group-welcome").is_some());
+        assert_eq!(store.continuity_persist_count(), 1);
+
+        processor.consume(&item, 2).unwrap();
+        assert_eq!(store.continuity_persist_count(), 2);
     }
 
     #[test]

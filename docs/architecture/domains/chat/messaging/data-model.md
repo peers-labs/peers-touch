@@ -1,8 +1,8 @@
 # Messaging Platform — 数据模型
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-08-08 | **Updated**: 2026-09-13
+> **Version**: v1.4
+> **Created**: 2026-08-08 | **Updated**: 2026-10-15
 > **Owner**: Messaging Platform Team
 
 ---
@@ -242,6 +242,17 @@ lane reset must preserve publication history and must never mark every published
 KeyPackage for upload again. The publisher replenishes the Station deficit with
 fresh packages and atomically persists their private provider pool before upload.
 Resetting the Station cannot recreate private material consumed on the device.
+
+Mobile 的 app-data SQLCipher 数据库可被重装清除，因此 native secure storage 必须按
+`(station_peer_id, actor_ptid, device_id)` 保存 MLS actor identity、pending join
+provider pool，以及完整 KeyPackage publication history（bytes、state、created_at）。
+只有三张本地 continuity 表全部为空时才允许恢复；scope、identity、provider bytes、
+package hash、state 和唯一性必须先校验。新包必须在上传前完成安全备份，Welcome
+消费后的 provider pool 必须在 queue ACK 前完成安全备份；备份失败保持 item
+可重放。publisher 以 `min(Station available count, local private provider count)` 计算
+可用库存缺口。Station 优先选择最新 available KeyPackage，使修复前遗留、但本机已
+无对应 private provider 的有限历史库存不会先于当前设备新发布的有效批次被领取；
+published history 在本地恢复后仍保持 `published`，不得重新上传。
 
 ### 3.2 Device Queue
 

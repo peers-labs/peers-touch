@@ -1,8 +1,8 @@
 # Messaging Platform — 模块目录结构
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-08-08 | **Updated**: 2026-09-06
+> **Version**: v1.2
+> **Created**: 2026-08-08 | **Updated**: 2026-10-15
 > **Owner**: Messaging Platform Team
 >
 > **Accepted MP-D30 correction**: Station has no target
@@ -127,6 +127,10 @@ apps/desktop/src-tauri/src/messaging/
 apps/mobile/src-tauri/src/messaging/
 ├── adapter.rs
 ├── lifecycle.rs
+├── mls_continuity/
+│   ├── mod.rs
+│   ├── backup.rs
+│   └── store.rs
 └── commands.rs
 ```
 
@@ -140,6 +144,12 @@ Recovery 的归档导出与 authority replay 校验分别收口于
 和 worker fencing。Mobile 使用一次事务合并缺失历史，保留当前 endpoint 的 live
 协议状态；Desktop 完整 profile replacement 继续使用 staging 与 atomic replace。
 两个入口都使用既有 v4 加密归档和同一 authority chain 校验。
+
+Mobile `mls_continuity/` 是 app-data 丢失后的单一 MLS bootstrap continuity owner：
+`mod.rs` 定义 scoped state/backup port，`backup.rs` 负责 native secure storage
+编码与完整性校验，`store.rs` 负责 SQLCipher 空库恢复、publication history 与
+provider pool 校验。`lifecycle.rs` 只组装平台备份实现，`adapter.rs` 只暴露通用
+repository hooks，不复制 continuity transaction。
 
 ## 2. Registration And Source Rules
 
