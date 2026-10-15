@@ -558,6 +558,28 @@ class MobileMessagingJourneyTests(unittest.TestCase):
     def test_direct_prerequisite_reuses_existing_accepted_relationship(
         self,
     ) -> None:
+        class PreparingSession(FakeMessagingSession):
+            def __init__(
+                self,
+                network: FakeMessagingNetwork,
+                actor: MessagingActor,
+            ) -> None:
+                super().__init__(network, actor)
+                self.contact_open_attempts = 0
+
+            def call_action(
+                self,
+                action: str,
+                payload: Mapping[str, Any] | None = None,
+            ) -> Any:
+                if action == "social.contact.open":
+                    self.contact_open_attempts += 1
+                    if self.contact_open_attempts == 1:
+                        raise DriverError(
+                            "mobile.contacts.conversationPreparing"
+                        )
+                return super().call_action(action, payload)
+
         self.network.friend_requests.append(
             {
                 "requestId": "existing-accepted",
@@ -569,7 +591,8 @@ class MobileMessagingJourneyTests(unittest.TestCase):
                 "status": FRIEND_REQUEST_STATUS_ACCEPTED,
             }
         )
-        self.journey.authenticate(self.sender_session, self.sender, password="1")
+        sender_session = PreparingSession(self.network, self.sender)
+        self.journey.authenticate(sender_session, self.sender, password="1")
         self.journey.authenticate(
             self.receiver_session,
             self.receiver,
@@ -577,7 +600,7 @@ class MobileMessagingJourneyTests(unittest.TestCase):
         )
 
         conversation_id = self.journey.ensure_direct_conversation(
-            self.sender_session,
+            sender_session,
             self.receiver_session,
             self.sender,
             self.receiver,
@@ -585,8 +608,9 @@ class MobileMessagingJourneyTests(unittest.TestCase):
 
         self.assertEqual(conversation_id, "ptid:alice-ptid:bob")
         self.assertEqual(len(self.network.friend_requests), 1)
+        self.assertEqual(sender_session.contact_open_attempts, 2)
         self.assertEqual(
-            self.sender_session.contact_open_inputs,
+            sender_session.contact_open_inputs,
             [
                 {
                     "peerPtid": "ptid:bob",
