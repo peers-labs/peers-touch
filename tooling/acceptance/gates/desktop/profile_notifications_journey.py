@@ -34,6 +34,7 @@ PROFILE_FIELDS = ("display_name", "note", "region", "timezone", "tags", "links",
 REPO_ROOT = Path(__file__).resolve().parents[4]
 NATIVE_CLICK_MAX_ATTEMPTS = 3
 NATIVE_CLICK_EVENT_TIMEOUT_SECONDS = 2.0
+NOTIFICATION_TRIGGER_SELECTOR = '[role="button"][aria-haspopup="dialog"]'
 
 
 def wait(session: TauriSession, predicate: Callable[[], Any], description: str) -> Any:
@@ -173,12 +174,40 @@ def open_notification_preview(
     binding: NativeDesktopRuntimeBinding,
     sessions: tuple[TauriSession, ...],
 ) -> dict[str, Any]:
-    selector = '[role="button"][aria-haspopup="dialog"]'
-    pointer = native_click(session, binding, selector, sessions)
-    wait(session, lambda: session.find_element(selector).get_attribute(
+    pointer = native_click(
+        session,
+        binding,
+        NOTIFICATION_TRIGGER_SELECTOR,
+        sessions,
+    )
+    wait(session, lambda: session.find_element(
+        NOTIFICATION_TRIGGER_SELECTOR,
+    ).get_attribute(
         "aria-expanded",
     ) == "true", "notification preview opens after Native click")
     return pointer
+
+
+def _resume_receiver_notification_preview(
+    receiver: TauriSession,
+    sender: TauriSession,
+    binding: NativeDesktopRuntimeBinding,
+) -> dict[str, Any]:
+    """Return from the sender window with the receiver preview ready."""
+    sender.find_element(NOTIFICATION_TRIGGER_SELECTOR).click()
+    sessions = (receiver, sender)
+    binding.request_cooperative_activation(receiver, sessions)
+    trigger = receiver.find_element(NOTIFICATION_TRIGGER_SELECTOR, 30)
+    if trigger.get_attribute("aria-expanded") == "true":
+        return {"reopened": False}
+    return {
+        "reopened": True,
+        "nativeInput": open_notification_preview(
+            receiver,
+            binding,
+            sessions,
+        ),
+    }
 
 
 def select_native_image(
@@ -560,7 +589,7 @@ def run_notifications_journey(
             result["notificationIds"].append(item["id"])
             wait(receiver, lambda: read_payload(receiver, "notification_unread_counts")["total"] == baseline + 1,
                  "authoritative unread increment")
-            bell_selector = '[role="button"][aria-haspopup="dialog"]'
+            bell_selector = NOTIFICATION_TRIGGER_SELECTOR
             wait(receiver, lambda: receiver.execute_script(
                 """const bell = document.querySelector(arguments[0]);
                 return bell?.parentElement?.querySelector('.ant-badge-count')?.title
@@ -615,8 +644,13 @@ def run_notifications_journey(
                 ).is_displayed(), "sender Native acceptance notification row")
                 sender.save_screenshot(artifacts / "sender-acceptance.png")
                 result["senderAcceptanceVisible"] = True
-                sender.find_element(bell_selector).click()
-                binding.request_cooperative_activation(receiver, (receiver, sender))
+                result["receiverPreviewResume"] = (
+                    _resume_receiver_notification_preview(
+                        receiver,
+                        sender,
+                        binding,
+                    )
+                )
             pending_request = ""
             receiver.save_screenshot(artifacts / f"notification-{decision.lower()}-{index}.png")
             click_text(receiver, "More notifications")
