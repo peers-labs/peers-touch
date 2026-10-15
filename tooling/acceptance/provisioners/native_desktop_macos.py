@@ -423,9 +423,7 @@ class NativeDesktopMacOSProvisioner:
                 input_probe=input_probe,
                 focus_probe=(
                     not control.error
-                    and control.frontmost
                     and control.actual_frontmost_pid == process_id
-                    and control.window_count > 0
                 ),
                 point_ownership_probe=(
                     not stack.error and stack.point_owned_by(process_id)
@@ -525,9 +523,7 @@ class NativeDesktopMacOSProvisioner:
         while True:
             if (
                 not last_control.error
-                and last_control.frontmost
                 and last_control.actual_frontmost_pid == process_id
-                and last_control.window_count > 0
             ):
                 return last_control
             if activation_point is not None:
@@ -540,9 +536,7 @@ class NativeDesktopMacOSProvisioner:
                 last_control = adapter.focused_control(process_id)
                 if (
                     not last_control.error
-                    and last_control.frontmost
                     and last_control.actual_frontmost_pid == process_id
-                    and last_control.window_count > 0
                 ):
                     return last_control
             try:

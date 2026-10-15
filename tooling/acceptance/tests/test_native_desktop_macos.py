@@ -379,6 +379,25 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
         self.assertEqual(control.actual_frontmost_pid, 42)
         adapter.activate_process.assert_not_called()
 
+    def test_focus_wait_accepts_nsworkspace_pid_without_ax_window(self) -> None:
+        accepted = NativeControlSnapshot(
+            window_count=0,
+            frontmost=False,
+            actual_frontmost_pid=42,
+        )
+        adapter = Mock(spec=MacOSNativeDesktopAdapter)
+        adapter.focused_control.return_value = accepted
+
+        control = NativeDesktopMacOSProvisioner._await_focused_process(
+            adapter,
+            42,
+            timeout_seconds=1,
+            interval_seconds=0,
+        )
+
+        self.assertEqual(control.actual_frontmost_pid, 42)
+        adapter.activate_process.assert_not_called()
+
     def test_focus_wait_clicks_an_owned_window_before_activation(self) -> None:
         wrong = NativeControlSnapshot(
             window_count=1,
