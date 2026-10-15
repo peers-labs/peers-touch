@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 from tooling.acceptance.core import GateError
 from tooling.acceptance.core.suite_runtime import SuiteRuntimeAction
+from tooling.acceptance.drivers.tauri import EXPECTED_URL
 from tooling.acceptance.provisioners.desktop_profile_notifications_suite import (
     DesktopProfileNotificationsSuite,
     read_native_source_identity,
@@ -22,7 +23,7 @@ class NativeSourceIdentityTest(unittest.TestCase):
     def setUp(self) -> None:
         self.session = MagicMock()
         self.session.process_id = 321
-        self.session.get_current_url.return_value = "tauri://localhost/"
+        self.session.get_current_url.return_value = EXPECTED_URL
         self.binding = MagicMock()
         self.binding.binary_identity.return_value = {
             "sourceCommit": "a" * 40, "sha256": "b" * 64,
@@ -42,6 +43,12 @@ class NativeSourceIdentityTest(unittest.TestCase):
         harness.assert_called_once_with(
             self.session, "sourceIdentity", {}, namespace="runtime", script_timeout=30,
         )
+
+    def test_browser_renderer_is_rejected_by_the_native_url_contract(self) -> None:
+        self.session.get_current_url.return_value = "http://localhost/"
+        with patch(f"{MODULE}.call_async_harness", return_value=self.identity):
+            with self.assertRaisesRegex(GateError, "embeddedRenderer"):
+                read_native_source_identity(self.session, self.binding, "a" * 40)
 
     def test_stale_source_wrong_process_and_wrong_binary_are_rejected(self) -> None:
         for field, value in (

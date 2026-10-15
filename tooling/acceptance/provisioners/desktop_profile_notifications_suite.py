@@ -29,7 +29,7 @@ from tooling.acceptance.core.suite_runtime import (
 )
 from tooling.acceptance.drivers.native import NativeLaunchOptions
 from tooling.acceptance.drivers.native.runtime import NativeDesktopRuntimeBinding
-from tooling.acceptance.drivers.tauri import TauriSession
+from tooling.acceptance.drivers.tauri import EXPECTED_URL, TauriSession
 from tooling.acceptance.fixtures.desktop_profile_accounts import PROFILE_ACCOUNT_PASSWORD
 from tooling.acceptance.fixtures.desktop_profile_contract import CAPABILITY_ID, RUNTIME_REUSE, SCENARIO_IDS
 from tooling.acceptance.gates.desktop.profile_notifications_journey import (
@@ -54,20 +54,23 @@ def read_native_source_identity(
         if "instances" in binary else {binary["sha256"]}
     )
     process_id = source.get("processId")
-    if (
-        not session.get_current_url().startswith("tauri://localhost/")
-        or type(process_id) is not int
-        or process_id < 1
-        or process_id != session.process_id
-        or source.get("sourceCommit") != source_commit
-        or binary["sourceCommit"] != source_commit
-        or source.get("executableSha256") not in executable_digests
-        or any(
-            re.fullmatch(r"[0-9a-f]{64}", str(source.get(field, ""))) is None
+    checks = {
+        "embeddedRenderer": session.get_current_url() == EXPECTED_URL,
+        "processId": type(process_id) is int and process_id > 0 and process_id == session.process_id,
+        "sourceCommit": source.get("sourceCommit") == source_commit,
+        "driverSourceCommit": binary["sourceCommit"] == source_commit,
+        "executableSha256": source.get("executableSha256") in executable_digests,
+        "artifactDigests": all(
+            re.fullmatch(r"[0-9a-f]{64}", str(source.get(field, ""))) is not None
             for field in ("executableSha256", "rendererArtifactSha256")
+        ),
+    }
+    mismatches = [field for field, matches in checks.items() if not matches]
+    if mismatches:
+        raise GateError(
+            "Native source identity does not match the Suite process and binary: "
+            + ", ".join(mismatches),
         )
-    ):
-        raise GateError("Native source identity does not match the Suite process and binary")
     return source
 
 
