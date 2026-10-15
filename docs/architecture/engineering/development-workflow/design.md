@@ -1,843 +1,178 @@
-# Development Workflow Control Plane - Architecture Design
+# 开发流程工具重构设计
 
 > **Status**: active
-> **Created**: 2026-09-13 | **Updated**: 2026-10-09
+> **Created**: 2026-09-13 | **Updated**: 2026-10-14
 > **Owner**: Platform Team
 
----
+## 1. 目标与范围
 
-## 1. Core Principles
+本设计落实[规范研发流程](../../../global/workflow.md)：目标 worktree 使用项目的方法论和编码标准；小改动不背整套任务管理手续，复杂任务能够恢复进度并保留验证依据。目标实现必须支持多个 worktree 各自推进而不串状态，但本次调研、修改和验证只针对明确选定的目标 worktree。
 
-1. **Journey before matrix**: 产品进度由真实用户 Journey 是否闭环决定，不由测试、
-   Gate 或文档数量决定。
-2. **Functional before formal proof**: 产品源码先在 exact-source 开发运行时通过
-   功能验证，再补齐或执行正式 Acceptance。
-3. **One owner per state**: ExecutionRun 拥有 Task 生命周期和 current
-   selection；Plan、Task、Session、Git、runtime lease 和 Evidence 各自只拥有
-   其余事实。
-4. **Declare before mutate**: 首次写入或占用运行资源前，必须发布并确认机器级资源声明。
-5. **First failure first**: 一次运行只保留首个可行动失败；修复后回到同一 Task/Journey。
-6. **Compact current state**: Git 只保存 stable Plan、Task 规格和 amendment
-   audit；lifecycle、attempt、日志和截图留在机器 Dev root。
-7. **Bounded resume**: 恢复只读取 active pointer、manifest、当前 Task 和当前 Session。
-8. **No dual truth**: 迁移完成后，旧计划只能作为 archive 输入，不能继续承载状态。
-9. **Progress-bearing continuation**: Context Anchor 的续作单位是可关闭一个
-   Task 的 Progress Slice，不是单条命令、检查或授权动作。
-10. **No zero-yield handoff**: Dev Workflow 在一个 Slice 内持续执行准备、诊断和
-    修复，直到 Task 关闭并产生可计算进度，或到达真实 hard boundary。
-11. **Stable Plan, explicit mount**: `planId` 在一个北极星目标生命周期内保持
-    稳定；Project Ledger 通过 PlanMount 将其显式挂载到一个执行 worktree。
-    普通执行修订不取消、不重挂，也不产生新版本号。
-12. **Snapshot-bound execution**: 每次初始挂载或修订都复制当前 Plan 和
-    executionBinding 形成 immutable ExecutionPlanSnapshot；ExecutionRun 以
-    CAS 指向当前快照，历史快照保留审计。
-13. **Continuous Plan Run**: 一次执行授权在 Plan 已接受范围内连续跨越多个
-    Task、Goal Slice 和 agent review gate，直到 Plan 完成或命中真实 hard
-    boundary。
-14. **Agent-led review**: Review 是 Development Run 内部质量 Gate。Agent
-    默认调用项目 Review Skills、自修并重审；用户只处理接受源无法裁决或需要外部
-    权限的高风险决定。
-15. **Host-neutral control plane**: 调度、Journey、Session、evidence 与 cleanup
-    由项目 Owner 定义；TRAE、Cursor、Codex 仅作为按当前 capability inventory
-    选择的工具 transport。
-16. **Unversioned internal workflow**: 内部流程没有 `vN` 阶段。Plan、Task、
-    Acceptance Execution 与 rollout receipt 使用 `kind` 和唯一当前格式。
-17. **Authorization reuse**: 用户或 accepted Plan 已明确授权的精确操作必须
-    直接执行；操作类别、Task 切换、重试、上下文压缩和宿主变化都不能触发重复
-    询问。只有操作超出授权包，或已准入操作实际返回外部权限错误时，才提出权限
-    问题。
-18. **Personal policy stays local**: 用户专属的语言、措辞和 coaching 偏好只
-    通过 machine-local Overlay 注入；共享 Skill 与项目执行语义不携带个人策略。
-19. **Owner-rooted execution**: 一个可见开发会话只创建一个不可变 OWNER
-    identity binding；它不永久占用 worktree。内部 WORKER/REVIEWER 通过显式
-    assignment 形成 child lineage，不能升级为并列 owner。
-20. **Canonical binding projection**: 每次 hook、状态、handoff 和 completion
-    claim 都消费同一个 `BindingProjection`，其中分别给出当前 Action
-    workspace、subject roots、role、lineage、release 和 child liveness。
-21. **Capability-honest enforcement**: 只有宿主规定的稳定 root-chat identity 和可阻断
-    `PreToolUse` 同时存在时才声明 `ENFORCED`；其他宿主只能明确标记为
-    `OBSERVE_ONLY`。
-22. **No worktree as a workaround**: Agent 不得为了绕过 Plan mount、
-    lifecycle 或并发错误自行创建 worktree；worktree 创建只来自用户明确选择的
-    隔离或并行需求。
-23. **Aggregate before acquire**: 模块 Skill 只描述 `ModuleImpact`；Dev
-    Workflow 在任何 runtime acquisition 前统一解析 target、依赖、峰值容量和
-    资源复用，业务 Gate 只 attach 到已准备的 runtime manifest。
-24. **Native Desktop only**: Desktop functional and formal proof uses one
-    native Tauri runtime. Browser launch, browser runtime classes, and browser
-    product proof do not exist.
-25. **Explicit no-Plan is standalone**: 用户明确拒绝为当前请求创建 Plan 时，
-    intake 必须保持 worktree unmounted，禁止进入 Plan model/persistence 或
-    伪造 Task、Session、active-work；声明、验证、review 和 cleanup 仍执行。
-26. **Close is coordinated, owners stay separate**: `dev-close` 在 workspace
-    lifecycle fence 下按 owner 顺序关闭资源并写可恢复
-    `DevelopmentCloseReceipt`；它不接管 Session、declaration、PlanMount、
-    lease 或 environment 的真源。
-27. **Global visibility, workspace mutation**: machine work/mount ledgers
-    提供跨 worktree 冲突视图，但 workspace liveness 只约束自身记录。Schema
-    adoption 由当前 workspace 执行，外部 legacy 记录通过受控 mixed envelope
-    保留，短锁和 CAS 只负责原子性。
+设计只涉及研发工具。Station、Desktop、Mobile 的产品行为与业务接口不变。实现保留在本仓库，不引入外部流程引擎、服务或技能依赖。
 
-## 2. Evidence Ledger
+北极星是流程的上游输入，不由任务状态机生成。工作组织读取对应产品或工程目标，
+保存本次贡献和引用；小改动可直接继承用户目标，非平凡产品工作缺少北极星时返回
+PRODUCT 阶段。任何 Plan、Task、Gate、进度百分比和关闭回执都不能替代北极星结果。
 
-| Claim | Class | Evidence | Confidence | Missing Proof |
-|---|---|---|---|---|
-| 外层流程是 `PRODUCT -> DESIGN -> PLAN -> EXECUTE -> DELIVER` | `verified_fact` | `docs/global/workflow.md`; `pt-dev-workflow` | high | none |
-| 当前 `active_work.current_step` 是自由文本 | `verified_fact` | `AGENTS.md` 和相关 Skills | high | none |
-| branch-wide Plan discovery cannot distinguish synchronized worktree ownership | `verified_fact` | pre-DWF-D18 `tooling/acceptance/core/execution_plan.py`; Group Chat reproduction | high | immutable binding regression |
-| Mobile Shell 计划超过 4,000 行并包含大量 dated progress | `verified_fact` | `20260827-mobile-shell-implementation.md` | high | none |
-| `DevelopmentSession` 已由 bounded event journal、snapshot replay 与 guarded transitions 实现 | `verified_fact` | `tooling/scripts/local-dev/dev-session-{schema,store}.mjs`; `dev-session.test.mjs` | high | none |
-| stable Plan 迁移把任意 foreign live declaration/mount 当作全机阻塞 | `verified_fact` | pre-DWF-D45 `stable-plan-state-migration.mjs`; two-workspace machine reproduction | high | workspace-isolation regression |
-| compact package 会降低恢复输入且保持证明可追踪 | `proposal` | DWF-D13 | medium | pilot metrics and adversarial simulation |
-| Context Anchor 的 `Next action` 是无结构自由文本 | `verified_fact` | `tooling/skills/pt-context-anchor/SKILL.md` | high | none |
-| `planctl status` 未输出 Task closure 进度和下一关闭效果 | `verified_fact` | `tooling/scripts/plan/plan-package.mjs` | high | none |
-| canonical `pt-ew` 强制所有消费者执行英语翻译和纠正 | `verified_fact` | pre-DWF-D25 `tooling/skills/pt-ew/SKILL.md` | high | machine-local Overlay regression |
-| digest-addressed installed copy 可隔离安装后的 source mutation | `accepted_decision` | DWF-D25 | high | control-plane unit tests |
-| hook `cwd` 同时承担聊天身份和工具作用路径会导致跨 worktree 权限漂移 | `verified_fact` | pre-DWF-D26 `workflow-guard.mjs`; adversarial kernel fixtures | high | none |
-| Cursor project hooks 提供稳定 `conversation_id`、`workspace_roots`、可阻断 `preToolUse` 和 `failClosed` | `verified_fact` | Cursor Hooks official documentation; adapter fixtures | high | live Cursor session |
-| TRAE payload 的 `chat_session_id` 标识可见顶层会话，而内部 reviewer/retry/subtask 可使用不同 `session_id` | `verified_fact` | high-chat 24-binding reproduction；TRAE hook payload capture | high | production regression |
-| 当前 binding schema 没有 role、root/parent lineage 或 child lifecycle | `verified_fact` | `workflow-conversation-binding.mjs`; 20 条 unreleased high-chat records | high | none |
-| `resolveActiveConversationBinding()` 将同 worktree 未 release 记录作为 peer owner，并强制全局唯一 | `verified_fact` | `workflow-conversation-binding.mjs`; `completion-review.mjs` | high | none |
-| 20 条冲突记录中多数 RUNNING Action Receipt lease 已过期，并不代表 live owner | `verified_fact` | workspace `95620934d3348d95` machine-store audit | high | none |
-| Mobile execution used successive Plan versions only to add missing write paths/Gates while the accepted goal and every Task state remained unchanged | `verified_fact` | MPS v4/v5 and current mount/run records | high | stable-Plan amendment regression |
-| OWNER 不按通用 TTL 过期；child 由 assignment lease 与 terminal receipt 定义 liveness | `accepted_decision` | DWF-D33 | high | owner/child lifecycle tests |
-| 同一 OWNER 可在不同 mutation Action 中选择不同 workspace，单个 Action 仍只能写一个 workspace | `accepted_decision` | DWF-D44 | high | action-workspace Kernel tests |
-| machine ledger schema adoption 只迁移选中 workspace 并保留 foreign records | `accepted_decision` | DWF-D45 | high | workspace-isolated migration tests |
-| TRAE Hook 是等价事件入口而非 owner authority；参与根共享一个 canonical Kernel | `accepted_decision` | DWF-D35 | high | multi-root projection regression |
-| 非破坏性 projection 不依赖待安装 Hook 的 grant；cleanup 仍需 exact OWNER grant | `accepted_decision` | DWF-D36 | high | ungranted install and cleanup-grant tests |
+本文描述当前已落地的工具边界。实施依据与验收安排见
+[冻结执行计划](./execution-plans/20261013-development-flow-rebuild-accepted/plan.md)。
 
-## 3. System Architecture
+## 2. 当前问题为什么会连着发生
 
-Intake first resolves one immutable request policy:
+旧流程曾把 IDE 身份、Hook OWNER、Action Receipt、任务登记、PlanMount 和多份
+状态记录串成通用前置链，并把这条链接入运行准入。DWF-D46 已将其硬切为三个
+独立问题：任务要做什么、具体副作用得到什么授权、实际资源是否可用。
 
-```text
-explicit no-Plan intent -> standalone declaration -> execution/review/delivery
-accepted formal Plan    -> PlanMount -> snapshot/run -> tracked execution
+当前 `workflow-kernel.mjs` 只解析工作区并生成建议上下文；
+`task-progress-store.mjs` 只保存可选进度；`machine-dev-registry.mjs` 和
+`machine-dev-lease.py` 独立执行真实运行权限、目标、源码身份和资源锁检查。
+
+## 3. 三类职责怎样配合
+
+```mermaid
+flowchart TD
+    N[产品或工程北极星] --> U[需求、本次贡献与明确授权]
+    U --> F[项目 Skill 按七步组织工作]
+    D[产品、架构、编码规范和项目知识] --> F
+    H[可选 Hook：补充提示] -.-> F
+    F --> S[在指定 worktree 实现与检查]
+    F --> T[复杂任务：保存进度和证据引用]
+    F --> R[需要环境时调用既有运行入口]
+    R --> A[核对权限、目标和数据范围]
+    A --> L[取得真实资源锁并复查占用]
+    L --> P[启动、部署或验证]
+    S --> V[当前源码的验证结果]
+    P --> V
+    V --> C[审查与交付]
+    T -.-> C
+    N -.-> V
+    N -.-> C
 ```
 
-Task size cannot upgrade standalone intent into tracked work. A live PlanMount
-cannot be downgraded by standalone intent; that conflict requires an explicit
-owner action.
-
-```text
-accepted product + architecture
-              |
-              v
-┌──────────────────────────────────────────────────────────────┐
-│ Stable Plan                                                  │
-│ plan.md + tasks: northStar / current scope / DAG / gates     │
-└───────────────┬──────────────────────────────────────────────┘
-                │ explicit PlanMount
-                v
-┌──────────────────────────────────────────────────────────────┐
-│ ExecutionPlanSnapshot + ExecutionRun                         │
-│ immutable revisions / current snapshot + mutable lifecycle   │
-└───────────────┬──────────────────────────────────────────────┘
-                │ current task
-                v
-┌──────────────────────────────────────────────────────────────┐
-│ Development Session                                          │
-│ session.json: current transition state + first failure       │
-│ events.ndjson: bounded transition history                    │
-└──────────┬───────────────────┬───────────────────────────────┘
-           │                   │
-           v                   v
-       Git checkpoint     Local Dev Control Plane
-       source identity    profile / slot / lease / runtime
-           │                   │
-           └─────────┬─────────┘
-                     ├──────────────► SOURCE_READY
-                     │                source claim only
-                     v
-               FUNCTIONAL_PASS
-                     |
-          ┌──────────┴──────────┐
-          v                     v
-  Acceptance Evidence      Quality / delivery
-```
-
-## 4. Sources Of Truth And Ownership
-
-| Concern | Owner | Canonical Source | Projection |
-|---|---|---|---|
-| Product behavior | Product/domain docs | accepted journeys and acceptance IDs | Task references |
-| Architecture | Architecture docs | `docs/architecture/**` | manifest references |
-| Current request Plan policy | Development Workflow intake | explicit user intent plus live PlanMount state | standalone or tracked dispatch |
-| Stable goal and current execution model | Plan | mutable `plan.md` plus referenced Task Slices and append-only amendments | current execution snapshot |
-| Plan-to-worktree occupancy | Project Ledger | immutable `PlanMount` plus live mount index | workflow inspection |
-| Exact execution input and audit history | Development Workflow | immutable `ExecutionPlanSnapshot` chain | Context Anchor |
-| Plan and Task lifecycle | Execution Run | machine-local `execution-run.json` | `planctl status` |
-| One execution closure specification | Task Slice | current `tasks/<id>.md` machine block | immutable execution snapshot |
-| Current execution transition | Development Session | machine event log + `session.json` projection | workspace active-work `devState` |
-| Attempt history and first failure | Development Session | bounded `events.ndjson` and artifacts | compact failure summary |
-| Current physical source identity | Git | commit/tree | declaration and Session verification |
-| Current mutation source identity | Development Workflow | `DevelopmentResourceDeclaration.sourceHead` | machine-wide work ledger |
-| Runtime checkpoint source identity | Development Session | `SourceCheckpoint.commit/tree` | Context Anchor evidence |
-| Runtime allocation | Local Dev Control Plane | machine registry and live observation | session binding ref |
-| Cross-module resource intent | Development Workflow | machine-local `PlanResourcePlan` plus public declaration claims | Context Anchor / Workflow Snapshot |
-| Physical account/service/client/device/Fixture lifecycle | owning Local Dev or Acceptance Suite Runtime | owner manifest and live lease | `PlanResourcePlan.resourceResults` |
-| Formal product proof | Acceptance Framework | Evidence Store | Task evidence refs |
-| Current Plan ownership | Development Workflow | Project Ledger `PlanMount` | snapshot/declaration/active-work consistency checks |
-| Current tracked locator | Execution Run | current Task state | workspace active-work + Context Anchor |
-| Distributed workflow implementation | `peers-dev-workflow` | canonical source and rollout receipts | installed worktree-local tools and Skills |
-| Read-only workflow projection | Workflow Snapshot | `workflow-snapshot-core.mjs` | CLI, Context Anchor, Doctor |
-| Development conversation authority | Workflow Binding Store | one machine-local immutable OWNER identity binding rooted in host root-chat identity | canonical `BindingProjection` |
-| Worker/reviewer identity and liveness | Workflow Binding Store | assignment, child binding, lease and terminal receipt | canonical `BindingProjection` |
-| Tool action target | Workflow Kernel | normalized Tool Intent AST plus one selected action workspace and resolved `subjectRoot` | admission result |
-| Final handoff completeness | Workflow Kernel | rendered Anchor receipt plus create-once release receipt | host-native Stop continuation |
-| Development resource closure | Dev Workflow close coordinator | machine-local `DevelopmentCloseReceipt` plus each owner readback | Completion Auditor `close-ready` |
-| User interaction preferences | user Overlay registry | `~/.peers-touch/dev/skill-overlays/registry.json` + digest-addressed installed copy | `pt-ew` resolution |
-| Chat status | Context Anchor | derived projection only | none |
-
-No owner may copy another owner's complete state. In particular:
-
-- Plan and Task files own no execution lifecycle, evidence, or worktree
-  identity.
-- Execution Run owns Plan/Task lifecycle but cannot alter its snapshot.
-- workspace active-work mirrors the run/session locator; disagreement
-  fails sync and is repaired at the owning source before execution.
-- Plan, declaration, Session and workspace active-work cannot select, replace,
-  or release a PlanMount.
-- Plan does not own an advancing HEAD. Declaration and Session own their
-  distinct current-source responsibilities; workspace active-work projects
-  them directly from Git.
-- The `peers-dev-workflow` source repository never owns mutable state for a
-  consuming worktree.
-- Context Anchor does not read `archive/` or scan every task body.
-- Development records do not satisfy formal Acceptance proof.
-- Module Skills do not select concrete runtime resources or execute lifecycle
-  actions; they emit standard `ModuleImpact`.
-- `PlanResourcePlan` does not replace a physical lease or runtime manifest.
-- Business Gates do not build, provision, log in, clean up, or release
-  resources.
-- A machine ledger writer may read foreign coordination claims but may mutate
-  declaration/mount lifecycle only for its selected workspace; unrelated
-  liveness is never a migration or admission lock.
-- Declaration release, Session archive, active-work removal, PlanMount release,
-  and environment unregister remain separate owner mutations. Only a
-  `CLOSED` close receipt proves their coordinated completion.
-
-### 4.1 Methodology Runtime Boundaries
-
-| Role | Owner | May mutate durable state? |
-|---|---|---|
-| Facade/router | `pt-god-view` | No |
-| Development Run application service | `pt-dev-workflow` | Yes, only through the owning Plan/Task/Session/workspace active-work commands |
-| Vertical dependency modeling | `pt-architecture-execution-methodology` | No |
-| Repository persistence | `pt-plan-and-document` | Yes, for accepted documents and stable Plan candidates; mounting requires explicit North Star approval, ordinary amendments are Agent-owned, and North Star changes require reapproval |
-| Scheduler / WHAT runs next | `pt-goal-orchestrator` | No |
-| Policy / MAY this action run | `pt-execution-plan-guardian` | No |
-| Runtime launch, Journey operation and functional result commit | `pt-dev-runtime-handoff` | Yes, through runtime and Session owner commands |
-| Host-specific tool invocation | detected `pt-*-host-adapter` | No project durable state |
-| Chat projection | `pt-context-anchor` | No |
-
-The runtime call direction is:
-
-```text
-God View -> Dev Workflow -> Scheduler -> Guardian -> Dev Workflow executes
-                               |                         |
-                               +------ read only --------+
-Module Skills -> ModuleImpact -> Dev Workflow Resource Aggregator
-                                      |
-                                      +-> public declaration claims
-                                      +-> Runtime/Suite Owner manifest
-Dev Workflow -> owner commands persist -> Context Anchor projects
-Dev Workflow -> Runtime Handoff -> project driver
-Dev Workflow -> admitted Host Capability Request -> optional Host Adapter
-```
-
-No scheduler or policy result is itself a Task/Session transition. No
-projection repairs its inputs. Host adapters supply actions or observations
-only; they cannot define Journey results, run repository-native fallback, or
-write project state.
-
-### 4.2 User Skill Overlay Boundary
-
-```text
-mutable local source
-        |
-        | explicit install / replace
-        v
-validated immutable copy -----> machine-local registry
-                                      |
-                                      | resolve target=pt-ew
-                                      v
-user request -> pt-ew host -> ordered interaction transforms
-                                  |
-                                  v
-                              pt-god-view
-                                  |
-                                  v
-                         project-owned workflow
-```
-
-The Overlay control plane is distinct from canonical project agent integration:
-
-- `make skills` projects tracked `tooling/skills/pt-*` plus the
-  supported host hook surface into the selected worktree.
-- `skill-overlay-control.py` writes only under the machine Dev root and never
-  edits a host discovery directory.
-- The registry owns enablement and ordering. The source directory is only
-  install input and is never read during normal resolution.
-- The installed copy is content-addressed. Resolution rehashes it before
-  returning its `SKILL.md`.
-- Overlay instructions are untrusted interaction policy. They may shape
-  language and presentation but cannot affect task intent, routing authority,
-  Plan state, authorization, execution, evidence, or Acceptance.
-- Overlay files are data only. Neither install nor runtime resolution executes
-  scripts, hooks, or binaries from the package.
-- An empty resolution is valid passthrough. A malformed registry, unexpected
-  symlink, or digest mismatch is a typed failure and never degrades silently to
-  passthrough.
-
-### 4.3 Owner-Rooted Workflow Kernel
-
-```text
-TRAE / Cursor / Codex payload
-  -> host adapter
-  -> host-specific root-chat / execution-session identity
-  -> BindingProjection
-       OWNER | assigned WORKER | assigned REVIEWER
-       rootBindingDigest + parentBindingDigest + child liveness
-       stable OWNER identity + selected action workspace + per-event subjectRoots
-  -> canonical HookEvent + ToolIntent AST
-  -> independently resolved subjectRoot(s)
-  -> workflow owner-state inspection
-  -> ALLOW | typed DENY | machine-rendered continuation
-```
-
-The first blockable `PreToolUse` atomically creates one OWNER binding from the
-host's root-chat identity. TRAE uses only `chat_session_id` for that identity;
-its `session_id` identifies an execution session and never creates another
-owner. Cursor and Codex each use their one documented root-chat field. Generic
-alias probing and process-global environment fallbacks are forbidden. The
-opaque root-chat ID is retained only in owner-controlled machine-local state
-and is copied into verified workflow-owner references so status consumers can
-identify the originating main session.
-
-A WORKER or REVIEWER exists only after the OWNER creates a bounded assignment.
-The child first atomically publishes one assignment-keyed claim for its
-execution-session hash, then publishes the child binding. Only the winning
-execution session can retry or use that assignment. The resulting child binding
-records `rootBindingDigest`, `parentBindingDigest`, role, Development Session
-identity, lease, and terminal receipt. Unassigned internal sessions inherit the
-OWNER projection for admission but cannot claim worker or reviewer independence.
-Assignment creation first validates that `active-work.json` and the canonical
-`session.json` identify the same current workspace, Work Item, Plan, Task,
-Session, and Development state.
-
-The Kernel distinguishes identity from action:
-
-- `rootBindingDigest` identifies the immutable OWNER lineage; persisted OWNER
-  root fields are only the compatible default/origin workspace;
-- for every mutating OWNER event, `executionRoot` and `workspaceId` identify
-  the selected action workspace, resolved from the unique mutation target,
-  explicit task root, tool `cwd`, active editor, then repository `cwd`;
-- assigned children keep the execution root from their assignment and cannot
-  switch workspaces;
-- `subjectRoot` comes from structured tool paths, shell working directory and
-  parsed shell arguments;
-- reads may cross roots;
-- one mutation action may write only inside its selected `executionRoot` and,
-  for explicit file writes, inside that workspace's active declaration
-  `exclusive-write` claims;
-- mutation targets spanning multiple worktrees fail with
-  `WORKTREE_SELECTION_REQUIRED`; path escape fails with
-  `ACTION_WORKSPACE_WRITE_DENIED`;
-- multiline commands, command substitution and unsupported shell operators
-  fail closed instead of passing through regex classification.
-
-The Kernel does not mutate Plan, Task, declaration, Development Session,
-active-work, runtime, or evidence state. Its machine-local writes are limited
-to atomically published OWNER bindings, assignments, assignment claims, child
-bindings, child terminal receipts, one current receipt per compacting binding
-lineage, exact installer-action grants, the latest rendered Anchor receipt, and
-OWNER release receipt. OWNER liveness is never inferred from a generic TTL.
-Child liveness is `ASSIGNED | LEASED | TERMINAL`; an expired or terminal child
-is diagnostic history and cannot participate in current ownership.
-
-Every injection contains the binding role, root/parent digests, binding digest,
-release state, selected action workspace, subject roots, tool root and target
-roots.
-Every status, readiness, handoff and final claim revalidates the same
-projection. Completion Review is a separate repository-native owner: it
-derives implementation context from successful Development Sessions and
-delegates through one request-scoped reviewer capability. It never reads
-Workflow Bindings or Action Receipts. Canonical requests, capabilities, and
-receipts live only in the versioned `completion-reviews-v3` namespace;
-earlier review records are neither read nor migrated.
-
-TRAE integration is projected only into the selected worktree. Its managed Hook
-calls that worktree's local plugin and may carry a workspace descriptor as the
-declared runtime root set, but it never writes a bootstrap folder or sibling
-worktree. Hook location is never owner authority or an action-workspace hint.
-On every mutating OWNER event, a unique mutation target wins, followed by an
-explicit host task root and tool `cwd`. The result must be one declared
-workspace root. Ambiguous selection returns `WORKTREE_SELECTION_REQUIRED`; a
-target-less action may use the stored default only when every resolved mutation
-path stays inside it. Every sibling worktree installs and audits its own Hook
-independently.
-
-Ordinary `skills` projection is non-destructive. It completes fallible
-preflight, updates only the selected worktree's host projection under the
-machine install lock, and records truthful installation/callback state without
-requiring global idle or a Hook-issued grant. It never deletes workflow state.
-
-`skills-hard-cut` and `skills-gc` are separate destructive operations. Each
-requires its own exact OWNER grant and global-idle proof before deleting its
-bounded legacy store. A post-grant failure records `BLOCKED`; no old
-binding/action schema reader, importer, alias, or dual-write path exists.
-
-## 5. Stable Plan And Execution Contract
-
-An active formal plan is a directory:
-
-```text
-execution-plans/<date>-<slug>/
-├── plan.md
-├── tasks/
-│   └── <task-id>.md
-└── archive/
-    └── <historical-input>.md
-```
-
-`plan.md` and referenced Task Slices own:
-
-- stable Plan identity and machine-readable North Star;
-- an explicit North Star approval bound to `planId + northStarDigest`;
-- criterion-to-Task/closure/Gate coverage derived from the current execution
-  model;
-- current scope, non-scope, architecture references, DAG, and Gate mapping;
-- an append-only Amendment Log with reason, actor, impact, approval class, and
-  before/after content digests;
-- task ID/path/dependency graph without lifecycle state;
-- one machine-readable Acceptance Execution contract;
-- global authorization, completion gates and non-claims.
-
-Project Ledger PlanMount explicitly selects one execution worktree and remains
-bound to the stable `planId + planPath`. Before execution, Development Workflow
-copies the current Plan plus `mountId/workspaceId/branch/initialHead` into an
-immutable ExecutionPlanSnapshot. ExecutionRun exclusively owns
-`pending | in_progress | blocked | done`, current Task, blockers, exhaustion,
-and the current snapshot pointer. A normal amendment appends its audit record,
-publishes another immutable snapshot, and advances that pointer with one CAS
-update; it does not replace the Plan, mount, or run.
-
-Plan authoring produces a candidate with `northStarApproval=null`.
-`planctl validate` keeps that state visible but does not approve it. After the
-user explicitly accepts the objective and criteria, `planctl
-approve-north-star` atomically records the exact digest, actor, timestamp, and
-decision reference. Mount and execution admission reject a missing or stale
-record with `NORTH_STAR_APPROVAL_REQUIRED`.
-
-The amendment owner compares the prior and candidate snapshots. New or changed
-Tasks and their transitive dependents return to `pending`; unchanged completed
-Tasks remain complete. The full candidate DAG, source containment, Task
-contracts, and Acceptance mapping must validate before the new snapshot can
-become current. A source edit without a matching amendment record fails closed
-as `PLAN_AMENDMENT_REQUIRED`.
-
-The complete `northStar`, including criterion IDs and source references, is the
-only Plan-content boundary that invalidates North Star approval. Such a change
-must first receive a fresh explicit approval, then proceeds as an
-owner-approved amendment; without those records it returns
-`NORTH_STAR_APPROVAL_REQUIRED` or `OWNER_DECISION_REQUIRED`. The denial names
-the conflict, impacted goal, options with tradeoffs, and a recommendation.
-Changes to `criterionCoverage`, Task/Gate mappings, or other execution details
-do not change the North Star digest and remain Agent-owned. Operation-
-authorization expansion remains separately governed and returns
-`OPERATION_AUTHORIZATION_REQUIRED`.
-
-A Plan that permits source reopening declares one strict
-`Source Invalidation Policy` block beside the Package. The policy names one
-source owner and one or more invalidation roots. After the failed runtime
-owners are quiescent, `planctl invalidate-source` derives the transitive
-affected set, persists an immutable proof of the prior manifest and evidence
-references, then atomically makes the source owner current and returns the
-affected closure to pending. No caller-selected owner, root, or task list is
-accepted.
-
-Mechanical bounds:
-
-- manifest: at most 300 lines and 20 KiB;
-- Task Slice: at most 200 lines and 12 KiB;
-- current snapshot section: at most 30 lines;
-- no `## Context Anchor`, dated progress appendix, raw command output or run-ID list.
-
-Archive files are excluded from discovery, status, dependency and resume parsing.
-They preserve history only.
-
-The repository may contain multiple stable Plans synchronized into one PR.
-Discovery never scans that set to select an owner. The Project Ledger's live
-`PlanMount` names the only Plan executable in the current workspace; all other
-Plans remain ordinary source files.
-
-## 6. Task Slice Contract
-
-A Task Slice is the smallest execution closure that can be verified and left
-internally consistent. It is split by responsibility/Journey, not by file count
-or individual test case.
-
-One legacy workstream may map to multiple Task Slices. A dependency-ready source
-slice and a completion/proof slice keep the same `workstreamId` but have distinct
-Task IDs and dependencies. Source successors depend on predecessor source
-Tasks; proof successors depend on their own source plus required predecessor
-proof Tasks. An aggregate partial workstream is never made current by bypassing
-incomplete completion dependencies.
-
-Each Task Slice owns:
-
-- stable task ID and plan ID;
-- one functional boundary or Journey;
-- exact in/out scope and target paths;
-- dependencies, completion criteria and failure behavior;
-- closure Gate reference, budgets and durable evidence references;
-- a compact current snapshot.
-
-Task lifecycle defines the progress unit. One completed Task contributes exactly
-one closure unit. Commands, checks, declarations, leases, diagnostics and
-individual Session transitions are execution activity, not independent progress.
-Task weights are intentionally forbidden: if one Task is too broad to serve as
-one meaningful progress unit, the plan owner must split it into independently
-closable Task Slices.
-
-Exactly one Task must be `in_progress` in an active ExecutionRun. A `pending`
-Task is ready only when every dependency is `done`. `blocked` parks that
-branch; it does not block independent ready Tasks. One worktree has one current
-Task; parallel subagents are lanes inside that Task, not concurrently current
-Tasks.
-
-Task handoff is one atomic ExecutionRun update performed by `planctl advance`:
-
-1. verify the current Session is terminal or absent for `done`, or is
-   `BLOCKED` with a first-failure record for `blocked`;
-2. mark the old Task `done` or `blocked`;
-3. select an explicit dependency-ready successor, or no successor when complete;
-4. mark that successor `in_progress`;
-5. atomically replace `execution-run.json`;
-6. let `pt-dev-workflow` synchronize this workspace's active-work record
-   through its owner-derived command.
-
-If execution stops after step 5, `pt-dev-workflow` retries owner-derived
-active-work sync during resume. `pt-context-anchor` only reports the mismatch,
-and no component reverses an owner from a stale projection.
-
-If a blocked Task has no ready successor, the same atomic update sets package
-status `blocked`. If a ready Task exists, the package remains `active` and that
-Task becomes the sole `in_progress` entry.
-
-### 6.1 Progress Slice Contract
-
-A Progress Slice is the Task-closing progress and scheduling boundary projected
-from the current Task. It is not another durable graph, status owner, or
-default user interaction boundary.
-
-`planctl status` derives:
-
-- completed and total Task closures;
-- the current Task closure;
-- the exact `in_progress -> done` target transition;
-- the resulting completed-count, target percentage and percentage-point delta;
-- Task IDs unlocked when that closure completes.
-
-The target endpoint is machine-derived from integer Task counts:
-`completedAfter = completed + 1` and
-`percentageAfter = round(100 * completedAfter / total, 2)`. The delta is the
-rounded difference between independently derived current and target
-percentages. Consumers display these values; they do not recompute them or
-count newly unlocked pending Tasks as completed.
-
-`pt-goal-orchestrator` may schedule multiple supporting actions inside the
-Slice, but the Slice completion boundary is the Task closure. `pt-dev-workflow`
-does not hand control back after a successful setup, inspection, authorization,
-or diagnostic action. It continues until:
-
-1. the target Task is `done` and the progress delta is durable; or
-2. a hard product, architecture, worktree, ownership, authorization, or
-   unavailable-resource boundary prevents closure.
-
-If the current Task hard-blocks while another Task is dependency-ready, the
-workflow parks the blocked branch and continues with a new Progress Slice.
-Only fixed-point exhaustion may produce a zero-delta blocked handoff.
-
-### 6.2 Plan Run Contract
-
-A Plan Run is the user-authorized outer execution horizon:
-
-```text
-accepted Plan + authorization envelope
-  -> Task Goal Slice
-  -> agent review/remediation
-  -> Task handoff
-  -> dependency-ready successor
-  -> repeat until Plan terminal or hard boundary
-```
-
-The Plan Run owns lifecycle only. `pt-dev-workflow` consumes the user's
-execution intent, PlanMount, immutable snapshot, ExecutionRun, active
-declaration, current Session, and accepted authorization. Task closure, review,
-Context Anchor output, and context compaction do not consume authorization.
-
-Already-authorized operations execute directly. Authorization admission is
-exact and reusable:
-
-1. match the proposed operation against explicit user grants and the accepted
-   Plan's `authorization` envelope;
-2. execute directly when an exact grant exists and every other Guardian check
-   passes;
-3. return `OPERATION_AUTHORIZATION_REQUIRED` only when the operation is denied
-   or outside every explicit grant;
-4. after admission, treat only an observed external permission, credential, or
-   scope failure as a permission escalation.
-
-The existence of a Plan or declaration alone grants nothing. Conversely, an
-explicit allowed Plan field is authorization and cannot be discarded merely
-because the operation is commit, deploy, reset, merge, release, or another
-sensitive category.
-
-Review is agent-led. Source-backed findings are fixed and re-reviewed inside the
-Run. Only destructive or irreversible work, missing external authorization or
-resources, unresolved material semantic choices, or fixed-point exhaustion
-reach the user.
-
-## 7. Development Session State Machine
-
-```text
-BOUND -> REPRODUCING -> REPRODUCED
-  -> IMPLEMENTING -> FOCUSED_CHECKING -> FOCUSED_PASS
-  -> SOURCE_READY
-
-FOCUSED_PASS
-  -> CHECKPOINTING -> CHECKPOINTED -> DEPLOYING -> DEPLOYED
-  -> FUNCTIONAL_RUNNING -> FUNCTIONAL_PASS -> ACCEPTANCE_READY
-  -> ACCEPTANCE_UPDATING -> FINAL_CHECKPOINTED
-  -> ACCEPTANCE_RUNNING -> ACCEPTANCE_PASS -> DELIVERY_READY
-
-active action -> FAILED | BLOCKED | STALE | CLEANING -> CANCELLED
-
-build-mode BOUND -> IMPLEMENTING
-```
-
-Transition guards are closed, work-class aware and fail-closed:
-
-- declaration must be ACTIVE before session start;
-- Task must be the package's single `in_progress` Task;
-- dependency status must be `done`;
-- defect repair uses reproduction; new/refactor/infrastructure/documentation
-  build mode enters implementation directly without fabricating a failure;
-- forward transitions must be legal for the current state;
-- `FUNCTIONAL_PASS` requires a `FUNCTIONAL_CHECK/PASS` record;
-- `ACCEPTANCE_PASS` requires an `ACCEPTANCE_PROOF/PASS` reference;
-- `completionClass=source` uses `runtimeClass=source-only`, owns no formal Gate,
-  and terminates at `SOURCE_READY` without a functional or product claim;
-- every non-documentation source Task has exactly one direct same-workstream
-  functional proof successor; documentation source Tasks terminate at
-  `SOURCE_READY` without inventing a runtime proof;
-- `completionClass=functional` owns the development Journey execution and is
-  the only class that may produce `FUNCTIONAL_PASS`;
-- `completionClass=acceptance-aggregate` owns no new functional claim and may
-  aggregate formal Acceptance only after every referenced product Journey has
-  a current `FUNCTIONAL_CHECK/PASS`; aggregation never creates or substitutes
-  functional proof;
-- failure records exactly one owner and first failure;
-- functional `source-only` refactor/infrastructure work may go
-  `FOCUSED_PASS -> FUNCTIONAL_RUNNING` without checkpoint/deploy;
-  its result rejects runtime identity, while service/native work requires the
-  existing checkpoint and runtime binding;
-- documentation work may close at `FOCUSED_PASS` without a product-functional claim;
-- transition commit atomically replaces the bounded event log, then materializes
-  `session.json`; a stale/missing snapshot is rebuilt by replay;
-- the runtime result owner starts the complete current closure only from
-  `FUNCTIONAL_RUNNING`, validates source/runtime/Journey identity, publishes a
-  create-once evidence seal, and commits
-  `FUNCTIONAL_CHECK/PASS -> FUNCTIONAL_PASS` before Task closure;
-- unknown fields, unknown states and source/task mismatch reject before mutation.
-
-The event log is the transition transaction journal. Every event carries the full
-post-transition Session snapshot and a digest chain. Under one session lock, a
-transition validates all events, appends one event in memory, atomically replaces
-the bounded `events.ndjson`, then atomically replaces `session.json`. If execution
-stops between replacements, replay deterministically rebuilds the snapshot. A
-snapshot ahead of the event log is invalid. Bounded compaction writes one full
-baseline event with the prior log digest before admitting more transitions.
-
-## 8. Resume Protocol
-
-Resume is deterministic and bounded:
-
-1. Verify worktree binding from persisted values.
-2. Resolve the workspace's live PlanMount, current immutable
-   ExecutionPlanSnapshot, and ExecutionRun. Missing or mismatched ownership
-   fails closed; source drift routes to `planctl amend`; no branch scan or
-   alternate Plan fallback runs.
-3. Validate the current snapshot; tooling may scan bounded machine blocks, but no Task
-   body or archive content enters agent context.
-4. If run status is `blocked`, validate typed exhaustion and recompute the
-   frontier without reading a Task body. Reactivate an explicit ready Task and
-   clear exhaustion, or report no current Task.
-5. Otherwise resolve the ExecutionRun's one `in_progress` Task.
-6. Read that Task only and replay/repair its matching Session store, if present.
-7. Reconcile workspace active-work `currentTaskId`, `currentTaskPath` and
-   `devState`.
-8. Derive ready/parked next Tasks from the snapshot DAG and run states.
-9. Emit or update Context Anchor when due, then continue the next legal
-   transition without waiting for confirmation.
-
-The emitted Anchor is a compact long-running execution contract. It carries the
-stable mission, execution horizon, current closure, machine-derived progress,
-the next Progress Slice and its expected delta. It does not enumerate every
-supporting action or stop after administrative work.
-
-Missing or mismatched session state is explicit `SESSION_UNAVAILABLE` or
-`SESSION_IDENTITY_MISMATCH`; it never causes history reconstruction from chat.
-
-### 8.1 Close Resume Protocol
-
-Close is a resumable owner sequence:
-
-```text
-no live runtime lease
-  -> Session archived or not applicable
-  -> active-work closed or not applicable
-  -> declaration released or not applicable
-  -> PlanMount released or not applicable
-  -> environment retained | unregistered | not registered
-  -> DevelopmentCloseReceipt CLOSED
-```
-
-Each successful stage advances the receipt before the next owner. A process
-failure leaves `CLOSING`; an owner failure leaves `BLOCKED` with its typed
-error. Repeating the exact selector resumes the remaining stages. A different
-mode, reason, owner, mount, work item, workspace, or environment policy is a
-receipt mismatch, not a new close.
-
-`owner-abandon` is the only reason allowed to archive a non-terminal Session or
-release an unfinished run. It is an explicit Owner decision and preserves the
-observed Session state. Deleted-worktree recovery omits root resolution and
-requires the exact `workspaceId + mountId + mountedBy` tuple.
-
-## 9. Concurrency And Cutover
-
-- Manifest, active pointer, shared parser, generated outputs, commit, deployment,
-  Fixture mutation and final Gates have one integrator owner.
-- Goal scheduling is host-neutral. Detected host adapters may provide worker or
-  UI transport only after scheduling and Guardian admission; missing optional
-  capability degrades to serial or repository-native execution.
-- Development and Acceptance execution consume the same Journey/provisioning
-  adapters. The runner selects an explicit `development` or `acceptance`
-  execution policy. Development writes only under the current machine Dev
-  Session artifact root, emits `FUNCTIONAL_CHECK` records, and cannot finalize
-  an Acceptance manifest, publish a latest pointer, or emit `PROVEN`.
-  Acceptance runs later and alone owns formal proof.
-- A formal single-Gate run may use a caller-supplied, format-validated,
-  previously unused run ID. The ID is generated before the evidence URI is
-  written into the Task snapshot; run allocation fails closed on collision and
-  never substitutes another ID.
-- Independent source lanes inside one Task may run in parallel only after
-  manifest/schema is frozen and write sets are disjoint. Different Tasks are
-  not concurrently current in one worktree.
-- Runtime targets run only after one Plan-level aggregation pass. Each ready
-  target publishes its complete concrete claim set atomically in canonical key
-  order; physical owner actions never hold one lease while waiting for another.
-- Capacity shortage parks only the conflicting target and its dependents.
-  Independent target lanes continue. A global workflow lock is forbidden.
-- Reuse requires compatible source, artifact, runtime, health and owner
-  manifest identity. Quarantine is controlled by the physical resource owner
-  and cannot be cleared by the aggregator.
-
-## 10. Allowed And Forbidden Relationships
-
-Allowed:
-
-- `planctl` reads structured blocks from `plan.md` and `tasks/*.md`.
-- Dev Session records refer to plan/task IDs and Git/runtime identities.
-- Acceptance planner consumes the package's single Acceptance contract.
-- Context Anchor projects manifest + current Task + current Session.
-- `pt-ew` resolves machine-local interaction overlays and then invokes
-  `pt-god-view`; it never becomes another workflow owner.
-
-Forbidden:
-
-- Plan or Task appending raw events, dated run narratives or full logs.
-- Session files being committed or stored in the Evidence Store.
-- a shared `project_memory.md active_work` table or free-text `current_step`
-  remaining as a parallel runtime truth after cutover.
-- Archive files affecting current status.
-- Static/source checks producing `FUNCTIONAL_PASS`.
-- Acceptance expanding before `FUNCTIONAL_PASS`.
-- A Task file per test case or per command.
-- User Overlay state in Git, canonical host projections, or project Plan state.
-- An Overlay changing project routing, authorization, execution, verification,
-  Acceptance, or stop conditions.
-- Runtime reads from the mutable Overlay source directory.
-
-## 11. Architecture Quality Gates
-
-The architecture is implemented only when:
-
-- all current Plan sources parse as stable Plans with append-only amendment
-  history and no runtime legacy fallback or dual active truth;
-- resume exposes only snapshot/run projection, current Task and current Session to agent context;
-- plan/task bounds fail closed mechanically;
-- invalid DAG, duplicate current Task and dependency violations fail;
-- legal and illegal Session transitions are covered deterministically;
-- symlinked CLI invocation executes rather than silently returning success;
-- clock-dependent tests use an injected/current clock;
-- Acceptance current-closure selection reads the immutable snapshot and run;
-- work-class-specific Tasks have legal completion paths without false product claims;
-- Context Anchor contains stable task pointers, not prose recovery state;
-- `planctl status` exposes deterministic Task-closure progress and the next
-  closure's exact target count, target percentage, delta, and unlock effect;
-- tracked Development declarations publish the exact mount, snapshot, run, and
-  current Task locator; Workflow Snapshot never infers progress from a work
-  item or branch;
-- Dev Workflow heartbeats long-running declarations before expiry and refreshes
-  the declaration after source HEAD changes; the machine registration does not
-  persist source HEAD;
-- unrelated sibling worktree add/remove/prune operations do not invalidate the
-  selected worktree's binding;
-- multiple Plans may coexist in one repository/PR while each workspace
-  resolves only its live PlanMount; unfinished replacement and discovery-based
-  reassignment fail closed;
-- an authorized checkpoint can advance declaration, Session and workspace
-  active-work source identity without editing the tracked Plan or dirtying the
-  checkpoint;
-- CI accepts only an explicitly supplied Plan and never infers ownership from a
-  PR branch;
-- every non-blocked Anchor continuation targets one Task closure and cannot
-  terminate successfully with zero durable progress;
-- one authorized Plan Run can close multiple dependency-ready Tasks and traverse
-  internal review gates without another user confirmation;
-- explicit user and accepted Plan authorization survives Task/Goal/context
-  boundaries, and repeat confirmation is rejected unless the operation is
-  outside the envelope or an admitted attempt returns an actual permission
-  failure;
-- agent review findings are remediated and re-reviewed inside the Run, while
-  only DWF-D20 hard boundaries reach the user;
-- the same Goal and Journey contracts execute under TRAE, Cursor, and Codex
-  without changing owner semantics or proof strength;
-- installing, disabling, enabling, replacing, resolving, and uninstalling a
-  user Overlay preserves canonical Skill rollout and returns deterministic,
-  digest-verified `pt-ew` inputs;
-- with no enabled Overlay, `pt-ew` passes the original user intent to
-  `pt-god-view` unchanged;
-- one root chat keeps one OWNER identity while sequential mutation Actions may
-  select different declared worktrees; each Action validates only its selected
-  workspace's owner state and write claims;
-- one Action spanning multiple worktrees fails with
-  `WORKTREE_SELECTION_REQUIRED`, while selected-workspace path escape fails
-  with `ACTION_WORKSPACE_WRITE_DENIED`;
-- one OWNER plus two assigned child sessions retain exact lineage; expired
-  child leases and terminal child receipts never create owner ambiguity;
-- TRAE ignores `session_id` as owner identity and requires `chat_session_id`;
-  missing host-specific root identity reports `OBSERVE_ONLY`;
-- subject/tool/target roots and binding lineage are injected and revalidated
-  before status, handoff and final claims;
-- Completion Review remains resolvable with twenty stale historical child
-  records because it selects the current assigned reviewer exactly;
-- Session start does not create authority and unsupported shell structure fails closed;
-- terminal/blocked Stop cannot release until the machine-rendered Anchor is
-  observed and a create-once release receipt is committed;
-- a deterministic runner PASS cannot coexist with a pre-functional Session
-  projection at Task closure;
-- two independent reviews find no unresolved source-of-truth or runnable gap.
+**工作组织**由 `pt-dev-workflow` 和相关方法论 Skill 负责。它们从已明确的需求、工作区与授权组织动作。小改动可直接调用小修纪律和编码标准；复杂任务才使用进度记录。调用 Skill 不取得系统权限，也不强制建立计划。
+
+**规范提示**由 Hook 补充。它读取当前工作区的规范和相关知识，返回上下文；不能决定普通工具能否执行，不能签发部署权限、创建 OWNER 或要求用户重开窗口后才能工作。
+
+**运行环境**由既有 `devctl`、Profile 管道、Local Dev 和 Acceptance Runtime 负责。启动服务、部署、重置、独占设备必须核对实际权限与资源。这些入口独立于 Hook 和开发任务记录，也不由 Hook 的放行结果授权。
+
+三者共同服务一个需求，不各自建立一套任务系统。只有工作组织保存任务进度；只有运行入口持有实际资源；Hook 的失败最多影响提示。
+
+## 4. 普通修改的执行依据
+
+执行普通源码或文档修改，需要明确需求、选定的 canonical worktree、修改范围及当前授权。工作区由用户指定或已确定的当前任务继承；不能从 Skill 路径、活动编辑器或随意一个搜索结果推断。
+
+worktree 是可长期复用的开发位置，不是一次性任务容器。任务完成、取消或记录损坏
+都不会封存 worktree；检查当前分支、未提交改动、修改范围和实际资源后，同一个
+固定 worktree 可以继续承接下一项开发。Agent 不因开始新任务自动创建、复制、
+切换或删除 worktree。
+
+创建 worktree 是独立的用户授权动作。只有用户显式要求创建 worktree 时才能执行；
+Plan、Task、流程恢复、冲突检测、测试或任何机器记录都不能隐含、继承或代替该授权。
+未获得显式要求时，流程只能使用用户指定的既有 worktree，不能通过创建临时或永久
+worktree 规避脏工作区、占用、冲突或旧流程错误。正式测试使用临时目录、合成
+workspace fixture 或独立临时 Git 仓库，不调用 `git worktree add`。
+
+Agent 在动手前核对目标 worktree 的真实目录、分支和已有改动。除非用户另行指定，
+不读取、比较或验证目标外 worktree 的实现；写入仅限本次已授权工作区。
+生成物和符号链接也要检查目标位置。
+
+不再要求全机 `work.json` 登记、OWNER 身份、Action Receipt 或 PlanMount。短任务不为满足工具制造任务文件；是否使用计划由实际需求和用户指令决定。
+
+这仍是 Agent 必须遵守的范围规则。可选 Hook 不构成针对任意 shell 的强制沙箱，不能声称它能够阻止所有越界写入。受控运行和验证入口对自己的路径、参数及目标执行检查；代码审查和 CI 检查已产生的变更。
+
+## 5. 复杂任务的记录与恢复
+
+复杂任务保存一份明确选定的任务记录，内容限于目标、范围、阶段、下一步、授权引用、验证引用和待收尾资源。每个任务使用一个带 checksum 的原子 `task.json`，更新采用 revision/CAS 和短时任务锁；不再维护事件日志、第二快照或 mount、run、Session、active-work 的相互强一致门槛。
+
+工作记录放在当前 worktree 已被忽略的 `.dev-workflow/` 下。稳定设计和实施计划仍在 `docs/`，运行日志和正式 Acceptance 证据仍放在各自的既有存储中，不混入任务文稿。
+
+一个 worktree 可以存在多份不同任务记录。恢复必须指定任务，或有唯一明确选择；多份记录不能按更新时间、分支名称或目录顺序猜选。记录只锁定自身的短时写入，不能占用整个工作区。
+
+恢复先检查当前工作区和源码，再读取任务进度。源码或计划内容变了，重新评估受影响工作与证据；不能把任务记录当作源码真相。
+
+中断的写操作如果结果不明，先检查操作结果或使用原操作幂等键查询。能确认已成功则补记录；能确认未执行才重试；不能确认时暂停该操作，禁止盲目再次部署、重置或提交。
+
+任务记录损坏时，该任务的自动恢复不可用，但不能阻止另一项已明确授权且不冲突的工作。新任务仍检查实际修改范围与资源；损坏记录不自动删除，也不能用人工填“成功”补齐。
+
+## 6. 运行环境与真实资源冲突
+
+复用 `make profile`、`make station`、`make desktop` 和当前平台入口。Make 保持薄转发，不再增加 `dev-quick` 等快任务专用入口。
+
+运行入口依次核对：
+
+1. 当前工作区与 Profile 的环境目标，不能默认换站或换主机；允许按任务创建本地开发环境。
+2. 操作权限：已评审非 stable Profile 及 workspace capability 直接授权连接、启动客户端、部署、重启和精确范围重置。
+3. 实际共享影响：部署环境、数据库范围、账号、设备、客户端存储及端口。
+4. 所需真实锁：在临界操作前取得，并在锁内复查目标和占用，失败则不执行。
+5. 操作后结果：健康检查、源码或产物身份、实际进程，以及资源释放或保留去向。
+
+现有 OS advisory lock 和进程组管理可继续使用。锁保护真实的部署目标、端口组、设备或数据范围，不能因为聊天结束、回执过期或文件 mtime 变旧就释放。
+
+计划只说明预计使用什么；拿到计划记录不等于拿到资源。PID、启动时间和监听端口用于核对本机进程，不能单独证明远端部署安全。远端操作仍需环境定义、目标校验与对应运行权限。
+
+具体运行请求包含 canonical worktree、操作、已评审 Profile、实际部署目标或数据范围
+以及源码/产物身份。复用现有 capability：连接能力不授予部署，部署不授予重置；
+非 stable Profile 可以按任务需要更新当前 workspace capability，随后由真实目标、源码和
+OS lease 约束执行。stable 部署或重启需要用户明确指令和显式 capability binding；
+stable reset 始终拒绝。Agent 不能伪造 Profile、扩大到未知目标或生成虚假授权引用。
+
+资源键由运行入口从规范化目标派生；Profile 别名指向同一部署目标时共享独占键。
+默认保护范围是本机多个 worktree 的竞争。跨机器同时部署需要该远端环境已有的
+协调能力；本机 OS 锁不能被描述成分布式部署锁。未知协调状态下不宣称可安全并发。
+
+目标不明确、stable 保护或真实独占冲突时，相关操作必须拒绝或等待。其他独立工作继续推进。缺少任务登记、Hook 身份或无关关闭记录不进入这类拒绝条件。
+
+多个场景共用一个测试环境时，由 Runtime/Suite 统一准备和清理。场景只创建自己的数据并执行验证，不能各自抢建客户端、重复登录或关闭共用服务。
+
+## 7. 验证结果与完成判断
+
+源码检查、真实功能验证、正式验收和资源收尾分别报告。它们的依据是实际结果，不能由一张通用回执替代。
+
+复用当前证据记录中的源码、产物、场景、断言、时间和证据摘要。审查显式接收本次范围与证据引用，不要求先建立 IDE 身份或开发 Session。证据缺失、过期或无法验证时，对应结论保持未验证。
+
+业务正式验收仍由 Acceptance 的规范入口产生；不允许调用者提交任意 PASS 文件。框架自测通过与业务场景通过分别记录，不以一个通过替另一个通过。
+
+本地 commit 可由流程在任何有用的完整边界自主形成 checkpoint，供追踪、回滚、
+集成或 exact-source runtime 使用；它不要求先完成功能验证，也不表示完成或交付。
+任务状态写为完成、或向用户提供阶段性交付前，必须检查当前源码已覆盖本次承诺的
+验证与 Acceptance。功能通过不授权 push、合并、发布、历史改写或 stable 环境重置。
+尚需用户亲自验证的事项保持待确认。
+
+结束时只处理本次持有的资源。关闭记录可恢复，但只能描述本任务的收尾，不能成为同 worktree 的全局新任务门禁。仍有资源未释放时明确列出并阻止相冲突的操作，不能因为缺少一张总关闭回执就封住整个工作区。
+
+## 8. Hook 与安装的失败边界
+
+复用现有插件和安装入口，删除与任务授权有关的绑定、grant、Stop 阻断和回执依赖。保留事件归一化与上下文输出。
+
+安装时发现本机解释器并生成正确引号包裹的绝对命令；验证必须执行落盘命令原文，在宿主的受限 PATH 下运行。不能用重拼 argv 或完整终端环境冒充安装验证。
+
+解释器不可用或回调自检失败时报告提示功能不可用，不阻止 Skill 单独安装，也不把安装失败表述为整个研发无法继续。实际宿主端是否执行、是否接受上下文需要另做真实验证，离线回放不替代它。
+
+运行时从结构化 task root、工具工作目录及文件目标解析项目；多根冲突时跳过错误归属的自动注入并提示 Agent 检查，不能自动绑定其他 worktree。未知工具也只影响自动提示，不拒绝执行。
+
+会话字段仅关联诊断，不建立 OWNER 权限。不要求每个宿主都提供同名 ID；缺失时不伪造稳定身份。缺少 task 选择时不自动写任务轨迹。
+
+不新装全局 Hook，不修改其他窗口的投影或共享 workspace descriptor。现有项目级 Hook 按宿主支持方式更新，保留不属于本项目的配置。需要新窗口加载时，只说明新提示尚未生效，不能停止正常开发。
+
+## 9. 本设计的明确取舍
+
+采用工作区明确、任务记录可选、提示失败不阻断的方式，减少通用前置依赖。代价是不能把提示层称为任意 Agent 行为的硬隔离；这项能力不在本设计承诺中。
+
+真实资源锁、稳定环境保护和操作权限继续保留，它们不是该删的“重流程”。完全删除锁只看进程，会留下检查与启动之间的争抢窗口；因此不采用。
+
+不采用仅将旧 DENY 改成 WARN 的方案。旧命令和 Skill 仍会因回执、登记和关闭记录停止，外围降级不能解掉内部依赖。
+
+不采用新的 Python 流程引擎、另一本任务账或独立 Make 快入口。已有 Node/运行工具的确定职责可以复用；解释器发现和提示降级在现有安装、插件入口处理。
+
+## 10. 必须证明的使用结果
+
+- 无 Hook、无会话 ID、无 OWNER、无开发登记时，已授权的局部源码和文档修改可以完成。
+- 一个无关旧关闭记录异常，不阻止当前任务；实际修改重叠与资源冲突仍被识别。
+- 两个不同 worktree 分别工作，知识与任务记录不串，且不修改对方源码和服务。
+- 任务中断后恢复正确进度；结果不明的部署、重置等操作不能盲目重放。
+- 非 stable Profile 的部署与精确 reset 可持续执行；stable 自主重置、抢占设备以及冒用资源标识被实际操作入口拒绝。
+- 多场景复用环境，场景不重复准备资源；清理只释放本任务持有的资源。
+- 验证与审查不依赖 Hook，旧证据不能证明新源码，框架通过不能代替业务通过。
+- 新旧实现切换后，正式入口、Skill、规范和测试采用同一套职责；不能留无限期兼容开关。
+
+正式设计评审和实现验收都按这些结果检查。本次文档成形不能替代任何运行通过结论。

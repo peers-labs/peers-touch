@@ -4,8 +4,8 @@ description: >
   Use when the user asks to commit changes, create a commit, or when you need
   to generate a standardized commit message. Enforces Conventional Commits
   format with AI traceability for the Peers-Touch project.
-stage: "DELIVER"
-requires: ["code changes ready to commit"]
+stage: "cross-stage"
+requires: ["coherent scoped changes"]
 produces: ["conventional commit"]
 next: "pt-github-pr"
 ---
@@ -14,6 +14,16 @@ next: "pt-github-pr"
 
 Generate and execute standardized git commits following Conventional Commits
 format with Peers-Touch project conventions and AI traceability.
+
+## Commit Authority
+
+A local commit is a normal Development Workflow checkpoint. The Agent may
+invoke this Skill without another user prompt when one coherent scoped change
+is useful for traceability, rollback, integration, or exact-source runtime and
+only task-owned files are staged. Run the source and secret checks appropriate
+to that checkpoint. The commit does not imply verification, Acceptance,
+completion, or delivery. It does not authorize amend, rebase, history rewrite,
+push, PR, merge, release, or worktree operations.
 
 ## Commit Format
 
@@ -109,8 +119,9 @@ Refs #789
 
 ## Workflow
 
-1. Invoke `pt-acceptance-gap-detector` for any completion or proof claim. Do
-   not commit a completion claim while the detector reports a blocking gap.
+1. If the commit or surrounding message makes a completion, readiness, or proof
+   claim, invoke `pt-acceptance-gap-detector` and keep a blocking gap explicit.
+   Ordinary implementation checkpoints do not require the detector.
 2. Run `git diff --cached --stat` to see staged changes.
 3. Run `git diff --cached` to understand the actual changes.
 4. Determine `type` from the nature of the change.

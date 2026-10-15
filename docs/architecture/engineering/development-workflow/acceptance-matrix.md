@@ -1,62 +1,65 @@
-# Development Workflow Acceptance Matrix
+# 开发流程重构验收清单
 
 > **Status**: active
-> **Created**: 2026-09-26 | **Updated**: 2026-10-09
+> **Created**: 2026-09-26 | **Updated**: 2026-10-14
 > **Owner**: Platform Team
-> **Module**: `tooling/scripts/local-dev/`, `tooling/scripts/plan/`
 
----
+以下编号定义稳定验收场景。FLOW-A01—A04、A06—A20 由
+`development-flow-tool-e2e` 直接执行。FLOW-A05 是可选的真实宿主 smoke，
+只用于诊断宿主差异，不是整体完成条件。文档不保存运行结果，正式状态以当前源码
+绑定的 Gate evidence 为准。
 
-| ID | Capability / Journey | Decision | Action | Observable Result | Evidence |
-|---|---|---|---|---|---|
-| DEV-A01 | DEV-J01 integration | DWF-D33/D35/D36/D44 | Install without an existing Hook grant | Canonical integration projects and callback proof passes | Integration audit |
-| DEV-A02 | Owner lineage | DWF-D33/D44 | OWNER assigns worker/reviewer children, then performs sequential actions in two worktrees | OWNER digest stays stable; each Action selects one workspace; children stay assignment-bound | Binding/Kernel tests |
-| DEV-A03 | Host fail-closed | DWF-D33 | Omit root identity, blocking hook, or child assignment | Typed denial with no mutation | Host-adapter negative tests |
-| DEV-A04 | Completion review | DWF-D28 | Complete without current review | ExecutionRun transition is rejected | Plan/run tests |
-| DEV-A05 | Review drift | DWF-D24/D28 | Change source or obligations after PASS | Receipt becomes stale; completion remains open | Review invalidation tests |
-| DEV-A06 | Forbidden legacy | DWF-D28 | Review source contains declared forbidden path | Review fails with the residue | Completion fixtures |
-| DEV-A07 | DEV-J02 snapshot | DWF-D27/D29/D38 | Run `make workflow-snapshot` during an active run | Mount, run, Task, activity, review, and health are joined read-only | Snapshot contract tests |
-| DEV-A08 | Loop activity | DWF-D29 | Repeat terminal action fingerprint without progress | Snapshot marks looping; progress does not change | Reducer tests |
-| DEV-A09 | Stall activity | DWF-D29 | Stop heartbeat receipts | Snapshot marks stalled with last activity time | Injected-clock tests |
-| DEV-A10 | One-shot projection | DWF-D27/LDCP-D19 | Invoke Workflow Snapshot | One bounded document; no listener/browser/PID/lease | Process and port audit |
-| DEV-A11 | Operating guide | DWF-D30 | Run documented commands from clean source | Commands exist and return documented typed state | README truth audit |
-| DEV-A12 | Doctor failure | DWF-D30 | Break Hook, mount, run, or review freshness | Doctor exits non-zero and names the failed promise | Doctor tests |
-| DEV-A13 | Doctor healthy | DWF-D30 | Run Doctor against consistent owner state | All required owners resolve from machine state | Doctor end-to-end |
-| DEV-A14 | Review handoff | DWF-D28/D37 | Prepare/submit independent review | Exact capability and immutable request produce one receipt | Review capability tests |
-| DEV-A15 | Partial snapshot | DWF-D27 | Make one owner unreadable | Other owners remain; typed partial finding appears | Snapshot tests |
-| DEV-A16 | Continuation | DWF-D27 | Evaluate active, terminal, and exhausted runs | Only owner state produces CONTINUE/COMPLETE/HARD_BLOCK | Reducer tests |
-| DEV-A17 | Source reopen | DWF-D24/D28 | Stale a completed Task receipt | Invalidation owner reopens the earliest affected Task closure | Reopen tests |
-| DEV-A18 | Overlay isolation | DWF-D25/D33 | Overlay expands scope/lineage/authorization | Kernel ignores policy influence and denies action | Overlay tests |
-| DEV-A19 | Plan mount and amendment | DWF-D42 | Mount a stable Plan authored in another worktree, then amend execution details | Mount/run identities remain stable while the current snapshot and affected Task states advance | Plan mount tests |
-| DEV-A20 | Mount conflict | DWF-D42 | Concurrently mount two live Plans to one workspace | Exactly one succeeds; the other gets `PLAN_MOUNT_CONFLICT` | Concurrency tests |
-| DEV-A21 | Explicit unmount | DWF-D42 | Agent tries to change/unmount an unfinished run | No mutation; explicit owner action required | Authorization tests |
-| DEV-A22 | Resource aggregation | DWF-D32 | Multiple modules request shared/exclusive resources | One all-or-none fenced PlanResourcePlan selects resources and parks conflicts | Resource-plan tests |
-| DEV-A23 | Native Desktop only | DWF-D39/D-18 | Scan Desktop commands, runtime schemas, Gates, provisioners, and matrices | Native Tauri is the only Desktop runtime/proof path | Native-only source gate |
-| DEV-A24 | Native proof | DWF-D39/D-18 | Execute Desktop product Journey | Real Tauri window/input/screenshot and receiver-visible evidence pass | Native runtime-cell Gate |
-| DEV-A25 | Close resume | DWF-D41 | Interrupt after one owner release and retry exact `dev-close` selector | Same receipt advances without duplicate owner state | Development close tests |
-| DEV-A26 | Exact close ownership | DWF-D42/D41 | Cancel/release with wrong mount owner or orphan selector | Typed denial with no state mutation | Plan mount/run tests |
-| DEV-A27 | Standalone close | DWF-D40/D41 | Close explicit no-Plan work | Declaration releases; Session/active-work/mount remain not applicable | Development close tests |
-| DEV-A28 | Close readiness | DWF-D41 | Audit before and after coordinated close | Only exact CLOSED receipt with no pending resource passes | Completion audit fixtures |
-| DEV-A29 | Routine amendment | DWF-D42 | Change a Task command, write set, dependency, order, or Gate mapping | The Agent records the reason, preserves Plan/mount/run IDs, advances the snapshot, and continues | Plan amendment tests |
-| DEV-A30 | North Star protection | DWF-D42 | Change any objective, criterion, or source reference after approval | Prior approval becomes stale; execution returns `NORTH_STAR_APPROVAL_REQUIRED`, then publication requires the matching owner decision | Plan amendment tests |
-| DEV-A31 | Amendment integrity | DWF-D42 | Rewrite history, skip the audit record, or execute against a stale snapshot | The operation fails closed before task execution | Plan package and mount tests |
-| DEV-A32 | Explicit North Star approval | DWF-D42 | Generate and validate a new Plan without a user decision | Validation reports `candidate`; mount is denied until `approve-north-star` binds actor, time, decision ref, Plan ID, and digest | Plan mount and CLI tests |
-| DEV-A33 | Criterion coverage | DWF-D42 | Omit a criterion or map it to unknown/mismatched Task, closure, or Gate IDs | `PLAN_CRITERION_COVERAGE_INVALID` rejects the Plan; ordinary valid remapping preserves North Star approval | Plan package and amendment tests |
-| DEV-A34 | Worktree main-session provenance | DWF-D43 | Create an authorized Agent worktree and start Development from it | Creation, registration, declaration, Session, active-work, and Snapshot expose the verified root-chat OWNER; missing or conflicting current ownership fails closed | Worktree creation, binding, declaration, Session, active-work, and Snapshot tests |
-| DEV-A35 | Action workspace confinement | DWF-D44 | Submit one mutation spanning two worktrees, a shell with foreign cwd, and a symlink escape | Typed denial before mutation; separate single-workspace OWNER actions remain legal | Kernel negative tests |
-| DEV-A36 | Workspace-isolated ledger adoption | DWF-D45 | Migrate one selected workspace while unrelated legacy work remains live | Selected records adopt the current schema; foreign records remain byte-stable and still participate in conflict admission | Ledger and Plan-mount migration tests |
+## 1. 普通工作与可选提示
 
-## Acceptance Rules
+- **FLOW-A01 / DEV-J01**：给出明确的产品或工程北极星与本次贡献，关闭项目 Hook，
+  不提供宿主会话 ID、OWNER、任务登记或 PlanMount，从真实工作组织入口完成已授权
+  局部修改与检查。不得停在旧准入错误；证据说明可观察结果怎样推进北极星，
+  不能只列实际差异、步骤或测试数量。
+- **FLOW-A02 / DEV-J01、DEV-J06**：临时夹具放入无关坏 schema 和未完成关闭记录。新任务可继续；修改重叠及实际资源冲突仍单独处理。夹具不得修改本机历史。
+- **FLOW-A03 / DEV-J03**：安装落盘命令含空格路径，在受限 PATH 下按原文执行。绝对解释器和引号正确；解释器不可用时明确提示降级，Skill 仍可使用。
+- **FLOW-A04 / DEV-J03**：缺少身份、未知工具、多根归属冲突、错误输入及提示内部异常。不返回普通工具 DENY、不绑定其他 worktree；日志脱敏且有界。
+- **FLOW-A05 / DEV-J03**：需要诊断真实宿主时，可分别观察提示启用和移除后的同一局部任务。启用时上下文归属正确；移除后仍能完成。该 smoke 不阻塞流程工具交付，也不替代产品证明。
+- **FLOW-A06 / DEV-J01、DEV-J03**：使用两个合成 workspace fixture 或独立临时
+  Git 仓库验证隔离，不调用 `git worktree add`；工具的知识、任务和投影不串。
+  一项任务关闭后，同一 fixture 直接承接第二项任务，不重建工作区，也不被历史记录拒绝。
+  在脏状态、路径冲突、恢复和验证分支中，用受控 Git 替身确认没有用户显式要求时
+  创建命令调用次数为零。不读取或比较任何现有目标外 worktree，全局 Hook 和共享
+  workspace descriptor 保持原内容。
 
-- Static checks do not substitute for native Desktop product proof.
-- Workflow Snapshot output does not authorize mutation or satisfy product
-  Acceptance.
-- Completion proof binds current source, obligations, snapshot, run, and
-  evidence digests.
-- Historical browser results and completed browser Plans remain audit history
-  only.
-- Declaration release alone is not close evidence; `close-ready` consumes the
-  exact `DevelopmentCloseReceipt`.
-- Output must not expose credentials, canonical roots, or user-home paths.
-  It may expose the opaque host root-chat ID needed for local cross-Agent
-  attribution; that ID is not copied into Git, logs, or Acceptance evidence.
+## 2. 复杂任务的恢复
+
+- **FLOW-A07 / DEV-J02**：同一 worktree 两项明确任务分别记录进度。多选歧义要求选择；不同任务不共享长时写锁，也不按 mtime 猜选。
+- **FLOW-A08 / DEV-J02**：原子替换前中断保留旧快照，替换后新快照成为唯一真源；JSON 或 checksum 损坏时报告该任务不可恢复。另一项不冲突工作继续。
+- **FLOW-A09 / DEV-J02、DEV-J05**：源码或完成义务改变，旧证据失效。重验受影响步骤；不自动继承旧 PASS、不重建整机登记。
+- **FLOW-A10 / DEV-J02、DEV-J04**：操作成功但记录未完成、操作未执行、操作结果未知分别恢复。已成功不重复，明确未执行可重试，未知仅暂停该动作。
+
+## 3. 运行权限与资源
+
+- **FLOW-A11 / DEV-J04**：无部署权限、越权重置范围、stable 自主重置、环境创建及目标主机不匹配均被真实运行入口拒绝，副作用计数为零。Hook 关闭时同样拒绝。
+- **FLOW-A12 / DEV-J04**：两个请求并发申请同一部署目标或设备，包括目标别名及伪造 resourceId。只允许合法持有者；检查与执行之间无可争抢窗口。
+- **FLOW-A13 / DEV-J04、DEV-J06**：持锁进程退出、PID 重用、旧诊断文件和外来 cleanup 请求。核对实际持有及启动身份；不得误杀或释放他人资源。
+- **FLOW-A14 / DEV-J04**：多个场景复用一个 Suite manifest。准备与登录不重复，场景只创建自己的数据；warm reuse、启动次数和清理归属有实际计数。
+- **FLOW-A15 / DEV-J06**：收尾中断、保留供用户测试及无关关闭记录损坏。只恢复本任务操作；未释放资源阻止相冲突动作，不阻止整个 worktree。
+
+## 4. 验证、审查与切换
+
+- **FLOW-A16 / DEV-J05**：明确无 Plan 的修改可以用需求范围和当前证据审查，不制造 Session/OWNER。缺失、伪造、陈旧和不可验证证据不得支持完成。
+- **FLOW-A17 / DEV-J05**：从正式 Acceptance 入口执行，任意 caller PASS 文件不能入库；框架自测和业务场景分别呈现。正式范围无法执行时保持未验证。
+- **FLOW-A18 / DEV-J07**：状态查询只读且一次性退出。无任务、提示故障和一项记录不可读不抹掉其他有效事实，不新增进程、任务或租约。
+- **FLOW-A19 / DEV-J01—DEV-J07**：逐消费者检查 Skill、Make、安装、状态、审查、
+  Runtime 与 Acceptance。复杂任务保留北极星引用和本次贡献，完成审查拒绝以流程状态
+  或 Gate 数量替代结果；已删除模块无活引用，无新的总账、兼容开关或快任务 Make 入口。
+- **FLOW-A20 / DEV-J03、DEV-J06**：选定工作区安装与移除可回退，配置合并保留非项目条目；不删除历史记录、不操作旧活跃实例、环境或其他窗口。
+
+## 5. 证明边界
+
+每项记录目标源码或产物、实际入口、场景、断言、时间、结果和证据引用。测试代码自身包含断言，不能用匹配字符串或成功退出冒充端到端行为。
+
+工具内的测试可用临时 Git 仓库、目录和受控替身；它们只证明工具合同。真实宿主
+观察是可选诊断；远端目标和 Native 产品声明仍需对应现场验证。
+
+实施时把场景接入现有 Gate 与 registry，同步其调用命令和风险映射。先运行针对性自测，再执行必要正式验收。未授权现场操作保持待验证，不能为了凑通过创建环境或修改权限。
+
+新流程完整通过必须覆盖：无 Hook 工作、合成 workspace 隔离、固定 worktree 复用、
+恢复、真实权限与锁、证据新鲜度及选定范围切换。文档链接和 schema 检查不支持
+这个完成结论。
