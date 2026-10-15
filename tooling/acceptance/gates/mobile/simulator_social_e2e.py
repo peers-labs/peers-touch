@@ -1536,16 +1536,14 @@ return node.value === value;
         SimulatorSocialGate._wait_for_value(
             lambda: session.execute_script(
                 """
-const owner = document.querySelector(arguments[0]);
-const select = owner?.querySelector('.ant-select-selector');
-if (!select) return null;
-select.scrollIntoView({block: 'center', inline: 'nearest'});
-select.dispatchEvent(new MouseEvent('mousedown', {
+const trigger = document.querySelector(arguments[0]);
+if (!trigger || trigger.getAttribute('aria-disabled') === 'true') return null;
+trigger.scrollIntoView({block: 'center', inline: 'nearest'});
+trigger.dispatchEvent(new MouseEvent('mousedown', {
   bubbles: true,
   cancelable: true,
   view: window,
 }));
-select.click();
 return true;
 """,
                 selector,
