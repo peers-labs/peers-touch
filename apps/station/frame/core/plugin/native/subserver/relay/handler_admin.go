@@ -16,6 +16,7 @@ import (
 
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/application"
+	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/domain"
 )
 
 // ---- DTO: Invite ----
@@ -25,19 +26,29 @@ type createInviteRequest struct {
 	Label          string `json:"label,omitempty"`
 	MaxClients     int32  `json:"max_clients,omitempty"`
 	BandwidthLimit int64  `json:"bandwidth_limit,omitempty"`
-	ExpiresIn      string `json:"expires_in,omitempty"`
 }
 
 type inviteInfo struct {
-	ID                    uint64 `json:"id"`
+	ID                    uint64 `json:"id,string"`
 	IntendedStationPeerID string `json:"intended_station_peer_id,omitempty"`
 	Label                 string `json:"label"`
 	MaxClients            int32  `json:"max_clients"`
 	BandwidthLimit        int64  `json:"bandwidth_limit"`
 	Status                int32  `json:"status"`
 	ConsumedBy            string `json:"consumed_by,omitempty"`
-	ExpiresAt             string `json:"expires_at"`
 	CreatedAt             string `json:"created_at"`
+}
+
+type invitationPackage struct {
+	SchemaVersion         int      `json:"schema_version"`
+	RelayPeerID           string   `json:"relay_peer_id"`
+	ControlOrigin         string   `json:"control_origin"`
+	DialAddresses         []string `json:"dial_addresses"`
+	InviteToken           string   `json:"invite_token"`
+	IntendedStationPeerID string   `json:"intended_station_peer_id,omitempty"`
+	Label                 string   `json:"label,omitempty"`
+	MaxClients            int32    `json:"max_clients,omitempty"`
+	BandwidthLimit        int64    `json:"bandwidth_limit,omitempty"`
 }
 
 // ---- DTO: Enrollment ----
@@ -63,23 +74,12 @@ func (h *relayHandler) handleCreateInvite(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	expiresIn := 7 * 24 * time.Hour
-	if req.ExpiresIn != "" {
-		d, err := time.ParseDuration(req.ExpiresIn)
-		if err != nil {
-			writeJSON(w, http.StatusBadRequest, errorBody("invalid expires_in format"))
-			return
-		}
-		expiresIn = d
-	}
-
 	invite, secret, err := h.sub.svc.CreateInvite(
 		ctx,
 		req.StationPeerID,
 		req.Label,
 		req.MaxClients,
 		req.BandwidthLimit,
-		expiresIn,
 	)
 	if err != nil {
 		if errors.Is(err, application.ErrInvalidRequest) {
@@ -91,10 +91,23 @@ func (h *relayHandler) handleCreateInvite(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{
-		"invite_id":    strconv.FormatUint(invite.ID, 10),
-		"invite_token": secret,
-		"expires_at":   invite.ExpiresAt.Format(time.RFC3339),
+	dialAddresses := make([]string, 0, len(h.sub.opts.Host.Addrs()))
+	for _, address := range h.sub.opts.Host.Addrs() {
+		dialAddresses = append(dialAddresses, address.String())
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"invite_id": strconv.FormatUint(invite.ID, 10),
+		"invitation": invitationPackage{
+			SchemaVersion:         1,
+			RelayPeerID:           h.sub.opts.Host.ID().String(),
+			ControlOrigin:         h.sub.opts.PublicBaseURL,
+			DialAddresses:         dialAddresses,
+			InviteToken:           secret,
+			IntendedStationPeerID: invite.IntendedStationPeerID,
+			Label:                 invite.Label,
+			MaxClients:            invite.MaxClients,
+			BandwidthLimit:        invite.BandwidthLimit,
+		},
 	})
 }
 
@@ -115,7 +128,6 @@ func (h *relayHandler) handleListInvites(w http.ResponseWriter, r *http.Request)
 			BandwidthLimit:        inv.BandwidthLimit,
 			Status:                int32(inv.Status),
 			ConsumedBy:            inv.ConsumedBy,
-			ExpiresAt:             inv.ExpiresAt.Format(time.RFC3339),
 			CreatedAt:             inv.CreatedAt.Format(time.RFC3339),
 		})
 	}
@@ -123,24 +135,32 @@ func (h *relayHandler) handleListInvites(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, map[string]interface{}{"invites": result})
 }
 
-func (h *relayHandler) handleRevokeInvite(w http.ResponseWriter, r *http.Request) {
+func (h *relayHandler) handleDeleteInvite(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	var req struct {
-		InviteID uint64 `json:"invite_id"`
+		InviteID uint64 `json:"invite_id,string"`
 	}
-	if err := json.NewDecoder(io.LimitReader(r.Body, 1024)).Decode(&req); err != nil {
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1024)).Decode(&req); err != nil || req.InviteID == 0 {
 		writeJSON(w, http.StatusBadRequest, errorBody("invalid request body"))
 		return
 	}
 
-	if err := h.sub.svc.RevokeInvite(ctx, req.InviteID); err != nil {
-		logger.Errorf(ctx, "[relay] revoke invite %d: %v", req.InviteID, err)
-		writeJSON(w, http.StatusInternalServerError, errorBody("failed to revoke invite"))
+	if err := h.sub.svc.DeleteInvite(ctx, req.InviteID); err != nil {
+		if errors.Is(err, domain.ErrInviteAlreadyConsumed) {
+			writeJSON(
+				w,
+				http.StatusConflict,
+				errorBody("invite is already consumed or deleted"),
+			)
+			return
+		}
+		logger.Errorf(ctx, "[relay] delete invite %d: %v", req.InviteID, err)
+		writeJSON(w, http.StatusInternalServerError, errorBody("failed to delete invite"))
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
 func (h *relayHandler) handleListEnrollments(w http.ResponseWriter, r *http.Request) {

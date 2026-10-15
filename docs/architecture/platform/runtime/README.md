@@ -1,8 +1,8 @@
 # Platform Runtime Foundations
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-10-05 | **Updated**: 2026-10-10
+> **Version**: v1.2
+> **Created**: 2026-10-05 | **Updated**: 2026-10-14
 > **Owner**: Architecture Team
 
 ---
@@ -19,3 +19,4 @@ multiple processes without owning a product domain.
 | [storage.md](./storage.md) | Unified runtime storage roots and path ownership |
 | [service-coordination.md](./service-coordination.md) | Relay, Station, Desktop, and Mobile dependency DAG |
 | [node-connectivity/](./node-connectivity/README.md) | Logical Station / node identity, Frame ingress, Circuit v2 and cluster readiness target |
+| [node-connectivity/relay-attachment/](./node-connectivity/relay-attachment/README.md) | Active bilateral Station Node to Relay Service attachment lifecycle |

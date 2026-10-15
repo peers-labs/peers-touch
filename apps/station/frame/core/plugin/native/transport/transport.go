@@ -27,13 +27,15 @@ type LibP2pTransport interface {
 	transport.Transport
 	Host() host.Host
 	KernelHostOptions(...option.Option) ([]libp2p.Option, error)
+	FederationGater() *federation.Gater
 }
 
 type libp2pTransport struct {
-	host        host.Host
-	opts        *transport.Options
-	initialized bool
-	lock        sync.Mutex
+	host            host.Host
+	opts            *transport.Options
+	federationGater *federation.Gater
+	initialized     bool
+	lock            sync.Mutex
 }
 
 func NewTransport(opts ...option.Option) LibP2pTransport {
@@ -100,10 +102,9 @@ func (t *libp2pTransport) KernelHostOptions(
 		libp2pOptions,
 		libp2p.Identity(key),
 	)
-	libp2pOptions = append(
-		libp2pOptions,
-		federation.LibP2PHostOptions()...,
-	)
+	federationOptions, gater := federation.LibP2PHostOptionsWithGater()
+	t.federationGater = gater
+	libp2pOptions = append(libp2pOptions, federationOptions...)
 	return libp2pOptions, nil
 }
 
@@ -131,6 +132,10 @@ func (t *libp2pTransport) Listen(
 
 func (t *libp2pTransport) Host() host.Host {
 	return t.host
+}
+
+func (t *libp2pTransport) FederationGater() *federation.Gater {
+	return t.federationGater
 }
 
 func (t *libp2pTransport) String() string {

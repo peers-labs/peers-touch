@@ -202,6 +202,26 @@ Before mutation:
 Missing identity returns `WORKTREE_IDENTITY_UNAVAILABLE`; drift returns
 `WORKTREE_IDENTITY_MISMATCH`.
 
+### Artifact Placement
+
+Derive the artifact owner from the action worktree verified in Intake. Never
+use the workflow-source repository, IDE primary folder, workspace ordering, or
+a hardcoded sibling path as the destination.
+
+- Keep intermediate review files, drafts, raw logs, and disposable scripts
+  under `/tmp/<repo>_<session>/`.
+- Put a user-facing report scoped to the current repository task under
+  `<selected-worktree>/.artifacts/reports/<report-name>/`.
+- Write formal Acceptance evidence and source-bound machine review decisions
+  only through the external Evidence Store owner.
+- Persist durable product, architecture, and engineering conclusions in their
+  governing `docs/` source, not in `.artifacts/`.
+
+Resolve `<selected-worktree>` with `git rev-parse --show-toplevel` from the
+bound action workspace immediately before writing. `.artifacts/` is
+worktree-local and gitignored; it is a delivery area, not formal proof. Do not
+copy reports into another worktree for convenience.
+
 ## 2. Public Resource Declaration
 
 Before the first write or runtime acquisition:

@@ -54,7 +54,6 @@ type invitePO struct {
 	Status                domain.InviteStatus `gorm:"index"`
 	ConsumedBy            string              `gorm:"size:255"`
 	ConsumedAt            *time.Time
-	ExpiresAt             time.Time `gorm:"index"`
 	CreatedAt             time.Time `gorm:"autoCreateTime"`
 	UpdatedAt             time.Time `gorm:"autoUpdateTime"`
 }
@@ -125,7 +124,6 @@ func toDomainInvite(po invitePO) domain.Invite {
 		Status:                po.Status,
 		ConsumedBy:            po.ConsumedBy,
 		ConsumedAt:            po.ConsumedAt,
-		ExpiresAt:             po.ExpiresAt,
 		CreatedAt:             po.CreatedAt,
 		UpdatedAt:             po.UpdatedAt,
 	}
@@ -142,7 +140,6 @@ func toInvitePO(i *domain.Invite) invitePO {
 		Status:                i.Status,
 		ConsumedBy:            i.ConsumedBy,
 		ConsumedAt:            i.ConsumedAt,
-		ExpiresAt:             i.ExpiresAt,
 		CreatedAt:             i.CreatedAt,
 		UpdatedAt:             i.UpdatedAt,
 	}
@@ -190,6 +187,31 @@ func (r *GormRepo) AutoMigrate() error {
 				).Error; err != nil {
 					return fmt.Errorf("drop legacy Relay invite identity: %w", err)
 				}
+			}
+		}
+		if tx.Migrator().HasTable("relay_invite") &&
+			tx.Migrator().HasColumn("relay_invite", "expires_at") {
+			if err := tx.
+				Where("status IN ?", []domain.InviteStatus{3, 4}).
+				Delete(&invitePO{}).Error; err != nil {
+				return fmt.Errorf(
+					"remove terminal expiring Relay invites: %w",
+					err,
+				)
+			}
+			if err := dropLegacyIndex(
+				tx,
+				"idx_relay_invite_expires_at",
+			); err != nil {
+				return err
+			}
+			if err := tx.Exec(
+				"ALTER TABLE relay_invite DROP COLUMN expires_at",
+			).Error; err != nil {
+				return fmt.Errorf(
+					"drop Relay invite expiry column: %w",
+					err,
+				)
 			}
 		}
 		if tx.Migrator().HasTable(&enrollmentPO{}) {
@@ -265,10 +287,9 @@ func (r *GormRepo) ConsumeInviteAndCreateEnrollment(
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.Model(&invitePO{}).
 			Where(
-				"id = ? AND status = ? AND expires_at > ?",
+				"id = ? AND status = ?",
 				inviteID,
 				domain.InviteStatusActive,
-				now,
 			).
 			Updates(map[string]interface{}{
 				"status":      domain.InviteStatusConsumed,
@@ -349,17 +370,21 @@ func (r *GormRepo) ListInvites(ctx context.Context) ([]domain.Invite, error) {
 	return out, nil
 }
 
-func (r *GormRepo) RevokeInvite(ctx context.Context, inviteID uint64) error {
-	return r.db.WithContext(ctx).Model(&invitePO{}).
+func (r *GormRepo) DeleteInvite(ctx context.Context, inviteID uint64) error {
+	result := r.db.WithContext(ctx).
 		Where("id = ? AND status = ?", inviteID, domain.InviteStatusActive).
-		Update("status", domain.InviteStatusRevoked).Error
-}
-
-func (r *GormRepo) ExpireStaleInvites(ctx context.Context) (int64, error) {
-	result := r.db.WithContext(ctx).Model(&invitePO{}).
-		Where("status = ? AND expires_at < ?", domain.InviteStatusActive, time.Now().UTC()).
-		Update("status", domain.InviteStatusExpired)
-	return result.RowsAffected, result.Error
+		Delete(&invitePO{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf(
+			"%w: invite_id=%d",
+			domain.ErrInviteAlreadyConsumed,
+			inviteID,
+		)
+	}
+	return nil
 }
 
 // ---- Enrollment ----
@@ -412,65 +437,81 @@ func (r *GormRepo) RotateNodeCredential(
 	ctx context.Context,
 	current domain.NodeIdentity,
 	nextCredentialJTI string,
+	nodeAuthorizationEpoch uint64,
+	nodeAuthorizationUntil time.Time,
 ) (*domain.Enrollment, error) {
 	r.enrollmentMu.Lock()
 	defer r.enrollmentMu.Unlock()
 
-	result := r.db.WithContext(ctx).Model(&enrollmentPO{}).
-		Where(
-			"id = ? AND station_peer_id = ? AND node_peer_id = ? AND generation = ? AND credential_jti = ? AND status <> ?",
-			current.EnrollmentID,
-			current.StationPeerID,
-			current.NodePeerID,
-			current.Generation,
-			current.JTI,
-			domain.EnrollmentStatusRevoked,
-		).
-		Updates(map[string]interface{}{
-			"credential_jti": nextCredentialJTI,
-		})
-	if result.Error != nil {
-		return nil, result.Error
-	}
-	if result.RowsAffected == 0 {
+	if nextCredentialJTI == "" || nodeAuthorizationEpoch == 0 ||
+		!nodeAuthorizationUntil.After(time.Now().UTC()) {
 		return nil, domain.ErrNodeCredentialStale
 	}
-	return r.GetEnrollment(ctx, current.StationPeerID, current.NodePeerID)
+
+	var rotated domain.Enrollment
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&enrollmentPO{}).
+			Where(
+				"id = ? AND station_peer_id = ? AND node_peer_id = ? AND generation = ? AND credential_jti = ? AND status <> ? AND node_authorization_epoch <= ?",
+				current.EnrollmentID,
+				current.StationPeerID,
+				current.NodePeerID,
+				current.Generation,
+				current.JTI,
+				domain.EnrollmentStatusRevoked,
+				nodeAuthorizationEpoch,
+			).
+			Updates(map[string]interface{}{
+				"credential_jti":           nextCredentialJTI,
+				"node_authorization_epoch": nodeAuthorizationEpoch,
+				"node_authorization_until": nodeAuthorizationUntil.UTC(),
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return domain.ErrNodeCredentialStale
+		}
+
+		var committed enrollmentPO
+		if err := tx.First(&committed, "id = ?", current.EnrollmentID).Error; err != nil {
+			return fmt.Errorf(
+				"load committed Relay enrollment %d: %w",
+				current.EnrollmentID,
+				err,
+			)
+		}
+		rotated = toDomainEnrollment(committed)
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &rotated, nil
 }
 
-func (r *GormRepo) UpdateNodeAuthorization(
+func (r *GormRepo) RetireEnrollment(
 	ctx context.Context,
 	current domain.NodeIdentity,
-	nodeAuthorizationEpoch uint64,
-	nodeAuthorizationUntil time.Time,
-) error {
-	result := r.db.WithContext(ctx).Model(&enrollmentPO{}).
-		Where(
-			"id = ? AND station_peer_id = ? AND node_peer_id = ? AND generation = ? AND credential_jti = ? AND status <> ?",
-			current.EnrollmentID,
-			current.StationPeerID,
-			current.NodePeerID,
-			current.Generation,
-			current.JTI,
-			domain.EnrollmentStatusRevoked,
-		).
-		Updates(map[string]interface{}{
-			"node_authorization_epoch": nodeAuthorizationEpoch,
-			"node_authorization_until": nodeAuthorizationUntil.UTC(),
-		})
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected == 0 {
-		return domain.ErrNodeCredentialStale
-	}
-	return nil
+) (*domain.Enrollment, error) {
+	return r.revokeEnrollment(ctx, current.StationPeerID, current.NodePeerID, &current)
 }
 
 func (r *GormRepo) RevokeEnrollment(
 	ctx context.Context,
 	stationPeerID string,
 	nodePeerID string,
+) (*domain.Enrollment, error) {
+	return r.revokeEnrollment(ctx, stationPeerID, nodePeerID, nil)
+}
+
+func (r *GormRepo) revokeEnrollment(
+	ctx context.Context,
+	stationPeerID string,
+	nodePeerID string,
+	identity *domain.NodeIdentity,
 ) (*domain.Enrollment, error) {
 	r.enrollmentMu.Lock()
 	defer r.enrollmentMu.Unlock()
@@ -491,13 +532,30 @@ func (r *GormRepo) RevokeEnrollment(
 			return err
 		}
 		now := time.Now().UTC()
+		if identity != nil {
+			if current.ID != identity.EnrollmentID || current.CredentialJTI != identity.JTI {
+				return domain.ErrNodeCredentialStale
+			}
+			if current.Status == domain.EnrollmentStatusRevoked {
+				if current.Generation != identity.Generation+1 {
+					return domain.ErrNodeCredentialStale
+				}
+			} else if current.Generation != identity.Generation ||
+				!identity.ExpiresAt.After(now) || !current.NodeAuthorizationUntil.After(now) {
+				return domain.ErrNodeCredentialStale
+			}
+		}
+		if current.Status == domain.EnrollmentStatusRevoked {
+			revoked = toDomainEnrollment(current)
+			return nil
+		}
 		result := tx.Model(&enrollmentPO{}).
-			Where("id = ? AND generation = ?", current.ID, current.Generation).
+			Where("id = ? AND generation = ? AND credential_jti = ? AND status <> ?",
+				current.ID, current.Generation, current.CredentialJTI, domain.EnrollmentStatusRevoked).
 			Updates(map[string]interface{}{
-				"generation":     current.Generation + 1,
-				"credential_jti": "",
-				"status":         domain.EnrollmentStatusRevoked,
-				"revoked_at":     &now,
+				"generation": current.Generation + 1,
+				"status":     domain.EnrollmentStatusRevoked,
+				"revoked_at": &now,
 			})
 		if result.Error != nil {
 			return result.Error
@@ -506,7 +564,6 @@ func (r *GormRepo) RevokeEnrollment(
 			return domain.ErrNodeCredentialStale
 		}
 		current.Generation++
-		current.CredentialJTI = ""
 		current.Status = domain.EnrollmentStatusRevoked
 		current.RevokedAt = &now
 		revoked = toDomainEnrollment(current)

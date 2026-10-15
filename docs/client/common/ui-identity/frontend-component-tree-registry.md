@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-07-01 | **Updated**: 2026-10-13
+> **Created**: 2026-07-01 | **Updated**: 2026-10-15
 > **Owner**: Client Platform Team
 > **Module**: `docs/client/common/ui-identity/`
 
@@ -103,7 +103,13 @@ Budget fields are recorded inside `Evidence` until the registry grows explicit c
 | Contacts / roster list | SectionBoundary | `virtualized content` if large | Chat/Agent page active | Virtual window or filtered selector | `social`, agent projections | needs audit | Search/filter derivation should be selector-backed | Chat / Agent |
 | Logs, diagnostics, or debug output | SectionHost / SectionBoundary | `on-visit + none` or `virtualized content` | Explicit diagnostic intent | Selected-only unless virtualized | Owning diagnostic store | needs audit | `logs` settings module declares `sectionHostPolicy: selected-only`; runtime sample confirmed `logs` unmounts when switching back to `statistics`; high-volume log virtualization remains a separate audit | Client Platform |
 
-## 8. Mobile Surface Registry
+## 8. Web Operator Surface Registry
+
+| Feature / Surface | Owner Layer | Alive Category | Trigger | Cache Policy | Runtime / Store Owner | Status | Evidence | Review Owner |
+|-------------------|-------------|----------------|---------|--------------|------------------------|--------|----------|--------------|
+| Station Dashboard Relay Attachments | Navigation / PageBoundary | `on-visit + none` | Select Relay Attachments | None; page-local polling is torn down on navigation | Station `AttachmentController` projection | not alive | Hash route changes synchronously; only the active page mounts; 3-second projection polling is page-local and cancelled on unmount; browser long-task and narrow-layout evidence pending | Node Connectivity / Station |
+
+## 9. Mobile Surface Registry
 
 Mobile does not use the Desktop `PageHost` keep-alive model.
 `MobileNavigationStore` owns the descriptor-backed primary route and detail
@@ -128,7 +134,7 @@ keep store truth fresh while a tab tree is unmounted. See
 | Mobile conversation action sheet | OverlayHost | `on-visit + none` | Tap conversation actions | None | Chat action state | not alive | `ChatActionSheet` returns `null` when `!open`; bottom action sheet, not a right drawer (`ChatPage.tsx`) | Mobile / Chat |
 | Mobile tabbar | NavigationShell | `idle + forever` while in tab mode | App ready | Forever while shown | Mobile navigation descriptor + Messaging/Social unread projection | alive | `MobileShell.tsx` renders `<nav className="mobile-tabbar">`; visibility is derived from the active detail descriptor, not feature-store selection | Mobile |
 
-## 9. Applet Registry
+## 10. Applet Registry
 
 | Feature / Surface | Owner Layer | Alive Category | Trigger | Cache Policy | Runtime / Store Owner | Status | Evidence | Review Owner |
 |-------------------|-------------|----------------|---------|--------------|------------------------|--------|----------|--------------|
@@ -136,7 +142,7 @@ keep store truth fresh while a tab tree is unmounted. See
 | Third-party applets | Applet runtime instance | `on-visit + lru` by default | Open applet | Applet runtime LRU | Applet manifest/runtime projection | lru | Each applet must not request global forever lifetime without product approval | Applet Platform |
 | Applet launcher cards | SectionBoundary | `lazy section` inside alive Applets launcher | Applets page mount/prewarm | Launcher list projection | `applets` runtime/store projection | alive | Cards should not materialize applet bundle on render | Applet Platform |
 
-## 10. Change Process
+## 11. Change Process
 
 Update this registry when any of these changes happen:
 
@@ -154,7 +160,7 @@ Required update fields:
 - Add owner and revisit condition for exceptions.
 - Update `Updated` date at the top of this file.
 
-## 11. Review Gates
+## 12. Review Gates
 
 Before approving a UI change covered by this registry:
 
@@ -166,7 +172,7 @@ Before approving a UI change covered by this registry:
 - [ ] Non-alive surfaces preserve user task recovery where needed.
 - [ ] Evidence is current enough for the change risk.
 
-## 12. Open Audits
+## 13. Open Audits
 
 These rows are intentionally marked `needs audit` until measured or redesigned:
 
@@ -178,7 +184,7 @@ These rows are intentionally marked `needs audit` until measured or redesigned:
 | Mobile chat tab tree | Re-mount cost when switching tabs or returning from a thread | Mobile long-task sampling on tab switch and thread back; confirm store keeps freshness without re-fetch |
 | Command palette / transient search overlay | Hidden result tree policy | Confirm unmount or virtualized cache |
 
-## 13. Related Documents
+## 14. Related Documents
 
 - `docs/client/common/ui-identity/frontend-component-tree.md`
 - `docs/client/common/ui-identity/README.md`

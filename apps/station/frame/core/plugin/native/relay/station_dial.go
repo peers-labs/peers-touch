@@ -31,10 +31,11 @@ func (r *Runtime) Available() bool {
 }
 
 func (r *Runtime) RelayOrigin() string {
-	if r == nil || len(r.config.Pool.Targets) == 0 {
+	targets := r.targets()
+	if len(targets) == 0 {
 		return ""
 	}
-	return r.config.Pool.Targets[0].ControlOrigin
+	return targets[0].ControlOrigin
 }
 
 func (r *Runtime) RoundTrip(
@@ -61,7 +62,15 @@ func (c *StationControl) roundTrip(
 	defer c.lock.Unlock()
 	var lastError error
 	bodySent := false
-	for _, target := range c.pool.Targets {
+	targets := make([]Target, 0, len(c.targets))
+	for _, target := range c.targets {
+		targets = append(targets, cloneTarget(target))
+	}
+	sort.Slice(targets, func(left, right int) bool {
+		return targets[left].RelayPeerID.String() <
+			targets[right].RelayPeerID.String()
+	})
+	for _, target := range targets {
 		route, err := c.discoverRouteLocked(
 			ctx,
 			target,
@@ -288,10 +297,12 @@ func (c *StationControl) close() {
 		return
 	}
 	c.lock.Lock()
-	defer c.lock.Unlock()
 	for key, session := range c.routeClients {
 		c.retireRouteClientLocked(key, session)
 	}
+	c.lock.Unlock()
+	c.credentialMu.Lock()
+	defer c.credentialMu.Unlock()
 	for key, client := range c.clients {
 		if closer, ok := client.Transport.(interface{ CloseIdleConnections() }); ok {
 			closer.CloseIdleConnections()

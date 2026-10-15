@@ -10,6 +10,7 @@ const (
 	NodeCredentialAudience = "peers-touch-relay-enrollment"
 
 	ScopeNodeRotate   = "relay.enrollment.rotate"
+	ScopeNodeRetire   = "relay.enrollment.retire"
 	ScopeRoutePublish = "relay.route.publish"
 
 	StationIdentityDomain       = "peers-touch/station-identity/v1\x00"
@@ -58,7 +59,6 @@ type Invite struct {
 	Status                InviteStatus
 	ConsumedBy            string
 	ConsumedAt            *time.Time
-	ExpiresAt             time.Time
 	CreatedAt             time.Time
 	UpdatedAt             time.Time
 }
@@ -68,8 +68,6 @@ type InviteStatus int32
 const (
 	InviteStatusActive   InviteStatus = 1
 	InviteStatusConsumed InviteStatus = 2
-	InviteStatusExpired  InviteStatus = 3
-	InviteStatusRevoked  InviteStatus = 4
 )
 
 type ChallengeOperation string

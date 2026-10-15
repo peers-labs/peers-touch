@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/libp2p/go-libp2p"
@@ -84,5 +85,46 @@ func TestRelayHealthRejectsMissingRuntimeIdentity(t *testing.T) {
 			recorder.Code,
 			http.StatusServiceUnavailable,
 		)
+	}
+}
+
+func TestRelayConsoleIsEmbeddedWithoutStationApplicationAuth(t *testing.T) {
+	handler := newRelayHandler(&SubServer{opts: &Options{}})
+	recorder := httptest.NewRecorder()
+	handler.handleConsoleIndex(
+		recorder,
+		httptest.NewRequest(http.MethodGet, "/relay-console", nil),
+	)
+	if recorder.Code != http.StatusOK ||
+		!strings.Contains(recorder.Body.String(), "Relay Console") {
+		t.Fatalf(
+			"Relay Console status=%d body=%s",
+			recorder.Code,
+			recorder.Body.String(),
+		)
+	}
+	if !strings.Contains(
+		recorder.Header().Get("Content-Security-Policy"),
+		"default-src 'self'",
+	) ||
+		recorder.Header().Get("Referrer-Policy") != "no-referrer" {
+		t.Fatalf("Relay Console security headers = %#v", recorder.Header())
+	}
+	for _, name := range []string{
+		"relay-console",
+		"relay-console-index",
+		"relay-console-script",
+		"relay-console-style",
+	} {
+		found := false
+		for _, registered := range handler.handlers() {
+			if registered.Name() == name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("Relay Console handler %q is not registered", name)
+		}
 	}
 }

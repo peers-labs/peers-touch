@@ -21,7 +21,6 @@ import (
 var (
 	ErrInviteNotFound     = errors.New("invite not found")
 	ErrInviteInactive     = errors.New("invite is not active")
-	ErrInviteExpired      = errors.New("invite has expired")
 	ErrChallengeInvalid   = errors.New("enrollment challenge is invalid")
 	ErrChallengeExpired   = errors.New("enrollment challenge has expired")
 	ErrProofInvalid       = errors.New("station host-key proof is invalid")
@@ -39,6 +38,9 @@ type Service struct {
 	authority *CredentialAuthority
 	admission *nativeRelay.Admission
 	now       func() time.Time
+
+	// Keep durable enrollment transitions and transport publication ordered.
+	enrollmentMu sync.Mutex
 
 	challengeMu sync.Mutex
 	challenges  map[string]domain.EnrollmentChallenge
@@ -70,6 +72,8 @@ func (s *Service) HydrateAdmission(ctx context.Context) error {
 	if s == nil || s.admission == nil {
 		return fmt.Errorf("standard Circuit admission is unavailable")
 	}
+	s.enrollmentMu.Lock()
+	defer s.enrollmentMu.Unlock()
 	enrollments, err := s.repo.ListAdmittedEnrollments(ctx)
 	if err != nil {
 		return err
@@ -107,7 +111,6 @@ func (s *Service) CreateInvite(
 	label string,
 	maxClients int32,
 	bandwidthLimit int64,
-	expiresIn time.Duration,
 ) (*domain.Invite, string, error) {
 	stationPeerID = strings.TrimSpace(stationPeerID)
 	label = strings.TrimSpace(label)
@@ -123,9 +126,6 @@ func (s *Service) CreateInvite(
 	if err != nil {
 		return nil, "", fmt.Errorf("generate invite secret: %w", err)
 	}
-	if expiresIn <= 0 {
-		expiresIn = 24 * time.Hour
-	}
 	invite := &domain.Invite{
 		SecretDigest:          s.authority.DigestInvite(secret),
 		IntendedStationPeerID: stationPeerID,
@@ -133,7 +133,6 @@ func (s *Service) CreateInvite(
 		MaxClients:            maxClients,
 		BandwidthLimit:        bandwidthLimit,
 		Status:                domain.InviteStatusActive,
-		ExpiresAt:             s.now().Add(expiresIn),
 	}
 	if err := s.repo.CreateInvite(ctx, invite); err != nil {
 		return nil, "", fmt.Errorf("create invite: %w", err)
@@ -145,12 +144,8 @@ func (s *Service) ListInvites(ctx context.Context) ([]domain.Invite, error) {
 	return s.repo.ListInvites(ctx)
 }
 
-func (s *Service) RevokeInvite(ctx context.Context, inviteID uint64) error {
-	return s.repo.RevokeInvite(ctx, inviteID)
-}
-
-func (s *Service) ExpireStaleInvites(ctx context.Context) (int64, error) {
-	return s.repo.ExpireStaleInvites(ctx)
+func (s *Service) DeleteInvite(ctx context.Context, inviteID uint64) error {
+	return s.repo.DeleteInvite(ctx, inviteID)
 }
 
 // ---- Enrollment challenges ----
@@ -175,9 +170,6 @@ func (s *Service) BeginEnrollmentChallenge(
 	if invite.Status != domain.InviteStatusActive {
 		return nil, ErrInviteInactive
 	}
-	if !invite.ExpiresAt.After(s.now()) {
-		return nil, ErrInviteExpired
-	}
 	return s.createChallenge(domain.EnrollmentChallenge{
 		Operation:    domain.ChallengeOperationEnroll,
 		InviteID:     invite.ID,
@@ -191,10 +183,9 @@ func (s *Service) BeginRotationChallenge(
 	ctx context.Context,
 	currentToken string,
 ) (*domain.EnrollmentChallenge, error) {
-	identity, enrollment, err := s.authenticateNodeCredential(
+	identity, enrollment, err := s.authenticateRotationLocator(
 		ctx,
 		currentToken,
-		domain.ScopeNodeRotate,
 	)
 	if err != nil {
 		return nil, err
@@ -277,6 +268,8 @@ func (s *Service) Register(
 	proof domain.StationIdentityProof,
 	maxStations int,
 ) (*RegisterResult, error) {
+	s.enrollmentMu.Lock()
+	defer s.enrollmentMu.Unlock()
 	if inviteSecret == "" || inviteSecret != strings.TrimSpace(inviteSecret) {
 		return nil, ErrInviteNotFound
 	}
@@ -300,9 +293,6 @@ func (s *Service) Register(
 	}
 	if invite.Status != domain.InviteStatusActive {
 		return nil, ErrInviteInactive
-	}
-	if !invite.ExpiresAt.After(s.now()) {
-		return nil, ErrInviteExpired
 	}
 
 	verifiedNode, err := VerifyStationIdentityProof(
@@ -383,10 +373,11 @@ func (s *Service) RotateCredential(
 	currentToken string,
 	proof domain.StationIdentityProof,
 ) (*domain.NodeCredential, error) {
-	current, enrollment, err := s.authenticateNodeCredential(
+	s.enrollmentMu.Lock()
+	defer s.enrollmentMu.Unlock()
+	current, enrollment, err := s.authenticateRotationLocator(
 		ctx,
 		currentToken,
-		domain.ScopeNodeRotate,
 	)
 	if err != nil {
 		return nil, err
@@ -415,6 +406,7 @@ func (s *Service) RotateCredential(
 	if verifiedNode.StationPeerID != current.StationPeerID ||
 		verifiedNode.NodePeerID != current.NodePeerID ||
 		verifiedNode.NodePeerID != enrollment.NodePeerID ||
+		verifiedNode.AuthorizationEpoch < enrollment.NodeAuthorizationEpoch ||
 		subtle.ConstantTimeCompare(
 			verifiedNode.StationRootPublicKey,
 			enrollment.StationRootPublicKey,
@@ -426,20 +418,16 @@ func (s *Service) RotateCredential(
 	if err != nil {
 		return nil, fmt.Errorf("generate credential id: %w", err)
 	}
-	if err := s.repo.UpdateNodeAuthorization(
+	enrollment, err = s.repo.RotateNodeCredential(
 		ctx,
 		current,
+		nextJTI,
 		verifiedNode.AuthorizationEpoch,
 		verifiedNode.AuthorizationExpiresAt,
-	); err != nil {
-		return nil, ErrCredentialInvalid
-	}
-	enrollment, err = s.repo.RotateNodeCredential(ctx, current, nextJTI)
+	)
 	if err != nil {
 		return nil, ErrCredentialInvalid
 	}
-	enrollment.NodeAuthorizationEpoch = verifiedNode.AuthorizationEpoch
-	enrollment.NodeAuthorizationUntil = verifiedNode.AuthorizationExpiresAt
 	nodePeerID, err := peer.Decode(enrollment.NodePeerID)
 	if err != nil {
 		return nil, ErrCredentialInvalid
@@ -462,6 +450,67 @@ func (s *Service) AuthenticateNodeCredential(
 ) (domain.NodeIdentity, error) {
 	identity, _, err := s.authenticateNodeCredential(ctx, token, requiredScope)
 	return identity, err
+}
+
+func (s *Service) AuthenticateRotationLocator(
+	ctx context.Context,
+	token string,
+) (domain.NodeIdentity, error) {
+	identity, _, err := s.authenticateRotationLocator(ctx, token)
+	return identity, err
+}
+
+func (s *Service) authenticateRotationLocator(
+	ctx context.Context,
+	token string,
+) (domain.NodeIdentity, *domain.Enrollment, error) {
+	identity, err := s.authority.ValidateRotationLocator(token)
+	if err != nil {
+		return domain.NodeIdentity{}, nil, ErrCredentialInvalid
+	}
+	enrollment, err := s.repo.GetEnrollment(ctx, identity.StationPeerID, identity.NodePeerID)
+	if err != nil || enrollment.Status == domain.EnrollmentStatusRevoked ||
+		enrollment.ID != identity.EnrollmentID ||
+		enrollment.NodePeerID != identity.NodePeerID ||
+		enrollment.Generation != identity.Generation ||
+		enrollment.CredentialJTI != identity.JTI {
+		return domain.NodeIdentity{}, nil, ErrCredentialInvalid
+	}
+	// The replacement proof, not the old delegation's expiry, authorizes recovery.
+	return identity, enrollment, nil
+}
+
+func (s *Service) AuthenticateRetireCredential(
+	ctx context.Context,
+	token string,
+) (domain.NodeIdentity, error) {
+	identity, err := s.authority.ValidateRetirementLocator(token)
+	if err != nil {
+		return domain.NodeIdentity{}, ErrCredentialInvalid
+	}
+	enrollment, err := s.repo.GetEnrollment(
+		ctx,
+		identity.StationPeerID,
+		identity.NodePeerID,
+	)
+	if err != nil ||
+		enrollment.ID != identity.EnrollmentID ||
+		enrollment.NodePeerID != identity.NodePeerID ||
+		enrollment.CredentialJTI != identity.JTI {
+		return domain.NodeIdentity{}, ErrCredentialInvalid
+	}
+	if enrollment.Status == domain.EnrollmentStatusRevoked {
+		if enrollment.Generation != identity.Generation+1 {
+			return domain.NodeIdentity{}, ErrCredentialInvalid
+		}
+		return identity, nil
+	}
+	if enrollment.Generation != identity.Generation ||
+		!identity.ExpiresAt.After(s.now()) ||
+		!enrollment.NodeAuthorizationUntil.After(s.now()) {
+		return domain.NodeIdentity{}, ErrCredentialInvalid
+	}
+	return identity, nil
 }
 
 func (s *Service) authenticateNodeCredential(
@@ -519,6 +568,8 @@ func (s *Service) RevokeEnrollment(
 	stationPeerID string,
 	nodePeerID string,
 ) (*domain.Enrollment, error) {
+	s.enrollmentMu.Lock()
+	defer s.enrollmentMu.Unlock()
 	enrollment, err := s.repo.RevokeEnrollment(
 		ctx,
 		stationPeerID,
@@ -530,15 +581,38 @@ func (s *Service) RevokeEnrollment(
 	if err != nil {
 		return nil, err
 	}
+	return enrollment, s.removeEnrollmentAdmission(enrollment)
+}
+
+func (s *Service) removeEnrollmentAdmission(enrollment *domain.Enrollment) error {
 	decodedNodePeerID, decodeErr := peer.Decode(enrollment.NodePeerID)
 	if decodeErr != nil {
-		return enrollment, fmt.Errorf("decode revoked Node PeerID: %w", decodeErr)
+		return fmt.Errorf("decode revoked Node PeerID: %w", decodeErr)
 	}
-	s.InvalidateNodeRoutes(stationPeerID, nodePeerID)
+	s.InvalidateNodeRoutes(enrollment.StationPeerID, enrollment.NodePeerID)
 	if revokeErr := s.admission.RevokeNode(decodedNodePeerID); revokeErr != nil {
-		return enrollment, fmt.Errorf("retire revoked Node circuits: %w", revokeErr)
+		return fmt.Errorf("retire revoked Node circuits: %w", revokeErr)
 	}
-	return enrollment, nil
+	return nil
+}
+
+func (s *Service) RetireEnrollment(
+	ctx context.Context,
+	identity domain.NodeIdentity,
+) (*domain.Enrollment, error) {
+	s.enrollmentMu.Lock()
+	defer s.enrollmentMu.Unlock()
+	enrollment, err := s.repo.RetireEnrollment(ctx, identity)
+	if errors.Is(err, domain.ErrEnrollmentNotFound) {
+		return nil, ErrEnrollmentNotFound
+	}
+	if errors.Is(err, domain.ErrNodeCredentialStale) {
+		return nil, ErrCredentialInvalid
+	}
+	if err != nil {
+		return nil, err
+	}
+	return enrollment, s.removeEnrollmentAdmission(enrollment)
 }
 
 func (s *Service) UpdateEnrollmentStatus(

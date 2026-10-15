@@ -25,18 +25,28 @@ import (
 // and has no public addrs — in that case the libp2p host is constructed
 // without any federation-induced options.
 func LibP2PHostOptions() []libp2p.Option {
-	return libP2PHostOptionsFromPolicy(GetPolicy())
+	options, _ := libP2PHostOptionsAndGater(GetPolicy())
+	return options
+}
+
+// LibP2PHostOptionsWithGater returns the exact Gater installed into the Host so
+// runtime-owned peers can update their own admission without rebuilding the
+// process Host or mutating the immutable Federation policy.
+func LibP2PHostOptionsWithGater() ([]libp2p.Option, *Gater) {
+	return libP2PHostOptionsAndGater(GetPolicy())
 }
 
 // LibP2PHostOptionsFromPolicy is the testable variant: callers build a
 // Policy in memory and ask for its libp2p options without touching the
 // package singleton.
 func LibP2PHostOptionsFromPolicy(p Policy) []libp2p.Option {
-	return libP2PHostOptionsFromPolicy(p)
+	options, _ := libP2PHostOptionsAndGater(p)
+	return options
 }
 
-func libP2PHostOptionsFromPolicy(p Policy) []libp2p.Option {
+func libP2PHostOptionsAndGater(p Policy) ([]libp2p.Option, *Gater) {
 	var opts []libp2p.Option
+	var gater *Gater
 
 	if len(p.PublicAddrs) > 0 {
 		// AddrsFactory replaces the default "advertise everything we can
@@ -51,8 +61,9 @@ func libP2PHostOptionsFromPolicy(p Policy) []libp2p.Option {
 	}
 
 	if gp := p.GaterPolicy(); gp.Active() {
-		opts = append(opts, libp2p.ConnectionGater(NewGater(gp)))
+		gater = NewGater(gp)
+		opts = append(opts, libp2p.ConnectionGater(gater))
 	}
 
-	return opts
+	return opts, gater
 }

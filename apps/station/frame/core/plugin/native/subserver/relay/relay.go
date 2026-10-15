@@ -24,6 +24,7 @@ type SubServer struct {
 	svc    *application.Service
 
 	nodeRotateJWTWrapper   server.Wrapper
+	nodeRetireJWTWrapper   server.Wrapper
 	routePublishJWTWrapper server.Wrapper
 	operatorJWTWrapper     server.Wrapper
 }
@@ -82,6 +83,7 @@ func (s *SubServer) Init(ctx context.Context, opts ...option.Option) error {
 		s.svc,
 		domain.ScopeNodeRotate,
 	)
+	s.nodeRetireJWTWrapper = retireAuthenticationWrapper(s.svc)
 	s.routePublishJWTWrapper = nodeAuthenticationWrapper(
 		s.svc,
 		domain.ScopeRoutePublish,

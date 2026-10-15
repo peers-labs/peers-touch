@@ -14,6 +14,7 @@ export const PAGES = {
   SYSTEM: 'system',
   LOGS: 'logs',
   TRANSPORT: 'transport',
+  RELAY_ATTACHMENTS: 'relay-attachments',
   ACCESS_GATES: 'access-gates',
 } as const;
 

@@ -113,6 +113,7 @@ func (a *CredentialAuthority) IssueNodeCredential(
 		domain.NodeCredentialAudience,
 		[]string{
 			domain.ScopeNodeRotate,
+			domain.ScopeNodeRetire,
 			domain.ScopeRoutePublish,
 		},
 		defaultNodeCredentialTTL,
@@ -178,22 +179,79 @@ func (a *CredentialAuthority) ValidateCredential(
 	requiredScope string,
 ) (domain.NodeIdentity, error) {
 	claims := &credentialClaims{}
+	return a.validateClaims(rawToken, claims, claims, audience, requiredScope, true)
+}
+
+// ValidateRotationLocator verifies an enrollment locator for proof-based
+// rotation. An expired credential can locate the enrollment, but cannot
+// authorize transport use.
+func (a *CredentialAuthority) ValidateRotationLocator(rawToken string) (domain.NodeIdentity, error) {
+	return a.validateEnrollmentLocator(rawToken, domain.ScopeNodeRotate)
+}
+
+// ValidateRetirementLocator verifies a locator for retirement. An expired
+// locator can acknowledge only its matching revoked predecessor; active
+// revocation still requires live authority.
+func (a *CredentialAuthority) ValidateRetirementLocator(rawToken string) (domain.NodeIdentity, error) {
+	return a.validateEnrollmentLocator(rawToken, domain.ScopeNodeRetire)
+}
+
+func (a *CredentialAuthority) validateEnrollmentLocator(rawToken, requiredScope string) (domain.NodeIdentity, error) {
+	claims := &enrollmentLocatorClaims{}
+
+	return a.validateClaims(
+		rawToken,
+		claims,
+		&claims.credentialClaims,
+		domain.NodeCredentialAudience,
+		requiredScope,
+		false,
+	)
+}
+
+type enrollmentLocatorClaims struct {
+	credentialClaims
+}
+
+// Only expiration is excluded from locator validation. Issuer, audience,
+// signature, issued-at and not-before retain the normal JWT validation.
+func (*enrollmentLocatorClaims) GetExpirationTime() (*jwt.NumericDate, error) {
+	return nil, nil
+}
+
+func (a *CredentialAuthority) validateClaims(
+	rawToken string,
+	parsedClaims jwt.Claims,
+	claims *credentialClaims,
+	audience string,
+	requiredScope string,
+	requireLive bool,
+) (domain.NodeIdentity, error) {
+	options := []jwt.ParserOption{
+		jwt.WithAudience(audience),
+		jwt.WithIssuedAt(),
+		jwt.WithIssuer(a.relayPeerID),
+		jwt.WithValidMethods([]string{jwt.SigningMethodEdDSA.Alg()}),
+		jwt.WithTimeFunc(a.now),
+	}
+	if requireLive {
+		options = append(options, jwt.WithExpirationRequired())
+	}
 	token, err := jwt.ParseWithClaims(
 		strings.TrimSpace(rawToken),
-		claims,
+		parsedClaims,
 		func(token *jwt.Token) (any, error) {
 			if token.Method != jwt.SigningMethodEdDSA {
 				return nil, ErrInvalidCredential
 			}
 			return a.publicKey, nil
 		},
-		jwt.WithAudience(audience),
-		jwt.WithExpirationRequired(),
-		jwt.WithIssuedAt(),
-		jwt.WithIssuer(a.relayPeerID),
-		jwt.WithValidMethods([]string{jwt.SigningMethodEdDSA.Alg()}),
+		options...,
 	)
-	if err != nil || !token.Valid ||
+	if err != nil || token == nil || !token.Valid ||
+		claims.CredentialType != "relay_enrollment" ||
+		claims.ExpiresAt == nil || claims.IssuedAt == nil ||
+		!claims.ExpiresAt.After(claims.IssuedAt.Time) ||
 		claims.ID == "" ||
 		claims.StationPeerID == "" ||
 		claims.NodePeerID == "" ||
@@ -302,7 +360,11 @@ func randomBytes(size int) ([]byte, error) {
 }
 
 func parseEd25519PrivateKey(material []byte) (ed25519.PrivateKey, error) {
-	trimmed := bytes.TrimSpace(material)
+	trimmed := material
+	// Host.Raw returns binary key material; whitespace is a valid key byte.
+	if len(material) != ed25519.SeedSize && len(material) != ed25519.PrivateKeySize {
+		trimmed = bytes.TrimSpace(material)
+	}
 	if block, _ := pem.Decode(trimmed); block != nil {
 		parsed, err := x509.ParsePKCS8PrivateKey(block.Bytes)
 		if err != nil {

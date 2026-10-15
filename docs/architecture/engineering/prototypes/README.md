@@ -61,7 +61,7 @@
 | desktop | `call` | Desktop Chat/通话能力历史原型，不是一级模块 | `packages/prototypes/desktop/features/call/` | 已由 `social-chat` 中的 Call UX 接替 | voice-video-calls | superseded | [prototype/README.md](../../domains/chat/calling/prototype/README.md)（历史路径，归属 desktop） |
 | desktop | `social-chat` | Desktop Chat 能力原型，不是一级模块 | `packages/prototypes/desktop/features/social-chat/` | Desktop 私聊 / 群聊体验；原型为 React web 展示 | client/chat + social-runtime | confirmed | [prototype/README.md](../../domains/social/core/prototype/README.md) |
 | mobile | `mobile-chat` | Mobile Shell 一级站点基准 | `packages/prototypes/mobile/chat/` | Mobile Shell / Access Gate / Chat / one-to-one Call / complete Social parity / Contacts / Settings / recovery states；原型为 React web 展示 | apps/mobile MobileShell + client/chat + mobile-social-parity + social-runtime | confirmed | [prototype/README.md](../../platform/client/mobile/prototype/README.md) |
-| dashboard | `station-dashboard` | Station Dashboard 一级站点运维台体验基准 | `packages/prototypes/dashboard/station-dashboard/` | Station Dashboard / 管理台 / 运维台体验；原型为 React web 展示 | station/base | drafting | [base.md](../../../station/base.md) |
+| dashboard | `station-dashboard` | Station Dashboard 一级站点运维台体验基准 | `packages/prototypes/dashboard/station-dashboard/` | Relay Operator 邀请/撤销与 Station Operator 接受/续期/迁移/卸载的双边挂载生命周期 | relay-attachment v0.1 | pending-review | [prototype/README.md](../../platform/runtime/node-connectivity/relay-attachment/prototype/README.md) |
 
 > 状态取值：`drafting`（搭建中）· `pending-review`（待确认）· `confirmed`（已确认，可落地）· `landed`（已落地）· `superseded`（已废弃）。
 > 登记表的一级维度是原型站点（`desktop` / `mobile` / `dashboard`），不是每个原型工程目录；applet、通话、聊天等都必须挂在所属站点下。

@@ -7,10 +7,12 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/peers-labs/peers-touch/station/frame/core/config"
+	"github.com/peers-labs/peers-touch/station/frame/core/facility/appdir"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin"
@@ -23,6 +25,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/registry"
 	"github.com/peers-labs/peers-touch/station/frame/core/runtime/role"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	"github.com/peers-labs/peers-touch/station/frame/core/store"
 )
 
 // Init initialises options. Additionally, it calls cmd.Init
@@ -135,6 +138,14 @@ func (s *native) initComponents(ctx context.Context) (err error) {
 	if err != nil {
 		return fmt.Errorf("init P2P kernel Host: %w", err)
 	}
+	nativeTransport, ok := s.opts.Transport.(transportNative.LibP2pTransport)
+	if !ok {
+		_ = kernel.Close()
+		return fmt.Errorf(
+			"configure standard Relay runtime: native transport is unavailable",
+		)
+	}
+	relayRuntime.ConfigurePeerAccess(nativeTransport.FederationGater())
 	s.kernel = kernel
 	initialized := false
 	defer func() {
@@ -298,7 +309,7 @@ func (s *native) initComponents(ctx context.Context) (err error) {
 	if err != nil {
 		return fmt.Errorf("initialize Station cluster admission: %w", err)
 	}
-	if processRole == role.Station && relayConfig.Pool.Mode != nativeRelay.PoolModeOff {
+	if processRole == role.Station {
 		bootstrapSigner, ok := s.opts.Server.Options().
 			SubserverInstances["bootstrap"].(nativeRelay.StationControlSigner)
 		if !ok {
@@ -311,6 +322,26 @@ func (s *native) initComponents(ctx context.Context) (err error) {
 			nodeIdentity.SPKISHA256(),
 		); err != nil {
 			return fmt.Errorf("configure Station Relay control: %w", err)
+		}
+		rds, err := store.GetRDS(ctx)
+		if err != nil {
+			return fmt.Errorf("configure Station Relay attachments: %w", err)
+		}
+		dataDir, err := appdir.Resolve("station", "data")
+		if err != nil {
+			return fmt.Errorf("resolve Station Relay credential storage: %w", err)
+		}
+		if err := relayRuntime.ConfigureAttachmentController(
+			ctx,
+			rds,
+			stationPeerID.String(),
+			filepath.Join(
+				dataDir,
+				"relay",
+				"credentials",
+			),
+		); err != nil {
+			return fmt.Errorf("configure Station Relay attachments: %w", err)
 		}
 	}
 	backendURL, err := secureHTTPBackendURL(s.opts.Server.Options().Address)

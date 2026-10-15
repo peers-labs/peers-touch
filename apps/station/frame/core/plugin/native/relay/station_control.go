@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/peer"
 	peerpb "github.com/peers-labs/peers-touch/station/frame/touch/model/peer"
 	"google.golang.org/protobuf/proto"
 )
@@ -56,6 +57,14 @@ type relayCredential struct {
 	ExpiresAt     string `json:"expires_at"`
 }
 
+type RelayCredentialInfo struct {
+	RelayPeerID   string
+	StationPeerID string
+	EnrollmentID  uint64
+	Generation    uint64
+	ExpiresAt     time.Time
+}
+
 type enrollmentChallenge struct {
 	ChallengeID string `json:"challenge_id"`
 	RelayPeerID string `json:"relay_peer_id"`
@@ -68,13 +77,16 @@ type stationIdentityProof struct {
 }
 
 type StationControl struct {
-	pool       Pool
 	host       host.Host
 	signer     StationControlSigner
 	innerSPKI  [sha256.Size]byte
 	liveRoutes func(time.Time) []CircuitRoute
 
 	lock                sync.Mutex
+	targets             map[peer.ID]Target
+	targetLockMu        sync.Mutex
+	targetLocks         map[peer.ID]*sync.Mutex
+	credentialMu        sync.Mutex
 	credentials         map[string]relayCredential
 	clients             map[string]*http.Client
 	routeClients        map[stationRouteClientKey]*stationRouteClient
@@ -89,18 +101,18 @@ func NewStationControl(
 	innerSPKI [sha256.Size]byte,
 	liveRoutes func(time.Time) []CircuitRoute,
 ) (*StationControl, error) {
-	if pool.Mode != PoolModeCustom || len(pool.Targets) == 0 ||
-		valueHost == nil || signer == nil ||
+	if valueHost == nil || signer == nil ||
 		innerSPKI == ([sha256.Size]byte{}) ||
 		liveRoutes == nil {
 		return nil, fmt.Errorf("Station Relay control is incomplete")
 	}
-	return &StationControl{
-		pool:        pool,
+	control := &StationControl{
 		host:        valueHost,
 		signer:      signer,
 		innerSPKI:   innerSPKI,
 		liveRoutes:  liveRoutes,
+		targets:     make(map[peer.ID]Target, len(pool.Targets)),
+		targetLocks: make(map[peer.ID]*sync.Mutex, len(pool.Targets)),
 		credentials: make(map[string]relayCredential, len(pool.Targets)),
 		clients:     make(map[string]*http.Client, len(pool.Targets)),
 		routeClients: make(
@@ -108,15 +120,218 @@ func NewStationControl(
 			len(pool.Targets),
 		),
 		persist: persistRelayCredential,
+	}
+	for _, target := range pool.Targets {
+		if err := control.addTargetLocked(target); err != nil {
+			return nil, err
+		}
+		control.targetLocks[target.RelayPeerID] = &sync.Mutex{}
+	}
+	return control, nil
+}
+
+func (c *StationControl) AddTarget(target Target) error {
+	if c == nil {
+		return fmt.Errorf("Station Relay control is unavailable")
+	}
+	operationLock := c.targetOperationLock(target.RelayPeerID)
+	operationLock.Lock()
+	defer operationLock.Unlock()
+	c.lock.Lock()
+	err := c.addTargetLocked(target)
+	c.lock.Unlock()
+	return err
+}
+
+func (c *StationControl) PrepareTarget(
+	ctx context.Context,
+	target Target,
+) (Target, RelayCredentialInfo, error) {
+	if c == nil {
+		return Target{}, RelayCredentialInfo{}, fmt.Errorf(
+			"Station Relay control is unavailable",
+		)
+	}
+	if err := c.AddTarget(target); err != nil {
+		return Target{}, RelayCredentialInfo{}, err
+	}
+	operationLock := c.targetOperationLock(target.RelayPeerID)
+	operationLock.Lock()
+	defer operationLock.Unlock()
+	credential, err := c.ensureCredentialLocked(ctx, target)
+	if err != nil {
+		c.removeTargetState(target.RelayPeerID)
+		return Target{}, RelayCredentialInfo{}, err
+	}
+	expiresAt, err := time.Parse(time.RFC3339, credential.ExpiresAt)
+	if err != nil {
+		c.removeTargetState(target.RelayPeerID)
+		return Target{}, RelayCredentialInfo{}, fmt.Errorf(
+			"Relay credential expiry is invalid",
+		)
+	}
+	prepared := cloneTarget(target)
+	prepared.InviteToken = ""
+	c.lock.Lock()
+	c.targets[target.RelayPeerID] = prepared
+	c.lock.Unlock()
+	return cloneTarget(prepared), RelayCredentialInfo{
+		RelayPeerID:   credential.RelayPeerID,
+		StationPeerID: credential.StationPeerID,
+		EnrollmentID:  credential.EnrollmentID,
+		Generation:    credential.Generation,
+		ExpiresAt:     expiresAt,
 	}, nil
+}
+
+func (c *StationControl) addTargetLocked(target Target) error {
+	if _, err := targetAddrInfo(target); err != nil {
+		return err
+	}
+	if _, exists := c.targets[target.RelayPeerID]; exists {
+		return fmt.Errorf("Relay target %s already exists", target.RelayPeerID)
+	}
+	c.targets[target.RelayPeerID] = cloneTarget(target)
+	return nil
+}
+
+func (c *StationControl) RemoveTarget(relayPeerID peer.ID) error {
+	if c == nil {
+		return fmt.Errorf("Station Relay control is unavailable")
+	}
+	operationLock := c.targetOperationLock(relayPeerID)
+	operationLock.Lock()
+	defer operationLock.Unlock()
+	c.lock.Lock()
+	if _, exists := c.targets[relayPeerID]; !exists {
+		c.lock.Unlock()
+		return fmt.Errorf("Relay target %s does not exist", relayPeerID)
+	}
+	c.lock.Unlock()
+	c.removeTargetState(relayPeerID)
+	return nil
+}
+
+func (c *StationControl) removeTargetState(relayPeerID peer.ID) {
+	c.lock.Lock()
+	delete(c.targets, relayPeerID)
+	c.lock.Unlock()
+	key := relayPeerID.String()
+	c.credentialMu.Lock()
+	delete(c.credentials, key)
+	if client := c.clients[key]; client != nil {
+		if transport, ok := client.Transport.(*http.Transport); ok {
+			transport.CloseIdleConnections()
+		}
+		delete(c.clients, key)
+	}
+	c.credentialMu.Unlock()
+}
+
+func (c *StationControl) targetOperationLock(
+	relayPeerID peer.ID,
+) *sync.Mutex {
+	c.targetLockMu.Lock()
+	defer c.targetLockMu.Unlock()
+	if c.targetLocks == nil {
+		c.targetLocks = make(map[peer.ID]*sync.Mutex)
+	}
+	if current := c.targetLocks[relayPeerID]; current != nil {
+		return current
+	}
+	current := &sync.Mutex{}
+	c.targetLocks[relayPeerID] = current
+	return current
+}
+
+func (c *StationControl) RetireTarget(
+	ctx context.Context,
+	target Target,
+) error {
+	if c == nil {
+		return fmt.Errorf("Station Relay control is unavailable")
+	}
+	operationLock := c.targetOperationLock(target.RelayPeerID)
+	operationLock.Lock()
+	defer operationLock.Unlock()
+	// Cleanup uses the durable target without adding it to the dial candidates.
+	// Drop transient credentials/clients even when the remote Relay is offline.
+	defer c.removeTargetState(target.RelayPeerID)
+	credential, err := loadRelayCredential(target.CredentialFile)
+	if err != nil {
+		return err
+	}
+	// Send the predecessor first: it may acknowledge an already-completed
+	// retirement even after expiry. Never enroll from an invitation to clean up.
+	status, err := c.requestRetirementLocked(ctx, target, credential.Token)
+	if status != http.StatusUnauthorized {
+		return err
+	}
+	rotated, err := c.rotateCredentialLocked(ctx, target, credential)
+	if err != nil {
+		return fmt.Errorf("recover Relay credential for retirement: %w", err)
+	}
+	persist := c.persist
+	if persist == nil {
+		persist = persistRelayCredential
+	}
+	if err := persist(target.CredentialFile, rotated); err != nil {
+		return err
+	}
+	_, err = c.requestRetirementLocked(ctx, target, rotated.Token)
+	return err
+}
+
+func (c *StationControl) requestRetirementLocked(
+	ctx context.Context,
+	target Target,
+	token string,
+) (int, error) {
+	client, err := c.httpClientLocked(target)
+	if err != nil {
+		return 0, err
+	}
+	request, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodDelete,
+		target.ControlOrigin+"/api/v1/relay/enrollment/self",
+		nil,
+	)
+	if err != nil {
+		return 0, err
+	}
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Authorization", "Bearer "+token)
+	response, err := client.Do(request)
+	if err != nil {
+		return 0, fmt.Errorf("retire Relay enrollment: %w", err)
+	}
+	defer response.Body.Close()
+	raw, err := io.ReadAll(
+		io.LimitReader(response.Body, maxControlResponseBytes+1),
+	)
+	if err != nil {
+		return 0, err
+	}
+	if len(raw) > maxControlResponseBytes {
+		return 0, fmt.Errorf("Relay retirement response exceeds size limit")
+	}
+	if response.StatusCode != http.StatusOK {
+		return response.StatusCode, fmt.Errorf(
+			"Relay retirement returned HTTP %d",
+			response.StatusCode,
+		)
+	}
+	return response.StatusCode, nil
 }
 
 func (c *StationControl) Authorize(
 	ctx context.Context,
 	target Target,
 ) (uint64, error) {
-	c.lock.Lock()
-	defer c.lock.Unlock()
+	operationLock := c.targetOperationLock(target.RelayPeerID)
+	operationLock.Lock()
+	defer operationLock.Unlock()
 	credential, err := c.ensureCredentialLocked(ctx, target)
 	if err != nil {
 		return 0, err
@@ -129,8 +344,9 @@ func (c *StationControl) Publish(
 	target Target,
 	route CircuitRoute,
 ) error {
-	c.lock.Lock()
-	defer c.lock.Unlock()
+	operationLock := c.targetOperationLock(target.RelayPeerID)
+	operationLock.Lock()
+	defer operationLock.Unlock()
 	credential, err := c.ensureCredentialLocked(ctx, target)
 	if err != nil {
 		return err
@@ -188,11 +404,21 @@ func (c *StationControl) IssueConnectionMaterial(
 	}
 
 	c.lock.Lock()
-	defer c.lock.Unlock()
 	target, route, err := c.selectLiveRouteLocked(now)
+	c.lock.Unlock()
 	if err != nil {
 		return nil, err
 	}
+	operationLock := c.targetOperationLock(target.RelayPeerID)
+	operationLock.Lock()
+	defer operationLock.Unlock()
+	c.lock.Lock()
+	currentTarget, exists := c.targets[target.RelayPeerID]
+	c.lock.Unlock()
+	if !exists {
+		return nil, ErrConnectionMaterialUnavailable
+	}
+	target = cloneTarget(currentTarget)
 	credential, err := c.ensureCredentialLocked(ctx, target)
 	if err != nil {
 		return nil, err
@@ -342,7 +568,9 @@ func (c *StationControl) ensureCredentialLocked(
 	if persist == nil {
 		persist = persistRelayCredential
 	}
+	c.credentialMu.Lock()
 	credential, ok := c.credentials[key]
+	c.credentialMu.Unlock()
 	if !ok {
 		loaded, err := loadRelayCredential(target.CredentialFile)
 		if err == nil {
@@ -358,18 +586,23 @@ func (c *StationControl) ensureCredentialLocked(
 			credential.RelayPeerID == key &&
 			credential.Generation > 0 &&
 			expiresAt.After(time.Now().UTC().Add(defaultCredentialRenewal)) {
+			c.credentialMu.Lock()
 			c.credentials[key] = credential
+			c.credentialMu.Unlock()
 			return credential, nil
 		}
 		if credential.Token != "" && credential.RelayPeerID == key {
 			rotated, err := c.rotateCredentialLocked(ctx, target, credential)
-			if err == nil {
-				if err := persist(target.CredentialFile, rotated); err != nil {
-					return relayCredential{}, err
-				}
-				c.credentials[key] = rotated
-				return rotated, nil
+			if err != nil {
+				return relayCredential{}, fmt.Errorf("recover Relay credential: %w", err)
 			}
+			if err := persist(target.CredentialFile, rotated); err != nil {
+				return relayCredential{}, err
+			}
+			c.credentialMu.Lock()
+			c.credentials[key] = rotated
+			c.credentialMu.Unlock()
+			return rotated, nil
 		}
 	}
 	if target.InviteToken == "" {
@@ -385,7 +618,9 @@ func (c *StationControl) ensureCredentialLocked(
 	if err := persist(target.CredentialFile, enrolled); err != nil {
 		return relayCredential{}, err
 	}
+	c.credentialMu.Lock()
 	c.credentials[key] = enrolled
+	c.credentialMu.Unlock()
 	return enrolled, nil
 }
 
@@ -499,10 +734,8 @@ func (c *StationControl) selectLiveRouteLocked(
 			routes[right].RelayPeerID.String()
 	})
 	for _, route := range routes {
-		for _, target := range c.pool.Targets {
-			if target.RelayPeerID == route.RelayPeerID {
-				return target, route, nil
-			}
+		if target, exists := c.targets[route.RelayPeerID]; exists {
+			return cloneTarget(target), route, nil
 		}
 	}
 	return Target{}, CircuitRoute{}, ErrConnectionMaterialUnavailable
@@ -613,6 +846,8 @@ func (c *StationControl) doLocked(
 }
 
 func (c *StationControl) httpClientLocked(target Target) (*http.Client, error) {
+	c.credentialMu.Lock()
+	defer c.credentialMu.Unlock()
 	key := target.RelayPeerID.String()
 	if current := c.clients[key]; current != nil {
 		return current, nil

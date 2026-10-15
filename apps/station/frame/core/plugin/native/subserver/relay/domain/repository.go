@@ -22,8 +22,7 @@ type Repository interface {
 	CreateInvite(ctx context.Context, invite *Invite) error
 	GetInviteBySecretDigest(ctx context.Context, secretDigest string) (*Invite, error)
 	ListInvites(ctx context.Context) ([]Invite, error)
-	RevokeInvite(ctx context.Context, inviteID uint64) error
-	ExpireStaleInvites(ctx context.Context) (int64, error)
+	DeleteInvite(ctx context.Context, inviteID uint64) error
 
 	// Enrollment operations
 	ConsumeInviteAndCreateEnrollment(
@@ -48,13 +47,13 @@ type Repository interface {
 		ctx context.Context,
 		current NodeIdentity,
 		nextCredentialJTI string,
-	) (*Enrollment, error)
-	UpdateNodeAuthorization(
-		ctx context.Context,
-		current NodeIdentity,
 		nodeAuthorizationEpoch uint64,
 		nodeAuthorizationUntil time.Time,
-	) error
+	) (*Enrollment, error)
+	RetireEnrollment(
+		ctx context.Context,
+		current NodeIdentity,
+	) (*Enrollment, error)
 	RevokeEnrollment(
 		ctx context.Context,
 		stationPeerID string,

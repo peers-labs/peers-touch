@@ -79,6 +79,30 @@ standalone at every depth. If a large standalone request lacks an accepted
 product or architecture decision, report that missing decision instead of
 creating a Plan.
 
+### Artifact locations
+
+Resolve the selected action worktree before writing any report or generated
+artifact:
+
+```bash
+git rev-parse --show-toplevel
+```
+
+Use these owners and locations:
+
+| Artifact class | Canonical location |
+|---|---|
+| Intermediate review files, drafts, raw logs, and disposable scripts | `/tmp/<repo>_<session>/` |
+| User-facing report scoped to the current repository task | `<selected-worktree>/.artifacts/reports/<report-name>/` |
+| Formal Acceptance evidence and source-bound machine review decisions | External Evidence Store |
+| Durable product, architecture, or engineering knowledge | Governing `docs/` location |
+
+`.artifacts/` is a worktree-local, gitignored delivery area. It is not formal
+Acceptance proof and must not be referenced as if it were Evidence Store
+output. Never hardcode a sibling worktree as the report destination, and never
+write a report into another worktree merely because that worktree is first in
+the IDE workspace or hosts the workflow source.
+
 ---
 
 ## 2) Select the action worktree

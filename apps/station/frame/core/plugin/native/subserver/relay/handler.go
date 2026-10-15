@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	"github.com/peers-labs/peers-touch/station/frame/core/metrics"
@@ -38,6 +39,7 @@ func newRelayHandler(sub *SubServer) *relayHandler {
 
 func (h *relayHandler) handlers() []server.Handler {
 	nodeRotateJWT := h.sub.nodeRotateJWTWrapper
+	nodeRetireJWT := h.sub.nodeRetireJWTWrapper
 	routePublishJWT := h.sub.routePublishJWTWrapper
 	operatorJWT := h.sub.operatorJWTWrapper
 	logID := serverwrapper.LogID()
@@ -46,6 +48,34 @@ func (h *relayHandler) handlers() []server.Handler {
 		// Public readiness surface.
 		server.NewHTTPHandler("relay-healthz", "/healthz", server.GET,
 			server.HTTPHandlerFunc(h.handleHealthz), logID),
+		server.NewHTTPHandler(
+			"relay-console",
+			"/relay-console",
+			server.GET,
+			server.HTTPHandlerFunc(h.handleConsoleIndex),
+			logID,
+		),
+		server.NewHTTPHandler(
+			"relay-console-index",
+			"/relay-console/",
+			server.GET,
+			server.HTTPHandlerFunc(h.handleConsoleIndex),
+			logID,
+		),
+		server.NewHTTPHandler(
+			"relay-console-script",
+			"/relay-console/app.js",
+			server.GET,
+			server.HTTPHandlerFunc(h.handleConsoleScript),
+			logID,
+		),
+		server.NewHTTPHandler(
+			"relay-console-style",
+			"/relay-console/style.css",
+			server.GET,
+			server.HTTPHandlerFunc(h.handleConsoleStyle),
+			logID,
+		),
 
 		// Operator endpoints use a dedicated key, issuer, audience, and scope.
 		server.NewHTTPHandler("relay-metrics", "/metrics", server.GET,
@@ -54,8 +84,8 @@ func (h *relayHandler) handlers() []server.Handler {
 			h.requireAdmin(h.handleCreateInvite), logID, operatorJWT),
 		server.NewHTTPHandler("relay-invite-list", "/api/v1/relay/invites", server.GET,
 			h.requireAdmin(h.handleListInvites), logID, operatorJWT),
-		server.NewHTTPHandler("relay-invite-revoke", "/api/v1/relay/invite/revoke", server.POST,
-			h.requireAdmin(h.handleRevokeInvite), logID, operatorJWT),
+		server.NewHTTPHandler("relay-invite-delete", "/api/v1/relay/invite", server.DELETE,
+			h.requireAdmin(h.handleDeleteInvite), logID, operatorJWT),
 		server.NewHTTPHandler("relay-enrollment-list", "/api/v1/relay/enrollments", server.GET,
 			h.requireAdmin(h.handleListEnrollments), logID, operatorJWT),
 		server.NewHTTPHandler("relay-enrollment-delete", "/api/v1/relay/enrollment", server.DELETE,
@@ -86,6 +116,14 @@ func (h *relayHandler) handlers() []server.Handler {
 		),
 		server.NewHTTPHandler("relay-token-refresh", "/api/v1/relay/token/refresh", server.POST,
 			h.requireStation(h.handleTokenRefresh), logID, nodeRotateJWT),
+		server.NewHTTPHandler(
+			"relay-enrollment-self-retire",
+			"/api/v1/relay/enrollment/self",
+			server.DELETE,
+			h.requireStation(h.handleRetireEnrollment),
+			logID,
+			nodeRetireJWT,
+		),
 		server.NewStrictTypedHandler(
 			"relay-route-publish",
 			"/api/v1/relay/routes",
@@ -191,6 +229,10 @@ func nodeIdentityFromSubject(
 	if stationPeerID == "" || nodePeerID == "" || jti == "" {
 		return domain.NodeIdentity{}, false
 	}
+	expiresAt, err := time.Parse(time.RFC3339Nano, attributes["expires_at"])
+	if err != nil {
+		return domain.NodeIdentity{}, false
+	}
 	return domain.NodeIdentity{
 		RelayPeerID:   attributes["relay_peer_id"],
 		StationPeerID: stationPeerID,
@@ -198,6 +240,7 @@ func nodeIdentityFromSubject(
 		EnrollmentID:  enrollmentID,
 		Generation:    generation,
 		JTI:           jti,
+		ExpiresAt:     expiresAt,
 	}, true
 }
 
