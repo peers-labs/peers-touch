@@ -281,6 +281,11 @@ export interface MessagingServiceContract {
     conversationId: string,
     messageId: string,
   ): Promise<{ commandId?: string; messageId: string; state: 'pending' | 'retrying' }>
+  forwardMessage(
+    sourceConversationId: string,
+    sourceMessageId: string,
+    destinationConversationId: string,
+  ): Promise<MessagingSendOutcome>
   listThreadMessages(
     conversationId: string,
     threadRootMessageId: string,

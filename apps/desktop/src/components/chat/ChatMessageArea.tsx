@@ -97,7 +97,8 @@ export function ChatMessageArea({
   const { t } = useTranslation('chat');
   const {
     activeTab, activeSessionUlid, activeGroupUlid,
-    loadMessages, loadOlderMessages, retryMessage, sendFriendMessage, sendGroupMessage, toggleDetail,
+    loadMessages, loadOlderMessages, retryMessage, forwardMessage,
+    sendFriendMessage, sendGroupMessage, toggleDetail,
     deleteMessage, recallFriendMessage, editFriendMessage,
     recallGroupMessage, editGroupMessage, openThread,
     conversationLocalState,
@@ -130,6 +131,7 @@ export function ChatMessageArea({
     loadMessages: s.loadMessages,
     loadOlderMessages: s.loadOlderMessages,
     retryMessage: s.retryMessage,
+    forwardMessage: s.forwardMessage,
     sendFriendMessage: s.sendFriendMessage,
     sendGroupMessage: s.sendGroupMessage,
     toggleDetail: s.toggleDetail,
@@ -787,15 +789,15 @@ export function ChatMessageArea({
   };
 
   const handleForwardSelect = async (conv: { id: string; kind: string }) => {
-    if (!forwardTarget) return;
-    const content = forwardTarget.content;
-    setForwardTarget(null);
+    if (!activeUlid || !forwardTarget) return;
     try {
-      if (conv.kind === 'friend') {
-        await sendFriendMessage(conv.id, '', content, undefined, undefined, undefined);
-      } else {
-        await sendGroupMessage(conv.id, content, undefined, undefined, undefined);
-      }
+      await forwardMessage(
+        activeUlid,
+        forwardTarget.ulid,
+        conv.id,
+        conv.kind === 'group' ? 'group' : 'friend',
+      );
+      setForwardTarget(null);
       toast.success(t('chat.social.messageArea.forwardSent'));
     } catch (err) {
       log.error('chat', 'forward message failed', err);

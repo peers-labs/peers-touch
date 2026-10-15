@@ -74,6 +74,12 @@ export function SocialChatPage() {
     activeConversation,
     messages,
     messagesByConversation,
+    reactionsByMessage,
+    retractedMessageIds,
+    hiddenMessageIds,
+    pinnedMessageIds,
+    threadRepliesByRoot,
+    peerTyping,
     currentUserId,
     groupMembers,
     groupMembersByConversation,
@@ -91,6 +97,12 @@ export function SocialChatPage() {
     sendAttachment,
     editMessage,
     retryMessage,
+    reactToMessage,
+    toggleMessagePin,
+    retractMessage,
+    hideMessageForActor,
+    sendThreadReply,
+    forwardMessage,
     renameGroup,
     removeGroupMember,
     addGroupMembers,
@@ -167,11 +179,23 @@ export function SocialChatPage() {
           conversation={activeConversation}
           messages={messages}
           conversations={conversations}
+          reactionsByMessage={reactionsByMessage}
+          retractedMessageIds={retractedMessageIds}
+          hiddenMessageIds={hiddenMessageIds}
+          pinnedMessageIds={pinnedMessageIds}
+          threadRepliesByRoot={threadRepliesByRoot}
+          peerTyping={peerTyping}
           onToggleDetail={toggleDetail}
           onSendMessage={sendMessage}
           onSendAttachment={sendAttachment}
           onRetryMessage={retryMessage}
           onEditMessage={editMessage}
+          onReactMessage={reactToMessage}
+          onTogglePinMessage={toggleMessagePin}
+          onRetractMessage={retractMessage}
+          onHideMessage={hideMessageForActor}
+          onSendThreadReply={sendThreadReply}
+          onForwardMessage={forwardMessage}
           externalJumpMessageId={pendingJumpMessageId}
           onJumpConsumed={() => setPendingJumpMessageId(null)}
           backgroundImageUrl={activeConversation?.backgroundImage}

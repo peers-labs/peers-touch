@@ -58,11 +58,27 @@ interface ChatAreaProps {
   conversation: MockConversation | null;
   messages: MockMessage[];
   conversations: MockConversation[];
+  reactionsByMessage: Record<string, string[]>;
+  retractedMessageIds: ReadonlySet<string>;
+  hiddenMessageIds: ReadonlySet<string>;
+  pinnedMessageIds: ReadonlySet<string>;
+  threadRepliesByRoot: Record<string, MockMessage[]>;
+  peerTyping: boolean;
   onToggleDetail: () => void;
-  onSendMessage: (conversationId: string, content: string) => void;
+  onSendMessage: (conversationId: string, content: string, replyToMessageId?: string) => void;
   onSendAttachment: (conversationId: string, file: File) => void;
   onRetryMessage: (conversationId: string, messageId: string) => void;
   onEditMessage: (conversationId: string, messageId: string, content: string) => void;
+  onReactMessage: (messageId: string, emoji: string) => void;
+  onTogglePinMessage: (messageId: string) => void;
+  onRetractMessage: (messageId: string) => void;
+  onHideMessage: (messageId: string) => void;
+  onSendThreadReply: (conversationId: string, rootMessageId: string, content: string) => void;
+  onForwardMessage: (
+    sourceConversationId: string,
+    sourceMessageId: string,
+    destinationConversationId: string,
+  ) => void;
   externalJumpMessageId?: string | null;
   onJumpConsumed?: () => void;
   backgroundImageUrl?: string;
@@ -1503,11 +1519,23 @@ export function ChatArea({
   conversation,
   messages,
   conversations,
+  reactionsByMessage,
+  retractedMessageIds,
+  hiddenMessageIds,
+  pinnedMessageIds,
+  threadRepliesByRoot,
+  peerTyping,
   onToggleDetail,
   onSendMessage,
   onSendAttachment,
   onRetryMessage,
   onEditMessage,
+  onReactMessage,
+  onTogglePinMessage,
+  onRetractMessage,
+  onHideMessage,
+  onSendThreadReply,
+  onForwardMessage,
   externalJumpMessageId = null,
   onJumpConsumed,
   backgroundImageUrl,
@@ -1516,11 +1544,6 @@ export function ChatArea({
   const [inputValue, setInputValue] = useState('');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [pendingAttachment, setPendingAttachment] = useState<File | null>(null);
-  // Message interaction state (prototype-local interaction form)
-  const [reactionsByMessage, setReactionsByMessage] = useState<Record<string, string[]>>({});
-  const [recalledIds, setRecalledIds] = useState<Set<string>>(new Set());
-  const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
-  const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const highlightTimer = useRef<number | null>(null);
@@ -1533,13 +1556,10 @@ export function ChatArea({
     setOverlay((current) => (current?.id === id && current.kind === kind ? null : { id, kind }));
   };
   const [replyTo, setReplyTo] = useState<MockMessage | null>(null);
-  const [forwardMessage, setForwardMessage] = useState<MockMessage | null>(null);
+  const [forwardTarget, setForwardTarget] = useState<MockMessage | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<MockMessage | null>(null);
   const [threadRoot, setThreadRoot] = useState<MockMessage | null>(null);
-  const [threadReplies, setThreadReplies] = useState<Record<string, MockMessage[]>>({});
   const [threadDraft, setThreadDraft] = useState('');
-  const [peerTyping, setPeerTyping] = useState(false);
-  const typingTimer = useRef<number | null>(null);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [inputExpanded, setInputExpanded] = useState(false);
   const [composerFocused, setComposerFocused] = useState(false);
@@ -1601,27 +1621,12 @@ export function ChatArea({
 
   const submitThreadReply = () => {
     if (!threadRoot || !threadDraft.trim()) return;
-    const reply: MockMessage = {
-      id: `thread-${Date.now()}`,
-      senderId: 'user-self',
-      content: threadDraft.trim(),
-      timestamp: Date.now(),
-      type: 'text',
-      status: 'sent',
-    };
-    setThreadReplies((prev) => ({
-      ...prev,
-      [threadRoot.id]: [...(prev[threadRoot.id] ?? []), reply],
-    }));
+    onSendThreadReply(conversation?.id ?? '', threadRoot.id, threadDraft.trim());
     setThreadDraft('');
   };
 
   const toggleReaction = (messageId: string, emoji: string) => {
-    setReactionsByMessage((prev) => {
-      const current = prev[messageId] ?? [];
-      const next = current.includes(emoji) ? current.filter((value) => value !== emoji) : [...current, emoji];
-      return { ...prev, [messageId]: next };
-    });
+    onReactMessage(messageId, emoji);
     setOverlay(null);
   };
 
@@ -1636,15 +1641,7 @@ export function ChatArea({
       return;
     }
     if (action === 'pin') {
-      setPinnedIds((prev) => {
-        const next = new Set(prev);
-        if (next.has(message.id)) {
-          next.delete(message.id);
-        } else {
-          next.add(message.id);
-        }
-        return next;
-      });
+      onTogglePinMessage(message.id);
       return;
     }
     if (action === 'edit') {
@@ -1658,7 +1655,7 @@ export function ChatArea({
       return;
     }
     if (action === 'forward') {
-      setForwardMessage(message);
+      setForwardTarget(message);
       return;
     }
     if (action === 'copy') {
@@ -1668,7 +1665,7 @@ export function ChatArea({
       return;
     }
     if (action === 'recall') {
-      setRecalledIds((prev) => new Set(prev).add(message.id));
+      onRetractMessage(message.id);
       if (editingId === message.id) cancelEdit();
       if (threadRoot?.id === message.id) setThreadRoot(null);
       showToast('Message recalled');
@@ -1725,22 +1722,17 @@ export function ChatArea({
   useEffect(() => {
     setOverlay(null);
     setReplyTo(null);
-    setForwardMessage(null);
+    setForwardTarget(null);
     setDeleteTarget(null);
     setEmojiOpen(false);
     setSearchOpen(false);
     setSearchQuery('');
     setThreadRoot(null);
     setThreadDraft('');
-    setPeerTyping(false);
     setPendingAttachment(null);
     setEditingId(null);
     setInputValue('');
     setHighlightedId(null);
-    if (typingTimer.current) {
-      window.clearTimeout(typingTimer.current);
-      typingTimer.current = null;
-    }
     if (highlightTimer.current) {
       window.clearTimeout(highlightTimer.current);
       highlightTimer.current = null;
@@ -1772,13 +1764,12 @@ export function ChatArea({
   }, [overlay]);
 
   useEffect(() => () => {
-    if (typingTimer.current) window.clearTimeout(typingTimer.current);
     if (highlightTimer.current) window.clearTimeout(highlightTimer.current);
   }, []);
-  const visibleMessages = messages.filter((message) => !deletedIds.has(message.id));
+  const visibleMessages = messages.filter((message) => !hiddenMessageIds.has(message.id));
   // Recalled tombstones and system events are never user-searchable content.
   const isSearchableMessage = (message: MockMessage) =>
-    !recalledIds.has(message.id) && message.type !== 'system';
+    !retractedMessageIds.has(message.id) && message.type !== 'system';
   const searchResults = searchQuery.trim()
     ? visibleMessages.filter((message) =>
       isSearchableMessage(message)
@@ -1865,20 +1856,10 @@ export function ChatArea({
       setPendingAttachment(null);
     }
     if (inputValue.trim()) {
-      onSendMessage(conversation.id, inputValue);
+      onSendMessage(conversation.id, inputValue, replyTo?.id);
     }
     setInputValue('');
     setReplyTo(null);
-    // Prototype-only presence feedback: an online peer shows a typing state
-    // briefly after a message is sent (production drives this from SSE).
-    if (conversation.type === 'friend' && conversation.online) {
-      if (typingTimer.current) window.clearTimeout(typingTimer.current);
-      setPeerTyping(true);
-      typingTimer.current = window.setTimeout(() => {
-        typingTimer.current = null;
-        setPeerTyping(false);
-      }, 1800);
-    }
   };
   const startCall = (media: MediaKind) => {
     setCallMedia(media);
@@ -2087,7 +2068,7 @@ export function ChatArea({
             isOwn={msg.senderId === 'user-self'}
             compact={compact}
             reactions={reactionsByMessage[msg.id] ?? []}
-            recalled={recalledIds.has(msg.id)}
+            recalled={retractedMessageIds.has(msg.id)}
             activeMenu={overlay?.id === msg.id && overlay.kind === 'menu'}
             reactionOpen={overlay?.id === msg.id && overlay.kind === 'reactions'}
             onRetry={msg.status === 'failed'
@@ -2098,9 +2079,9 @@ export function ChatArea({
             onReact={(emoji) => toggleReaction(msg.id, emoji)}
             onAction={(action) => handleMessageAction(msg, action)}
             replyTarget={msg.replyTo ? (visibleMessages.find((candidate) => candidate.id === msg.replyTo) ?? null) : null}
-            threadCount={threadReplies[msg.id]?.length ?? 0}
+            threadCount={threadRepliesByRoot[msg.id]?.length ?? 0}
             onOpenThread={() => setThreadRoot(msg)}
-            pinned={pinnedIds.has(msg.id)}
+            pinned={pinnedMessageIds.has(msg.id)}
             highlighted={highlightedId === msg.id}
           />
         ))}
@@ -2511,12 +2492,12 @@ export function ChatArea({
               replyTarget={threadRoot.replyTo ? (visibleMessages.find((candidate) => candidate.id === threadRoot.replyTo) ?? null) : null}
             />
             <div style={{ borderTop: `1px solid ${T.borderSubtle}`, margin: `${T.space3}px 0` }} />
-            {(threadReplies[threadRoot.id] ?? []).length === 0 ? (
+            {(threadRepliesByRoot[threadRoot.id] ?? []).length === 0 ? (
               <div style={{ color: T.textTertiary, fontSize: T.fontSm, textAlign: 'center', padding: `${T.space4}px 0` }}>
                 No replies yet
               </div>
             ) : (
-              (threadReplies[threadRoot.id] ?? []).map((reply) => (
+              (threadRepliesByRoot[threadRoot.id] ?? []).map((reply) => (
                 <MessageBubble key={reply.id} message={reply} isOwn compact />
               ))
             )}
@@ -2568,10 +2549,10 @@ export function ChatArea({
       ) : null}
 
       {/* Forward picker */}
-      {forwardMessage ? (
+      {forwardTarget ? (
         <div
           role="presentation"
-          onClick={() => setForwardMessage(null)}
+          onClick={() => setForwardTarget(null)}
           style={{ position: 'absolute', inset: 0, zIndex: 60, background: 'rgba(15,23,42,0.32)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
         >
           <div
@@ -2583,7 +2564,7 @@ export function ChatArea({
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: `1px solid ${T.border}` }}>
               <strong style={{ fontSize: 15 }}>Forward to…</strong>
-              <button type="button" aria-label="Close forward" onClick={() => setForwardMessage(null)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: T.textTertiary }}>
+              <button type="button" aria-label="Close forward" onClick={() => setForwardTarget(null)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: T.textTertiary }}>
                 <X size={16} />
               </button>
             </div>
@@ -2594,7 +2575,8 @@ export function ChatArea({
                   type="button"
                   data-chat-forward-target={item.id}
                   onClick={() => {
-                    setForwardMessage(null);
+                    onForwardMessage(conversation.id, forwardTarget.id, item.id);
+                    setForwardTarget(null);
                     showToast(`Forwarded to ${item.name}`);
                   }}
                   style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 10px', border: 'none', background: 'transparent', borderRadius: 10, cursor: 'pointer', textAlign: 'left', font: 'inherit' }}
@@ -2638,7 +2620,7 @@ export function ChatArea({
                 type="button"
                 data-chat-confirm-delete
                 onClick={() => {
-                  setDeletedIds((prev) => new Set(prev).add(deleteTarget.id));
+                  onHideMessage(deleteTarget.id);
                   if (threadRoot?.id === deleteTarget.id) setThreadRoot(null);
                   setDeleteTarget(null);
                   showToast('Message deleted on this device');

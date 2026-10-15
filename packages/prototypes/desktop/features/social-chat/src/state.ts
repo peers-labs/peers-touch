@@ -8,6 +8,7 @@ import {
   type MockConversation,
   type MockGroupMember,
   type MockGroupRole,
+  type MockMessage,
   type FederatedFriendMeta,
 } from './mock';
 import {
@@ -26,12 +27,41 @@ export function useChatState() {
   const [conversations, setConversations] = useState(CONVERSATIONS);
   const [groupMembers, setGroupMembers] = useState(GROUP_MEMBERS);
   const [messagesByConversation, setMessagesByConversation] = useState(MESSAGES);
+  const [reactionsByMessage, setReactionsByMessage] = useState<Record<string, string[]>>({});
+  const [retractedMessageIds, setRetractedMessageIds] = useState<Set<string>>(new Set());
+  const [hiddenMessageIds, setHiddenMessageIds] = useState<Set<string>>(new Set());
+  const [pinnedMessageIds, setPinnedMessageIds] = useState<Set<string>>(new Set());
+  const [threadRepliesByRoot, setThreadRepliesByRoot] = useState<Record<string, MockMessage[]>>({});
   const [activeId, setActiveId] = useState<string | null>('conv-1');
   const [showDetail, setShowDetail] = useState(false);
 
   const activeConversation = conversations.find((c) => c.id === activeId) ?? null;
-  const messages = activeId ? messagesByConversation[activeId] ?? [] : [];
+  const projectedMessagesByConversation = Object.fromEntries(
+    Object.entries(messagesByConversation).map(([conversationId, conversationMessages]) => [
+      conversationId,
+      conversationMessages
+        .filter((message) => !hiddenMessageIds.has(message.id))
+        .map((message) => (
+          retractedMessageIds.has(message.id)
+            ? {
+                ...message,
+                content: '',
+                attachmentName: undefined,
+                attachmentMeta: undefined,
+                attachmentUrl: undefined,
+                durationSeconds: undefined,
+              }
+            : message
+        )),
+    ]),
+  );
+  const messages = activeId ? projectedMessagesByConversation[activeId] ?? [] : [];
   const activeGroupMembers = activeId ? groupMembers[activeId] ?? [] : [];
+  const peerTyping = Boolean(
+    activeConversation?.type === 'friend'
+    && typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('chatState') === 'typing',
+  );
 
   useEffect(() => () => {
     retryTimers.current.forEach((timer) => window.clearTimeout(timer));
@@ -94,7 +124,20 @@ export function useChatState() {
     );
   }, []);
 
-  const sendMessage = useCallback((id: string, content: string) => {
+  const scheduleDeliveredProjection = useCallback((conversationId: string, messageId: string) => {
+    const timer = window.setTimeout(() => {
+      retryTimers.current.delete(timer);
+      setMessagesByConversation((prev) => ({
+        ...prev,
+        [conversationId]: (prev[conversationId] ?? []).map((message) => (
+          message.id === messageId ? { ...message, status: 'delivered' as const } : message
+        )),
+      }));
+    }, 450);
+    retryTimers.current.add(timer);
+  }, []);
+
+  const sendMessage = useCallback((id: string, content: string, replyToMessageId?: string) => {
     const text = content.trim();
     if (!text) return;
     const nextMessage = {
@@ -103,7 +146,8 @@ export function useChatState() {
       content: text,
       timestamp: Date.now(),
       type: 'text' as const,
-      status: 'sent' as const,
+      status: 'sending' as const,
+      replyTo: replyToMessageId,
     };
     setMessagesByConversation((prev) => ({
       ...prev,
@@ -115,7 +159,8 @@ export function useChatState() {
       lastMessageTime: nextMessage.timestamp,
       unread: 0,
     } : c)));
-  }, []);
+    scheduleDeliveredProjection(id, nextMessage.id);
+  }, [scheduleDeliveredProjection]);
 
   const sendAttachment = useCallback((id: string, file: File) => {
     const isImage = file.type.startsWith('image/');
@@ -131,7 +176,7 @@ export function useChatState() {
       content: '',
       timestamp: Date.now(),
       type: (isImage ? 'image' : 'file') as 'image' | 'file',
-      status: 'sent' as const,
+      status: 'sending' as const,
       attachmentName: file.name,
       attachmentMeta: sizeLabel,
       attachmentUrl: objectUrl,
@@ -146,7 +191,8 @@ export function useChatState() {
       lastMessageTime: nextMessage.timestamp,
       unread: 0,
     } : c)));
-  }, []);
+    scheduleDeliveredProjection(id, nextMessage.id);
+  }, [scheduleDeliveredProjection]);
 
   const editMessage = useCallback((conversationId: string, messageId: string, content: string) => {
     const text = content.trim();
@@ -236,6 +282,93 @@ export function useChatState() {
     }, 900);
     retryTimers.current.add(timer);
   }, []);
+
+  const reactToMessage = useCallback((messageId: string, emoji: string) => {
+    setReactionsByMessage((prev) => {
+      const current = prev[messageId] ?? [];
+      const next = current.includes(emoji)
+        ? current.filter((value) => value !== emoji)
+        : [...current, emoji];
+      return { ...prev, [messageId]: next };
+    });
+  }, []);
+
+  const toggleMessagePin = useCallback((messageId: string) => {
+    setPinnedMessageIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(messageId)) next.delete(messageId);
+      else next.add(messageId);
+      return next;
+    });
+  }, []);
+
+  const retractMessage = useCallback((messageId: string) => {
+    setRetractedMessageIds((prev) => new Set(prev).add(messageId));
+  }, []);
+
+  const hideMessageForActor = useCallback((messageId: string) => {
+    setHiddenMessageIds((prev) => new Set(prev).add(messageId));
+  }, []);
+
+  const sendThreadReply = useCallback((
+    conversationId: string,
+    rootMessageId: string,
+    content: string,
+  ) => {
+    const text = content.trim();
+    if (!conversationId || !rootMessageId || !text) return;
+    const reply: MockMessage = {
+      id: `thread-${Date.now()}`,
+      senderId: CURRENT_USER.id,
+      content: text,
+      timestamp: Date.now(),
+      type: 'text',
+      status: 'delivered',
+      replyTo: rootMessageId,
+    };
+    setThreadRepliesByRoot((prev) => ({
+      ...prev,
+      [rootMessageId]: [...(prev[rootMessageId] ?? []), reply],
+    }));
+  }, []);
+
+  const forwardMessage = useCallback((
+    sourceConversationId: string,
+    sourceMessageId: string,
+    destinationConversationId: string,
+  ) => {
+    const source = messagesByConversation[sourceConversationId]
+      ?.find((message) => message.id === sourceMessageId);
+    if (!source || !destinationConversationId) return;
+    const forwarded: MockMessage = {
+      ...source,
+      id: `forward-${Date.now()}`,
+      senderId: CURRENT_USER.id,
+      timestamp: Date.now(),
+      status: 'sending',
+      edited: false,
+      replyTo: undefined,
+    };
+    setMessagesByConversation((prev) => ({
+      ...prev,
+      [destinationConversationId]: [
+        ...(prev[destinationConversationId] ?? []),
+        forwarded,
+      ],
+    }));
+    setConversations((prev) => prev.map((conversation) => (
+      conversation.id === destinationConversationId
+        ? {
+            ...conversation,
+            lastMessage: forwarded.content
+              || forwarded.attachmentName
+              || 'Forwarded message',
+            lastMessageTime: forwarded.timestamp,
+          }
+        : conversation
+    )));
+    scheduleDeliveredProjection(destinationConversationId, forwarded.id);
+  }, [messagesByConversation, scheduleDeliveredProjection]);
 
   const sendVoiceMessage = useCallback((id: string, durationSeconds: number) => {
     const nextMessage = {
@@ -430,7 +563,13 @@ export function useChatState() {
     activeId,
     activeConversation,
     messages,
-    messagesByConversation,
+    messagesByConversation: projectedMessagesByConversation,
+    reactionsByMessage,
+    retractedMessageIds,
+    hiddenMessageIds,
+    pinnedMessageIds,
+    threadRepliesByRoot,
+    peerTyping,
     currentUserId: CURRENT_USER.id,
     groupMembers: activeGroupMembers,
     groupMembersByConversation: groupMembers,
@@ -448,6 +587,12 @@ export function useChatState() {
     sendAttachment,
     editMessage,
     retryMessage,
+    reactToMessage,
+    toggleMessagePin,
+    retractMessage,
+    hideMessageForActor,
+    sendThreadReply,
+    forwardMessage,
     sendVoiceMessage,
     renameGroup,
     removeGroupMember,

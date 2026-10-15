@@ -584,6 +584,7 @@ mod tests {
                     command_id: "command-1",
                     conversation_id: "conversation-1",
                     conversation_kind: 1,
+                    command_kind: crate::model::chat::ConversationCommandKind::SendMessage as i32,
                     message_id: "message-1",
                     sender_ptid: "ptid:alice",
                     sender_device_id: "alice-device",

@@ -127,7 +127,9 @@ pub use recovery::{
     RecoveryMessageRedactionTombstone, RecoveryReconciliation, RecoveryRetentionFloor,
     RecoveryTrustRecord,
 };
-pub use send::{DirectSessionBootstrap, EditTextIntent, SendPreparer, SendTextIntent};
+pub use send::{
+    DirectSessionBootstrap, EditTextIntent, ForwardTextIntent, SendPreparer, SendTextIntent,
+};
 pub use service_plaintext::ServicePlaintextProcessor;
 pub use skipped::SkippedPayloadProcessor;
 pub use store::{

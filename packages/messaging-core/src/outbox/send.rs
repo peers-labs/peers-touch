@@ -5,11 +5,11 @@ use crate::crypto::session::DirectSession;
 use crate::proto::actor::ActorDeviceRef;
 use crate::proto::actor_device_ptid;
 use crate::proto::chat::{
-    chat_command, AttachmentPlaintextMetadata, ChatCommand, ConversationKind,
-    CryptoEndpoint as ProtoCryptoEndpoint, DirectCiphertextAad, DirectDeviceCiphertext,
-    DirectSessionInit, DoubleRatchetCiphertext, EditMessageIntent, ForwardMessageIntent,
-    MessagingContentKind, PrepareConversationCommandResponse, PreparedEndpointPayload,
-    PreparedEndpointPayloadKind, SendMessageIntent,
+    chat_command, AttachmentPlaintextMetadata, ChatCommand, ConversationCommandKind,
+    ConversationKind, CryptoEndpoint as ProtoCryptoEndpoint, DirectCiphertextAad,
+    DirectDeviceCiphertext, DirectSessionInit, DoubleRatchetCiphertext, EditMessageIntent,
+    ForwardMessageIntent, MessagingContentKind, PrepareConversationCommandResponse,
+    PreparedEndpointPayload, PreparedEndpointPayloadKind, SendMessageIntent,
 };
 use crate::store::{
     DirectOutboundEditCommit, DirectOutboundRepository, DirectOutboundSendCommit,
@@ -114,6 +114,7 @@ impl<R: DirectOutboundRepository> DirectOutboundPreparer<R> {
                     command_id: intent.command_id,
                     conversation_id: intent.conversation_id,
                     conversation_kind: plan.conversation_kind,
+                    command_kind: ConversationCommandKind::SendMessage as i32,
                     message_id: intent.message_id,
                     sender_ptid: &self.endpoint.ptid,
                     sender_device_id: &self.endpoint.device_id,
@@ -214,6 +215,7 @@ impl<R: DirectOutboundRepository> DirectOutboundPreparer<R> {
                     command_id: intent.command_id,
                     conversation_id: intent.conversation_id,
                     conversation_kind: plan.conversation_kind,
+                    command_kind: ConversationCommandKind::ForwardMessage as i32,
                     message_id: intent.destination_message_id,
                     sender_ptid: &self.endpoint.ptid,
                     sender_device_id: &self.endpoint.device_id,

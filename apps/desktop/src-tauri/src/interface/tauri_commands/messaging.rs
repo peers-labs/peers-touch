@@ -80,6 +80,13 @@ pub struct MessagingRetryMessageInput {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct MessagingForwardMessageInput {
+    pub source_conversation_id: String,
+    pub source_message_id: String,
+    pub destination_conversation_id: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct MessagingListThreadMessagesInput {
     pub conversation_id: String,
     pub thread_root_message_id: String,
@@ -2328,6 +2335,60 @@ pub async fn messaging_retry_message(
     Ok(AppResult::success(json!({
         "command_id": outcome.command_id.unwrap_or_default(),
         "message_id": outcome.message_id,
+        "state": outcome.state,
+    })))
+}
+
+#[tauri::command]
+pub async fn messaging_forward_message(
+    input: MessagingForwardMessageInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> Result<AppResult<Value>, String> {
+    if input.source_conversation_id.trim().is_empty()
+        || input.source_message_id.trim().is_empty()
+        || input.destination_conversation_id.trim().is_empty()
+    {
+        return Ok(AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "source_conversation_id, source_message_id, and destination_conversation_id are required",
+            None,
+        ));
+    }
+    let (account_id, token, engine) = match active_engine(state.inner(), &window) {
+        Ok(value) => value,
+        Err(error) => return Ok(error),
+    };
+    let source_conversation_id = input.source_conversation_id;
+    let source_message_id = input.source_message_id;
+    let destination_conversation_id = input.destination_conversation_id;
+    let outcome = match tauri::async_runtime::spawn_blocking(move || {
+        engine.forward_message(
+            &token,
+            &source_conversation_id,
+            &source_message_id,
+            &destination_conversation_id,
+        )
+    })
+    .await
+    {
+        Ok(Ok(value)) => value,
+        Ok(Err(error)) => return Ok(AppResult::fail(ErrorCode::InternalError, error, None)),
+        Err(error) => {
+            return Ok(AppResult::fail(
+                ErrorCode::InternalError,
+                format!("messaging forward worker failed: {error}"),
+                None,
+            ))
+        }
+    };
+    if let Err(error) = state.messaging_engines.wake_profile(&account_id) {
+        return Ok(AppResult::fail(ErrorCode::InternalError, error, None));
+    }
+    Ok(AppResult::success(json!({
+        "command_id": outcome.command_id.unwrap_or_default(),
+        "message_id": outcome.message_id,
+        "attachment_ids": outcome.attachment_ids,
         "state": outcome.state,
     })))
 }

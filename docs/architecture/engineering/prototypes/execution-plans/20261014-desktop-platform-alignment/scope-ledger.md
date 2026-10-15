@@ -13,7 +13,7 @@
 - `NOT_STARTED`: no alignment delta for this ledger item is present in the current worktree.
 - Every row remains `OPEN` until its owning Task closes production behavior, prototype truthfulness, focused checks, and required receiver-side proof.
 
-Current source-side count: `74 IMPLEMENTED/UNPROVEN`, `10 PARTIAL`, `18 NOT_STARTED`, `9/111 formally closed`.
+Current source-side count: `75 IMPLEMENTED/UNPROVEN`, `9 PARTIAL`, `18 NOT_STARTED`, `9/111 formally closed`.
 
 ## Shell, identity, and login
 
@@ -49,16 +49,16 @@ Current source-side count: `74 IMPLEMENTED/UNPROVEN`, `10 PARTIAL`, `18 NOT_STAR
 
 | ID | Required outcome | Source state | Current evidence | Task |
 |---|---|---|---|---|
-| S1 | Real DM/group send and receive through Conversation projections | IMPLEMENTED/UNPROVEN | `socialChat` and `im-service` use canonical send plus runtime projections; prototype remains local append | DUI-04 |
-| S2 | Real sent/delivered/read/retry state | IMPLEMENTED/UNPROVEN | production outbox, receipts, forward-only status, and retry are live; prototype uses timers | DUI-04 |
-| S3 | Persist reactions and per-actor projection | IMPLEMENTED/UNPROVEN | production reaction facts, mutations, and visible projection are wired; prototype state is local | DUI-04 |
-| S4 | Persist reply/quote target | IMPLEMENTED/UNPROVEN | production send carries reply relation and renders reply preview; prototype remains local | DUI-04 |
-| S5 | Bind thread list and counts | IMPLEMENTED/UNPROVEN | production thread list/count commands and panel are wired; prototype panel is local | DUI-04 |
-| S6 | Bind pinned message projection and banner | IMPLEMENTED/UNPROVEN | production pin command and projection are wired; prototype uses a local Set | DUI-04 |
-| S7 | Bind author-only edit with real policy | IMPLEMENTED/UNPROVEN | production edit command and UI are wired; prototype mutates local data | DUI-04 |
-| S8 | Preserve delete-for-me versus retract semantics | IMPLEMENTED/UNPROVEN | production hide and retract paths remain distinct; prototype uses local filters | DUI-04 |
-| S9 | Implement one accepted forward semantic end to end | PARTIAL | picker sends plaintext as a new message and drops attachments/forward provenance despite generated forward facts | DUI-04 |
-| S10 | Bind typing pulses and stale sweep | IMPLEMENTED/UNPROVEN | production typing submission, realtime projection, and stale sweep are live; prototype uses a timer | DUI-04 |
+| S1 | Real DM/group send and receive through Conversation projections | IMPLEMENTED/UNPROVEN | `socialChat` and `im-service` use canonical send plus runtime projections; prototype renders an injected mock runtime projection instead of owning terminal message state in `ChatArea` | DUI-04 |
+| S2 | Real sent/delivered/read/retry state | IMPLEMENTED/UNPROVEN | production outbox, receipts, forward-only status, and retry are live; prototype receipt transitions are isolated in its runtime adapter | DUI-04 |
+| S3 | Persist reactions and per-actor projection | IMPLEMENTED/UNPROVEN | production reaction facts, mutations, and visible projection are wired; prototype component dispatches reaction commands and reads projected state | DUI-04 |
+| S4 | Persist reply/quote target | IMPLEMENTED/UNPROVEN | production and prototype command adapters carry the reply target into projected rows | DUI-04 |
+| S5 | Bind thread list and counts | IMPLEMENTED/UNPROVEN | production thread list/count commands and panel are wired; prototype panel reads one injected thread projection | DUI-04 |
+| S6 | Bind pinned message projection and banner | IMPLEMENTED/UNPROVEN | production pin command and projection are wired; prototype component no longer owns a local pin Set | DUI-04 |
+| S7 | Bind author-only edit with real policy | IMPLEMENTED/UNPROVEN | production edit command and UI are wired; prototype keeps only edit draft state and dispatches the mutation | DUI-04 |
+| S8 | Preserve delete-for-me versus retract semantics | IMPLEMENTED/UNPROVEN | production and prototype adapters keep actor hide and authority retract as distinct commands/projections | DUI-04 |
+| S9 | Implement one accepted forward semantic end to end | IMPLEMENTED/UNPROVEN | Desktop now invokes `messaging_forward_message`; the Engine emits durable `ForwardMessageIntent`, preserves attachment bytes, and retains forward command kind across retry | DUI-04 |
+| S10 | Bind typing pulses and stale sweep | IMPLEMENTED/UNPROVEN | production typing submission, realtime projection, and stale sweep are live; prototype uses an explicit receiver-projection fixture and no send-triggered fake peer timer | DUI-04 |
 | S11 | Carry validated group person/all mentions through encrypted message | IMPLEMENTED/UNPROVEN | chat proto, Conversation aggregate, Rust DTO, composer picker and tests | DUI-04 |
 | S12 | Record/upload/render real voice notes | IMPLEMENTED/UNPROVEN | recorder, staged `voice_note`, duration, playback, seek, retry, and failure states are live | DUI-05 |
 | S13 | Upload encrypted attachments with availability states | IMPLEMENTED/UNPROVEN | Native pick/capture, staging, encrypted transfer, projection, open/download, and availability states are live | DUI-05 |

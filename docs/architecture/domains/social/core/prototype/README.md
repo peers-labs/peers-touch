@@ -78,7 +78,8 @@ Owner 确认；确认前不得作为新的 Desktop Chat 落地参照。
   被引用消息在气泡内左侧强调边引用块；时间/回执独立 16px 元信息行；
   回应为计数 chip、可点切换；Thread 汇总 chip（消息数）打开右侧 Thread 侧栏。
 - Thread 侧栏：根消息 + 回复流 + 独立 “Reply in thread…” 输入（Enter 发送、空内容禁用），
-  回复计数实时反映到主时间线的汇总 chip；本原型回复为本地状态。
+  回复计数实时反映到主时间线的汇总 chip；组件只提交 command callback 并读取注入的
+  thread projection，不在 `ChatArea` 内维护第二份 thread 真相。
 - 消息操作面（对齐真实 `ChatMessageActionOverlay`）：悬停工具条 React / Reply /
   Reply in thread / Forward / More；React 为 6 列 24 表情网格（真实 `REACTION` 全集），
   回应以计数 chip 呈现、可点切换；More 菜单含 Reply in thread / Pin·Unpin / Reply /
@@ -87,7 +88,9 @@ Owner 确认；确认前不得作为新的 Desktop Chat 落地参照。
   且 Edit 仅文本消息可见；Edit 将内容载入 composer 并显示编辑引用条（Save/Cancel，
   空内容禁用保存），提交后正文更新并显示 `Edited` 标记（保留原发送时间与排序）；
   Recall 将消息替换为墓碑态且保留行 `data-chat-message-id` 身份；Delete for me 二次确认。
-  本原型全部为本地交互态。
+  `ChatArea` 只保留菜单、draft、选择与 focus 等 UI 状态；reaction、pin、edit、
+  retract、hide-for-actor、thread、forward 和 receipt 结果统一来自
+  `state.ts` 的 mock runtime adapter，形状对应生产 command/projection 边界。
 - 会话头部（对齐真实 `ChatMessageArea` header）：名称旁为私聊 presence dot chip
   （`data-chat-presence-tag` = online/offline/unknown，未知显式渲染、不折叠为离线）、
   端到端加密 Lock、Authority Station pill（`Server` 图标 + `Station · 名称`，
@@ -107,8 +110,9 @@ Owner 确认；确认前不得作为新的 Desktop Chat 落地参照。
 - 会话列表（对齐真实 `ChatSessionList`）：顶部为可输入 Search（非静态条），
   实时过滤会话（名称/末条/信任标签），下拉展示会话与可直开的联系人（`UserPlus` 行），
   选择后跳转会话/为联系人新建私聊；带清空按钮；右键 Pin/Mute/Mark read/Hide/Delete 不变。
-- Presence/Typing（对齐真实 presence 副标题）：私聊在线对端在发送后显示 1.8s
-  “typing…”（头部副标题主色 + 时间线三点气泡动画），随后自动消失；生产由 SSE 驱动，原型为本地演示。
+- Presence/Typing（对齐真实 presence 副标题）：`chatState=typing` review fixture
+  注入 receiver projection；发送动作不再伪造对端 typing。生产由 SSE pulse 与
+  runtime stale sweep 驱动。
 - 群聊样本：当前用户为群主、管理员、普通成员三种权限态。
 - 消息样本：文本、系统消息、图片、文件、失败发送状态。
 - `CHAT-CRAFT-J01`：发送消息已本地保存但远端未确认；用户可从会话级
@@ -171,9 +175,11 @@ Owner 确认；确认前不得作为新的 Desktop Chat 落地参照。
 - 文件/图片只展示交互卡片，不做真实上传或下载；背景选择使用本地对象 URL
   表达即时预览，生产实现仍必须完成异步上传、持久化和失败回滚。
 - 消息搜索为原型内过滤（全局 + 单会话）；真实结果必须来自 Desktop 本地持久化投影。
-- 消息回应/撤回/删除/转发/回复、安全码标记均为原型本地交互态，不与 Station
-  持久化或真实端到端加密同步；Thread 侧栏、@提及、语音录制、截图/剪接、
-  Link preview 尚未实现，真实能力见 `apps/desktop/src/components/chat/`。
+- 原型的 mock runtime adapter 只用于可达状态评审，不与 Station 持久化或真实端到端
+  加密同步，也不构成生产证据；组件内不存在 S1-S11 的 terminal substitute。
+  生产真相仍由 `messagingRuntime`、Device Messaging Engine 与 Conversation Authority
+  提供。语音录制、截图/剪接和 Link preview 的真实能力见
+  `apps/desktop/src/components/chat/`。
 - 在线、离线与状态不可用是三个独立状态；生产实现必须由 Presence owner 的
   snapshot/event 驱动，原型不模拟网络权威。
 - Owner 确认前不得把本原型当作真实 Desktop 落地依据。

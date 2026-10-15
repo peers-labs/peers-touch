@@ -8886,9 +8886,14 @@ fn validate_pending_sender(
     projection: &PendingSenderProjection<'_>,
     command_bytes: &[u8],
 ) -> Result<(), String> {
+    let command_kind = ConversationCommandKind::try_from(projection.command_kind).ok();
     if projection.command_id.trim().is_empty()
         || projection.conversation_id.trim().is_empty()
         || projection.conversation_kind <= 0
+        || !matches!(
+            command_kind,
+            Some(ConversationCommandKind::SendMessage | ConversationCommandKind::ForwardMessage)
+        )
         || projection.message_id.trim().is_empty()
         || projection.sender_ptid.trim().is_empty()
         || projection.sender_device_id.trim().is_empty()
@@ -8936,19 +8941,21 @@ fn persist_pending_sender(
     let changed = transaction
         .execute(
             "INSERT INTO messaging_pending_messages(
-                conversation_id, conversation_kind, message_id, sender_ptid,
-                sender_device_id, plaintext, reply_to_message_id,
+                conversation_id, conversation_kind, command_kind, message_id,
+                sender_ptid, sender_device_id, plaintext, reply_to_message_id,
                 thread_root_message_id, mention_metadata, state, attempt_count,
                 next_attempt_at_unix_ms, last_error_code, created_at_unix_ms
              ) VALUES (
-                ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'pending', 0, ?10, '', ?10
+                ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'pending', 0, ?11, '', ?11
              )
              ON CONFLICT(conversation_id, message_id) DO UPDATE SET
                 state='pending',
                 conversation_kind=excluded.conversation_kind,
+                command_kind=excluded.command_kind,
                 last_error_code=''
              WHERE messaging_pending_messages.sender_ptid = excluded.sender_ptid
                AND messaging_pending_messages.sender_device_id = excluded.sender_device_id
+               AND messaging_pending_messages.command_kind = excluded.command_kind
                AND messaging_pending_messages.plaintext = excluded.plaintext
                AND messaging_pending_messages.reply_to_message_id = excluded.reply_to_message_id
                AND messaging_pending_messages.thread_root_message_id = excluded.thread_root_message_id
@@ -8956,6 +8963,7 @@ fn persist_pending_sender(
             params![
                 projection.conversation_id,
                 projection.conversation_kind,
+                projection.command_kind,
                 projection.message_id,
                 projection.sender_ptid,
                 projection.sender_device_id,
@@ -11663,6 +11671,7 @@ mod tests {
                         command_id: "command-new",
                         conversation_id: "conversation-1",
                         conversation_kind: 1,
+                        command_kind: ConversationCommandKind::SendMessage as i32,
                         message_id: "message-1",
                         sender_ptid: "ptid:alice",
                         sender_device_id: "alice-device",
@@ -13526,6 +13535,7 @@ mod tests {
             command_id: "stale-mls-send",
             conversation_id: "group-1",
             conversation_kind: 2,
+            command_kind: ConversationCommandKind::SendMessage as i32,
             message_id: "stale-message",
             sender_ptid: "ptid:alice",
             sender_device_id: "alice-device",
@@ -13557,6 +13567,7 @@ mod tests {
             command_id: "command-mls-send",
             conversation_id: "group-1",
             conversation_kind: 2,
+            command_kind: ConversationCommandKind::SendMessage as i32,
             message_id: "message-mls-send",
             sender_ptid: "ptid:alice",
             sender_device_id: "alice-device",
@@ -14215,6 +14226,7 @@ mod tests {
             command_id: "command-direct-1",
             conversation_id: "conversation-1",
             conversation_kind: 1,
+            command_kind: ConversationCommandKind::SendMessage as i32,
             message_id: "message-direct-1",
             sender_ptid: "ptid:alice",
             sender_device_id: "alice-device",
@@ -14246,6 +14258,7 @@ mod tests {
             command_id: "command-direct-2",
             conversation_id: "conversation-1",
             conversation_kind: 1,
+            command_kind: ConversationCommandKind::SendMessage as i32,
             message_id: "message-direct-2",
             sender_ptid: "ptid:alice",
             sender_device_id: "alice-device",
@@ -14598,6 +14611,7 @@ mod tests {
                         command_id: "attachment-command",
                         conversation_id: &ready.conversation_id,
                         conversation_kind: ready.conversation_kind,
+                        command_kind: ready.command_kind,
                         message_id: &ready.message_id,
                         sender_ptid: &ready.sender_ptid,
                         sender_device_id: &ready.sender_device_id,

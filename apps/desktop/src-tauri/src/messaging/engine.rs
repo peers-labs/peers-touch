@@ -13,12 +13,12 @@ use super::{
     CommandReconciliationProgress, CommandReconciliationWorker, CommandRetryPolicy,
     ConversationMemberProjection, ConversationMessagePage, ConversationMessageProjection,
     ConversationProjection, ConversationSummaryProjection, DirectSessionBootstrapper,
-    DrainProgress, EditTextIntent, MessageRetryDisposition, MessagingItemConsumer,
-    MessagingLifecycleWorker, MessagingStore, PendingAttachmentUpload, PendingMembershipIntent,
-    PendingMessageDraft, PreKeyPublisher, QueueDrain, SendPreparer, SendTextIntent,
-    StationAttachmentTransferTransport, StationCommandTransport, StationDeliveryReceiptTransport,
-    StationDeviceTransport, StationGroupGenesisTransport, StationKeyBundleTransport,
-    StationMembershipTransitionTransport, StationMlsKeyPackageTransport,
+    DrainProgress, EditTextIntent, ForwardTextIntent, MessageRetryDisposition,
+    MessagingItemConsumer, MessagingLifecycleWorker, MessagingStore, PendingAttachmentUpload,
+    PendingMembershipIntent, PendingMessageDraft, PreKeyPublisher, QueueDrain, SendPreparer,
+    SendTextIntent, StationAttachmentTransferTransport, StationCommandTransport,
+    StationDeliveryReceiptTransport, StationDeviceTransport, StationGroupGenesisTransport,
+    StationKeyBundleTransport, StationMembershipTransitionTransport, StationMlsKeyPackageTransport,
     StationMlsLeaveIntentTransport, StationPreKeyTransport, StationQueueTransport,
     SupersededInteractionIntent, ThreadCountProjection,
 };
@@ -2020,13 +2020,188 @@ impl MessagingEngine {
         mention_all: bool,
         attachment_intents: &[LocalAttachmentIntent],
     ) -> Result<SubmitMessageOutcome, String> {
+        self.submit_message_intent(
+            token,
+            ConversationCommandKind::SendMessage,
+            conversation_id,
+            conversation_kind,
+            plaintext,
+            reply_to_message_id,
+            thread_root_message_id,
+            mentions,
+            mention_all,
+            attachment_intents,
+        )
+    }
+
+    pub fn forward_message(
+        &self,
+        token: &str,
+        source_conversation_id: &str,
+        source_message_id: &str,
+        destination_conversation_id: &str,
+    ) -> Result<SubmitMessageOutcome, String> {
+        if token.trim().is_empty()
+            || source_conversation_id.trim().is_empty()
+            || source_message_id.trim().is_empty()
+            || destination_conversation_id.trim().is_empty()
+        {
+            return Err("messaging forward intent is incomplete".to_string());
+        }
+        let source = self
+            .store
+            .conversation_message_projections(source_conversation_id)?
+            .into_iter()
+            .find(|message| message.message_id == source_message_id)
+            .ok_or_else(|| "messaging forward source is unavailable".to_string())?;
+        if source.retracted
+            || source.moderated
+            || source.event_id.is_none()
+            || source.event_sequence.is_none()
+        {
+            return Err("messaging forward source is not visible".to_string());
+        }
+        let plaintext = source.edited_text.as_deref().unwrap_or(&source.plaintext);
+        if plaintext.is_empty() && source.attachments.is_empty() {
+            return Err("messaging forward source has no content".to_string());
+        }
+        let attachment_intents =
+            self.forward_attachment_intents(source_conversation_id, &source)?;
+        let destination = self
+            .store
+            .conversation_projections()?
+            .into_iter()
+            .find(|conversation| conversation.conversation_id == destination_conversation_id)
+            .ok_or_else(|| "messaging forward destination is unavailable".to_string())?;
+        let destination_kind = ConversationKind::try_from(destination.kind)
+            .map_err(|_| "messaging forward destination kind is invalid".to_string())?;
+        let result = self.submit_message_intent(
+            token,
+            ConversationCommandKind::ForwardMessage,
+            destination_conversation_id,
+            destination_kind,
+            plaintext,
+            "",
+            "",
+            &[],
+            false,
+            &attachment_intents,
+        );
+        if result.is_err() {
+            for attachment in &attachment_intents {
+                let _ = self.discard_staged_attachment_source(&attachment.source_local_ref);
+            }
+        }
+        result
+    }
+
+    fn forward_attachment_intents(
+        &self,
+        source_conversation_id: &str,
+        source: &ConversationMessageProjection,
+    ) -> Result<Vec<LocalAttachmentIntent>, String> {
+        let _guard = self
+            .attachment_source_lock
+            .lock()
+            .map_err(|_| "messaging attachment source lock poisoned".to_string())?;
+        let mut intents = Vec::with_capacity(source.attachments.len());
+        let result: Result<(), String> = (|| {
+            for attachment in &source.attachments {
+                let projection = self
+                    .store
+                    .attachment_download_projection(&attachment.attachment_id)?
+                    .ok_or_else(|| {
+                        "messaging forward attachment projection is unavailable".to_string()
+                    })?;
+                if projection.conversation_id != source_conversation_id
+                    || projection.message_id != source.message_id
+                    || projection.metadata != *attachment
+                {
+                    return Err("messaging forward attachment projection mismatch".to_string());
+                }
+                let cache_path = match self
+                    .store
+                    .completed_sender_attachment_source(&attachment.attachment_id)?
+                {
+                    Some(sender_source) => {
+                        if sender_source.message_id != source.message_id {
+                            return Err(
+                                "messaging forward attachment source message mismatch".to_string()
+                            );
+                        }
+                        self.promote_sender_attachment_cache(&sender_source)?
+                    }
+                    None => projection
+                        .local_cache_path
+                        .as_deref()
+                        .map(PathBuf::from)
+                        .ok_or_else(|| {
+                            "messaging forward attachment must be downloaded first".to_string()
+                        })?,
+                };
+                let expected_plaintext_sha256: [u8; 32] = attachment
+                    .plaintext_sha256
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| {
+                        "messaging forward attachment commitment is invalid".to_string()
+                    })?;
+                if !cache_path.is_file() || sha256_path(&cache_path)? != expected_plaintext_sha256 {
+                    return Err("messaging forward attachment local source is invalid".to_string());
+                }
+                let staged_source =
+                    self.stage_attachment_file(&attachment.filename, &cache_path)?;
+                intents.push(LocalAttachmentIntent {
+                    source_local_ref: staged_source,
+                    filename: attachment.filename.clone(),
+                    mime_type: attachment.mime_type.clone(),
+                    content_kind: attachment.content_kind,
+                    duration_ms: attachment.duration_ms,
+                });
+            }
+            Ok(())
+        })();
+        if let Err(error) = result {
+            for intent in &intents {
+                let _ = std::fs::remove_file(&intent.source_local_ref);
+            }
+            return Err(error);
+        }
+        Ok(intents)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn submit_message_intent(
+        &self,
+        token: &str,
+        command_kind: ConversationCommandKind,
+        conversation_id: &str,
+        conversation_kind: ConversationKind,
+        plaintext: &str,
+        reply_to_message_id: &str,
+        thread_root_message_id: &str,
+        mentions: &[MessageMention],
+        mention_all: bool,
+        attachment_intents: &[LocalAttachmentIntent],
+    ) -> Result<SubmitMessageOutcome, String> {
         let _guard = self
             .send_intent_lock
             .lock()
             .map_err(|_| "messaging send intent lock poisoned".to_string())?;
+        let supported_command = matches!(
+            command_kind,
+            ConversationCommandKind::SendMessage | ConversationCommandKind::ForwardMessage
+        );
+        let invalid_forward_relation = command_kind == ConversationCommandKind::ForwardMessage
+            && (!reply_to_message_id.is_empty()
+                || !thread_root_message_id.is_empty()
+                || !mentions.is_empty()
+                || mention_all);
         if conversation_id.trim().is_empty()
             || (plaintext.is_empty() && attachment_intents.is_empty())
             || conversation_kind == ConversationKind::Unspecified
+            || !supported_command
+            || invalid_forward_relation
             || attachment_intents.len() > super::private_content::MESSAGE_MAX_ATTACHMENT_COUNT
             || (conversation_kind != ConversationKind::Group
                 && (!mentions.is_empty() || mention_all))
@@ -2041,6 +2216,7 @@ impl MessagingEngine {
             .find(|conversation| conversation.conversation_id == conversation_id)
             .ok_or_else(|| "messaging conversation projection is unavailable".to_string())?;
         if conversation.kind != conversation_kind as i32
+            || !conversation.active
             || conversation.authority_station_id.trim().is_empty()
         {
             return Err("messaging conversation projection does not match intent".to_string());
@@ -2090,6 +2266,7 @@ impl MessagingEngine {
         let draft = PendingMessageDraft {
             conversation_id: conversation_id.to_string(),
             conversation_kind: conversation_kind as i32,
+            command_kind: command_kind as i32,
             message_id: message_id.clone(),
             sender_ptid: self.endpoint.ptid.clone(),
             sender_device_id: self.endpoint.device_id.clone(),
@@ -2358,7 +2535,15 @@ impl MessagingEngine {
         }
         let conversation_kind = ConversationKind::try_from(draft.conversation_kind)
             .map_err(|_| "messaging draft conversation kind is invalid".to_string())?;
-        let plan = self.prepare_send_plan(token, &draft.conversation_id)?;
+        let command_kind = ConversationCommandKind::try_from(draft.command_kind)
+            .map_err(|_| "messaging draft command kind is invalid".to_string())?;
+        if !matches!(
+            command_kind,
+            ConversationCommandKind::SendMessage | ConversationCommandKind::ForwardMessage
+        ) {
+            return Err("messaging draft command kind is unsupported".to_string());
+        }
+        let plan = self.prepare_command_plan(token, &draft.conversation_id, command_kind)?;
         // Drain inbox until the local authority head matches the send plan.
         // A single drain may not suffice if the conversation was just created
         // and the creation event hasn't arrived in the device inbox yet.
@@ -2380,18 +2565,11 @@ impl MessagingEngine {
             return Err("messaging conversation kind does not match Station plan".to_string());
         }
         let command_id = Ulid::new().to_string();
-        let intent = SendTextIntent {
-            command_id: &command_id,
-            message_id: &draft.message_id,
-            conversation_id: &draft.conversation_id,
-            plaintext: &draft.plaintext,
-            reply_to_message_id: &draft.reply_to_message_id,
-            thread_root_message_id: &draft.thread_root_message_id,
-            attachments: &draft.attachments,
-            mentions: &draft.mentions,
-            mention_all: draft.mention_all,
-            client_timestamp_unix_ms: draft.created_at_unix_ms,
-        };
+        let preparer = SendPreparer::new(
+            self.store.clone(),
+            self.endpoint.clone(),
+            self.mls_manager.clone(),
+        )?;
         match conversation_kind {
             ConversationKind::Direct => {
                 let actor_identity = self.actor_identity.clone().ok_or_else(|| {
@@ -2408,16 +2586,76 @@ impl MessagingEngine {
                 .prepare_missing(
                     &draft.conversation_id,
                     &plan.required_endpoints,
-                    intent.client_timestamp_unix_ms,
+                    draft.created_at_unix_ms,
                     &StationKeyBundleTransport::new(
                         self.station_client.clone(),
                         token.to_string(),
                         self.endpoint.device_id.clone(),
                     )?,
                 )?;
-                self.prepare_direct_text_with_bootstraps(&plan, &intent, &bootstraps)?
+                match command_kind {
+                    ConversationCommandKind::SendMessage => preparer
+                        .prepare_direct_text_with_bootstraps(
+                            &plan,
+                            &SendTextIntent {
+                                command_id: &command_id,
+                                message_id: &draft.message_id,
+                                conversation_id: &draft.conversation_id,
+                                plaintext: &draft.plaintext,
+                                reply_to_message_id: &draft.reply_to_message_id,
+                                thread_root_message_id: &draft.thread_root_message_id,
+                                attachments: &draft.attachments,
+                                mentions: &draft.mentions,
+                                mention_all: draft.mention_all,
+                                client_timestamp_unix_ms: draft.created_at_unix_ms,
+                            },
+                            &bootstraps,
+                        )?,
+                    ConversationCommandKind::ForwardMessage => preparer
+                        .prepare_direct_forward_with_bootstraps(
+                            &plan,
+                            &ForwardTextIntent {
+                                command_id: &command_id,
+                                destination_message_id: &draft.message_id,
+                                conversation_id: &draft.conversation_id,
+                                plaintext: &draft.plaintext,
+                                attachments: &draft.attachments,
+                                client_timestamp_unix_ms: draft.created_at_unix_ms,
+                            },
+                            &bootstraps,
+                        )?,
+                    _ => unreachable!(),
+                }
             }
-            ConversationKind::Group => self.prepare_group_text(&plan, &intent)?,
+            ConversationKind::Group => match command_kind {
+                ConversationCommandKind::SendMessage => preparer.prepare_group_text(
+                    &plan,
+                    &SendTextIntent {
+                        command_id: &command_id,
+                        message_id: &draft.message_id,
+                        conversation_id: &draft.conversation_id,
+                        plaintext: &draft.plaintext,
+                        reply_to_message_id: &draft.reply_to_message_id,
+                        thread_root_message_id: &draft.thread_root_message_id,
+                        attachments: &draft.attachments,
+                        mentions: &draft.mentions,
+                        mention_all: draft.mention_all,
+                        client_timestamp_unix_ms: draft.created_at_unix_ms,
+                    },
+                )?,
+                ConversationCommandKind::ForwardMessage => preparer.prepare_group_forward(
+                    &plan,
+                    &ForwardTextIntent {
+                        command_id: &command_id,
+                        destination_message_id: &draft.message_id,
+                        conversation_id: &draft.conversation_id,
+                        plaintext: &draft.plaintext,
+                        attachments: &draft.attachments,
+                        client_timestamp_unix_ms: draft.created_at_unix_ms,
+                    },
+                )?,
+                _ => unreachable!(),
+            },
             ConversationKind::Unspecified => {
                 return Err("messaging conversation kind is required".to_string());
             }

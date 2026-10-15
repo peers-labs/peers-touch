@@ -15,6 +15,7 @@ pub struct PendingSenderProjection<'a> {
     pub command_id: &'a str,
     pub conversation_id: &'a str,
     pub conversation_kind: i32,
+    pub command_kind: i32,
     pub message_id: &'a str,
     pub sender_ptid: &'a str,
     pub sender_device_id: &'a str,

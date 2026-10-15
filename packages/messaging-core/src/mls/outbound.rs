@@ -4,9 +4,9 @@ use crate::codec::private_content::{
 };
 use crate::proto::actor_device_ptid;
 use crate::proto::chat::{
-    chat_command, AttachmentPlaintextMetadata, ChatCommand, ConversationKind, CryptoEndpoint,
-    EditMessageIntent, ForwardMessageIntent, MessageMention, MessagingContentKind,
-    PrepareConversationCommandResponse, SendMessageIntent,
+    chat_command, AttachmentPlaintextMetadata, ChatCommand, ConversationCommandKind,
+    ConversationKind, CryptoEndpoint, EditMessageIntent, ForwardMessageIntent, MessageMention,
+    MessagingContentKind, PrepareConversationCommandResponse, SendMessageIntent,
 };
 use crate::store::{
     MlsOutboundEditCommit, MlsOutboundRepository, MlsOutboundSendCommit, PendingSenderProjection,
@@ -113,6 +113,7 @@ impl<R: MlsOutboundRepository> MlsOutboundPreparer<R> {
                     command_id: intent.command_id,
                     conversation_id: intent.conversation_id,
                     conversation_kind: plan.conversation_kind,
+                    command_kind: ConversationCommandKind::SendMessage as i32,
                     message_id: intent.message_id,
                     sender_ptid: &self.endpoint.ptid,
                     sender_device_id: &self.endpoint.device_id,
@@ -224,6 +225,7 @@ impl<R: MlsOutboundRepository> MlsOutboundPreparer<R> {
                     command_id: intent.command_id,
                     conversation_id: intent.conversation_id,
                     conversation_kind: plan.conversation_kind,
+                    command_kind: ConversationCommandKind::ForwardMessage as i32,
                     message_id: intent.destination_message_id,
                     sender_ptid: &self.endpoint.ptid,
                     sender_device_id: &self.endpoint.device_id,

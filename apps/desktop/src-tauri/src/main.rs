@@ -1272,6 +1272,7 @@ fn main() {
             messaging_commands::messaging_capture_attachment_source,
             messaging_commands::messaging_send_message,
             messaging_commands::messaging_retry_message,
+            messaging_commands::messaging_forward_message,
             messaging_commands::messaging_submit_typing,
             messaging_commands::messaging_submit_read_cursor,
             messaging_commands::messaging_submit_edit,

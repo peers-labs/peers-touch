@@ -5,10 +5,12 @@ use crate::model::chat::{
 };
 use messaging_core::mls::group::MlsGroupManager;
 use messaging_core::mls::outbound::{
-    GroupEditTextIntent, GroupSendTextIntent, MlsOutboundPreparer,
+    GroupEditTextIntent, GroupForwardIntent, GroupSendTextIntent, MlsOutboundPreparer,
 };
 pub use messaging_core::outbox::DirectSessionBootstrap;
-use messaging_core::outbox::{DirectEditIntent, DirectOutboundPreparer, DirectSendIntent};
+use messaging_core::outbox::{
+    DirectEditIntent, DirectForwardIntent, DirectOutboundPreparer, DirectSendIntent,
+};
 use std::sync::Arc;
 
 pub struct SendTextIntent<'a> {
@@ -31,6 +33,15 @@ pub struct EditTextIntent<'a> {
     pub message_id: &'a str,
     pub conversation_id: &'a str,
     pub plaintext: &'a str,
+    pub client_timestamp_unix_ms: i64,
+}
+
+pub struct ForwardTextIntent<'a> {
+    pub command_id: &'a str,
+    pub destination_message_id: &'a str,
+    pub conversation_id: &'a str,
+    pub plaintext: &'a str,
+    pub attachments: &'a [AttachmentPlaintextMetadata],
     pub client_timestamp_unix_ms: i64,
 }
 
@@ -112,6 +123,27 @@ impl SendPreparer {
             )
     }
 
+    pub fn prepare_direct_forward_with_bootstraps(
+        &self,
+        plan: &PrepareConversationCommandResponse,
+        intent: &ForwardTextIntent<'_>,
+        bootstraps: &[DirectSessionBootstrap],
+    ) -> Result<ChatCommand, String> {
+        DirectOutboundPreparer::new(self.store.clone(), model_endpoint(&self.endpoint))?
+            .prepare_forward(
+                plan,
+                &DirectForwardIntent {
+                    command_id: intent.command_id,
+                    destination_message_id: intent.destination_message_id,
+                    conversation_id: intent.conversation_id,
+                    plaintext: intent.plaintext,
+                    attachments: intent.attachments,
+                    client_timestamp_unix_ms: intent.client_timestamp_unix_ms,
+                },
+                bootstraps,
+            )
+    }
+
     pub fn prepare_group_text(
         &self,
         plan: &PrepareConversationCommandResponse,
@@ -158,6 +190,29 @@ impl SendPreparer {
                 message_id: intent.message_id,
                 conversation_id: intent.conversation_id,
                 plaintext: intent.plaintext,
+                client_timestamp_unix_ms: intent.client_timestamp_unix_ms,
+            },
+        )
+    }
+
+    pub fn prepare_group_forward(
+        &self,
+        plan: &PrepareConversationCommandResponse,
+        intent: &ForwardTextIntent<'_>,
+    ) -> Result<ChatCommand, String> {
+        MlsOutboundPreparer::new(
+            self.store.clone(),
+            self.mls_manager.clone(),
+            model_endpoint(&self.endpoint),
+        )?
+        .prepare_forward(
+            plan,
+            &GroupForwardIntent {
+                command_id: intent.command_id,
+                destination_message_id: intent.destination_message_id,
+                conversation_id: intent.conversation_id,
+                plaintext: intent.plaintext,
+                attachments: intent.attachments,
                 client_timestamp_unix_ms: intent.client_timestamp_unix_ms,
             },
         )
@@ -486,6 +541,73 @@ mod tests {
                 .n_send,
             2
         );
+    }
+
+    #[test]
+    fn direct_forward_persists_forward_kind_for_exact_retry() {
+        let store = Arc::new(MessagingStore::in_memory().unwrap());
+        store
+            .save_direct_session(&session("ptid:bob", "bob-device", 30))
+            .unwrap();
+        let preparer = SendPreparer::new(
+            store.clone(),
+            EngineEndpoint {
+                ptid: "ptid:alice".to_string(),
+                device_id: "alice-device".to_string(),
+            },
+            Arc::new(MlsGroupManager::new()),
+        )
+        .unwrap();
+        let plan = PrepareConversationCommandResponse {
+            conversation_id: "conversation-1".to_string(),
+            conversation_kind: ConversationKind::Direct as i32,
+            authority_sequence: 0,
+            authority_hash: Vec::new(),
+            membership_epoch: 1,
+            mls_epoch: 0,
+            required_endpoints: vec![
+                actor_device_ref("ptid:alice", "alice-device"),
+                actor_device_ref("ptid:bob", "bob-device"),
+            ],
+            delivery_plan_sha256: vec![9; 32],
+            endpoint_manifests: Vec::new(),
+            authority_station_peer_id: "station-local".to_string(),
+        };
+
+        let command = preparer
+            .prepare_direct_forward_with_bootstraps(
+                &plan,
+                &ForwardTextIntent {
+                    command_id: "forward-command-1",
+                    destination_message_id: "forwarded-message-1",
+                    conversation_id: "conversation-1",
+                    plaintext: "forwarded plaintext",
+                    attachments: &[],
+                    client_timestamp_unix_ms: 100,
+                },
+                &[],
+            )
+            .unwrap();
+        let forward = match command.payload.as_ref().unwrap() {
+            chat_command::Payload::ForwardMessage(forward) => forward,
+            _ => panic!("unexpected command payload"),
+        };
+        assert_eq!(forward.destination_message_id, "forwarded-message-1");
+        assert_eq!(forward.destination_payloads.len(), 1);
+        assert_eq!(
+            decrypt_direct_payload(&forward.destination_payloads[0], "conversation-1", 30,).text,
+            "forwarded plaintext"
+        );
+
+        store
+            .mark_command_superseded("forward-command-1", &command.encode_to_vec(), 0)
+            .unwrap();
+        let retry = store.next_due_message_draft(100).unwrap().unwrap();
+        assert_eq!(
+            retry.command_kind,
+            crate::model::chat::ConversationCommandKind::ForwardMessage as i32
+        );
+        assert_eq!(retry.message_id, "forwarded-message-1");
     }
 
     #[test]

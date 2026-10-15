@@ -481,6 +481,12 @@ interface SocialChatState {
     messageUlid: string,
     kind?: 'friend' | 'group',
   ) => Promise<void>;
+  forwardMessage: (
+    sourceConversationUlid: string,
+    sourceMessageUlid: string,
+    destinationConversationUlid: string,
+    destinationKind: 'friend' | 'group',
+  ) => Promise<MessagingQueuedSendOutcome>;
   loadThreadMessages: (
     ulid: string,
     rootUlid: string,
@@ -1502,6 +1508,39 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     const activeKind = kind ?? get().activeTab;
     await imServiceV1.messaging.retryMessage(ulid, messageUlid);
     await get().loadMessages(ulid, activeKind);
+  },
+
+  forwardMessage: async (
+    sourceConversationUlid,
+    sourceMessageUlid,
+    destinationConversationUlid,
+    destinationKind,
+  ) => {
+    const outcome = await imServiceV1.messaging.forwardMessage(
+      sourceConversationUlid,
+      sourceMessageUlid,
+      destinationConversationUlid,
+    );
+    set((state) => ({
+      sendOutcomes: {
+        ...state.sendOutcomes,
+        [destinationConversationUlid]: {
+          revision: (state.sendOutcomes[destinationConversationUlid]?.revision ?? 0) + 1,
+          outcome,
+        },
+      },
+    }));
+    const queuedOutcome = requireQueuedMessagingSendOutcome(
+      outcome,
+      outcome.attachmentCount,
+    );
+    await get().loadMessages(destinationConversationUlid, destinationKind);
+    if (destinationKind === 'friend') {
+      await get().loadSessions();
+    } else {
+      await get().loadGroups();
+    }
+    return queuedOutcome;
   },
 
   loadThreadMessages: async (ulid, rootUlid, kind, options) => {

@@ -100,6 +100,7 @@ const GO_EVENT_PAYLOAD_KEYS: Record<string, string> = {
   ConversationUpdated: 'conversationUpdated',
   ReactionCommitted: 'reactionCommitted',
   MessagePinCommitted: 'messagePinCommitted',
+  MessageForwarded: 'messageForwarded',
 }
 
 function protobufTimestampJson(value: unknown): unknown {
@@ -1021,6 +1022,33 @@ const messagingService: MessagingServiceContract = {
     return {
       commandId: response.command_id || undefined,
       messageId: response.message_id,
+      state: response.state,
+    }
+  },
+
+  async forwardMessage(sourceConversationId, sourceMessageId, destinationConversationId) {
+    const response = await cmd<
+      {
+        source_conversation_id: string
+        source_message_id: string
+        destination_conversation_id: string
+      },
+      {
+        command_id: string
+        message_id: string
+        attachment_ids: string[]
+        state: 'draft' | 'pending' | 'attachment_failed'
+      }
+    >('messaging_forward_message', {
+      source_conversation_id: sourceConversationId,
+      source_message_id: sourceMessageId,
+      destination_conversation_id: destinationConversationId,
+    })
+    return {
+      commandId: response.command_id || undefined,
+      messageId: response.message_id,
+      attachmentIds: response.attachment_ids,
+      attachmentCount: response.attachment_ids.length,
       state: response.state,
     }
   },

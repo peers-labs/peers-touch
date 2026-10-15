@@ -10,8 +10,8 @@ use crate::infrastructure::storage::key_provider::PlatformKeyProvider;
 use crate::infrastructure::storage::{open_database, resolve_database_path};
 use crate::model::chat::{
     chat_command, AttachmentPlaintextMetadata, AttachmentTransferState, ChatCommand,
-    ConversationKind, EncryptedObjectDescriptor, EncryptedObjectUploadSpec, MemberRole,
-    MessageMention,
+    ConversationCommandKind, ConversationKind, EncryptedObjectDescriptor,
+    EncryptedObjectUploadSpec, MemberRole, MessageMention,
 };
 pub use messaging_core::attachment::AttachmentTransferRecord;
 use messaging_core::attachment::{
@@ -163,6 +163,7 @@ pub struct PendingSenderProjection<'a> {
     pub command_id: &'a str,
     pub conversation_id: &'a str,
     pub conversation_kind: i32,
+    pub command_kind: i32,
     pub message_id: &'a str,
     pub sender_ptid: &'a str,
     pub sender_device_id: &'a str,
@@ -179,6 +180,7 @@ pub struct PendingSenderProjection<'a> {
 pub struct PendingMessageDraft {
     pub conversation_id: String,
     pub conversation_kind: i32,
+    pub command_kind: i32,
     pub message_id: String,
     pub sender_ptid: String,
     pub sender_device_id: String,
@@ -4254,6 +4256,8 @@ impl MessagingStore {
     }
 
     pub fn create_message_draft(&self, draft: &PendingMessageDraft) -> Result<(), String> {
+        let command_kind = ConversationCommandKind::try_from(draft.command_kind)
+            .map_err(|_| "messaging draft command kind is invalid".to_string())?;
         let private_content = super::private_content::encode_message_private_content_with_mentions(
             &draft.plaintext,
             &draft.attachments,
@@ -4264,6 +4268,10 @@ impl MessagingStore {
             super::private_content::encode_message_mention_set(&draft.mentions, draft.mention_all)?;
         if draft.conversation_id.trim().is_empty()
             || draft.conversation_kind <= 0
+            || !matches!(
+                command_kind,
+                ConversationCommandKind::SendMessage | ConversationCommandKind::ForwardMessage
+            )
             || draft.message_id.trim().is_empty()
             || draft.sender_ptid.trim().is_empty()
             || draft.sender_device_id.trim().is_empty()
@@ -4278,16 +4286,17 @@ impl MessagingStore {
         let changed = transaction
             .execute(
                 "INSERT INTO messaging_pending_messages(
-                    conversation_id, conversation_kind, message_id,
+                    conversation_id, conversation_kind, command_kind, message_id,
                     sender_ptid, sender_device_id, plaintext,
                     reply_to_message_id, thread_root_message_id, mention_metadata, state,
                     attempt_count, next_attempt_at_unix_ms, last_error_code,
                     created_at_unix_ms
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'draft', 0, ?10, '', ?10)
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'draft', 0, ?11, '', ?11)
                  ON CONFLICT(conversation_id, message_id) DO NOTHING",
                 params![
                     draft.conversation_id,
                     draft.conversation_kind,
+                    draft.command_kind,
                     draft.message_id,
                     draft.sender_ptid,
                     draft.sender_device_id,
@@ -4318,6 +4327,8 @@ impl MessagingStore {
         draft: &PendingMessageDraft,
         uploads: &[PendingAttachmentUpload],
     ) -> Result<(), String> {
+        let command_kind = ConversationCommandKind::try_from(draft.command_kind)
+            .map_err(|_| "messaging attachment draft command kind is invalid".to_string())?;
         super::private_content::validate_message_mentions(
             &draft.plaintext,
             &draft.mentions,
@@ -4329,6 +4340,10 @@ impl MessagingStore {
             || !draft.attachments.is_empty()
             || draft.conversation_id.trim().is_empty()
             || draft.conversation_kind <= 0
+            || !matches!(
+                command_kind,
+                ConversationCommandKind::SendMessage | ConversationCommandKind::ForwardMessage
+            )
             || draft.message_id.trim().is_empty()
             || draft.sender_ptid.trim().is_empty()
             || draft.sender_device_id.trim().is_empty()
@@ -4363,16 +4378,17 @@ impl MessagingStore {
         let changed = transaction
             .execute(
                 "INSERT INTO messaging_pending_messages(
-                    conversation_id, conversation_kind, message_id,
+                    conversation_id, conversation_kind, command_kind, message_id,
                     sender_ptid, sender_device_id, plaintext,
                     reply_to_message_id, thread_root_message_id, mention_metadata, state,
                     attempt_count, next_attempt_at_unix_ms, last_error_code,
                     created_at_unix_ms
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'draft', 0, ?10, '', ?10)
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'draft', 0, ?11, '', ?11)
                  ON CONFLICT(conversation_id, message_id) DO NOTHING",
                 params![
                     draft.conversation_id,
                     draft.conversation_kind,
+                    draft.command_kind,
                     draft.message_id,
                     draft.sender_ptid,
                     draft.sender_device_id,
@@ -5381,7 +5397,7 @@ impl MessagingStore {
         let connection = self.connection()?;
         let draft = connection
             .query_row(
-                "SELECT conversation_id, conversation_kind, message_id,
+                "SELECT conversation_id, conversation_kind, command_kind, message_id,
                         sender_ptid, sender_device_id, plaintext,
                         reply_to_message_id, thread_root_message_id,
                         mention_metadata, attempt_count, created_at_unix_ms
@@ -5397,21 +5413,22 @@ impl MessagingStore {
                  LIMIT 1",
                 params![now_unix_ms],
                 |row| {
-                    let (mentions, mention_all) = message_mentions_from_row(row, 8)?;
+                    let (mentions, mention_all) = message_mentions_from_row(row, 9)?;
                     Ok(PendingMessageDraft {
                         conversation_id: row.get(0)?,
                         conversation_kind: row.get(1)?,
-                        message_id: row.get(2)?,
-                        sender_ptid: row.get(3)?,
-                        sender_device_id: row.get(4)?,
-                        plaintext: row.get(5)?,
-                        reply_to_message_id: row.get(6)?,
-                        thread_root_message_id: row.get(7)?,
+                        command_kind: row.get(2)?,
+                        message_id: row.get(3)?,
+                        sender_ptid: row.get(4)?,
+                        sender_device_id: row.get(5)?,
+                        plaintext: row.get(6)?,
+                        reply_to_message_id: row.get(7)?,
+                        thread_root_message_id: row.get(8)?,
                         attachments: Vec::new(),
                         mentions,
                         mention_all,
-                        attempt_count: row.get(9)?,
-                        created_at_unix_ms: row.get(10)?,
+                        attempt_count: row.get(10)?,
+                        created_at_unix_ms: row.get(11)?,
                     })
                 },
             )
@@ -5437,7 +5454,7 @@ impl MessagingStore {
         let connection = self.connection()?;
         let draft = connection
             .query_row(
-                "SELECT conversation_id, conversation_kind, message_id,
+                "SELECT conversation_id, conversation_kind, command_kind, message_id,
                         sender_ptid, sender_device_id, plaintext,
                         reply_to_message_id, thread_root_message_id,
                         mention_metadata, attempt_count, created_at_unix_ms
@@ -5451,21 +5468,22 @@ impl MessagingStore {
                    )",
                 params![message_id],
                 |row| {
-                    let (mentions, mention_all) = message_mentions_from_row(row, 8)?;
+                    let (mentions, mention_all) = message_mentions_from_row(row, 9)?;
                     Ok(PendingMessageDraft {
                         conversation_id: row.get(0)?,
                         conversation_kind: row.get(1)?,
-                        message_id: row.get(2)?,
-                        sender_ptid: row.get(3)?,
-                        sender_device_id: row.get(4)?,
-                        plaintext: row.get(5)?,
-                        reply_to_message_id: row.get(6)?,
-                        thread_root_message_id: row.get(7)?,
+                        command_kind: row.get(2)?,
+                        message_id: row.get(3)?,
+                        sender_ptid: row.get(4)?,
+                        sender_device_id: row.get(5)?,
+                        plaintext: row.get(6)?,
+                        reply_to_message_id: row.get(7)?,
+                        thread_root_message_id: row.get(8)?,
                         attachments: Vec::new(),
                         mentions,
                         mention_all,
-                        attempt_count: row.get(9)?,
-                        created_at_unix_ms: row.get(10)?,
+                        attempt_count: row.get(10)?,
+                        created_at_unix_ms: row.get(11)?,
                     })
                 },
             )
@@ -10627,6 +10645,7 @@ impl MlsOutboundRepository for MessagingStore {
                     command_id: commit.projection.command_id,
                     conversation_id: commit.projection.conversation_id,
                     conversation_kind: commit.projection.conversation_kind,
+                    command_kind: commit.projection.command_kind,
                     message_id: commit.projection.message_id,
                     sender_ptid: commit.projection.sender_ptid,
                     sender_device_id: commit.projection.sender_device_id,
@@ -11482,8 +11501,13 @@ fn validate_receive_core(input: &ReceiveCommitCore<'_>) -> Result<(), String> {
 fn validate_pending_sender_projection(
     projection: &PendingSenderProjection<'_>,
 ) -> Result<(), String> {
+    let command_kind = ConversationCommandKind::try_from(projection.command_kind).ok();
     if projection.command_id.trim().is_empty()
         || projection.conversation_id.trim().is_empty()
+        || !matches!(
+            command_kind,
+            Some(ConversationCommandKind::SendMessage | ConversationCommandKind::ForwardMessage)
+        )
         || projection.message_id.trim().is_empty()
         || projection.sender_ptid.trim().is_empty()
         || projection.sender_device_id.trim().is_empty()
@@ -12111,6 +12135,14 @@ fn persist_prepared_command(
     command_bytes: &[u8],
     projection: &PendingSenderProjection<'_>,
 ) -> Result<(), String> {
+    let command_kind = ConversationCommandKind::try_from(projection.command_kind)
+        .map_err(|_| "messaging sender projection command kind is invalid".to_string())?;
+    if !matches!(
+        command_kind,
+        ConversationCommandKind::SendMessage | ConversationCommandKind::ForwardMessage
+    ) {
+        return Err("messaging sender projection command kind is unsupported".to_string());
+    }
     let private_content =
         super::private_content::decode_message_private_content(projection.private_content)?;
     let mention_metadata = super::private_content::encode_message_mention_set(
@@ -12154,18 +12186,20 @@ fn persist_prepared_command(
     let pending_changed = transaction
         .execute(
             "INSERT INTO messaging_pending_messages(
-                conversation_id, conversation_kind, message_id, sender_ptid,
-                sender_device_id, plaintext, reply_to_message_id,
+                conversation_id, conversation_kind, command_kind, message_id,
+                sender_ptid, sender_device_id, plaintext, reply_to_message_id,
                 thread_root_message_id, mention_metadata, state, attempt_count,
                 next_attempt_at_unix_ms, last_error_code, created_at_unix_ms
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'pending', 0, ?10, '', ?10)
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'pending', 0, ?11, '', ?11)
              ON CONFLICT(conversation_id, message_id) DO UPDATE SET
                 state='pending',
                 conversation_kind=excluded.conversation_kind,
+                command_kind=excluded.command_kind,
                 mention_metadata=excluded.mention_metadata,
                 last_error_code=''
              WHERE messaging_pending_messages.sender_ptid = excluded.sender_ptid
                AND messaging_pending_messages.sender_device_id = excluded.sender_device_id
+               AND messaging_pending_messages.command_kind = excluded.command_kind
                AND messaging_pending_messages.plaintext = excluded.plaintext
                AND messaging_pending_messages.reply_to_message_id = excluded.reply_to_message_id
                AND messaging_pending_messages.thread_root_message_id = excluded.thread_root_message_id
@@ -12173,6 +12207,7 @@ fn persist_prepared_command(
             params![
                 projection.conversation_id,
                 projection.conversation_kind,
+                projection.command_kind,
                 projection.message_id,
                 projection.sender_ptid,
                 projection.sender_device_id,
@@ -12550,6 +12585,7 @@ fn desktop_pending_projection<'a>(
         command_id: projection.command_id,
         conversation_id: projection.conversation_id,
         conversation_kind: projection.conversation_kind,
+        command_kind: projection.command_kind,
         message_id: projection.message_id,
         sender_ptid: projection.sender_ptid,
         sender_device_id: projection.sender_device_id,
@@ -16118,6 +16154,7 @@ mod tests {
                 command_id,
                 conversation_id: "conversation-1",
                 conversation_kind: 1,
+                command_kind: ConversationCommandKind::SendMessage as i32,
                 message_id: command_id,
                 sender_ptid: "ptid:alice",
                 sender_device_id: "alice-device",
@@ -17472,6 +17509,7 @@ mod tests {
         let draft = PendingMessageDraft {
             conversation_id: transfer.conversation_id.clone(),
             conversation_kind: ConversationKind::Group as i32,
+            command_kind: ConversationCommandKind::SendMessage as i32,
             message_id: transfer.message_id.clone(),
             sender_ptid: "ptid:alice".to_string(),
             sender_device_id: "alice-device".to_string(),
@@ -17660,6 +17698,7 @@ mod tests {
                 command_id: "command-overflow",
                 conversation_id: "conversation-1",
                 conversation_kind: 1,
+                command_kind: ConversationCommandKind::SendMessage as i32,
                 message_id: "message-overflow",
                 sender_ptid: "ptid:alice",
                 sender_device_id: "alice-device",
@@ -17707,6 +17746,7 @@ mod tests {
                     command_id: "group-command",
                     conversation_id: "group-1",
                     conversation_kind: 2,
+                    command_kind: ConversationCommandKind::SendMessage as i32,
                     message_id: "group-message",
                     sender_ptid: "ptid:alice",
                     sender_device_id: "alice-device",
@@ -17746,6 +17786,7 @@ mod tests {
         let draft = PendingMessageDraft {
             conversation_id: "group-1".to_string(),
             conversation_kind: 2,
+            command_kind: ConversationCommandKind::SendMessage as i32,
             message_id: "message-draft".to_string(),
             sender_ptid: "ptid:alice".to_string(),
             sender_device_id: "alice-device".to_string(),

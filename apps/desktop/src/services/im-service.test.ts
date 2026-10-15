@@ -194,6 +194,35 @@ describe('normalizeConversationEvents', () => {
     expect(event.payload.value.toMlsEpoch).toBe(1n)
     expect(event.payload.value.mlsCommitSha256).toEqual(new Uint8Array([7, 8, 9]))
   })
+
+  it('decodes the canonical forwarded-message authority fact', () => {
+    const [event] = normalizeConversationEvents([{
+      event_id: 'event-forward-1',
+      conversation_id: 'destination-conversation',
+      sequence: 8,
+      command_id: 'forward-command-1',
+      membership_epoch: 2,
+      authority_station_peer_id: 'station-1',
+      committed_at: { seconds: 1_785_634_845, nanos: 0 },
+      Payload: {
+        MessageForwarded: {
+          destination_message_id: 'forwarded-message-1',
+          sender: {
+            ptid: 'ptid:alice',
+            device_id: 'alice-device',
+          },
+          content_kind: 'MESSAGING_CONTENT_KIND_TEXT',
+          destination_attachments: [],
+          client_timestamp: { seconds: 1_785_634_844, nanos: 0 },
+        },
+      },
+    }])
+
+    expect(event.payload.case).toBe('messageForwarded')
+    if (event.payload.case !== 'messageForwarded') throw new Error('unexpected payload')
+    expect(event.payload.value.destinationMessageId).toBe('forwarded-message-1')
+    expect(event.payload.value.sender?.ptid).toBe('ptid:alice')
+  })
 })
 
 describe('Messaging leave intent boundary', () => {
@@ -630,6 +659,37 @@ describe('Messaging local projections and member settings', () => {
 })
 
 describe('Messaging send outcome', () => {
+  it('forwards through the canonical Engine command without renderer plaintext replay', async () => {
+    invokeMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        command_id: 'forward-command-1',
+        message_id: 'forwarded-message-1',
+        attachment_ids: ['forwarded-attachment-1'],
+        state: 'pending',
+      },
+    })
+
+    await expect(imServiceV1.messaging.forwardMessage(
+      'source-conversation',
+      'source-message',
+      'destination-conversation',
+    )).resolves.toEqual({
+      commandId: 'forward-command-1',
+      messageId: 'forwarded-message-1',
+      attachmentIds: ['forwarded-attachment-1'],
+      attachmentCount: 1,
+      state: 'pending',
+    })
+    expect(invokeMock).toHaveBeenCalledWith('messaging_forward_message', {
+      input: {
+        source_conversation_id: 'source-conversation',
+        source_message_id: 'source-message',
+        destination_conversation_id: 'destination-conversation',
+      },
+    })
+  })
+
   it.each([
     ['pending', 'command-1'],
     ['draft', ''],
