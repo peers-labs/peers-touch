@@ -665,6 +665,32 @@ class NativeDesktopRuntimeBinding(ABC):
         expected_url = station_url.rstrip("/")
         fallback: tuple[str, str] | None = None
         matches: list[tuple[tuple[int, str, int, str], str, str]] = []
+
+        def activate(station_peer_id: str, route_id: str) -> None:
+            activation_input = {
+                "input": {
+                    "station_peer_id": station_peer_id,
+                    "route_id": route_id,
+                }
+            }
+            deadline = time.monotonic() + 30
+            while True:
+                try:
+                    session.invoke_app_result(
+                        "station_set_active",
+                        activation_input,
+                    )
+                    return
+                except DriverError as error:
+                    detail = str(error)
+                    if (
+                        "station_unreachable" not in detail
+                        or "'retryable': True" not in detail
+                        or time.monotonic() >= deadline
+                    ):
+                        raise
+                    time.sleep(0.5)
+
         for entry in entries:
             if not isinstance(entry, dict):
                 continue
@@ -738,26 +764,10 @@ class NativeDesktopRuntimeBinding(ABC):
                         )
         if matches:
             _, station_peer_id, route_id = max(matches)
-            session.invoke_app_result(
-                "station_set_active",
-                {
-                    "input": {
-                        "station_peer_id": station_peer_id,
-                        "route_id": route_id,
-                    }
-                },
-            )
+            activate(station_peer_id, route_id)
             return
         if fallback is not None:
-            session.invoke_app_result(
-                "station_set_active",
-                {
-                    "input": {
-                        "station_peer_id": fallback[0],
-                        "route_id": fallback[1],
-                    }
-                },
-            )
+            activate(fallback[0], fallback[1])
             return
         raise DriverError(
             "Runtime Binding Station discovery did not return the requested route"

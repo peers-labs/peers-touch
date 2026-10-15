@@ -433,6 +433,65 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             ),
         )
 
+    def test_station_configuration_retries_retryable_unreachable(self) -> None:
+        lifecycle = SyntheticRemoteNativeLifecycle(
+            "/workspace/run/actors/alice/fixture.png"
+        )
+        binding = LinuxNativeDesktopRuntimeBinding(
+            "chat-native",
+            "source-commit",
+            lifecycle,
+        )
+        session = Mock(spec=TauriSession)
+        session.invoke_app_result.side_effect = (
+            {
+                "data": {
+                    "status": json.dumps({
+                        "entries": [{
+                            "station_peer_id": "station-peer-four",
+                            "routes": [{
+                                "route_id": "direct-primary",
+                                "route_type": "direct",
+                                "endpoint_origin": "http://station.example",
+                                "health": "available",
+                            }],
+                        }],
+                    })
+                }
+            },
+            DriverError(
+                "Native Tauri command station_set_active failed: "
+                "{'error': {'details': {'code': 'station_unreachable', "
+                "'retryable': True}}}"
+            ),
+            {},
+        )
+
+        with patch(
+            "tooling.acceptance.drivers.native.runtime.time.sleep",
+        ) as sleep:
+            binding._configure_session_station(
+                session,
+                "http://station.example",
+                "station-four",
+                "station-peer-four",
+            )
+
+        self.assertEqual(session.invoke_app_result.call_count, 3)
+        self.assertEqual(
+            session.invoke_app_result.call_args_list[-1],
+            call(
+                "station_set_active",
+                {
+                    "input": {
+                        "station_peer_id": "station-peer-four",
+                        "route_id": "direct-primary",
+                    }
+                },
+            ),
+        )
+        sleep.assert_called_once_with(0.5)
+
     def test_station_configuration_prefers_fresh_available_route(self) -> None:
         lifecycle = SyntheticRemoteNativeLifecycle(
             "/workspace/run/actors/alice/fixture.png"
