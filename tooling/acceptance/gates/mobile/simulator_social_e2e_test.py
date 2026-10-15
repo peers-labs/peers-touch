@@ -376,6 +376,8 @@ class SimulatorSocialGateTests(unittest.TestCase):
 
         self.assertIn('social-search-submit', source)
         self.assertIn('social-circle-member-search-submit', source)
+        self.assertIn('ensure_direct_conversation', source)
+        self.assertNotIn('journey._create_direct', source)
         self.assertNotIn('ant-input-search-button', source)
         self.assertLess(
             source.index('social-search-federation'),

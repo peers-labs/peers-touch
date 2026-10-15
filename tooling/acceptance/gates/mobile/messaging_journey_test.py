@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from tooling.acceptance.core import DriverError, GateError
 from tooling.acceptance.gates.mobile.messaging_journey import (
+    FRIEND_REQUEST_STATUS_ACCEPTED,
     MobileMessagingJourney,
     MessagingActor,
 )
@@ -553,6 +554,41 @@ class MobileMessagingJourneyTests(unittest.TestCase):
             [{"peerPtid": "ptid:bob", "federationId": "federation-1"}],
         )
         self.assertEqual(result["conversationId"], "ptid:alice-ptid:bob")
+
+    def test_direct_prerequisite_reuses_existing_accepted_relationship(
+        self,
+    ) -> None:
+        self.network.friend_requests.append(
+            {
+                "requestId": "existing-accepted",
+                "federationId": "federation-1",
+                "senderPtid": self.receiver.ptid,
+                "receiverPtid": self.sender.ptid,
+                "senderHomeStationPeerId": self.receiver.station_peer_id,
+                "receiverHomeStationPeerId": self.sender.station_peer_id,
+                "status": FRIEND_REQUEST_STATUS_ACCEPTED,
+            }
+        )
+        self.journey.authenticate(self.sender_session, self.sender, password="1")
+        self.journey.authenticate(
+            self.receiver_session,
+            self.receiver,
+            password="1",
+        )
+
+        conversation_id = self.journey.ensure_direct_conversation(
+            self.sender_session,
+            self.receiver_session,
+            self.sender,
+            self.receiver,
+        )
+
+        self.assertEqual(conversation_id, "ptid:alice-ptid:bob")
+        self.assertEqual(len(self.network.friend_requests), 1)
+        self.assertEqual(
+            self.sender_session.contact_open_inputs,
+            [{"peerPtid": "ptid:bob", "federationId": "federation-1"}],
+        )
 
     def test_contact_direct_admission_timeout_retains_last_public_reason(
         self,
