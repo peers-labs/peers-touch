@@ -482,6 +482,56 @@ func TestCanonicalMLSConcurrentFetchConsumesPackageOnce(t *testing.T) {
 	}
 }
 
+func TestCanonicalMLSFetchPrefersNewestAvailablePackage(t *testing.T) {
+	device := domain.Endpoint{
+		ActorPTID: "ptid:mls-newest",
+		DeviceID:  "device-1",
+	}
+	store := newCanonicalStoreForTest(t, device)
+	ctx := context.Background()
+	now := time.Unix(1_800_000_000, 0).UTC()
+	oldPackage := []byte("old-mls-key-package")
+	newPackage := []byte("new-mls-key-package")
+	if _, err := store.UploadMLSKeyPackage(
+		ctx,
+		device,
+		"station-local",
+		oldPackage,
+		now,
+	); err != nil {
+		t.Fatalf("upload old MLS KeyPackage: %v", err)
+	}
+	if _, err := store.UploadMLSKeyPackage(
+		ctx,
+		device,
+		"station-local",
+		newPackage,
+		now.Add(time.Second),
+	); err != nil {
+		t.Fatalf("upload new MLS KeyPackage: %v", err)
+	}
+
+	selected, err := store.FetchAndConsumeMLSKeyPackage(
+		ctx,
+		testDestructiveReadIdentity("mls-newest-request", device),
+		device.ActorPTID,
+		[]string{device.DeviceID},
+		"station-local",
+		now.Add(2*time.Second),
+	)
+	if err != nil {
+		t.Fatalf("fetch newest MLS KeyPackage: %v", err)
+	}
+	if selected == nil || !bytes.Equal(selected.KeyPackage, newPackage) {
+		t.Fatalf("selected MLS KeyPackage = %+v, want newest bytes", selected)
+	}
+	if count, err := store.CountMLSKeyPackages(ctx, device); err != nil {
+		t.Fatalf("count MLS packages after newest fetch: %v", err)
+	} else if count != 1 {
+		t.Fatalf("available MLS package count = %d, want 1", count)
+	}
+}
+
 func TestCanonicalMLSFetchReplaysExactResponseAndRejectsHashConflict(t *testing.T) {
 	device := domain.Endpoint{
 		ActorPTID: "ptid:mls-replay",

@@ -200,6 +200,10 @@ impl MlsGroupManager {
         serialize_join_provider_pool(&providers)
     }
 
+    pub fn pending_join_provider_count(&self) -> usize {
+        self.pending_join_providers.lock().unwrap().len()
+    }
+
     pub fn import_pending_join_providers(&self, state_bytes: &[u8]) -> Result<usize, String> {
         let restored = restore_join_provider_pool(state_bytes)?;
         let count = restored.len();

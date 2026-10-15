@@ -31,6 +31,7 @@ use super::engine::{
     validate_account_scope, DeviceSigningSeedBackup, MessageDraftResumeProgress,
     MobileMessagingEngine, SecureContentRuntimeIdentity,
 };
+use super::mls_continuity::{MlsContinuityBackup, StorageMlsContinuityBackup};
 
 const DATABASE_KEY_PREFIX: &str = "messaging.v1.sqlcipher";
 const MAX_CONTINUATION_CYCLES: usize = 8;
@@ -290,6 +291,12 @@ impl MobileMessagingRuntime {
             &actor_ptid,
             &device_id,
         );
+        let mls_continuity_backup: Arc<dyn MlsContinuityBackup> = StorageMlsContinuityBackup::new(
+            storage.clone(),
+            &station_peer_id,
+            &actor_ptid,
+            &device_id,
+        );
         let status = self
             .activate_with_material(
                 &database_path,
@@ -304,6 +311,7 @@ impl MobileMessagingRuntime {
                 event_sink,
                 &seed_backup,
                 prekey_backup,
+                mls_continuity_backup,
             )
             .map_err(MobileError::messaging)?;
         Ok(status)
@@ -323,6 +331,7 @@ impl MobileMessagingRuntime {
         event_sink: ProjectionEventSink,
         seed_backup: &dyn DeviceSigningSeedBackup,
         prekey_backup: Arc<dyn PreKeyBundleBackup>,
+        mls_continuity_backup: Arc<dyn MlsContinuityBackup>,
     ) -> Result<MessagingRuntimeStatus, String> {
         validate_account_scope(&station_peer_id, &station_origin, &actor_ptid)?;
         let mut active = self
@@ -363,6 +372,7 @@ impl MobileMessagingRuntime {
             access_token,
             seed_backup,
             prekey_backup,
+            mls_continuity_backup,
         )?);
         let activation_generation = self
             .next_activation_generation
@@ -1348,6 +1358,7 @@ mod tests {
                 discard_events(),
                 &crate::messaging::engine::NoopSeedBackup,
                 crate::messaging::engine::noop_prekey_backup(),
+                crate::messaging::mls_continuity::noop_mls_continuity_backup(),
             )
             .unwrap();
 
@@ -1400,6 +1411,7 @@ mod tests {
                 discard_events(),
                 &crate::messaging::engine::NoopSeedBackup,
                 crate::messaging::engine::noop_prekey_backup(),
+                crate::messaging::mls_continuity::noop_mls_continuity_backup(),
             )
             .unwrap();
         assert!(first.active);
@@ -1419,6 +1431,7 @@ mod tests {
                 discard_events(),
                 &crate::messaging::engine::NoopSeedBackup,
                 crate::messaging::engine::noop_prekey_backup(),
+                crate::messaging::mls_continuity::noop_mls_continuity_backup(),
             )
             .unwrap();
         assert_eq!(repeated.profile_id, first.profile_id);
@@ -1438,6 +1451,7 @@ mod tests {
                 discard_events(),
                 &crate::messaging::engine::NoopSeedBackup,
                 crate::messaging::engine::noop_prekey_backup(),
+                crate::messaging::mls_continuity::noop_mls_continuity_backup(),
             )
             .unwrap();
         assert_eq!(
@@ -1462,6 +1476,7 @@ mod tests {
                 discard_events(),
                 &crate::messaging::engine::NoopSeedBackup,
                 crate::messaging::engine::noop_prekey_backup(),
+                crate::messaging::mls_continuity::noop_mls_continuity_backup(),
             )
             .is_err());
         assert!(runtime.deactivate("station-1", "ptid:bob").is_err());
@@ -1490,6 +1505,7 @@ mod tests {
             "token-1".to_string(),
             &crate::messaging::engine::NoopSeedBackup,
             crate::messaging::engine::noop_prekey_backup(),
+            crate::messaging::mls_continuity::noop_mls_continuity_backup(),
         )
         .unwrap();
         let first_device_id = first.scope().device_id.clone();
@@ -1508,6 +1524,7 @@ mod tests {
             "token-2".to_string(),
             &crate::messaging::engine::NoopSeedBackup,
             crate::messaging::engine::noop_prekey_backup(),
+            crate::messaging::mls_continuity::noop_mls_continuity_backup(),
         )
         .unwrap();
         assert_eq!(reopened.scope().device_id, first_device_id);

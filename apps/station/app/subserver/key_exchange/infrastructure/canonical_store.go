@@ -1511,7 +1511,7 @@ func selectAvailableMLSKeyPackage(
 		query = query.Where("station_id = ?", homeStationID)
 	}
 	if err := query.
-		Order("created_at ASC, id ASC").
+		Order("created_at DESC, id DESC").
 		First(&keyPackage).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return MLSKeyPackageModel{}, domain.NewError(
