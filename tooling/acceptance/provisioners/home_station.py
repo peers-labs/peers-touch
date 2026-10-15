@@ -1814,6 +1814,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 (
                     "STATION_CAPABILITY_CONFLICT" in detail
                     or "DEVCTL_REMOTE_SOURCE_MISMATCH" in detail
+                    or "Connection timed out during banner exchange" in detail
                     or (
                         "remote source lease" in detail
                         and (

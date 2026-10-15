@@ -824,6 +824,12 @@ class ProvisionerBlockingTests(unittest.TestCase):
             stdout='{"code":"DEVCTL_REMOTE_SOURCE_MISMATCH"}',
             stderr="",
         )
+        transport_timeout = subprocess.CompletedProcess(
+            args=["make", "station"],
+            returncode=2,
+            stdout="Connection timed out during banner exchange",
+            stderr="",
+        )
         with patch(
             "tooling.acceptance.provisioners.home_station."
             "source_proto_digest",
@@ -842,6 +848,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
                 conflict,
                 source_conflict,
                 source_mismatch,
+                transport_timeout,
                 completed,
             ),
         ) as run, patch(
@@ -856,10 +863,10 @@ class ProvisionerBlockingTests(unittest.TestCase):
                 source_commit="abc1234",
             )
 
-        self.assertEqual(run.call_count, 4)
+        self.assertEqual(run.call_count, 5)
         self.assertEqual(
             [call.args for call in sleep.call_args_list],
-            [(5,), (5,), (5,)],
+            [(5,), (5,), (5,), (5,)],
         )
         self.assertEqual(run.call_args.args[0], ["make", "station"])
         self.assertEqual(
