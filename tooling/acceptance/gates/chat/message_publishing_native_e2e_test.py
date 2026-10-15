@@ -138,6 +138,13 @@ class MessagePublishingNativeGateTests(unittest.TestCase):
         )
         self.assertNotIn("SuiteRuntimeAction.CLIENT_REPLACEMENT", self.source)
 
+    def test_client_readiness_uses_canonical_actor_and_device_identity(self) -> None:
+        self.assertEqual(
+            self.source.count('and value.get("actorPtid") == self.owner_ptid'),
+            2,
+        )
+        self.assertNotIn('and value.get("active") is True', self.source)
+
     def test_runner_keeps_http_authority_out_of_native_harness(self) -> None:
         self.assertIn('"/message-publishing/grants/create"', self.source)
         self.assertIn('"/message-publishing/grants/list"', self.source)

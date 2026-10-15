@@ -249,7 +249,6 @@ class MessagePublishingNativeGate(AcceptanceGate):
                 if (
                     isinstance(value, dict)
                     and value.get("actorPtid") == self.owner_ptid
-                    and value.get("active") is True
                     and value.get("deviceId")
                 ):
                     return value
@@ -311,7 +310,6 @@ class MessagePublishingNativeGate(AcceptanceGate):
                 if (
                     isinstance(value, dict)
                     and value.get("actorPtid") == self.owner_ptid
-                    and value.get("active") is True
                     and value.get("deviceId")
                 ):
                     return value
