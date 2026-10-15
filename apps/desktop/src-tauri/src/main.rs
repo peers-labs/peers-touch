@@ -787,6 +787,8 @@ fn main() {
             #[cfg(feature = "acceptance-webdriver")]
             messaging_recovery::messaging_recovery_acceptance_create_revision,
             #[cfg(feature = "acceptance-webdriver")]
+            acceptance::runtime_identity::acceptance_runtime_source_identity,
+            #[cfg(feature = "acceptance-webdriver")]
             acceptance::federation_fixture::acceptance_federation_fixture_snapshot,
             #[cfg(feature = "acceptance-webdriver")]
             acceptance::federation_fixture::acceptance_federation_fixture_create,

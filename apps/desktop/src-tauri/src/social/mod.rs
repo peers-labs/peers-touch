@@ -43,8 +43,6 @@ use self::projection::PrivateReactionOperation;
 
 #[cfg(feature = "acceptance-webdriver")]
 static ACCEPTANCE_RUNTIME_BOOT_ID: OnceLock<String> = OnceLock::new();
-#[cfg(feature = "acceptance-webdriver")]
-static ACCEPTANCE_EXECUTABLE_SHA256: OnceLock<Result<String, String>> = OnceLock::new();
 
 #[cfg(feature = "acceptance-webdriver")]
 fn acceptance_station_binding_digests(
@@ -660,15 +658,9 @@ pub fn social_private_moments_acceptance_runtime_identity(
     let account_storage_identity_sha256 = hex::encode(Sha256::digest(
         crate::infrastructure::local_scope::user_scope_for_actor_ptid(&input.actor_ptid).as_bytes(),
     ));
-    let executable_sha256 = match ACCEPTANCE_EXECUTABLE_SHA256.get_or_init(|| {
-        let executable = std::env::current_exe()
-            .map_err(|error| format!("resolve Desktop executable: {error}"))?;
-        let bytes = std::fs::read(executable)
-            .map_err(|error| format!("read Desktop executable: {error}"))?;
-        Ok::<_, String>(hex::encode(Sha256::digest(bytes)))
-    }) {
+    let executable_sha256 = match crate::acceptance::runtime_identity::executable_sha256() {
         Ok(digest) => digest,
-        Err(error) => return native_failure(error.clone(), "INTEGRITY_FAILURE"),
+        Err(error) => return native_failure(error, "INTEGRITY_FAILURE"),
     };
     let binding = state.station.binding().state();
     let station_peer_id = match state.station.active_station_peer_id() {

@@ -34,10 +34,10 @@ import {
 import { usePrivateMomentsStore } from '../../store/privateMoments';
 import { useSessionStore } from '../../store/session';
 import { registerAcceptanceHarness } from '../registry';
+import { rendererArtifactSha256, resetRendererArtifactDigest } from '../runtime/rendererArtifact';
 
 declare const __PT_SOURCE_COMMIT__: string;
 
-let rendererArtifactSha256Promise: Promise<string> | null = null;
 const MAX_PROTO_UINT64 = 18_446_744_073_709_551_615n;
 
 interface StagePrivateDraftInput {
@@ -252,51 +252,6 @@ async function activeSessionIdentity() {
       sessionEpoch: session.sessionEpoch,
     })),
   };
-}
-
-function rendererArtifactSha256(): Promise<string> {
-  if (rendererArtifactSha256Promise) return rendererArtifactSha256Promise;
-  rendererArtifactSha256Promise = (async () => {
-    const candidates = new Set<string>();
-    for (const script of Array.from(document.scripts)) {
-      if (script.src) {
-        const url = new URL(script.src, window.location.href);
-        if (url.origin === window.location.origin) candidates.add(url.href);
-      }
-    }
-    for (const entry of performance.getEntriesByType('resource')) {
-      const resource = entry as PerformanceResourceTiming;
-      if (resource.initiatorType === 'script' && resource.name) {
-        const url = new URL(resource.name, window.location.href);
-        if (url.origin === window.location.origin) candidates.add(url.href);
-      }
-    }
-    if (candidates.size === 0) {
-      throw new Error('moments.acceptance.rendererArtifactMissing');
-    }
-    const artifacts = await Promise.all(
-      [...candidates].sort().map(async (url) => {
-        const parsed = new URL(url);
-        const response = await fetch(url, {
-          cache: 'no-store',
-          credentials: 'same-origin',
-        });
-        if (!response.ok) {
-          throw new Error('moments.acceptance.rendererArtifactFetchFailed');
-        }
-        return {
-          path: parsed.pathname,
-          sha256: await sha256(await response.arrayBuffer()),
-        };
-      }),
-    );
-    return sha256(JSON.stringify({
-      schemaVersion: 1,
-      sourceCommit: __PT_SOURCE_COMMIT__,
-      artifacts,
-    }));
-  })();
-  return rendererArtifactSha256Promise;
 }
 
 async function nativeRuntimeIdentitySha256(
@@ -780,7 +735,7 @@ async function publishTypedPrivateMoment(input: StagePrivateDraftInput) {
 }
 
 export function installAcceptanceHarness(): void {
-  rendererArtifactSha256Promise = null;
+  resetRendererArtifactDigest();
   registerAcceptanceHarness('moments', {
     async snapshot() {
       const privateState = usePrivateMomentsStore.getState();

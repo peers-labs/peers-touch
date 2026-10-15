@@ -118,6 +118,13 @@ namespaced business state, and verifies final process/port/session cleanup befor
 publishing the complete result generation. Neither scenario nor Gate provisions,
 launches, logs in, or releases Suite resources.
 
+Native Acceptance owns `runtime.sourceIdentity`: it reads the compiled source
+commit, live process ID and executable digest from the Native Acceptance command,
+then hashes the embedded renderer scripts. The Suite compares that identity with
+its source and driver-owned binary/process. This capability is independent of
+authenticated business runtime leases. Private Moments retains its own secure
+content lease and Station trust checks and shares only artifact hashing.
+
 ## 4.1 Moments Runtime Contract
 
 `momentsRuntime` is responsible for the first runtime-owned Moments projection slice:

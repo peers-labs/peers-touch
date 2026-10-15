@@ -11,29 +11,48 @@ from tooling.acceptance.core import GateError
 from tooling.acceptance.core.suite_runtime import SuiteRuntimeAction
 from tooling.acceptance.provisioners.desktop_profile_notifications_suite import (
     DesktopProfileNotificationsSuite,
-    wait_native_source_identity,
+    read_native_source_identity,
 )
 
 
 MODULE = "tooling.acceptance.provisioners.desktop_profile_notifications_suite"
 
 
-class NativeSourceReadinessTest(unittest.TestCase):
-    def test_authenticated_runtime_may_become_ready_after_device_enrollment(self) -> None:
-        session = MagicMock()
-        identity = {"sourceCommit": "a" * 40}
-        with patch(f"{MODULE}.call_async_harness", side_effect=[
-            GateError("harness moments.snapshot failed: moments.acceptance.nativeRuntimeIdentityMissing"),
-            identity,
-        ]) as snapshot:
-            self.assertEqual(identity, wait_native_source_identity(session))
-        self.assertEqual(2, snapshot.call_count)
+class NativeSourceIdentityTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.session = MagicMock()
+        self.session.process_id = 321
+        self.session.get_current_url.return_value = "tauri://localhost/"
+        self.binding = MagicMock()
+        self.binding.binary_identity.return_value = {
+            "sourceCommit": "a" * 40, "sha256": "b" * 64,
+        }
+        self.identity = {
+            "sourceCommit": "a" * 40,
+            "processId": 321,
+            "executableSha256": "b" * 64,
+            "rendererArtifactSha256": "c" * 64,
+        }
 
-    def test_unrelated_harness_failure_is_not_retried(self) -> None:
-        with patch(f"{MODULE}.call_async_harness", side_effect=GateError("Station binding differs")) as snapshot:
-            with self.assertRaisesRegex(GateError, "Station binding differs"):
-                wait_native_source_identity(MagicMock())
-        snapshot.assert_called_once()
+    def test_profile_identity_has_no_private_moments_dependency(self) -> None:
+        with patch(f"{MODULE}.call_async_harness", return_value=self.identity) as harness:
+            self.assertEqual(self.identity, read_native_source_identity(
+                self.session, self.binding, "a" * 40,
+            ))
+        harness.assert_called_once_with(
+            self.session, "sourceIdentity", {}, namespace="runtime", script_timeout=30,
+        )
+
+    def test_stale_source_wrong_process_and_wrong_binary_are_rejected(self) -> None:
+        for field, value in (
+            ("sourceCommit", "d" * 40), ("processId", 322),
+            ("executableSha256", "e" * 64), ("rendererArtifactSha256", ""),
+        ):
+            with self.subTest(field=field), patch(
+                f"{MODULE}.call_async_harness", return_value={**self.identity, field: value},
+            ):
+                with self.assertRaisesRegex(GateError, "Suite process and binary"):
+                    read_native_source_identity(self.session, self.binding, "a" * 40)
 
 
 class DesktopProfileNotificationsSuiteTest(unittest.TestCase):

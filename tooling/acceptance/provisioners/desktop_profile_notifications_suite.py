@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -38,21 +39,36 @@ from tooling.acceptance.gates.desktop.profile_notifications_journey import (
 )
 
 
-def wait_native_source_identity(session: TauriSession) -> dict[str, Any]:
-    """Wait for the authenticated Native runtime without hiding other failures."""
-    def snapshot_when_ready(_: Any) -> dict[str, Any] | None:
-        try:
-            return call_async_harness(
-                session, "snapshot", {}, namespace="moments", script_timeout=10,
-            )
-        except GateError as error:
-            if "moments.acceptance.nativeRuntimeIdentityMissing" in str(error):
-                return None
-            raise
-
-    return WebDriverWait(session.driver, 60, poll_frequency=0.5).until(
-        snapshot_when_ready, "authenticated Native runtime source identity",
+def read_native_source_identity(
+    session: TauriSession,
+    binding: NativeDesktopRuntimeBinding,
+    source_commit: str,
+) -> dict[str, Any]:
+    """Bind the live Native process and embedded renderer to the Suite source."""
+    source = call_async_harness(
+        session, "sourceIdentity", {}, namespace="runtime", script_timeout=30,
     )
+    binary = binding.binary_identity()
+    executable_digests = (
+        {instance["sha256"] for instance in json.loads(binary["instances"])}
+        if "instances" in binary else {binary["sha256"]}
+    )
+    process_id = source.get("processId")
+    if (
+        not session.get_current_url().startswith("tauri://localhost/")
+        or type(process_id) is not int
+        or process_id < 1
+        or process_id != session.process_id
+        or source.get("sourceCommit") != source_commit
+        or binary["sourceCommit"] != source_commit
+        or source.get("executableSha256") not in executable_digests
+        or any(
+            re.fullmatch(r"[0-9a-f]{64}", str(source.get(field, ""))) is None
+            for field in ("executableSha256", "rendererArtifactSha256")
+        )
+    ):
+        raise GateError("Native source identity does not match the Suite process and binary")
+    return source
 
 
 class DesktopProfileNotificationsSuite:
@@ -101,14 +117,9 @@ class DesktopProfileNotificationsSuite:
                 f"{role} production Device enrollment",
             )
             profile = read_profile(session)
-            source = wait_native_source_identity(session)
-            if not session.get_current_url().startswith("tauri://localhost/"):
-                raise GateError(f"Native {role} is not running the embedded renderer")
-            if source["sourceCommit"] != self.manifest["source"]["commit"] or any(
-                re.fullmatch(r"[0-9a-f]{64}", str(source.get(field, ""))) is None
-                for field in ("clientArtifactSha256", "stationRuntimeIdentitySha256")
-            ):
-                raise GateError(f"Native {role} source identity does not match the Suite")
+            source = read_native_source_identity(
+                session, self.binding, self.manifest["source"]["commit"],
+            )
             actors[role] = {
                 "accountRef": f"station-account:{accounts[role]}",
                 "ptid": profile["peers_touch"]["network_id"],
