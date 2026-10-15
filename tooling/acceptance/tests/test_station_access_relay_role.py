@@ -29,6 +29,8 @@ from tooling.acceptance.provisioners.station_access_relay_role import (
     _relay_discovery_endpoint,
     _relay_peer_identity,
     _service_source_compatibility,
+    _station_compose_environment_file,
+    _station_runtime_config,
     _validate_runtime_status,
 )
 
@@ -639,6 +641,49 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
             "docker-compose:pt-relay/relay",
         )
         self.assertEqual(evidence["platform"], "linux")
+
+    def test_disposable_station_runtime_uses_reviewed_acceptance_topology(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            environment = Path(directory) / "station.env.example"
+            environment.write_text(
+                "\n".join(
+                    (
+                        "PT_DEPLOY_HOST=10.37.94.156",
+                        "PT_DEPLOY_USER=operator",
+                        "PT_DEPLOY_PATH=peers-touch/acceptance/station/repo",
+                        "PT_DEPLOY_ROLE=station",
+                        "PT_DEPLOY_PLATFORM=posix",
+                        "PT_DEPLOY_RESTART_CMD='docker compose --env-file "
+                        "$HOME/peers-touch/branches/chat/.env up -d station'",
+                        "PT_ACCEPTANCE_DISPOSABLE=1",
+                        "PT_ACCEPTANCE_STATION_URL=http://10.37.94.156:18132",
+                        "PT_ACCEPTANCE_COMPOSE_PROJECT=pt-chat",
+                        "PT_ACCEPTANCE_STATION_CONTAINER=pt-chat-station-1",
+                    )
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            with patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "resolve_deployment_environment_path",
+                return_value=environment,
+            ):
+                config = _station_runtime_config("chat-station")
+                env_file = _station_compose_environment_file(
+                    config,
+                    "/home/operator",
+                )
+
+        self.assertEqual(config.compose_project, "pt-chat")
+        self.assertEqual(config.data_volume, "pt-chat_peers_data")
+        self.assertEqual(config.http_port, 18132)
+        self.assertEqual(
+            env_file,
+            "/home/operator/peers-touch/branches/chat/.env",
+        )
 
     def test_runtime_status_rejects_source_drift(self) -> None:
         status = _status("relay", 202)

@@ -4,6 +4,7 @@ import dataclasses
 import hashlib
 import json
 import os
+import re
 import shutil
 import socket
 import ssl
@@ -34,6 +35,8 @@ from tooling.acceptance.core.evidence_store import (
 )
 from tooling.acceptance.core.provisioner import (
     EnvironmentProvisioner,
+    load_env_file,
+    resolve_deployment_environment_path,
 )
 from tooling.acceptance.core.provisioning import (
     ActorIdentity,
@@ -93,6 +96,104 @@ def _required(values: Mapping[str, str], key: str) -> str:
             resource=f"profile:{key}",
         )
     return value
+
+
+def _station_runtime_config(
+    deployment_environment: str,
+) -> PosixServiceRuntimeConfig:
+    try:
+        return PosixServiceRuntimeConfig.load(
+            deployment_environment,
+            expected_role="station",
+        )
+    except ProvisioningError as original_error:
+        source = resolve_deployment_environment_path(
+            deployment_environment
+        )
+        values = load_env_file(source)
+        station_url = str(
+            values.get("PT_ACCEPTANCE_STATION_URL")
+            or values.get("PT_DEPLOY_PUBLIC_BASE_URL")
+            or ""
+        ).rstrip("/")
+        parsed = urlparse(station_url)
+        project = str(
+            values.get("PT_ACCEPTANCE_COMPOSE_PROJECT") or ""
+        ).strip()
+        service = str(
+            values.get("PT_ACCEPTANCE_STATION_CONTAINER") or ""
+        ).strip()
+        expected_container = (
+            f"{project}-station-1"
+            if project
+            else ""
+        )
+        if (
+            values.get("PT_ACCEPTANCE_DISPOSABLE") != "1"
+            or values.get("PT_DEPLOY_ROLE") != "station"
+            or values.get("PT_DEPLOY_PLATFORM", "posix") != "posix"
+            or parsed.scheme != "http"
+            or not parsed.hostname
+            or parsed.port is None
+            or not project
+            or service != expected_container
+        ):
+            raise original_error
+        deploy_path = str(values.get("PT_DEPLOY_PATH") or "").strip()
+        if (
+            not deploy_path
+            or deploy_path.startswith("/")
+            or ".." in Path(deploy_path).parts
+        ):
+            raise original_error
+        return PosixServiceRuntimeConfig(
+            environment_name=deployment_environment,
+            role="station",
+            host=str(values.get("PT_DEPLOY_HOST") or ""),
+            user=str(values.get("PT_DEPLOY_USER") or ""),
+            ssh_port=int(values.get("PT_DEPLOY_SSH_PORT", "22")),
+            known_hosts_file=str(
+                values.get("PT_DEPLOY_KNOWN_HOSTS_FILE") or ""
+            ),
+            deploy_path=deploy_path,
+            runtime_path=deploy_path,
+            http_port=parsed.port,
+            public_port=parsed.port,
+            libp2p_port=None,
+            public_base_url=station_url,
+            compose_project=project,
+            compose_service="station",
+            data_volume=f"{project}_peers_data",
+            tls_ca_path="",
+            operator_key_path="",
+        )
+
+
+def _station_compose_environment_file(
+    config: PosixServiceRuntimeConfig,
+    home: str,
+) -> str:
+    values = load_env_file(
+        resolve_deployment_environment_path(config.environment_name)
+    )
+    restart_command = str(
+        values.get("PT_DEPLOY_RESTART_CMD") or ""
+    )
+    matched = re.search(
+        r"--env-file\s+\$HOME/([A-Za-z0-9._/-]+)",
+        restart_command,
+    )
+    relative = (
+        matched.group(1)
+        if matched is not None
+        else "peers-touch/station.env"
+    )
+    if ".." in Path(relative).parts:
+        raise BlockedError(
+            reason="Station Compose environment path is invalid",
+            resource=f"station:{config.environment_name}",
+        )
+    return f"{home}/{relative}"
 
 
 def _service_source_compatibility(
@@ -701,7 +802,10 @@ class StationAccessRelayRoleProvisioner(EnvironmentProvisioner):
         canonical_origin: str,
     ) -> None:
         home = StationAccessRelayRoleProvisioner._remote_home(config)
-        environment_file = f"{home}/peers-touch/station.env"
+        environment_file = _station_compose_environment_file(
+            config,
+            home,
+        )
         compose_file = (
             f"{home}/{config.deploy_path}/tooling/docker/compose.yml"
         )
@@ -949,10 +1053,7 @@ server {
                     reason=f"Attached Station is unhealthy at {station_health}",
                     resource=f"service-health:{station_deployment}",
                 )
-            station_config = PosixServiceRuntimeConfig.load(
-                station_deployment,
-                expected_role="station",
-            )
+            station_config = _station_runtime_config(station_deployment)
             relay_config = PosixServiceRuntimeConfig.load(
                 relay_deployment,
                 expected_role="relay",
