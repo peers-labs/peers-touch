@@ -12,6 +12,7 @@ import {
   composeHomeFeedState,
   privateMomentFeedPost,
 } from './privateMomentFeedProjection';
+import { isPublicSocialAudience } from './socialAudience';
 
 const baseProjection = {
   contentId: 'content-1',
@@ -87,6 +88,18 @@ describe('private Moment feed projection', () => {
         reactedByViewer: true,
       }),
     ]);
+  });
+
+  it('keeps a kind-only Circle projection renderable as private feed content', () => {
+    const post = privateMomentFeedPost({
+      ...baseProjection,
+      postId: 'post-circle',
+      audienceKind: 'CIRCLE',
+      content: { kind: 'TEXT', text: 'circle private' },
+    });
+
+    expect(post).not.toBeNull();
+    expect(isPublicSocialAudience(post!.audience!)).toBe(false);
   });
 
   it('deduplicates public and private rows by canonical Post ID', () => {

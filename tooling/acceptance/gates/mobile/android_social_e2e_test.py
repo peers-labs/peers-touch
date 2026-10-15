@@ -77,13 +77,9 @@ class AndroidSocialGateTests(unittest.TestCase):
         self.assertFalse(RUNTIME_REUSE.allow_client_replacement)
 
     def test_circle_audience_selects_the_target_row(self) -> None:
-        source = "\n".join((
-            inspect.getsource(AndroidSocialGate._run_ios_circles_publish),
-            inspect.getsource(AndroidSocialGate._run_ios_thread_reaction),
-        ))
+        source = inspect.getsource(AndroidSocialGate._run_ios_circles_publish)
 
         self.assertIn('social-audience-circle', source)
-        self.assertIn('_open_moment_thread(', source)
         self.assertIn('data-circle-id="{circle_id}"', source)
         self.assertNotIn('social-audience-target-done', source)
 

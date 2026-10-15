@@ -372,9 +372,6 @@ class SimulatorSocialGateTests(unittest.TestCase):
             inspect.getsource(
                 SimulatorSocialGate._run_ios_circles_publish
             ),
-            inspect.getsource(
-                SimulatorSocialGate._run_ios_thread_reaction
-            ),
         ))
 
         self.assertIn('social-search-submit', source)
@@ -387,7 +384,6 @@ class SimulatorSocialGateTests(unittest.TestCase):
             source.index('social-search-submit'),
         )
         self.assertIn('_select_antd_option(', source)
-        self.assertIn('_open_moment_thread(', source)
         self.assertIn('sender.federation_id', source)
         self.assertIn('social-audience-circle', source)
         self.assertIn('data-circle-id="{circle_id}"', source)

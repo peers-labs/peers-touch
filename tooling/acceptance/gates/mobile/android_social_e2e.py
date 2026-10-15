@@ -1108,16 +1108,17 @@ class AndroidSocialGate(AcceptanceGate):
             {"kind": "primary", "routeId": "tab:moments"},
         )
         self._wait_post_visible(session, post_id, "")
+        self._click_ui_for_post(
+            session,
+            post_id,
+            "social-thread-open",
+            "Android Moment thread",
+        )
         thread_selector = (
             '[data-acceptance-id="social-moment-thread"]'
             f'[data-post-id="{post_id}"]'
         )
-        self._open_moment_thread(
-            session,
-            post_id,
-            thread_selector,
-            "Android Moment thread",
-        )
+        self._wait_ui(session, thread_selector, "Android Moment thread")
         self._wait_ui_attribute(
             session,
             f"{thread_selector} [data-comment-total]",
@@ -1373,40 +1374,6 @@ class AndroidSocialGate(AcceptanceGate):
             f'[data-acceptance-id="{action_id}"]'
         )
         self._click_ui(session, selector, label)
-
-    def _open_moment_thread(
-        self,
-        session: _ActorScopedSession,
-        post_id: str,
-        thread_selector: str,
-        label: str,
-    ) -> None:
-        self._click_ui_for_post(
-            session,
-            post_id,
-            "social-thread-open",
-            label,
-        )
-        try:
-            self._wait_social_ui(
-                lambda: session.social_ui(
-                    "query",
-                    {"selector": thread_selector},
-                ),
-                lambda value: value.get("exists") is True,
-                label,
-                timeout_seconds=2.0,
-            )
-            return
-        except GateError:
-            pass
-        self._click_ui_for_post(
-            session,
-            post_id,
-            "social-thread-open",
-            f"{label} retry",
-        )
-        self._wait_ui(session, thread_selector, label)
 
     def _set_ui_value(
         self,

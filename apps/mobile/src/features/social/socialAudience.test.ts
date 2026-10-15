@@ -6,6 +6,7 @@ import { Audience_Kind } from '../../gen/proto/domain/social/post_pb';
 import {
   SOCIAL_AUDIENCE_CHOICES,
   buildSocialAudience,
+  isPublicSocialAudience,
   normalizeSocialAudience,
   socialAudienceChoiceFromAudience,
   socialAudienceTargetFromAudience,
@@ -68,9 +69,21 @@ describe('canonical Mobile Social Audience', () => {
       .toThrow('mobile.moments.audience.publicIsNotPrivate');
   });
 
+  it('classifies kind-only private read projections without write-target validation', () => {
+    expect(isPublicSocialAudience({
+      kind: Audience_Kind.CIRCLE,
+      target: { case: undefined },
+    })).toBe(false);
+    expect(isPublicSocialAudience(buildSocialAudience('PUBLIC'))).toBe(true);
+  });
+
   it('fails closed for incomplete or unsupported Audience values', () => {
     expect(() => buildSocialAudience('CIRCLE', { circleId: '0' }))
       .toThrow('mobile.moments.audience.circleRequired');
+    expect(() => normalizeSocialAudience({
+      kind: Audience_Kind.CIRCLE,
+      target: { case: undefined },
+    })).toThrow('mobile.moments.audience.circleRequired');
     expect(() => buildSocialAudience('DIRECT', {
       actorPtids: ['ptid:bob', 'ptid:carol'],
     })).toThrow('mobile.moments.audience.directRequired');
