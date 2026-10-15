@@ -1,8 +1,8 @@
 # Local Dev Control Plane - Architecture Decisions
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-09-13 | **Updated**: 2026-10-05
+> **Version**: v1.4
+> **Created**: 2026-09-13 | **Updated**: 2026-10-15
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/`
 
@@ -20,18 +20,19 @@
 | LDCP-D06 | Bootstrap with a non-authoritative observed snapshot | accepted |
 | LDCP-D07 | Place Acceptance Evidence under the machine Dev root | accepted |
 | LDCP-D08 | Registration is explicit and activity is runtime-derived | accepted |
-| LDCP-D09 | Require human authorization for environment creation | accepted |
+| LDCP-D09 | Require human authorization for environment creation | superseded by LDCP-D21 |
 | LDCP-D10 | Declare Agent control mode in each profile | superseded by LDCP-D15 |
 | LDCP-D11 | Provide one read-only Development Control Plane dashboard | superseded by LDCP-D19 |
 | LDCP-D12 | Run one machine-wide Peers Dev application | superseded by LDCP-D19 |
 | LDCP-D13 | Project Plan progress separately from environment health | accepted |
 | LDCP-D14 | Reserve immutable workspace Plan ownership under the machine Dev root | superseded by DWF-D38 |
-| LDCP-D15 | Derive reset protection from the canonical Profile ID | accepted |
+| LDCP-D15 | Derive reset protection from the canonical Profile ID | superseded by LDCP-D21 |
 | LDCP-D16 | Bootstrap minimum registration from explicit Profile selection | accepted |
 | LDCP-D17 | Separate durable workspace binding from current Git HEAD | accepted |
-| LDCP-D18 | Require committed resource-plan provenance for planner-owned leases | accepted |
+| LDCP-D18 | Require committed resource-plan provenance for planner-owned leases | superseded by DWF-D46 |
 | LDCP-D19 | Retire the Peers Dev browser service and keep Workflow Snapshot read-only | accepted |
-| LDCP-D20 | Unregister environments only through coordinated Development close | accepted |
+| LDCP-D20 | Unregister environments only through coordinated Development close | superseded by DWF-D46 |
+| LDCP-D21 | Let reviewed Profiles authorize development operations and protect only the stable suffix | accepted |
 
 ## LDCP-D01: Machine Control-Plane Root
 
@@ -312,7 +313,7 @@ not share one status field.
 
 ## LDCP-D09: Human-Authorized Environment Creation
 
-**Status**: accepted
+**Status**: superseded by LDCP-D21
 **Date**: 2026-09-13
 
 ### Context
@@ -600,7 +601,7 @@ registration.
 
 ## LDCP-D15: Canonical Profile-ID Reset Protection
 
-**Status**: accepted
+**Status**: superseded by LDCP-D21
 **Date**: 2026-09-21
 
 ### Context
@@ -631,8 +632,6 @@ choose and bind `station.reset` without human involvement.
 Reset execution still requires all independent runtime guards:
 
 - `station.reset` in the current workspace binding;
-- one live Development declaration for the same Profile and exact exclusive
-  reset scope;
 - the same scope at the command boundary;
 - matching tracked-clean remote topology and source identity;
 - one OS-held reset lease.
@@ -671,8 +670,8 @@ actual mutation.
 
 ### Context
 
-`make profile <name>` is an explicit Owner action, but previously delegated to
-the update-only registry operation. A newly cloned or newly created worktree
+`make profile <name>` is the canonical selection action, but previously
+delegated to the update-only registry operation. A newly cloned or newly created worktree
 therefore failed with `WORKSPACE_UNREGISTERED` and required callers to discover
 the separate registration command, slot, capabilities, purpose, and owner
 fields before they could select an existing reviewed Profile.
@@ -689,8 +688,9 @@ dirty remote source, or missing runtime environment file.
 selection:
 
 - an unregistered worktree atomically receives the lowest available local slot;
-- a reviewed remote Profile receives only `station.connect` and
+- a reviewed non-stable remote Profile receives only `station.connect` and
   `station.deploy`;
+- a stable remote Profile receives only `station.connect`;
 - a local or compose Profile receives only `station.connect`;
 - `station.reset` is never granted implicitly;
 - an existing registration keeps its slot, owner, and purpose while switching
@@ -708,13 +708,11 @@ path, whose result is verified again after health recovery. Typed downstream
 failures are preserved; only a real elapsed timeout is reported as
 `DEVCTL_START_TIMEOUT`.
 
-An explicit operator invocation of `make station` is itself a bounded
-`make.station` owner action. When deployment is required, that action may
-acquire only the exact bound `station.deploy` lease without a separately
-authored Development declaration. Registry capability, deploy-target matching,
-post-lock source validation, and OS lease exclusion remain mandatory. This
-exception never applies to `station.reset`; Agent-driven Plan work still
-declares runtime intent before invoking the command.
+When deployment is required, `make station` acquires only the exact bound
+`station.deploy` lease. Registry capability, deploy-target matching, prepared
+source identity, post-lock revalidation, and OS lease exclusion remain
+mandatory. Task declarations, PlanMount, resource-plan receipts, OWNER
+bindings, and Hook receipts are not runtime admission inputs.
 
 `make desktop` is the complete Native Desktop developer entrypoint. It resolves
 runtime values from the selected Profile, prepares missing workspace packages
@@ -768,9 +766,9 @@ registered branch, Profile, slot, capabilities, and Owner metadata.
 
 Every operation captures current Git branch and HEAD directly from the
 worktree. Root, workspace ID, and registered branch remain fail-closed binding
-checks. Development declarations, Plan/Session records, and deployment
-`build_commit` remain the source-version authorities for Agent mutation and
-exact-source runtime verification.
+checks. Runtime acquisition snapshots branch and HEAD before lock acquisition
+and revalidates them after the OS lock is held; deployment `build_commit`
+remains the exact-source runtime readback.
 
 Runtime accepts only the corrected schema-v1 shape and does not migrate or
 silently normalize incompatible registrations. Machine-local files produced by
@@ -797,16 +795,19 @@ Stable workspace identity and advancing source identity change independently and
 
 - Same-branch Git updates require no machine-registry write and immediately work
   across config, check, status, Station, Desktop, and Mobile entrypoints.
-- Agent runtime acquisition still fails when its declaration `sourceHead` does
-  not equal the current worktree HEAD.
+- Runtime acquisition fails when the prepared branch or HEAD no longer equals
+  the current worktree identity.
 - Root or branch drift still returns `WORKTREE_IDENTITY_MISMATCH`.
 - `env-update` changes explicit binding fields; it no longer refreshes source
   commit identity.
 
 ## LDCP-D18: Require Committed Resource-Plan Provenance For Planner-Owned Leases
 
-**Status**: accepted
+**Status**: superseded by DWF-D46
 **Date**: 2026-09-30
+
+This decision is retained as historical context only. Runtime admission no
+longer reads Development declarations or PlanResourcePlan receipts.
 
 ### Context
 
@@ -902,8 +903,12 @@ keeps authority with the underlying workflow stores.
 
 ## LDCP-D20: Unregister Environments Only Through Coordinated Development Close
 
-**Status**: accepted
+**Status**: superseded by DWF-D46
 **Date**: 2026-10-05
+
+This decision is retained as historical context only. Unregister now checks
+the exact registration owner and actual live OS leases; optional task,
+active-work, PlanMount, and close records do not occupy a workspace binding.
 
 ### Context
 
@@ -945,3 +950,67 @@ prevents worktree deletion from bypassing live lifecycle owners.
 - Worktree removal remains an explicit Owner operation.
 - Tests must prove PlanMount blocks unregister and exact identity recovery works
   after the source root is gone.
+
+## LDCP-D21: Reviewed Profiles Authorize Development Operations
+
+**Status**: accepted
+**Date**: 2026-10-15
+
+### Context
+
+The internal development environment is intentionally disposable. Requiring a
+separate human receipt for local Profile creation, then another prompt for
+deploy or reset, duplicated authority already present in the reviewed Profile
+and interrupted exact-source verification.
+
+The old reset matcher also protected any ID containing `stable`, although the
+operator convention is a terminal `stable` suffix.
+
+### Decision
+
+- A reviewed Profile and its workspace binding capabilities authorize
+  selection, registration, runtime provisioning, deploy, restart, and reset.
+- A worktree-local Profile may be created directly with `make profile-init`.
+  The environment-creation authorization receipt and `profile-authorize`
+  command are removed.
+- Profile IDs ending in `stable`, case-insensitively, are
+  `stable-protected`; every other Profile is `agent-resettable`.
+- Canonical first selection grants a stable Profile only `station.connect`.
+  Stable deploy/restart requires a user-directed explicit `station.deploy`
+  binding; stable reset remains forbidden.
+- A non-stable operation still requires exact target or reset scope, current
+  source identity, clean topology where remote deployment is involved, and the
+  matching OS-held lease.
+- Remote Profile definitions remain tracked source in the sibling environment
+  repository. Runtime code may not invent a host, credential, or dirty
+  topology definition.
+- Source synchronization may force-update a namespaced ref in an internal
+  deployment transport repository. That ref is not a collaboration branch,
+  delivery push, or authorization to publish to origin/GitHub.
+
+### Rationale
+
+The Profile is the reviewed capability boundary. Removing duplicate chat and
+receipt authorization keeps routine development autonomous without weakening
+target identity, stable protection, source fencing, or resource exclusion.
+
+### Alternatives Considered
+
+- Keep the human receipt for local Profile creation: rejected because it
+  duplicates worktree scope and blocks disposable development setup.
+- Treat every Profile as mutable: rejected because stable environments need a
+  visible protection boundary.
+- Remove capabilities or leases: rejected because they still own operation
+  scope and real resource exclusion.
+
+### Consequences
+
+- Non-stable development environments can be prepared and reset as part of an
+  ordinary verification loop.
+- A non-terminal `stable` token no longer protects a Profile.
+- Stable reset remains rejected before lease acquisition; stable deployment is
+  absent from default selection and exists only through an explicit binding.
+- Push, PR, merge, release, history rewrite, and worktree lifecycle remain
+  separately governed operations. Internal deployment transport ref updates
+  are part of Profile-authorized source synchronization, not collaboration
+  publication.

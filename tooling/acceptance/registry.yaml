@@ -629,26 +629,6 @@
       ]
     },
     {
-      "id": "workspace-plan-mount",
-      "features": [
-        "development-workflow-control-plane"
-      ],
-      "when": {
-        "paths": [
-          "tooling/scripts/plan/plan-mount*.mjs",
-          "tooling/scripts/plan/plan-completion*.mjs",
-          "tooling/scripts/plan/stable-plan-state-migration*.mjs",
-          "docs/knowledge/invariants/plan-mount-is-run-bound.md",
-          "docs/knowledge/invariants/stable-plan-amendments.md",
-          "tooling/skills/pt-plan-and-document/**"
-        ]
-      },
-      "require": [
-        "workspace-plan-mount-self",
-        "acceptance-workflow-contract"
-      ]
-    },
-    {
       "id": "chat-proto",
       "features": [
         "chat-service-contract"
@@ -2189,7 +2169,9 @@
           "docs/architecture/engineering/development-workflow/**",
           "tooling/scripts/lib/machine-dev-paths.mjs",
           "tooling/scripts/local-dev/dev-work*.mjs",
-          "tooling/scripts/local-dev/dev-session*.mjs",
+          "tooling/scripts/local-dev/task-progress-store.mjs",
+          "tooling/scripts/local-dev/completion-review*.mjs",
+          "tooling/scripts/local-dev/workflow-*.mjs",
           "tooling/scripts/plan/**",
           "tooling/scripts/execution-plan.py",
           "tooling/acceptance/core/execution_plan.py",
@@ -2204,7 +2186,8 @@
         ]
       },
       "require": [
-        "development-workflow-control-plane"
+        "development-workflow-control-plane",
+        "development-flow-tool-e2e"
       ]
     },
     {
