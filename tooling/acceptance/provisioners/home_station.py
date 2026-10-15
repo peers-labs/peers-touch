@@ -23,6 +23,7 @@ from tooling.acceptance.core.provisioner import EnvironmentProvisioner
 from tooling.acceptance.core.provisioning import (
     ActorIdentity,
     ActorManifest,
+    ClientServiceBinding,
     ClientRuntime,
     EnvironmentContract,
     ProvisioningState,
@@ -865,7 +866,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
         slot: int,
         profile_env: dict[str, str],
     ) -> ClientRuntime:
-        return self._agent_native_client(
+        client = self._agent_native_client(
             run_id,
             slot,
             profile_env,
@@ -875,6 +876,17 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             gateway_port_variable="PT_MESSAGE_PUBLISHING_GATEWAY_PORT",
             renderer_port_variable="PT_MESSAGE_PUBLISHING_RENDERER_PORT",
             webdriver_port_variable="PT_MESSAGE_PUBLISHING_WEBDRIVER_PORT",
+        )
+        return dataclasses.replace(
+            client,
+            id="alice",
+            required_service_roles=("station",),
+            service_bindings={
+                "station": ClientServiceBinding(
+                    service_id="station",
+                    required_kind="station",
+                )
+            },
         )
 
     def _export_profile_credential_refs(

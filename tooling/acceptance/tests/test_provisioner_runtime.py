@@ -1062,7 +1062,16 @@ class ProvisionerBlockingTests(unittest.TestCase):
         self.assertFalse(agent_native_requires_provider(MESSAGE_PUBLISHING_GATE))
         self.assertEqual(agent_profile_for_gate(MESSAGE_PUBLISHING_GATE), "one")
         self.assertEqual(client.actor, "alice")
+        self.assertEqual(client.id, "alice")
         self.assertEqual(client.profile, "one")
+        self.assertEqual(client.required_service_roles, ("station",))
+        self.assertEqual(
+            client.service_bindings["station"],
+            ClientServiceBinding(
+                service_id="station",
+                required_kind="station",
+            ),
+        )
         self.assertEqual(client.gateway_port, 13331)
         self.assertEqual(client.renderer_port, 13511)
         self.assertEqual(client.webdriver_port, 14449)
