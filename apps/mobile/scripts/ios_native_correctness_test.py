@@ -150,6 +150,10 @@ class IOSSwiftPackageLocalizationTest(unittest.TestCase):
 
 
 class IOSProjectGenerationTest(unittest.TestCase):
+    def test_network_stack_links_system_configuration(self) -> None:
+        project_spec = PROJECT_SPEC_PATH.read_text(encoding="utf-8")
+        self.assertIn("- sdk: SystemConfiguration.framework", project_spec)
+
     def test_committed_xcode_project_matches_current_inputs(self) -> None:
         xcodegen = shutil.which("xcodegen")
         self.assertIsNotNone(xcodegen, "xcodegen is required for iOS project checks")
