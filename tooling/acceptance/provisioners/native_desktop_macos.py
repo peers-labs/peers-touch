@@ -516,7 +516,7 @@ class NativeDesktopMacOSProvisioner:
         adapter: MacOSNativeDesktopAdapter,
         process_id: int,
         *,
-        timeout_seconds: float = 5.0,
+        timeout_seconds: float = 15.0,
         interval_seconds: float = 0.1,
         activation_point: tuple[float, float] | None = None,
     ) -> NativeControlSnapshot:
