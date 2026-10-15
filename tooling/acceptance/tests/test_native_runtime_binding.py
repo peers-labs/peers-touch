@@ -297,6 +297,7 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             session,
             "http://station.example",
             "station-four",
+            "station-peer-four",
         )
 
         self.assertEqual(
@@ -370,6 +371,7 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             session,
             "https://new-proxy.example:19443",
             "station-four",
+            "station-peer-four",
         )
 
         self.assertEqual(
@@ -400,6 +402,23 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
                 "status": json.dumps(
                     {
                         "entries": [
+                            {
+                                "station_peer_id": "station-peer-foreign",
+                                "routes": [
+                                    {
+                                        "route_id": "relay-foreign-newer",
+                                        "route_type": "relay",
+                                        "endpoint_origin": (
+                                            "https://relay.example:18443"
+                                        ),
+                                        "health": "available",
+                                        "attestation_expires_at_unix_ms": 100,
+                                        "last_verified_at": (
+                                            "2026-10-14T10:00:00Z"
+                                        ),
+                                    }
+                                ],
+                            },
                             {
                                 "station_peer_id": "station-peer-four",
                                 "routes": [
@@ -451,6 +470,7 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             session,
             "https://relay.example:18443",
             "station-via-relay",
+            "station-peer-four",
         )
 
         self.assertEqual(
@@ -503,6 +523,7 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             session,
             "http://relay.example:18081",
             "station-via-relay",
+            "station-peer-four",
         )
 
         self.assertEqual(
@@ -1041,6 +1062,7 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             session,
             "http://station.example",
             "station-four",
+            "station-peer-four",
         )
         observe.assert_called_once()
         persist.assert_called_once()
