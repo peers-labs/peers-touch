@@ -19,6 +19,7 @@
 		9B32A5A86C8444F020EE1379 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = BBF682509308BA6096B91686 /* UIKit.framework */; };
 		A3FE74727D6D3CD53C06EDF0 /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = 2DB9AE4068D0698CC760EFDC /* main.mm */; };
 		A8E509A9D575492449BCC25A /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 4317CABC0BF4FAAD9726B4B4 /* InfoPlist.strings */; };
+		D99BEA9EDF2936E72C8CBCC9 /* SystemConfiguration.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9E449E124C6CE1DB3D59EE08 /* SystemConfiguration.framework */; };
 		E6CFD4A3ED38E260E8E4C3DF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 09635B86FCB666DB3DD032BD /* LaunchScreen.storyboard */; };
 		FC0BCF858EA0D8685E663578 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0C7A99727446DB80E9D7AAE6 /* Metal.framework */; };
 /* End PBXBuildFile section */
@@ -89,6 +90,7 @@
 		9766B784729AEF6ADA9206F7 /* credential_envelope_go.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = credential_envelope_go.json; sourceTree = "<group>"; };
 		9D88BF08E8AD1E4262DA0219 /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
 		9E01F1E86E2C8759D6ED8013 /* v2.rs */ = {isa = PBXFileReference; path = v2.rs; sourceTree = "<group>"; };
+		9E449E124C6CE1DB3D59EE08 /* SystemConfiguration.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SystemConfiguration.framework; path = System/Library/Frameworks/SystemConfiguration.framework; sourceTree = SDKROOT; };
 		A17A9297DBC2437ECA875E8B /* native_events.rs */ = {isa = PBXFileReference; path = native_events.rs; sourceTree = "<group>"; };
 		A3A6CA12AAFD2977F7655A8F /* friend_request.rs */ = {isa = PBXFileReference; path = friend_request.rs; sourceTree = "<group>"; };
 		A3AB9134448CE6FBFD60A512 /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
@@ -108,6 +110,7 @@
 		B7D32EC622950496A52F1C5E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		BAD307392C7965567BE94662 /* recovery.rs */ = {isa = PBXFileReference; path = recovery.rs; sourceTree = "<group>"; };
 		BBF682509308BA6096B91686 /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
+		BC6B10C7362982CCB7DCF902 /* station_route.rs */ = {isa = PBXFileReference; path = station_route.rs; sourceTree = "<group>"; };
 		BD4532501B8BB118A19537AA /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
 		BE07F44D8E2DA3DE9DDC1A61 /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
 		C03314EE01D41723A426E908 /* scope.rs */ = {isa = PBXFileReference; path = scope.rs; sourceTree = "<group>"; };
@@ -153,6 +156,7 @@
 				3D85ED81D184602FA9353961 /* MetalKit.framework in Frameworks */,
 				07B8BAAA4AF8128DAC8642C1 /* QuartzCore.framework in Frameworks */,
 				743FAC398981C6B515779589 /* Security.framework in Frameworks */,
+				D99BEA9EDF2936E72C8CBCC9 /* SystemConfiguration.framework in Frameworks */,
 				9B32A5A86C8444F020EE1379 /* UIKit.framework in Frameworks */,
 				0DDC2AFCC4F9A9612E42DADF /* WebKit.framework in Frameworks */,
 			);
@@ -255,6 +259,7 @@
 				3BDD68EE88959D535CCA896B /* mod.rs */,
 				FBDFD7420181003F849579C1 /* pin.rs */,
 				04EE79673F068760A28AFAAE /* reliability_proto.rs */,
+				BC6B10C7362982CCB7DCF902 /* station_route.rs */,
 				7AE460EC8C6D12C92A8BD0DD /* command_ledger */,
 				4B0AFBCEE81D1061A47AAA31 /* draft_store */,
 				2B265825691E42E706F216E5 /* oauth */,
@@ -452,6 +457,7 @@
 				A7DC514F4BCF0258D54EE039 /* MetalKit.framework */,
 				DDAD56ECF90CC7A8FBB94E19 /* QuartzCore.framework */,
 				A3AB9134448CE6FBFD60A512 /* Security.framework */,
+				9E449E124C6CE1DB3D59EE08 /* SystemConfiguration.framework */,
 				BBF682509308BA6096B91686 /* UIKit.framework */,
 				0D33199FDB1DA6A3792D12B0 /* WebKit.framework */,
 			);
@@ -643,7 +649,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = "peers-touch-mobile_iOS/peers-touch-mobile_iOS.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = "D82S6W6WUC";
+				DEVELOPMENT_TEAM = "$(APPLE_DEVELOPMENT_TEAM)";
 				ENABLE_BITCODE = NO;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
@@ -660,7 +666,7 @@
 				"LIBRARY_SEARCH_PATHS[sdk=iphoneos*]" = "$(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)";
 				"LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]" = "$(inherited) $(PROJECT_DIR)/Externals/arm64-sim/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)";
 				PRODUCT_BUNDLE_IDENTIFIER = com.peers.touch.mobile;
-				PRODUCT_NAME = "Peers";
+				PRODUCT_NAME = Peers;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -675,7 +681,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = "peers-touch-mobile_iOS/peers-touch-mobile_iOS.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = "D82S6W6WUC";
+				DEVELOPMENT_TEAM = "$(APPLE_DEVELOPMENT_TEAM)";
 				ENABLE_BITCODE = NO;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
@@ -692,7 +698,7 @@
 				"LIBRARY_SEARCH_PATHS[sdk=iphoneos*]" = "$(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)";
 				"LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]" = "$(inherited) $(PROJECT_DIR)/Externals/arm64-sim/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)";
 				PRODUCT_BUNDLE_IDENTIFIER = com.peers.touch.mobile;
-				PRODUCT_NAME = "Peers";
+				PRODUCT_NAME = Peers;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
