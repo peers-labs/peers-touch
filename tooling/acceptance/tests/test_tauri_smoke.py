@@ -52,24 +52,20 @@ class TauriSessionSemanticActionTests(unittest.TestCase):
         self.element.send_keys.assert_called_once_with("replacement")
 
     def test_semantic_key_sequence_targets_webview_focus(self) -> None:
-        with patch(
-            "tooling.acceptance.drivers.tauri.ActionChains"
-        ) as action_chains:
-            chain = action_chains.return_value
-            chain.send_keys.return_value = chain
+        self.session.semantic_key_sequence(
+            self.element,
+            "ENTER",
+            "TAB",
+        )
 
-            self.session.semantic_key_sequence(
-                self.element,
-                "ENTER",
-                "TAB",
-            )
-
-        script, element = self.native_driver.execute_script.call_args.args
+        script, element, keys = self.native_driver.execute_script.call_args.args
         self.assertIs(element, self.element)
         self.assertIn("focus({ preventScroll: true })", script)
-        action_chains.assert_called_once_with(self.native_driver.driver)
-        chain.send_keys.assert_called_once_with("ENTER", "TAB")
-        chain.perform.assert_called_once_with()
+        self.assertIn("new KeyboardEvent('keydown'", script)
+        self.assertIn("descriptor.key === 'Tab'", script)
+        self.assertIn("target.click()", script)
+        self.assertEqual(keys, ["ENTER", "TAB"])
+        self.element.send_keys.assert_not_called()
 
 
 if __name__ == "__main__":
