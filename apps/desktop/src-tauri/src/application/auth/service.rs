@@ -16,7 +16,7 @@ use crate::model::access_gate::{
     GetAccessDecisionRequest, GetAccessDecisionResponse, StartAccessAttemptRequest,
     StartAccessAttemptResponse, SubmitAccessGateRequest, SubmitAccessGateResponse,
 };
-use crate::model::actor::ActorProfile;
+use crate::model::actor::{ActorProfile, ListActorDevicesRequest, ListActorDevicesResponse};
 use crate::model::auth::{LoginRequest, LoginResponse};
 use crate::state::AppState;
 use serde_json::json;
@@ -113,7 +113,7 @@ pub(crate) fn activate_messaging_profile(
     actor_ptid: &str,
     token: &str,
 ) -> Result<(), String> {
-    prepare_messaging_profile(state, account_id, actor_ptid)?;
+    prepare_messaging_profile(state, account_id, actor_ptid, token)?;
     activate_messaging_profile_worker(state, account_id, token)
 }
 
@@ -121,6 +121,7 @@ pub(crate) fn prepare_messaging_profile(
     state: &AppState,
     account_id: &str,
     actor_ptid: &str,
+    token: &str,
 ) -> Result<(), String> {
     if account_id.trim().is_empty() || actor_ptid.trim().is_empty() {
         return Err("messaging activation identity is incomplete".to_string());
@@ -128,6 +129,7 @@ pub(crate) fn prepare_messaging_profile(
     if !actor_ptid.starts_with("ptid:") {
         return Err("messaging activation requires canonical actor PTID".to_string());
     }
+    let actor_profile_version = resolve_actor_profile_version(token)?;
     let identity_key_ref =
         crate::infrastructure::local_scope::LocalScope::from_actor_ptid(actor_ptid)
             .identity_key_ref();
@@ -138,9 +140,44 @@ pub(crate) fn prepare_messaging_profile(
         account_id.to_string(),
         actor_ptid.to_string(),
         &actor_identity_seed,
-        crate::messaging::INITIAL_ACTOR_IDENTITY_PROFILE_VERSION,
+        actor_profile_version,
     )?;
     Ok(())
+}
+
+fn resolve_actor_profile_version(token: &str) -> Result<u64, String> {
+    if token.trim().is_empty() {
+        return Err("messaging activation token is incomplete".to_string());
+    }
+    let response =
+        station_client::request_proto::<ListActorDevicesRequest, ListActorDevicesResponse>(
+            reqwest::Method::GET,
+            "/device/list",
+            token,
+            None,
+            None,
+        )
+        .map_err(|error| {
+            format!(
+                "messaging actor profile version unavailable: {}",
+                error.message
+            )
+        })?;
+    actor_profile_version_from_devices(&response)
+}
+
+fn actor_profile_version_from_devices(response: &ListActorDevicesResponse) -> Result<u64, String> {
+    if response.devices.is_empty() {
+        return Ok(crate::messaging::INITIAL_ACTOR_IDENTITY_PROFILE_VERSION);
+    }
+
+    response.devices.iter().try_fold(0, |latest, device| {
+        let version = device.profile_version;
+        if version == 0 || version > i64::MAX as u64 {
+            return Err("Station returned an invalid actor profile version".to_string());
+        }
+        Ok(latest.max(version))
+    })
 }
 
 pub(crate) fn activate_messaging_profile_worker(
@@ -1441,18 +1478,48 @@ fn station_verification_rejects_session(error: &station_client::StationClientErr
 #[cfg(test)]
 mod tests {
     use super::{
-        run_required_logout_cleanup, should_resume_access_binding,
-        station_verification_rejects_session, DESKTOP_SESSION_CLASS,
+        actor_profile_version_from_devices, run_required_logout_cleanup,
+        should_resume_access_binding, station_verification_rejects_session, DESKTOP_SESSION_CLASS,
     };
     use crate::application::station_binding::StationBindingPhase;
     use crate::contracts::AuthSessionPayload;
     use crate::error::ErrorCode;
     use crate::infrastructure::station_client::{StationClientError, StationClientErrorKind};
+    use crate::model::actor::{ActorDevice, ListActorDevicesResponse};
     use std::cell::Cell;
 
     #[test]
     fn desktop_uses_the_canonical_session_class() {
         assert_eq!(DESKTOP_SESSION_CLASS, "desktop");
+    }
+
+    #[test]
+    fn empty_device_list_uses_the_initial_actor_profile_version() {
+        let response = ListActorDevicesResponse::default();
+
+        assert_eq!(
+            actor_profile_version_from_devices(&response),
+            Ok(crate::messaging::INITIAL_ACTOR_IDENTITY_PROFILE_VERSION)
+        );
+    }
+
+    #[test]
+    fn device_list_uses_the_latest_actor_profile_version() {
+        let response = device_list_with_profile_versions(&[3, 21, 8]);
+
+        assert_eq!(actor_profile_version_from_devices(&response), Ok(21));
+    }
+
+    #[test]
+    fn device_list_rejects_invalid_actor_profile_versions() {
+        for version in [0, i64::MAX as u64 + 1] {
+            let response = device_list_with_profile_versions(&[version]);
+
+            assert_eq!(
+                actor_profile_version_from_devices(&response),
+                Err("Station returned an invalid actor profile version".to_string())
+            );
+        }
     }
 
     #[test]
@@ -1602,6 +1669,18 @@ mod tests {
         for (actual, (operation, message)) in failures.iter().zip(expected_failures) {
             assert_eq!(actual["operation"], *operation);
             assert_eq!(actual["message"], *message);
+        }
+    }
+
+    fn device_list_with_profile_versions(versions: &[u64]) -> ListActorDevicesResponse {
+        ListActorDevicesResponse {
+            devices: versions
+                .iter()
+                .map(|profile_version| ActorDevice {
+                    profile_version: *profile_version,
+                    ..ActorDevice::default()
+                })
+                .collect(),
         }
     }
 }

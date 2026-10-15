@@ -5424,6 +5424,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 state,
                 &prepared.account_id,
                 &prepared.actor_ptid,
+                &prepared.token,
             ) {
                 return to_json(AppResult::<AuthSessionPayload>::fail(
                     ErrorCode::InternalError,
@@ -5607,6 +5608,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     state,
                     &input.account_id,
                     &session.actor_ptid,
+                    &session.token,
                 ) {
                     return to_json(AppResult::<AuthSessionPayload>::fail(
                         ErrorCode::InternalError,
