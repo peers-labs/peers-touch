@@ -3163,6 +3163,7 @@ func validateCanonicalPrivatePostSchema(database *gorm.DB) error {
 		&dbmodel.SocialPrivateContentPost{},
 		nil,
 		nil,
+		nil,
 		true,
 	)
 }
@@ -3170,6 +3171,7 @@ func validateCanonicalPrivatePostSchema(database *gorm.DB) error {
 func validatePrivatePostIndexes(database *gorm.DB, allowRetired bool) error {
 	var allowedExtraColumns map[string]struct{}
 	var allowedExtraIndexes map[string]canonicalIndexExpectation
+	var allowedPartialIndexes map[string]string
 	requireAll := true
 	if allowRetired {
 		allowedExtraColumns = stringSet(RetiredPrivatePostColumns())
@@ -3185,6 +3187,14 @@ func validatePrivatePostIndexes(database *gorm.DB, allowRetired bool) error {
 					Unique:  false,
 				},
 			}
+			allowedPartialIndexes = map[string]string{
+				"uidx_social_private_post_id": canonicalPostgresPrivateIndexPredicate(
+					"post_id",
+				),
+				"uidx_social_private_post_content": canonicalPostgresPrivateIndexPredicate(
+					"content_id",
+				),
+			}
 		}
 	}
 
@@ -3193,6 +3203,7 @@ func validatePrivatePostIndexes(database *gorm.DB, allowRetired bool) error {
 		&dbmodel.SocialPrivateContentPost{},
 		allowedExtraColumns,
 		allowedExtraIndexes,
+		allowedPartialIndexes,
 		requireAll,
 	)
 }
@@ -3231,6 +3242,7 @@ func validateCanonicalPrivateContentSchema(database *gorm.DB) error {
 		if err := validateCanonicalModelIndexes(
 			database,
 			model,
+			nil,
 			nil,
 			nil,
 			true,
@@ -3450,6 +3462,7 @@ func validateCanonicalModelIndexes(
 	model any,
 	allowedExtraColumns map[string]struct{},
 	allowedExtraIndexes map[string]canonicalIndexExpectation,
+	allowedPartialIndexes map[string]string,
 	requireAll bool,
 ) error {
 	statement := &gorm.Statement{DB: database}
@@ -3478,22 +3491,10 @@ func validateCanonicalModelIndexes(
 			Columns: columns,
 			Unique:  strings.EqualFold(index.Class, "UNIQUE"),
 		}
-		if database.Dialector.Name() == "postgres" &&
-			statement.Schema.Table == "social_private_posts" {
-			switch index.Name {
-			case "uidx_social_private_post_id":
-				expected[index.Name] = canonicalIndexExpectation{
-					Columns:          columns,
-					Unique:           true,
-					PartialPredicate: canonicalPostgresPrivateIndexPredicate("post_id"),
-				}
-			case "uidx_social_private_post_content":
-				expected[index.Name] = canonicalIndexExpectation{
-					Columns:          columns,
-					Unique:           true,
-					PartialPredicate: canonicalPostgresPrivateIndexPredicate("content_id"),
-				}
-			}
+		if predicate, ok := allowedPartialIndexes[index.Name]; ok {
+			expectation := expected[index.Name]
+			expectation.PartialPredicate = predicate
+			expected[index.Name] = expectation
 		}
 	}
 
