@@ -510,6 +510,13 @@ class DesktopPrimaryNavigationGate(AcceptanceGate):
                 "New Job",
             ),
         )
+        self._wait(
+            session,
+            "Number("
+            "window.__PT_NATIVE_NAV_INVOCATIONS__?.cron_list_jobs || 0"
+            ") >= 1",
+            "Cron Settings initial jobs load",
+        )
         cron_count = self._invocation_count(
             session,
             "cron_list_jobs",
