@@ -20,7 +20,10 @@ from urllib.parse import urlparse
 from tooling.acceptance.core._paths import REPO_ROOT
 from tooling.acceptance.core.attestation import (
     commits_match,
+    persist_service_attestation,
     produce_station_attestation,
+    read_service_runtime_identity,
+    read_service_version,
     source_proto_digest,
 )
 from tooling.acceptance.core.errors import BlockedError, ProvisioningError
@@ -310,6 +313,39 @@ def _persist_relay_attestation(
             repo_root=REPO_ROOT,
             media_type="application/json",
         ).to_dict(),
+    )
+
+
+def _persist_direct_station_attestation(
+    *,
+    environment_id: str,
+    station_url: str,
+    station_endpoint: str,
+    station_deployment: str,
+) -> ServiceAttestation:
+    version = read_service_version(station_url)
+    live_commit = str(version.get("build_commit") or "")
+    if not live_commit:
+        raise BlockedError(
+            reason="Station direct ingress has no source-bound build identity",
+            resource=f"service-attestation:{station_deployment}",
+        )
+    return persist_service_attestation(
+        ServiceAttestation(
+            service_id="station",
+            service_kind="station",
+            environment_id=environment_id,
+            deployment_environment=station_deployment,
+            endpoint=station_endpoint,
+            live_commit=live_commit,
+            workspace_digest="clean",
+            protocol_digest=source_proto_digest(REPO_ROOT),
+            artifact_ref={},
+            produced_at=utc_now(),
+            producer="station-relay-role-attachment",
+            build_time=str(version.get("build_time") or ""),
+            runtime_identity=read_service_runtime_identity(station_url),
+        )
     )
 
 
@@ -999,17 +1035,26 @@ server {
                     relay_config=relay_config,
                     trust_anchor=trust_anchor,
                 )
-            station_attestation = produce_station_attestation(
-                environment_id=self.environment_id,
-                run_id=manifest.run_id,
-                service_id="station",
-                station_url=station_endpoint,
-                profile_env={
-                    "PT_STATION_MODE": "remote",
-                    "PT_STATION_DEPLOY_ENV": station_deployment,
-                },
-                require_runtime_identity=True,
-                remote_source_identity_provider=resolve_remote_source_identity,
+            station_attestation = (
+                _persist_direct_station_attestation(
+                    environment_id=self.environment_id,
+                    station_url=station_url,
+                    station_endpoint=station_endpoint,
+                    station_deployment=station_deployment,
+                )
+                if station_endpoint != station_url
+                else produce_station_attestation(
+                    environment_id=self.environment_id,
+                    run_id=manifest.run_id,
+                    service_id="station",
+                    station_url=station_url,
+                    profile_env={
+                        "PT_STATION_MODE": "remote",
+                        "PT_STATION_DEPLOY_ENV": station_deployment,
+                    },
+                    require_runtime_identity=True,
+                    remote_source_identity_provider=resolve_remote_source_identity,
+                )
             )
             relay_attestation = _persist_relay_attestation(
                 environment_id=self.environment_id,

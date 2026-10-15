@@ -277,6 +277,11 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
             ),
             patch(
                 "tooling.acceptance.provisioners.station_access_relay_role."
+                "_persist_direct_station_attestation",
+                return_value=_attestation("station", "station"),
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
                 "_persist_relay_attestation",
                 return_value=_attestation("relay", "relay"),
             ),
@@ -405,6 +410,11 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
             patch(
                 "tooling.acceptance.provisioners.station_access_relay_role."
                 "produce_station_attestation",
+                return_value=_attestation("station", "station"),
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "_persist_direct_station_attestation",
                 return_value=_attestation("station", "station"),
             ),
             patch(
