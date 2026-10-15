@@ -76,6 +76,13 @@ class AndroidSocialGateTests(unittest.TestCase):
         self.assertGreaterEqual(RUNTIME_REUSE.min_warm_reuse_rate, 0.8)
         self.assertFalse(RUNTIME_REUSE.allow_client_replacement)
 
+    def test_circle_audience_selects_the_target_row(self) -> None:
+        source = inspect.getsource(AndroidSocialGate._run_ios_circles_publish)
+
+        self.assertIn('social-audience-circle', source)
+        self.assertIn('data-circle-id="{circle_id}"', source)
+        self.assertNotIn('social-audience-target-done', source)
+
     def test_active_scenario_cleanup_preserves_failed_suite_report(self) -> None:
         gate = AndroidSocialGate()
         ledger = SuiteRuntimeLedger(
