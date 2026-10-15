@@ -49,7 +49,6 @@ export VITE_PORT=3000
 | `verify-worktree-binding-test.py` | 可用 | 回归验证 worktree identity guard 与 Goal 队列契约 | 覆盖 wrong cwd、detached HEAD、identity drift、sibling worktree churn、持久 schema，以及 Ready/Parked queue 与 exhaustion-proof 阻塞语义 |
 | `local-dev/machine-dev.mjs` | 推荐 | 管理 machine-authoritative workspace registration 与 runtime lease | `make env-{register,update,check,status-all}`；显式删除 worktree 前用 `make env-unregister`，禁止手改 registry |
 | `local-dev/task-progress-store.mjs` | 可选 | 保存显式 taskId 的单一原子快照、checksum、CAS、证据失效与局部损坏隔离 | `.dev-workflow/tasks/<taskId>/task.json`；不参与写入或运行准入 |
-| `local-dev/environment-creation-authorization.py` | 内部依赖 | 管理 human-only environment creation grant | `make profile-authorize` 交互创建 30 分钟 exact-tuple grant；`profile-init` 单次消费并保留 profile digest receipt；Agent 不得创建 grant |
 | `check-social-runtime-boundaries.sh` | 可用 | 校验双端社交 Runtime 边界 | 禁止页面/组件直接拥有社交实时流、reconcile、长期 freshness |
 | `check-frontend-runtime-registry.sh` | 可用 | 校验 Frontend Runtime registry 门禁 | 检查 registry 必填字段、alive/status 枚举、evidence、`needs audit` owner/revisit wording，并支持 review diff-range warning |
 | `apps/mobile/scripts/check-social-wire-contract.sh` | 可用 | 校验 Mobile 社交实时协议契约 | 禁止回退到手写 protobuf wire decoder |

@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# profile.sh — Manage human-authorized local profile definitions
+# profile.sh — Manage worktree-local development profile definitions
 # Usage:
-#   profile.sh authorize <name> [SLOT=N]
 #   profile.sh init <name> [SLOT=N]
 #   profile.sh list
 set -euo pipefail
@@ -10,7 +9,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/redact-env.sh"
-AUTHORIZATION_SCRIPT="$SCRIPT_DIR/environment-creation-authorization.py"
 LOCAL_DEV_DIR="$PROJECT_ROOT/.local/dev"
 PROFILES_DIR="$LOCAL_DEV_DIR/profiles"
 
@@ -91,31 +89,7 @@ require_reviewed_env_profile() {
   fi
 }
 
-verify_authorized_local_profile() {
-  local profile_name="$1"
-  local profile_file="$2"
-  python3 "$AUTHORIZATION_SCRIPT" verify \
-    --workspace-root "$PROJECT_ROOT" \
-    --profile "$profile_name" \
-    --profile-file "$profile_file"
-}
-
 case "$cmd" in
-  authorize)
-    if [[ -z "$name" ]]; then
-      echo "[ERROR] Usage: profile.sh authorize <name> [SLOT=N]"
-      exit 1
-    fi
-    validate_profile_name "$name"
-    slot="${SLOT:-0}"
-    validate_slot "$slot"
-    python3 "$AUTHORIZATION_SCRIPT" grant \
-      --workspace-root "$PROJECT_ROOT" \
-      --profile "$name" \
-      --mode compose \
-      --slot "$slot"
-    ;;
-
   init)
     if [[ -z "$name" ]]; then
       echo "[ERROR] Usage: profile.sh init <name> [SLOT=N]"
@@ -179,19 +153,10 @@ PT_MOBILE_WEB_PORT=$mobile_web
 PT_MOBILE_DEFAULT_STATION_URL=http://127.0.0.1:$station_port
 EOF
 
-    if ! receipt="$(python3 "$AUTHORIZATION_SCRIPT" consume \
-      --workspace-root "$PROJECT_ROOT" \
-      --profile "$name" \
-      --profile-file "$temporary_profile")"; then
-      echo "[ERROR] profile-init requires a matching human-created authorization."
-      echo "        Run interactively: make profile-authorize PROFILE=$name SLOT=$slot"
-      exit 1
-    fi
     chmod 600 "$temporary_profile"
     mv "$temporary_profile" "$dest"
     trap - EXIT
     echo "[OK] Created profile: $dest"
-    echo "     Authorization receipt: $receipt"
     echo "     Register with: make env-register PROFILE=$name SLOT=$slot CAPABILITIES=station.connect PURPOSE='<purpose>'"
     ;;
 
@@ -217,21 +182,17 @@ EOF
       while IFS= read -r pname; do
         [[ -n "$pname" ]] || continue
         f="$PROFILES_DIR/$pname.env"
-        source_kind="unapproved"
+        source_kind="local"
         if [[ -n "$env_repo" && -f "$env_repo/peers-touch/$pname/profile.env.example" ]] \
           && require_reviewed_env_profile "$pname" "$env_repo" >/dev/null 2>&1; then
           source_kind="canonical"
-        elif [[ -f "$f" ]] \
-          && verify_authorized_local_profile "$pname" "$f" >/dev/null 2>&1; then
-          source_kind="authorized-local"
         fi
         echo "    $pname ($source_kind)"
       done <<< "$profile_names"
     else
       echo "  (none)"
       echo ""
-      echo "  Human authorization: make profile-authorize PROFILE=local-a SLOT=0"
-      echo "  Then create: make profile-init PROFILE=local-a SLOT=0"
+      echo "  Create one: make profile-init PROFILE=local-a SLOT=0"
     fi
     echo ""
     echo "Local deploy env cache is non-authoritative."
@@ -239,7 +200,7 @@ EOF
     ;;
 
   *)
-    echo "Usage: profile.sh {authorize|init|list} [name]"
+    echo "Usage: profile.sh {init|list} [name]"
     exit 1
     ;;
 esac

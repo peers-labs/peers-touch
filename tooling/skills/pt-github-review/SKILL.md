@@ -288,12 +288,12 @@ Treat these as blocking unless the user explicitly asks for exploratory review:
 | `retired-product-reference` | tracked content or a tracked path reintroduces a retired external product identifier |
 | `repository-debug-artifact` | repository-root `debug-*`, `.dbg/`, ad-hoc prompt, runtime log, trace, screenshot, DOM dump, or temporary report |
 | `station-profile-bypass` | Station start, deployment, restart, or direct execution bypasses `make station` and the active profile pipeline |
-| `unauthorized-environment-creation` | an agent creates, copies, derives, or registers a profile or deploy environment without explicit human approval for the exact name and target |
+| `unreviewed-environment-topology` | runtime code invents a remote host, credential, dirty/untracked deploy definition, or bypasses canonical Profile creation and binding |
 
 Keywords intentionally present for freshness checks: hardcoded secrets, No mock,
 hardcoded-ui-string, silent error, generated, runtime projection, CODEOWNERS,
 user-home-absolute-path, retired-product-reference, repository-debug-artifact, station-profile-bypass,
-unauthorized-environment-creation.
+unreviewed-environment-topology.
 
 ## Operational Knowledge
 
@@ -408,11 +408,17 @@ Hook installation fails.
 
 For Local Dev Profile changes, reject any stored reset-policy field or
 compatibility reader. The verified canonical Profile ID is the sole policy
-source: case-insensitive `stable` means reset-protected; all other reviewed
+source: a case-insensitive terminal `stable` suffix means reset-protected; all other reviewed
 Profiles are Agent-resettable only inside the exact binding capability,
-scope, topology/source identity, operation authorization, and OS-lease guards. Missing
+scope, topology/source identity, and OS-lease guards. Missing
 capability or scope must remain a typed control-plane failure, not a request for
 human authorization.
+
+Reviewed non-stable Profiles authorize routine environment selection,
+registration, provisioning, deploy, restart, and reset. Local Profile creation
+through `make profile-init` and coherent verified local commits are not review
+violations; push, PR, merge, release, history rewrite, and stable mutation
+remain separately governed.
 
 For machine workspace registration changes, reject persisted Git HEAD,
 command-specific HEAD reconciliation, or another mutable source cache in the

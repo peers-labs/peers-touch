@@ -3,8 +3,8 @@ name: pt-local-dev-env
 description: >
   Set up worktree-isolated local development environment using profiles.
   Use when the user wants to run Desktop, Mobile, or Station locally, or
-  connect to a remote Station. Agents may operate remote Station profiles
-  only; local/compose Station modes are reserved for human developers.
+  connect to a remote Station. Reviewed non-stable Profiles may be operated
+  autonomously in local, compose, or remote mode.
 ---
 
 # Local Dev Environment
@@ -23,60 +23,27 @@ make stop          # Stop everything
 make restart       # Restart everything
 ```
 
-The agent's job is to resolve and activate an existing approved **profile** for
-the user's scenario. The verified canonical Profile ID is the sole reset-policy
-input: IDs containing `stable` case-insensitively are reset-protected; every
-other reviewed Profile is Agent-resettable. Creating a profile or deploy
-environment still requires explicit human approval for the exact environment
-name and target.
+The agent resolves or creates a **Profile** for the selected worktree, then uses
+the canonical Make entrypoints. The verified Profile ID is the sole
+reset-policy input: IDs ending in `stable` case-insensitively are protected;
+every other reviewed Profile is Agent-resettable.
 
-## Environment Creation Authorization
+## Operation Policy
 
-AI agents MUST NOT create, copy, derive, or register a development profile or
-deploy environment without that explicit authorization. This includes:
-
-- adding `env/peers-touch/<name>/` definitions;
-- writing local-only `.local/dev/profiles/` or `.local/deploy/envs/` entries;
-- supplying an arbitrary `PT_DEV_PROFILE_FILE` outside a bounded Acceptance
-  runtime-manifest profile root;
-- running `make profile-authorize`, minting an authorization file, or running
-  `make profile-init` without a pre-existing exact grant; and
-- inferring creation permission from mere Plan existence, an Acceptance
-  requirement, available host, old pointer, task scope, or a Plan field that
-  does not explicitly authorize environment creation.
-
-A missing environment is a fail-closed blocker to report. Untracked or
-dirty env-repository definitions cannot authorize profile selection,
-deployment, restart, or reset. A machine-local compose profile is usable only
-when it matches a consumed human-created authorization receipt.
-
-## Agent Station Safety Boundary
-
-Local and compose-managed Station support exists for human developers only.
-AI agents MUST NOT start, restart, probe, test against, or otherwise access a
-Station whose active profile resolves to:
-
-- `PT_STATION_MODE=local` or `PT_STATION_MODE=compose`;
-- `127.0.0.1`, `localhost`, or another loopback Station URL;
-- an empty or unapproved remote deploy environment.
-
-Before an agent runs `make station`, `make station-restart`, `make restart`,
-`make desktop`, `make mobile`, or any test/Acceptance
-command that may ready or access Station, it MUST:
-
-1. Run `make config`.
-2. Resolve the active worktree profile.
-3. Verify `PT_STATION_MODE=remote`.
-4. Verify `PT_STATION_DEPLOY_ENV` is non-empty and matches the exact remote node
-   authorized by the user or by the accepted Plan's
-   `authorization.runtime.deployProfiles`.
-5. Verify `PT_STATION_URL` is non-loopback and matches that same node.
-
-Any missing, ambiguous, local, compose, loopback, or mismatched value is a
-fail-closed stop. The agent must not rely on defaults because the runtime
-scripts default to local/loopback behavior. `make station` is permitted for an
-agent only after this remote-profile preflight; in that case it performs the
-remote deploy/restart/health closure.
+- Existing reviewed non-stable Profiles authorize selection, registration,
+  runtime provisioning, deploy, restart, and exact-scope reset within their
+  declared capabilities. Do not ask for another approval.
+- `make profile-init` may create one non-overwriting worktree-local compose
+  Profile. No authorization receipt is required.
+- Remote mutation requires one Git-tracked, clean Profile and deploy definition
+  from the sibling environment repository. Never invent a host, credential, or
+  local deploy fallback.
+- New remote topology is a normal source change only when the environment
+  repository is explicitly selected in task scope.
+- Stable Profile reset is denied. Other stable mutations require explicit user
+  direction.
+- Every operation still validates the canonical worktree binding, capability,
+  target or reset scope, current source identity, topology, and OS-held lease.
 
 ## Core Concepts
 
@@ -86,8 +53,8 @@ A deployable profile is canonically defined in the sibling environment
 repository at `env/peers-touch/<name>/profile.env.example`. The
 `.local/dev/profiles/<name>.env` file is an imported cache and is never the
 authority for a same-named environment-repository profile. The only
-machine-local authority is a human-authorized compose profile whose bytes match
-its consumed environment-creation receipt.
+machine-local definition is a worktree-local compose Profile created through
+`make profile-init`.
 
 Remote deploy environments resolve directly from exactly one Git-tracked, clean
 `env/peers-touch/<profile>/deploy/<name>.env.example`. A
@@ -96,16 +63,16 @@ Remote deploy environments resolve directly from exactly one Git-tracked, clean
 The profile directory name and `PT_DEV_PROFILE` value must match exactly. After
 that identity check, derive reset policy from the canonical ID:
 
-- ID contains `stable`, case-insensitive: `stable-protected`; autonomous reset
+- ID ends in `stable`, case-insensitive: `stable-protected`; autonomous reset
   is denied with `PROFILE_RESET_PROTECTED`.
-- ID does not contain `stable`: `agent-resettable`; the Agent may choose reset
+- ID does not end in `stable`: `agent-resettable`; the Agent may choose reset
   without human involvement.
 
 There is no reset-policy field or legacy fallback. Resettable does not mean
 unbounded: `station.reset` must still be present in the workspace binding and
 the command must name the exact scope, topology and current source identity
-must match, and the OS lease must be held. Profile creation and renaming remain
-human-reviewed.
+must match, and the OS lease must be held. Remote Profile creation remains a
+tracked source change; local Profile creation is worktree-scoped setup.
 
 One profile is bound per registered worktree in
 `~/.peers-touch/dev/registry.json`, keyed by canonical `workspaceId`.
@@ -136,8 +103,8 @@ binding supplies the runtime values.
 
 ### Station Mode
 
-- `local` / `compose` — human-developer-only modes; `make station` runs Station
-  on the current machine. Agents MUST NOT activate or execute these modes.
+- `local` / `compose` — `make station` runs Station on the current machine.
+  Agents may operate non-stable Profiles through the canonical entrypoint.
 - `remote` — `make station` runs the remote ready closure:
   pull code via deploy env, build, restart, then health-check. A remote Station
   profile MUST set `PT_STATION_DEPLOY_ENV`.
@@ -164,8 +131,7 @@ make env-check [WORKSPACE_ID=<id>] [PROFILE=<name>] [SLOT=<n>] [CAPABILITIES='<c
 make env-status-all                         # Bindings plus observed OS-held leases
 make profiles                               # List approved canonical profiles
 make profile <name>                         # Register on first use, then update this workspace binding
-make profile-authorize <name> SLOT=<n>      # Human-only interactive grant
-make profile-init <name> SLOT=<n>           # Consume a pre-existing exact grant
+make profile-init <name> SLOT=<n>           # Create a worktree-local compose Profile
 make config                                 # Show authoritative binding and config
 
 # Services
@@ -226,18 +192,15 @@ PT_MOBILE_DEFAULT_STATION_URL=http://<host>:<port>
 
 ## Recipes
 
-### Recipe: Local Station + Desktop + Mobile (Human Only)
-
-This recipe is documentation for human developers. Agents MUST NOT execute it.
+### Recipe: Local Station + Desktop + Mobile
 
 ```bash
-make profile-authorize PROFILE=local-dev SLOT=0
 make profile-init PROFILE=local-dev SLOT=0
 make env-register \
   PROFILE=local-dev \
   SLOT=0 \
   CAPABILITIES=station.connect \
-  PURPOSE='Human local development'
+  PURPOSE='Local development'
 # Profile defaults are correct for local development
 make station   # Compiles and starts Station
 make desktop   # Starts Desktop
@@ -268,20 +231,16 @@ make desktop   # Connects to 10.37.246.80
 make mobile    # Connects to 10.37.246.80
 ```
 
-### Recipe: Second worktree running simultaneously (Human Local Mode)
-
-This local/compose example is documentation for human developers. Agents must
-instead configure and preflight an approved remote Station profile.
+### Recipe: Second worktree running simultaneously
 
 ```bash
 # In worktree-2, use slot=1 to avoid port conflicts
-make profile-authorize PROFILE=worktree-2 SLOT=1
 make profile-init PROFILE=worktree-2 SLOT=1
 make env-register \
   PROFILE=worktree-2 \
   SLOT=1 \
   CAPABILITIES=station.connect \
-  PURPOSE='Human local development in worktree-2'
+  PURPOSE='Local development in worktree-2'
 make station   # Runs on :18180
 make desktop   # Gateway on :3130, web on :3310
 ```
@@ -302,15 +261,10 @@ These variables are passed to Station at startup.
 ### Recipe: Multi-Station (e.g. cross-Station chat acceptance)
 
 When acceptance scenarios require two Stations (e.g. Alice on station-four,
-Bob on station-five-arm), deploy both using separate approved profiles. The
-creation commands below are human-developer examples; an agent may execute them
-only when the human developer has already created grants for both exact profile
-names and targets:
+Bob on station-five-arm), deploy both using separate reviewed Profiles:
 
 ```bash
-# 1. Create/register profile for station-four
-make profile-authorize PROFILE=multi-four SLOT=0
-make profile-init PROFILE=multi-four SLOT=0
+# 1. Register the reviewed profile for station-four
 make env-register \
   PROFILE=multi-four \
   SLOT=0 \
@@ -323,8 +277,6 @@ make env-register \
 make station          # Deploy/restart/check station-four
 
 # 2. Switch the existing workspace binding to station-five-arm
-make profile-authorize PROFILE=multi-five-arm SLOT=1
-make profile-init PROFILE=multi-five-arm SLOT=1
 make env-update PROFILE=multi-five-arm SLOT=1
 # Set in env/peers-touch/fiveArm/profile.env:
 #   PT_STATION_MODE=remote
@@ -360,32 +312,26 @@ When the user says "set up environment for X" or "I want to debug against Y":
 
 1. **Inspect authority**: run `make env-status-all` and `make profiles`.
 2. **Resolve reset policy**: verify the directory name equals
-   `PT_DEV_PROFILE`, then apply a case-insensitive `stable` substring check.
-3. **Select remote only**: reuse a canonical environment-repository profile that sets
-   `PT_STATION_MODE=remote`.
-4. **Missing profile means stop**: report the missing topology and request
-   explicit human developer authorization. Do not run `make profile-authorize`,
-   create authorization files, create `env/peers-touch/<name>/`, or add a
-   local-only fallback.
-5. **Configure**: set the approved remote Station URL and deploy environment in
-   that canonical environment source only when the developer explicitly
-   authorized creating or changing it.
-6. **Register or update the existing Profile**: the Agent may run
+   `PT_DEV_PROFILE`, then apply a case-insensitive terminal `stable` check.
+3. **Resolve the mode**: reuse a canonical environment-repository Profile or
+   create a worktree-local compose Profile with `make profile-init`.
+4. **Do not invent remote topology**: a missing remote host, credential, or
+   deploy definition is a blocker unless the environment repository is
+   explicitly in task scope for a tracked source change.
+5. **Register or update the Profile**: the Agent may run
    `make env-register`, `make profile`, or `make env-update` without a repeated
    approval prompt. It may add `station.reset` for a non-stable Profile when
-   the task requires it. None of these commands creates an environment.
-7. **Fail-closed preflight**: run `make env-check` and `make config`; verify
-   canonical workspace identity, tracked-clean definition, allocated slot,
-   allowed capabilities, remote mode, non-loopback URL, and exact deploy-host
-   match. Current Git HEAD is read from the worktree and is not part of the
+   the task requires it.
+6. **Fail-closed preflight**: run `make env-check` and `make config`; verify
+   canonical workspace identity, allocated slot, allowed capabilities, and
+   exact topology. Remote mode additionally requires tracked-clean definitions,
+   non-loopback URL, and deploy-host match. Current Git HEAD is not part of the
    durable registration; root or registered-branch drift remains fail-closed.
-8. **Execute**: only after preflight may the agent run `make station`,
+7. **Execute**: after preflight run `make station`,
    `make desktop`, `make mobile`, or related lifecycle/Acceptance commands.
-   Desktop startup automatically installs missing workspace packages from the
-   committed lockfile and runs the source-aware Station ready closure.
-9. **Report**: include workspace ID, slot, capabilities, derived reset policy,
+8. **Report**: include workspace ID, slot, capabilities, derived reset policy,
     Station URL, deploy environment, and lease result.
-10. **Remove explicitly**: when the user explicitly authorizes worktree
+9. **Remove explicitly**: when the user explicitly authorizes worktree
     removal, unregister the exact owned binding only after its OS-held leases
     are released. Do not delete registry rows by hand.
 
@@ -467,23 +413,16 @@ Source modes:
   authority; an observed snapshot is not authority.
 - Deployable profiles and deploy envs are authoritative in the sibling `env`
   repository; remote deploy resolves them directly.
-- Agents must not create or register profiles or deploy environments without
-  explicit human developer approval for the exact name and target.
+- Agents may create worktree-local Profiles through `make profile-init`.
+  Remote topology must remain tracked, clean, and explicitly scoped source.
 - The canonical Profile ID is the only reset-policy source. A case-insensitive
-  `stable` substring blocks autonomous reset; every other reviewed Profile is
+  terminal `stable` suffix blocks autonomous reset; every other reviewed Profile is
   Agent-resettable.
-- Non-stable reset requires an exact user or accepted Plan
-  `destructiveResetScopes` grant, the binding capability, exact scope,
-  matching topology/source identity, and live lease. Once every guard matches,
-  execute without another approval prompt.
-- An accepted Plan `authorization.runtime.deployProfiles` entry is explicit
-  deploy authorization for that existing reviewed profile. It must be consumed
-  directly and never converted into another user confirmation.
-- `make profile-authorize` is human-only. Agents may consume only an existing,
-  unexpired exact-tuple grant through `make profile-init`.
-- Agents may select only approved canonical env-repository definitions; a
-  local-only fallback discovered by `make profiles` or `make profile <name>`
-  must fail closed.
+- Non-stable reset requires the binding capability, exact scope, matching
+  topology/source identity, and live lease. Once every guard matches, execute
+  without another approval prompt.
+- Existing reviewed non-stable Profiles authorize deploy and restart through
+  their workspace capabilities; no Plan authorization field is required.
 - `make env-register` is an explicit workspace registration, not permission to
   create or edit a profile.
 - `make env-unregister` is a terminal cleanup operation. It requires the exact
@@ -507,8 +446,8 @@ Source modes:
   stale or missing build identity triggers exact-source deployment
 - `make station` holds `station.deploy` through source sync, build, restart,
   deploy health, and final profile health readback.
-- Agent use of `make station` is remote-only and requires the safety preflight
-  above. Local/compose Station execution is reserved for human developers.
+- Agent use of `make station` follows the selected Profile mode. Local, compose,
+  and remote all use the same canonical preflight and lease owners.
 - `make desktop`, `make mobile`, and restart targets may
   ready Station indirectly, so the same agent preflight applies to them.
 - `make desktop` installs missing package dependencies with
@@ -532,8 +471,8 @@ Machine allocation and runtime state:
 ~/.peers-touch/dev/workspaces/<workspaceId>/
 ```
 
-`.local/dev/profiles/*.env` remains only for human-authorized local compose
-definitions whose bytes match a consumed receipt. `.local/deploy/envs/` and
+`.local/dev/profiles/*.env` contains worktree-local compose definitions created
+through `make profile-init`. `.local/deploy/envs/` and
 `.local/dev/active/` are legacy observations and never deployment or selection
 authority.
 

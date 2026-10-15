@@ -16,8 +16,9 @@ describe scope but never grants authority.
 - canonical worktree, branch, and current HEAD;
 - exact action, targets, expected side effects, and rollback;
 - explicit request scope and applicable accepted product/architecture sources;
-- concrete authorization for commit, deploy, reset, publish, or destructive
-  actions when required;
+- applicable authority: request scope for source work and local commit, Profile
+  capability for non-stable development operations, or explicit authorization
+  for stable mutation, publish, history rewrite, and destructive delivery;
 - actual runtime resource state for operations that need it;
 - optional explicit Plan path/taskId as planning context.
 
@@ -44,7 +45,10 @@ source work.
 3. No worktree create/switch/remove/prune occurs without explicit user request.
 4. Current source identity matches the action's prepared source.
 5. The action follows accepted architecture and platform standards.
-6. Separately governed operations have exact authorization.
+6. Local commit is allowed for a coherent verified task-owned change.
+   Non-stable development operations derive authority from the reviewed
+   Profile and capability; separately governed operations have exact
+   authorization.
 7. Runtime actions pass Profile, capability, target/scope, stable protection,
    topology, source, and OS-held lease checks at their concrete entrypoint.
 8. Verification and cleanup are proportionate to the action.

@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-15
-covered_docs_hash: a08f3350cda2a4872d9e12d2dcca366a1aea059e2b3461a35f1efd0d94a59e7f
+covered_docs_hash: fefadd24646e78fbd6ff4e155d60b88ec11083c127333519e41cc04de16f3e64
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,20 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-10-15 Development Operation Authority Review
+
+DWF-D43 and LDCP-D21 make reviewed non-stable Profiles the authority for
+routine environment provisioning, deploy, restart, and exact-scope reset.
+Worktree-local Profile creation no longer uses a human authorization receipt,
+and coherent verified local commits are workflow-owned checkpoints.
+
+Review replaces `unauthorized-environment-creation` with
+`unreviewed-environment-topology`: invented remote hosts or credentials,
+dirty/untracked deploy definitions, and Profile-pipeline bypasses remain
+blocking. Push, PR, merge, release, history rewrite, worktree lifecycle, and
+stable mutation remain separately governed. Focused Machine Dev tests cover
+terminal stable-suffix behavior; no new general review fixture is required.
 
 ## 2026-10-14 Lightweight Development Flow Review
 
@@ -451,21 +465,9 @@ were updated; `pt-github-review/SKILL.md` needs no behavior change. The canonica
 skill check now enforces declaration, functional-fence, first-failure and
 release markers directly.
 
-Machine Dev Control Plane and Acceptance Evidence Store changes make
-repository-root debug artifacts, Station profile bypasses, and unauthorized
-environment creation explicit violations. `pt-github-review/SKILL.md` now
-treats all three as blocking hard rules, and `review/skill-check.sh` pins their
-markers. Local Dev architecture and the global environment specification are
-now covered freshness sources.
-
-No new golden fixture is required for unauthorized environment creation because
-the decisive approval is a human-created exact-tuple machine grant rather than
-diff content. Focused Local Dev tests prove non-interactive grant rejection,
-single-use consumption, untracked env rejection, and profile-digest binding.
-Remote deployment and Foundation restart now resolve only unique,
-Git-tracked-clean env-repository definitions; arbitrary profile-file overrides
-are confined to declared Acceptance runtime roots. Existing repository hygiene
-checks and profile-only startup invariants own the other two rules.
+At that time, Machine Dev used a human-created exact-tuple environment receipt.
+DWF-D43 and LDCP-D21 supersede that receipt in the active workflow while
+retaining tracked-clean remote topology and profile-only startup.
 
 ## 2026-09-14 Review
 
@@ -482,7 +484,7 @@ The covered-document drift records source-bound Native Desktop Runtime evidence,
 scope boundaries, and navigation to the already-reviewed cross-platform
 `devctl` architecture. It does not change PR review severity, ownership, or
 evidence semantics. Existing Acceptance review rules and the
-`station-profile-bypass` and `unauthorized-environment-creation` hard rules
+`station-profile-bypass` and `unreviewed-environment-topology` hard rules
 already cover these changes, so no `pt-github-review/SKILL.md` update or new
 review fixture is required.
 

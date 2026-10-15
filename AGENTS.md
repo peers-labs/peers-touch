@@ -233,10 +233,14 @@ hours to diagnose.
 - Source and documentation work do not require a machine task ledger.
 - Local Dev and Acceptance Suite Runtime own physical resource lifecycle,
   contention, and quarantine.
-- Station reset follows the canonical Profile ID policy: IDs containing
+- Station reset follows the canonical Profile ID policy: IDs ending in
   `stable` case-insensitively are protected; every other reviewed Profile is
   Agent-resettable when binding capability, exact scope, current source
   identity, topology, and OS-held lease all match.
+- An existing reviewed non-stable Profile is direct authority for the
+  operations declared by its binding capabilities. Selecting or registering
+  it, creating its runtime instance, deploying, restarting, and exact-scope
+  reset do not require a separate chat authorization prompt.
 - Optional task progress, Plan files, Hook state, and chat identity neither
   grant nor block runtime acquisition.
 - Do not evade an actual resource conflict by changing worktree, Profile,
@@ -248,34 +252,30 @@ hours to diagnose.
   Capacity conflict parks only that target and its dependents; independent
   target lanes continue without a global lock.
 
-### No Unauthorized Development Environments
+### Profile-Scoped Development Environment Operations
 
-AI agents MUST NOT create, copy, derive, or register a development profile or
-deploy environment unless a human developer explicitly authorizes the exact
-environment name and target in the current conversation. This prohibition
-includes:
+AI agents may create and operate development runtime instances as needed by the
+task. `make profile-init` may create a worktree-local Profile, while an existing
+reviewed Profile may be selected, registered, provisioned, deployed, restarted,
+and reset without a separate approval round.
 
-- adding files under the sibling `env/peers-touch/<name>/` repository;
-- creating local-only definitions under `.local/dev/profiles/` or
-  `.local/deploy/envs/`;
-- supplying an arbitrary `PT_DEV_PROFILE_FILE`; run-scoped overrides require
-  the Acceptance runtime-manifest authority and containment checks;
-- running `make profile-authorize`, minting an authorization receipt, or
-  running `make profile-init` without a pre-existing matching grant; and
-- turning an ad-hoc host, port, existing pointer, execution plan, or Acceptance
-  need into implied creation permission.
+These operations remain bounded:
 
-A missing environment is a blocker to report, not permission to create one.
-Untracked env-repository definitions and local profiles without a matching
-consumed human authorization receipt cannot authorize profile selection,
-deployment, restart, or reset.
+- the canonical Profile or worktree-local Profile owns topology; do not invent
+  an ad-hoc host, port, credential, or arbitrary `PT_DEV_PROFILE_FILE`;
+- environment-repository definitions used for remote mutation must be
+  Git-tracked and clean;
+- adding or changing a tracked Profile in the sibling `env` repository is an
+  ordinary source change only when that repository is explicitly in task scope;
+- Profile capability, exact target or reset scope, current source identity,
+  stable protection, and OS-held lease must all pass at the concrete entrypoint;
+- Profile IDs ending in `stable`, case-insensitively, remain protected from
+  autonomous reset, and stable runtime mutation requires explicit user
+  direction.
 
-For an existing reviewed Profile, reset policy is derived only after the
-directory name and `PT_DEV_PROFILE` value match exactly. No control-mode field,
-legacy cache, or machine-state override is allowed. A non-stable Profile reset
-never requires human confirmation; a stable Profile fails closed before lease
-acquisition. Creating or renaming a Profile remains human-authorized topology
-work.
+Profile selection and runtime provisioning are not worktree creation. They may
+proceed automatically inside the user-selected worktree. A missing target or
+credential is a real blocker; it must not be guessed.
 
 ### No Mocking
 
@@ -644,14 +644,18 @@ boundary instead of silently creating one.
 6. Resume and status derive from the current request, current Git/runtime facts,
    one explicit task ID, an explicit Plan/task selector when supplied, and
    current evidence. Never infer a task from branch, mtime, chat, or memory.
-7. Hook events are advisory. Unknown events, missing identity, ambiguous host
+7. The Agent may create a local commit when one coherent scoped change has
+   passed its required checks. Stage only task-owned files. Push, PR, merge,
+   release, history rewrite, and worktree operations remain separately
+   governed.
+8. Hook events are advisory. Unknown events, missing identity, ambiguous host
    context, and Hook failures return neutral output. Real permission, stable
    protection, data scope, and OS-held resource locks stay in concrete
    operation entrypoints.
-8. Current-source evidence must bind the current commit and workspace digest.
+9. Current-source evidence must bind the current commit and workspace digest.
    Source changes invalidate prior evidence. Caller-authored PASS values do not
    become formal proof.
-9. Completion review consumes explicit obligations, current source, and current
+10. Completion review consumes explicit obligations, current source, and current
    evidence. Closing affects only the selected task and resources it actually
    owns; it never seals the worktree.
 

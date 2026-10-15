@@ -1,10 +1,10 @@
 # 开发流程工具设计决策
 
 > **Status**: active
-> **Created**: 2026-09-13 | **Updated**: 2026-10-13
+> **Created**: 2026-09-13 | **Updated**: 2026-10-15
 > **Owner**: Platform Team
 
-DWF-D42 已确认，定义当前目标设计。被其替代的旧决定在索引和正文中标记为
+DWF-D42 与 DWF-D43 已确认，定义当前目标设计。被其替代的旧决定在索引和正文中标记为
 `superseded`；保留内容仅用于历史追溯，不再约束新实现。设计接受不代表代码已经
 实施或运行验收通过，也不更新机器旧任务、运行权限或资源状态。
 
@@ -56,6 +56,7 @@ DWF-D42 已确认，定义当前目标设计。被其替代的旧决定在索引
 | DWF-D40 | Preserve explicit user no-Plan intent | accepted |
 | DWF-D41 | Coordinate Development close with one resumable receipt | superseded by DWF-D42 |
 | DWF-D42 | 普通工作、可选任务记录、真实运行保护分别负责 | accepted |
+| DWF-D43 | Profile 授权开发运行，本地 commit 属于流程内部检查点 | accepted |
 
 ## DWF-D42：普通工作、可选任务记录、真实运行保护分别负责
 
@@ -109,7 +110,7 @@ DWF-D42 已确认，定义当前目标设计。被其替代的旧决定在索引
 
 继续保留产品结果导向、功能先验证、正式证据分离、适量预算、宿主可替换、
 工作区明确、用户授权复用、Native Desktop 证明和明确 no-Plan 边界。
-旧决策中的 checkpoint 许可不构成本次提交授权。
+本地 checkpoint 与环境操作权限由后续 DWF-D43 统一澄清。
 
 ### Rationale
 
@@ -132,6 +133,48 @@ DWF-D42 已确认，定义当前目标设计。被其替代的旧决定在索引
 
 验收必须覆盖无 Hook 工作、多 worktree、记录恢复、真实权限与锁、证据新鲜度和
 选定范围安装。D42 的 proposed 状态及当前草稿不能支持实施完成声明。
+
+## DWF-D43：Profile 授权开发运行，本地 Commit 属于流程内部检查点
+
+**Status**: accepted
+**Date**: 2026-10-15
+
+### Context
+
+内部研发环境是可重复准备的工作资源。已评审 Profile 已经声明拓扑与 capability，
+但旧流程仍要求环境创建、部署、reset 和每次本地 commit 再获得聊天或 Plan 授权，
+造成重复确认，并把 exact-source 验证所需的 checkpoint 变成人工阻塞点。
+
+### Decision
+
+- 已评审且名称不以 `stable` 结尾的 Profile 直接授权 capability 覆盖的环境选择、
+  注册、运行实例创建、部署、重启和精确范围 reset。
+- stable 判断采用大小写不敏感的 terminal suffix；stable reset 保持保护，其他
+  stable 运行变更需要用户明确指令。
+- 本地 Profile 可通过 `make profile-init` 直接创建，不再使用环境创建授权回执。
+- 本地 commit 是 Development Workflow 内部检查点。变更形成完整边界、验证通过且
+  只暂存本任务文件后，Agent 可自主提交。
+- push、PR、merge、release/publish、历史改写和 worktree 生命周期仍是独立授权动作。
+- Profile 权限不取消目标、源码身份、tracked-clean remote topology、数据范围和
+  OS-held lease 等实际运行守卫。
+
+### Rationale
+
+Profile、Git scope 和真实资源锁已经分别持有环境能力、源码边界和并发安全。重复的
+聊天授权与 receipt 不增加这些保证，只会中断持续研发。
+
+### Alternatives Considered
+
+- 每次 deploy、reset、环境创建和 commit 都询问：拒绝，因为与已评审 Profile、
+  明确任务范围和持续执行合同重复。
+- 删除 capability、stable 与 lease：拒绝，因为它们分别保护操作范围、长期环境和
+  真实资源竞争。
+- 自动 push 或创建 PR：拒绝，因为它们改变共享交付状态，不是本地研发检查点。
+
+### Consequences
+
+Agent 能独立完成从实现到 exact-source runtime 验证所需的环境准备和 checkpoint。
+未知主机、凭据、stable mutation、远端交付及历史操作仍然失败关闭或等待授权。
 
 ## DWF-D01: EXECUTE Owns A Mandatory Inner State Machine
 

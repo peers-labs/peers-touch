@@ -574,17 +574,17 @@ make config
 
 If no appropriate profile exists:
 
-1. Stop with `PROFILE_UNAVAILABLE`.
-2. Request explicit human developer approval for the exact profile name,
-   target, and slot.
-3. Do not run `make profile-authorize` or create an authorization file.
-4. Only after the developer creates the exact pending grant may the Agent run:
+1. For local/compose development, create one worktree-local Profile:
 
    ```bash
-   make profile-init PROFILE=<name> SLOT=<approved-slot>
+    make profile-init PROFILE=<name> SLOT=<slot>
    make profile PROFILE=<name>
    make config
    ```
+
+2. For remote development, stop with `PROFILE_UNAVAILABLE` unless the
+   environment repository is explicitly in task scope and the exact target is
+   known. Never invent remote topology or credentials.
 
 Verify configured Station URL, mode, slot, and Desktop ports. Do not edit a
 shared active profile to fit one Gate when a dedicated profile is required.
@@ -670,10 +670,12 @@ test -n "${ACCEPTANCE_API_TOKEN:-}" \
 
 #### 7.7 Prepare Fixture And Harness
 
-For destructive reset, require both:
+For destructive reset, require:
 
-1. Explicit authorization such as `CHAT_ACCEPTANCE_RESET=1`.
-2. Verification that the target is the approved disposable environment.
+1. An Agent-resettable non-stable Profile, or explicit user direction for the
+   stable target.
+2. The `station.reset` capability, exact reset scope, approved disposable
+   target, current source identity, and live lease.
 
 Run Fixture setup/reset, then assert the expected initial state. Start clients
 and wait for the namespaced production Harness to become available. A missing
