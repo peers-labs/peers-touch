@@ -1688,6 +1688,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 service_id="station",
                 station_url=station_url,
                 profile_env=profile_env,
+                require_runtime_identity=gate_id == MESSAGE_PUBLISHING_GATE,
                 remote_source_identity_provider=resolve_remote_source_identity,
             )
             local_proto_digest = source_proto_digest(REPO_ROOT)

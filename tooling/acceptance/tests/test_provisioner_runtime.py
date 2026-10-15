@@ -1079,6 +1079,17 @@ class ProvisionerBlockingTests(unittest.TestCase):
             "pt-agent-message-publishing-run-message-publishing",
             client.storage_root,
         )
+        source = (
+            Path(__file__).resolve().parents[3]
+            / "tooling"
+            / "acceptance"
+            / "provisioners"
+            / "home_station.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "require_runtime_identity=gate_id == MESSAGE_PUBLISHING_GATE",
+            source,
+        )
 
     def test_agent_core_lifecycle_uses_reviewed_two_profile(self):
         provisioner = HomeStationProvisioner(
