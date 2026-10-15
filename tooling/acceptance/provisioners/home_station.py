@@ -1741,9 +1741,28 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 raise RuntimeError(
                     "Message Publishing actor identity fixture was not resolved"
                 )
+            runtime_root = Path(
+                tempfile.mkdtemp(
+                    prefix=f"pt-message-publishing-{manifest.run_id}-"
+                )
+            )
+            runtime_identity_root = runtime_root / "actor-identity"
+            try:
+                shutil.copytree(
+                    identity_resolution.fixture.root,
+                    runtime_identity_root,
+                )
+            except Exception:
+                shutil.rmtree(runtime_root, ignore_errors=True)
+                raise
+            self.register_cleanup(
+                f"message-publishing-runtime:{runtime_root}",
+                lambda: shutil.rmtree(runtime_root, ignore_errors=True),
+            )
             client = dataclasses.replace(
                 client,
-                actor_identity_root=identity_resolution.fixture.root,
+                storage_root=str(runtime_root / "storage"),
+                actor_identity_root=str(runtime_identity_root),
             )
         else:
             client = self._agent_stream_client(

@@ -1364,10 +1364,21 @@ class ProvisionerBlockingTests(unittest.TestCase):
                     },
                 )
 
-            self.assertEqual(
-                prepared.clients[0].actor_identity_root,
-                str(identity_root),
+            runtime_identity_root = Path(
+                prepared.clients[0].actor_identity_root
             )
+            runtime_root = runtime_identity_root.parent
+            self.assertNotEqual(runtime_identity_root, identity_root)
+            self.assertTrue(runtime_identity_root.is_dir())
+            self.assertEqual(
+                Path(prepared.clients[0].storage_root).parent,
+                runtime_root,
+            )
+            (runtime_identity_root / "runtime-created").write_text(
+                "ephemeral",
+                encoding="utf-8",
+            )
+            self.assertFalse((identity_root / "runtime-created").exists())
             self.assertEqual(prepared.retained_fixtures, (fixture,))
             self.assertEqual(
                 prepared.to_dict()["retainedFixtures"],
@@ -1381,7 +1392,8 @@ class ProvisionerBlockingTests(unittest.TestCase):
             )
             cleanup = provisioner.cleanup()
             self.assertTrue(identity_root.is_dir())
-            self.assertEqual(cleanup, ())
+            self.assertFalse(runtime_root.exists())
+            self.assertEqual(len(cleanup), 1)
 
     def test_agent_core_lifecycle_uses_reviewed_two_profile(self):
         provisioner = HomeStationProvisioner(
