@@ -131,12 +131,8 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
             side_effect=(point_probe, point_probe),
         ), patch.object(
             NativeDesktopMacOSProvisioner,
-            "_await_focused_process",
-            return_value=NativeControlSnapshot(
-                window_count=1,
-                frontmost=True,
-                actual_frontmost_pid=42,
-            ),
+            "_await_webview_focus",
+            return_value=True,
         ):
             probes, webdriver_port = lifecycle._probe_native_adapter()
 
@@ -159,6 +155,26 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
             "acceptance_request_activation"
         )
         session.stop.assert_called_once_with()
+
+    def test_webview_focus_clicks_process_owned_point(self) -> None:
+        session = Mock()
+        session.driver.execute_script.side_effect = [False, True]
+        adapter = Mock(spec=MacOSNativeDesktopAdapter)
+
+        focused = NativeDesktopMacOSProvisioner._await_webview_focus(
+            session,
+            adapter,
+            activation_point=(640.0, 400.0),
+            timeout_seconds=1,
+            interval_seconds=0,
+        )
+
+        self.assertTrue(focused)
+        self.assertEqual(adapter.post_mouse.call_count, 2)
+        adapter.post_mouse.assert_called_with(
+            (MouseAction.LEFT_DOWN, MouseAction.LEFT_UP),
+            (640.0, 400.0),
+        )
 
     def test_window_bounds_wait_retries_transient_visibility(self) -> None:
         transient = BlockedError(

@@ -403,9 +403,9 @@ class NativeDesktopMacOSProvisioner:
                 and stack.point_owned_by(process_id)
                 else None
             )
-            control = self._await_focused_process(
+            focus_probe = self._await_webview_focus(
+                session,
                 adapter,
-                process_id,
                 activation_point=activation_point,
             )
             point, pointer, stack, input_probe, attempted_points = (
@@ -421,10 +421,7 @@ class NativeDesktopMacOSProvisioner:
                 window_backend=self.contract.native_adapter.window,
                 screenshot_backend=self.contract.native_adapter.screenshot,
                 input_probe=input_probe,
-                focus_probe=(
-                    not control.error
-                    and control.actual_frontmost_pid == process_id
-                ),
+                focus_probe=focus_probe,
                 point_ownership_probe=(
                     not stack.error and stack.point_owned_by(process_id)
                 ),
@@ -441,7 +438,6 @@ class NativeDesktopMacOSProvisioner:
                 raise BlockedError(
                     reason=(
                         "macOS Native adapter probes are incomplete: "
-                        f"control={control.to_dict()} "
                         f"pointer={pointer} expectedPoint={point} "
                         f"windowStack={stack.to_dict()} "
                         f"attemptedPoints={attempted_points} "
@@ -458,6 +454,40 @@ class NativeDesktopMacOSProvisioner:
                 log_path = launcher.log_path
             if log_path is not None:
                 log_path.unlink(missing_ok=True)
+
+    @staticmethod
+    def _await_webview_focus(
+        session: TauriSession,
+        adapter: MacOSNativeDesktopAdapter,
+        *,
+        activation_point: tuple[float, float] | None,
+        timeout_seconds: float = 15.0,
+        interval_seconds: float = 0.1,
+    ) -> bool:
+        if activation_point is None:
+            return False
+        deadline = time.monotonic() + max(0.0, timeout_seconds)
+        while True:
+            adapter.post_mouse(
+                (MouseAction.LEFT_DOWN, MouseAction.LEFT_UP),
+                activation_point,
+            )
+            if bool(
+                session.driver.execute_script(
+                    "return document.hasFocus()"
+                )
+            ):
+                return True
+            if time.monotonic() >= deadline:
+                raise BlockedError(
+                    reason=(
+                        "macOS Native WebView did not receive focus at its "
+                        f"process-owned point within {timeout_seconds:.1f}s"
+                    ),
+                    resource="runtime-cell-native-focus",
+                )
+            if interval_seconds > 0:
+                time.sleep(interval_seconds)
 
     @classmethod
     def _probe_owned_point(
