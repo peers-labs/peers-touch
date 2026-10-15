@@ -1083,13 +1083,18 @@ server {
         container = str(status["containerId"])
         transport = config.transport()
         home = self._remote_home(config)
+        remote_root = f"{home}/.peers-touch/runtime"
         remote_certificate = (
-            f"{home}/.peers-touch/runtime/"
-            f"ncp-relay-ca-{self._manifest.run_id}.crt"
+            f"{remote_root}/ncp-relay-ca-{self._manifest.run_id}.crt"
         )
         container_certificate = (
             "/usr/local/share/ca-certificates/"
             "ncp-relay-acceptance.crt"
+        )
+        transport.run_argv(
+            ("mkdir", "-p", remote_root),
+            timeout=15,
+            check=True,
         )
         transport.run_argv(
             ("sh", "-lc", f"cat > {remote_certificate}"),
