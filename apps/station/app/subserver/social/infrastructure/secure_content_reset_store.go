@@ -3213,14 +3213,14 @@ type canonicalIndexExpectation struct {
 }
 
 type postgresCanonicalIndexRow struct {
-	IndexName                string  `gorm:"column:index_name"`
-	ColumnName               *string `gorm:"column:column_name"`
-	Ordinal                  int     `gorm:"column:ordinal"`
-	IsUnique                 bool    `gorm:"column:is_unique"`
-	IsPrimary                bool    `gorm:"column:is_primary"`
-	PartialPredicateApproved int     `gorm:"column:partial_predicate_approved"`
-	IsValid                  bool    `gorm:"column:is_valid"`
-	IsReady                  bool    `gorm:"column:is_ready"`
+	IndexName        string  `gorm:"column:index_name"`
+	ColumnName       *string `gorm:"column:column_name"`
+	Ordinal          int     `gorm:"column:ordinal"`
+	IsUnique         bool    `gorm:"column:is_unique"`
+	IsPrimary        bool    `gorm:"column:is_primary"`
+	PartialPredicate string  `gorm:"column:partial_predicate"`
+	IsValid          bool    `gorm:"column:is_valid"`
+	IsReady          bool    `gorm:"column:is_ready"`
 }
 
 func validateCanonicalPrivateContentSchema(database *gorm.DB) error {
@@ -3622,22 +3622,13 @@ SELECT
   index_column.ordinality AS ordinal,
   index_definition.indisunique AS is_unique,
   index_definition.indisprimary AS is_primary,
-  CASE
-    WHEN index_definition.indpred IS NULL THEN 0
-    WHEN index_relation.relname = 'uidx_social_private_post_id' THEN
-      CASE WHEN pg_catalog.pg_get_expr(
-        index_definition.indpred,
-        index_definition.indrelid
-      ) = $reset$((post_id IS NOT NULL) AND ((post_id)::text <> ''::text))$reset$
-      THEN 1 ELSE 0 END
-    WHEN index_relation.relname = 'uidx_social_private_post_content' THEN
-      CASE WHEN pg_catalog.pg_get_expr(
-        index_definition.indpred,
-        index_definition.indrelid
-      ) = $reset$((content_id IS NOT NULL) AND ((content_id)::text <> ''::text))$reset$
-      THEN 1 ELSE 0 END
-    ELSE 0
-  END AS partial_predicate_approved,
+  COALESCE(
+    pg_catalog.pg_get_expr(
+      index_definition.indpred,
+      index_definition.indrelid
+    ),
+    ''
+  ) AS partial_predicate,
   index_definition.indisvalid AS is_valid,
   index_definition.indisready AS is_ready
 FROM pg_catalog.pg_index AS index_definition
@@ -3685,7 +3676,7 @@ ORDER BY index_relation.relname, index_column.ordinality
 			&row.Ordinal,
 			&row.IsUnique,
 			&row.IsPrimary,
-			&row.PartialPredicateApproved,
+			&row.PartialPredicate,
 			&row.IsValid,
 			&row.IsReady,
 		); err != nil {
@@ -3712,15 +3703,6 @@ ORDER BY index_relation.relname, index_column.ordinality
 				row.IndexName,
 			)
 		}
-		if row.PartialPredicateApproved != 0 &&
-			row.PartialPredicateApproved != 1 {
-			return nil, resetError(
-				ResetCodeSchemaTargetUnreviewed,
-				"index %s.%s has invalid partial-predicate metadata",
-				table,
-				row.IndexName,
-			)
-		}
 		index, found := result[row.IndexName]
 		if found && index.Unique != row.IsUnique {
 			return nil, resetError(
@@ -3732,22 +3714,10 @@ ORDER BY index_relation.relname, index_column.ordinality
 		}
 		index.Unique = row.IsUnique
 		index.Columns = append(index.Columns, strings.ToLower(*row.ColumnName))
-		if row.PartialPredicateApproved == 1 {
-			switch row.IndexName {
-			case "uidx_social_private_post_id":
-				index.PartialPredicate =
-					canonicalPostgresPrivateIndexPredicate("post_id")
-			case "uidx_social_private_post_content":
-				index.PartialPredicate =
-					canonicalPostgresPrivateIndexPredicate("content_id")
-			default:
-				return nil, resetError(
-					ResetCodeSchemaTargetUnreviewed,
-					"index %s.%s is an unreviewed partial index",
-					table,
-					row.IndexName,
-				)
-			}
+		if row.PartialPredicate != "" {
+			index.PartialPredicate = normalizePostgresIndexPredicate(
+				row.PartialPredicate,
+			)
 		}
 		result[row.IndexName] = index
 		ordinals[row.IndexName] = row.Ordinal
@@ -3770,6 +3740,10 @@ func canonicalPostgresPrivateIndexPredicate(column string) string {
 		column,
 		column,
 	)
+}
+
+func normalizePostgresIndexPredicate(predicate string) string {
+	return strings.Join(strings.Fields(predicate), " ")
 }
 
 func primaryKeyColumns(
