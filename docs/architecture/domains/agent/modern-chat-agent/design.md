@@ -241,6 +241,20 @@ Memory describes learned user/Agent experience; knowledge supplies external
 facts; skills supply procedures; tools supply executable capabilities. These
 types cannot substitute for one another.
 
+Agent-owned `MemoryPreferences` live under its configuration's `memory` field.
+Agent version fencing and authority invalidation also govern these changes.
+Disabling memory rejects the memory prompt segment and stops automatic
+extraction, while preserving existing records. Automatic-update policy governs
+extraction independently of retrieval. Vector and keyword weights are consumed
+by the same ranking owner for database and keyword fallback paths; both zero is
+invalid. Missing fields retain Station defaults. Reset changes preferences,
+without clearing records or replacing unrelated Agent configuration.
+Authenticated aggregate memory reads use the same owned/workspace-visible Agent
+scope as Agent discovery. List, keyword/vector search, statistics, events,
+export and embedding counts cannot include another actor's private Agent.
+Entry mutation, import and re-embedding require owned Agents. Internal workers
+retain their explicit Agent scope without acquiring an unrelated actor scope.
+
 ## 9. Capability Negotiation
 
 Station resolves an immutable `RuntimeCapabilitySnapshot` before admission,
@@ -506,6 +520,14 @@ by idempotent Station-owned `McpServerCommand` revisions. The declared
 execution owner performs discovery, and Station publishes the resulting
 per-Tool manifests. MCP does not use `CapabilityOperation`.
 
+Station remote HTTP and legacy SSE execution use the official MCP Go SDK.
+Streamable HTTP accepts both JSON and event-stream responses, preserves the
+negotiated protocol and session ID, and closes the session after each bounded
+discovery or tool operation. Legacy SSE follows its advertised POST endpoint.
+Station retains URL validation, response limits and origin-scoped credentials.
+The local stdio executor retains its bounded newline framing and process owner.
+Transport choice never changes the Server's declared execution owner.
+
 Connector connect, reconnect, cancel, and cleanup remain Station-owned
 `CapabilityOperation` records executed by their declared owner.
 
@@ -531,7 +553,7 @@ Rules:
 MCP configuration flow:
 
 ```text
-Desktop/Web mutation
+Desktop/Web/Mobile mutation
   -> Station McpServer revision (sanitized config + secret refs)
   -> owner-local secret material write
   -> owner-local discovery

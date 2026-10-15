@@ -873,7 +873,7 @@ func (s *MemoryService) ListWithOptions(ctx context.Context, opts domain.MemoryL
 		return nil, 0, err
 	}
 
-	base := applyMemoryFilters(db.Model(&persistence.Memory{}), opts)
+	base := memoryAccessQuery(ctx, applyMemoryFilters(db.Model(&persistence.Memory{}), opts), false)
 	var total int64
 	if err := base.Count(&total).Error; err != nil {
 		return nil, 0, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
@@ -894,7 +894,7 @@ func (s *MemoryService) ListWithOptions(ctx context.Context, opts domain.MemoryL
 	offset := (page - 1) * pageSize
 
 	var rows []persistence.Memory
-	if err := applyMemoryFilters(db.Model(&persistence.Memory{}), opts).
+	if err := memoryAccessQuery(ctx, applyMemoryFilters(db.Model(&persistence.Memory{}), opts), false).
 		Order(orderByMemory(opts.OrderBy)).
 		Limit(pageSize).
 		Offset(offset).
@@ -917,7 +917,7 @@ func (s *MemoryService) GetMemory(ctx context.Context, id string) (*domain.Memor
 		return nil, err
 	}
 	var row persistence.Memory
-	if err := db.Where("id = ?", id).First(&row).Error; err != nil {
+	if err := memoryAccessQuery(ctx, db.Where("id = ?", id), false).First(&row).Error; err != nil {
 		return nil, errcode.New(errcode.AgentNotFound, http.StatusNotFound,
 			fmt.Sprintf("memory not found: %s", id), err)
 	}
@@ -936,8 +936,14 @@ func (s *MemoryService) Search(ctx context.Context, opts domain.MemorySearchOpti
 	if err != nil {
 		return nil, err
 	}
+	preferences, err := s.preferences(ctx, opts.AgentID)
+	if err != nil {
+		return nil, err
+	}
 	if s.ensureSearchInfrastructure(ctx, db) {
-		if results, searchErr := s.searchPostgresHybrid(ctx, db, opts, query, start); searchErr == nil {
+		if results, searchErr := s.searchPostgresHybrid(
+			ctx, db, opts, query, start, preferences.GetVectorWeight(), preferences.GetKeywordWeight(),
+		); searchErr == nil {
 			return results, nil
 		} else {
 			logger.Warnf(ctx, "memory postgres hybrid search failed, falling back to in-process search: %v", searchErr)
@@ -949,7 +955,7 @@ func (s *MemoryService) Search(ctx context.Context, opts domain.MemorySearchOpti
 		Since:   opts.Since,
 		Until:   opts.Until,
 	}
-	dbQuery := applyMemoryFilters(db.Model(&persistence.Memory{}), listOpts)
+	dbQuery := memoryAccessQuery(ctx, applyMemoryFilters(db.Model(&persistence.Memory{}), listOpts), false)
 	if len(opts.Layers) > 0 {
 		layers := make([]string, 0, len(opts.Layers))
 		for _, layer := range opts.Layers {
@@ -972,7 +978,7 @@ func (s *MemoryService) Search(ctx context.Context, opts domain.MemorySearchOpti
 	now := time.Now()
 	for _, row := range rows {
 		keywordScore := keywordMemoryScore(row, terms)
-		if keywordScore <= 0 {
+		if keywordScore <= 0 || preferences.GetKeywordWeight() <= 0 {
 			continue
 		}
 		decay := memoryDecayFactor(row, now)
@@ -981,7 +987,7 @@ func (s *MemoryService) Search(ctx context.Context, opts domain.MemorySearchOpti
 			trust = domain.MemoryDefaultTrustScore
 		}
 		trustFactor := 0.5 + trust*0.5
-		weighted := keywordScore
+		weighted := keywordScore * preferences.GetKeywordWeight()
 		afterDecay := weighted * decay
 		final := afterDecay * trustFactor
 		item := memoryRowToDomain(row)
@@ -1020,13 +1026,17 @@ type memoryHybridHit struct {
 	VectorScore  float64
 }
 
-func (s *MemoryService) searchPostgresHybrid(ctx context.Context, db *gorm.DB, opts domain.MemorySearchOptions, query string, start time.Time) ([]domain.ScoredMemory, error) {
+func (s *MemoryService) searchPostgresHybrid(
+	ctx context.Context, db *gorm.DB, opts domain.MemorySearchOptions, query string,
+	start time.Time, vectorWeight, keywordWeight float64,
+) ([]domain.ScoredMemory, error) {
 	vector, ok := s.memoryEmbeddingLiteral(ctx, query)
 	if !ok {
 		return nil, fmt.Errorf("embedding provider unavailable")
 	}
-	whereParts := []string{"1=1"}
-	args := []any{}
+	predicate, accessArgs := memoryAccessPredicate(ctx, false)
+	whereParts := []string{predicate}
+	args := append([]any(nil), accessArgs...)
 	if opts.AgentID != "" {
 		whereParts = append(whereParts, "agent_id = ?")
 		args = append(args, opts.AgentID)
@@ -1066,12 +1076,12 @@ func (s *MemoryService) searchPostgresHybrid(ctx context.Context, db *gorm.DB, o
 				OR embedding IS NOT NULL
 			)
 		ORDER BY (
-			0.45 * ts_rank_cd(to_tsvector('simple', coalesce(summary, '') || ' ' || coalesce(content, '')), plainto_tsquery('simple', ?))
-			+ 0.55 * CASE WHEN embedding IS NULL THEN 0 ELSE GREATEST(0, 1 - (embedding <=> ?::vector)) END
+			? * ts_rank_cd(to_tsvector('simple', coalesce(summary, '') || ' ' || coalesce(content, '')), plainto_tsquery('simple', ?))
+			+ ? * CASE WHEN embedding IS NULL THEN 0 ELSE GREATEST(0, 1 - (embedding <=> ?::vector)) END
 		) DESC
 		LIMIT 500
 	`, strings.Join(whereParts, " AND "))
-	args = append(args, query, vector)
+	args = append(args, keywordWeight, query, vectorWeight, vector)
 
 	var hits []memoryHybridHit
 	if err := db.Raw(raw, args...).Scan(&hits).Error; err != nil {
@@ -1104,7 +1114,7 @@ func (s *MemoryService) searchPostgresHybrid(ctx context.Context, db *gorm.DB, o
 			continue
 		}
 		hit := scoreByID[id]
-		weighted := 0.45*hit.KeywordScore + 0.55*hit.VectorScore
+		weighted := keywordWeight*hit.KeywordScore + vectorWeight*hit.VectorScore
 		if weighted <= 0 {
 			continue
 		}
@@ -1284,7 +1294,7 @@ func (s *MemoryService) Stats(ctx context.Context, agentID string) (*domain.Memo
 	if err != nil {
 		return nil, err
 	}
-	query := db.Model(&persistence.Memory{})
+	query := memoryAccessQuery(ctx, db.Model(&persistence.Memory{}), false)
 	if agentID != "" {
 		query = query.Where("agent_id = ?", agentID)
 	}
@@ -1439,7 +1449,7 @@ func (s *MemoryService) QueryEvents(ctx context.Context, opts domain.MemoryEvent
 	if err != nil {
 		return nil, err
 	}
-	query := db.Model(&persistence.MemoryEvent{})
+	query := memoryAccessQuery(ctx, db.Model(&persistence.MemoryEvent{}), false)
 	if opts.Type != "" {
 		query = query.Where("type = ?", string(opts.Type))
 	}
@@ -1565,6 +1575,14 @@ func (s *MemoryService) RecordFeedback(ctx context.Context, memoryID string, hel
 }
 
 func (s *MemoryService) ExtractFromTurn(ctx context.Context, agentID, conversationID, turnID, userInput, assistantResponse string) {
+	preferences, err := s.preferences(ctx, agentID)
+	if err != nil {
+		logger.Warnf(ctx, "memory extraction preferences unavailable: agent=%s err=%v", agentID, err)
+		return
+	}
+	if !preferences.GetEnabled() || !preferences.GetTuningEnabled() {
+		return
+	}
 	candidates := extractMemoryCandidates(userInput, assistantResponse)
 	if len(candidates) == 0 {
 		return
@@ -1634,7 +1652,8 @@ func (s *MemoryService) EmbeddingStatus(ctx context.Context) (provider, model st
 	db, err := s.getDB(ctx)
 	if err == nil && s.ensureSearchInfrastructure(ctx, db) {
 		var count int64
-		if countErr := db.Raw(`SELECT COUNT(*) FROM agent_memories WHERE embedding IS NOT NULL`).Scan(&count).Error; countErr == nil {
+		if countErr := memoryAccessQuery(ctx, db.Table("agent_memories").Where("embedding IS NOT NULL"), false).
+			Count(&count).Error; countErr == nil {
 			provider := s.MemoryEmbeddingProvider()
 			return provider.Name(), provider.Model(), provider.Dimensions(), int(count)
 		}
@@ -1652,7 +1671,7 @@ func (s *MemoryService) ReEmbed(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	var rows []persistence.Memory
-	if err := db.Find(&rows).Error; err != nil {
+	if err := memoryAccessQuery(ctx, db.Model(&persistence.Memory{}), true).Find(&rows).Error; err != nil {
 		return 0, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to load memories for re-embed", err)
 	}
 	if !s.ensureSearchInfrastructure(ctx, db) {

@@ -550,10 +550,13 @@ MobileDraftEnvelopeV2 {
 }
 ```
 
-`ChatDraftPayload` contains composer text and encrypted attachment references.
-`MomentDraftPayload` contains composer text, generated audience selection, and
-encrypted media references. Neither payload contains media bytes or a
-dispatchable command frame.
+`ChatDraftPayload` contains composer text, encrypted attachment references, and
+an optional exact `submitted_command_id + submitted_message_id` pair. The pair
+correlates a retained composer draft with its Messaging-owned durable
+submission; it is not a dispatchable command frame. `MomentDraftPayload`
+contains composer text, generated audience selection, and encrypted media
+references. Neither payload contains media bytes or a dispatchable command
+frame.
 
 The single persistent owner is an encrypted `mobile-rust` draft store.
 mobile-web owns editing state and writes through typed Tauri commands. A draft
@@ -562,6 +565,12 @@ scope removal. It is never replayed as a command and never exposed under another
 Station/PTID scope. It uses the scope key hierarchy in §4.6, so deletion or
 rotation of session credentials does not make an intentionally retained draft
 unreadable.
+
+For a submitted Chat draft, Messaging command status is the cleanup authority:
+`pending`, `retry_wait`, and `submitted` keep the encrypted draft hidden from
+unsaved-draft recovery; `failed` and `superseded` make it restorable; only
+`committed` removes it. Command and conversation identity must match the draft
+scope before any cleanup.
 
 ## 6. JSON To Generated-Proto Cutover
 

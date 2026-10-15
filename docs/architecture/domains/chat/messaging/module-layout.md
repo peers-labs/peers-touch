@@ -134,6 +134,13 @@ Core 中不得出现 Tauri command、concrete `reqwest` client、平台路径、
 Keychain API 或 UI copy。Desktop/Mobile adapter 中不得出现 ratchet/OpenMLS algorithm、
 queue FSM、recovery codec 或 duplicated SQL schema definition。
 
+Recovery 的归档导出与 authority replay 校验分别收口于
+`packages/messaging-core/src/recovery/sqlite.rs` 和 `reconciliation.rs`。
+`sqlite-recovery` 使用两端一致的 rusqlite；平台继续持有 SQLCipher key、connection
+和 worker fencing。Mobile 使用一次事务合并缺失历史，保留当前 endpoint 的 live
+协议状态；Desktop 完整 profile replacement 继续使用 staging 与 atomic replace。
+两个入口都使用既有 v4 加密归档和同一 authority chain 校验。
+
 ## 2. Registration And Source Rules
 
 | Concern | 唯一注册/真源 |

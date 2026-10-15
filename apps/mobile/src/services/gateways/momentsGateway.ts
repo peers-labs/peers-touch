@@ -185,6 +185,7 @@ export interface MomentsGateway {
 
 export function createMomentsGateway(
   session: MobileAuthSession,
+  requestSignal?: () => AbortSignal,
 ): MomentsGateway {
   const { command } = createGatewayTransport(
     session,
@@ -195,6 +196,7 @@ export function createMomentsGateway(
         operation as SocialNativeOperation,
         signal,
       ),
+    requestSignal,
   );
   const scopeKey = mobileAuthScopeKey(session);
   const commandProtoJson = async <Desc extends DescMessage>(

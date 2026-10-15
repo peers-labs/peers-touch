@@ -4,7 +4,30 @@ interface ListSnapshot {
   anchor?: { id: string; offset: number };
   following?: boolean;
   query?: string;
+  open?: boolean;
   submittedQuery?: string;
+  history?: string[];
+}
+
+export const MAX_RECENT_SEARCHES = 10;
+
+export function normalizeSearchQuery(query: string): string {
+  return query.trim().replace(/\s+/g, ' ');
+}
+
+export function addRecentSearch(history: string[], query: string): string[] {
+  const normalized = normalizeSearchQuery(query);
+  if (!normalized) return history;
+  const key = normalized.toLocaleLowerCase();
+  return [
+    normalized,
+    ...history.filter((entry) => normalizeSearchQuery(entry).toLocaleLowerCase() !== key),
+  ].slice(0, MAX_RECENT_SEARCHES);
+}
+
+export function removeRecentSearch(history: string[], query: string): string[] {
+  const key = normalizeSearchQuery(query).toLocaleLowerCase();
+  return history.filter((entry) => normalizeSearchQuery(entry).toLocaleLowerCase() !== key);
 }
 
 /** Shell-owned presentation metadata survives selected-only pages, not scenario resets. */

@@ -18,6 +18,12 @@ pub fn handlers<R: tauri::Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync
     tauri::generate_handler![
         // Health
         health::mobile_health,
+        crate::runtime::pin::mobile_pin_status,
+        crate::runtime::pin::mobile_pin_unlock,
+        crate::runtime::pin::mobile_pin_configure,
+        crate::runtime::pin::mobile_pin_lock,
+        crate::runtime::pin::mobile_pin_request_reset,
+        crate::messaging::native_recovery::mobile_recovery_execute,
         // Messaging
         crate::messaging::commands::messaging_activate,
         crate::messaging::commands::messaging_attachment_stage_begin,
@@ -162,7 +168,13 @@ pub fn handlers<R: tauri::Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync
         build_identity::mobile_build_identity,
         // Health
         health::mobile_health,
+        crate::runtime::pin::mobile_pin_status,
+        crate::runtime::pin::mobile_pin_unlock,
+        crate::runtime::pin::mobile_pin_configure,
+        crate::runtime::pin::mobile_pin_lock,
+        crate::runtime::pin::mobile_pin_request_reset,
         // Native events
+        crate::messaging::native_recovery::mobile_recovery_execute,
         native_events::mobile_native_event_emit,
         orientation::mobile_acceptance_set_orientation,
         // Messaging

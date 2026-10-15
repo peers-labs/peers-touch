@@ -34,7 +34,8 @@ use messaging_core::proto::chat::{
     CreateGroupConversationRequest, CreateGroupConversationResponse, CryptoEndpoint,
     DeviceConsumptionReceipt, EncryptedObjectDescriptor, GetConversationPublicHeadRequest,
     GetConversationPublicHeadResponse, GetConversationRequest, GetConversationResponse,
-    ListConversationsRequest, ListConversationsResponse, MemberRole, MessagingMembershipAction,
+    ListConversationEventsRequest, ListConversationEventsResponse, ListConversationsRequest,
+    ListConversationsResponse, MemberRole, MessagingMembershipAction,
     PrepareConversationCommandRequest, PrepareConversationCommandResponse,
     PrepareConversationGroupRequest, PrepareConversationGroupResponse,
     PrepareConversationMembershipRequest, PrepareConversationMembershipResponse,
@@ -1168,6 +1169,29 @@ impl StationConversationTransport {
             return Err("mobile messaging Station returned another Conversation".to_string());
         }
         Ok(conversation)
+    }
+
+    pub fn list_events(
+        &self,
+        conversation_id: &str,
+        after_sequence: i64,
+        limit: i32,
+    ) -> Result<ListConversationEventsResponse, String> {
+        if conversation_id.trim().is_empty() || after_sequence < 0 || !(1..=100).contains(&limit) {
+            return Err("mobile messaging Conversation event query is invalid".to_string());
+        }
+        get_proto(
+            &self.station_origin,
+            self.access_token.as_str(),
+            &self.device_id,
+            "/conversation/events",
+            &ListConversationEventsRequest {
+                conversation_id: conversation_id.to_string(),
+                after_seq: after_sequence,
+                limit,
+            },
+        )
+        .map_err(|error| error.to_string())
     }
 
     pub fn create_direct(

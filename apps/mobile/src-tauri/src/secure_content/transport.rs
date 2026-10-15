@@ -637,12 +637,7 @@ pub fn resolve_trusted_station_signing_key(
     // Station's home peer id is re-proven independently by the signed profile
     // envelope below, so an empty value in this legacy profile projection does
     // not invalidate the identity.
-    if profile
-        .r#ref
-        .as_ref()
-        .map(|actor| actor.ptid.as_str())
-        != Some(scope.actor_ptid.as_str())
-    {
+    if profile.r#ref.as_ref().map(|actor| actor.ptid.as_str()) != Some(scope.actor_ptid.as_str()) {
         return Err("private Social Actor profile identity is inconsistent".to_string());
     }
     // Resolve the canonical handle: prefer the profile projection, then fall

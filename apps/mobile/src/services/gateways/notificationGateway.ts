@@ -60,8 +60,11 @@ export interface NotificationGateway {
 // Factory
 // ---------------------------------------------------------------------------
 
-export function createNotificationGateway(session: MobileAuthSession): NotificationGateway {
-  const { command } = createGatewayTransport(session, 'notification');
+export function createNotificationGateway(
+  session: MobileAuthSession,
+  requestSignal?: () => AbortSignal,
+): NotificationGateway {
+  const { command } = createGatewayTransport(session, 'notification', undefined, requestSignal);
 
   return {
     listNotifications: async (limit = 30, cursor) => {

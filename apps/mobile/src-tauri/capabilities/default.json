@@ -5,6 +5,7 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "clipboard-manager:allow-write-text",
     "peers-platform-permissions:allow-register-listener",
     "peers-platform-permissions:allow-remove-listener"
   ]

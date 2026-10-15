@@ -330,6 +330,8 @@ export function MobilePrototype() {
             : socialScenario ?? 'shell'}
           stationLabel={activeStation.label}
           onChangeStation={handleBackToLaunch}
+          themeMode={themeMode}
+          onThemeModeChange={setThemeMode}
           recoveryScenario={shellRecovery}
           longLists={longLists}
           focusChatJourney={evidenceScenario === 'chat-delivery-recovery'}

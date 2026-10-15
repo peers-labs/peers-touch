@@ -10,9 +10,10 @@
  */
 
 import { Component, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
-import { Button, Input, Modal, Spin, Typography, type InputRef } from 'antd';
+import { Button, Input, Modal, Spin, Typography } from 'antd';
+import type { TextAreaRef } from 'antd/es/input/TextArea';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { ArrowLeft, CornerUpLeft, Flag, FolderOpen, Mic, MoreHorizontal, Phone, Plus, RotateCcw, Scissors, Search, Send, Smile, Square, Video, X } from 'lucide-react';
+import { ArrowLeft, CornerUpLeft, Flag, FolderOpen, Mic, MoreHorizontal, Phone, Plus, RotateCcw, Scissors, Send, Smile, Square, Video, X } from 'lucide-react';
 import { useShallow } from 'zustand/shallow';
 import {
   CHAT_COMPOSER_CAPABILITIES_MOBILE_THREAD,
@@ -34,6 +35,9 @@ import { readRouteQuery, saveRouteQuery } from '../app/navigation/scrollRestorat
 import { useChatSurfaceFixture } from '../acceptance/chatSurfaceFixture';
 import { BoundedList, type BoundedListHandle } from '../components/BoundedList';
 import { MobileNotice } from '../components/MobileNotice';
+import { RecentChatSearches } from '../components/RecentChatSearches';
+import { MobileSearchField } from '../components/MobileSearchField';
+import { PinnedMessageCarousel } from '../components/chat/PinnedMessageCarousel';
 import type { MobileAuthSession } from '../features/auth/authSession';
 import { useAuthStore } from '../features/auth/authStore';
 import {
@@ -87,13 +91,12 @@ import {
   type MessageDeliveryDisplayState,
 } from '../features/chat/messageProjection';
 import {
-  IDLE_SENDER_TYPING_FEEDBACK,
-  beginSenderTypingFeedback,
   dispatchSenderTypingRequest,
-  settleSenderTypingFeedback,
 } from '../features/chat/typingFeedbackState';
 import { useMessageFlagState } from '../features/chat/messageFlagState';
 import { useChatHistorySearch } from '../features/chat/useChatHistorySearch';
+import { useGlobalChatSearch } from '../features/chat/useGlobalChatSearch';
+import { normalizeChatSearchQuery, useRecentChatSearch } from '../features/chat/recentChatSearch';
 import { useMobileChatVoiceRecorder } from '../features/chat/useMobileChatVoiceRecorder';
 import { mobileCallManager } from '../features/call/callState';
 import {
@@ -104,6 +107,7 @@ import {
   friendSettingsToActionState,
   messageTimestampMillis,
   chatMessageAttachments,
+  chatMessageAuthorName,
   isOwnChatMessage,
   useChatHistoryProjection,
   conversationPreferenceState,
@@ -114,6 +118,7 @@ import {
   requestSocialFriendshipStatus,
   requestSocialPeerProfiles,
 } from '../features/social/socialRuntime';
+import { projectAcceptedContacts } from '../features/social/socialProjection';
 import { formatSocialError, useSocialStore } from '../features/social/socialStore';
 import { SocialApiError, readableErrorMessage, type SocialMessage, type SocialMessageAttachment } from '../features/social/socialTypes';
 import { MemberRole } from '../gen/proto/domain/chat/conversation_pb';
@@ -146,7 +151,6 @@ import {
   MessageAttachmentPresentation,
   MessageCommandStatus,
   MessageDeliveryStatus,
-  PinnedMessageBanner,
 } from './chat/ChatMessagePresentation';
 import {
   ChatMessageSectionBoundary,
@@ -175,7 +179,7 @@ import {
   chatInputPanelState,
   useChatBottomOcclusion,
 } from './chat/chatBottomOcclusion';
-import { SenderTypingFeedback } from './chat/SenderTypingFeedback';
+import { GlobalChatSearchResults } from './chat/GlobalChatSearchResults';
 
 const { Text } = Typography;
 const TYPING_TRUE_INTERVAL_MS = 3000;
@@ -233,6 +237,7 @@ interface ChatPageProps {
   readonly activeDetail: MobileChatDetailRoute | null;
   readonly onStartConversation: () => void;
   readonly onOpenConversation: (route: MobileChatDetailRoute) => void;
+  readonly onOpenContact: (actorPtid: string) => void;
   readonly onBack: () => void;
 }
 
@@ -265,6 +270,7 @@ function ChatPageInner({
   activeDetail,
   onStartConversation,
   onOpenConversation,
+  onOpenContact,
   onBack,
 }: ChatPageProps) {
   const { t } = useMobileI18n();
@@ -279,6 +285,7 @@ function ChatPageInner({
   // --- Local UI state (no business logic) ---
   const [draft, setDraft] = useState('');
   const [conversationQuery, setConversationQuery] = useState(() => readRouteQuery('tab:chat'));
+  const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
   const [threadSearchQuery, setThreadSearchQuery] = useState('');
   const [threadSearchOpen, setThreadSearchOpen] = useState(false);
   const [actionSheetOpen, setActionSheetOpen] = useState(false);
@@ -309,9 +316,6 @@ function ChatPageInner({
   const [localActionError, setLocalActionError] = useState('');
   const [chatWriteAdmissionOpen, setChatWriteAdmissionOpen] = useState(
     () => !getRecoveryProjection().getSnapshot().isWriteBlocked,
-  );
-  const [senderTypingFeedback, setSenderTypingFeedback] = useState(
-    IDLE_SENDER_TYPING_FEEDBACK,
   );
   const messageWindow = useRef<BoundedListHandle>(null);
 
@@ -370,6 +374,7 @@ function ChatPageInner({
   const activeConversationId = activeGroupUlid || activeSessionUlid || '';
   const authSession = useAuthStore((s) => s.session);
   const searchSession = useSocialStore((s) => s.authSession);
+  const recentSearches = useRecentChatSearch(searchSession);
   const historySearch = useChatHistorySearch(
     searchSession, activeGroupUlid ? 'group' : 'friend', activeConversationId,
   );
@@ -402,6 +407,13 @@ function ChatPageInner({
     friendConversationSettings,
   );
   const filteredConversationSurfaceItems = allSurfaceItems;
+  const globalSearch = useGlobalChatSearch(searchSession, baseConversations);
+  const globalContacts = useMemo(
+    () => projectAcceptedContacts(friendRequests, currentUserPtid, {})
+      .filter((contact) => `${contact.peerName} ${contact.peerPtid}`.toLocaleLowerCase()
+        .includes(normalizeChatSearchQuery(conversationQuery).toLocaleLowerCase())),
+    [conversationQuery, currentUserPtid, friendRequests],
+  );
 
   // --- Derived conversation data (memoised) ---
   const conversations = useMemo(() =>
@@ -545,7 +557,8 @@ function ChatPageInner({
 
   // --- Refs ---
   const composingRef = useRef(false);
-  const composerInputRef = useRef<InputRef | null>(null);
+  const composerInputRef = useRef<TextAreaRef | null>(null);
+  const composerRootRef = useRef<HTMLElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const lastCompositionEndRef = useRef(0);
   const lastTypingPulseRef = useRef(0);
@@ -780,11 +793,10 @@ function ChatPageInner({
     setGroupDescriptionDraft(activeGroupConversation.projection.description ?? '');
   }, [activeGroupConversation]);
 
-  // --- Sender typing feedback ---
+  // --- Best-effort sender typing publication ---
   const publishTypingState = useCallback(async (
     conversationId: string,
     typing: boolean,
-    retry: boolean = false,
   ) => {
     if (!conversationId) return;
     const request = {
@@ -793,21 +805,12 @@ function ChatPageInner({
       typing,
     };
     typingAttemptRef.current = request.attempt;
-    if (typingConversationRef.current === conversationId) {
-      setSenderTypingFeedback(beginSenderTypingFeedback(request, retry));
-    }
-
-    const result = await dispatchSenderTypingRequest(request, sendTypingState);
-    if (typingConversationRef.current !== conversationId) return;
-    setSenderTypingFeedback((current) => (
-      settleSenderTypingFeedback(current, result)
-    ));
+    await dispatchSenderTypingRequest(request, sendTypingState);
   }, [sendTypingState]);
 
   const emitTypingState = useCallback((
     typing: boolean,
-    retry: boolean = false,
-  ) => publishTypingState(activeConversationId, typing, retry), [
+  ) => publishTypingState(activeConversationId, typing), [
     activeConversationId,
     publishTypingState,
   ]);
@@ -815,7 +818,6 @@ function ChatPageInner({
   useEffect(() => {
     typingConversationRef.current = activeConversationId;
     typingAttemptRef.current += 1;
-    setSenderTypingFeedback(IDLE_SENDER_TYPING_FEEDBACK);
     return () => {
       if (typingIdleTimerRef.current) { window.clearTimeout(typingIdleTimerRef.current); typingIdleTimerRef.current = null; }
       if (lastTypingPulseRef.current > 0 && typingConversationRef.current) {
@@ -831,20 +833,6 @@ function ChatPageInner({
       typingConversationRef.current = '';
     };
   }, [activeConversationId, sendTypingState]);
-
-  const retryTypingState = useCallback(() => {
-    if (
-      senderTypingFeedback.phase !== 'failed'
-      || senderTypingFeedback.request.conversationId !== activeConversationId
-    ) {
-      return;
-    }
-    void publishTypingState(
-      senderTypingFeedback.request.conversationId,
-      senderTypingFeedback.request.typing,
-      true,
-    );
-  }, [activeConversationId, publishTypingState, senderTypingFeedback]);
 
   // --- Command dispatch wrappers ---
   const runChatOperation = useCallback(async (operation: () => Promise<unknown>, failureKey: string) => {
@@ -976,6 +964,12 @@ function ChatPageInner({
       text: submittedText,
       replyToMessageId: context.replyToMessageId ?? '',
       encryptedAttachmentRefs: outcome.attachmentIds,
+      submission: outcome.state === 'pending'
+        ? {
+            commandId: outcome.commandId,
+            messageId: outcome.messageId,
+          }
+        : undefined,
     });
     pendingAttachmentSubmissionRef.current = submission;
     setPendingAttachmentSubmission(submission);
@@ -1005,7 +999,7 @@ function ChatPageInner({
     ) {
       throw new Error(t('mobile.chat.blockedComposer'));
     }
-    await emitTypingState(false);
+    void emitTypingState(false);
 
     const activeKind = activeGroupConversation ? 'group' : 'friend';
     if (editingMessage?.kind === activeKind) {
@@ -1030,7 +1024,7 @@ function ChatPageInner({
     }
   }, [activeConversation, activeConversationId, activeGroupConversation, applySendOutcome, attachmentDrafts, attachmentStagingFailed, attachmentUploading, clearComposerDraftAfterEdit, draft, editingMessage, emitTypingState, encryptedAttachmentRefs.length, friendshipStatus, replyToMessageUlid, t, threadRootMessageUlid]);
 
-  const handleComposerKeyDown = useCallback((event: KeyboardEvent<HTMLInputElement>) => {
+  const handleComposerKeyDown = useCallback((event: KeyboardEvent<HTMLTextAreaElement>) => {
     const native = event.nativeEvent;
     if (!shouldSendComposerEnter({
       key: event.key, shiftKey: event.shiftKey, isComposing: composingRef.current,
@@ -1359,6 +1353,32 @@ function ChatPageInner({
     );
   };
 
+  const searchMessageUlid = activeDetail?.messageUlid;
+  useEffect(() => {
+    if (!composerEmojiOpen && !composerMoreOpen) return;
+    const close = () => { setComposerEmojiOpen(false); setComposerMoreOpen(false); };
+    const outside = (event: Event) => {
+      if (!composerRootRef.current?.contains(event.target as Node)) close();
+    };
+    const escape = (event: globalThis.KeyboardEvent) => { if (event.key === 'Escape') close(); };
+    document.addEventListener('pointerdown', outside);
+    document.addEventListener('focusin', outside);
+    document.addEventListener('keydown', escape);
+    window.addEventListener('blur', close);
+    return () => {
+      document.removeEventListener('pointerdown', outside);
+      document.removeEventListener('focusin', outside);
+      document.removeEventListener('keydown', escape);
+      window.removeEventListener('blur', close);
+    };
+  }, [composerEmojiOpen, composerMoreOpen]);
+
+  useEffect(() => {
+    if (searchMessageUlid) void scrollToMessage(searchMessageUlid);
+    // A navigation intent hydrates its target once; normal projection refreshes preserve scroll.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeConversationId, searchMessageUlid]);
+
   const toggleMessageReaction = async (
     message: SocialMessage,
     reaction: string,
@@ -1429,7 +1449,7 @@ function ChatPageInner({
       || '';
     const activeKey = activeConversationKey;
     const ownAvatar = currentUserProfile?.avatar || '';
-    const ownName = authSession?.actorRef.acct || currentUserPtid || '';
+    const ownName = currentUserProfile?.displayName || authSession?.actorRef.acct || currentUserPtid || '';
     const peerProfile = activeConversation
       ? peerProfiles[activeConversation.peerPtid] ?? null
       : null;
@@ -1517,7 +1537,14 @@ function ChatPageInner({
               <h1 className="chat-search-title">
                 {t('mobile.chat.quickSearch')}
               </h1>
-              <Input.Search className="chat-header-search" value={threadSearchQuery} onChange={(e) => { setThreadSearchQuery(e.target.value); historySearch.clear(); }} prefix={<Search size={16} />} placeholder={t('mobile.chat.searchMessagesPlaceholder')} autoComplete="off" autoCorrect="off" autoCapitalize="none" spellCheck={false} allowClear loading={historySearch.loading} onSearch={historySearch.search} />
+              <MobileSearchField className="chat-header-search" query={threadSearchQuery}
+                onChange={(query) => { setThreadSearchQuery(query); historySearch.clear(); }}
+                placeholder={t('mobile.chat.searchMessagesPlaceholder')} loading={historySearch.loading} onSearch={(query) => {
+                const normalized = normalizeChatSearchQuery(query);
+                setThreadSearchQuery(normalized);
+                recentSearches.remember(normalized);
+                historySearch.search(normalized);
+              }} />
               <button className="header-action" type="button" onClick={() => { setThreadSearchOpen(false); setThreadSearchQuery(''); historySearch.clear(); }} aria-label={t('common.action.cancel')}><X size={18} /></button>
             </>
           ) : (
@@ -1841,6 +1868,26 @@ function ChatPageInner({
         ) : null}
         {localActionError ? <MobileNotice onClose={() => setLocalActionError('')}>{localActionError}</MobileNotice> : null}
 
+        {threadSearchOpen && recentSearches.failed ? (
+          <MobileNotice tone="error">
+            {t('mobile.chat.search.historyFailed')}
+            <Button onClick={recentSearches.retry}>{t('common.action.retry')}</Button>
+          </MobileNotice>
+        ) : null}
+
+        {threadSearchOpen && !threadSearchQuery.trim() ? (
+          <RecentChatSearches
+            queries={recentSearches.queries}
+            onReplay={(query) => {
+              setThreadSearchQuery(query);
+              recentSearches.remember(query);
+              historySearch.search(query);
+            }}
+            onRemove={recentSearches.remove}
+            onClear={recentSearches.clear}
+          />
+        ) : null}
+
         {threadSearchQuery.trim() ? (
           <section
             className="message-search-panel"
@@ -1879,12 +1926,13 @@ function ChatPageInner({
         ) : null}
 
         {!threadRootMessageUlid ? (
-          <PinnedMessageBanner
-            count={pinnedMessages.length}
-            preview={pinnedMessages[0]
-              ? messageContentForSearch(pinnedMessages[0], t)
-              : ''}
-            onOpen={() => setPinnedMessagesOpen(true)}
+          <PinnedMessageCarousel
+            messages={pinnedMessages.map((message) => ({
+              id: message.ulid,
+              text: messageContentForSearch(message, t),
+              author: chatMessageAuthorName(message, currentUserPtid, ownName, peerProfiles, activeConversation?.peerName),
+            }))}
+            onJump={(messageUlid) => { void scrollToMessage(messageUlid); }}
           />
         ) : null}
 
@@ -1893,6 +1941,9 @@ function ChatPageInner({
           background={actionState.background}
           messages={threadMessages}
           historyById={history.byId}
+          repliesByRoot={history.repliesByRoot}
+          isThread={Boolean(threadRootMessageUlid)}
+          isGroup={isGroupThread}
           currentUserPtid={currentUserPtid}
           highlightedMessageUlid={highlightedMessageUlid}
           ownAvatar={ownAvatar}
@@ -1954,6 +2005,7 @@ function ChatPageInner({
               'mobile.chat.operationReactionFailed',
             );
           }}
+          onOpenThread={openMessageThread}
         />
 
         {activePeerBlocked ? (
@@ -1970,7 +2022,7 @@ function ChatPageInner({
             </div>
           </footer>
         ) : (
-          <footer className="message-composer">
+          <footer className="message-composer" ref={composerRootRef}>
             <div
               className="message-composer-input-panels"
               ref={chatBottomOcclusion.inputPanelRef}
@@ -2077,16 +2129,13 @@ function ChatPageInner({
                   <button type="button" className="message-action-button light" onClick={() => updateReplyContext('')} aria-label={t('common.action.cancel')}><X size={13} /></button>
                 </div>
               ) : null}
-              <SenderTypingFeedback
-                feedback={senderTypingFeedback}
-                onRetry={retryTypingState}
-              />
               <input ref={fileInputRef} className="visually-hidden-file-input" type="file" multiple onChange={(e) => { void handleMobileFilesSelected(e.target.files); }} />
               <div className="message-composer-row">
                 {MOBILE_THREAD_COMPOSER_CAPABILITIES.emoji ? (
                   <button type="button" className={`message-composer-tool ${composerEmojiOpen ? 'active' : ''}`} aria-label={t('mobile.chat.composerEmoji')} onClick={() => { composerInputRef.current?.blur(); setComposerEmojiOpen((o) => !o); setComposerMoreOpen(false); }} disabled={voiceRecorder.recording || Boolean(pendingAttachmentSubmission)}><Smile size={18} /></button>
                 ) : null}
-                <Input ref={composerInputRef} className="message-composer-input" value={draft} onChange={(e) => handleDraftChange(e.target.value)}
+                <Input.TextArea ref={composerInputRef} autoSize={{ minRows: 1, maxRows: 5 }}
+                  className="message-composer-input" value={draft} onChange={(e) => handleDraftChange(e.target.value)}
                   data-product-surface={chatBottomOcclusion.keyboardOverlapHeight > 0 ? 'chat.composer-keyboard' : undefined}
                   onFocus={() => { setComposerEmojiOpen(false); setComposerMoreOpen(false); }}
                   onCompositionStart={() => { composingRef.current = true; }} onCompositionEnd={() => { composingRef.current = false; lastCompositionEndRef.current = Date.now(); }}
@@ -2124,7 +2173,52 @@ function ChatPageInner({
       onQueryChange={(nextQuery) => {
         setConversationQuery(nextQuery);
         saveRouteQuery('tab:chat', nextQuery);
+        globalSearch.clear();
       }}
+      onSearch={(query) => {
+        const normalized = normalizeChatSearchQuery(query);
+        setConversationQuery(normalized);
+        saveRouteQuery('tab:chat', normalized);
+        recentSearches.remember(normalized);
+        globalSearch.search(normalized);
+      }}
+      onSearchFocus={() => setGlobalSearchOpen(true)}
+      searchContent={(
+        <>
+          {globalSearchOpen && !conversationQuery.trim() ? (
+            <RecentChatSearches queries={recentSearches.queries}
+              onReplay={(query) => {
+                setConversationQuery(query);
+                saveRouteQuery('tab:chat', query);
+                recentSearches.remember(query);
+                globalSearch.search(query);
+              }}
+              onRemove={recentSearches.remove}
+              onClear={recentSearches.clear}
+            />
+          ) : null}
+          {globalSearchOpen && recentSearches.failed ? (
+            <MobileNotice tone="error">
+              {t('mobile.chat.search.historyFailed')}
+              <Button onClick={recentSearches.retry}>{t('common.action.retry')}</Button>
+            </MobileNotice>
+          ) : null}
+          <GlobalChatSearchResults query={conversationQuery} contacts={globalContacts}
+            results={globalSearch.results} loading={globalSearch.loading} failed={globalSearch.failed}
+            submitted={globalSearch.query === conversationQuery && Boolean(globalSearch.query)}
+            index={globalSearch.index} hasNext={globalSearch.next.size > 0}
+            onOpenContact={onOpenContact}
+            onOpenMessage={({ conversation, message }) => onOpenConversation(conversation.kind === 'friend'
+              ? { routeId: 'detail:chat-conversation', sessionUlid: conversation.conversation.session.ulid, messageUlid: message.ulid }
+              : { routeId: 'detail:group-conversation', groupUlid: conversation.conversation.projection.conversationId, messageUlid: message.ulid })}
+            onRetry={globalSearch.retry} onPrevious={globalSearch.previous} onNext={globalSearch.nextPage}
+            resolveAuthor={({ message, conversation }) => chatMessageAuthorName(
+              message, currentUserPtid, currentUserProfile?.displayName || authSession?.actorRef.acct || '',
+              peerProfiles, conversation.kind === 'friend' ? conversationTitle(conversation) : '',
+            )}
+          />
+        </>
+      )}
       onDismissLocalError={() => setLocalActionError('')}
       onDismissSocialError={clearSocialError}
       onDismissGroupError={() => undefined}

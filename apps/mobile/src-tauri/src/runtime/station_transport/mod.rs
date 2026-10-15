@@ -18,6 +18,9 @@ use crate::error::{MobileError, MobileResult};
 use crate::platform::secure_storage::SecureStorage;
 use crate::runtime::oauth::session::{authenticated_native_session, AuthenticatedNativeSession};
 
+mod agent_settings;
+mod federation_settings;
+
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const REALTIME_TIMEOUT: Duration = Duration::from_secs(45);
@@ -114,6 +117,18 @@ pub struct StationTransportCancelInput {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "operationId", rename_all = "snake_case", deny_unknown_fields)]
 enum StationOperation {
+    ActorDevicesList {},
+    ActorDevicesRevoke {
+        body_bytes: Vec<u8>,
+    },
+    AgentSettingsExecute {
+        rpc: agent_settings::AgentSettingsRpc,
+        body_bytes: Vec<u8>,
+    },
+    FederationSettingsExecute {
+        rpc: federation_settings::FederationSettingsRpc,
+        body_bytes: Vec<u8>,
+    },
     ActorProfileGet {},
     ActorProfileUpdate {
         input: ActorProfileUpdateInput,
@@ -265,6 +280,10 @@ enum StationOperation {
 impl StationOperation {
     fn id(&self) -> &'static str {
         match self {
+            Self::ActorDevicesList {} => "actor_devices_list",
+            Self::ActorDevicesRevoke { .. } => "actor_devices_revoke",
+            Self::AgentSettingsExecute { .. } => "agent_settings_execute",
+            Self::FederationSettingsExecute { .. } => "federation_settings_execute",
             Self::ActorProfileGet {} => "actor_profile_get",
             Self::ActorProfileUpdate { .. } => "actor_profile_update",
             Self::ActorProfileGetPeer { .. } => "actor_profile_get_peer",
@@ -689,6 +708,35 @@ fn build_request(
     operation: StationOperation,
 ) -> MobileResult<RequestBuilder> {
     let request = match operation {
+        StationOperation::ActorDevicesList {} => authenticated_request(
+            client,
+            session,
+            Method::GET,
+            fixed_url(session, "/device/list")?,
+        )
+        .header(CONTENT_TYPE, "application/protobuf")
+        .header(ACCEPT, "application/protobuf"),
+        StationOperation::ActorDevicesRevoke { body_bytes } => {
+            use crate::runtime::reliability_proto::peers_touch::model::actor::v1::RevokeActorDeviceRequest;
+            use prost::Message;
+            if body_bytes.len() > 1024 {
+                return Err(transport_error("actor_devices_revoke", "body_size_invalid"));
+            }
+            let input = RevokeActorDeviceRequest::decode(body_bytes.as_slice())
+                .map_err(|_| transport_error("actor_devices_revoke", "decode"))?;
+            if input.device_id.is_empty() || input.device_id == session.device_id() {
+                return Err(transport_error("actor_devices_revoke", "device_invalid"));
+            }
+            authenticated_request(
+                client,
+                session,
+                Method::POST,
+                fixed_url(session, "/device/revoke")?,
+            )
+            .header(CONTENT_TYPE, "application/protobuf")
+            .header(ACCEPT, "application/protobuf")
+            .body(body_bytes)
+        }
         StationOperation::ActorProfileGet {} => authenticated_request(
             client,
             session,
@@ -1267,6 +1315,12 @@ fn build_request(
             Method::GET,
             fixed_url(session, "/api/v1/turn/ice-servers")?,
         ),
+        StationOperation::AgentSettingsExecute { rpc, body_bytes } => {
+            agent_settings::request(client, session, rpc, body_bytes)?
+        }
+        StationOperation::FederationSettingsExecute { rpc, body_bytes } => {
+            federation_settings::request(client, session, rpc, body_bytes)?
+        }
     };
     Ok(request)
 }
@@ -1535,7 +1589,9 @@ fn clean_header_value(value: String, max_len: usize, field: &str) -> MobileResul
 
 fn validate_optional_text(value: Option<&str>, maximum: usize, field: &str) -> MobileResult<()> {
     if let Some(value) = value {
-        clean_required(value.to_string(), maximum, field)?;
+        // Presence and empty value are distinct in generated profile/settings
+        // patches. Empty clears an optional field; a bio may contain newlines.
+        clean_text_allow_empty(value.to_string(), maximum, field)?;
     }
     Ok(())
 }
@@ -1596,6 +1652,13 @@ fn emit_realtime<R: Runtime>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn editable_optional_fields_can_be_cleared_and_bios_can_be_multiline() {
+        assert!(validate_optional_text(Some(""), 4096, "header").is_ok());
+        assert!(validate_optional_text(Some("first\nsecond"), 32768, "note").is_ok());
+        assert!(validate_optional_text(Some("bad\0text"), 4096, "header").is_err());
+    }
 
     #[test]
     fn moments_operations_use_the_station_moments_resource() {

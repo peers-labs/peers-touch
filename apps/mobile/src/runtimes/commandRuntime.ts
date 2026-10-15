@@ -150,6 +150,18 @@ export type DraftRestorationConsumer = (
   envelope: MobileDraftEnvelopeV2,
 ) => void;
 
+interface MessagingCommandStatus {
+  readonly commandId: string;
+  readonly conversationId: string;
+  readonly state:
+    | 'pending'
+    | 'retry_wait'
+    | 'submitted'
+    | 'failed'
+    | 'superseded'
+    | 'committed';
+}
+
 const MAX_RELIABILITY_TIMER_DELAY_MS = 2_147_000_000;
 let reliabilityReconciliationWake: (() => void) | null = null;
 // Process-local handoff only: Rust remains the sole durable draft owner.
@@ -202,6 +214,82 @@ async function loadDraftEnvelopeFromOwner(
   return bytes
     ? fromBinary(MobileDraftEnvelopeV2Schema, Uint8Array.from(bytes))
     : null;
+}
+
+async function removeDraftEnvelopeFromOwner(
+  envelope: MobileDraftEnvelopeV2,
+): Promise<void> {
+  await invoke<boolean>('draft_remove', {
+    input: {
+      stationPeerId: envelope.stationPeerId,
+      actorPtid: envelope.actorPtid,
+      surfaceKind: envelope.surfaceKind,
+      targetId: envelope.targetId,
+    },
+  });
+  const remaining = await loadDraftEnvelopeFromOwner(
+    envelope.stationPeerId,
+    envelope.actorPtid,
+    envelope.surfaceKind,
+    envelope.targetId,
+  );
+  if (remaining) {
+    throw new Error('mobile.reliability.draftDiscardIncomplete');
+  }
+  const key = envelopeRestorationKey(envelope);
+  pendingDraftRestorations.delete(key);
+  observedDraftConsumers.delete(key);
+}
+
+async function submittedChatDraftState(
+  envelope: MobileDraftEnvelopeV2,
+): Promise<'restore' | 'submitted' | 'committed'> {
+  if (
+    envelope.surfaceKind !== MobileDraftSurfaceKind.CHAT_COMPOSER
+    || envelope.payload.case !== 'chat'
+  ) {
+    return 'restore';
+  }
+  const { submittedCommandId, submittedMessageId } = envelope.payload.value;
+  if (!submittedCommandId && !submittedMessageId) return 'restore';
+  if (!submittedCommandId || !submittedMessageId) {
+    throw new Error('mobile.reliability.draftSubmissionInvalid');
+  }
+
+  let status: MessagingCommandStatus;
+  try {
+    status = await invoke<MessagingCommandStatus>('messaging_command_status', {
+      input: {
+        stationPeerId: envelope.stationPeerId,
+        actorPtid: envelope.actorPtid,
+        commandId: submittedCommandId,
+      },
+    });
+  } catch {
+    return 'restore';
+  }
+  if (
+    status.commandId !== submittedCommandId
+    || status.conversationId !== envelope.targetId
+  ) {
+    throw new Error('mobile.reliability.draftSubmissionScopeMismatch');
+  }
+  if (status.state === 'committed') return 'committed';
+  if (['pending', 'retry_wait', 'submitted'].includes(status.state)) {
+    return 'submitted';
+  }
+  return 'restore';
+}
+
+async function reconcileSubmittedChatDraft(
+  envelope: MobileDraftEnvelopeV2,
+): Promise<MobileDraftEnvelopeV2 | null> {
+  const state = await submittedChatDraftState(envelope);
+  if (state === 'restore') return envelope;
+  if (state === 'committed') {
+    await removeDraftEnvelopeFromOwner(envelope);
+  }
+  return null;
 }
 
 function deliverRestoredDraft(envelope: MobileDraftEnvelopeV2): void {
@@ -604,26 +692,8 @@ export function draftsRequiringRestoreDecision(
 export async function discardReliabilityDrafts(
   drafts: readonly DraftProjection[],
 ): Promise<void> {
-  const port = getDraftRestorationPort();
   for (const draft of drafts) {
-    await port.remove(
-      draft.envelope.stationPeerId,
-      draft.envelope.actorPtid,
-      draft.envelope.surfaceKind,
-      draft.envelope.targetId,
-    );
-    const remaining = await loadDraftEnvelopeFromOwner(
-      draft.envelope.stationPeerId,
-      draft.envelope.actorPtid,
-      draft.envelope.surfaceKind,
-      draft.envelope.targetId,
-    );
-    if (remaining) {
-      throw new Error('mobile.reliability.draftDiscardIncomplete');
-    }
-    const key = envelopeRestorationKey(draft.envelope);
-    pendingDraftRestorations.delete(key);
-    observedDraftConsumers.delete(key);
+    await removeDraftEnvelopeFromOwner(draft.envelope);
   }
 }
 
@@ -640,7 +710,7 @@ function createDraftRestorationPort(): DraftRestorationPort {
     },
 
     async load(stationPeerId, actorPtid, surfaceKind, targetId) {
-      const envelope = await loadDraftEnvelopeFromOwner(
+      const stored = await loadDraftEnvelopeFromOwner(
         stationPeerId,
         actorPtid,
         surfaceKind,
@@ -652,13 +722,15 @@ function createDraftRestorationPort(): DraftRestorationPort {
         surfaceKind,
         targetId,
       );
-      if (!envelope) {
+      if (!stored) {
         observedDraftConsumers.delete(key);
         if (pendingDraftRestorations.has(key)) {
           throw new Error('mobile.reliability.draftMissing');
         }
         return null;
       }
+      const envelope = await reconcileSubmittedChatDraft(stored);
+      if (!envelope) return null;
       assertRestorableDraftEnvelope(envelope);
       pendingDraftRestorations.delete(key);
       observedDraftConsumers.add(key);
@@ -669,9 +741,14 @@ function createDraftRestorationPort(): DraftRestorationPort {
       const encoded = await invoke<readonly number[][]>('draft_list', {
         input: { stationPeerId, actorPtid, surfaceKind },
       });
-      return encoded.map((bytes) => draftProjection(
-        fromBinary(MobileDraftEnvelopeV2Schema, Uint8Array.from(bytes)),
-      ));
+      const drafts: DraftProjection[] = [];
+      for (const bytes of encoded) {
+        const envelope = await reconcileSubmittedChatDraft(
+          fromBinary(MobileDraftEnvelopeV2Schema, Uint8Array.from(bytes)),
+        );
+        if (envelope) drafts.push(draftProjection(envelope));
+      }
+      return drafts;
     },
 
     async remove(stationPeerId, actorPtid, surfaceKind, targetId) {

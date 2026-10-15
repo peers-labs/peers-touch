@@ -1,12 +1,11 @@
 import type { CSSProperties, ReactNode } from 'react';
-import { Badge, Button, Empty, Input, List, Typography } from 'antd';
+import { Badge, Button, Empty, List, Typography } from 'antd';
 import {
   BellOff,
   Pencil,
   Pin,
   RefreshCw,
   RotateCcw,
-  Search,
   Users,
 } from 'lucide-react';
 
@@ -14,6 +13,7 @@ import { useMobileI18n } from '../../app/mobileI18n';
 import { BoundedList } from '../../components/BoundedList';
 import { MobileAvatar } from '../../components/MobileAvatar';
 import { MobileNotice } from '../../components/MobileNotice';
+import { MobileSearchField } from '../../components/MobileSearchField';
 import {
   conversationAvatar,
   conversationPreview,
@@ -70,6 +70,9 @@ interface ChatConversationListPageContentProps {
   readonly socialError: string;
   readonly groupError: string;
   readonly onQueryChange: (query: string) => void;
+  readonly onSearch: (query: string) => void;
+  readonly onSearchFocus: () => void;
+  readonly searchContent?: ReactNode;
   readonly onDismissLocalError: () => void;
   readonly onDismissSocialError: () => void;
   readonly onDismissGroupError: () => void;
@@ -88,6 +91,9 @@ export function ChatConversationListPageContent({
   socialError,
   groupError,
   onQueryChange,
+  onSearch,
+  onSearchFocus,
+  searchContent,
   onDismissLocalError,
   onDismissSocialError,
   onDismissGroupError,
@@ -125,15 +131,16 @@ export function ChatConversationListPageContent({
       </header>
 
       <div className="chat-search-bar">
-        <Input
-          value={query}
-          onChange={(event) => onQueryChange(event.target.value)}
-          prefix={<Search size={16} color="#9ca0ab" />}
-          placeholder={t('mobile.chat.searchPlaceholder')}
-          allowClear
+        <MobileSearchField
+          query={query}
+          onChange={onQueryChange}
+          onSearch={onSearch}
+          onFocus={onSearchFocus}
+          placeholder={t('mobile.chat.search.allPlaceholder')}
         />
       </div>
 
+      {searchContent}
       {localError ? <MobileNotice onClose={onDismissLocalError}>{localError}</MobileNotice> : null}
       {socialError ? (
         <MobileNotice onClose={onDismissSocialError}>
@@ -157,6 +164,7 @@ export function ChatConversationListPageContent({
       ) : null}
 
       <section className="social-list-panel">
+        {query.trim() ? <h2 className="chat-search-section-title">{t('mobile.chat.search.conversations')}</h2> : null}
         {loading && items.length === 0 ? (
           <ConversationListSkeleton />
         ) : items.length === 0 ? (

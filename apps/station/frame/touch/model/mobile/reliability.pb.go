@@ -481,12 +481,14 @@ func (x *EncryptedBlobReference) GetBlobId() string {
 }
 
 type ChatDraftPayload struct {
-	state            protoimpl.MessageState    `protogen:"open.v1"`
-	Text             string                    `protobuf:"bytes,1,opt,name=text,proto3" json:"text,omitempty"`
-	ReplyToMessageId string                    `protobuf:"bytes,2,opt,name=reply_to_message_id,json=replyToMessageId,proto3" json:"reply_to_message_id,omitempty"`
-	AttachmentRefs   []*EncryptedBlobReference `protobuf:"bytes,3,rep,name=attachment_refs,json=attachmentRefs,proto3" json:"attachment_refs,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	state              protoimpl.MessageState    `protogen:"open.v1"`
+	Text               string                    `protobuf:"bytes,1,opt,name=text,proto3" json:"text,omitempty"`
+	ReplyToMessageId   string                    `protobuf:"bytes,2,opt,name=reply_to_message_id,json=replyToMessageId,proto3" json:"reply_to_message_id,omitempty"`
+	AttachmentRefs     []*EncryptedBlobReference `protobuf:"bytes,3,rep,name=attachment_refs,json=attachmentRefs,proto3" json:"attachment_refs,omitempty"`
+	SubmittedCommandId string                    `protobuf:"bytes,4,opt,name=submitted_command_id,json=submittedCommandId,proto3" json:"submitted_command_id,omitempty"`
+	SubmittedMessageId string                    `protobuf:"bytes,5,opt,name=submitted_message_id,json=submittedMessageId,proto3" json:"submitted_message_id,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *ChatDraftPayload) Reset() {
@@ -538,6 +540,20 @@ func (x *ChatDraftPayload) GetAttachmentRefs() []*EncryptedBlobReference {
 		return x.AttachmentRefs
 	}
 	return nil
+}
+
+func (x *ChatDraftPayload) GetSubmittedCommandId() string {
+	if x != nil {
+		return x.SubmittedCommandId
+	}
+	return ""
+}
+
+func (x *ChatDraftPayload) GetSubmittedMessageId() string {
+	if x != nil {
+		return x.SubmittedMessageId
+	}
+	return ""
 }
 
 type MomentDraftPayload struct {
@@ -761,11 +777,13 @@ const file_domain_mobile_reliability_proto_rawDesc = "" +
 	"\x13social_relationship\x18\x15 \x01(\v26.peers_touch.model.social.v1.SocialRelationshipCommandH\x00R\x12socialRelationshipB\t\n" +
 	"\apayload\"1\n" +
 	"\x16EncryptedBlobReference\x12\x17\n" +
-	"\ablob_id\x18\x01 \x01(\tR\x06blobId\"\xb3\x01\n" +
+	"\ablob_id\x18\x01 \x01(\tR\x06blobId\"\x97\x02\n" +
 	"\x10ChatDraftPayload\x12\x12\n" +
 	"\x04text\x18\x01 \x01(\tR\x04text\x12-\n" +
 	"\x13reply_to_message_id\x18\x02 \x01(\tR\x10replyToMessageId\x12\\\n" +
-	"\x0fattachment_refs\x18\x03 \x03(\v23.peers_touch.model.mobile.v1.EncryptedBlobReferenceR\x0eattachmentRefs\"\xbf\x01\n" +
+	"\x0fattachment_refs\x18\x03 \x03(\v23.peers_touch.model.mobile.v1.EncryptedBlobReferenceR\x0eattachmentRefs\x120\n" +
+	"\x14submitted_command_id\x18\x04 \x01(\tR\x12submittedCommandId\x120\n" +
+	"\x14submitted_message_id\x18\x05 \x01(\tR\x12submittedMessageId\"\xbf\x01\n" +
 	"\x12MomentDraftPayload\x12\x12\n" +
 	"\x04text\x18\x01 \x01(\tR\x04text\x12A\n" +
 	"\baudience\x18\x02 \x01(\v2%.peers_touch.model.social.v1.AudienceR\baudience\x12R\n" +

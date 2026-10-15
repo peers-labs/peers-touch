@@ -1,5 +1,4 @@
 use super::recovery::{
-    fetch_recovery_events_to_target, reconcile_archive_authority_events,
     restore_profile_database_atomically, MessagingRecoveryArchive, RecoveryReconciliation,
 };
 use super::store::{
@@ -66,6 +65,9 @@ use messaging_core::proto::actor_device_ref;
 use messaging_core::proto::chat::{
     ChatStorageOperationState, ChatStoragePolicy, ChatStorageResult, ChatStorageScope,
     ChatStorageSnapshot,
+};
+use messaging_core::recovery::reconciliation::{
+    fetch_recovery_events_to_target, reconcile_archive_authority_events,
 };
 use messaging_core::storage_governance::cache::{
     cache_cleanup_error_proto, cache_cleanup_operation_proto, execute_cache_cleanup,

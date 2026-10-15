@@ -75,6 +75,12 @@ State rules:
 - Non-empty text shows send affordance.
 - Multiline input expands to the platform token maximum, then scrolls internally.
 - Emoji panel, attachment panel, voice panel, and system keyboard are mutually exclusive visible input surfaces.
+- Emoji and attachment drawers are transient: outside pointer/focus, Escape,
+  conversation context change, or app-window blur closes them. Their
+  source controls remain part of the dismissal boundary so a second activation
+  toggles the active drawer instead of immediately reopening it.
+- A selected attachment moves into the composer context row before the drawer
+  closes. Canceling the system picker creates no empty attachment state.
 - Reply/edit preview uses a reserved row above the input; it MUST NOT consume message list padding directly.
 - Sender typing publication is best-effort ephemeral presence. Its progress or
   transport failure MUST NOT add a status row, retry action, or height change to
@@ -166,6 +172,7 @@ Every Mobile Chat UI change should be checked in these states:
 | Keyboard open | Composer follows keyboard and does not cover content. |
 | Attachment panel open | Message list bottom padding includes panel height. |
 | Emoji panel open | Panel replaces keyboard and keeps same clearance model. |
+| Composer drawer loses focus | Drawer closes; draft and selected attachment remain. |
 | Long text selected | Menu does not cover selected text. |
 | Image selected | Menu does not cover image body. |
 | Long image near bottom | Fallback action surface does not collide with composer. |
@@ -203,6 +210,17 @@ traverse overlapping half-windows, and message targets materialize before focus
 or scrolling. Replacing a window keeps the overlapping row's viewport offset.
 Logical-history selectors own thread counts and local search; submitting search
 uses the existing native indexed-search command and its timestamp/ID cursor.
+The native index also matches literal Unicode fragments in message text and
+attachment filenames, because the word tokenizer cannot segment unspaced CJK
+or emoji. Both paths apply the same conversation, visibility and cursor
+policy before enrichment and the bounded result limit.
+
+Global search reuses this command across the actor's accessible conversation
+projection with at most four concurrent native reads. It does not hydrate
+entire histories. Results are fenced by account and search revision; per-source
+cursors support previous/next without skipping another conversation's results.
+Recent queries share one actor-scoped preference owner across global and
+conversation search, retaining ten normalized case-insensitive unique queries.
 
 `app/navigation/scrollRestoration.ts` owns bounded in-memory window/query/scroll
 metadata outside tab lifetime. Each cache retains at most 100 locations; scroll

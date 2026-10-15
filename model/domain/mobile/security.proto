@@ -1,0 +1,70 @@
+syntax = "proto3";
+
+package peers_touch.model.mobile.v1;
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/mobile;mobile";
+
+// Native-only application lock. The PIN is never a Station credential.
+message MobilePinRecord {
+  string verification_hash = 1;
+  uint32 failed_attempts = 2;
+  int64 locked_until_unix_ms = 3;
+}
+
+message MobilePinRequest {
+  string station_peer_id = 1;
+  string actor_ptid = 2;
+  string current_pin = 3;
+  string new_pin = 4;
+  bool remove = 5;
+}
+
+message MobilePinStatus {
+  string station_peer_id = 1;
+  string actor_ptid = 2;
+  bool configured = 3;
+  bool locked = 4;
+  uint32 attempts_remaining = 5;
+  int64 locked_until_unix_ms = 6;
+}
+
+// A pending local reset is completed only by a newly verified Station login
+// for this exact actor. It cannot authorize credential reads or PIN removal.
+message MobilePinResetRecord {
+  string station_peer_id = 1;
+  string actor_ptid = 2;
+  int64 expires_at_unix_ms = 3;
+}
+
+enum MobileRecoveryAction {
+  MOBILE_RECOVERY_ACTION_UNSPECIFIED = 0;
+  MOBILE_RECOVERY_ACTION_STATUS = 1;
+  MOBILE_RECOVERY_ACTION_CREATE = 2;
+  MOBILE_RECOVERY_ACTION_RESTORE = 3;
+}
+
+// Secrets are generated, displayed and entered by the native owner.
+message MobileRecoveryRequest {
+  string station_peer_id = 1;
+  string actor_ptid = 2;
+  string session_id = 3;
+  uint64 lifecycle_generation = 4;
+  MobileRecoveryAction action = 5;
+}
+
+message MobileRecoveryResult {
+  bool exists = 1;
+  string revision_id = 2;
+  uint32 format_version = 3;
+  int64 created_at_unix_ms = 4;
+  uint64 archive_bytes = 5;
+  uint64 conversation_count = 6;
+  uint64 message_count = 7;
+  uint64 attachment_count = 8;
+}
+
+// Stored only in native secure storage; never returned to the renderer.
+message MobileRecoveryRecord {
+  string phrase = 1;
+  uint64 recovery_epoch = 2;
+}

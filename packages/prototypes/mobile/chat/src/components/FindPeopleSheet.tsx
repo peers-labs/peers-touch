@@ -6,6 +6,7 @@ import { demoContacts } from '../data';
 import { demoPeopleHandle, type SocialDemoAction, type SocialDemoState } from '../socialDemo';
 import { RequestRecoveryNotice } from './ExperienceRecovery';
 import { IdentityAvatar } from './IdentityAvatar';
+import { AccessibleClearIcon } from './AccessibleClearIcon';
 
 export function FindPeopleSheet({
   state,
@@ -83,7 +84,7 @@ export function FindPeopleSheet({
             placeholder={copy['mobile.contacts.findPeoplePlaceholder']}
             enterButton={copy['mobile.contacts.search']}
             value={query}
-            allowClear
+            allowClear={{ clearIcon: <AccessibleClearIcon label="Clear people search" /> }}
             onChange={(event) => {
               setQuery(event.target.value);
               if (!event.target.value.trim()) setSearchedQuery('');

@@ -229,6 +229,25 @@ describe('moments feed runtime projection', () => {
     });
   });
 
+  it('replaces a complete feed window so deleted receiver rows do not survive refresh', async () => {
+    const gateway = {
+      fetchFeed: vi.fn()
+        .mockResolvedValueOnce(feedPage(['post-1', 'post-deleted']))
+        .mockResolvedValueOnce(feedPage(['post-1'])),
+    };
+    const store = createMomentsFeedStore(gateway);
+
+    await store.loadFeed();
+    await store.refresh();
+
+    expect(store.state().posts.map(({ id }) => id)).toEqual(['post-1']);
+    expect(store.state()).toMatchObject({
+      cursor: '',
+      hasMore: false,
+      loadState: 'idle',
+    });
+  });
+
   it('retains visible rows and retries the exact failed refresh', async () => {
     const gateway = {
       fetchFeed: vi.fn()
@@ -332,7 +351,7 @@ describe('moments feed runtime projection', () => {
     });
   });
 
-  it('rejects a late page after a preserving refresh', async () => {
+  it('rejects a late page after a complete refresh', async () => {
     const stalePage = deferred<ReturnType<typeof feedPage>>();
     const replacement = deferred<ReturnType<typeof feedPage>>();
     const gateway = {
@@ -353,7 +372,6 @@ describe('moments feed runtime projection', () => {
 
     expect(store.state().posts.map(({ id }) => id)).toEqual([
       'post-replacement',
-      'post-initial',
     ]);
     expect(store.state()).toMatchObject({
       cursor: 'cursor-fresh',
@@ -362,7 +380,7 @@ describe('moments feed runtime projection', () => {
     });
   });
 
-  it('rejects a late page error after a preserving refresh', async () => {
+  it('rejects a late page error after a complete refresh', async () => {
     const stalePage = deferred<{
       ok: false;
       error: { message: string };
@@ -390,7 +408,6 @@ describe('moments feed runtime projection', () => {
     });
     expect(store.state().posts.map(({ id }) => id)).toEqual([
       'post-replacement',
-      'post-initial',
     ]);
   });
 
@@ -835,7 +852,7 @@ describe('moments feed runtime projection', () => {
 
     await expect(readback).resolves.toBe(false);
     expect(gateway.fetchComments).not.toHaveBeenCalled();
-    expect(store.state().posts.map(({ id }) => id)).toEqual(['new', 'target']);
+    expect(store.state().posts.map(({ id }) => id)).toEqual(['new']);
   });
 
   it('rejects a late comment page after an authoritative reload', async () => {
@@ -1010,7 +1027,7 @@ describe('moments feed runtime projection', () => {
 
   it('prunes settled reactions on eviction while retaining inflight ownership', async () => {
     const store = createMomentsFeedStore({
-      fetchFeed: vi.fn(async () => feedPage(['post-current'])),
+      fetchFeed: vi.fn(async () => feedPage(['post-current'], 'cursor-next', true)),
     });
     await store.loadFeed();
     const pending = store.beginReaction('post-current', 1);

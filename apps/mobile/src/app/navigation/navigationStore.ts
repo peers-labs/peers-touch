@@ -22,16 +22,27 @@ export type MobileSettingDetailId =
   | 'station-connection'
   | 'encryption'
   | 'language'
-  | 'about';
+  | 'about'
+  | 'general'
+  | 'storage'
+  | 'providers'
+  | 'models'
+  | 'memory'
+  | 'skills'
+  | 'mcp'
+  | 'federation'
+  | 'security';
 
 export type MobileDetailRoute =
   | {
       readonly routeId: 'detail:chat-conversation';
       readonly sessionUlid: string;
+      readonly messageUlid?: string;
     }
   | {
       readonly routeId: 'detail:group-conversation';
       readonly groupUlid: string;
+      readonly messageUlid?: string;
     }
   | {
       readonly routeId: 'detail:contact-profile';

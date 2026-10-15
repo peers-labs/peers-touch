@@ -6,7 +6,9 @@ use messaging_core::proto::chat::{
 };
 use zeroize::Zeroizing;
 
-use super::transport::{get_proto, post_proto, validate_transport_scope};
+use super::transport::{
+    get_proto, post_proto, validate_transport_scope, StationTransportError,
+};
 
 pub struct StationMlsLeaveIntentTransport {
     station_origin: String,
@@ -50,6 +52,22 @@ impl StationMlsLeaveIntentTransport {
         }
         Ok(conversation)
     }
+
+    pub(crate) fn list_leave_intents_typed(
+        &self,
+        conversation_id: &str,
+    ) -> Result<Vec<MlsLeaveIntent>, StationTransportError> {
+        let response: ListPendingMlsLeaveIntentsResponse = get_proto(
+            &self.station_origin,
+            self.access_token.as_str(),
+            &self.device_id,
+            "/conversation/mls/leave-intents",
+            &ListPendingMlsLeaveIntentsRequest {
+                conversation_id: conversation_id.to_string(),
+            },
+        )?;
+        Ok(response.intents)
+    }
 }
 
 impl MlsLeaveIntentTransport for StationMlsLeaveIntentTransport {
@@ -70,17 +88,8 @@ impl MlsLeaveIntentTransport for StationMlsLeaveIntentTransport {
     }
 
     fn list_leave_intents(&self, conversation_id: &str) -> Result<Vec<MlsLeaveIntent>, String> {
-        let response: ListPendingMlsLeaveIntentsResponse = get_proto(
-            &self.station_origin,
-            self.access_token.as_str(),
-            &self.device_id,
-            "/conversation/mls/leave-intents",
-            &ListPendingMlsLeaveIntentsRequest {
-                conversation_id: conversation_id.to_string(),
-            },
-        )
-        .map_err(|error| error.to_string())?;
-        Ok(response.intents)
+        self.list_leave_intents_typed(conversation_id)
+            .map_err(|error| error.to_string())
     }
 }
 

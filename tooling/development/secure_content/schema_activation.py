@@ -106,9 +106,19 @@ PROFILE_TARGETS = MappingProxyType(
             final_workstream_id="W12F-FIVEARM",
             ordinal=2,
         ),
+        "chat-native-five": ProfileTarget(
+            profile_id="chat-native-five",
+            deployment_environment="chat-native-five",
+            destructive_scope="chat-native-five-social-private",
+            activation_work_item_id="MOBILE-WHOLE-PRODUCT-USABILITY-20261008",
+            activation_workstream_id="MWPU-PROOF",
+            final_work_item_id="",
+            final_workstream_id="",
+            ordinal=1,
+        ),
     }
 )
-PROFILE_ORDER = tuple(PROFILE_TARGETS)
+PROFILE_ORDER = ("four", "fiveArm")
 
 
 @dataclass(frozen=True)
@@ -132,6 +142,8 @@ class ActivationOwnerDescriptor:
     journey_id: str
     activation_bindings: Mapping[str, ActivationWorkItemBinding]
     allowed_intents: tuple[str, ...]
+    profile_order: tuple[str, ...]
+    reuse_active_declaration: bool = False
 
 
 SECURE_CONTENT_OWNER = ActivationOwnerDescriptor(
@@ -156,6 +168,7 @@ SECURE_CONTENT_OWNER = ActivationOwnerDescriptor(
         }
     ),
     allowed_intents=INTENTS,
+    profile_order=("four", "fiveArm"),
 )
 CROSS_STATION_SOCIAL_OWNER = ActivationOwnerDescriptor(
     owner_id="cross-station-social",
@@ -189,11 +202,40 @@ CROSS_STATION_SOCIAL_OWNER = ActivationOwnerDescriptor(
         }
     ),
     allowed_intents=("SCHEMA_ACTIVATION",),
+    profile_order=("four", "fiveArm"),
+)
+MOBILE_USABILITY_OWNER = ActivationOwnerDescriptor(
+    owner_id="mobile-whole-product-usability",
+    plan_id="mobile-whole-product-usability-20261008",
+    plan_path=(
+        "docs/architecture/platform/client/mobile/execution-plans/"
+        "20261008-mobile-whole-product-usability/plan.md"
+    ),
+    manifest_path="",
+    source_work_item_id="MOBILE-WHOLE-PRODUCT-USABILITY-20261008",
+    source_workstream_id="MWPU-PROOF",
+    source_task_id="MWPU-07-FRONTIER",
+    aggregate_workstream_id="MWPU-PROOF",
+    source_evidence_root="MWPU-07-FRONTIER",
+    journey_id="MS-J08",
+    activation_bindings=MappingProxyType(
+        {
+            "chat-native-five": ActivationWorkItemBinding(
+                work_item_id="MOBILE-WHOLE-PRODUCT-USABILITY-20261008",
+                workstream_id="MWPU-PROOF",
+                task_id="MWPU-07-FRONTIER",
+            ),
+        }
+    ),
+    allowed_intents=("SCHEMA_ACTIVATION",),
+    profile_order=("chat-native-five",),
+    reuse_active_declaration=True,
 )
 OWNER_DESCRIPTORS = MappingProxyType(
     {
         SECURE_CONTENT_OWNER.owner_id: SECURE_CONTENT_OWNER,
         CROSS_STATION_SOCIAL_OWNER.owner_id: CROSS_STATION_SOCIAL_OWNER,
+        MOBILE_USABILITY_OWNER.owner_id: MOBILE_USABILITY_OWNER,
     }
 )
 DEFAULT_OWNER_ID = SECURE_CONTENT_OWNER.owner_id
@@ -1448,7 +1490,7 @@ def _validate_declaration(
         raise ValidationError("Development declaration source is stale")
     if target is None:
         runtime_claims = declaration.get("runtimeClaims", [])
-        if runtime_claims:
+        if runtime_claims and not owner.reuse_active_declaration:
             raise ValidationError("source-freeze declaration must not own runtime claims")
         return declaration
     claims = declaration.get("runtimeClaims")
@@ -2363,7 +2405,9 @@ class SchemaActivationOwner:
                 "source_commit": generation,
                 "workspace_id": identity["workspaceId"],
                 "profile_id": target.profile_id,
-                "activation_ordinal": target.ordinal,
+                "activation_ordinal": (
+                    self.owner_descriptor.profile_order.index(target.profile_id) + 1
+                ),
                 "deployment_environment": target.deployment_environment,
                 "destructive_scope": target.destructive_scope,
                 "reset_id": reset_identifier,
@@ -2411,9 +2455,10 @@ class SchemaActivationOwner:
         generation = _require_text(
             generation_id, "generation_id", pattern=GIT_COMMIT
         )
-        if tuple(profiles) != PROFILE_ORDER:
+        profile_order = self.owner_descriptor.profile_order
+        if tuple(profiles) != profile_order:
             raise ValidationError(
-                f"profiles must be exactly {','.join(PROFILE_ORDER)} in serial order"
+                f"profiles must be exactly {','.join(profile_order)} in serial order"
             )
         identity = self._current_identity(
             generation,
@@ -2423,7 +2468,7 @@ class SchemaActivationOwner:
         source_result = self._load_source_result(generation)
         child_results: list[Mapping[str, Any]] = []
         children: list[dict[str, Any]] = []
-        for profile_id in PROFILE_ORDER:
+        for profile_id in profile_order:
             target = _target(profile_id)
             paths = sorted(
                 self._profile_parent(checked_intent, generation, profile_id).glob(
@@ -2454,14 +2499,16 @@ class SchemaActivationOwner:
                     ],
                 }
             )
-        if child_results[0]["reset_id"] == child_results[1]["reset_id"]:
+        if len(child_results) > 1 and (
+            child_results[0]["reset_id"] == child_results[1]["reset_id"]
+        ):
             raise ValidationError("profile reset IDs must be distinct")
-        if (
+        if len(child_results) > 1 and (
             child_results[0]["declaration_digest"]
             == child_results[1]["declaration_digest"]
         ):
             raise ValidationError("profile declarations must be distinct")
-        if _require_timestamp(
+        if len(child_results) > 1 and _require_timestamp(
             child_results[1]["completed_at"], "fiveArm completed_at"
         ) < _require_timestamp(child_results[0]["completed_at"], "four completed_at"):
             raise ValidationError("profile results do not prove serial execution")
@@ -2483,7 +2530,7 @@ class SchemaActivationOwner:
                 "source_commit": generation,
                 "workspace_id": identity["workspaceId"],
                 "reset_intent": checked_intent,
-                "profiles": list(PROFILE_ORDER),
+                "profiles": list(profile_order),
                 "source_freeze_ref": self._source_result_ref(generation),
                 "source_freeze_digest": source_result["result_digest"],
                 "children": children,
@@ -2580,6 +2627,8 @@ class SchemaActivationOwner:
         work_item_id: str,
         workstream_id: str,
     ) -> Mapping[str, Any]:
+        if self.owner_descriptor.reuse_active_declaration:
+            return self._load_declaration(work_item_id)
         try:
             projection = work_item_control.load_projection(
                 self.repo_root / self.owner_descriptor.manifest_path,
@@ -2739,9 +2788,11 @@ class SchemaActivationOwner:
         generation_id: str,
         target: ProfileTarget,
     ) -> None:
-        if target.ordinal == 1:
+        profile_order = self.owner_descriptor.profile_order
+        index = profile_order.index(target.profile_id)
+        if index == 0:
             return
-        predecessor = _target(PROFILE_ORDER[target.ordinal - 2])
+        predecessor = _target(profile_order[index - 1])
         paths = sorted(
             self._profile_parent(
                 intent, generation_id, predecessor.profile_id
@@ -2919,7 +2970,9 @@ class SchemaActivationOwner:
             "source_commit": generation_id,
             "workspace_id": self.workspace_id,
             "profile_id": target.profile_id,
-            "activation_ordinal": target.ordinal,
+            "activation_ordinal": (
+                self.owner_descriptor.profile_order.index(target.profile_id) + 1
+            ),
             "deployment_environment": target.deployment_environment,
             "destructive_scope": target.destructive_scope,
             "reset_intent": intent,
@@ -3098,7 +3151,7 @@ class SchemaActivationOwner:
             "source_commit": generation_id,
             "workspace_id": self.workspace_id,
             "reset_intent": intent,
-            "profiles": list(PROFILE_ORDER),
+            "profiles": list(self.owner_descriptor.profile_order),
             "status": "PASS",
             "claim": (
                 "CANONICAL_SCHEMA_ACTIVE_ONLY"
@@ -3110,7 +3163,8 @@ class SchemaActivationOwner:
             if result.get(field) != expected_value:
                 raise ValidationError(f"aggregate result has invalid {field}")
         children = result["children"]
-        if not isinstance(children, list) or len(children) != len(PROFILE_ORDER):
+        profile_order = self.owner_descriptor.profile_order
+        if not isinstance(children, list) or len(children) != len(profile_order):
             raise ValidationError("aggregate children are incomplete")
         for index, child_value in enumerate(children):
             child = _require_exact_keys(
@@ -3124,7 +3178,7 @@ class SchemaActivationOwner:
                     "schema_attestation_digest",
                 },
             )
-            if child.get("profile_id") != PROFILE_ORDER[index]:
+            if child.get("profile_id") != profile_order[index]:
                 raise ValidationError("aggregate child order is invalid")
             _require_text(child["reset_id"], "child reset_id", pattern=IDENTIFIER)
             _validate_ref(child["result_ref"], "child result_ref")
@@ -3179,7 +3233,7 @@ def _parser() -> argparse.ArgumentParser:
 
     run = subparsers.add_parser("run")
     run.add_argument("--workstream", required=True)
-    run.add_argument("--profile", required=True, choices=PROFILE_ORDER)
+    run.add_argument("--profile", required=True, choices=tuple(PROFILE_TARGETS))
     run.add_argument("--intent", required=True, choices=INTENTS)
     run.add_argument("--generation-id")
     run.add_argument("--budget-seconds", required=True, type=int)

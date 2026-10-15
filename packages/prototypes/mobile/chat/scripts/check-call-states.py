@@ -97,8 +97,18 @@ def assert_layout(page: Page, expected: str) -> dict:
     return evidence
 
 
+def choose_mobile(page: Page) -> None:
+    mobile_site = page.get_by_role(
+        "button", name="mobile Mobile Prototypes", exact=True
+    )
+    if mobile_site.count() and mobile_site.get_attribute("aria-pressed") != "true":
+        mobile_site.click()
+    page.get_by_text("Live Preview", exact=True).wait_for()
+
+
 def open_scenario(page: Page, scenario: str) -> dict:
     page.goto(f"{BASE_URL}/?scenario={scenario}", wait_until="networkidle")
+    choose_mobile(page)
     page.locator("[data-prototype-call-state]").wait_for(state="visible")
     expected = {
         "call-outgoing-audio": "outgoing",
@@ -182,6 +192,7 @@ def main() -> None:
         report["interactions"].append("handled_elsewhere -> close")
 
         page.goto(f"{BASE_URL}/?scenario=journey", wait_until="networkidle")
+        choose_mobile(page)
         page.get_by_role("button", name="Continue", exact=True).click()
         page.get_by_role("button", name="Email Login").click()
         page.get_by_role("button", name="Sign In", exact=True).click()

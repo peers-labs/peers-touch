@@ -61,7 +61,6 @@ export const longListMessages: Message[] = Array.from({ length: 480 }, (_, index
   time: `09:${String(index % 60).padStart(2, '0')}`,
   status: 'read',
   ...(index % 20 === 0 ? {
-    threadCount: 3,
     threadReplies: Array.from({ length: 3 }, (_, replyIndex) => ({
       id: `long-reply-${ordinal(index)}-${replyIndex}`,
       mine: replyIndex % 2 === 0,

@@ -238,3 +238,13 @@ message MemoryFeedbackResponse {
   double trust_score = 2;
   bool helpful = 3;
 }
+
+// Agent-owned memory policy stored under Agent.config_json.memory. Missing
+// fields inherit Station defaults; disabling retains existing memory records.
+message MemoryPreferences {
+  optional bool enabled = 1;
+  optional bool tuning_enabled = 2;
+  optional double vector_weight = 3;
+  optional double keyword_weight = 4;
+  string effort = 5;
+}

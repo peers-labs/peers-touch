@@ -117,6 +117,7 @@ export function createGatewayTransport(
   session: MobileAuthSession,
   mutationDomain: MobileMutationDomain,
   executeOperation: GatewayOperationExecutor = executeStationOperation,
+  requestSignal?: () => AbortSignal,
 ) {
   async function request<T>(options: GatewayRequestOptions): Promise<T> {
     const admission = options.admission
@@ -132,6 +133,7 @@ export function createGatewayTransport(
       const response = await executeOperation(
         session,
         resolveGatewayOperation(options),
+        requestSignal?.(),
       );
       const payload = responseJson(response);
       if (response.status < 200 || response.status >= 300) {

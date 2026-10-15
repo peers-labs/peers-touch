@@ -1,9 +1,10 @@
 import { Component, StrictMode, type ErrorInfo, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { ThemeProvider } from '@lobehub/ui';
 
 import { App } from './App';
+import { MobileThemeProvider } from './app/MobileThemeProvider';
 import { installMobileWebGuards } from './app/installMobileWebGuards';
+import { copyTextToClipboard } from './services/clipboard';
 import enCommon from '../../../packages/locales/en/common.json';
 import zhCommon from '../../../packages/locales/zh-CN/common.json';
 import './styles.css';
@@ -120,11 +121,11 @@ if (import.meta.env.VITE_ACCEPTANCE_HARNESS === '1') {
 
 createRoot(document.getElementById('root') as HTMLElement).render(
   <StrictMode>
-    <ThemeProvider>
+    <MobileThemeProvider>
       <RootErrorBoundary>
         <App />
       </RootErrorBoundary>
-    </ThemeProvider>
+    </MobileThemeProvider>
   </StrictMode>,
 );
 
@@ -147,24 +148,6 @@ function getCopyDiagnosticsLabelKey(state: RootErrorState): string {
   if (state.diagnosticsCopyFailed) return 'mobile.error.copyDiagnosticsFailed';
   if (state.diagnosticsCopied) return 'mobile.error.copiedDiagnostics';
   return 'mobile.error.copyDiagnostics';
-}
-
-async function copyTextToClipboard(text: string): Promise<void> {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text);
-    return;
-  }
-
-  const textarea = document.createElement('textarea');
-  textarea.value = text;
-  textarea.setAttribute('readonly', 'true');
-  textarea.style.position = 'fixed';
-  textarea.style.opacity = '0';
-  textarea.style.pointerEvents = 'none';
-  document.body.appendChild(textarea);
-  textarea.select();
-  document.execCommand('copy');
-  document.body.removeChild(textarea);
 }
 
 function formatRootErrorDiagnostics(error: Error, source: RootErrorSource, componentStack: string): string {

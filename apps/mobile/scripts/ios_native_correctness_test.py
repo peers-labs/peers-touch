@@ -327,6 +327,30 @@ class NativeReadinessAndReconciliationSourceContractTest(unittest.TestCase):
         self.assertGreaterEqual(request_source.count("DispatchQueue.main.async"), 3)
         self.assertIn("self.permissionRequestInProgress = false", request_source)
 
+    def test_ios_camera_without_capture_device_is_not_requestable(self) -> None:
+        swift_source = SWIFT_PLUGIN_PATH.read_text(encoding="utf-8")
+        camera_projection = swift_source.split(
+            "private func cameraPermissionResponse",
+            maxsplit=1,
+        )[1].split(
+            "private func mapCaptureStatus",
+            maxsplit=1,
+        )[0]
+        camera_request = swift_source.split(
+            "case .camera:",
+            maxsplit=2,
+        )[2].split(
+            "case .microphone:",
+            maxsplit=1,
+        )[0]
+
+        for source in (camera_projection, camera_request):
+            self.assertIn("AVCaptureDevice.default(for: .video)", source)
+            self.assertIn(
+                "PermissionResponse(status: .unsupported, canRequest: false)",
+                source,
+            )
+
     def test_reconciliation_counts_are_read_by_rust(self) -> None:
         command_source = PLATFORM_COMMAND_PATH.read_text(encoding="utf-8")
         handlers_source = COMMANDS_MOD_PATH.read_text(encoding="utf-8")
@@ -500,6 +524,30 @@ class NativePushSchedulerAndPickerSourceContractTest(unittest.TestCase):
         self.assertIn("sha256_base64", rust)
         self.assertIn("cleanup_native_items", rust)
         self.assertNotIn("local_path: item.local_path", rust)
+
+    def test_ios_picker_preserves_media_extension_before_kind_validation(self) -> None:
+        swift = SWIFT_PLUGIN_PATH.read_text(encoding="utf-8")
+        copy_picker = swift.split(
+            "private func copyPickedURLs",
+            maxsplit=1,
+        )[1].split(
+            "private func finishMediaPick",
+            maxsplit=1,
+        )[0]
+
+        self.assertIn(
+            ".appendingPathExtension(stagingExtension(url))",
+            copy_picker,
+        )
+        self.assertNotIn(r'"\(UUID().uuidString).stage"', copy_picker)
+        self.assertLess(
+            copy_picker.index(".appendingPathExtension(stagingExtension(url))"),
+            copy_picker.index("mediaKindForPath(destination.path)"),
+        )
+        self.assertIn(
+            "candidate.rangeOfCharacter(from: CharacterSet.alphanumerics.inverted) == nil",
+            swift,
+        )
 
 
 class NativeEventInjectionBoundaryTest(unittest.TestCase):

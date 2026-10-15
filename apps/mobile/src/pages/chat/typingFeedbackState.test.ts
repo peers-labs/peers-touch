@@ -1,10 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
-  IDLE_SENDER_TYPING_FEEDBACK,
-  beginSenderTypingFeedback,
   dispatchSenderTypingRequest,
-  settleSenderTypingFeedback,
   type SenderTypingRequest,
 } from '../../features/chat/typingFeedbackState';
 
@@ -16,14 +13,11 @@ function request(attempt: number): SenderTypingRequest {
   };
 }
 
-describe('sender typing feedback', () => {
-  it('moves from waiting to failed without leaking the rejected dispatch', async () => {
+describe('best-effort sender typing publication', () => {
+  it('contains an ephemeral transport rejection without a composer feedback state', async () => {
     const transportError = new Error('transport unavailable');
     const dispatch = vi.fn().mockRejectedValue(transportError);
-    const pending = beginSenderTypingFeedback(request(1), false);
-
     const result = await dispatchSenderTypingRequest(request(1), dispatch);
-    const failed = settleSenderTypingFeedback(pending, result);
 
     expect(dispatch).toHaveBeenCalledWith('conversation-1', true);
     expect(result).toEqual({
@@ -31,42 +25,15 @@ describe('sender typing feedback', () => {
       request: request(1),
       error: transportError,
     });
-    expect(failed).toEqual({
-      phase: 'failed',
-      request: request(1),
-      error: transportError,
-    });
   });
 
-  it('exposes retrying and clears feedback only after retry succeeds', async () => {
-    const failed = {
-      phase: 'failed' as const,
-      request: request(1),
-      error: new Error('first attempt failed'),
-    };
-    const retryRequest = request(2);
-    const retrying = beginSenderTypingFeedback(retryRequest, true);
-
-    expect(retrying.phase).toBe('retrying');
-
+  it('publishes the requested conversation and preserves the diagnostic result', async () => {
+    const dispatch = vi.fn().mockResolvedValue(undefined);
     const result = await dispatchSenderTypingRequest(
-      retryRequest,
-      vi.fn().mockResolvedValue(undefined),
-    );
-
-    expect(settleSenderTypingFeedback(retrying, result)).toBe(
-      IDLE_SENDER_TYPING_FEEDBACK,
-    );
-    expect(settleSenderTypingFeedback(failed, result)).toBe(failed);
-  });
-
-  it('does not let an older completion replace a newer waiting attempt', async () => {
-    const newer = beginSenderTypingFeedback(request(2), false);
-    const olderResult = await dispatchSenderTypingRequest(
       request(1),
-      vi.fn().mockResolvedValue(undefined),
+      dispatch,
     );
-
-    expect(settleSenderTypingFeedback(newer, olderResult)).toBe(newer);
+    expect(dispatch).toHaveBeenCalledWith('conversation-1', true);
+    expect(result).toEqual({ ok: true, request: request(1) });
   });
 });

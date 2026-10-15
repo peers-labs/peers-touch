@@ -12,20 +12,20 @@ use messaging_core::attachment::{
     AttachmentRetryPolicy, AttachmentTransferControl, AttachmentTransferRecord,
     AttachmentTransferWorker,
 };
-use messaging_core::codec::verification::verify_device_event_delivery;
+use messaging_core::codec::verification::{
+    verify_authority_event, verify_device_event_delivery,
+};
 use messaging_core::contracts::{
     CommandStatusProjection, ConversationMessageProjection, ConversationProjection,
     CryptoEndpoint as CoreCryptoEndpoint,
 };
 use messaging_core::crypto::identity::IdentityKeyPair;
-use messaging_core::crypto::prekeys::{
-    PendingPreKeyBundle, PreKeyBundleBackup, PreKeyPublisher,
-};
+use messaging_core::crypto::prekeys::{PendingPreKeyBundle, PreKeyBundleBackup, PreKeyPublisher};
 use messaging_core::crypto::signaling_envelope;
 use messaging_core::identity::{
     generate_device_identity_for_device_from_parts, is_stale_endpoint_error,
-    load_or_create_device_identity_for_device, DeviceEnrollmentManager,
-    DeviceEnrollmentRepository, DeviceSigningKey, INITIAL_ACTOR_IDENTITY_PROFILE_VERSION,
+    load_or_create_device_identity_for_device, DeviceEnrollmentManager, DeviceEnrollmentRepository,
+    DeviceSigningKey, INITIAL_ACTOR_IDENTITY_PROFILE_VERSION,
 };
 use messaging_core::inbox::{
     AcknowledgedItemObserver, ClaimedItemConsumer, CommandResultLifecycle, CommandResultProcessor,
@@ -112,9 +112,9 @@ use zeroize::Zeroizing;
 use super::adapter::{
     load_storage_retention_policy, AttachmentDownloadProjection, CompletedSenderAttachmentSource,
     ConversationCommandCommit, ConversationMutation, ConversationMutationReceiveCommit,
-    ConversationSummary, MobileConversationProjection, MobileMemberAuthorityProjection,
-    MobileMessagingStore, MobileOutboxStore, PendingAttachmentUpload, PendingMembershipIntent,
-    PendingMessageDraft,
+    ConversationMutationReplay, ConversationSummary, MobileConversationProjection,
+    MobileMemberAuthorityProjection, MobileMessagingStore, MobileOutboxStore,
+    PendingAttachmentUpload, PendingMembershipIntent, PendingMessageDraft,
 };
 use super::attachment_blob::FilesystemAttachmentBlob;
 use super::mls_leave_intent::StationMlsLeaveIntentTransport;
@@ -130,6 +130,7 @@ use crate::runtime::reliability::{
 };
 
 const DRAIN_BATCH_LIMIT: u32 = 100;
+const COMMAND_AUTHORITY_RECONCILE_ATTEMPTS: usize = 5;
 pub const ATTACHMENT_STAGE_CHUNK_SIZE: usize = 1024 * 1024;
 const FRIEND_REQUEST_COMMAND_FORMAT_VERSION: u32 = 1;
 const FRIEND_REQUEST_COMMAND_LIFETIME_MS: i64 = 60 * 60 * 1_000;
@@ -408,6 +409,146 @@ impl CommandResultLifecycle for MobileMlsItemConsumer {
 
 type CoreItemConsumer = MessagingItemConsumer<MobileMessagingStore, MobileMlsItemConsumer>;
 
+struct MobileItemConsumer {
+    core: Arc<CoreItemConsumer>,
+    store: Arc<MobileMessagingStore>,
+    endpoint: CryptoEndpoint,
+}
+
+impl ClaimedItemConsumer for MobileItemConsumer {
+    fn consume(&self, item: &DurableDeviceInboxItem, consumer_epoch: u64) -> Result<(), String> {
+        if self.consume_conversation_mutation_event(item, consumer_epoch)? {
+            return Ok(());
+        }
+        self.core.consume(item, consumer_epoch)
+    }
+}
+
+impl MobileItemConsumer {
+    fn consume_conversation_mutation_event(
+        &self,
+        item: &DurableDeviceInboxItem,
+        consumer_epoch: u64,
+    ) -> Result<bool, String> {
+        if DeviceInboxPayloadType::try_from(item.payload_type).ok()
+            != Some(DeviceInboxPayloadType::ConversationEvent)
+        {
+            return Ok(false);
+        }
+        let Ok(candidate) = messaging_core::proto::chat::DeviceEventDelivery::decode(
+            item.opaque_payload.as_slice(),
+        ) else {
+            return Ok(false);
+        };
+        let Some(candidate_event) = candidate.event.as_ref() else {
+            return Ok(false);
+        };
+        if !matches!(
+            candidate_event.payload.as_ref(),
+            Some(
+                conversation_event::Payload::ConversationUpdated(_)
+                    | conversation_event::Payload::ConversationDissolved(_)
+            )
+        ) {
+            return Ok(false);
+        }
+
+        let consumed_at_unix_ms = now_unix_ms();
+        MessagingRepository::persist_claimed_item(
+            self.store.as_ref(),
+            &item.item_id,
+            &item.event_id,
+            &item.conversation_id,
+            item.lane_sequence,
+            consumer_epoch,
+            &item.payload_sha256,
+            &item.opaque_payload,
+            consumed_at_unix_ms,
+        )?;
+        if MessagingRepository::consumption_marker_matches(
+            self.store.as_ref(),
+            &item.item_id,
+            &item.payload_sha256,
+        )? {
+            return Ok(true);
+        }
+        let delivery =
+            verify_device_event_delivery(item, &self.endpoint.ptid, &self.endpoint.device_id)?;
+        if PreparedEndpointPayloadKind::try_from(delivery.payload_kind)
+            .map_err(|_| "mobile messaging Conversation mutation payload kind is invalid")?
+            != PreparedEndpointPayloadKind::PublicEvent
+        {
+            return Err(
+                "mobile messaging Conversation mutation requires a public event".to_string(),
+            );
+        }
+        let event = delivery.event.as_ref().ok_or_else(|| {
+            "mobile messaging Conversation mutation event is unavailable".to_string()
+        })?;
+        let marker = PublicEventMarker::decode(delivery.endpoint_payload.as_slice())
+            .map_err(|_| "mobile messaging Conversation mutation marker is invalid".to_string())?;
+        if marker.conversation_id != event.conversation_id
+            || marker.event_id != event.event_id
+            || marker.command_id != event.command_id
+            || marker.sending_endpoint != event.actor
+        {
+            return Err(
+                "mobile messaging Conversation mutation marker binding mismatch".to_string(),
+            );
+        }
+        let mutation = match event.payload.as_ref() {
+            Some(conversation_event::Payload::ConversationUpdated(update)) => {
+                ConversationMutation::Update {
+                    name: update.name.as_deref(),
+                    description: update.description.as_deref(),
+                }
+            }
+            Some(conversation_event::Payload::ConversationDissolved(_)) => {
+                ConversationMutation::Dissolve
+            }
+            _ => return Ok(false),
+        };
+        let receipt = DeviceConsumptionReceipt {
+            receipt_id: format!("device-consumed:{}", item.item_id),
+            conversation_id: event.conversation_id.clone(),
+            event_id: event.event_id.clone(),
+            consumer: Some(self.endpoint.clone()),
+            event_sequence: event.sequence,
+            lane_sequence: item.lane_sequence,
+            payload_sha256: item.payload_sha256.clone(),
+            consumed_at: Some(timestamp(consumed_at_unix_ms)),
+        };
+        let receipt_bytes = receipt.encode_to_vec();
+        let commit = ConversationMutationReceiveCommit {
+            item_id: &item.item_id,
+            event_id: &event.event_id,
+            conversation_id: &event.conversation_id,
+            command_id: &event.command_id,
+            event_sequence: event.sequence,
+            lane_sequence: item.lane_sequence,
+            consumer_epoch,
+            payload_sha256: &item.payload_sha256,
+            event_hash: &event.event_hash,
+            previous_event_hash: &event.previous_hash,
+            membership_epoch: event.membership_epoch,
+            mls_epoch: event.mls_epoch,
+            mutation,
+            receipt_id: &receipt.receipt_id,
+            receipt_bytes: &receipt_bytes,
+            consumed_at_unix_ms,
+        };
+        let local =
+            MessagingRepository::authority_head(self.store.as_ref(), &event.conversation_id)?;
+        if local == (event.sequence, event.event_hash.clone()) {
+            self.store
+                .commit_replayed_conversation_mutation_delivery(&commit)?;
+        } else {
+            self.store.commit_conversation_mutation_event(&commit)?;
+        }
+        Ok(true)
+    }
+}
+
 pub struct MobileMessagingEngine {
     profile_id: String,
     scope: MessagingAccountScope,
@@ -419,13 +560,14 @@ pub struct MobileMessagingEngine {
     attachment_transfer_control: Arc<AttachmentTransferControl>,
     actor_identity: Arc<IdentityKeyPair>,
     mls_manager: Arc<MlsGroupManager>,
-    consumer: Arc<CoreItemConsumer>,
+    consumer: Arc<MobileItemConsumer>,
     consumer_id: String,
     consumer_epoch: Arc<AtomicU64>,
     drain_lock: Mutex<()>,
     dispatch_lock: Mutex<()>,
     send_intent_lock: Mutex<()>,
     membership_transition_lock: Mutex<()>,
+    device_enrollment_lock: Mutex<()>,
     access_token: Mutex<Zeroizing<String>>,
     prekey_backup: Arc<dyn PreKeyBundleBackup>,
 }
@@ -602,14 +744,22 @@ impl MobileMessagingEngine {
         });
         let command_result =
             CommandResultProcessor::new(store.clone(), mls.clone(), endpoint.clone(), now_unix_ms)?;
-        let consumer = Arc::new(MessagingItemConsumer::new(
+        let core_consumer = Arc::new(MessagingItemConsumer::new(
             direct,
             mls,
             PublicEventProcessor::new(store.clone(), endpoint.clone(), now_unix_ms)?,
             ConversationStateProcessor::new(store.clone(), endpoint.clone(), now_unix_ms)?,
             command_result,
-            DeliveryReceiptProcessor::new(store.clone(), endpoint, now_unix_ms)?,
+            DeliveryReceiptProcessor::new(store.clone(), endpoint.clone(), now_unix_ms)?,
         ));
+        let consumer = Arc::new(MobileItemConsumer {
+            core: core_consumer,
+            store: store.clone(),
+            endpoint: CryptoEndpoint {
+                ptid: endpoint.ptid,
+                device_id: endpoint.device_id,
+            },
+        });
         let consumer_id = random_consumer_id();
 
         Ok(Self {
@@ -630,6 +780,7 @@ impl MobileMessagingEngine {
             dispatch_lock: Mutex::new(()),
             send_intent_lock: Mutex::new(()),
             membership_transition_lock: Mutex::new(()),
+            device_enrollment_lock: Mutex::new(()),
             access_token: Mutex::new(Zeroizing::new(access_token)),
             prekey_backup,
         })
@@ -1056,6 +1207,38 @@ impl MobileMessagingEngine {
         &self.scope
     }
 
+    pub(crate) fn build_recovery_archive(
+        &self,
+    ) -> Result<messaging_core::recovery::MessagingRecoveryArchive, String> {
+        let seed = zeroize::Zeroizing::new(self.actor_identity.seed_bytes());
+        let enrollment = self
+            .store
+            .device_enrollment()?
+            .ok_or("mobile messaging recovery enrollment is missing")?;
+        self.store.export_recovery_archive(
+            &self.scope.actor_ptid,
+            &seed,
+            enrollment.certificate.observed_profile_version,
+        )
+    }
+
+    pub(crate) fn recovery_identity_matches(&self, seed: &[u8; 32]) -> bool {
+        self.actor_identity.verifying_key() == IdentityKeyPair::from_seed(seed).verifying_key()
+    }
+
+    pub(crate) fn import_recovery_history(
+        &self,
+        archive: &messaging_core::recovery::MessagingRecoveryArchive,
+        reconciliation: &messaging_core::recovery::RecoveryReconciliation,
+    ) -> Result<(), String> {
+        if archive.ptid != self.scope.actor_ptid {
+            return Err("mobile messaging recovery actor mismatch".into());
+        }
+        self.store
+            .import_recovery_history(archive, reconciliation, &self.scope.device_id)?;
+        self.resume_redaction_file_cleanup()
+    }
+
     pub fn seal_call_signal(
         &self,
         peer_ptid: &str,
@@ -1157,6 +1340,34 @@ impl MobileMessagingEngine {
             }
         }
         Ok(repaired)
+    }
+
+    pub fn reconcile_conversation_membership_visibility(&self) -> Result<usize, String> {
+        let visible_ids = StationConversationTransport::new(
+            self.scope.station_origin.clone(),
+            self.access_token()?,
+            self.scope.device_id.clone(),
+            self.proto_endpoint(),
+        )?
+        .list_conversations()?
+        .conversations
+        .into_iter()
+        .map(|conversation| conversation.conversation_id)
+        .collect::<std::collections::HashSet<_>>();
+        let mut retired = 0;
+        for conversation in self.store.conversation_projections()? {
+            if conversation.active
+                && !visible_ids.contains(&conversation.conversation_id)
+                && self
+                    .store
+                    .retire_conversation_after_membership_loss(
+                        &conversation.conversation_id,
+                    )?
+            {
+                retired += 1;
+            }
+        }
+        Ok(retired)
     }
 
     pub fn prepare_send_social_friend_request(
@@ -1591,6 +1802,76 @@ impl MobileMessagingEngine {
         )
     }
 
+    pub fn resume_leave_intent_once(&self) -> Result<bool, String> {
+        let transport = StationMlsLeaveIntentTransport::new(
+            self.scope.station_origin.clone(),
+            self.access_token()?,
+            self.scope.device_id.clone(),
+        )?;
+        for conversation in self.store.conversation_projections()? {
+            if !can_commit_pending_leave(&conversation, &self.scope.actor_ptid) {
+                continue;
+            }
+            let intents = match transport.list_leave_intents_typed(&conversation.conversation_id) {
+                Ok(intents) => intents,
+                Err(error) if error.has_http_code(403, "CONVERSATION_UNAUTHORIZED") => {
+                    return self
+                        .store
+                        .retire_conversation_after_membership_loss(
+                            &conversation.conversation_id,
+                        );
+                }
+                Err(error) => return Err(error.to_string()),
+            };
+            if intents
+                .iter()
+                .any(|intent| intent.conversation_id != conversation.conversation_id)
+            {
+                return Err(
+                    "Station returned an MLS leave intent for another conversation".to_string(),
+                );
+            }
+            let Some(intent) = intents
+                .into_iter()
+                .find(|intent| intent.actor_ptid != self.scope.actor_ptid)
+            else {
+                continue;
+            };
+            self.prepare_delegated_leave(intent)?;
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
+    fn prepare_delegated_leave(&self, leave_intent: MlsLeaveIntent) -> Result<ChatCommand, String> {
+        let _guard = self
+            .membership_transition_lock
+            .lock()
+            .map_err(|_| "mobile messaging membership transition lock poisoned".to_string())?;
+        let input = MembershipTransitionIntentInput {
+            conversation_id: leave_intent.conversation_id.clone(),
+            action: MessagingMembershipAction::Leave,
+            target_ptid: leave_intent.actor_ptid.clone(),
+            target_device_id: String::new(),
+            role: String::new(),
+            leave_intent: Some(leave_intent),
+        };
+        let plan = StationConversationTransport::new(
+            self.scope.station_origin.clone(),
+            self.access_token()?,
+            self.scope.device_id.clone(),
+            self.proto_endpoint(),
+        )?
+        .prepare_membership_transition_typed(&input)
+        .map_err(|error| error.to_string())?;
+        MembershipTransitionPreparer::new(
+            self.store.clone(),
+            self.mls_manager.clone(),
+            self.proto_endpoint(),
+        )?
+        .prepare(None, &input, &plan, now_unix_ms())
+    }
+
     pub fn prepare_membership_transition(
         &self,
         input: &MembershipTransitionIntentInput,
@@ -1816,7 +2097,11 @@ impl MobileMessagingEngine {
             .lock()
             .map_err(|_| "mobile messaging send intent lock poisoned".to_string())?;
         let token = self.access_token()?;
-        let plan = self.prepare_send_plan(&token, conversation_id)?;
+        let plan = self.prepare_fresh_command_plan(
+            &token,
+            conversation_id,
+            ConversationCommandKind::Unspecified,
+        )?;
         let command_id = Ulid::new().to_string();
         let command = prepare_conversation_mutation_command(
             &plan,
@@ -2125,7 +2410,11 @@ impl MobileMessagingEngine {
             );
         }
         let token = self.access_token()?;
-        let plan = self.prepare_send_plan(&token, conversation_id)?;
+        let plan = self.prepare_fresh_command_plan(
+            &token,
+            conversation_id,
+            ConversationCommandKind::Unspecified,
+        )?;
         let command_id = Ulid::new().to_string();
         let message_id = Ulid::new().to_string();
         let created_at_unix_ms = now_unix_ms();
@@ -2229,7 +2518,7 @@ impl MobileMessagingEngine {
         }
 
         let token = self.access_token()?;
-        let plan = self.prepare_command_plan(
+        let plan = self.prepare_fresh_command_plan(
             &token,
             destination_conversation_id,
             ConversationCommandKind::ForwardMessage,
@@ -2578,7 +2867,11 @@ impl MobileMessagingEngine {
             return Err("mobile messaging edit target is not authored by this actor".to_string());
         }
         let token = self.access_token()?;
-        let plan = self.prepare_send_plan(&token, conversation_id)?;
+        let plan = self.prepare_fresh_command_plan(
+            &token,
+            conversation_id,
+            ConversationCommandKind::EditMessage,
+        )?;
         let command_id = Ulid::new().to_string();
         let created_at_unix_ms = now_unix_ms();
         self.prepare_edit_with_plan(
@@ -2615,7 +2908,7 @@ impl MobileMessagingEngine {
             MetadataInteraction::Reaction { .. } => ConversationCommandKind::React,
             MetadataInteraction::Pin { .. } => ConversationCommandKind::PinMessage,
         };
-        let plan = self.prepare_command_plan(&token, conversation_id, command_kind)?;
+        let plan = self.prepare_fresh_command_plan(&token, conversation_id, command_kind)?;
         let command_id = Ulid::new().to_string();
         self.prepare_metadata_with_plan(
             &plan,
@@ -2656,7 +2949,11 @@ impl MobileMessagingEngine {
                 }
             };
             let token = self.access_token()?;
-            let plan = self.prepare_send_plan(&token, &intent.conversation_id)?;
+            let plan = self.prepare_fresh_command_plan(
+                &token,
+                &intent.conversation_id,
+                ConversationCommandKind::Unspecified,
+            )?;
             let replacement_command_id =
                 replacement_command_id(&intent.command_id, &plan.delivery_plan_sha256);
             if self.command_status(&replacement_command_id)?.is_none() {
@@ -2694,7 +2991,11 @@ impl MobileMessagingEngine {
             return Err("mobile messaging superseded interaction binding mismatch".to_string());
         }
         let token = self.access_token()?;
-        let plan = self.prepare_send_plan(&token, &intent.conversation_id)?;
+        let plan = self.prepare_fresh_command_plan(
+            &token,
+            &intent.conversation_id,
+            ConversationCommandKind::Unspecified,
+        )?;
         let replacement_command_id =
             replacement_command_id(&intent.command_id, &plan.delivery_plan_sha256);
         if self.command_status(&replacement_command_id)?.is_none() {
@@ -2935,6 +3236,11 @@ impl MobileMessagingEngine {
     pub(crate) fn secure_content_runtime_identity(
         &self,
     ) -> Result<SecureContentRuntimeIdentity, String> {
+        let _enrollment = self
+            .device_enrollment_lock
+            .lock()
+            .map_err(|_| "mobile messaging device enrollment lock poisoned".to_string())?;
+        self.enroll_pending_device_locked()?;
         let (enrollment, device_signing_key) = self.store.active_device_signing_identity()?;
         let certificate = enrollment.certificate;
         let device = certificate
@@ -2970,133 +3276,6 @@ impl MobileMessagingEngine {
             .map_err(|_| "mobile messaging access token lock poisoned".to_string())? =
             Zeroizing::new(access_token);
         Ok(())
-    }
-
-    pub fn consume(
-        &self,
-        item: &DurableDeviceInboxItem,
-        consumer_epoch: u64,
-    ) -> Result<(), String> {
-        if self.consume_conversation_mutation_event(item, consumer_epoch)? {
-            return Ok(());
-        }
-        self.consumer.consume(item, consumer_epoch)
-    }
-
-    fn consume_conversation_mutation_event(
-        &self,
-        item: &DurableDeviceInboxItem,
-        consumer_epoch: u64,
-    ) -> Result<bool, String> {
-        if DeviceInboxPayloadType::try_from(item.payload_type).ok()
-            != Some(DeviceInboxPayloadType::ConversationEvent)
-        {
-            return Ok(false);
-        }
-        let Ok(candidate) = messaging_core::proto::chat::DeviceEventDelivery::decode(
-            item.opaque_payload.as_slice(),
-        ) else {
-            return Ok(false);
-        };
-        let Some(candidate_event) = candidate.event.as_ref() else {
-            return Ok(false);
-        };
-        if !matches!(
-            candidate_event.payload.as_ref(),
-            Some(
-                conversation_event::Payload::ConversationUpdated(_)
-                    | conversation_event::Payload::ConversationDissolved(_)
-            )
-        ) {
-            return Ok(false);
-        }
-
-        let consumed_at_unix_ms = now_unix_ms();
-        MessagingRepository::persist_claimed_item(
-            self.store.as_ref(),
-            &item.item_id,
-            &item.event_id,
-            &item.conversation_id,
-            item.lane_sequence,
-            consumer_epoch,
-            &item.payload_sha256,
-            &item.opaque_payload,
-            consumed_at_unix_ms,
-        )?;
-        if MessagingRepository::consumption_marker_matches(
-            self.store.as_ref(),
-            &item.item_id,
-            &item.payload_sha256,
-        )? {
-            return Ok(true);
-        }
-        let delivery =
-            verify_device_event_delivery(item, &self.scope.actor_ptid, &self.scope.device_id)?;
-        if PreparedEndpointPayloadKind::try_from(delivery.payload_kind)
-            .map_err(|_| "mobile messaging Conversation mutation payload kind is invalid")?
-            != PreparedEndpointPayloadKind::PublicEvent
-        {
-            return Err(
-                "mobile messaging Conversation mutation requires a public event".to_string(),
-            );
-        }
-        let event = delivery.event.as_ref().ok_or_else(|| {
-            "mobile messaging Conversation mutation event is unavailable".to_string()
-        })?;
-        let marker = PublicEventMarker::decode(delivery.endpoint_payload.as_slice())
-            .map_err(|_| "mobile messaging Conversation mutation marker is invalid".to_string())?;
-        if marker.conversation_id != event.conversation_id
-            || marker.event_id != event.event_id
-            || marker.command_id != event.command_id
-            || marker.sending_endpoint != event.actor
-        {
-            return Err(
-                "mobile messaging Conversation mutation marker binding mismatch".to_string(),
-            );
-        }
-        let mutation = match event.payload.as_ref() {
-            Some(conversation_event::Payload::ConversationUpdated(update)) => {
-                ConversationMutation::Update {
-                    name: update.name.as_deref(),
-                    description: update.description.as_deref(),
-                }
-            }
-            Some(conversation_event::Payload::ConversationDissolved(_)) => {
-                ConversationMutation::Dissolve
-            }
-            _ => return Ok(false),
-        };
-        let receipt = DeviceConsumptionReceipt {
-            receipt_id: format!("device-consumed:{}", item.item_id),
-            conversation_id: event.conversation_id.clone(),
-            event_id: event.event_id.clone(),
-            consumer: Some(self.proto_endpoint()),
-            event_sequence: event.sequence,
-            lane_sequence: item.lane_sequence,
-            payload_sha256: item.payload_sha256.clone(),
-            consumed_at: Some(timestamp(consumed_at_unix_ms)),
-        };
-        let receipt_bytes = receipt.encode_to_vec();
-        self.store
-            .commit_conversation_mutation_event(&ConversationMutationReceiveCommit {
-                item_id: &item.item_id,
-                event_id: &event.event_id,
-                conversation_id: &event.conversation_id,
-                command_id: &event.command_id,
-                event_sequence: event.sequence,
-                lane_sequence: item.lane_sequence,
-                consumer_epoch,
-                payload_sha256: &item.payload_sha256,
-                event_hash: &event.event_hash,
-                previous_event_hash: &event.previous_hash,
-                membership_epoch: event.membership_epoch,
-                mls_epoch: event.mls_epoch,
-                mutation,
-                receipt_id: &receipt.receipt_id,
-                receipt_bytes: &receipt_bytes,
-                consumed_at_unix_ms,
-            })?;
-        Ok(true)
     }
 
     pub fn drain_once(&self) -> Result<DrainProgress, String> {
@@ -3434,7 +3613,7 @@ impl MobileMessagingEngine {
             return Err("mobile messaging draft command kind is unsupported".to_string());
         }
         let token = self.access_token()?;
-        let plan = self.prepare_command_plan(&token, &draft.conversation_id, command_kind)?;
+        let plan = self.prepare_fresh_command_plan(&token, &draft.conversation_id, command_kind)?;
         if plan.conversation_kind != draft.conversation_kind {
             return Err(
                 "mobile messaging draft conversation kind does not match Station plan".to_string(),
@@ -3534,6 +3713,14 @@ impl MobileMessagingEngine {
     }
 
     pub fn enroll_pending_device(&self) -> Result<Option<ActorDevice>, String> {
+        let _enrollment = self
+            .device_enrollment_lock
+            .lock()
+            .map_err(|_| "mobile messaging device enrollment lock poisoned".to_string())?;
+        self.enroll_pending_device_locked()
+    }
+
+    fn enroll_pending_device_locked(&self) -> Result<Option<ActorDevice>, String> {
         let token = self.access_token()?;
         DeviceEnrollmentManager::new(
             self.store.clone(),
@@ -3606,7 +3793,9 @@ impl MobileMessagingEngine {
         .submit(&receipt)
         .map_or_else(
             |error| {
-                if error.has_http_code(404, "CONVERSATION_NOT_FOUND") {
+                if error.has_http_code(404, "CONVERSATION_NOT_FOUND")
+                    || error.has_http_code(403, "CONVERSATION_INTERACTION_UNAUTHORIZED")
+                {
                     self.store.discard_missing_conversation_receipt(
                         &receipt_id,
                         &receipt_bytes,
@@ -3625,6 +3814,10 @@ impl MobileMessagingEngine {
     }
 
     pub fn recover_stale_enrollment(&self, error: &str) -> Result<bool, String> {
+        let _enrollment = self
+            .device_enrollment_lock
+            .lock()
+            .map_err(|_| "mobile messaging device enrollment lock poisoned".to_string())?;
         DeviceEnrollmentManager::new(
             self.store.clone(),
             self.scope.actor_ptid.clone(),
@@ -3633,16 +3826,124 @@ impl MobileMessagingEngine {
         .recover_stale(error)
     }
 
-    fn prepare_send_plan(
+    fn prepare_fresh_command_plan(
         &self,
         access_token: &str,
         conversation_id: &str,
-    ) -> Result<messaging_core::proto::chat::PrepareConversationCommandResponse, String> {
-        self.prepare_command_plan(
-            access_token,
-            conversation_id,
-            ConversationCommandKind::Unspecified,
-        )
+        command_kind: ConversationCommandKind,
+    ) -> Result<PrepareConversationCommandResponse, String> {
+        let result = reconcile_authority_plan(
+            COMMAND_AUTHORITY_RECONCILE_ATTEMPTS,
+            || self.prepare_command_plan(access_token, conversation_id, command_kind),
+            || MessagingRepository::authority_head(self.store.as_ref(), conversation_id),
+            || self.drain_once().map(|_| ()),
+            || std::thread::sleep(std::time::Duration::from_millis(200)),
+        );
+        let Err(original_error) = result else {
+            return result;
+        };
+        if let Err(error) =
+            self.replay_recoverable_public_authority_events(access_token, conversation_id)
+        {
+            log::warn!(
+                "mobile authority preflight event-log reconciliation did not converge: {error}"
+            );
+            return Err(original_error);
+        }
+        let refreshed =
+            self.prepare_command_plan(access_token, conversation_id, command_kind)?;
+        let local = MessagingRepository::authority_head(self.store.as_ref(), conversation_id)?;
+        if local == (refreshed.authority_sequence, refreshed.authority_hash.clone()) {
+            Ok(refreshed)
+        } else {
+            Err(original_error)
+        }
+    }
+
+    fn replay_recoverable_public_authority_events(
+        &self,
+        access_token: &str,
+        conversation_id: &str,
+    ) -> Result<(), String> {
+        let transport = StationConversationTransport::new(
+            self.scope.station_origin.clone(),
+            access_token.to_string(),
+            self.scope.device_id.clone(),
+            self.proto_endpoint(),
+        )?;
+        let mut local = MessagingRepository::authority_head(self.store.as_ref(), conversation_id)?;
+        for _ in 0..100 {
+            let plan = self.prepare_command_plan(
+                access_token,
+                conversation_id,
+                ConversationCommandKind::Unspecified,
+            )?;
+            if local == (plan.authority_sequence, plan.authority_hash.clone()) {
+                return Ok(());
+            }
+            if local.0 >= plan.authority_sequence {
+                return Err(
+                    "mobile messaging authority reconciliation head conflicts with Station plan"
+                        .to_string(),
+                );
+            }
+            let response = transport.list_events(conversation_id, local.0, 100)?;
+            if response.events.is_empty() {
+                return Err(
+                    "mobile messaging authority reconciliation event log is incomplete".to_string(),
+                );
+            }
+            for event in response.events {
+                if event.sequence > plan.authority_sequence {
+                    break;
+                }
+                verify_authority_event(&event)?;
+                if event.conversation_id != conversation_id
+                    || event.authority_station_peer_id != plan.authority_station_peer_id
+                {
+                    return Err(
+                        "mobile messaging authority reconciliation event binding mismatch"
+                            .to_string(),
+                    );
+                }
+                let mutation = match event.payload.as_ref() {
+                    Some(conversation_event::Payload::ConversationUpdated(update))
+                        if update.avatar_object_id.is_none() && update.visibility.is_none() =>
+                    {
+                        ConversationMutation::Update {
+                            name: update.name.as_deref(),
+                            description: update.description.as_deref(),
+                        }
+                    }
+                    Some(conversation_event::Payload::ConversationDissolved(_)) => {
+                        ConversationMutation::Dissolve
+                    }
+                    _ => {
+                        return Err(
+                            "mobile messaging authority reconciliation requires endpoint payload"
+                                .to_string(),
+                        )
+                    }
+                };
+                self.store.replay_conversation_mutation_event(
+                    &ConversationMutationReplay {
+                        event_id: &event.event_id,
+                        conversation_id: &event.conversation_id,
+                        command_id: &event.command_id,
+                        event_sequence: event.sequence,
+                        event_hash: &event.event_hash,
+                        previous_event_hash: &event.previous_hash,
+                        membership_epoch: event.membership_epoch,
+                        mls_epoch: event.mls_epoch,
+                        mutation,
+                        observed_at_unix_ms: now_unix_ms(),
+                    },
+                )?;
+                local =
+                    MessagingRepository::authority_head(self.store.as_ref(), conversation_id)?;
+            }
+        }
+        Err("mobile messaging authority reconciliation exceeded replay bound".to_string())
     }
 
     fn prepare_command_plan(
@@ -4576,6 +4877,49 @@ fn conversation_authority_scope(conversation: &Conversation) -> Result<(&str, &s
     ))
 }
 
+fn reconcile_authority_plan<Prepare, ReadHead, Drain, Wait>(
+    attempts: usize,
+    mut prepare: Prepare,
+    mut read_head: ReadHead,
+    mut drain: Drain,
+    mut wait: Wait,
+) -> Result<PrepareConversationCommandResponse, String>
+where
+    Prepare: FnMut() -> Result<PrepareConversationCommandResponse, String>,
+    ReadHead: FnMut() -> Result<(i64, Vec<u8>), String>,
+    Drain: FnMut() -> Result<(), String>,
+    Wait: FnMut(),
+{
+    for attempt in 0..=attempts {
+        let plan = prepare()?;
+        let (local_sequence, local_hash) = read_head()?;
+        if local_sequence == plan.authority_sequence && local_hash == plan.authority_hash {
+            return Ok(plan);
+        }
+        if attempt == attempts {
+            break;
+        }
+        drain()?;
+        wait();
+    }
+    Err("mobile messaging local authority head is behind command plan".to_string())
+}
+
+fn can_commit_pending_leave(
+    conversation: &ConversationProjection,
+    actor_ptid: &str,
+) -> bool {
+    conversation.active
+        && conversation.kind == ConversationKind::Group as i32
+        && conversation.members.iter().any(|member| {
+            member.ptid == actor_ptid
+                && matches!(
+                    MemberRole::try_from(member.role),
+                    Ok(MemberRole::Admin | MemberRole::Owner)
+                )
+        })
+}
+
 fn self_leave_intent_input(
     scope: &MessagingAccountScope,
     local: &ConversationProjection,
@@ -4657,7 +5001,7 @@ fn validate_friend_request_identifier(field: &str, value: &str) -> Result<(), St
     Ok(())
 }
 
-fn now_unix_ms() -> i64 {
+pub(crate) fn now_unix_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -4677,6 +5021,93 @@ mod tests {
     use ed25519_dalek::{Signature, Verifier};
 
     #[test]
+    fn concurrent_secure_content_signers_enroll_the_session_device_once() {
+        use messaging_core::proto::actor::{ActorDeviceStatus, EnrollActorDeviceResponse};
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let (mut engine, root) = test_engine("secure-content-identity-readiness");
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        engine.scope.station_origin = format!("http://{}", listener.local_addr().unwrap());
+        let enrollment = engine.store.device_enrollment().unwrap().unwrap();
+        let certificate = enrollment.certificate;
+        let response = EnrollActorDeviceResponse {
+            device: Some(ActorDevice {
+                r#ref: certificate.device,
+                status: ActorDeviceStatus::Active as i32,
+                signing_key_id: certificate.signing_key_id,
+                profile_version: certificate.observed_profile_version,
+                actor_identity_key_fingerprint: certificate.actor_identity_key_fingerprint,
+                ..Default::default()
+            }),
+            ..Default::default()
+        }
+        .encode_to_vec();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+                .unwrap();
+            let mut request = Vec::new();
+            loop {
+                let mut buffer = [0; 4096];
+                let count = stream.read(&mut buffer).unwrap();
+                assert!(count > 0, "enrollment request ended before its body");
+                request.extend_from_slice(&buffer[..count]);
+                if let Some(end) = request.windows(4).position(|bytes| bytes == b"\r\n\r\n") {
+                    let headers = String::from_utf8_lossy(&request[..end]);
+                    let content_length: usize = headers
+                        .lines()
+                        .find_map(|line| {
+                            line.to_ascii_lowercase()
+                                .strip_prefix("content-length:")
+                                .map(|length| length.trim().parse().unwrap())
+                        })
+                        .unwrap();
+                    if request.len() < end + 4 + content_length {
+                        continue;
+                    }
+                    assert!(headers.starts_with("POST /device/enroll "));
+                    assert!(headers.contains("mobile-device-1"));
+                    let submitted = messaging_core::proto::actor::EnrollActorDeviceRequest::decode(
+                        &request[end + 4..end + 4 + content_length],
+                    )
+                    .unwrap();
+                    assert_eq!(
+                        submitted.certificate.unwrap().device.unwrap().device_id,
+                        "mobile-device-1"
+                    );
+                    break;
+                }
+            }
+            write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/protobuf\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", response.len()).unwrap();
+            stream.write_all(&response).unwrap();
+        });
+        let engine = Arc::new(engine);
+        let start = Arc::new(std::sync::Barrier::new(3));
+        let readers: Vec<_> = (0..2)
+            .map(|_| {
+                let engine = engine.clone();
+                let start = start.clone();
+                std::thread::spawn(move || {
+                    start.wait();
+                    engine.secure_content_runtime_identity().unwrap()
+                })
+            })
+            .collect();
+        start.wait();
+        for reader in readers {
+            let identity = reader.join().unwrap();
+            assert_eq!(identity.scope.device_id, "mobile-device-1");
+            assert_eq!(identity.device_signing_key.device_id(), "mobile-device-1");
+        }
+        server.join().unwrap();
+        assert!(engine.store.pending_device_enrollment().unwrap().is_none());
+        drop(engine);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn consumer_epoch_observer_updates_runtime_epoch() {
         let (engine, root) = test_engine("consumer-epoch-observer");
 
@@ -4684,6 +5115,69 @@ mod tests {
 
         assert_eq!(engine.consumer_epoch.load(Ordering::Acquire), 7);
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn command_plan_waits_for_new_group_authority_event() {
+        let head = std::cell::RefCell::new((0_i64, Vec::new()));
+        let drains = std::cell::Cell::new(0_usize);
+        let waits = std::cell::Cell::new(0_usize);
+        let plan = PrepareConversationCommandResponse {
+            conversation_id: "group-new".to_string(),
+            conversation_kind: ConversationKind::Group as i32,
+            authority_sequence: 1,
+            authority_hash: vec![7; 32],
+            ..Default::default()
+        };
+
+        let reconciled = reconcile_authority_plan(
+            5,
+            || Ok(plan.clone()),
+            || Ok(head.borrow().clone()),
+            || {
+                drains.set(drains.get() + 1);
+                *head.borrow_mut() = (1, vec![7; 32]);
+                Ok(())
+            },
+            || waits.set(waits.get() + 1),
+        )
+        .unwrap();
+
+        assert_eq!(reconciled.conversation_id, "group-new");
+        assert_eq!(drains.get(), 1);
+        assert_eq!(waits.get(), 1);
+    }
+
+    #[test]
+    fn command_plan_fails_closed_when_authority_never_converges() {
+        let prepares = std::cell::Cell::new(0_usize);
+        let drains = std::cell::Cell::new(0_usize);
+        let error = reconcile_authority_plan(
+            2,
+            || {
+                prepares.set(prepares.get() + 1);
+                Ok(PrepareConversationCommandResponse {
+                    conversation_id: "group-stale".to_string(),
+                    authority_sequence: 4,
+                    authority_hash: vec![9; 32],
+                    ..Default::default()
+                })
+            },
+            || Ok((3, vec![8; 32])),
+            || {
+                drains.set(drains.get() + 1);
+                Ok(())
+            },
+            || {},
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            "mobile messaging local authority head is behind command plan"
+        );
+        assert_eq!(prepares.get(), 3);
+        assert_eq!(drains.get(), 2);
     }
 
     fn group_mutation_plan() -> PrepareConversationCommandResponse {
@@ -5122,6 +5616,43 @@ mod tests {
         let mut owner = local;
         owner.owner_ptid = scope.actor_ptid.clone();
         assert!(self_leave_intent_input(&scope, &owner, &authoritative, 9, vec![5; 32]).is_err());
+    }
+
+    #[test]
+    fn delegated_leave_polling_is_owned_only_by_active_group_admins() {
+        let mut conversation = ConversationProjection {
+            conversation_id: "conversation-1".to_string(),
+            authority_station_id: "station-authority".to_string(),
+            federation_id: "federation-1".to_string(),
+            kind: ConversationKind::Group as i32,
+            name: "Group".to_string(),
+            description: String::new(),
+            avatar_object_id: String::new(),
+            owner_ptid: "ptid:bob".to_string(),
+            members: vec![
+                messaging_core::contracts::ConversationAuthorityMemberProjection {
+                    ptid: "ptid:alice".to_string(),
+                    role: MemberRole::Admin as i32,
+                    home_station_peer_id: "station-home".to_string(),
+                    muted: false,
+                    muted_until_unix_ms: None,
+                },
+            ],
+            membership_epoch: 3,
+            mls_epoch: 4,
+            active: true,
+            updated_at_unix_ms: 1,
+        };
+
+        assert!(can_commit_pending_leave(&conversation, "ptid:alice"));
+        conversation.members[0].role = MemberRole::Member as i32;
+        assert!(!can_commit_pending_leave(&conversation, "ptid:alice"));
+        conversation.members[0].role = MemberRole::Owner as i32;
+        conversation.active = false;
+        assert!(!can_commit_pending_leave(&conversation, "ptid:alice"));
+        conversation.active = true;
+        conversation.kind = ConversationKind::Direct as i32;
+        assert!(!can_commit_pending_leave(&conversation, "ptid:alice"));
     }
 
     #[test]

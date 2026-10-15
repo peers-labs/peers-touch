@@ -5586,305 +5586,13 @@ impl MessagingStore {
         actor_identity_seed: &[u8; 32],
         actor_profile_version: u64,
     ) -> Result<MessagingRecoveryArchive, String> {
-        if ptid.trim().is_empty() || actor_profile_version == 0 {
-            return Err("messaging recovery export requires PTID and profile version".to_string());
-        }
         let connection = self.connection()?;
-        let mut conversation_statement = connection
-            .prepare(
-                "SELECT conversation_id, authority_station_id, federation_id,
-                        kind, name, description, avatar_object_id, owner_ptid,
-                        membership_epoch, mls_epoch, active, updated_at_unix_ms
-                 FROM messaging_conversations
-                 WHERE authority_station_id <> ''
-                 ORDER BY conversation_id",
-            )
-            .map_err(|error| error.to_string())?;
-        let conversation_rows = conversation_statement
-            .query_map([], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, i32>(3)?,
-                    row.get::<_, String>(4)?,
-                    row.get::<_, String>(5)?,
-                    row.get::<_, String>(6)?,
-                    row.get::<_, String>(7)?,
-                    row.get::<_, i64>(8)?,
-                    row.get::<_, i64>(9)?,
-                    row.get::<_, bool>(10)?,
-                    row.get::<_, i64>(11)?,
-                ))
-            })
-            .map_err(|error| error.to_string())?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| error.to_string())?;
-        let mut conversations = Vec::with_capacity(conversation_rows.len());
-        for row in conversation_rows {
-            let mut member_statement = connection
-                .prepare(
-                    "SELECT ptid, role FROM messaging_conversation_members
-                     WHERE conversation_id = ?1 AND active = 1
-                     ORDER BY ptid",
-                )
-                .map_err(|error| error.to_string())?;
-            let members = member_statement
-                .query_map(params![row.0], |member| {
-                    Ok((member.get::<_, String>(0)?, member.get::<_, i32>(1)?))
-                })
-                .map_err(|error| error.to_string())?
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|error| error.to_string())?;
-            let member_ptids = members
-                .iter()
-                .map(|(ptid, _)| ptid.clone())
-                .collect::<Vec<_>>();
-            let member_roles = members.into_iter().collect::<BTreeMap<_, _>>();
-            conversations.push(RecoveryConversationProjection {
-                conversation_id: row.0,
-                authority_station_id: row.1,
-                federation_id: row.2,
-                kind: row.3,
-                name: row.4,
-                description: row.5,
-                avatar_object_id: row.6,
-                owner_ptid: row.7,
-                member_ptids,
-                member_roles,
-                membership_epoch: row.8,
-                mls_epoch: row.9,
-                active: row.10,
-                updated_at_unix_ms: row.11,
-            });
-        }
-        let mut head_statement = connection
-            .prepare(
-                "SELECT head.conversation_id, head.event_sequence,
-                        head.event_hash, head.updated_at_unix_ms
-                 FROM messaging_authority_heads head
-                 JOIN messaging_conversations conversation
-                   ON conversation.conversation_id = head.conversation_id
-                  AND conversation.authority_station_id <> ''
-                 ORDER BY head.conversation_id",
-            )
-            .map_err(|error| error.to_string())?;
-        let authority_heads = head_statement
-            .query_map([], |row| {
-                Ok(RecoveryAuthorityHead {
-                    conversation_id: row.get(0)?,
-                    event_sequence: row.get(1)?,
-                    event_hash: row.get(2)?,
-                    updated_at_unix_ms: row.get(3)?,
-                })
-            })
-            .map_err(|error| error.to_string())?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| error.to_string())?;
-        let mut message_statement = connection
-            .prepare(
-                "SELECT message.conversation_id, message.event_id,
-                        message.event_sequence, authority.event_hash,
-                        message.message_id, message.sender_ptid,
-                        message.sender_device_id, message.plaintext,
-                        message.committed_at_unix_ms, message.retracted
-                 FROM messaging_message_projections message
-                 JOIN messaging_authority_events authority
-                   ON authority.conversation_id = message.conversation_id
-                  AND authority.event_id = message.event_id
-                  AND authority.event_sequence = message.event_sequence
-                 WHERE message.conversation_id IN (
-                     SELECT conversation_id FROM messaging_conversations
-                     WHERE authority_station_id <> ''
-                 )
-                   AND message.event_sequence > COALESCE((
-                       SELECT MAX(floor.pruned_through_sequence)
-                       FROM chat_retention_floor floor
-                       WHERE floor.conversation_id = message.conversation_id
-                   ), 0)
-                   AND message.hidden_for_actor = 0
-                 ORDER BY message.conversation_id, message.event_sequence, message.event_id",
-            )
-            .map_err(|error| error.to_string())?;
-        let messages = message_statement
-            .query_map([], |row| {
-                Ok(RecoveryMessageProjection {
-                    conversation_id: row.get(0)?,
-                    event_id: row.get(1)?,
-                    event_sequence: row.get(2)?,
-                    authority_event_hash: row.get(3)?,
-                    message_id: row.get(4)?,
-                    sender_ptid: row.get(5)?,
-                    sender_device_id: row.get(6)?,
-                    plaintext: row.get(7)?,
-                    committed_at_unix_ms: row.get(8)?,
-                    retracted: row.get(9)?,
-                })
-            })
-            .map_err(|error| error.to_string())?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| error.to_string())?;
-        let mut floor_statement = connection
-            .prepare(
-                "SELECT floor.station_peer_id, floor.conversation_id,
-                        floor.pruned_through_sequence, floor.authority_event_hash,
-                        floor.policy_cutoff_unix_ms, floor.reason,
-                        floor.updated_at_unix_ms
-                 FROM chat_retention_floor floor
-                 JOIN messaging_device_identity identity
-                   ON identity.id = 1
-                  AND identity.ptid = floor.actor_ptid
-                  AND identity.device_id = floor.device_id
-                 JOIN (
-                     SELECT scoped.station_peer_id, scoped.conversation_id,
-                            MAX(scoped.pruned_through_sequence) AS max_sequence
-                     FROM chat_retention_floor scoped
-                     JOIN messaging_device_identity identity
-                       ON identity.id = 1
-                      AND identity.ptid = scoped.actor_ptid
-                      AND identity.device_id = scoped.device_id
-                     GROUP BY scoped.station_peer_id, scoped.conversation_id
-                 ) latest
-                   ON latest.station_peer_id = floor.station_peer_id
-                  AND latest.conversation_id = floor.conversation_id
-                  AND latest.max_sequence = floor.pruned_through_sequence
-                 ORDER BY floor.station_peer_id, floor.conversation_id",
-            )
-            .map_err(|error| error.to_string())?;
-        let retention_floors = floor_statement
-            .query_map([], |row| {
-                Ok(RecoveryRetentionFloor {
-                    station_peer_id: row.get(0)?,
-                    conversation_id: row.get(1)?,
-                    pruned_through_sequence: row.get(2)?,
-                    authority_event_hash: row.get(3)?,
-                    policy_cutoff_unix_ms: row.get(4)?,
-                    reason: row.get(5)?,
-                    updated_at_unix_ms: row.get(6)?,
-                })
-            })
-            .map_err(|error| error.to_string())?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| error.to_string())?;
-        let mut redaction_statement = connection
-            .prepare(
-                "SELECT conversation_id, message_id, kind, authority_sequence,
-                        authority_event_hash, applied_at_unix_ms
-                 FROM message_redaction_tombstones
-                 WHERE conversation_id IN (
-                     SELECT conversation_id FROM messaging_conversations
-                     WHERE authority_station_id <> ''
-                 )
-                 ORDER BY conversation_id, authority_sequence, message_id, kind",
-            )
-            .map_err(|error| error.to_string())?;
-        let redaction_tombstones = redaction_statement
-            .query_map([], |row| {
-                Ok(RecoveryMessageRedactionTombstone {
-                    conversation_id: row.get(0)?,
-                    message_id: row.get(1)?,
-                    kind: row.get(2)?,
-                    authority_sequence: row.get(3)?,
-                    authority_event_hash: row.get(4)?,
-                    applied_at_unix_ms: row.get(5)?,
-                })
-            })
-            .map_err(|error| error.to_string())?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| error.to_string())?;
-        let mut attachment_statement = connection
-            .prepare(
-                "SELECT message_id, attachment_id, filename, mime_type,
-                        plaintext_size, plaintext_sha256, object_key, base_nonce,
-                        content_kind, duration_ms, descriptor_bytes
-                 FROM messaging_attachment_projections
-                 WHERE message_id IN (
-                     SELECT message_id FROM messaging_message_projections
-                     WHERE conversation_id IN (
-                         SELECT conversation_id FROM messaging_conversations
-                         WHERE authority_station_id <> ''
-                     )
-                 )
-                 ORDER BY message_id, attachment_id",
-            )
-            .map_err(|error| error.to_string())?;
-        let attachments = attachment_statement
-            .query_map([], |row| {
-                let descriptor_bytes = row.get::<_, Vec<u8>>(10)?;
-                let object = crate::model::chat::EncryptedObjectDescriptor::decode(
-                    descriptor_bytes.as_slice(),
-                )
-                .map_err(|error| {
-                    rusqlite::Error::FromSqlConversionFailure(
-                        descriptor_bytes.len(),
-                        rusqlite::types::Type::Blob,
-                        Box::new(error),
-                    )
-                })?;
-                let attachment_id = row.get::<_, String>(1)?;
-                let metadata = AttachmentPlaintextMetadata {
-                    attachment_id: attachment_id.clone(),
-                    filename: row.get(2)?,
-                    mime_type: row.get(3)?,
-                    plaintext_size: row.get::<_, i64>(4)?.try_into().map_err(|error| {
-                        rusqlite::Error::FromSqlConversionFailure(
-                            8,
-                            rusqlite::types::Type::Integer,
-                            Box::new(error),
-                        )
-                    })?,
-                    plaintext_sha256: row.get(5)?,
-                    object_key: row.get(6)?,
-                    base_nonce: row.get(7)?,
-                    object: Some(object),
-                    content_kind: row.get(8)?,
-                    duration_ms: row.get::<_, i64>(9)?.try_into().map_err(|error| {
-                        rusqlite::Error::FromSqlConversionFailure(
-                            9,
-                            rusqlite::types::Type::Integer,
-                            Box::new(error),
-                        )
-                    })?,
-                    voice_note: None,
-                };
-                Ok(RecoveryAttachmentMetadata {
-                    message_id: row.get(0)?,
-                    attachment_id,
-                    metadata: metadata.encode_to_vec(),
-                })
-            })
-            .map_err(|error| error.to_string())?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| error.to_string())?;
-        let mut trust_statement = connection
-            .prepare(
-                "SELECT peer_ptid, fingerprint, verified_at_unix_ms
-                 FROM messaging_trust ORDER BY peer_ptid",
-            )
-            .map_err(|error| error.to_string())?;
-        let trust = trust_statement
-            .query_map([], |row| {
-                Ok(RecoveryTrustRecord {
-                    peer_ptid: row.get(0)?,
-                    fingerprint: row.get(1)?,
-                    verified_at_unix_ms: row.get(2)?,
-                })
-            })
-            .map_err(|error| error.to_string())?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| error.to_string())?;
-        Ok(MessagingRecoveryArchive {
-            ptid: ptid.to_string(),
-            actor_identity_seed: *actor_identity_seed,
+        messaging_core::recovery::sqlite::export_archive(
+            &connection,
+            ptid,
+            actor_identity_seed,
             actor_profile_version,
-            conversations,
-            messages,
-            retention_floors,
-            authority_heads,
-            redaction_tombstones,
-            attachments,
-            trust,
-        })
+        )
     }
 
     // This method must only target a temporary recovery database. The caller
@@ -14991,19 +14699,34 @@ mod tests {
                 }],
             )
             .unwrap();
-        bob.join_group("before-reset", &genesis.welcome_bytes).unwrap();
+        bob.join_group("before-reset", &genesis.welcome_bytes)
+            .unwrap();
         store
             .save_mls_join_provider_pool(&bob.export_pending_join_providers().unwrap(), 101)
             .unwrap();
         store
             .persist_claimed_item(
-                "old-item", "old-event", "before-reset", 1, 1, &[1; 32], b"old", 102,
+                "old-item",
+                "old-event",
+                "before-reset",
+                1,
+                1,
+                &[1; 32],
+                b"old",
+                102,
             )
             .unwrap();
         directory.packages.lock().unwrap().clear();
         store
             .persist_claimed_item(
-                "new-item", "new-event", "after-reset", 1, 2, &[2; 32], b"new", 103,
+                "new-item",
+                "new-event",
+                "after-reset",
+                1,
+                2,
+                &[2; 32],
+                b"new",
+                103,
             )
             .unwrap();
 
@@ -15026,7 +14749,8 @@ mod tests {
                     }],
                 )
                 .unwrap();
-            bob.join_group(&group_id, &invitation.welcome_bytes).unwrap();
+            bob.join_group(&group_id, &invitation.welcome_bytes)
+                .unwrap();
         }
     }
 

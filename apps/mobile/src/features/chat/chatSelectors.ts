@@ -8,9 +8,9 @@ import {
 } from '@peers-touch/client-chat-core';
 
 import { useSocialStore } from '../social/socialStore';
-import { projectConversations } from '../social/socialProjection';
+import { actorDisplayName, projectConversations } from '../social/socialProjection';
 import { timestampMillis } from '../social/socialNormalizers';
-import type { SocialMessage, SocialConversation, TypingEntry } from '../social/socialTypes';
+import type { PeerProfile, SocialMessage, SocialConversation, TypingEntry } from '../social/socialTypes';
 import type { SocialMessageAttachment } from '../social/socialTypes';
 import type { ChatActionState } from './chatActionState';
 import { chatActionKey, defaultChatActionState } from './chatActionState';
@@ -298,6 +298,22 @@ export function isOwnChatMessage(
   return Boolean(currentUserPtid && message.senderPtid === currentUserPtid);
 }
 
+export function chatMessageAuthorName(
+  message: SocialMessage,
+  currentUserPtid: string | null,
+  ownName: string,
+  peerProfiles: Readonly<Record<string, PeerProfile | null>>,
+  fallbackName = '',
+): string {
+  return isOwnChatMessage(message, currentUserPtid)
+    ? ownName
+    : actorDisplayName(
+        peerProfiles[message.senderPtid]?.displayName
+          || peerProfiles[message.senderPtid]?.acct || fallbackName,
+        message.senderPtid,
+      );
+}
+
 export function formatRelativeTime(
   value: number,
   t: (key: string, params?: Record<string, string | number>) => string,
@@ -379,14 +395,26 @@ export function useChatHistoryProjection(
     loadedThreadMessages.forEach((message) => {
       if (!byId.has(message.ulid)) byId.set(message.ulid, message);
     });
+    const repliesByRoot = new Map<string, SocialMessage[]>();
+    for (const message of byId.values()) {
+      if (!message.threadRootUlid || message.threadRootUlid === message.ulid) continue;
+      const replies = repliesByRoot.get(message.threadRootUlid) ?? [];
+      replies.push(message);
+      repliesByRoot.set(message.threadRootUlid, replies);
+    }
+    repliesByRoot.forEach((replies) => replies.sort((a, b) => (
+      messageTimestampMillis(a) - messageTimestampMillis(b) || a.ulid.localeCompare(b.ulid)
+    )));
     const visible = [...byId.values()]
       .filter((message) => (
-        !threadRoot || message.ulid === threadRoot || message.threadRootUlid === threadRoot
+        threadRoot
+          ? message.ulid === threadRoot || message.threadRootUlid === threadRoot
+          : !message.threadRootUlid || message.threadRootUlid === message.ulid
       ))
       .sort((a, b) => messageTimestampMillis(a) - messageTimestampMillis(b)
         || a.ulid.localeCompare(b.ulid));
     return {
-      byId, visible,
+      byId, visible, repliesByRoot,
       replyCount: threadRoot ? visible.filter((message) => message.ulid !== threadRoot).length : 0,
     };
   }, [conversationMessages, loadedThreadMessages, threadRoot]);

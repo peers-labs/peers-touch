@@ -16,4 +16,20 @@ describe('Social Circle page selectors', () => {
       expect(source).not.toContain('membersByCircle[circleId] ?? []');
     }
   });
+
+  it('keeps raw PTIDs out of Circle member presentation', () => {
+    const detail = readFileSync(
+      new URL('./SocialCircleDetailPage.tsx', import.meta.url),
+      'utf8',
+    );
+    const picker = readFileSync(
+      new URL('./SocialCircleMemberPickerPage.tsx', import.meta.url),
+      'utf8',
+    );
+
+    expect(detail).toContain("t('mobile.social.circles.localPerson')");
+    expect(picker).toContain("t('mobile.social.circles.localPerson')");
+    expect(detail).not.toContain('{member.actorPtid}</Text>');
+    expect(picker).not.toContain('actor.federation?.handle || actor.ptid');
+  });
 });

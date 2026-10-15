@@ -135,4 +135,20 @@ for arch in ${ARCHS:?}; do
 
   mkdir -p "$external_dir"
   cp "$rust_lib" "$external_lib"
+
+  # Swift static archives do not carry their SPM resource bundles.
+  resource_manifest="$cargo_target_dir/$rust_target/$profile_dir/mobile-native-resource-bundles"
+  if [ ! -f "$resource_manifest" ]; then
+    echo "Current native resource bundle manifest not found: $resource_manifest" >&2
+    exit 1
+  fi
+  resource_dir="${TARGET_BUILD_DIR:?}/${UNLOCALIZED_RESOURCES_FOLDER_PATH:?}"
+  mkdir -p "$resource_dir"
+  while IFS= read -r bundle || [ -n "$bundle" ]; do
+    if [ ! -d "$bundle" ] || [[ "$bundle" != *.bundle ]]; then
+      echo "Native resource bundle is invalid: $bundle" >&2
+      exit 1
+    fi
+    ditto "$bundle" "$resource_dir/$(basename "$bundle")"
+  done < "$resource_manifest"
 done

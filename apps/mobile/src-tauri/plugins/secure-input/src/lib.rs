@@ -83,7 +83,7 @@ pub enum NativeSecretInputResult {
     PlatformFailure,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NativeSecretInputRequest<'a> {
     pub request_id: &'a str,
@@ -91,6 +91,8 @@ pub struct NativeSecretInputRequest<'a> {
     pub lifecycle_generation: u64,
     pub deadline_ms: u64,
     pub acceptance_autofill_allowed: bool,
+    /// Native-to-native display material; never comes from the WebView.
+    pub initial_secret: Option<&'a str>,
 }
 
 #[derive(Clone)]

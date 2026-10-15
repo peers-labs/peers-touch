@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "check:controls": "node scripts/check-control-contracts.mjs",
     "check:product-parity": "node scripts/check-product-parity.mjs",
     "preview": "vite preview"
   },

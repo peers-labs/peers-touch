@@ -1,210 +1,98 @@
 import {
   AppWindow,
-  BarChart3,
-  Bell,
-  Bot,
   Brain,
   CircleHelp,
   Clock3,
   Command,
   Database,
+  FolderOpen,
   Globe2,
   HardDrive,
-  Languages,
-  LockKeyhole,
-  Network,
   Plug,
   Radio,
   ScrollText,
   Send,
   Server,
   Settings2,
-  Sparkles,
+  ShieldCheck,
   UserRound,
+  Volume2,
   Wrench,
+  type LucideIcon,
 } from 'lucide-react';
-import type { SettingGroup } from './types';
+import catalog from './settingsCapabilities.json';
+import type { SettingEntry, SettingGroup, SettingId } from './types';
 
-export const mobileSettingGroups: SettingGroup[] = [
-  {
-    title: 'General',
-    items: [
-      {
-        id: 'account',
-        label: 'Account',
-        description: 'Public profile and technical identity',
-        icon: UserRound,
-        tint: 'primary',
-      },
-      {
-        id: 'notifications',
-        label: 'Notifications',
-        description: 'Events and delivery on this device',
-        value: 'In-app',
-        icon: Bell,
-        tint: 'warning',
-      },
-      {
-        id: 'privacy',
-        label: 'Privacy & Security',
-        description: 'App access and social privacy',
-        icon: LockKeyhole,
-        tint: 'success',
-      },
-      {
-        id: 'appearance',
-        label: 'Appearance & Language',
-        description: 'Theme and interface language',
-        value: 'System',
-        icon: Languages,
-        tint: 'neutral',
-      },
-    ],
-  },
-  {
-    title: 'Network',
-    items: [
-      {
-        id: 'station',
-        label: 'Your Station',
-        description: 'Account host and authorized devices',
-        value: 'Connected',
-        icon: Server,
-        tint: 'success',
-      },
-      {
-        id: 'discovery',
-        label: 'Discovery',
-        description: 'How people find and contact you',
-        value: 'Visible',
-        icon: Globe2,
-        tint: 'primary',
-      },
-      {
-        id: 'federation',
-        label: 'Federation',
-        description: 'Networks this Station participates in',
-        value: '3 joined',
-        icon: Network,
-        tint: 'primary',
-      },
-    ],
-  },
-  {
-    title: 'AI',
-    items: [
-      {
-        id: 'providers',
-        label: 'Providers',
-        description: 'Model service connections',
-        value: '2 ready',
-        icon: Sparkles,
-        tint: 'primary',
-      },
-      {
-        id: 'models',
-        label: 'Models',
-        description: 'Default models and capability routing',
-        icon: Brain,
-        tint: 'primary',
-      },
-      {
-        id: 'memory',
-        label: 'Memory',
-        description: 'Personal memory and retention',
-        icon: HardDrive,
-        tint: 'success',
-      },
-      {
-        id: 'skills',
-        label: 'Skills',
-        description: 'Installed agent capabilities',
-        value: '12',
-        icon: ScrollText,
-        tint: 'warning',
-      },
-      {
-        id: 'mcp',
-        label: 'MCP',
-        description: 'External tool connections',
-        value: '3 connected',
-        icon: Plug,
-        tint: 'neutral',
-      },
-    ],
-  },
-  {
-    title: 'Advanced',
-    items: [
-      {
-        id: 'storage',
-        label: 'Data & Storage',
-        description: 'Local data, media, and cache',
-        value: '2.8 GB',
-        icon: Database,
-        tint: 'primary',
-      },
-      {
-        id: 'channels',
-        label: 'Channels',
-        description: 'Outbound notification channels',
-        icon: Send,
-        tint: 'success',
-      },
-      {
-        id: 'applets',
-        label: 'Applets',
-        description: 'Installed product applets',
-        value: '6',
-        icon: AppWindow,
-        tint: 'primary',
-      },
-      {
-        id: 'statistics',
-        label: 'Statistics',
-        description: 'Local usage and runtime health',
-        icon: BarChart3,
-        tint: 'neutral',
-      },
-      {
-        id: 'logs',
-        label: 'Diagnostics & Logs',
-        description: 'Runtime diagnostics and export',
-        icon: Radio,
-        tint: 'warning',
-      },
-      {
-        id: 'cron',
-        label: 'Scheduled Tasks',
-        description: 'Recurring agent work',
-        value: '2 active',
-        icon: Clock3,
-        tint: 'primary',
-      },
-      {
-        id: 'command-menu',
-        label: 'Command Palette',
-        description: 'Search product actions',
-        icon: Command,
-        tint: 'neutral',
-      },
-      {
-        id: 'about',
-        label: 'About',
-        description: 'Version, licenses, and support',
-        value: 'v1.0.0',
-        icon: CircleHelp,
-        tint: 'neutral',
-      },
-    ],
-  },
-];
+const icons: Record<SettingId, LucideIcon> = {
+  account: UserRound,
+  security: ShieldCheck,
+  general: Settings2,
+  federation: Globe2,
+  providers: Server,
+  models: Brain,
+  memory: HardDrive,
+  skills: ScrollText,
+  mcp: Plug,
+  tts: Volume2,
+  cron: Clock3,
+  'command-menu': Command,
+  tools: Wrench,
+  channels: Send,
+  applets: AppWindow,
+  storage: Database,
+  oss: FolderOpen,
+  logs: Radio,
+  help: CircleHelp,
+};
+
+const tints: Record<SettingId, SettingEntry['tint']> = {
+  account: 'primary',
+  security: 'success',
+  general: 'neutral',
+  federation: 'primary',
+  providers: 'primary',
+  models: 'primary',
+  memory: 'success',
+  skills: 'warning',
+  mcp: 'neutral',
+  tts: 'primary',
+  cron: 'primary',
+  'command-menu': 'neutral',
+  tools: 'warning',
+  channels: 'success',
+  applets: 'primary',
+  storage: 'primary',
+  oss: 'success',
+  logs: 'warning',
+  help: 'neutral',
+};
+
+export const mobileSettingGroups: SettingGroup[] = catalog.groups.map((group) => ({
+  title: group.label,
+  items: group.sections.map((section) => {
+    const id = section.id as SettingId;
+    return {
+      id,
+      label: section.label,
+      description: section.description,
+      capabilities: section.capabilities,
+      icon: icons[id],
+      tint: tints[id],
+    };
+  }),
+}));
 
 export const accountSetting = mobileSettingGroups[0].items[0];
 
-export const settingGroupIcons = {
+export const settingCapabilityCatalog = catalog;
+
+export const settingGroupIcons: Record<string, LucideIcon> = {
   General: Settings2,
-  Network: Network,
-  AI: Bot,
-  Advanced: Wrench,
-} as const;
+  Federation: Globe2,
+  AI: Brain,
+  Tools: Wrench,
+  Channels: Send,
+  Applets: AppWindow,
+  Data: Database,
+  Help: CircleHelp,
+};

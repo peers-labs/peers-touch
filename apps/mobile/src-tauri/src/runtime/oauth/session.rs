@@ -82,7 +82,22 @@ pub(crate) fn authenticated_native_session(
     actor_ptid: &str,
     session_id: &str,
 ) -> MobileResult<AuthenticatedNativeSession> {
+    crate::runtime::pin::require_unlocked(storage, station_peer_id, actor_ptid)?;
     authenticated_native_session_inner(storage, station_peer_id, actor_ptid, session_id)
+}
+
+pub(crate) fn current_session_actor_scope(
+    storage: &SecureStorage,
+) -> MobileResult<Option<(String, String)>> {
+    let Some(key) = storage.get(CURRENT_SESSION_INDEX_KEY)? else {
+        return Ok(None);
+    };
+    let session = read_json::<_, PersistedNativeSession>(storage, &key)?
+        .ok_or_else(|| oauth_error("sessionIndexCorrupt"))?;
+    Ok(Some((
+        session.station_peer_id.clone(),
+        session.actor_ptid.clone(),
+    )))
 }
 
 impl OAuthCoordinator {
@@ -93,6 +108,9 @@ impl OAuthCoordinator {
     ) -> MobileResult<Option<NativeSessionProjection>> {
         let _operation = self.begin_operation()?;
         purge_legacy_web_session(storage)?;
+        if let Some((station, actor)) = current_session_actor_scope(storage)? {
+            crate::runtime::pin::require_unlocked(storage, &station, &actor)?;
+        }
         session_projection_inner(storage, scope)
     }
 
@@ -103,6 +121,9 @@ impl OAuthCoordinator {
     ) -> MobileResult<NativeSessionProjection> {
         let _operation = self.begin_operation()?;
         purge_legacy_web_session(storage)?;
+        if let Some((station, actor)) = current_session_actor_scope(storage)? {
+            crate::runtime::pin::require_unlocked(storage, &station, &actor)?;
+        }
         self.refresh_session_inner(storage, scope).await
     }
 
@@ -321,6 +342,11 @@ pub(super) fn persist_access_gate_credential<S: SecretStore>(
     let persist = || -> MobileResult<()> {
         write_json(storage, &key, &session)?;
         storage.set_secret(CURRENT_SESSION_INDEX_KEY, &key)?;
+        crate::runtime::pin::finish_reauthentication(
+            storage,
+            &session.station_peer_id,
+            &session.actor_ptid,
+        )?;
         write_public_projection(
             storage,
             &OAuthPublicProjection {

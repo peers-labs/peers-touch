@@ -3754,6 +3754,7 @@ dependencies = [
  "prost-build",
  "prost-types",
  "rand 0.8.5",
+ "rusqlite",
  "rustix",
  "secure-content-core",
  "serde",

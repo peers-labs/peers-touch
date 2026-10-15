@@ -6,7 +6,6 @@ import {
   Clock,
   Paperclip,
   Mic,
-  Pin,
   RefreshCw,
   RotateCcw,
   X,
@@ -21,36 +20,6 @@ import type { ChatMessageCommandOutcome } from '../../features/chat/messageComma
 import type { MessageDeliveryDisplayState } from '../../features/chat/messageProjection';
 
 const { Text } = Typography;
-
-export function PinnedMessageBanner({
-  count,
-  preview,
-  onOpen,
-}: {
-  readonly count: number;
-  readonly preview: string;
-  readonly onOpen: () => void;
-}) {
-  const { t } = useMobileI18n();
-  if (count <= 0) return null;
-  return (
-    <button
-      type="button"
-      className="pinned-message-banner"
-      data-pinned-message-count={count}
-      onClick={onOpen}
-    >
-      <Pin size={13} />
-      <span className="pinned-message-banner-copy">
-        <span>{t('mobile.chat.pinnedMessageCount', { count })}</span>
-        <span>{preview}</span>
-      </span>
-      <span className="pinned-message-banner-action">
-        {t('common.action.view')}
-      </span>
-    </button>
-  );
-}
 
 export function MessageDeliveryStatus({
   state,
@@ -154,12 +123,16 @@ export function MessageCommandStatus({
 export function MessageAvatar({
   src,
   fallback,
+  name,
+  identityKey,
 }: {
   readonly src: string;
   readonly fallback: string;
+  readonly name?: string;
+  readonly identityKey?: string;
 }) {
   return (
-    <MobileAvatar className="message-avatar" src={src}>
+    <MobileAvatar className="message-avatar" src={src} name={name} identityKey={identityKey}>
       {(fallback || '?').slice(0, 1).toUpperCase()}
     </MobileAvatar>
   );

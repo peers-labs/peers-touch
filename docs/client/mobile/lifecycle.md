@@ -105,6 +105,15 @@ The user must not enter the Station shell without passing the Station-driven acc
 - Auth session secrets must be stored through native secure storage, not plain `localStorage`.
 - A session is scoped to the active Station. Switching Station invalidates the current session unless an explicit multi-Station session model is introduced.
 - The main shell must not hide login in Settings as the only entry point.
+- `entryRuntime` owns the app-scoped Station probe, remembered-account readback,
+  gate submission and explicit scope-exit decision projection. AppRoot observes
+  it and dispatches actions; it contains no asynchronous entry state machine.
+  Access revisions fence late handshake/submission results after Back. Registry
+  probes only update an entry that still has the same Station identity and URL.
+- Identity replacement requires an explicit decision before either the Add or
+  Continue path persists a replacement. Scope exit fences command admission
+  before asking about real drafts. An exit with no drafts proceeds directly;
+  cancellation restores admission without changing the active account.
 
 ---
 
@@ -116,6 +125,26 @@ The user must not enter the Station shell without passing the Station-driven acc
 - Pages render projections and user actions; long-lived freshness belongs to runtimes.
 - Runtime dependencies use hard `dependsOn` and degradable `uses`; bootstrap is
   topological and teardown/suspend use reverse order.
+- The native `security` runtime precedes Auth. Its optional application PIN is
+  scoped to Station and actor, stored as an Argon2id verification hash in OS
+  secure storage, and required on cold start and background return. Credentials
+  remain in the native OAuth/Keychain owner. PIN attempts and five-minute
+  cooldown survive relaunch; the renderer cannot access the security namespace.
+  Forgotten PIN creates a ten-minute native reset request, retains drafts and
+  enters the existing Station reauthentication flow. Only a new verified login
+  for the same Station and actor removes that PIN; another account or an expired
+  request cannot reset it.
+- Interactive runtime gates separate bounded I/O from user decisions. The
+  Kernel awaits `descriptor.userGate.wait()` after bootstrap/resume I/O and
+  before marking the runtime ready or admitting dependents. A user decision has
+  no infrastructure deadline. Stop, restart and scope transition cancel the
+  outstanding gate before joining the serialized lifecycle queue. The PIN host
+  only presents the security projection and sends verification intent.
+- Native signed-device identity acquisition completes pending Actor Device
+  enrollment before returning a signer. Enrollment, signer acquisition, and
+  stale-enrollment recovery share one engine lock and the Session device ID.
+  Private Social can acquire its signer during asynchronous login activation
+  without waiting for unrelated Messaging inbox or media reconciliation.
 - Cold start, restart, and resume resolve the launch state through the lifecycle
   kernel after runtime bootstrap/revalidation. React does not auto-advance a
   restored access decision; the kernel preserves the handshake transition before
@@ -205,6 +234,46 @@ Current Mobile code now implements the local owner layer of this lifecycle:
   A failed or missing owner renders unavailable content rather than an empty
   domain projection; a starting owner shows preparation. Tab and detail-back
   navigation remain available, and retry belongs to the lifecycle recovery host.
+- `MobilePageHost` composes only the selected page/detail tree. `MobileShell`
+  subscribes to navigation, authentication and scalar Chat/Contacts badges;
+  `navigationBadgeProjection` derives those counts from the existing Social
+  projection without another store, reconciliation loop or domain-list
+  subscription in the shell.
+- Global Chat search is an explicit intent over the existing native message
+  index, combined with accepted Contacts and conversation projections. Native
+  IPC concurrency is bounded, account changes fence results, and pagination
+  retains each conversation's timestamp/message cursor. Recent queries use
+  the actor-scoped device preference repository. Selecting a message result
+  routes to its conversation and hydrates/reveals that message.
+- Me renders identity and counters from the existing profile and Social
+  projections. It does not instantiate settings controllers or query native
+  permissions/version metadata. The selected Settings detail is a lazy
+  section; only its Profile, device, notification, permission or version
+  dependencies subscribe/load. A shared `SettingsExitBoundary` protects Back,
+  route changes and provider selection with save/discard/stay. Profile drafts
+  emit only edited fields. Native transport retains explicit empty clearing
+  and multiline biographies; Station remains the field-policy owner.
+- Agent provider settings use generated protobuf requests through a native
+  fixed capability whitelist at `/sub-agent/agent/*`. Station owns provider
+  versions and credentials; the section controller owns only the selected
+  editor draft and cancels read requests on unmount. Writes read back the
+  stable provider identity before success or retry. API keys are never saved
+  in client preference/draft repositories or read through credential resolve.
+  Available-model refresh is an explicit read of Station admission metadata,
+  not proof of a remote model invocation.
+- General settings compose the existing device, language, Profile and
+  notification owners with a selected Agent defaults editor. Agent provider,
+  model and reasoning changes preserve unrelated Agent fields and use the
+  Station versioned update contract. Independently committed owners retain
+  their actual result when another owner fails. The app theme provider reads
+  only committed device preferences; component-library tokens and CSS surfaces
+  share light/dark/system state. Storage is an independent detail attached to
+  the Chat Storage runtime. A detail scroll container preserves the header and
+  safe area while the selected form or long list scrolls.
+- Inline and full-thread replies share the same logical message collection.
+  Avatar identity disclosure, pins and composers use shared component
+  boundaries; typing publication remains ephemeral and cannot add a sender
+  status row or delay durable submission.
 - Login is rendered by the top-level access gate host instead of Settings;
   full native gate-chain evidence remains pending.
 - Invite-only and fixed-user gates consume the shared Station gate protocol.
@@ -225,6 +294,14 @@ Current Mobile code now implements the local owner layer of this lifecycle:
   Suspend stops foreground producers and closes write admission; resume
   revalidates and reconciles stale projections before reopening writes;
   teardown drains accepted work and releases page-independent projections.
+  Each Social controller owns the cancellation scope used by its Social,
+  Moments, notification, and profile network requests. Suspend aborts that
+  foreground's requests; resume allocates a fresh signal; teardown permanently
+  closes the scope before awaiting startup, ingress, or reconciliation.
+  Foreground shutdown drains only operations captured from the stopped
+  foreground, so a concurrent resume's new realtime stream cannot keep the old
+  shutdown alive. Same-account credential refresh preserves projected data
+  while rebinding gateways to the current request scope.
 - Moments feed and Profile/account preference freshness are runtime-owned and
   survive page unmounts. Pages subscribe to the active session projection and
   do not create ingress, gateway, or reconciliation owners.
@@ -239,6 +316,21 @@ Current Mobile code now implements the local owner layer of this lifecycle:
 ---
 
 ## 9. Verification
+
+Account recovery uses the native Recovery application service. A selected
+Security section requests only generated action/result protobufs. The native
+plugin displays or collects the 24-word phrase; WebView state, diagnostic logs
+and Station never receive it. Recovery records live in the protected native
+security namespace. Each backup also installs the Secure Content recovery
+master for the same actor and epoch.
+
+Restore validates the current native Session again after user input, authenticates
+the encrypted archive, checks the Station authority chain for later redactions,
+stops the Messaging worker, and imports history in one SQLCipher transaction.
+For the same actor identity, existing devices, sessions, authority heads,
+commands and drafts remain current. An unenrolled fresh installation replaces
+its temporary actor identity and imports history atomically before enrollment.
+The lifecycle graph then rebuilds current projections through its normal owner.
 
 Before changing Mobile lifecycle behavior, verify:
 

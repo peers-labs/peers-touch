@@ -390,7 +390,7 @@ function SettingsItemCard({ children, onClick, active }: {
 // ── General · Account ────────────────────────────────────────────────────────
 const COVER_KEY = 'pt.profile.cover';
 const COVER_HISTORY_KEY = 'pt.profile.cover.history';
-const DEFAULT_COVER = 'linear-gradient(120deg,#6b5bd6 0%,#8b7df0 55%,#b794f6 100%)';
+const DEFAULT_COVER = `linear-gradient(120deg, ${T.primary} 0%, color-mix(in srgb, ${T.primary} 72%, white) 55%, color-mix(in srgb, ${T.primary} 42%, white) 100%)`;
 const COVER_HISTORY_LIMIT = 8;
 const ACCOUNT_IDENTITY = {
   ptid: 'ptid:01HQX7K3M9VDGF2N8PWJRST6YZ',
@@ -603,7 +603,7 @@ function AccountSection({ federations }: { federations: JoinedFederation[] }) {
               // The separation ring must paint above the positioned cover.
               position: 'relative', zIndex: 1,
               width: 72, height: 72, borderRadius: 14,
-              background: 'linear-gradient(135deg, #6b5bd6 0%, #a78bfa 100%)',
+              background: `linear-gradient(135deg, ${T.primary} 0%, color-mix(in srgb, ${T.primary} 68%, white) 100%)`,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: 26, fontWeight: 700, color: T.white,
               border: `4px solid ${T.white}`,

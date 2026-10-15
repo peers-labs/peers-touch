@@ -1,0 +1,32 @@
+.native-pin-screen {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: calc(env(safe-area-inset-top, 0px) + 24px) 24px calc(env(safe-area-inset-bottom, 0px) + 24px);
+  background: var(--brand-muted);
+  color: var(--mobile-text-primary);
+}
+
+.native-pin-card {
+  width: min(100%, 400px);
+  background: var(--brand-surface);
+}
+
+.native-pin-card .ant-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.native-pin-card svg { color: var(--brand-primary); }
+.native-pin-card .ant-typography { margin: 0; }
+.native-pin-form, .settings-security-form { display: grid; gap: 16px; }
+.native-pin-form .ant-input-affix-wrapper, .native-pin-form .ant-btn,
+.settings-security-form .ant-input-affix-wrapper, .settings-security-form .ant-btn {
+  min-height: 44px;
+}
+.settings-security-form label { display: grid; gap: 8px; }
+.settings-device-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 12px; }
+.settings-device-row > div { flex: 1; min-width: 0; }
+.settings-device-row .ant-typography { overflow-wrap: anywhere; margin-block: 4px 0; }
+.settings-device-row .ant-btn { min-height: 44px; }

@@ -58,6 +58,15 @@ const SETTING_LABELS: Record<MobileSettingDetailId, string> = {
   encryption: 'mobile.settings.encryption',
   language: 'mobile.settings.section.language',
   about: 'mobile.settings.aboutApp',
+  general: 'mobile.settings.general.title',
+  storage: 'mobile.settings.section.storage',
+  providers: 'mobile.settings.agent.providers',
+  models: 'mobile.settings.agent.models',
+  memory: 'mobile.settings.memory.title',
+  skills: 'mobile.settings.skills.title',
+  mcp: 'mobile.settings.mcp.title',
+  federation: 'mobile.settings.federation.title',
+  security: 'mobile.settings.security.title',
 };
 
 const SUMMARY_DETAILS: ReadonlyArray<{

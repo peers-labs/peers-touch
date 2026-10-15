@@ -167,7 +167,15 @@ type memoryProcessor struct {
 }
 
 func (p memoryProcessor) process(in *promptBuildInput) ([]ContextSegment, error) {
-	if in.memoryDisabled || p.memoryService == nil {
+	disabled := in.memoryDisabled || p.memoryService == nil
+	if !disabled {
+		preferences, err := p.memoryService.preferences(in.ctx, in.agentID)
+		if err != nil {
+			return nil, fmt.Errorf("load memory policy: %w", err)
+		}
+		disabled = !preferences.GetEnabled()
+	}
+	if disabled {
 		return []ContextSegment{{
 			Type:           model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_MEMORY,
 			Decision:       model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_REJECTED,

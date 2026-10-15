@@ -1343,6 +1343,11 @@ fn finalize_acknowledged_session<S: SecretStore>(
     session.acknowledged = true;
     write_json(storage, &key, &session)?;
     storage.set_secret(CURRENT_SESSION_INDEX_KEY, &key)?;
+    crate::runtime::pin::finish_reauthentication(
+        storage,
+        &session.station_peer_id,
+        &session.actor_ptid,
+    )?;
 
     attempt.phase = OAuthPublicPhase::ActiveSession;
     attempt.result = Some(

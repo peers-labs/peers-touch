@@ -525,6 +525,11 @@ only profile `four`/scope `station-four-social-private` and profile
 `fiveArm`/scope `station-five-arm-social-private`. It is not a selective
 plaintext migration.
 
+Accepted `SC-D30` adds the reviewed `chat-native-five` profile with scope
+`chat-native-five-social-private` for `MWPU-07-FRONTIER`
+`SCHEMA_ACTIVATION`. It consumes the same reset implementation and cannot be
+used as a `FINAL_CUT` or as an alias for another environment.
+
 Before reset:
 
 - record exact Station/profile scope;

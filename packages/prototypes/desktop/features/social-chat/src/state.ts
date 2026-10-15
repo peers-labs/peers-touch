@@ -94,13 +94,14 @@ export function useChatState() {
     );
   }, []);
 
-  const sendMessage = useCallback((id: string, content: string) => {
+  const sendMessage = useCallback((id: string, content: string, replyTo?: string) => {
     const text = content.trim();
     if (!text) return;
     const nextMessage = {
       id: `draft-${Date.now()}`,
       senderId: CURRENT_USER.id,
       content: text,
+      replyTo,
       timestamp: Date.now(),
       type: 'text' as const,
       status: 'sent' as const,

@@ -7,7 +7,6 @@ use crate::domain::crypto::validate_mnemonic as validate_recovery_mnemonic;
 use crate::domain::storage::database::DatabaseOpenSpec;
 use crate::infrastructure::storage::key_provider::PlatformKeyProvider;
 use crate::infrastructure::storage::{open_database, resolve_database_path};
-use messaging_core::codec::verification::verify_authority_event;
 use messaging_core::identity::{FreshDeviceEnrollment, FreshDeviceIdentityState};
 use messaging_core::proto::chat::{conversation_event, ConversationEvent};
 use messaging_core::recovery::RecoveryKdf;
@@ -164,163 +163,6 @@ pub(super) fn validate_archive(archive: &MessagingRecoveryArchive) -> Result<(),
     messaging_core::recovery::validate_archive(archive)
 }
 
-pub(super) fn fetch_recovery_events_to_target<F>(
-    from_sequence: i64,
-    target_sequence: i64,
-    page_limit: i32,
-    max_pages: usize,
-    mut fetch_page: F,
-) -> Result<Vec<ConversationEvent>, String>
-where
-    F: FnMut(i64, i32) -> Result<Vec<ConversationEvent>, String>,
-{
-    if from_sequence <= 0 || target_sequence < from_sequence || page_limit <= 0 || max_pages == 0 {
-        return Err("messaging recovery reconciliation replay bound is invalid".to_string());
-    }
-    let mut events = Vec::new();
-    let mut after_sequence = from_sequence;
-    for _ in 0..max_pages {
-        if after_sequence == target_sequence {
-            return Ok(events);
-        }
-        let limit = i32::try_from((target_sequence - after_sequence).min(i64::from(page_limit)))
-            .map_err(|_| "messaging recovery reconciliation page limit is invalid".to_string())?;
-        let page = fetch_page(after_sequence, limit)?;
-        if page.is_empty() {
-            return Err(
-                "messaging recovery reconciliation authority event log is incomplete".to_string(),
-            );
-        }
-        if page.len() > limit as usize {
-            return Err(
-                "messaging recovery reconciliation authority event page exceeds target".to_string(),
-            );
-        }
-        let next_sequence = page.last().map(|event| event.sequence).ok_or_else(|| {
-            "messaging recovery reconciliation authority event log is incomplete".to_string()
-        })?;
-        if next_sequence <= after_sequence || next_sequence > target_sequence {
-            return Err(
-                "messaging recovery reconciliation authority event page is out of range"
-                    .to_string(),
-            );
-        }
-        after_sequence = next_sequence;
-        events.extend(page);
-    }
-    Err("messaging recovery reconciliation exceeded authority replay bound".to_string())
-}
-
-pub(super) fn reconcile_archive_authority_events(
-    archive: &MessagingRecoveryArchive,
-    conversation_id: &str,
-    target_sequence: i64,
-    target_event_hash: &[u8],
-    events: &[ConversationEvent],
-) -> Result<Vec<RecoveryMessageRedactionTombstone>, String> {
-    let conversation = archive
-        .conversations
-        .iter()
-        .find(|conversation| conversation.conversation_id == conversation_id)
-        .ok_or_else(|| "messaging recovery reconciliation conversation is missing".to_string())?;
-    let authority_station_id = conversation.authority_station_id.clone();
-    let head_index = archive
-        .authority_heads
-        .iter()
-        .position(|head| head.conversation_id == conversation_id)
-        .ok_or_else(|| "messaging recovery reconciliation authority head is missing".to_string())?;
-    let mut sequence = archive.authority_heads[head_index].event_sequence;
-    let mut event_hash = archive.authority_heads[head_index].event_hash.clone();
-    if target_sequence < sequence
-        || target_event_hash.len() != 32
-        || target_event_hash.iter().all(|byte| *byte == 0)
-    {
-        return Err("messaging recovery reconciliation authority target is invalid".to_string());
-    }
-    let mut redactions = Vec::new();
-
-    for event in events {
-        verify_authority_event(event)?;
-        if event.conversation_id != conversation_id
-            || event.authority_station_peer_id != authority_station_id
-            || event.sequence != sequence + 1
-            || event.previous_hash != event_hash
-        {
-            return Err(
-                "messaging recovery reconciliation authority chain is not contiguous".to_string(),
-            );
-        }
-        match event.payload.as_ref() {
-            Some(conversation_event::Payload::MessageRetracted(fact)) => {
-                upsert_reconciliation_redaction(
-                    &mut redactions,
-                    conversation_id,
-                    &fact.message_id,
-                    "retracted",
-                    event,
-                    event_timestamp_unix_ms(event)?,
-                )?;
-            }
-            Some(conversation_event::Payload::MessageHiddenForActor(fact))
-                if fact.actor_ptid == archive.ptid =>
-            {
-                upsert_reconciliation_redaction(
-                    &mut redactions,
-                    conversation_id,
-                    &fact.message_id,
-                    "hidden_for_actor",
-                    event,
-                    event_timestamp_unix_ms(event)?,
-                )?;
-            }
-            _ => {}
-        }
-        sequence = event.sequence;
-        event_hash.clone_from(&event.event_hash);
-    }
-
-    if sequence != target_sequence || event_hash != target_event_hash {
-        return Err(
-            "messaging recovery reconciliation did not reach the authority snapshot".to_string(),
-        );
-    }
-    Ok(redactions)
-}
-
-fn upsert_reconciliation_redaction(
-    redactions: &mut Vec<RecoveryMessageRedactionTombstone>,
-    conversation_id: &str,
-    message_id: &str,
-    kind: &str,
-    event: &ConversationEvent,
-    applied_at_unix_ms: i64,
-) -> Result<(), String> {
-    if message_id.trim().is_empty() {
-        return Err("messaging recovery redaction target is missing".to_string());
-    }
-    if !matches!(kind, "retracted" | "hidden_for_actor") {
-        return Err("messaging recovery redaction kind is invalid".to_string());
-    }
-    let tombstone = RecoveryMessageRedactionTombstone {
-        conversation_id: conversation_id.to_string(),
-        message_id: message_id.to_string(),
-        kind: kind.to_string(),
-        authority_sequence: event.sequence,
-        authority_event_hash: event.event_hash.clone(),
-        applied_at_unix_ms,
-    };
-    if let Some(existing) = redactions.iter_mut().find(|existing| {
-        existing.conversation_id == conversation_id
-            && existing.message_id == message_id
-            && existing.kind == kind
-    }) {
-        *existing = tombstone;
-    } else {
-        redactions.push(tombstone);
-    }
-    Ok(())
-}
-
 fn validate_reconciliation(
     archive: &MessagingRecoveryArchive,
     reconciliation: &RecoveryReconciliation,
@@ -352,22 +194,6 @@ fn validate_reconciliation(
         return Err("messaging recovery reconciliation is invalid".to_string());
     }
     Ok(())
-}
-
-fn event_timestamp_unix_ms(event: &ConversationEvent) -> Result<i64, String> {
-    let timestamp = event
-        .committed_at
-        .as_ref()
-        .ok_or_else(|| "messaging recovery authority event timestamp is missing".to_string())?;
-    if timestamp.seconds < 0 || !(0..1_000_000_000).contains(&timestamp.nanos) {
-        return Err("messaging recovery authority event timestamp is invalid".to_string());
-    }
-    timestamp
-        .seconds
-        .checked_mul(1_000)
-        .and_then(|value| value.checked_add(i64::from(timestamp.nanos) / 1_000_000))
-        .filter(|value| *value > 0)
-        .ok_or_else(|| "messaging recovery authority event timestamp is invalid".to_string())
 }
 
 fn atomic_replace_file(staging: &Path, target: &Path) -> Result<(), String> {
@@ -409,6 +235,9 @@ mod tests {
     use crate::messaging::private_content::test_attachment_metadata;
     use messaging_core::identity::enrollment::{
         generate_fresh_device_identity_for_device, generate_fresh_device_identity_from_seed,
+    };
+    use messaging_core::recovery::reconciliation::{
+        fetch_recovery_events_to_target, reconcile_archive_authority_events,
     };
     use prost::Message;
     use serde::{Deserialize, Serialize};

@@ -6,6 +6,7 @@ fn main() {
     let mut output = stdout.lock();
     emit_build_identity(&mut output);
     emit_acceptance_harness_linker_contract(&mut output);
+    write_native_resource_manifest();
 
     let proto_root = "../../../model";
     let protos = [
@@ -37,6 +38,7 @@ fn main() {
         "../../../model/domain/social/media.proto",
         "../../../model/domain/social/relationship.proto",
         "../../../model/domain/mobile/reliability.proto",
+        "../../../model/domain/mobile/security.proto",
     ];
     for proto in protos {
         writeln!(output, "cargo:rerun-if-changed={proto}")
@@ -44,6 +46,51 @@ fn main() {
     }
     prost_build::compile_protos(&protos, &[proto_root])
         .expect("failed to compile Mobile Rust proto contracts");
+}
+
+fn write_native_resource_manifest() {
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("ios") {
+        return;
+    }
+    let manifest_root = std::path::PathBuf::from(
+        std::env::var_os("CARGO_MANIFEST_DIR").expect("Cargo manifest directory missing"),
+    );
+    let target_root = std::env::var_os("CARGO_TARGET_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| manifest_root.join("target"));
+    let target_root = if target_root.is_absolute() {
+        target_root
+    } else {
+        manifest_root.join(target_root)
+    };
+    let target = std::env::var("TARGET").expect("Cargo target missing");
+    let profile = std::env::var("PROFILE").expect("Cargo profile missing");
+    let path = target_root
+        .join(target)
+        .join(profile)
+        .join("mobile-native-resource-bundles");
+    let mut bundles = std::env::vars()
+        .filter(|(name, _)| name.starts_with("DEP_") && name.ends_with("_IOS_RESOURCE_BUNDLE"))
+        .map(|(_, value)| value)
+        .collect::<Vec<_>>();
+    bundles.sort();
+    bundles.dedup();
+    assert!(
+        !bundles.is_empty(),
+        "iOS native resource bundle metadata missing"
+    );
+    for bundle in &bundles {
+        assert!(
+            !bundle.contains(['\r', '\n']) && std::path::Path::new(bundle).is_dir(),
+            "iOS native resource bundle path invalid"
+        );
+    }
+    std::fs::create_dir_all(
+        path.parent()
+            .expect("native resource manifest parent missing"),
+    )
+    .expect("failed to prepare native resource manifest directory");
+    std::fs::write(path, bundles.join("\n")).expect("failed to write native resource manifest");
 }
 
 fn emit_build_identity(output: &mut impl Write) {

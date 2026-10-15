@@ -45,6 +45,8 @@ export interface MockMessage {
   durationSeconds?: number;
   transferState?: 'ready' | 'failed';
   edited?: boolean;
+  pinned?: boolean;
+  threadReplies?: MockMessage[];
 }
 
 export interface MockConversation {
@@ -306,8 +308,13 @@ export const CONVERSATIONS: MockConversation[] = [
 
 export const MESSAGES: Record<string, MockMessage[]> = {
   'conv-1': [
-    { id: 'm1', senderId: 'user-3', content: CHAT_JOURNEY_LOCALE === 'zh' ? '我还在确认重连是否恢复。' : "I'm still verifying the reconnect.", timestamp: Date.now() - 540_000, type: 'text' },
-    { id: 'm2', senderId: 'user-1', content: CHAT_JOURNEY.messages.inbound[CHAT_JOURNEY_LOCALE], timestamp: Date.now() - 360_000, type: 'text' },
+    { id: 'm1', senderId: 'user-3', content: CHAT_JOURNEY_LOCALE === 'zh' ? '我还在确认重连是否恢复。' : "I'm still verifying the reconnect.", timestamp: Date.now() - 540_000, type: 'text', pinned: true,
+      threadReplies: [
+        { id: 'tr1', senderId: 'user-self', content: 'The session is back. Checking delivery next.', timestamp: Date.now() - 520_000, type: 'text', status: 'read' },
+        { id: 'tr2', senderId: 'user-1', content: 'Keep the gate closed until the check is complete.', timestamp: Date.now() - 500_000, type: 'text' },
+        { id: 'tr3', senderId: 'user-3', content: 'Agreed. I will post the result here.', timestamp: Date.now() - 480_000, type: 'text' },
+      ] },
+    { id: 'm2', senderId: 'user-1', content: CHAT_JOURNEY.messages.inbound[CHAT_JOURNEY_LOCALE], timestamp: Date.now() - 360_000, type: 'text', pinned: true },
     { id: CHAT_JOURNEY_MESSAGE_ID, senderId: 'user-self', content: CHAT_JOURNEY.messages.outbound[CHAT_JOURNEY_LOCALE], timestamp: Date.now() - 240_000, type: 'text', status: 'failed' },
     { id: 'm4', senderId: 'system', content: CHAT_JOURNEY_LOCALE === 'zh' ? '已保存在本机，等待发送。' : 'Saved on this device · waiting to send.', timestamp: Date.now() - 210_000, type: 'system' },
   ],

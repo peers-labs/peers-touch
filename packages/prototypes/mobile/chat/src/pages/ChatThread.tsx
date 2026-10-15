@@ -1,16 +1,25 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Input, Typography } from 'antd';
-import type { TextAreaRef } from 'antd/es/input/TextArea';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Typography } from 'antd';
 import {
   AlertCircle, ArrowLeft, Check, CheckCheck, ChevronRight, Clock,
   Copy, CornerUpLeft, EyeOff, File, Flag as FlagIcon, Forward,
-  Image as ImageIcon, Laugh, ListChecks, LockKeyhole,
+  Image as ImageIcon, LockKeyhole,
   MessageSquare, MoreVertical, Pencil, Phone, Pin,
-  RefreshCw, RotateCcw, Send, ShieldX, Smile, Video, X,
+  RefreshCw, RotateCcw, ShieldX, Video, X,
 } from 'lucide-react';
 import type { Conversation, Message, MessageStatus, MobileUiEvidence, ReactionKind } from '../types';
-import { REACTION_EMOJI, REACTION_EMOJI_EXTENDED, FULL_EMOJI_GRID } from '../types';
-import { demoMessages } from '../data';
+import { REACTION_EMOJI, REACTION_KINDS } from '../types';
+import { demoMessages, releaseSender } from '../data';
+import { messageSender, mobileMessageClusters } from '../messagePresentation';
+import { ReactionChip } from '../../../../shared/ReactionChip';
+import { ReactionPicker } from '../../../../shared/ReactionPicker';
+import { InlineMessageReplies } from '../../../../shared/InlineMessageReplies';
+import { MessageAuthor } from '../../../../shared/MessageAuthor';
+import { PinnedMessageCarousel } from '../../../../shared/PinnedMessageCarousel';
+import {
+  MobileMessageComposer,
+  type MobileComposerAttachment,
+} from '../components/MobileMessageComposer';
 import { ThreadView } from '../components/ThreadView';
 import { ForwardPicker } from '../components/ForwardPicker';
 import { ChatHistorySearch } from '../components/ChatHistorySearch';
@@ -26,14 +35,47 @@ import {
 } from '../../../../shared/chat-journey';
 import type { PrototypeCallMediaKind } from '../callPrototype';
 import { IdentityAvatar } from '../components/IdentityAvatar';
+import { ConfirmationDialog } from '../components/ConfirmationDialog';
 import {
   InlineSurfaceNotice,
   RouteSurfaceState,
   ThreadSkeleton,
 } from '../components/MobileSurfaceState';
+import { useDismissableLayer } from '../components/useDismissableLayer';
 
 const { Text } = Typography;
 const messageKey = (message: Message) => message.id;
+const reactionLabels: Record<ReactionKind, string> = {
+  like: copy['mobile.moments.reaction.like'],
+  love: copy['mobile.moments.reaction.love'],
+  laugh: copy['mobile.moments.reaction.laugh'],
+  wow: copy['mobile.moments.reaction.wow'],
+  celebrate: copy['mobile.moments.reaction.celebrate'],
+};
+
+function toggleReaction(
+  reactions: NonNullable<Message['reactions']>,
+  kind: ReactionKind,
+): NonNullable<Message['reactions']> {
+  const found = reactions.find((reaction) => reaction.kind === kind);
+  if (found?.byMe) {
+    return reactions
+      .map((reaction) => (
+        reaction.kind === kind
+          ? { ...reaction, byMe: false, count: reaction.count - 1 }
+          : reaction
+      ))
+      .filter((reaction) => reaction.count > 0);
+  }
+  if (found) {
+    return reactions.map((reaction) => (
+      reaction.kind === kind
+        ? { ...reaction, byMe: true, count: reaction.count + 1 }
+        : reaction
+    ));
+  }
+  return [...reactions, { kind, byMe: true, count: 1 }];
+}
 
 export function ChatThread({
   conversation,
@@ -58,30 +100,25 @@ export function ChatThread({
 }) {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [inputValue, setInputValue] = useState('');
-  const [composerEmojiOpen, setComposerEmojiOpen] = useState(false);
-  const composerInputRef = useRef<TextAreaRef | null>(null);
-
-  function insertComposerEmoji(emoji: string) {
-    const textarea = composerInputRef.current?.resizableTextArea?.textArea;
-    const start = textarea?.selectionStart ?? inputValue.length;
-    const end = textarea?.selectionEnd ?? inputValue.length;
-    setInputValue(`${inputValue.slice(0, start)}${emoji}${inputValue.slice(end)}`);
-    requestAnimationFrame(() => {
-      if (!textarea) return;
-      const position = start + emoji.length;
-      textarea.focus();
-      textarea.setSelectionRange(position, position);
-    });
-  }
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [actionSheetMessage, setActionSheetMessage] = useState<Message | null>(null);
+  const actionSheetRef = useRef<HTMLDivElement>(null);
+  const closeActionSheet = useCallback(() => {
+    setActionSheetMessage(null);
+  }, []);
+  useDismissableLayer({
+    open: actionSheetMessage !== null,
+    containerRef: actionSheetRef,
+    onDismiss: closeActionSheet,
+    dismissOnWindowBlur: true,
+  });
   const [isTyping] = useState(
     initialMessages.length > 0
       && !initialMessages.some((message) => message.status === 'failed' || message.status === 'unknown'),
   );
-  const [threadMessage, setThreadMessage] = useState<Message | null>(null);
+  const [threadMessageId, setThreadMessageId] = useState<string | null>(null);
+  const threadMessage = messages.find((message) => message.id === threadMessageId) ?? null;
   const [showPinnedMessages, setShowPinnedMessages] = useState(false);
-  const [showEmojiGrid, setShowEmojiGrid] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastKey, setToastKey] = useState(0);
   const [showChatDetails, setShowChatDetails] = useState(false);
@@ -102,33 +139,20 @@ export function ChatThread({
     : resolveChatJourneyLocale(window.location.search, window.navigator.language);
   const journeyCopy = CHAT_JOURNEY_COPY[locale];
 
-  const clusterPositions = useMemo(() => {
-    const positions = new Map<string, { start: boolean; end: boolean }>();
-    const sameCluster = (left?: Message, right?: Message) => Boolean(
-      left
-      && right
-      && !left.dateLabel
-      && !right.dateLabel
-      && !left.recalled
-      && !right.recalled
-      && !left.moderated
-      && !right.moderated
-      && left.mine === right.mine,
-    );
-    messages.forEach((message, index) => {
-      if (message.dateLabel) return;
-      positions.set(message.id, {
-        start: !sameCluster(messages[index - 1], message),
-        end: !sameCluster(message, messages[index + 1]),
-      });
-    });
-    return positions;
-  }, [messages]);
+  const clusterPositions = useMemo(
+    () => mobileMessageClusters(messages, conversation),
+    [messages, conversation],
+  );
 
   useEffect(() => () => {
     retryTimers.current.forEach((timer) => window.clearTimeout(timer));
     retryTimers.current.clear();
   }, []);
+
+  useEffect(() => {
+    if (!actionSheetMessage) return;
+    requestAnimationFrame(() => actionSheetRef.current?.focus());
+  }, [actionSheetMessage]);
 
   useLayoutEffect(() => {
     if (!targetMessageId || showChatDetails || showPinnedMessages || threadMessage) return;
@@ -140,11 +164,12 @@ export function ChatThread({
     setThreadState(uiEvidence.chatThreadState);
   }, [uiEvidence.chatThreadState]);
 
-  function handleSend() {
+  function handleSend(attachment?: MobileComposerAttachment) {
     const text = inputValue.trim();
-    if (!text) return;
+    if (!text && !attachment) return;
 
     if (editingMessage) {
+      if (!text) return;
       setMessages((prev) => prev.map((m) =>
         m.id === editingMessage.id ? { ...m, text } : m,
       ));
@@ -156,14 +181,41 @@ export function ChatThread({
     const newMsg: Message = {
       id: `m-${Date.now()}`,
       mine: true,
-      text,
+      text: text || undefined,
+      image: attachment?.kind === 'image' && attachment.previewUrl
+        ? `url("${attachment.previewUrl}") center / cover`
+        : undefined,
+      file: attachment?.kind === 'file'
+        ? { name: attachment.name, size: attachment.size }
+        : undefined,
+      timestamp: Date.now(),
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       status: 'sent',
-      reply: replyTo ? { name: replyTo.mine ? 'You' : conversation.name, text: replyTo.text || (replyTo.image ? '[Photo]' : '[File]') } : undefined,
+      reply: replyTo ? { name: messageSender(replyTo, conversation).name, text: replyTo.text || (replyTo.image ? '[Photo]' : '[File]') } : undefined,
     };
     setMessages((prev) => [...prev, newMsg]);
     setInputValue('');
     setReplyTo(null);
+  }
+
+  function handleThreadReply(messageId: string, text: string, attachment?: MobileComposerAttachment) {
+    const reply: Message = {
+      id: `tr-${Date.now()}`,
+      mine: true,
+      text: text || undefined,
+      image: attachment?.kind === 'image' && attachment.previewUrl
+        ? `url("${attachment.previewUrl}") center / cover`
+        : undefined,
+      file: attachment?.kind === 'file'
+        ? { name: attachment.name, size: attachment.size }
+        : undefined,
+      timestamp: Date.now(),
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), status: 'sent',
+    };
+    setMessages((current) => current.map((message) => {
+      if (message.id !== messageId || message.recalled || message.moderated) return message;
+      return { ...message, threadReplies: [...(message.threadReplies ?? []), reply] };
+    }));
   }
 
   function handleRetry(messageId: string) {
@@ -195,6 +247,7 @@ export function ChatThread({
           {
             id: 'release-hold-mobile-ack',
             mine: false,
+            sender: releaseSender,
             text: CHAT_JOURNEY.messages.followup[locale],
             time: CHAT_JOURNEY.timestamps.recovered,
             status: 'read' as const,
@@ -219,6 +272,7 @@ export function ChatThread({
           {
             id: 'release-hold-mobile-ack',
             mine: false,
+            sender: releaseSender,
             text: CHAT_JOURNEY.messages.followup[locale],
             time: CHAT_JOURNEY.timestamps.recovered,
             status: 'read' as const,
@@ -248,14 +302,17 @@ export function ChatThread({
     if (action === 'reply') {
       setReplyTo(actionSheetMessage);
     } else if (action === 'thread') {
-      setThreadMessage(actionSheetMessage);
+      setThreadMessageId(actionSheetMessage.id);
     } else if (action === 'forward') {
       setForwardMessage(actionSheetMessage);
     } else if (action === 'copy') {
-      if (actionSheetMessage.text) {
-        navigator.clipboard.writeText(actionSheetMessage.text);
+      if (actionSheetMessage.text && navigator.clipboard) {
+        void navigator.clipboard.writeText(actionSheetMessage.text)
+          .then(() => showToast('Copied to clipboard'))
+          .catch(() => showToast('Copy unavailable'));
+      } else {
+        showToast('Copy unavailable');
       }
-      showToast('Copied to clipboard');
     } else if (action === 'edit') {
       setEditingMessage(actionSheetMessage);
       setInputValue(actionSheetMessage.text ?? '');
@@ -277,15 +334,12 @@ export function ChatThread({
       setMessages((prev) => prev.map((m) =>
         m.id === actionSheetMessage.id ? { ...m, pinned: !m.pinned } : m,
       ));
-    } else if (action === 'multiselect') {
-      showToast('Select messages to forward or delete');
     } else if (action === 'flag') {
       setMessages((prev) => prev.map((m) =>
         m.id === actionSheetMessage.id ? { ...m, flagged: !m.flagged } : m,
       ));
     }
     setActionSheetMessage(null);
-    setShowEmojiGrid(false);
   }
 
   function showToast(msg: string) {
@@ -303,28 +357,13 @@ export function ChatThread({
   function handleReaction(msgId: string, kind: ReactionKind) {
     setMessages((prev) => prev.map((m) => {
       if (m.id !== msgId) return m;
-      const existing = m.reactions ?? [];
-      const found = existing.find((r) => r.kind === kind);
-      if (found && found.byMe) {
-        // Remove my reaction
-        const updated = existing
-          .map((r) => r.kind === kind ? { ...r, byMe: false, count: r.count - 1 } : r)
-          .filter((r) => r.count > 0);
-        return { ...m, reactions: updated };
-      }
-      if (found) {
-        return { ...m, reactions: existing.map((r) => r.kind === kind ? { ...r, byMe: true, count: r.count + 1 } : r) };
-      }
-      return { ...m, reactions: [...existing, { kind, byMe: true, count: 1 }] };
+      return { ...m, reactions: toggleReaction(m.reactions ?? [], kind) };
     }));
-    setActionSheetMessage(null);
-    setShowEmojiGrid(false);
-  }
-
-  function handleEmojiReaction(msgId: string, emoji: string) {
-    const emojiToKind: Record<string, ReactionKind> = { '\u{1F44D}': 'like', '\u{2764}\u{FE0F}': 'love', '\u{1F604}': 'laugh', '\u{1F62E}': 'wow', '\u{1F389}': 'celebrate' };
-    const kind = emojiToKind[emoji] ?? 'like';
-    handleReaction(msgId, kind);
+    setActionSheetMessage((current) => (
+      current?.id === msgId
+        ? { ...current, reactions: toggleReaction(current.reactions ?? [], kind) }
+        : current
+    ));
   }
 
   function renderReceipt(status?: MessageStatus) {
@@ -336,7 +375,6 @@ export function ChatThread({
     return <Clock size={13} className="mp-receipt mp-receipt--pending" />;
   }
 
-  const pinnedMessage = messages.find((m) => m.pinned && !m.dateLabel && !m.recalled && !m.moderated);
   const pinnedMessages = messages.filter((m) => m.pinned && !m.dateLabel && !m.recalled && !m.moderated);
 
   return (
@@ -387,15 +425,10 @@ export function ChatThread({
         </button>
       </header>
 
-      {pinnedMessage && threadState !== 'route-error' && (
-        <button type="button" className="mp-pinned-banner" onClick={() => setShowPinnedMessages(true)}>
-          <Pin size={14} />
-          <span className="mp-pinned-banner-content">
-            <Text type="secondary" className="mp-pinned-banner-label">Pinned message</Text>
-            <Text className="mp-pinned-banner-text" ellipsis>{pinnedMessage.text || '[Media]'}</Text>
-          </span>
-          <ChevronRight size={16} />
-        </button>
+      {threadState !== 'route-error' && (
+        <PinnedMessageCarousel messages={pinnedMessages.map((message) => ({
+          id: message.id, text: message.text || '[Media]', author: messageSender(message, conversation).name,
+        }))} onJump={setTargetMessageId} />
       )}
 
       {threadState === 'route-error' ? (
@@ -449,36 +482,38 @@ export function ChatThread({
                               ? copy['mobile.chat.moderatedMessage']
                               : msg.mine
                                 ? 'You recalled a message'
-                                : `${conversation.name} recalled a message`}
+                                : `${messageSender(msg, conversation).name} recalled a message`}
                           </span>
                         </div>
                       </div>
                     );
                   }
-                  const cluster = clusterPositions.get(msg.id) ?? { start: true, end: true };
+                  const cluster = clusterPositions.get(msg.id)!;
+                  const sender = messageSender(msg, conversation);
                   const checking = checkingMessageIds.has(msg.id);
                   return (
                     <div key={msg.id}
                       className={`mp-message-row ${msg.mine ? 'mine' : 'peer'} ${cluster.start ? 'cluster-start' : ''} ${cluster.end ? 'cluster-end' : ''}`}
-                      data-scroll-anchor-id={msg.id}>
+                      data-scroll-anchor-id={msg.id}
+                      data-chat-message-id={msg.id}
+                      data-chat-message-own={msg.mine ? 'true' : 'false'}
+                      data-chat-cluster-start={cluster.start}
+                      data-chat-cluster-end={cluster.end}>
                       {!msg.mine && (
                         <span className="mp-message-avatar-slot">
                           {cluster.start && (
-                            <IdentityAvatar
-                              name={conversation.name}
-                              initials={conversation.avatar}
-                              src={conversation.avatarUrl}
-                              kind={conversation.isGroup ? 'group' : 'person'}
+                            <MessageAuthor name={sender.name}><IdentityAvatar
+                              name={sender.name}
+                              initials={sender.avatar}
+                              src={sender.avatarUrl}
+                              kind="person"
                               size={32}
                               renderState={uiEvidence.avatarState}
-                            />
+                            /></MessageAuthor>
                           )}
                         </span>
                       )}
                       <div className="mp-message-content">
-                        {conversation.isGroup && !msg.mine && cluster.start && (
-                          <span className="mp-message-sender">{conversation.name}</span>
-                        )}
                         {msg.flagged && (
                           <span className="mp-message-flag" title="Flagged on this device">
                             <FlagIcon size={12} fill="currentColor" />
@@ -516,33 +551,39 @@ export function ChatThread({
                             {msg.text}
                           </div>
                         )}
-                        {msg.threadCount && msg.threadCount > 0 && (
-                          <button type="button" className="mp-thread-badge" onClick={() => setThreadMessage(msg)}>
-                            <MessageSquare size={12} />
-                            <span>{copy['mobile.chat.threadReplyCount'].replace('{{count}}', String(msg.threadCount))}</span>
-                          </button>
-                        )}
+                        <InlineMessageReplies onOpenThread={() => setThreadMessageId(msg.id)}
+                          replies={(msg.threadReplies ?? []).map((reply) => {
+                          const author = messageSender(reply, conversation);
+                          return {
+                            id: reply.id, time: reply.time,
+                            body: reply.moderated ? 'Message removed by a moderator'
+                              : reply.recalled ? 'Message recalled' : reply.text || (reply.image ? '[Photo]' : '[File]'),
+                            avatar: <MessageAuthor name={author.name}><IdentityAvatar name={author.name}
+                              initials={author.avatar} src={author.avatarUrl} kind="person" size={20} /></MessageAuthor>,
+                          };
+                        })} />
                         {msg.reactions && msg.reactions.length > 0 && (
                           <div className="mp-reaction-row">
                             {msg.reactions.map((reaction) => (
-                              <button
+                              <ReactionChip
                                 key={reaction.kind}
-                                type="button"
-                                className={`mp-reaction-chip ${reaction.byMe ? 'mine' : ''}`}
+                                touch
+                                emoji={REACTION_EMOJI[reaction.kind]}
+                                count={reaction.count}
+                                selected={reaction.byMe}
+                                reactionId={reaction.kind}
+                                label={(reaction.byMe
+                                  ? copy['mobile.reaction.removeNamed']
+                                  : copy['mobile.reaction.addNamed'])
+                                  .replace('{{reaction}}', reactionLabels[reaction.kind])}
                                 onClick={() => handleReaction(msg.id, reaction.kind)}
-                              >
-                                <span>{REACTION_EMOJI[reaction.kind]}</span>
-                                <span className="mp-reaction-count">{reaction.count}</span>
-                              </button>
+                              />
                             ))}
-                            <button
-                              type="button"
-                              className="mp-reaction-add"
+                            <ReactionChip
+                              touch
                               onClick={() => setActionSheetMessage(msg)}
-                              aria-label="Add reaction"
-                            >
-                              <Laugh size={15} />
-                            </button>
+                              label={copy['mobile.reaction.add']}
+                            />
                           </div>
                         )}
                         {(cluster.end || msg.status === 'failed' || msg.status === 'unknown') && (
@@ -586,14 +627,14 @@ export function ChatThread({
                 {isTyping && messages.length <= 200 && (
                   <div className="mp-message-row peer cluster-start cluster-end">
                     <span className="mp-message-avatar-slot">
-                      <IdentityAvatar
+                      {!conversation.isGroup && <IdentityAvatar
                         name={conversation.name}
                         initials={conversation.avatar}
                         src={conversation.avatarUrl}
-                        kind={conversation.isGroup ? 'group' : 'person'}
+                        kind="person"
                         size={32}
                         renderState={uiEvidence.avatarState}
-                      />
+                      />}
                     </span>
                     <div className="mp-typing-bubble">
                       <span className="mp-typing-dot" /><span className="mp-typing-dot" /><span className="mp-typing-dot" />
@@ -608,7 +649,7 @@ export function ChatThread({
             <div className="mp-reply-banner">
               <CornerUpLeft size={16} className="mp-reply-banner-icon" />
               <div className="mp-reply-banner-content">
-                <Text strong className="mp-reply-banner-name">Replying to {replyTo.mine ? 'yourself' : conversation.name}</Text>
+                <Text strong className="mp-reply-banner-name">Replying to {replyTo.mine ? 'yourself' : messageSender(replyTo, conversation).name}</Text>
                 <Text type="secondary" className="mp-reply-banner-text">{replyTo.text || (replyTo.image ? '[Photo]' : '[File]')}</Text>
               </div>
               <button type="button" className="mp-reply-banner-close" onClick={() => setReplyTo(null)} aria-label="Cancel reply">
@@ -630,54 +671,9 @@ export function ChatThread({
             </div>
           )}
 
-          <div className="mp-composer" data-thread-state={threadState}>
-            <div className={`mp-composer-dock${composerEmojiOpen ? ' is-focused' : ''}`}>
-              {composerEmojiOpen && (
-                <div className="mp-composer-emoji" role="dialog" aria-label="Emoji picker">
-                  {FULL_EMOJI_GRID.map((emoji, index) => (
-                    <button
-                      key={`${emoji}-${index}`}
-                      type="button"
-                      className="mp-composer-emoji-btn"
-                      aria-label={`Insert ${emoji}`}
-                      onClick={() => insertComposerEmoji(emoji)}
-                    >
-                      {emoji}
-                    </button>
-                  ))}
-                </div>
-              )}
-              <Input.TextArea
-                ref={composerInputRef}
-                className="mp-composer-input"
-                value={inputValue}
-                placeholder={conversation.isGroup ? 'Message the group...' : 'Send a message...'}
-                autoSize={{ minRows: 1, maxRows: 4 }}
-                onChange={(e) => setInputValue(e.target.value)}
-                onPressEnter={(e) => { if (!e.shiftKey) { e.preventDefault(); handleSend(); } }}
-              />
-              <div className="mp-composer-tools">
-                <button
-                  type="button"
-                  className="mp-composer-tool"
-                  aria-label="Emoji"
-                  aria-pressed={composerEmojiOpen}
-                  onClick={() => setComposerEmojiOpen((open) => !open)}
-                >
-                  <Smile size={20} />
-                </button>
-                <button
-                  type="button"
-                  className={`mp-composer-send ${inputValue.trim() ? 'active' : ''}`}
-                  aria-label="Send"
-                  disabled={!inputValue.trim()}
-                  onClick={handleSend}
-                >
-                  <Send size={18} />
-                </button>
-              </div>
-            </div>
-          </div>
+          <MobileMessageComposer value={inputValue} onChange={setInputValue} onSend={handleSend}
+            placeholder={conversation.isGroup ? 'Message the group…' : 'Message…'} state={threadState}
+            allowAttachments={!editingMessage} />
         </>
       )}
         </>
@@ -688,49 +684,31 @@ export function ChatThread({
 
       {/* Feishu-style action sheet */}
       {actionSheetMessage && (
-        <div className="mp-action-sheet-backdrop" onClick={() => { setActionSheetMessage(null); setShowEmojiGrid(false); }}>
-          <div className="mp-action-sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="mp-action-sheet-backdrop" onClick={closeActionSheet}>
+          <div ref={actionSheetRef} className="mp-action-sheet" role="dialog" aria-modal="true"
+            aria-label="Message actions" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
             <div className="mp-action-sheet-handle" />
 
             {/* Reaction row */}
             {!actionSheetMessage.recalled && !actionSheetMessage.moderated && (
               <div className="mp-reaction-bar-wrapper">
-                <div className="mp-reaction-bar">
-                  {REACTION_EMOJI_EXTENDED.map((emoji, idx) => {
-                    return (
-                      <button
-                        key={idx}
-                        type="button"
-                        className="mp-reaction-bar-btn"
-                        onClick={() => handleEmojiReaction(actionSheetMessage.id, emoji)}
-                      >
-                        {emoji}
-                      </button>
-                    );
+                <ReactionPicker
+                  label={copy['mobile.reaction.choose']}
+                  items={REACTION_KINDS.map((kind) => {
+                    const selected = actionSheetMessage.reactions
+                      ?.some((reaction) => reaction.kind === kind && reaction.byMe) ?? false;
+                    const action = selected
+                      ? copy['mobile.reaction.removeNamed']
+                      : copy['mobile.reaction.addNamed'];
+                    return {
+                      id: kind,
+                      emoji: REACTION_EMOJI[kind],
+                      selected,
+                      label: action.replace('{{reaction}}', reactionLabels[kind]),
+                    };
                   })}
-                </div>
-                <button
-                  type="button"
-                  className="mp-reaction-more-btn"
-                  onClick={() => setShowEmojiGrid(!showEmojiGrid)}
-                >
-                  ···
-                </button>
-              </div>
-            )}
-
-            {/* Full emoji grid */}
-            {showEmojiGrid && (
-              <div className="mp-emoji-grid">
-                {FULL_EMOJI_GRID.map((emoji, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => handleEmojiReaction(actionSheetMessage.id, emoji)}
-                  >
-                    {emoji}
-                  </button>
-                ))}
+                  onToggle={(kind) => handleReaction(actionSheetMessage.id, kind)}
+                />
               </div>
             )}
 
@@ -767,9 +745,6 @@ export function ChatThread({
             )}
 
             <div className="mp-action-group">
-              <button type="button" className="mp-action-item" onClick={() => handleAction('multiselect')}>
-                <ListChecks size={19} /><span>Multiselect</span>
-              </button>
               <button type="button" className="mp-action-item" onClick={() => handleAction('flag')}>
                 <FlagIcon size={19} />
                 <span>{actionSheetMessage.flagged ? 'Unflag on this device' : 'Flag on this device'}</span>
@@ -799,6 +774,8 @@ export function ChatThread({
       {/* Forward Picker Modal */}
       {forwardMessage && (
         <ForwardPicker
+          sourceName={messageSender(forwardMessage, conversation).name}
+          preview={forwardMessage.text || forwardMessage.file?.name || '[Photo]'}
           onSelect={(name) => {
             showToast(`Forwarded to ${name}`);
             setForwardMessage(null);
@@ -829,7 +806,7 @@ export function ChatThread({
                     setShowPinnedMessages(false);
                     setTargetMessageId(message.id);
                   }}>
-                  <span className="mp-pinned-item-sender">{message.mine ? 'You' : conversation.name}</span>
+                  <span className="mp-pinned-item-sender">{messageSender(message, conversation).name}</span>
                   <span className="mp-pinned-item-text">{message.text || '[Media]'}</span>
                   <span className="mp-pinned-item-time">{message.time}</span>
                 </button>
@@ -870,7 +847,16 @@ export function ChatThread({
 
               <div className="mp-chat-details-section">
                 <button type="button" className="mp-chat-details-item" onClick={() => setDetailsView('search')}>
-                  <span>Search Chat History</span>
+                  <span className="mp-chat-details-label">Search Chat History</span>
+                  <span className="mp-chat-details-meta" aria-hidden="true" />
+                  <ChevronRight size={16} className="mp-row-chevron" />
+                </button>
+                <button type="button" className="mp-chat-details-item" onClick={() => {
+                  setShowChatDetails(false);
+                  setShowPinnedMessages(true);
+                }}>
+                  <span className="mp-chat-details-label">Pinned messages</span>
+                  <span className="mp-chat-details-meta">{pinnedMessages.length}</span>
                   <ChevronRight size={16} className="mp-row-chevron" />
                 </button>
               </div>
@@ -936,7 +922,7 @@ export function ChatThread({
           {/* Search Chat History Sub-view */}
           {detailsView === 'search' && (
             <ChatHistorySearch messages={messages} conversationKey={conversation.key}
-              peerName={conversation.name} memory={listMemory} searchDemo={searchDemo} onSelect={(id) => {
+              senderName={(message) => messageSender(message, conversation).name} memory={listMemory} searchDemo={searchDemo} onSelect={(id) => {
                 setTargetMessageId(id);
                 setDetailsView('main');
                 setShowChatDetails(false);
@@ -979,48 +965,48 @@ export function ChatThread({
             </div>
           )}
 
-          {/* Confirm Dialog */}
           {confirmAction && (
-            <div className="mp-confirm-backdrop" onClick={() => setConfirmAction(null)}>
-              <div className="mp-confirm-dialog" onClick={(e) => e.stopPropagation()}>
-                <div className="mp-confirm-title">
-                  {confirmAction === 'clear' && 'Clear Local Chat Data?'}
-                  {confirmAction === 'block' && (blocked ? 'Unblock Contact?' : 'Block Contact?')}
-                  {confirmAction === 'report' && 'Report this contact?'}
-                </div>
-                <div className="mp-confirm-desc">
-                  {confirmAction === 'clear' && 'Permanently removes messages, search entries, and unreferenced media from this device. Other devices and participants are not affected.'}
-                  {confirmAction === 'block' && (blocked ? `${conversation.name} will be able to message you again.` : `${conversation.name} will no longer be able to send you messages.`)}
-                  {confirmAction === 'report' && 'This will be reported to our safety team for review.'}
-                </div>
-                <div className="mp-confirm-actions">
-                  <button type="button" className="mp-confirm-btn" onClick={() => setConfirmAction(null)}>Cancel</button>
-                  <button type="button" className="mp-confirm-btn mp-confirm-btn--danger" onClick={() => {
-                    if (confirmAction === 'clear') {
-                      setMessages([]);
-                      showToast('Local chat data cleared');
-                    } else if (confirmAction === 'block') {
-                      onBlockedChange(!blocked);
-                      showToast(blocked ? 'Contact unblocked' : 'Contact blocked');
-                    } else if (confirmAction === 'report') {
-                      showToast('Report submitted');
-                    }
-                    setConfirmAction(null);
-                  }}>
-                    {confirmAction === 'clear' && 'Clear Local Data'}
-                    {confirmAction === 'block' && (blocked ? 'Unblock' : 'Block')}
-                    {confirmAction === 'report' && 'Report'}
-                  </button>
-                </div>
-              </div>
-            </div>
+            <ConfirmationDialog
+              title={confirmAction === 'clear'
+                ? 'Clear Local Chat Data?'
+                : confirmAction === 'block'
+                  ? blocked ? 'Unblock Contact?' : 'Block Contact?'
+                  : 'Report this contact?'}
+              description={confirmAction === 'clear'
+                ? 'Permanently removes messages, search entries, and unreferenced media from this device. Other devices and participants are not affected.'
+                : confirmAction === 'block'
+                  ? blocked
+                    ? `${conversation.name} will be able to message you again.`
+                    : `${conversation.name} will no longer be able to send you messages.`
+                  : 'This will be reported to our safety team for review.'}
+              confirmLabel={confirmAction === 'clear'
+                ? 'Clear Local Data'
+                : confirmAction === 'block'
+                  ? blocked ? 'Unblock' : 'Block'
+                  : 'Report'}
+              onCancel={() => setConfirmAction(null)}
+              onConfirm={() => {
+                if (confirmAction === 'clear') {
+                  setMessages([]);
+                  showToast('Local chat data cleared');
+                } else if (confirmAction === 'block') {
+                  onBlockedChange(!blocked);
+                  showToast(blocked ? 'Contact unblocked' : 'Contact blocked');
+                } else {
+                  showToast('Report submitted');
+                }
+                setConfirmAction(null);
+              }}
+            />
           )}
         </div>
       )}
 
       {/* Thread View overlay */}
       {threadMessage && (
-        <ThreadView message={threadMessage} conversation={conversation} onBack={() => setThreadMessage(null)} />
+        <ThreadView message={threadMessage} conversation={conversation}
+          onReply={(text, attachment) => handleThreadReply(threadMessage.id, text, attachment)}
+          onBack={() => setThreadMessageId(null)} />
       )}
     </div>
   );

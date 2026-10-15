@@ -1,12 +1,18 @@
 import assert from 'node:assert/strict';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { verifyInlineComments } from './verify-inline-comments.mjs';
+import { verifySocialInteractions } from './verify-social-interactions.mjs';
 
 const repoRoot = fileURLToPath(new URL('../../../../../', import.meta.url));
 const require = createRequire(resolve(repoRoot, 'apps/desktop/package.json'));
 const { chromium } = require('@playwright/test');
+const settingsCatalog = JSON.parse(await readFile(
+  resolve(repoRoot, 'packages/prototypes/mobile/chat/src/settingsCapabilities.json'),
+  'utf8',
+));
 const url = process.env.PROTOTYPE_URL ?? 'http://localhost:3200';
 const output = resolve(repoRoot, process.env.PROTOTYPE_EVIDENCE_DIR
   ?? 'apps/mobile/src-tauri/target/prototype-layout');
@@ -217,8 +223,14 @@ try {
         `group avatar must use lg radius 12 and never be circular, got ${shape.radius} / size ${shape.size}`);
     }
 
-    // Interactive controls are never circular/pill: the chat search input
-    // keeps a compact md corner, not a full pill.
+    // Search is intent-mounted. Its input keeps a compact md corner and
+    // unmounts again when the header command closes the search surface.
+    assert.equal(
+      await device.locator('.mp-search-bar .ant-input-affix-wrapper').count(),
+      0,
+      'chat search must stay hidden before explicit intent',
+    );
+    await device.getByRole('button', { name: 'Search chats', exact: true }).click();
     const searchFields = await device.locator('.mp-search-bar .ant-input-affix-wrapper').evaluateAll(
       (elements) => elements.map((element) => {
         const rect = element.getBoundingClientRect();
@@ -229,11 +241,13 @@ try {
         };
       }),
     );
-    assert(searchFields.length > 0, 'expected the chat search input on the default list');
+    assert.equal(searchFields.length, 1, 'expected one intent-mounted chat search input');
     for (const field of searchFields) {
       assert(field.radius === 8 && field.radius < field.height / 2 - 1,
         `search input must use md radius 8 and never be a pill, got radius ${field.radius} / height ${field.height}`);
     }
+    await device.getByRole('button', { name: 'Close search', exact: true }).click();
+    assert.equal(await device.locator('.mp-search-bar .ant-input-affix-wrapper').count(), 0);
 
     // ── Desktop↔Mobile chat parity (measured on the delivery-recovery thread) ──
     await open('chat-delivery-recovery');
@@ -281,8 +295,8 @@ try {
     assert(retryBox.inMeta, 'inline retry must live inside the message meta row');
     assert(retryBox.height <= 28, `inline retry must be a compact inline action, height ${retryBox.height}px`);
 
-    // 3. Composer is one grounded soft-gray dock: no exterior attach button,
-    //    send/emoji live inside the dock, whose frame inside the bar is equal.
+    // 3. Composer is one grounded soft-gray dock: no exterior attach button;
+    //    attach/emoji/send live inside the dock, whose frame is equal.
     assert.equal(await device.locator('.mp-composer-attach').count(), 0,
       'exterior composer attach button must not exist');
     const dock = device.locator('.mp-composer-dock').first();
@@ -291,6 +305,7 @@ try {
       const dockEl = bar.querySelector('.mp-composer-dock');
       const send = bar.querySelector('.mp-composer-send');
       const emoji = bar.querySelector('.mp-composer-tool[aria-label="Emoji"]');
+      const attach = bar.querySelector('.mp-composer-tool[aria-label="Attach"]');
       const barRect = bar.getBoundingClientRect();
       const dockRect = dockEl.getBoundingClientRect();
       const insets = {
@@ -305,63 +320,82 @@ try {
         radius,
         sendInside: dockEl.contains(send),
         emojiInside: dockEl.contains(emoji),
+        attachInside: dockEl.contains(attach),
+        attachCount: bar.querySelectorAll('.mp-composer-tool[aria-label="Attach"]').length,
       };
     });
     const insetValues = Object.values(composer.insets);
     assert(composer.radius === 12, `composer dock radius must be 12, got ${composer.radius}`);
-    assert(composer.sendInside && composer.emojiInside, 'send and emoji must live inside the dock');
+    assert(composer.sendInside && composer.emojiInside && composer.attachInside,
+      'attach, emoji, and send must live inside the dock');
+    assert.equal(composer.attachCount, 1, 'composer must expose exactly one attachment entry');
     assert(Math.max(...insetValues) - Math.min(...insetValues) <= 2,
       `composer dock frame must be equal on all four sides, got ${JSON.stringify(composer.insets)}`);
 
-    // 4. Social has the same semantic information architecture as Desktop:
-    // Home / Public / Search / Circles, plus a continuous post detail thread.
+    // 4. Details rows share stable label / metadata / chevron tracks.
+    await device.getByRole('button', { name: 'More', exact: true }).click();
+    const detailsGeometry = await device.locator('.mp-chat-details-section').first()
+      .locator('.mp-chat-details-item').evaluateAll((rows) => rows.map((row) => {
+        const label = row.querySelector('.mp-chat-details-label')?.getBoundingClientRect();
+        const meta = row.querySelector('.mp-chat-details-meta')?.getBoundingClientRect();
+        const chevron = row.querySelector('.mp-row-chevron')?.getBoundingClientRect();
+        return {
+          labelRight: label?.right,
+          metaLeft: meta?.left,
+          metaWidth: meta?.width,
+          chevronLeft: chevron?.left,
+          chevronRight: chevron?.right,
+          columns: getComputedStyle(row).gridTemplateColumns,
+        };
+      }));
+    assert.equal(detailsGeometry.length, 2);
+    assert(Math.abs(detailsGeometry[0].chevronRight - detailsGeometry[1].chevronRight) <= 1,
+      `Details chevrons must share one trailing axis: ${JSON.stringify(detailsGeometry)}`);
+    assert.equal(Math.round(detailsGeometry[1].metaWidth), 28);
+    assert(detailsGeometry[1].labelRight <= detailsGeometry[1].metaLeft,
+      `Pinned count must not overlap its label: ${JSON.stringify(detailsGeometry[1])}`);
+    assert(detailsGeometry[1].metaLeft < detailsGeometry[1].chevronLeft,
+      `Pinned count must precede the chevron: ${JSON.stringify(detailsGeometry[1])}`);
+    await capture('chat-details');
+    await device.getByRole('button', { name: 'Back', exact: true }).click();
+
+    // 5. Social scopes, header Search, Circle lifecycle, and post detail.
     await open('chat-default');
     await device.getByRole('button', { name: 'Moments', exact: true }).click();
-    const socialScopes = await device.locator('.mp-social-scope button').allTextContents();
-    assert.deepEqual(socialScopes, ['Home', 'Public', 'Search', 'Circles']);
-    assert.equal(await device.locator('[data-social-post]').count(), 5);
     await capture('social-home');
-    await device.getByRole('button', { name: 'Public', exact: true }).click();
-    assert.equal(await device.locator('[data-social-post]').count(), 2);
-    assert.equal(await device.locator('[data-social-post] .mp-moment-audience').evaluateAll(
-      (elements) => elements.every((element) => element.textContent?.trim() === 'Public'),
-    ), true);
-    await capture('social-public');
-    await device.getByRole('button', { name: 'Search', exact: true }).click();
-    await device.getByPlaceholder('Search people by name or handle', { exact: true }).fill('Carol');
-    const follow = device.getByRole('button', { name: 'Following', exact: true });
-    assert(await follow.isVisible());
-    await follow.click();
-    assert(await device.getByRole('button', { name: 'Follow', exact: true }).isVisible());
-    await capture('social-search');
-    await device.getByRole('button', { name: 'Circles', exact: true }).click();
-    assert.equal(await device.locator('.mp-circle-card').count(), 2);
-    await device.getByPlaceholder('New circle name', { exact: true }).fill('Release review');
-    await device.getByRole('button', { name: 'Create circle', exact: true }).click();
-    assert(await device.getByText('Release review', { exact: true }).isVisible());
-    await capture('social-circles');
-    await device.getByRole('button', { name: 'Home', exact: true }).click();
+    await verifySocialInteractions(page, device, capture);
+    await verifyInlineComments(page, device);
+    await device.locator('[data-comment-action="mo1"]').click();
+    await capture('social-inline-comment');
+    await device.locator('[data-social-post="mo1"] .mp-moment-comment-input').press('Escape');
     await device.getByRole('button', { name: 'Open post by Carol Li', exact: true }).click();
     assert.equal(await device.locator('[data-prototype-page="social-detail"]').count(), 1);
     assert.equal(await device.locator('.mp-tabbar').count(), 0);
-    assert(await device.getByPlaceholder('Add a comment...', { exact: true }).isVisible());
+    assert(await device.getByPlaceholder('Write a comment...', { exact: true }).isVisible());
     await capture('social-detail');
     await device.getByRole('button', { name: 'Back', exact: true }).click();
 
-    // 5. Mobile Settings preserves Desktop's four ownership groups and every
+    // 6. Mobile Settings preserves Desktop's production ownership groups and every
     // meaningful section. No generic placeholder is allowed to satisfy a row.
     await device.getByRole('button', { name: 'Me', exact: true }).click();
+    const profileGeometry = await device.locator('[data-prototype-page="settings"]').evaluate((page) => {
+      const cover = page.querySelector('.mp-profile-cover')?.getBoundingClientRect();
+      const bounds = page.getBoundingClientRect();
+      return { pageTop: bounds.top, coverTop: cover?.top ?? -1 };
+    });
+    assert(
+      Math.abs(profileGeometry.pageTop - profileGeometry.coverTop) <= 1,
+      `Me cover must own the top page boundary: ${JSON.stringify(profileGeometry)}`,
+    );
+    assert.equal(await device.getByRole('button', { name: 'Open account settings', exact: true }).count(), 0);
+    assert.equal(await device.getByRole('button', { name: 'Edit profile', exact: true }).count(), 1);
     assert.deepEqual(
       await device.locator('.mp-settings-group-title').allTextContents(),
-      ['General', 'Network', 'AI', 'Advanced'],
+      settingsCatalog.groups.map((group) => group.label),
     );
-    const settingIds = [
-      'account', 'notifications', 'privacy', 'appearance',
-      'station', 'discovery', 'federation',
-      'providers', 'models', 'memory', 'skills', 'mcp',
-      'storage', 'channels', 'applets', 'statistics', 'logs', 'cron',
-      'command-menu', 'about',
-    ];
+    const settingIds = settingsCatalog.groups.flatMap(
+      (group) => group.sections.map((section) => section.id),
+    );
     assert.equal(await device.locator('[data-setting-id]').count(), settingIds.length);
     await capture('settings-home');
     for (const settingId of settingIds) {
@@ -372,7 +406,113 @@ try {
         `generic setting placeholder leaked for ${settingId}`);
       assert(await detail.locator('.mp-setting-section, .mp-account-identity, .mp-about-hero').count() > 0,
         `setting detail ${settingId} has no meaningful section`);
-      if (settingId === 'station') await capture('settings-station');
+      await capture(`settings-${settingId}`);
+      if (settingId === 'account') {
+        assert.equal(await detail.locator('.mp-account-identity button, .mp-account-identity [role="button"]').count(), 2,
+          'Account hero must expose background and avatar editing');
+        assert.equal(await detail.locator('[data-account-mode="view"]').count(), 1);
+        await capture('settings-account-view');
+        const mediaFile = {
+          name: 'profile.png',
+          mimeType: 'image/png',
+          buffer: Buffer.from(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+            'base64',
+          ),
+        };
+        const coverChooser = page.waitForEvent('filechooser');
+        await detail.getByRole('button', { name: 'Change profile background', exact: true }).click();
+        await (await coverChooser).setFiles(mediaFile);
+        assert.equal(await detail.locator('[data-account-mode="edit"]').count(), 1);
+        assert(await detail.locator('.mp-account-cover').evaluate(
+          (element) => getComputedStyle(element).backgroundImage.includes('data:image/png'),
+        ));
+        await detail.getByRole('button', { name: 'Cancel', exact: true }).click();
+        assert.equal(
+          (await detail.locator('.mp-account-cover').getAttribute('style'))?.includes('data:image/png') ?? false,
+          false,
+        );
+        const avatarChooser = page.waitForEvent('filechooser');
+        await detail.getByRole('button', { name: /profile photo$/ }).click();
+        await (await avatarChooser).setFiles(mediaFile);
+        await detail.getByRole('button', { name: 'Save', exact: true }).click();
+        assert(await detail.locator('.mp-account-person img').evaluate(
+          (element) => element.getAttribute('src')?.startsWith('data:image/png'),
+        ));
+        await detail.getByRole('button', { name: 'Edit', exact: true }).click();
+        const profileForm = detail.locator('[data-account-mode="edit"]');
+        assert.equal(await profileForm.count(), 1);
+        assert(await detail.getByRole('button', { name: 'Cancel', exact: true }).isVisible());
+        assert(await detail.getByRole('button', { name: 'Save', exact: true }).isVisible());
+        const editGeometry = await profileForm.evaluate((form) => {
+          const owner = form.getBoundingClientRect();
+          return [...form.querySelectorAll('label')].map((label) => {
+            const caption = label.querySelector(':scope > span')?.getBoundingClientRect();
+            const input = label.querySelector('input, textarea')?.getBoundingClientRect();
+            return {
+              ownerLeft: owner.left,
+              ownerRight: owner.right,
+              inputLeft: input?.left,
+              inputRight: input?.right,
+              captionBottom: caption?.bottom,
+              inputTop: input?.top,
+            };
+          });
+        });
+        assert(editGeometry.every((row) => (
+          Math.abs(row.inputLeft - row.ownerLeft) <= 1
+          && Math.abs(row.inputRight - row.ownerRight) <= 1
+          && row.captionBottom <= row.inputTop
+        )), `Account fields must own a full row without overlap: ${JSON.stringify(editGeometry)}`);
+        await capture('settings-account-edit');
+        await profileForm.getByLabel('Display name', { exact: true }).fill('Unsaved Name');
+        await detail.getByRole('button', { name: 'Cancel', exact: true }).click();
+        assert.equal(await detail.locator('.mp-account-name').innerText(), 'Alice Chen');
+        await detail.getByRole('button', { name: 'Edit', exact: true }).click();
+        await detail.getByLabel('Display name', { exact: true }).fill('Alice Review');
+        await detail.getByRole('button', { name: 'Save', exact: true }).click();
+        assert.equal(await detail.locator('.mp-account-name').innerText(), 'Alice Review');
+        const unblockActions = detail.getByRole('button', { name: 'Unblock', exact: true });
+        await unblockActions.last().scrollIntoViewIfNeeded();
+        const accountTailGeometry = await detail.evaluate((owner) => ({
+          overflowing: owner.scrollWidth > owner.clientWidth,
+          codeWidths: [...owner.querySelectorAll('.mp-setting-code')]
+            .map((code) => code.getBoundingClientRect().width),
+          unblockRights: [...owner.querySelectorAll('.mp-setting-detail-row .ant-btn')]
+            .filter((button) => button.textContent?.trim() === 'Unblock')
+            .map((button) => button.getBoundingClientRect().right),
+        }));
+        assert.equal(accountTailGeometry.overflowing, false);
+        assert(accountTailGeometry.codeWidths.every((width) => width >= 72),
+          `Technical identity values must remain inspectable: ${JSON.stringify(accountTailGeometry.codeWidths)}`);
+        assert(accountTailGeometry.unblockRights.length === 2
+          && Math.abs(accountTailGeometry.unblockRights[0] - accountTailGeometry.unblockRights[1]) <= 1,
+        `Blocked-user actions must share one trailing edge: ${JSON.stringify(accountTailGeometry.unblockRights)}`);
+        await capture('settings-account-bottom');
+      }
+      if (settingId === 'federation') await capture('settings-federation');
+      if (settingId === 'storage') {
+        const storageGeometry = await detail.evaluate((owner) => {
+          const summary = owner.querySelector('.mp-storage-overview')?.getBoundingClientRect();
+          const total = owner.querySelector('.mp-storage-total')?.getBoundingClientRect();
+          const breakdown = [...owner.querySelectorAll('.mp-storage-category-grid > span')]
+            .map((element) => element.getBoundingClientRect());
+          return {
+            overflowing: owner.scrollWidth > owner.clientWidth,
+            summaryWidth: summary?.width ?? 0,
+            totalWidth: total?.width ?? 0,
+            breakdownWidths: breakdown.map((rect) => rect.width),
+            breakdownRows: breakdown.map((rect) => rect.height),
+          };
+        });
+        assert.equal(storageGeometry.overflowing, false);
+        assert(storageGeometry.summaryWidth >= 240 && storageGeometry.totalWidth >= 120,
+          `Storage summary must preserve readable tracks: ${JSON.stringify(storageGeometry)}`);
+        assert(storageGeometry.breakdownWidths.every((width) => width >= 100)
+          && storageGeometry.breakdownRows.every((height) => height >= 56),
+        `Storage categories must not collapse into narrow columns: ${JSON.stringify(storageGeometry)}`);
+        await capture('settings-storage');
+      }
       await detail.getByRole('button', { name: 'Back', exact: true }).click();
     }
 

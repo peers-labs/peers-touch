@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package peers_touch.model.agent.v1;
+
+import "domain/agent/provider.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/agent/model;model";
+
+// Operations use committed actor-owned configuration. Credentials and upstream
+// response bodies never cross this boundary.
+message CheckProviderRequest {
+  string provider_id = 1;
+  int64 version = 2;
+  string model_id = 3;
+}
+
+message CheckProviderResponse {
+  string provider_id = 1;
+  int64 version = 2;
+  string model_id = 3;
+  bool connected = 4;
+  string failure_code = 5;
+  google.protobuf.Timestamp observed_at = 6;
+  int64 latency_ms = 7;
+}
+
+message DiscoverProviderModelsRequest {
+  string provider_id = 1;
+  int64 version = 2;
+}
+
+message DiscoverProviderModelsResponse {
+  string provider_id = 1;
+  int64 version = 2;
+  repeated ProviderModelInfo models = 3;
+  google.protobuf.Timestamp observed_at = 4;
+}

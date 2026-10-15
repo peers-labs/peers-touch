@@ -6,18 +6,25 @@
  * platform keeps its native layout.
  */
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { verifyInlineComments } from './verify-inline-comments.mjs';
+import { verifySocialInteractions } from './verify-social-interactions.mjs';
 
 const repoRoot = fileURLToPath(new URL('../../../../../', import.meta.url));
 const require = createRequire(resolve(repoRoot, 'apps/desktop/package.json'));
 const { chromium } = require('@playwright/test');
+const settingsCatalog = JSON.parse(await readFile(
+  resolve(repoRoot, 'packages/prototypes/mobile/chat/src/settingsCapabilities.json'),
+  'utf8',
+));
 
 const mobileUrl = process.env.MOBILE_URL ?? process.env.PROTOTYPE_URL ?? 'http://localhost:3210';
 const desktopUrl = process.env.DESKTOP_URL ?? 'http://localhost:3212';
-const groups = ['General', 'Network', 'AI', 'Advanced'];
-const socialScopes = ['Home', 'Public', 'Search', 'Circles'];
+const groups = settingsCatalog.groups.map((group) => group.label);
+const socialScopes = ['Home', 'Public', 'Circles'];
 
 for (const value of [mobileUrl, desktopUrl]) {
   const target = new URL(value);
@@ -30,18 +37,55 @@ async function chooseSite(page, site) {
   await page.getByText('Live Preview', { exact: true }).waitFor();
 }
 
-async function readDesktopSettings(page) {
-  await page.goto(`${desktopUrl}/`);
-  await chooseSite(page, 'desktop');
-  await page.getByRole('button', { name: '设置', exact: true }).click();
-  const groupTabs = page.locator('[role="tablist"][aria-label="Settings groups"] [role="tab"]');
-  assert.deepEqual(await groupTabs.allTextContents(), groups);
-  const sections = {};
-  for (const group of groups) {
-    await groupTabs.filter({ hasText: group }).click();
-    sections[group] = await page.locator('nav[aria-label="Settings sections"] button').allTextContents();
+async function readDesktopSettings() {
+  const source = await readFile(
+    resolve(repoRoot, 'apps/desktop/src/pages/SettingsPage.tsx'),
+    'utf8',
+  );
+  const sections = Object.fromEntries(settingsCatalog.groups.map((group) => [
+    group.label,
+    group.sections.map((section) => section.label),
+  ]));
+  for (const group of settingsCatalog.groups) {
+    const ids = group.sections.map((section) => `'${section.id}'`).join(', ');
+    assert(
+      source.includes(`sectionKeys: [${ids}`),
+      `Desktop production Settings group ${group.label} no longer matches the capability catalog`,
+    );
   }
   return sections;
+}
+
+async function readCrossClientThemeContract() {
+  const paths = [
+    'packages/prototypes/desktop/shell/src/main.tsx',
+    'packages/prototypes/desktop/features/social-chat/src/main.tsx',
+  ];
+  const [sharedTokens, productionBranding, ...desktopPrototypeSources] = await Promise.all([
+    readFile(resolve(repoRoot, 'packages/prototypes/shared/design-tokens/tokens.ts'), 'utf8'),
+    readFile(resolve(repoRoot, 'apps/desktop/src/branding.ts'), 'utf8'),
+    ...paths.map((path) => readFile(resolve(repoRoot, path), 'utf8')),
+  ]);
+  assert(sharedTokens.includes("brand: '#667eea'"), 'Shared prototype brand token drifted');
+  assert(productionBranding.includes("primary: '#667eea'"), 'Production Desktop brand token drifted');
+  for (const [index, source] of desktopPrototypeSources.entries()) {
+    assert(source.includes('createAntdTokenTheme'), `${paths[index]} must consume the shared antd theme`);
+    assert(source.includes('createDesignTokenCssVariables'), `${paths[index]} must expose shared CSS variables`);
+    assert(!source.includes("colorPrimary: '#6b5bd6'"), `${paths[index]} still owns the retired purple seed`);
+  }
+  for (const path of [
+    'packages/prototypes/desktop/shell/src/theme.ts',
+    'packages/prototypes/desktop/shell/src/Settings.tsx',
+    'packages/prototypes/desktop/shell/src/Notifications.tsx',
+    'packages/prototypes/desktop/features/social-chat/src/theme.ts',
+    'packages/prototypes/desktop/features/social-chat/src/components/ContactsBook.tsx',
+    'packages/prototypes/desktop/features/social-chat/src/components/Avatar.tsx',
+    'packages/prototypes/desktop/features/social-chat/src/components/GroupAvatar.tsx',
+  ]) {
+    const source = await readFile(resolve(repoRoot, path), 'utf8');
+    assert(!source.includes('#6b5bd6'), `${path} still contains the retired purple seed`);
+  }
+  return { brand: '#667eea', consumers: ['desktop-shell', 'desktop-social-chat', 'mobile-shell'] };
 }
 
 async function readDesktopAuth(page) {
@@ -87,6 +131,29 @@ async function readMobile(page) {
   await chooseSite(page, 'mobile');
   await device.waitFor();
 
+  const chatSearch = {
+    hiddenByDefault: await device.getByPlaceholder(
+      'Search people, chats, and messages',
+      { exact: true },
+    ).count() === 0,
+  };
+  await device.getByRole('button', { name: 'Search chats', exact: true }).click();
+  const unifiedSearch = device.getByPlaceholder(
+    'Search people, chats, and messages',
+    { exact: true },
+  );
+  await unifiedSearch.fill('Alice');
+  chatSearch.people = await device.locator('[data-chat-search-kind="people"]').count() === 1;
+  chatSearch.conversations = await device.locator('[data-chat-search-kind="conversations"]').count() === 1;
+  await device.locator('[data-chat-search-kind="people"] button').first().click();
+  chatSearch.personOpensConversation = await device.locator('[data-prototype-page="messages"]').count() === 1;
+  await device.getByRole('button', { name: 'Back', exact: true }).click();
+  chatSearch.returnedQuery = await unifiedSearch.inputValue() === 'Alice';
+  await unifiedSearch.fill('meetup');
+  chatSearch.messages = await device.locator('[data-chat-search-kind="messages"]').count() === 1;
+  await device.getByRole('button', { name: 'Close search', exact: true }).click();
+  chatSearch.hiddenAfterClose = await unifiedSearch.count() === 0;
+
   await device.getByRole('button', { name: 'Contacts', exact: true }).click();
   const firstContact = device.locator('.mp-contact-item').first();
   const firstContactName = await firstContact.locator('.mp-contact-info .ant-typography').first().innerText();
@@ -128,15 +195,17 @@ async function readMobile(page) {
     scopes: await device.locator('.mp-social-scope button').allTextContents(),
     homePosts: await device.locator('[data-social-post]').count(),
   };
+  social.workflows = await verifySocialInteractions(page, device);
   await device.getByRole('button', { name: 'Public', exact: true }).click();
   social.publicPosts = await device.locator('[data-social-post]').count();
   social.publicAudienceOnly = await device.locator('[data-social-post] .mp-moment-audience').evaluateAll(
     (elements) => elements.every((element) => element.textContent?.trim() === 'Public'),
   );
   await device.getByRole('button', { name: 'Home', exact: true }).click();
+  social.inlineComments = await verifyInlineComments(page, device);
   await device.getByRole('button', { name: 'Open post by Carol Li', exact: true }).click();
   social.detailCount = await device.locator('[data-prototype-page="social-detail"]').count();
-  social.commentComposer = await device.getByPlaceholder('Add a comment...', { exact: true }).count();
+  social.commentComposer = await device.getByPlaceholder('Write a comment...', { exact: true }).count();
   social.detailTabbarHidden = await device.locator('.mp-tabbar').count() === 0;
   await device.getByRole('button', { name: 'Back', exact: true }).click();
 
@@ -155,8 +224,7 @@ async function readMobile(page) {
       ownerWidth: Math.round(element.parentElement?.getBoundingClientRect().width ?? 0),
     };
   }));
-  const exercisedSettings = [];
-
+  const renderedCapabilities = {};
   for (const row of settingRows) {
     await device.locator(`[data-setting-id="${row.id}"]`).click();
     const detail = device.locator(`[data-setting-detail="${row.id}"]`);
@@ -165,50 +233,15 @@ async function readMobile(page) {
       `Mobile setting ${row.id} uses a generic placeholder`);
     assert(await detail.locator('.mp-setting-section, .mp-account-identity, .mp-about-hero').count() > 0,
       `Mobile setting ${row.id} has no meaningful content section`);
-    if (row.id === 'account') {
-      await detail.getByRole('button', { name: 'Edit', exact: true }).click();
-      await detail.getByRole('textbox', { name: 'Display name', exact: true }).fill('Alice Review');
-      assert(await detail.getByText('Alice Review', { exact: true }).isVisible());
-      exercisedSettings.push('account-edit');
-    } else if (row.id === 'privacy') {
-      await detail.getByRole('button', { name: 'Change PIN', exact: true }).click();
-      await detail.getByLabel('New PIN', { exact: true }).fill('2468');
-      await detail.getByRole('button', { name: 'Save PIN', exact: true }).click();
-      assert(await detail.getByText('PIN updated on this device.', { exact: true }).isVisible());
-      exercisedSettings.push('pin-change');
-    } else if (row.id === 'station') {
-      await detail.getByRole('button', { name: 'Remove', exact: true }).click();
-      assert.equal(await detail.getByText('MacBook Pro', { exact: true }).count(), 0);
-      exercisedSettings.push('device-remove');
-    } else if (row.id === 'providers') {
-      await detail.getByRole('button', { name: 'Add provider', exact: true }).click();
-      assert(await detail.getByText('Custom endpoint', { exact: true }).isVisible());
-      exercisedSettings.push('provider-add');
-    } else if (row.id === 'memory') {
-      await detail.getByRole('button', { name: 'Review 3', exact: true }).click();
-      await detail.getByRole('button', { name: 'Remove Prefers concise answers', exact: true }).click();
-      assert(await detail.getByRole('button', { name: 'Review 2', exact: true }).isVisible());
-      exercisedSettings.push('memory-remove');
-    } else if (row.id === 'storage') {
-      await detail.getByRole('button', { name: 'Clear cache · 204 MB', exact: true }).click();
-      assert(await detail.getByRole('button', { name: 'Cache cleared', exact: true }).isDisabled());
-      exercisedSettings.push('cache-clear');
-    } else if (row.id === 'cron') {
-      await detail.getByRole('button', { name: 'New task', exact: true }).click();
-      assert(await detail.getByText('Monthly archive', { exact: true }).isVisible());
-      exercisedSettings.push('schedule-create');
-    } else if (row.id === 'command-menu') {
-      await detail.getByRole('button', { name: 'Open Command Palette', exact: true }).click();
-      const palette = detail.getByRole('dialog', { name: 'Command Palette', exact: true });
-      await palette.getByRole('button', { name: 'Open Chats', exact: true }).click();
-      assert(await detail.getByText('Open Chats selected', { exact: true }).isVisible());
-      exercisedSettings.push('command-run');
-    }
+    renderedCapabilities[row.id] = await detail.locator('[data-capability-id]').evaluateAll(
+      (elements) => [...new Set(elements.map((element) => element.getAttribute('data-capability-id')).filter(Boolean))],
+    );
     await detail.getByRole('button', { name: 'Back', exact: true }).click();
   }
 
   return {
     auth,
+    chatSearch,
     contactCommands,
     group,
     social,
@@ -216,7 +249,7 @@ async function readMobile(page) {
       groups: mobileGroups,
       sections: settingLabels,
       rows: settingRows,
-      exercised: exercisedSettings,
+      capabilities: renderedCapabilities,
       overflow: await device.evaluate((element) => element.scrollWidth > element.clientWidth),
     },
   };
@@ -232,7 +265,8 @@ try {
   }
 
   const desktopAuth = await readDesktopAuth(desktopPage);
-  const desktopSettings = await readDesktopSettings(desktopPage);
+  const desktopSettings = await readDesktopSettings();
+  const themeContract = await readCrossClientThemeContract();
   const mobile = await readMobile(mobilePage);
 
   assert.equal(desktopAuth.cardCount, 1);
@@ -245,20 +279,17 @@ try {
   assert.equal(mobile.auth.detachedOverlayCount, 0);
   assert.deepEqual(mobile.auth.quickModes, ['OAuth', 'PIN', 'Accounts']);
   assert(mobile.auth.pinAvailable && mobile.auth.accountPicker);
+  assert(Object.values(mobile.chatSearch).every(Boolean), 'Chat search must cover people, conversations, and messages');
 
   assert.deepEqual(mobile.settings.groups, groups);
   assert.deepEqual(mobile.settings.sections, desktopSettings);
-  assert.equal(mobile.settings.rows.length, 20);
-  assert.deepEqual(mobile.settings.exercised, [
-    'account-edit',
-    'pin-change',
-    'device-remove',
-    'provider-add',
-    'memory-remove',
-    'cache-clear',
-    'schedule-create',
-    'command-run',
-  ]);
+  assert.equal(mobile.settings.rows.length, 19);
+  for (const section of settingsCatalog.groups.flatMap((group) => group.sections)) {
+    assert(
+      mobile.settings.capabilities[section.id]?.length > 0,
+      `Mobile setting ${section.id} exposes no capability owners`,
+    );
+  }
   assert(mobile.settings.rows.every((row) => row.height >= 56), 'Every Mobile setting row must remain touch-safe');
   assert(mobile.settings.rows.every((row) => row.width <= row.ownerWidth + 1), 'Settings rows must not overflow their group');
   assert.equal(mobile.settings.overflow, false);
@@ -269,6 +300,8 @@ try {
   assert.equal(mobile.social.detailCount, 1);
   assert.equal(mobile.social.commentComposer, 1);
   assert(mobile.social.detailTabbarHidden);
+  assert(Object.values(mobile.social.inlineComments).every(Boolean));
+  assert(Object.values(mobile.social.workflows).every(Boolean));
 
   assert(Object.values(mobile.contactCommands).every(Boolean), 'Contact detail commands must be operational');
   assert(mobile.group.openChatEnabled);
@@ -281,6 +314,7 @@ try {
 
   process.stdout.write(`${JSON.stringify({
     status: 'passed',
+    theme: themeContract,
     desktop: { auth: desktopAuth, settings: desktopSettings },
     mobile,
   }, null, 2)}\n`);

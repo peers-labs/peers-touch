@@ -1,0 +1,84 @@
+.prototype-pins {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--pt-border-hairline, #e8e8e8);
+  background: color-mix(in srgb, var(--pt-action-primary, #6b5bd6) 5%, var(--pt-surface-base, white));
+  color: var(--pt-action-primary, #6b5bd6);
+}
+.prototype-pins > svg { flex-shrink: 0; }
+.prototype-pins-track {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x;
+  -webkit-overflow-scrolling: touch;
+}
+.prototype-pins-track::-webkit-scrollbar { display: none; }
+.prototype-pin {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  flex: 0 0 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 4px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  scroll-snap-align: start;
+  cursor: pointer;
+}
+.prototype-pin-label { font-size: 11px; line-height: 16px; font-weight: 600; }
+.prototype-pin-text {
+  display: block;
+  width: 100%;
+  color: var(--pt-text-secondary, #595959);
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.prototype-pins-count {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--pt-action-primary, #6b5bd6) 10%, transparent);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.prototype-pin-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 28px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.prototype-pin-nav:disabled { opacity: .3; cursor: default; }
+.prototype-pin:focus-visible, .prototype-pin-nav:focus-visible {
+  outline: 2px solid var(--pt-action-primary, #6b5bd6);
+  outline-offset: -2px;
+  border-radius: 6px;
+}
+@media (pointer: coarse) {
+  .prototype-pins, .prototype-pin { min-height: 44px; }
+  .prototype-pin-nav { flex-basis: 44px; height: 44px; }
+}

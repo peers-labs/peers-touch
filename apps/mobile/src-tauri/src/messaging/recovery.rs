@@ -5,12 +5,13 @@ use argon2::{Algorithm, Argon2, Params, Version};
 use bip39::{Language, Mnemonic};
 use messaging_core::proto::recovery::{
     ReadLatestRecoveryRevisionRequest, ReadLatestRecoveryRevisionResponse,
+    StoreRecoveryRevisionRequest, StoreRecoveryRevisionResponse,
 };
-use messaging_core::recovery::{DecodedRecoveryRevision, RecoveryKdf};
+use messaging_core::recovery::RecoveryKdf;
 use prost::Message;
 use rand::{rngs::OsRng, RngCore};
-use reqwest::blocking::Client;
-use reqwest::header::{ACCEPT, AUTHORIZATION};
+use reqwest::blocking::{Client, RequestBuilder};
+use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
@@ -32,7 +33,7 @@ pub struct MobileRecoveryKdfParameters {
     pub output_length: u32,
 }
 
-struct MobileRecoveryKdf;
+pub(crate) struct MobileRecoveryKdf;
 
 impl RecoveryKdf for MobileRecoveryKdf {
     type Params = MobileRecoveryKdfParameters;
@@ -83,72 +84,154 @@ impl RecoveryKdf for MobileRecoveryKdf {
     }
 }
 
-pub fn fetch_and_decode_latest(
-    station_origin: &str,
-    access_token: &str,
-    actor_ptid: &str,
-    recovery_phrase: &str,
-) -> Result<DecodedRecoveryRevision, String> {
-    if station_origin.trim().is_empty()
-        || access_token.trim().is_empty()
-        || actor_ptid.trim().is_empty()
-    {
-        return Err("messaging recovery scope is incomplete".to_string());
+pub(crate) struct RecoveryTransport {
+    client: Client,
+    origin: String,
+    token: Zeroizing<String>,
+    device_id: String,
+}
+
+impl RecoveryTransport {
+    pub fn new(origin: &str, token: &str, device_id: &str) -> Result<Self, String> {
+        let client = Client::builder()
+            .connect_timeout(CONNECT_TIMEOUT)
+            .timeout(REQUEST_TIMEOUT)
+            .build()
+            .map_err(|e| e.to_string())?;
+        Ok(Self {
+            client,
+            origin: origin.trim_end_matches('/').into(),
+            token: Zeroizing::new(token.into()),
+            device_id: device_id.into(),
+        })
     }
-    let request = ReadLatestRecoveryRevisionRequest {};
-    let client = Client::builder()
-        .connect_timeout(CONNECT_TIMEOUT)
-        .timeout(REQUEST_TIMEOUT)
-        .build()
-        .map_err(|error| format!("build messaging recovery transport: {error}"))?;
-    let response = client
-        .get(format!(
-            "{}/recovery/latest",
-            station_origin.trim_end_matches('/')
-        ))
-        .header(AUTHORIZATION, format!("Bearer {access_token}"))
-        .header(ACCEPT, "application/protobuf")
-        .body(request.encode_to_vec())
-        .send()
-        .map_err(|error| format!("fetch messaging recovery revision: {error}"))?;
-    let status = response.status();
-    if response
-        .content_length()
-        .is_some_and(|length| length > MAX_RECOVERY_REVISION_BYTES as u64)
-    {
-        return Err("messaging recovery revision exceeds the client limit".to_string());
+
+    fn read<Reply: Message + Default>(
+        &self,
+        request: RequestBuilder,
+    ) -> Result<Option<Reply>, String> {
+        let response = request
+            .header(AUTHORIZATION, format!("Bearer {}", self.token.as_str()))
+            .header("X-Device-ID", &self.device_id)
+            .header(ACCEPT, "application/protobuf")
+            .header(CONTENT_TYPE, "application/protobuf")
+            .send()
+            .map_err(|e| e.to_string())?;
+        let status = response.status();
+        if status.as_u16() == 404 {
+            return Ok(None);
+        }
+        if !status.is_success() {
+            return Err(format!(
+                "messaging recovery Station returned HTTP {}",
+                status.as_u16()
+            ));
+        }
+        let mut body = Vec::new();
+        response
+            .take((MAX_RECOVERY_REVISION_BYTES + 1) as u64)
+            .read_to_end(&mut body)
+            .map_err(|e| e.to_string())?;
+        if body.len() > MAX_RECOVERY_REVISION_BYTES {
+            return Err("messaging recovery response exceeds the client limit".into());
+        }
+        Reply::decode(body.as_slice())
+            .map(Some)
+            .map_err(|_| "messaging recovery response invalid".into())
     }
-    let mut body = Vec::new();
-    response
-        .take((MAX_RECOVERY_REVISION_BYTES + 1) as u64)
-        .read_to_end(&mut body)
-        .map_err(|error| format!("read messaging recovery revision: {error}"))?;
-    if !status.is_success() {
-        return Err(format!(
-            "messaging recovery Station returned HTTP {}",
-            status.as_u16()
-        ));
+
+    pub fn latest(&self) -> Result<Option<ReadLatestRecoveryRevisionResponse>, String> {
+        self.read(
+            self.client
+                .get(format!("{}/recovery/latest", self.origin))
+                .body(ReadLatestRecoveryRevisionRequest {}.encode_to_vec()),
+        )
     }
-    if body.len() > MAX_RECOVERY_REVISION_BYTES {
-        return Err("messaging recovery revision exceeds the client limit".to_string());
+
+    fn query_url(&self, path: &str, pairs: &[(&str, String)]) -> Result<reqwest::Url, String> {
+        let mut url =
+            reqwest::Url::parse(&format!("{}{path}", self.origin)).map_err(|e| e.to_string())?;
+        url.query_pairs_mut()
+            .extend_pairs(pairs.iter().map(|(key, value)| (*key, value.as_str())));
+        Ok(url)
     }
-    let revision = ReadLatestRecoveryRevisionResponse::decode(body.as_slice())
-        .map_err(|_| "messaging recovery Station response is invalid".to_string())?;
-    if revision.revision_id.trim().is_empty()
-        || revision.encrypted_archive.is_empty()
-        || revision.encrypted_archive_sha256.len() != 32
-    {
-        return Err("messaging recovery revision is incomplete".to_string());
+
+    pub fn store(
+        &self,
+        request: &StoreRecoveryRevisionRequest,
+    ) -> Result<StoreRecoveryRevisionResponse, String> {
+        self.read(
+            self.client
+                .post(format!("{}/recovery/revision", self.origin))
+                .header(CONTENT_TYPE, "application/protobuf")
+                .body(request.encode_to_vec()),
+        )?
+        .ok_or_else(|| "messaging recovery endpoint unavailable".into())
     }
-    let phrase = Zeroizing::new(recovery_phrase.trim().to_string());
-    messaging_core::recovery::decode_recovery_revision(
-        &MobileRecoveryKdf,
-        phrase.as_str(),
-        actor_ptid,
-        &revision.revision_id,
-        &revision.encrypted_archive,
-        &revision.encrypted_archive_sha256,
-    )
+
+    pub fn reconcile(
+        &self,
+        archive: &messaging_core::recovery::MessagingRecoveryArchive,
+    ) -> Result<messaging_core::recovery::RecoveryReconciliation, String> {
+        use messaging_core::proto::chat::{
+            ConversationPublicHeadSource, GetConversationPublicHeadResponse,
+            ListConversationEventsResponse,
+        };
+        use messaging_core::recovery::reconciliation::{
+            fetch_recovery_events_to_target, reconcile_archive_authority_events,
+        };
+        let mut result = messaging_core::recovery::RecoveryReconciliation::default();
+        for conversation in &archive.conversations {
+            let response: GetConversationPublicHeadResponse = self
+                .read(self.client.get(self.query_url(
+                    "/conversation/public-head",
+                    &[("conversation_id", conversation.conversation_id.clone())],
+                )?))?
+                .ok_or("messaging recovery authority head unavailable")?;
+            let head = response
+                .head
+                .ok_or("messaging recovery authority head missing")?;
+            if head.source != ConversationPublicHeadSource::Authority as i32
+                || head.conversation_id != conversation.conversation_id
+                || head.authority_station_peer_id != conversation.authority_station_id
+                || head.federation_id != conversation.federation_id
+            {
+                return Err("messaging recovery authority binding invalid".into());
+            }
+            let old = archive
+                .authority_heads
+                .iter()
+                .find(|h| h.conversation_id == conversation.conversation_id)
+                .ok_or("messaging recovery archived head missing")?;
+            let events = fetch_recovery_events_to_target(
+                old.event_sequence,
+                head.group_seq,
+                500,
+                1_000,
+                |after, limit| {
+                    let response: ListConversationEventsResponse = self
+                        .read(self.client.get(self.query_url(
+                            "/conversation/events",
+                            &[
+                                ("conversation_id", conversation.conversation_id.clone()),
+                                ("after_seq", after.to_string()),
+                                ("limit", limit.to_string()),
+                            ],
+                        )?))?
+                        .ok_or("messaging recovery authority events missing")?;
+                    Ok(response.events)
+                },
+            )?;
+            result.redactions.extend(reconcile_archive_authority_events(
+                archive,
+                &conversation.conversation_id,
+                head.group_seq,
+                &head.event_hash,
+                &events,
+            )?);
+        }
+        Ok(result)
+    }
 }
 
 #[cfg(test)]

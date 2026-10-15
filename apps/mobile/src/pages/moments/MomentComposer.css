@@ -99,7 +99,7 @@
   justify-self: start;
 }
 
-.moment-composer-header > button:first-child.moment-composer-clear {
+.moment-composer-header > button:first-child.moment-composer-cancel {
   width: 52px;
   min-width: 52px;
   padding: 0;
@@ -320,6 +320,23 @@
 
 .moment-composer-meta svg {
   flex: 0 0 auto;
+}
+
+.moment-composer-meta-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.moment-composer-meta-actions > button {
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--moment-gray-500);
+  font: inherit;
+  font-weight: 600;
 }
 
 .moments-composer-backdrop.moment-composer-overlay

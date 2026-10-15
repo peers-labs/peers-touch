@@ -22,6 +22,7 @@ use social::MobilePrivateSocialRuntime;
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_peers_platform_permissions::init())
         .plugin(tauri_plugin_peers_secure_input::init())

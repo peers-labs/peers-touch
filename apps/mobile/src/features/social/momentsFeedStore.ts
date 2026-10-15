@@ -437,10 +437,12 @@ export function createMomentsFeedStore(
           ? { ...post, reactions: existingPost.reactions }
           : post;
       });
-      combined = [
-        ...refreshedPosts,
-        ...feedState.posts.filter((post) => !pageIds.has(post.id)),
-      ];
+      combined = page.hasMore
+        ? [
+            ...refreshedPosts,
+            ...feedState.posts.filter((post) => !pageIds.has(post.id)),
+          ]
+        : refreshedPosts;
     } else {
       const existingIds = new Set(feedState.posts.map((post) => post.id));
       combined = [

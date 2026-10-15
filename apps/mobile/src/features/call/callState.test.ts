@@ -305,4 +305,160 @@ describe('mobile call manager', () => {
     });
     manager.reset();
   });
+
+  it('keeps an actionable terminal projection when outgoing media is denied', async () => {
+    const manager = new MobileCallManager();
+    const permissionDenied = Object.assign(
+      new Error('Permission denied'),
+      { name: 'NotAllowedError' },
+    );
+    vi.stubGlobal('navigator', {
+      mediaDevices: {
+        getUserMedia: vi.fn().mockRejectedValue(permissionDenied),
+      },
+    });
+
+    await manager.activate(session);
+    await expect(
+      manager.startOutgoingCall('ptid:alice', 'video'),
+    ).rejects.toMatchObject({ name: 'NotAllowedError' });
+
+    expect(manager.getSnapshot()).toMatchObject({
+      state: 'ended',
+      endReason: 'media-failed',
+      mediaFailure: 'permission-denied',
+      peerPtid: 'ptid:alice',
+    });
+    expect(transportMocks.execute).not.toHaveBeenCalled();
+    manager.reset();
+  });
+
+  it('restores an outgoing active call after foreground reconciliation', async () => {
+    const manager = new MobileCallManager();
+    let offerCount = 0;
+    const stream = {
+      getTracks: () => [],
+      getAudioTracks: () => [],
+      getVideoTracks: () => [],
+    };
+    vi.stubGlobal('navigator', {
+      mediaDevices: { getUserMedia: vi.fn().mockResolvedValue(stream) },
+    });
+    vi.stubGlobal('RTCPeerConnection', class {
+      connectionState = 'connected';
+      onconnectionstatechange = null;
+      onicecandidate = null;
+      ontrack = null;
+      addTrack() {}
+      getSenders() { return []; }
+      createOffer() {
+        offerCount += 1;
+        return Promise.resolve({ type: 'offer', sdp: 'offer' });
+      }
+      setLocalDescription() { return Promise.resolve(); }
+      close() {}
+    });
+    transportMocks.execute.mockImplementation(async (_session, operation) => {
+      if (operation.operationId === 'turn_ice_servers') {
+        return {
+          status: 200,
+          contentType: 'application/json',
+          bodyBytes: [],
+          json: { ice_servers: [] },
+        };
+      }
+      if (operation.operationId === 'realtime_call_resolution_get') {
+        return {
+          status: 200,
+          contentType: 'application/json',
+          bodyBytes: [],
+          json: {
+            state: 'ACCEPTED',
+            winning_device_id: 'alice-mobile',
+          },
+        };
+      }
+      return { status: 204, contentType: '', bodyBytes: [] };
+    });
+
+    await manager.activate(session);
+    const outgoing = await manager.startOutgoingCall('ptid:alice', 'audio');
+    commandMocks.open.mockResolvedValue(JSON.stringify({
+      callId: outgoing.callId,
+    }));
+    await manager.ingestRealtimeSignal({
+      kind: 'call-signal',
+      signalKind: 'CALL_ACCEPT',
+      callId: outgoing.callId,
+      sessionUlid: 'ptid:alice-ptid:bob',
+      fromActorPtid: 'ptid:alice',
+      winningDeviceId: 'alice-mobile',
+      payload: new Uint8Array([1]),
+      cursor: 'event-5',
+      timestampMs: 5,
+    });
+    expect(manager.getSnapshot()?.state).toBe('active_here');
+    const startedAt = manager.getSnapshot()?.startedAt;
+    await manager.ingestRealtimeSignal({
+      kind: 'call-signal',
+      signalKind: 'CALL_ACCEPT',
+      callId: outgoing.callId,
+      sessionUlid: 'ptid:alice-ptid:bob',
+      fromActorPtid: 'ptid:alice',
+      winningDeviceId: 'alice-mobile',
+      payload: new Uint8Array([1]),
+      cursor: 'event-5-duplicate',
+      timestampMs: 6,
+    });
+    expect(manager.getSnapshot()?.startedAt).toBe(startedAt);
+    expect(offerCount).toBe(1);
+
+    manager.suspend();
+    expect(manager.getSnapshot()?.state).toBe('reconnecting');
+    await manager.resume();
+
+    expect(manager.getSnapshot()).toMatchObject({
+      state: 'active_here',
+      callId: outgoing.callId,
+    });
+    manager.reset();
+  });
+
+  it('preserves a remote media failure reason for caller recovery', async () => {
+    const manager = new MobileCallManager();
+    const stream = {
+      getTracks: () => [],
+      getAudioTracks: () => [],
+      getVideoTracks: () => [],
+    };
+    vi.stubGlobal('navigator', {
+      mediaDevices: { getUserMedia: vi.fn().mockResolvedValue(stream) },
+    });
+
+    await manager.activate(session);
+    const outgoing = await manager.startOutgoingCall('ptid:alice', 'audio');
+    commandMocks.open.mockResolvedValue(JSON.stringify({
+      callId: outgoing.callId,
+      reason: 'media-failed',
+      mediaFailure: 'permission-denied',
+    }));
+    await manager.ingestRealtimeSignal({
+      kind: 'call-signal',
+      signalKind: 'CALL_END',
+      callId: outgoing.callId,
+      sessionUlid: 'ptid:alice-ptid:bob',
+      fromActorPtid: 'ptid:alice',
+      winningDeviceId: 'alice-mobile',
+      payload: new Uint8Array([1]),
+      cursor: 'event-6',
+      timestampMs: 6,
+    });
+
+    expect(manager.getSnapshot()).toMatchObject({
+      state: 'ended',
+      endReason: 'media-failed',
+      mediaFailure: 'permission-denied',
+    });
+    manager.reset();
+  });
 });

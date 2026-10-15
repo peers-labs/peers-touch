@@ -9,10 +9,10 @@ use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine as _;
 use messaging_core::attachment::AttachmentTransferControl;
 use messaging_core::contracts::ConversationProjection;
+use messaging_core::crypto::prekeys::{PendingPreKeyBundle, PreKeyBundleBackup};
 use messaging_core::identity::{
     generate_fresh_device_identity_for_device, DeviceEnrollmentRepository,
 };
-use messaging_core::crypto::prekeys::{PendingPreKeyBundle, PreKeyBundleBackup};
 use messaging_core::inbox::DrainProgress;
 use messaging_core::outbox::CommandDispatchProgress;
 use messaging_core::store::MessagingRepository;
@@ -35,6 +35,7 @@ use super::engine::{
 const DATABASE_KEY_PREFIX: &str = "messaging.v1.sqlcipher";
 const MAX_CONTINUATION_CYCLES: usize = 8;
 const FAILURE_RETRY_DELAY: Duration = Duration::from_secs(1);
+const FOREGROUND_RECONCILE_INTERVAL: Duration = Duration::from_secs(2);
 pub const MOBILE_MESSAGING_PROJECTION_EVENT: &str = "mobile:messaging-projection-changed";
 
 const DEVICE_SEED_PREFIX: &str = "messaging.v1.device-signing-seed";
@@ -92,7 +93,6 @@ impl DeviceSigningSeedBackup for StorageDeviceSeedBackup<'_> {
             .map_err(|e| format!("write device seed backup: {e}"))
     }
 }
-
 
 const PREKEY_BUNDLE_PREFIX: &str = "messaging.v1.prekey-bundle";
 
@@ -153,8 +153,7 @@ impl PreKeyBundleBackup for StoragePreKeyBundleBackup {
             merged.signed_prekey_id = bundle.signed_prekey_id;
             merged.signed_prekey_private = bundle.signed_prekey_private;
         }
-        let mut by_id: BTreeMap<i32, [u8; 32]> =
-            merged.one_time_prekeys.into_iter().collect();
+        let mut by_id: BTreeMap<i32, [u8; 32]> = merged.one_time_prekeys.into_iter().collect();
         for (id, key) in &bundle.one_time_prekeys {
             by_id.insert(*id, *key);
         }
@@ -167,7 +166,6 @@ impl PreKeyBundleBackup for StoragePreKeyBundleBackup {
             .map_err(|e| format!("write prekey bundle backup: {e}"))
     }
 }
-
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -284,12 +282,8 @@ impl MobileMessagingRuntime {
                 .emit(MOBILE_MESSAGING_PROJECTION_EVENT, event)
                 .map_err(|error| format!("emit mobile messaging projection event: {error}"))
         });
-        let seed_backup = StorageDeviceSeedBackup::new(
-            storage,
-            &station_peer_id,
-            &actor_ptid,
-            &device_id,
-        );
+        let seed_backup =
+            StorageDeviceSeedBackup::new(storage, &station_peer_id, &actor_ptid, &device_id);
         let prekey_backup: Arc<dyn PreKeyBundleBackup> = StoragePreKeyBundleBackup::new(
             storage.clone(),
             &station_peer_id,
@@ -400,7 +394,7 @@ impl MobileMessagingRuntime {
             .unwrap_or_else(|| Ok(MessagingRuntimeStatus::inactive()))
     }
 
-    pub fn recover_fresh_install_identity<R: Runtime>(
+    pub fn recover_archive<R: Runtime>(
         &self,
         app: AppHandle<R>,
         data_root: &Path,
@@ -409,13 +403,16 @@ impl MobileMessagingRuntime {
         station_origin: String,
         actor_ptid: String,
         device_id: String,
-        actor_identity_seed: [u8; 32],
-        actor_profile_version: u64,
+        archive: &messaging_core::recovery::MessagingRecoveryArchive,
+        reconciliation: &messaging_core::recovery::RecoveryReconciliation,
         access_token: String,
     ) -> MobileResult<MessagingRuntimeStatus> {
         validate_account_scope(&station_peer_id, &station_origin, &actor_ptid)
             .map_err(MobileError::messaging)?;
-        if device_id.trim().is_empty() || actor_profile_version == 0 {
+        if device_id.trim().is_empty()
+            || archive.actor_profile_version == 0
+            || archive.ptid != actor_ptid
+        {
             return Err(MobileError::coded(
                 "MOBILE_MESSAGING_IDENTITY_RECOVERY_INVALID",
                 "recovered messaging identity is incomplete",
@@ -424,8 +421,8 @@ impl MobileMessagingRuntime {
         let recovered = generate_fresh_device_identity_for_device(
             &actor_ptid,
             &device_id,
-            actor_identity_seed,
-            actor_profile_version,
+            archive.actor_identity_seed,
+            archive.actor_profile_version,
         )
         .map_err(MobileError::messaging)?;
         let mut active = self
@@ -448,17 +445,39 @@ impl MobileMessagingRuntime {
         drop(active);
         current.worker.stop().map_err(MobileError::messaging)?;
 
+        if current
+            .engine
+            .recovery_identity_matches(&archive.actor_identity_seed)
+        {
+            let result = current
+                .engine
+                .import_recovery_history(archive, reconciliation)
+                .map_err(MobileError::messaging);
+            drop(current.engine);
+            let activation = self.activate(
+                app,
+                data_root,
+                storage,
+                station_peer_id,
+                station_origin,
+                actor_ptid,
+                device_id,
+                access_token,
+            );
+            result?;
+            return activation;
+        }
         let user_scope = format!("{station_peer_id}|{actor_ptid}");
         let previous_seed = identity_keys::replace_identity_seed(
             storage,
             &user_scope,
             &actor_ptid,
-            &actor_identity_seed,
+            &archive.actor_identity_seed,
         )?;
         if let Err(error) = current
             .engine
             .store()
-            .replace_fresh_install_identity(&recovered)
+            .replace_fresh_install_identity(&recovered, Some((archive, reconciliation)))
         {
             let rollback = identity_keys::restore_identity_seed(
                 storage,
@@ -542,6 +561,7 @@ impl MobileMessagingRuntime {
     }
 
     pub fn resume(&self, station_peer_id: &str, actor_ptid: &str) -> MobileResult<()> {
+        crate::runtime::pin::require_runtime_unlocked(station_peer_id, actor_ptid)?;
         let active = self
             .active
             .lock()
@@ -554,6 +574,7 @@ impl MobileMessagingRuntime {
     }
 
     pub fn wake(&self, station_peer_id: &str, actor_ptid: &str) -> MobileResult<u64> {
+        crate::runtime::pin::require_runtime_unlocked(station_peer_id, actor_ptid)?;
         let active = self
             .active
             .lock()
@@ -605,6 +626,7 @@ impl MobileMessagingRuntime {
         station_peer_id: &str,
         actor_ptid: &str,
     ) -> MobileResult<Arc<MobileMessagingEngine>> {
+        crate::runtime::pin::require_runtime_unlocked(station_peer_id, actor_ptid)?;
         let engine = self
             .active
             .lock()
@@ -965,17 +987,34 @@ fn run_engine_cycle(
     if !worker_is_running(state) {
         return Ok(None);
     }
+    let membership_visibility_changed = messaging_cycle_stage(
+        "Conversation membership visibility reconciliation",
+        engine.reconcile_conversation_membership_visibility(),
+    )?;
+    if !worker_is_running(state) {
+        return Ok(None);
+    }
     messaging_cycle_stage("Direct PreKey publication", engine.publish_prekeys())?;
     if !worker_is_running(state) {
         return Ok(None);
     }
-    messaging_cycle_stage("MLS KeyPackage publication", engine.publish_mls_key_packages())?;
+    messaging_cycle_stage(
+        "MLS KeyPackage publication",
+        engine.publish_mls_key_packages(),
+    )?;
     if !worker_is_running(state) {
         return Ok(None);
     }
     let membership_reprepared = messaging_cycle_stage(
         "membership intent recovery",
         engine.resume_membership_intent_once(),
+    )?;
+    if !worker_is_running(state) {
+        return Ok(None);
+    }
+    let leave_reprepared = messaging_cycle_stage(
+        "delegated leave intent recovery",
+        engine.resume_leave_intent_once(),
     )?;
     if !worker_is_running(state) {
         return Ok(None);
@@ -997,8 +1036,10 @@ fn run_engine_cycle(
     if !worker_is_running(state) {
         return Ok(None);
     }
-    let draft_result =
-        messaging_cycle_stage("message draft recovery", engine.resume_message_draft_once(now));
+    let draft_result = messaging_cycle_stage(
+        "message draft recovery",
+        engine.resume_message_draft_once(now),
+    );
     let draft = draft_result?;
     if !worker_is_running(state) {
         return Ok(None);
@@ -1010,8 +1051,7 @@ fn run_engine_cycle(
     if !worker_is_running(state) {
         return Ok(None);
     }
-    let command_result =
-        messaging_cycle_stage("command dispatch", engine.dispatch_command_once());
+    let command_result = messaging_cycle_stage("command dispatch", engine.dispatch_command_once());
     let command = command_result?;
     if !worker_is_running(state) {
         return Ok(None);
@@ -1058,12 +1098,18 @@ fn run_engine_cycle(
         messaging_cycle_stage("scheduled work read", engine.next_scheduled_work_at())?
             .map(|next| unix_retry_deadline(next, now)),
     );
+    let retry_deadline = earlier_deadline(
+        retry_deadline,
+        Some(Instant::now() + FOREGROUND_RECONCILE_INTERVAL),
+    );
     let has_backlog = enrolled_now
+        || membership_visibility_changed > 0
         || attachment_upload_progressed
         || attachment_download_progressed
         || attachment_sources_cleaned > 0
         || matches!(draft, MessageDraftResumeProgress::Prepared)
         || membership_reprepared
+        || leave_reprepared
         || interaction_reprepared
         || !matches!(
             command,

@@ -82,6 +82,9 @@ func TestResetTaskAllowlistMatchesIntentAndProfile(t *testing.T) {
 		{"cross-station activation four", CrossStationSocialResetPlanID, ResetIntentSchemaActivation, "four", CrossStationSocialActivationTask, false},
 		{"cross-station activation fiveArm", CrossStationSocialResetPlanID, ResetIntentSchemaActivation, "fiveArm", CrossStationSocialActivationTask, false},
 		{"cross-station final cut denied", CrossStationSocialResetPlanID, ResetIntentFinalCut, "four", "W12", true},
+		{"mobile usability activation", MobileUsabilityResetPlanID, ResetIntentSchemaActivation, "chat-native-five", MobileUsabilityResetTask, false},
+		{"mobile usability final cut denied", MobileUsabilityResetPlanID, ResetIntentFinalCut, "chat-native-five", MobileUsabilityResetTask, true},
+		{"mobile usability alias denied", MobileUsabilityResetPlanID, ResetIntentSchemaActivation, "fiveArm", MobileUsabilityResetTask, true},
 		{"unknown plan denied", "OTHER-PLAN", ResetIntentSchemaActivation, "four", CrossStationSocialActivationTask, true},
 	}
 
@@ -92,6 +95,9 @@ func TestResetTaskAllowlistMatchesIntentAndProfile(t *testing.T) {
 			if test.profileID == "fiveArm" {
 				deployment = "station-five-arm"
 				scope = "station-five-arm-social-private"
+			} else if test.profileID == "chat-native-five" {
+				deployment = "chat-native-five"
+				scope = "chat-native-five-social-private"
 			}
 			request := SecureContentResetAuditRequestV1{
 				SchemaVersion:         SecureContentResetSchemaVersion,

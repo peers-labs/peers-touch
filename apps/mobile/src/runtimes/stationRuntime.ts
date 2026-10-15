@@ -110,6 +110,10 @@ export function updateStationRegistryProjection(
   return stationRegistryRuntime.update(updater);
 }
 
+export function subscribeStationRegistryProjection(listener: () => void): () => void {
+  return stationRegistryRuntime.subscribe(listener);
+}
+
 export function useStationRegistryProjection(): StoredStationRegistry {
   return useSyncExternalStore(
     stationRegistryRuntime.subscribe,

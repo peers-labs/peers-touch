@@ -244,8 +244,10 @@ describe('social runtime supervisor', () => {
     await suspend;
     await controller.resume();
 
-    expect(runtimeMocks.projectionRuntime.resume).toHaveBeenCalledTimes(2);
+    expect(runtimeMocks.projectionRuntime.resume).toHaveBeenCalledOnce();
     expect(runtimeMocks.startRealtimeStream).toHaveBeenCalledTimes(2);
+    expect(runtimeMocks.startRealtimeStream.mock.calls[0][1].aborted).toBe(true);
+    expect(runtimeMocks.startRealtimeStream.mock.calls[1][1].aborted).toBe(false);
     await controller.teardown();
   });
 

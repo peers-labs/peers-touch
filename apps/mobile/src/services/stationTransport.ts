@@ -9,7 +9,66 @@ import {
 } from '../runtimes/sessionRuntime';
 import { secureRandomUuid } from '../utils/randomIdentity';
 
+export type AgentSettingsRpc =
+  | 'provider_list'
+  | 'provider_get'
+  | 'provider_create'
+  | 'provider_update'
+  | 'provider_delete'
+  | 'provider_check'
+  | 'provider_models_discover'
+  | 'models_available'
+  | 'model_create'
+  | 'credential_set'
+  | 'credential_status'
+  | 'agent_list'
+  | 'agent_get'
+  | 'agent_update'
+  | 'skill_list'
+  | 'skill_get'
+  | 'skill_install'
+  | 'skill_update'
+  | 'skill_delete'
+  | 'memory_list'
+  | 'memory_get'
+  | 'memory_update'
+  | 'memory_delete'
+  | 'memory_import'
+  | 'memory_search'
+  | 'memory_embedding_status'
+  | 'mcp_list'
+  | 'mcp_get'
+  | 'mcp_upsert'
+  | 'mcp_refresh'
+  | 'mcp_delete';
+
+export function agentSettingsAdmission(rpc: AgentSettingsRpc): SessionAdmission {
+  switch (rpc) {
+    case 'provider_list':
+    case 'provider_get':
+    case 'models_available':
+    case 'credential_status':
+    case 'agent_list':
+    case 'agent_get':
+    case 'skill_list':
+    case 'skill_get':
+    case 'memory_list':
+    case 'memory_get':
+    case 'memory_search':
+    case 'memory_embedding_status':
+    case 'mcp_list':
+    case 'mcp_get':
+      return 'read';
+    default:
+      return 'write';
+  }
+}
+
 export type StationTransportOperation =
+  | { operationId: 'actor_devices_list' }
+  | { operationId: 'actor_devices_revoke'; body_bytes: number[] }
+  | { operationId: 'agent_settings_execute'; rpc: AgentSettingsRpc; body_bytes: number[] }
+  | { operationId: 'federation_settings_execute'; rpc: 'list' | 'create' | 'join' | 'leave' | 'delete'; body_bytes: number[] }
   | { operationId: 'actor_profile_get' }
   | {
     operationId: 'actor_profile_update';
@@ -155,6 +214,30 @@ export interface StationTransportResponse {
 
 export interface StationRealtimeHandle {
   readonly streamId: number;
+}
+
+export interface StationRequestScope {
+  signal(): AbortSignal;
+  suspend(): void;
+  resume(): void;
+  close(): void;
+}
+
+/** A runtime cancels its requests before waiting for accepted work to drain. */
+export function createStationRequestScope(): StationRequestScope {
+  let controller = new AbortController();
+  let closed = false;
+  return {
+    signal: () => controller.signal,
+    suspend: () => controller.abort(),
+    resume: () => {
+      if (!closed && controller.signal.aborted) controller = new AbortController();
+    },
+    close: () => {
+      closed = true;
+      controller.abort();
+    },
+  };
 }
 
 export interface StationRealtimeEvent {
@@ -332,6 +415,12 @@ function operationAdmission(
   operation: StationTransportOperation,
 ): SessionAdmission {
   switch (operation.operationId) {
+    case 'actor_devices_list':
+      return 'read';
+    case 'federation_settings_execute':
+      return operation.rpc === 'list' ? 'read' : 'write';
+    case 'agent_settings_execute':
+      return agentSettingsAdmission(operation.rpc);
     case 'actor_profile_get':
     case 'actor_profile_get_peer':
     case 'actor_search':
@@ -356,6 +445,7 @@ function operationAdmission(
     case 'turn_ice_servers':
       return 'read';
     case 'actor_profile_update':
+    case 'actor_devices_revoke':
     case 'notification_mark_read':
     case 'notification_mark_all_read':
     case 'notification_delete':

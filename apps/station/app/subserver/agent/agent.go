@@ -353,6 +353,9 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		credentialConfigSvc,
 		admissionResolver,
 	)
+	providerOperationsHandlers := handler.NewProviderOperationsHandlers(
+		service.NewProviderOperationsService(providerConfigSvc, admissionResolver, providerSvc),
+	)
 	runtimeEvidenceHandlers := handler.NewRuntimeEvidenceHandlers(
 		runtimeEvidenceSvc,
 	)
@@ -538,6 +541,8 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-provider-create", "/agent/provider/create", server.POST, providerHandlers.HandleProviderCreate, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-provider-update", "/agent/provider/update", server.POST, providerHandlers.HandleProviderUpdate, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-provider-delete", "/agent/provider/delete", server.POST, providerHandlers.HandleProviderDelete, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-provider-check", "/agent/provider/check", server.POST, providerOperationsHandlers.HandleCheck, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-provider-models-discover", "/agent/provider/models/discover", server.POST, providerOperationsHandlers.HandleDiscover, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-model-list", "/agent/model/list", server.POST, providerHandlers.HandleModelList, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-model-create", "/agent/model/create", server.POST, providerHandlers.HandleModelCreate, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-model-update", "/agent/model/update", server.POST, providerHandlers.HandleModelUpdate, logIDWrapper, jwtWrapper),

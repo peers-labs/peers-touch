@@ -3,15 +3,22 @@
 import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
+import { createRecoveryProjection } from '../../runtimes/recoveryProjection';
 import {
   bindDeferredCapabilityProjection,
+  isBlockingRecoveryState,
   isShellStatusState,
+  recoverySurfacePresentation,
   visibleRecoveryStates,
 } from './RecoveryOverlayHost';
 
 describe('Mobile reliability recovery surfaces', () => {
   const appSource = readFileSync(
     new URL('../../App.tsx', import.meta.url),
+    'utf8',
+  );
+  const entryRuntimeSource = readFileSync(
+    new URL('../../runtimes/entryRuntime.ts', import.meta.url),
     'utf8',
   );
   const scopeExitSource = readFileSync(
@@ -40,13 +47,13 @@ describe('Mobile reliability recovery surfaces', () => {
   );
 
   it('fences Rust draft admission before deciding whether scope drafts exist', () => {
-    expect(appSource).toMatch(
+    expect(entryRuntimeSource).toMatch(
       /readReliabilityRuntimeStatus\(\)[\s\S]*prepareReliabilityScopeExit\(/,
     );
-    expect(appSource).toMatch(
-      /committedDisposition:\s*status\.draftCount === 0 \? 'discard' : null/,
+    expect(entryRuntimeSource).toMatch(
+      /if \(status\.draftCount === 0\)[\s\S]*execute\('discard'\)/,
     );
-    expect(appSource).toMatch(
+    expect(entryRuntimeSource).toMatch(
       /openReliabilityAdmission\([\s\S]*notifyReliabilityCommandChanged\(\)/,
     );
   });
@@ -106,6 +113,19 @@ describe('Mobile reliability recovery surfaces', () => {
     expect(visibleRecoveryStates([expired], 'shell')).toEqual([expired]);
   });
 
+  it('keeps routine suspend write fencing without a recovery card and preserves real revocation', () => {
+    const projection = createRecoveryProjection();
+    projection.reportWriteAdmission({ open: false, reason: 'runtime_suspended', closedAt: 1 });
+    expect(projection.getSnapshot().isWriteBlocked).toBe(true);
+    expect(visibleRecoveryStates(projection.getSnapshot().states, 'shell')).toEqual([]);
+    projection.reportWriteAdmission({ open: false, reason: 'control_event_lost', closedAt: 2 });
+    expect(visibleRecoveryStates(projection.getSnapshot().states, 'shell')).toHaveLength(1);
+    expect(projection.getSnapshot().isWriteBlocked).toBe(true);
+    projection.reportWriteAdmission({ open: true });
+    expect(projection.getSnapshot().isWriteBlocked).toBe(false);
+    projection.teardown();
+  });
+
   it('hides only runtime degradation while an explicit domain fixture is under review', () => {
     const degraded = {
       kind: 'deferred-capability',
@@ -139,6 +159,43 @@ describe('Mobile reliability recovery surfaces', () => {
     } as const;
 
     expect(visibleRecoveryStates([identity, degraded], 'shell')).toEqual([identity]);
+  });
+
+  it('suppresses shell status while a blocking recovery surface is active', () => {
+    const draft = {
+      kind: 'draft-restore-pending',
+      drafts: [{ key: 'chat:one' }],
+      discoveredAtMs: 1,
+    } as const;
+    const degraded = {
+      kind: 'deferred-capability',
+      unavailableRuntimes: [],
+    } as const;
+
+    expect(isBlockingRecoveryState(draft)).toBe(true);
+    expect(isBlockingRecoveryState(degraded)).toBe(false);
+    expect(recoverySurfacePresentation(
+      [draft, degraded],
+      'shell',
+      true,
+    )).toEqual({
+      blocksApplicationSurface: true,
+      overlayStates: [draft],
+      shellStatusStates: [],
+    });
+  });
+
+  it('keeps retained legacy data non-blocking while unresolved legacy data blocks', () => {
+    expect(isBlockingRecoveryState({
+      kind: 'legacy-reliability-recovery',
+      archivedLegacyFiles: 1,
+      retainedReadOnly: true,
+    })).toBe(false);
+    expect(isBlockingRecoveryState({
+      kind: 'legacy-reliability-recovery',
+      archivedLegacyFiles: 1,
+      retainedReadOnly: false,
+    })).toBe(true);
   });
 
   it('keeps deferred capability recovery synchronized with every kernel update', () => {
@@ -178,13 +235,18 @@ describe('Mobile reliability recovery surfaces', () => {
     expect(isShellStatusState(degraded, 'resume')).toBe(true);
     expect(isShellStatusState(degraded, 'access-gate-chain')).toBe(false);
     expect(deferredSource).toContain('data-blocks-unrelated-content="false"');
-    expect(hostSource).toContain('createPortal(shellStatusStates.map(renderState)');
+    expect(hostSource).toContain(
+      'presentation.shellStatusStates.map(renderState)',
+    );
     expect(mobileShellSource).toContain('data-recovery-status-slot');
     expect(stylesSource).toMatch(
       /\.mobile-shell-status-slot\s*\{[^}]*flex:\s*0 0 auto;/s,
     );
     expect(stylesSource).toMatch(
       /\.mobile-shell-status-slot:not\(:empty\)\s*\{[^}]*display:\s*block;/s,
+    );
+    expect(appSource).toContain(
+      'surfaceRef.current.inert = blocked',
     );
   });
 

@@ -67,6 +67,7 @@ interface RecoveryOverlayHostProps {
   readonly onRetryDeviceLocal: (
     state: DeviceLocalFlagState,
   ) => Promise<void>;
+  readonly onBlockingChange?: (blocking: boolean) => void;
 }
 
 export function visibleRecoveryStates(
@@ -79,14 +80,21 @@ export function visibleRecoveryStates(
   );
   if (actorIdentityRecovery) return [actorIdentityRecovery];
   return states.filter((state) => {
+    if (state.kind === 'write-revocation'
+      && !state.admission.open
+      && state.admission.reason === 'runtime_suspended') {
+      // Routine resume keeps mutations fenced without obscuring the active page.
+      return false;
+    }
     if (domainFixtureActive && state.kind === 'deferred-capability') {
       return false;
     }
-    return !(
-      launchState === 'access-gate-chain'
-      && state.kind === 'device-local-flag'
+    if (launchState !== 'access-gate-chain') return true;
+    if (
+      state.kind === 'device-local-flag'
       && state.reason === 'session-expired'
-    );
+    ) return false;
+    return true;
   });
 }
 
@@ -98,6 +106,45 @@ export function isShellStatusState(
     (launchState === 'shell' || launchState === 'resume')
     && state.kind === 'deferred-capability'
   );
+}
+
+export function isBlockingRecoveryState(state: RecoveryState): boolean {
+  if (state.kind === 'legacy-reliability-recovery') {
+    return !state.retainedReadOnly;
+  }
+  return state.kind === 'reliability-reset-recovery'
+    || state.kind === 'draft-restore-pending'
+    || state.kind === 'session-mismatch'
+    || state.kind === 'actor-identity-recovery';
+}
+
+export function recoverySurfacePresentation(
+  states: readonly RecoveryState[],
+  launchState: MobileLaunchState,
+  shellStatusAvailable: boolean,
+): {
+  readonly blocksApplicationSurface: boolean;
+  readonly overlayStates: readonly RecoveryState[];
+  readonly shellStatusStates: readonly RecoveryState[];
+} {
+  const blockingState = states.find(isBlockingRecoveryState);
+  if (blockingState) {
+    return {
+      blocksApplicationSurface: true,
+      overlayStates: [blockingState],
+      shellStatusStates: [],
+    };
+  }
+
+  return {
+    blocksApplicationSurface: false,
+    overlayStates: states.filter(
+      (state) => !isShellStatusState(state, launchState),
+    ),
+    shellStatusStates: shellStatusAvailable
+      ? states.filter((state) => isShellStatusState(state, launchState))
+      : [],
+  };
 }
 
 export function bindDeferredCapabilityProjection(
@@ -114,6 +161,7 @@ export function RecoveryOverlayHost({
   onReAuthenticate,
   onSwitchStation,
   onRetryDeviceLocal,
+  onBlockingChange,
 }: RecoveryOverlayHostProps) {
   const { t } = useMobileI18n();
   const lifecycle = useLifecycleKernel();
@@ -326,7 +374,33 @@ export function RecoveryOverlayHost({
     ],
   );
 
-  if (fixture.surfaceId === 'recovery.session-valid-restore') {
+  const fixtureState = recoveryStateForFixture(fixture.surfaceId);
+  const sessionRestoreVisible =
+    fixture.surfaceId === 'recovery.session-valid-restore';
+  const visibleStates = sessionRestoreVisible
+    ? []
+    : fixture.surfaceId
+    ? (fixtureState ? [fixtureState] : [])
+    : visibleRecoveryStates(
+        snapshot.states,
+        lifecycle.launchState,
+        domainFixtureActive,
+      );
+  const presentation = recoverySurfacePresentation(
+    visibleStates,
+    lifecycle.launchState,
+    shellStatusTarget !== null,
+  );
+
+  useLayoutEffect(() => {
+    onBlockingChange?.(presentation.blocksApplicationSurface);
+  }, [onBlockingChange, presentation.blocksApplicationSurface]);
+
+  useEffect(() => () => {
+    onBlockingChange?.(false);
+  }, [onBlockingChange]);
+
+  if (sessionRestoreVisible) {
     return (
       <div
         className="recovery-overlay-host"
@@ -340,26 +414,14 @@ export function RecoveryOverlayHost({
     );
   }
 
-  const fixtureState = recoveryStateForFixture(fixture.surfaceId);
-  const visibleStates = fixture.surfaceId
-    ? (fixtureState ? [fixtureState] : [])
-    : visibleRecoveryStates(
-        snapshot.states,
-        lifecycle.launchState,
-        domainFixtureActive,
-      );
-  const shellStatusStates = visibleStates.filter(
-    (state) => isShellStatusState(state, lifecycle.launchState),
-  );
-  const overlayStates = shellStatusTarget
-    ? visibleStates.filter(
-        (state) => !isShellStatusState(state, lifecycle.launchState),
+  const shellStatusRail = shellStatusTarget
+    && presentation.shellStatusStates.length > 0
+    ? createPortal(
+        presentation.shellStatusStates.map(renderState),
+        shellStatusTarget,
       )
-    : visibleStates;
-  const shellStatusRail = shellStatusTarget && shellStatusStates.length > 0
-    ? createPortal(shellStatusStates.map(renderState), shellStatusTarget)
     : null;
-  if (overlayStates.length === 0) return shellStatusRail;
+  if (presentation.overlayStates.length === 0) return shellStatusRail;
 
   return (
     <>
@@ -367,8 +429,14 @@ export function RecoveryOverlayHost({
       <div
         className="recovery-overlay-host"
         data-launch-state={lifecycle.launchState}
+        data-blocking-recovery={
+          presentation.blocksApplicationSurface ? 'true' : 'false'
+        }
+        data-blocks-unrelated-content={
+          presentation.blocksApplicationSurface ? 'true' : 'false'
+        }
       >
-        {overlayStates.map(renderState)}
+        {presentation.overlayStates.map(renderState)}
       </div>
     </>
   );

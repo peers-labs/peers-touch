@@ -8,10 +8,10 @@ import { PrototypeListWindow } from './PrototypeListWindow';
 
 const messageKey = (message: Message) => message.id;
 
-export function ChatHistorySearch({ messages, conversationKey, peerName, memory, searchDemo, onSelect }: {
+export function ChatHistorySearch({ messages, conversationKey, senderName, memory, searchDemo, onSelect }: {
   messages: Message[];
   conversationKey: string;
-  peerName: string;
+  senderName: (message: Message) => string;
   memory: PrototypeListMemory;
   searchDemo?: SearchDemoControl;
   onSelect: (id: string) => void;
@@ -85,7 +85,7 @@ export function ChatHistorySearch({ messages, conversationKey, peerName, memory,
               <button key={message.id} type="button" className="mp-details-search-result-item mp-history-result"
                 data-scroll-anchor-id={message.id} onClick={() => onSelect(message.id)}>
                 <span className="mp-details-search-result-sender">
-                  {message.mine ? copy['mobile.contacts.self'] : peerName}
+                  {message.mine ? copy['mobile.contacts.self'] : senderName(message)}
                 </span>
                 <span className="mp-details-search-result-text">{message.text}</span>
                 <span className="mp-details-search-result-time">{message.time}</span>

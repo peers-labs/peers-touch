@@ -74,6 +74,35 @@ Slot rules:
 - `AvatarSlot` and `SenderSlot` may collapse in consecutive message groups, but their absence MUST NOT change message body width unpredictably.
 - Avatar and message content begin at the same top edge. Message height must
   never move the avatar down to the metadata baseline.
+- Direct and Group timelines omit sender names, including own messages and
+  inline replies. Group identity is available by activating the actor avatar
+  at the cluster start. A group title or group avatar cannot stand in for a
+  message actor.
+- A cluster contains adjacent messages from the same actor, on the same local
+  day, with a nonnegative interval of at most five minutes. Sender changes,
+  date/system rows, recalled/moderated rows, and unknown actor identity or
+  timestamp end the cluster. Determine boundaries from the full timeline
+  before windowing it.
+- Continuations retain the same content track and full bubble corners;
+  only cluster starts carry the small corner toward the actor. Time and
+  ordinary receipts appear at cluster end. Failed/unknown sends retain
+  their per-message recovery controls.
+- Quoted previews, forwards, search results and pinned-message summaries
+  retain source identity independently of timeline label visibility.
+- Replies are rendered under their root message. Up to ten replies are all
+  visible; larger threads show the first ten with a More control that expands
+  the rest in place. A compact `Thread · N replies` entry and the explicit
+  Reply in thread action open the full thread. Both views read and mutate the
+  same reply collection.
+- Thread counts, More, pinned counts and similar disclosure metadata stay at
+  caption scale with compact visual height. Their touch targets may expand
+  invisibly on coarse pointers, but they must not compete with message bodies.
+- Pinned messages use a horizontal carousel below the conversation header.
+  Multiple pins show a current/total tag and previous/next controls, support
+  native horizontal swipe and keyboard arrows, and jump to the selected
+  message on activation. Membership changes preserve the active message when
+  possible, otherwise select the nearest remaining item. Recalled, moderated
+  or locally hidden messages cannot appear in pinned previews.
 - Overflow entry is transparent and borderless, with received-message entry
   toward the sender on the left and sent-message entry toward self on the right.
 
@@ -131,6 +160,12 @@ Occlusion rectangles:
 - Desktop sidebars, detail panels, and resizable splitters.
 - System safe areas.
 - Existing modal, drawer, or popover layers.
+
+If a tall message leaves insufficient room on both sides, a Desktop prototype
+may put the action panel in normal flow after that message, outside `Bubble`.
+The existing message viewport scrolls the panel into view; Escape or an
+outside press closes it. Scrolling must not dismiss this inline fallback
+before its controls can be reached.
 
 Conversation-level action surfaces are not message actions.
 
@@ -194,6 +229,19 @@ Composer semantics are shared even when layout differs:
 - Empty composer shows attach/action affordance.
 - Non-empty composer shows send affordance.
 - Multiline composer has a maximum expansion height; after that, the input scrolls internally.
+- The initial chat composer is one compact row containing tools, a transparent
+  borderless textarea and Send inside the same dock. Text input grows for
+  multiline drafts. The textarea must not acquire an independent form border
+  or occupy a separate row above the controls. Enter respects IME composition;
+  Shift+Enter inserts a newline.
+- Mobile exposes both attachment and emoji entries in the compact row.
+  Attachment choices support photo, camera, and file selection; a selected
+  attachment becomes composer-owned context and may be sent without text.
+- Emoji and attachment drawers are mutually exclusive transient layers. They
+  close when focus or pointer ownership leaves the drawer/trigger, on Escape,
+  on conversation context change, and when the app window loses focus.
+  Selecting an attachment closes the drawer while retaining the selected
+  attachment preview in the composer.
 - Reply/edit/draft context occupies a reserved context row above the input, not ad hoc bubble padding.
 - Failed sends must be recoverable at message level and should not rely only on toast feedback.
 
@@ -226,7 +274,16 @@ Platform contracts may map these tokens to different values.
 - User-facing strings MUST use locale keys.
 - Interactive action targets MUST expose accessible names.
 - Reactions display the selected Unicode emoji without a second smiley icon.
-  Mobile reaction and composer pickers share the same bounded emoji catalog.
+  Chat and Social use the same five typed reactions and shared picker; the
+  unrestricted composer Emoji catalog remains a separate text-input feature.
+- Reaction tags have a 28px visible capsule with no hard outline. Emoji remains
+  primary, counts share its baseline, and selected tags use a quiet accent
+  wash. The add entry is a borderless icon. Separate transparent hit bounds
+  preserve at least 44px on Mobile/coarse pointers without enlarging the
+  visible capsule or overlapping adjacent targets.
+- Typed reactions are independent multi-select values. Toggling one value
+  never removes another, and the shared picker remains open until explicitly
+  dismissed so multiple reactions can be changed in one interaction.
 - Repeated message commands use compact icon controls with accessible names and
   tooltips. Compact presentation preserves the platform's minimum touch target.
 - Keyboard focus, screen reader order, and visible focus state MUST match message anatomy order.

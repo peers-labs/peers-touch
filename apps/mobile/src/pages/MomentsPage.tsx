@@ -645,6 +645,13 @@ function MomentsPageInner({
                             explanation={runtimeFeedState?.feedExplanations.get(
                               post.id,
                             )}
+                            commentCount={Math.max(
+                              runtimeFeedState?.commentsByPost?.get(post.id)
+                                ?.comments.length ?? 0,
+                              projection?.runtime.privateSocial
+                                ?.commentThreadsByPostId?.[post.id]?.comments
+                                .length ?? 0,
+                            )}
                             policyState={resolveMomentPolicyState(
                               runtimeFeedState?.feedExplanations.get(post.id),
                             )}

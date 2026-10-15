@@ -8,6 +8,7 @@ private let acceptanceSecretFileEnvironment =
   "PEERS_TOUCH_ACCEPTANCE_RECOVERY_SECRET_FILE"
 private let privateSocialRecoveryPurpose = "private_social_recovery"
 private let actorIdentityRecoveryPurpose = "actor_identity_recovery"
+private let actorIdentityBackupPurpose = "actor_identity_backup"
 private let maximumSecretBytes = 1024
 
 private struct SecretInputArgs: Decodable {
@@ -16,6 +17,7 @@ private struct SecretInputArgs: Decodable {
   let lifecycleGeneration: Int
   let deadlineMs: Int
   let acceptanceAutofillAllowed: Bool
+  let initialSecret: String?
 }
 
 private struct SecretInputResponse: Encodable {
@@ -55,7 +57,8 @@ final class SecureInputPlugin: Plugin {
       guard
         !args.requestId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
         args.purpose == privateSocialRecoveryPurpose
-          || args.purpose == actorIdentityRecoveryPurpose,
+          || args.purpose == actorIdentityRecoveryPurpose
+          || args.purpose == actorIdentityBackupPurpose,
         args.lifecycleGeneration > 0,
         args.deadlineMs >= 1_000,
         args.deadlineMs <= 300_000
@@ -98,15 +101,20 @@ final class SecureInputPlugin: Plugin {
     }
 
     let actorIdentityRecovery = args.purpose == actorIdentityRecoveryPurpose
+    let backup = args.purpose == actorIdentityBackupPurpose
+    if backup && (args.initialSecret == nil || args.initialSecret!.utf8.count > maximumSecretBytes) {
+      resolve(invoke, args: args, outcome: "platform_failure", errorCode: "SECURE_INPUT_INVALID_REQUEST")
+      return
+    }
     let alert = UIAlertController(
       title: localized(
-        actorIdentityRecovery
+        backup ? "backup_title" : actorIdentityRecovery
           ? "actor_identity_recovery_title" : "recovery_title"
       ),
       message: localized(
-        actorIdentityRecovery
+        backup ? "backup_message" : actorIdentityRecovery
           ? "actor_identity_recovery_message" : "recovery_message"
-      ),
+      ) + (backup ? "\n\n" + (args.initialSecret ?? "") : ""),
       preferredStyle: .alert
     )
     alert.view.accessibilityIdentifier = "peers-touch.secure-input.recovery"
@@ -117,6 +125,11 @@ final class SecureInputPlugin: Plugin {
       field.autocapitalizationType = .none
       field.placeholder = self?.localized("recovery_placeholder")
       field.accessibilityIdentifier = "peers-touch.secure-input.recovery-field"
+      if backup {
+        field.text = args.initialSecret
+        field.isHidden = true
+        field.isUserInteractionEnabled = false
+      }
       if args.acceptanceAutofillAllowed,
          ProcessInfo.processInfo.environment[acceptanceSecretFileEnvironment] != nil
       {
@@ -147,7 +160,7 @@ final class SecureInputPlugin: Plugin {
       }
     ))
     alert.addAction(UIAlertAction(
-      title: localized("recover"),
+      title: localized(backup ? "backup_create" : "recover"),
       style: .default,
       handler: { [weak self, weak field] _ in
         self?.complete(
@@ -157,6 +170,16 @@ final class SecureInputPlugin: Plugin {
         )
       }
     ))
+    if backup {
+      alert.addAction(UIAlertAction(title: localized("backup_copy_create"), style: .default) {
+        [weak self, weak field] _ in
+        if let phrase = field?.text {
+          UIPasteboard.general.setItems([[UIPasteboard.typeAutomatic: phrase]],
+            options: [.localOnly: true, .expirationDate: Date().addingTimeInterval(60)])
+        }
+        self?.complete(outcome: "submitted", secret: field?.text ?? "", errorCode: nil)
+      })
+    }
 
     let active = ActiveSecretInput(
       args: args,

@@ -120,8 +120,11 @@ export interface SocialGateway {
 // Factory
 // ---------------------------------------------------------------------------
 
-export function createSocialGateway(session: MobileAuthSession): SocialGateway {
-  const { command } = createGatewayTransport(session, 'social');
+export function createSocialGateway(
+  session: MobileAuthSession,
+  requestSignal?: () => AbortSignal,
+): SocialGateway {
+  const { command } = createGatewayTransport(session, 'social', undefined, requestSignal);
 
   const getConversationSettings = async (
     conversationId: string,

@@ -1,7 +1,16 @@
 // @ts-nocheck -- Vitest is supplied by the repository test runner.
 
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { create } from '@bufbuild/protobuf';
+import { describe, expect, it, vi } from 'vitest';
+import { PostSchema } from '../../gen/proto/domain/social/post_pb';
+import { MomentFeedItem } from './MomentFeedItem';
+
+vi.mock('../../app/mobileI18n', () => ({
+  useMobileI18n: () => ({ t: (key: string) => key }),
+}));
 
 describe('Moment feed item', () => {
   it('routes every published image through the encrypted media renderer', () => {
@@ -55,6 +64,34 @@ describe('Moment feed item', () => {
     expect(source).toMatch(/moments-action--share"[\s\S]*?disabled/);
     expect(source).not.toContain('moments-comment-input-row');
     expect(source).not.toContain('onOpenDetail');
+    expect(source).toContain('setShowReactionPicker(false)');
+  });
+
+  it('keeps transport addresses out of author metadata and uses loaded comment truth', () => {
+    const post = create(PostSchema, {
+      id: 'post-1',
+      authorPtid: 'ptid:bob',
+      author: {
+        id: 'ptid:bob',
+        displayName: 'Bob',
+        homeStationDomain: '10.37.221.38:18132',
+      },
+      reactions: [],
+    });
+    const markup = renderToStaticMarkup(createElement(MomentFeedItem, {
+      post,
+      commentCount: 3,
+      explanation: {
+        source: { stationDomain: '10.37.221.38:18132' },
+      },
+      onReact: () => undefined,
+      onOpenComments: () => undefined,
+    }));
+
+    expect(markup).not.toContain('10.37.221.38:18132');
+    expect(markup).toContain('mobile.moments.audience.public');
+    expect(markup).toContain('moments-action-count');
+    expect(markup).toContain('>3<');
   });
 
   it('keeps reaction and mutation feedback from changing article geometry', () => {
@@ -89,7 +126,7 @@ describe('Moment feed item', () => {
     expect(actionGroup).toContain('justify-content: flex-end');
     expect(actionGroup).toContain('margin-left: auto');
     expect(styles).toMatch(
-      /\.moments-reaction-summary\s*\{[\s\S]*?max-width:\s*80%;[\s\S]*?overflow:\s*hidden;/,
+      /\.moments-reaction-summary\s*\{[\s\S]*?flex-wrap:\s*wrap;/,
     );
     expect(styles).toMatch(
       /\.moments-comments-section--inline[\s\S]*?margin-top:\s*8px;[\s\S]*?padding:\s*6px 0 0;/,
@@ -115,43 +152,35 @@ describe('Moment feed item', () => {
     expect(sendBlock).not.toMatch(/border-radius:\s*(?:50%|999px)/);
   });
 
-  it('uses one direct heart reaction without an emoji picker', () => {
-    const source = readFileSync(
-      new URL('./MomentFeedItem.tsx', import.meta.url),
-      'utf8',
-    );
-    const styles = readFileSync(
-      new URL('./Moments.css', import.meta.url),
-      'utf8',
-    );
+  it('renders five independent reaction counts through the same chip, without a duplicate heart total', () => {
+    const post = create(PostSchema, {
+      id: 'post-1',
+      reactions: [1, 2, 3, 4, 5].map((kind) => ({
+        kind, count: BigInt(kind), reactedByViewer: kind === 1 || kind === 2,
+      })),
+    });
+    const markup = renderToStaticMarkup(createElement(MomentFeedItem, {
+      post, onReact: () => undefined, onOpenComments: () => undefined,
+    }));
+    for (const emoji of ['👍', '❤️', '😄', '😮', '🎉']) {
+      expect(markup).toContain(`data-reaction-chip="${emoji}"`);
+    }
+    expect(markup.match(/class="mobile-reaction-count"/g)).toHaveLength(5);
+    expect(markup.match(/aria-pressed="true"/g)).toHaveLength(2);
+    expect(markup).not.toContain('moments-reaction-tag');
+  });
 
-    expect(source).toContain(
-      'const PRIMARY_REACTION_KIND = ReactionKind.REACTION_LOVE',
-    );
-    expect(source).toContain(
-      'onClick={() => onReact(post.id, PRIMARY_REACTION_KIND)}',
-    );
-    expect(source).toContain('data-reaction-kind={PRIMARY_REACTION_KIND}');
-    expect(source).not.toContain('REACTION_LONG_PRESS_MS');
-    expect(source).not.toContain('setShowReactionPicker');
-    expect(source).not.toContain('useMomentReactionPreferences');
-    expect(source).not.toContain('data-can-scroll-left');
-    expect(source).not.toContain('onPointerMove=');
-    expect(source).toMatch(
-      /PRIMARY_REACTION_EMOJI[\s\S]*?heartCount/,
-    );
-    expect(source).toContain('className="moments-more"');
-    expect(source.indexOf('className="moments-more"')).toBeLessThan(
-      source.indexOf('className="moments-actions"'),
-    );
-    expect(source).toContain('className="moments-action-count"');
-    expect(styles).toMatch(
-      /\.moments-action\s*\{[\s\S]*?width:\s*var\(--moments-action-size\);[\s\S]*?height:\s*var\(--moments-action-size\);[\s\S]*?flex:\s*0 0 var\(--moments-action-size\);/,
-    );
-    expect(styles).toMatch(
-      /\.moments-action-count\s*\{[\s\S]*?position:\s*absolute;/,
-    );
-    expect(styles).not.toContain('.moments-reaction-picker');
-    expect(styles).not.toContain('.moments-reaction-rail');
+  it('keeps existing reactions visible but non-interactive while a command outcome is unresolved', () => {
+    const post = create(PostSchema, {
+      id: 'post-1',
+      reactions: [{ kind: 2, count: 3n, reactedByViewer: true }],
+    });
+    const markup = renderToStaticMarkup(createElement(MomentFeedItem, {
+      post, onReact: () => undefined, onOpenComments: () => undefined,
+      reactionMutation: { status: 'unknown-outcome', reactionKind: 2 },
+    }));
+    expect(markup).toContain('data-reaction-chip="❤️"');
+    expect(markup.match(/aria-busy="true"/g)).toHaveLength(2);
+    expect(markup).toContain('mobile.moments.reaction.unknownOutcome');
   });
 });

@@ -190,7 +190,11 @@ export function SocialCircleDetailPage({
                       <Text strong ellipsis>
                         {profile?.displayName || member.actorPtid}
                       </Text>
-                      <Text type="secondary" ellipsis>{member.actorPtid}</Text>
+                    <Text type="secondary" ellipsis>
+                      {profile?.username
+                        ? `@${profile.username}`
+                        : t('mobile.social.circles.localPerson')}
+                    </Text>
                     </span>
                     <Button
                       type="text"
