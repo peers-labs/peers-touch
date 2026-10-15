@@ -18,6 +18,10 @@ ATTACHMENT_BYTES = b"peers-touch mobile acceptance attachment\n"
 STATION_ACCOUNT_REF_PREFIX = "station-account:"
 FRIEND_REQUEST_STATUS_ACCEPTED = 2
 TERMINAL_FAILURE_STATES = frozenset({"failed", "terminal", "superseded"})
+CONTACT_OPEN_RETRYABLE_ERRORS = (
+    "mobile.contacts.conversationPreparing",
+    "mobile.recovery.writeRevocation.body",
+)
 
 
 class MessagingJourneySession(Protocol):
@@ -421,7 +425,10 @@ class MobileMessagingJourney:
                     },
                 )
             except DriverError as error:
-                if "mobile.contacts.conversationPreparing" in str(error):
+                if any(
+                    retryable in str(error)
+                    for retryable in CONTACT_OPEN_RETRYABLE_ERRORS
+                ):
                     return False
                 raise
             conversation = self._mapping(

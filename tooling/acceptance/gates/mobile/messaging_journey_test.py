@@ -555,10 +555,10 @@ class MobileMessagingJourneyTests(unittest.TestCase):
         )
         self.assertEqual(result["conversationId"], "ptid:alice-ptid:bob")
 
-    def test_direct_prerequisite_reuses_existing_accepted_relationship(
+    def test_direct_prerequisite_retries_transient_contact_open_failures(
         self,
     ) -> None:
-        class PreparingSession(FakeMessagingSession):
+        class TransientContactSession(FakeMessagingSession):
             def __init__(
                 self,
                 network: FakeMessagingNetwork,
@@ -574,10 +574,12 @@ class MobileMessagingJourneyTests(unittest.TestCase):
             ) -> Any:
                 if action == "social.contact.open":
                     self.contact_open_attempts += 1
-                    if self.contact_open_attempts == 1:
-                        raise DriverError(
-                            "mobile.contacts.conversationPreparing"
-                        )
+                    retryable = (
+                        "mobile.recovery.writeRevocation.body",
+                        "mobile.contacts.conversationPreparing",
+                    )
+                    if self.contact_open_attempts <= len(retryable):
+                        raise DriverError(retryable[self.contact_open_attempts - 1])
                 return super().call_action(action, payload)
 
         self.network.friend_requests.append(
@@ -591,7 +593,7 @@ class MobileMessagingJourneyTests(unittest.TestCase):
                 "status": FRIEND_REQUEST_STATUS_ACCEPTED,
             }
         )
-        sender_session = PreparingSession(self.network, self.sender)
+        sender_session = TransientContactSession(self.network, self.sender)
         self.journey.authenticate(sender_session, self.sender, password="1")
         self.journey.authenticate(
             self.receiver_session,
@@ -608,7 +610,7 @@ class MobileMessagingJourneyTests(unittest.TestCase):
 
         self.assertEqual(conversation_id, "ptid:alice-ptid:bob")
         self.assertEqual(len(self.network.friend_requests), 1)
-        self.assertEqual(sender_session.contact_open_attempts, 2)
+        self.assertEqual(sender_session.contact_open_attempts, 3)
         self.assertEqual(
             sender_session.contact_open_inputs,
             [
