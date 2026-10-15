@@ -78,6 +78,36 @@ def fill(session: TauriSession, selector: str, value: str) -> None:
     field.send_keys(value)
 
 
+def focus_native_session(
+    session: TauriSession,
+    binding: NativeDesktopRuntimeBinding,
+    sessions: tuple[TauriSession, ...],
+) -> dict[str, object]:
+    process_id = session.process_id
+    if process_id is None:
+        raise GateError("Native focus target has no owning process")
+    cooperatively_activated = binding.request_cooperative_activation(
+        session,
+        sessions,
+    )
+    control = (
+        binding.native_adapter.focused_control(process_id)
+        if cooperatively_activated
+        else binding.native_adapter.activate_and_focused_control(process_id)
+    )
+    if (
+        control.error
+        or not control.frontmost
+        or control.actual_frontmost_pid != process_id
+        or control.window_count <= 0
+    ):
+        raise GateError(
+            "Native focus did not converge for exact process "
+            f"{process_id}: {control.to_dict()}"
+        )
+    return control.to_dict()
+
+
 def _native_click_once(
     session: TauriSession,
     binding: NativeDesktopRuntimeBinding,
@@ -88,8 +118,7 @@ def _native_click_once(
     pid = session.process_id
     if pid is None:
         raise GateError("Native pointer target has no owning process")
-    binding.request_cooperative_activation(session, sessions)
-    wait(session, lambda: session.execute_script("return document.hasFocus()"), "Native pointer focus")
+    focus = focus_native_session(session, binding, sessions)
     element = session.find_element(selector, 30)
     geometry = session.execute_script(
         """const rect = arguments[0].getBoundingClientRect();
@@ -141,7 +170,7 @@ def _native_click_once(
             delete window.__PT_POINTER_PROBE__;
             return probe.events;""",
         )
-    return {"processId": pid, "selector": selector, "point": list(point),
+    return {"processId": pid, "selector": selector, "point": list(point), "focus": focus,
             "geometry": geometry, "window": window, "events": pointer_events}
 
 
@@ -322,8 +351,11 @@ def run_profile_journey(
     changed = False
     try:
         session.find_element('[data-pt-primary-nav="settings"] [role="button"]', 30).click()
-        session.invoke_app_result("acceptance_request_activation")
-        wait(session, lambda: session.execute_script("return document.hasFocus()"), "Native focus")
+        result["nativeFocus"] = focus_native_session(
+            session,
+            binding,
+            (session,),
+        )
         session.find_element('[data-pt-secondary-tab="general"]', 30).click()
         session.find_element('[data-pt-section-item="account"]', 30).click()
         marker = f"Native Profile {time.time_ns()}"
