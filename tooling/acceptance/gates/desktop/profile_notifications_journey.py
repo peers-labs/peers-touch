@@ -31,6 +31,8 @@ from tooling.acceptance.gates.chat.native_support import DEV_ACCOUNT_PASSWORD, s
 
 PROFILE_FIELDS = ("display_name", "note", "region", "timezone", "tags", "links", "avatar", "header")
 REPO_ROOT = Path(__file__).resolve().parents[4]
+NATIVE_CLICK_MAX_ATTEMPTS = 3
+NATIVE_CLICK_EVENT_TIMEOUT_SECONDS = 2.0
 
 
 def wait(session: TauriSession, predicate: Callable[[], Any], description: str) -> Any:
@@ -74,7 +76,7 @@ def fill(session: TauriSession, selector: str, value: str) -> None:
     field.send_keys(value)
 
 
-def native_click(
+def _native_click_once(
     session: TauriSession,
     binding: NativeDesktopRuntimeBinding,
     selector: str,
@@ -115,11 +117,54 @@ def native_click(
             window["y"] / ratio + max(0, window["height"] / ratio - geometry["height"]),
         )
     point = (origin[0] + geometry["x"], origin[1] + geometry["y"])
-    binding.native_adapter.post_mouse_to_process(
-        pid, (MouseAction.LEFT_DOWN, MouseAction.LEFT_UP), point,
-    )
+    try:
+        binding.native_adapter.post_mouse_to_process(
+            pid, (MouseAction.LEFT_DOWN, MouseAction.LEFT_UP), point,
+        )
+        deadline = time.monotonic() + NATIVE_CLICK_EVENT_TIMEOUT_SECONDS
+        while time.monotonic() < deadline:
+            events = session.execute_script(
+                "return window.__PT_POINTER_PROBE__?.events || [];",
+            )
+            if any(event["type"] == "click" for event in events):
+                break
+            time.sleep(0.05)
+    finally:
+        pointer_events = session.execute_script(
+            """const probe = window.__PT_POINTER_PROBE__;
+            if (!probe) return [];
+            for (const type of ['pointerdown', 'pointerup', 'click']) {
+              document.removeEventListener(type, probe.listener, true);
+            }
+            delete window.__PT_POINTER_PROBE__;
+            return probe.events;""",
+        )
     return {"processId": pid, "selector": selector, "point": list(point),
-            "geometry": geometry, "window": window}
+            "geometry": geometry, "window": window, "events": pointer_events}
+
+
+def native_click(
+    session: TauriSession,
+    binding: NativeDesktopRuntimeBinding,
+    selector: str,
+    sessions: tuple[TauriSession, ...],
+) -> dict[str, Any]:
+    """Deliver one trusted Native click with bounded focus-contention retries."""
+    attempts = []
+    for _ in range(NATIVE_CLICK_MAX_ATTEMPTS):
+        pointer = _native_click_once(session, binding, selector, sessions)
+        attempts.append(pointer)
+        if any(
+            event["type"] == "click"
+            and event["trusted"]
+            and event["hitsTrigger"]
+            for event in pointer["events"]
+        ):
+            return {**pointer, "attempts": attempts}
+    raise GateError(
+        "Native click did not reach the notification trigger after "
+        f"{NATIVE_CLICK_MAX_ATTEMPTS} attempts: {attempts}",
+    )
 
 
 def open_notification_preview(
@@ -129,22 +174,9 @@ def open_notification_preview(
 ) -> dict[str, Any]:
     selector = '[role="button"][aria-haspopup="dialog"]'
     pointer = native_click(session, binding, selector, sessions)
-    try:
-        wait(session, lambda: session.find_element(selector).get_attribute(
-            "aria-expanded",
-        ) == "true", "notification preview opens after Native click")
-    finally:
-        pointer["events"] = session.execute_script(
-            """const probe = window.__PT_POINTER_PROBE__;
-            for (const type of ['pointerdown', 'pointerup', 'click']) {
-              document.removeEventListener(type, probe.listener, true);
-            }
-            delete window.__PT_POINTER_PROBE__;
-            return probe.events;""",
-        )
-    if not any(event["type"] == "click" and event["trusted"] and event["hitsTrigger"]
-               for event in pointer["events"]):
-        raise GateError("Native notification click did not reach the trigger")
+    wait(session, lambda: session.find_element(selector).get_attribute(
+        "aria-expanded",
+    ) == "true", "notification preview opens after Native click")
     return pointer
 
 

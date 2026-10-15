@@ -15,6 +15,9 @@ from tooling.acceptance.drivers.tauri import EXPECTED_URL
 from tooling.acceptance.gates.desktop.profile_notifications_e2e import (
     DesktopProfileNotificationsGate,
 )
+from tooling.acceptance.gates.desktop.profile_notifications_journey import (
+    native_click,
+)
 from tooling.acceptance.provisioners.desktop_profile_notifications_suite import (
     DesktopProfileNotificationsSuite,
     read_native_source_identity,
@@ -23,6 +26,7 @@ from tooling.acceptance.provisioners.desktop_profile_notifications_suite import 
 
 MODULE = "tooling.acceptance.provisioners.desktop_profile_notifications_suite"
 GATE_MODULE = "tooling.acceptance.gates.desktop.profile_notifications_e2e"
+JOURNEY_MODULE = "tooling.acceptance.gates.desktop.profile_notifications_journey"
 
 
 class DesktopProfileNotificationsGateTest(unittest.TestCase):
@@ -45,6 +49,61 @@ class DesktopProfileNotificationsGateTest(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=True):
             with self.assertRaisesRegex(GateError, "PT_ACCEPTANCE_RUNTIME_MANIFEST is required"):
                 DesktopProfileNotificationsGate().run()
+
+
+class NativePointerDeliveryTest(unittest.TestCase):
+    def test_native_click_retries_only_until_a_trusted_trigger_click(self) -> None:
+        missed = {
+            "events": [{
+                "type": "click",
+                "trusted": True,
+                "hitsTrigger": False,
+            }],
+        }
+        delivered = {
+            "events": [{
+                "type": "click",
+                "trusted": True,
+                "hitsTrigger": True,
+            }],
+        }
+        with patch(
+            f"{JOURNEY_MODULE}._native_click_once",
+            side_effect=(missed, delivered),
+        ) as click_once:
+            result = native_click(
+                MagicMock(),
+                MagicMock(),
+                '[aria-haspopup="dialog"]',
+                (MagicMock(),),
+            )
+
+        self.assertEqual(click_once.call_count, 2)
+        self.assertEqual(result["attempts"], [missed, delivered])
+
+    def test_native_click_fails_after_bounded_untrusted_attempts(self) -> None:
+        missed = {
+            "events": [{
+                "type": "click",
+                "trusted": False,
+                "hitsTrigger": True,
+            }],
+        }
+        with (
+            patch(
+                f"{JOURNEY_MODULE}._native_click_once",
+                side_effect=(missed, missed, missed),
+            ) as click_once,
+            self.assertRaisesRegex(GateError, "after 3 attempts"),
+        ):
+            native_click(
+                MagicMock(),
+                MagicMock(),
+                '[aria-haspopup="dialog"]',
+                (MagicMock(),),
+            )
+
+        self.assertEqual(click_once.call_count, 3)
 
 
 class NativeSourceIdentityTest(unittest.TestCase):
