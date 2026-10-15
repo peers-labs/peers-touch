@@ -11,7 +11,7 @@ import tempfile
 import unittest
 import zlib
 from pathlib import Path, PureWindowsPath
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from tooling.acceptance.core import (
     RUNTIME_CELLS_DIR,
@@ -397,6 +397,60 @@ class WindowsProvisionerContractTest(unittest.TestCase):
         self.assertIn('"powershell.exe"', source)
         self.assertNotIn("class SshTransport", source)
         self.assertNotIn("class SourceSyncRequest", source)
+
+    def test_source_sync_cleans_an_already_current_checkout(self) -> None:
+        commit = "a" * 40
+        request = Mock(
+            deploy_path="peers-touch/repo",
+            environment_name="acceptance-windows",
+            branch="design/relay-operations-plane",
+            source_mode="central",
+        )
+        provisioner = NativeDesktopWindowsProvisioner.__new__(
+            NativeDesktopWindowsProvisioner
+        )
+        provisioner._source_request = Mock(return_value=request)
+        provisioner.transport = Mock()
+        provisioner.transport.run_argv.side_effect = (
+            subprocess.CompletedProcess(
+                ("git",),
+                0,
+                stdout=commit + "\n",
+                stderr="",
+            ),
+            subprocess.CompletedProcess(
+                ("powershell.exe",),
+                0,
+                stdout="",
+                stderr="",
+            ),
+            subprocess.CompletedProcess(
+                ("powershell.exe",),
+                0,
+                stdout=json.dumps(
+                    {"commit": commit, "clean": True}
+                ),
+                stderr="",
+            ),
+        )
+
+        with patch(
+            "tooling.acceptance.provisioners.native_desktop_windows."
+            "RemoteSourceSynchronizer"
+        ) as synchronizer:
+            synchronizer.return_value.preflight.return_value = (
+                commit,
+                "b" * 64,
+            )
+            result = provisioner._sync_source(
+                r"C:\Users\Administrator"
+            )
+
+        cleanup = provisioner.transport.run_argv.call_args_list[1].args[0]
+        self.assertIn("reset --hard", cleanup[-1])
+        self.assertIn("clean -ffdqx", cleanup[-1])
+        self.assertEqual(result.remote_commit, commit)
+        self.assertTrue(result.remote_checkout_clean)
 
     def test_build_script_preserves_toolchain_environment(self) -> None:
         source = WINDOWS_BUILD_SCRIPT_PATH.read_text(encoding="utf-8")

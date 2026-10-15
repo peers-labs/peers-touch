@@ -1352,6 +1352,7 @@ class NativeDesktopWindowsProvisioner:
                         timeout=30,
                         check=False,
                     )
+        self._clean_remote_source(remote_source, commit)
         identity = self.transport.run_argv(
             (
                 "powershell.exe",
