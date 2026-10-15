@@ -5,6 +5,7 @@ import { App } from './App';
 import { MobileThemeProvider } from './app/MobileThemeProvider';
 import { installMobileWebGuards } from './app/installMobileWebGuards';
 import { copyTextToClipboard } from './services/clipboard';
+import { readableErrorMessage } from './utils/errorMessage';
 import enCommon from '../../../packages/locales/en/common.json';
 import zhCommon from '../../../packages/locales/zh-CN/common.json';
 import './styles.css';
@@ -131,8 +132,10 @@ createRoot(document.getElementById('root') as HTMLElement).render(
 
 function normalizeError(error: unknown): Error {
   if (error instanceof Error) return error;
-  if (typeof error === 'string') return new Error(error);
-  return new Error(mobileRootT('mobile.error.fallbackMessage'));
+  return new Error(readableErrorMessage(
+    error,
+    mobileRootT('mobile.error.fallbackMessage'),
+  ));
 }
 
 function isIgnorableGlobalError(error: unknown): boolean {
