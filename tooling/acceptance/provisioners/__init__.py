@@ -153,6 +153,15 @@ def get_provisioner(
         raise ProvisioningError(
             f"no provisioner registered for environment: {contract.id}"
         )
+    if provisioner_class is HomeStationProvisioner:
+        if station_profiles:
+            raise ProvisioningError(
+                f"environment {contract.id!r} does not accept station profile bindings"
+            )
+        return provisioner_class(
+            contract,
+            service_profiles=service_profiles,
+        )
     if provisioner_class is CrossStationSocialNativeProvisioner:
         if (
             station_profiles

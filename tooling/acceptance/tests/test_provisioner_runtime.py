@@ -1094,6 +1094,27 @@ class ProvisionerBlockingTests(unittest.TestCase):
             source,
         )
 
+    def test_home_station_factory_accepts_relay_profile_binding(self):
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "home-station.yaml"
+        )
+
+        provisioner = get_provisioner(
+            contract,
+            service_profiles={"relay": "one"},
+        )
+
+        self.assertIsInstance(provisioner, HomeStationProvisioner)
+        self.assertEqual(provisioner._service_profiles, {"relay": "one"})
+        with self.assertRaisesRegex(BlockedError, "does not match active profile"):
+            provisioner._services_for_gate(
+                gate_id=MESSAGE_PUBLISHING_GATE,
+                manifest=MagicMock(run_id="run", source_commit="commit"),
+                profile_name="two",
+                profile_env={},
+                station_attestation=self._station_attestation(),
+            )
+
     def test_message_publishing_attaches_optional_source_bound_relay_services(
         self,
     ):

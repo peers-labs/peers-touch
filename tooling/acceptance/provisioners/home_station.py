@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 import urllib.error
 import urllib.request
+from collections.abc import Mapping
 from pathlib import Path
 
 from tooling.acceptance.core._paths import REPO_ROOT
@@ -423,8 +424,20 @@ def attach_source_bound_relay_services(
 class HomeStationProvisioner(EnvironmentProvisioner):
     environment_id = "home-station"
 
-    def __init__(self, contract: EnvironmentContract) -> None:
+    def __init__(
+        self,
+        contract: EnvironmentContract,
+        *,
+        service_profiles: Mapping[str, str] | None = None,
+    ) -> None:
         super().__init__(contract)
+        self._service_profiles = dict(service_profiles or {})
+        unsupported = sorted(set(self._service_profiles) - {"relay"})
+        if unsupported:
+            raise ProvisioningError(
+                "home-station does not accept service profile bindings for: "
+                + ", ".join(unsupported)
+            )
 
     def _resolve_credentials(self) -> tuple[tuple[str, ...], dict[str, str]]:
         refs: list[str] = []
@@ -1053,6 +1066,15 @@ class HomeStationProvisioner(EnvironmentProvisioner):
         services = {"station": station_attestation}
         if gate_id != MESSAGE_PUBLISHING_GATE:
             return services
+        relay_profile = self._service_profiles.get("relay", "")
+        if relay_profile and relay_profile != profile_name:
+            raise BlockedError(
+                reason=(
+                    f"Message Publishing Relay profile {relay_profile!r} "
+                    f"does not match active profile {profile_name!r}"
+                ),
+                resource="profile:relay",
+            )
         for service_id, expected_kind in (
             ("relay", "relay"),
             ("station-via-relay", "station"),
