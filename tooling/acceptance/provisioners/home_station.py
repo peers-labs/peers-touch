@@ -8,6 +8,7 @@ import shutil
 import socket
 import subprocess
 import tempfile
+import time
 import urllib.error
 import urllib.request
 from collections.abc import Mapping
@@ -1791,21 +1792,30 @@ class HomeStationProvisioner(EnvironmentProvisioner):
         deploy_environment["PT_ACCEPTANCE_ENVIRONMENT"] = ""
         deploy_environment["PT_AGENT_CAPABILITY_SCENARIO_CONTROL"] = ""
         deploy_environment["PT_ACCEPTANCE_RUN_ID"] = ""
-        completed = subprocess.run(
-            ["make", "station"],
-            cwd=REPO_ROOT,
-            env=deploy_environment,
-            capture_output=True,
-            text=True,
-            timeout=1800,
-            check=False,
-        )
-        if completed.returncode != 0:
+        deadline = time.monotonic() + 180
+        while True:
+            completed = subprocess.run(
+                ["make", "station"],
+                cwd=REPO_ROOT,
+                env=deploy_environment,
+                capture_output=True,
+                text=True,
+                timeout=1800,
+                check=False,
+            )
+            if completed.returncode == 0:
+                return
             detail = (
                 completed.stderr.strip()
                 or completed.stdout.strip()
                 or "unknown Station deployment failure"
             )
+            if (
+                "STATION_CAPABILITY_CONFLICT" in detail
+                and time.monotonic() < deadline
+            ):
+                time.sleep(5)
+                continue
             raise BlockedError(
                 reason=(
                     "Exact-source Station deployment failed while the "

@@ -803,6 +803,12 @@ class ProvisionerBlockingTests(unittest.TestCase):
             stdout="[OK] station start",
             stderr="",
         )
+        conflict = subprocess.CompletedProcess(
+            args=["make", "station"],
+            returncode=2,
+            stdout='{"code":"STATION_CAPABILITY_CONFLICT"}',
+            stderr="",
+        )
         with patch(
             "tooling.acceptance.provisioners.home_station."
             "source_proto_digest",
@@ -817,8 +823,10 @@ class ProvisionerBlockingTests(unittest.TestCase):
             return_value=("foreign", "clean", "foreign-proto"),
         ), patch(
             "tooling.acceptance.provisioners.home_station.subprocess.run",
-            return_value=completed,
-        ) as run:
+            side_effect=(conflict, completed),
+        ) as run, patch(
+            "tooling.acceptance.provisioners.home_station.time.sleep",
+        ) as sleep:
             provisioner._ensure_remote_station_exact_source(
                 station_url="http://station.example:18080",
                 deployment_environment="station-1",
@@ -828,7 +836,8 @@ class ProvisionerBlockingTests(unittest.TestCase):
                 source_commit="abc1234",
             )
 
-        run.assert_called_once()
+        self.assertEqual(run.call_count, 2)
+        sleep.assert_called_once_with(5)
         self.assertEqual(run.call_args.args[0], ["make", "station"])
         self.assertEqual(
             run.call_args.kwargs["env"]["PT_STATION_FORCE_DEPLOY"],
