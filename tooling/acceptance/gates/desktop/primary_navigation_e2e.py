@@ -149,6 +149,58 @@ class DesktopPrimaryNavigationGate(AcceptanceGate):
         element.click()
 
     @staticmethod
+    def _click_visible_renderer_command(
+        session: TauriSession,
+        selector: str,
+    ) -> dict[str, Any]:
+        result = session.execute_script(
+            """
+            const candidates = [...document.querySelectorAll(arguments[0])];
+            const snapshots = candidates.map((element) => {
+              const rect = element.getBoundingClientRect();
+              return {
+                disabled:
+                  element.hasAttribute('disabled')
+                  || element.getAttribute('aria-disabled') === 'true',
+                height: rect.height,
+                role: element.getAttribute('role') || '',
+                tag: element.tagName.toLowerCase(),
+                visible: element.getClientRects().length > 0,
+                width: rect.width,
+              };
+            });
+            const index = snapshots.findIndex(
+              (snapshot) => snapshot.visible && !snapshot.disabled
+                && snapshot.width > 0 && snapshot.height > 0,
+            );
+            if (index < 0) {
+              return {
+                afterHash: window.location.hash,
+                beforeHash: window.location.hash,
+                clicked: false,
+                snapshots,
+              };
+            }
+            const beforeHash = window.location.hash;
+            candidates[index].click();
+            return {
+              afterHash: window.location.hash,
+              beforeHash,
+              clicked: true,
+              selectedIndex: index,
+              snapshots,
+            };
+            """,
+            selector,
+        )
+        if not isinstance(result, dict) or result.get("clicked") is not True:
+            raise GateError(
+                "No visible enabled renderer command matched "
+                f"{selector}: {json.dumps(result, sort_keys=True)}"
+            )
+        return result
+
+    @staticmethod
     def _text_present(
         session: TauriSession,
         selector: str,
@@ -368,16 +420,20 @@ class DesktopPrimaryNavigationGate(AcceptanceGate):
         assertions["primary_navigation_clean"] = True
         assertions["notes_route_falls_back_without_applet_redirect"] = True
 
-        applets_command = session.find_element(
-            '[data-pt-primary-nav="applets"]',
-            30,
-        )
-        session.execute_script("arguments[0].click()", applets_command)
-        self._wait(
+        applets_click = self._click_visible_renderer_command(
             session,
-            "window.location.hash === '#/applets'",
-            "Applets route",
+            '[data-pt-primary-nav="applets"]',
         )
+        try:
+            self._wait(
+                session,
+                "window.location.hash === '#/applets'",
+                "Applets route",
+            )
+        except GateError as error:
+            raise GateError(
+                f"{error}; click={json.dumps(applets_click, sort_keys=True)}"
+            ) from error
         self._wait(
             session,
             "document.querySelector('[data-applet-open=\"peers.note\"]')",
@@ -400,12 +456,20 @@ class DesktopPrimaryNavigationGate(AcceptanceGate):
             note_command.is_enabled(),
             f"status={note_status}",
         )
-        note_command.click()
-        self._wait(
+        note_click = self._click_visible_renderer_command(
             session,
-            "window.location.hash === '#/applet:peers.note'",
-            "official Note applet route",
+            '[data-applet-open="peers.note"]',
         )
+        try:
+            self._wait(
+                session,
+                "window.location.hash === '#/applet:peers.note'",
+                "official Note applet route",
+            )
+        except GateError as error:
+            raise GateError(
+                f"{error}; click={json.dumps(note_click, sort_keys=True)}"
+            ) from error
         self._wait(
             session,
             "document.querySelector('[data-applet-container-shell=\"peers.note\"]')",
