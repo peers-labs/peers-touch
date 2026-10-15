@@ -182,6 +182,16 @@ class AndroidSocialGateTests(unittest.TestCase):
             "reuse-exact-artifact",
         )
 
+    def test_android_explore_opens_sort_sheet_before_selecting_hot(self) -> None:
+        source = inspect.getsource(
+            AndroidSocialGate._run_ios_home_explore
+        )
+
+        self.assertLess(
+            source.index('social-explore-sort-open'),
+            source.index('social-explore-sort-hot'),
+        )
+
     def test_android_social_consumes_generic_installation_evidence(self) -> None:
         source = inspect.getsource(AndroidSocialGate._start_physical_session)
 

@@ -442,7 +442,14 @@ class AndroidSocialGate(AcceptanceGate):
                 scenario_id=scenario_id,
             )
             started_at = time.monotonic()
-            scenario_result = runner()
+            try:
+                scenario_result = runner()
+            except Exception:
+                ledger.record(
+                    SuiteRuntimeAction.SCENARIO_END,
+                    scenario_id=scenario_id,
+                )
+                raise
             duration_seconds = time.monotonic() - started_at
             ledger.record(
                 SuiteRuntimeAction.UI_ACTION,
@@ -756,6 +763,11 @@ class AndroidSocialGate(AcceptanceGate):
             "data-feed-scope",
             "explore",
             "Android Explore scope",
+        )
+        self._click_ui(
+            receiver_session,
+            '[data-acceptance-id="social-explore-sort-open"]',
+            "Android Explore sort menu",
         )
         self._click_ui(
             receiver_session,

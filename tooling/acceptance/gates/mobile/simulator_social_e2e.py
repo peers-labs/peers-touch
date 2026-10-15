@@ -749,7 +749,14 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
                 scenario_id=scenario_id,
             )
             started_at = time.monotonic()
-            scenario_result = run_scenario()
+            try:
+                scenario_result = run_scenario()
+            except Exception:
+                ledger.record(
+                    SuiteRuntimeAction.SCENARIO_END,
+                    scenario_id=scenario_id,
+                )
+                raise
             duration_seconds = time.monotonic() - started_at
             ledger.record(
                 SuiteRuntimeAction.UI_ACTION,
@@ -835,6 +842,11 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             "data-feed-scope",
             "explore",
             "Explore scope",
+        )
+        self._click_ui(
+            receiver_session,
+            '[data-acceptance-id="social-explore-sort-open"]',
+            "Explore sort menu",
         )
         self._click_ui(
             receiver_session,
