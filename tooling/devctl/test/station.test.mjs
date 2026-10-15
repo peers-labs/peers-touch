@@ -200,12 +200,7 @@ test(
     const root = temporaryRoot(t);
     const environment = machineEnvironment(t, root);
     const productCommit = 'a'.repeat(40);
-    const port = await startHealthServer(
-      t,
-      0,
-      () => true,
-      productCommit,
-    );
+    const port = await startHealthServer(t, 0, () => true, productCommit);
     const profilePath = writeProfile(
       root,
       'remote-product-source',
@@ -231,6 +226,40 @@ test(
     assert.equal(result.deployed, false);
     assert.equal(result.reused, true);
     assert.equal(fs.existsSync(path.join(root, 'remote-bridge-ran')), false);
+  },
+);
+
+test(
+  'remote start can force deployment when live and checkout identities diverge',
+  { skip: process.platform === 'win32' },
+  async (t) => {
+    const root = temporaryRoot(t);
+    const environment = machineEnvironment(t, root);
+    const currentCommit = git(root, 'rev-parse', 'HEAD');
+    const port = await startHealthServer(t, 0, () => true, currentCommit);
+    const profilePath = writeProfile(root, 'remote-force', 'remote', port);
+    writeRemoteBridge(
+      root,
+      [
+        '#!/usr/bin/env bash',
+        'set -euo pipefail',
+        'printf "forced\\n" > "$PWD/remote-force-deployed"',
+        '',
+      ].join('\n'),
+    );
+
+    const result = await startStation(root, {
+      ...environment,
+      PT_DEV_PROFILE_FILE: profilePath,
+      PT_STATION_FORCE_DEPLOY: 'true',
+    });
+
+    assert.equal(result.deployed, true);
+    assert.equal(result.reused, undefined);
+    assert.equal(
+      fs.readFileSync(path.join(root, 'remote-force-deployed'), 'utf8'),
+      'forced\n',
+    );
   },
 );
 

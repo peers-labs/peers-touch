@@ -134,6 +134,12 @@ function commitsMatch(expected, actual) {
   return expected.startsWith(actual) || actual.startsWith(expected);
 }
 
+function forceRemoteDeploy(environment) {
+  return ['1', 'true'].includes(
+    String(environment.PT_STATION_FORCE_DEPLOY ?? '').trim().toLowerCase(),
+  );
+}
+
 export function prepareStationConfig(root, resolved) {
   const values = stationValues(resolved);
   const slot = Number(resolved.profile.PT_DEV_SLOT);
@@ -375,7 +381,8 @@ export async function startStation(root, environment = process.env) {
     const expectedCommit = expectedRemoteCommit(root, environment);
     const existing = await stationStatus(root, environment);
     if (
-      existing.health.ok
+      !forceRemoteDeploy(environment)
+      && existing.health.ok
       && existing.build?.ok
       && commitsMatch(expectedCommit, existing.build.commit)
     ) {
