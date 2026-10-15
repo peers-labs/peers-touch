@@ -17,6 +17,7 @@ from tooling.acceptance.core._paths import REPO_ROOT
 from tooling.acceptance.core.attestation import (
     commits_match,
     produce_station_attestation,
+    read_service_version,
     source_proto_digest,
 )
 from tooling.acceptance.core.errors import BlockedError, ProvisioningError
@@ -1747,6 +1748,69 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 resource="profile:PT_STATION_DEPLOY_ENV",
             )
 
+    def _ensure_remote_station_exact_source(
+        self,
+        *,
+        station_url: str,
+        deployment_environment: str,
+        profile_env: dict[str, str],
+        source_commit: str,
+    ) -> None:
+        if (
+            profile_env.get(
+                "CHAT_ACCEPTANCE_ALLOW_STATION_RESTART",
+                "",
+            )
+            != "1"
+        ):
+            return
+
+        local_proto_digest = source_proto_digest(REPO_ROOT)
+        source_current = False
+        try:
+            live_version = read_service_version(station_url)
+            deployed_commit, workspace_digest, remote_proto_digest = (
+                resolve_remote_source_identity(deployment_environment)
+            )
+            source_current = (
+                commits_match(
+                    str(live_version.get("build_commit") or ""),
+                    source_commit,
+                )
+                and commits_match(deployed_commit, source_commit)
+                and workspace_digest == "clean"
+                and remote_proto_digest == local_proto_digest
+            )
+        except BlockedError:
+            source_current = False
+        if source_current:
+            return
+
+        deploy_environment = os.environ.copy()
+        deploy_environment["PT_STATION_FORCE_DEPLOY"] = "true"
+        completed = subprocess.run(
+            ["make", "station"],
+            cwd=REPO_ROOT,
+            env=deploy_environment,
+            capture_output=True,
+            text=True,
+            timeout=1800,
+            check=False,
+        )
+        if completed.returncode != 0:
+            detail = (
+                completed.stderr.strip()
+                or completed.stdout.strip()
+                or "unknown Station deployment failure"
+            )
+            raise BlockedError(
+                reason=(
+                    "Exact-source Station deployment failed while the "
+                    f"Acceptance profile lease was held: {detail}"
+                ),
+                resource=f"station-deployment:{deployment_environment}",
+            )
+
     def provision(self, gate_id: str) -> RuntimeManifest:
         self._manifest = self._new_base_manifest(gate_id)
         try:
@@ -1809,6 +1873,12 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                     deployment_environment=deployment_environment,
                 )
             if profile_env.get("PT_STATION_MODE", "local") == "remote":
+                self._ensure_remote_station_exact_source(
+                    station_url=station_url,
+                    deployment_environment=deployment_environment,
+                    profile_env=profile_env,
+                    source_commit=manifest.source_commit,
+                )
                 self.acquire_remote_git_source_lease(
                     deployment_environment,
                     f"acceptance:{gate_id}:{manifest.run_id}",

@@ -759,6 +759,82 @@ class ProvisionerBlockingTests(unittest.TestCase):
             },
         )
 
+    def test_home_station_reuses_exact_remote_source_under_profile_lease(
+        self,
+    ):
+        provisioner = HomeStationProvisioner(
+            EnvironmentContract(id="home-station")
+        )
+        with patch(
+            "tooling.acceptance.provisioners.home_station."
+            "source_proto_digest",
+            return_value="proto-digest",
+        ), patch(
+            "tooling.acceptance.provisioners.home_station."
+            "read_service_version",
+            return_value={"build_commit": "abc1234"},
+        ), patch(
+            "tooling.acceptance.provisioners.home_station."
+            "resolve_remote_source_identity",
+            return_value=("abc1234", "clean", "proto-digest"),
+        ), patch(
+            "tooling.acceptance.provisioners.home_station.subprocess.run",
+        ) as run:
+            provisioner._ensure_remote_station_exact_source(
+                station_url="http://station.example:18080",
+                deployment_environment="station-1",
+                profile_env={
+                    "CHAT_ACCEPTANCE_ALLOW_STATION_RESTART": "1",
+                },
+                source_commit="abc1234",
+            )
+
+        run.assert_not_called()
+
+    def test_home_station_repairs_drifted_remote_source_under_profile_lease(
+        self,
+    ):
+        provisioner = HomeStationProvisioner(
+            EnvironmentContract(id="home-station")
+        )
+        completed = subprocess.CompletedProcess(
+            args=["make", "station"],
+            returncode=0,
+            stdout="[OK] station start",
+            stderr="",
+        )
+        with patch(
+            "tooling.acceptance.provisioners.home_station."
+            "source_proto_digest",
+            return_value="proto-digest",
+        ), patch(
+            "tooling.acceptance.provisioners.home_station."
+            "read_service_version",
+            return_value={"build_commit": "abc1234"},
+        ), patch(
+            "tooling.acceptance.provisioners.home_station."
+            "resolve_remote_source_identity",
+            return_value=("foreign", "clean", "foreign-proto"),
+        ), patch(
+            "tooling.acceptance.provisioners.home_station.subprocess.run",
+            return_value=completed,
+        ) as run:
+            provisioner._ensure_remote_station_exact_source(
+                station_url="http://station.example:18080",
+                deployment_environment="station-1",
+                profile_env={
+                    "CHAT_ACCEPTANCE_ALLOW_STATION_RESTART": "1",
+                },
+                source_commit="abc1234",
+            )
+
+        run.assert_called_once()
+        self.assertEqual(run.call_args.args[0], ["make", "station"])
+        self.assertEqual(
+            run.call_args.kwargs["env"]["PT_STATION_FORCE_DEPLOY"],
+            "true",
+        )
+
     def test_home_station_requests_required_station_runtime_identity(self):
         contract = EnvironmentContract.from_yaml(
             ENVIRONMENTS_DIR / "desktop-primary-navigation-native.yaml"
