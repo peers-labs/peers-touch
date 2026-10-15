@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import os
 import threading
 import time
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from tooling.acceptance.core import GateError
 from tooling.acceptance.core.suite_runtime import SuiteRuntimeAction
 from tooling.acceptance.drivers.tauri import EXPECTED_URL
+from tooling.acceptance.gates.desktop.profile_notifications_e2e import (
+    DesktopProfileNotificationsGate,
+)
 from tooling.acceptance.provisioners.desktop_profile_notifications_suite import (
     DesktopProfileNotificationsSuite,
     read_native_source_identity,
@@ -17,6 +22,29 @@ from tooling.acceptance.provisioners.desktop_profile_notifications_suite import 
 
 
 MODULE = "tooling.acceptance.provisioners.desktop_profile_notifications_suite"
+GATE_MODULE = "tooling.acceptance.gates.desktop.profile_notifications_e2e"
+
+
+class DesktopProfileNotificationsGateTest(unittest.TestCase):
+    def test_gate_loads_the_parent_owned_runtime_manifest(self) -> None:
+        with (
+            patch.dict(os.environ, {
+                "PT_ACCEPTANCE_RUNTIME_MANIFEST": "/tmp/profile-runtime.json",
+            }),
+            patch(f"{GATE_MODULE}.load_runtime_manifest", return_value={}) as loader,
+            patch(f"{GATE_MODULE}.EphemeralGateClient.from_environment", return_value=None),
+        ):
+            with self.assertRaisesRegex(GateError, "parent-owned Suite"):
+                DesktopProfileNotificationsGate().run()
+        loader.assert_called_once_with(
+            Path("/tmp/profile-runtime.json"),
+            DesktopProfileNotificationsGate.gate_id,
+        )
+
+    def test_gate_rejects_a_missing_runtime_manifest(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaisesRegex(GateError, "PT_ACCEPTANCE_RUNTIME_MANIFEST is required"):
+                DesktopProfileNotificationsGate().run()
 
 
 class NativeSourceIdentityTest(unittest.TestCase):

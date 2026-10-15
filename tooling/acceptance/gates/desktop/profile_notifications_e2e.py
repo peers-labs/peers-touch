@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any
 
 from tooling.acceptance.core import AcceptanceGate, EphemeralGateClient, GateError, REPO_ROOT, load_runtime_manifest
@@ -19,7 +20,13 @@ class DesktopProfileNotificationsGate(AcceptanceGate):
     spec = ("DUI-C1-C9",)
 
     def run(self) -> dict[str, Any]:
-        manifest = load_runtime_manifest(self.gate_id)
+        manifest_path = os.environ.get(
+            "PT_ACCEPTANCE_RUNTIME_MANIFEST",
+            "",
+        ).strip()
+        if not manifest_path:
+            raise GateError("PT_ACCEPTANCE_RUNTIME_MANIFEST is required")
+        manifest = load_runtime_manifest(Path(manifest_path), self.gate_id)
         client = EphemeralGateClient.from_environment()
         if client is None:
             raise GateError("Profile and notification proof requires its parent-owned Suite")
