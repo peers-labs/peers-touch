@@ -444,7 +444,6 @@ function AppletIconTile({
 
   return (
     <div
-      data-applet-open={info.manifest.id}
       data-applet-status={info.status}
       style={{
         position: 'relative',
@@ -452,6 +451,7 @@ function AppletIconTile({
     >
       <button
         type="button"
+        data-applet-open={info.manifest.id}
         onClick={onOpen}
         disabled={isRevoked || isDisabled || pending}
         aria-label={`${t('applet.card.open')} ${info.manifest.name}`}

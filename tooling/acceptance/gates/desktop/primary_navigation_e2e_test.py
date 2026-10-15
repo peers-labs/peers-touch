@@ -12,6 +12,7 @@ from tooling.acceptance.provisioners import (
 
 ENVIRONMENT_ID = "desktop-primary-navigation-native"
 GATE_ID = "desktop-primary-navigation-e2e"
+REPO_ROOT = ENVIRONMENTS_DIR.parents[2]
 
 
 class DesktopPrimaryNavigationAcceptanceTests(unittest.TestCase):
@@ -79,6 +80,28 @@ class DesktopPrimaryNavigationAcceptanceTests(unittest.TestCase):
                 self.assertIn(contract, source)
         self.assertNotIn("chromium", source.lower())
         self.assertNotIn("playwright", source.lower())
+
+    def test_applet_open_selector_marks_the_interactive_button(self) -> None:
+        source = (
+            REPO_ROOT
+            / "apps"
+            / "desktop"
+            / "src"
+            / "pages"
+            / "AppletsPage.tsx"
+        ).read_text(encoding="utf-8")
+        tile_start = source.index("function AppletIconTile")
+        button_start = source.index("<button", tile_start)
+        button_end = source.index(">", button_start)
+
+        self.assertIn(
+            "data-applet-open={info.manifest.id}",
+            source[button_start:button_end],
+        )
+        self.assertEqual(
+            source.count("data-applet-open={info.manifest.id}"),
+            1,
+        )
 
 
 if __name__ == "__main__":
