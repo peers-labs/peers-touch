@@ -96,7 +96,6 @@ class MakeDesktopLauncherProfileTests(unittest.TestCase):
             launcher = MakeDesktopLauncher(
                 worktree=root,
                 port=45123,
-                gateway_port=45124,
                 renderer_port=45125,
                 profile="semantic-runtime",
                 storage_root=str(root / "storage"),
@@ -124,7 +123,6 @@ class MakeDesktopLauncherProfileTests(unittest.TestCase):
             self.assertNotIn(".local/dev/active", " ".join(command))
             content = rendered.read_text(encoding="utf-8")
             self.assertIn("PT_DEV_PROFILE=semantic-runtime", content)
-            self.assertIn("PT_DESKTOP_APP_GATEWAY_PORT=45124", content)
             self.assertIn("PT_DESKTOP_APP_WEB_PORT=45125", content)
             launcher.stop()
 

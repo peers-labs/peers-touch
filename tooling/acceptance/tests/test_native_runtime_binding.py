@@ -1575,7 +1575,11 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
     def test_macos_activation_yields_actual_frontmost_actor(self) -> None:
         with patch.dict(
             "os.environ",
-            {"PT_ACCEPTANCE_NATIVE_DEV": "1"},
+            {
+                "PT_ACCEPTANCE_NATIVE_DEV": "1",
+                "PT_ACCEPTANCE_DESKTOP_INPUT_MODE": "exclusive-native-input",
+                "PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION": "isolated-gui-session",
+            },
         ):
             binding = LocalMacOSRuntimeBinding()
         target = Mock(spec=TauriSession)
@@ -1647,7 +1651,11 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
     ) -> None:
         with patch.dict(
             "os.environ",
-            {"PT_ACCEPTANCE_NATIVE_DEV": "1"},
+            {
+                "PT_ACCEPTANCE_NATIVE_DEV": "1",
+                "PT_ACCEPTANCE_DESKTOP_INPUT_MODE": "exclusive-native-input",
+                "PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION": "isolated-gui-session",
+            },
         ):
             binding = LocalMacOSRuntimeBinding()
         target = Mock(spec=TauriSession)
@@ -1703,7 +1711,11 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
     def test_macos_activation_does_not_click_unowned_title_bar(self) -> None:
         with patch.dict(
             "os.environ",
-            {"PT_ACCEPTANCE_NATIVE_DEV": "1"},
+            {
+                "PT_ACCEPTANCE_NATIVE_DEV": "1",
+                "PT_ACCEPTANCE_DESKTOP_INPUT_MODE": "exclusive-native-input",
+                "PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION": "isolated-gui-session",
+            },
         ):
             binding = LocalMacOSRuntimeBinding()
         target = Mock(spec=TauriSession)
@@ -1751,7 +1763,11 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
     ) -> None:
         with patch.dict(
             "os.environ",
-            {"PT_ACCEPTANCE_NATIVE_DEV": "1"},
+            {
+                "PT_ACCEPTANCE_NATIVE_DEV": "1",
+                "PT_ACCEPTANCE_DESKTOP_INPUT_MODE": "exclusive-native-input",
+                "PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION": "isolated-gui-session",
+            },
         ):
             binding = LocalMacOSRuntimeBinding()
         target = Mock(spec=TauriSession)
@@ -1853,7 +1869,11 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
     ) -> None:
         with patch.dict(
             "os.environ",
-            {"PT_ACCEPTANCE_NATIVE_DEV": "1"},
+            {
+                "PT_ACCEPTANCE_NATIVE_DEV": "1",
+                "PT_ACCEPTANCE_DESKTOP_INPUT_MODE": "exclusive-native-input",
+                "PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION": "isolated-gui-session",
+            },
         ):
             binding = LocalMacOSRuntimeBinding()
         target = Mock(spec=TauriSession)
@@ -1909,7 +1929,11 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
     def test_macos_activation_rejected_yield_fails_closed(self) -> None:
         with patch.dict(
             "os.environ",
-            {"PT_ACCEPTANCE_NATIVE_DEV": "1"},
+            {
+                "PT_ACCEPTANCE_NATIVE_DEV": "1",
+                "PT_ACCEPTANCE_DESKTOP_INPUT_MODE": "exclusive-native-input",
+                "PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION": "isolated-gui-session",
+            },
         ):
             binding = LocalMacOSRuntimeBinding()
         target = Mock(spec=TauriSession)
@@ -1941,7 +1965,11 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
     def test_macos_activation_rejected_request_fails_closed(self) -> None:
         with patch.dict(
             "os.environ",
-            {"PT_ACCEPTANCE_NATIVE_DEV": "1"},
+            {
+                "PT_ACCEPTANCE_NATIVE_DEV": "1",
+                "PT_ACCEPTANCE_DESKTOP_INPUT_MODE": "exclusive-native-input",
+                "PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION": "isolated-gui-session",
+            },
         ):
             binding = LocalMacOSRuntimeBinding()
         target = Mock(spec=TauriSession)

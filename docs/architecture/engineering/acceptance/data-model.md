@@ -1405,7 +1405,11 @@ exclusive-native-input
   `NATIVE_INPUT_ISOLATION_REQUIRED/BLOCKED/UNPROVEN`。
 - Remote Native Runtime Binding 由 cell GUI-session lease 提供 isolation，并把
   mode 与 isolation 传给目标 Desktop process。
-- Gate report 的 `runtime.desktopInputMode` 记录实际模式。
+- Gate report 的 `runtime.desktopInputMode` 和 Runtime Cell manifest 的
+  `nativeAdapter.inputMode` 记录实际模式。
+- semantic Runtime Cell 记录 `frontmostUnchanged`、`pointerUnchanged` 与
+  `keyboardFocusUnchanged`，其 `focusProbe` 和 `pointOwnershipProbe` 必须保持
+  `false`。
 - semantic result 不得填充 native-input、physical-focus 或 point-ownership proof。
 
 ## 16. Runtime Cell Manifest

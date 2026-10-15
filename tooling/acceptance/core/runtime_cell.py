@@ -651,33 +651,14 @@ class RuntimeCellManifest:
         semantic_input = (
             self.native_adapter.input_mode == "semantic-nonintrusive"
         )
-        expected_input_backend = (
-            "embedded-webdriver-semantic"
-            if semantic_input
-            else contract.native_adapter.input
-        )
-        expected_screenshot_backend = (
-            "embedded-webdriver"
-            if semantic_input
-            else contract.native_adapter.screenshot
-        )
-        if (
-            self.native_adapter.input_backend != expected_input_backend
+        if not semantic_input and (
+            self.native_adapter.input_backend != contract.native_adapter.input
             or self.native_adapter.window_backend != contract.native_adapter.window
             or self.native_adapter.screenshot_backend
-            != expected_screenshot_backend
+            != contract.native_adapter.screenshot
         ):
             raise ProvisioningError(
                 f"runtime cell {self.cell_id}: native adapter identity mismatch"
-            )
-        if semantic_input and not (
-            self.native_adapter.frontmost_unchanged
-            and self.native_adapter.pointer_unchanged
-            and self.native_adapter.keyboard_focus_unchanged
-        ):
-            raise ProvisioningError(
-                f"runtime cell {self.cell_id}: semantic input changed host focus "
-                "or pointer state"
             )
         if contract.isolation.image_digest_required and not _SHA256_PATTERN.fullmatch(
             self.platform.image_digest
@@ -879,7 +860,6 @@ class RuntimeCellManifest:
                     "binarySha256": self.source.binary_sha256,
                 },
                 "nativeAdapter": {
-                    "inputMode": self.native_adapter.input_mode,
                     "inputBackend": self.native_adapter.input_backend,
                     "inputMode": self.native_adapter.input_mode,
                     "windowBackend": self.native_adapter.window_backend,

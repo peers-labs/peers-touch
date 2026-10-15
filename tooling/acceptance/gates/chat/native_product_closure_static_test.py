@@ -1032,8 +1032,11 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         self.assertNotIn("call_async_harness", yield_source)
         self.assertIn(
-            'source.invoke_app_result(\n'
-            '                "acceptance_yield_activation"',
+            "source.invoke_app_result(",
+            yield_source,
+        )
+        self.assertIn(
+            '"acceptance_yield_activation"',
             yield_source,
         )
         self.assertIn(

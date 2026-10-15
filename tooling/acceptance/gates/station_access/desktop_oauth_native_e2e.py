@@ -566,20 +566,23 @@ class DesktopOAuthNativeGate(AcceptanceGate):
         self,
         session: TauriSession,
     ) -> dict[str, Any]:
-        session.find_element(
+        chat_command = session.find_element(
             CHAT_NAV_SELECTOR,
             timeout=20,
-        ).click()
-        self._wait_for_displayed(
+        )
+        session.semantic_click(chat_command)
+        new_menu = self._wait_for_displayed(
             session,
             "[data-chat-new-menu]",
             timeout=20,
-        ).click()
-        self._wait_for_displayed(
+        )
+        session.semantic_click(new_menu)
+        find_people_command = self._wait_for_displayed(
             session,
             "[data-chat-find-people-menu]",
             timeout=10,
-        ).click()
+        )
+        session.semantic_click(find_people_command)
         self._wait_for_displayed(
             session,
             "[data-chat-find-people]",
@@ -599,7 +602,7 @@ class DesktopOAuthNativeGate(AcceptanceGate):
             federation_aria,
             timeout=10,
         )
-        federation.click()
+        session.semantic_click(federation)
         station = self._wait_for_displayed_with_text(
             session,
             '[data-chat-find-people-scope="station"]',
