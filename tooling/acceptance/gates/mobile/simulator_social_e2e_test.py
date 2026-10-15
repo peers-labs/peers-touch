@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import unittest
 from unittest.mock import Mock, patch
 
@@ -352,6 +353,56 @@ class SimulatorSocialGateTests(unittest.TestCase):
         self.assertEqual(report["metrics"]["provisioningRuns"], 1)
         self.assertEqual(report["metrics"]["clientLaunches"], 2)
         self.assertEqual(report["metrics"]["completedScenarios"], 6)
+
+    def test_ios_explore_opens_sort_sheet_before_selecting_hot(self) -> None:
+        source = inspect.getsource(
+            SimulatorSocialGate._run_ios_home_explore
+        )
+
+        self.assertLess(
+            source.index('social-explore-sort-open'),
+            source.index('social-explore-sort-hot'),
+        )
+
+    def test_failed_ios_scenario_ends_before_suite_cleanup(self) -> None:
+        gate = SimulatorSocialGate("ios-social-parity")
+        with (
+            patch.object(
+                gate,
+                "_run_ios_home_explore",
+                side_effect=GateError("expected failure"),
+            ),
+            self.assertRaisesRegex(GateError, "expected failure"),
+        ):
+            gate._run_ios_social_parity_suite(
+                manifest={"runId": "fixture-epoch"},
+                source_identity={"commit": "a" * 40},
+                sessions={
+                    "sim-ios": object(),
+                    "sim-ios-peer": object(),
+                },
+                actors={
+                    "sim-ios": self._actor("sim-ios", "alice"),
+                    "sim-ios-peer": self._actor(
+                        "sim-ios-peer",
+                        "bob",
+                    ),
+                    "fixture-eve": self._actor("sim-ios", "eve"),
+                },
+                journey=object(),  # type: ignore[arg-type]
+                journey_id="journey",
+            )
+
+        self.assertIsNotNone(gate.suite_runtime_ledger)
+        gate.suite_runtime_ledger.record(
+            SuiteRuntimeAction.CLEANUP_COMPLETE,
+        )
+        report = gate.suite_runtime_ledger.report()
+        self.assertEqual(report["result"], "FAIL")
+        self.assertEqual(
+            report["events"][-1]["action"],
+            SuiteRuntimeAction.CLEANUP_COMPLETE.value,
+        )
 
     def test_missing_runtime_manifest_blocks_before_journey(self) -> None:
         artifacts = Artifacts()
