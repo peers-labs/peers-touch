@@ -16,6 +16,7 @@ from tooling.acceptance.fixtures.desktop_profile_contract import (
 
 class DesktopProfileNotificationsGate(AcceptanceGate):
     gate_id = GATE_ID
+    phase = "DUI-C1-C9"
     bom = ("Desktop Native", "Station Actor profile", "Station Social", "Station notifications")
     spec = ("DUI-C1-C9",)
 

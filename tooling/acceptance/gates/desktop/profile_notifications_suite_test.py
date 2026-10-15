@@ -33,6 +33,14 @@ JOURNEY_MODULE = "tooling.acceptance.gates.desktop.profile_notifications_journey
 
 
 class DesktopProfileNotificationsGateTest(unittest.TestCase):
+    def test_gate_report_declares_complete_source_traceability(self) -> None:
+        report = DesktopProfileNotificationsGate().report.to_dict()
+
+        self.assertEqual(report["phase"], "DUI-C1-C9")
+        self.assertEqual(report["bom"], list(DesktopProfileNotificationsGate.bom))
+        self.assertEqual(report["spec"], ["DUI-C1-C9"])
+        self.assertEqual(report["gate"], DesktopProfileNotificationsGate.gate_id)
+
     def test_gate_loads_the_parent_owned_runtime_manifest(self) -> None:
         with (
             patch.dict(os.environ, {
