@@ -110,6 +110,17 @@ describe('Moment detail', () => {
     expect(source).toContain('className="moments-comment-reply-clear"');
   });
 
+  it('expands an accepted thread so the submitted comment remains visible', () => {
+    const source = readFileSync(
+      new URL('./MomentCommentsSection.tsx', import.meta.url),
+      'utf8',
+    );
+
+    expect(source).toMatch(
+      /if \(accepted\) \{\s*setExpanded\(true\);\s*setCommentText\(''\);/,
+    );
+  });
+
   it('offers public comment deletion only to the comment author', () => {
     const source = readFileSync(
       new URL('./MomentCommentsSection.tsx', import.meta.url),
