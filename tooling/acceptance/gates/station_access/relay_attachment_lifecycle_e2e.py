@@ -841,7 +841,7 @@ class RelayAttachmentAggregateGate(AcceptanceGate):
         GateSpec(gate_id, gate_id)
         for gate_id in (SUITE_GATE_ID, *PROJECTION_GATE_IDS)
     ) + (
-        GateSpec("NCP-G03", "NCP-G03", "desktop-macos-native"),
+        GateSpec("NCP-G03", "NCP-G03", "desktop-windows-native"),
         GateSpec("NCP-G07", "NCP-G07"),
     )
 

@@ -32,7 +32,7 @@ SPEC = (
 SECURITY_GATES: tuple[GateSpec, ...] = (
     GateSpec("SAL-REL-01", "relay-role-security-contract"),
     GateSpec("NCP-G01", "NCP-G01"),
-    GateSpec("NCP-G03", "NCP-G03", "desktop-macos-native"),
+    GateSpec("NCP-G03", "NCP-G03", "desktop-windows-native"),
     GateSpec("NCP-G07", "NCP-G07"),
     GateSpec("NCP-G08", "NCP-G08"),
 )

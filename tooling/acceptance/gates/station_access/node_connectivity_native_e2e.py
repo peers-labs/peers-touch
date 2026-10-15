@@ -51,7 +51,7 @@ from tooling.acceptance.gates.station_access.relay_native_support import (
 
 GATE_ID = "NCP-G03"
 ENVIRONMENT_ID = "station-access-relay-role"
-RUNTIME_CELL_ID = "desktop-macos-native"
+RUNTIME_CELL_ID = "desktop-windows-native"
 JOURNEY_ID = "native-circuit-chat"
 NCP_ASSERTIONS = {
     "native_actor_identity_state_persistent",
