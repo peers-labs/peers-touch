@@ -10,8 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/libp2p/go-libp2p/core/peer"
 	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 	nativefed "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
+	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation/locator"
 	locatorpb "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation/locator/pb"
 	fedcache "github.com/peers-labs/peers-touch/station/frame/touch/federation/cache"
 	fedprofile "github.com/peers-labs/peers-touch/station/frame/touch/federation/profile"
@@ -28,6 +30,31 @@ type membershipReaderStub struct {
 	active bool
 	err    error
 	calls  [][2]string
+}
+
+type localProfileFetcherStub struct {
+	profile  *modelpb.ActorProfile
+	metadata *fedprofile.LocalResolutionMetadata
+}
+
+func (s *localProfileFetcherStub) FetchByLocalHandle(
+	_ context.Context,
+	_ string,
+) (*modelpb.ActorProfile, error) {
+	if s.profile == nil {
+		return nil, fedprofile.ErrHandleNotLocal
+	}
+	return s.profile, nil
+}
+
+func (s *localProfileFetcherStub) FetchLocalResolutionMetadata(
+	_ context.Context,
+	_ string,
+) (*fedprofile.LocalResolutionMetadata, error) {
+	if s.metadata == nil {
+		return nil, fedprofile.ErrHandleNotLocal
+	}
+	return s.metadata, nil
 }
 
 func (s *membershipReaderStub) IsActiveMember(
@@ -124,6 +151,96 @@ func TestResolveByHandleInFederationRequiresContextAndReader(t *testing.T) {
 		nil,
 	); !errors.Is(err, ErrMembershipReaderMissing) {
 		t.Fatalf("missing reader error = %v", err)
+	}
+}
+
+func TestResolveByHandleInFederationResolvesLocalActorWhenDHTIsNotReady(t *testing.T) {
+	if nativefed.GetRoutingHealth().Ready {
+		t.Fatal("test requires an unavailable federation DHT")
+	}
+	stationPeerID, err := peer.Decode(
+		"12D3KooWRQ2Tc85YxU3gAnP4vbTaWLDtAz6JU6PURsHcspAun6ag",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previousIdentity := nativefed.LocalIdentitySnapshot()
+	nativefed.SetLocalStationPeerID(stationPeerID)
+	nativefed.SetLocalStationDomain("station.test")
+	t.Cleanup(func() {
+		nativefed.SetLocalStationPeerID(previousIdentity.StationPeerID)
+		nativefed.SetLocalStationDomain(previousIdentity.StationDomain)
+	})
+
+	keys := authfed.NewKeyCache(
+		authfed.NewInMemoryKeyStore(),
+		authfed.WithRecheckTTL(0),
+	)
+	memberships := &membershipReaderStub{active: true}
+	fetcher := &localProfileFetcherStub{
+		profile: &modelpb.ActorProfile{
+			Ref: &modelpb.ActorRef{
+				Ptid: "ptid:alice",
+				Acct: "@alice@station.test",
+				Kind: modelpb.ActorKind_ACTOR_KIND_PERSON,
+			},
+			FederatedHandle:   "@alice@station.test",
+			HomeStationPeerId: stationPeerID.String(),
+			HomeStationDomain: "station.test",
+			PeersTouch: &modelpb.PeersTouchInfo{
+				NetworkId: "ptid:alice",
+			},
+		},
+		metadata: &fedprofile.LocalResolutionMetadata{
+			FederatedHandle:   "@alice@station.test",
+			HomeStationPeerID: stationPeerID.String(),
+			HomeStationDomain: "station.test",
+			Visibility:        modelpb.ActorVisibility_ACTOR_VISIBILITY_BY_HANDLE,
+			LocatorSeq:        41,
+		},
+	}
+
+	resolved, err := New(Config{}).ResolveByHandleInFederation(
+		context.Background(),
+		"federation-1",
+		"@alice@station.test",
+		memberships,
+		fetcher,
+		keys,
+	)
+	if err != nil {
+		t.Fatalf("resolve local actor without DHT: %v", err)
+	}
+	if !resolved.IsLocal || resolved.FromCache {
+		t.Fatalf("resolution flags = local:%v cache:%v", resolved.IsLocal, resolved.FromCache)
+	}
+	if resolved.Envelope.GetProfile().GetPeersTouch().GetNetworkId() != "ptid:alice" {
+		t.Fatalf("resolved profile = %+v", resolved.Envelope.GetProfile())
+	}
+	if resolved.Locator.GetSeq() != 41 {
+		t.Fatalf("locator seq = %d, want 41", resolved.Locator.GetSeq())
+	}
+	if err := locator.Verify(resolved.Locator, locator.VerifyOptions{
+		ExpectedHandle: "@alice@station.test",
+		Now:            time.Now(),
+	}); err != nil {
+		t.Fatalf("verify local locator projection: %v", err)
+	}
+	if len(memberships.calls) != 1 ||
+		memberships.calls[0] != [2]string{"federation-1", stationPeerID.String()} {
+		t.Fatalf("membership calls = %#v", memberships.calls)
+	}
+
+	fetcher.metadata.Visibility = modelpb.ActorVisibility_ACTOR_VISIBILITY_HIDDEN
+	if _, err := New(Config{}).ResolveByHandleInFederation(
+		context.Background(),
+		"federation-1",
+		"@alice@station.test",
+		memberships,
+		fetcher,
+		keys,
+	); !errors.Is(err, ErrTombstoned) {
+		t.Fatalf("hidden local actor error = %v, want ErrTombstoned", err)
 	}
 }
 

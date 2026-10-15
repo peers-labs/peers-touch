@@ -40,6 +40,24 @@ type LocalProfileFetcher interface {
 	FetchByLocalHandle(ctx context.Context, localHandle string) (*modelpb.ActorProfile, error)
 }
 
+// LocalResolutionMetadata carries the persisted local-row fields required by
+// the resolver's same-Station path. They keep visibility and locator sequence
+// authoritative even when the federation DHT is unavailable.
+type LocalResolutionMetadata struct {
+	FederatedHandle   string
+	HomeStationPeerID string
+	HomeStationDomain string
+	Visibility        modelpb.ActorVisibility
+	LocatorSeq        uint64
+}
+
+type LocalResolutionMetadataFetcher interface {
+	FetchLocalResolutionMetadata(
+		ctx context.Context,
+		localHandle string,
+	) (*LocalResolutionMetadata, error)
+}
+
 // LocalDeviceSigningKeyFetcher is implemented by identity owners that can
 // publish authenticated local device keys in the signed profile envelope.
 type LocalDeviceSigningKeyFetcher interface {
