@@ -480,6 +480,13 @@ class NativeDesktopRuntimeBinding(ABC):
                 binding_role,
                 "bound client session is not live",
             )
+        if self._runtime_manifest is None:
+            raise DriverError("Runtime Binding manifest is not set")
+        _, service = require_runtime_client_service(
+            self._runtime_manifest,
+            client_id,
+            binding_role,
+        )
         self._configure_session_station(
             session,
             override.endpoint,
