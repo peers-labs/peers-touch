@@ -18,7 +18,6 @@ from tooling.acceptance.core import (
     ArtifactRef,
     EvidenceStore,
     GateError,
-    REPORTS_DIR,
     call_async_harness,
     load_runtime_manifest,
 )
@@ -37,8 +36,6 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 GATE_ID = "desktop-primary-navigation-e2e"
 CLIENT_ID = "alice"
 ENVIRONMENT_ID = "desktop-primary-navigation-native"
-REPORT_PATH = REPORTS_DIR / f"{GATE_ID}.json"
-EVIDENCE_DIR = REPORTS_DIR / "evidence" / GATE_ID
 
 
 class DesktopPrimaryNavigationGate(AcceptanceGate):
@@ -46,8 +43,6 @@ class DesktopPrimaryNavigationGate(AcceptanceGate):
     phase = "DPNC-J01"
     bom = ("DPNC-01-DESKTOP-CUTOVER",)
     spec = ("DPNC-D01", "DPNC-D02")
-    report_path = REPORT_PATH
-    evidence_dir = EVIDENCE_DIR
 
     def __init__(self) -> None:
         super().__init__()

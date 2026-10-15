@@ -105,6 +105,9 @@ class DesktopPrimaryNavigationAcceptanceTests(unittest.TestCase):
                 self.assertIn(contract, source)
         self.assertNotIn("chromium", source.lower())
         self.assertNotIn("playwright", source.lower())
+        self.assertNotIn("REPORTS_DIR", source)
+        self.assertNotIn("report_path =", source)
+        self.assertNotIn("evidence_dir =", source)
 
     def test_applet_open_selector_marks_the_interactive_button(self) -> None:
         source = (
