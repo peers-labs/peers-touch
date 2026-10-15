@@ -42,6 +42,27 @@ from tooling.acceptance.provisioners.native_desktop_macos import (
 )
 
 
+def _window_stack(process_id: int) -> NativeWindowStack:
+    return NativeWindowStack(
+        windows=(
+            NativeWindowSnapshot(
+                index=0,
+                owner_pid=process_id,
+                owner_name="Peers Touch",
+                window_name="Peers Touch",
+                layer=0,
+                alpha=1,
+                bounds=NativeWindowBounds(
+                    left=0,
+                    top=0,
+                    width=1280,
+                    height=720,
+                ),
+            ),
+        ),
+    )
+
+
 class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
     def setUp(self) -> None:
         self.contract_path = (
@@ -943,6 +964,11 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
                 "activate_and_focused_control",
                 return_value=focused,
             ) as activate,
+            patch.object(
+                adapter,
+                "window_stack_at_point",
+                return_value=_window_stack(process_id),
+            ) as window_stack,
             patch.object(adapter, "post_mouse") as post_mouse,
         ):
             adapter.post_mouse_to_process(
@@ -952,7 +978,86 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
             )
 
         activate.assert_called_once_with(process_id)
+        window_stack.assert_called_once_with(point)
         post_mouse.assert_called_once_with(actions, point)
+
+    def test_process_targeted_mouse_waits_for_point_ownership(self) -> None:
+        process_id = 42
+        actions = (MouseAction.LEFT_DOWN, MouseAction.LEFT_UP)
+        point = (640.0, 400.0)
+        focused = NativeControlSnapshot(
+            window_count=1,
+            frontmost=True,
+            actual_frontmost_pid=process_id,
+        )
+        adapter = MacOSNativeDesktopAdapter()
+
+        with (
+            patch.object(
+                adapter,
+                "activate_and_focused_control",
+                return_value=focused,
+            ),
+            patch.object(
+                adapter,
+                "window_stack_at_point",
+                side_effect=(
+                    _window_stack(process_id + 1),
+                    _window_stack(process_id),
+                ),
+            ) as window_stack,
+            patch.object(adapter, "activate_process") as reactivate,
+            patch.object(adapter, "post_mouse") as post_mouse,
+            patch(
+                "tooling.acceptance.drivers.native.macos."
+                "_FOCUS_CONVERGENCE_INTERVAL_SECONDS",
+                0,
+            ),
+        ):
+            adapter.post_mouse_to_process(process_id, actions, point)
+
+        self.assertEqual(window_stack.call_count, 2)
+        reactivate.assert_called_once_with(process_id)
+        post_mouse.assert_called_once_with(actions, point)
+
+    def test_process_targeted_mouse_rejects_unowned_point(self) -> None:
+        process_id = 42
+        actions = (MouseAction.LEFT_DOWN, MouseAction.LEFT_UP)
+        point = (640.0, 400.0)
+        focused = NativeControlSnapshot(
+            window_count=1,
+            frontmost=True,
+            actual_frontmost_pid=process_id,
+        )
+        adapter = MacOSNativeDesktopAdapter()
+
+        with (
+            patch.object(
+                adapter,
+                "activate_and_focused_control",
+                return_value=focused,
+            ),
+            patch.object(
+                adapter,
+                "window_stack_at_point",
+                return_value=_window_stack(process_id + 1),
+            ),
+            patch.object(adapter, "activate_process") as reactivate,
+            patch.object(adapter, "post_mouse") as post_mouse,
+            patch(
+                "tooling.acceptance.drivers.native.macos."
+                "_POINT_OWNERSHIP_TIMEOUT_SECONDS",
+                0,
+            ),
+            self.assertRaisesRegex(
+                DriverError,
+                "did not own the click point for exact process 42",
+            ),
+        ):
+            adapter.post_mouse_to_process(process_id, actions, point)
+
+        reactivate.assert_not_called()
+        post_mouse.assert_not_called()
 
     def test_file_chooser_reactivates_exact_process_before_selection(
         self,

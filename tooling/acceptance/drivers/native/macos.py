@@ -835,6 +835,7 @@ _CONTROL_KINDS = {
 _MEDIA_PERMISSION_ALLOW_BUTTON_IDENTIFIER = "action-button-1"
 _FOCUS_CONVERGENCE_TIMEOUT_SECONDS = 5.0
 _FOCUS_CONVERGENCE_INTERVAL_SECONDS = 0.1
+_POINT_OWNERSHIP_TIMEOUT_SECONDS = 2.0
 
 
 @dataclass(frozen=True)
@@ -1225,6 +1226,20 @@ class MacOSNativeDesktopAdapter(NativeDesktopAdapter):
         point: tuple[float, float],
     ) -> None:
         self.activate_and_focused_control(process_id)
+        deadline = time.monotonic() + _POINT_OWNERSHIP_TIMEOUT_SECONDS
+        window_stack = self.window_stack_at_point(point)
+        while (
+            window_stack.error
+            or not window_stack.point_owned_by(process_id)
+        ):
+            if time.monotonic() >= deadline:
+                raise DriverError(
+                    "Native mouse target did not own the click point for exact "
+                    f"process {process_id}: {window_stack.to_dict()}"
+                )
+            self.activate_process(process_id)
+            time.sleep(_FOCUS_CONVERGENCE_INTERVAL_SECONDS)
+            window_stack = self.window_stack_at_point(point)
         self.post_mouse(actions, point)
 
     def post_key(
