@@ -11,10 +11,29 @@ from tooling.acceptance.core import GateError
 from tooling.acceptance.core.suite_runtime import SuiteRuntimeAction
 from tooling.acceptance.provisioners.desktop_profile_notifications_suite import (
     DesktopProfileNotificationsSuite,
+    wait_native_source_identity,
 )
 
 
 MODULE = "tooling.acceptance.provisioners.desktop_profile_notifications_suite"
+
+
+class NativeSourceReadinessTest(unittest.TestCase):
+    def test_authenticated_runtime_may_become_ready_after_device_enrollment(self) -> None:
+        session = MagicMock()
+        identity = {"sourceCommit": "a" * 40}
+        with patch(f"{MODULE}.call_async_harness", side_effect=[
+            GateError("harness moments.snapshot failed: moments.acceptance.nativeRuntimeIdentityMissing"),
+            identity,
+        ]) as snapshot:
+            self.assertEqual(identity, wait_native_source_identity(session))
+        self.assertEqual(2, snapshot.call_count)
+
+    def test_unrelated_harness_failure_is_not_retried(self) -> None:
+        with patch(f"{MODULE}.call_async_harness", side_effect=GateError("Station binding differs")) as snapshot:
+            with self.assertRaisesRegex(GateError, "Station binding differs"):
+                wait_native_source_identity(MagicMock())
+        snapshot.assert_called_once()
 
 
 class DesktopProfileNotificationsSuiteTest(unittest.TestCase):

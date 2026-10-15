@@ -38,6 +38,23 @@ from tooling.acceptance.gates.desktop.profile_notifications_journey import (
 )
 
 
+def wait_native_source_identity(session: TauriSession) -> dict[str, Any]:
+    """Wait for the authenticated Native runtime without hiding other failures."""
+    def snapshot_when_ready(_: Any) -> dict[str, Any] | None:
+        try:
+            return call_async_harness(
+                session, "snapshot", {}, namespace="moments", script_timeout=10,
+            )
+        except GateError as error:
+            if "moments.acceptance.nativeRuntimeIdentityMissing" in str(error):
+                return None
+            raise
+
+    return WebDriverWait(session.driver, 60, poll_frequency=0.5).until(
+        snapshot_when_ready, "authenticated Native runtime source identity",
+    )
+
+
 class DesktopProfileNotificationsSuite:
     def __init__(
         self,
@@ -84,7 +101,7 @@ class DesktopProfileNotificationsSuite:
                 f"{role} production Device enrollment",
             )
             profile = read_profile(session)
-            source = call_async_harness(session, "snapshot", {}, namespace="moments")
+            source = wait_native_source_identity(session)
             if not session.get_current_url().startswith("tauri://localhost/"):
                 raise GateError(f"Native {role} is not running the embedded renderer")
             if source["sourceCommit"] != self.manifest["source"]["commit"] or any(
