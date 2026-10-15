@@ -105,10 +105,13 @@ interface PrivateSocialSessionScope extends PrivateSocialAccountInput {
 }
 
 const listeners = new Set<() => void>();
+const PRIVATE_REACTION_RECONCILE_DELAY_MS = 250;
+const PRIVATE_REACTION_RECONCILE_ERROR_DELAY_MS = 1_000;
 let snapshot: PrivateMomentsRuntimeSnapshot = emptySnapshot();
 let activeScope: PrivateSocialSessionScope | null = null;
 let transition: Promise<void> = Promise.resolve();
 let projectionFenceRevision = 0;
+let privateReactionReconcileTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function usePrivateMomentsRuntime(): PrivateMomentsRuntimeSnapshot {
   return useSyncExternalStore(subscribe, readPrivateMomentsSnapshot, readPrivateMomentsSnapshot);
@@ -119,6 +122,7 @@ export function readPrivateMomentsSnapshot(): PrivateMomentsRuntimeSnapshot {
 }
 
 export function fencePrivateMomentsRuntimeProjection(): void {
+  cancelPrivateReactionReconcile();
   projectionFenceRevision += 1;
   setSnapshot(emptySnapshot());
 }
@@ -154,6 +158,7 @@ export function createPrivateMomentsRuntimeDescriptor(): MobileRuntimeDescriptor
 
     async suspend(): Promise<void> {
       suspended = true;
+      cancelPrivateReactionReconcile();
       await transition;
     },
 
@@ -600,6 +605,7 @@ export async function reconcilePrivateMoments(): Promise<PrivateSocialWorkerRepo
       lastReport: report,
       errorMessage: null,
     });
+    schedulePrivateReactionReconcile();
     return report;
   } catch (error) {
     if (isCurrentScope(scope)) {
@@ -608,6 +614,9 @@ export async function reconcilePrivateMoments(): Promise<PrivateSocialWorkerRepo
         reconciling: false,
         errorMessage: readableErrorMessage(error),
       });
+      schedulePrivateReactionReconcile(
+        PRIVATE_REACTION_RECONCILE_ERROR_DELAY_MS,
+      );
     }
     throw error;
   }
@@ -824,6 +833,39 @@ function applyPrivateReactionResult(result: PrivateReactionMutationResult): void
     ),
     errorMessage: null,
   });
+  schedulePrivateReactionReconcile();
+}
+
+function cancelPrivateReactionReconcile(): void {
+  if (privateReactionReconcileTimer === null) return;
+  clearTimeout(privateReactionReconcileTimer);
+  privateReactionReconcileTimer = null;
+}
+
+function schedulePrivateReactionReconcile(
+  minimumDelayMs = PRIVATE_REACTION_RECONCILE_DELAY_MS,
+): void {
+  cancelPrivateReactionReconcile();
+  const scope = activeScope;
+  if (!scope || !isCurrentScope(scope)) return;
+  const retryable = snapshot.reactionCommands.filter((command) => (
+    command.state === 'REACTION_PENDING'
+    || command.state === 'REACTION_RETRYING'
+    || command.state === 'REACTION_UNKNOWN_OUTCOME'
+  ));
+  if (retryable.length === 0) return;
+  const now = Date.now();
+  const delayMs = retryable.reduce((earliest, command) => {
+    const commandDelay = command.retryNotBeforeUnixMs === undefined
+      ? minimumDelayMs
+      : Math.max(minimumDelayMs, command.retryNotBeforeUnixMs - now);
+    return Math.min(earliest, commandDelay);
+  }, Number.MAX_SAFE_INTEGER);
+  privateReactionReconcileTimer = setTimeout(() => {
+    privateReactionReconcileTimer = null;
+    if (!isCurrentScope(scope)) return;
+    void reconcilePrivateMoments().catch(() => undefined);
+  }, delayMs);
 }
 
 function mergeReactionCommands(
@@ -910,6 +952,7 @@ async function synchronizeSession(
   if (activeScope && !matchesAuthSession(activeScope, session)) {
     const previousScope = activeScope;
     activeScope = null;
+    cancelPrivateReactionReconcile();
     setSnapshot(emptySnapshot());
     try {
       await privateSocialTeardown(operationScope(previousScope));
@@ -979,6 +1022,7 @@ async function synchronizeSession(
       lastReport: report,
       errorMessage: null,
     });
+    schedulePrivateReactionReconcile();
   } catch (error) {
     if (!cleanupScope) {
       if (!status.active) throw error;

@@ -126,6 +126,7 @@ beforeEach(() => {
 afterEach(async () => {
   await activeDescriptor?.teardown({ reason: 'app-unmount' });
   activeDescriptor = null;
+  vi.useRealTimers();
   useAuthStore.setState({
     session: null,
     accessDecision: null,
@@ -691,6 +692,77 @@ describe('privateMomentsRuntime projection', () => {
         state: 'REACTION_UNKNOWN_OUTCOME',
       }),
     ]);
+  });
+
+  it('reconciles an accepted private reaction without creating a second command', async () => {
+    vi.useFakeTimers();
+    commandMocks.activate.mockResolvedValue(activeStatus(7));
+    commandMocks.readMoment.mockResolvedValue(
+      readProjection('post-a', '1', 'CONTENT_READY'),
+    );
+    commandMocks.react.mockResolvedValue({
+      command: {
+        commandId: 'reaction-1',
+        postId: 'post-a',
+        kind: 2,
+        operation: 'REACT',
+        state: 'REACTION_RETRYING',
+        attemptCount: 1,
+        projectionRevision: '0',
+        errorCode: 'PRIVATE_CONTENT_DEPENDENCY',
+      },
+      reactions: [],
+      projectionRevision: '0',
+      exactReplay: false,
+    });
+    useAuthStore.setState({
+      session: authSession('session-1'),
+      accessDecision: {
+        state: 'ACCESS_DECISION_STATE_GRANTED',
+        attemptId: 'attempt-1',
+        gates: [],
+      },
+    });
+    activeDescriptor = createPrivateMomentsRuntimeDescriptor();
+    await activeDescriptor.bootstrap(runtimeContext);
+    await readPrivateMoment('post-a');
+    commandMocks.snapshot.mockResolvedValueOnce({
+      publishProjections: [],
+      readProjections: [{
+        ...readProjection('post-a', '1', 'CONTENT_READY'),
+        reactions: [{ kind: 2, count: '1', reactedByViewer: true }],
+        reactionRevision: '1',
+        reactionsHydrated: true,
+      }],
+      commentDrafts: [],
+      comments: [],
+      reactionCommands: [{
+        commandId: 'reaction-1',
+        postId: 'post-a',
+        kind: 2,
+        operation: 'REACT',
+        state: 'REACTION_COMMITTED',
+        attemptCount: 2,
+        projectionRevision: '1',
+      }],
+    });
+
+    const result = await setPrivateMomentReaction('post-a', 2, true);
+    expect(result.command.state).toBe('REACTION_RETRYING');
+
+    await vi.advanceTimersByTimeAsync(250);
+    await vi.waitFor(() => {
+      expect(readPrivateMomentsSnapshot().reactionCommands).toEqual([
+        expect.objectContaining({
+          commandId: 'reaction-1',
+          state: 'REACTION_COMMITTED',
+        }),
+      ]);
+    });
+    expect(commandMocks.react).toHaveBeenCalledOnce();
+    expect(commandMocks.reactionRetry).not.toHaveBeenCalled();
+    expect(readPrivateMomentsSnapshot().postsById['post-a']?.reactions)
+      .toEqual([{ kind: 2, count: '1', reactedByViewer: true }]);
   });
 
   it('projects native-only recovery without accepting secret material', async () => {

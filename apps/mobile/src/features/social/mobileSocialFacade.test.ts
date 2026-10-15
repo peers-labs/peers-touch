@@ -351,6 +351,43 @@ describe('Mobile Social facade', () => {
     expect(gateway.unreactToPost).not.toHaveBeenCalled();
   });
 
+  it('treats a durable private reaction retry as accepted pending work', async () => {
+    privateRuntime.snapshot.postsById = {
+      'private-1': {
+        postId: 'private-1',
+        contentId: 'private-1',
+        generation: '1',
+        authorPtid: 'ptid:bob',
+        audienceKind: 'FRIENDS',
+        state: 'CONTENT_READY',
+        content: { kind: 'TEXT', text: 'private' },
+        reactions: [],
+      },
+    };
+    privateRuntime.setPrivateReaction.mockResolvedValue({
+      command: {
+        commandId: 'reaction-1',
+        postId: 'private-1',
+        kind: 2,
+        operation: 'REACT',
+        state: 'REACTION_RETRYING',
+        attemptCount: 1,
+        projectionRevision: '0',
+        errorCode: 'PRIVATE_CONTENT_DEPENDENCY',
+      },
+      reactions: [],
+      projectionRevision: '0',
+      exactReplay: false,
+    });
+    facade = createMobileSocialFacade(session, {
+      retry: vi.fn(async () => true),
+    });
+    facade.activate();
+
+    await expect(facade.intents.react('private-1', 2)).resolves.toBe(true);
+    expect(privateRuntime.setPrivateReaction).toHaveBeenCalledOnce();
+  });
+
   it('fences an in-flight completion after teardown', async () => {
     let resolvePublish: (value: unknown) => void = () => undefined;
     gateway.createMoment.mockReturnValue(new Promise((resolve) => {
