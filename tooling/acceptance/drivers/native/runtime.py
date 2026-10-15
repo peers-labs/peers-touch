@@ -52,6 +52,38 @@ _MACOS_COOPERATIVE_ACTIVATION_TIMEOUT_SECONDS = 5.0
 _MACOS_COOPERATIVE_ACTIVATION_INTERVAL_SECONDS = 0.1
 
 
+def _runtime_cell_input_mode() -> str | None:
+    manifest_path = os.environ.get(
+        "PT_ACCEPTANCE_RUNTIME_CELL_MANIFEST",
+        "",
+    ).strip()
+    if not manifest_path:
+        return None
+    try:
+        manifest = json.loads(
+            Path(manifest_path).read_text(encoding="utf-8")
+        )
+    except (OSError, json.JSONDecodeError) as error:
+        raise DriverError(
+            f"Runtime Cell input-mode manifest is invalid: {error}"
+        ) from error
+    native_adapter = (
+        manifest.get("nativeAdapter")
+        if isinstance(manifest, dict)
+        else None
+    )
+    input_mode = (
+        native_adapter.get("inputMode")
+        if isinstance(native_adapter, dict)
+        else None
+    )
+    if not isinstance(input_mode, str) or not input_mode.strip():
+        raise DriverError(
+            "Runtime Cell manifest omitted nativeAdapter.inputMode"
+        )
+    return input_mode.strip()
+
+
 def _file_sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -1479,6 +1511,18 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
         )
         requested_input_mode = os.environ.get(
             "PT_ACCEPTANCE_DESKTOP_INPUT_MODE"
+        )
+        runtime_cell_input_mode = _runtime_cell_input_mode()
+        if (
+            requested_input_mode
+            and runtime_cell_input_mode
+            and requested_input_mode != runtime_cell_input_mode
+        ):
+            raise DriverError(
+                "Desktop input mode does not match the leased Runtime Cell"
+            )
+        requested_input_mode = (
+            requested_input_mode or runtime_cell_input_mode
         )
         if not requested_input_mode and not self._use_make:
             requested_input_mode = (

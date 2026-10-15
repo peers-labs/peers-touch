@@ -189,6 +189,64 @@ class NativeDesktopAdapterInputTest(unittest.TestCase):
             NativeInputMode.SEMANTIC_NON_INTRUSIVE,
         )
 
+    def test_local_macos_binding_uses_runtime_cell_input_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            manifest_path = Path(directory) / "runtime-cell.json"
+            manifest_path.write_text(
+                json.dumps({
+                    "nativeAdapter": {
+                        "inputMode": "semantic-nonintrusive",
+                    }
+                }),
+                encoding="utf-8",
+            )
+            with patch.dict(
+                os.environ,
+                {
+                    "PT_ACCEPTANCE_RUNTIME_CELL_MANIFEST": str(
+                        manifest_path
+                    ),
+                },
+            ):
+                os.environ.pop("PT_ACCEPTANCE_DESKTOP_INPUT_MODE", None)
+                os.environ.pop("PT_ACCEPTANCE_NATIVE_DEV", None)
+                binding = LocalMacOSRuntimeBinding()
+
+        self.assertEqual(
+            binding.input_mode,
+            NativeInputMode.SEMANTIC_NON_INTRUSIVE,
+        )
+
+    def test_local_macos_binding_rejects_runtime_cell_mode_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            manifest_path = Path(directory) / "runtime-cell.json"
+            manifest_path.write_text(
+                json.dumps({
+                    "nativeAdapter": {
+                        "inputMode": "semantic-nonintrusive",
+                    }
+                }),
+                encoding="utf-8",
+            )
+            with patch.dict(
+                os.environ,
+                {
+                    "PT_ACCEPTANCE_DESKTOP_INPUT_MODE": (
+                        "exclusive-native-input"
+                    ),
+                    "PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION": (
+                        "isolated-gui-session"
+                    ),
+                    "PT_ACCEPTANCE_RUNTIME_CELL_MANIFEST": str(
+                        manifest_path
+                    ),
+                },
+            ), self.assertRaisesRegex(
+                DriverError,
+                "does not match the leased Runtime Cell",
+            ):
+                LocalMacOSRuntimeBinding()
+
     def test_local_exclusive_input_requires_isolated_gui_session(self) -> None:
         with self.assertRaisesRegex(
             RuntimeError,
