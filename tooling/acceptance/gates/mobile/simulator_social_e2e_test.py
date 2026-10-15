@@ -385,6 +385,9 @@ class SimulatorSocialGateTests(unittest.TestCase):
         )
         self.assertIn('_select_antd_option(', source)
         self.assertIn('sender.federation_id', source)
+        self.assertIn('social-audience-circle', source)
+        self.assertIn('data-circle-id="{circle_id}"', source)
+        self.assertNotIn('social-audience-target-done', source)
         self.assertLess(
             source.index('social-circle-member-federation-option'),
             source.index('social-circle-member-search-submit'),

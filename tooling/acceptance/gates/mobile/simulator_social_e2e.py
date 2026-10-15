@@ -1111,7 +1111,10 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
         )
         self._click_ui(
             sender_session,
-            '[data-acceptance-id="social-audience-target-done"]',
+            (
+                '[data-acceptance-id="social-audience-circle"]'
+                f'[data-circle-id="{circle_id}"]'
+            ),
             "Circle target",
         )
         self._wait_ui_attribute(

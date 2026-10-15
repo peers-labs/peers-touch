@@ -1019,7 +1019,10 @@ class AndroidSocialGate(AcceptanceGate):
         )
         self._click_ui(
             sender_session,
-            '[data-acceptance-id="social-audience-target-done"]',
+            (
+                '[data-acceptance-id="social-audience-circle"]'
+                f'[data-circle-id="{circle_id}"]'
+            ),
             "Android Circle target",
         )
         private_text = f"mps11a-circle-{journey_id}"
