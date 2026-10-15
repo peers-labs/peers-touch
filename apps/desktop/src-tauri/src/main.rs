@@ -104,7 +104,6 @@ fn acceptance_yield_activation(target_pid: i32) -> error::AppResult<serde_json::
 
 #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
 #[tauri::command]
-#[allow(deprecated)]
 fn acceptance_request_activation() -> error::AppResult<serde_json::Value> {
     use objc2::MainThreadMarker;
     use objc2_app_kit::NSApplication;
@@ -117,8 +116,19 @@ fn acceptance_request_activation() -> error::AppResult<serde_json::Value> {
         );
     };
 
-    NSApplication::sharedApplication(main_thread).activateIgnoringOtherApps(true);
-    error::AppResult::success(serde_json::json!({ "requested": true }))
+    let application = NSApplication::sharedApplication(main_thread);
+    let api = if objc2::available!(macos = 14.0) {
+        application.activate();
+        "activate"
+    } else {
+        #[allow(deprecated)]
+        application.activateIgnoringOtherApps(true);
+        "activateIgnoringOtherApps"
+    };
+    error::AppResult::success(serde_json::json!({
+        "requested": true,
+        "api": api,
+    }))
 }
 
 #[cfg(feature = "acceptance-webdriver")]
