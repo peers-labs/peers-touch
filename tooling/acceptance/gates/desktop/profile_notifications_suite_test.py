@@ -18,6 +18,7 @@ from tooling.acceptance.gates.desktop.profile_notifications_e2e import (
 )
 from tooling.acceptance.gates.desktop.profile_notifications_journey import (
     _reject_pending_friend_request,
+    _request_has_status,
     native_click,
 )
 from tooling.acceptance.provisioners.desktop_profile_notifications_suite import (
@@ -109,6 +110,16 @@ class NativePointerDeliveryTest(unittest.TestCase):
 
 
 class NotificationFixtureRecoveryTest(unittest.TestCase):
+    def test_request_status_matches_only_the_exact_authority_row(self) -> None:
+        projection = {
+            "requests": [
+                {"id": "request-1", "status": 1},
+                {"id": "request-2", "status": 3},
+            ],
+        }
+        self.assertTrue(_request_has_status(projection, "request-2", 3))
+        self.assertFalse(_request_has_status(projection, "request-1", 3))
+
     def test_conflict_is_recovered_when_authority_is_terminal(self) -> None:
         receiver = MagicMock()
         receiver.invoke_app_result.return_value = {

@@ -468,6 +468,17 @@ def _reject_pending_friend_request(
         raise GateError(f"{failure_message}: {response.get('error')}")
 
 
+def _request_has_status(
+    projection: dict[str, Any],
+    request_id: str,
+    status: int,
+) -> bool:
+    return any(
+        request["id"] == request_id and request["status"] == status
+        for request in projection["requests"]
+    )
+
+
 def run_notifications_journey(
     receiver: TauriSession,
     sender: TauriSession,
@@ -575,13 +586,14 @@ def run_notifications_journey(
                     || getComputedStyle(badge).display === 'none';""",
                 bell_selector, baseline,
             ), "receiver Native notification badge clears")
-            snapshot = call_async_harness(receiver, "refreshOnboardingProjection", {
-                "peerPtid": sender_ptid,
-            }, namespace="chat")
             expected_status = 2 if index == 7 else 3
-            if not any(request["id"] == item["targetId"] and request["status"] == expected_status
-                       for request in snapshot["requests"]):
-                raise GateError(f"{decision} did not reach Social request authority")
+            wait(receiver, lambda: _request_has_status(
+                call_async_harness(receiver, "refreshOnboardingProjection", {
+                    "peerPtid": sender_ptid,
+                }, namespace="chat"),
+                item["targetId"],
+                expected_status,
+            ), f"{decision} reaches Social request authority")
             if index == 7:
                 accepted_notification = wait(sender, lambda: next((
                     candidate for candidate in read_payload(sender, "notification_list", {
