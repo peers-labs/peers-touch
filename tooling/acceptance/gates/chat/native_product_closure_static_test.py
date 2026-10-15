@@ -1316,10 +1316,21 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "yieldActivationToApplication(&target)",
             self.desktop_main,
         )
+        self.assertIn(
+            "activateFromApplication_options(",
+            self.desktop_main,
+        )
+        self.assertIn(
+            "NSRunningApplication::currentApplication()",
+            self.desktop_main,
+        )
+        self.assertIn(
+            "acceptance cooperative activation request was rejected",
+            self.desktop_main,
+        )
         self.assertIn("fn acceptance_request_activation(", self.desktop_main)
         self.assertIn(
-            "NSApplication::sharedApplication(main_thread)"
-            ".activateIgnoringOtherApps(true)",
+            "application.activateIgnoringOtherApps(true)",
             self.desktop_main,
         )
         self.assertIn(
@@ -1804,8 +1815,13 @@ class NativeProductClosureStaticTests(unittest.TestCase):
                 patch.object(Path, "home", return_value=home),
                 patch.object(
                     adapter,
+                    "activate_and_focused_control",
+                    return_value=owner,
+                ),
+                patch.object(
+                    adapter,
                     "focused_control",
-                    side_effect=(owner, restored),
+                    return_value=restored,
                 ),
                 patch(
                     "tooling.acceptance.drivers.native.macos.subprocess.run",

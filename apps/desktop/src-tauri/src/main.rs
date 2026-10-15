@@ -80,7 +80,7 @@ fn configure_acceptance_window_level(_window: &tauri::WebviewWindow) -> std::io:
 #[tauri::command]
 fn acceptance_yield_activation(target_pid: i32) -> error::AppResult<serde_json::Value> {
     use objc2::MainThreadMarker;
-    use objc2_app_kit::{NSApplication, NSRunningApplication};
+    use objc2_app_kit::{NSApplication, NSApplicationActivationOptions, NSRunningApplication};
 
     let Some(main_thread) = MainThreadMarker::new() else {
         return error::AppResult::fail(
@@ -99,7 +99,30 @@ fn acceptance_yield_activation(target_pid: i32) -> error::AppResult<serde_json::
     };
 
     NSApplication::sharedApplication(main_thread).yieldActivationToApplication(&target);
-    error::AppResult::success(serde_json::json!({ "targetPid": target_pid }))
+    let source = NSRunningApplication::currentApplication();
+    let requested = if objc2::available!(macos = 14.0) {
+        target.activateFromApplication_options(
+            &source,
+            NSApplicationActivationOptions::ActivateAllWindows,
+        )
+    } else {
+        #[allow(deprecated)]
+        target.activateWithOptions(
+            NSApplicationActivationOptions::ActivateAllWindows
+                | NSApplicationActivationOptions::ActivateIgnoringOtherApps,
+        )
+    };
+    if !requested {
+        return error::AppResult::fail(
+            error::ErrorCode::InternalError,
+            "acceptance cooperative activation request was rejected",
+            Some(serde_json::json!({ "targetPid": target_pid })),
+        );
+    }
+    error::AppResult::success(serde_json::json!({
+        "targetPid": target_pid,
+        "requested": requested,
+    }))
 }
 
 #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
