@@ -229,6 +229,12 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
                 return_value=("one", Path("/profile"), 0, profile),
             ),
             patch.object(provisioner, "_station_ready", return_value=True),
+            patch.object(provisioner, "acquire_profile_lease"),
+            patch.object(
+                provisioner,
+                "_activate_direct_station_proxy",
+                return_value="https://station-proxy.example",
+            ),
             patch(
                 "tooling.acceptance.provisioners.station_access_relay_role."
                 "PosixServiceRuntimeConfig.load",
@@ -355,6 +361,12 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
                 return_value=("one", Path("/profile"), 0, profile),
             ),
             patch.object(provisioner, "_station_ready", return_value=True),
+            patch.object(provisioner, "acquire_profile_lease"),
+            patch.object(
+                provisioner,
+                "_activate_direct_station_proxy",
+                return_value="https://station-proxy.example",
+            ),
             patch(
                 "tooling.acceptance.provisioners.station_access_relay_role."
                 "PosixServiceRuntimeConfig.load",

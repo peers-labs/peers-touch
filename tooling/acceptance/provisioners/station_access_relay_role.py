@@ -9,6 +9,8 @@ import socket
 import ssl
 import subprocess
 import tempfile
+import time
+import urllib.error
 import urllib.request
 from collections.abc import Mapping
 from pathlib import Path
@@ -640,6 +642,221 @@ class StationAccessRelayRoleProvisioner(EnvironmentProvisioner):
         self._station_config: PosixServiceRuntimeConfig | None = None
         self._relay_config: PosixServiceRuntimeConfig | None = None
         self._relay_trust_anchor: bytes | None = None
+        self._direct_proxy_url = ""
+
+    @staticmethod
+    def _remote_home(config: PosixServiceRuntimeConfig) -> str:
+        completed = config.transport().run_argv(
+            ("sh", "-lc", 'printf "%s" "$HOME"'),
+            timeout=15,
+            check=True,
+        )
+        home = completed.stdout.strip()
+        if not home.startswith("/"):
+            raise BlockedError(
+                reason="Remote POSIX home is invalid",
+                resource=f"runtime:{config.environment_name}",
+            )
+        return home
+
+    @staticmethod
+    def _restart_station_origin(
+        config: PosixServiceRuntimeConfig,
+        canonical_origin: str,
+    ) -> None:
+        home = StationAccessRelayRoleProvisioner._remote_home(config)
+        environment_file = f"{home}/peers-touch/station.env"
+        compose_file = (
+            f"{home}/{config.deploy_path}/tooling/docker/compose.yml"
+        )
+        completed = config.transport().run_argv(
+            (
+                "env",
+                f"PEERS_NODE_SERVER_BASEURL={canonical_origin}",
+                f"LIBP2P_PORT={config.libp2p_port or 4001}",
+                "docker",
+                "compose",
+                "--env-file",
+                environment_file,
+                "-p",
+                config.compose_project,
+                "-f",
+                compose_file,
+                "--profile",
+                "station",
+                "--profile",
+                "infra",
+                "up",
+                "-d",
+                config.compose_service,
+            ),
+            timeout=180,
+            check=False,
+        )
+        if completed.returncode != 0:
+            detail = completed.stderr.strip() or completed.stdout.strip()
+            raise BlockedError(
+                reason=f"Station canonical origin restart failed: {detail[-1000:]}",
+                resource=f"station:{config.environment_name}",
+            )
+
+    @staticmethod
+    def _wait_https_proxy(
+        endpoint: str,
+        trust_anchor: bytes,
+    ) -> None:
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.minimum_version = ssl.TLSVersion.TLSv1_3
+        context.check_hostname = True
+        context.verify_mode = ssl.CERT_REQUIRED
+        context.load_verify_locations(cadata=trust_anchor.decode("ascii"))
+        deadline = time.monotonic() + 120
+        last_error: Exception | None = None
+        while time.monotonic() < deadline:
+            try:
+                request = urllib.request.Request(
+                    endpoint.rstrip("/") + "/sub-oss/healthz",
+                    headers={"Accept": "application/json"},
+                )
+                with urllib.request.urlopen(
+                    request,
+                    context=context,
+                    timeout=5,
+                ) as response:
+                    if response.status == 200:
+                        return
+            except (OSError, urllib.error.URLError) as error:
+                last_error = error
+            time.sleep(1)
+        raise BlockedError(
+            reason=f"Station HTTPS proxy did not become ready: {last_error}",
+            resource="station-direct-https",
+        )
+
+    def _activate_direct_station_proxy(
+        self,
+        *,
+        manifest: RuntimeManifest,
+        station_config: PosixServiceRuntimeConfig,
+        station_url: str,
+        relay_config: PosixServiceRuntimeConfig,
+        trust_anchor: bytes,
+    ) -> str:
+        relay_transport = relay_config.transport()
+        relay_home = self._remote_home(relay_config)
+        proxy_port = relay_transport.available_remote_port()
+        container = f"pt-ncp-direct-{manifest.run_id}"
+        runtime_root = (
+            f"{relay_home}/.peers-touch/runtime/{container}"
+        )
+        proxy_url = f"https://{relay_config.host}:{proxy_port}"
+        certificate_root = (
+            f"{relay_home}/{relay_config.runtime_path}/secrets"
+        )
+        nginx = """
+server {
+  listen 443 ssl;
+  server_name _;
+  ssl_certificate /etc/nginx/tls/relay.crt;
+  ssl_certificate_key /etc/nginx/tls/relay-tls.key;
+  ssl_protocols TLSv1.3;
+  client_max_body_size 64m;
+  location / {
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header Connection "";
+    proxy_read_timeout 300s;
+    proxy_send_timeout 300s;
+    proxy_pass %s;
+  }
+}
+""" % station_url.rstrip("/")
+        relay_transport.run_argv(
+            ("mkdir", "-p", runtime_root),
+            timeout=15,
+            check=True,
+        )
+        relay_transport.run_argv(
+            ("sh", "-lc", f"cat > {runtime_root}/nginx.conf"),
+            timeout=15,
+            check=True,
+            input_text=nginx,
+        )
+
+        def remove_proxy() -> None:
+            relay_transport.run_argv(
+                ("docker", "rm", "-f", container),
+                timeout=30,
+                check=False,
+            )
+            relay_transport.run_argv(
+                ("rm", "-rf", "--", runtime_root),
+                timeout=30,
+                check=True,
+            )
+
+        self.register_cleanup(
+            f"station-direct-proxy:{container}",
+            remove_proxy,
+        )
+        completed = relay_transport.run_argv(
+            (
+                "docker",
+                "run",
+                "-d",
+                "--name",
+                container,
+                "--restart",
+                "no",
+                "-p",
+                f"{proxy_port}:443",
+                "-v",
+                f"{runtime_root}/nginx.conf:/etc/nginx/conf.d/default.conf:ro",
+                "-v",
+                f"{certificate_root}:/etc/nginx/tls:ro",
+                "nginx:1.27-alpine",
+            ),
+            timeout=60,
+            check=False,
+        )
+        if completed.returncode != 0:
+            detail = completed.stderr.strip() or completed.stdout.strip()
+            raise BlockedError(
+                reason=f"Station HTTPS proxy startup failed: {detail[-1000:]}",
+                resource="station-direct-https",
+            )
+        self.register_cleanup(
+            f"station-origin:{station_config.environment_name}",
+            lambda: (
+                self._restart_station_origin(
+                    station_config,
+                    station_url,
+                ),
+                self._wait_station_origin(station_url),
+            ),
+        )
+        self._restart_station_origin(station_config, proxy_url)
+        self._wait_https_proxy(proxy_url, trust_anchor)
+        self._direct_proxy_url = proxy_url
+        return proxy_url
+
+    @staticmethod
+    def _wait_station_origin(station_url: str) -> None:
+        deadline = time.monotonic() + 120
+        while time.monotonic() < deadline:
+            request = urllib.request.Request(
+                station_url.rstrip("/") + "/sub-oss/healthz",
+                headers={"Accept": "application/json"},
+            )
+            try:
+                with urllib.request.urlopen(request, timeout=5) as response:
+                    if response.status == 200:
+                        return
+            except (OSError, urllib.error.URLError):
+                pass
+            time.sleep(1)
+        raise RuntimeError("Station did not recover after origin restoration")
 
     def provision(self, gate_id: str) -> RuntimeManifest:
         self._manifest = self._new_base_manifest(gate_id)
@@ -767,11 +984,26 @@ class StationAccessRelayRoleProvisioner(EnvironmentProvisioner):
                 relay_health,
                 trust_anchor,
             )
+            station_endpoint = station_url
+            if gate_id in {
+                NODE_CONNECTIVITY_NATIVE_GATE_ID,
+                *DESKTOP_RELAY_GATE_IDS,
+            }:
+                owner = f"acceptance:{gate_id}:{manifest.run_id}"
+                self.acquire_profile_lease(station_deployment, owner)
+                self.acquire_profile_lease(relay_deployment, owner)
+                station_endpoint = self._activate_direct_station_proxy(
+                    manifest=manifest,
+                    station_config=station_config,
+                    station_url=station_url,
+                    relay_config=relay_config,
+                    trust_anchor=trust_anchor,
+                )
             station_attestation = produce_station_attestation(
                 environment_id=self.environment_id,
                 run_id=manifest.run_id,
                 service_id="station",
-                station_url=station_url,
+                station_url=station_endpoint,
                 profile_env={
                     "PT_STATION_MODE": "remote",
                     "PT_STATION_DEPLOY_ENV": station_deployment,
@@ -813,7 +1045,10 @@ class StationAccessRelayRoleProvisioner(EnvironmentProvisioner):
                 client_ids = NODE_CONNECTIVITY_CLIENT_IDS
                 actors = tuple(
                     dataclasses.replace(
-                        resolve_existing_actor_identity(station_url, role),
+                        resolve_existing_actor_identity(
+                            station_endpoint,
+                            role,
+                        ),
                         device_policy="persistent-acceptance",
                     )
                     for role in NODE_CONNECTIVITY_CLIENT_IDS
