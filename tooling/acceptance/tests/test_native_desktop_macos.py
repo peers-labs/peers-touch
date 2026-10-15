@@ -59,14 +59,12 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
         lifecycle = get_runtime_cell_lifecycle("desktop-macos-native")
         self.assertIsInstance(lifecycle, NativeDesktopMacOSProvisioner)
 
-    def test_probe_launcher_places_window_on_primary_display(self) -> None:
+    def test_probe_launcher_uses_app_owned_acceptance_window_placement(
+        self,
+    ) -> None:
         launcher = Mock(log_path=None)
         session = Mock(process_id=42, log_path=None)
         adapter = Mock(spec=MacOSNativeDesktopAdapter)
-        events: list[str] = []
-        adapter.position_main_window.side_effect = (
-            lambda *_: events.append("position")
-        )
         adapter.capture_screenshot.side_effect = (
             lambda path: path.write_bytes(b"screenshot")
         )
@@ -126,7 +124,7 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
         ), patch.object(
             NativeDesktopMacOSProvisioner,
             "_await_window_bounds",
-            side_effect=lambda *_: events.append("bounds") or bounds,
+            return_value=bounds,
         ), patch.object(
             NativeDesktopMacOSProvisioner,
             "_probe_owned_point",
@@ -156,34 +154,8 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
                 "PT_ACCEPTANCE_WINDOW_COUNT": "1",
             },
         )
-        adapter.position_main_window.assert_called_once_with(
-            42,
-            (0.0, 32.0),
-        )
-        self.assertEqual(events[:3], ["bounds", "position", "bounds"])
+        adapter.position_main_window.assert_not_called()
         session.stop.assert_called_once_with()
-
-    def test_window_position_retries_transient_accessibility_window(
-        self,
-    ) -> None:
-        adapter = Mock(spec=MacOSNativeDesktopAdapter)
-        adapter.position_main_window.side_effect = (
-            DriverError(
-                "macOS main-window positioning failed: "
-                "main window is absent"
-            ),
-            None,
-        )
-
-        NativeDesktopMacOSProvisioner._position_main_window_when_ready(
-            adapter,
-            42,
-            (0.0, 32.0),
-            timeout_seconds=1,
-            interval_seconds=0,
-        )
-
-        self.assertEqual(adapter.position_main_window.call_count, 2)
 
     def test_window_bounds_wait_retries_transient_visibility(self) -> None:
         transient = BlockedError(

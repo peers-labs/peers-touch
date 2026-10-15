@@ -118,9 +118,6 @@ point = Quartz.CGEventGetLocation(event)
 print(json.dumps({"x": float(point.x), "y": float(point.y)}, sort_keys=True))
 """
 
-_PRIMARY_DISPLAY_WINDOW_ORIGIN = (0.0, 32.0)
-
-
 def _sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
@@ -390,12 +387,6 @@ class NativeDesktopMacOSProvisioner:
                     "macOS runtime-cell probe process identity is unavailable"
                 )
             adapter = MacOSNativeDesktopAdapter()
-            self._await_window_bounds(process_id)
-            self._position_main_window_when_ready(
-                adapter,
-                process_id,
-                _PRIMARY_DISPLAY_WINDOW_ORIGIN,
-            )
             bounds = self._await_window_bounds(process_id)
             point, pointer, stack, input_probe, attempted_points = (
                 self._probe_owned_point(
@@ -601,34 +592,6 @@ class NativeDesktopMacOSProvisioner:
                             f"become visible within {timeout_seconds:.1f}s"
                         ),
                         resource="runtime-cell-window-bounds",
-                    ) from error
-                if interval_seconds > 0:
-                    time.sleep(interval_seconds)
-
-    @staticmethod
-    def _position_main_window_when_ready(
-        adapter: MacOSNativeDesktopAdapter,
-        process_id: int,
-        position: tuple[float, float],
-        *,
-        timeout_seconds: float = 5.0,
-        interval_seconds: float = 0.1,
-    ) -> None:
-        deadline = time.monotonic() + max(0.0, timeout_seconds)
-        while True:
-            try:
-                adapter.position_main_window(process_id, position)
-                return
-            except DriverError as error:
-                if "main window is absent" not in str(error):
-                    raise
-                if time.monotonic() >= deadline:
-                    raise BlockedError(
-                        reason=(
-                            "macOS runtime-cell Accessibility window did not "
-                            f"become available within {timeout_seconds:.1f}s"
-                        ),
-                        resource="runtime-cell-window-position",
                     ) from error
                 if interval_seconds > 0:
                     time.sleep(interval_seconds)
