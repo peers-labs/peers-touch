@@ -97,7 +97,7 @@
       "description": "Validate only acceptance_core_self_validation capabilities and generic Infra closure without consuming business Domain injection."
     },
     "acceptance-runtime-provisioning-self": {
-      "command": "env -u PT_ACCEPTANCE_WORKSPACE_ID -u PT_ACCEPTANCE_GATE_ID -u PT_ACCEPTANCE_RUN_ID sh -c 'python3 -m unittest tooling.acceptance.tests.test_tauri_smoke tooling.acceptance.tests.test_native_desktop_macos tooling.acceptance.tests.test_provisioning_model tooling.acceptance.tests.test_provisioner_runtime tooling.acceptance.tests.test_provisioning_owners tooling.acceptance.tests.test_station_access_relay_role tooling.acceptance.tests.test_posix_service_runtime tooling.acceptance.tests.test_profile_lease tooling.acceptance.tests.test_launch_context && python3 tooling/scripts/acceptance-run-test.py && python3 tooling/scripts/acceptance-plan-test.py && python3 tooling/scripts/acceptance-report-test.py && python3 tooling/scripts/acceptance-validate-test.py && python3 tooling/scripts/acceptance-infra-boundary-test.py && python3 tooling/scripts/acceptance-gap-detect-test.py && python3 tooling/scripts/acceptance-coverage-report-test.py && python3 tooling/scripts/quality-evidence-test.py'",
+      "command": "env -u PT_ACCEPTANCE_WORKSPACE_ID -u PT_ACCEPTANCE_GATE_ID -u PT_ACCEPTANCE_RUN_ID sh -c 'python3 -m unittest tooling.acceptance.tests.test_tauri_smoke tooling.acceptance.tests.test_native_desktop_macos tooling.acceptance.tests.test_provisioning_model tooling.acceptance.tests.test_provisioner_runtime tooling.acceptance.tests.test_provisioning_owners tooling.acceptance.tests.test_station_access_dual_relay tooling.acceptance.tests.test_station_access_relay_role tooling.acceptance.tests.test_posix_service_runtime tooling.acceptance.tests.test_profile_lease tooling.acceptance.tests.test_launch_context && python3 tooling/scripts/acceptance-run-test.py && python3 tooling/scripts/acceptance-plan-test.py && python3 tooling/scripts/acceptance-report-test.py && python3 tooling/scripts/acceptance-validate-test.py && python3 tooling/scripts/acceptance-infra-boundary-test.py && python3 tooling/scripts/acceptance-gap-detect-test.py && python3 tooling/scripts/acceptance-coverage-report-test.py && python3 tooling/scripts/quality-evidence-test.py'",
       "timeout_seconds": 180,
       "environment": "local",
       "tier": "ci-cheap",
@@ -441,6 +441,98 @@
       "environment": "local",
       "tier": "local-evidence",
       "description": "Aggregate Rust-Go Circuit interop, Relay ACL semantics, Mobile Rust contract build, and the source-owned zero-old-data-plane inventory for the atomic native transport cut."
+    },
+    "RAL-G01": {
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.station_access.relay_attachment_lifecycle_e2e"
+      ],
+      "ephemeralCapabilities": [
+        "station-access.dual-relay-control"
+      ],
+      "timeout_seconds": 3600,
+      "environment": "station-access-dual-relay",
+      "provisioner": "station-access-dual-relay",
+      "tier": "env-evidence",
+      "description": "Provision one exact-source disposable Station and two isolated Relays once, then execute RAL-G01 through RAL-G07 as an attach-only Suite covering invitation, overlap, failure, restart, offline cleanup, revoke, and idempotency."
+    },
+    "RAL-G02": {
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.station_access.relay_attachment_lifecycle_e2e"
+      ],
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Project the current-source RAL-G01 Suite evidence for credential-before-intent attachment activation and secret-free operator readback."
+    },
+    "RAL-G03": {
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.station_access.relay_attachment_lifecycle_e2e"
+      ],
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Project the current-source RAL-G01 Suite evidence for independent dual-Relay generation-1 active overlap."
+    },
+    "RAL-G04": {
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.station_access.relay_attachment_lifecycle_e2e"
+      ],
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Project the current-source RAL-G01 Suite evidence for Relay failure isolation and dual-active recovery."
+    },
+    "RAL-G05": {
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.station_access.relay_attachment_lifecycle_e2e"
+      ],
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Project the current-source RAL-G01 Suite evidence for Station restart recovery of persisted dual-Relay intent."
+    },
+    "RAL-G06": {
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.station_access.relay_attachment_lifecycle_e2e"
+      ],
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Project the current-source RAL-G01 Suite evidence for local-disable-first offline detach and unaffected Relay continuity."
+    },
+    "RAL-G07": {
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.station_access.relay_attachment_lifecycle_e2e"
+      ],
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Project the current-source RAL-G01 Suite evidence for cleanup retry, online detach, consumed-invite conflict, durable generation-2 revoke, repeated delete, and empty final projection."
+    },
+    "RAL-G08": {
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.station_access.relay_attachment_lifecycle_e2e"
+      ],
+      "timeout_seconds": 180,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Aggregate current-source RAL-G01 through RAL-G07 with NCP-G03 Native Desktop Direct/Circuit continuity and NCP-G07 bounded renewal/admission proof."
     },
     "station-access-capability-contract": {
       "command": "python3 -m tooling.acceptance.gates.station_access.capability_contract",

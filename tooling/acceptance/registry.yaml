@@ -301,6 +301,44 @@
       ]
     },
     {
+      "id": "station-access-relay-attachment-lifecycle",
+      "features": [
+        "station-access-relay-attachment-lifecycle"
+      ],
+      "when": {
+        "paths": [
+          "apps/station/frame/core/plugin/native/relay/attachment_controller.go",
+          "apps/station/frame/core/plugin/native/relay/attachment_migration.go",
+          "apps/station/frame/core/plugin/native/relay/reservation.go",
+          "apps/station/frame/core/plugin/native/relay/runtime.go",
+          "apps/station/frame/core/plugin/native/relay/station_control.go",
+          "apps/station/frame/core/plugin/native/subserver/relay/handler_admin.go",
+          "apps/station/frame/core/plugin/native/subserver/relay/infrastructure/repo.go",
+          "apps/station/app/subserver/dashboard/handler.go",
+          "apps/station/app/subserver/dashboard/web/src/api/relayAttachments.ts",
+          "apps/station/app/subserver/dashboard/web/src/pages/RelayAttachmentsPage.tsx",
+          "docs/architecture/platform/runtime/node-connectivity/relay-attachment/**",
+          "tooling/acceptance/environments/station-access-dual-relay.yaml",
+          "tooling/acceptance/features/station-access-relay-attachment-lifecycle.yaml",
+          "tooling/acceptance/gates/station_access/relay_attachment_lifecycle_e2e.py",
+          "tooling/acceptance/provisioners/station_access_dual_relay.py",
+          "tooling/acceptance/runtime/station-access-dual-relay.compose.yml",
+          "tooling/acceptance/station_access_evidence.py",
+          "tooling/acceptance/tests/test_station_access_dual_relay.py"
+        ]
+      },
+      "require": [
+        "RAL-G01",
+        "RAL-G02",
+        "RAL-G03",
+        "RAL-G04",
+        "RAL-G05",
+        "RAL-G06",
+        "RAL-G07",
+        "RAL-G08"
+      ]
+    },
+    {
       "id": "station-access-endpoint-discovery",
       "features": [
         "station-access-endpoint-discovery"
@@ -556,6 +594,7 @@
         "station-access-federation-boundary",
         "station-access-relay-role-security",
         "station-access-relay-enrollment",
+        "station-access-relay-attachment-lifecycle",
         "station-access-endpoint-discovery",
         "node-connectivity-standard-stream",
         "station-access-desktop-relay-binding",
@@ -570,11 +609,14 @@
           "tooling/acceptance/features/station-access-*.yaml",
           "tooling/acceptance/environments/station-access-desktop-oauth-native.yaml",
           "tooling/acceptance/environments/station-access-native.yaml",
+          "tooling/acceptance/environments/station-access-dual-relay.yaml",
           "tooling/acceptance/environments/station-access-relay-role.yaml",
           "tooling/acceptance/environments/mobile-relay-simulator.yaml",
           "tooling/acceptance/gates/station_access/**",
           "tooling/acceptance/provisioners/station_access_desktop_oauth_native.py",
-          "tooling/acceptance/provisioners/station_access_relay_role.py"
+          "tooling/acceptance/provisioners/station_access_dual_relay.py",
+          "tooling/acceptance/provisioners/station_access_relay_role.py",
+          "tooling/acceptance/station_access_evidence.py"
         ]
       },
       "require": [
@@ -593,6 +635,14 @@
         "NCP-G04",
         "NCP-G07",
         "NCP-G08",
+        "RAL-G01",
+        "RAL-G02",
+        "RAL-G03",
+        "RAL-G04",
+        "RAL-G05",
+        "RAL-G06",
+        "RAL-G07",
+        "RAL-G08",
         "station-access-mobile-relay-native-e2e",
         "station-access-relay-security-e2e",
         "desktop-release-build",

@@ -1,0 +1,184 @@
+x-runtime-image: &runtime-image
+  image: ${PT_RAL_RUNTIME_IMAGE:?PT_RAL_RUNTIME_IMAGE is required}
+  build:
+    context: .
+    dockerfile: tooling/docker/station.Dockerfile
+    args:
+      BUILD_COMMIT: ${PT_RAL_SOURCE_COMMIT:?PT_RAL_SOURCE_COMMIT is required}
+      BUILD_LABEL: relay-attachment-lifecycle-acceptance
+      BUILD_TIME: ${PT_RAL_BUILD_TIME:?PT_RAL_BUILD_TIME is required}
+      BUILDER_IMAGE: ${PT_RAL_BUILDER_IMAGE:-hub.byted.org/library/ubuntu:22.04}
+      BASE_IMAGE: ${PT_RAL_BASE_IMAGE:-hub.byted.org/library/ubuntu:22.04}
+
+x-relay-environment: &relay-environment
+  PEERS_NODE_ROLE: relay
+  PEERS_AUTH_SECRET: ${PEERS_AUTH_SECRET:?PEERS_AUTH_SECRET is required}
+  PEERS_DATA_DIR: /app/data
+  PEERS_BOOTSTRAP_NODES: ""
+  RELAY_OPERATOR_KEY_FILE: /app/relay-secrets/relay-operator.key
+  RELAY_OPERATOR_ISSUER: peers-relay-operator
+  RELAY_OPERATOR_AUDIENCE: peers-relay-admin
+  RELAY_OPERATOR_SCOPE: relay.admin
+
+x-relay-health: &relay-health
+  test:
+    - CMD
+    - wget
+    - -qO-
+    - --tries=1
+    - --timeout=3
+    - http://127.0.0.1:18080/healthz
+  interval: 3s
+  timeout: 3s
+  retries: 40
+  start_period: 20s
+
+x-postgres-health: &postgres-health
+  test:
+    - CMD-SHELL
+    - pg_isready -U ${POSTGRES_USER:-peers} -d ${POSTGRES_DB:-peers_touch}
+  interval: 2s
+  timeout: 3s
+  retries: 30
+
+services:
+  station-postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-peers}
+      POSTGRES_PASSWORD: ${PEERS_DB_PASSWORD:?PEERS_DB_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-peers_touch}
+    volumes:
+      - station-postgres:/var/lib/postgresql/data
+    healthcheck: *postgres-health
+    restart: "no"
+
+  station:
+    <<: *runtime-image
+    environment:
+      PEERS_NODE_ROLE: station
+      PEERS_AUTH_SECRET: ${PEERS_AUTH_SECRET:?PEERS_AUTH_SECRET is required}
+      PEERS_DATA_DIR: /app/data
+      PEERS_DB_DSN: host=station-postgres user=${POSTGRES_USER:-peers} password=${PEERS_DB_PASSWORD} dbname=${POSTGRES_DB:-peers_touch} port=5432 sslmode=disable TimeZone=Asia/Shanghai
+      PEERS_NODE_SERVER_SUBSERVER_OSS_STORE_PATH: /app/data/oss
+      PEERS_OSS_BACKEND: local
+      PEERS_NODE_SERVER_BASEURL: ${PT_RAL_STATION_URL:?PT_RAL_STATION_URL is required}
+      PEERS_LIBP2P_PUBLIC_ADDRS: /ip4/${PT_RAL_REMOTE_HOST:?PT_RAL_REMOTE_HOST is required}/tcp/${PT_RAL_STATION_LIBP2P_PORT:?PT_RAL_STATION_LIBP2P_PORT is required}
+      PEERS_FEDERATION_DIRECT_OUTBOUND: "true"
+      PEERS_FEDERATION_DIRECT_INBOUND: "true"
+      PEERS_NODE_LABEL: RAL Acceptance Station
+    ports:
+      - ${PT_RAL_STATION_HTTP_PORT:?PT_RAL_STATION_HTTP_PORT is required}:18080
+      - ${PT_RAL_STATION_LIBP2P_PORT}:4001
+    volumes:
+      - station-data:/app/data
+    depends_on:
+      station-postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - -qO-
+        - --tries=1
+        - --timeout=3
+        - http://127.0.0.1:18080/sub-oss/healthz
+      interval: 3s
+      timeout: 3s
+      retries: 60
+      start_period: 30s
+    restart: "no"
+
+  relay-a-postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-peers}
+      POSTGRES_PASSWORD: ${PEERS_DB_PASSWORD:?PEERS_DB_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-peers_touch}
+    volumes:
+      - relay-a-postgres:/var/lib/postgresql/data
+    healthcheck: *postgres-health
+    restart: "no"
+
+  relay-a:
+    <<: *runtime-image
+    environment:
+      <<: *relay-environment
+      PEERS_DB_DSN: host=relay-a-postgres user=${POSTGRES_USER:-peers} password=${PEERS_DB_PASSWORD} dbname=${POSTGRES_DB:-peers_touch} port=5432 sslmode=disable TimeZone=Asia/Shanghai
+      PEERS_LIBP2P_PUBLIC_ADDRS: /ip4/${PT_RAL_REMOTE_HOST}/tcp/${PT_RAL_RELAY_A_LIBP2P_PORT:?PT_RAL_RELAY_A_LIBP2P_PORT is required}
+      PEERS_NODE_SERVER_BASEURL: ${PT_RAL_RELAY_A_URL:?PT_RAL_RELAY_A_URL is required}
+      PEERS_NODE_LABEL: RAL Relay A
+    ports:
+      - 127.0.0.1:${PT_RAL_RELAY_A_CONTROL_PORT:?PT_RAL_RELAY_A_CONTROL_PORT is required}:18080
+      - ${PT_RAL_RELAY_A_PUBLIC_PORT:?PT_RAL_RELAY_A_PUBLIC_PORT is required}:18443
+      - ${PT_RAL_RELAY_A_LIBP2P_PORT}:4001
+    volumes:
+      - relay-a-data:/app/data
+      - ${PT_RAL_RELAY_A_SECRET_ROOT:?PT_RAL_RELAY_A_SECRET_ROOT is required}:/app/relay-secrets:ro
+    depends_on:
+      relay-a-postgres:
+        condition: service_healthy
+    healthcheck: *relay-health
+    restart: "no"
+
+  relay-a-proxy:
+    image: nginx:1.27-alpine
+    network_mode: service:relay-a
+    volumes:
+      - ./tooling/docker/relay-nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ${PT_RAL_RELAY_A_SECRET_ROOT}:/etc/nginx/tls:ro
+    depends_on:
+      relay-a:
+        condition: service_healthy
+    restart: "no"
+
+  relay-b-postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-peers}
+      POSTGRES_PASSWORD: ${PEERS_DB_PASSWORD:?PEERS_DB_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-peers_touch}
+    volumes:
+      - relay-b-postgres:/var/lib/postgresql/data
+    healthcheck: *postgres-health
+    restart: "no"
+
+  relay-b:
+    <<: *runtime-image
+    environment:
+      <<: *relay-environment
+      PEERS_DB_DSN: host=relay-b-postgres user=${POSTGRES_USER:-peers} password=${PEERS_DB_PASSWORD} dbname=${POSTGRES_DB:-peers_touch} port=5432 sslmode=disable TimeZone=Asia/Shanghai
+      PEERS_LIBP2P_PUBLIC_ADDRS: /ip4/${PT_RAL_REMOTE_HOST}/tcp/${PT_RAL_RELAY_B_LIBP2P_PORT:?PT_RAL_RELAY_B_LIBP2P_PORT is required}
+      PEERS_NODE_SERVER_BASEURL: ${PT_RAL_RELAY_B_URL:?PT_RAL_RELAY_B_URL is required}
+      PEERS_NODE_LABEL: RAL Relay B
+    ports:
+      - 127.0.0.1:${PT_RAL_RELAY_B_CONTROL_PORT:?PT_RAL_RELAY_B_CONTROL_PORT is required}:18080
+      - ${PT_RAL_RELAY_B_PUBLIC_PORT:?PT_RAL_RELAY_B_PUBLIC_PORT is required}:18443
+      - ${PT_RAL_RELAY_B_LIBP2P_PORT}:4001
+    volumes:
+      - relay-b-data:/app/data
+      - ${PT_RAL_RELAY_B_SECRET_ROOT:?PT_RAL_RELAY_B_SECRET_ROOT is required}:/app/relay-secrets:ro
+    depends_on:
+      relay-b-postgres:
+        condition: service_healthy
+    healthcheck: *relay-health
+    restart: "no"
+
+  relay-b-proxy:
+    image: nginx:1.27-alpine
+    network_mode: service:relay-b
+    volumes:
+      - ./tooling/docker/relay-nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ${PT_RAL_RELAY_B_SECRET_ROOT}:/etc/nginx/tls:ro
+    depends_on:
+      relay-b:
+        condition: service_healthy
+    restart: "no"
+
+volumes:
+  station-postgres:
+  station-data:
+  relay-a-postgres:
+  relay-a-data:
+  relay-b-postgres:
+  relay-b-data:

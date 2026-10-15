@@ -10,6 +10,7 @@
     "station-access-federation-context-boundary",
     "station-access-relay-runtime-security",
     "station-access-relay-enrollment",
+    "station-access-relay-attachment-lifecycle",
     "station-access-endpoint-discovery",
     "node-connectivity-standard-stream",
     "node-connectivity-cluster",
