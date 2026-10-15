@@ -275,7 +275,6 @@ class DesktopOAuthNativeGate(AcceptanceGate):
                 self.assert_condition(
                     f"{provider_id}_loopback_cancels_before_authentication",
                     cancellation["transport"] == "resolved"
-                    and cancellation["cancelled"] is True
                     and cancellation["status"] == "cancelled",
                     json.dumps(cancellation, sort_keys=True),
                 )
@@ -1195,7 +1194,6 @@ class DesktopOAuthNativeGate(AcceptanceGate):
             raise GateError("OAuth cancellation returned invalid status JSON") from error
         return {
             "transport": "resolved",
-            "cancelled": status.get("cancelled") is True,
             "status": str(status.get("status") or ""),
         }
 

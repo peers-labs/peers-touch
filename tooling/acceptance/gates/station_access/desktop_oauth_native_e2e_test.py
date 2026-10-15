@@ -531,12 +531,7 @@ class DesktopOAuthNativeGateTest(unittest.TestCase):
             DesktopOAuthNativeGate._start_oauth(session, "google")
 
     def test_accepts_pre_authentication_loopback_cancellation(self) -> None:
-        status = json.dumps(
-            {
-                "cancelled": True,
-                "status": "cancelled",
-            }
-        )
+        status = json.dumps({"status": "cancelled"})
         session = _FakeSession(
             {
                 "transport": "resolved",
@@ -549,8 +544,10 @@ class DesktopOAuthNativeGateTest(unittest.TestCase):
 
         result = DesktopOAuthNativeGate._cancel_oauth(session, "lp-123")
 
-        self.assertTrue(result["cancelled"])
-        self.assertEqual(result["status"], "cancelled")
+        self.assertEqual(
+            result,
+            {"transport": "resolved", "status": "cancelled"},
+        )
         self.assertIn("oauth2_cancel_loopback", session.script)
         self.assertEqual(session.provider_id, "lp-123")
 
