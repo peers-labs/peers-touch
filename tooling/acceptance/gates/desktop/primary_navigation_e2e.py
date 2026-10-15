@@ -254,6 +254,7 @@ class DesktopPrimaryNavigationGate(AcceptanceGate):
             "pages:prewarm:end",
             "authenticated Native Desktop page prewarm",
         )
+        session.driver.set_script_timeout(120)
         session.find_element('[data-pt-primary-nav="search"]', 30)
         return login
 
