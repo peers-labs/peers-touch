@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-07-01 | **Updated**: 2026-10-15
+> **Created**: 2026-07-01 | **Updated**: 2026-10-16
 > **Owner**: Client Platform Team
 > **Module**: `docs/client/common/ui-identity/`
 
@@ -72,6 +72,7 @@ Budget fields are recorded inside `Evidence` until the registry grows explicit c
 | Agent profile page | PageBoundary / PageFrame | `idle + forever` | First profile visit | Forever while Agent module is alive | Agent/social projections | alive | Prototype Shell preserves the visited profile frame; production hidden-render cost still needs sampling | Agent |
 | Agent orchestration/canvas | PageBoundary / PageFrame | `idle + forever` | First orchestration visit | Forever while Agent module is alive | Agent canvas/orchestration stores | alive | Prototype L3 verifies prompt and panel state recovery across Agent / Atelier / Orchestration switches; production mount cost and memory sampling remain required | Agent |
 | Agent creation workbench | OverlayHost | `on-visit + none` | Explicit Create Agent intent | None; transient form state is discarded on cancel | Agent store | not alive | `ReadyView` owns one global `AgentCreateDialogHost`; opening/cancelling performs no Station write and Save persists once through `store.createAgent` | Agent |
+| Find People discovery | OverlayHost | `on-visit + none` | Explicit Find People intent from Chat | None; scope and query reset on close | Federation and relationship stores | not alive | `FindPeopleModal` uses `destroyOnHidden`; Federation/Station scope directories load only on explicit scope selection; native OAuth Gate proves distinct labels/tooltips | Chat / Federation |
 | Import/export flows | OverlayHost / PageBoundary | `on-visit + none` | Explicit user intent | None | Owning feature store | not alive | Must preserve draft or recovery externally if interrupted | Client Platform |
 | Notifications preview / complete viewer prototype | OverlayHost | `on-visit + none` | Rail bell; More notifications expands into centered dialog | None; at most four preview rows or six current-page rows | Caller-injected notification snapshot; prototype owns transient presentation state only | not alive | `Notifications.tsx` has no embedded notification fixtures and the Shell defaults to the truthful empty projection; one list owns preview/modal geometry, search, pagination, teardown, and focus return | Client Platform |
 | Native Desktop notifications preview / complete viewer | Popover / Modal | `on-visit + none` | Rail bell; More opens a centered dialog | None; four preview or six current-page rows; resets on session epoch | `socialRealtime` + `notification` store | not alive | `NotificationBell` owns transient overlay state and focus return; `NotificationCenter` shares pagination/decisions; formal `desktop-profile-notifications-e2e` proves authoritative list/count survival, trusted pointer actions, two-client visibility, and teardown | Client Platform |

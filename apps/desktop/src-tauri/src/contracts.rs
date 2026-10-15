@@ -1977,3 +1977,8 @@ pub struct FederationCatalogSearchInput {
     #[serde(default)]
     pub page_size: Option<u32>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FederationListMemberStationsInput {
+    pub federation_id: String,
+}

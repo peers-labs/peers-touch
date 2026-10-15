@@ -876,6 +876,7 @@ fn main() {
             federation::federation_resolve,
             federation::federation_catalog_search,
             federation::federation_list_contexts,
+            federation::federation_list_member_stations,
             admin::admin_health,
             admin::admin_network_probe,
             admin::admin_execute_action,

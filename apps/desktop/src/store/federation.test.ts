@@ -7,6 +7,7 @@ import type {
 const mocks = vi.hoisted(() => ({
   federationCatalogSearch: vi.fn(),
   federationListContexts: vi.fn(),
+  federationListMemberStations: vi.fn(),
   profileGet: vi.fn(),
   profileUpdate: vi.fn(),
 }));
@@ -19,6 +20,7 @@ vi.mock('../services/desktop_api', () => ({
   api: {
     federationCatalogSearch: mocks.federationCatalogSearch,
     federationListContexts: mocks.federationListContexts,
+    federationListMemberStations: mocks.federationListMemberStations,
     profileGet: mocks.profileGet,
     profileUpdate: mocks.profileUpdate,
   },
@@ -39,6 +41,7 @@ describe('federation actor Station directory', () => {
   beforeEach(() => {
     mocks.federationCatalogSearch.mockReset();
     mocks.federationListContexts.mockReset();
+    mocks.federationListMemberStations.mockReset();
     mocks.profileGet.mockReset();
     mocks.profileUpdate.mockReset();
     session.actorPtid = 'ptid:alice';
@@ -49,6 +52,7 @@ describe('federation actor Station directory', () => {
       loading: false,
       lastError: null,
       federations: [],
+      memberStationsByFederation: {},
       actorStationEntries: {},
     });
   });
@@ -103,6 +107,32 @@ describe('federation actor Station directory', () => {
         homeStationPeerId: 'station-bob',
         homeStationName: 'Aspen Station',
       });
+  });
+
+  it('loads and stores the authoritative Federation Station directory', async () => {
+    mocks.federationListMemberStations.mockResolvedValue({
+      stations: [{
+        stationPeerId: 'station-local',
+        stationName: 'local',
+        status: 'active',
+      }],
+    });
+
+    const stations = await useFederationStore
+      .getState()
+      .listMemberStations('federation-1');
+
+    expect(mocks.federationListMemberStations)
+      .toHaveBeenCalledWith('federation-1');
+    expect(stations).toEqual([{
+      stationPeerId: 'station-local',
+      stationName: 'local',
+      status: 'active',
+    }]);
+    expect(
+      useFederationStore.getState()
+        .memberStationsByFederation['federation-1'],
+    ).toEqual(stations);
   });
 
   it('does not issue a second lookup after the actor Station is known', async () => {

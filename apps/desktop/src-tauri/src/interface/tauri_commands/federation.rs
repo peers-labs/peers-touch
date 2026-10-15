@@ -17,7 +17,9 @@ use tauri::{State, Window};
 use crate::application::federation;
 use crate::application::session_resolver;
 use crate::application::station_runtime::client as station_client;
-use crate::contracts::{FederationCatalogSearchInput, FederationResolveInput};
+use crate::contracts::{
+    FederationCatalogSearchInput, FederationListMemberStationsInput, FederationResolveInput,
+};
 use crate::error::{AppResult, ErrorCode};
 use crate::state::AppState;
 
@@ -96,5 +98,21 @@ pub fn federation_list_contexts(
     match federation::list_contexts(state.station.client(), &token) {
         Ok(view) => AppResult::success(federation::encode_list_contexts(&view)),
         Err(e) => map_station_error(e, "federation_list_contexts failed"),
+    }
+}
+
+#[tauri::command]
+pub fn federation_list_member_stations(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+    input: FederationListMemberStationsInput,
+) -> AppResult<Vec<u8>> {
+    let token = match token_or_unauthorized(&state, &window) {
+        Ok(token) => token,
+        Err(error) => return error,
+    };
+    match federation::list_member_stations(state.station.client(), &token, &input.federation_id) {
+        Ok(view) => AppResult::success(federation::encode_list_member_stations(&view)),
+        Err(error) => error.into_app_result_proto("federation_list_member_stations failed"),
     }
 }

@@ -63,6 +63,7 @@ import {
 } from '../gen/proto/domain/federation/federation_discovery_pb';
 import {
   ListFederationContextsResponseSchema,
+  ListMemberStationsResponseSchema,
 } from '../gen/proto/domain/federation/federation_projection_service_pb';
 import type {
   Conversation as ProtoAgentConversation,
@@ -183,6 +184,7 @@ export type {
 export type {
   ListFederationContextsResponse,
   FederationContext,
+  MemberStationView,
 } from '../gen/proto/domain/federation/federation_projection_service_pb';
 export type {
   Friend,
@@ -7336,6 +7338,13 @@ export const api = {
 
   federationListContexts: () =>
     invokeRustProto('federation_list_contexts', ListFederationContextsResponseSchema),
+
+  federationListMemberStations: (federationId: string) =>
+    invokeRustProto(
+      'federation_list_member_stations',
+      ListMemberStationsResponseSchema,
+      { federation_id: federationId },
+    ),
 
   /**
    * Fire a presence trigger to the Rust supervisor. Always resolves; the

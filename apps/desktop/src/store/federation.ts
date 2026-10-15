@@ -15,6 +15,7 @@ import type {
   AccountProfile,
   FederationContext,
   FederationCatalogEntry,
+  MemberStationView,
   ProfileUpdateInput,
   ProfileUpdateResult,
 } from '../services/desktop_api';
@@ -100,6 +101,8 @@ export interface FederationState {
   lastError: string | null;
   /** Station-provided Federation contexts available to this actor. */
   federations: FederationContext[];
+  /** Authoritative member Station directory by Federation. */
+  memberStationsByFederation: Record<string, MemberStationView[]>;
   /** Actor-resolved Station names retained from authoritative catalog rows. */
   actorStationEntries: Record<string, FederationCatalogEntry>;
 
@@ -111,6 +114,7 @@ export interface FederationState {
     federationId: string,
     visibility: FederationVisibilityLabel,
   ) => Promise<void>;
+  listMemberStations: (federationId: string) => Promise<MemberStationView[]>;
   rememberCatalogEntries: (entries: readonly FederationCatalogEntry[]) => void;
   resolveActorStations: (
     candidates: readonly FederationActorStationCandidate[],
@@ -124,6 +128,7 @@ export const useFederationStore = createDesktopStore<FederationState>('federatio
   loading: false,
   lastError: null,
   federations: [],
+  memberStationsByFederation: {},
   actorStationEntries: {},
 
   refreshSelf: async () => {
@@ -265,6 +270,21 @@ export const useFederationStore = createDesktopStore<FederationState>('federatio
     });
   },
 
+  listMemberStations: async (federationId) => {
+    const fence = currentFederationSessionFence();
+    if (!fence || !federationId.trim()) return [];
+    const response = await api.federationListMemberStations(federationId);
+    if (!federationSessionFenceMatches(fence)) return [];
+    const stations = response.stations ?? [];
+    set((state) => ({
+      memberStationsByFederation: {
+        ...state.memberStationsByFederation,
+        [federationId]: stations,
+      },
+    }));
+    return stations;
+  },
+
   rememberCatalogEntries: (entries) => {
     set((state) => {
       const actorStationEntries = { ...state.actorStationEntries };
@@ -320,6 +340,7 @@ export const useFederationStore = createDesktopStore<FederationState>('federatio
       loading: false,
       lastError: null,
       federations: [],
+      memberStationsByFederation: {},
       actorStationEntries: {},
     });
   },

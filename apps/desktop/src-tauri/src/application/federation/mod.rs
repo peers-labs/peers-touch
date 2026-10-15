@@ -23,7 +23,7 @@ use crate::application::station_runtime::client::{self as station_client, Statio
 use crate::error::{AppResult, ErrorCode};
 use crate::model::federation::v1::{
     FederationCatalogSearchRequest, FederationCatalogSearchResponse, FederationResolveView,
-    ListFederationContextsResponse,
+    ListFederationContextsResponse, ListMemberStationsResponse,
 };
 
 const ROUTE_RESOLVE: &str = "/actor/federation/resolve";
@@ -149,5 +149,37 @@ pub fn list_contexts(
 }
 
 pub fn encode_list_contexts(view: &ListFederationContextsResponse) -> Vec<u8> {
+    view.encode_to_vec()
+}
+
+/// GET /sub-federation/federations/:id/stations — read-only member directory.
+pub fn list_member_stations(
+    station_client: &StationClient,
+    token: &str,
+    federation_id: &str,
+) -> Result<ListMemberStationsResponse, FederationGatewayError> {
+    let federation_id = federation_id.trim();
+    if federation_id.is_empty()
+        || !federation_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+    {
+        return Err(FederationGatewayError::InvalidArgument(
+            "federation_id is invalid",
+        ));
+    }
+    let route = format!("/sub-federation/federations/{federation_id}/stations");
+    station_client
+        .request_proto::<(), ListMemberStationsResponse>(
+            Method::GET,
+            &route,
+            token,
+            None,
+            None::<&()>,
+        )
+        .map_err(FederationGatewayError::Station)
+}
+
+pub fn encode_list_member_stations(view: &ListMemberStationsResponse) -> Vec<u8> {
     view.encode_to_vec()
 }

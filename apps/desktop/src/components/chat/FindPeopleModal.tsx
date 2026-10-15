@@ -4,7 +4,10 @@ import { Flexbox } from 'react-layout-kit';
 import { Button, Input } from '@lobehub/ui';
 import { Alert, Spin, Tag, theme, Modal, Tooltip, Typography, message } from 'antd';
 import { Search, ShieldCheck, Globe, Server } from 'lucide-react';
-import { api } from '../../services/desktop_api';
+import {
+  api,
+  type MemberStationView,
+} from '../../services/desktop_api';
 import {
   useActiveChatFederationSlice,
   useActiveSocialChatSlice,
@@ -27,6 +30,8 @@ interface Props {
   open: boolean;
   onClose: () => void;
 }
+
+type SearchScope = 'all' | 'federation' | 'station';
 
 const FEDERATED_HANDLE_RE = /^@?([a-zA-Z0-9._-]+)(?:@([a-zA-Z0-9.-]+(?::\d+)?))?$/;
 
@@ -85,8 +90,13 @@ export function FindPeopleModal({ open, onClose }: Props) {
     friendRequestsError: s.friendRequestsError,
   }));
   const currentUserPtid = useActiveSocialChatStore((s) => s.currentUserPtid);
-  const { federations, rememberCatalogEntries } = useActiveChatFederationSlice((s) => ({
+  const {
+    federations,
+    listMemberStations,
+    rememberCatalogEntries,
+  } = useActiveChatFederationSlice((s) => ({
     federations: s.federations,
+    listMemberStations: s.listMemberStations,
     rememberCatalogEntries: s.rememberCatalogEntries,
   }));
   const federationOptions = useMemo(
@@ -102,7 +112,11 @@ export function FindPeopleModal({ open, onClose }: Props) {
   const [results, setResults] = useState<ActorSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [addingId, setAddingId] = useState<string | null>(null);
+  const [searchScope, setSearchScope] = useState<SearchScope>('all');
   const [selectedFederationId, setSelectedFederationId] = useState<string>('');
+  const [memberStations, setMemberStations] = useState<MemberStationView[]>([]);
+  const [selectedStationId, setSelectedStationId] = useState('');
+  const [stationsLoading, setStationsLoading] = useState(false);
   const [searchError, setSearchError] = useState('');
   const [requestErrors, setRequestErrors] = useState<Record<string, string>>({});
 
@@ -135,7 +149,9 @@ export function FindPeopleModal({ open, onClose }: Props) {
 
   const parsed = useMemo(() => parseHandleInput(searchText), [searchText]);
   const activeFederationId = selectedFederationId || defaultFederationId;
-  const blockedByGate = !activeFederationId;
+  const blockedByGate = parsed.isFederated
+    && parsed.hasHost
+    && !activeFederationId;
 
   const handleSearch = async () => {
     const trimmed = searchText.trim();
@@ -143,23 +159,42 @@ export function FindPeopleModal({ open, onClose }: Props) {
     setSearchError('');
     setSearching(true);
     try {
-      if (!activeFederationId) {
-        setSearchError(t('chat.social.findPeople.catalogNoFederation'));
-        return;
-      }
       if (parsed.isFederated && parsed.hasHost) {
+        if (!activeFederationId) {
+          setSearchError(t('chat.social.findPeople.catalogNoFederation'));
+          return;
+        }
         const view = await api.federationResolve(activeFederationId, parsed.canonical);
         const item = resolvedProfileToSearchResult(view);
         setResults(item ? [item] : []);
         return;
       }
-      const resp = await api.federationCatalogSearch({
-        federation_id: activeFederationId,
-        prefix: parsed.localPart || trimmed.replace(/^@/, ''),
-        page_size: 20,
-      });
-      rememberCatalogEntries(resp.entries ?? []);
-      setResults((resp.entries || []).map(catalogEntryToSearchResult));
+      const query = parsed.localPart || trimmed.replace(/^@/, '');
+      if (searchScope !== 'all') {
+        if (!activeFederationId) {
+          setSearchError(t('chat.social.findPeople.catalogNoFederation'));
+          return;
+        }
+        const response = await api.federationCatalogSearch({
+          federation_id: activeFederationId,
+          prefix: query,
+          station_id: searchScope === 'station' ? selectedStationId : undefined,
+          page_size: 20,
+        });
+        rememberCatalogEntries(response.entries ?? []);
+        setResults((response.entries ?? []).map(catalogEntryToSearchResult));
+        return;
+      }
+      const response = await api.actorSearchActors(query);
+      setResults(
+        response.items.map((actor) => ({
+          id: String(actor.actorPtid ?? ''),
+          username: String(actor.username ?? ''),
+          displayName: String(actor.displayName ?? ''),
+          avatar: String(actor.avatar ?? ''),
+          homeStationPeerId: String(actor.homeStationPeerId ?? ''),
+        })),
+      );
     } catch (e: unknown) {
       const fallback = parsed.isFederated && parsed.hasHost
         ? t('chat.social.findPeople.resolveFailed', { handle: parsed.canonical })
@@ -223,16 +258,49 @@ export function FindPeopleModal({ open, onClose }: Props) {
   const handleClose = () => {
     setSearchText('');
     setResults([]);
+    setSearchScope('all');
     setSelectedFederationId('');
+    setMemberStations([]);
+    setSelectedStationId('');
     setSearchError('');
     setRequestErrors({});
     onClose();
   };
 
-  const handleScopeChange = (federationId: string) => {
-    setSelectedFederationId(federationId);
+  const handleScopeChange = async (
+    scope: SearchScope,
+    federationId = '',
+    stationId = '',
+  ) => {
+    setSearchScope(scope);
+    setSelectedStationId(stationId);
     setSearchError('');
     setResults([]);
+    if (scope === 'all') {
+      setSelectedFederationId('');
+      setMemberStations([]);
+      return;
+    }
+    if (!federationId) return;
+    setSelectedFederationId(federationId);
+    if (
+      federationId === selectedFederationId
+      && memberStations.length > 0
+    ) {
+      return;
+    }
+    setStationsLoading(true);
+    try {
+      setMemberStations(await listMemberStations(federationId));
+    } catch (error) {
+      setMemberStations([]);
+      setSearchError(
+        (error as { message?: string })?.message
+          || t('chat.social.findPeople.stationListFailed'),
+      );
+    } finally {
+      setStationsLoading(false);
+    }
   };
 
   return (
@@ -291,8 +359,26 @@ export function FindPeopleModal({ open, onClose }: Props) {
 
         {/* Scope chips */}
         <Flexbox horizontal gap={6} style={{ flexWrap: 'wrap', alignItems: 'center' }}>
+          <Tag.CheckableTag
+            data-chat-find-people-scope="all"
+            checked={searchScope === 'all'}
+            onChange={() => void handleScopeChange('all')}
+            style={searchScope === 'all' ? {
+              background: token.colorPrimaryBg,
+              color: token.colorPrimary,
+              borderColor: token.colorPrimary,
+            } : {
+              background: 'transparent',
+              color: token.colorTextSecondary,
+              borderColor: token.colorBorder,
+            }}
+          >
+            {t('chat.social.findPeople.scopeAll')}
+          </Tag.CheckableTag>
+
           {federationOptions.map((fed) => {
-            const isActive = activeFederationId === fed.federationId;
+            const isActive = searchScope === 'federation'
+              && selectedFederationId === fed.federationId;
             const presentation = findPeopleScopePresentation(
               'federation',
               fed.federationName,
@@ -309,8 +395,14 @@ export function FindPeopleModal({ open, onClose }: Props) {
                   data-chat-find-people-federation-id={fed.federationId}
                   checked={isActive}
                   onChange={(checked) => {
-                    if (checked) handleScopeChange(fed.federationId);
-                    else handleScopeChange('');
+                    if (checked) {
+                      void handleScopeChange(
+                        'federation',
+                        fed.federationId,
+                      );
+                    } else {
+                      void handleScopeChange('all');
+                    }
                   }}
                   style={isActive ? {
                     background: token.colorPrimaryBg,
@@ -323,6 +415,56 @@ export function FindPeopleModal({ open, onClose }: Props) {
                   }}
                 >
                   <Globe size={10} style={{ marginRight: 3, verticalAlign: -1 }} />
+                  {t(presentation.labelKey, { name: presentation.name })}
+                </Tag.CheckableTag>
+              </Tooltip>
+            );
+          })}
+
+          {stationsLoading ? <Spin size="small" /> : null}
+          {selectedFederationId && memberStations.map((station) => {
+            const isActive = searchScope === 'station'
+              && selectedStationId === station.stationPeerId;
+            const presentation = findPeopleScopePresentation(
+              'station',
+              station.stationName,
+              station.stationPeerId,
+            );
+            return (
+              <Tooltip
+                key={station.stationPeerId}
+                title={t(presentation.tooltipKey, { name: presentation.name })}
+              >
+                <Tag.CheckableTag
+                  aria-label={t(presentation.tooltipKey, { name: presentation.name })}
+                  data-chat-find-people-scope="station"
+                  data-chat-find-people-station-id={station.stationPeerId}
+                  checked={isActive}
+                  onChange={(checked) => {
+                    if (checked) {
+                      void handleScopeChange(
+                        'station',
+                        selectedFederationId,
+                        station.stationPeerId,
+                      );
+                    } else {
+                      void handleScopeChange(
+                        'federation',
+                        selectedFederationId,
+                      );
+                    }
+                  }}
+                  style={isActive ? {
+                    background: token.colorPrimaryBg,
+                    color: token.colorPrimary,
+                    borderColor: token.colorPrimary,
+                  } : {
+                    background: 'transparent',
+                    color: token.colorTextSecondary,
+                    borderColor: token.colorBorder,
+                  }}
+                >
+                  <Server size={10} style={{ marginRight: 3, verticalAlign: -1 }} />
                   {t(presentation.labelKey, { name: presentation.name })}
                 </Tag.CheckableTag>
               </Tooltip>
