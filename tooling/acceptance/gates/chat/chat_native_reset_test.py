@@ -1459,6 +1459,8 @@ ORDER BY owner_ptid
         reset_station_chat_state("chat-native-acceptance")
         sql = run.call_args.kwargs["input_text"]
         self.assertIn("actor_sessions", CHAT_TABLES)
+        self.assertIn("realtime_actor_event_sequences", CHAT_TABLES)
+        self.assertIn("realtime_events", CHAT_TABLES)
         self.assertIn("friend_chat_friend_requests", RETIRED_CHAT_TABLES)
         self.assertIn("friend_chat_friendships", CHAT_TABLES)
         self.assertIn("TRUNCATE TABLE", sql)
@@ -1535,6 +1537,8 @@ ORDER BY owner_ptid
             "key_exchange_direct_fetch_receipts",
             "key_exchange_identity_keys",
             "key_exchange_mls_fetch_receipts",
+            "realtime_actor_event_sequences",
+            "realtime_events",
             "recovery_revisions",
             "social_friend_request_commands",
             "social_friend_request_effects",
