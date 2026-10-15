@@ -1136,31 +1136,44 @@ class ProvisionerBlockingTests(unittest.TestCase):
         }
         self.assertFalse(contract.services["relay"].required)
         self.assertFalse(contract.services["station-via-relay"].required)
-        with patch(
+        with patch.object(
+            provisioner,
+            "acquire_profile_lease",
+        ) as profile_lease, patch.object(
+            provisioner,
+            "acquire_remote_git_source_lease",
+        ) as source_lease, patch(
             "tooling.acceptance.provisioners.home_station."
             "attach_source_bound_relay_services",
             return_value=expected,
         ) as attach:
+            profile_env = {
+                "PT_STATION_MODE": "remote",
+                "PT_RELAY_MODE": "remote",
+                "PT_RELAY_DEPLOY_ENV": "relay-1",
+            }
             services = provisioner._services_for_gate(
                 gate_id=MESSAGE_PUBLISHING_GATE,
                 manifest=manifest,
                 profile_name="one",
-                profile_env={
-                    "PT_STATION_MODE": "remote",
-                    "PT_RELAY_MODE": "remote",
-                },
+                profile_env=profile_env,
                 station_attestation=station,
             )
 
         self.assertEqual(services, expected)
+        profile_lease.assert_called_once_with(
+            "relay-1",
+            f"acceptance:{MESSAGE_PUBLISHING_GATE}:{manifest.run_id}:relay",
+        )
+        source_lease.assert_called_once_with(
+            "relay-1",
+            f"acceptance:{MESSAGE_PUBLISHING_GATE}:{manifest.run_id}:relay",
+        )
         attach.assert_called_once_with(
             environment_id="home-station",
             source_commit="abc1234",
             profile_name="one",
-            profile_env={
-                "PT_STATION_MODE": "remote",
-                "PT_RELAY_MODE": "remote",
-            },
+            profile_env=profile_env,
             station_attestation=station,
         )
 

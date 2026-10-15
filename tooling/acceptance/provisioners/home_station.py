@@ -1070,6 +1070,13 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                     ),
                     resource=f"gate-environment:{MESSAGE_PUBLISHING_GATE}",
                 )
+        relay_deployment = _required(profile_env, "PT_RELAY_DEPLOY_ENV")
+        lease_owner = f"acceptance:{gate_id}:{manifest.run_id}:relay"
+        self.acquire_profile_lease(relay_deployment, lease_owner)
+        self.acquire_remote_git_source_lease(
+            relay_deployment,
+            lease_owner,
+        )
         try:
             return attach_source_bound_relay_services(
                 environment_id=self.environment_id,
