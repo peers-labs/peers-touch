@@ -368,10 +368,12 @@ class DesktopPrimaryNavigationGate(AcceptanceGate):
         assertions["primary_navigation_clean"] = True
         assertions["notes_route_falls_back_without_applet_redirect"] = True
 
-        self._click(
-            session,
-            '[data-pt-primary-nav="applets"]',
-        )
+        native_input = {
+            "applets": self._native_click(
+                session,
+                '[data-pt-primary-nav="applets"]',
+            ),
+        }
         self._wait(
             session,
             "window.location.hash === '#/applets'",
@@ -399,7 +401,10 @@ class DesktopPrimaryNavigationGate(AcceptanceGate):
             note_command.is_enabled(),
             f"status={note_status}",
         )
-        note_command.click()
+        native_input["officialNote"] = self._native_click(
+            session,
+            '[data-applet-open="peers.note"]',
+        )
         self._wait(
             session,
             "window.location.hash === '#/applet:peers.note'",
@@ -419,7 +424,7 @@ class DesktopPrimaryNavigationGate(AcceptanceGate):
         assertions["official_note_applet_command_enabled"] = True
         assertions["official_note_applet_launchable"] = True
 
-        native_input = self._native_click(
+        native_input["settings"] = self._native_click(
             session,
             '[data-pt-primary-nav="settings"]',
         )
