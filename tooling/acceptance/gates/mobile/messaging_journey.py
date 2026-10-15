@@ -353,6 +353,52 @@ class MobileMessagingJourney:
             ),
             f"{sender.client_id} accepted relationship",
         )
+        return self._open_contact_direct(
+            sender_session,
+            receiver_session,
+            sender,
+            receiver,
+            federation_id,
+        )
+
+    def ensure_direct_conversation(
+        self,
+        sender_session: MessagingJourneySession,
+        receiver_session: MessagingJourneySession,
+        sender: MessagingActor,
+        receiver: MessagingActor,
+    ) -> str:
+        if sender.federation_id != receiver.federation_id:
+            raise GateError("Mobile actors do not share one explicit Federation")
+        if not self._accepted_relationship_visible(
+            sender_session,
+            request_id=None,
+            sender_ptid=sender.ptid,
+            receiver_ptid=receiver.ptid,
+            federation_id=sender.federation_id,
+        ):
+            return self._create_direct(
+                sender_session,
+                receiver_session,
+                sender,
+                receiver,
+            )
+        return self._open_contact_direct(
+            sender_session,
+            receiver_session,
+            sender,
+            receiver,
+            sender.federation_id,
+        )
+
+    def _open_contact_direct(
+        self,
+        sender_session: MessagingJourneySession,
+        receiver_session: MessagingJourneySession,
+        sender: MessagingActor,
+        receiver: MessagingActor,
+        federation_id: str,
+    ) -> str:
         self._await_write_admission(
             sender_session,
             f"{sender.client_id} contact Direct write admission",
@@ -379,7 +425,7 @@ class MobileMessagingJourney:
         self,
         session: MessagingJourneySession,
         *,
-        request_id: str,
+        request_id: str | None,
         sender_ptid: str,
         receiver_ptid: str,
         federation_id: str,
@@ -392,9 +438,11 @@ class MobileMessagingJourney:
         requests = projection.get("friendRequests")
         return isinstance(requests, list) and any(
             isinstance(value, Mapping)
-            and value.get("requestId") == request_id
-            and value.get("senderPtid") == sender_ptid
-            and value.get("receiverPtid") == receiver_ptid
+            and (request_id is None or value.get("requestId") == request_id)
+            and {
+                value.get("senderPtid"),
+                value.get("receiverPtid"),
+            } == {sender_ptid, receiver_ptid}
             and value.get("federationId") == federation_id
             and value.get("status") == FRIEND_REQUEST_STATUS_ACCEPTED
             for value in requests

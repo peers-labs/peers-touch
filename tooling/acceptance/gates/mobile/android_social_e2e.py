@@ -873,7 +873,7 @@ class AndroidSocialGate(AcceptanceGate):
         journey_id: str,
         state: dict[str, Any],
     ) -> dict[str, Any]:
-        conversation_id = journey._create_direct(
+        conversation_id = journey.ensure_direct_conversation(
             sender_session,
             receiver_session,
             sender,
