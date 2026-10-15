@@ -54,7 +54,11 @@ class ChangedPathsTests(unittest.TestCase):
             makefile,
         )
         self.assertIn(
-            "acceptance-plan.py --root tooling/acceptance $(ACCEPTANCE_PLAN_OUTPUT_ARG)",
+            'ACCEPTANCE_PLAN_RANGE_ARG = $(if $(ACCEPTANCE_RANGE),--range "$(ACCEPTANCE_RANGE)",)',
+            makefile,
+        )
+        self.assertIn(
+            "acceptance-plan.py --root tooling/acceptance $(ACCEPTANCE_PLAN_RANGE_ARG) $(ACCEPTANCE_PLAN_OUTPUT_ARG)",
             makefile,
         )
         self.assertIn(

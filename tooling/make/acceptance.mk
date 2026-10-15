@@ -27,6 +27,7 @@
 
 ACCEPTANCE_RANGE ?= HEAD
 ACCEPTANCE_PLAN ?=
+ACCEPTANCE_PLAN_RANGE_ARG = $(if $(ACCEPTANCE_RANGE),--range "$(ACCEPTANCE_RANGE)",)
 ACCEPTANCE_PLAN_OUTPUT_ARG = $(if $(ACCEPTANCE_PLAN),--output "$(ACCEPTANCE_PLAN)",)
 ACCEPTANCE_RUN_PLAN_ARG = $(if $(PLAN),--plan "$(PLAN)",$(if $(ACCEPTANCE_PLAN),--plan "$(ACCEPTANCE_PLAN)",))
 ACCEPTANCE_DRIVER_BINARY ?= .local/acceptance/bin/peers-touch-desktop
@@ -63,7 +64,7 @@ acceptance-cell-stop:
 	python3 tooling/scripts/acceptance-cell.py stop --cell "$(CELL)"
 
 acceptance-plan:
-	python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance $(ACCEPTANCE_PLAN_OUTPUT_ARG)
+	python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance $(ACCEPTANCE_PLAN_RANGE_ARG) $(ACCEPTANCE_PLAN_OUTPUT_ARG)
 
 acceptance-plan-self:
 	python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --self-check $(ACCEPTANCE_PLAN_OUTPUT_ARG)
