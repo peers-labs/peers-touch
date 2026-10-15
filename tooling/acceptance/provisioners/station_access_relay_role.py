@@ -201,6 +201,8 @@ def _service_source_compatibility(
     runtime_commit: str,
     source_commit: str,
 ) -> dict[str, Any] | None:
+    if not runtime_commit.strip() or not source_commit.strip():
+        return None
     if commits_match(runtime_commit, source_commit):
         return {
             "mode": "exact-commit",

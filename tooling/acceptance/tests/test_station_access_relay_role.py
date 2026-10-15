@@ -987,6 +987,16 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
 
         self.assertIsNone(compatibility)
 
+    def test_source_compatibility_rejects_missing_runtime_commit(self) -> None:
+        with patch(
+            "tooling.acceptance.provisioners.station_access_relay_role."
+            "subprocess.run",
+        ) as run:
+            compatibility = _service_source_compatibility("", COMMIT)
+
+        self.assertIsNone(compatibility)
+        run.assert_not_called()
+
     def test_relay_discovery_endpoint_uses_public_https_listener(self) -> None:
         self.assertEqual(
             _relay_discovery_endpoint(
