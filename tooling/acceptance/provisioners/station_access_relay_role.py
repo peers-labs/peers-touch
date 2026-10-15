@@ -1079,7 +1079,7 @@ server {
         config: PosixServiceRuntimeConfig,
         trust_anchor: bytes,
     ) -> None:
-        status = inspect_posix_runtime(config)
+        status = self._wait_posix_runtime(config)
         container = str(status["containerId"])
         transport = config.transport()
         home = self._remote_home(config)
@@ -1126,7 +1126,7 @@ server {
             )
 
         def remove_certificate() -> None:
-            current = inspect_posix_runtime(config)
+            current = self._wait_posix_runtime(config)
             current_container = str(current["containerId"])
             current_transport = config.transport()
             current_transport.run_argv(
@@ -1155,6 +1155,28 @@ server {
         self.register_cleanup(
             f"station-relay-ca:{config.environment_name}",
             remove_certificate,
+        )
+
+    @staticmethod
+    def _wait_posix_runtime(
+        config: PosixServiceRuntimeConfig,
+        *,
+        timeout_seconds: float = 120,
+    ) -> dict[str, Any]:
+        deadline = time.monotonic() + timeout_seconds
+        last_error: Exception | None = None
+        while time.monotonic() < deadline:
+            try:
+                return inspect_posix_runtime(config)
+            except BlockedError as error:
+                last_error = error
+            time.sleep(1)
+        raise BlockedError(
+            reason=(
+                f"Linux runtime {config.environment_name} did not become "
+                f"healthy: {last_error}"
+            ),
+            resource=f"runtime-status:{config.environment_name}",
         )
 
     @staticmethod

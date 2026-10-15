@@ -665,6 +665,35 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
         )
         self.assertEqual(evidence["platform"], "linux")
 
+
+    def test_runtime_wait_allows_http_ready_to_reach_docker_healthy(
+        self,
+    ) -> None:
+        expected = _status("station", 101)
+        with (
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "inspect_posix_runtime",
+                side_effect=(
+                    BlockedError(
+                        reason="runtime is starting",
+                        resource="runtime-status:station",
+                    ),
+                    expected,
+                ),
+            ) as inspect_runtime,
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "time.sleep",
+            ),
+        ):
+            result = StationAccessRelayRoleProvisioner._wait_posix_runtime(
+                _config("station"),
+            )
+
+        self.assertEqual(result, expected)
+        self.assertEqual(inspect_runtime.call_count, 2)
+
     def test_disposable_station_runtime_uses_reviewed_acceptance_topology(
         self,
     ) -> None:
