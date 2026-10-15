@@ -1538,14 +1538,16 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
         with patch.object(
             binding.native_adapter,
             "focused_control",
-            return_value=NativeControlSnapshot(
-                window_count=1,
-                actual_frontmost_pid=49629,
+            side_effect=(
+                NativeControlSnapshot(
+                    window_count=1,
+                    actual_frontmost_pid=49629,
+                ),
+                converged,
             ),
         ), patch.object(
             binding.native_adapter,
-            "activate_and_focused_control",
-            return_value=converged,
+            "activate_process",
         ) as activate:
             activated = binding.request_cooperative_activation(
                 target,
@@ -1560,6 +1562,126 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
         stale_dom_source.invoke_app_result.assert_not_called()
         source.driver.execute_script.assert_not_called()
         stale_dom_source.driver.execute_script.assert_not_called()
+        target.invoke_app_result.assert_called_once_with(
+            "acceptance_request_activation"
+        )
+        activate.assert_called_once_with(49712)
+
+    def test_macos_activation_replays_process_owned_handoff_until_converged(
+        self,
+    ) -> None:
+        with patch.dict(
+            "os.environ",
+            {"PT_ACCEPTANCE_NATIVE_DEV": "1"},
+        ):
+            binding = LocalMacOSRuntimeBinding()
+        target = Mock(spec=TauriSession)
+        target.process_id = 49712
+        source = Mock(spec=TauriSession)
+        source.process_id = 49629
+        source.invoke_app_result.return_value = {"ok": True}
+        target.invoke_app_result.return_value = {"ok": True}
+        source_control = NativeControlSnapshot(
+            window_count=1,
+            actual_frontmost_pid=49629,
+        )
+        converged = NativeControlSnapshot(
+            window_count=1,
+            frontmost=True,
+            actual_frontmost_pid=49712,
+        )
+
+        with patch.object(
+            binding.native_adapter,
+            "focused_control",
+            side_effect=(
+                source_control,
+                source_control,
+                source_control,
+                converged,
+            ),
+        ), patch.object(
+            binding.native_adapter,
+            "activate_process",
+        ) as activate, patch(
+            "tooling.acceptance.drivers.native.runtime.time.sleep",
+        ):
+            activated = binding.request_cooperative_activation(
+                target,
+                (target, source),
+            )
+
+        self.assertTrue(activated)
+        self.assertEqual(
+            source.invoke_app_result.call_args_list,
+            [
+                call(
+                    "acceptance_yield_activation",
+                    {"targetPid": 49712},
+                ),
+                call(
+                    "acceptance_yield_activation",
+                    {"targetPid": 49712},
+                ),
+            ],
+        )
+        self.assertEqual(
+            target.invoke_app_result.call_args_list,
+            [
+                call("acceptance_request_activation"),
+                call("acceptance_request_activation"),
+            ],
+        )
+        self.assertEqual(
+            activate.call_args_list,
+            [call(49712), call(49712)],
+        )
+
+    def test_macos_activation_fails_closed_after_cooperative_timeout(
+        self,
+    ) -> None:
+        with patch.dict(
+            "os.environ",
+            {"PT_ACCEPTANCE_NATIVE_DEV": "1"},
+        ):
+            binding = LocalMacOSRuntimeBinding()
+        target = Mock(spec=TauriSession)
+        target.process_id = 49712
+        target.invoke_app_result.return_value = {"ok": True}
+        source = Mock(spec=TauriSession)
+        source.process_id = 49629
+        source.invoke_app_result.return_value = {"ok": True}
+        source_control = NativeControlSnapshot(
+            window_count=1,
+            actual_frontmost_pid=49629,
+        )
+
+        with patch.object(
+            binding.native_adapter,
+            "focused_control",
+            return_value=source_control,
+        ), patch.object(
+            binding.native_adapter,
+            "activate_process",
+        ) as activate, patch(
+            "tooling.acceptance.drivers.native.runtime."
+            "_MACOS_COOPERATIVE_ACTIVATION_TIMEOUT_SECONDS",
+            0,
+        ), patch(
+            "tooling.acceptance.drivers.native.runtime.time.sleep",
+        ), self.assertRaisesRegex(
+            DriverError,
+            "did not converge after cooperative activation",
+        ):
+            binding.request_cooperative_activation(
+                target,
+                (target, source),
+            )
+
+        source.invoke_app_result.assert_called_once_with(
+            "acceptance_yield_activation",
+            {"targetPid": 49712},
+        )
         target.invoke_app_result.assert_called_once_with(
             "acceptance_request_activation"
         )
@@ -1586,7 +1708,7 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             ),
         ), patch.object(
             binding.native_adapter,
-            "activate_and_focused_control",
+            "activate_process",
         ) as activate:
             with self.assertRaisesRegex(DriverError, "yield rejected"):
                 binding.request_cooperative_activation(
@@ -1619,7 +1741,7 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             ),
         ), patch.object(
             binding.native_adapter,
-            "activate_and_focused_control",
+            "activate_process",
         ) as activate:
             with self.assertRaisesRegex(DriverError, "request rejected"):
                 binding.request_cooperative_activation(

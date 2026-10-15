@@ -48,6 +48,9 @@ from tooling.acceptance.drivers.tauri import (
     find_app_binary,
 )
 
+_MACOS_COOPERATIVE_ACTIVATION_TIMEOUT_SECONDS = 5.0
+_MACOS_COOPERATIVE_ACTIVATION_INTERVAL_SECONDS = 0.1
+
 
 def _file_sha256(path: Path) -> str:
     digest = hashlib.sha256()
@@ -1639,44 +1642,70 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
                 "Native activation target process is unavailable"
             )
         target_process_id = target.process_id
-        current_control = self.native_adapter.focused_control(
-            target_process_id
+        deadline = (
+            time.monotonic()
+            + _MACOS_COOPERATIVE_ACTIVATION_TIMEOUT_SECONDS
         )
-        if current_control.error:
-            raise DriverError(
-                "Native activation source inspection failed: "
-                f"{current_control.to_dict()}"
+        last_control = NativeControlSnapshot()
+        last_activation_error = ""
+        while True:
+            current_control = self.native_adapter.focused_control(
+                target_process_id
             )
-        source = next(
-            (
-                session
-                for session in sessions
-                if session.process_id == current_control.actual_frontmost_pid
-                and session.process_id != target_process_id
-            ),
-            None,
-        )
-        if source is not None:
-            source.invoke_app_result(
-                "acceptance_yield_activation",
-                {"targetPid": target_process_id},
+            if current_control.error:
+                raise DriverError(
+                    "Native activation source inspection failed: "
+                    f"{current_control.to_dict()}"
+                )
+            if (
+                current_control.frontmost
+                and current_control.actual_frontmost_pid == target_process_id
+                and current_control.window_count > 0
+            ):
+                return True
+
+            source = next(
+                (
+                    session
+                    for session in sessions
+                    if (
+                        session.process_id
+                        == current_control.actual_frontmost_pid
+                        and session.process_id != target_process_id
+                    )
+                ),
+                None,
             )
-        target.invoke_app_result("acceptance_request_activation")
-        focused_control = self.native_adapter.activate_and_focused_control(
-            target_process_id
-        )
-        if (
-            focused_control.error
-            or not focused_control.frontmost
-            or focused_control.actual_frontmost_pid != target_process_id
-            or focused_control.window_count <= 0
-        ):
-            raise DriverError(
-                "Native actor focus did not converge after cooperative "
-                f"activation for exact process {target_process_id}: "
-                f"{focused_control.to_dict()}"
+            if source is not None:
+                source.invoke_app_result(
+                    "acceptance_yield_activation",
+                    {"targetPid": target_process_id},
+                )
+            target.invoke_app_result("acceptance_request_activation")
+            last_activation_error = ""
+            try:
+                self.native_adapter.activate_process(target_process_id)
+            except DriverError as error:
+                last_activation_error = str(error)
+            time.sleep(_MACOS_COOPERATIVE_ACTIVATION_INTERVAL_SECONDS)
+            last_control = self.native_adapter.focused_control(
+                target_process_id
             )
-        return True
+            if (
+                not last_control.error
+                and last_control.frontmost
+                and last_control.actual_frontmost_pid == target_process_id
+                and last_control.window_count > 0
+            ):
+                return True
+
+            if time.monotonic() >= deadline:
+                raise DriverError(
+                    "Native actor focus did not converge after cooperative "
+                    f"activation for exact process {target_process_id}: "
+                    f"{last_control.to_dict()} "
+                    f"activationError={last_activation_error!r}"
+                )
 
     def binary_identity(self) -> dict[str, str]:
         if self._use_make:
