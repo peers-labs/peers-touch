@@ -94,6 +94,7 @@ class FakeMessagingSession:
             if not isinstance(email, str):
                 raise AssertionError("login email must be a string")
             self.login_emails.append(email)
+            self.social_runtime_active = True
             return {
                 "decision": {"state": "ACCESS_DECISION_STATE_GRANTED"},
                 "session": {
@@ -386,6 +387,16 @@ class FakeMessagingSession:
                 "activeStationPeerId": self.actor.station_peer_id,
                 "activeActorPtid": actor_ptid,
                 "runtimeStationPeerId": runtime_station_peer_id,
+                "social": {
+                    "stationPeerId": (
+                        runtime_station_peer_id
+                        if self.social_runtime_active
+                        else None
+                    ),
+                    "actorPtid": (
+                        actor_ptid if self.social_runtime_active else None
+                    ),
+                },
             }
         raise AssertionError(f"unexpected action: {action}")
 
@@ -576,7 +587,7 @@ class MobileMessagingJourneyTests(unittest.TestCase):
         self.assertTrue(self.sender_session.social_runtime_active)
         self.assertEqual(
             self.sender_session.lifecycle_scope_phases,
-            ["BOOTSTRAPPING", "ACTIVE"],
+            ["ACTIVE", "BOOTSTRAPPING", "ACTIVE"],
         )
 
     def test_post_restart_waits_for_full_harness_registration(self) -> None:
@@ -586,6 +597,7 @@ class MobileMessagingJourneyTests(unittest.TestCase):
             def __init__(self) -> None:
                 self.scope_attempts = 0
                 self.social_attempts = 0
+                self.restart_scope_attempts = 0
 
             def call_action(
                 self,
@@ -593,6 +605,7 @@ class MobileMessagingJourneyTests(unittest.TestCase):
                 _payload: Mapping[str, Any] | None = None,
             ) -> Any:
                 if action == "lifecycle.restart":
+                    self.restart_scope_attempts = self.scope_attempts
                     return {"requested": True, "scope": "webview"}
                 if action == "lifecycle.scope.read":
                     self.scope_attempts += 1
@@ -606,6 +619,10 @@ class MobileMessagingJourneyTests(unittest.TestCase):
                         "activeStationPeerId": actor.station_peer_id,
                         "runtimeStationPeerId": actor.station_peer_id,
                         "activeActorPtid": actor.ptid,
+                        "social": {
+                            "stationPeerId": actor.station_peer_id,
+                            "actorPtid": actor.ptid,
+                        },
                     }
                 if action == "social.projection.read":
                     self.social_attempts += 1
@@ -642,7 +659,8 @@ class MobileMessagingJourneyTests(unittest.TestCase):
 
         journey._activate_authenticated_shell(session, actor)
 
-        self.assertEqual(session.scope_attempts, 2)
+        self.assertEqual(session.restart_scope_attempts, 2)
+        self.assertEqual(session.scope_attempts, 3)
         self.assertEqual(session.social_attempts, 2)
 
     def test_authentication_rejects_non_station_account_reference(self) -> None:
