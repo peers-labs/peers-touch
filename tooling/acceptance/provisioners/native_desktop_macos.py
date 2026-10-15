@@ -37,7 +37,10 @@ from tooling.acceptance.core.errors import (
 from tooling.acceptance.drivers.native.base import (
     MouseAction,
     NativeControlSnapshot,
+    NativeInputIsolation,
+    NativeInputMode,
     NativeWindowStack,
+    admit_local_native_input_mode,
 )
 from tooling.acceptance.drivers.native.macos import MacOSNativeDesktopAdapter
 from tooling.acceptance.drivers.tauri import (
@@ -388,6 +391,11 @@ class NativeDesktopMacOSProvisioner:
     def _probe_native_adapter(
         self,
     ) -> tuple[CellAdapterIdentity, int]:
+        input_mode = admit_local_native_input_mode(
+            os.environ.get("PT_ACCEPTANCE_DESKTOP_INPUT_MODE")
+            or NativeInputMode.EXCLUSIVE_NATIVE_INPUT.value,
+            os.environ.get("PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION"),
+        )
         webdriver_port = resolve_smoke_port(0)
         launcher = LocalTauriLauncher(
             app_binary=find_app_binary(),
@@ -396,6 +404,12 @@ class NativeDesktopMacOSProvisioner:
             environment={
                 "PT_ACCEPTANCE_WINDOW_SLOT": "0",
                 "PT_ACCEPTANCE_WINDOW_COUNT": "1",
+                "PT_ACCEPTANCE_DESKTOP_INPUT_MODE": input_mode.value,
+                "PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION": (
+                    NativeInputIsolation.ISOLATED_GUI_SESSION.value
+                    if input_mode is NativeInputMode.EXCLUSIVE_NATIVE_INPUT
+                    else NativeInputIsolation.SHARED_USER_SESSION.value
+                ),
             },
         )
         session = TauriSession(launcher)
@@ -414,9 +428,10 @@ class NativeDesktopMacOSProvisioner:
                 raise ProvisioningError(
                     "macOS runtime-cell probe process identity is unavailable"
                 )
-            adapter = MacOSNativeDesktopAdapter()
-            session.invoke_app_result("acceptance_request_activation")
-            adapter.position_main_window(process_id, (100.0, 100.0))
+            adapter = MacOSNativeDesktopAdapter(input_mode)
+            if input_mode is NativeInputMode.EXCLUSIVE_NATIVE_INPUT:
+                session.invoke_app_result("acceptance_request_activation")
+                adapter.position_main_window(process_id, (100.0, 100.0))
             bounds = self._await_window_bounds(process_id)
             point, pointer, stack, input_probe, attempted_points = (
                 self._probe_owned_point(

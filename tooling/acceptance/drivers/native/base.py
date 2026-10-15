@@ -6,6 +6,64 @@ from dataclasses import asdict, dataclass
 from enum import Enum
 from pathlib import Path
 
+from tooling.acceptance.core.errors import NativeInputBlocked
+
+
+class NativeInputMode(str, Enum):
+    SEMANTIC_NON_INTRUSIVE = "semantic-nonintrusive"
+    EXCLUSIVE_NATIVE_INPUT = "exclusive-native-input"
+
+
+class NativeInputIsolation(str, Enum):
+    SHARED_USER_SESSION = "shared-user-session"
+    ISOLATED_GUI_SESSION = "isolated-gui-session"
+
+
+def resolve_native_input_mode(value: str | None) -> NativeInputMode:
+    normalized = (value or "").strip()
+    if not normalized:
+        return NativeInputMode.SEMANTIC_NON_INTRUSIVE
+    try:
+        return NativeInputMode(normalized)
+    except ValueError as error:
+        supported = ", ".join(mode.value for mode in NativeInputMode)
+        raise NativeInputBlocked(
+            "resolve native input mode",
+            f"unsupported mode {normalized!r}; expected one of: {supported}",
+        ) from error
+
+
+def admit_local_native_input_mode(
+    mode_value: str | None,
+    isolation_value: str | None,
+) -> NativeInputMode:
+    mode = resolve_native_input_mode(mode_value)
+    isolation_raw = (isolation_value or "").strip()
+    try:
+        isolation = (
+            NativeInputIsolation.SHARED_USER_SESSION
+            if not isolation_raw
+            else NativeInputIsolation(isolation_raw)
+        )
+    except ValueError as error:
+        supported = ", ".join(
+            isolation.value for isolation in NativeInputIsolation
+        )
+        raise NativeInputBlocked(
+            "resolve native input isolation",
+            f"unsupported isolation {isolation_raw!r}; expected: {supported}",
+        ) from error
+    if (
+        mode is NativeInputMode.EXCLUSIVE_NATIVE_INPUT
+        and isolation is not NativeInputIsolation.ISOLATED_GUI_SESSION
+    ):
+        raise NativeInputBlocked(
+            "admit local exclusive native input",
+            "exclusive input requires PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION="
+            f"{NativeInputIsolation.ISOLATED_GUI_SESSION.value}",
+        )
+    return mode
+
 
 class MouseAction(str, Enum):
     MOVE = "move"
@@ -115,6 +173,19 @@ class NativeWindowStack:
 
 class NativeDesktopAdapter(ABC):
     @property
+    def input_mode(self) -> NativeInputMode:
+        return NativeInputMode.EXCLUSIVE_NATIVE_INPUT
+
+    def require_exclusive_input(self, operation: str) -> None:
+        if self.input_mode is NativeInputMode.EXCLUSIVE_NATIVE_INPUT:
+            return
+        raise NativeInputBlocked(
+            operation,
+            "global focus, keyboard, or pointer injection is forbidden in "
+            f"{self.input_mode.value!r} mode",
+        )
+
+    @property
     @abstractmethod
     def platform(self) -> str:
         ...
@@ -137,6 +208,7 @@ class NativeDesktopAdapter(ABC):
         actions: tuple[MouseAction, ...],
         point: tuple[float, float],
     ) -> None:
+        self.require_exclusive_input("post mouse to process")
         self.activate_process(process_id)
         self.post_mouse(actions, point)
 
@@ -152,6 +224,7 @@ class NativeDesktopAdapter(ABC):
             raise ValueError("Native mouse drag duration must be positive")
         if steps < 1:
             raise ValueError("Native mouse drag steps must be positive")
+        self.require_exclusive_input("drag mouse")
 
         interval_seconds = duration_seconds / (steps + 1)
         current = start
@@ -190,6 +263,7 @@ class NativeDesktopAdapter(ABC):
         text: str = "",
         private_source: bool = False,
     ) -> None:
+        self.require_exclusive_input("post key to process")
         self.activate_process(process_id)
         self.post_key(
             key,
@@ -210,6 +284,7 @@ class NativeDesktopAdapter(ABC):
             raise ValueError("Native key sequence must not be empty")
         if interval_seconds < 0:
             raise ValueError("Native key sequence interval must not be negative")
+        self.require_exclusive_input("post key sequence to process")
         self.activate_process(process_id)
         for index, key in enumerate(keys):
             self.post_key(key, private_source=private_source)
@@ -224,6 +299,7 @@ class NativeDesktopAdapter(ABC):
         self,
         process_id: int,
     ) -> NativeControlSnapshot | None:
+        self.require_exclusive_input("reveal native file chooser location")
         self.activate_process(process_id)
         self.reveal_file_chooser_location()
         return None
@@ -251,6 +327,7 @@ class NativeDesktopAdapter(ABC):
         self,
         process_id: int,
     ) -> NativeControlSnapshot:
+        self.require_exclusive_input("activate process and inspect focus")
         self.activate_process(process_id)
         return self.focused_control(process_id)
 
@@ -287,5 +364,6 @@ class NativeDesktopAdapter(ABC):
     def release_stuck_mouse_button(self, point: tuple[float, float]) -> bool:
         if not self.mouse_button_down():
             return False
+        self.require_exclusive_input("release stuck mouse button")
         self.post_mouse((MouseAction.LEFT_UP,), point)
         return True

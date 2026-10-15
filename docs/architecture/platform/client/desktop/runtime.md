@@ -71,8 +71,9 @@ Desktop functional and formal proof must use an approved native runtime cell,
 such as `desktop-macos-native`, and must include:
 
 - a real native application process and visible window;
-- native focus and input dispatch;
-- embedded WebDriver or native accessibility actions;
+- embedded WebDriver semantic input for non-intrusive functional Journeys;
+- isolated native focus and input dispatch for claims that require physical
+  input semantics;
 - native screenshots and DOM snapshots when applicable;
 - Desktop Rust and Station identity;
 - bounded reverse-order process and resource cleanup.
@@ -83,6 +84,13 @@ native Accessibility state, real native actions, and reverse cleanup.
 
 Chromium/CDP, a standalone Vite page, coordinate-only automation, API-only
 readback, and a system browser are not Desktop product proof.
+
+Local development defaults to `semantic-nonintrusive`: it must not activate the
+Desktop process, move the system pointer, redirect keyboard focus, or force the
+Acceptance window above the operator's current application.
+`exclusive-native-input` requires an `isolated-gui-session`; a shared user
+session fails closed before AppKit or CoreGraphics mutation. Semantic evidence
+does not satisfy a physical native-input or native-focus claim.
 
 ## 5. Browser Boundaries
 

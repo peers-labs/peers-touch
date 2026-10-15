@@ -6,14 +6,19 @@ from typing import TYPE_CHECKING, Any
 from tooling.acceptance.core.errors import DriverError
 from tooling.acceptance.drivers.native.base import (
     MouseAction,
+    NativeInputIsolation,
     NativeControlSnapshot,
     NativeDesktopAdapter,
+    NativeInputMode,
     NativeKey,
     NativeModifier,
     NativeWindowBounds,
     NativeWindowSnapshot,
     NativeWindowStack,
+    admit_local_native_input_mode,
+    resolve_native_input_mode,
 )
+
 if TYPE_CHECKING:
     from tooling.acceptance.drivers.native.runtime import (
         NativeDesktopRuntimeBinding,
@@ -23,8 +28,10 @@ if TYPE_CHECKING:
 
 __all__ = [
     "MouseAction",
+    "NativeInputIsolation",
     "NativeControlSnapshot",
     "NativeDesktopAdapter",
+    "NativeInputMode",
     "NativeDesktopRuntimeBinding",
     "NativeLaunchOptions",
     "TransportOverrideHandle",
@@ -33,6 +40,8 @@ __all__ = [
     "NativeWindowBounds",
     "NativeWindowSnapshot",
     "NativeWindowStack",
+    "admit_local_native_input_mode",
+    "resolve_native_input_mode",
     "create_native_desktop_adapter",
     "resolve_native_desktop_runtime",
 ]

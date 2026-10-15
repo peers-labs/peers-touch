@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -18,7 +19,10 @@ from tooling.acceptance.core.errors import ClientBindingError, DriverError
 from tooling.acceptance.drivers.native.base import (
     MouseAction,
     NativeDesktopAdapter,
+    NativeInputMode,
     NativeKey,
+    admit_local_native_input_mode,
+    resolve_native_input_mode,
 )
 from tooling.acceptance.drivers.native.runtime import (
     LinuxNativeDesktopRuntimeBinding,
@@ -160,6 +164,49 @@ class SyntheticRemoteNativeLifecycle:
 
 
 class NativeDesktopAdapterInputTest(unittest.TestCase):
+    def test_native_input_mode_defaults_to_non_intrusive(self) -> None:
+        self.assertEqual(
+            resolve_native_input_mode(None),
+            NativeInputMode.SEMANTIC_NON_INTRUSIVE,
+        )
+        self.assertEqual(
+            resolve_native_input_mode("exclusive-native-input"),
+            NativeInputMode.EXCLUSIVE_NATIVE_INPUT,
+        )
+
+    def test_local_macos_binding_uses_declared_input_mode(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "PT_ACCEPTANCE_NATIVE_DEV": "1",
+                "PT_ACCEPTANCE_DESKTOP_INPUT_MODE": "semantic-nonintrusive",
+            },
+        ):
+            binding = LocalMacOSRuntimeBinding()
+
+        self.assertEqual(
+            binding.input_mode,
+            NativeInputMode.SEMANTIC_NON_INTRUSIVE,
+        )
+
+    def test_local_exclusive_input_requires_isolated_gui_session(self) -> None:
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "NATIVE_INPUT_ISOLATION_REQUIRED",
+        ):
+            admit_local_native_input_mode(
+                "exclusive-native-input",
+                "shared-user-session",
+            )
+
+        self.assertEqual(
+            admit_local_native_input_mode(
+                "exclusive-native-input",
+                "isolated-gui-session",
+            ),
+            NativeInputMode.EXCLUSIVE_NATIVE_INPUT,
+        )
+
     def test_drag_mouse_posts_interpolated_drag_events_with_timing(self) -> None:
         adapter = Mock(spec=NativeDesktopAdapter)
 

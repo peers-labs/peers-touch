@@ -166,6 +166,31 @@ fn acceptance_window_inner_width(
 }
 
 #[cfg(feature = "acceptance-webdriver")]
+fn acceptance_input_mode_is_exclusive(
+    mode: Option<&str>,
+    isolation: Option<&str>,
+) -> Result<bool, String> {
+    match mode.unwrap_or("semantic-nonintrusive") {
+        "semantic-nonintrusive" => Ok(false),
+        "exclusive-native-input" => {
+            if isolation == Some("isolated-gui-session") {
+                Ok(true)
+            } else {
+                Err(
+                    "exclusive-native-input requires \
+                     PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION=isolated-gui-session"
+                        .to_string(),
+                )
+            }
+        }
+        value => Err(format!(
+            "unsupported Desktop input mode {value:?}; expected \
+             semantic-nonintrusive or exclusive-native-input"
+        )),
+    }
+}
+
+#[cfg(feature = "acceptance-webdriver")]
 fn position_acceptance_window(
     window: &tauri::WebviewWindow,
     monitor_x: f64,
@@ -200,6 +225,15 @@ fn configure_acceptance_window(
     window: &tauri::WebviewWindow,
     minimum_window_width: f64,
 ) -> std::io::Result<()> {
+    let exclusive_native_input = acceptance_input_mode_is_exclusive(
+        std::env::var("PT_ACCEPTANCE_DESKTOP_INPUT_MODE")
+            .ok()
+            .as_deref(),
+        std::env::var("PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION")
+            .ok()
+            .as_deref(),
+    )
+    .map_err(std::io::Error::other)?;
     let slot = std::env::var("PT_ACCEPTANCE_WINDOW_SLOT")
         .map_err(|error| {
             std::io::Error::other(format!("acceptance window slot is missing: {error}"))
@@ -315,16 +349,56 @@ fn configure_acceptance_window(
     window.show().map_err(|error| {
         std::io::Error::other(format!("acceptance window show failed: {error}"))
     })?;
-    window.set_always_on_top(true).map_err(|error| {
-        std::io::Error::other(format!("acceptance window layering failed: {error}"))
-    })?;
-    configure_acceptance_window_level(window)?;
+    if exclusive_native_input {
+        window.set_always_on_top(true).map_err(|error| {
+            std::io::Error::other(format!("acceptance window layering failed: {error}"))
+        })?;
+        configure_acceptance_window_level(window)?;
+    }
     Ok(())
 }
 
 #[cfg(all(test, feature = "acceptance-webdriver"))]
 mod acceptance_window_tests {
-    use super::{acceptance_window_inner_width, acceptance_window_x};
+    use super::{
+        acceptance_input_mode_is_exclusive, acceptance_window_inner_width, acceptance_window_x,
+    };
+
+    #[test]
+    fn semantic_input_is_the_default() {
+        assert!(
+            !acceptance_input_mode_is_exclusive(None, None)
+                .expect("mode should parse")
+        );
+        assert!(
+            !acceptance_input_mode_is_exclusive(
+                Some("semantic-nonintrusive"),
+                None,
+            )
+                .expect("mode should parse")
+        );
+    }
+
+    #[test]
+    fn exclusive_input_requires_an_explicit_mode() {
+        assert!(
+            acceptance_input_mode_is_exclusive(
+                Some("exclusive-native-input"),
+                Some("isolated-gui-session"),
+            )
+            .expect("mode should parse")
+        );
+        assert!(
+            acceptance_input_mode_is_exclusive(
+                Some("exclusive-native-input"),
+                None,
+            )
+            .is_err()
+        );
+        assert!(
+            acceptance_input_mode_is_exclusive(Some("legacy"), None).is_err()
+        );
+    }
 
     #[test]
     fn single_actor_client_width_reserves_native_window_frame() {

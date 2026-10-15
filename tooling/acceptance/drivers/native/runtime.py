@@ -32,11 +32,14 @@ from tooling.acceptance.drivers.native.base import (
     MouseAction,
     NativeControlSnapshot,
     NativeDesktopAdapter,
+    NativeInputIsolation,
+    NativeInputMode,
     NativeKey,
     NativeModifier,
     NativeWindowBounds,
     NativeWindowSnapshot,
     NativeWindowStack,
+    admit_local_native_input_mode,
 )
 from tooling.acceptance.drivers.tauri import (
     LocalTauriLauncher,
@@ -187,6 +190,10 @@ class NativeDesktopRuntimeBinding(ABC):
     def proof_refs(self) -> tuple[dict[str, Any], ...]:
         return tuple(self._proof_refs)
 
+    @property
+    def input_mode(self) -> NativeInputMode:
+        return self.native_adapter.input_mode
+
     def binding_proof_evidence(self) -> dict[str, Any]:
         if self._runtime_manifest is None:
             raise DriverError("Runtime Binding manifest is not set")
@@ -240,9 +247,14 @@ class NativeDesktopRuntimeBinding(ABC):
         environment = {
             "PT_ACCEPTANCE_WINDOW_SLOT": str(options.window_slot),
             "PT_ACCEPTANCE_WINDOW_COUNT": str(options.window_count),
+            "PT_ACCEPTANCE_DESKTOP_INPUT_MODE": self.input_mode.value,
             "PT_STATION_URL": station_url,
             "PT_STATION_HEALTH_URL": f"{station_url}/sub-oss/healthz",
         }
+        if self.input_mode is NativeInputMode.EXCLUSIVE_NATIVE_INPUT:
+            environment["PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION"] = (
+                NativeInputIsolation.ISOLATED_GUI_SESSION.value
+            )
         relay_trust_service_id = station_service_id
         if station_service_id != "station-via-relay":
             services = self._runtime_manifest.get("services")
@@ -1425,7 +1437,19 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
             if self._use_make
             else Path(find_app_binary()).resolve()
         )
-        self._native_adapter = MacOSNativeDesktopAdapter()
+        requested_input_mode = os.environ.get(
+            "PT_ACCEPTANCE_DESKTOP_INPUT_MODE"
+        )
+        if not requested_input_mode and not self._use_make:
+            requested_input_mode = (
+                NativeInputMode.EXCLUSIVE_NATIVE_INPUT.value
+            )
+        self._native_adapter = MacOSNativeDesktopAdapter(
+            admit_local_native_input_mode(
+                requested_input_mode,
+                os.environ.get("PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION"),
+            )
+        )
         self._native_file_staging: tempfile.TemporaryDirectory[str] | None = None
 
     @property
@@ -1582,6 +1606,9 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
         target: TauriSession,
         sessions: Sequence[TauriSession],
     ) -> bool:
+        self.native_adapter.require_exclusive_input(
+            "request cooperative macOS activation"
+        )
         if target.process_id is None:
             raise DriverError(
                 "Native activation target process is unavailable"
