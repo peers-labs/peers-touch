@@ -256,13 +256,16 @@ hours to diagnose.
 
 AI agents may create and operate development runtime instances as needed by the
 task. `make profile-init` may create a worktree-local Profile, while an existing
-reviewed Profile may be selected, registered, provisioned, deployed, restarted,
-and reset without a separate approval round.
+reviewed non-stable Profile may be selected, registered, provisioned, deployed,
+restarted, and reset without a separate approval round.
 
 These operations remain bounded:
 
 - the canonical Profile or worktree-local Profile owns topology; do not invent
   an ad-hoc host, port, credential, or arbitrary `PT_DEV_PROFILE_FILE`;
+- worktree-local Profiles must remain current-user-owned private regular files
+  with shell-safe literal assignments and are parsed into quoted exports, not
+  sourced as executable shell;
 - environment-repository definitions used for remote mutation must be
   Git-tracked and clean;
 - adding or changing a tracked Profile in the sibling `env` repository is an
@@ -270,8 +273,8 @@ These operations remain bounded:
 - Profile capability, exact target or reset scope, current source identity,
   stable protection, and OS-held lease must all pass at the concrete entrypoint;
 - Profile IDs ending in `stable`, case-insensitively, remain protected from
-  autonomous reset, and stable runtime mutation requires explicit user
-  direction.
+  autonomous reset; stable selection grants connect only, stable deploy needs
+  an explicit user-directed capability binding, and stable reset is forbidden.
 
 Profile selection and runtime provisioning are not worktree creation. They may
 proceed automatically inside the user-selected worktree. A missing target or
@@ -646,8 +649,10 @@ boundary instead of silently creating one.
 6. Resume and status derive from the current request, current Git/runtime facts,
    one explicit task ID, an explicit Plan/task selector when supplied, and
    current evidence. Never infer a task from branch, mtime, chat, or memory.
-7. The Agent may create a local commit when one coherent scoped change has
-   passed its required checks. Stage only task-owned files. Push, PR, merge,
+7. The Agent may create a local checkpoint commit at any useful coherent
+   boundary for traceability, rollback, integration, or exact-source runtime.
+   Stage only task-owned files and run checkpoint-appropriate source and secret
+   checks. A commit is not proof, completion, or delivery. Push, PR, merge,
    release, history rewrite, and worktree operations remain separately
    governed.
 8. Hook events are advisory. Unknown events, missing identity, ambiguous host

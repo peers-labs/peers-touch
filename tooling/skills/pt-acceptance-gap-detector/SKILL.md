@@ -2,7 +2,7 @@
 name: pt-acceptance-gap-detector
 description: >
   Detects missing or invalid Acceptance evidence without modifying code.
-  Invoke before completion, quality, commit, PR readiness, or proof claims.
+  Invoke before completion, quality, delivery or PR readiness, or proof claims.
 ---
 
 # Acceptance Gap Detector
@@ -14,11 +14,13 @@ Invoke before:
 - marking a product task or Acceptance workstream complete;
 - claiming a runtime journey, Gate, or capability is proven;
 - generating quality evidence;
-- committing or opening a ready-for-review PR;
+- presenting a staged delivery or opening a ready-for-review PR;
 - approving or merging a PR.
 
+Ordinary source-only or exact-source checkpoint commits do not require this
+skill unless they also make a completion, readiness, delivery, or proof claim.
 Pure formatting, documentation navigation, and CI-cheap checks that make no
-product claim do not require this skill.
+product claim do not require it either.
 
 ## Core Rule
 

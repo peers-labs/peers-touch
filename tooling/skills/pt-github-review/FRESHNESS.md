@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-15
-covered_docs_hash: fefadd24646e78fbd6ff4e155d60b88ec11083c127333519e41cc04de16f3e64
+covered_docs_hash: 0c9e68f8d5f2707ed28da28947433c81b771ed7711e910faafc8fc3207e0d81a
 
 covered_docs:
   - AGENTS.md
@@ -36,14 +36,18 @@ Updating this file is a review act, not bookkeeping. Execution Plan files are ex
 DWF-D43 and LDCP-D21 make reviewed non-stable Profiles the authority for
 routine environment provisioning, deploy, restart, and exact-scope reset.
 Worktree-local Profile creation no longer uses a human authorization receipt,
-and coherent verified local commits are workflow-owned checkpoints.
+and coherent local commits are workflow-owned checkpoints that may precede
+exact-source runtime proof. A checkpoint is not Acceptance or delivery.
 
 Review replaces `unauthorized-environment-creation` with
 `unreviewed-environment-topology`: invented remote hosts or credentials,
-dirty/untracked deploy definitions, and Profile-pipeline bypasses remain
-blocking. Push, PR, merge, release, history rewrite, worktree lifecycle, and
-stable mutation remain separately governed. Focused Machine Dev tests cover
-terminal stable-suffix behavior; no new general review fixture is required.
+dirty/untracked deploy definitions, unsafe worktree-local Profile files, and
+Profile-pipeline bypasses remain blocking. Stable selection is connect-only by
+default, stable reset remains forbidden, and namespaced deployment transport
+refs are not collaboration publication. Push, PR, merge, release, history
+rewrite, worktree lifecycle, and stable mutation remain separately governed.
+Focused Machine Dev and source-sync tests cover these boundaries; no new
+general review fixture is required.
 
 ## 2026-10-14 Lightweight Development Flow Review
 

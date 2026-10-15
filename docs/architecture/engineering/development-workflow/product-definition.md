@@ -60,7 +60,8 @@ Runtime 核对目标、当前源码、真实资源锁和清理归属。任务状
 - 不自动创建、复制、选择、切换或修改 worktree；只有用户显式要求创建时才允许创建。
 - 不把计划、冲突、脏工作区、验证或恢复解释成 worktree 创建授权。
 - 不自动选择或修改目标外 worktree，也不默认安装到全局 IDE。
-- 不自主重置 stable Profile、发布、合并或改写历史；非 stable 开发环境可按需创建和操作。
+- 不重置 stable Profile；stable 部署需要用户明确指令和显式 capability binding。
+  不自主发布、合并或改写历史；非 stable 开发环境可按需创建和操作。
 - 不导入旧记录的成功状态来证明本次代码。
 - 不要求所有任务都具备 Plan、Session、OWNER 或关闭回执。
 

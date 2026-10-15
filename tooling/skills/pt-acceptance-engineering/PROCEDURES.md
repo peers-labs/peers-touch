@@ -672,8 +672,8 @@ test -n "${ACCEPTANCE_API_TOKEN:-}" \
 
 For destructive reset, require:
 
-1. An Agent-resettable non-stable Profile, or explicit user direction for the
-   stable target.
+1. An Agent-resettable non-stable Profile. Stable targets are rejected by the
+   canonical Runtime and cannot be reset through Acceptance.
 2. The `station.reset` capability, exact reset scope, approved disposable
    target, current source identity, and live lease.
 

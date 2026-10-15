@@ -99,6 +99,11 @@ Invoke `pt-read-before-edit` and applicable coding/domain Skills. Keep changes
 inside scope and at the owning layer. Structural replacement must remove the
 old active path and update governing docs/knowledge in the same change.
 
+Create a local checkpoint commit autonomously at any useful coherent boundary
+for traceability, rollback, integration, or exact-source runtime. Stage only
+task-owned files and run checkpoint-appropriate source and secret checks. A
+checkpoint is source addressability, not proof, completion, or delivery.
+
 Hook context is advisory. Missing identity, unknown event, or Hook failure does
 not stop ordinary work.
 
@@ -115,15 +120,17 @@ formal Acceptance. Keep these evidence classes separate:
 
 Current-source evidence must bind the current commit/workspace digest. A stale
 or caller-authored PASS is not proof. Fix failures and rerun affected evidence.
+Until the required checks and Acceptance cover current source, report only
+implementation/checkpoint progress, failures, or blockers; do not present a
+candidate as a staged delivery.
 
 ### 7. Deliver
 
 Run findings-first completion review from explicit obligations and current
-source. Report implemented, proven, unverified, and blocked scope separately.
-Create a local commit autonomously when one coherent scoped change has passed
-its required checks and only task-owned files are staged. Push, PR, merge,
-publish/release, history rewrite, worktree lifecycle, and destructive cleanup
-remain separately governed.
+source. Only after required verification and Acceptance may the Agent present
+the result as staged delivery. Report implemented, proven, unverified, and
+blocked scope separately. Push, PR, merge, publish/release, history rewrite,
+worktree lifecycle, and destructive cleanup remain separately governed.
 
 Release only resources owned by this request. Explicitly retained resources
 must name their owner and purpose. Do not close unrelated services or seal the
@@ -140,8 +147,8 @@ Use canonical Local Dev / Acceptance entrypoints. Runtime admission requires:
 - stable Profile protection;
 - tracked-clean topology;
 - OS-held lease and post-lock revalidation;
-- explicit user direction only for stable mutation or separately governed
-  delivery operations.
+- explicit capability binding for user-directed stable deploy/restart;
+- separately governed authority for collaboration delivery operations.
 
 Task declarations, OWNER, PlanMount, resource-plan receipts, Hook receipts, and
 task completion neither grant nor block runtime acquisition.
@@ -150,6 +157,9 @@ An existing reviewed non-stable Profile authorizes selection, registration,
 runtime provisioning, deploy, restart, and exact-scope reset. A worktree-local
 Profile may be created with `make profile-init`. Remote topology must remain
 tracked source and may not be invented from ambient hosts or credentials.
+Profile-authorized source sync may update a namespaced ref in the internal
+deployment transport repository. That is not a collaboration push or delivery
+publication.
 
 ## Goal And Concurrency
 

@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import {
+  chmodSync,
   existsSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -25,6 +28,7 @@ import {
   observeLeases,
   registerWorkspace,
   resetPolicyForProfile,
+  resolveProfileDefinition,
   selectWorkspaceProfile,
   statusAll,
   unregisterWorkspace,
@@ -118,6 +122,33 @@ function addProfile(
     git(scope.envRepo, 'add', `peers-touch/${name}`);
     git(scope.envRepo, 'commit', '-m', `test: add ${name} profile`);
   }
+}
+
+function addLocalProfile(
+  scope,
+  {
+    name,
+    workspaceRoot = scope.workspaceA,
+    text = profileText({
+      name,
+      mode: 'compose',
+      stationUrl: 'http://127.0.0.1:18080',
+      deployEnvironment: '',
+    }),
+    mode = 0o600,
+  },
+) {
+  const directory = path.join(
+    workspaceRoot,
+    '.local',
+    'dev',
+    'profiles',
+  );
+  const file = path.join(directory, `${name}.env`);
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(file, text);
+  chmodSync(file, mode);
+  return file;
 }
 
 function fixture() {
@@ -617,10 +648,131 @@ test('profile reset policy is derived from the canonical identifier', () => {
       envRepo: stableScope.envRepo,
     });
     assert.equal(checked.profile.resetPolicy, 'stable-protected');
+
+    const selected = selectWorkspaceProfile({
+      home: stableScope.home,
+      workspaceRoot: stableScope.workspaceB,
+      envRepo: stableScope.envRepo,
+      profile: 'dailyStable',
+      owner: 'machine-dev-test@example.invalid',
+    });
+    assert.deepEqual(selected.allowedCapabilities, ['station.connect']);
   } finally {
     stableScope.close();
   }
 });
+
+test(
+  'worktree-local profiles require private owned literal files',
+  { skip: process.platform === 'win32' },
+  () => {
+    const scope = fixture();
+    try {
+      const validFile = addLocalProfile(scope, { name: 'local-private' });
+      const valid = resolveProfileDefinition({
+        workspaceRoot: scope.workspaceA,
+        envRepo: scope.envRepo,
+        profile: 'local-private',
+      });
+      assert.equal(valid.profileFile, realpathSync.native(validFile));
+      assert.equal(valid.sourceState, 'local');
+      registerWorkspace(
+        registrationOptions(scope, {
+          profile: 'local-private',
+          capabilities: 'station.connect',
+        }),
+      );
+      const shellResolution = spawnSync(
+        process.execPath,
+        [
+          cli,
+          'resolve',
+          '--home',
+          scope.home,
+          '--workspace-root',
+          scope.workspaceA,
+          '--env-repo',
+          scope.envRepo,
+          '--format',
+          'shell',
+        ],
+        { encoding: 'utf8' },
+      );
+      assert.equal(shellResolution.status, 0, shellResolution.stderr);
+      assert.match(
+        shellResolution.stdout,
+        /export PT_DEV_PROFILE='local-private'/,
+      );
+      assert.match(
+        shellResolution.stdout,
+        /export PT_STATION_MODE='compose'/,
+      );
+
+      addLocalProfile(scope, {
+        name: 'local-public',
+        mode: 0o644,
+      });
+      expectCode('PROFILE_UNAVAILABLE', () =>
+        resolveProfileDefinition({
+          workspaceRoot: scope.workspaceA,
+          envRepo: scope.envRepo,
+          profile: 'local-public',
+        }),
+      );
+
+      const linkedTarget = path.join(scope.root, 'linked-local.env');
+      writeFileSync(
+        linkedTarget,
+        profileText({
+          name: 'local-linked',
+          mode: 'compose',
+          stationUrl: 'http://127.0.0.1:18080',
+          deployEnvironment: '',
+        }),
+      );
+      chmodSync(linkedTarget, 0o600);
+      const linkedFile = path.join(
+        scope.workspaceA,
+        '.local',
+        'dev',
+        'profiles',
+        'local-linked.env',
+      );
+      symlinkSync(linkedTarget, linkedFile);
+      expectCode('PROFILE_UNAVAILABLE', () =>
+        resolveProfileDefinition({
+          workspaceRoot: scope.workspaceA,
+          envRepo: scope.envRepo,
+          profile: 'local-linked',
+        }),
+      );
+
+      const marker = path.join(scope.root, 'unsafe-profile-side-effect');
+      addLocalProfile(scope, {
+        name: 'local-unsafe',
+        text: profileText({
+          name: 'local-unsafe',
+          mode: 'compose',
+          stationUrl: 'http://127.0.0.1:18080',
+          deployEnvironment: '',
+        }).replace(
+          'PT_STATION_NAME=local-unsafe',
+          `PT_STATION_NAME=$(touch ${marker})`,
+        ),
+      });
+      expectCode('PROFILE_UNAVAILABLE', () =>
+        resolveProfileDefinition({
+          workspaceRoot: scope.workspaceA,
+          envRepo: scope.envRepo,
+          profile: 'local-unsafe',
+        }),
+      );
+      assert.equal(existsSync(marker), false);
+    } finally {
+      scope.close();
+    }
+  },
+);
 
 test('agent-resettable profiles still require exact reset scope identity', () => {
   const scope = fixture();

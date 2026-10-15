@@ -348,6 +348,7 @@ class LocalDevProfileResolutionTest(unittest.TestCase):
             ),
             encoding="utf-8",
         )
+        local_profile.chmod(0o600)
         result = self.register_profile("local")
 
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -376,8 +377,10 @@ class LocalDevProfileResolutionTest(unittest.TestCase):
 
         profile = self.project_root / ".local" / "dev" / "profiles" / "local-four.env"
         profile.write_text(
-            profile.read_text(encoding="utf-8")
-            + "PT_STATION_URL=http://modified.example:19080\n",
+            profile.read_text(encoding="utf-8").replace(
+                "PT_STATION_URL=http://127.0.0.1:18980",
+                "PT_STATION_URL=http://modified.example:19080",
+            ),
             encoding="utf-8",
         )
         output = self.run_config()

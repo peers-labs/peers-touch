@@ -5,6 +5,7 @@ import {
   existsSync,
   fsyncSync,
   linkSync,
+  lstatSync,
   mkdirSync,
   openSync,
   readdirSync,
@@ -49,6 +50,7 @@ const IDENTIFIER = /^[a-z0-9][a-z0-9._-]{0,127}$/i;
 const HEAD_PATTERN = /^[0-9a-f]{40,64}$/;
 const REGISTRY_LOCK_TIMEOUT_MS = 5_000;
 const REGISTRY_LOCK_HELD = Symbol('registryLockHeld');
+const PROFILE_VALUES = Symbol('profileValues');
 const REGISTRATION_KEYS = new Set([
   'workspaceId',
   'canonicalRoot',
@@ -278,7 +280,7 @@ function registrationIdentity(workspace) {
   };
 }
 
-function parseEnvFile(file) {
+function parseEnvFile(file, { literalOnly = false } = {}) {
   const values = {};
   const lines = readFileSync(file, 'utf8').split(/\r?\n/);
   for (const [index, rawLine] of lines.entries()) {
@@ -299,16 +301,117 @@ function parseEnvFile(file) {
         line: index + 1,
       });
     }
-    if (
-      value.length >= 2 &&
-      ((value.startsWith("'") && value.endsWith("'")) ||
-        (value.startsWith('"') && value.endsWith('"')))
-    ) {
+    if (Object.hasOwn(values, key)) {
+      fail('PROFILE_UNAVAILABLE', 'profile contains a duplicate variable', {
+        file,
+        line: index + 1,
+        key,
+      });
+    }
+    const quote = value[0];
+    const quoted = quote === "'" || quote === '"';
+    if (quoted) {
+      if (value.length < 2 || value.at(-1) !== quote) {
+        fail('PROFILE_UNAVAILABLE', 'profile contains an unterminated value', {
+          file,
+          line: index + 1,
+        });
+      }
       value = value.slice(1, -1);
+    } else if (value.endsWith("'") || value.endsWith('"')) {
+      fail('PROFILE_UNAVAILABLE', 'profile contains an unmatched quote', {
+        file,
+        line: index + 1,
+      });
+    }
+    if (
+      literalOnly
+      && (
+        /[\u0000-\u001f\u007f]/.test(value)
+        || /[$`\\;&|<>(){}\[\]*?!~#'"]/.test(value)
+        || (!quoted && /\s/.test(value))
+      )
+    ) {
+      fail(
+        'PROFILE_UNAVAILABLE',
+        'local profile values must be shell-safe literals',
+        { file, line: index + 1, key },
+      );
     }
     values[key] = value;
   }
   return values;
+}
+
+function validateLocalProfileFile(workspaceRoot, file) {
+  const expectedRoot = path.resolve(
+    workspaceRoot,
+    '.local',
+    'dev',
+    'profiles',
+  );
+  try {
+    const rootMetadata = lstatSync(expectedRoot);
+    if (!rootMetadata.isDirectory() || rootMetadata.isSymbolicLink()) {
+      fail(
+        'PROFILE_UNAVAILABLE',
+        'local profile root must be a real directory',
+        { profileRoot: expectedRoot },
+      );
+    }
+    const canonicalRoot = realpathSync.native(expectedRoot);
+    if (canonicalRoot !== expectedRoot) {
+      fail(
+        'PROFILE_UNAVAILABLE',
+        'local profile root must remain inside the worktree',
+        { profileRoot: expectedRoot, canonicalRoot },
+      );
+    }
+
+    const metadata = lstatSync(file);
+    if (!metadata.isFile() || metadata.isSymbolicLink()) {
+      fail(
+        'PROFILE_UNAVAILABLE',
+        'local profile must be a non-symlink regular file',
+        { file },
+      );
+    }
+    const canonicalFile = realpathSync.native(file);
+    if (
+      canonicalFile !== path.resolve(file)
+      || path.dirname(canonicalFile) !== canonicalRoot
+    ) {
+      fail(
+        'PROFILE_UNAVAILABLE',
+        'local profile must be directly contained by the worktree profile root',
+        { file, canonicalFile, profileRoot: canonicalRoot },
+      );
+    }
+    if (
+      typeof process.getuid === 'function'
+      && metadata.uid !== process.getuid()
+    ) {
+      fail(
+        'PROFILE_UNAVAILABLE',
+        'local profile must be owned by the current user',
+        { file, ownerUid: metadata.uid },
+      );
+    }
+    if ((metadata.mode & 0o077) !== 0) {
+      fail(
+        'PROFILE_UNAVAILABLE',
+        'local profile must not be accessible by group or other users',
+        { file, mode: (metadata.mode & 0o777).toString(8) },
+      );
+    }
+    return canonicalFile;
+  } catch (error) {
+    if (error instanceof MachineDevError) throw error;
+    fail('PROFILE_UNAVAILABLE', 'local profile cannot be validated', {
+      file,
+      cause: String(error),
+    });
+  }
 }
 
 function resolveEnvRepository(workspaceRoot, requestedEnvRepo) {
@@ -450,10 +553,13 @@ export function resolveProfileDefinition(options) {
         ],
       });
     }
+    profileFile = validateLocalProfileFile(workspaceRoot, profileFile);
     sourceState = 'local';
   }
 
-  const values = parseEnvFile(profileFile);
+  const values = parseEnvFile(profileFile, {
+    literalOnly: sourceState === 'local',
+  });
   if (values.PT_DEV_PROFILE !== profile) {
     fail('PROFILE_UNAVAILABLE', 'profile identity does not match its directory', {
       selected: profile,
@@ -495,7 +601,19 @@ export function resolveProfileDefinition(options) {
     stationDeployEnvironment: deployEnvironment,
     stationDeployFile: deploy?.file ?? null,
     stationDeployHost: deploy?.values.PT_DEPLOY_HOST?.trim() || null,
+    [PROFILE_VALUES]: values,
   };
+}
+
+export function profileEnvironment(definition) {
+  const values = definition?.[PROFILE_VALUES];
+  if (!isObject(values)) {
+    fail(
+      'PROFILE_UNAVAILABLE',
+      'resolved profile environment is unavailable',
+    );
+  }
+  return { ...values };
 }
 
 function validateProfileCapabilities(definition, capabilities) {
@@ -1004,6 +1122,7 @@ function firstAvailableSlot(registry) {
 function defaultProfileCapabilities(definition) {
   return definition.stationMode === 'remote'
     && definition.stationDeployEnvironment
+    && definition.resetPolicy !== 'stable-protected'
     ? ['station.connect', 'station.deploy']
     : ['station.connect'];
 }

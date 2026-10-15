@@ -50,13 +50,15 @@ Agent 执行标准不依赖 Hook。没有自动注入时直接读取相关文档
 修改 `machine-dev-registry.mjs` 的 runtime intent 消费点时，必须保留：
 
 - reviewed Profile 和目标主机/URL 一致性；
-- environment 创建的人工授权与 stable reset 保护；
+- 非 stable reviewed Profile 的直接操作能力、worktree-local Profile 的直接创建
+  边界，以及 stable reset 保护；
 - 本次操作的精确部署、重启或数据范围权限；
 - 本机端口组、设备、客户端存储和共享远端部署目标的冲突；
 - OS-held lease、锁内复查、进程身份和清理归属；
 - 构建源码、部署产物与验证对象的一致性。
 
-当前 `ownerAction` 分支仅是既有特殊入口，不能扩展成通用绕过资源权限的办法。runtime lease 验证与任务无关，不等于取消运行验证。
+调用者提供的 `ownerAction` 不是 Runtime 参数，也不能绕过 Profile capability、
+目标、源码或租约。runtime lease 验证与任务无关，不等于取消运行验证。
 
 共享测试环境由 Suite 准备一次，场景附着其 manifest。资源不够时暂停相关场景，不能变更环境身份或重新分配他人账号来躲冲突。
 

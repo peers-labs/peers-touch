@@ -1,8 +1,8 @@
 # Local Dev Control Plane - Data Model
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-09-13 | **Updated**: 2026-09-28
+> **Version**: v1.4
+> **Created**: 2026-09-13 | **Updated**: 2026-10-15
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/`
 
@@ -160,13 +160,15 @@ type StationCapability =
 Rules:
 
 - One workspace has at most one active profile binding.
-- Registration requires an explicit Owner action; discovery never writes a
-  `WorkspaceBinding`.
+- Registration is created only by the canonical `profile` or `env-register`
+  action; discovery never writes a `WorkspaceBinding`.
 - Slot is allocated independently of profile.
 - `station.connect` does not imply deploy or reset.
-- `station.deploy` consumes an exact user grant or accepted Plan
-  `authorization.runtime.deployProfiles` entry for the existing reviewed
-  profile.
+- A reviewed non-stable remote Profile receives `station.deploy` on canonical
+  first selection and may use it without another Plan or chat grant.
+- A stable Profile receives only `station.connect` by default. A user-directed
+  explicit capability binding may add `station.deploy`; reset remains
+  forbidden.
 - `station.reset` may be added by the Agent for an `agent-resettable` Profile.
   It still requires an exact command scope and OS-held lease.
 - `station.reset` cannot be added for a `stable-protected` Profile.
@@ -205,7 +207,12 @@ outside the managed cohort.
 
 `make profile-init PROFILE=<name> SLOT=<n>` creates one local compose Profile
 under `.local/dev/profiles/`. It never overwrites an existing Profile and its
-identity must match the selected name.
+identity must match the selected name. Runtime accepts it only when it is a
+non-symlink regular file directly inside that worktree-local directory, owned
+by the current user, inaccessible to group/other users, and composed only of
+shell-safe literal `KEY=VALUE` assignments. Machine resolution parses those
+values and emits shell-quoted exports; normal development never executes the
+local Profile with `source`.
 
 Git-tracked, clean environment-repository Profiles remain canonical for remote
 deployment. A local Profile cannot authorize remote deploy or reset because it

@@ -18,7 +18,7 @@ DWF-D42 与 DWF-D43 已确认，定义当前目标设计。被其替代的旧决
 | DWF-D02 | Make a product Journey the unit of development progress | accepted |
 | DWF-D03 | Require functional pass before formal Acceptance execution | accepted |
 | DWF-D04 | Share business Journey semantics across Dev and Acceptance runners | accepted |
-| DWF-D05 | Use local checkpoint commits for exact-source runtime iteration | accepted |
+| DWF-D05 | Use local checkpoint commits for exact-source runtime iteration | superseded by DWF-D43 |
 | DWF-D06 | Separate Development records from Acceptance Evidence | accepted |
 | DWF-D07 | Stop on the first actionable failure under explicit budgets | accepted |
 | DWF-D08 | Keep plans compact and store transient execution state outside Git | accepted |
@@ -149,12 +149,17 @@ DWF-D42 与 DWF-D43 已确认，定义当前目标设计。被其替代的旧决
 
 - 已评审且名称不以 `stable` 结尾的 Profile 直接授权 capability 覆盖的环境选择、
   注册、运行实例创建、部署、重启和精确范围 reset。
-- stable 判断采用大小写不敏感的 terminal suffix；stable reset 保持保护，其他
-  stable 运行变更需要用户明确指令。
+- stable 判断采用大小写不敏感的 terminal suffix；stable reset 始终拒绝，stable
+  deploy/restart 需要用户明确指令和显式 capability binding。
 - 本地 Profile 可通过 `make profile-init` 直接创建，不再使用环境创建授权回执。
-- 本地 commit 是 Development Workflow 内部检查点。变更形成完整边界、验证通过且
-  只暂存本任务文件后，Agent 可自主提交。
+- 本地 commit 是 Development Workflow 内部检查点。Agent 可在任何有用的完整边界
+  自主提交，以便追踪、合并、回滚或进行 exact-source runtime 验证；每次只暂存本任务
+  文件，并完成适合该 checkpoint 的源码与敏感信息检查。
+- checkpoint commit 不表示验证、Acceptance、阶段性交付或任务完成。只有所需验证与
+  Acceptance 覆盖当前源码后，才能把结果作为阶段性交付展示给用户。
 - push、PR、merge、release/publish、历史改写和 worktree 生命周期仍是独立授权动作。
+- Profile 驱动的 source sync 更新内部部署传输 ref，不属于协作分支 push 或历史发布；
+  协作远端 push 仍是独立授权动作。
 - Profile 权限不取消目标、源码身份、tracked-clean remote topology、数据范围和
   OS-held lease 等实际运行守卫。
 
@@ -173,8 +178,9 @@ Profile、Git scope 和真实资源锁已经分别持有环境能力、源码边
 
 ### Consequences
 
-Agent 能独立完成从实现到 exact-source runtime 验证所需的环境准备和 checkpoint。
-未知主机、凭据、stable mutation、远端交付及历史操作仍然失败关闭或等待授权。
+Agent 能独立完成从实现到 exact-source runtime 验证所需的环境准备和 checkpoint，
+同时只有验收后的结果才进入用户可见阶段性交付。未知主机、凭据、stable mutation、
+协作远端交付及历史操作仍然失败关闭或等待授权。
 
 ## DWF-D01: EXECUTE Owns A Mandatory Inner State Machine
 
@@ -287,7 +293,7 @@ Existing Gates that mix behavior with provisioning must separate those concerns.
 
 ## DWF-D05: Checkpoint Commits Are Development Infrastructure
 
-**Status**: accepted
+**Status**: superseded by DWF-D43
 **Date**: 2026-09-13
 
 ### Context
