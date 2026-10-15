@@ -1090,10 +1090,7 @@ server {
                 client_ids = NODE_CONNECTIVITY_CLIENT_IDS
                 actors = tuple(
                     dataclasses.replace(
-                        resolve_existing_actor_identity(
-                            station_endpoint,
-                            role,
-                        ),
+                        resolve_existing_actor_identity(station_url, role),
                         device_policy="persistent-acceptance",
                     )
                     for role in NODE_CONNECTIVITY_CLIENT_IDS
