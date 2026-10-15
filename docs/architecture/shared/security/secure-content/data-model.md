@@ -411,6 +411,13 @@ record 的 base64/protobuf/mnemonic/epoch，再从 phrase 重建同一 recovery 
 republication。损坏、跨 Station、跨 actor 或 epoch-zero record 均 fail closed，不得
 生成替代 master。
 
+Immutable submit receipts intentionally omit the five-minute Station signing-key
+attestation. A Native sender may verify its own just-submitted Post/Comment proof
+with the already pinned Station proof key only when it still owns the local root
+for that exact submission and the proof key ID matches the pinned key. Ordinary
+read, remote-author, restart, and recovery paths continue to require a current
+Station attestation.
+
 ### Proposed Recovery PreKey Derivation
 
 Under `SC-D16`, the maintained BIP39 parser applies NFKD, validates

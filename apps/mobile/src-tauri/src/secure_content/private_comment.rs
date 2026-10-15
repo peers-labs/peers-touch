@@ -912,10 +912,7 @@ fn decrypt_comment(
         Some(&sender_key),
         "private Comment",
     )?;
-    let attestation = verification
-        .station_signing_key_attestation
-        .as_ref()
-        .ok_or_else(|| "private Comment Station attestation is unavailable".to_string())?;
+    let attestation = verification.station_signing_key_attestation.as_ref();
     if resource.owner_domain != wire::SecureContentOwnerDomain::Social as i32
         || resource.content_id != metadata.comment_id
         || resource.generation == 0
@@ -939,7 +936,8 @@ fn decrypt_comment(
         || proof.object_descriptor_set_sha256 != object_hash
         || proof.mention_routing_sha256 != mention_hash.as_slice()
         || proof.subtype_authority_sha256 != Sha256::digest([]).as_slice()
-        || proof.station_signing_key_id != attestation.proof_signing_key_id
+        || attestation
+            .is_some_and(|value| proof.station_signing_key_id != value.proof_signing_key_id)
         || proof.station_signature.len() != 64
         || committed_at
             > current_unix_seconds()
@@ -977,7 +975,15 @@ fn decrypt_comment(
             &signing_key_id,
         )?;
     }
-    let proof_key = verify_station_attestation(session, attestation, current_unix_seconds())?;
+    let proof_key = match attestation {
+        Some(value) => verify_station_attestation(session, value, current_unix_seconds())?,
+        None if supplied_root.is_some()
+            && proof.station_signing_key_id == session.trusted_station_signing_key.key_id =>
+        {
+            session.trusted_station_signing_key.verifying_key
+        }
+        None => return Err("private Comment Station attestation is unavailable".to_string()),
+    };
     let mut unsigned_proof = proof.clone();
     unsigned_proof.station_signature.clear();
     proof_key
