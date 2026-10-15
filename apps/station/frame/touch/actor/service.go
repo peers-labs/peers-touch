@@ -61,7 +61,7 @@ func GetActorByEmail(ctx context.Context, email string) (*db.Actor, error) {
 	if err := rds.Where("email = ?", email).First(&actor).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			logger.Warnf(ctx, "Actor not found for email: %s", email)
-			return nil, fmt.Errorf("actor not found: %s", email)
+			return nil, gorm.ErrRecordNotFound
 		}
 		logger.Errorf(ctx, "Failed to query actor: %v", err)
 		return nil, fmt.Errorf("query actor failed: %w", err)
