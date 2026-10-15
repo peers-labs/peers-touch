@@ -346,6 +346,7 @@ class DesktopOAuthNativeGateTest(unittest.TestCase):
             "http://127.0.0.1:49152/callback?session_id=lp-123",
         )
         self.assertIn("oauth2_start_loopback", session.script)
+        self.assertIn("purpose: 'account_login'", session.script)
         self.assertEqual(session.provider_id, "github")
 
     def test_builds_deterministic_loopback_callback(self) -> None:

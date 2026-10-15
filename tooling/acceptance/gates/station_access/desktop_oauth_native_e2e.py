@@ -120,7 +120,7 @@ const timer = window.setTimeout(
   10000,
 );
 Promise.resolve(internals.invoke('oauth2_start_loopback', {
-  input: { id: providerId, environment: 'prod' },
+  input: { id: providerId, environment: 'prod', purpose: 'account_login' },
 })).then(
   (value) => finish({ transport: 'resolved', value }),
   (error) => finish({
