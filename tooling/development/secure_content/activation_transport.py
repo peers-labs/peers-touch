@@ -469,8 +469,18 @@ class ReviewedSchemaActivationTransport:
         return load_env_file(profile_path)
 
 
-def _compose_command(repo_root: Path) -> list[str]:
-    station_env = repo_root.parent / "station.env"
+def _compose_contract(repo_root: Path, profile_id: str) -> tuple[Path, str]:
+    if profile_id == "chat-native-five":
+        return repo_root.parents[2] / "chat-native-five.env", "pt-chat-native-five"
+    if profile_id in {"four", "fiveArm"}:
+        return repo_root.parent / "station.env", "pt-station"
+    raise ActivationTransportError(
+        f"remote Station compose profile is unsupported: {profile_id}"
+    )
+
+
+def _compose_command(repo_root: Path, profile_id: str) -> list[str]:
+    station_env, project = _compose_contract(repo_root, profile_id)
     compose = repo_root / "tooling/docker/compose.yml"
     if not station_env.is_file() or not compose.is_file():
         raise ActivationTransportError(
@@ -482,7 +492,7 @@ def _compose_command(repo_root: Path) -> list[str]:
         "--env-file",
         str(station_env),
         "-p",
-        "pt-station",
+        project,
         "-f",
         str(compose),
         "--profile",
@@ -522,8 +532,8 @@ def _remote_source(repo_root: Path, expected_commit: str) -> None:
         )
 
 
-def _quiesce(repo_root: Path) -> None:
-    compose = _compose_command(repo_root)
+def _quiesce(repo_root: Path, profile_id: str) -> None:
+    compose = _compose_command(repo_root, profile_id)
     _run_checked(
         [*compose, "stop", "-t", "30", "station"],
         cwd=repo_root,
@@ -577,7 +587,8 @@ def _remote_maintenance(arguments: argparse.Namespace) -> None:
         raise ActivationTransportError(
             "service attestation is missing before maintenance startup"
         )
-    compose = _compose_command(repo_root)
+    station_env, project = _compose_contract(repo_root, arguments.profile)
+    compose = _compose_command(repo_root, arguments.profile)
     station_container = _run_checked(
         [*compose, "ps", "-q", "--status", "running", "station"],
         cwd=repo_root,
@@ -587,9 +598,7 @@ def _remote_maintenance(arguments: argparse.Namespace) -> None:
         raise ActivationTransportError(
             "Station must be running before schema audit"
         )
-    station_environment = _load_shell_environment(
-        repo_root.parent / "station.env"
-    )
+    station_environment = _load_shell_environment(station_env)
     database_user = station_environment.get("POSTGRES_USER", "peers")
     database_password = _required(
         station_environment.get("PEERS_DB_PASSWORD"),
@@ -651,19 +660,19 @@ def _remote_maintenance(arguments: argparse.Namespace) -> None:
             "--rm",
             "-i",
             "--network",
-            "pt-station_default",
+            f"{project}_default",
             "--env-file",
             str(runtime_environment),
             "--entrypoint",
             "/bin/sh",
             "-v",
-            "pt-station_peers_data:/app/data",
+            f"{project}_peers_data:/app/data",
             "-v",
             (
                 f"{attestation}:"
                 "/app/secure-content-service-attestation.json:ro"
             ),
-            "pt-station-station",
+            f"{project}-station",
             "-lc",
             shell,
         ],
@@ -716,7 +725,7 @@ def _remote_maintenance(arguments: argparse.Namespace) -> None:
                     and not quiesced
                     and not arguments.skip_quiesce
                 ):
-                    _quiesce(repo_root)
+                    _quiesce(repo_root, arguments.profile)
                     quiesced = True
                 process.stdin.write(line)
                 process.stdin.flush()
@@ -837,7 +846,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if arguments.command == "install-attestation":
             _install_attestation(repo_root, arguments.profile)
         elif arguments.command == "remote-quiesce":
-            _quiesce(repo_root)
+            _quiesce(repo_root, arguments.profile)
         else:
             arguments.source_commit = _required(
                 arguments.source_commit,
