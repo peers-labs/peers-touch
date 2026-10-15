@@ -8,6 +8,7 @@ import (
 	"time"
 
 	ossmodel "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/model"
+	ossrepo "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/repo"
 	"github.com/peers-labs/peers-touch/station/frame/core/facility/storage"
 )
 
@@ -43,6 +44,47 @@ func (b *gcFakeBlobs) Delete(_ context.Context, _, key string) error {
 	}
 	b.deleted = append(b.deleted, key)
 	return nil
+}
+
+func (b *gcFakeBlobs) ClaimGC(
+	_ context.Context,
+	candidate ossmodel.Blob,
+	_ time.Time,
+	authority ossrepo.BlobGCAuthority,
+) (*ossrepo.BlobGCClaim, error) {
+	storageKey := candidate.StorageKey
+	if storageKey == "" {
+		storageKey = candidate.Key
+	}
+	generation := candidate.Generation
+	if generation == 0 {
+		generation = 1
+	}
+	return &ossrepo.BlobGCClaim{
+		Backend:          candidate.Backend,
+		Key:              candidate.Key,
+		Generation:       generation,
+		StorageKey:       storageKey,
+		Size:             candidate.Size,
+		WorkerName:       authority.WorkerName,
+		OwnerNodePeerID:  authority.OwnerNodePeerID,
+		OwnerIncarnation: authority.OwnerIncarnation,
+		FencingToken:     authority.FencingToken,
+	}, nil
+}
+
+func (b *gcFakeBlobs) CompleteGC(ctx context.Context, claim ossrepo.BlobGCClaim) error {
+	return b.Delete(ctx, claim.Backend, claim.Key)
+}
+
+func fencedGCContext() context.Context {
+	return withLeaseAuthority(context.Background(), LeaseAuthority{
+		WorkerName:       "blob_gc",
+		OwnerNodePeerID:  "node-test",
+		OwnerIncarnation: "incarnation-test",
+		FencingToken:     1,
+		ExpiresAt:        time.Now().Add(time.Minute),
+	})
 }
 
 // stubBackend implements storage.Backend's Delete with configurable
@@ -109,7 +151,7 @@ func TestBlobGC_RunOnce_DeletesCandidatesAndAudits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewBlobGC: %v", err)
 	}
-	if err := gc.RunOnce(context.Background()); err != nil {
+	if err := gc.RunOnce(fencedGCContext()); err != nil {
 		t.Fatalf("RunOnce: %v", err)
 	}
 
@@ -167,7 +209,7 @@ func TestBlobGC_BackendDeleteFailureAuditedAndContinues(t *testing.T) {
 		Grace:       24 * time.Hour,
 		Now:         func() time.Time { return now },
 	})
-	if err := gc.RunOnce(context.Background()); err != nil {
+	if err := gc.RunOnce(fencedGCContext()); err != nil {
 		t.Fatalf("RunOnce should swallow per-row failures: %v", err)
 	}
 	if len(blobs.deleted) != 0 {
@@ -199,7 +241,7 @@ func TestBlobGC_RowDeleteFailureAuditedSeparately(t *testing.T) {
 		Grace:       24 * time.Hour,
 		Now:         func() time.Time { return now },
 	})
-	if err := gc.RunOnce(context.Background()); err != nil {
+	if err := gc.RunOnce(fencedGCContext()); err != nil {
 		t.Fatalf("RunOnce: %v", err)
 	}
 	rows := audit.snapshot()

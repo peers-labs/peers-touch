@@ -1,14 +1,14 @@
 # Chat Lifecycle - Current Capability Audit
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-09-16 | **Updated**: 2026-09-18
+> **Version**: v1.2
+> **Created**: 2026-09-16 | **Updated**: 2026-10-12
 > **Owner**: Chat Product Team
-> **Audited HEAD**: `c6d3b79b409013c921fafcb8c735b7f419cc303f`
+> **Audited HEAD**: `3e615e94dca50ba04931ef81ad458c244d9f9770`
 
-The 2026-09-18 product amendment adds required group live voice/video scope.
-Its source classification is `MISSING`; other rows remain based on the audited
-HEAD above until a new full capability audit is generated.
+This is a current-source classification, not a product-readiness report.
+Historical Acceptance remains useful evidence but cannot promote this HEAD.
+Browser prototype proof is listed only as product-intent evidence.
 
 ---
 
@@ -27,53 +27,51 @@ Historical proof is recorded separately and never upgrades current status.
 
 | Product area | Current status | Implemented foundation | Missing product closure |
 |---|---|---|---|
-| Find people | `PARTIAL` | Desktop/Mobile local and federated search UI and APIs exist | Station-scoped search is inert; federation catalog is local-only; no current native search-to-result proof |
-| Friend request and contact | `IMPLEMENTED_UNPROVEN` on Desktop; `PARTIAL` on Mobile | Send/list/accept/reject and relationship projection exist | Desktop failures can be log-only; Mobile cross-Station materialization is unresolved; no current UI lifecycle proof |
+| Find people | `IMPLEMENTED_UNPROVEN` | Desktop/Mobile local and federated search UI, Station-scoped catalog search, Profile fallback, and explicit no-membership/no-result states exist | No exact-source native search-to-result Gate; cross-Station routing and result identity remain unproven |
+| Friend request and contact | `IMPLEMENTED_UNPROVEN` | Generated send/list/accept/reject commands, durable Mobile result reconciliation, request-history projection, and contact/profile entry exist | No current exact-source native request-to-contact proof; cross-Station materialization remains unproven |
 | Open/create Direct | `IMPLEMENTED_UNPROVEN` | Existing conversation reuse, canonical create, peer-bound inline retry path exist | No current exact-source search/contact-to-conversation proof |
 | Text send/receive | `IMPLEMENTED_UNPROVEN` | Durable Engine command, Direct/MLS encryption, ordered inbox, projection refresh exist | Current-source native proof is absent |
-| Offline/reconnect/restart | `IMPLEMENTED_UNPROVEN` on Desktop; `PARTIAL` on Mobile | Durable outbox, inbox cursor, replay, SQLCipher reopening exist | Required current runtime cells and Mobile recovery are unproven |
-| Visible send/retry state | `PARTIAL` | Engine persists pending/retry/submitted/failed states | Desktop lacks complete message-level failed/retry UI; Mobile can render failed as read |
-| Conversation list/history/read/search | `PARTIAL` | Conversation projection, local history, FTS, settings, receipt paths exist | Desktop preview/unread loaders contain no-op paths; history pagination is incomplete; Group/Mobile receipt parity is absent |
-| Message interactions | `IMPLEMENTED_UNPROVEN` | Reply/thread/edit/retract/reaction/pin/read contracts and projections exist | Repository-local Native interaction report is `FAIL`; no current proof |
-| Typing | `IMPLEMENTED_UNPROVEN` | Authenticated ephemeral Direct/Group paths and TTL projection exist | Stored PASS is stale relative to current source; Mobile proof absent |
-| Image/file attachments | `IMPLEMENTED_UNPROVEN` on Desktop; `PARTIAL` on Mobile | Encrypted resumable transfer, rendering, open/download, recovery foundations exist | Current-source product proof and complete Mobile lifecycle are absent |
-| Recorded voice message | `PARTIAL` on Desktop; `MISSING` on Mobile | Desktop records WebM, stages it as encrypted audio attachment, and plays it inline | Duration is discarded before persistence; no progress/seek/retry contract; no Mobile recorder/player; no Gate |
-| Group lifecycle | `PARTIAL` | Conversation create and MLS add/remove/send paths exist | Rename/roles/owner/dissolve still use legacy Group routes; leave is incomplete; readiness is projected too early |
-| Live one-to-one voice/video | `PARTIAL` on Desktop; `MISSING` on Mobile | Desktop WebRTC manager, sealed signaling, audio/video call surface, camera controls, and TURN discovery exist | Calls require unrelated P2P-connected state; no native audio/video call proof; Mobile implementation is missing |
-| Group live voice/video | `MISSING` | One-to-one signaling, WebRTC, TURN, Group membership, and MLS foundations may be reused after design review | No accepted SFU/room architecture, product surface, multi-participant runtime, or native Gate exists |
-| Cross-Station/multi-device/recovery | `PARTIAL` | Substantial Station/Desktop paths and historical proof exist | Current-source matrix, Mobile, and complete cross-Station product proof are absent |
+| Offline/reconnect/restart | `IMPLEMENTED_UNPROVEN` | Durable outbox/inbox, SQLCipher reopen, cursor reconcile, generation fencing, and Mobile recovery owners exist | Required exact-source runtime cells, fresh-install recovery, and cleanup evidence are absent |
+| Visible send/retry state | `IMPLEMENTED_UNPROVEN` | Pending/retrying/submitted/failed command state and message-level recovery UI exist on both clients | No current receiver-visible failure/retry/restart Gate for this HEAD |
+| Conversation list/history/read/search | `IMPLEMENTED_UNPROVEN` | Canonical conversation summaries, latest message, unread counts, paged history, actor read cursors, FTS search, and scoped settings exist | Exact-source mixed-client pagination/search/read convergence and restart proof are absent |
+| Message interactions | `IMPLEMENTED_UNPROVEN` | Reply/thread/edit/retract/reaction/pin/read commands, authoritative projection refresh, and role-gated moderation exist | Current interaction, duplicate, restart, and mixed-client readback Gates are unrun for this HEAD |
+| Typing | `IMPLEMENTED_UNPROVEN` | Authenticated Direct/Group ingress, TTL projection, and best-effort Mobile publication exist | Current Mobile and mixed-client native typing evidence is absent |
+| Image/file attachments | `IMPLEMENTED_UNPROVEN` | Encrypted staging, resumable transfer, cache/open/download, retry, and Mobile media projection exist | Exact-source bidirectional byte/readback, interruption, restart, and permission proof are absent |
+| Recorded voice message | `IMPLEMENTED_UNPROVEN` | Desktop and Mobile record, cancel/finish, stage encrypted audio, persist duration/private metadata, render duration, and expose native audio playback controls | Current microphone permission, sender/receiver byte identity, seek/progress, retry, restart, and mixed-client Gate evidence is absent |
+| Group lifecycle | `IMPLEMENTED_UNPROVEN` | Canonical Conversation update/invite/remove/role/owner-transfer/leave/dissolve commands and ordered Mobile readback exist | Exact-source mixed-client role denial, epoch recovery, leave/dissolve, and restart proof are absent |
+| Live one-to-one voice/video | `PARTIAL` | Desktop and Mobile have sealed signaling, WebRTC/TURN managers, Direct call actions, shell-level surfaces, media controls, reconnect, and cross-device resolution actions | Mobile production styling/i18n and device selection remain incomplete; native media, direct/TURN, cleanup, cross-Station, and mixed-client proof are absent |
+| Group live voice/video | `PARTIAL` | Station GroupCall authority + LiveKit adapter, Desktop group-call manager/surface, federation route, and native Gate exist | Mobile has generated contracts but no group-call runtime or product surface; no current multi-participant Gate proof |
+| Cross-Station/multi-device/recovery | `IMPLEMENTED_UNPROVEN` | Mixed-client Gates, sender-companion fan-out, actor read convergence, call arbitration, revoke, and federation paths exist | Current exact-source runtime matrix and full cross-Station recovery proof are absent |
 
 Current product result: **0/12 required Chat capabilities are current-source
 product-proven**.
 
 ## 3. Evidence Integrity Findings
 
-1. Repository-local Native PASS reports are bound to older commits such as
-   `5ed85551`, `b4207062`, `638679c0`, `13d867e8`, and `ef89b11`, not the
-   audited HEAD.
-2. `tooling/acceptance/reports/chat-native-interactions-run.json` is an explicit
-   failure: the local authority head is behind the interaction plan.
-3. `docs/architecture/engineering/acceptance/coverage-report.md` reports only
-   1/11 Chat features complete and 0/9 Mobile features complete.
-4. The friend-request Gate proves a gateway/API lifecycle, not Native find,
-   request, accept, conversation open, and first-message UI.
-5. Mobile native Chat scenarios are registered but six dispatch paths remain
-   unimplemented. They now emit typed `BLOCKED/PARTIAL/UNPROVEN` evidence
-   instead of crashing during report construction; fake-memory tests still do
-   not prove the product.
-6. Existing attachment evidence does not exercise microphone capture, recorded
-   voice transfer, playback, or live calls.
+1. The immutable MICU-02/MICU-03 same-Station Chat and Session-class evidence
+   is bound to an earlier product commit, not this audited HEAD.
+2. Registered cross-Station, multi-device, Group MLS, call-resolution, live
+   voice, and group-live Gates do not imply execution or proof.
+3. Current unit/static checks prove source contracts only. They do not replace
+   sender, receiver, durable readback, native media, restart, or cleanup proof.
+4. Mobile Call browser prototype evidence proves state and interaction intent
+   only; production Call remains `PARTIAL`.
+5. The current standalone worktree cannot start exact-source Mobile runtime
+   verification because the Workflow Kernel misclassifies `make mobile` target
+   `mobile` as a source path and rejects it with `SOURCE_SCOPE_DENIED`.
+6. Existing historical PASS/BLOCKED/FAIL artifacts retain their original
+   status and source identity; none is promoted to this HEAD.
 
 ## 4. Safety Baseline
 
 - Production Station and Mobile source contains no hard-coded collector URL or
   temporary debug-point block under the audited Chat safety scope.
-- Mobile `social.people.search` accepts only a query and projects
-  `federationId` from the observed production search result. Desktop
-  `federationContext` continues to project the Federation list returned by the
-  production API.
-- Every registered Mobile native scenario has traceability metadata and can
-  emit typed blocked evidence while its physical implementation is absent.
+- Mobile `social.people.search` consumes explicit query/Federation scope and
+  preserves unavailable/no-result distinctions.
+- Mobile has zero executable `/friend-chat/*` or `/group-chat/*` route callers;
+  legacy table names remain persistence compatibility facts, not client owners.
+- Every registered Mobile native scenario has traceability metadata and must
+  keep missing runtime evidence `UNPROVEN`.
 - Formal Gate `chat-lifecycle-safety-e2e` is the source-bound proof owner for
   this baseline.
 
@@ -82,8 +80,8 @@ capability in section 2.
 
 ## 5. Historical Evidence Disposition
 
-Historical Direct, Group MLS, typing, attachment, multi-device, recovery, and
-cross-Station runs demonstrate that portions of the architecture are feasible.
-They are retained as regression references only. The new plan starts every
-capability at its audited current status and requires a fresh exact-source
-result before promotion to `PROVEN`.
+Historical Direct, Group MLS, typing, attachment, multi-device, recovery,
+same-Station mixed-client, and cross-Station runs demonstrate that portions of
+the architecture are feasible. They are retained as regression references
+only. Every capability requires a fresh exact-source result before promotion
+to `PROVEN`.

@@ -6,8 +6,8 @@ use serde_json::{json, Value};
 use tauri::{State, Window};
 
 use crate::application::session_resolver;
+use crate::application::station_runtime::client::{self as station_client, StationClient};
 use crate::error::{AppResult, ErrorCode};
-use crate::infrastructure::station_client;
 use crate::model::actor::ActorProfile;
 use crate::model::federation::v1::{
     CreateFederationRequest, CreateFederationResponse, JoinFederationRequest,
@@ -47,14 +47,17 @@ fn station_failure(error: station_client::StationClientError, context: &str) -> 
     error.into_app_result(context)
 }
 
-pub(crate) fn fixture_snapshot(token: &str) -> Result<Value, station_client::StationClientError> {
-    let profile = station_client::request_peers_proto_no_body::<ActorProfile>(
+pub(crate) fn fixture_snapshot(
+    station_client: &StationClient,
+    token: &str,
+) -> Result<Value, station_client::StationClientError> {
+    let profile = station_client.request_peers_proto_no_body::<ActorProfile>(
         Method::GET,
         "/actor/profile",
         token,
         None,
     )?;
-    let federations = station_client::request_proto::<(), ListFederationsResponse>(
+    let federations = station_client.request_proto::<(), ListFederationsResponse>(
         Method::GET,
         "/sub-federation/federations",
         token,
@@ -66,7 +69,7 @@ pub(crate) fn fixture_snapshot(token: &str) -> Result<Value, station_client::Sta
     for federation in federations.federations {
         let federation_id = federation.federation_id.trim().to_string();
         let route = format!("/sub-federation/federations/{federation_id}/stations");
-        let members = station_client::request_proto::<(), ListMemberStationsResponse>(
+        let members = station_client.request_proto::<(), ListMemberStationsResponse>(
             Method::GET,
             &route,
             token,
@@ -96,14 +99,18 @@ pub(crate) fn fixture_snapshot(token: &str) -> Result<Value, station_client::Sta
     }))
 }
 
-pub(crate) fn snapshot_result(token: &str) -> AppResult<Value> {
-    match fixture_snapshot(token) {
+pub(crate) fn snapshot_result(station_client: &StationClient, token: &str) -> AppResult<Value> {
+    match fixture_snapshot(station_client, token) {
         Ok(snapshot) => AppResult::success(snapshot),
         Err(error) => station_failure(error, "acceptance Federation fixture snapshot failed"),
     }
 }
 
-pub(crate) fn create_fixture(token: &str, input: FederationFixtureCreateInput) -> AppResult<Value> {
+pub(crate) fn create_fixture(
+    station_client: &StationClient,
+    token: &str,
+    input: FederationFixtureCreateInput,
+) -> AppResult<Value> {
     let name = input.name.trim();
     if name.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "name is required", None);
@@ -113,7 +120,7 @@ pub(crate) fn create_fixture(token: &str, input: FederationFixtureCreateInput) -
         description: input.description.trim().to_string(),
         policy_type: "single_admin".to_string(),
     };
-    match station_client::request_proto::<CreateFederationRequest, CreateFederationResponse>(
+    match station_client.request_proto::<CreateFederationRequest, CreateFederationResponse>(
         Method::POST,
         "/sub-federation/federations",
         token,
@@ -127,7 +134,11 @@ pub(crate) fn create_fixture(token: &str, input: FederationFixtureCreateInput) -
     }
 }
 
-pub(crate) fn join_fixture(token: &str, input: FederationFixtureJoinInput) -> AppResult<Value> {
+pub(crate) fn join_fixture(
+    station_client: &StationClient,
+    token: &str,
+    input: FederationFixtureJoinInput,
+) -> AppResult<Value> {
     if input.federation_id.trim().is_empty() || input.federation_endpoint.trim().is_empty() {
         return AppResult::fail(
             ErrorCode::InvalidArgument,
@@ -140,7 +151,7 @@ pub(crate) fn join_fixture(token: &str, input: FederationFixtureJoinInput) -> Ap
         federation_id: input.federation_id.trim().to_string(),
         message: input.message,
     };
-    match station_client::request_proto::<JoinFederationRequest, JoinFederationResponse>(
+    match station_client.request_proto::<JoinFederationRequest, JoinFederationResponse>(
         Method::POST,
         "/sub-federation/federations/join",
         token,
@@ -164,7 +175,7 @@ pub fn acceptance_federation_fixture_snapshot(
         Ok(token) => token,
         Err(error) => return error,
     };
-    snapshot_result(&token)
+    snapshot_result(state.station.client(), &token)
 }
 
 #[tauri::command]
@@ -177,7 +188,7 @@ pub fn acceptance_federation_fixture_create(
         Ok(token) => token,
         Err(error) => return error,
     };
-    create_fixture(&token, input)
+    create_fixture(state.station.client(), &token, input)
 }
 
 #[tauri::command]
@@ -190,5 +201,5 @@ pub fn acceptance_federation_fixture_join(
         Ok(token) => token,
         Err(error) => return error,
     };
-    join_fixture(&token, input)
+    join_fixture(state.station.client(), &token, input)
 }

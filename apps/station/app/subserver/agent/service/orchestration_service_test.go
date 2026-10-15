@@ -1489,6 +1489,9 @@ func TestClaimNodeLeaseTxFencesActiveExecutorLease(t *testing.T) {
 			step_id text,
 			executor_id text NOT NULL,
 			executor_kind integer NOT NULL,
+			owner_node_id text NOT NULL DEFAULT '',
+			owner_incarnation text NOT NULL DEFAULT '',
+			fencing_token integer NOT NULL DEFAULT 0,
 			status text NOT NULL,
 			acquired_at datetime NOT NULL,
 			heartbeat_at datetime NOT NULL,
@@ -1526,7 +1529,10 @@ func TestClaimNodeLeaseTxFencesActiveExecutorLease(t *testing.T) {
 		t.Fatalf("create node: %v", err)
 	}
 
-	service := &OrchestrationService{}
+	service := &OrchestrationService{
+		executorNodeID:      "station-node",
+		executorIncarnation: "station-incarnation",
+	}
 	var first persistence.ExecutorLease
 	if err := db.Transaction(func(tx *gorm.DB) error {
 		lease, ok, err := service.claimNodeLeaseTx(tx, &task, &node, "executor-a", time.Minute, now)
@@ -1589,6 +1595,13 @@ func TestClaimNodeLeaseTxFencesActiveExecutorLease(t *testing.T) {
 		}
 		if lease.ExecutorID != "executor-b" || lease.LeaseID == first.LeaseID {
 			t.Fatalf("expected a new executor-b lease, got %#v", lease)
+		}
+		if lease.FencingToken != first.FencingToken+1 {
+			t.Fatalf(
+				"takeover fencing token = %d, want %d",
+				lease.FencingToken,
+				first.FencingToken+1,
+			)
 		}
 		return nil
 	}); err != nil {
@@ -2415,15 +2428,18 @@ func TestResolveCollaborationInterruptTxRejectsGateBlockedTaskWithActiveLease(t 
 	}}
 	seedResumeCollaborationTask(t, db, task, nodes)
 	if err := db.Create(&persistence.ExecutorLease{
-		LeaseID:      "lease-active",
-		TaskID:       task.ID,
-		StepID:       "node-gate",
-		ExecutorID:   "executor-1",
-		ExecutorKind: int32(model.ExecutorKind_EXECUTOR_KIND_DESKTOP_DEVICE),
-		Status:       executorLeaseStatusActive,
-		AcquiredAt:   now,
-		HeartbeatAt:  now,
-		ExpiresAt:    now.Add(time.Minute),
+		LeaseID:          "lease-active",
+		TaskID:           task.ID,
+		StepID:           "node-gate",
+		ExecutorID:       "executor-1",
+		ExecutorKind:     int32(model.ExecutorKind_EXECUTOR_KIND_DESKTOP_DEVICE),
+		OwnerNodeID:      "station-node-a",
+		OwnerIncarnation: "station-incarnation-a",
+		FencingToken:     1,
+		Status:           executorLeaseStatusActive,
+		AcquiredAt:       now,
+		HeartbeatAt:      now,
+		ExpiresAt:        time.Now().UTC().Add(time.Minute),
 	}).Error; err != nil {
 		t.Fatalf("seed active lease: %v", err)
 	}
@@ -2492,15 +2508,18 @@ func TestResolveCollaborationInterruptTxExpiresStaleLeaseBeforeGateRecovery(t *t
 		t.Fatalf("mark gate plan blocked: %v", err)
 	}
 	if err := db.Create(&persistence.ExecutorLease{
-		LeaseID:      "lease-expired",
-		TaskID:       task.ID,
-		StepID:       "node-gate",
-		ExecutorID:   "executor-1",
-		ExecutorKind: int32(model.ExecutorKind_EXECUTOR_KIND_DESKTOP_DEVICE),
-		Status:       executorLeaseStatusActive,
-		AcquiredAt:   now,
-		HeartbeatAt:  now,
-		ExpiresAt:    time.Now().Add(-time.Minute),
+		LeaseID:          "lease-expired",
+		TaskID:           task.ID,
+		StepID:           "node-gate",
+		ExecutorID:       "executor-1",
+		ExecutorKind:     int32(model.ExecutorKind_EXECUTOR_KIND_DESKTOP_DEVICE),
+		OwnerNodeID:      "station-node-a",
+		OwnerIncarnation: "station-incarnation-a",
+		FencingToken:     1,
+		Status:           executorLeaseStatusActive,
+		AcquiredAt:       now,
+		HeartbeatAt:      now,
+		ExpiresAt:        time.Now().Add(-time.Minute),
 	}).Error; err != nil {
 		t.Fatalf("seed expired lease: %v", err)
 	}
@@ -3176,15 +3195,18 @@ func TestSubmitCollaborationNodeResultTypedFixturePersistsArtifactGateIndexes(t 
 		EndedAt:   now,
 	}
 	lease := persistence.ExecutorLease{
-		LeaseID:      "lease-submit-typed",
-		TaskID:       task.ID,
-		StepID:       node.ID,
-		ExecutorID:   "executor-desktop-1",
-		ExecutorKind: int32(model.ExecutorKind_EXECUTOR_KIND_DESKTOP_DEVICE),
-		Status:       executorLeaseStatusActive,
-		AcquiredAt:   now,
-		HeartbeatAt:  now,
-		ExpiresAt:    now.Add(time.Minute),
+		LeaseID:          "lease-submit-typed",
+		TaskID:           task.ID,
+		StepID:           node.ID,
+		ExecutorID:       "executor-desktop-1",
+		ExecutorKind:     int32(model.ExecutorKind_EXECUTOR_KIND_DESKTOP_DEVICE),
+		OwnerNodeID:      "station-node-a",
+		OwnerIncarnation: "station-incarnation-a",
+		FencingToken:     1,
+		Status:           executorLeaseStatusActive,
+		AcquiredAt:       now,
+		HeartbeatAt:      now,
+		ExpiresAt:        time.Now().UTC().Add(time.Minute),
 	}
 	seedResumeCollaborationTask(t, db, task, []persistence.CollaborationTaskNode{node})
 	if err := db.Create(&lease).Error; err != nil {
@@ -3364,15 +3386,18 @@ func TestSubmitCollaborationNodeResultRejectsTypedInvalidArtifactRefsBeforeMutat
 		EndedAt:   now,
 	}
 	lease := persistence.ExecutorLease{
-		LeaseID:      "lease-submit-invalid-refs",
-		TaskID:       task.ID,
-		StepID:       node.ID,
-		ExecutorID:   "executor-desktop-1",
-		ExecutorKind: int32(model.ExecutorKind_EXECUTOR_KIND_DESKTOP_DEVICE),
-		Status:       executorLeaseStatusActive,
-		AcquiredAt:   now,
-		HeartbeatAt:  now,
-		ExpiresAt:    now.Add(time.Minute),
+		LeaseID:          "lease-submit-invalid-refs",
+		TaskID:           task.ID,
+		StepID:           node.ID,
+		ExecutorID:       "executor-desktop-1",
+		ExecutorKind:     int32(model.ExecutorKind_EXECUTOR_KIND_DESKTOP_DEVICE),
+		OwnerNodeID:      "station-node-a",
+		OwnerIncarnation: "station-incarnation-a",
+		FencingToken:     1,
+		Status:           executorLeaseStatusActive,
+		AcquiredAt:       now,
+		HeartbeatAt:      now,
+		ExpiresAt:        time.Now().UTC().Add(time.Minute),
 	}
 	seedResumeCollaborationTask(t, db, task, []persistence.CollaborationTaskNode{node})
 	if err := db.Create(&lease).Error; err != nil {
@@ -4945,6 +4970,9 @@ func openResumeCollaborationTaskDB(t *testing.T, name string) *gorm.DB {
                         step_id text,
                         executor_id text NOT NULL,
                         executor_kind integer NOT NULL,
+                        owner_node_id text NOT NULL DEFAULT '',
+                        owner_incarnation text NOT NULL DEFAULT '',
+                        fencing_token integer NOT NULL DEFAULT 0,
                         status text NOT NULL,
                         acquired_at datetime NOT NULL,
                         heartbeat_at datetime NOT NULL,

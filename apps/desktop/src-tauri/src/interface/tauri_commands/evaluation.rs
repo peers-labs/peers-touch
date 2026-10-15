@@ -18,7 +18,11 @@ async fn execute(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    run_blocking_evaluation_command(move || evaluation::forward(input, &token, operation)).await
+    let station_client = state.station.client().clone();
+    run_blocking_evaluation_command(move || {
+        evaluation::forward(&station_client, input, &token, operation)
+    })
+    .await
 }
 
 async fn run_blocking_evaluation_command(

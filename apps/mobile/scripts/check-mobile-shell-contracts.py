@@ -469,12 +469,35 @@ def validate_auth_ui_identity(repo_root: Path = REPO_ROOT) -> None:
         / "recovery"
         / "RecoveryOverlayHost.tsx"
     ).read_text(encoding="utf-8")
+    route_boundary_source = (
+        mobile_root / "src" / "components" / "MobileRouteBoundary.tsx"
+    ).read_text(encoding="utf-8")
+    command_recovery_source = (
+        mobile_root
+        / "src"
+        / "components"
+        / "recovery"
+        / "CommandRecoveryPanel.tsx"
+    ).read_text(encoding="utf-8")
+    draft_recovery_source = (
+        mobile_root
+        / "src"
+        / "components"
+        / "recovery"
+        / "DraftRestoreOverlay.tsx"
+    ).read_text(encoding="utf-8")
     mobile_css = (mobile_root / "src" / "styles.css").read_text(encoding="utf-8")
     prototype_source = (
         prototype_root / "src" / "pages" / "AuthGateScreen.tsx"
     ).read_text(encoding="utf-8")
     prototype_shell = (
         prototype_root / "src" / "MobilePrototype.tsx"
+    ).read_text(encoding="utf-8")
+    prototype_mobile_shell = (
+        prototype_root / "src" / "MobileShell.tsx"
+    ).read_text(encoding="utf-8")
+    prototype_recovery = (
+        prototype_root / "src" / "components" / "ExperienceRecovery.tsx"
     ).read_text(encoding="utf-8")
     prototype_css = (
         prototype_root / "src" / "mobilePrototype.css"
@@ -512,10 +535,72 @@ def validate_auth_ui_identity(repo_root: Path = REPO_ROOT) -> None:
     required_recovery_tokens = (
         "launchState !== 'access-gate-chain'",
         "state.reason === 'session-expired'",
+        "state.kind === 'event-overflow-reconcile'",
+        "state.kind === 'deferred-capability'",
+        "data-tabbar-visible={tabBarVisible}",
     )
     if any(token not in recovery_source for token in required_recovery_tokens):
         raise ValueError(
-            "Access Gate must suppress only its duplicate session-expired recovery"
+            "Mobile recovery composition must keep route and passive sync states "
+            "out of the global overlay"
+        )
+    if (
+        ".recovery-overlay-host[data-launch-state='shell']"
+        "[data-tabbar-visible='true']"
+    ) not in mobile_css:
+        raise ValueError(
+            "Mobile recovery overlays must use the active navigation tab-bar state"
+        )
+    forbidden_recovery_copy = (
+        "mobile.recovery.command.commandId",
+        "mobile.recovery.command.requestId",
+        "mobile.recovery.command.target",
+    )
+    if any(
+        token in command_recovery_source
+        for token in forbidden_recovery_copy
+    ):
+        raise ValueError(
+            "Mobile recovery UI must not expose internal command identity"
+        )
+    if (
+        "draft.key" in draft_recovery_source
+        or "mobile.recovery.draftRestore.chatCount" not in draft_recovery_source
+        or "mobile.recovery.draftRestore.momentsCount" not in draft_recovery_source
+    ):
+        raise ValueError(
+            "Mobile draft recovery must summarize draft kinds without scope keys"
+        )
+    required_route_recovery_tokens = (
+        'data-acceptance-id="mobile-route-unavailable"',
+        "data-route-state={preparing ? 'preparing' : 'unavailable'}",
+        'data-acceptance-id="mobile-route-retry"',
+        "restartRuntimeGraph('app-resume')",
+        "mobile.route.unavailableBody",
+    )
+    if any(
+        token not in route_boundary_source
+        for token in required_route_recovery_tokens
+    ):
+        raise ValueError(
+            "Unavailable Mobile routes must own one lifecycle-backed recovery"
+        )
+    required_prototype_route_tokens = (
+        'className="mp-route-state"',
+        'data-demo-recovery-owner="lifecycle"',
+        "data-demo-route-state={retrying ? 'preparing' : 'unavailable'}",
+        "mobile.route.unavailableBody",
+        "onClick={onRetry}",
+    )
+    if any(
+        token not in prototype_recovery
+        for token in required_prototype_route_tokens
+    ) or (
+        "SocialRuntimeNotice" in prototype_mobile_shell
+        or ".mp-runtime-notice" in prototype_css
+    ):
+        raise ValueError(
+            "Mobile prototype must keep lifecycle Retry inside one route state"
         )
 
     required_prototype_tokens = (

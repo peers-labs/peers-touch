@@ -22,6 +22,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/dashboard/infrastructure"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
+	"github.com/peers-labs/peers-touch/station/frame/touch/crypto"
 )
 
 // dashboard-side claim attribute keys used to round-trip
@@ -93,7 +94,7 @@ func (s *AuthService) EnsureSuperUser(ctx context.Context, username, password st
 		return nil
 	}
 
-	hash, err := domain.HashPassword(password)
+	hash, err := crypto.HashPassword(password)
 	if err != nil {
 		return fmt.Errorf("failed to hash password: %w", err)
 	}
@@ -150,7 +151,7 @@ func (s *AuthService) Login(ctx context.Context, username, password, ip, userAge
 		}
 	}
 
-	if !domain.CheckPassword(admin.PasswordHash, password) {
+	if !crypto.VerifyPassword(admin.PasswordHash, password) {
 		s.auditRepo.Record(ctx, admin.ID, username, "login_failed", "auth", "wrong password", ip, userAgent)
 		return nil, domain.ErrInvalidCredentials
 	}
@@ -280,7 +281,7 @@ func (s *AuthService) Logout(ctx context.Context, sessionID string, adminID uint
 // CreateAdmin creates a new admin. The super user is retired once a real
 // admin is created.
 func (s *AuthService) CreateAdmin(ctx context.Context, req domain.CreateAdminRequest, creatorID uint64, ip, userAgent string) (*domain.DashboardAdmin, error) {
-	hash, err := domain.HashPassword(req.Password)
+	hash, err := crypto.HashPassword(req.Password)
 	if err != nil {
 		return nil, fmt.Errorf("failed to hash password: %w", err)
 	}
@@ -412,13 +413,13 @@ func (s *AuthService) ChangePassword(ctx context.Context, adminID uint64, oldPas
 		return domain.ErrInvalidCredentials
 	}
 
-	if !domain.CheckPassword(admin.PasswordHash, oldPassword) {
+	if !crypto.VerifyPassword(admin.PasswordHash, oldPassword) {
 		s.auditRepo.Record(ctx, adminID, admin.Username, "change_password_failed", "auth",
 			"wrong old password", ip, userAgent)
 		return domain.ErrInvalidCredentials
 	}
 
-	hash, err := domain.HashPassword(newPassword)
+	hash, err := crypto.HashPassword(newPassword)
 	if err != nil {
 		return fmt.Errorf("failed to hash password: %w", err)
 	}

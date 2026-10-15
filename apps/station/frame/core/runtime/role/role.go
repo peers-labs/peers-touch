@@ -28,13 +28,12 @@ type contextKey struct{}
 
 var pluginSubserverAllowlists = map[Role]map[string]struct{}{
 	Station: {
-		"agent":        {},
-		"bootstrap":    {},
-		"launcher":     {},
-		"oauth":        {},
-		"oss":          {},
-		"relay-client": {},
-		"turn":         {},
+		"agent":     {},
+		"bootstrap": {},
+		"launcher":  {},
+		"oauth":     {},
+		"oss":       {},
+		"turn":      {},
 	},
 	Relay: {
 		"relay": {},

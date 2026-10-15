@@ -1022,8 +1022,8 @@ describe('Mobile Acceptance Harness', () => {
       new URL('./actions.ts', import.meta.url),
       'utf8',
     );
-    const appSource = readFileSync(
-      new URL('../App.tsx', import.meta.url),
+    const entryRuntimeSource = readFileSync(
+      new URL('../runtimes/entryRuntime.ts', import.meta.url),
       'utf8',
     );
 
@@ -1033,14 +1033,14 @@ describe('Mobile Acceptance Harness', () => {
     expect(actionsSource).toMatch(
       /station\.select[\s\S]*transitionScope\(\s*'station-replace'[\s\S]*logoutSessionRuntime\(\)/,
     );
-    expect(appSource).toMatch(
+    expect(entryRuntimeSource).toMatch(
       /commitStationScope[\s\S]*runUserScopeTransition\(\s*'station-replace'[\s\S]*logoutSessionRuntime\(\)/,
     );
-    expect(appSource).toMatch(
+    expect(entryRuntimeSource).toMatch(
       /runUserScopeTransition[\s\S]*transitionScope\([\s\S]*draftDisposition/,
     );
-    expect(appSource).toMatch(
-      /function logout[\s\S]*runUserScopeTransition\(\s*'logout'[\s\S]*logoutSessionRuntime/,
+    expect(entryRuntimeSource).toMatch(
+      /async logout[\s\S]*runUserScopeTransition\(\s*'logout'[\s\S]*logoutSessionRuntime/,
     );
   });
 
@@ -1391,8 +1391,8 @@ describe('Mobile Acceptance Harness', () => {
       new URL('../runtimes/accessRuntime.ts', import.meta.url),
       'utf8',
     );
-    const appSource = readFileSync(
-      new URL('../App.tsx', import.meta.url),
+    const entryRuntimeSource = readFileSync(
+      new URL('../runtimes/entryRuntime.ts', import.meta.url),
       'utf8',
     );
 
@@ -1408,10 +1408,10 @@ describe('Mobile Acceptance Harness', () => {
     expect(runtimeSource).toMatch(
       /startAccessAttemptWithInvalidSessionRecovery[\s\S]*isRevokedSessionError[\s\S]*clearSession\(\)/,
     );
-    expect(appSource).toMatch(
+    expect(entryRuntimeSource).toMatch(
       /startAccessGateChainFor[\s\S]*startAccessAttemptForActiveStation\(\)/,
     );
-    expect(appSource).not.toMatch(/function isRevokedSessionError/);
+    expect(entryRuntimeSource).not.toMatch(/function isRevokedSessionError/);
   });
 
   it('projects negative OAuth results without callback or credential material', () => {

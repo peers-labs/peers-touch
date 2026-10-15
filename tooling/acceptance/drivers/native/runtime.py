@@ -18,6 +18,7 @@ from typing import Any, Mapping, Protocol, Sequence, cast
 from urllib.parse import urlsplit
 
 from tooling.acceptance.core._paths import REPO_ROOT
+from tooling.acceptance.core.evidence_store import ArtifactRef, EvidenceStore
 from tooling.acceptance.core.errors import ClientBindingError, DriverError
 from tooling.acceptance.core.provisioning import (
     BindingProofRecord,
@@ -151,7 +152,10 @@ def _route_matches_bound_service(
 ) -> bool:
     endpoint = str(route.get("endpoint_origin") or "").rstrip("/")
     if service_id != "station-via-relay":
-        return endpoint == expected_url
+        return (
+            route.get("route_type") == "direct"
+            and endpoint == expected_url
+        )
 
     locator = urlsplit(expected_url)
     transport = urlsplit(endpoint)
@@ -239,6 +243,37 @@ class NativeDesktopRuntimeBinding(ABC):
             "PT_STATION_URL": station_url,
             "PT_STATION_HEALTH_URL": f"{station_url}/sub-oss/healthz",
         }
+        relay_trust_service_id = station_service_id
+        if station_service_id != "station-via-relay":
+            services = self._runtime_manifest.get("services")
+            relay_route = (
+                services.get("station-via-relay")
+                if isinstance(services, dict)
+                else None
+            )
+            if (
+                isinstance(relay_route, dict)
+                and relay_route.get("runtimeIdentity")
+                == station_service.get("runtimeIdentity")
+            ):
+                relay_trust_service_id = "station-via-relay"
+        trust_anchor = self._relay_tls_trust_anchor(
+            relay_trust_service_id
+        )
+        if trust_anchor is not None:
+            source_path, expected_sha256 = trust_anchor
+            staged_path = self.stage_native_file(client_id, source_path)
+            observed_sha256 = self.native_file_sha256(
+                client_id,
+                staged_path,
+            )
+            if observed_sha256 != expected_sha256:
+                raise DriverError(
+                    "Native Relay trust anchor staging changed its content"
+                )
+            environment["PT_ACCEPTANCE_RELAY_TLS_CA_FILE"] = str(
+                staged_path
+            )
 
         session = self._create_session(
             client_id,
@@ -251,7 +286,11 @@ class NativeDesktopRuntimeBinding(ABC):
             session.start()
             session.wait_for_acceptance_harness(30)
             if not options.restore_session:
-                self._configure_session_station(session, station_url)
+                self._configure_session_station(
+                    session,
+                    station_url,
+                    station_service_id,
+                )
             runtime_identity = self._client_runtime_identity(
                 client_id,
                 generation,
@@ -294,6 +333,95 @@ class NativeDesktopRuntimeBinding(ABC):
         except Exception:
             session.stop()
             raise
+
+    def _relay_tls_trust_anchor(
+        self,
+        station_service_id: str,
+    ) -> tuple[Path, str] | None:
+        if station_service_id != "station-via-relay":
+            return None
+        if self._runtime_manifest is None:
+            raise DriverError("Runtime Binding manifest is not set")
+        services = self._runtime_manifest.get("services")
+        station_service = (
+            services.get(station_service_id)
+            if isinstance(services, dict)
+            else None
+        )
+        relay_service = (
+            services.get("relay")
+            if isinstance(services, dict)
+            else None
+        )
+        if not isinstance(station_service, dict) or not isinstance(
+            relay_service,
+            dict,
+        ):
+            raise DriverError(
+                "Relay-bound Native client has incomplete service topology"
+            )
+        try:
+            store = EvidenceStore.from_environment(
+                repo_root=REPO_ROOT,
+                worktree=REPO_ROOT,
+            )
+            route_reference = ArtifactRef.from_dict(
+                station_service["attestationArtifact"]
+            )
+            route_attestation = store.read_json(route_reference)
+            route = route_attestation["route"]
+            expected_relay_peer_id = str(
+                relay_service.get("runtimeIdentity") or ""
+            )
+            if (
+                not isinstance(route, dict)
+                or route.get("relayServiceId") != "relay"
+                or not expected_relay_peer_id
+                or route.get("relayPeerId") != expected_relay_peer_id
+            ):
+                raise DriverError(
+                    "Relay route attestation has no canonical Relay binding"
+                )
+            relay_reference = ArtifactRef.from_dict(
+                route["relayAttestationRef"]
+            )
+            if (
+                relay_reference.to_dict()
+                != relay_service.get("attestationArtifact")
+            ):
+                raise DriverError(
+                    "Relay route attestation does not match runtime topology"
+                )
+            relay_attestation = store.read_json(relay_reference)
+            if (
+                relay_attestation.get("runtimeIdentity")
+                != expected_relay_peer_id
+            ):
+                raise DriverError(
+                    "Relay service attestation identity does not match route"
+                )
+            runtime_security = relay_attestation["runtimeSecurity"]
+            trust = runtime_security["tlsTrustAnchor"]
+            trust_reference = ArtifactRef.from_dict(trust["artifact"])
+            expected_sha256 = str(trust.get("sha256") or "").removeprefix(
+                "sha256:"
+            )
+            if (
+                expected_sha256 != trust_reference.sha256
+                or trust_reference.media_type
+                != "application/x-pem-file"
+            ):
+                raise DriverError(
+                    "Relay trust anchor attestation is inconsistent"
+                )
+            trust_path = store.resolve(trust_reference)
+        except DriverError:
+            raise
+        except Exception as error:
+            raise DriverError(
+                f"Relay trust anchor evidence is invalid: {error}"
+            ) from error
+        return trust_path, expected_sha256
 
     def create_transport_override(
         self,
@@ -339,7 +467,64 @@ class NativeDesktopRuntimeBinding(ABC):
                 binding_role,
                 "bound client session is not live",
             )
-        self._configure_session_station(session, override.endpoint)
+        self._configure_session_station(
+            session,
+            override.endpoint,
+            override.service_id,
+        )
+
+    def apply_verified_direct_route_override(
+        self,
+        client_id: str,
+        binding_role: str,
+        handle: TransportOverrideHandle,
+    ) -> None:
+        override = self._require_transport_override(
+            client_id,
+            binding_role,
+            handle,
+        )
+        session = self._sessions_by_client.get(client_id)
+        if session is None or not session.is_alive():
+            raise self._transport_override_error(
+                client_id,
+                binding_role,
+                "bound client session is not live",
+            )
+        session.invoke_app_result(
+            "acceptance_station_direct_route_override",
+            {
+                "input": {
+                    "dial_multiaddr": override.endpoint,
+                }
+            },
+        )
+
+    def clear_verified_direct_route_override(
+        self,
+        client_id: str,
+        binding_role: str,
+        handle: TransportOverrideHandle,
+    ) -> None:
+        override = self._require_transport_override(
+            client_id,
+            binding_role,
+            handle,
+        )
+        session = self._sessions_by_client.get(client_id)
+        command_error: Exception | None = None
+        if session is not None and session.is_alive():
+            try:
+                session.invoke_app_result(
+                    "acceptance_station_direct_route_override",
+                    {"input": {"dial_multiaddr": None}},
+                )
+            except Exception as error:
+                command_error = error
+        self._transport_overrides.pop(handle._token, None)
+        self._release_transport_endpoint(override.endpoint_lease_id)
+        if command_error is not None:
+            raise command_error
 
     def clear_transport_override(
         self,
@@ -354,7 +539,7 @@ class NativeDesktopRuntimeBinding(ABC):
         )
         if self._runtime_manifest is None:
             raise DriverError("Runtime Binding manifest is not set")
-        _, service = require_runtime_client_service(
+        service_id, service = require_runtime_client_service(
             self._runtime_manifest,
             client_id,
             binding_role,
@@ -364,6 +549,7 @@ class NativeDesktopRuntimeBinding(ABC):
             self._configure_session_station(
                 session,
                 str(service.get("endpoint") or ""),
+                service_id,
             )
         self._transport_overrides.pop(handle._token, None)
         self._release_transport_endpoint(override.endpoint_lease_id)
@@ -426,6 +612,7 @@ class NativeDesktopRuntimeBinding(ABC):
     def _configure_session_station(
         session: TauriSession,
         station_url: str,
+        station_service_id: str,
     ) -> None:
         if not station_url:
             raise DriverError("Runtime Binding Station endpoint is empty")
@@ -448,6 +635,7 @@ class NativeDesktopRuntimeBinding(ABC):
             )
         expected_url = station_url.rstrip("/")
         fallback: tuple[str, str] | None = None
+        matches: list[tuple[tuple[int, str, int, str], str, str]] = []
         for entry in entries:
             if not isinstance(entry, dict):
                 continue
@@ -459,6 +647,12 @@ class NativeDesktopRuntimeBinding(ABC):
                 len(entries) == 1
                 and len(routes) == 1
                 and isinstance(routes[0], dict)
+                and _route_matches_bound_service(
+                    station_service_id,
+                    expected_url,
+                    routes[0],
+                )
+                and routes[0].get("health") != "unavailable"
             ):
                 route_id = str(routes[0].get("route_id") or "").strip()
                 if route_id:
@@ -466,21 +660,51 @@ class NativeDesktopRuntimeBinding(ABC):
             for route in routes:
                 if (
                     isinstance(route, dict)
-                    and str(route.get("endpoint_origin") or "").rstrip("/")
-                    == expected_url
+                    and _route_matches_bound_service(
+                        station_service_id,
+                        expected_url,
+                        route,
+                    )
                 ):
                     route_id = str(route.get("route_id") or "").strip()
-                    if route_id:
-                        session.invoke_app_result(
-                            "station_set_active",
-                            {
-                                "input": {
-                                    "station_peer_id": station_peer_id,
-                                    "route_id": route_id,
-                                }
-                            },
+                    health = str(route.get("health") or "")
+                    if route_id and health != "unavailable":
+                        expiry = route.get("attestation_expires_at_unix_ms")
+                        generation = route.get("route_generation")
+                        matches.append(
+                            (
+                                (
+                                    (
+                                        int(expiry)
+                                        if isinstance(expiry, int)
+                                        and not isinstance(expiry, bool)
+                                        else 0
+                                    ),
+                                    str(route.get("last_verified_at") or ""),
+                                    (
+                                        int(generation)
+                                        if isinstance(generation, int)
+                                        and not isinstance(generation, bool)
+                                        else 0
+                                    ),
+                                    route_id,
+                                ),
+                                station_peer_id,
+                                route_id,
+                            )
                         )
-                        return
+        if matches:
+            _, station_peer_id, route_id = max(matches)
+            session.invoke_app_result(
+                "station_set_active",
+                {
+                    "input": {
+                        "station_peer_id": station_peer_id,
+                        "route_id": route_id,
+                    }
+                },
+            )
+            return
         if fallback is not None:
             session.invoke_app_result(
                 "station_set_active",

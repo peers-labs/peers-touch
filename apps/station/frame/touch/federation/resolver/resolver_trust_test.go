@@ -19,6 +19,7 @@ import (
 	fedprofile "github.com/peers-labs/peers-touch/station/frame/touch/federation/profile"
 	modelpb "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	modeldb "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
+	"google.golang.org/protobuf/proto"
 )
 
 type resolverRelayClient struct {
@@ -279,6 +280,37 @@ func TestCachedToProtosPreservesCanonicalActorIdentity(t *testing.T) {
 	}
 }
 
+func TestLocatorCacheReuseRequiresSameSignedRevisionAndAuthority(t *testing.T) {
+	cached := &locatorpb.ActorLocatorRecord{
+		FederatedHandle:   "alice@example.test",
+		HomeStationPeerId: "station-a",
+		HomeStationDomain: "example.test",
+		Seq:               7,
+	}
+	if !locatorMatchesCachedProfile(proto.Clone(cached).(*locatorpb.ActorLocatorRecord), cached) {
+		t.Fatal("identical signed locator revision did not reuse cached profile")
+	}
+	for name, mutate := range map[string]func(*locatorpb.ActorLocatorRecord){
+		"revision": func(record *locatorpb.ActorLocatorRecord) {
+			record.Seq++
+		},
+		"station": func(record *locatorpb.ActorLocatorRecord) {
+			record.HomeStationPeerId = "station-b"
+		},
+		"domain": func(record *locatorpb.ActorLocatorRecord) {
+			record.HomeStationDomain = "other.test"
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			current := proto.Clone(cached).(*locatorpb.ActorLocatorRecord)
+			mutate(current)
+			if locatorMatchesCachedProfile(current, cached) {
+				t.Fatalf("%s change reused cached profile", name)
+			}
+		})
+	}
+}
+
 func TestRememberRemoteStationKeyPersistsVerifiedLocatorKey(t *testing.T) {
 	key, err := authfed.MintLocalKey(time.Now())
 	if err != nil {
@@ -381,12 +413,12 @@ func TestResolveRemoteUsesProtobufAndBindsProfileToLocator(t *testing.T) {
 		_, _ = writer.Write(body)
 	}))
 	defer server.Close()
-	nativefed.ClearRelayClient()
-	nativefed.RegisterRelayClient(resolverRelayClient{
+	nativefed.ClearRelayAccess()
+	nativefed.RegisterRelayAccess(resolverRelayClient{
 		baseURL: server.URL,
 		client:  server.Client(),
 	})
-	t.Cleanup(nativefed.ClearRelayClient)
+	t.Cleanup(nativefed.ClearRelayAccess)
 
 	resolver := New(Config{Now: func() time.Time { return now }})
 	resolved, err := resolver.resolveRemote(

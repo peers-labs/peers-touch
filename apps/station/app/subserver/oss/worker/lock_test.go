@@ -2,39 +2,44 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
+
+	ossmodel "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/model"
+	"gorm.io/gorm"
 )
 
 func TestMemLock_AcquireReleaseAndContention(t *testing.T) {
 	lock := NewMemLock()
 	ctx := context.Background()
 
-	held, release, err := lock.TryAcquire(ctx, "ttl_sweeper")
+	authority, release, err := lock.TryAcquire(ctx, "ttl_sweeper")
 	if err != nil {
 		t.Fatalf("first acquire: %v", err)
 	}
-	if !held {
+	if authority == nil {
 		t.Fatalf("first caller should win the lock")
 	}
 
 	// Second acquire with the lock still held → fails.
-	if h2, _, err2 := lock.TryAcquire(ctx, "ttl_sweeper"); err2 != nil || h2 {
-		t.Fatalf("second acquire while held: held=%v err=%v", h2, err2)
+	if a2, _, err2 := lock.TryAcquire(ctx, "ttl_sweeper"); err2 != nil || a2 != nil {
+		t.Fatalf("second acquire while held: authority=%v err=%v", a2, err2)
 	}
 
 	// Different name → unrelated, both can hold simultaneously.
-	if h3, r3, err3 := lock.TryAcquire(ctx, "blob_gc"); err3 != nil || !h3 {
-		t.Fatalf("different-name acquire: held=%v err=%v", h3, err3)
+	if a3, r3, err3 := lock.TryAcquire(ctx, "blob_gc"); err3 != nil || a3 == nil {
+		t.Fatalf("different-name acquire: authority=%v err=%v", a3, err3)
 	} else {
 		r3()
 	}
 
 	release()
 	// After release, a fresh acquire on the same name succeeds.
-	if h, _, err := lock.TryAcquire(ctx, "ttl_sweeper"); err != nil || !h {
-		t.Errorf("post-release acquire: held=%v err=%v", h, err)
+	if authority, _, err := lock.TryAcquire(ctx, "ttl_sweeper"); err != nil || authority == nil {
+		t.Errorf("post-release acquire: authority=%v err=%v", authority, err)
 	}
 }
 
@@ -45,14 +50,14 @@ func TestMemLock_DoubleReleaseIsNoop(t *testing.T) {
 	release() // must NOT panic; must NOT reacquire.
 
 	// Sanity: lock is now free.
-	if h, _, _ := lock.TryAcquire(context.Background(), "ttl_sweeper"); !h {
+	if authority, _, _ := lock.TryAcquire(context.Background(), "ttl_sweeper"); authority == nil {
 		t.Errorf("lock should be free after double release")
 	}
 }
 
 func TestMemLock_EmptyNameRefused(t *testing.T) {
 	lock := NewMemLock()
-	if h, _, _ := lock.TryAcquire(context.Background(), ""); h {
+	if authority, _, _ := lock.TryAcquire(context.Background(), ""); authority != nil {
 		t.Errorf("empty name should not acquire")
 	}
 }
@@ -69,8 +74,8 @@ func TestMemLock_ConcurrentAcquire_OnlyOneWins(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			held, release, _ := lock.TryAcquire(context.Background(), "shared")
-			if held {
+			authority, release, _ := lock.TryAcquire(context.Background(), "shared")
+			if authority != nil {
 				atomic.AddInt32(&winners, 1)
 				release()
 			}
@@ -86,19 +91,57 @@ func TestMemLock_ConcurrentAcquire_OnlyOneWins(t *testing.T) {
 	if winners == 0 {
 		t.Fatalf("expected at least one winner; got 0")
 	}
-	if h, _, _ := lock.TryAcquire(context.Background(), "shared"); !h {
+	if authority, _, _ := lock.TryAcquire(context.Background(), "shared"); authority == nil {
 		t.Errorf("lock should be clean after all releases")
 	}
 }
 
-func TestNameToLockKey_DeterministicAndPositive(t *testing.T) {
-	if nameToLockKey("ttl_sweeper") != nameToLockKey("ttl_sweeper") {
-		t.Errorf("nameToLockKey not deterministic")
+func TestDBLeaderLock_TakeoverAdvancesFenceAndRejectsOldOwner(t *testing.T) {
+	db := initIntegrationStore(t)
+	resetIntegration(t, db)
+	lockA, err := NewDBLeaderLock(
+		integrationDBName,
+		"node-a",
+		"incarnation-a",
+		time.Minute,
+	)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if nameToLockKey("ttl_sweeper") == nameToLockKey("blob_gc") {
-		t.Errorf("nameToLockKey collisions on the test set")
+	lockB, err := NewDBLeaderLock(
+		integrationDBName,
+		"node-b",
+		"incarnation-b",
+		time.Minute,
+	)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if nameToLockKey("ttl_sweeper") < 0 {
-		t.Errorf("nameToLockKey returned negative — pgconn would sign-extend")
+	authorityA, releaseA, err := lockA.TryAcquire(context.Background(), "blob_gc")
+	if err != nil || authorityA == nil {
+		t.Fatalf("node A acquire: authority=%+v err=%v", authorityA, err)
+	}
+	if authorityB, _, err := lockB.TryAcquire(context.Background(), "blob_gc"); err != nil || authorityB != nil {
+		t.Fatalf("healthy lease was interrupted: authority=%+v err=%v", authorityB, err)
+	}
+	if result := db.Model(&ossmodel.WorkerLease{}).
+		Where("worker_name = ? AND fencing_token = ?", "blob_gc", authorityA.FencingToken).
+		Update("expires_at", gorm.Expr("datetime('now', '-1 second')")); result.Error != nil || result.RowsAffected != 1 {
+		t.Fatalf("expire node A: rows=%d err=%v", result.RowsAffected, result.Error)
+	}
+	authorityB, releaseB, err := lockB.TryAcquire(context.Background(), "blob_gc")
+	if err != nil || authorityB == nil {
+		t.Fatalf("node B takeover: authority=%+v err=%v", authorityB, err)
+	}
+	defer releaseB()
+	if authorityB.FencingToken != authorityA.FencingToken+1 {
+		t.Fatalf("takeover token=%d want=%d", authorityB.FencingToken, authorityA.FencingToken+1)
+	}
+	if err := lockA.Validate(context.Background(), *authorityA); !errors.Is(err, ErrStaleWorkerLease) {
+		t.Fatalf("old owner validation error=%v want=%v", err, ErrStaleWorkerLease)
+	}
+	releaseA()
+	if err := lockB.Validate(context.Background(), *authorityB); err != nil {
+		t.Fatalf("old release corrupted current owner: %v", err)
 	}
 }

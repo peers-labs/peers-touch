@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 import unittest
 from unittest.mock import Mock
@@ -7,6 +8,7 @@ from unittest.mock import Mock
 from tooling.acceptance.core import GateError
 from tooling.acceptance.drivers.tauri import TauriSession
 from tooling.acceptance.gates.station_access.desktop_relay_native_e2e import (
+    DesktopRelayNativeGate,
     MACOS_GATE_ID,
     WINDOWS_GATE_ID,
     expected_runtime_cell,
@@ -20,7 +22,7 @@ class DesktopRelayNativeGateTest(unittest.TestCase):
         self.assertTrue(
             is_relay_transport(
                 "http://10.36.3.187:18081",
-                "https://10.36.3.187:4501",
+                "https://10.36.3.187:18443",
             )
         )
         self.assertFalse(
@@ -41,6 +43,12 @@ class DesktopRelayNativeGateTest(unittest.TestCase):
         )
         with self.assertRaisesRegex(GateError, "unsupported Desktop Relay"):
             expected_runtime_cell("station-access-desktop-relay-linux-e2e")
+
+    def test_restart_preserves_runtime_owned_actor_storage(self) -> None:
+        run = inspect.getsource(DesktopRelayNativeGate.run)
+
+        self.assertIn("first.stop(preserve_state=True)", run)
+        self.assertIn("NativeLaunchOptions(restore_session=True)", run)
 
     def test_registry_snapshot_resolves_station_keyed_active_route(self) -> None:
         session = Mock(spec=TauriSession)
@@ -84,6 +92,10 @@ class DesktopRelayNativeGateTest(unittest.TestCase):
         self.assertEqual(snapshot["activeRouteId"], "relay-route")
         self.assertEqual(snapshot["routeRevision"], 3)
         self.assertEqual(snapshot["route"]["route_type"], "relay")
+        self.assertEqual(
+            [route["route_type"] for route in snapshot["routes"]],
+            ["direct", "relay"],
+        )
 
     def test_registry_snapshot_rejects_url_keyed_legacy_shape(self) -> None:
         session = Mock(spec=TauriSession)

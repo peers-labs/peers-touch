@@ -9,11 +9,23 @@
     "packages/locales/**"
   ],
   "truth_sources": ["runtime readiness projections", "command ledger projection", "Station/session validation"],
-  "visible_surfaces": [{"type": "mobile", "state": "recovery-overlay"}],
+  "visible_surfaces": [
+    {"type": "mobile", "state": "recovery-overlay"},
+    {"type": "mobile", "state": "route-recovery"}
+  ],
   "required_gates": ["mobile-simulator-recovery-e2e", "mobile-simulator-recovery-ui-e2e"],
   "acceptance": {
     "product_assertions": ["MS-PA14", "MS-PA22", "MS-PA23", "MS-PA25", "MS-PA26", "MS-PA27"],
-    "visible": ["recovery, capacity, identity mismatch, revocation, and deferred states expose one truthful next action"]
+    "visible": [
+      "blocking recovery states expose one truthful next action",
+      "an unavailable active route exposes one local lifecycle Retry without duplicate global notices"
+    ]
   },
-  "negative": ["recovery UI must not invent persistence or retry ownership", "deferred capabilities must not appear enabled", "same-Station recovery evidence must not imply cross-Station or Relay-backed recovery"]
+  "negative": [
+    "recovery UI must not invent persistence or retry ownership",
+    "deferred capabilities must not appear enabled",
+    "default recovery surfaces must not expose command IDs, request IDs, PTIDs, draft scope keys, runtime IDs, or internal domain names",
+    "background reconciliation must not expose internal domain counts or stack a global card over route recovery",
+    "same-Station recovery evidence must not imply cross-Station or Relay-backed recovery"
+  ]
 }

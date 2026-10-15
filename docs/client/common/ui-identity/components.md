@@ -24,13 +24,13 @@ Implementation order:
 
 Button roles:
 
-| Role | Meaning | Visual intent |
-| --- | --- | --- |
-| Primary | main user commitment | strong but not visually alien |
-| Secondary | normal navigation/action | quiet, readable |
-| Ghost | low-emphasis surface action | visible on hover or subtle background |
-| Danger | destructive action | scoped, explicit, recoverable |
-| Icon | compact repeated action | accessible label required |
+| Role      | Meaning                     | Visual intent                         |
+| --------- | --------------------------- | ------------------------------------- |
+| Primary   | main user commitment        | strong but not visually alien         |
+| Secondary | normal navigation/action    | quiet, readable                       |
+| Ghost     | low-emphasis surface action | visible on hover or subtle background |
+| Danger    | destructive action          | scoped, explicit, recoverable         |
+| Icon      | compact repeated action     | accessible label required             |
 
 Rules:
 
@@ -117,8 +117,18 @@ Rules:
 - Composer input, attachment controls, audience selector, and publish action form one action surface.
 - Placeholder text should guide the task, not replace labels.
 - Error and loading states belong to the composer surface before child controls show local state.
+- Inputs use bounded rounded rectangles, never full pills. Adjacent send/tool buttons use the same radius family rather than circular geometry.
 
-## 8. Popovers And Menus
+## 8. User Identity And Avatars
+
+Rules:
+
+- Every person avatar uses the shared platform avatar primitive and rounded-square geometry.
+- Avatar radius is derived from size and remains visibly below half the avatar dimension.
+- The same canonical actor identity must project the same display name, avatar asset, and deterministic fallback color across feeds, comments, chat, contacts, and notifications.
+- Feature code may supply a DTO fallback, but it must not create a second avatar primitive or display a raw PTID when a canonical profile is available.
+
+## 9. Popovers And Menus
 
 Rules:
 
@@ -134,7 +144,7 @@ Rules:
   with one dialog and retains the same data and row components. Search and
   pagination preserve the dialog's bounds; closing restores source focus.
 
-## 9. Empty, Loading, And Error States
+## 10. Empty, Loading, And Error States
 
 Rules:
 
@@ -143,7 +153,38 @@ Rules:
 - Error states must include context, recovery, and stable localized text.
 - Trust-related empty states must distinguish "no data" from "hidden by policy".
 
-## 10. Covered UX Dimensions
+## 10. Network Settings Ownership
+
+The desktop **Settings → Network** group is a user surface for account-level
+choices only. It contains exactly three sections: **Your Station**,
+**Discovery**, **Federation**. Operator capabilities live in the Station
+Dashboard, never behind a control in ordinary user Settings.
+
+User-owned (Settings):
+
+- **Your Station**: bound station identity and connection state, authorized
+  device list/revoke, and **Switch station**, which is sign-out: return to
+  onboarding to pick another station and account, keeping local conversations.
+  Relay mounts, seeds, locator sequence, and transport telemetry are operator
+  concepts and must not appear here.
+- **Discovery**: account discoverability. A master switch (hidden ↔ federated),
+  per-federation visibility choices whose previous values are remembered while
+  hidden and restored on re-show, the exact handle, and a separate reachability
+  policy (who can send requests). Discoverability and reachability are distinct.
+- **Federation**: the federations this station has joined — join by endpoint,
+  leave (local conversations/contacts are kept; routing and discoverability in
+  that federation stop), member/operator role, and member-station count.
+  Creating/governing federations is an operator action; users with the operator
+  role get a "Manage in Station Dashboard" affordance, not inline governance.
+
+Designed-but-unshipped capabilities (per-federation visibility matrix,
+inbound request policy enforcement, cross-station directory) MUST render a
+visible **Pending backend** marker and be read-only/disabled — never a live
+control that silently does nothing. Fabricated operational numbers (peer/seed
+counts, per-federation degraded/unreachable health, visible-actor totals) are
+forbidden on user cards unless backed by a real endpoint.
+
+## 11. Covered UX Dimensions
 
 This component contract covers:
 
@@ -159,7 +200,7 @@ Out of scope:
 - Backend data ownership.
 - Exact implementation file structure.
 
-## 11. AI Agent Checklist
+## 12. AI Agent Checklist
 
 - [ ] Is every button role named before styling?
 - [ ] Are library defaults normalized through token roles?
@@ -167,3 +208,4 @@ Out of scope:
 - [ ] Are tabs, CTA, and page header aligned as one system?
 - [ ] Are popovers anchored, bounded, and keyboard-recoverable?
 - [ ] Are empty/loading/error states designed, localized, and recoverable?
+- [ ] Do all user avatars use the shared rounded-square primitive and canonical identity projection?

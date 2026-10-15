@@ -323,7 +323,8 @@ var (
 	// ErrCrossActorBucket is returned by `PatchFile` when a bucket
 	// move targets a bucket owned by another actor. Owners can
 	// only re-organise their own buckets.
-	ErrCrossActorBucket = errors.New("oss: cannot move file into a bucket owned by another actor")
+	ErrCrossActorBucket  = errors.New("oss: cannot move file into a bucket owned by another actor")
+	ErrBlobBytesRequired = errors.New("oss: blob generation requires replacement bytes")
 )
 
 // Config is the dependency envelope for the file service. We
@@ -398,6 +399,51 @@ func NewFileService(cfg Config) FileService {
 		mimeBlocklist: normaliseMimeBlocklist(cfg.MimeBlocklist),
 		clock:         cfg.Clock,
 	}
+}
+
+func (s *fileService) writeBlob(
+	ctx context.Context,
+	key string,
+	size int64,
+	digest string,
+	file io.Seeker,
+	reader io.Reader,
+) (string, *ossmodel.Blob, error) {
+	write, err := s.blobs.StageWrite(ctx, s.backendName, key, size, digest)
+	if err != nil {
+		return "", nil, err
+	}
+	path := ""
+	if write.RequiresWrite {
+		if _, err := file.Seek(0, io.SeekStart); err != nil {
+			return "", nil, err
+		}
+		path, err = s.backend.Save(ctx, write.StorageKey, reader)
+		if err != nil {
+			return "", nil, err
+		}
+	}
+	blob, err := s.blobs.CommitWrite(ctx, *write)
+	if err != nil {
+		return "", nil, err
+	}
+	return path, blob, nil
+}
+
+func (s *fileService) attachBlob(
+	ctx context.Context,
+	key string,
+	size int64,
+	digest string,
+) (*ossmodel.Blob, error) {
+	write, err := s.blobs.StageWrite(ctx, s.backendName, key, size, digest)
+	if err != nil {
+		return nil, err
+	}
+	if write.RequiresWrite {
+		return nil, ErrBlobBytesRequired
+	}
+	return s.blobs.CommitWrite(ctx, *write)
 }
 
 // resolved holds the post-validation state needed to write a
@@ -491,18 +537,10 @@ func (s *fileService) saveRandom(ctx context.Context, attr UploadAttribution, re
 		return nil, err
 	}
 
-	fullPath, err := s.backend.Save(ctx, key, file)
+	fullPath, _, err := s.writeBlob(ctx, key, header.Size, sum, file, file)
 	if err != nil {
 		_ = s.buckets.AddUsage(ctx, res.bucket.ID, -header.Size)
 		return nil, err
-	}
-
-	if s.blobs != nil {
-		if _, terr := s.blobs.Touch(ctx, s.backendName, key, header.Size, sum); terr != nil {
-			_ = s.buckets.AddUsage(ctx, res.bucket.ID, -header.Size)
-			_ = s.backend.Delete(ctx, key)
-			return nil, terr
-		}
 	}
 
 	meta := &ossmodel.FileMeta{
@@ -526,11 +564,7 @@ func (s *fileService) saveRandom(ctx context.Context, attr UploadAttribution, re
 		// Random keys collide with vanishing probability; treat any
 		// Create error as fatal and clean up the blob bytes.
 		_ = s.buckets.AddUsage(ctx, res.bucket.ID, -header.Size)
-		if s.blobs != nil {
-			if _, dropped, _ := s.blobs.Release(ctx, s.backendName, key); dropped {
-				_ = s.backend.Delete(ctx, key)
-			}
-		}
+		_, _, _ = s.blobs.Release(ctx, s.backendName, key)
 		return nil, err
 	}
 	return meta, nil
@@ -545,9 +579,9 @@ func (s *fileService) saveRandom(ctx context.Context, attr UploadAttribution, re
 //  2. Revives a soft-deleted row owned by this actor, by clearing
 //     `DeletedAt`, bumping `UpdatedAt`, refreshing `ExpiresAt`
 //     against the bucket's TTL, debiting the bucket usage, and
-//     incrementing the blob's `RefCount` via `Touch`. Bytes are
+//     committing a reference to the current live generation. Bytes are
 //     already on disk; we do not re-`backend.Save`.
-//  3. Performs a fresh upload: backend.Save, blobRepo.Touch,
+//  3. Performs a fresh upload: stage generation, backend.Save, commit reference,
 //     bucket.AddUsage, repo.Create. On any failure after Save we
 //     compensate by Release+AddUsage(-) so partial state never
 //     ships.
@@ -583,33 +617,17 @@ func (s *fileService) saveCAS(ctx context.Context, attr UploadAttribution, res *
 	// the row regardless of DeletedAt; we branch on the column to
 	// pick the revival path vs the fresh-upload path.
 	if maybeDeleted, err := s.repo.FindByOwnerKeyIncludeDeleted(ctx, attr.ActorPTID, key); err == nil && maybeDeleted != nil && maybeDeleted.Key == key && maybeDeleted.DeletedAt != nil {
-		return s.reviveCASRow(ctx, res, attr, maybeDeleted)
+		return s.reviveCASRowFromUpload(ctx, res, attr, maybeDeleted, file)
 	}
 
 	if err := s.buckets.AddUsage(ctx, res.bucket.ID, header.Size); err != nil {
 		return nil, err
 	}
 
-	if _, err := file.Seek(0, io.SeekStart); err != nil {
-		_ = s.buckets.AddUsage(ctx, res.bucket.ID, -header.Size)
-		return nil, err
-	}
-	fullPath, err := s.backend.Save(ctx, key, file)
+	fullPath, _, err := s.writeBlob(ctx, key, header.Size, sum, file, file)
 	if err != nil {
 		_ = s.buckets.AddUsage(ctx, res.bucket.ID, -header.Size)
 		return nil, err
-	}
-
-	// Bytes are now on disk; the blob is "live" from the storage
-	// backend's POV. Bump the refcount BEFORE inserting the meta
-	// row so a crash between Save and Create still leaves the blob
-	// observable to the reconciler.
-	if s.blobs != nil {
-		if _, terr := s.blobs.Touch(ctx, s.backendName, key, header.Size, sum); terr != nil {
-			_ = s.buckets.AddUsage(ctx, res.bucket.ID, -header.Size)
-			_ = s.backend.Delete(ctx, key)
-			return nil, terr
-		}
 	}
 
 	id, _ := touchutil.RandomString(16)
@@ -652,7 +670,7 @@ func (s *fileService) saveCAS(ctx context.Context, attr UploadAttribution, res *
 //
 //  1. Re-debit the bucket usage — we credited it on the matching
 //     DELETE, so a fresh upload of the same bytes counts again.
-//  2. Re-bump the blob ref_count via Touch — same observation as
+//  2. Re-bump the blob ref_count through a generation commit — same observation as
 //     (1) but for the physical-blob counter.
 //  3. Clear `DeletedAt` and refresh `ExpiresAt` against the
 //     current bucket TTL.
@@ -663,20 +681,41 @@ func (s *fileService) reviveCASRow(ctx context.Context, res *resolved, attr Uplo
 	if err := s.buckets.AddUsage(ctx, res.bucket.ID, row.Size); err != nil {
 		return nil, err
 	}
-	if s.blobs != nil {
-		if _, terr := s.blobs.Touch(ctx, s.backendName, row.Key, row.Size, row.Sha256); terr != nil {
-			_ = s.buckets.AddUsage(ctx, res.bucket.ID, -row.Size)
-			return nil, terr
-		}
+	if _, err := s.attachBlob(ctx, row.Key, row.Size, row.Sha256); err != nil {
+		_ = s.buckets.AddUsage(ctx, res.bucket.ID, -row.Size)
+		return nil, err
 	}
+	return s.finishCASRevival(ctx, res, attr, row)
+}
+
+func (s *fileService) reviveCASRowFromUpload(
+	ctx context.Context,
+	res *resolved,
+	attr UploadAttribution,
+	row *ossmodel.FileMeta,
+	file multipart.File,
+) (*ossmodel.FileMeta, error) {
+	if err := s.buckets.AddUsage(ctx, res.bucket.ID, row.Size); err != nil {
+		return nil, err
+	}
+	if _, _, err := s.writeBlob(ctx, row.Key, row.Size, row.Sha256, file, file); err != nil {
+		_ = s.buckets.AddUsage(ctx, res.bucket.ID, -row.Size)
+		return nil, err
+	}
+	return s.finishCASRevival(ctx, res, attr, row)
+}
+
+func (s *fileService) finishCASRevival(
+	ctx context.Context,
+	res *resolved,
+	attr UploadAttribution,
+	row *ossmodel.FileMeta,
+) (*ossmodel.FileMeta, error) {
 	now := s.clock()
 	expiry := defaultExpiresAt(now, res.bucket)
 	if err := s.repo.Restore(ctx, row.ID, now, expiry); err != nil {
-		// Best-effort compensation. If Touch already incremented the
-		// counter we leave it — the reconciler will catch any drift,
-		// and the worst case is one extra ref that the next DELETE
-		// will release.
 		_ = s.buckets.AddUsage(ctx, res.bucket.ID, -row.Size)
+		_, _, _ = s.blobs.Release(ctx, s.backendName, row.Key)
 		return nil, err
 	}
 	// Re-read so the caller sees the post-restore row state.
@@ -696,9 +735,51 @@ func (s *fileService) reviveCASRow(ctx context.Context, res *resolved, attr Uplo
 // reconciler will reconcile any drift.
 func (s *fileService) compensateAfterCreateFail(ctx context.Context, bucketID, key string, size int64) {
 	_ = s.buckets.AddUsage(ctx, bucketID, -size)
-	if s.blobs != nil {
-		_, _, _ = s.blobs.Release(ctx, s.backendName, key)
+	_, _, _ = s.blobs.Release(ctx, s.backendName, key)
+}
+
+func (s *fileService) registerStagedBlob(
+	ctx context.Context,
+	res *resolved,
+	attr UploadAttribution,
+	write ossrepo.BlobWrite,
+	filename string,
+	contentType string,
+	path string,
+) (*ossmodel.FileMeta, error) {
+	if err := s.buckets.AddUsage(ctx, res.bucket.ID, write.Size); err != nil {
+		return nil, err
 	}
+	if _, err := s.blobs.CommitWrite(ctx, write); err != nil {
+		_ = s.buckets.AddUsage(ctx, res.bucket.ID, -write.Size)
+		return nil, err
+	}
+	id, _ := touchutil.RandomString(16)
+	now := s.clock()
+	meta := &ossmodel.FileMeta{
+		ID:            id,
+		Key:           write.Key,
+		Name:          filename,
+		Size:          write.Size,
+		Mime:          contentType,
+		Backend:       s.backendName,
+		Path:          path,
+		Sha256:        write.Sha256,
+		BucketID:      res.bucket.ID,
+		OwnerPTID:     attr.ActorPTID,
+		Visibility:    res.visibility,
+		ChatSessionID: chatSessionForVisibility(attr.ChatSessionID, res.visibility),
+		ExpiresAt:     defaultExpiresAt(now, res.bucket),
+		CreatedAt:     now,
+	}
+	if err := s.repo.Create(ctx, meta); err != nil {
+		s.compensateAfterCreateFail(ctx, res.bucket.ID, write.Key, write.Size)
+		if existing, findErr := s.repo.FindByOwnerKey(ctx, attr.ActorPTID, write.Key); findErr == nil && existing != nil {
+			return existing, nil
+		}
+		return nil, err
+	}
+	return meta, nil
 }
 
 // defaultExpiresAt returns now + bucket.TTLDays × 24h, or nil when
@@ -808,10 +889,12 @@ func (s *fileService) PrepareUpload(ctx context.Context, presigner storage.Presi
 		// requiring the client to re-PUT.
 		if maybeDeleted, err := s.repo.FindByOwnerKeyIncludeDeleted(ctx, attr.ActorPTID, key); err == nil && maybeDeleted != nil && maybeDeleted.Key == key && maybeDeleted.DeletedAt != nil {
 			revived, rerr := s.reviveCASRow(ctx, res, attr, maybeDeleted)
-			if rerr != nil {
+			if rerr == nil {
+				return PrepareUploadResult{Meta: revived, AlreadyUploaded: true}, nil
+			}
+			if !errors.Is(rerr, ErrBlobBytesRequired) {
 				return PrepareUploadResult{}, rerr
 			}
-			return PrepareUploadResult{Meta: revived, AlreadyUploaded: true}, nil
 		}
 	} else {
 		rnd, _ := touchutil.RandomString(16)
@@ -819,7 +902,27 @@ func (s *fileService) PrepareUpload(ctx context.Context, presigner storage.Presi
 		key = day + "/" + rnd + ext
 	}
 
-	pr, err := presigner.PresignPut(ctx, key, contentType, req.Size, req.Sha256, ttl)
+	write, err := s.blobs.StageWrite(ctx, s.backendName, key, req.Size, req.Sha256)
+	if err != nil {
+		return PrepareUploadResult{}, err
+	}
+	if !write.RequiresWrite {
+		meta, err := s.registerStagedBlob(
+			ctx,
+			res,
+			attr,
+			*write,
+			req.Filename,
+			contentType,
+			"",
+		)
+		if err != nil {
+			return PrepareUploadResult{}, err
+		}
+		return PrepareUploadResult{Meta: meta, AlreadyUploaded: true}, nil
+	}
+
+	pr, err := presigner.PresignPut(ctx, write.StorageKey, contentType, req.Size, req.Sha256, ttl)
 	if err != nil {
 		return PrepareUploadResult{}, fmt.Errorf("oss: presign put: %w", err)
 	}
@@ -858,6 +961,9 @@ func (s *fileService) CompleteUpload(ctx context.Context, presigner storage.Pres
 	if strings.TrimSpace(req.Key) == "" {
 		return nil, errors.New("oss: key is required for upload-complete")
 	}
+	if req.Size <= 0 {
+		return nil, errors.New("oss: size is required for upload-complete")
+	}
 
 	res, err := s.resolveAttribution(ctx, attr)
 	if err != nil {
@@ -867,15 +973,17 @@ func (s *fileService) CompleteUpload(ctx context.Context, presigner storage.Pres
 	if existing, err := s.repo.FindByOwnerKey(ctx, attr.ActorPTID, req.Key); err == nil && existing != nil && existing.Key == req.Key {
 		return existing, nil
 	}
-	// Tiny-race revival: a Delete may have raced between Prepare
-	// and Complete and soft-deleted the row we'd otherwise return.
-	// The bytes are still on disk, so revive symmetrically with
-	// the multipart `saveCAS` path.
-	if maybeDeleted, err := s.repo.FindByOwnerKeyIncludeDeleted(ctx, attr.ActorPTID, req.Key); err == nil && maybeDeleted != nil && maybeDeleted.Key == req.Key && maybeDeleted.DeletedAt != nil {
-		return s.reviveCASRow(ctx, res, attr, maybeDeleted)
+	write, err := s.blobs.StageWrite(
+		ctx,
+		s.backendName,
+		req.Key,
+		req.Size,
+		req.Sha256,
+	)
+	if err != nil {
+		return nil, err
 	}
-
-	head, err := presigner.HeadObject(ctx, req.Key)
+	head, err := presigner.HeadObject(ctx, write.StorageKey)
 	if err != nil {
 		return nil, fmt.Errorf("oss: head after presigned put: %w", err)
 	}
@@ -903,46 +1011,30 @@ func (s *fileService) CompleteUpload(ctx context.Context, presigner storage.Pres
 		return nil, fmt.Errorf("%w: %s", ErrMimeBlocked, mt)
 	}
 
-	if err := s.buckets.AddUsage(ctx, res.bucket.ID, head.Size); err != nil {
-		return nil, err
-	}
-
-	if s.blobs != nil {
-		if _, terr := s.blobs.Touch(ctx, s.backendName, req.Key, head.Size, req.Sha256); terr != nil {
-			_ = s.buckets.AddUsage(ctx, res.bucket.ID, -head.Size)
-			return nil, terr
+	write.Size = head.Size
+	if deleted, findErr := s.repo.FindByOwnerKeyIncludeDeleted(
+		ctx,
+		attr.ActorPTID,
+		req.Key,
+	); findErr == nil && deleted != nil && deleted.DeletedAt != nil {
+		if err := s.buckets.AddUsage(ctx, res.bucket.ID, write.Size); err != nil {
+			return nil, err
 		}
-	}
-
-	id, _ := touchutil.RandomString(16)
-	now := s.clock()
-	meta := &ossmodel.FileMeta{
-		ID:            id,
-		Key:           req.Key,
-		Name:          req.Filename,
-		Size:          head.Size,
-		Mime:          mt,
-		Backend:       s.backendName,
-		Path:          "", // S3 has no filesystem path; key is authoritative.
-		Sha256:        req.Sha256,
-		BucketID:      res.bucket.ID,
-		OwnerPTID:     attr.ActorPTID,
-		Visibility:    res.visibility,
-		ChatSessionID: chatSessionForVisibility(attr.ChatSessionID, res.visibility),
-		ExpiresAt:     defaultExpiresAt(now, res.bucket),
-		CreatedAt:     now,
-	}
-	if err := s.repo.Create(ctx, meta); err != nil {
-		// Concurrent winner of the same (actor, key) — return their
-		// row and roll back the usage we just debited + the blob
-		// refcount we bumped.
-		s.compensateAfterCreateFail(ctx, res.bucket.ID, req.Key, head.Size)
-		if existing, err2 := s.repo.FindByOwnerKey(ctx, attr.ActorPTID, req.Key); err2 == nil && existing != nil && existing.Key == req.Key {
-			return existing, nil
+		if _, err := s.blobs.CommitWrite(ctx, *write); err != nil {
+			_ = s.buckets.AddUsage(ctx, res.bucket.ID, -write.Size)
+			return nil, err
 		}
-		return nil, err
+		return s.finishCASRevival(ctx, res, attr, deleted)
 	}
-	return meta, nil
+	return s.registerStagedBlob(
+		ctx,
+		res,
+		attr,
+		*write,
+		req.Filename,
+		mt,
+		"",
+	)
 }
 
 func (s *fileService) GetFileMeta(ctx context.Context, key string) (*ossmodel.FileMeta, error) {
@@ -975,7 +1067,11 @@ func (s *fileService) ReadOwnedFile(
 		return nil, nil, ossrepo.ErrQuotaExceeded
 	}
 
-	reader, _, _, err := s.backend.Open(ctx, key, nil)
+	storageKey, err := s.blobs.ResolveStorageKey(ctx, meta.Backend, key)
+	if err != nil {
+		return nil, nil, err
+	}
+	reader, _, _, err := s.backend.Open(ctx, storageKey, nil)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1101,11 +1197,9 @@ func (s *fileService) RestoreFile(ctx context.Context, ownerPTID, key string, gr
 	}
 
 	// Step 2: bump blob refcount. Compensate usage on failure.
-	if s.blobs != nil {
-		if _, terr := s.blobs.Touch(ctx, s.backendName, row.Key, row.Size, row.Sha256); terr != nil {
-			_ = s.buckets.AddUsage(ctx, row.BucketID, -row.Size)
-			return nil, terr
-		}
+	if _, err := s.attachBlob(ctx, row.Key, row.Size, row.Sha256); err != nil {
+		_ = s.buckets.AddUsage(ctx, row.BucketID, -row.Size)
+		return nil, err
 	}
 
 	// Step 3: clear deleted_at + refresh expires_at. Compensate

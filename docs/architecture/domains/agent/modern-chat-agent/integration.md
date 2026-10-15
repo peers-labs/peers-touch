@@ -62,7 +62,7 @@ Downstream consumers:
 | `application/agent_orchestration/` | Agent Canvas bridge, downstream of the single-Agent kernel |
 | `interface/http_gateway/` | Browser gateway to the same Station business contracts |
 | `domain/actor_device_identity.rs` | Existing actor/device Ed25519 identity used to sign terminal recovery proof |
-| `infrastructure/station_client.rs` | Typed per-device protobuf transport for lease and receipt APIs |
+| `application/station_runtime/client.rs` | Typed per-device protobuf transport for lease and receipt APIs |
 
 ### Desktop Web
 

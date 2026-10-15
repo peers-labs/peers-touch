@@ -32,7 +32,7 @@ pub fn agent_execute_turn(
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
     let actor_ptid = session_resolver::ptid_for_window(state.inner(), &window).unwrap_or_default();
-    application_agent_turn::agent_execute_turn(input, &token, &actor_ptid)
+    application_agent_turn::agent_execute_turn(state.station.client(), input, &token, &actor_ptid)
 }
 
 #[tauri::command]
@@ -61,8 +61,10 @@ pub fn agent_execute_turn_stream(
     let cancellation =
         application_agent_turn::register_agent_turn_live_stream(&window_label, &ptid, &stream_id);
     let stream_id_for_task = stream_id.clone();
+    let station_client = state.station.client().clone();
     tauri::async_runtime::spawn_blocking(move || {
         application_agent_turn::agent_execute_turn_stream(
+            &station_client,
             app,
             stream_id_for_task.clone(),
             input,
@@ -116,7 +118,7 @@ pub fn agent_cancel_turn(
     window: Window,
 ) -> AppResult<StubPayload> {
     let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
-    application_agent_turn::cancel_agent_turn(&input.turn_id, &token)
+    application_agent_turn::cancel_agent_turn(state.station.client(), &input.turn_id, &token)
 }
 
 #[tauri::command]
@@ -150,8 +152,10 @@ pub fn agent_replay_turn_stream(
     let cancellation =
         application_agent_turn::register_agent_turn_replay_stream(&window_label, &ptid, &stream_id);
     let stream_id_for_task = stream_id.clone();
+    let station_client = state.station.client().clone();
     tauri::async_runtime::spawn(async move {
         application_agent_turn::agent_replay_turn_stream(
+            &station_client,
             app,
             window_label,
             stream_id_for_task,
@@ -194,7 +198,7 @@ pub fn agent_turn_queue_list(
     window: Window,
 ) -> AppResult<StubPayload> {
     let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
-    application_agent_turn::agent_turn_queue_list(input, &token)
+    application_agent_turn::agent_turn_queue_list(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -204,7 +208,7 @@ pub fn agent_turn_queue_cancel(
     window: Window,
 ) -> AppResult<StubPayload> {
     let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
-    application_agent_turn::agent_turn_queue_cancel(input, &token)
+    application_agent_turn::agent_turn_queue_cancel(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -217,7 +221,7 @@ pub fn agent_turn_trace_list(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    application_agent_turn::agent_turn_trace_list(input, &token)
+    application_agent_turn::agent_turn_trace_list(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -230,7 +234,7 @@ pub fn agent_turn_trace_get(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    application_agent_turn::agent_turn_trace_get(input, &token)
+    application_agent_turn::agent_turn_trace_get(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -243,7 +247,7 @@ pub fn agent_turn_diagnostics_export(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    application_agent_turn::agent_turn_diagnostics_export(input, &token)
+    application_agent_turn::agent_turn_diagnostics_export(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -257,10 +261,11 @@ pub async fn agent_submit_tool_decision(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
+    let station_client = state.station.client().clone();
     run_blocking_agent_command(
         "agent_submit_tool_decision",
         "agent.toolDecisionTaskFailed",
-        move || application_agent_turn::submit_tool_decision(input, &token),
+        move || application_agent_turn::submit_tool_decision(&station_client, input, &token),
     )
     .await
 }
@@ -275,7 +280,7 @@ pub fn agent_conversation_list(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    application_agent_turn::agent_conversation_list(input, &token)
+    application_agent_turn::agent_conversation_list(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -288,7 +293,7 @@ pub fn agent_conversation_get(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    application_agent_turn::agent_conversation_get(input, &token)
+    application_agent_turn::agent_conversation_get(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -301,7 +306,7 @@ pub fn agent_conversation_create(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    application_agent_turn::agent_conversation_create(input, &token)
+    application_agent_turn::agent_conversation_create(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -314,7 +319,7 @@ pub fn agent_conversation_messages(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    application_agent_turn::agent_conversation_messages(input, &token)
+    application_agent_turn::agent_conversation_messages(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -327,7 +332,7 @@ pub fn agent_conversation_update(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    application_agent_turn::agent_conversation_update(input, &token)
+    application_agent_turn::agent_conversation_update(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -340,7 +345,7 @@ pub fn agent_conversation_archive(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    application_agent_turn::agent_conversation_archive(input, &token)
+    application_agent_turn::agent_conversation_archive(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -353,7 +358,7 @@ pub fn agent_conversation_restore(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    application_agent_turn::agent_conversation_restore(input, &token)
+    application_agent_turn::agent_conversation_restore(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -366,7 +371,7 @@ pub fn agent_conversation_runtime_reset(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    application_agent_turn::agent_conversation_runtime_reset(input, &token)
+    application_agent_turn::agent_conversation_runtime_reset(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -377,8 +382,9 @@ pub async fn agent_retry_turn(
 ) -> AppResult<StubPayload> {
     let state: Arc<AppState> = app.state::<Arc<AppState>>().inner().clone();
     let token = session_resolver::token_for_window(&state, &window).unwrap_or_default();
+    let station_client = state.station.client().clone();
     run_revision_command("agent_retry_turn", move || {
-        application_agent_turn::agent_retry_turn(input, &token)
+        application_agent_turn::agent_retry_turn(&station_client, input, &token)
     })
     .await
 }
@@ -391,8 +397,9 @@ pub async fn agent_regenerate_turn(
 ) -> AppResult<StubPayload> {
     let state: Arc<AppState> = app.state::<Arc<AppState>>().inner().clone();
     let token = session_resolver::token_for_window(&state, &window).unwrap_or_default();
+    let station_client = state.station.client().clone();
     run_revision_command("agent_regenerate_turn", move || {
-        application_agent_turn::agent_regenerate_turn(input, &token)
+        application_agent_turn::agent_regenerate_turn(&station_client, input, &token)
     })
     .await
 }
@@ -405,8 +412,9 @@ pub async fn agent_edit_and_resend(
 ) -> AppResult<StubPayload> {
     let state: Arc<AppState> = app.state::<Arc<AppState>>().inner().clone();
     let token = session_resolver::token_for_window(&state, &window).unwrap_or_default();
+    let station_client = state.station.client().clone();
     run_revision_command("agent_edit_and_resend", move || {
-        application_agent_turn::agent_edit_and_resend(input, &token)
+        application_agent_turn::agent_edit_and_resend(&station_client, input, &token)
     })
     .await
 }
@@ -446,7 +454,7 @@ pub fn agent_select_active_branch(
     window: Window,
 ) -> AppResult<StubPayload> {
     let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
-    application_agent_turn::agent_select_active_branch(input, &token)
+    application_agent_turn::agent_select_active_branch(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -456,7 +464,7 @@ pub fn agent_tombstone_message(
     window: Window,
 ) -> AppResult<StubPayload> {
     let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
-    application_agent_turn::agent_tombstone_message(input, &token)
+    application_agent_turn::agent_tombstone_message(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -469,7 +477,7 @@ pub fn agent_thread_create(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    application_agent_turn::agent_thread_create(input, &token)
+    application_agent_turn::agent_thread_create(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -482,7 +490,7 @@ pub fn agent_thread_list(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    application_agent_turn::agent_thread_list(input, &token)
+    application_agent_turn::agent_thread_list(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -495,7 +503,7 @@ pub fn agent_thread_messages(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    application_agent_turn::agent_thread_messages(input, &token)
+    application_agent_turn::agent_thread_messages(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -508,7 +516,7 @@ pub fn agent_group_create(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    application_agent_turn::agent_group_create(input, &token)
+    application_agent_turn::agent_group_create(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -521,7 +529,7 @@ pub fn agent_group_update(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    application_agent_turn::agent_group_update(input, &token)
+    application_agent_turn::agent_group_update(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -534,7 +542,7 @@ pub fn agent_group_delete(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    application_agent_turn::agent_group_delete(input, &token)
+    application_agent_turn::agent_group_delete(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -543,7 +551,7 @@ pub fn agent_group_list(state: State<'_, Arc<AppState>>, window: Window) -> AppR
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    application_agent_turn::agent_group_list(&token)
+    application_agent_turn::agent_group_list(state.station.client(), &token)
 }
 
 #[tauri::command]
@@ -556,7 +564,7 @@ pub fn topic_comment_create(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    application_agent_turn::topic_comment_create(input, &token)
+    application_agent_turn::topic_comment_create(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -569,7 +577,7 @@ pub fn topic_comment_delete(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    application_agent_turn::topic_comment_delete(input, &token)
+    application_agent_turn::topic_comment_delete(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -582,7 +590,7 @@ pub fn topic_comment_list(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    application_agent_turn::topic_comment_list(input, &token)
+    application_agent_turn::topic_comment_list(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -595,7 +603,7 @@ pub fn agent_task_create(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    application_agent_turn::agent_task_create(input, &token)
+    application_agent_turn::agent_task_create(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -608,7 +616,7 @@ pub fn agent_task_list(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    application_agent_turn::agent_task_list(input, &token)
+    application_agent_turn::agent_task_list(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -621,7 +629,7 @@ pub fn agent_task_status(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    application_agent_turn::agent_task_status(input, &token)
+    application_agent_turn::agent_task_status(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -634,7 +642,7 @@ pub fn agent_task_delete(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    application_agent_turn::agent_task_delete(input, &token)
+    application_agent_turn::agent_task_delete(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -647,7 +655,7 @@ pub fn agent_task_subtask_add(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    application_agent_turn::agent_task_subtask_add(input, &token)
+    application_agent_turn::agent_task_subtask_add(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -660,7 +668,7 @@ pub fn agent_task_subtask_complete(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    application_agent_turn::agent_task_subtask_complete(input, &token)
+    application_agent_turn::agent_task_subtask_complete(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -673,5 +681,5 @@ pub fn agent_message_translate(
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    application_agent_turn::agent_message_translate(input, &token)
+    application_agent_turn::agent_message_translate(state.station.client(), input, &token)
 }

@@ -227,28 +227,28 @@ func MapError(err error) error {
 	}
 
 	message := fmt.Sprintf("[%s] %s", typed.Code, publicErrorMessage(typed.Code))
+	status := nethttp.StatusInternalServerError
 	switch typed.Code {
 	case domain.ErrorCodeInvalidArgument:
-		return server.NewHandlerErrorWithCause(nethttp.StatusBadRequest, message, err)
+		status = nethttp.StatusBadRequest
 	case domain.ErrorCodeUnauthorized:
-		return server.NewHandlerErrorWithCause(nethttp.StatusUnauthorized, message, err)
+		status = nethttp.StatusUnauthorized
 	case domain.ErrorCodeInvalidProof:
-		return server.NewHandlerErrorWithCause(nethttp.StatusForbidden, message, err)
+		status = nethttp.StatusForbidden
 	case domain.ErrorCodeDeviceNotFound:
-		return server.NewHandlerErrorWithCause(nethttp.StatusNotFound, message, err)
+		status = nethttp.StatusNotFound
 	case domain.ErrorCodeIdentityConflict,
 		domain.ErrorCodeDeviceConflict,
 		domain.ErrorCodeStaleProfileVersion,
 		domain.ErrorCodeFutureProfileVersion,
 		domain.ErrorCodeDeviceRevoked:
-		return server.NewHandlerErrorWithCause(nethttp.StatusConflict, message, err)
-	default:
-		return server.NewHandlerErrorWithCause(
-			nethttp.StatusInternalServerError,
-			message,
-			err,
-		)
+		status = nethttp.StatusConflict
 	}
+	mapped := server.NewHandlerErrorWithCause(status, message, err)
+	mapped.Headers = map[string]string{
+		"X-Peers-Error-Code": string(typed.Code),
+	}
+	return mapped
 }
 
 func mapDeviceStatus(status domain.DeviceStatus) actormodel.ActorDeviceStatus {

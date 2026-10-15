@@ -16,8 +16,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/libp2p/go-libp2p/core/crypto"
-	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/peers-labs/peers-touch/station/frame/core/facility/session"
 	"github.com/peers-labs/peers-touch/station/frame/core/types"
 	authpb "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	accesspb "github.com/peers-labs/peers-touch/station/frame/touch/model/accessgate"
@@ -26,16 +25,13 @@ import (
 )
 
 const (
-	protobufContentType   = "application/protobuf"
-	stationIdentityDomain = "peers-touch/station-identity/v1\x00"
-	maxClockSkew          = 30 * time.Second
-	maxIdentityLifetime   = time.Minute
+	protobufContentType = "application/protobuf"
 )
 
-var requiredCapabilities = map[string]bool{
-	"access-gate":      true,
-	"actor-ptid":       true,
-	"station-identity": true,
+var requiredCapabilities = []string{
+	"access-gate",
+	"actor-ptid",
+	"station-identity",
 }
 
 type loginOutput struct {
@@ -83,7 +79,7 @@ func login(station, email, password string) (*loginOutput, error) {
 			StationUrl:    origin,
 			StationPeerId: stationPeerID,
 			Client: &accesspb.AccessGateClientInfo{
-				Platform:            "testnet-federation-e2e",
+				Platform:            string(session.DeviceTypeDesktop),
 				AppVersion:          "1",
 				DeviceId:            deviceID,
 				Locale:              "en",
@@ -111,7 +107,7 @@ func login(station, email, password string) (*loginOutput, error) {
 			AttemptId:           decision.GetAttemptId(),
 			GateId:              gate.GetGateId(),
 			Type:                accesspb.AccessGateType_ACCESS_GATE_TYPE_AUTH_LOGIN,
-			ActionInput:         &accesspb.SubmitAccessGateRequest_Login{Login: &authpb.LoginRequest{Email: email, Password: password, DeviceType: "testnet-federation"}},
+			ActionInput:         &accesspb.SubmitAccessGateRequest_Login{Login: &authpb.LoginRequest{Email: email, Password: password, DeviceType: string(session.DeviceTypeDesktop)}},
 			ActionId:            gate.GetActionId(),
 			StationPeerId:       stationPeerID,
 			DeviceId:            deviceID,
@@ -150,53 +146,17 @@ func verifyStationIdentity(origin string) (string, error) {
 	); err != nil {
 		return "", fmt.Errorf("read Station identity: %w", err)
 	}
-	statement := &peerpb.StationIdentityStatement{}
-	if err := proto.Unmarshal(response.GetStatementBytes(), statement); err != nil {
-		return "", fmt.Errorf("decode Station identity statement: %w", err)
-	}
-	if !bytes.Equal(statement.GetChallenge(), challenge) {
-		return "", errors.New("Station identity challenge mismatch")
-	}
-	if statement.GetCanonicalOrigin() != origin {
-		return "", fmt.Errorf(
-			"Station identity origin mismatch: got %q want %q",
-			statement.GetCanonicalOrigin(),
-			origin,
-		)
-	}
-	now := time.Now().UnixMilli()
-	if statement.GetIssuedAtUnixMs() > now+maxClockSkew.Milliseconds() ||
-		statement.GetExpiresAtUnixMs() < now-maxClockSkew.Milliseconds() ||
-		statement.GetExpiresAtUnixMs()-statement.GetIssuedAtUnixMs() > maxIdentityLifetime.Milliseconds() {
-		return "", errors.New("Station identity validity window is invalid")
-	}
-	capabilities := make(map[string]bool, len(statement.GetCapabilities()))
-	for _, capability := range statement.GetCapabilities() {
-		capabilities[capability] = true
-	}
-	for capability := range requiredCapabilities {
-		if !capabilities[capability] {
-			return "", fmt.Errorf("Station identity is missing capability %q", capability)
-		}
-	}
-
-	publicKey, err := crypto.UnmarshalPublicKey(response.GetHostPublicKey())
+	verified, err := peerpb.VerifyStationIdentityResponse(
+		response,
+		challenge,
+		origin,
+		requiredCapabilities,
+		time.Now().UTC(),
+	)
 	if err != nil {
-		return "", fmt.Errorf("decode Station public key: %w", err)
+		return "", fmt.Errorf("verify Station identity response: %w", err)
 	}
-	derivedPeerID, err := peer.IDFromPublicKey(publicKey)
-	if err != nil {
-		return "", fmt.Errorf("derive Station peer ID: %w", err)
-	}
-	if derivedPeerID.String() != statement.GetStationPeerId() {
-		return "", errors.New("Station identity peer ID does not match the signing key")
-	}
-	signingBytes := append([]byte(stationIdentityDomain), response.GetStatementBytes()...)
-	verified, err := publicKey.Verify(signingBytes, response.GetSignature())
-	if err != nil || !verified {
-		return "", errors.New("Station identity signature verification failed")
-	}
-	return statement.GetStationPeerId(), nil
+	return verified.Statement.GetStationPeerId(), nil
 }
 
 func currentLoginGate(decision *accesspb.AccessDecision) *accesspb.AccessGate {

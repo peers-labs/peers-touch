@@ -1,4 +1,4 @@
-use crate::infrastructure::station_client::{self, StationClientErrorKind};
+use crate::application::station_runtime::client::{StationClient, StationClientErrorKind};
 use messaging_core::proto::actor::ActorDeviceRef;
 use messaging_core::proto::actor_device_ptid;
 use messaging_core::proto::key_exchange::{
@@ -14,16 +14,25 @@ pub use messaging_core::crypto::prekeys::{
 };
 
 pub struct StationPreKeyTransport {
+    station_client: StationClient,
     token: String,
     device_id: String,
 }
 
 impl StationPreKeyTransport {
-    pub fn new(token: String, device_id: String) -> Result<Self, String> {
+    pub fn new(
+        station_client: StationClient,
+        token: String,
+        device_id: String,
+    ) -> Result<Self, String> {
         if token.trim().is_empty() || device_id.trim().is_empty() {
             return Err("messaging prekey transport requires token and device ID".to_string());
         }
-        Ok(Self { token, device_id })
+        Ok(Self {
+            station_client,
+            token,
+            device_id,
+        })
     }
 }
 
@@ -37,7 +46,7 @@ impl PreKeyTransport for StationPreKeyTransport {
         if device.device_id != self.device_id {
             return Err("messaging prekey upload endpoint mismatch".to_string());
         }
-        station_client::request_proto_for_device::<
+        self.station_client.request_proto_for_device::<
             UploadDirectKeyBundleRequest,
             UploadDirectKeyBundleResponse,
         >(
@@ -59,7 +68,7 @@ impl PreKeyInventoryTransport for StationPreKeyTransport {
         request: &CountDirectOneTimePreKeysRequest,
     ) -> Result<RemotePreKeyInventory, String> {
         validate_request_device(request.device.as_ref(), &self.device_id)?;
-        match station_client::request_proto_for_device::<
+        match self.station_client.request_proto_for_device::<
             CountDirectOneTimePreKeysRequest,
             CountDirectOneTimePreKeysResponse,
         >(
@@ -83,7 +92,7 @@ impl PreKeyInventoryTransport for StationPreKeyTransport {
         request: &ReplenishDirectOneTimePreKeysRequest,
     ) -> Result<PreKeyReplenishOutcome, String> {
         validate_request_device(request.device.as_ref(), &self.device_id)?;
-        match station_client::request_proto_for_device::<
+        match self.station_client.request_proto_for_device::<
             ReplenishDirectOneTimePreKeysRequest,
             ReplenishDirectOneTimePreKeysResponse,
         >(

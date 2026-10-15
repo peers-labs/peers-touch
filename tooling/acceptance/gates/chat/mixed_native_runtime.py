@@ -1502,7 +1502,7 @@ class MixedNativeRuntime:
         )
         if (
             bound_station.get("phase") != "bound"
-            or str(bound_station.get("bound_url") or "").rstrip("/")
+            or str(bound_station.get("activeUrl") or "").rstrip("/")
             != station_url
         ):
             raise GateError(

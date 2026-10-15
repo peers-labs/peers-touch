@@ -28,9 +28,9 @@ const (
 //   - ActorLocatorRecord (locator.proto) is the *pointer* — it lives in the
 //     DHT under "/pst-actor/<handle>" and answers "which station is
 //     authoritative for this handle?".
-//   - ActorProfileEnvelope is the *content* — it travels point-to-point
-//     over a scoped opaque Relay tunnel and answers "what does this actor look like
-//     right now?".
+//   - ActorProfileEnvelope is the *content* — it travels point-to-point over
+//     the verified Direct/Circuit Node Connectivity route and answers "what
+//     does this actor look like right now?".
 //
 // Receivers verify the envelope's `signature` against `signing_key_pem`
 // using the same canonical-deterministic-protobuf scheme as locator

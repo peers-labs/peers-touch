@@ -1,8 +1,8 @@
 # Station 统一接入生命周期
 
 > **Status**: active
-> **Version**: v2.0
-> **Created**: 2026-09-26 | **Updated**: 2026-10-06
+> **Version**: v2.4
+> **Created**: 2026-09-26 | **Updated**: 2026-10-13
 > **Owner**: Identity and Access
 > **Module**: `apps/desktop/`, `apps/mobile/`, `apps/station/frame/touch/`
 
@@ -20,14 +20,17 @@
 - protobuf Access Gate、Station/Actor/Device scope 与 Federation context；
 - 直连与 Relay 路由切换、恢复、撤销和双端一致验收；
 - 接入能力、owner 和双端 consumer 的正向完整性；
-- Desktop/Mobile 跨类别共存与同类别 Session 接管。
+- Desktop/Mobile 跨类别共存与同类别 Session 接管；
+- Relay service host 仅支持 Linux/POSIX，Windows 只作为客户端平台。
 
 本文档集不定义：
 
-- Federation Ledger、membership 与 Relay 内部传输实现，见
+- Federation Ledger 与 membership，见
   [Federation Domain](../../../domains/federation/README.md)；
+- Relay enrollment、signed route、运行角色与标准 Circuit，见
+  [Node Connectivity](../../runtime/node-connectivity/README.md)；
 - Chat、Social、Agent 等业务 API；
-- Relay invite、mount、证书或配额的普通客户端管理 UI；
+- Relay invite、node enrollment、证书或配额的普通客户端管理 UI；
 - Browser 客户端。
 
 ## 2. 背景
@@ -51,6 +54,12 @@
 7. 所有接入接口均由当前 capability registry 声明且拥有真实 consumer。
 8. 同一 actor 每个 canonical client class 只保留一个 active Session。
 9. Desktop 与 Mobile 以相同结果、错误、安全条件和持久状态验收。
+10. Relay 服务端实现、部署和 Acceptance 仅使用 Linux/POSIX runtime；Windows
+    Desktop 通过 Linux Relay 验收。
+11. Desktop binding 由 `AppState` 内唯一 coordinator 持有，并以不可变
+    `RouteLease` 驱动 transport；adapter 不反向修改 registry。
+12. Station-owned relative resource 以 `StationResourceRef` 绑定逻辑 scope；
+    active Direct/Relay origin 不进入资源身份或业务持久化。
 
 ## 4. 文档导航
 
@@ -67,22 +76,9 @@
 | [integration.md](./integration.md) | 当前实现证据、差距与切换策略 |
 | [station-access-gate-architecture.md](./station-access-gate-architecture.md) | Access Gate 链的早期架构输入 |
 | [station-access-gate-implementation-plan.md](./station-access-gate-implementation-plan.md) | Access Gate 实施记录 |
-| [execution-plans/20261006-unified-relay-station-access-v8/plan.md](./execution-plans/20261006-unified-relay-station-access-v8/plan.md) | 当前已批准的 Relay 执行 Plan |
-| [execution-plans/20261006-unified-relay-station-access-v7/plan.md](./execution-plans/20261006-unified-relay-station-access-v7/plan.md) | 已批准的 Plan Version；v7 补齐 SAL-REL-03 Dashboard source impact 的 formal Gate |
-| [execution-plans/20261006-unified-relay-station-access-v6/plan.md](./execution-plans/20261006-unified-relay-station-access-v6/plan.md) | 已由 v7 替换；缺少 SAL-REL-03 Dashboard unit/web formal Gate |
-| [execution-plans/20261006-unified-relay-station-access-v5/plan.md](./execution-plans/20261006-unified-relay-station-access-v5/plan.md) | 已由 v6 替换；缺少 SAL-REL-03 真实生产调用面与完整生成绑定写集 |
-| [execution-plans/20261006-unified-relay-station-access-v4/plan.md](./execution-plans/20261006-unified-relay-station-access-v4/plan.md) | 已取消；因 `ACCEPTANCE_PLAN_DRIFT` 被 v5 替换 |
-| [execution-plans/20261006-unified-relay-station-access-v3/plan.md](./execution-plans/20261006-unified-relay-station-access-v3/plan.md) | 已取消的 frozen v3；保留 sixwin exact-source Windows 编译与首次双角色运行快照 |
-| [execution-plans/20261006-unified-relay-station-access-v2/plan.md](./execution-plans/20261006-unified-relay-station-access-v2/plan.md) | 已取消的 frozen v2；保留首次 sixwin exact-source 构建快照 |
-| [execution-plans/20261006-unified-relay-station-access/plan.md](./execution-plans/20261006-unified-relay-station-access/plan.md) | 已取消的 frozen v1；保留历史快照，不再执行 |
-| [reviews/review-03-unified-relay-product-architecture.md](./reviews/review-03-unified-relay-product-architecture.md) | 产品与架构 findings-first review |
-| [reviews/review-04-unified-relay-plan-readiness.md](./reviews/review-04-unified-relay-plan-readiness.md) | Plan、安全与验收 readiness review |
-| [reviews/review-05-unified-relay-plan-v2.md](./reviews/review-05-unified-relay-plan-v2.md) | sixwin 执行范围修订与 v2 readiness review |
-| [reviews/review-06-unified-relay-plan-v3.md](./reviews/review-06-unified-relay-plan-v3.md) | Windows externalruntime 写集修订与 v3 readiness review |
-| [reviews/review-07-unified-relay-plan-v4.md](./reviews/review-07-unified-relay-plan-v4.md) | externalruntime formal Gate inventory 修订与 v4 readiness review |
-| [reviews/review-08-unified-relay-plan-v5.md](./reviews/review-08-unified-relay-plan-v5.md) | 当前 source impact formal Gate inventory 修订与 v5 readiness review |
-| [reviews/review-09-unified-relay-plan-v6.md](./reviews/review-09-unified-relay-plan-v6.md) | Dashboard operator 与完整生成绑定写集修订的 v6 review |
-| [reviews/review-10-unified-relay-plan-v7.md](./reviews/review-10-unified-relay-plan-v7.md) | Dashboard source impact formal Gate 修订的 v7 review |
+| [execution-plans/20261006-unified-relay-station-access-v9/plan.md](./execution-plans/20261006-unified-relay-station-access-v9/plan.md) | 当前 Relay 执行 Plan；Relay 服务宿主仅支持 Linux/POSIX |
+| [execution-plans/20261006-unified-relay-station-access-v8/plan.md](./execution-plans/20261006-unified-relay-station-access-v8/plan.md) | 已由 v9 替换；保留 Windows Relay 宿主范围的 frozen 历史快照 |
+| [Node Connectivity](../../runtime/node-connectivity/README.md) | 当前 Relay 协议、角色、宿主、路由与安全边界 |
 | [execution-plans/20260926-station-access-lifecycle/plan.md](./execution-plans/20260926-station-access-lifecycle/plan.md) | 已完成的绑定 Plan |
 | [execution-plans/20260929-desktop-oauth-preauth/plan.md](./execution-plans/20260929-desktop-oauth-preauth/plan.md) | Desktop OAuth 登录前回归修复 |
 | [../client/mobile/execution-plans/20261006-infra-chat-usability/plan.md](../../client/mobile/execution-plans/20261006-infra-chat-usability/plan.md) | Mobile Infra/Chat 可用性与 Session 类别矩阵 |
@@ -95,6 +91,7 @@
 - `docs/architecture/engineering/api-governance/`
 - `docs/architecture/domains/federation/`
 - `docs/architecture/domains/identity/`
+- `docs/architecture/platform/runtime/node-connectivity/`
 - `docs/architecture/platform/runtime/service-coordination.md`
 - `docs/client/desktop/identity-lifecycle.md`
 
@@ -105,6 +102,6 @@
 - Architecture：`accepted`
 - Lifecycle Plan：`completed`，3/3 Task 已关闭
 - Desktop OAuth 回归 Plan：`completed`，SAL-OAUTH-01 已关闭
-- Relay v8 Plan：Task 1-3 已关闭，Task 4 源码 checkpoint 已完成，运行态 Gate 待执行
+- Relay v9 Plan：Linux/POSIX Relay 收敛与运行态 Gate 待执行
 - Mobile Infra/Chat 可用性 Plan：按独立 Run 跟踪
 - `CCU-20260922`：保持 `completed`

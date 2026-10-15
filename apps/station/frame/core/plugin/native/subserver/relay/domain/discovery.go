@@ -1,29 +1,27 @@
 package domain
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"time"
 
 	peerpb "github.com/peers-labs/peers-touch/station/frame/touch/model/peer"
-	"google.golang.org/protobuf/proto"
 )
 
 const (
 	AccessEndpointDomain  = "peers-touch/access-endpoint/v1\x00"
-	StationRouteDomain    = "peers-touch/station-route/v1\x00"
-	ConnectionGrantDomain = "peers-touch/station-connection-grant/v1\x00"
+	StationRouteDomain    = peerpb.StationRouteDomain
+	ConnectionGrantDomain = peerpb.ConnectionGrantDomain
 
 	AccessProtocolVersion       = uint32(1)
 	DiscoveryChallengeSize      = 32
-	MaxRouteAttestationLifetime = 24 * time.Hour
-	MaxConnectionGrantLifetime  = 15 * time.Minute
-	MaxConnectionGrantUses      = uint32(32)
+	MaxRouteAttestationLifetime = peerpb.MaxRouteAttestationLifetime
+	MaxConnectionGrantLifetime  = peerpb.MaxConnectionGrantLifetime
+	MaxConnectionGrantUses      = peerpb.MaxConnectionGrantUses
 )
 
 type RouteRecord struct {
 	RouteID          string
 	StationPeerID    string
+	NodePeerID       string
 	RelayPeerID      string
 	RouteGeneration  uint64
 	Visibility       peerpb.StationRouteVisibility
@@ -40,15 +38,15 @@ type GrantRecord struct {
 	RouteGeneration uint64
 	MaxUses         uint32
 	RemainingUses   uint32
-	ReservedUses    uint32
 	ExpiresAt       time.Time
 }
 
-func DigestGrant(grant *peerpb.StationConnectionGrant) (string, error) {
-	raw, err := proto.MarshalOptions{Deterministic: true}.Marshal(grant)
-	if err != nil {
-		return "", err
-	}
-	sum := sha256.Sum256(raw)
-	return hex.EncodeToString(sum[:]), nil
+type GrantRedemptionRecord struct {
+	RedemptionID    string
+	GrantDigest     string
+	StationPeerID   string
+	SourcePeerID    string
+	RouteID         string
+	RouteGeneration uint64
+	ExpiresAt       time.Time
 }

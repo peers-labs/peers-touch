@@ -16,6 +16,8 @@ use std::io::Write;
 #[cfg(target_os = "windows")]
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::path::{Path, PathBuf};
+#[cfg(test)]
+use std::sync::{Mutex, MutexGuard, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[cfg(not(target_os = "windows"))]
@@ -123,6 +125,14 @@ pub enum StorageKind {
     Logs,
     Runtime,
     Temp,
+}
+
+#[cfg(test)]
+pub(crate) fn test_storage_env_lock() -> MutexGuard<'static, ()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 impl StorageKind {

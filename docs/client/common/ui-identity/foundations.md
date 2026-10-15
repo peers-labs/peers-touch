@@ -20,7 +20,20 @@ The UI must communicate those answers without making every screen look like a de
 
 ## 2. Style Thesis
 
-Peers Touch uses **Quiet Protocol Minimalism**.
+Peers Touch uses **Structured Expressive Minimalism**.
+
+- **Structured**: shared hierarchy, boundary ownership, action priority, trust
+  semantics, and accessibility remain invariant.
+- **Expressive**: each module declares a bounded visual signature rooted in
+  its product purpose.
+- **Minimal**: the interface removes competing structures without removing
+  useful information or module character.
+- **Trust-aware**: identity, source, audience, permission, and policy become
+  prominent only when they affect interpretation or action.
+
+**Quiet Protocol Minimalism** remains the default expression mode for dense,
+recurring workflows. Entry and milestone surfaces may use stronger expression
+only when it reinforces the product thesis and remains inside the same system.
 
 ### Quiet
 
@@ -65,6 +78,20 @@ Rules:
 - Station and protocol context explain content; they do not visually dominate it.
 - Agent, Applet, and automation affordances remain extension points unless the module contract explicitly activates them.
 
+### Expressive
+
+Expression must come from product meaning, not decoration.
+
+Rules:
+
+- Every module names one signature feature and the user meaning it reinforces.
+- Density, motion, contrast, and visual weight are adjustable only within a
+  declared module envelope.
+- Core workflows stay quiet; entry and milestone states may use stronger
+  composition when the stronger expression improves orientation or trust.
+- A signature that could be applied unchanged to an unrelated product is not a
+  Peers signature.
+
 ## 3. Visual Personality
 
 | Dimension | Target | Avoid |
@@ -75,6 +102,7 @@ Rules:
 | Accent | disciplined single-accent system | mixed blue/purple/red/black CTAs |
 | Surfaces | continuous social flows | stitched component-library defaults |
 | Trust state | visible and contextual | hidden, inferred, or debug-like |
+| Expression | product-specific signature inside stable structure | generic decoration or benchmark imitation |
 
 ## 4. Boundary Philosophy
 
@@ -128,3 +156,6 @@ Out of scope:
 - [ ] Are boundaries defined before styling?
 - [ ] Are action colors disciplined and consistent?
 - [ ] Is the screen free from admin-dashboard visual language unless the module is explicitly an admin module?
+- [ ] Is the module signature explicit, useful, and recognizably Peers?
+- [ ] Does the surface pass the evidence gate in `craft-quality.md` without
+  relying on an award claim or self-score?

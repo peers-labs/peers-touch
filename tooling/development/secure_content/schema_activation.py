@@ -50,6 +50,9 @@ AGGREGATE_RESULT_KIND = "secure-content-schema-activation-aggregate"
 CANONICAL_PRIVATE_SCHEMA_ATTESTATION_FILENAME = (
     "canonical-private-schema-attestation.json"
 )
+PROFILE_OPERATION_BINDING_KIND = (
+    "profile-authorized-schema-activation-binding"
+)
 
 INTENTS = ("SCHEMA_ACTIVATION", "FINAL_CUT")
 JOURNAL_STATES = (
@@ -143,7 +146,7 @@ class ActivationOwnerDescriptor:
     activation_bindings: Mapping[str, ActivationWorkItemBinding]
     allowed_intents: tuple[str, ...]
     profile_order: tuple[str, ...]
-    reuse_active_declaration: bool = False
+    profile_authorized_binding: bool = False
 
 
 SECURE_CONTENT_OWNER = ActivationOwnerDescriptor(
@@ -229,7 +232,7 @@ MOBILE_USABILITY_OWNER = ActivationOwnerDescriptor(
     ),
     allowed_intents=("SCHEMA_ACTIVATION",),
     profile_order=("chat-native-five",),
-    reuse_active_declaration=True,
+    profile_authorized_binding=True,
 )
 OWNER_DESCRIPTORS = MappingProxyType(
     {
@@ -1490,7 +1493,7 @@ def _validate_declaration(
         raise ValidationError("Development declaration source is stale")
     if target is None:
         runtime_claims = declaration.get("runtimeClaims", [])
-        if runtime_claims and not owner.reuse_active_declaration:
+        if runtime_claims and not owner.profile_authorized_binding:
             raise ValidationError("source-freeze declaration must not own runtime claims")
         return declaration
     claims = declaration.get("runtimeClaims")
@@ -1526,7 +1529,7 @@ def _validate_declaration(
     return declaration
 
 
-class DevelopmentSessionSourceCheckpointRunner:
+class CurrentSourceCheckpointRunner:
     def __init__(
         self,
         *,
@@ -1542,11 +1545,13 @@ class DevelopmentSessionSourceCheckpointRunner:
         *,
         budget_seconds: int,
     ) -> Mapping[str, Any]:
-        completed = self.command_runner(
+        status_completed = self.command_runner(
             [
-                "make",
-                "dev-session-status",
-                f"WORK_ITEM={request['work_item_id']}",
+                "git",
+                "status",
+                "--porcelain=v2",
+                "--branch",
+                "--untracked-files=normal",
             ],
             cwd=self.repo_root,
             capture_output=True,
@@ -1554,56 +1559,65 @@ class DevelopmentSessionSourceCheckpointRunner:
             timeout=budget_seconds,
             check=False,
         )
-        payload = _decode_process_json(
-            completed,
-            "Development Session checkpoint",
+        if status_completed.returncode != 0:
+            raise ValidationError("current Git source status is unavailable")
+        status_lines = status_completed.stdout.splitlines()
+        oid_line = next(
+            (line for line in status_lines if line.startswith("# branch.oid ")),
+            "",
         )
-        session = payload.get("session") if isinstance(payload, Mapping) else None
-        state = session.get("state") if isinstance(session, Mapping) else None
-        source = state.get("source") if isinstance(state, Mapping) else None
+        branch_line = next(
+            (line for line in status_lines if line.startswith("# branch.head ")),
+            "",
+        )
+        source_commit = oid_line.removeprefix("# branch.oid ")
+        branch = branch_line.removeprefix("# branch.head ")
+        dirty = any(not line.startswith("# ") for line in status_lines)
+        workspace_id = hashlib.sha256(
+            str(self.repo_root.resolve(strict=True)).encode("utf-8")
+        ).hexdigest()[:16]
         if (
-            not isinstance(session, Mapping)
-            or not isinstance(state, Mapping)
-            or not isinstance(source, Mapping)
-            or state.get("state") not in {"CHECKPOINTED", "DEPLOYING", "DEPLOYED"}
-            or state.get("workItemId") != request["work_item_id"]
-            or state.get("planId") != request["plan_id"]
-            or state.get("taskId") != request["task_id"]
-            or state.get("workspaceId") != request["workspace_id"]
-            or state.get("branch") != request["branch"]
-            or source.get("commit") != request["source_commit"]
-            or source.get("branch") != request["branch"]
-            or source.get("clean") is not True
-            or source.get("purpose") != "development-runtime"
+            source_commit != request["source_commit"]
+            or branch != request["branch"]
+            or workspace_id != request["workspace_id"]
+            or dirty
         ):
-            raise ValidationError(
-                "Development Session does not own the exact source checkpoint"
-            )
+            raise ValidationError("current Git source does not match checkpoint request")
+        tree_completed = self.command_runner(
+            ["git", "rev-parse", "HEAD^{tree}"],
+            cwd=self.repo_root,
+            capture_output=True,
+            text=True,
+            timeout=budget_seconds,
+            check=False,
+        )
+        if tree_completed.returncode != 0:
+            raise ValidationError("current Git source tree is unavailable")
         source_tree = _require_text(
-            source.get("tree"),
-            "Development Session source tree",
+            tree_completed.stdout.strip(),
+            "current Git source tree",
             pattern=GIT_COMMIT,
         )
-        event_digest = _require_text(
-            session.get("eventDigest"),
-            "Development Session event digest",
-            pattern=SHA256,
+        source_digest = canonical_digest(
+            {
+                "workspace_id": workspace_id,
+                "branch": branch,
+                "source_commit": source_commit,
+                "source_tree": source_tree,
+            }
         )
-        completed_at = _require_timestamp(
-            source.get("createdAt"),
-            "Development Session source createdAt",
-        )
+        completed_at = datetime.now(timezone.utc)
         receipt = {
             "kind": SOURCE_RECEIPT_KIND,
             "state": "COMPLETE",
             "purpose": request["purpose"],
-            "checkpoint_id": state["sessionId"],
+            "checkpoint_id": f"source-{source_commit[:16]}",
             "plan_id": request["plan_id"],
             "task_id": request["task_id"],
             "workspace_id": request["workspace_id"],
             "source_commit": request["source_commit"],
             "source_tree": source_tree,
-            "session_event_digest": event_digest,
+            "session_event_digest": source_digest,
             "declaration_digest": request["declaration_digest"],
             "completed_at": completed_at.isoformat(
                 timespec="milliseconds"
@@ -1973,7 +1987,7 @@ class SchemaActivationOwner:
             self.profile_declaration_loader = self._activate_profile_declaration
         self.clean_checker = clean_checker or self._check_clean
         self.source_checkpoint_runner = source_checkpoint_runner or (
-            DevelopmentSessionSourceCheckpointRunner(
+            CurrentSourceCheckpointRunner(
                 repo_root=self.repo_root,
                 command_runner=command_runner,
             )
@@ -2613,6 +2627,8 @@ class SchemaActivationOwner:
         return _decode_process_json(completed, "worktree binding capture")
 
     def _load_declaration(self, work_item_id: str) -> Mapping[str, Any]:
+        if self.owner_descriptor.profile_authorized_binding:
+            return self._load_profile_authorized_binding(work_item_id)
         completed = self.command_runner(
             ["make", "dev-check", f"WORK_ITEM={work_item_id}"],
             cwd=self.repo_root,
@@ -2622,12 +2638,144 @@ class SchemaActivationOwner:
         )
         return _decode_process_json(completed, "Development declaration readback")
 
+    def _load_profile_authorized_binding(
+        self,
+        work_item_id: str,
+    ) -> Mapping[str, Any]:
+        profile_ids = self.owner_descriptor.profile_order
+        if len(profile_ids) != 1:
+            raise ValidationError(
+                "profile-authorized activation requires exactly one profile"
+            )
+        target = _target(profile_ids[0])
+        completed = self.command_runner(
+            [
+                "node",
+                "tooling/scripts/local-dev/machine-dev.mjs",
+                "check",
+                "--workspace-id",
+                self.workspace_id,
+                "--profile",
+                target.profile_id,
+                "--capabilities",
+                "station.connect,station.deploy,station.reset",
+                "--budget-seconds",
+                str(MAX_INVOCATION_LIFETIME_SECONDS),
+            ],
+            cwd=self.repo_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        resolved = _decode_process_json(
+            completed,
+            "Profile-authorized schema activation binding",
+        )
+        binding = _require_mapping(
+            resolved.get("binding"),
+            "Profile-authorized binding workspace",
+        )
+        source = _require_mapping(
+            resolved.get("source"),
+            "Profile-authorized binding source",
+        )
+        profile = _require_mapping(
+            resolved.get("profile"),
+            "Profile-authorized binding profile",
+        )
+        capabilities = binding.get("allowedCapabilities")
+        required_capabilities = {
+            "station.connect",
+            "station.deploy",
+            "station.reset",
+        }
+        if (
+            resolved.get("authority") != "machine-control-plane"
+            or binding.get("workspaceId") != self.workspace_id
+            or binding.get("canonicalRoot") != str(self.repo_root)
+            or binding.get("branch") != self.branch
+            or binding.get("profile") != target.profile_id
+            or not isinstance(capabilities, list)
+            or not required_capabilities.issubset(capabilities)
+            or source.get("branch") != self.branch
+            or not isinstance(source.get("head"), str)
+            or GIT_COMMIT.fullmatch(source["head"]) is None
+            or profile.get("profile") != target.profile_id
+            or profile.get("sourceState") != "tracked-clean"
+            or profile.get("stationMode") != "remote"
+            or profile.get("resetPolicy") != "agent-resettable"
+            or profile.get("stationDeployEnvironment")
+            != target.deployment_environment
+        ):
+            raise ValidationError(
+                "Profile-authorized schema activation binding is invalid"
+            )
+        activation_binding = self.owner_descriptor.activation_bindings.get(
+            target.profile_id
+        )
+        if (
+            activation_binding is None
+            or activation_binding.work_item_id != work_item_id
+        ):
+            raise ValidationError(
+                "Profile-authorized schema activation work item is invalid"
+            )
+        # Declaration field names remain part of the Station maintenance wire
+        # contract. Their authority now comes from the reviewed Profile and
+        # current Git source, not the retired Development declaration store.
+        value = {
+            "kind": PROFILE_OPERATION_BINDING_KIND,
+            "authority": "machine-control-plane",
+            "declarationId": f"{work_item_id}-{self.workspace_id}",
+            "workItemId": work_item_id,
+            "planId": self.owner_descriptor.plan_id,
+            "planPath": self.owner_descriptor.plan_path,
+            "taskId": activation_binding.task_id,
+            "journeyId": self.owner_descriptor.journey_id,
+            "workspaceId": self.workspace_id,
+            "branch": self.branch,
+            "sourceHead": source["head"],
+            "state": "ACTIVE",
+            "profileSourceState": profile["sourceState"],
+            "runtimeClaims": [
+                {
+                    "kind": "profile",
+                    "resourceId": target.profile_id,
+                    "mode": "shared",
+                },
+                {
+                    "kind": "station.connect",
+                    "resourceId": target.profile_id,
+                    "mode": "shared",
+                },
+                {
+                    "kind": "station.deploy",
+                    "resourceId": target.deployment_environment,
+                    "mode": "exclusive",
+                },
+                {
+                    "kind": "station.reset",
+                    "resourceId": target.destructive_scope,
+                    "mode": "exclusive",
+                },
+                {
+                    "kind": "fixture",
+                    "resourceId": f"schema-{target.profile_id}",
+                    "mode": "exclusive",
+                },
+            ],
+        }
+        return {
+            **value,
+            "declarationDigest": canonical_digest(value),
+        }
+
     def _activate_profile_declaration(
         self,
         work_item_id: str,
         workstream_id: str,
     ) -> Mapping[str, Any]:
-        if self.owner_descriptor.reuse_active_declaration:
+        if self.owner_descriptor.profile_authorized_binding:
             return self._load_declaration(work_item_id)
         try:
             projection = work_item_control.load_projection(

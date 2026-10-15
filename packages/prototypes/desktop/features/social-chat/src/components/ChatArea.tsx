@@ -1252,6 +1252,7 @@ function CallHud({
   onToggleCam: () => void;
   onAudioDevice: (device: string) => void;
   onVideoDevice: (device: string) => void;
+  onHangup: () => void;
   onPeerAccept: () => void;
   onSimWeak: () => void;
 }) {
@@ -2386,7 +2387,10 @@ export function ChatArea({
           <div
             style={{ display: 'contents' }}
           >
-            <div style={{ gridArea: 'tools', display: 'flex', alignItems: 'center', gap: 2, height: 44 }}>
+            <div
+              data-chat-composer-tools
+              style={{ gridArea: 'tools', display: 'flex', alignItems: 'center', gap: 2, height: 44 }}
+            >
               <ComposerToolButton
                 label="Emoji"
                 active={emojiOpen}
@@ -2415,7 +2419,10 @@ export function ChatArea({
                 <Mic size={20} />
               </ComposerToolButton>
             </div>
-            <div style={{ gridArea: 'send', display: 'flex', alignItems: 'center', gap: 2, height: 44 }}>
+            <div
+              data-chat-composer-send
+              style={{ gridArea: 'send', display: 'flex', alignItems: 'center', gap: 2, height: 44 }}
+            >
               <span
                 aria-hidden
                 style={{ width: 1, height: 18, background: T.border, marginRight: 2, flexShrink: 0 }}

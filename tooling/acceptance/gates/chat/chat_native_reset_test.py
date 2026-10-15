@@ -118,6 +118,93 @@ class FixtureFederationIdentityTest(unittest.TestCase):
 
 
 class DisposableAcceptanceTargetTest(unittest.TestCase):
+    def test_accepts_run_scoped_ncp_cluster_descriptor(self) -> None:
+        run_id = "0123456789abcdef"
+        project = f"pt-ncp-{run_id}"
+        payload = {
+            "artifactKind": "acceptance-disposable-runtime-descriptor",
+            "environmentName": project,
+            "runId": run_id,
+            "evidenceRunId": "evidence-run",
+            "host": "10.37.246.80",
+            "user": "acceptance",
+            "sshPort": 22,
+            "knownHostsFile": "",
+            "stationUrl": "http://10.37.246.80:38123",
+            "composeProject": project,
+            "stationService": "station-node-a",
+            "stationContainer": f"{project}-station-node-a-1",
+            "postgresContainer": f"{project}-postgres-1",
+            "postgresVolume": f"{project}_postgres-data",
+        }
+        with tempfile.TemporaryDirectory() as raw:
+            descriptor = Path(raw) / "runtime.json"
+            descriptor.write_text(
+                json.dumps(payload),
+                encoding="utf-8",
+            )
+            with patch.dict(
+                os.environ,
+                {
+                    "PT_ACCEPTANCE_RUNTIME_DESCRIPTOR": str(descriptor),
+                    "PT_ACCEPTANCE_RUN_ID": "evidence-run",
+                },
+                clear=True,
+            ):
+                environment = acceptance_station_environment(
+                    payload["stationUrl"],
+                    project,
+                )
+
+        self.assertEqual(
+            environment["PT_ACCEPTANCE_COMPOSE_PROJECT"],
+            project,
+        )
+        self.assertEqual(
+            environment["PT_ACCEPTANCE_STATION_SERVICE"],
+            "station-node-a",
+        )
+        self.assertEqual(
+            environment["PT_ACCEPTANCE_POSTGRES_VOLUME"],
+            f"{project}_postgres-data",
+        )
+
+    def test_rejects_ncp_descriptor_for_protected_station_port(self) -> None:
+        run_id = "0123456789abcdef"
+        project = f"pt-ncp-{run_id}"
+        payload = {
+            "artifactKind": "acceptance-disposable-runtime-descriptor",
+            "environmentName": project,
+            "runId": run_id,
+            "evidenceRunId": "",
+            "host": "10.37.246.80",
+            "user": "acceptance",
+            "stationUrl": "http://10.37.246.80:18080",
+            "composeProject": project,
+            "stationService": "station-node-a",
+            "stationContainer": f"{project}-station-node-a-1",
+            "postgresContainer": f"{project}-postgres-1",
+            "postgresVolume": f"{project}_postgres-data",
+        }
+        with tempfile.TemporaryDirectory() as raw:
+            descriptor = Path(raw) / "runtime.json"
+            descriptor.write_text(
+                json.dumps(payload),
+                encoding="utf-8",
+            )
+            with patch.dict(
+                os.environ,
+                {"PT_ACCEPTANCE_RUNTIME_DESCRIPTOR": str(descriptor)},
+                clear=True,
+            ), self.assertRaisesRegex(
+                RuntimeError,
+                "descriptor topology is invalid",
+            ):
+                acceptance_station_environment(
+                    payload["stationUrl"],
+                    project,
+                )
+
     @patch(
         "tooling.acceptance.fixtures.chat_native_reset."
         "resolve_deployment_environment_path",

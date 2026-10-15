@@ -1099,6 +1099,7 @@ export function installAcceptanceHarness(): void {
       return {
         actorPtid: String(device?.actor_ptid ?? ''),
         deviceId,
+        profileRevision: Number(device?.profile_revision ?? 0),
         active,
       };
     },

@@ -32,7 +32,7 @@ pub fn memory_list(
         Ok(token) => token,
         Err(err) => return err,
     };
-    application_memory::memory_list(input, &token)
+    application_memory::memory_list(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -45,7 +45,7 @@ pub fn memory_get(
         Ok(token) => token,
         Err(err) => return err,
     };
-    application_memory::memory_get(input, &token)
+    application_memory::memory_get(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -58,7 +58,7 @@ pub fn memory_delete(
         Ok(token) => token,
         Err(err) => return err,
     };
-    application_memory::memory_delete(input, &token)
+    application_memory::memory_delete(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -71,7 +71,7 @@ pub fn memory_update(
         Ok(token) => token,
         Err(err) => return err,
     };
-    application_memory::memory_update(input, &token)
+    application_memory::memory_update(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -84,7 +84,7 @@ pub fn memory_search(
         Ok(token) => token,
         Err(err) => return err,
     };
-    application_memory::memory_search(input, &token)
+    application_memory::memory_search(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -97,7 +97,7 @@ pub fn memory_persona(
         Ok(token) => token,
         Err(err) => return err,
     };
-    application_memory::memory_persona(input, &token)
+    application_memory::memory_persona(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -106,7 +106,7 @@ pub fn memory_stats(state: State<'_, Arc<AppState>>, window: Window) -> AppResul
         Ok(token) => token,
         Err(err) => return err,
     };
-    application_memory::memory_stats(&token)
+    application_memory::memory_stats(state.station.client(), &token)
 }
 
 #[tauri::command]
@@ -119,7 +119,7 @@ pub fn memory_events(
         Ok(token) => token,
         Err(err) => return err,
     };
-    application_memory::memory_events(input, &token)
+    application_memory::memory_events(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -132,7 +132,7 @@ pub fn memory_export(
         Ok(token) => token,
         Err(err) => return err,
     };
-    application_memory::memory_export(input, &token)
+    application_memory::memory_export(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -145,7 +145,7 @@ pub fn memory_import(
         Ok(token) => token,
         Err(err) => return err,
     };
-    application_memory::memory_import(input, &token)
+    application_memory::memory_import(state.station.client(), input, &token)
 }
 
 #[tauri::command]
@@ -157,7 +157,7 @@ pub fn memory_embedding_status(
         Ok(token) => token,
         Err(err) => return err,
     };
-    application_memory::memory_embedding_status(&token)
+    application_memory::memory_embedding_status(state.station.client(), &token)
 }
 
 #[tauri::command]
@@ -166,5 +166,5 @@ pub fn memory_reembed(state: State<'_, Arc<AppState>>, window: Window) -> AppRes
         Ok(token) => token,
         Err(err) => return err,
     };
-    application_memory::memory_reembed(&token)
+    application_memory::memory_reembed(state.station.client(), &token)
 }

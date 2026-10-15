@@ -1,3 +1,4 @@
+use crate::application::station_runtime::client::StationClient;
 use crate::error::{AppResult, ErrorCode};
 use crate::messaging::CommandDispatchProgress;
 use crate::model::chat::{
@@ -493,6 +494,7 @@ pub(crate) fn messaging_thread_counts_result(
 }
 
 pub(crate) fn messaging_get_member_settings_result(
+    station_client: &StationClient,
     token: &str,
     engine: &crate::messaging::MessagingEngine,
     input: &MemberSettingsInput,
@@ -505,17 +507,15 @@ pub(crate) fn messaging_get_member_settings_result(
         );
     }
     let query = [("conversation_id", input.conversation_id.clone())];
-    let response = match crate::infrastructure::station_client::request_proto_for_device::<
-        GetMemberSettingsRequest,
-        GetMemberSettingsResponse,
-    >(
-        Method::GET,
-        "/conversation/member/settings",
-        token,
-        Some(&query),
-        None,
-        &engine.endpoint().device_id,
-    ) {
+    let response = match station_client
+        .request_proto_for_device::<GetMemberSettingsRequest, GetMemberSettingsResponse>(
+            Method::GET,
+            "/conversation/member/settings",
+            token,
+            Some(&query),
+            None,
+            &engine.endpoint().device_id,
+        ) {
         Ok(response) => response,
         Err(error) => return error.into_app_result("get messaging member settings failed"),
     };
@@ -530,6 +530,7 @@ pub(crate) fn messaging_get_member_settings_result(
 }
 
 pub(crate) fn messaging_update_member_settings_result(
+    station_client: &StationClient,
     token: &str,
     engine: &crate::messaging::MessagingEngine,
     input: MessagingUpdateMemberSettingsInput,
@@ -542,17 +543,15 @@ pub(crate) fn messaging_update_member_settings_result(
         );
     }
     let query = [("conversation_id", input.conversation_id.clone())];
-    let current = match crate::infrastructure::station_client::request_proto_for_device::<
-        GetMemberSettingsRequest,
-        GetMemberSettingsResponse,
-    >(
-        Method::GET,
-        "/conversation/member/settings",
-        token,
-        Some(&query),
-        None,
-        &engine.endpoint().device_id,
-    ) {
+    let current = match station_client
+        .request_proto_for_device::<GetMemberSettingsRequest, GetMemberSettingsResponse>(
+            Method::GET,
+            "/conversation/member/settings",
+            token,
+            Some(&query),
+            None,
+            &engine.endpoint().device_id,
+        ) {
         Ok(response) => match response.settings {
             Some(settings) => settings,
             None => {
@@ -573,20 +572,18 @@ pub(crate) fn messaging_update_member_settings_result(
         background: input.background.unwrap_or(current.background),
         background_image: input.background_image.unwrap_or(current.background_image),
     };
-    let response = match crate::infrastructure::station_client::request_proto_for_device::<
-        UpdateMemberSettingsRequest,
-        UpdateMemberSettingsResponse,
-    >(
-        Method::PUT,
-        "/conversation/member/settings",
-        token,
-        None,
-        Some(&UpdateMemberSettingsRequest {
-            conversation_id: input.conversation_id,
-            settings: Some(settings.clone()),
-        }),
-        &engine.endpoint().device_id,
-    ) {
+    let response = match station_client
+        .request_proto_for_device::<UpdateMemberSettingsRequest, UpdateMemberSettingsResponse>(
+            Method::PUT,
+            "/conversation/member/settings",
+            token,
+            None,
+            Some(&UpdateMemberSettingsRequest {
+                conversation_id: input.conversation_id,
+                settings: Some(settings.clone()),
+            }),
+            &engine.endpoint().device_id,
+        ) {
         Ok(response) => response,
         Err(error) => return error.into_app_result("update messaging member settings failed"),
     };
@@ -1282,9 +1279,21 @@ pub fn messaging_acceptance_current_endpoint(
             Some(json!({ "reason": "messaging_endpoint_actor_mismatch" })),
         );
     }
+    let profile_revision = match engine.store().device_enrollment() {
+        Ok(Some(enrollment)) => enrollment.certificate.observed_profile_version,
+        Ok(None) => 0,
+        Err(error) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                format!("read messaging device enrollment for acceptance: {error}"),
+                Some(json!({ "reason": "messaging_enrollment_lookup_failed" })),
+            )
+        }
+    };
     AppResult::success(json!({
         "actor_ptid": actor_ptid,
         "device_id": engine.endpoint().device_id.as_str(),
+        "profile_revision": profile_revision,
     }))
 }
 
@@ -2511,7 +2520,7 @@ pub fn messaging_get_member_settings(
         Ok(value) => value,
         Err(error) => return error,
     };
-    messaging_get_member_settings_result(&token, &engine, &input)
+    messaging_get_member_settings_result(state.station.client(), &token, &engine, &input)
 }
 
 #[tauri::command]
@@ -2524,7 +2533,7 @@ pub fn messaging_update_member_settings(
         Ok(value) => value,
         Err(error) => return error,
     };
-    messaging_update_member_settings_result(&token, &engine, input)
+    messaging_update_member_settings_result(state.station.client(), &token, &engine, input)
 }
 
 #[tauri::command]

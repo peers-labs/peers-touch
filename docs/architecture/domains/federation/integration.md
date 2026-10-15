@@ -1,36 +1,36 @@
 # Federation Architecture - 集成与映射
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-05-31 | **Updated**: 2026-10-06
+> **Version**: v1.1
+> **Created**: 2026-05-31 | **Updated**: 2026-10-10
 > **Owner**: Architecture Team
 
 ---
 
-## 1. Station app/frame
+## 1. Station App/Frame Boundary
 
-| 层 | 责任 | 不允许 |
+| Layer | Responsibility | Forbidden |
 |---|---|---|
-| Station app | Federation lifecycle、membership、policy、role、ledger、业务权限 | 管理 Relay socket/read loop |
-| Station frame federation | typed peer capability、locator、resolver、signing adapter | 读取 app policy 表 |
-| Relay subserver | enrollment、route、opaque tunnel、quota、audit | Actor/Chat/Social/Agent 业务 |
-| Relay-client subserver | Station mount、credential、inner TLS ingress | Federation governance |
+| Station app | Federation lifecycle, membership, policy, role, Ledger and business authorization | Relay socket/read loop |
+| Station frame Federation | typed peer transport port, locator, resolver and signing adapter | app policy truth |
+| Node Connectivity | route, enrollment and authenticated opaque transport | Federation membership/business policy |
 
-app 可以依赖 frame primitive；frame 不得依赖 app 或复制业务真源。
+App may depend on frame ports. Frame cannot import app business owners or read
+Federation policy tables to decide governance.
 
 ## 2. Station Access
 
-[Station Access](../../platform/station/access/README.md) 是客户端接入 owner：
+[Station Access](../../platform/station/access/README.md) owns client access:
 
-- 定义统一 endpoint discovery 和 Station route binding；
-- 验证 Relay 返回的 Station route attestation；
-- 经 opaque tunnel 到达同一个 Station Access Gate；
-- 以 `station_peer_id` 而不是 Relay/Station URL 管理 scope。
+- one endpoint input and signed Station identity;
+- one station-keyed route-aware binding;
+- Access Gate, Session and Station/Actor/Device scope;
+- Federation context consumption.
 
-本模块只提供 Relay transport protocol。它不创建客户端 registry、Session 或第二套
-Access API。
+Federation does not create a second client registry, Session or access API.
+Relay details are supplied by Node Connectivity.
 
-## 3. Catalog / Resolver
+## 3. Catalog And Resolver
 
 ```text
 Federation membership/policy
@@ -39,99 +39,67 @@ Federation membership/policy
   -> ActorRef profile resolution
 ```
 
-Relay directory 与 Federation Catalog 不同：
+Route discovery and Federation Catalog differ:
 
-- Relay directory 回答“哪些 opt-in Station route 当前可达”；
-- Federation Catalog 回答“在指定 Federation 中哪些 Actor 可发现”；
-- Relay mount 不意味着 Federation membership；
-- route URL/Host 不得生成 `ActorRef.acct`。
+- route discovery answers how a Station can currently be reached;
+- Catalog answers which Actors are discoverable in one Federation;
+- route/mount presence does not imply membership;
+- request URL/Host cannot generate `ActorRef.acct`.
 
-## 4. Typed Federation Transport
-
-Station-to-Station 调用必须从正向 capability manifest 解析：
+## 4. Typed Peer Delivery
 
 ```text
-Federation caller
-  -> resolve target station_peer_id
-  -> select verified direct/relay route
-  -> establish authenticated peer tunnel
-  -> invoke typed capability
-  -> receiver verifies caller identity + federation_id + policy
+Federation/domain caller
+  -> choose target station_peer_id
+  -> build deterministic typed frame
+  -> frame peer transport port
+  -> Node Connectivity route
+  -> target Station authenticates caller
+  -> target Federation/domain policy
+  -> receiver-owned commit/readback
 ```
 
-Relay 不接收任意 method/path/header，不查看目标 Authorization。broadcast topic
-保持 allowlist，并由 receiver 执行 origin、membership、replay 和 relevance 校验。
+Direct and Relay routes carry the same frame and produce the same typed
+receiver disposition. Relay cannot select recipients, parse business payload,
+mint Federation claims or convert connectivity into membership.
 
-## 5. Runtime Role 与部署
+## 5. Credential Boundary
 
-当前 compose 的 Relay 与 Station 使用相同 image，这是保留项；需要把隐式配置改为
-显式 role：
+- Station host key proves Station identity.
+- Federation peer authorization is minted/validated by Station owners.
+- Relay operator/mount/grant credentials are Node Connectivity internals.
+- Client Station Session belongs to Station Access and remains inside inner TLS.
 
-```text
-PEERS_NODE_ROLE=station
-  -> Station subserver allowlist
-  -> optional relay-client
+No credential is accepted outside its issuer/audience/scope. Federation app
+never receives raw Relay operator or mount credentials.
 
-PEERS_NODE_ROLE=relay
-  -> Relay subserver allowlist
-  -> no Station business subservers
-```
+## 6. ActivityPub
 
-entrypoint 只生成 role 允许的 overlay。生产 `relay` role 必须注入 TLS certificate、
-Relay signing key、operator trust policy 和 quota；缺失即启动失败。
+ActivityPub remains a future interoperability layer. Any external activity that
+would affect Federation governance must become a valid proposal and pass
+Ledger policy. Transport reachability cannot directly mutate membership,
+sequencer, role or policy.
 
-当前安全基线使用以下运行时配置：
+## 7. Observability
 
-- `RELAY_TLS_CERT_FILE` 与 `RELAY_TLS_KEY_FILE`：公网 Relay 必填，监听器最低
-  TLS 1.3；
-- `RELAY_SIGNING_KEY_FILE`：Relay identity/attestation 专用 key，不能与 TLS 或
-  operator key 共用；
-- `RELAY_OPERATOR_KEY_FILE`、`RELAY_OPERATOR_ISSUER`、
-  `RELAY_OPERATOR_AUDIENCE`、`RELAY_OPERATOR_SCOPE`：独立 operator JWT policy；
-- `RELAY_ALLOW_INSECURE_LOOPBACK=true`：唯一明文例外，仅接受显式 loopback
-  listener，不能用于正式证据。
+Federation metrics may expose bounded:
 
-Relay readiness 使用 `/healthz`；`/metrics` 与 admin routes 共同要求 operator
-credential。Station role 不装配 Relay subserver，Relay role 不装配 Touch、app
-business subserver 或其他 native plugins。
+- proposal/event/receiver outcomes;
+- Ledger sequence/head/fork state;
+- membership and policy decision classes;
+- peer delivery result classes.
 
-## 6. Credential 集成
+Transport metrics such as mounts, tunnels, bytes and rate limits belong to Node
+Connectivity. Neither layer logs credentials, Authorization, decrypted payload,
+Actor PII or high-cardinality raw route values.
 
-- Station host key：证明 Station identity，签 route attestation/enrollment proof。
-- Relay signing key：证明 Relay endpoint，签 mount/operator credential。
-- Station Session：只在 inner TLS 中到达 Station。
-- Federation peer authorization：由 caller Station identity 与 Federation policy
-  在 target Station 验证。
+## 8. Verification
 
-四类 credential 不共用 issuer、audience 或 secret。普通客户端不接触 mount 或
-operator credential。
-
-## 7. 迁移策略
-
-1. 先删除硬编码 debug egress，建立 Relay role、TLS 和 auth 基线。
-2. 引入 PoP enrollment、hash-only invite、mount generation 与 revoke/rotate。
-3. 发布 endpoint/route Proto 与 signed discovery。
-4. 原子落地 bounded opaque tunnel 和 typed Federation transport，并删除
-   transparent forward、relay-client-token 和 header passthrough。
-5. Desktop/Mobile 迁移到 station-keyed route binding。
-6. 完成 exact-source native Acceptance。
-
-不得双写旧/新 mount credential，不得保留旧 forward 作为 fallback。
-
-## 8. ActivityPub
-
-ActivityPub 仍只作为未来互操作层。任何外部 activity 若要影响 Federation
-governance，必须转换为合法 proposal 并通过 ledger policy；不能借 Relay route
-直接修改 membership 或 policy。
-
-## 9. 观测
-
-Relay metrics 只使用低基数标签：
-
-- role/version/readiness；
-- active mounts/tunnels、queue depth、bytes、latency；
-- enrollment/rotation/revoke outcome；
-- typed failure class。
-
-禁止记录 invite/grant/credential、Authorization、业务 path/body、Actor PII 或
-高基数 route/peer 原文。安全审计可以记录不可逆 digest 和明确 operator action。
+- app/frame dependency checks remain one-way;
+- all discovery/Catalog queries carry explicit Federation scope;
+- peer receiver verifies caller identity, membership, policy and replay;
+- direct and Relay delivery have receiver-visible parity;
+- route/mount changes do not mutate Federation membership;
+- Node Connectivity formal Gate proves transport opacity and cleanup;
+- no active Federation document defines Relay frame, mount credential or role
+  allowlist a second time.

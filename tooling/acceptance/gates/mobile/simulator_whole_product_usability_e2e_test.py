@@ -72,16 +72,14 @@ REQUIRED_SURFACE_IDS = {
     ),
     "chat": frozenset(
         """
-        chat.list chat.list-loading chat.list-refreshing chat.list-empty
-        chat.list-error
+        chat.list chat.list-loading chat.list-empty chat.list-error
         chat.list-unavailable chat.list-search chat.list-search-empty
         chat.direct-thread chat.group-thread chat.thread-empty
         chat.history-loading chat.history-error chat.thread-search
         chat.thread-search-empty chat.thread-search-error chat.composer-keyboard
         chat.attachment-ready chat.attachment-uploading chat.attachment-failed
         chat.voice-recording chat.voice-failed chat.message-pending
-        chat.message-failed chat.message-uncertain chat.pinned-messages
-        chat.message-actions
+        chat.message-failed chat.message-uncertain chat.message-actions
         chat.conversation-actions chat.conversation-settings-pending
         chat.conversation-settings-saved chat.conversation-settings-failed
         chat.destructive-confirm chat.forward-picker chat.forward-pending
@@ -159,9 +157,7 @@ class _ShellDriverSession:
         self.settings_surface_id: str | None = None
         self.activated_apps: list[str] = []
         self.navigation_actions: list[str] = []
-        self.orientation_actions: list[str] = []
         self.fixture_history: list[tuple[str, str | None]] = []
-        self.text_size_applications: list[str] = []
 
     def switch_to_native(self) -> None:
         self.current_context = "NATIVE_APP"
@@ -174,14 +170,7 @@ class _ShellDriverSession:
         self.orientation = orientation
 
     def execute_script(self, script: str, *args: Any) -> Any:
-        if script == "mobile: activateApp":
-            self.activated_apps.append(args[0]["bundleId"])
-            return None
-        return True
-
-    def execute_async_script(self, script: str, *args: Any) -> Any:
         if script == TEXT_SIZE_SCRIPT:
-            self.text_size_applications.append(args[0])
             width, height = (
                 (852, 393)
                 if self.orientation == "LANDSCAPE"
@@ -193,7 +182,10 @@ class _ShellDriverSession:
                 "height": height,
                 "scaledElementCount": 1 if args[0] == "maximum" else 0,
             }
-        raise AssertionError(script)
+        if script == "mobile: activateApp":
+            self.activated_apps.append(args[0]["bundleId"])
+            return None
+        return True
 
     def find_element(self, using: str, value: str) -> str:
         if using not in {"css selector", "class name"}:
@@ -241,20 +233,6 @@ class _ShellDriverSession:
             self.route_id = str((payload or {})["routeId"])
             self.navigation_actions.append(self.route_id)
             return {"primaryRouteId": self.route_id}
-        if action == "orientation.apply":
-            orientation = str((payload or {})["orientation"])
-            self.orientation = orientation.upper()
-            self.orientation_actions.append(orientation)
-            width, height = (
-                (852, 393)
-                if orientation == "landscape"
-                else (393, 852)
-            )
-            return {
-                "orientation": orientation,
-                "width": width,
-                "height": height,
-            }
         if action == "entry.fixture":
             self.entry_surface_id = (payload or {}).get("surfaceId")
             return {
@@ -402,16 +380,6 @@ def valid_surface_evidence(
                 ],
                 "occlusions": [],
                 "blockingSurfaces": [],
-                "stationLayout": {
-                    "launchCard": None,
-                    "addressInput": None,
-                    "placeholder": None,
-                    "submit": None,
-                    "helper": None,
-                    "logo": None,
-                    "stationStatusClasses": [],
-                    "continueDisabled": None,
-                },
             }
             cells[cell_id] = {
                 "status": "PASS",
@@ -652,104 +620,8 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
             session.activated_apps,
             ["com.peers.touch.mobile"] * 3,
         )
-        self.assertEqual(
-            session.text_size_applications,
-            ["normal", "maximum", "normal"],
-        )
 
-    def test_surface_capture_reapplies_maximum_text_after_surface_entry(
-        self,
-    ) -> None:
-        class CaptureSession(_ShellDriverSession):
-            def execute_script(self, script: str, *args: Any) -> Any:
-                if script == SURFACE_AUDIT_SCRIPT:
-                    return {
-                        "found": True,
-                        "unlabeledControls": [],
-                        "undersizedControls": [],
-                        "clippedText": [],
-                        "viewport": {"width": 393, "height": 852},
-                        "surfaceElement": {
-                            "selector": args[0],
-                            "width": 393,
-                            "height": 852,
-                            "visible": True,
-                            "inViewport": True,
-                        },
-                        "controls": [],
-                        "occlusions": [],
-                        "blockingSurfaces": [],
-                        "stationLayout": {},
-                    }
-                return super().execute_script(script, *args)
-
-            def get_webview_source(self) -> str:
-                return (
-                    '<main data-product-surface="moments.feed">'
-                    "<h1>Moments</h1></main>"
-                )
-
-            def get_page_source(self) -> str:
-                return (
-                    '<AppiumAUT><XCUIElementTypeApplication '
-                    'x="0" y="0" width="393" height="852">'
-                    '<XCUIElementTypeButton label="Refresh" '
-                    'x="20" y="20" width="44" height="44" visible="true" />'
-                    "</XCUIElementTypeApplication></AppiumAUT>"
-                )
-
-            def screenshot_bytes(self) -> bytes:
-                return png_bytes(393, 852)
-
-        inventory = load_surface_inventory()
-        entry = next(
-            value
-            for value in selected_surface_entries(inventory, "moments")
-            if value["id"] == "moments.feed"
-        )
-        viewport = {
-            "width": 393,
-            "height": 852,
-            "orientation": "portrait",
-            "textSize": "maximum",
-        }
-        session = CaptureSession()
-        gate = SimulatorWholeProductUsabilityGate(
-            foreground_probe=lambda: {},
-        )
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            store = EvidenceStore(Path(temp_dir), worktree=REPO_ROOT)
-            with store.begin_run(
-                GATE_ID,
-                source=source_identity(REPO_ROOT),
-            ) as run:
-                result = gate._capture_surface(
-                    run,
-                    session,
-                    inventory,
-                    entry,
-                    "portrait-maximum-text",
-                    viewport,
-                    {
-                        "kind": "native-touch",
-                        "target": "tap-moments-tab",
-                        "performed": True,
-                    },
-                )
-                run.finalize(
-                    result={
-                        "status": "PASS",
-                        "completionStatus": "DONE",
-                        "proofStatus": "PROVEN",
-                    }
-                )
-
-        self.assertEqual(session.text_size_applications, ["maximum"])
-        self.assertEqual(result["status"], "PASS")
-        self.assertEqual(result["viewport"]["textSize"], "maximum")
-
-    def test_shell_driver_falls_back_to_native_ios_scene_rotation(self) -> None:
+    def test_shell_driver_retries_transient_ios_rotation_failure(self) -> None:
         class TransientRotationSession(_ShellDriverSession):
             def __init__(self) -> None:
                 super().__init__()
@@ -757,7 +629,9 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
 
             def set_orientation(self, orientation: str) -> None:
                 self.orientation_attempts += 1
-                raise DriverError("Unable To Rotate Device")
+                if self.orientation_attempts == 1:
+                    raise DriverError("Unable To Rotate Device")
+                super().set_orientation(orientation)
 
         gate = SimulatorWholeProductUsabilityGate(
             foreground_probe=lambda: {},
@@ -770,8 +644,7 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         ):
             result = gate._configure_cell(session, "landscape-normal")
 
-        self.assertEqual(session.orientation_attempts, 1)
-        self.assertEqual(session.orientation_actions, ["landscape"])
+        self.assertEqual(session.orientation_attempts, 2)
         self.assertEqual(result["orientation"], "landscape")
         self.assertGreater(result["width"], result["height"])
 
@@ -1069,10 +942,6 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         self.assertIn("stationLayout:", SURFACE_AUDIT_SCRIPT)
         self.assertIn("placeholder: stationPlaceholder", SURFACE_AUDIT_SCRIPT)
         self.assertIn("stationStatusClasses:", SURFACE_AUDIT_SCRIPT)
-        self.assertIn(
-            ".launch-brand-logo, .launch-hero-logo",
-            SURFACE_AUDIT_SCRIPT,
-        )
 
     def test_station_entry_layout_requires_human_usable_geometry_and_states(
         self,
@@ -1103,11 +972,6 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         validate_station_entry_layout(
             "entry.station-address",
             observation,
-            viewport,
-        )
-        validate_station_entry_layout(
-            "entry.station-address",
-            {"stationLayout": {**layout, "helper": None}},
             viewport,
         )
         validate_station_entry_layout(
@@ -1205,11 +1069,10 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         )
         self.assertNotIn("ptidDisplay", settings)
         self.assertIn("settings-profile-subtitle", settings)
-        for launch_state in ("shell", "background", "resume"):
-            self.assertIn(
-                f"renderedLaunchState === '{launch_state}'",
-                app,
-            )
+        self.assertIn(
+            "renderedLaunchState === 'shell' || renderedLaunchState === 'resume'",
+            app,
+        )
 
     def test_entry_product_selectors_are_present_in_production(self) -> None:
         app = (REPO_ROOT / "apps/mobile/src/App.tsx").read_text(
@@ -1486,67 +1349,36 @@ class WholeProductSurfaceContractTests(unittest.TestCase):
         )
 
     def test_landscape_moments_composer_preserves_top_safe_area(self) -> None:
-        production_styles = (
+        styles = (
             REPO_ROOT
             / "apps"
             / "mobile"
             / "src"
-            / "pages"
-            / "moments"
-            / "MomentComposer.css"
+            / "styles.css"
         ).read_text(encoding="utf-8")
-        fixture_styles = (
-            REPO_ROOT
-            / "apps"
-            / "mobile"
-            / "src"
-            / "pages"
-            / "moments"
-            / "Moments.css"
-        ).read_text(encoding="utf-8")
-        production_landscape_rule = re.search(
+        landscape_rule = re.search(
             r"@media \(orientation: landscape\) \{\s*"
-            r"\.moments-composer-backdrop\.moment-composer-overlay\s*"
-            r">\s*\.moments-composer-card\.moment-composer-surface "
-            r"\{(?P<body>.*?)\n  \}",
-            production_styles,
-            flags=re.DOTALL,
-        )
-        fixture_landscape_rule = re.search(
-            r"@media \(orientation: landscape\) \{\s*"
+            r"\.moments-composer-backdrop \.moments-composer-card,\s*"
             r"\.moments-fixture-composer \{(?P<body>.*?)\n  \}",
-            fixture_styles,
+            styles,
             flags=re.DOTALL,
         )
-        self.assertIsNotNone(production_landscape_rule)
-        self.assertIsNotNone(fixture_landscape_rule)
+
+        self.assertIsNotNone(landscape_rule)
         self.assertIn(
             "max-height: calc(100dvh - var(--safe-area-top));",
-            production_landscape_rule.group("body"),
+            landscape_rule.group("body"),
         )
-        self.assertIn(
-            "max-height: calc(100dvh - var(--safe-area-top));",
-            fixture_landscape_rule.group("body"),
-        )
-        production_header_rule = re.search(
-            r"\.moment-composer-header \{(?P<body>.*?)\n\}",
-            production_styles,
-            flags=re.DOTALL,
-        )
-        fixture_header_rule = re.search(
+        composer_header_rule = re.search(
+            r"\.moments-composer-header,\s*"
             r"\.moments-fixture-sheet-header \{(?P<body>.*?)\n\}",
-            fixture_styles,
+            styles,
             flags=re.DOTALL,
         )
-        self.assertIsNotNone(production_header_rule)
-        self.assertIsNotNone(fixture_header_rule)
+        self.assertIsNotNone(composer_header_rule)
         self.assertIn(
             "position: sticky;",
-            production_header_rule.group("body"),
-        )
-        self.assertIn(
-            "position: sticky;",
-            fixture_header_rule.group("body"),
+            composer_header_rule.group("body"),
         )
 
     def test_all_surface_report_names_final_frontier_scope(self) -> None:

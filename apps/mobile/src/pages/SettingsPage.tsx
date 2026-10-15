@@ -6,7 +6,11 @@ import { requestSettingsExit, type MobileSettingDetailId } from '../app/navigati
 import type { MobileAuthSession } from '../features/auth/authSession';
 import { projectAcceptedContacts } from '../features/social/socialProjection';
 import { useSocialStore } from '../features/social/socialStore';
-import { activeStationEntry, type StoredStationRegistry } from '../features/station/stationRegistry';
+import {
+  activeStationEntry,
+  type MobileStationRouteCandidate,
+  type StoredStationRegistry,
+} from '../features/station/stationRegistry';
 import { stationDisplayName } from '../features/station/stationDisplayName';
 import { useSettingsSurfaceFixture } from '../acceptance/settingsSurfaceFixture';
 import { MobileAvatar } from '../components/MobileAvatar';
@@ -29,6 +33,10 @@ interface SettingsPageProps {
   readonly onOpenSetting: (settingId: MobileSettingDetailId) => void;
   readonly onBack: () => void;
   readonly onChangeStation: () => Promise<void>;
+  readonly onChangeStationRoute: (
+    stationPeerId: string,
+    route: MobileStationRouteCandidate,
+  ) => Promise<void>;
   readonly onLogout: () => Promise<void>;
 }
 

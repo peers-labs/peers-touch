@@ -107,6 +107,7 @@ evidence cannot be promoted to that scope.
 | MS-C12 | MS-J03, MS-J07 | MS-PA28, MS-PA29 | Direct call actions + shell-owned outgoing/incoming/active/reconnecting/handled-elsewhere/ended surface |
 | MS-C13 | MS-J03 | MS-PA27 | Disabled/absent Docs entry |
 | MS-C14 | MS-J07 | MS-PA22, MS-PA27 | Device-only message flag |
+| MS-C15 | MS-J08 | MS-PA28, MS-PA29 | Complete foreground Mobile surface inventory |
 
 ## Architecture Requirement Traceability
 

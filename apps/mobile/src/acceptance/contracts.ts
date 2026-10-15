@@ -62,6 +62,8 @@ export const MOBILE_ACCEPTANCE_ACTION_NAMES = [
   'runtime.prepareActorIdentity',
   'station.add',
   'station.replace',
+  'station.route.select',
+  'station.route.snapshot',
   'station.select',
   'entry.fixture',
   'recovery.fixture',
@@ -173,6 +175,11 @@ export interface StationSelectInput {
   draftDisposition?: DraftDisposition;
 }
 
+export interface StationRouteSelectInput {
+  stationPeerId: string;
+  routeId: string;
+}
+
 export interface EntrySurfaceFixtureInput {
   surfaceId: EntrySurfaceFixtureId | null;
 }
@@ -203,6 +210,17 @@ export interface PublicStationEntry {
   label: string;
   online?: boolean;
   lastCheckedAt?: number;
+  activeRouteId?: string;
+  routeRevision?: number;
+  lifecycleGeneration?: number;
+  routes?: {
+    routeId: string;
+    routeType: 'direct' | 'relay';
+    endpointOrigin: string;
+    relayPeerId?: string;
+    routeGeneration: number;
+    health: 'available' | 'degraded' | 'unavailable' | 'revoked';
+  }[];
 }
 
 export interface StationMutationOutput {
@@ -217,6 +235,16 @@ export interface StationSelectionOutput {
   activeStationPeerId: string;
   entries: PublicStationEntry[];
   sessionRevocation: SessionRevocationProjection;
+  binding?: {
+    stationPeerId: string;
+    routeId: string;
+    routeType: 'direct' | 'relay';
+    endpointOrigin: string;
+    relayPeerId?: string;
+    routeGeneration: number;
+    routeRevision: number;
+    transportOrigin: string;
+  } | null;
 }
 
 export interface SessionRevocationProjection {
@@ -1215,6 +1243,14 @@ export interface MobileAcceptanceActionContract {
   };
   'station.select': {
     input: StationSelectInput;
+    output: StationSelectionOutput;
+  };
+  'station.route.select': {
+    input: StationRouteSelectInput;
+    output: StationSelectionOutput;
+  };
+  'station.route.snapshot': {
+    input: undefined;
     output: StationSelectionOutput;
   };
   'entry.fixture': {

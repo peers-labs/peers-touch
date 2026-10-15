@@ -11,8 +11,9 @@ export interface SessionRevokedPayload {
 }
 
 export interface StationActiveChangedPayload {
-  stationUrl: string;
-  label?: string;
+  stationPeerId: string;
+  routeId: string;
+  displayName?: string;
 }
 
 export interface RealtimeMessageReceivedPayload {

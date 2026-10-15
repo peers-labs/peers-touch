@@ -1,0 +1,206 @@
+---
+/**
+ * AgentDiagram — the AI runtime.
+ *
+ * An Agent lives inside the user's trust boundary (their devices + Station),
+ * grounded in their own data, memory, tools, and applets. It collaborates with
+ * agents on other Stations across the open network — nothing funnels a user's
+ * private data into a vendor cloud.
+ */
+interface DiagramLabels {
+  agent: string;
+  data: string;
+  tools: string;
+  applets: string;
+  memory: string;
+  otherAgents: string;
+  a2a: string;
+  boundary: string;
+}
+
+interface Props {
+  labels: DiagramLabels;
+}
+
+const { labels: l } = Astro.props;
+
+const agent = { cx: 300, cy: 220 };
+type SatelliteType = 'data' | 'tools' | 'applets' | 'memory';
+const satellites: { cx: number; cy: number; type: SatelliteType; label: string }[] = [
+  { cx: 150, cy: 104, type: 'data', label: l.data },
+  { cx: 462, cy: 104, type: 'tools', label: l.tools },
+  { cx: 150, cy: 336, type: 'applets', label: l.applets },
+  { cx: 462, cy: 336, type: 'memory', label: l.memory },
+];
+
+const others = [
+  { cx: 722, cy: 150 },
+  { cx: 722, cy: 308 },
+];
+
+const SW = 120;
+const SH = 58;
+---
+
+<svg
+  class="agent"
+  viewBox="0 0 880 440"
+  role="img"
+  aria-label={l.a2a}
+  fill="none"
+  xmlns="http://www.w3.org/2000/svg"
+>
+  <defs>
+    <filter id="agent-shadow" x="-30%" y="-30%" width="160%" height="170%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#5568d6" flood-opacity="0.28" />
+    </filter>
+    <filter id="node-shadow" x="-30%" y="-30%" width="160%" height="170%">
+      <feDropShadow dx="0" dy="5" stdDeviation="8" flood-color="#3c426e" flood-opacity="0.12" />
+    </filter>
+  </defs>
+
+  <!-- Trust boundary -->
+  <rect x="32" y="36" width="560" height="368" rx="26" class="boundary" />
+  <rect x="52" y="20" width="196" height="26" rx="13" fill="#f5f7fd" stroke="#d4dcf5" stroke-width="1.2" />
+  <text x="150" y="37" class="boundary-text" text-anchor="middle">{l.boundary}</text>
+
+  <!-- Agent → satellites -->
+  {satellites.map((s) => (
+    <line class="edge" x1={agent.cx} y1={agent.cy} x2={s.cx} y2={s.cy} />
+  ))}
+
+  <!-- Agent → other agents (crosses the boundary) -->
+  <path class="edge edge--cross" d={`M${agent.cx + 84} ${agent.cy} H640 L662 ${others[0].cy}`} />
+  <path class="edge edge--cross" d={`M640 ${agent.cy} L662 ${others[1].cy}`} />
+  <g>
+    <rect x="628" y="226" width="240" height="26" rx="13" fill="#ffffff" stroke="#765aa2" stroke-width="1.4" />
+    <text x="748" y="243" class="pill-text" text-anchor="middle">{l.a2a}</text>
+  </g>
+
+  <!-- Satellites -->
+  {satellites.map((s) => (
+    <g filter="url(#node-shadow)">
+      <rect x={s.cx - SW / 2} y={s.cy - SH / 2} width={SW} height={SH} rx="14" fill="#ffffff" stroke="#d4dcf5" stroke-width="1.3" />
+      <g transform={`translate(${s.cx - 38} ${s.cy})`} class="node-glyph" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        {s.type === 'data' && (
+          <>
+            <path d="M-10 -7a10 3.5 0 1 0 20 0a10 3.5 0 1 0 -20 0" />
+            <path d="M-10 -7v14M10 -7v14" />
+            <path d="M-10 0a10 3.5 0 0 0 20 0" />
+            <path d="M-10 7a10 3.5 0 0 0 20 0" />
+          </>
+        )}
+        {s.type === 'tools' && (
+          <g transform="scale(0.62)">
+            <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+          </g>
+        )}
+        {s.type === 'applets' && (
+          <g transform="scale(0.92)">
+            <rect x="-9" y="-9" width="7.4" height="7.4" rx="1.6" />
+            <rect x="1.6" y="-9" width="7.4" height="7.4" rx="1.6" />
+            <rect x="-9" y="1.6" width="7.4" height="7.4" rx="1.6" />
+            <rect x="1.6" y="1.6" width="7.4" height="7.4" rx="1.6" />
+          </g>
+        )}
+        {s.type === 'memory' && (
+          <>
+            <rect x="-9" y="-7" width="18" height="14" rx="2.4" />
+            <path d="M-5 -3h10M-5 1h10M-5 5h6" />
+          </>
+        )}
+      </g>
+      <text x={s.cx + 12} y={s.cy + 5} class="node-text" text-anchor="middle">{s.label}</text>
+    </g>
+  ))}
+
+  <!-- Other agents -->
+  {others.map((o) => (
+    <g filter="url(#node-shadow)">
+      <rect x={o.cx - SW / 2} y={o.cy - SH / 2} width={SW} height={SH} rx="14" fill="#faf8ff" stroke="#cbb6e6" stroke-width="1.3" />
+      <g transform={`translate(${o.cx - 38} ${o.cy})`} class="other-glyph" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="-9" cy="0" r="3.2" />
+        <circle cx="9" cy="0" r="3.2" />
+        <path d="M-6 0h12" />
+      </g>
+      <text x={o.cx + 12} y={o.cy + 5} class="node-text node-text--other" text-anchor="middle">{l.otherAgents}</text>
+    </g>
+  ))}
+
+  <!-- The Agent (on top) -->
+  <g filter="url(#agent-shadow)">
+    <rect x={agent.cx - 84} y={agent.cy - 48} width="168" height="96" rx="20" fill="#667eea" />
+    <g transform={`translate(${agent.cx - 40} ${agent.cy - 6})`} class="agent-glyph" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M0 -10l2.6 6.4L9 -1l-6.4 2.6L0 8l-2.6-6.4L-9 -1l6.4-2.6z" />
+    </g>
+    <text x={agent.cx + 20} y={agent.cy + 6} class="agent-text" text-anchor="middle">{l.agent}</text>
+  </g>
+</svg>
+
+<style>
+  .agent {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+  .boundary {
+    stroke: #b9a8de;
+    stroke-width: 1.5;
+    stroke-dasharray: 7 7;
+    fill: rgba(118, 90, 162, 0.025);
+  }
+  .edge {
+    stroke: #c2cbf0;
+    stroke-width: 1.6;
+    stroke-dasharray: 5 7;
+    animation: pt-a-flow 1.1s linear infinite;
+  }
+  .edge--cross {
+    stroke: #765aa2;
+    stroke-width: 2;
+    stroke-dasharray: 7 7;
+    animation-duration: 0.8s;
+  }
+  .node-glyph {
+    stroke: #667eea;
+  }
+  .other-glyph {
+    stroke: #765aa2;
+  }
+  .agent-glyph {
+    stroke: #ffffff;
+    fill: #ffffff;
+  }
+  .node-text {
+    font-family: var(--pt-font-sans);
+    font-size: 13px;
+    font-weight: 600;
+    fill: #282c4e;
+  }
+  .node-text--other {
+    fill: #5b457e;
+  }
+  .agent-text {
+    font-family: var(--pt-font-sans);
+    font-size: 16px;
+    font-weight: 700;
+    fill: #ffffff;
+  }
+  .boundary-text {
+    font-family: var(--pt-font-sans);
+    font-size: 12px;
+    font-weight: 600;
+    fill: #6f6796;
+  }
+  .pill-text {
+    font-family: var(--pt-font-sans);
+    font-size: 12px;
+    font-weight: 600;
+    fill: #6d4f97;
+  }
+  @keyframes pt-a-flow {
+    to {
+      stroke-dashoffset: -28;
+    }
+  }
+</style>

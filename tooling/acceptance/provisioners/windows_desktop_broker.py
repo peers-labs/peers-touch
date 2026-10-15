@@ -29,6 +29,7 @@ from typing import Any, Callable, Mapping, Sequence
 _IDENTIFIER = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 _TASK_PREFIX = "PeersTouch-Acceptance"
 _WAIT_INTERVAL_SECONDS = 0.1
+_DISPLAY_AUTO_RESIZE_SERVICE = "vdservice"
 
 
 class BrokerError(RuntimeError):
@@ -72,6 +73,16 @@ def _port(value: object, name: str) -> int:
         raise BrokerError(f"{name} is invalid") from error
     if parsed < 1024 or parsed > 65535:
         raise BrokerError(f"{name} must be between 1024 and 65535")
+    return parsed
+
+
+def _display_dimension(value: object, name: str) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as error:
+        raise BrokerError(f"{name} is invalid") from error
+    if isinstance(value, bool) or parsed <= 0 or parsed > 16_384:
+        raise BrokerError(f"{name} is invalid")
     return parsed
 
 
@@ -410,6 +421,104 @@ class WindowsDesktopBroker:
         self._write_json(self.lease_path, lease)
         return {"actor": actor, **actors[actor]}
 
+    def prepare_display(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        lease = self._require_lease(payload)
+        if lease.get("displayLease") is not None:
+            raise BrokerError("display is already prepared for this lease")
+        width = _display_dimension(payload.get("width"), "display width")
+        height = _display_dimension(payload.get("height"), "display height")
+        source_root = _windows_path(
+            payload.get("sourceRoot"),
+            "display source root",
+        )
+        geometry = self.execute_adapter(
+            {
+                **payload,
+                "adapterOperation": "display_geometry",
+                "requestId": f"display-read-{time.time_ns():x}",
+                "payload": {},
+                "sourceRoot": source_root,
+            }
+        )
+        previous_width = _display_dimension(
+            geometry.get("width"),
+            "current display width",
+        )
+        previous_height = _display_dimension(
+            geometry.get("height"),
+            "current display height",
+        )
+        service_was_running = self._service_running(
+            _DISPLAY_AUTO_RESIZE_SERVICE
+        )
+        display_lease = {
+            "autoResizeService": _DISPLAY_AUTO_RESIZE_SERVICE,
+            "serviceWasRunning": service_was_running,
+            "sourceRoot": source_root,
+            "restoreGeometry": {
+                "width": previous_width,
+                "height": previous_height,
+            },
+            "targetGeometry": {
+                "width": width,
+                "height": height,
+            },
+            "prepared": False,
+            "restored": False,
+        }
+        lease["displayLease"] = display_lease
+        self._write_json(self.lease_path, lease)
+        try:
+            if service_was_running:
+                self._set_service_running(
+                    _DISPLAY_AUTO_RESIZE_SERVICE,
+                    False,
+                )
+            changed = self.execute_adapter(
+                {
+                    **payload,
+                    "adapterOperation": "set_display_geometry",
+                    "requestId": f"display-set-{time.time_ns():x}",
+                    "payload": {"width": width, "height": height},
+                    "sourceRoot": source_root,
+                }
+            )
+            current = changed.get("current")
+            if (
+                not isinstance(current, dict)
+                or current.get("width") != width
+                or current.get("height") != height
+            ):
+                raise BrokerError(
+                    "interactive display did not reach the requested geometry"
+                )
+            lease = self._require_lease(payload)
+            display_lease = lease.get("displayLease")
+            if not isinstance(display_lease, dict):
+                raise BrokerError("display lease disappeared during preparation")
+            display_lease["prepared"] = True
+            self._write_json(self.lease_path, lease)
+            return {
+                "prepared": True,
+                "serviceWasRunning": service_was_running,
+                "previous": {
+                    "width": previous_width,
+                    "height": previous_height,
+                },
+                "current": dict(current),
+            }
+        except BaseException as error:
+            try:
+                self._restore_display(
+                    self._require_lease(payload, allow_expired=True)
+                )
+            except Exception as cleanup_error:
+                raise BrokerError(
+                    f"display preparation failed ({error}); "
+                    f"display restoration also failed: {cleanup_error}"
+                ) from error
+            raise
+
     def actor_status(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         lease = self._require_lease(payload)
         actor = _canonical_id(payload.get("actor"), "actor")
@@ -480,8 +589,13 @@ class WindowsDesktopBroker:
             "logContent": base64.b64encode(log_content).decode("ascii"),
         }
 
-    def execute_adapter(self, payload: Mapping[str, Any]) -> dict[str, Any]:
-        lease = self._require_lease(payload)
+    def execute_adapter(
+        self,
+        payload: Mapping[str, Any],
+        *,
+        allow_expired: bool = False,
+    ) -> dict[str, Any]:
+        lease = self._require_lease(payload, allow_expired=allow_expired)
         operation = _canonical_id(payload.get("adapterOperation"), "adapter operation")
         adapter_payload = payload.get("payload") or {}
         if not isinstance(adapter_payload, dict):
@@ -547,6 +661,7 @@ class WindowsDesktopBroker:
             "expiresAtEpoch": lease["expiresAtEpoch"],
             "expired": int(lease["expiresAtEpoch"]) <= int(self._now()),
             "actors": actor_statuses,
+            "displayLease": lease.get("displayLease"),
         }
 
     def cleanup(self, payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -568,6 +683,12 @@ class WindowsDesktopBroker:
                     )
                 except Exception as error:
                     failures.append(f"actor {actor}: {error}")
+        try:
+            self._restore_display(lease)
+        except Exception as error:
+            failures.append(f"display: {error}")
+        if failures:
+            raise BrokerError("broker cleanup failed: " + "; ".join(failures))
         cleanup_task = self._task_name(str(lease["runId"]), "ttl-cleanup")
         try:
             self.scheduler.unregister(cleanup_task)
@@ -584,6 +705,135 @@ class WindowsDesktopBroker:
             "runId": lease["runId"],
             "expired": payload.get("expired") is True,
         }
+
+    def _restore_display(self, lease: dict[str, Any]) -> dict[str, Any]:
+        display_lease = lease.get("displayLease")
+        if display_lease is None:
+            return {"restored": True, "notRequired": True}
+        if not isinstance(display_lease, dict):
+            raise BrokerError("display lease is invalid")
+        if display_lease.get("restored") is True:
+            return {"restored": True, "alreadyRestored": True}
+        source_root = _windows_path(
+            display_lease.get("sourceRoot"),
+            "display source root",
+        )
+        restore = display_lease.get("restoreGeometry")
+        if not isinstance(restore, dict):
+            raise BrokerError("display restore geometry is invalid")
+        width = _display_dimension(
+            restore.get("width"),
+            "display restore width",
+        )
+        height = _display_dimension(
+            restore.get("height"),
+            "display restore height",
+        )
+        service_name = _canonical_id(
+            display_lease.get("autoResizeService"),
+            "display auto-resize service",
+        )
+        if service_name != _DISPLAY_AUTO_RESIZE_SERVICE:
+            raise BrokerError("display auto-resize service is not approved")
+        if self._service_running(service_name):
+            self._set_service_running(service_name, False)
+        changed = self.execute_adapter(
+            {
+                "runId": lease["runId"],
+                "adapterOperation": "set_display_geometry",
+                "requestId": f"display-restore-{time.time_ns():x}",
+                "payload": {"width": width, "height": height},
+                "sourceRoot": source_root,
+            },
+            allow_expired=True,
+        )
+        current = changed.get("current")
+        if (
+            not isinstance(current, dict)
+            or current.get("width") != width
+            or current.get("height") != height
+        ):
+            raise BrokerError(
+                "interactive display did not restore its original geometry"
+            )
+        should_run = display_lease.get("serviceWasRunning") is True
+        self._set_service_running(service_name, should_run)
+        if self._service_running(service_name) is not should_run:
+            raise BrokerError(
+                "display auto-resize service did not restore its original state"
+            )
+        display_lease["restored"] = True
+        self._write_json(self.lease_path, lease)
+        return {
+            "restored": True,
+            "serviceRunning": should_run,
+            "current": dict(current),
+        }
+
+    @staticmethod
+    def _service_running(name: str) -> bool:
+        service_name = _canonical_id(name, "service name")
+        completed = subprocess.run(
+            _encoded_powershell(
+                "$ErrorActionPreference='Stop'; "
+                f"(Get-Service -Name {_ps_literal(service_name)} "
+                "-ErrorAction Stop).Status.ToString()"
+            ),
+            capture_output=True,
+            encoding="utf-8",
+            check=False,
+        )
+        if completed.returncode != 0:
+            raise BrokerError(
+                "query display auto-resize service failed: "
+                + _powershell_failure_detail(completed)
+            )
+        status = completed.stdout.strip().splitlines()
+        if not status:
+            raise BrokerError(
+                "display auto-resize service returned no status"
+            )
+        observed = status[-1].strip().lower()
+        if observed == "running":
+            return True
+        if observed == "stopped":
+            return False
+        raise BrokerError(
+            f"display auto-resize service is in unsupported state {observed!r}"
+        )
+
+    @staticmethod
+    def _set_service_running(name: str, running: bool) -> None:
+        service_name = _canonical_id(name, "service name")
+        target = "Running" if running else "Stopped"
+        action = "Start-Service" if running else "Stop-Service"
+        completed = subprocess.run(
+            _encoded_powershell(
+                "$ErrorActionPreference='Stop'; "
+                f"$service=Get-Service -Name {_ps_literal(service_name)} "
+                "-ErrorAction Stop; "
+                f"if ($service.Status.ToString() -ne '{target}') {{ "
+                f"{action} -Name {_ps_literal(service_name)} "
+                "-ErrorAction Stop }; "
+                f"$service.WaitForStatus('{target}', "
+                "[TimeSpan]::FromSeconds(30)); "
+                f"(Get-Service -Name {_ps_literal(service_name)} "
+                "-ErrorAction Stop).Status.ToString()"
+            ),
+            capture_output=True,
+            encoding="utf-8",
+            check=False,
+        )
+        if completed.returncode != 0:
+            raise BrokerError(
+                f"set display auto-resize service {target.lower()} failed: "
+                + _powershell_failure_detail(completed)
+            )
+        status = completed.stdout.strip().splitlines()
+        if not status or status[-1].strip().lower() != target.lower():
+            raise BrokerError(
+                "display auto-resize service state verification failed"
+            )
 
     @staticmethod
     def _remove_tree(path: Path) -> None:
@@ -818,6 +1068,14 @@ try:
         process_id = int(payload["processId"])
         adapter.activate_process(process_id)
         result = adapter.focused_control(process_id).to_dict()
+    elif operation == "display_geometry":
+        width, height = adapter.display_geometry()
+        result = {"width": width, "height": height}
+    elif operation == "set_display_geometry":
+        result = adapter.set_display_geometry(
+            int(payload["width"]),
+            int(payload["height"]),
+        )
     elif operation == "post_mouse":
         actions = tuple(MouseAction(item) for item in payload["actions"])
         result = adapter.post_mouse(actions, tuple(payload["point"])) or {}
@@ -946,6 +1204,7 @@ def dispatch_request(request: Mapping[str, Any]) -> dict[str, Any]:
     operation = str(request.get("operation") or "")
     handlers: dict[str, Callable[[Mapping[str, Any]], dict[str, Any]]] = {
         "acquire": broker.acquire,
+        "prepare-display": broker.prepare_display,
         "launch-actor": broker.launch_actor,
         "actor-status": broker.actor_status,
         "stop-actor": broker.stop_actor,

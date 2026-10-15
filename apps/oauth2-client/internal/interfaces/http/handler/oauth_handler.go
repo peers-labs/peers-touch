@@ -7,6 +7,7 @@ import (
 
 	"github.com/peers-labs/peers-touch/oauth2-client/internal/application/oauth/usecase"
 	"github.com/peers-labs/peers-touch/oauth2-client/internal/domain/oauth/valueobject"
+	"github.com/peers-labs/peers-touch/oauth2-client/internal/version"
 )
 
 type OAuthHandler struct {
@@ -73,7 +74,7 @@ func (h *OAuthHandler) Healthz(w http.ResponseWriter, r *http.Request) {
 	if !requireGET(w, r) {
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "version": version.Version()})
 }
 
 func requireGET(w http.ResponseWriter, r *http.Request) bool {

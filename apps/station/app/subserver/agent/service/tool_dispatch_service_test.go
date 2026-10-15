@@ -2398,6 +2398,70 @@ func TestToolDispatchServiceClaimReadyContinuation(t *testing.T) {
 	if _, err := fixture.service.ClaimReadyContinuation(context.Background(), time.Minute); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("second claim must not acquire an active lease, got %v", err)
 	}
+	if err := fixture.service.ReleaseContinuationClaim(
+		context.Background(),
+		claimed.ID,
+		claimed.LeaseID,
+		claimed.FencingToken,
+	); err != nil {
+		t.Fatalf("release unused continuation claim: %v", err)
+	}
+	reclaimed, err := fixture.service.ClaimReadyContinuation(
+		context.Background(),
+		time.Minute,
+	)
+	if err != nil {
+		t.Fatalf("reclaim released continuation: %v", err)
+	}
+	if reclaimed.ID != row.ID ||
+		reclaimed.FencingToken != claimed.FencingToken+1 {
+		t.Fatalf("released continuation was not fenced on reclaim: %+v", reclaimed)
+	}
+}
+
+func TestTurnServiceReleasesContinuationClaimBeforeProviderEmission(
+	t *testing.T,
+) {
+	fixture := newToolDispatchFixture(t)
+	row := &persistence.ToolContinuation{
+		ID:          "continuation-release-before-provider",
+		TurnID:      "turn-missing",
+		AttemptID:   "attempt-missing",
+		ToolBatchID: "batch-missing",
+		Status:      persistence.ToolContinuationStatusReady,
+		CreatedAt:   fixture.now,
+		UpdatedAt:   fixture.now,
+	}
+	if err := fixture.db.Create(row).Error; err != nil {
+		t.Fatalf("seed ready continuation: %v", err)
+	}
+	service := &TurnService{toolDispatch: fixture.service}
+
+	resumed, err := service.ResumeReadyToolContinuation(
+		context.Background(),
+		time.Minute,
+	)
+	if !resumed || err == nil {
+		t.Fatalf(
+			"missing batch result: resumed=%v err=%v",
+			resumed,
+			err,
+		)
+	}
+
+	var released persistence.ToolContinuation
+	if err := fixture.db.First(&released, "id = ?", row.ID).Error; err != nil {
+		t.Fatalf("reload released continuation: %v", err)
+	}
+	if released.Status != persistence.ToolContinuationStatusReady ||
+		released.LeaseID != "" ||
+		released.LeaseExpiresAt != nil ||
+		released.ProviderRequestEmitted {
+		t.Fatalf(
+			"pre-provider continuation claim was not released: %+v",
+			released,
+		)
+	}
 }
 
 func TestToolDispatchServiceSubmitDecision(t *testing.T) {
@@ -4626,12 +4690,31 @@ func TestTurnServiceLifecycleCancellationPreservesResumedContinuation(t *testing
 		Status:    int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING),
 		StartedAt: fixture.now,
 	}
+	chatTasks := NewChatTaskService(nil, ChatTaskExecutorIdentity{
+		NodeID:      "node-lifecycle",
+		Incarnation: "incarnation-lifecycle",
+	})
+	executorLease := &persistence.ExecutorLease{
+		LeaseID:          "lease-lifecycle-cancel",
+		TaskID:           authority.TaskID,
+		StepID:           authority.StepID,
+		ExecutorID:       "node-lifecycle/incarnation-lifecycle",
+		ExecutorKind:     int32(model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED),
+		OwnerNodeID:      "node-lifecycle",
+		OwnerIncarnation: "incarnation-lifecycle",
+		FencingToken:     1,
+		Status:           executorLeaseStatusActive,
+		AcquiredAt:       fixture.now,
+		HeartbeatAt:      fixture.now,
+		ExpiresAt:        time.Now().UTC().Add(time.Minute),
+	}
 	for name, record := range map[string]interface{}{
-		"conversation": conversation,
-		"turn":         turn,
-		"attempt":      attempt,
-		"task":         task,
-		"step":         step,
+		"conversation":   conversation,
+		"turn":           turn,
+		"attempt":        attempt,
+		"task":           task,
+		"step":           step,
+		"executor lease": executorLease,
 	} {
 		if err := fixture.db.Create(record).Error; err != nil {
 			t.Fatalf("seed %s: %v", name, err)
@@ -4678,6 +4761,7 @@ func TestTurnServiceLifecycleCancellationPreservesResumedContinuation(t *testing
 		toolDispatch:      fixture.service,
 		nudgeState:        domain.NewNudgeState(),
 		admissionResolver: admissionResolver,
+		chatTaskService:   chatTasks,
 		resumeProviderCall: func(
 			ctx context.Context,
 			_ *TurnConfig,
@@ -4934,15 +5018,18 @@ func TestChatTaskServiceBindChatStepToTurn(t *testing.T) {
 		StartedAt: fixture.now,
 	}
 	lease := &persistence.ExecutorLease{
-		LeaseID:      "lease-bind",
-		TaskID:       step.TaskID,
-		StepID:       step.StepID,
-		ExecutorID:   "station-old",
-		ExecutorKind: int32(model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED),
-		Status:       chatLeaseStatusActive,
-		AcquiredAt:   fixture.now,
-		HeartbeatAt:  fixture.now,
-		ExpiresAt:    fixture.now.Add(time.Minute),
+		LeaseID:          "lease-bind",
+		TaskID:           step.TaskID,
+		StepID:           step.StepID,
+		ExecutorID:       "node-bind/incarnation-bind",
+		ExecutorKind:     int32(model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED),
+		OwnerNodeID:      "node-bind",
+		OwnerIncarnation: "incarnation-bind",
+		FencingToken:     1,
+		Status:           executorLeaseStatusActive,
+		AcquiredAt:       fixture.now,
+		HeartbeatAt:      fixture.now,
+		ExpiresAt:        time.Now().UTC().Add(time.Minute),
 	}
 	if err := fixture.db.Create(step).Error; err != nil {
 		t.Fatalf("seed running chat step: %v", err)
@@ -4951,8 +5038,18 @@ func TestChatTaskServiceBindChatStepToTurn(t *testing.T) {
 		t.Fatalf("seed chat step lease: %v", err)
 	}
 
-	service := NewChatTaskService(nil)
-	if err := service.BindChatStepToTurn(context.Background(), step.TaskID, step.StepID, "turn-bind"); err != nil {
+	service := NewChatTaskService(nil, ChatTaskExecutorIdentity{
+		NodeID:      "node-bind",
+		Incarnation: "incarnation-bind",
+	})
+	if err := service.BindChatStepToTurn(
+		context.Background(),
+		step.TaskID,
+		step.StepID,
+		"turn-bind",
+		lease.LeaseID,
+		lease.FencingToken,
+	); err != nil {
 		t.Fatalf("bind chat step to turn: %v", err)
 	}
 

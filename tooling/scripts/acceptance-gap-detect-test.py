@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import sys
 import unittest
 from pathlib import Path
@@ -33,69 +34,49 @@ def proven_result(gate_id: str) -> dict[str, Any]:
 
 
 class AcceptanceGapDetectorTests(unittest.TestCase):
-    def test_session_and_acceptance_run_are_distinct_inputs(self) -> None:
+    def test_acceptance_run_remains_an_explicit_input_without_session_state(self) -> None:
         args = MODULE.parse_arguments(
             [
-                "--session",
-                "/tmp/development-session.json",
                 "--run",
                 "/tmp/acceptance-run.json",
             ]
         )
 
-        self.assertEqual(args.session, "/tmp/development-session.json")
         self.assertEqual(args.run, "/tmp/acceptance-run.json")
 
-    def test_main_rejects_before_loading_evidence_without_a_session(self) -> None:
+    def test_missing_latest_evidence_fails_closed_without_traceback(self) -> None:
+        class MissingEvidenceStore:
+            def read_json(self, reference):
+                raise AssertionError(f"unexpected evidence reference: {reference}")
+
+            def latest_artifact_ref(self, gate_id: str, role: str):
+                raise MODULE.EvidenceError(
+                    f"latest pointer is unavailable for {gate_id}:{role}"
+                )
+
+        stderr = io.StringIO()
         with patch.object(
             sys,
             "argv",
             ["acceptance-gap-detect.py"],
         ), patch.object(
             MODULE,
-            "require_acceptance_admission",
-            side_effect=MODULE.AcceptanceAdmissionError(
-                "ACCEPTANCE_SESSION_REQUIRED"
-            ),
-        ) as admission, patch.object(
-            sys,
-            "stderr",
-        ):
-            exit_code = MODULE.main()
-
-        self.assertEqual(exit_code, 2)
-        admission.assert_called_once_with(
-            MODULE.REPO_ROOT,
-            None,
-            "gap",
-        )
-
-    def test_main_passes_session_separately_from_acceptance_run(self) -> None:
-        with patch.object(
-            sys,
-            "argv",
-            [
-                "acceptance-gap-detect.py",
-                "--session",
-                "session.json",
-                "--run",
-                "run.json",
-            ],
+            "resolve_changed_paths",
+            return_value=["tooling/scripts/acceptance-gap-detect.py"],
+        ), patch(
+            "tooling.acceptance.core.EvidenceStore.from_environment",
+            return_value=MissingEvidenceStore(),
         ), patch.object(
-            MODULE,
-            "require_acceptance_admission",
-            side_effect=MODULE.AcceptanceAdmissionError("STOP_AFTER_ADMISSION"),
-        ) as admission, patch.object(
             sys,
             "stderr",
+            stderr,
         ):
             exit_code = MODULE.main()
 
         self.assertEqual(exit_code, 2)
-        admission.assert_called_once_with(
-            MODULE.REPO_ROOT,
-            "session.json",
-            "gap",
+        self.assertIn(
+            "acceptance gap detector failed closed",
+            stderr.getvalue(),
         )
 
     def test_explicit_changed_paths_define_exact_scope(self) -> None:

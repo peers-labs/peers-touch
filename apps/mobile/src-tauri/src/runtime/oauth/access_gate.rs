@@ -130,12 +130,13 @@ impl OAuthCoordinator {
                 lifecycle_generation: identity.generation,
             }),
             session_id,
-            station_peer_id: scope.station_peer_id,
+            station_peer_id: scope.station_peer_id.clone(),
         };
+        let transport_origin = scope.transport_origin()?;
         let response: StartAccessAttemptResponse = self
             .transport
             .post_enveloped(
-                &scope.station_origin,
+                &transport_origin,
                 "/actor/access/start",
                 &request,
                 START_RESPONSE_TYPE,
@@ -170,10 +171,11 @@ impl OAuthCoordinator {
             device_id: identity.device_id.clone(),
             lifecycle_generation: identity.generation,
         };
+        let transport_origin = scope.transport_origin()?;
         let mut response: GetAccessDecisionResponse = self
             .transport
             .post_enveloped(
-                &scope.station_origin,
+                &transport_origin,
                 "/actor/access/decision",
                 &request,
                 DECISION_RESPONSE_TYPE,
@@ -216,10 +218,11 @@ impl OAuthCoordinator {
         let identity = load_or_create_identity(storage)?;
         let submission_id = clean_required(input.submission_id.clone(), "submissionId")?;
         let request = validated_submit_request(input, &scope, &identity, &submission_id)?;
+        let transport_origin = scope.transport_origin()?;
         let mut response: SubmitAccessGateResponse = self
             .transport
             .post_enveloped(
-                &scope.station_origin,
+                &transport_origin,
                 "/actor/access/submit",
                 &request,
                 SUBMIT_RESPONSE_TYPE,
@@ -260,10 +263,11 @@ impl OAuthCoordinator {
             station_peer_id: input.station_peer_id,
         })?;
         let identity = load_or_create_identity(storage)?;
+        let transport_origin = scope.transport_origin()?;
         let response: CancelAccessAttemptResponse = self
             .transport
             .post_enveloped(
-                &scope.station_origin,
+                &transport_origin,
                 "/actor/access/cancel",
                 &CancelAccessAttemptRequest {
                     attempt_id: clean_required(input.attempt_id, "accessAttemptId")?,
@@ -382,6 +386,8 @@ fn nonempty(value: String) -> Option<String> {
 mod tests {
     use super::*;
 
+    const TEST_PASSWORD: &str = "secret";
+
     fn scope() -> ValidatedScope {
         ValidatedScope::new(super::super::OAuthScopeIntent {
             station_origin: "https://station.example".to_string(),
@@ -412,7 +418,7 @@ mod tests {
                 submission_id: "submission-a".to_string(),
                 input: NativeAccessGateInput::Login {
                     email: "alice@example.test".to_string(),
-                    password: "secret".to_string(),
+                    password: TEST_PASSWORD.to_string(),
                 },
             },
             &scope(),

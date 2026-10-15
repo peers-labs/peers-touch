@@ -1,8 +1,8 @@
 # Local Dev Control Plane - Integration
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-09-13 | **Updated**: 2026-10-06
+> **Version**: v1.4
+> **Created**: 2026-09-13 | **Updated**: 2026-10-15
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/`
 
@@ -13,15 +13,15 @@
 | Existing path | Current role | Target role |
 |---------------|--------------|-------------|
 | `env/peers-touch/<profile>/` | Profile and deploy topology | Remains canonical topology owner |
-| `<worktree>/.local/dev/profiles/` | Imported cache or authorized local compose profile | Cache is not authority; local profile requires a digest-bound receipt |
+| `<worktree>/.local/dev/profiles/` | Imported cache or local compose profile | Worktree-local Profile created by canonical `profile-init`; never remote deploy authority |
 | `<worktree>/.local/dev/active/` | Legacy worktree profile pointer | No runtime reader; replaced by machine registry binding |
 | `<worktree>/.local/dev/pids|logs|data/` | Legacy worktree/profile runtime state | New runtime state resolves under the workspace-scoped global dev root |
 | `<worktree>/.local/deploy/envs/` | Legacy imported deploy cache | Never deployment authority; deploy resolves a unique tracked-clean env-repository definition |
 | `/tmp/peers-touch-profile-leases/` | Legacy Acceptance/deploy live locks | Not used by canonical `make station`; replaced by one machine control-plane lease root |
 | `~/.peers-touch/dev/registry.json` | Observed snapshot until explicit promotion | Authoritative after `make env-register` |
-| `~/.peers-touch/dev/plan-mounts/` | Absent before DWF-D38 | Development Workflow PlanMount ledger and immutable execution input |
 | `~/Library/Application Support/PeersTouch/acceptance/` | Legacy Acceptance Evidence Store | One-time verified move to `~/.peers-touch/dev/acceptance/` |
-| `tooling/scripts/local-dev/workflow-snapshot*.mjs` | Peers Dev server previously owned this projection | Canonical one-shot read-only Workflow Snapshot |
+| `.dev-workflow/tasks/<taskId>/task.json` | Optional task-local recovery | Repository-local atomic snapshot; never runtime authority |
+| `tooling/scripts/local-dev/workflow-snapshot.mjs` | Peers Dev server previously owned this projection | Canonical one-shot read-only Workflow Snapshot |
 
 The migration must be atomic at the runtime command boundary. There must not be
 permanent dual-read precedence between global registry and `.local/dev/active`.
@@ -33,17 +33,6 @@ permanent dual-read precedence between global registry and `.local/dev/active`.
 ├── README.md
 ├── registry.json
 ├── registry.lock
-├── work.json
-├── work.lock
-├── plan-mounts/
-│   ├── ledger.json
-│   ├── ledger.lock
-│   └── mounts/<mountId>.json
-├── authorizations/
-│   └── environment-creation/
-│       ├── pending/
-│       ├── claims/
-│       └── receipts/
 ├── acceptance/
 │   └── <workspaceId>/<gateId>/<runId>/
 ├── leases/
@@ -52,10 +41,6 @@ permanent dual-read precedence between global registry and `.local/dev/active`.
 │   └── station-reset-<station-fixture>.lock
 └── workspaces/
     └── <workspaceId>/
-        ├── workflow/
-        │   └── <runId>/
-        │       ├── execution-plan-snapshots/<snapshotId>.json
-        │       └── execution-run.json
         ├── runtime/
         ├── pids/
         ├── logs/
@@ -73,27 +58,20 @@ Target command behavior:
 
 | Command | Control-plane action |
 |---------|----------------------|
-| `make worktree-create WORKTREE=<absolute-path> BRANCH=<new-branch> PURPOSE='<text>' [START=<ref>]` | Create an explicitly authorized Git worktree and persist immutable creating main-session provenance |
-| `make worktree-creation-status` | Read the current worktree creation provenance |
 | `make env-register` | Explicitly enroll the verified current workspace and allocate one profile/slot/capability binding |
-| `make env-unregister [WORKSPACE_ID=<id>]` | Remove the exact idle registration after coordinated close; reject live declaration, active-work, PlanMount, or lease |
-| `make profile <name>` | Explicitly select a reviewed Profile; register with the lowest free slot and minimum operational capabilities, excluding reset, on first use; otherwise update the existing binding |
+| `make env-unregister [WORKSPACE_ID=<id>]` | Remove the exact idle registration owned by the caller; reject any live OS-held lease |
+| `make profile <name>` | Select a reviewed Profile; register with the lowest free slot on first use; non-stable remote Profiles receive connect+deploy, while stable/local/compose Profiles receive connect only |
 | `make env-update` | Atomically replace requested binding fields and the registered branch while no lease is held |
 | `make env-check` | Verify current root/ID/branch, live Git source, selected definition, slot, capabilities, target host, and budget |
-| `make dev-start` | Publish and confirm source/runtime intent before mutation |
-| `make dev-update` | Atomically replace the current work item's intent |
-| `make dev-status-all` | Show all worktree declarations beside observed leases |
-| `make dev-check` | Verify current worktree/branch/HEAD owns a live declaration |
-| `make dev-release` | Low-level declaration owner release; not a complete workflow close |
-| `make dev-close ... ENVIRONMENT_POLICY=<retain|unregister>` | Coordinate every workflow/resource owner and persist the resumable close receipt |
-| `make dev-resources-prepare` | Ask Dev Workflow to aggregate module impacts and atomically publish ready-target resource claims |
-| `make dev-resource-record` | Record a Runtime Owner result against the committed resource-plan fence |
-| `make plan-mount PLAN=<path>` | Mount one stable Plan to the current execution workspace |
-| `make plan-mount-status` | Resolve the live mount, immutable snapshot, and ExecutionRun |
-| `make plan-amend PLAN=<path> REASON='<why>' CHANGE='<what>'` | Record an Agent-owned in-place Plan correction and advance the current snapshot without remounting |
-| `make plan-unmount MOUNT=<id> REASON=<reason>` | Release a completed/cancelled run or consume explicit owner unmount authority |
-| `make profile-authorize <name> SLOT=<n>` | Human-only interactive grant for one exact local compose profile |
-| `make profile-init <name> SLOT=<n>` | Consume the exact pending grant and persist a digest-bound receipt |
+| `make dev-start TASK=<id> ...` | Optionally create task-local recovery state |
+| `make dev-update TASK=<id> EXPECTED_REVISION=<n> ...` | Update one explicit task with revision/CAS |
+| `make dev-status TASK=<id>` | Read one explicit task |
+| `make dev-status-all` | Read task-local records and isolate corrupt tasks |
+| `make dev-close TASK=<id> ...` | Close only the selected task and settle only its owned resources |
+| `make plan-validate PLAN=<path>` | Validate one explicit frozen Plan Version |
+| `make plan-inspect PLAN=<path>` | Inspect one explicit Plan without machine occupancy |
+| `make plan-task PLAN=<path> TASK=<id>` | Read one explicit Plan task |
+| `make profile-init <name> SLOT=<n>` | Create one non-overwriting worktree-local compose Profile |
 | `make profile <name>` | Call canonical `env-update` behavior for only the current `workspaceId` binding |
 | `make config` | Resolve current binding + env definition + allocation |
 | `make status` | Show current worktree declared and observed state |
@@ -117,14 +95,10 @@ node tooling/scripts/local-dev/machine-dev.mjs lease \
 ```
 
 It validates the canonical Profile-ID reset policy, authoritative binding,
-`allowedCapabilities`, exact active Development intent, remote tracked-clean
-topology, and exact reset scope before acquiring the OS lock. It does not
-implement deletion or consult a second human-authorization channel.
-
-For a claim introduced by DWF-D32 planning, the same lease admission also
-requires the matching machine-local resource plan to be `COMMITTED` and current.
-`RESERVING` plans cannot authorize physical work. Pre-existing claims are
-recorded separately as base intent and keep their original behavior.
+`allowedCapabilities`, remote tracked-clean topology, prepared current source,
+and exact reset scope before acquiring the OS lock. It does not implement
+deletion or consult task progress, Plan state, host identity, Hook output, or a
+second human-authorization channel.
 
 `make station` uses the same API with `station.deploy` and holds the lease
 across source synchronization, build, restart, deploy health readback, and the
@@ -153,17 +127,13 @@ promotes it. This permits visibility without silently changing active runtimes.
 
 - Preserve each worktree's independent profile choice.
 - Derive reset policy only from the verified canonical Profile ID. A
-  case-insensitive `stable` substring is protected; all other reviewed Profile
+  case-insensitive terminal `stable` suffix is protected; all other reviewed Profile
   IDs are Agent-resettable. Do not read a control-mode field or legacy cache.
 - Do not select a default profile for unbound worktrees.
 - Do not assign slot 0 as a fallback.
-- Do not create, copy, derive, or register an environment-repository profile,
-  deploy environment, or local-only profile cache without explicit human
-  developer approval for the exact environment name and target. A missing
-  environment blocks execution and must be reported.
-- Agents must not run `make profile-authorize` or create authorization files.
-  Pending authorizations are short-lived and single-use; authorized local
-  profiles must continue to match their consumed receipt digest.
+- Agents may create a worktree-local Profile with `make profile-init`; remote
+  topology must remain tracked source in the explicitly scoped environment
+  repository.
 - `PT_DEV_PROFILE_FILE` is reserved for a profile directly contained by a
   declared Acceptance runtime profile root with
   `acceptance-runtime-manifest` authority.
@@ -212,11 +182,10 @@ Required negative fixtures:
 - Live process whose PID file points to another executable.
 - Missing registry, malformed registry, and unsupported schema.
 - Dirty/untracked environment repository definition.
-- Missing profile with no explicit human authorization to create it.
+- Missing or ambiguous remote target or credential.
 - Mixed-case `stable` Profile requesting `station.reset`.
-- Non-stable reset with missing binding capability, declaration, exact scope,
-  or OS lease.
-- Expired, mismatched, reused, or digest-invalid environment authorization.
+- Non-stable reset with missing binding capability, exact scope, current
+  source identity, or OS lease.
 
 Focused implementation verification:
 
@@ -233,19 +202,10 @@ node --test tooling/scripts/local-dev/workflow-snapshot*.test.mjs
 make workflow-snapshot
 ```
 
-The snapshot must contain only selected non-secret profile fields, machine
-registrations, work declarations, lease projections, a worktree-centric joined
-view and derived profile occupancy. The primary view must retain declaration-
-only workspaces, group active requirements and Journeys by `workspaceId`, and
-distinguish runtime intent from held leases.
-
-Tracked declarations must resolve their declared PlanMount, immutable snapshot,
-ExecutionRun, and current Task through the registered worktree root. Tests must
-cover a valid mount, identifier mismatch, missing snapshot/run, unregistered
-root, and an escaping path. Active and stale declarations remain visible,
-while only live declarations contribute intent or occupancy.
-`workState` and `environmentHealth` are asserted independently so profile or
-registry problems cannot rewrite task lifecycle.
+The snapshot contains current source, explicitly selected task-local records,
+isolated task errors, and optional runtime status. It never infers a current
+task, joins historical workflow stores, or turns task progress into runtime
+intent or occupancy.
 
 Lifecycle verification proves Workflow Snapshot emits one document and exits
 without opening a listener, browser, PID file, background process, or runtime
@@ -282,9 +242,9 @@ Migration remains incomplete until every condition below holds:
 
 - `make profile <name>` and `make env-register` are the only operations that
   enroll the current `workspaceId`. The former is the normal explicit
-  first-use path with atomic free-slot allocation and minimum operational
-  capabilities without reset; the latter accepts an Owner-provided purpose,
-  profile, capability set, and slot.
+  first-use path with atomic free-slot allocation; non-stable remote Profiles
+  receive connect+deploy while stable/local/compose Profiles receive connect
+  only. The latter accepts purpose metadata, profile, capability set, and slot.
 - `make profiles`, `git worktree list`, repository scans, and old
   `.local/dev/active` pointers are discovery only.
 - `make env-status-all` lists registered worktrees first, then separately

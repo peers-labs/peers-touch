@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -44,6 +45,21 @@ const (
 )
 
 var testAttemptSecret = []byte("test-attempt-secret-with-enough-entropy-0123456789")
+
+func TestOAuthLiveBindingKeyIsPostgresSafe(t *testing.T) {
+	key := oauthLiveBindingKey(testAccessAttempt, testDeviceID, testGeneration)
+
+	if strings.ContainsRune(key, '\x00') {
+		t.Fatalf(
+			"live binding key contains NUL, which PostgreSQL rejects (SQLSTATE 22021): %q",
+			key,
+		)
+	}
+	want := testAccessAttempt + ":" + testDeviceID + ":" + "7"
+	if key != want {
+		t.Fatalf("unexpected live binding key: want %q, got %q", want, key)
+	}
+}
 
 type fakeProviderExchange struct {
 	exchanges atomic.Int32

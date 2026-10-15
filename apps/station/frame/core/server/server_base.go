@@ -99,12 +99,7 @@ func (b *BaseServer) init(opts ...option.Option) error {
 
 		logger.Infof(b.opts.Ctx(), "init sub server: %s", sub.Name())
 
-		// append the sub server to the map
-		b.subServers[sub.Name()] = sub
-
-		// Publish the instance into Options so sibling subservers can
-		// discover each other via server.GetOptions().SubserverInstances.
-		b.opts.SubserverInstances[sub.Name()] = sub
+		b.registerSubserver(name, sub)
 
 		// then append the sub server's handlers to the main server
 		for _, handler := range sub.Handlers() {
@@ -115,6 +110,11 @@ func (b *BaseServer) init(opts ...option.Option) error {
 	}
 
 	return nil
+}
+
+func (b *BaseServer) registerSubserver(name string, sub Subserver) {
+	b.subServers[name] = sub
+	b.opts.SubserverInstances[name] = sub
 }
 
 func orderedSubserverNames(subservers map[string]subServerNewFunctions) []string {

@@ -51,11 +51,14 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-appender = "0.2"
 rfd = "0.15"
 tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
+tokio-util = "0.7"
 futures-lite = "2"
 ulid = "1.1"
 bip39 = { version = "2", features = ["rand"] }
 messaging-core = { path = "../../../packages/messaging-core", features = ["sqlite-recovery"] }
 secure-content-core = { path = "../../../packages/secure-content-core" }
+station-trust = { path = "../../../packages/station-trust" }
+station-libp2p-http = { path = "../../../packages/station-libp2p-http" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 dispatch2 = "0.3.1"

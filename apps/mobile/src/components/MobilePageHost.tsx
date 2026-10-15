@@ -3,7 +3,10 @@ import type {
   MobileOverlayRoute,
 } from '../app/navigation';
 import type { MobileAuthSession } from '../features/auth/authSession';
-import type { StoredStationRegistry } from '../features/station/stationRegistry';
+import type {
+  MobileStationRouteCandidate,
+  StoredStationRegistry,
+} from '../features/station/stationRegistry';
 import { ChatPage } from '../pages/ChatPage';
 import { ContactsPage } from '../pages/ContactsPage';
 import { MomentsPage } from '../pages/MomentsPage';
@@ -41,7 +44,8 @@ export function mobileDetailTab(route: MobileDetailRoute | null): MobileTabId | 
 export function MobilePageHost({
   tabId, stationRegistry, authSession, activeDetail, activeOverlay,
   onStartConversation, onOpenDetail, onOpenOverlay, onCloseOverlay,
-  onBack, onMomentsImmersiveVisibilityChange, onChangeStation, onLogout,
+  onBack, onMomentsImmersiveVisibilityChange, onChangeStation,
+  onChangeStationRoute, onLogout,
 }: {
   readonly tabId: MobileTabId;
   readonly stationRegistry: StoredStationRegistry;
@@ -55,6 +59,10 @@ export function MobilePageHost({
   readonly onBack: () => void;
   readonly onMomentsImmersiveVisibilityChange: (visible: boolean) => void;
   readonly onChangeStation: () => Promise<void>;
+  readonly onChangeStationRoute: (
+    stationPeerId: string,
+    route: MobileStationRouteCandidate,
+  ) => Promise<void>;
   readonly onLogout: () => Promise<void>;
 }) {
   switch (tabId) {
@@ -85,6 +93,7 @@ export function MobilePageHost({
         onOpenSetting={(settingId) => onOpenDetail({ routeId: 'detail:setting', settingId })}
         onBack={onBack}
         onChangeStation={onChangeStation}
+        onChangeStationRoute={onChangeStationRoute}
         onLogout={onLogout}
       />;
     case 'moments':

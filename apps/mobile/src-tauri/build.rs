@@ -12,6 +12,7 @@ fn main() {
     let protos = [
         "../../../model/domain/activity/activity.proto",
         "../../../model/domain/peer/station_identity.proto",
+        "../../../model/domain/peer/access_endpoint.proto",
         "../../../model/domain/activity/activity.proto",
         "../../../model/domain/common/common.proto",
         "../../../model/domain/actor/actor.proto",

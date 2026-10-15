@@ -216,7 +216,7 @@
 
 - **状态**：`stopped` → `starting` → `running` → `stopping` → `error`（`IsRunning()` 谓词；多数 subserver 实际仅在 stopped↔running 间切换）
 - **触发**：各 subserver `Init`→`starting`；`Start`→`running`；`Stop`→`stopped`
-- **不变量**：统一枚举，OSS / Relay / Relay-client / Bootstrap / TURN / Debug 一致实现。
+- **不变量**：统一枚举，OSS / Relay / Bootstrap / TURN / Debug 一致实现。
 - **Owner**：[frame/core/server/subserver.go](../../../../apps/station/frame/core/server/subserver.go#L59)
 - **关联规范** → [station/subserver-standard.md](../../../station/subserver-standard.md)
 

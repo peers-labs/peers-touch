@@ -1080,3 +1080,7 @@ export function MomentsPage({
     </div>
   );
 }
+
+function IconButton({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
+  return <button type="button" className="mp-header-action" aria-label={label} onClick={onClick}>{children}</button>;
+}

@@ -18,7 +18,10 @@ import {
 } from '../app/navigation';
 import { useAuthStore } from '../features/auth/authStore';
 import { useSocialStore } from '../features/social/socialStore';
-import type { StoredStationRegistry } from '../features/station/stationRegistry';
+import type {
+  MobileStationRouteCandidate,
+  StoredStationRegistry,
+} from '../features/station/stationRegistry';
 import {
   selectChatNavigationBadge,
   selectContactsNavigationBadge,
@@ -46,6 +49,10 @@ function routeIdToTabId(routeId: string): MobileTabId | null {
 export interface MobileShellProps {
   stationRegistry: StoredStationRegistry;
   readonly onChangeStation: () => Promise<void>;
+  readonly onChangeStationRoute: (
+    stationPeerId: string,
+    route: MobileStationRouteCandidate,
+  ) => Promise<void>;
   onLogout: () => Promise<void>;
 }
 

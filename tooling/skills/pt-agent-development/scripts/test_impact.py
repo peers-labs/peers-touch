@@ -289,9 +289,9 @@ class AgentImpactTests(unittest.TestCase):
 
     def test_path_decisions_are_deduplicated_and_ordered(self) -> None:
         result = self.classify(
-            "tooling/scripts/local-dev/dev-session.mjs",
+            "tooling/scripts/local-dev/task-progress-store.mjs",
             "AGENTS.md",
-            "tooling/scripts/local-dev/dev-session.mjs",
+            "tooling/scripts/local-dev/task-progress-store.mjs",
         )
 
         self.assertEqual(
@@ -299,7 +299,7 @@ class AgentImpactTests(unittest.TestCase):
                 decision["path"]
                 for decision in result["classification"]["pathDecisions"]
             ],
-            ["AGENTS.md", "tooling/scripts/local-dev/dev-session.mjs"],
+            ["AGENTS.md", "tooling/scripts/local-dev/task-progress-store.mjs"],
         )
 
     def test_noncanonical_path_is_rejected(self) -> None:
@@ -307,7 +307,7 @@ class AgentImpactTests(unittest.TestCase):
             MODULE.ImpactError,
             "canonical and repository-relative",
         ):
-            self.classify(" tooling/scripts/local-dev/dev-session.mjs")
+            self.classify(" tooling/scripts/local-dev/task-progress-store.mjs")
 
     def test_product_and_workflow_changes_require_ownership_split(self) -> None:
         result = self.classify(

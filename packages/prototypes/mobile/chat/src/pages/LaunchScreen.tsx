@@ -1,15 +1,13 @@
-import { Button, Card, Typography } from 'antd';
-import { LockKeyhole, RadioTower } from 'lucide-react';
+import { Button } from 'antd';
+import { RefreshCw, WifiOff } from 'lucide-react';
 import type { StationEntry } from '../types';
 import { LanguageSwitcher } from '../components/LanguageSwitcher';
 import { StationSelector } from '../components/StationSelector';
 import logo from '../assets/logo.png';
 
-const { Text } = Typography;
-
 export function LaunchScreen({
   stations, activeUrl, onSelectStation, onRemoveStation, onAddStation, onContinue,
-  showRemovalConfirmation = false,
+  showRemovalConfirmation = false, offline = false,
 }: {
   stations: StationEntry[];
   activeUrl: string;
@@ -18,28 +16,27 @@ export function LaunchScreen({
   onAddStation: (url: string) => void;
   onContinue: () => void;
   showRemovalConfirmation?: boolean;
+  offline?: boolean;
 }) {
   const activeStation = stations.find((station) => station.url === activeUrl);
-  const canContinue = activeStation?.online === true;
 
   return (
     <main className="mp-launch-screen">
-      <div className="mp-access-network" aria-hidden="true">
-        <span /><span /><span /><span /><span /><span />
-      </div>
       <div className="mp-launch-topbar">
         <LanguageSwitcher />
       </div>
 
-      <div className="mp-launch-body">
-        <Card className="mp-launch-card" variant="borderless">
-          <section className="mp-launch-brand">
-            <img src={logo} alt="Peers Touch" className="mp-launch-hero-logo" />
-            <div>
-              <h1>Choose your Station</h1>
-              <Text type="secondary">Your Station hosts your account and connects Peers Touch.</Text>
-            </div>
-          </section>
+      <section className="mp-launch-content" aria-labelledby="mp-launch-title">
+        <header className="mp-launch-brand">
+          <img src={logo} alt="Peers Touch" className="mp-launch-brand-logo" />
+          <div className="mp-launch-brand-copy">
+            <span>Peers</span>
+            <h1 id="mp-launch-title">Connect Your Station</h1>
+            <p>Choose Station</p>
+          </div>
+        </header>
+
+        <div className="mp-launch-panel">
           <StationSelector
             entries={stations}
             activeUrl={activeUrl}
@@ -49,20 +46,33 @@ export function LaunchScreen({
             showRemovalConfirmation={showRemovalConfirmation}
           />
           <div className="mp-launch-actions">
-            <Button block size="large" type="primary" disabled={!canContinue} onClick={onContinue}>
-              {activeStation?.online === undefined ? 'Verifying Station...' : 'Continue'}
+            <Button
+              block
+              size="large"
+              type="primary"
+              data-product-action="station-continue"
+              disabled={!activeUrl}
+              onClick={onContinue}
+            >
+              {activeStation ? `Open ${activeStation.label}` : 'Continue'}
             </Button>
           </div>
-          <div className="mp-launch-trust">
-            <LockKeyhole size={13} />
-            <span>The selected Station is verified before sign-in.</span>
+        </div>
+      </section>
+
+      {offline && (
+        <section className="mp-launch-offline" role="status">
+          <WifiOff size={17} aria-hidden="true" />
+          <div>
+            <strong>Offline mode</strong>
+            <span>No network connection. Retry or choose another Station.</span>
+            <div className="mp-launch-offline-actions">
+              <Button type="primary" size="small" icon={<RefreshCw size={14} />}>Retry</Button>
+              <Button size="small">Change Station</Button>
+            </div>
           </div>
-        </Card>
-      </div>
-      <div className="mp-access-status">
-        <RadioTower size={13} />
-        Federated network ready
-      </div>
+        </section>
+      )}
     </main>
   );
 }

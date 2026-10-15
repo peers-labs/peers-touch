@@ -2,6 +2,7 @@
 package native
 
 import (
+	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/transport"
@@ -31,6 +32,7 @@ type options struct {
 	// Multiplexers configures the stream multiplexers to use (e.g., "yamux", "mplex").
 	Multiplexers          []string
 	libp2pIdentityKeyFile string
+	libp2pHost            host.Host
 }
 
 // EnableRelay enables the use of circuit relay.
@@ -74,5 +76,12 @@ func WithMultiplexers(multiplexers []string) option.Option {
 func WithLibp2pIdentityKeyFile(path string) option.Option {
 	return wrapOptions(func(o *options) {
 		o.libp2pIdentityKeyFile = path
+	})
+}
+
+// WithHost injects the process-wide P2P Kernel Host.
+func WithHost(value host.Host) option.Option {
+	return wrapOptions(func(o *options) {
+		o.libp2pHost = value
 	})
 }

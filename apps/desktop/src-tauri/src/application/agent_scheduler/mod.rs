@@ -1,6 +1,6 @@
+use crate::application::station_runtime::client::StationClient;
 use crate::contracts::StubPayload;
 use crate::error::AppResult;
-use crate::infrastructure::station_client;
 use crate::model;
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
@@ -54,23 +54,25 @@ fn scheduler_add_job_response_to_json(
     })
 }
 
-pub fn agent_scheduler_start(input: SchedulerStartInput, token: &str) -> AppResult<StubPayload> {
+pub fn agent_scheduler_start(
+    station_client: &StationClient,
+    input: SchedulerStartInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     let req = model::agent::SchedulerStartRequest {
         agent_id: input.agent_id,
         review_interval_minutes: input.review_interval_minutes.unwrap_or(120),
         dogfood_interval_minutes: input.dogfood_interval_minutes.unwrap_or(360),
     };
 
-    match station_client::request_proto::<
-        model::agent::SchedulerStartRequest,
-        model::agent::SchedulerStartResponse,
-    >(
-        Method::POST,
-        "/agent/scheduler/start",
-        token,
-        None,
-        Some(&req),
-    ) {
+    match station_client
+        .request_proto::<model::agent::SchedulerStartRequest, model::agent::SchedulerStartResponse>(
+            Method::POST,
+            "/agent/scheduler/start",
+            token,
+            None,
+            Some(&req),
+        ) {
         Ok(resp) => {
             let status = serde_json::to_string(&scheduler_start_response_to_json(&resp))
                 .unwrap_or_else(|_| r#"{"ok":false}"#.to_string());
@@ -86,18 +88,16 @@ pub fn agent_scheduler_start(input: SchedulerStartInput, token: &str) -> AppResu
     }
 }
 
-pub fn agent_scheduler_stop(token: &str) -> AppResult<StubPayload> {
+pub fn agent_scheduler_stop(station_client: &StationClient, token: &str) -> AppResult<StubPayload> {
     let req = model::agent::SchedulerStopRequest {};
-    match station_client::request_proto::<
-        model::agent::SchedulerStopRequest,
-        model::agent::SchedulerStopResponse,
-    >(
-        Method::POST,
-        "/agent/scheduler/stop",
-        token,
-        None,
-        Some(&req),
-    ) {
+    match station_client
+        .request_proto::<model::agent::SchedulerStopRequest, model::agent::SchedulerStopResponse>(
+            Method::POST,
+            "/agent/scheduler/stop",
+            token,
+            None,
+            Some(&req),
+        ) {
         Ok(resp) => {
             let status = serde_json::to_string(&scheduler_stop_response_to_json(&resp))
                 .unwrap_or_else(|_| r#"{"ok":false}"#.to_string());
@@ -113,8 +113,11 @@ pub fn agent_scheduler_stop(token: &str) -> AppResult<StubPayload> {
     }
 }
 
-pub fn agent_scheduler_status(token: &str) -> AppResult<StubPayload> {
-    match station_client::request_proto::<
+pub fn agent_scheduler_status(
+    station_client: &StationClient,
+    token: &str,
+) -> AppResult<StubPayload> {
+    match station_client.request_proto::<
         model::agent::SchedulerStatusRequest,
         model::agent::SchedulerStatusResponse,
     >(Method::GET, "/agent/scheduler/status", token, None, None)
@@ -134,14 +137,18 @@ pub fn agent_scheduler_status(token: &str) -> AppResult<StubPayload> {
     }
 }
 
-pub fn agent_scheduler_add_job(input: SchedulerAddJobInput, token: &str) -> AppResult<StubPayload> {
+pub fn agent_scheduler_add_job(
+    station_client: &StationClient,
+    input: SchedulerAddJobInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     let req = model::agent::SchedulerAddJobRequest {
         kind: input.kind,
         agent_id: input.agent_id,
         interval_minutes: input.interval_minutes.unwrap_or(60),
     };
 
-    match station_client::request_proto::<
+    match station_client.request_proto::<
         model::agent::SchedulerAddJobRequest,
         model::agent::SchedulerAddJobResponse,
     >(

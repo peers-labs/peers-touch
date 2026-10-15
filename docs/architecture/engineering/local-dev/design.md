@@ -1,8 +1,8 @@
 # Local Dev Control Plane - Architecture Design
 
 > **Status**: active
-> **Version**: v1.4
-> **Created**: 2026-09-13 | **Updated**: 2026-10-06
+> **Version**: v1.6
+> **Created**: 2026-09-13 | **Updated**: 2026-10-15
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/`
 
@@ -27,27 +27,24 @@
 8. **Repository cleanliness**: transient debug sessions, logs, traces,
    screenshots, DOM dumps, and ad-hoc reports are machine development state,
    not repository-root content.
-9. **Human-authorized environment lifecycle**: an AI agent may select an
-   existing approved environment, but may not create, copy, derive, or register
-   a profile or deploy environment without explicit human developer approval
-   for the exact name and target.
+9. **Profile-authorized environment lifecycle**: a reviewed non-stable Profile
+   authorizes routine selection, registration, provisioning, deploy, restart,
+   and reset within its declared capabilities. A worktree-local Profile may be
+   created directly; remote topology still comes from tracked source. Stable
+   Profiles default to connect-only and require explicit binding for mutation.
 10. **Profile-ID reset policy**: the canonical Profile ID is the only reset
-    policy source. A case-insensitive `stable` substring protects the Profile
+    policy source. A case-insensitive terminal `stable` suffix protects the Profile
     from autonomous reset; every other reviewed Profile is Agent-resettable.
-    The policy never replaces declarations, capabilities, exact reset scope,
+    The policy never replaces capabilities, exact reset scope,
     leases, topology validation, or source identity.
 11. **One read-only development projection**: Workflow Snapshot joins each
-    worktree's requirements and Journeys with topology, mounts, declarations,
-    leases, and observations without becoming a mutation or truth owner.
+    worktree's optional task facts with topology, leases, and observations
+    without becoming a mutation or truth owner.
 12. **No dashboard runtime**: the projection is an on-demand CLI/library call;
     it starts no server, opens no browser, and reserves no fixed port.
-13. **Explicit Plan occupancy**: Project Ledger PlanMount, not repository
-    discovery or a workspace binding file, selects the stable Plan
-    executed by a worktree.
-14. **Stable binding, live source**: the registry owns durable root, branch,
+13. **Stable binding, live source**: the registry owns durable root, branch,
     profile, slot, and capability binding only. Current Git HEAD is read from
-    the worktree for each operation and fenced by Development intent and
-    runtime build identity where mutation occurs.
+    the worktree for each operation and revalidated after OS-lock acquisition.
 
 ## 2. System Architecture
 
@@ -62,9 +59,6 @@ Sibling env repository
 Machine Dev Control Plane
   ~/.peers-touch/dev/
   - workspace registry
-  - Project Ledger Plan mounts
-  - public development work declarations
-  - human environment-creation authorizations
   - local slot allocation
   - Station capability leases
   - observed process/port projection
@@ -100,19 +94,16 @@ not remain as a symlink, fallback, or second read owner.
 | State | Owner | Canonical source |
 |-------|-------|------------------|
 | Deployable Station/Relay topology | Environment repository | `env/peers-touch/<profile>/` |
-| Profile reset policy | Canonical profile identity | Case-insensitive `stable` substring in the verified directory/`PT_DEV_PROFILE` ID |
-| Machine-local environment creation approval | Human developer | `~/.peers-touch/dev/authorizations/environment-creation/` |
+| Profile reset policy | Canonical profile identity | Case-insensitive terminal `stable` suffix in the verified directory/`PT_DEV_PROFILE` ID |
+| Machine-local Profile creation | Current worktree | `make profile-init PROFILE=<name> SLOT=<n>` |
 | Worktree registration identity | Canonical filesystem path + registered branch | `workspaceId = sha256(realpath(root))[0:16]` |
 | Current worktree source identity | Git | Current branch and HEAD captured at operation time |
 | Worktree profile selection | Machine Dev Control Plane | `bindings[workspaceId].profile` |
-| Worktree Plan occupancy | Development Workflow | Project Ledger `PlanMount` |
-| Development source/runtime intent | Development Workflow | `~/.peers-touch/dev/work.json` |
-| Development close transaction | Development Workflow | Per-work-item `DevelopmentCloseReceipt` |
 | Local port slot | Machine Dev Control Plane | `bindings[workspaceId].slot` |
 | Station connection/deploy/reset permission | Machine Dev Control Plane | capability lease |
 | Live process and port state | OS observation | PID identity + listening socket |
 | Runtime evidence | Acceptance Evidence Store | `~/.peers-touch/dev/acceptance/` |
-| Read-only workflow projection | Development Workflow | `workflow-snapshot-core.mjs` |
+| Read-only workflow projection | Development Workflow | `workflow-snapshot.mjs` |
 
 Profile files may describe remote topology defaults, but they must not remain
 the authority for machine-local slot allocation.
@@ -124,11 +115,11 @@ the authority for machine-local slot allocation.
 Owns named, reviewable environment definitions. It must not record which local
 worktree currently uses an environment.
 
-Missing topology is a fail-closed boundary. It does not authorize an agent to
-create `env/peers-touch/<name>/`, a local-only profile cache, or a deploy
-environment. Creation requires explicit human developer approval naming the
-environment and target; task scope, an execution plan, an existing host, or an
-Acceptance requirement is not implied approval.
+Missing remote topology is a fail-closed boundary. It does not authorize an
+agent to invent a host, credential, or untracked deploy definition. A new
+tracked remote Profile is an ordinary source change only when the environment
+repository is explicitly in task scope. A worktree-local development Profile
+may be created directly with `make profile-init`.
 
 Remote deployment resolves exactly one Git-tracked, clean deploy definition
 directly from this repository. A `.local/deploy/envs/` copy is never topology
@@ -139,31 +130,33 @@ Reset policy is derived after the selected directory name and
 
 | Derived policy | Canonical Profile ID | Agent reset authority |
 |---|---|---|
-| `stable-protected` | contains `stable`, case-insensitive | autonomous `station.reset` is denied |
-| `agent-resettable` | does not contain `stable` | Agent may choose exact-scope reset without human involvement |
+| `stable-protected` | ends in `stable`, case-insensitive | autonomous `station.reset` is denied |
+| `agent-resettable` | does not end in `stable` | Agent may choose exact-scope reset without human involvement |
 
 No profile field stores or overrides this policy. Former control-mode metadata
 has no reader. Renaming a Profile across the `stable` boundary is therefore a
 reviewed topology change, not a runtime toggle.
 
 For a non-stable Profile, reset still requires `station.reset` in the workspace
-binding, one live Development declaration with the same Profile and exact
-exclusive reset scope, the same scope on the command boundary, remote
-tracked-clean topology, matching source identity, and the OS-held reset lease.
-These are intent, scope, topology, identity, and concurrency guards; none is a
-human-permission prompt. A stable Profile fails with
+binding, the same exact reset scope on the command boundary, remote
+tracked-clean topology, matching current source identity, and the OS-held
+reset lease. These are scope, topology, identity, and concurrency guards; none
+is a human-permission prompt. A stable Profile fails with
 `PROFILE_RESET_PROTECTED` before lease acquisition.
 
-Existing-profile deploy authorization remains resolved from exact user grants
-and the accepted Plan's `authorization.runtime.deployProfiles`. Mere Plan
-existence grants nothing, and Plan fields never authorize profile or
-deploy-environment creation.
+An existing reviewed non-stable Profile and the current workspace binding
+authorize deploy and restart within their capabilities. Non-stable reset is
+likewise Profile-authorized. Stable Profile selection grants only
+`station.connect`; a user-directed explicit binding is required to add
+`station.deploy`, while stable reset always fails before lease acquisition.
+Every operation still resolves the exact target, current source, clean remote
+topology when applicable, and OS-held lease.
 
-Human developers may create a short-lived, exact machine authorization for one
-`workspaceId + profile + mode + slot` tuple. `profile-init` consumes it once
-and writes a digest-bound receipt. Agents may consume a pre-existing grant when
-the requested tuple matches, but may not create the grant. A machine-local
-compose profile is selectable only while its bytes match that consumed receipt.
+`profile-init` creates one worktree-local compose Profile and never overwrites
+an existing definition. Runtime accepts only a private, current-user-owned
+regular file directly inside the worktree Profile root with shell-safe literal
+assignments. It creates development topology, not another worktree and not
+delivery permission.
 
 ### 4.2 Machine Registry
 
@@ -175,28 +168,21 @@ Owns durable machine-local declarations:
 - Allowed Station capability mode.
 - Detected conflicts.
 
-It does not own Plan selection. Development Workflow stores the stable
-PlanMount and current immutable snapshot in the workspace workflow namespace
-beside, not inside, the mutable environment registration. The registry must
-not contain credentials, JWTs, passwords, private keys, user messages, or
-Acceptance artifacts.
+It does not own Plan selection. Development Workflow stores the immutable Plan
+binding in the workspace workflow namespace beside, not inside, the mutable
+environment registration. The registry must not contain credentials, JWTs,
+passwords, private keys, user messages, or Acceptance artifacts.
 
 Registration is explicit. Discovery through `git worktree list`, a branch name,
 an existing directory, a project `active_work` row, or a legacy profile pointer
 must not register a worktree automatically.
 
-Agent-created worktrees use `make worktree-create` after explicit user
-authorization. The command associates the new `workspaceId` with the creating
-main-session OWNER and the creation Action Receipt in
-`worktree-creation.json`. Raw `git worktree add` remains outside the supported
-Agent lifecycle because Git metadata has no conversation provenance.
-
 Registration is reusable machine allocation and remains after normal task
 completion. It is removed only for an explicitly authorized worktree removal.
-Unregister requires the exact registration owner and no live declaration,
-active-work, PlanMount, or OS-held lease. Deleted-worktree cleanup uses the
-exact workspace identity through the Development close coordinator; no
-registry row is removed by path guessing or direct file edits.
+Unregister requires the exact registration owner and no OS-held lease.
+Deleted-worktree cleanup uses the exact workspace identity; no registry row is
+removed by path guessing or direct file edits. Optional task records do not
+occupy the registration.
 
 Worktree activity is a derived runtime fact:
 
@@ -234,20 +220,12 @@ reports, and reproduction notes. A session must be deleted after closure.
 Reusable conclusions move to the governing design, operational knowledge, or
 Acceptance Evidence Store; transient files do not move into the repository.
 
-### 4.5 Development Work Ledger
+### 4.5 Optional Task Records
 
-`~/.peers-touch/dev/work.json` is the machine-wide public intent projection
-owned by Development Workflow. It advertises work item, workspace, branch,
-source write scope and planned runtime resources before mutation.
-
-The ledger does not allocate resources and cannot grant deploy/reset authority.
-Local Dev Control Plane leases remain the live exclusivity owner. A work
-declaration and lease may reference the same resource, but they answer different
-questions: planned use versus current possession.
-
-A tracked declaration must match the live PlanMount, immutable snapshot,
-ExecutionRun, and current Task. Once mounted, the workspace cannot publish
-untracked declarations.
+Development Workflow may keep task-local progress and recovery records, but
+Local Dev does not read them for runtime admission, binding changes, or
+unregister. Historical `work.json`, PlanMount, Session, active-work, close, and
+resource-plan files are diagnostic history only during removal.
 
 ### 4.6 Lease Manager
 
@@ -267,7 +245,7 @@ durable binding.
 The canonical implementation is split by responsibility:
 
 - `machine-dev-registry.mjs` owns registration, binding, topology validation,
-  slot allocation, capability checks, Development-intent matching, and status
+  slot allocation, capability checks, current-source validation, and status
   projection.
 - `machine-dev-lease.py` owns the OS advisory-lock file descriptor and the
   bounded child process group; the mutation child inherits that descriptor and
@@ -281,20 +259,18 @@ This is one control plane, not a Secure Content lease implementation.
 that same value as run-scoped authorization input. `local.slot` is keyed by the
 machine binding's slot.
 
-Lease acquisition also requires one live Development declaration for the same
-workspace, current branch, current HEAD, profile, and exclusive runtime claim.
-The registry does not cache that HEAD: the declaration proves source intent,
-the worktree supplies current source, and the OS lock proves possession.
-The binding and intent are revalidated after OS-lock acquisition under the
-registry update lock, closing the registration-update/acquisition race.
+Lease acquisition snapshots the current branch and HEAD from the exact
+canonical worktree. After acquiring the OS lock, it revalidates that source,
+the authoritative binding, capability, reviewed Profile, normalized target,
+reset policy, and exact scope under the lifecycle and registry locks. This
+closes registration/source-change races without treating task records as
+permission.
 
-When a DWF-D32 `PlanResourcePlan` introduced the claim, admission additionally
-requires a source-current `COMMITTED` receipt for that exact claim. A
-`RESERVING` receipt is recoverable but non-authorizing. The receipt keeps
-pre-existing declaration claims in `baseRuntimeClaims`; those claims retain
-their original declaration authority and are not removed by replanning. A
-shared `resource.plan:<workItemId>` claim marks planner provenance, so a missing
-receipt fails closed instead of falling back to declaration-only admission.
+Remote exact-source synchronization may force-update
+`refs/peers-touch/deploy/<environment>/<branch>` in a dedicated internal
+transport repository. The ref carries Git objects to one deployment target; it
+is not a collaboration branch, delivery publication, or authorization to push
+origin/GitHub.
 
 ### 4.7 Runtime Observer
 
@@ -310,20 +286,15 @@ as running.
 
 ### 4.8 Workflow Snapshot
 
-`workflow-snapshot-core.mjs` assembles one bounded, redacted, read-only view
-from reviewed profile definitions, machine registry bindings, Plan mounts and
-runs, active Development declarations, Sessions, active-work, runtime leases,
-and observations.
+`workflow-snapshot.mjs` assembles one bounded read-only view of current Git
+source, explicitly stored task progress, task-local corruption, and an
+optional runtime status supplied by its caller. The primary key is
+`workspaceId`, never basename.
 
-The primary key is `workspaceId`, never basename. Work execution and
-environment readiness remain separate projections. A stale declaration may be
-visible but contributes no runtime intent, occupancy, or authorization.
-
-The core never reads credentials, raw profile values, product data, logs,
-canonical roots, or Acceptance payloads. Missing or malformed sources remain
-typed unavailable/conflict states. `workflow-snapshot.mjs` prints the result
-and exits; there is no HTTP endpoint, browser asset, refresh loop, source
-freshness server, mutation endpoint, or resident owner.
+The projection does not infer a selected task, join retired workflow ledgers,
+or decide runtime authorization. Missing or malformed sources remain local
+typed findings. The command prints one result and exits; it has no HTTP
+endpoint, browser asset, refresh loop, mutation endpoint, or resident owner.
 
 ## 5. Resolution Contract
 
@@ -348,45 +319,39 @@ or whichever `.local` directory happens to contain a file.
 
 Allowed:
 
-- Multiple worktrees observe the same public Development work ledger.
 - Multiple worktrees share one remote Station with `station.connect`.
 - One worktree holds `station.deploy` while other clients remain connected,
-  provided the deployment policy explicitly allows it.
-- An exact user grant or accepted Plan `deployProfiles` entry authorizes direct
-  deploy operation of the matching existing reviewed remote profile.
-- An Agent may add `station.reset` to the current binding and declare an exact
+  provided the Profile capability and lease checks allow it.
+- A reviewed non-stable Profile authorizes direct deploy, restart, runtime
+  provisioning, and exact-scope reset without another prompt.
+- An Agent may add `station.reset` to the current binding and request an exact
   reset scope for any non-stable reviewed Profile without human confirmation.
 - Each worktree has its own profile and slot binding.
-- A human-authorized machine-local compose profile has one consumed,
-  digest-bound authorization receipt for its exact workspace and slot.
+- A worktree-local compose profile is created only by canonical
+  `make profile-init` and remains scoped to that worktree.
 - Acceptance acquires stronger temporary leases without changing the user's
   durable worktree binding.
 
 Forbidden:
 
-- A private worktree declaration replaces the machine public ledger.
-- A Development declaration is treated as a held runtime lease.
 - Two live worktrees use the same local slot.
 - Two owners hold `station.deploy` or `station.reset` for the same resource.
 - A profile's static `PT_DEV_SLOT` silently overrides the machine allocation.
 - One worktree's `.local/dev/active` acts as global truth.
 - Runtime commands read untracked environment definitions as approved topology.
-- An AI agent creates or registers a profile or deploy environment without
-  explicit human developer approval for the exact environment and target.
+- An Agent invents a remote host, credential, or untracked deploy definition
+  outside the canonical Profile pipeline.
 - A stored field, alias, Station mode, worktree name, or legacy cache overrides
   the canonical Profile ID reset policy.
 - An existing non-stable Profile reset is converted into a user authorization
   request.
-- A non-stable Profile bypasses exact reset
-  declaration/capability/scope/lease checks.
+- A non-stable Profile bypasses exact reset capability/scope/lease checks.
 - A stable Profile is granted `station.reset` or reaches reset lease
   acquisition.
 - Workflow Snapshot writes registry, mount ledger, work ledger, lease, profile,
   workflow, or runtime state.
 - A workflow inspection command starts a server, opens a browser, or reserves a
   fixed port.
-- An Agent runs `profile-authorize`, creates an authorization file, reuses a
-  consumed grant, or edits an authorized local profile after receipt creation.
 - An arbitrary `PT_DEV_PROFILE_FILE` bypasses reviewed topology; only a
   contained Acceptance runtime-manifest profile is allowed.
 - Machine registry stores secrets or product data.
@@ -404,8 +369,6 @@ Forbidden:
 | Stable Profile requests `station.reset` | `PROFILE_RESET_PROTECTED` |
 | Workspace binding lacks a requested capability | `WORKSPACE_CAPABILITY_MISSING` |
 | Reset command scope differs from the requested resource | `RESET_SCOPE_MISMATCH` |
-| Environment creation lacks explicit human approval | `ENVIRONMENT_CREATION_UNAUTHORIZED` |
-| Authorization is expired, mismatched, reused, or digest-invalid | `ENVIRONMENT_CREATION_AUTHORIZATION_INVALID` |
 | Slot already live | `LOCAL_SLOT_CONFLICT` |
 | Station capability held | `STATION_CAPABILITY_CONFLICT` |
 | Deploy host/URL mismatch | `DEPLOY_TARGET_MISMATCH` |
@@ -427,8 +390,10 @@ The target implementation must prove:
 - `make env-status-all` reports declared binding and observed runtime separately.
 - Every reviewed profile derives exactly one reset policy from its canonical
   ID and the resolved status projection exposes it.
-- Mixed-case `stable` IDs reject `station.reset`; IDs without `stable` admit it
-  only when binding capability, declaration, exact scope, and lease all match.
+- Mixed-case terminal `stable` suffixes reject `station.reset`; IDs with only a
+  non-terminal `stable` token admit it
+  only when binding capability, exact scope, current source, and lease all
+  match.
 - Workflow Snapshot joins every worktree's active requirements/Journeys and
   declared/held resources without exposing secret-bearing profile fields or
   providing mutation controls.
@@ -446,5 +411,5 @@ The target implementation must prove:
 - No runtime command defaults to loopback, slot 0, or an arbitrary profile when
   a binding is missing.
 - Existing non-stable Profile reset never requests human authorization; missing
-  capability, declaration, scope, topology, identity, and lease failures remain
-  separately typed and fail closed.
+  capability, scope, topology, identity, and lease failures remain separately
+  typed and fail closed.

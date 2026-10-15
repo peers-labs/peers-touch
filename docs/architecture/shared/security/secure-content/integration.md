@@ -324,15 +324,15 @@ The business scenario cannot create, refresh, or bypass it.
 
 The attestation is produced only by the shared SC-D23 reset owner after one
 complete `SCHEMA_ACTIVATION` or `FINAL_CUT` journal. The Local Dev Control Plane
-owns declaration and lease validation; a non-public Station maintenance
-entrypoint composes Social database reset and OSS object deletion. No product
-route, Harness action, or Development scenario receives schema mutation
-authority.
+owns reviewed Profile, workspace capability, current-source, and lease
+validation; a non-public Station maintenance entrypoint composes Social
+database reset and OSS object deletion. No product route, Harness action, or
+Development scenario receives schema mutation authority.
 
 The maintenance entrypoint is an OS-authenticated CLI invoked through the
 reviewed deploy transport. The local SSH transport is the direct child of the
 generic `machine-dev` reset-lease wrapper. Its typed invocation binds the
-declaration, plan/task, source, profile, deploy environment, scope, reset
+source authorization, plan/task, profile, deploy environment, scope, reset
 intent, manifest, and expiry. The remote CLI acquires a database advisory lock
 keyed by deploy environment and scope, while the journal records accepted
 invocation IDs and digests. Exact replay returns current journal state; resume

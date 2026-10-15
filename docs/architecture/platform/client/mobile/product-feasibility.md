@@ -31,6 +31,7 @@
 | MS-C12 One-to-one voice/video call | Start or receive audio/video, accept/reject, mute/toggle camera, reconnect/end, and resolve one winning device | `MobileCallManager`, sealed CallSignal ingress, WebRTC/TURN setup, Direct header actions, shell-owned `MobileCallSurface`, and mixed-client resolution actions | Production styling/i18n, native audio/video media journey, permission/device selection, direct/TURN evidence, reconnect/cleanup, and full exact-source Mobile runtime proof remain `UNPROVEN` | MS-PA28, MS-PA29 |
 | MS-C13 Chat Docs tab | No enabled entry | None required | Shared-document product/domain absent; remains deferred | MS-PA27 |
 | MS-C14 Local message flag | Flag/unflag locally and understand device-only scope | Prototype interaction | Durable local projection and explicit scope copy | MS-PA22 |
+| MS-C15 Whole-product usability | Complete every primary task and recovery path on every reachable page in a visible iOS Simulator | Confirmed Mobile prototype, descriptor registry, current production pages, Appium/DOM/AX/screenshot capture | Remove production/prototype drift; add complete route/state inventory, automated content/layout oracles, and agent visual review | MS-PA28, MS-PA29 |
 
 ## 3. Feasibility Rules
 

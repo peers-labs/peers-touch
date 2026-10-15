@@ -315,7 +315,7 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
             },
             "bindingState": {
                 "phase": "bound",
-                "bound_url": "https://station.invalid",
+                "activeUrl": "https://station.invalid",
             },
         }
         scope_states = iter(

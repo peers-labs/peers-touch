@@ -149,17 +149,18 @@ class WindowsRuntimeTests(unittest.TestCase):
         self.assertIn('"sourceTreeDigest": "sha256:bbbb', argv[3])
         self.assertEqual(options["input_text"], _remote_runtime_script())
 
-    def test_remote_runtime_owns_isolated_build_service_and_secrets(self) -> None:
+    def test_remote_station_owns_isolated_build_service_and_secret(self) -> None:
         script = _remote_runtime_script()
 
         self.assertIn("runtime path must be isolated from source checkout", script)
         self.assertIn("sourceTreeDigest", script)
         self.assertIn("runtime build contaminated source checkout", script)
-        self.assertIn("openssl", script)
         self.assertIn("icacls.exe", script)
         self.assertIn("schtasks.exe", script)
         self.assertIn('"SYSTEM"', script)
         self.assertIn("New-NetFirewallRule", script)
+        self.assertNotIn("relay-signing.key", script)
+        self.assertNotIn("relay-operator.key", script)
         self.assertNotIn("C:\\\\peers-touch", script)
 
     def test_deploy_entrypoint_dispatches_reviewed_windows_platform(self) -> None:
@@ -168,6 +169,22 @@ class WindowsRuntimeTests(unittest.TestCase):
         self.assertIn('PT_DEPLOY_PLATFORM:-posix', source)
         self.assertIn('exec python3 "$WINDOWS_RUNTIME_SCRIPT"', source)
         self.assertIn('"$windows_action"', source)
+
+    def test_deploy_entrypoint_prepares_posix_relay_secrets(self) -> None:
+        source = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+
+        self.assertIn(
+            'POSIX_RELAY_RUNTIME_SCRIPT="$SCRIPT_DIR/posix_relay_runtime.py"',
+            source,
+        )
+        self.assertIn(
+            'python3 "$POSIX_RELAY_RUNTIME_SCRIPT" "$env_name"',
+            source,
+        )
+        self.assertIn(
+            "Relay service hosts must use Linux/POSIX",
+            source,
+        )
         self.assertIn("stop)", source)
 
 

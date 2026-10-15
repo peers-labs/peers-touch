@@ -12,9 +12,7 @@ use messaging_core::attachment::{
     AttachmentRetryPolicy, AttachmentTransferControl, AttachmentTransferRecord,
     AttachmentTransferWorker,
 };
-use messaging_core::codec::verification::{
-    verify_authority_event, verify_device_event_delivery,
-};
+use messaging_core::codec::verification::{verify_authority_event, verify_device_event_delivery};
 use messaging_core::contracts::{
     CommandStatusProjection, ConversationMessageProjection, ConversationProjection,
     CryptoEndpoint as CoreCryptoEndpoint,
@@ -1360,9 +1358,7 @@ impl MobileMessagingEngine {
                 && !visible_ids.contains(&conversation.conversation_id)
                 && self
                     .store
-                    .retire_conversation_after_membership_loss(
-                        &conversation.conversation_id,
-                    )?
+                    .retire_conversation_after_membership_loss(&conversation.conversation_id)?
             {
                 retired += 1;
             }
@@ -1817,9 +1813,7 @@ impl MobileMessagingEngine {
                 Err(error) if error.has_http_code(403, "CONVERSATION_UNAUTHORIZED") => {
                     return self
                         .store
-                        .retire_conversation_after_membership_loss(
-                            &conversation.conversation_id,
-                        );
+                        .retire_conversation_after_membership_loss(&conversation.conversation_id);
                 }
                 Err(error) => return Err(error.to_string()),
             };
@@ -3850,10 +3844,14 @@ impl MobileMessagingEngine {
             );
             return Err(original_error);
         }
-        let refreshed =
-            self.prepare_command_plan(access_token, conversation_id, command_kind)?;
+        let refreshed = self.prepare_command_plan(access_token, conversation_id, command_kind)?;
         let local = MessagingRepository::authority_head(self.store.as_ref(), conversation_id)?;
-        if local == (refreshed.authority_sequence, refreshed.authority_hash.clone()) {
+        if local
+            == (
+                refreshed.authority_sequence,
+                refreshed.authority_hash.clone(),
+            )
+        {
             Ok(refreshed)
         } else {
             Err(original_error)
@@ -3906,27 +3904,26 @@ impl MobileMessagingEngine {
                             .to_string(),
                     );
                 }
-                let mutation = match event.payload.as_ref() {
-                    Some(conversation_event::Payload::ConversationUpdated(update))
-                        if update.avatar_object_id.is_none() && update.visibility.is_none() =>
-                    {
-                        ConversationMutation::Update {
-                            name: update.name.as_deref(),
-                            description: update.description.as_deref(),
+                let mutation =
+                    match event.payload.as_ref() {
+                        Some(conversation_event::Payload::ConversationUpdated(update))
+                            if update.avatar_object_id.is_none() && update.visibility.is_none() =>
+                        {
+                            ConversationMutation::Update {
+                                name: update.name.as_deref(),
+                                description: update.description.as_deref(),
+                            }
                         }
-                    }
-                    Some(conversation_event::Payload::ConversationDissolved(_)) => {
-                        ConversationMutation::Dissolve
-                    }
-                    _ => {
-                        return Err(
+                        Some(conversation_event::Payload::ConversationDissolved(_)) => {
+                            ConversationMutation::Dissolve
+                        }
+                        _ => return Err(
                             "mobile messaging authority reconciliation requires endpoint payload"
                                 .to_string(),
-                        )
-                    }
-                };
-                self.store.replay_conversation_mutation_event(
-                    &ConversationMutationReplay {
+                        ),
+                    };
+                self.store
+                    .replay_conversation_mutation_event(&ConversationMutationReplay {
                         event_id: &event.event_id,
                         conversation_id: &event.conversation_id,
                         command_id: &event.command_id,
@@ -3937,10 +3934,8 @@ impl MobileMessagingEngine {
                         mls_epoch: event.mls_epoch,
                         mutation,
                         observed_at_unix_ms: now_unix_ms(),
-                    },
-                )?;
-                local =
-                    MessagingRepository::authority_head(self.store.as_ref(), conversation_id)?;
+                    })?;
+                local = MessagingRepository::authority_head(self.store.as_ref(), conversation_id)?;
             }
         }
         Err("mobile messaging authority reconciliation exceeded replay bound".to_string())
@@ -4905,10 +4900,7 @@ where
     Err("mobile messaging local authority head is behind command plan".to_string())
 }
 
-fn can_commit_pending_leave(
-    conversation: &ConversationProjection,
-    actor_ptid: &str,
-) -> bool {
+fn can_commit_pending_leave(conversation: &ConversationProjection, actor_ptid: &str) -> bool {
     conversation.active
         && conversation.kind == ConversationKind::Group as i32
         && conversation.members.iter().any(|member| {

@@ -601,12 +601,22 @@ func (s *ossSubServer) handleFileGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	storageKey := key
+	if s.blobRepo != nil {
+		resolved, err := s.blobRepo.ResolveStorageKey(r.Context(), meta.Backend, key)
+		if err != nil {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		storageKey = resolved
+	}
+
 	// When the active backend can issue presigned GET URLs, redirect
 	// the client straight to the underlying store. This is the
 	// bandwidth-offload story that justifies running an S3-protocol
 	// backend at all — bytes never traverse the Station.
 	if pb := s.presignedBackend(); pb != nil {
-		pr, err := pb.PresignGet(r.Context(), key, s.presignedDownloadTTL)
+		pr, err := pb.PresignGet(r.Context(), storageKey, s.presignedDownloadTTL)
 		if err == nil {
 			http.Redirect(w, r, pr.URL, http.StatusFound)
 			return
@@ -617,7 +627,7 @@ func (s *ossSubServer) handleFileGet(w http.ResponseWriter, r *http.Request) {
 		logger.Warnf(r.Context(), "[handleFileGet] presign get failed, streaming: %v", err)
 	}
 
-	rc, size, mt, err := s.backend.Open(r.Context(), key, nil)
+	rc, size, mt, err := s.backend.Open(r.Context(), storageKey, nil)
 	if err != nil {
 		w.WriteHeader(http.StatusNotFound)
 		return

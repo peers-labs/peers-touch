@@ -18,19 +18,25 @@
 
 use std::collections::HashMap;
 use std::fs;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 
 use base64::Engine;
 use prost::Message;
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue, ACCEPT, AUTHORIZATION, CACHE_CONTROL};
+use reqwest::Method;
 use serde_json::json;
 use tauri::{AppHandle, Emitter};
+use tokio_util::sync::CancellationToken;
 
+use crate::application::station_runtime::client::{
+    ReplayPolicy, StationClient, StationRequest, StationRequestBody, StationRouteSecurity,
+    TrafficClass,
+};
 use crate::infrastructure::session_revocation;
-use crate::infrastructure::station_client::{active_station_peer_id, station_base_url};
 use crate::infrastructure::storage::{self, StorageKind};
 use crate::model::realtime::v1::{stream_event::Kind as StreamKind, StreamEvent};
 
@@ -61,9 +67,35 @@ pub const EVENT_CONNECTION_STATE: &str = "realtime:connection-state";
 // Keyed by `actor_ptid`.
 // ---------------------------------------------------------------------
 
-fn registry() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {
-    static REG: OnceLock<Mutex<HashMap<String, Arc<AtomicBool>>>> = OnceLock::new();
-    REG.get_or_init(|| Mutex::new(HashMap::new()))
+struct StreamControl {
+    cancellation: CancellationToken,
+}
+
+impl StreamControl {
+    fn new() -> Self {
+        Self {
+            cancellation: CancellationToken::new(),
+        }
+    }
+
+    fn cancel(&self) {
+        self.cancellation.cancel();
+    }
+
+    fn is_cancelled(&self) -> bool {
+        self.cancellation.is_cancelled()
+    }
+}
+
+struct StreamWorker {
+    control: Arc<StreamControl>,
+    join: JoinHandle<()>,
+}
+
+#[derive(Default)]
+pub struct EventStreamRuntime {
+    transition: Mutex<()>,
+    workers: Mutex<HashMap<String, StreamWorker>>,
 }
 
 /// Start (or restart) the event-stream supervisor for an actor.
@@ -78,81 +110,181 @@ fn registry() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {
 /// running two windows of the same actor on the same machine gets
 /// independent cursor tracking on the server side. Empty string is
 /// tolerated; the server falls back to an anonymous suffix.
-pub fn start(
-    app: AppHandle,
-    actor_ptid: String,
-    session_epoch: u64,
-    token: String,
-    device_id: String,
-) {
-    if token.trim().is_empty() {
-        tracing::warn!(actor = %actor_ptid, "event_stream: refusing to start with empty token");
-        return;
+impl EventStreamRuntime {
+    pub fn new() -> Self {
+        Self::default()
     }
-    let cancel = Arc::new(AtomicBool::new(false));
-    {
-        let mut map = registry().lock().expect("event_stream registry poisoned");
-        if let Some(prev) = map.insert(actor_ptid.clone(), cancel.clone()) {
-            prev.store(true, Ordering::Relaxed);
+
+    pub fn start(
+        &self,
+        station_client: StationClient,
+        app: AppHandle,
+        actor_ptid: String,
+        session_epoch: u64,
+        token: String,
+        device_id: String,
+    ) -> Result<(), String> {
+        if token.trim().is_empty() {
+            return Err("event stream requires a non-empty token".to_string());
+        }
+        let _transition = self
+            .transition
+            .lock()
+            .map_err(|_| "event stream transition lock poisoned".to_string())?;
+        let previous = self
+            .workers
+            .lock()
+            .map_err(|_| "event stream worker lock poisoned".to_string())?
+            .remove(&actor_ptid);
+        if let Some(previous) = previous {
+            let deadline = Instant::now() + Duration::from_secs(5);
+            if !cancel_and_wait(&previous, deadline) {
+                self.workers
+                    .lock()
+                    .map_err(|_| "event stream worker lock poisoned".to_string())?
+                    .insert(actor_ptid, previous);
+                return Err(
+                    "previous event stream worker did not stop before replacement".to_string(),
+                );
+            }
+            join_worker(previous)?;
+        }
+
+        let control = Arc::new(StreamControl::new());
+        let control_for_thread = control.clone();
+        let actor_for_thread = actor_ptid.clone();
+        let station_url = station_client.active_endpoint_origin().unwrap_or_default();
+        let station_peer_id = station_client.active_station_peer_id().unwrap_or_default();
+        let stream_cursor_path = cursor_path(&actor_ptid, &station_peer_id, &station_url);
+        let join = std::thread::Builder::new()
+            .name(format!(
+                "event-stream-{}",
+                &actor_ptid[..actor_ptid.len().min(8)]
+            ))
+            .spawn(move || {
+                run_supervisor(
+                    station_client,
+                    app,
+                    actor_for_thread,
+                    session_epoch,
+                    station_url,
+                    station_peer_id,
+                    stream_cursor_path,
+                    token,
+                    device_id,
+                    control_for_thread,
+                );
+            })
+            .map_err(|error| format!("start event stream worker: {error}"))?;
+        let worker = StreamWorker { control, join };
+        self.workers
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(actor_ptid, worker);
+        Ok(())
+    }
+
+    /// Stop the event-stream supervisor for an actor (idempotent). Used
+    /// on logout, account switch, and app shutdown.
+    pub fn stop(&self, actor_ptid: &str) -> Result<(), String> {
+        let _transition = self
+            .transition
+            .lock()
+            .map_err(|_| "event stream transition lock poisoned".to_string())?;
+        let worker = self
+            .workers
+            .lock()
+            .map_err(|_| "event stream worker lock poisoned".to_string())?
+            .remove(actor_ptid);
+        let Some(worker) = worker else {
+            return Ok(());
+        };
+        if !cancel_and_wait(&worker, Instant::now() + Duration::from_secs(5)) {
+            self.workers
+                .lock()
+                .map_err(|_| "event stream worker lock poisoned".to_string())?
+                .insert(actor_ptid.to_string(), worker);
+            return Err(
+                "event stream worker did not stop before the shutdown deadline".to_string(),
+            );
+        }
+        join_worker(worker)
+    }
+
+    /// Stop every Station-scoped event stream before changing Station binding.
+    pub fn stop_all(&self) -> Result<(), String> {
+        let _transition = self
+            .transition
+            .lock()
+            .map_err(|_| "event stream transition lock poisoned".to_string())?;
+        let workers = self
+            .workers
+            .lock()
+            .map_err(|_| "event stream worker lock poisoned".to_string())?
+            .drain()
+            .collect::<Vec<_>>();
+        for (_, worker) in &workers {
+            worker.control.cancel();
+        }
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut failures = Vec::new();
+        let mut retained = Vec::new();
+        for (actor_ptid, worker) in workers {
+            if !wait_for_worker(&worker, deadline) {
+                failures.push(format!(
+                    "event stream worker {actor_ptid} did not stop before the shutdown deadline"
+                ));
+                retained.push((actor_ptid, worker));
+                continue;
+            }
+            if let Err(error) = join_worker(worker) {
+                failures.push(error);
+            }
+        }
+        if !retained.is_empty() {
+            self.workers
+                .lock()
+                .map_err(|_| "event stream worker lock poisoned".to_string())?
+                .extend(retained);
+        }
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(failures.join("; "))
         }
     }
-    let actor_for_thread = actor_ptid.clone();
-    let cancel_for_thread = cancel.clone();
-    let station_url = station_base_url();
-    let station_peer_id = active_station_peer_id().unwrap_or_default();
-    let stream_cursor_path = cursor_path(&actor_ptid, &station_peer_id, &station_url);
-    std::thread::Builder::new()
-        .name(format!(
-            "event-stream-{}",
-            &actor_ptid[..actor_ptid.len().min(8)]
-        ))
-        .spawn(move || {
-            run_supervisor(
-                app,
-                actor_for_thread.clone(),
-                session_epoch,
-                station_url,
-                station_peer_id,
-                stream_cursor_path,
-                token,
-                device_id,
-                cancel_for_thread,
-            );
-            // Best-effort cleanup if the supervisor exits naturally.
-            let mut map = registry().lock().expect("event_stream registry poisoned");
-            if let Some(existing) = map.get(&actor_for_thread) {
-                if Arc::ptr_eq(existing, &cancel) {
-                    map.remove(&actor_for_thread);
-                }
-            }
-        })
-        .ok();
-}
 
-/// Stop the event-stream supervisor for an actor (idempotent). Used
-/// on logout, account switch, and app shutdown.
-pub fn stop(actor_ptid: &str) {
-    let mut map = registry().lock().expect("event_stream registry poisoned");
-    if let Some(flag) = map.remove(actor_ptid) {
-        flag.store(true, Ordering::Relaxed);
+    /// True if a live supervisor is registered for the actor.
+    pub fn is_running(&self, actor_ptid: &str) -> bool {
+        self.workers
+            .lock()
+            .ok()
+            .and_then(|workers| {
+                workers
+                    .get(actor_ptid)
+                    .map(|worker| !worker.join.is_finished())
+            })
+            .unwrap_or(false)
     }
 }
 
-/// Stop every Station-scoped event stream before changing Station binding.
-pub fn stop_all() {
-    let mut map = registry().lock().expect("event_stream registry poisoned");
-    for (_, flag) in map.drain() {
-        flag.store(true, Ordering::Relaxed);
-    }
+fn cancel_and_wait(worker: &StreamWorker, deadline: Instant) -> bool {
+    worker.control.cancel();
+    wait_for_worker(worker, deadline)
 }
 
-/// True if a supervisor is registered for the actor (it may not be
-/// connected yet — registration happens before the first connect).
-pub fn is_running(actor_ptid: &str) -> bool {
-    registry()
-        .lock()
-        .map(|m| m.contains_key(actor_ptid))
-        .unwrap_or(false)
+fn wait_for_worker(worker: &StreamWorker, deadline: Instant) -> bool {
+    while !worker.join.is_finished() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    worker.join.is_finished()
+}
+
+fn join_worker(worker: StreamWorker) -> Result<(), String> {
+    worker
+        .join
+        .join()
+        .map_err(|_| "event stream worker panicked".to_string())
 }
 
 // ---------------------------------------------------------------------
@@ -206,16 +338,8 @@ fn save_cursor(path: Option<&PathBuf>, event_id: &str) {
     }
 }
 
-fn with_current_supervisor(
-    actor_ptid: &str,
-    cancel: &Arc<AtomicBool>,
-    operation: impl FnOnce(),
-) -> bool {
-    let map = registry().lock().expect("event_stream registry poisoned");
-    let current = map
-        .get(actor_ptid)
-        .is_some_and(|registered| Arc::ptr_eq(registered, cancel));
-    if !current || cancel.load(Ordering::Acquire) {
+fn with_current_supervisor(cancel: &Arc<StreamControl>, operation: impl FnOnce()) -> bool {
+    if cancel.is_cancelled() {
         return false;
     }
     operation();
@@ -227,6 +351,7 @@ fn with_current_supervisor(
 // ---------------------------------------------------------------------
 
 fn run_supervisor(
+    station_client: StationClient,
     app: AppHandle,
     actor_ptid: String,
     session_epoch: u64,
@@ -235,7 +360,7 @@ fn run_supervisor(
     cursor_path: Option<PathBuf>,
     token: String,
     device_id: String,
-    cancel: Arc<AtomicBool>,
+    cancel: Arc<StreamControl>,
 ) {
     // Exponential backoff capped at 30s. Full jitter would be ideal
     // for thundering-herd protection across many clients reconnecting
@@ -244,7 +369,7 @@ fn run_supervisor(
     let mut backoff_ms: u64 = 500;
     let mut last_state_connected: Option<bool> = None;
     loop {
-        if cancel.load(Ordering::Relaxed) {
+        if cancel.is_cancelled() {
             return;
         }
 
@@ -253,6 +378,7 @@ fn run_supervisor(
 
         match run_once(
             &app,
+            &station_client,
             &actor_ptid,
             session_epoch,
             &station_url,
@@ -273,7 +399,7 @@ fn run_supervisor(
         // Sleep with cancellation polling.
         let mut slept = 0u64;
         while slept < backoff_ms {
-            if cancel.load(Ordering::Relaxed) {
+            if cancel.is_cancelled() {
                 return;
             }
             let step = std::cmp::min(100, backoff_ms - slept);
@@ -286,6 +412,7 @@ fn run_supervisor(
 
 fn run_once(
     app: &AppHandle,
+    station_client: &StationClient,
     actor_ptid: &str,
     session_epoch: u64,
     station_url: &str,
@@ -294,44 +421,54 @@ fn run_once(
     token: &str,
     device_id: &str,
     cursor: &str,
-    cancel: &Arc<AtomicBool>,
+    cancel: &Arc<StreamControl>,
 ) -> Result<(), String> {
-    let url = format!("{station_url}/events/stream");
-    tracing::info!(url = %url, actor = %actor_ptid, cursor_len = cursor.len(), "event_stream: connecting");
+    tracing::info!(actor = %actor_ptid, cursor_len = cursor.len(), "event_stream: connecting");
 
-    // Contract §2.4 wants a 30s no-frame deadline; reqwest 0.12.28
-    // blocking ClientBuilder does not expose per-read timeout (that's
-    // only on the async builder). We approximate the same outcome
-    // with aggressive TCP keepalive — a silent-NAT black hole becomes
-    // a TCP error within ~15-30s rather than minutes. Combined with
-    // the server's 15s heartbeat (so any healthy connection sees a
-    // frame at least that often), this is close enough to the
-    // contract for now. If we ever migrate this supervisor to
-    // tokio + async reqwest the per-read read_timeout becomes the
-    // canonical implementation.
-    let client = reqwest::blocking::Client::builder()
-        .tcp_keepalive(Some(Duration::from_secs(15)))
-        .connect_timeout(Duration::from_secs(10))
-        .build()
-        .map_err(|e| format!("build client: {e}"))?;
-
-    let mut req = client
-        .get(&url)
-        .header("Accept", "text/event-stream")
-        .header("Cache-Control", "no-cache")
-        .bearer_auth(token);
+    let mut headers = HeaderMap::new();
+    headers.insert(ACCEPT, HeaderValue::from_static("text/event-stream"));
+    headers.insert(CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+    headers.insert(
+        AUTHORIZATION,
+        HeaderValue::from_str(&format!("Bearer {token}"))
+            .map_err(|error| format!("invalid event stream token: {error}"))?,
+    );
     if !cursor.is_empty() {
-        req = req.header("Last-Event-ID", cursor);
+        headers.insert(
+            HeaderName::from_static("last-event-id"),
+            HeaderValue::from_str(cursor)
+                .map_err(|error| format!("invalid event stream cursor: {error}"))?,
+        );
     }
     if !device_id.is_empty() {
-        req = req.header("X-Device-ID", device_id);
+        headers.insert(
+            HeaderName::from_static("x-device-id"),
+            HeaderValue::from_str(device_id)
+                .map_err(|error| format!("invalid event stream device ID: {error}"))?,
+        );
     }
 
-    let resp = req.send().map_err(|e| format!("send: {e}"))?;
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let body = resp.text().unwrap_or_default();
-        if session_revocation::emit_if_session_revoked(app, token, status.as_u16(), &body) {
+    let mut response = station_client
+        .execute_raw(StationRequest {
+            method: Method::GET,
+            path_and_query: "/events/stream".to_string(),
+            headers,
+            body: StationRequestBody::Empty,
+            timeout: Duration::from_secs(24 * 60 * 60),
+            admission_timeout: Duration::from_secs(30),
+            traffic_class: TrafficClass::Realtime,
+            route_security: StationRouteSecurity::VerifiedRoute,
+            route_policy: crate::application::station_runtime::client::StationRoutePolicy::Auto,
+            replay_policy: ReplayPolicy::SafeRead,
+            cancellation: cancel.cancellation.clone(),
+            expected_scope: None,
+        })
+        .map_err(|error| format!("send: {error}"))?;
+    if !(200..300).contains(&response.status) {
+        let status = response.status;
+        let mut body = String::new();
+        let _ = response.body.read_to_string(&mut body);
+        if session_revocation::emit_if_session_revoked(app, token, status, &body) {
             return Ok(());
         }
         return Err(format!("station returned {status}: {body}"));
@@ -343,13 +480,13 @@ fn run_once(
         &json!({"connected": true, "reason": "connected"}),
     );
 
-    let mut reader = BufReader::new(resp);
+    let mut reader = BufReader::new(response.body);
     let mut current_event: Option<String> = None;
     let mut current_id: Option<String> = None;
     let mut data_buf = String::new();
     let mut line = String::new();
     loop {
-        if cancel.load(Ordering::Relaxed) {
+        if cancel.is_cancelled() {
             return Ok(());
         }
         line.clear();
@@ -413,7 +550,7 @@ fn dispatch(
     station_url: &str,
     station_peer_id: &str,
     cursor_path: Option<&PathBuf>,
-    cancel: &Arc<AtomicBool>,
+    cancel: &Arc<StreamControl>,
     event_name: Option<&str>,
     event_id: Option<&str>,
     data_b64: &str,
@@ -469,7 +606,7 @@ fn dispatch(
         "event_id": resolved_event_id,
         "data_b64": data_b64.trim(),
     });
-    with_current_supervisor(actor_ptid, cancel, || {
+    with_current_supervisor(cancel, || {
         // Cursor advancement and emit share the registration fence. Once a
         // replacement supervisor is registered, the old generation can do
         // neither and the replacement resumes from the unconsumed event.
@@ -533,9 +670,11 @@ mod tests {
     fn cursor_path_is_scoped_by_station_identity() {
         let actor = "cross-station-cursor-actor";
         let station_a = cursor_path(actor, "station-a", "https://shared.test");
+        let station_a_relay = cursor_path(actor, "station-a", "https://relay.test");
         let station_b = cursor_path(actor, "station-b", "https://shared.test");
         let url_fallback = cursor_path(actor, "", "https://station-c.test");
 
+        assert_eq!(station_a, station_a_relay);
         assert_ne!(station_a, station_b);
         assert_ne!(station_a, url_fallback);
         assert_ne!(station_b, url_fallback);
@@ -548,33 +687,65 @@ mod tests {
         if let Some(path) = path.as_ref() {
             let _ = fs::remove_file(path);
         }
-        let old = Arc::new(AtomicBool::new(false));
-        let current = Arc::new(AtomicBool::new(false));
-        {
-            let mut map = registry().lock().unwrap();
-            map.insert(actor.to_string(), old.clone());
-            old.store(true, Ordering::Release);
-            map.insert(actor.to_string(), current.clone());
-        }
+        let old = Arc::new(StreamControl::new());
+        let current = Arc::new(StreamControl::new());
+        old.cancel();
 
-        assert!(!with_current_supervisor(actor, &old, || {
+        assert!(!with_current_supervisor(&old, || {
             save_cursor(path.as_ref(), "stale-event");
         }));
         assert_eq!(load_cursor(path.as_ref()), "");
-        assert!(with_current_supervisor(actor, &current, || {
+        assert!(with_current_supervisor(&current, || {
             save_cursor(path.as_ref(), "current-event");
         }));
         assert_eq!(load_cursor(path.as_ref()), "current-event");
 
-        let mut map = registry().lock().unwrap();
-        if map
-            .get(actor)
-            .is_some_and(|registered| Arc::ptr_eq(registered, &current))
-        {
-            map.remove(actor);
-        }
         if let Some(path) = path {
             let _ = fs::remove_file(path);
         }
+    }
+
+    #[test]
+    fn runtime_stop_cancels_and_joins_worker() {
+        let runtime = EventStreamRuntime::new();
+        let control = Arc::new(StreamControl::new());
+        let worker_control = control.clone();
+        let join = std::thread::spawn(move || {
+            while !worker_control.is_cancelled() {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        });
+        runtime
+            .workers
+            .lock()
+            .unwrap()
+            .insert("actor-a".to_string(), StreamWorker { control, join });
+
+        runtime.stop("actor-a").unwrap();
+
+        assert!(!runtime.is_running("actor-a"));
+        assert!(runtime.workers.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn lifecycle_operations_are_serialized() {
+        let runtime = Arc::new(EventStreamRuntime::new());
+        let transition = runtime.transition.lock().unwrap();
+        let completed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let completed_by_worker = completed.clone();
+        let runtime_for_worker = runtime.clone();
+        let (started_tx, started_rx) = std::sync::mpsc::sync_channel(0);
+        let worker = std::thread::spawn(move || {
+            started_tx.send(()).unwrap();
+            runtime_for_worker.stop("actor-a").unwrap();
+            completed_by_worker.store(true, std::sync::atomic::Ordering::Release);
+        });
+
+        started_rx.recv().unwrap();
+        std::thread::sleep(Duration::from_millis(20));
+        assert!(!completed.load(std::sync::atomic::Ordering::Acquire));
+        drop(transition);
+        worker.join().unwrap();
+        assert!(completed.load(std::sync::atomic::Ordering::Acquire));
     }
 }

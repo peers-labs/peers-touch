@@ -1104,6 +1104,13 @@ authorizing native work.
 - Station needs a durable targeted outbox and exactly-once continuation key.
 - Client Rust needs a durable receipt ledger; an in-memory dedupe map is
   insufficient.
+- Desktop receipt state is scoped by logical `station_peer_id`. A same-Station
+  route change preserves the worker, lease and in-memory pull cursor; a Station
+  lifecycle change replaces the worker. An empty legacy endpoint-keyed schema
+  is replaced atomically. Non-empty endpoint-only rows fail closed because the
+  current registry cannot prove historical origin ownership; they are never
+  relabeled from current route state. The retired capability-operation worker
+  and its checkpoint/cursor stores are absent.
 - Duplicate identical envelopes return the existing receipt/result. A stale or
   mismatched envelope is rejected before side effects.
 - Duplicate terminal receipts return the original result acknowledgement;

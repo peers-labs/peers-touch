@@ -49,9 +49,10 @@ type Options struct {
 	MaxFilesPerMessage int32
 
 	// BackendType labels the active storage driver. The accepted
-	// values are documented as `storage.Driver`: today `local` (the
-	// zero-config default) and `s3` (any S3-protocol store —
-	// AWS S3, MinIO, R2, B2, …). The label round-trips into
+	// values are documented as `storage.Driver`: `local` (the
+	// zero-config, single-node default), `shared-fs` (an
+	// operator-mounted NAS/NFS namespace), and `s3` (any
+	// S3-protocol store — AWS S3, MinIO, R2, B2, …). The label round-trips into
 	// `FileMeta.Backend` for every upload.
 	BackendType string
 
@@ -241,7 +242,7 @@ func WithMaxFilesPerMessage(n int32) option.Option {
 	return wrapper.Wrap(func(o *Options) { o.MaxFilesPerMessage = n })
 }
 
-// WithBackendType selects the active storage driver (`local` / `s3`).
+// WithBackendType selects the active storage driver (`local` / `shared-fs` / `s3`).
 func WithBackendType(t string) option.Option {
 	return wrapper.Wrap(func(o *Options) { o.BackendType = t })
 }

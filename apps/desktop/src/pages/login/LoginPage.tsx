@@ -65,6 +65,16 @@ function loginSubmissionErrorMessage(error: unknown, fallback: string): string {
   return errorMessage(error, fallback);
 }
 
+// Stable Touch ErrorResponse numeric code for "an actor already exists"
+// (proto ErrorCode::ACTOR_EXISTS). Returned when a brand-new provider identity
+// carries a verified email already owned by another actor.
+const ACTOR_EXISTS_ERROR_CODE = 10006;
+
+function isStationEmailConflict(error: unknown): boolean {
+  if (!(error instanceof AuthCommandException)) return false;
+  return error.details?.error_code === ACTOR_EXISTS_ERROR_CODE;
+}
+
 function wait(milliseconds: number): Promise<void> {
   return new Promise(resolve => window.setTimeout(resolve, milliseconds));
 }
@@ -571,7 +581,9 @@ export function LoginPage({
         return;
       }
       setAuthState('error');
-      setAuthError(errorMessage(err, t('auth.login.failedRetry')));
+      setAuthError(isStationEmailConflict(err)
+        ? t('auth.oauth.emailConflict')
+        : errorMessage(err, t('auth.login.failedRetry')));
     }
   }, [continueAfterFreshAuth, onLoginWithOAuthBridge, startAuth, t]);
 

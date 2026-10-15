@@ -1,10 +1,9 @@
 /**
  * RecoveryOverlayHost — W6D root component for recovery overlays.
  *
- * Subscribes to the RecoveryProjection and renders the appropriate
- * overlay components based on active recovery states. Each overlay
- * dispatches actions to the owning runtime — no overlay creates
- * a second retry, persistence, or lifecycle owner.
+ * Subscribes to the RecoveryProjection and renders app-level recovery
+ * surfaces. Route-owned runtime failures and background reconciliation remain
+ * local instead of stacking global notices.
  */
 
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react';

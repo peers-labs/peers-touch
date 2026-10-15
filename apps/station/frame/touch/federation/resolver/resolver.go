@@ -32,7 +32,7 @@ import (
 // string-matching wrapped errors.
 var (
 	ErrLocalIdentityMissing      = errors.New("resolver: local station identity not registered")
-	ErrRelayUnavailable          = errors.New("resolver: relay-client not registered")
+	ErrRelayUnavailable          = errors.New("resolver: standard Relay route is unavailable")
 	ErrEmptyResponse             = errors.New("resolver: empty profile response")
 	ErrTombstoned                = errors.New("resolver: actor withdrawn (tombstone)")
 	ErrFederationContextRequired = errors.New(
@@ -54,14 +54,14 @@ var (
 
 // Resolved is the return shape: the verified envelope plus the locator
 // record that authenticated it. Callers may inspect the locator for
-// origin / mounts / seq metadata.
+// origin and sequence metadata.
 type Resolved struct {
 	Envelope *profilepb.ActorProfileEnvelope
 	Locator  *locatorpb.ActorLocatorRecord
 
 	// IsLocal indicates the handle resolved to this station's own
 	// PeerID — the resolver bypassed both the federation cache and the
-	// opaque Relay tunnel leg.
+	// remote Node Connectivity route.
 	IsLocal bool
 
 	// FromCache is true when the resolver served the envelope from the
@@ -219,33 +219,59 @@ func (r *Resolver) resolveByHandle(
 		)
 	}
 
-	// Cache fast-path: serve a fresh remote_cached row without touching
-	// the DHT. We skip the cache entirely when the handle is locally
-	// owned (the local fast-path is already cheaper than a DB lookup
-	// and bypasses pollution risks).
+	var rec *locatorpb.ActorLocatorRecord
+
+	// Cached profiles are revalidated against the signed locator sequence.
+	// Standard Relay transport has no broadcast invalidation channel, so a
+	// cache hit cannot bypass the DHT authority that carries visibility and
+	// profile revision changes.
 	if !r.skipCache {
 		if cached, err := fedcache.Lookup(ctx, canon); err == nil && cached != nil {
-			env, locrec := cachedToProtos(cached, canon)
-			if env != nil && locrec != nil {
+			env, cachedLocator := cachedToProtos(cached, canon)
+			if env != nil && cachedLocator != nil {
+				rec, err = r.lookupLocator(ctx, canon)
+				if err != nil {
+					return nil, err
+				}
+				if rec.GetSeq() < cachedLocator.GetSeq() {
+					return nil, fedcache.ErrStaleEnvelope
+				}
 				if memberships != nil &&
-					locrec.GetHomeStationPeerId() != localStationPeerID {
+					rec.GetHomeStationPeerId() != localStationPeerID {
 					if err := requireActiveMembership(
 						ctx,
 						memberships,
 						federationID,
-						locrec.GetHomeStationPeerId(),
+						rec.GetHomeStationPeerId(),
 					); err != nil {
 						return nil, err
 					}
 				}
-				return &Resolved{Envelope: env, Locator: locrec, IsLocal: false, FromCache: true}, nil
+				if rec.GetTombstone() {
+					_, _ = fedcache.Evict(ctx, canon)
+					return nil, ErrTombstoned
+				}
+				if locatorMatchesCachedProfile(rec, cachedLocator) {
+					if err := r.rememberRemoteStationKey(ctx, rec); err != nil {
+						return nil, err
+					}
+					return &Resolved{
+						Envelope:  env,
+						Locator:   rec,
+						IsLocal:   false,
+						FromCache: true,
+					}, nil
+				}
+				_, _ = fedcache.Evict(ctx, canon)
 			}
 		}
 	}
 
-	rec, err := r.lookupLocator(ctx, canon)
-	if err != nil {
-		return nil, err
+	if rec == nil {
+		rec, err = r.lookupLocator(ctx, canon)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if memberships != nil &&
 		rec.GetHomeStationPeerId() != localStationPeerID {
@@ -295,6 +321,18 @@ func (r *Resolver) resolveByHandle(
 		logger.Warnf(ctx, "[resolver] cache upsert failed handle=%s err=%v", canon, cerr)
 	}
 	return res, nil
+}
+
+func locatorMatchesCachedProfile(
+	current *locatorpb.ActorLocatorRecord,
+	cached *locatorpb.ActorLocatorRecord,
+) bool {
+	return current != nil &&
+		cached != nil &&
+		current.GetSeq() == cached.GetSeq() &&
+		current.GetFederatedHandle() == cached.GetFederatedHandle() &&
+		current.GetHomeStationPeerId() == cached.GetHomeStationPeerId() &&
+		current.GetHomeStationDomain() == cached.GetHomeStationDomain()
 }
 
 func localHandlePart(canon string, stationDomain string) (string, bool) {
@@ -568,62 +606,17 @@ func (r *Resolver) resolveLocal(
 	return &Resolved{Envelope: env, Locator: rec, IsLocal: true}, nil
 }
 
-// relayMountMatches reports whether `localBase` appears in the
-// locator-advertised mount list. Comparison is trailing-slash-
-// tolerant — the locator hook publishes the trimmed form, but a
-// future relay-client implementation that publishes its own mount
-// list might not be as careful, so we trim both sides at compare
-// time. Case-sensitive: relay base URLs are URL-typed strings, and
-// the host portion is the only part that's case-insensitive in
-// strict RFC reading; in practice all our relays normalize to
-// lowercase host so an EqualFold here would buy nothing.
-func relayMountMatches(mounts []string, localBase string) bool {
-	want := strings.TrimRight(strings.TrimSpace(localBase), "/")
-	if want == "" {
-		return false
-	}
-	for _, m := range mounts {
-		if strings.TrimRight(strings.TrimSpace(m), "/") == want {
-			return true
-		}
-	}
-	return false
-}
-
 // resolveRemote sends GET /actor/federation/profile?handle=<canon> through
-// the local relay-client's scoped opaque tunnel. The Relay sees only bounded
+// the local standard Circuit route. The Relay carries only encrypted
 // ciphertext and the target Station identity.
 func (r *Resolver) resolveRemote(
 	ctx context.Context,
 	canon string,
 	rec *locatorpb.ActorLocatorRecord,
 ) (*Resolved, error) {
-	rc := fednode.RelayClient()
+	rc := fednode.RelayAccessSnapshot()
 	if rc == nil || !rc.Available() {
 		return nil, ErrRelayUnavailable
-	}
-	base := strings.TrimRight(strings.TrimSpace(rc.RelayOrigin()), "/")
-	if base == "" {
-		return nil, ErrRelayUnavailable
-	}
-
-	// Tier B2 — soft hint. The locator record can advertise the
-	// relay base-URLs the home station publishes through. If our
-	// local relay's base does NOT appear in that list, our forward
-	// is at the mercy of relay-to-relay federation (not yet
-	// implemented) and most likely will fail with 404 at the relay's
-	// mount table.
-	//
-	// We attempt the tunnel anyway — the proto explicitly marks
-	// inbox_relay_mounts as a hint, and the relay's live mount table
-	// is the authoritative answer. A misconfigured but recoverable
-	// hint must not turn into a hard outage. Log loudly so an
-	// operator sees the cross-relay split during testing.
-	if mounts := rec.GetInboxRelayMounts(); len(mounts) > 0 && !relayMountMatches(mounts, base) {
-		logger.Warnf(ctx,
-			"[resolver] handle=%s home_relays=%v local_relay=%s no overlap; "+
-				"attempting tunnel via local relay, expect unavailable if relays do not federate",
-			canon, mounts, base)
 	}
 
 	target := (&url.URL{
@@ -644,7 +637,7 @@ func (r *Resolver) resolveRemote(
 
 	resp, err := rc.RoundTrip(reqCtx, rec.GetHomeStationPeerId(), req)
 	if err != nil {
-		return nil, fmt.Errorf("resolver: tunnel GET: %w", err)
+		return nil, fmt.Errorf("resolver: Station route GET: %w", err)
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, (1<<20)+1))

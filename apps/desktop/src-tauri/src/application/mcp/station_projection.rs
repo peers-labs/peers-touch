@@ -1,8 +1,14 @@
 use super::*;
-use crate::infrastructure::station_client::{StationClientError, StationClientErrorKind};
+use crate::application::station_runtime::client::{
+    StationClient, StationClientError, StationClientErrorKind,
+};
 
-pub fn mcp_station_list_servers(actor_ptid: &str, token: &str) -> AppResult<StubPayload> {
-    match crate::infrastructure::station_client::request_proto::<_, ListMcpServersResponse>(
+pub fn mcp_station_list_servers(
+    station_client: &StationClient,
+    actor_ptid: &str,
+    token: &str,
+) -> AppResult<StubPayload> {
+    match station_client.request_proto::<_, ListMcpServersResponse>(
         Method::POST,
         MCP_SERVER_LIST_PATH,
         token,
@@ -26,11 +32,12 @@ pub fn mcp_station_list_servers(actor_ptid: &str, token: &str) -> AppResult<Stub
 }
 
 pub fn mcp_station_get_server(
+    station_client: &StationClient,
     actor_ptid: &str,
     token: &str,
     input: McpNameInput,
 ) -> AppResult<StubPayload> {
-    match get_station_mcp_server(token, "", input.name.trim()) {
+    match get_station_mcp_server(station_client, token, "", input.name.trim()) {
         Ok(server) => success_payload(
             "mcp_get_server",
             mcp_server_projection(actor_ptid, &server, true),
@@ -40,41 +47,51 @@ pub fn mcp_station_get_server(
 }
 
 pub fn mcp_station_create_server(
+    station_client: &StationClient,
     actor_ptid: &str,
     token: &str,
     input: McpCreateInput,
 ) -> AppResult<StubPayload> {
-    mcp_station_upsert_server(actor_ptid, token, None, input.data)
+    mcp_station_upsert_server(station_client, actor_ptid, token, None, input.data)
 }
 
 pub fn mcp_station_update_server(
+    station_client: &StationClient,
     actor_ptid: &str,
     token: &str,
     input: McpUpdateInput,
 ) -> AppResult<StubPayload> {
-    mcp_station_upsert_server(actor_ptid, token, Some(input.name), input.data)
+    mcp_station_upsert_server(
+        station_client,
+        actor_ptid,
+        token,
+        Some(input.name),
+        input.data,
+    )
 }
 
 pub fn mcp_station_toggle_server(
+    station_client: &StationClient,
     actor_ptid: &str,
     token: &str,
     input: McpToggleInput,
 ) -> AppResult<StubPayload> {
-    let current = match get_station_mcp_server(token, "", input.name.trim()) {
+    let current = match get_station_mcp_server(station_client, token, "", input.name.trim()) {
         Ok(server) => server,
         Err(error) => return error.into_app_result("agent.mcpServerGetFailed"),
     };
     let mut data = mcp_server_projection(actor_ptid, &current, true);
     data["enabled"] = json!(input.enabled);
-    mcp_station_upsert_server(actor_ptid, token, Some(input.name), data)
+    mcp_station_upsert_server(station_client, actor_ptid, token, Some(input.name), data)
 }
 
 pub fn mcp_station_delete_server(
+    station_client: &StationClient,
     actor_ptid: &str,
     token: &str,
     input: McpNameInput,
 ) -> AppResult<StubPayload> {
-    let current = match get_station_mcp_server(token, "", input.name.trim()) {
+    let current = match get_station_mcp_server(station_client, token, "", input.name.trim()) {
         Ok(server) => server,
         Err(error) => return error.into_app_result("agent.mcpServerGetFailed"),
     };
@@ -83,7 +100,7 @@ pub fn mcp_station_delete_server(
         expected_revision: current.revision,
         idempotency_key: format!("mcp-delete-{}", ulid::Ulid::new()),
     };
-    match crate::infrastructure::station_client::request_proto::<_, DeleteMcpServerResponse>(
+    match station_client.request_proto::<_, DeleteMcpServerResponse>(
         Method::POST,
         MCP_SERVER_DELETE_PATH,
         token,
@@ -108,11 +125,12 @@ pub fn mcp_station_delete_server(
 }
 
 pub fn mcp_station_refresh_server(
+    station_client: &StationClient,
     actor_ptid: &str,
     token: &str,
     input: McpNameInput,
 ) -> AppResult<StubPayload> {
-    let current = match get_station_mcp_server(token, "", input.name.trim()) {
+    let current = match get_station_mcp_server(station_client, token, "", input.name.trim()) {
         Ok(server) => server,
         Err(error) => return error.into_app_result("agent.mcpServerGetFailed"),
     };
@@ -122,10 +140,7 @@ pub fn mcp_station_refresh_server(
             expected_revision: current.revision,
             idempotency_key: format!("mcp-refresh-{}", ulid::Ulid::new()),
         };
-        return match crate::infrastructure::station_client::request_proto::<
-            _,
-            RefreshMcpServerResponse,
-        >(
+        return match station_client.request_proto::<_, RefreshMcpServerResponse>(
             Method::POST,
             MCP_SERVER_REFRESH_PATH,
             token,
@@ -158,17 +173,18 @@ pub fn mcp_station_refresh_server(
         }
         Err(error) => return persist_error(error),
     };
-    mcp_station_upsert_server(actor_ptid, token, Some(current.name), local)
+    mcp_station_upsert_server(station_client, actor_ptid, token, Some(current.name), local)
 }
 
 fn mcp_station_upsert_server(
+    station_client: &StationClient,
     actor_ptid: &str,
     token: &str,
     existing_name: Option<String>,
     update: Value,
 ) -> AppResult<StubPayload> {
     let current = match existing_name.as_deref() {
-        Some(name) => match get_station_mcp_server(token, "", name.trim()) {
+        Some(name) => match get_station_mcp_server(station_client, token, "", name.trim()) {
             Ok(server) => Some(server),
             Err(error) => return error.into_app_result("agent.mcpServerGetFailed"),
         },
@@ -297,7 +313,7 @@ fn mcp_station_upsert_server(
             return persist_error(error);
         }
     }
-    let response = crate::infrastructure::station_client::request_proto::<_, UpsertMcpServerResponse>(
+    let response = station_client.request_proto::<_, UpsertMcpServerResponse>(
         Method::POST,
         MCP_SERVER_UPSERT_PATH,
         token,
@@ -346,29 +362,31 @@ fn mcp_station_upsert_server(
 }
 
 fn get_station_mcp_server(
+    station_client: &StationClient,
     token: &str,
     server_id: &str,
     name: &str,
 ) -> Result<McpServer, StationClientError> {
-    crate::infrastructure::station_client::request_proto::<_, GetMcpServerResponse>(
-        Method::POST,
-        MCP_SERVER_GET_PATH,
-        token,
-        None,
-        Some(&GetMcpServerRequest {
-            server_id: server_id.to_string(),
-            name: name.to_string(),
-        }),
-    )
-    .and_then(|response| {
-        response.server.ok_or_else(|| {
-            StationClientError::new(
-                StationClientErrorKind::InvalidResponse,
-                "Station MCP response is missing server",
-                None,
-            )
+    station_client
+        .request_proto::<_, GetMcpServerResponse>(
+            Method::POST,
+            MCP_SERVER_GET_PATH,
+            token,
+            None,
+            Some(&GetMcpServerRequest {
+                server_id: server_id.to_string(),
+                name: name.to_string(),
+            }),
+        )
+        .and_then(|response| {
+            response.server.ok_or_else(|| {
+                StationClientError::new(
+                    StationClientErrorKind::InvalidResponse,
+                    "Station MCP response is missing server",
+                    None,
+                )
+            })
         })
-    })
 }
 
 fn mcp_server_projection(actor_ptid: &str, server: &McpServer, include_secrets: bool) -> Value {

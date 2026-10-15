@@ -26,7 +26,7 @@ This document defines the user-visible and runtime lifecycle across those units.
 
 | Phase | Entry Trigger | Owner | Exit Condition |
 | --- | --- | --- | --- |
-| `app-boot` | Process starts | `desktop-app` + `desktop-rust` | Local gateway, storage, and WebView are ready |
+| `app-boot` | Process starts | `desktop-app` + `desktop-rust` | Local gateway, storage, app-scoped Station runtime, and WebView are ready |
 | `shell-boot` | `desktop-web` starts | `desktop-web` kernel | Shell has mounted and boot telemetry starts |
 | `identity-restore` | Shell boot completes | `desktop-rust` + session service | Existing account/session context is restored or rejected |
 | `station-handshake` | Station context is known | `desktop-rust` + Station gateway | Station capability baseline is checked |
@@ -36,7 +36,7 @@ This document defines the user-visible and runtime lifecycle across those units.
 | `runtime-idle` | First paint completes | Runtime registry | Non-critical runtimes install during idle time |
 | `steady` | App is interactive | Owning runtimes | Events and reconciliation keep projections fresh |
 | `session-change` | Login/logout/account switch | Session runtime owner | Old session runtimes teardown; new session bootstraps |
-| `shutdown` | Window/process exits | `desktop-app` + runtimes | Timers, streams, and local resources are closed |
+| `shutdown` | Window/process exits | `desktop-app` + runtimes | Admission stops; timers, streams, Station transport, and local resources drain and close |
 
 ---
 
@@ -66,6 +66,8 @@ The Desktop user must not enter business surfaces that require Station access be
 
 - Station owns cross-device business truth.
 - `desktop-rust` owns local command execution, local storage, local gateway behavior, and native capability coordination.
+- Tauri `AppState` owns one Station runtime. Setup and shutdown are explicit;
+  URL getters and request builders cannot create listeners or background workers.
 - `desktop-web` owns rendering and local projections.
 - Long-lived projection freshness belongs to runtimes, not page mount effects.
 - Session-scoped runtimes bootstrap on authenticated actor edges and teardown on logout/account switch.
@@ -88,6 +90,8 @@ The detailed runtime API and Boot Pipeline phases are defined in [`runtime-proje
 | Station unreachable | Keep local shell safe; surface retry state; do not pretend projections are fresh |
 | Event stream dropped | Runtime reconnects and reconciles from Station |
 | Window hidden or system sleep | Runtime treats resume as stale and reconciles |
+| Route switch | Revoke the prior RouteLease, cancel stale callbacks, preserve same-Station Access scope |
+| Process exit | Stop Station request admission, drain boundedly, close route sessions and join the transport owner |
 
 ---
 

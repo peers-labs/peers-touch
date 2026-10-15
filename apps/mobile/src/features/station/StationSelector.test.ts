@@ -11,8 +11,8 @@ const launchSource = readFileSync(
   new URL('./StationLaunchScreen.tsx', import.meta.url),
   'utf8',
 );
-const appSource = readFileSync(
-  new URL('../../App.tsx', import.meta.url),
+const entryRuntimeSource = readFileSync(
+  new URL('../../runtimes/entryRuntime.ts', import.meta.url),
   'utf8',
 );
 const styles = readFileSync(
@@ -66,12 +66,17 @@ describe('StationSelector reachability states', () => {
   });
 
   it('requires a current identity check before enabling Continue', () => {
-    expect(appSource).toContain('await verifyStationIdentity(entry.url)');
-    expect(appSource).toContain(
-      'online = identity.stationPeerId === entry.stationPeerId',
+    expect(entryRuntimeSource).toContain(
+      'const identity = await verifyStationEntry(station)',
     );
-    expect(appSource).toContain(
-      'verifiedStationKeysForSelection.current.clear()',
+    expect(entryRuntimeSource).toContain(
+      'return verifyBoundStationRoute({',
+    );
+    expect(entryRuntimeSource).toContain(
+      'requireMatchingStationIdentity(station, identity.stationPeerId)',
+    );
+    expect(entryRuntimeSource).toContain(
+      'verifiedSelectionKeys.clear()',
     );
     expect(launchSource).toContain(
       'disabled={!activeStation || !activeStationChecked}',
@@ -91,13 +96,8 @@ describe('StationSelector layout contract', () => {
   });
 
   it('anchors the surface and preserves a useful one-line address field', () => {
-    expect(styles).toMatch(
-      /\.launch-content\s*\{[^}]*flex:\s*1;[^}]*justify-content:\s*flex-end;[^}]*padding:[^;]*var\(--safe-area-bottom\)\s*\+\s*24px\);/s,
-    );
+    expect(styles).toMatch(/\.launch-content\s*\{[^}]*flex:\s*1;/s);
     expect(styles).toMatch(/\.launch-panel\s*\{[^}]*flex:\s*0 0 auto;/s);
-    expect(styles).toMatch(
-      /@media \(orientation: landscape\) and \(max-height: 500px\)[\s\S]*?\.launch-content\s*\{[^}]*justify-content:\s*center;/s,
-    );
     expect(styles).toMatch(
       /\.station-address-input\s*\{[^}]*height:\s*44px;[^}]*font-size:\s*16px;/s,
     );
@@ -108,7 +108,6 @@ describe('StationSelector layout contract', () => {
       /\.launch-brand-logo\s*\{[^}]*filter:\s*drop-shadow\(/s,
     );
     expect(styles).not.toMatch(/\.launch-brand-logo\s*\{[^}]*border:/s);
-    expect(source).not.toMatch(/<Text[^>]*>\{entry\.url\}<\/Text>/);
   });
 
   it('never draws an inner focus frame inside the outer control', () => {

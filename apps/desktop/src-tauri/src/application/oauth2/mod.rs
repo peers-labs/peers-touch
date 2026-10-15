@@ -1,5 +1,7 @@
 use crate::application::capability_authority;
 use crate::application::security::redact_json_value;
+use crate::application::station_runtime::client::StationClient;
+use crate::application::station_runtime::StationRuntime;
 use crate::contracts::{
     OAuthAuthorizeInput, OAuthCallbackInput, OAuthIdInput, OAuthLoopbackPollInput,
     OAuthLoopbackStartInput, OAuthResourceInput, OAuthSetCredentialsInput, StubPayload,
@@ -11,7 +13,6 @@ use crate::infrastructure::auth_identity;
 use crate::infrastructure::i18n::I18nService;
 use crate::infrastructure::session_store::{self, PersistedSession, SessionSource};
 use crate::infrastructure::session_vault;
-use crate::infrastructure::station_client;
 use crate::infrastructure::storage::key_provider::PlatformKeyProvider;
 use crate::infrastructure::storage::{self, StorageKind};
 use crate::model::access_gate::{AccessDecision, AccessDecisionState};
@@ -152,6 +153,8 @@ const BROKER_ACK_RECOVERY_RETRY_SECONDS: i64 = 2;
 const BROKER_ACK_RECOVERY_SCHEMA_VERSION: u32 = 1;
 const BROKER_ACK_RECOVERY_KEY_PREFIX: &str = "oauth-acknowledgement-recovery";
 const BROKER_ACK_RECOVERY_AAD_DOMAIN: &str = "peers-touch/oauth-acknowledgement-recovery";
+const OAUTH_BROKER_BASE_URL_ENV: &str = "PEERS_OAUTH_BROKER_BASE_URL";
+const DEFAULT_OAUTH_BROKER_BASE_URL: &str = "https://peers-touch-oauth.vercel.app";
 
 #[derive(Debug, Clone)]
 pub struct OAuthConnectorAuthorization {
@@ -375,6 +378,7 @@ fn request_loopback_cancellation(session_id: &str) -> Result<bool, String> {
 }
 
 fn update_loopback_following_gate(
+    station_client: &StationClient,
     session_id: &str,
     callback_url: String,
     decision: &AccessDecision,
@@ -400,11 +404,11 @@ fn update_loopback_following_gate(
     logins.insert(session_id.to_string(), pending);
     drop(sessions);
     drop(logins);
-    schedule_pending_broker_cleanup(session_id.to_string(), created_at);
+    schedule_pending_broker_cleanup(station_client.clone(), session_id.to_string(), created_at);
     Ok(())
 }
 
-fn cleanup_expired_loopback_sessions(now: i64) {
+fn cleanup_expired_loopback_sessions(station_client: &StationClient, now: i64) {
     let pending = {
         let Ok(mut logins) = pending_broker_logins().lock() else {
             return;
@@ -420,7 +424,9 @@ fn cleanup_expired_loopback_sessions(now: i64) {
         pending
     };
     for login in pending {
-        if let Err(error) = cancel_broker_login(&login.binding, &login.oauth_attempt_id) {
+        if let Err(error) =
+            cancel_broker_login(station_client, &login.binding, &login.oauth_attempt_id)
+        {
             tracing::warn!(
                 oauth_attempt_id = %login.oauth_attempt_id,
                 error = ?error.error,
@@ -466,7 +472,11 @@ fn expire_loopback_sessions(
     expired_ids
 }
 
-fn schedule_pending_broker_cleanup(session_id: String, created_at: i64) {
+fn schedule_pending_broker_cleanup(
+    station_client: StationClient,
+    session_id: String,
+    created_at: i64,
+) {
     thread::spawn(move || {
         let expires_at = created_at.saturating_add(LOOPBACK_SESSION_TTL_SECONDS);
         let delay = expires_at.saturating_sub(chrono_like_now_unix());
@@ -479,7 +489,7 @@ fn schedule_pending_broker_cleanup(session_id: String, created_at: i64) {
             .and_then(|sessions| sessions.get(&session_id).cloned())
             .is_some_and(|session| session.status == "action_required");
         if should_cleanup {
-            cleanup_expired_loopback_sessions(chrono_like_now_unix());
+            cleanup_expired_loopback_sessions(&station_client, chrono_like_now_unix());
         }
     });
 }
@@ -550,6 +560,7 @@ fn oauth_bridge_request(
 }
 
 fn save_oauth_callback(
+    station_client: &StationClient,
     input: OAuthCallbackInput,
     purpose: &str,
     connector_authorization: Option<&OAuthConnectorAuthorization>,
@@ -589,12 +600,13 @@ fn save_oauth_callback(
                 Some(value) => value,
                 None => {
                     let bridge_req = oauth_bridge_request(&input, Some(binding));
-                    station_client::post_peers_proto_no_auth::<
+                    station_client.post_peers_proto_no_auth::<
                         BrokerOAuthBridgeRequest,
                         BrokerOAuthBridgeResponse,
                     >("/actor/oauth-bridge", &bridge_req)
                     .map_err(|error| {
-                        internal_error(format!("Station OAuth bridge failed: {error}"))
+                        let message = format!("Station OAuth bridge failed: {error}");
+                        error.into_app_result(message)
                     })?
                     .completion
                     .ok_or_else(|| internal_error("OAuth bridge response missing completion"))?
@@ -663,21 +675,19 @@ fn save_oauth_callback(
                 return Err(invalid_argument("connector_link requires authentication"));
             }
             let bridge_req = oauth_bridge_request(&input, None);
-            let response = station_client::request_peers_proto::<
-                BrokerOAuthBridgeRequest,
-                BrokerOAuthConnectorLinkResponse,
-            >(
-                Method::POST,
-                "/actor/oauth-connector-link",
-                &authorization.token,
-                None,
-                Some(&bridge_req),
-            )
-            .map_err(|error| {
-                internal_error(format!(
-                    "Station OAuth connector verification failed: {error}"
-                ))
-            })?;
+            let response = station_client
+                .request_peers_proto::<BrokerOAuthBridgeRequest, BrokerOAuthConnectorLinkResponse>(
+                    Method::POST,
+                    "/actor/oauth-connector-link",
+                    &authorization.token,
+                    None,
+                    Some(&bridge_req),
+                )
+                .map_err(|error| {
+                    internal_error(format!(
+                        "Station OAuth connector verification failed: {error}"
+                    ))
+                })?;
             let response_ptid = response
                 .actor_ref
                 .as_ref()
@@ -701,9 +711,9 @@ fn save_oauth_callback(
     } else {
         None
     };
-    let account_id = station_access_token
-        .as_ref()
-        .map(|_| auth_identity::oauth_account_id(provider_id, provider_user_id.as_str()));
+    let account_id = station_access_token.as_ref().map(|_| {
+        auth_identity::oauth_account_id(&owner_ptid, provider_id, provider_user_id.as_str())
+    });
     if let (Some(identity_state), Some(account_id)) =
         (previous_identity_state.as_ref(), account_id.as_ref())
     {
@@ -713,7 +723,7 @@ fn save_oauth_callback(
             .any(|account| account.id == *account_id && account.pin_protection.is_some())
         {
             if let Some((binding, attempt_id)) = acknowledgement.as_ref() {
-                let _ = cancel_broker_login(binding, attempt_id);
+                let _ = cancel_broker_login(station_client, binding, attempt_id);
             }
             return Err(AppResult::fail(
                 ErrorCode::Unauthorized,
@@ -746,7 +756,7 @@ fn save_oauth_callback(
                 previous_session: previous_session.clone(),
             };
             if let Err(error) = persist_broker_acknowledgement_recovery(record.clone()) {
-                let _ = cancel_broker_login(binding, oauth_attempt_id);
+                let _ = cancel_broker_login(station_client, binding, oauth_attempt_id);
                 return Err(internal_error(error));
             }
             Some(record)
@@ -773,7 +783,7 @@ fn save_oauth_callback(
                     .map_err(internal_error)?;
             }
             if let Some((binding, attempt_id)) = acknowledgement.as_ref() {
-                let _ = cancel_broker_login(binding, attempt_id);
+                let _ = cancel_broker_login(station_client, binding, attempt_id);
             }
             return Err(internal_error(error.to_string()));
         }
@@ -844,7 +854,7 @@ fn save_oauth_callback(
                     .map_err(internal_error)?;
             }
             if let Some((binding, attempt_id)) = acknowledgement.as_ref() {
-                let _ = cancel_broker_login(binding, attempt_id);
+                let _ = cancel_broker_login(station_client, binding, attempt_id);
             }
         }
         return Err(error);
@@ -862,7 +872,7 @@ fn save_oauth_callback(
                     .map_err(internal_error)?;
             }
             if let Some((binding, attempt_id)) = acknowledgement.as_ref() {
-                let _ = cancel_broker_login(binding, attempt_id);
+                let _ = cancel_broker_login(station_client, binding, attempt_id);
             }
             return Err(internal_error("OAuth account identifier is unavailable"));
         }
@@ -887,7 +897,7 @@ fn save_oauth_callback(
                     .map_err(internal_error)?;
             }
             if let Some((binding, attempt_id)) = acknowledgement.as_ref() {
-                let _ = cancel_broker_login(binding, attempt_id);
+                let _ = cancel_broker_login(station_client, binding, attempt_id);
             }
             return Err(internal_error(error));
         }
@@ -900,7 +910,7 @@ fn save_oauth_callback(
         {
             rollback_and_remove_broker_acknowledgement_recovery(record)?;
             if let Some((binding, attempt_id)) = acknowledgement.as_ref() {
-                let _ = cancel_broker_login(binding, attempt_id);
+                let _ = cancel_broker_login(station_client, binding, attempt_id);
             }
             return Err(internal_error(error));
         }
@@ -910,10 +920,10 @@ fn save_oauth_callback(
             if let Some(record) = acknowledgement_recovery.as_ref() {
                 rollback_and_remove_broker_acknowledgement_recovery(record)?;
             }
-            let _ = cancel_broker_login(binding, attempt_id);
+            let _ = cancel_broker_login(station_client, binding, attempt_id);
             return Err(internal_error("OAuth loopback session was cancelled"));
         }
-        match acknowledge_broker_login(binding, attempt_id) {
+        match acknowledge_broker_login(station_client, binding, attempt_id) {
             Ok(()) => {
                 if let Some(record) = acknowledgement_recovery.as_ref() {
                     remove_broker_acknowledgement_recovery(&record.loopback_session_id)
@@ -954,7 +964,7 @@ fn save_oauth_callback(
                             return Ok(OAuthCallbackOutcome::AcknowledgementPending);
                         }
                     }
-                    match cancel_broker_login(binding, attempt_id) {
+                    match cancel_broker_login(station_client, binding, attempt_id) {
                         Ok(OAuthAttemptResult::OauthAttemptResultAccessGranted) => {
                             if let Some(record) = acknowledgement_recovery.as_ref() {
                                 remove_broker_acknowledgement_recovery(&record.loopback_session_id)
@@ -1128,16 +1138,19 @@ fn binding_receiver_secret(binding: &BrokerAccessBinding) -> Vec<u8> {
 }
 
 fn acknowledge_broker_login(
+    station_client: &StationClient,
     binding: &BrokerAccessBinding,
     oauth_attempt_id: &str,
 ) -> Result<(), BrokerAcknowledgementFailure> {
     acknowledge_persisted_broker_login(
+        station_client,
         &PersistedBrokerReceiverBinding::from_runtime(binding),
         oauth_attempt_id,
     )
 }
 
 fn acknowledge_persisted_broker_login(
+    station_client: &StationClient,
     binding: &PersistedBrokerReceiverBinding,
     oauth_attempt_id: &str,
 ) -> Result<(), BrokerAcknowledgementFailure> {
@@ -1166,18 +1179,20 @@ fn acknowledge_persisted_broker_login(
     };
     reconcile_broker_acknowledgement(
         || {
-            station_client::post_peers_proto_no_auth::<
+            station_client.request_proto_no_auth::<
                 AcknowledgeOAuthCredentialRequest,
                 AcknowledgeOAuthCredentialResponse,
-            >("/oauth/mobile/acknowledge", &acknowledgement)
+            >(Method::POST, "/oauth/mobile/acknowledge", &acknowledgement)
             .map_err(|error| error.to_string())
         },
         || {
-            station_client::post_peers_proto_no_auth::<
-                GetOAuthAttemptRequest,
-                GetOAuthAttemptResponse,
-            >("/oauth/mobile/status", &status)
-            .map_err(|error| error.to_string())
+            station_client
+                .request_proto_no_auth::<GetOAuthAttemptRequest, GetOAuthAttemptResponse>(
+                    Method::POST,
+                    "/oauth/mobile/status",
+                    &status,
+                )
+                .map_err(|error| error.to_string())
         },
         BROKER_ACK_RETRY_DELAY,
     )
@@ -1273,35 +1288,36 @@ where
 }
 
 fn cancel_broker_login(
+    station_client: &StationClient,
     binding: &BrokerAccessBinding,
     oauth_attempt_id: &str,
 ) -> CmdResult<OAuthAttemptResult> {
     cancel_persisted_broker_login(
+        station_client,
         &PersistedBrokerReceiverBinding::from_runtime(binding),
         oauth_attempt_id,
     )
 }
 
 fn cancel_persisted_broker_login(
+    station_client: &StationClient,
     binding: &PersistedBrokerReceiverBinding,
     oauth_attempt_id: &str,
 ) -> CmdResult<OAuthAttemptResult> {
     let attempt_secret = binding.receiver_secret().map_err(internal_error)?;
-    let response = station_client::post_peers_proto_no_auth::<
-        CancelOAuthAttemptRequest,
-        CancelOAuthAttemptResponse,
-    >(
-        "/oauth/mobile/cancel",
-        &CancelOAuthAttemptRequest {
-            oauth_attempt_id: oauth_attempt_id.to_string(),
-            station_peer_id: binding.station_peer_id.clone(),
-            access_attempt_id: binding.access_attempt_id.clone(),
-            attempt_secret,
-            device_id: binding.device_id.clone(),
-            lifecycle_generation: binding.lifecycle_generation,
-        },
-    )
-    .map_err(|error| internal_error(format!("OAuth cancellation failed: {error}")))?;
+    let response = station_client
+        .post_peers_proto_no_auth::<CancelOAuthAttemptRequest, CancelOAuthAttemptResponse>(
+            "/oauth/mobile/cancel",
+            &CancelOAuthAttemptRequest {
+                oauth_attempt_id: oauth_attempt_id.to_string(),
+                station_peer_id: binding.station_peer_id.clone(),
+                access_attempt_id: binding.access_attempt_id.clone(),
+                attempt_secret,
+                device_id: binding.device_id.clone(),
+                lifecycle_generation: binding.lifecycle_generation,
+            },
+        )
+        .map_err(|error| internal_error(format!("OAuth cancellation failed: {error}")))?;
     let result = OAuthAttemptResult::try_from(response.result)
         .map_err(|_| internal_error("Station returned an unknown OAuth cancellation result"))?;
     if result != OAuthAttemptResult::OauthAttemptResultCancelled
@@ -1354,7 +1370,11 @@ fn read_broker_acknowledgement_recoveries() -> Result<BrokerAcknowledgementRecov
         .get_or_create_key(&key_ref)
         .map_err(|error| format!("load OAuth acknowledgement recovery key: {error}"))?;
     if envelope.key_id != key_material.key_id || envelope.key_version != key_material.key_version {
-        return Err("OAuth acknowledgement recovery key binding is invalid".to_string());
+        tracing::warn!(
+            path = %path.display(),
+            "OAuth acknowledgement recovery key is unavailable in this context; resetting recovery state"
+        );
+        return Ok(BrokerAcknowledgementRecoveryStore::default());
     }
     let key: [u8; 32] = key_material
         .key_bytes
@@ -1370,8 +1390,16 @@ fn read_broker_acknowledgement_recoveries() -> Result<BrokerAcknowledgementRecov
         .decode(envelope.ciphertext.as_bytes())
         .map_err(|_| "OAuth acknowledgement recovery ciphertext is invalid".to_string())?;
     let aad = broker_acknowledgement_recovery_aad(&envelope.key_id, envelope.key_version, &path);
-    let mut plaintext = aes_gcm_decrypt(&key, &nonce, &ciphertext, &aad)
-        .map_err(|_| "decrypt OAuth acknowledgement recovery state".to_string())?;
+    let mut plaintext = match aes_gcm_decrypt(&key, &nonce, &ciphertext, &aad) {
+        Ok(plaintext) => plaintext,
+        Err(_) => {
+            tracing::warn!(
+                path = %path.display(),
+                "OAuth acknowledgement recovery state could not be decrypted; resetting recovery state"
+            );
+            return Ok(BrokerAcknowledgementRecoveryStore::default());
+        }
+    };
     let decoded = serde_json::from_slice::<BrokerAcknowledgementRecoveryStore>(&plaintext)
         .map_err(|error| format!("decode OAuth acknowledgement recovery state: {error}"));
     plaintext.zeroize();
@@ -1517,14 +1545,17 @@ fn persist_broker_cancellation_request(session_id: &str) -> Result<(), String> {
 }
 
 fn reconcile_broker_acknowledgement_recovery(
+    station_client: &StationClient,
     record: PendingBrokerAcknowledgement,
     force: bool,
 ) -> Result<BrokerAcknowledgementRecovery, String> {
     reconcile_broker_acknowledgement_recovery_with(
         record,
         force,
-        cancel_persisted_broker_login,
-        acknowledge_persisted_broker_login,
+        |binding, attempt_id| cancel_persisted_broker_login(station_client, binding, attempt_id),
+        |binding, attempt_id| {
+            acknowledge_persisted_broker_login(station_client, binding, attempt_id)
+        },
     )
 }
 
@@ -1590,6 +1621,7 @@ where
 }
 
 fn reconcile_broker_acknowledgement_for_session(
+    station_client: &StationClient,
     session_id: &str,
     force: bool,
 ) -> Result<Option<BrokerAcknowledgementRecovery>, String> {
@@ -1604,7 +1636,7 @@ fn reconcile_broker_acknowledgement_for_session(
     {
         return Ok(None);
     }
-    let recovery = reconcile_broker_acknowledgement_recovery(record, force)?;
+    let recovery = reconcile_broker_acknowledgement_recovery(station_client, record, force)?;
     match &recovery {
         BrokerAcknowledgementRecovery::Ready => {
             update_loopback_session(session_id, "completed", None, None);
@@ -1620,6 +1652,7 @@ fn reconcile_broker_acknowledgement_for_session(
 }
 
 pub(crate) fn reconcile_broker_acknowledgement_for_account(
+    station_client: &StationClient,
     account_id: &str,
 ) -> Result<BrokerAcknowledgementRecovery, String> {
     let _mutation_guard = lock_connection_mutations();
@@ -1628,11 +1661,15 @@ pub(crate) fn reconcile_broker_acknowledgement_for_account(
     else {
         return Ok(BrokerAcknowledgementRecovery::Ready);
     };
-    reconcile_broker_acknowledgement_recovery(record, true)
+    reconcile_broker_acknowledgement_recovery(station_client, record, true)
 }
 
-pub(crate) fn reconcile_broker_cancellations_after_restart() -> Result<(), String> {
-    reconcile_broker_cancellations_after_restart_with(cancel_persisted_broker_login)
+pub(crate) fn reconcile_broker_cancellations_after_restart(
+    station_client: &StationClient,
+) -> Result<(), String> {
+    reconcile_broker_cancellations_after_restart_with(|binding, attempt_id| {
+        cancel_persisted_broker_login(station_client, binding, attempt_id)
+    })
 }
 
 fn reconcile_broker_cancellations_after_restart_with<Cancel>(
@@ -1743,7 +1780,29 @@ fn unix_to_rfc3339(ts: i64) -> String {
         .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_string())
 }
 
+fn resolve_oauth_broker_base_url(configured: Option<&str>) -> String {
+    configured
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.trim_end_matches('/').to_string())
+        .unwrap_or_else(|| DEFAULT_OAUTH_BROKER_BASE_URL.to_string())
+}
+
+fn oauth_broker_base_url() -> String {
+    let configured = std::env::var(OAUTH_BROKER_BASE_URL_ENV).ok();
+    resolve_oauth_broker_base_url(configured.as_deref())
+}
+
+fn oauth_provider_callback_url(broker_base_url: &str, provider_id: &str) -> String {
+    format!("{broker_base_url}/api/oauth/{provider_id}/callback")
+}
+
 fn provider_catalog() -> Vec<ProviderCatalogItem> {
+    let broker_base_url = oauth_broker_base_url();
+    provider_catalog_for_base_url(&broker_base_url)
+}
+
+fn provider_catalog_for_base_url(broker_base_url: &str) -> Vec<ProviderCatalogItem> {
     vec![
         ProviderCatalogItem {
             id: "github".to_string(),
@@ -1754,7 +1813,7 @@ fn provider_catalog() -> Vec<ProviderCatalogItem> {
             category: "Developer Tools".to_string(),
             enabled: true,
             status: "active".to_string(),
-            callback_url: "https://peers-touch.vercel.app/api/oauth/github/callback".to_string(),
+            callback_url: oauth_provider_callback_url(broker_base_url, "github"),
             authorize_url: "https://github.com/login/oauth/authorize".to_string(),
             token_url: "https://github.com/login/oauth/access_token".to_string(),
             userinfo_url: Some("https://api.github.com/user".to_string()),
@@ -1774,7 +1833,7 @@ fn provider_catalog() -> Vec<ProviderCatalogItem> {
             category: "Office".to_string(),
             enabled: true,
             status: "active".to_string(),
-            callback_url: "https://peers-touch.vercel.app/api/oauth/google/callback".to_string(),
+            callback_url: oauth_provider_callback_url(broker_base_url, "google"),
             authorize_url: "https://accounts.google.com/o/oauth2/v2/auth".to_string(),
             token_url: "https://oauth2.googleapis.com/token".to_string(),
             userinfo_url: Some("https://openidconnect.googleapis.com/v1/userinfo".to_string()),
@@ -1798,7 +1857,7 @@ fn provider_catalog() -> Vec<ProviderCatalogItem> {
             category: "Collaboration".to_string(),
             enabled: true,
             status: "coming_soon".to_string(),
-            callback_url: "https://peers-touch.vercel.app/api/oauth/weixin/callback".to_string(),
+            callback_url: oauth_provider_callback_url(broker_base_url, "weixin"),
             authorize_url: "https://open.weixin.qq.com/connect/qrconnect".to_string(),
             token_url: "https://api.weixin.qq.com/sns/oauth2/access_token".to_string(),
             userinfo_url: Some("https://api.weixin.qq.com/sns/userinfo".to_string()),
@@ -1818,7 +1877,7 @@ fn provider_catalog() -> Vec<ProviderCatalogItem> {
             category: "Collaboration".to_string(),
             enabled: true,
             status: "active".to_string(),
-            callback_url: "https://peers-touch.vercel.app/api/oauth/lark/callback".to_string(),
+            callback_url: oauth_provider_callback_url(broker_base_url, "lark"),
             authorize_url: "https://open.larksuite.com/open-apis/authen/v1/authorize".to_string(),
             token_url: "https://open.larksuite.com/open-apis/authen/v1/oidc/access_token"
                 .to_string(),
@@ -2373,7 +2432,11 @@ fn connector_revocation_is_projected(connection: &OAuthConnectionState) -> bool 
         && connection.projected_revision == connection.revision
 }
 
-pub fn sync_connector_manifests(actor_ptid: &str, token: &str) -> AppResult<Vec<u8>> {
+pub fn sync_connector_manifests(
+    station_client: &StationClient,
+    actor_ptid: &str,
+    token: &str,
+) -> AppResult<Vec<u8>> {
     if !actor_ptid.starts_with("ptid:") || token.trim().is_empty() {
         return AppResult::fail(
             ErrorCode::Unauthorized,
@@ -2400,13 +2463,16 @@ pub fn sync_connector_manifests(actor_ptid: &str, token: &str) -> AppResult<Vec<
             Some(connection) => connection,
             None => continue,
         };
-        let station_resources =
-            match capability_authority::list_connector_manifest_records(&connector_id, token) {
-                Ok(resources) => resources,
-                Err(error) => {
-                    return error.into_app_result("agent.connectorManifestListFailed");
-                }
-            };
+        let station_resources = match capability_authority::list_connector_manifest_records(
+            station_client,
+            &connector_id,
+            token,
+        ) {
+            Ok(resources) => resources,
+            Err(error) => {
+                return error.into_app_result("agent.connectorManifestListFailed");
+            }
+        };
         if let Err(error) = reconcile_connector_station_head(connection, &station_resources) {
             return AppResult::fail(
                 ErrorCode::Conflict,
@@ -2447,8 +2513,11 @@ pub fn sync_connector_manifests(actor_ptid: &str, token: &str) -> AppResult<Vec<
                 );
             }
         };
-        let response = match capability_authority::sync_connector_manifest_records(&request, token)
-        {
+        let response = match capability_authority::sync_connector_manifest_records(
+            station_client,
+            &request,
+            token,
+        ) {
             Ok(response) => response,
             Err(error) => {
                 return error.into_app_result("agent.connectorManifestSyncFailed");
@@ -2674,6 +2743,7 @@ pub fn oauth2_authorize(input: OAuthAuthorizeInput) -> AppResult<StubPayload> {
 }
 
 pub fn oauth2_start_loopback(
+    station: &StationRuntime,
     input: OAuthLoopbackStartInput,
     i18n: I18nService,
     connector_authorization: Option<OAuthConnectorAuthorization>,
@@ -2699,7 +2769,7 @@ pub fn oauth2_start_loopback(
     if provider.status == "coming_soon" {
         return AppResult::fail(ErrorCode::Conflict, "error.oauth2.providerDeveloping", None);
     }
-    cleanup_expired_loopback_sessions(chrono_like_now_unix());
+    cleanup_expired_loopback_sessions(station.client(), chrono_like_now_unix());
 
     let listener = match TcpListener::bind("127.0.0.1:0") {
         Ok(v) => v,
@@ -2722,11 +2792,13 @@ pub fn oauth2_start_loopback(
         Err(error) => return internal_error(error),
     };
     let broker_binding = if purpose == "account_login" {
-        let access =
-            match crate::application::auth::service::start_oauth_access_attempt::<StubPayload>() {
-                Ok(value) => value,
-                Err(error) => return error,
-            };
+        let access = match crate::application::auth::service::start_oauth_access_attempt::<
+            StubPayload,
+        >(station)
+        {
+            Ok(value) => value,
+            Err(error) => return error,
+        };
         let delivery_private = StaticSecret::random_from_rng(OsRng);
         let delivery_public = PublicKey::from(&delivery_private);
         Some(BrokerAccessBinding {
@@ -2760,6 +2832,7 @@ pub fn oauth2_start_loopback(
     drop(sessions);
 
     let session_id_for_thread = session_id.clone();
+    let station_client = station.client().clone();
     let provider_id_for_thread = provider_id.to_string();
     let purpose_for_thread = purpose.to_string();
     let receiver_challenge_for_thread = receiver_challenge.clone();
@@ -2893,6 +2966,7 @@ pub fn oauth2_start_loopback(
                 message = i18n.resolve_key(&lang, "oauth", "oauth.callback.saveFailed");
             } else {
                 match save_oauth_callback(
+                    &station_client,
                     OAuthCallbackInput {
                         bridge_version: params.get("bridge_version").cloned().unwrap_or_default(),
                         site_id: params.get("site_id").cloned().unwrap_or_default(),
@@ -2942,6 +3016,7 @@ pub fn oauth2_start_loopback(
                     }
                     Ok(OAuthCallbackOutcome::FollowingGate { decision, pending }) => {
                         match update_loopback_following_gate(
+                            &station_client,
                             &session_id_for_thread,
                             callback_url.clone(),
                             &decision,
@@ -3027,16 +3102,20 @@ pub fn oauth2_start_loopback(
     )
 }
 
-pub fn oauth2_poll_loopback(input: OAuthLoopbackPollInput) -> AppResult<StubPayload> {
+pub fn oauth2_poll_loopback(
+    station_client: &StationClient,
+    input: OAuthLoopbackPollInput,
+) -> AppResult<StubPayload> {
     let session_id = input.session_id.trim();
     if session_id.is_empty() {
         return invalid_argument("session_id is required");
     }
     let now = chrono_like_now_unix();
-    let recovery = match reconcile_broker_acknowledgement_for_session(session_id, false) {
-        Ok(value) => value,
-        Err(error) => return internal_error(error),
-    };
+    let recovery =
+        match reconcile_broker_acknowledgement_for_session(station_client, session_id, false) {
+            Ok(value) => value,
+            Err(error) => return internal_error(error),
+        };
     match recovery.as_ref() {
         Some(BrokerAcknowledgementRecovery::Ready) => {
             update_loopback_session(session_id, "completed", None, None);
@@ -3050,7 +3129,7 @@ pub fn oauth2_poll_loopback(input: OAuthLoopbackPollInput) -> AppResult<StubPayl
         }
         None => {}
     }
-    cleanup_expired_loopback_sessions(now);
+    cleanup_expired_loopback_sessions(station_client, now);
     let mut completed = false;
     let mut callback_url: Option<String> = None;
     let mut status = "pending".to_string();
@@ -3094,7 +3173,10 @@ pub fn oauth2_poll_loopback(input: OAuthLoopbackPollInput) -> AppResult<StubPayl
     )
 }
 
-pub fn oauth2_resume_loopback(input: OAuthLoopbackPollInput) -> AppResult<StubPayload> {
+pub fn oauth2_resume_loopback(
+    station_client: &StationClient,
+    input: OAuthLoopbackPollInput,
+) -> AppResult<StubPayload> {
     let session_id = input.session_id.trim();
     if session_id.is_empty() {
         return invalid_argument("session_id is required");
@@ -3110,13 +3192,11 @@ pub fn oauth2_resume_loopback(input: OAuthLoopbackPollInput) -> AppResult<StubPa
             None,
         );
     };
-    let status = match station_client::post_peers_proto_no_auth::<
-        GetOAuthAttemptRequest,
-        GetOAuthAttemptResponse,
-    >(
-        "/oauth/mobile/status",
-        &broker_scope_request(&pending.binding, &pending.oauth_attempt_id),
-    ) {
+    let status = match station_client
+        .post_peers_proto_no_auth::<GetOAuthAttemptRequest, GetOAuthAttemptResponse>(
+            "/oauth/mobile/status",
+            &broker_scope_request(&pending.binding, &pending.oauth_attempt_id),
+        ) {
         Ok(value) => value,
         Err(error) => {
             return internal_error(format!("OAuth candidate status failed: {error}"));
@@ -3135,6 +3215,7 @@ pub fn oauth2_resume_loopback(input: OAuthLoopbackPollInput) -> AppResult<StubPa
         oauth_attempt_id: _,
     } = pending;
     match save_oauth_callback(
+        station_client,
         input,
         "account_login",
         None,
@@ -3161,9 +3242,13 @@ pub fn oauth2_resume_loopback(input: OAuthLoopbackPollInput) -> AppResult<StubPa
                     Ok(value) => value,
                     Err(error) => return internal_error(error),
                 };
-            if let Err(error) =
-                update_loopback_following_gate(session_id, String::new(), &decision, pending)
-            {
+            if let Err(error) = update_loopback_following_gate(
+                station_client,
+                session_id,
+                String::new(),
+                &decision,
+                pending,
+            ) {
                 return internal_error(error);
             }
             success_payload(
@@ -3178,7 +3263,10 @@ pub fn oauth2_resume_loopback(input: OAuthLoopbackPollInput) -> AppResult<StubPa
     }
 }
 
-pub fn oauth2_cancel_loopback(input: OAuthLoopbackPollInput) -> AppResult<StubPayload> {
+pub fn oauth2_cancel_loopback(
+    station_client: &StationClient,
+    input: OAuthLoopbackPollInput,
+) -> AppResult<StubPayload> {
     let session_id = input.session_id.trim();
     if session_id.is_empty() {
         return invalid_argument("session_id is required");
@@ -3213,7 +3301,11 @@ pub fn oauth2_cancel_loopback(input: OAuthLoopbackPollInput) -> AppResult<StubPa
         if let Err(error) = persist_broker_cancellation_request(&record.loopback_session_id) {
             return internal_error(error);
         }
-        match cancel_persisted_broker_login(&record.binding, &record.oauth_attempt_id) {
+        match cancel_persisted_broker_login(
+            station_client,
+            &record.binding,
+            &record.oauth_attempt_id,
+        ) {
             Ok(OAuthAttemptResult::OauthAttemptResultAccessGranted) => {
                 if let Err(error) =
                     remove_broker_acknowledgement_recovery(&record.loopback_session_id)
@@ -3241,7 +3333,9 @@ pub fn oauth2_cancel_loopback(input: OAuthLoopbackPollInput) -> AppResult<StubPa
         Err(_) => return internal_error("OAuth pending-login registry is unavailable"),
     };
     if let Some(pending) = pending {
-        if let Err(error) = cancel_broker_login(&pending.binding, &pending.oauth_attempt_id) {
+        if let Err(error) =
+            cancel_broker_login(station_client, &pending.binding, &pending.oauth_attempt_id)
+        {
             return error;
         }
         if let Ok(mut logins) = pending_broker_logins().lock() {
@@ -3313,6 +3407,7 @@ pub fn oauth2_get_connection(actor_ptid: &str, input: OAuthIdInput) -> AppResult
 }
 
 pub fn oauth2_disconnect(
+    station_client: &StationClient,
     actor_ptid: &str,
     token: &str,
     input: OAuthIdInput,
@@ -3364,7 +3459,11 @@ pub fn oauth2_disconnect(
             );
         }
     };
-    let response = match capability_authority::sync_connector_manifest_records(&request, token) {
+    let response = match capability_authority::sync_connector_manifest_records(
+        station_client,
+        &request,
+        token,
+    ) {
         Ok(response) => response,
         Err(error) => {
             return error.into_app_result("agent.connectorManifestSyncFailed");
@@ -3509,11 +3608,39 @@ mod tests {
     use super::*;
     use std::cell::Cell;
 
-    static OAUTH_STORAGE_ENV_LOCK: Mutex<()> = Mutex::new(());
+    #[test]
+    fn oauth_broker_base_url_uses_config_or_dedicated_default_bits_ut() {
+        assert_eq!(
+            resolve_oauth_broker_base_url(None),
+            DEFAULT_OAUTH_BROKER_BASE_URL
+        );
+        assert_eq!(
+            resolve_oauth_broker_base_url(Some("   ")),
+            DEFAULT_OAUTH_BROKER_BASE_URL
+        );
+        assert_eq!(
+            resolve_oauth_broker_base_url(Some(" https://oauth.example.test/ ")),
+            "https://oauth.example.test"
+        );
+    }
+
+    #[test]
+    fn oauth_provider_catalog_derives_callbacks_from_broker_base_url_bits_ut() {
+        let catalog = provider_catalog_for_base_url("https://oauth.example.test");
+        for provider in catalog {
+            assert_eq!(
+                provider.callback_url,
+                format!(
+                    "https://oauth.example.test/api/oauth/{}/callback",
+                    provider.id
+                )
+            );
+        }
+    }
 
     #[test]
     fn oauth_local_rollback_restores_account_session_and_connection_bits_ut() {
-        let _guard = OAUTH_STORAGE_ENV_LOCK.lock().expect("lock storage env");
+        let _guard = storage::test_storage_env_lock();
         let root = std::env::temp_dir().join(format!(
             "peers-oauth-rollback-{}-{}",
             std::process::id(),
@@ -3705,7 +3832,7 @@ mod tests {
 
     #[test]
     fn broker_acknowledgement_recovery_is_durable_before_local_commit_bits_ut() {
-        let _guard = OAUTH_STORAGE_ENV_LOCK.lock().expect("lock storage env");
+        let _guard = storage::test_storage_env_lock();
         let root = std::env::temp_dir().join(format!(
             "peers-oauth-ack-recovery-{}-{}",
             std::process::id(),
@@ -3798,7 +3925,7 @@ mod tests {
 
     #[test]
     fn cancelled_broker_acknowledgement_recovery_never_acknowledges_after_restart_bits_ut() {
-        let _guard = OAUTH_STORAGE_ENV_LOCK.lock().expect("lock storage env");
+        let _guard = storage::test_storage_env_lock();
         let root = std::env::temp_dir().join(format!(
             "peers-oauth-cancel-recovery-{}-{}",
             std::process::id(),

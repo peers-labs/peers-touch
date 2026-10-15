@@ -12,6 +12,8 @@ type jwtProvider struct {
 	secret     []byte
 	prevSecret []byte
 	accessTTL  time.Duration
+	keyring    StationAccessKeyring
+	useShared  bool
 }
 
 type jwtClaims struct {
@@ -35,17 +37,28 @@ func WithPreviousSecret(secret string) Option {
 	}
 }
 
-func NewJWTProvider(secret string, ttl time.Duration, opts ...Option) Provider {
-	if ttl == 0 {
-		ttl = Get().AccessTTL
+func WithStationAccessKeyring(keyring StationAccessKeyring) Option {
+	return func(p *jwtProvider) {
+		p.keyring = keyring
 	}
-	p := &jwtProvider{secret: []byte(secret), accessTTL: ttl}
+}
+
+func NewJWTProvider(secret string, ttl time.Duration, opts ...Option) Provider {
+	config := Get()
+	if ttl == 0 {
+		ttl = config.AccessTTL
+	}
+	p := &jwtProvider{
+		secret:    []byte(secret),
+		accessTTL: ttl,
+		useShared: secret == config.Secret,
+	}
 	for _, opt := range opts {
 		opt(p)
 	}
 	// Auto-load previous secret from config if not set and available
 	if len(p.prevSecret) == 0 {
-		if prev := Get().PreviousSecret; prev != "" {
+		if prev := config.PreviousSecret; prev != "" {
 			p.prevSecret = []byte(prev)
 		}
 	}
@@ -64,7 +77,12 @@ func (p *jwtProvider) Authenticate(ctx context.Context, cred Credentials) (*Subj
 		RegisteredClaims: jwt.RegisteredClaims{IssuedAt: jwt.NewNumericDate(now), ExpiresAt: jwt.NewNumericDate(exp)},
 	}
 	t := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	s, err := t.SignedString(p.secret)
+	key, err := p.keyringForRequest().Current(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	t.Header["kid"] = key.ID
+	s, err := t.SignedString(key.Material)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -72,16 +90,50 @@ func (p *jwtProvider) Authenticate(ctx context.Context, cred Credentials) (*Subj
 }
 
 func (p *jwtProvider) Validate(ctx context.Context, token string) (*Subject, error) {
-	// Try primary secret
-	tok, err := jwt.ParseWithClaims(token, &jwtClaims{}, func(t *jwt.Token) (interface{}, error) { return p.secret, nil })
-
-	// If failed and we have a previous secret, try that
-	if err != nil && len(p.prevSecret) > 0 {
-		tok, err = jwt.ParseWithClaims(token, &jwtClaims{}, func(t *jwt.Token) (interface{}, error) { return p.prevSecret, nil })
-	}
-
+	parser := jwt.NewParser(jwt.WithValidMethods([]string{
+		jwt.SigningMethodHS256.Alg(),
+	}))
+	unverified, _, err := parser.ParseUnverified(token, &jwtClaims{})
 	if err != nil {
 		return nil, err
+	}
+	keyID := ""
+	if raw, present := unverified.Header["kid"]; present {
+		value, ok := raw.(string)
+		if !ok || value == "" {
+			return nil, errors.New("jwt: invalid key id")
+		}
+		keyID = value
+	}
+	keys, err := p.keyringForRequest().ValidationKeys(ctx, keyID)
+	if err != nil {
+		return nil, err
+	}
+
+	var (
+		tok     *jwt.Token
+		lastErr error
+	)
+	for _, key := range keys {
+		tok, lastErr = parser.ParseWithClaims(
+			token,
+			&jwtClaims{},
+			func(t *jwt.Token) (interface{}, error) {
+				if t.Method != jwt.SigningMethodHS256 {
+					return nil, errors.New("jwt: invalid signing method")
+				}
+				if keyID != "" && key.ID != keyID {
+					return nil, errors.New("jwt: key id mismatch")
+				}
+				return key.Material, nil
+			},
+		)
+		if lastErr == nil {
+			break
+		}
+	}
+	if lastErr != nil {
+		return nil, lastErr
 	}
 	c, ok := tok.Claims.(*jwtClaims)
 	if !ok || !tok.Valid {
@@ -98,3 +150,29 @@ func (p *jwtProvider) Validate(ctx context.Context, token string) (*Subject, err
 }
 
 func (p *jwtProvider) Revoke(ctx context.Context, token string) error { return nil }
+
+func (p *jwtProvider) keyringForRequest() StationAccessKeyring {
+	if p.keyring != nil {
+		return p.keyring
+	}
+	if p.useShared {
+		if shared := getStationAccessKeyring(); shared != nil {
+			return shared
+		}
+	}
+	current := StationAccessKey{
+		ID:       stationAccessKeyID(p.secret),
+		Material: append([]byte(nil), p.secret...),
+	}
+	var previous *StationAccessKey
+	if len(p.prevSecret) > 0 {
+		previous = &StationAccessKey{
+			ID:       stationAccessKeyID(p.prevSecret),
+			Material: append([]byte(nil), p.prevSecret...),
+		}
+	}
+	return staticStationAccessKeyring{
+		current:  current,
+		previous: previous,
+	}
+}

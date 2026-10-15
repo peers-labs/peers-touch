@@ -100,6 +100,10 @@ class LifecycleRichVoiceContractTest(unittest.TestCase):
         runner = self.source(
             "tooling/acceptance/gates/chat/lifecycle_rich_voice.py"
         )
+        native_file_picker = self.source(
+            "tooling/acceptance/gates/chat/native_file_picker.py"
+        )
+        contract_source = runner + native_file_picker
         for contract in (
             "AcceptanceStationAttachmentFaultProxy",
             "create_transport_override(",
@@ -117,8 +121,8 @@ class LifecycleRichVoiceContractTest(unittest.TestCase):
             ".accept_media_capture_permission_to_process(",
             "if selected_control is not None:",
             "adapter.reveal_file_chooser_location()",
-            "def post_chooser_key(",
-            "restored_activation = (",
+            "def post_key(",
+            "def restore_native_window(",
             'client.driver.execute_script("return document.hasFocus()")',
             "native window bounds are unavailable after",
             "def _native_click(",
@@ -127,10 +131,10 @@ class LifecycleRichVoiceContractTest(unittest.TestCase):
             "def _engine_attachment(",
             "def _voice_surface_snapshot(",
             "ATTACHMENT_TRANSFER_ERROR_CODE_RETRY_LATER",
-            "for reveal_attempt in range(1, 5):",
+            "for _ in range(REVEAL_ATTEMPTS):",
             "after bounded target-owned retries",
         ):
-            self.assertIn(contract, runner)
+            self.assertIn(contract, contract_source)
 
     def test_voice_surface_serializes_boolean_data_contract(self) -> None:
         attachment_item = self.source(

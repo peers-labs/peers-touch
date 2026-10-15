@@ -10024,9 +10024,7 @@ fn apply_conversation_mutation(
                 )
                 .map_err(|error| error.to_string())?;
             if changed != 1 {
-                return Err(
-                    "mobile messaging Conversation command transition mismatch".to_string()
-                );
+                return Err("mobile messaging Conversation command transition mismatch".to_string());
             }
         }
     }
@@ -12132,11 +12130,9 @@ mod tests {
             .connection
             .lock()
             .unwrap()
-            .query_row(
-                "SELECT COUNT(*) FROM messaging_receipt_outbox",
-                [],
-                |row| row.get::<_, i64>(0),
-            )
+            .query_row("SELECT COUNT(*) FROM messaging_receipt_outbox", [], |row| {
+                row.get::<_, i64>(0)
+            })
             .unwrap();
         let update_hash = [6u8; 32];
 
@@ -12175,11 +12171,9 @@ mod tests {
         let connection = store.connection.lock().unwrap();
         assert_eq!(
             connection
-                .query_row(
-                    "SELECT COUNT(*) FROM messaging_receipt_outbox",
-                    [],
-                    |row| row.get::<_, i64>(0),
-                )
+                .query_row("SELECT COUNT(*) FROM messaging_receipt_outbox", [], |row| {
+                    row.get::<_, i64>(0)
+                },)
                 .unwrap(),
             receipts_before
         );
@@ -12199,29 +12193,27 @@ mod tests {
         )
         .unwrap();
         store
-            .commit_replayed_conversation_mutation_delivery(
-                &ConversationMutationReceiveCommit {
-                    item_id: "update-replay-item",
-                    event_id: "update-replay-event",
-                    conversation_id: "conversation-group",
-                    command_id: "update-replay-command",
-                    event_sequence: 2,
-                    lane_sequence: 2,
-                    consumer_epoch: 2,
-                    payload_sha256: &delivery_hash,
-                    event_hash: &update_hash,
-                    previous_event_hash: &genesis_hash,
-                    membership_epoch: 1,
-                    mls_epoch: 1,
-                    mutation: ConversationMutation::Update {
-                        name: None,
-                        description: Some("Replayed description"),
-                    },
-                    receipt_id: "update-replay-receipt",
-                    receipt_bytes: b"update-replay-receipt",
-                    consumed_at_unix_ms: 24,
+            .commit_replayed_conversation_mutation_delivery(&ConversationMutationReceiveCommit {
+                item_id: "update-replay-item",
+                event_id: "update-replay-event",
+                conversation_id: "conversation-group",
+                command_id: "update-replay-command",
+                event_sequence: 2,
+                lane_sequence: 2,
+                consumer_epoch: 2,
+                payload_sha256: &delivery_hash,
+                event_hash: &update_hash,
+                previous_event_hash: &genesis_hash,
+                membership_epoch: 1,
+                mls_epoch: 1,
+                mutation: ConversationMutation::Update {
+                    name: None,
+                    description: Some("Replayed description"),
                 },
-            )
+                receipt_id: "update-replay-receipt",
+                receipt_bytes: b"update-replay-receipt",
+                consumed_at_unix_ms: 24,
+            })
             .unwrap();
         assert_eq!(
             MessagingRepository::lane_checkpoint(&store).unwrap(),
@@ -12232,11 +12224,9 @@ mod tests {
                 .connection
                 .lock()
                 .unwrap()
-                .query_row(
-                    "SELECT COUNT(*) FROM messaging_receipt_outbox",
-                    [],
-                    |row| row.get::<_, i64>(0),
-                )
+                .query_row("SELECT COUNT(*) FROM messaging_receipt_outbox", [], |row| {
+                    row.get::<_, i64>(0)
+                },)
                 .unwrap(),
             receipts_before + 1
         );

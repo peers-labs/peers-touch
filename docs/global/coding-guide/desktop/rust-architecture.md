@@ -325,18 +325,27 @@ impl MessagingStore {
 ```
 
 ```rust
-// infrastructure/station_client/mod.rs
-pub struct StationClient {
-    base_url: String,
-    http_client: reqwest::Client,
+// infrastructure/station/transport/mod.rs
+pub struct StationTransportOwner {
+    shared: Arc<Shared>,
 }
 
-impl StationClient {
-    pub async fn sync_messages(
-        &self,
-        since: i64,
-    ) -> Result<Vec<Message>, InfraError> {
-        // HTTP 请求 Station 服务
+#[derive(Clone)]
+pub struct StationTransportHandle {
+    shared: Arc<Shared>,
+}
+
+impl StationTransportOwner {
+    pub fn start() -> Result<Self, StationTransportLifecycleError> {
+        // 创建 Direct/Circuit transport 资源
+    }
+
+    pub fn handle(&self) -> StationTransportHandle {
+        // 向应用层暴露可克隆的 transport handle
+    }
+
+    pub fn shutdown(&self, timeout: Duration) -> Result<(), StationTransportLifecycleError> {
+        // 在 composition root 关闭期间释放 transport
     }
 }
 ```

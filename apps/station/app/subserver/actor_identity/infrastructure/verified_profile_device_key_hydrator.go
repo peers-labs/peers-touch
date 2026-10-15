@@ -77,7 +77,7 @@ func (f relayActorProfileFetcher) Fetch(
 	homeStationPeerID string,
 ) (*profilepb.ActorProfileEnvelope, error) {
 	const operation = "actor_identity.fetch_remote_profile"
-	relayClient := fednode.RelayClient()
+	relayClient := fednode.RelayAccessSnapshot()
 	if relayClient == nil || !relayClient.Available() {
 		return nil, actoridentitydomain.NewError(
 			actoridentitydomain.ErrorCodeIdentityUnavailable,

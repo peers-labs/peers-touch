@@ -5,10 +5,8 @@
 // "delete-then-immediate-reupload" race: a user uploads bytes,
 // deletes them, then re-uploads the same content. Without grace,
 // the GC would race between the soft-delete (refcount→0) and the
-// re-upload (refcount→1) and could end up deleting bytes the
-// re-upload claims. The grace lets the upload writer's CAS dedup
-// observe the tombstone in time and Touch() the existing row
-// instead.
+// re-upload (refcount→1). Generation staging makes that race safe;
+// the grace still avoids unnecessary physical churn.
 //
 // Each tick:
 //  1. List up to BatchSize blobs with `ref_count = 0` and
@@ -24,6 +22,7 @@ package worker
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	ossmodel "github.com/peers-labs/peers-touch/station/app/subserver/oss/db/model"
@@ -108,6 +107,14 @@ func (w *BlobGC) Interval() time.Duration { return w.cfg.Interval }
 
 // RunOnce sweeps one batch of orphaned blobs.
 func (w *BlobGC) RunOnce(ctx context.Context) error {
+	lease, ok := LeaseAuthorityFromContext(ctx)
+	if !ok ||
+		lease.WorkerName != w.Name() ||
+		lease.OwnerNodePeerID == "" ||
+		lease.OwnerIncarnation == "" ||
+		lease.FencingToken == 0 {
+		return errors.New("worker: blob_gc: fenced lease authority is required")
+	}
 	cutoff := w.now().Add(-w.cfg.Grace)
 	rows, err := w.cfg.Blobs.ListGCCandidates(ctx, cutoff, w.cfg.BatchSize)
 	if err != nil {
@@ -126,52 +133,74 @@ func (w *BlobGC) RunOnce(ctx context.Context) error {
 		if rows[i].Backend != w.cfg.BackendName {
 			continue
 		}
-		w.processOne(ctx, &rows[i])
+		w.processOne(ctx, &rows[i], cutoff, lease)
 	}
 	return nil
 }
 
-func (w *BlobGC) processOne(ctx context.Context, b *ossmodel.Blob) {
-	// 1. Physically delete the bytes. Both LocalBackend and
+func (w *BlobGC) processOne(
+	ctx context.Context,
+	b *ossmodel.Blob,
+	cutoff time.Time,
+	lease LeaseAuthority,
+) {
+	// 1. Claim the exact immutable generation while revalidating
+	// zero references and the current worker authority.
+	claim, err := w.cfg.Blobs.ClaimGC(
+		ctx,
+		*b,
+		cutoff,
+		ossrepo.BlobGCAuthority{
+			WorkerName:       lease.WorkerName,
+			OwnerNodePeerID:  lease.OwnerNodePeerID,
+			OwnerIncarnation: lease.OwnerIncarnation,
+			FencingToken:     lease.FencingToken,
+		},
+	)
+	if err != nil {
+		if !errors.Is(err, ossrepo.ErrBlobGCClaimStale) {
+			log.Warnf(ctx, "[oss-worker] blob_gc claim failed (key=%s generation=%d): %v",
+				b.Key, b.Generation, err)
+		}
+		return
+	}
+
+	// 2. Physically delete only the claimed generation bytes. Both LocalBackend and
 	//    S3Backend return nil for a missing key (idempotent),
 	//    so any non-nil error is a real backend failure
 	//    worth surfacing.
-	if err := w.cfg.Backend.Delete(ctx, b.Key); err != nil {
-		log.Warnf(ctx, "[oss-worker] blob_gc backend.Delete failed (key=%s): %v",
-			b.Key, err)
+	if err := w.cfg.Backend.Delete(ctx, claim.StorageKey); err != nil {
+		log.Warnf(ctx, "[oss-worker] blob_gc backend.Delete failed (key=%s generation=%d): %v",
+			b.Key, claim.Generation, err)
 		// Surface the failure as an audit row so operators
 		// can correlate with backend health.
 		_ = w.cfg.Audit.Append(ctx, ossmodel.Audit{
 			Action:    ossmodel.AuditActionBlobGC,
 			Outcome:   ossmodel.AuditOutcomeError,
-			Reason:    "backend_delete: " + err.Error(),
+			Reason:    fmt.Sprintf("backend_delete generation=%d: %v", claim.Generation, err),
 			FileKey:   b.Key,
 			SizeBytes: b.Size,
 		})
 		return
 	}
 
-	// 2. Drop the metadata row. Idempotent — a missing row
-	//    is fine because the goal is "row gone, bytes gone";
-	//    we got there from a different angle but the
-	//    invariant holds.
-	if err := w.cfg.Blobs.Delete(ctx, b.Backend, b.Key); err != nil {
-		log.Warnf(ctx, "[oss-worker] blob_gc row.Delete failed (key=%s): %v",
-			b.Key, err)
-		// We deleted the bytes but the row stuck around;
-		// the next tick will retry. Audit so operators can
-		// detect the divergence.
+	// 3. Complete only if the generation and fencing authority are
+	// still current. A replacement upload advances generation and
+	// makes this completion stale by construction.
+	if err := w.cfg.Blobs.CompleteGC(ctx, *claim); err != nil {
+		log.Warnf(ctx, "[oss-worker] blob_gc completion rejected (key=%s generation=%d): %v",
+			b.Key, claim.Generation, err)
 		_ = w.cfg.Audit.Append(ctx, ossmodel.Audit{
 			Action:    ossmodel.AuditActionBlobGC,
 			Outcome:   ossmodel.AuditOutcomeError,
-			Reason:    "row_delete: " + err.Error(),
+			Reason:    fmt.Sprintf("stale_completion generation=%d: %v", claim.Generation, err),
 			FileKey:   b.Key,
 			SizeBytes: b.Size,
 		})
 		return
 	}
 
-	// 3. Success audit.
+	// 4. Success audit.
 	if err := w.cfg.Audit.Append(ctx, ossmodel.Audit{
 		Action:    ossmodel.AuditActionBlobGC,
 		Outcome:   ossmodel.AuditOutcomeOK,

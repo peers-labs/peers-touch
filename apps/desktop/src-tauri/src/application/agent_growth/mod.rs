@@ -1,6 +1,6 @@
+use crate::application::station_runtime::client::StationClient;
 use crate::contracts::StubPayload;
 use crate::error::AppResult;
-use crate::infrastructure::station_client;
 use crate::model;
 use prost::Message;
 use reqwest::Method;
@@ -112,12 +112,16 @@ fn growth_snapshot_to_json(r: &model::agent::GetGrowthSnapshotResponse) -> Value
     })
 }
 
-pub fn agent_growth_snapshot(input: AgentGrowthInput, token: &str) -> AppResult<StubPayload> {
+pub fn agent_growth_snapshot(
+    station_client: &StationClient,
+    input: AgentGrowthInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     let req = model::agent::GetGrowthSnapshotRequest {
         agent_id: input.agent_id,
     };
 
-    match station_client::request_proto::<
+    match station_client.request_proto::<
         model::agent::GetGrowthSnapshotRequest,
         model::agent::GetGrowthSnapshotResponse,
     >(
@@ -142,7 +146,11 @@ pub fn agent_growth_snapshot(input: AgentGrowthInput, token: &str) -> AppResult<
     }
 }
 
-pub fn agent_memory_list(input: AgentMemoryListInput, token: &str) -> AppResult<StubPayload> {
+pub fn agent_memory_list(
+    station_client: &StationClient,
+    input: AgentMemoryListInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     let req = model::agent::ListMemoriesRequest {
         agent_id: input.agent_id,
         target: String::new(),
@@ -155,11 +163,14 @@ pub fn agent_memory_list(input: AgentMemoryListInput, token: &str) -> AppResult<
         period: String::new(),
     };
 
-    match station_client::request_proto::<
-        model::agent::ListMemoriesRequest,
-        model::agent::ListMemoriesResponse,
-    >(Method::POST, "/agent/memory/list", token, None, Some(&req))
-    {
+    match station_client
+        .request_proto::<model::agent::ListMemoriesRequest, model::agent::ListMemoriesResponse>(
+            Method::POST,
+            "/agent/memory/list",
+            token,
+            None,
+            Some(&req),
+        ) {
         Ok(resp) => {
             let items: Vec<Value> = resp.items.iter().map(memory_item_to_json).collect();
             let n = items.len() as i32;
@@ -181,22 +192,24 @@ pub fn agent_memory_list(input: AgentMemoryListInput, token: &str) -> AppResult<
     }
 }
 
-pub fn agent_skill_list(input: AgentSkillListInput, token: &str) -> AppResult<StubPayload> {
+pub fn agent_skill_list(
+    station_client: &StationClient,
+    input: AgentSkillListInput,
+    token: &str,
+) -> AppResult<StubPayload> {
     let req = model::agent::ListSkillsRequest {
         agent_id: input.agent_id,
         category: String::new(),
     };
 
-    match station_client::request_proto::<
-        model::agent::ListSkillsRequest,
-        model::agent::ListSkillsResponse,
-    >(
-        Method::POST,
-        "/sub-agent/agent/skill/list",
-        token,
-        None,
-        Some(&req),
-    ) {
+    match station_client
+        .request_proto::<model::agent::ListSkillsRequest, model::agent::ListSkillsResponse>(
+            Method::POST,
+            "/sub-agent/agent/skill/list",
+            token,
+            None,
+            Some(&req),
+        ) {
         Ok(resp) => {
             let skills: Vec<Value> = resp.skills.iter().map(skill_manifest_to_json).collect();
             let n = skills.len() as i32;
@@ -218,7 +231,11 @@ pub fn agent_skill_list(input: AgentSkillListInput, token: &str) -> AppResult<St
     }
 }
 
-pub fn agent_submit_feedback(input: AgentFeedbackInput, token: &str) -> AppResult<Vec<u8>> {
+pub fn agent_submit_feedback(
+    station_client: &StationClient,
+    input: AgentFeedbackInput,
+    token: &str,
+) -> AppResult<Vec<u8>> {
     let req = model::agent::RecordFeedbackRequest {
         agent_id: input.agent_id,
         turn_id: input.turn_id,
@@ -232,16 +249,14 @@ pub fn agent_submit_feedback(input: AgentFeedbackInput, token: &str) -> AppResul
         idempotency_key: input.idempotency_key,
     };
 
-    match station_client::request_proto::<
-        model::agent::RecordFeedbackRequest,
-        model::agent::RecordFeedbackResponse,
-    >(
-        Method::POST,
-        "/sub-agent/agent/growth/feedback",
-        token,
-        None,
-        Some(&req),
-    ) {
+    match station_client
+        .request_proto::<model::agent::RecordFeedbackRequest, model::agent::RecordFeedbackResponse>(
+            Method::POST,
+            "/sub-agent/agent/growth/feedback",
+            token,
+            None,
+            Some(&req),
+        ) {
         Ok(resp) => AppResult::success(resp.encode_to_vec()),
         Err(err) => {
             tracing::error!(command = "agent_submit_feedback", error = %err);
@@ -251,6 +266,7 @@ pub fn agent_submit_feedback(input: AgentFeedbackInput, token: &str) -> AppResul
 }
 
 pub fn agent_list_turn_feedback(
+    station_client: &StationClient,
     input: AgentTurnFeedbackListInput,
     token: &str,
 ) -> AppResult<Vec<u8>> {
@@ -263,7 +279,7 @@ pub fn agent_list_turn_feedback(
         );
     }
     let req = model::agent::ListTurnFeedbackRequest { turn_id };
-    match station_client::request_proto::<
+    match station_client.request_proto::<
         model::agent::ListTurnFeedbackRequest,
         model::agent::ListTurnFeedbackResponse,
     >(

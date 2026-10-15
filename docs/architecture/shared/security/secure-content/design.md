@@ -549,7 +549,7 @@ Forbidden:
 
 Accepted `SC-D22` and `SC-D23` close the remaining evidence and destructive
 execution boundaries. Implementation and reset remain subject to the formal
-plan, exact declarations, authorization, runtime leases, and evidence gates.
+plan, exact source authorization, runtime leases, and evidence gates.
 
 ### 13.1 Runtime topology and ownership
 
@@ -642,7 +642,8 @@ SC-D24 supersedes only SC-D23's W12-exclusive task timing. It does not widen
 the accepted target profiles, scopes, tables, predicates, columns, object
 owners, public snapshot, journal, or failure contract.
 
-Local Dev Control Plane owns declaration and `station.reset` lease truth. The
+Local Dev Control Plane owns reviewed Profile, workspace capability,
+current-source, and `station.reset` lease truth. The
 Secure Content Development reset owner owns manifest, quiescence, journal, and
 orchestration. Social and OSS remain the only database/object mutation owners
 behind a non-public Station maintenance entrypoint. Product scenarios remain

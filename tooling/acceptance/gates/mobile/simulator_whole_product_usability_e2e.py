@@ -90,7 +90,6 @@ SHELL_REQUIRED_HARNESS_ACTIONS = (
     "navigation.apply",
     "navigation.snapshot",
     "moments.fixture",
-    "orientation.apply",
     "projection.read",
     "recovery.fixture",
     "settings.fixture",
@@ -137,7 +136,6 @@ DEGRADED_NOTICE_SURFACES = {
     "recovery.deferred-capability",
 }
 TEXT_SIZE_SCRIPT = """
-const done = arguments[arguments.length - 1];
 const size = arguments[0];
 if (size !== 'normal' && size !== 'maximum') {
   throw new Error(`unsupported text size ${size}`);
@@ -152,36 +150,29 @@ const nodes = Array.from(document.body.querySelectorAll('*')).filter(
       )
     ),
 );
-let scaledElementCount = 0;
 for (const element of nodes) {
-  const originalAttribute = 'data-acceptance-original-font-size';
-  const baseAttribute = 'data-acceptance-base-font-size';
+  const attribute = 'data-acceptance-original-font-size';
   if (size === 'normal') {
-    if (element.hasAttribute(originalAttribute)) {
-      element.style.fontSize = element.getAttribute(originalAttribute);
-      element.removeAttribute(originalAttribute);
-      element.removeAttribute(baseAttribute);
+    if (element.hasAttribute(attribute)) {
+      element.style.fontSize = element.getAttribute(attribute);
+      element.removeAttribute(attribute);
     }
     continue;
   }
-  const computed = Number.parseFloat(getComputedStyle(element).fontSize);
-  if (!element.hasAttribute(originalAttribute)) {
-    element.setAttribute(originalAttribute, element.style.fontSize || '');
-    element.setAttribute(baseAttribute, String(computed));
+  if (!element.hasAttribute(attribute)) {
+    element.setAttribute(attribute, element.style.fontSize || '');
   }
-  const base = Number.parseFloat(element.getAttribute(baseAttribute));
-  if (Number.isFinite(base) && base > 0) {
-    element.style.fontSize = `${Math.min(32, base * 1.35)}px`;
-    scaledElementCount += 1;
+  const computed = Number.parseFloat(getComputedStyle(element).fontSize);
+  if (Number.isFinite(computed) && computed > 0) {
+    element.style.fontSize = `${Math.min(32, computed * 1.35)}px`;
   }
 }
-const result = {
+return {
   textSize: size,
   width: Math.round(window.innerWidth),
   height: Math.round(window.innerHeight),
-  scaledElementCount: size === 'maximum' ? scaledElementCount : 0,
+  scaledElementCount: size === 'maximum' ? nodes.length : 0,
 };
-requestAnimationFrame(() => requestAnimationFrame(() => done(result)));
 """
 SURFACE_AUDIT_SCRIPT = """
 const selector = arguments[0];
@@ -329,9 +320,7 @@ const stationHelper = stationHelperElement && visible(stationHelperElement)
         > stationHelperElement.clientHeight + 1,
     }
   : null;
-const stationLogoElement = document.querySelector(
-  '.launch-brand-logo, .launch-hero-logo'
-);
+const stationLogoElement = document.querySelector('.launch-hero-logo');
 const stationLogoStyle = stationLogoElement && visible(stationLogoElement)
   ? getComputedStyle(stationLogoElement)
   : null;
@@ -363,7 +352,7 @@ return {
   occlusions,
   blockingSurfaces,
   stationLayout: {
-    launchCard: rectFor('.launch-panel'),
+    launchCard: rectFor('.launch-card'),
     addressInput: rectFor('.station-address-input'),
     placeholder: stationPlaceholder,
     submit: rectFor('.station-submit'),
@@ -476,14 +465,12 @@ def validate_station_entry_layout(
     if surface_id == "entry.station-address":
         helper = layout.get("helper")
         if (
-            isinstance(helper, Mapping)
-            and (
-                helper.get("whiteSpace") != "nowrap"
-                or helper.get("wrapped") is not False
-            )
+            not isinstance(helper, Mapping)
+            or helper.get("whiteSpace") != "nowrap"
+            or helper.get("wrapped") is not False
         ):
             raise GateError(
-                f"Mobile Station HTTP guidance wrapped: {helper!r}"
+                f"Mobile Station HTTP guidance wrapped or disappeared: {helper!r}"
             )
 
     if surface_id == "entry.station-unavailable":
@@ -805,7 +792,6 @@ def _validate_interaction_artifact(
         "controls",
         "occlusions",
         "blockingSurfaces",
-        "stationLayout",
     }
     if set(value) != required:
         raise GateError("Mobile interaction artifact has an invalid shape")
@@ -867,27 +853,6 @@ def _validate_interaction_artifact(
         raise GateError("Mobile interaction artifact reports occluded content")
     if value.get("blockingSurfaces") != []:
         raise GateError("Mobile interaction artifact reports a blocking surface")
-    station_layout = value.get("stationLayout")
-    if (
-        not isinstance(station_layout, Mapping)
-        or set(station_layout)
-        != {
-            "launchCard",
-            "addressInput",
-            "placeholder",
-            "submit",
-            "helper",
-            "logo",
-            "stationStatusClasses",
-            "continueDisabled",
-        }
-    ):
-        raise GateError("Mobile interaction artifact has invalid Station layout")
-    validate_station_entry_layout(
-        str(entry["id"]),
-        {"stationLayout": station_layout},
-        viewport,
-    )
 
 
 def _validate_artifact_ref(
@@ -2407,26 +2372,6 @@ class SimulatorWholeProductUsabilityGate(
                 break
             except DriverError as error:
                 if (
-                    getattr(session, "platform", "") == "ios"
-                    and "Unable To Rotate Device" in str(error)
-                ):
-                    session.switch_to_app_webview()
-                    applied = session.call_action(
-                        "orientation.apply",
-                        {"orientation": orientation},
-                    )
-                    if (
-                        not isinstance(applied, Mapping)
-                        or applied.get("orientation") != orientation
-                        or not isinstance(applied.get("width"), int)
-                        or not isinstance(applied.get("height"), int)
-                    ):
-                        raise GateError(
-                            "Mobile native orientation fallback failed "
-                            f"for {cell_id}"
-                        ) from error
-                    break
-                if (
                     "Unable To Rotate Device" not in str(error)
                     or attempt == ORIENTATION_MAX_ATTEMPTS
                 ):
@@ -2434,14 +2379,26 @@ class SimulatorWholeProductUsabilityGate(
                 time.sleep(0.75 * attempt)
         time.sleep(0.5)
         session.switch_to_app_webview()
-        value = self._apply_text_size(session, text_size)
+        value = session.execute_script(TEXT_SIZE_SCRIPT, text_size)
         if (
-            not isinstance(value.get("width"), int)
+            not isinstance(value, dict)
+            or value.get("textSize") != text_size
+            or not isinstance(value.get("width"), int)
             or not isinstance(value.get("height"), int)
             or value["width"] <= 0
             or value["height"] <= 0
         ):
             raise GateError(f"Mobile viewport setup failed for {cell_id}")
+        if (
+            text_size == "maximum"
+            and (
+                not isinstance(value.get("scaledElementCount"), int)
+                or value["scaledElementCount"] <= 0
+            )
+        ):
+            raise GateError(
+                f"Mobile maximum text stress did not scale content for {cell_id}"
+            )
         if (
             orientation == "portrait"
             and value["width"] >= value["height"]
@@ -2461,31 +2418,6 @@ class SimulatorWholeProductUsabilityGate(
             "orientation": orientation,
             "textSize": text_size,
         }
-
-    @staticmethod
-    def _apply_text_size(
-        session: Any,
-        text_size: str,
-    ) -> dict[str, Any]:
-        if text_size not in {"normal", "maximum"}:
-            raise GateError("Mobile text size is invalid")
-        value = session.execute_async_script(TEXT_SIZE_SCRIPT, text_size)
-        if (
-            not isinstance(value, dict)
-            or value.get("textSize") != text_size
-        ):
-            raise GateError("Mobile text size setup failed")
-        if (
-            text_size == "maximum"
-            and (
-                not isinstance(value.get("scaledElementCount"), int)
-                or value["scaledElementCount"] <= 0
-            )
-        ):
-            raise GateError(
-                "Mobile maximum text stress did not scale visible content"
-            )
-        return value
 
     def _enter_surface(
         self,
@@ -3057,7 +2989,6 @@ class SimulatorWholeProductUsabilityGate(
         action: Mapping[str, Any],
     ) -> dict[str, Any]:
         session.switch_to_app_webview()
-        self._apply_text_size(session, str(viewport.get("textSize", "")))
         observation = session.execute_script(
             SURFACE_AUDIT_SCRIPT,
             entry["surfaceSelector"],

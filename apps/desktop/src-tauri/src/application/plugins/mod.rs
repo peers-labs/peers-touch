@@ -563,6 +563,7 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn with_temp_storage_root(f: impl FnOnce()) {
+        let _guard = storage::test_storage_env_lock();
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("system time")

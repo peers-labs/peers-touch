@@ -14,6 +14,10 @@ type Driver string
 const (
 	// DriverLocal is the default zero-config filesystem driver.
 	DriverLocal Driver = "local"
+	// DriverSharedFS is an operator-mounted shared filesystem (for
+	// example NFS or a NAS volume) visible at the same namespace to
+	// every Station node.
+	DriverSharedFS Driver = "shared-fs"
 	// DriverS3 is the S3-protocol driver. Works against AWS S3,
 	// MinIO, Cloudflare R2, Backblaze B2, GCS S3-compat, etc. —
 	// what the protocol speaks is what we support.
@@ -73,6 +77,11 @@ func New(cfg Config) (Backend, error) {
 			return nil, fmt.Errorf("%w: local.root is required", ErrInvalidConfig)
 		}
 		return NewLocalBackend(cfg.Local.Root), nil
+	case DriverSharedFS:
+		if cfg.Local == nil || strings.TrimSpace(cfg.Local.Root) == "" {
+			return nil, fmt.Errorf("%w: shared-fs.root is required", ErrInvalidConfig)
+		}
+		return NewSharedFSBackend(cfg.Local.Root), nil
 	case DriverS3:
 		if cfg.S3 == nil {
 			return nil, fmt.Errorf("%w: s3 config block is required", ErrInvalidConfig)
@@ -91,6 +100,8 @@ func normalizeDriver(d Driver) Driver {
 	switch Driver(strings.ToLower(strings.TrimSpace(string(d)))) {
 	case "", DriverLocal:
 		return DriverLocal
+	case DriverSharedFS:
+		return DriverSharedFS
 	case DriverS3:
 		return DriverS3
 	default:

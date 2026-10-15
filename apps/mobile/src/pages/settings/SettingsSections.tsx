@@ -40,6 +40,7 @@ import { useMobileI18n } from '../../app/mobileI18n';
 import { ChatRetentionPreset } from '../../gen/proto/domain/chat/storage_pb';
 import { MobileNotice } from '../../components/MobileNotice';
 import { MobileAvatar } from '../../components/MobileAvatar';
+import type { MobileStationRouteCandidate } from '../../features/station/stationRegistry';
 import { useAvatarAsset } from '../../runtimes/avatarAssetRuntime';
 import type {
   DevicePermission,
@@ -1306,6 +1307,9 @@ export function StationSection({
   stationLabel,
   stationUrl,
   identityVerified,
+  routes = [],
+  activeRouteId = '',
+  onChangeRoute = async () => {},
   onChangeStation,
   onLogout,
   loggingOut,
@@ -1313,6 +1317,9 @@ export function StationSection({
   stationLabel: string;
   stationUrl: string;
   identityVerified: boolean;
+  routes?: MobileStationRouteCandidate[];
+  activeRouteId?: string;
+  onChangeRoute?: (route: MobileStationRouteCandidate) => Promise<void>;
   onChangeStation: () => Promise<void>;
   onLogout: () => void;
   loggingOut: boolean;
@@ -1337,6 +1344,23 @@ export function StationSection({
             ? t('mobile.launch.verified')
             : t('mobile.launch.unverified')}
         </Tag>
+      </div>
+      <div className="settings-station-routes" role="group" aria-label={t('mobile.launch.route')}>
+        {routes.map((route) => (
+          <Button
+            key={route.routeId}
+            size="small"
+            type={route.routeId === activeRouteId ? 'primary' : 'default'}
+            aria-pressed={route.routeId === activeRouteId}
+            data-station-route-id={route.routeId}
+            data-station-route-type={route.routeType}
+            onClick={() => void onChangeRoute(route)}
+          >
+            {route.routeType === 'relay'
+              ? t('mobile.launch.viaRelay')
+              : t('mobile.launch.direct')}
+          </Button>
+        ))}
       </div>
       <div className="settings-station-actions">
         <Button block onClick={() => void onChangeStation()}>
