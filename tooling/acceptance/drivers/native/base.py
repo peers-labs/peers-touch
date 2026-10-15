@@ -194,6 +194,13 @@ class NativeDesktopAdapter(ABC):
     def activate_process(self, process_id: int) -> None:
         ...
 
+    def process_owned_activation_point(
+        self,
+        process_id: int,
+    ) -> tuple[float, float] | None:
+        del process_id
+        return None
+
     @abstractmethod
     def post_mouse(
         self,

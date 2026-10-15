@@ -320,6 +320,43 @@ sys.stdout.write(
 )
 """
 
+_WINDOW_BOUNDS_PROBE = r"""
+import json
+import sys
+
+import Quartz
+
+process_id = int(sys.argv[1])
+windows = Quartz.CGWindowListCopyWindowInfo(
+    Quartz.kCGWindowListOptionOnScreenOnly
+    | Quartz.kCGWindowListExcludeDesktopElements,
+    Quartz.kCGNullWindowID,
+)
+candidates = []
+for window in windows:
+    if int(window.get(Quartz.kCGWindowOwnerPID, -1)) != process_id:
+        continue
+    if float(window.get(Quartz.kCGWindowAlpha, 0)) <= 0:
+        continue
+    bounds = window.get(Quartz.kCGWindowBounds) or {}
+    width = float(bounds.get("Width", 0))
+    height = float(bounds.get("Height", 0))
+    if width <= 0 or height <= 0:
+        continue
+    candidates.append(
+        {
+            "left": float(bounds.get("X", 0)),
+            "top": float(bounds.get("Y", 0)),
+            "width": width,
+            "height": height,
+        }
+    )
+if not candidates:
+    raise SystemExit("no visible process-owned window")
+candidates.sort(key=lambda value: value["width"] * value["height"], reverse=True)
+print(json.dumps(candidates[0], sort_keys=True))
+"""
+
 _FILE_CHOOSER_SELECTION_PROBE = r"""
 import ctypes
 import json
@@ -1164,6 +1201,68 @@ class MacOSNativeDesktopAdapter(NativeDesktopAdapter):
                 f"{completed.stderr.strip() or completed.stdout.strip()}"
             )
         return completed.stdout.strip()
+
+    def process_owned_activation_point(
+        self,
+        process_id: int,
+    ) -> tuple[float, float] | None:
+        process_id = self._validated_process_id(process_id)
+        try:
+            completed = subprocess.run(
+                (
+                    sys.executable,
+                    "-c",
+                    _WINDOW_BOUNDS_PROBE,
+                    str(process_id),
+                ),
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=2,
+            )
+        except subprocess.TimeoutExpired as error:
+            raise DriverError(
+                "Native actor window-bounds probe timed out"
+            ) from error
+        if completed.returncode != 0:
+            raise DriverError(
+                "Native actor window-bounds probe failed: "
+                f"{completed.stderr.strip() or completed.stdout.strip()}"
+            )
+        try:
+            raw_bounds = json.loads(completed.stdout)
+            bounds = NativeWindowBounds(
+                left=float(raw_bounds["left"]),
+                top=float(raw_bounds["top"]),
+                width=float(raw_bounds["width"]),
+                height=float(raw_bounds["height"]),
+            )
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
+            raise DriverError(
+                "Native actor window-bounds probe returned invalid geometry"
+            ) from error
+        if bounds.width <= 0 or bounds.height <= 0:
+            raise DriverError(
+                "Native actor window-bounds probe returned invalid geometry"
+            )
+
+        for vertical_offset in (12.0, 8.0, 16.0):
+            if vertical_offset >= bounds.height:
+                continue
+            for horizontal_ratio in (0.5, 0.25, 0.75):
+                point = (
+                    bounds.left + bounds.width * horizontal_ratio,
+                    bounds.top + vertical_offset,
+                )
+                stack = self.window_stack_at_point(point)
+                if stack.error:
+                    raise DriverError(
+                        "Native actor activation-point ownership probe failed: "
+                        f"{stack.to_dict()}"
+                    )
+                if stack.point_owned_by(process_id):
+                    return point
+        return None
 
     def activate_and_focused_control(
         self,

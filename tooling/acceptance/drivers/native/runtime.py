@@ -1629,48 +1629,6 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
                 ) from error
             raise DriverError("Native actor storage clone failed") from error
 
-    def _verified_title_bar_activation_point(
-        self,
-        target: TauriSession,
-        process_id: int,
-    ) -> tuple[float, float] | None:
-        try:
-            geometry = target.execute_script(
-                """return {
-                  innerHeight: window.innerHeight,
-                  ratio: window.devicePixelRatio
-                };"""
-            )
-            window = target.driver.get_window_rect()
-            ratio = float(geometry["ratio"])
-            left = float(window["x"]) / ratio
-            top = float(window["y"]) / ratio
-            width = float(window["width"]) / ratio
-            outer_height = float(window["height"]) / ratio
-            inner_height = float(geometry["innerHeight"])
-        except (KeyError, TypeError, ValueError) as error:
-            raise DriverError(
-                "Native actor title-bar geometry is invalid"
-            ) from error
-        if ratio <= 0 or width <= 0 or outer_height <= 0 or inner_height <= 0:
-            raise DriverError("Native actor title-bar geometry is invalid")
-
-        title_bar_height = outer_height - inner_height
-        if title_bar_height <= 2:
-            return None
-        point_y = top + title_bar_height / 2
-        for horizontal_ratio in (0.5, 0.25, 0.75):
-            point = (left + width * horizontal_ratio, point_y)
-            stack = self.native_adapter.window_stack_at_point(point)
-            if stack.error:
-                raise DriverError(
-                    "Native actor title-bar ownership inspection failed: "
-                    f"{stack.to_dict()}"
-                )
-            if stack.point_owned_by(process_id):
-                return point
-        return None
-
     def request_cooperative_activation(
         self,
         target: TauriSession,
@@ -1730,9 +1688,10 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
             except DriverError as error:
                 last_activation_error = str(error)
             if source is None:
-                activation_point = self._verified_title_bar_activation_point(
-                    target,
-                    target_process_id,
+                activation_point = (
+                    self.native_adapter.process_owned_activation_point(
+                        target_process_id,
+                    )
                 )
                 if activation_point is None:
                     last_activation_error = (

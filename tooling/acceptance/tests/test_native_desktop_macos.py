@@ -31,6 +31,7 @@ from tooling.acceptance.drivers.native.base import (
 from tooling.acceptance.drivers.native.macos import (
     MacOSNativeDesktopAdapter,
     _ACTIVATION_PROBE,
+    _WINDOW_BOUNDS_PROBE,
     _pixel_buffer_has_visible_alpha,
 )
 from tooling.acceptance.provisioners import get_runtime_cell_lifecycle
@@ -38,7 +39,6 @@ from tooling.acceptance.provisioners.native_desktop_macos import (
     NATIVE_FOCUS_READY_TIMEOUT_SECONDS,
     NATIVE_WINDOW_READY_TIMEOUT_SECONDS,
     NativeDesktopMacOSProvisioner,
-    _WINDOW_BOUNDS_PROBE,
 )
 
 
@@ -942,6 +942,35 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
             [window.owner_pid for window in stack.windows],
             [process_id],
         )
+
+    def test_activation_point_uses_process_owned_native_window_bounds(
+        self,
+    ) -> None:
+        process_id = 42
+        completed = Mock(
+            returncode=0,
+            stderr="",
+            stdout=json.dumps({
+                "left": 0,
+                "top": 33,
+                "width": 864,
+                "height": 800,
+            }),
+        )
+        adapter = MacOSNativeDesktopAdapter()
+
+        with patch(
+            "tooling.acceptance.drivers.native.macos.subprocess.run",
+            return_value=completed,
+        ), patch.object(
+            adapter,
+            "window_stack_at_point",
+            return_value=_window_stack(process_id),
+        ) as window_stack:
+            point = adapter.process_owned_activation_point(process_id)
+
+        self.assertEqual(point, (432.0, 45.0))
+        window_stack.assert_called_once_with((432.0, 45.0))
 
     def test_media_permission_targets_positive_webkit_action_by_process(
         self,

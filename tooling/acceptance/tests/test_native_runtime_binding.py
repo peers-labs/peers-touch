@@ -22,9 +22,6 @@ from tooling.acceptance.drivers.native.base import (
     NativeDesktopAdapter,
     NativeInputMode,
     NativeKey,
-    NativeWindowBounds,
-    NativeWindowSnapshot,
-    NativeWindowStack,
     admit_local_native_input_mode,
     resolve_native_input_mode,
 )
@@ -1581,16 +1578,6 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
         target = Mock(spec=TauriSession)
         target.process_id = 49712
         target.invoke_app_result.return_value = {"ok": True}
-        target.execute_script.return_value = {
-            "innerHeight": 512,
-            "ratio": 2,
-        }
-        target.driver.get_window_rect.return_value = {
-            "x": 200,
-            "y": 80,
-            "width": 1200,
-            "height": 1080,
-        }
         external_control = NativeControlSnapshot(
             window_count=1,
             actual_frontmost_pid=49629,
@@ -1600,24 +1587,6 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             frontmost=True,
             actual_frontmost_pid=49712,
         )
-        owned_stack = NativeWindowStack(
-            windows=(
-                NativeWindowSnapshot(
-                    index=0,
-                    owner_pid=49712,
-                    owner_name="Peers Touch",
-                    window_name="Peers Touch",
-                    layer=0,
-                    alpha=1,
-                    bounds=NativeWindowBounds(
-                        left=100,
-                        top=40,
-                        width=600,
-                        height=540,
-                    ),
-                ),
-            ),
-        )
 
         with patch.object(
             binding.native_adapter,
@@ -1625,9 +1594,9 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             side_effect=(external_control, converged),
         ), patch.object(
             binding.native_adapter,
-            "window_stack_at_point",
-            return_value=owned_stack,
-        ) as window_stack, patch.object(
+            "process_owned_activation_point",
+            return_value=(432.0, 45.0),
+        ) as activation_point, patch.object(
             binding.native_adapter,
             "activate_process",
         ) as activate, patch.object(
@@ -1646,14 +1615,14 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             "acceptance_request_activation"
         )
         activate.assert_called_once_with(49712)
-        window_stack.assert_called_once_with((400.0, 54.0))
+        activation_point.assert_called_once_with(49712)
         post_mouse.assert_called_once_with(
             (
                 MouseAction.MOVE,
                 MouseAction.LEFT_DOWN,
                 MouseAction.LEFT_UP,
             ),
-            (400.0, 54.0),
+            (432.0, 45.0),
         )
 
     def test_macos_activation_does_not_click_unowned_title_bar(self) -> None:
@@ -1665,37 +1634,9 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
         target = Mock(spec=TauriSession)
         target.process_id = 49712
         target.invoke_app_result.return_value = {"ok": True}
-        target.execute_script.return_value = {
-            "innerHeight": 512,
-            "ratio": 2,
-        }
-        target.driver.get_window_rect.return_value = {
-            "x": 200,
-            "y": 80,
-            "width": 1200,
-            "height": 1080,
-        }
         external_control = NativeControlSnapshot(
             window_count=1,
             actual_frontmost_pid=49629,
-        )
-        unowned_stack = NativeWindowStack(
-            windows=(
-                NativeWindowSnapshot(
-                    index=0,
-                    owner_pid=49629,
-                    owner_name="External",
-                    window_name="External",
-                    layer=0,
-                    alpha=1,
-                    bounds=NativeWindowBounds(
-                        left=100,
-                        top=40,
-                        width=600,
-                        height=540,
-                    ),
-                ),
-            ),
         )
 
         with patch.object(
@@ -1704,9 +1645,9 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             return_value=external_control,
         ), patch.object(
             binding.native_adapter,
-            "window_stack_at_point",
-            return_value=unowned_stack,
-        ) as window_stack, patch.object(
+            "process_owned_activation_point",
+            return_value=None,
+        ) as activation_point, patch.object(
             binding.native_adapter,
             "activate_process",
         ), patch.object(
@@ -1727,7 +1668,7 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
                 (target,),
             )
 
-        self.assertEqual(window_stack.call_count, 3)
+        activation_point.assert_called_once_with(49712)
         post_mouse.assert_not_called()
 
     def test_macos_activation_replays_process_owned_handoff_until_converged(

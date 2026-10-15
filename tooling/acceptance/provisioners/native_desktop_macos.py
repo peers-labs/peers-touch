@@ -45,7 +45,10 @@ from tooling.acceptance.drivers.native.base import (
     NativeWindowStack,
     admit_local_native_input_mode,
 )
-from tooling.acceptance.drivers.native.macos import MacOSNativeDesktopAdapter
+from tooling.acceptance.drivers.native.macos import (
+    MacOSNativeDesktopAdapter,
+    _WINDOW_BOUNDS_PROBE,
+)
 from tooling.acceptance.drivers.tauri import (
     LocalTauriLauncher,
     TauriSession,
@@ -58,45 +61,6 @@ NATIVE_WINDOW_READY_TIMEOUT_SECONDS = 30.0
 NATIVE_FOCUS_READY_TIMEOUT_SECONDS = 30.0
 OPERATOR_FOCUS_STABILITY_TIMEOUT_SECONDS = 1.0
 OPERATOR_FOCUS_STABILITY_INTERVAL_SECONDS = 0.05
-
-
-_WINDOW_BOUNDS_PROBE = r"""
-import json
-import sys
-
-import Quartz
-
-process_id = int(sys.argv[1])
-windows = Quartz.CGWindowListCopyWindowInfo(
-    Quartz.kCGWindowListOptionOnScreenOnly
-    | Quartz.kCGWindowListExcludeDesktopElements,
-    Quartz.kCGNullWindowID,
-)
-candidates = []
-for window in windows:
-    if int(window.get(Quartz.kCGWindowOwnerPID, -1)) != process_id:
-        continue
-    if float(window.get(Quartz.kCGWindowAlpha, 0)) <= 0:
-        continue
-    bounds = window.get(Quartz.kCGWindowBounds) or {}
-    width = float(bounds.get("Width", 0))
-    height = float(bounds.get("Height", 0))
-    if width <= 0 or height <= 0:
-        continue
-    candidates.append(
-        {
-            "left": float(bounds.get("X", 0)),
-            "top": float(bounds.get("Y", 0)),
-            "width": width,
-            "height": height,
-        }
-    )
-if not candidates:
-    raise SystemExit("no visible process-owned window")
-candidates.sort(key=lambda value: value["width"] * value["height"], reverse=True)
-print(json.dumps(candidates[0], sort_keys=True))
-"""
-
 _DISPLAY_PROBE = r"""
 import json
 
