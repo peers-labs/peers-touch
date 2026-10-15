@@ -647,17 +647,40 @@ class MakeDesktopLauncher(AppLauncher):
         return pid
 
     def _prepare_runtime_profile(self) -> Path:
-        active_profile = (
-            self.worktree
-            / ".local"
-            / "dev"
-            / "active"
-            / f"{self.worktree.name}.env"
-        )
         try:
-            source = active_profile.resolve(strict=True)
+            completed = subprocess.run(
+                [
+                    "node",
+                    str(self.worktree / "tooling" / "devctl" / "index.mjs"),
+                    "--root",
+                    str(self.worktree),
+                    "--json",
+                    "config",
+                ],
+                cwd=self.worktree,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if completed.returncode != 0:
+                detail = completed.stderr.strip() or completed.stdout.strip()
+                raise DriverError(
+                    f"canonical Desktop profile resolution failed: {detail}"
+                )
+            resolved = json.loads(completed.stdout)
+            profile = resolved.get("profile")
+            resolved_path = (
+                profile.get("resolvedPath")
+                if isinstance(profile, dict)
+                else None
+            )
+            if not isinstance(resolved_path, str) or not resolved_path:
+                raise DriverError(
+                    "canonical Desktop profile response omitted resolvedPath"
+                )
+            source = Path(resolved_path).resolve(strict=True)
             lines = source.read_text(encoding="utf-8").splitlines()
-        except OSError as error:
+        except (json.JSONDecodeError, OSError) as error:
             raise DriverError(
                 f"active Desktop profile is unavailable: {error}"
             ) from error

@@ -1488,12 +1488,9 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
     def test_make_launcher_uses_allocated_ports_after_managed_handoff(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "peers-group-chat"
-            active = root / ".local" / "dev" / "active"
-            profiles = root / ".local" / "dev" / "profiles"
-            active.mkdir(parents=True)
-            profiles.mkdir(parents=True)
+            root.mkdir(parents=True)
             (root / "Makefile").write_text("desktop-stop:\n\t@true\n", encoding="utf-8")
-            profile = profiles / "four.env"
+            profile = Path(temp_dir) / "four.env"
             profile.write_text(
                 "\n".join(
                     (
@@ -1510,9 +1507,6 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
                 )
                 + "\n",
                 encoding="utf-8",
-            )
-            (active / "peers-group-chat.env").symlink_to(
-                Path("..") / "profiles" / "four.env"
             )
             launcher = MakeDesktopLauncher(
                 worktree=root,
@@ -1531,10 +1525,23 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             process = Mock(pid=1234)
             process.poll.return_value = 0
             response = Mock()
+            resolved_profile = Mock(
+                returncode=0,
+                stdout=json.dumps(
+                    {
+                        "ok": True,
+                        "profile": {"resolvedPath": str(profile)},
+                    }
+                ),
+                stderr="",
+            )
 
             with patch(
                 "tooling.acceptance.drivers.tauri.subprocess.Popen",
                 return_value=process,
+            ), patch(
+                "tooling.acceptance.drivers.tauri.subprocess.run",
+                return_value=resolved_profile,
             ), patch(
                 "tooling.acceptance.drivers.tauri.urllib.request.urlopen",
                 return_value=response,
