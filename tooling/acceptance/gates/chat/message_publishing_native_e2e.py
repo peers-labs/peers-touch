@@ -228,7 +228,7 @@ class MessagePublishingNativeGate(AcceptanceGate):
                     "account": account,
                     "password": DEV_ACCOUNT_PASSWORD,
                 },
-                namespace="chat",
+                namespace="stationAccess",
                 script_timeout=90,
             )
             if (
