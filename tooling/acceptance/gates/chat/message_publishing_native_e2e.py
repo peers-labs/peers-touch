@@ -630,21 +630,23 @@ class MessagePublishingNativeGate(AcceptanceGate):
             SuiteRuntimeAction.SCENARIO_START,
             scenario_id=scenario_id,
         )
-        value = action()
-        self.suite.record(
-            SuiteRuntimeAction.UI_ACTION,
-            scenario_id=scenario_id,
-            resource_id="alice-native",
-        )
-        self.suite.record(
-            SuiteRuntimeAction.RECEIVER_ASSERTION,
-            scenario_id=scenario_id,
-            resource_id="alice-visible-projection",
-        )
-        self.suite.record(
-            SuiteRuntimeAction.SCENARIO_END,
-            scenario_id=scenario_id,
-        )
+        try:
+            value = action()
+            self.suite.record(
+                SuiteRuntimeAction.UI_ACTION,
+                scenario_id=scenario_id,
+                resource_id="alice-native",
+            )
+            self.suite.record(
+                SuiteRuntimeAction.RECEIVER_ASSERTION,
+                scenario_id=scenario_id,
+                resource_id="alice-visible-projection",
+            )
+        finally:
+            self.suite.record(
+                SuiteRuntimeAction.SCENARIO_END,
+                scenario_id=scenario_id,
+            )
         self.scenario_evidence[scenario_id] = value
         return value
 

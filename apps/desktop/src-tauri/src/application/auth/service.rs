@@ -136,12 +136,13 @@ pub(crate) fn prepare_messaging_profile(
     let actor_identity = crate::domain::crypto::get_or_create_identity(&identity_key_ref)
         .map_err(|error| format!("messaging actor identity unavailable: {error}"))?;
     let actor_identity_seed = Zeroizing::new(actor_identity.seed_bytes());
-    state.messaging_engines.activate_profile(
+    let engine = state.messaging_engines.activate_profile(
         account_id.to_string(),
         actor_ptid.to_string(),
         &actor_identity_seed,
         actor_profile_version,
     )?;
+    station_client::set_device_id(engine.endpoint().device_id.clone());
     Ok(())
 }
 

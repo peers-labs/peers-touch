@@ -230,6 +230,11 @@ class MessagePublishingNativeGateTests(unittest.TestCase):
             "SuiteRuntimeAction.RECEIVER_ASSERTION",
             method_source,
         )
+        self.assertIn("finally:", method_source)
+        self.assertLess(
+            method_source.index("finally:"),
+            method_source.index("SuiteRuntimeAction.SCENARIO_END"),
+        )
         for scenario_id in SCENARIO_IDS:
             self.assertIn(f'"{scenario_id}"', self.source)
 
