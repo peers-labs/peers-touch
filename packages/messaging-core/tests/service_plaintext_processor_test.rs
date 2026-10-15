@@ -127,6 +127,11 @@ impl DeliveryBuilder {
         self
     }
 
+    fn payload_kind(mut self, kind: PreparedEndpointPayloadKind) -> Self {
+        self.payload_kind = kind as i32;
+        self
+    }
+
     fn build(self) -> DurableDeviceInboxItem {
         let sender = ProtoCryptoEndpoint {
             ptid: self.bot.ptid.clone(),
@@ -280,6 +285,43 @@ fn service_plaintext_rejects_non_system_sender_device() {
         error,
         "messaging service-plaintext sender is not the reserved system endpoint"
     );
+}
+
+#[test]
+fn service_plaintext_decoder_rejects_every_mls_group_delivery_kind() {
+    for kind in [
+        PreparedEndpointPayloadKind::MlsApplication,
+        PreparedEndpointPayloadKind::MlsCommit,
+        PreparedEndpointPayloadKind::MlsWelcome,
+        PreparedEndpointPayloadKind::MlsRetirement,
+    ] {
+        let (repo, processor) = service_processor();
+        let item = DeliveryBuilder::service().payload_kind(kind).build();
+
+        let error = processor.consume(&item, 1).unwrap_err();
+        assert_eq!(
+            error,
+            "messaging service-plaintext processor received wrong endpoint payload kind"
+        );
+        assert!(repo.committed_service.lock().unwrap().is_none());
+        assert!(repo.committed_message.lock().unwrap().is_none());
+    }
+}
+
+#[test]
+fn normal_direct_ciphertext_never_enters_service_plaintext_decoder() {
+    let (repo, processor) = service_processor();
+    let item = DeliveryBuilder::service()
+        .payload_kind(PreparedEndpointPayloadKind::DirectCiphertext)
+        .build();
+
+    let error = processor.consume(&item, 1).unwrap_err();
+    assert_eq!(
+        error,
+        "messaging service-plaintext processor received wrong endpoint payload kind"
+    );
+    assert!(repo.committed_service.lock().unwrap().is_none());
+    assert!(repo.committed_message.lock().unwrap().is_none());
 }
 
 #[test]

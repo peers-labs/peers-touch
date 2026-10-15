@@ -58,6 +58,7 @@ GATE_ROLES = {
     "agent-v2-evaluation-lab-e2e": ("alice", "bob"),
     "agent-v2-external-runtime-e2e": ("bob",),
     "agent-marketplace-catalog-e2e": ("alice",),
+    "chat-message-publishing-native-e2e": ("alice",),
     "chat-native-two-client-e2e": ("alice", "bob"),
     "chat-presence-layout-e2e": ("alice", "bob"),
     "chat-native-interactions-e2e": ("alice", "bob", "charlie"),
@@ -83,6 +84,7 @@ AGENT_MARKETPLACE_GATE = "agent-marketplace-catalog-e2e"
 AGENT_CLI_PROVIDER_GATE = "agent-cli-provider-primary-native-e2e"
 AGENT_CORE_LIFECYCLE_GATE = "agent-core-lifecycle-native-e2e"
 AGENT_MINIMUM_USABLE_CHAT_GATE = "agent-minimum-usable-chat-native-e2e"
+MESSAGE_PUBLISHING_GATE = "chat-message-publishing-native-e2e"
 AGENT_NATIVE_GATES = frozenset(
     {
         "agent-attachment-e2e",
@@ -92,6 +94,7 @@ AGENT_NATIVE_GATES = frozenset(
         "agent-stream-resilience-e2e",
     }
 )
+HOME_SINGLE_NATIVE_GATES = AGENT_NATIVE_GATES | {MESSAGE_PUBLISHING_GATE}
 AGENT_V2_PROFILE = os.environ.get("PT_ACCEPTANCE_APPROVED_PROFILE", "one")
 AGENT_V2_BINDING_PROFILE = "two"
 AGENT_V2_BINDING_GATES = frozenset(
@@ -149,6 +152,7 @@ def agent_native_requires_disposable_fixture(gate_id: str) -> bool:
         AGENT_CLI_PROVIDER_GATE,
         AGENT_CORE_LIFECYCLE_GATE,
         AGENT_MINIMUM_USABLE_CHAT_GATE,
+        MESSAGE_PUBLISHING_GATE,
     }
 
 
@@ -157,6 +161,7 @@ def agent_native_requires_provider(gate_id: str) -> bool:
         AGENT_CLI_PROVIDER_GATE,
         AGENT_CORE_LIFECYCLE_GATE,
         AGENT_MINIMUM_USABLE_CHAT_GATE,
+        MESSAGE_PUBLISHING_GATE,
     }
 
 
@@ -920,6 +925,24 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             actor="charlie",
         )
 
+    def _message_publishing_client(
+        self,
+        run_id: str,
+        slot: int,
+        profile_env: dict[str, str],
+    ) -> ClientRuntime:
+        return self._agent_native_client(
+            run_id,
+            slot,
+            profile_env,
+            journey="message-publishing",
+            profile=AGENT_V2_PROFILE,
+            worktree_variable="PT_MESSAGE_PUBLISHING_WORKTREE",
+            gateway_port_variable="PT_MESSAGE_PUBLISHING_GATEWAY_PORT",
+            renderer_port_variable="PT_MESSAGE_PUBLISHING_RENDERER_PORT",
+            webdriver_port_variable="PT_MESSAGE_PUBLISHING_WEBDRIVER_PORT",
+        )
+
     def _export_profile_credential_refs(
         self,
         profile_env: dict[str, str],
@@ -1543,6 +1566,12 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 manifest.profile_slot,
                 profile_env,
             )
+        elif gate_id == MESSAGE_PUBLISHING_GATE:
+            client = self._message_publishing_client(
+                manifest.run_id,
+                manifest.profile_slot,
+                profile_env,
+            )
         else:
             client = self._agent_stream_client(
                 manifest.run_id,
@@ -1606,7 +1635,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                     AGENT_V2_EVALUATION_GATE,
                     AGENT_V2_EXTERNAL_RUNTIME_GATE,
                 }
-                or gate_id in AGENT_NATIVE_GATES
+                or gate_id in HOME_SINGLE_NATIVE_GATES
             ):
                 self._validate_agent_profile(
                     gate_id,
@@ -1730,6 +1759,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 AGENT_V2_EXTERNAL_RUNTIME_GATE,
                 AGENT_MARKETPLACE_GATE,
                 AGENT_MINIMUM_USABLE_CHAT_GATE,
+                MESSAGE_PUBLISHING_GATE,
             }:
                 if manifest.workspace_digest != "clean":
                     raise BlockedError(
@@ -1751,6 +1781,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                     AGENT_V2_EXTERNAL_RUNTIME_GATE,
                     AGENT_MARKETPLACE_GATE,
                     AGENT_MINIMUM_USABLE_CHAT_GATE,
+                    MESSAGE_PUBLISHING_GATE,
                 }
                 and not attestation.is_clean_workspace
             ):
@@ -1878,7 +1909,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 )
                 self._manifest = manifest
                 return self._ready(manifest)
-            if gate_id in AGENT_NATIVE_GATES:
+            if gate_id in HOME_SINGLE_NATIVE_GATES:
                 manifest = self._agent_native_manifest(
                     manifest,
                     gate_id=gate_id,

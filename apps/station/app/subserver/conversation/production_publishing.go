@@ -198,6 +198,7 @@ func productionPublishingGrant(grant entity.PublishingGrant) *chat.MessagePublis
 		DefaultTarget:      string(grant.DefaultTarget),
 		AllowedTargets:     targets,
 		SecretHint:         grant.SecretHint,
+		Disabled:           grant.Disabled,
 		Revoked:            grant.Revoked,
 		CreatedAt:          timestamppb.New(grant.CreatedAt),
 		RateLimitPerMinute: grant.RatePerMinute,

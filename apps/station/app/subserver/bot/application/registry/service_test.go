@@ -64,6 +64,18 @@ type fakePublishingManager struct {
 	disabled    []bool
 	rotateCount int
 	revokeCount int
+	createCalls []publishingManagerCall
+	getCalls    []publishingManagerCall
+	rotateCalls []publishingManagerCall
+	stateCalls  []publishingManagerCall
+	revokeCalls []publishingManagerCall
+}
+
+type publishingManagerCall struct {
+	owner        string
+	bot          string
+	name         string
+	publishingID string
 }
 
 func (m *fakePublishingManager) CreateForBot(
@@ -72,6 +84,11 @@ func (m *fakePublishingManager) CreateForBot(
 	bot string,
 	name string,
 ) (PublishingCreated, error) {
+	m.createCalls = append(m.createCalls, publishingManagerCall{
+		owner: owner,
+		bot:   bot,
+		name:  name,
+	})
 	m.grant = PublishingGrant{
 		ID:                 "publishing-1",
 		OwnerPtid:          owner,
@@ -86,36 +103,52 @@ func (m *fakePublishingManager) CreateForBot(
 	return PublishingCreated{Grant: m.grant, Secret: m.secret}, nil
 }
 func (m *fakePublishingManager) Get(
-	context.Context,
-	string,
-	string,
+	_ context.Context,
+	owner string,
+	publishingID string,
 ) (PublishingGrant, error) {
+	m.getCalls = append(m.getCalls, publishingManagerCall{
+		owner:        owner,
+		publishingID: publishingID,
+	})
 	return m.grant, nil
 }
 func (m *fakePublishingManager) Rotate(
-	context.Context,
-	string,
-	string,
+	_ context.Context,
+	owner string,
+	publishingID string,
 ) (PublishingCreated, error) {
 	m.rotateCount++
+	m.rotateCalls = append(m.rotateCalls, publishingManagerCall{
+		owner:        owner,
+		publishingID: publishingID,
+	})
 	return PublishingCreated{Grant: m.grant, Secret: "secret-2"}, nil
 }
 func (m *fakePublishingManager) SetDisabled(
 	_ context.Context,
-	_ string,
-	_ string,
+	owner string,
+	publishingID string,
 	disabled bool,
 ) (PublishingGrant, error) {
 	m.disabled = append(m.disabled, disabled)
+	m.stateCalls = append(m.stateCalls, publishingManagerCall{
+		owner:        owner,
+		publishingID: publishingID,
+	})
 	m.grant.Disabled = disabled
 	return m.grant, nil
 }
 func (m *fakePublishingManager) Revoke(
-	context.Context,
-	string,
-	string,
+	_ context.Context,
+	owner string,
+	publishingID string,
 ) (PublishingGrant, error) {
 	m.revokeCount++
+	m.revokeCalls = append(m.revokeCalls, publishingManagerCall{
+		owner:        owner,
+		publishingID: publishingID,
+	})
 	m.grant.Revoked = true
 	return m.grant, nil
 }
@@ -146,6 +179,19 @@ func TestBotCreateDelegatesToGenericPublishing(t *testing.T) {
 		created.Secret != "secret-1" {
 		t.Fatalf("created Bot = %+v", created)
 	}
+	if len(publishing.createCalls) != 1 {
+		t.Fatalf("create calls = %v", publishing.createCalls)
+	}
+	call := publishing.createCalls[0]
+	if call.owner != created.Bot.OwnerPtid ||
+		call.bot != created.Bot.BotPtid ||
+		call.name != created.Bot.Name {
+		t.Fatalf("generic publishing create call = %+v", call)
+	}
+	if created.Publishing.SenderPtid != created.Bot.BotPtid ||
+		created.Publishing.SourceNamespace != "bot."+created.Bot.BotPtid {
+		t.Fatalf("publishing adapter projection = %+v", created.Publishing)
+	}
 }
 
 func TestBotLifecycleControlsSamePublishingGrant(t *testing.T) {
@@ -170,6 +216,24 @@ func TestBotLifecycleControlsSamePublishingGrant(t *testing.T) {
 	if publishing.rotateCount != 1 {
 		t.Fatalf("rotate calls = %d", publishing.rotateCount)
 	}
+	if len(publishing.rotateCalls) != 1 ||
+		publishing.rotateCalls[0].owner != created.Bot.OwnerPtid ||
+		publishing.rotateCalls[0].publishingID != created.Bot.PublishingID {
+		t.Fatalf("rotate adapter calls = %+v", publishing.rotateCalls)
+	}
+	grant, err := service.PublishingGrant(
+		context.Background(),
+		created.Bot.OwnerPtid,
+		created.Bot,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if grant.ID != created.Bot.PublishingID ||
+		len(publishing.getCalls) != 1 ||
+		publishing.getCalls[0].publishingID != created.Bot.PublishingID {
+		t.Fatalf("publishing grant adapter calls = %+v", publishing.getCalls)
+	}
 	if _, _, err := service.SetState(
 		context.Background(),
 		created.Bot.OwnerPtid,
@@ -181,6 +245,11 @@ func TestBotLifecycleControlsSamePublishingGrant(t *testing.T) {
 	if len(publishing.disabled) != 1 || !publishing.disabled[0] {
 		t.Fatalf("disable calls = %v", publishing.disabled)
 	}
+	if len(publishing.stateCalls) != 1 ||
+		publishing.stateCalls[0].owner != created.Bot.OwnerPtid ||
+		publishing.stateCalls[0].publishingID != created.Bot.PublishingID {
+		t.Fatalf("state adapter calls = %+v", publishing.stateCalls)
+	}
 	if _, _, err := service.SetState(
 		context.Background(),
 		created.Bot.OwnerPtid,
@@ -191,5 +260,10 @@ func TestBotLifecycleControlsSamePublishingGrant(t *testing.T) {
 	}
 	if publishing.revokeCount != 1 {
 		t.Fatalf("revoke calls = %d", publishing.revokeCount)
+	}
+	if len(publishing.revokeCalls) != 1 ||
+		publishing.revokeCalls[0].owner != created.Bot.OwnerPtid ||
+		publishing.revokeCalls[0].publishingID != created.Bot.PublishingID {
+		t.Fatalf("revoke adapter calls = %+v", publishing.revokeCalls)
 	}
 }

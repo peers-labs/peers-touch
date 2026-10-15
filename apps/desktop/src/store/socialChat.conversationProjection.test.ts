@@ -14,7 +14,12 @@ import { ActorKind } from '../gen/proto/domain/actor/actor_pb';
 import { resolveMessageSearchTargets, useSocialChatStore } from './socialChat';
 import { useSessionStore } from './session';
 import type { AccountProfile } from '../services/desktop_api';
-import type { SocialMessage } from './socialProjection';
+import {
+  projectDesktopIMMessage,
+  visibleConversationUnread,
+  type DesktopServiceMessage,
+  type SocialMessage,
+} from './socialProjection';
 
 function peerProfile(kind: ActorKind): AccountProfile {
   return {
@@ -226,5 +231,72 @@ describe('social chat conversation projection', () => {
       senderPtid: visible.senderPtid,
     });
     expect(state.openThreadRootUlid).toBeNull();
+  });
+
+  it('preserves native service-message identity and typed rendering content', () => {
+    const serviceMessage: DesktopServiceMessage = {
+      eventId: 'event-service-1',
+      eventSequence: 7,
+      messageId: 'message-service-1',
+      senderPtid: 'ptid:service:ci',
+      fallbackText: 'Build completed',
+      sourceNamespace: 'ci.build',
+      content: {
+        primary: {
+          kind: 'event',
+          eventType: 'ci.task.state',
+          title: 'Build completed',
+          body: 'All checks passed',
+          subject: {
+            kind: 'build',
+            id: 'build-42',
+            executionId: 'run-7',
+          },
+          taskState: {
+            revision: '2',
+            state: 4,
+          },
+        },
+        attachments: [],
+      },
+      timestampUnixMs: 1_760_500_000_000,
+    };
+    const projected = projectDesktopIMMessage(
+      'friend',
+      'direct-conversation',
+      {
+        ulid: serviceMessage.messageId,
+        senderPtid: serviceMessage.senderPtid,
+        senderDeviceId: 'station-system',
+        content: serviceMessage.fallbackText,
+        type: MessageType.SYSTEM,
+        attachments: [],
+        serviceMessage,
+      },
+    );
+
+    expect(projected).toMatchObject({
+      id: serviceMessage.messageId,
+      ulid: serviceMessage.messageId,
+      conversationId: 'direct-conversation',
+      senderPtid: serviceMessage.senderPtid,
+      content: serviceMessage.fallbackText,
+      serviceMessage: {
+        eventId: serviceMessage.eventId,
+        eventSequence: serviceMessage.eventSequence,
+        sourceNamespace: 'ci.build',
+      },
+    });
+    expect(projected.serviceMessage?.content?.primary).toMatchObject({
+      kind: 'event',
+      title: 'Build completed',
+      taskState: { revision: '2', state: 4 },
+    });
+  });
+
+  it('keeps unread truth while suppressing visible alerts by local preference', () => {
+    expect(visibleConversationUnread(2, undefined)).toBe(2);
+    expect(visibleConversationUnread(2, { muted: true })).toBe(0);
+    expect(visibleConversationUnread(2, { alertEnabled: false })).toBe(0);
   });
 });

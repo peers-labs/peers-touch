@@ -36,6 +36,9 @@ from tooling.acceptance.provisioners import (
     get_provisioner,
 )
 from tooling.acceptance.provisioners.home_station import (
+    GATE_ROLES,
+    HOME_SINGLE_NATIVE_GATES,
+    MESSAGE_PUBLISHING_GATE,
     agent_native_requires_disposable_fixture,
     agent_native_requires_provider,
     agent_profile_for_gate,
@@ -1027,6 +1030,42 @@ class ProvisionerBlockingTests(unittest.TestCase):
         self.assertEqual(client.renderer_port, 13511)
         self.assertEqual(client.webdriver_port, 14449)
         self.assertIn("pt-agent-stream-run-stream-resilience", client.storage_root)
+
+    def test_message_publishing_uses_one_alice_profile_without_reset(self):
+        provisioner = HomeStationProvisioner(
+            EnvironmentContract(id="home-station")
+        )
+        profile_env = {
+            "PT_DESKTOP_APP_GATEWAY_PORT": "13331",
+            "PT_DESKTOP_APP_WEB_PORT": "13511",
+        }
+        with patch.dict(
+            "os.environ",
+            {"PT_MESSAGE_PUBLISHING_WEBDRIVER_PORT": "14449"},
+            clear=True,
+        ), patch.object(provisioner, "_assert_client_ports_available"):
+            client = provisioner._message_publishing_client(
+                "run-message-publishing",
+                1,
+                profile_env,
+            )
+
+        self.assertEqual(GATE_ROLES[MESSAGE_PUBLISHING_GATE], ("alice",))
+        self.assertIn(MESSAGE_PUBLISHING_GATE, HOME_SINGLE_NATIVE_GATES)
+        self.assertFalse(
+            agent_native_requires_disposable_fixture(MESSAGE_PUBLISHING_GATE)
+        )
+        self.assertFalse(agent_native_requires_provider(MESSAGE_PUBLISHING_GATE))
+        self.assertEqual(agent_profile_for_gate(MESSAGE_PUBLISHING_GATE), "one")
+        self.assertEqual(client.actor, "alice")
+        self.assertEqual(client.profile, "one")
+        self.assertEqual(client.gateway_port, 13331)
+        self.assertEqual(client.renderer_port, 13511)
+        self.assertEqual(client.webdriver_port, 14449)
+        self.assertIn(
+            "pt-agent-message-publishing-run-message-publishing",
+            client.storage_root,
+        )
 
     def test_agent_core_lifecycle_uses_reviewed_two_profile(self):
         provisioner = HomeStationProvisioner(

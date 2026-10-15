@@ -5,6 +5,7 @@
   "capabilities": [
     "acceptance-framework-self-consistency",
     "chat-proto-service-contract",
+    "chat-message-publishing",
     "chat-realtime-contract",
     "desktop-chat-typed-surface",
     "chat-direct-delivery-receipt",

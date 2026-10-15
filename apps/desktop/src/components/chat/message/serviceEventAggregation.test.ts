@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ChatMessage } from './chatMessageModel';
-import { aggregateServiceEvents } from './serviceEventAggregation';
+import {
+  aggregateServiceEvents,
+  serviceAggregationKey,
+} from './serviceEventAggregation';
 
 function taskMessage(
   id: string,
@@ -98,6 +101,57 @@ describe('aggregateServiceEvents', () => {
     expect(rows[0].aggregation?.effective.content?.primary?.taskState).toEqual({
       revision: '5',
       state: 2,
+    });
+  });
+
+  it('treats a partial history as known history and expands when more pages arrive', () => {
+    const newestOnly = [taskMessage('m3', 'run-1', '3', 2)];
+    expect(aggregateServiceEvents(newestOnly)).toEqual([{
+      message: newestOnly[0],
+    }]);
+
+    const completeKnownPage = [
+      taskMessage('m1', 'run-1', '1', 1),
+      taskMessage('m2', 'run-1', '2', 2),
+      ...newestOnly,
+    ];
+    const rows = aggregateServiceEvents(completeKnownPage);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].aggregation).toMatchObject({
+      knownCount: 3,
+      knownHistoryOnly: true,
+    });
+  });
+
+  it('rebuilds the same aggregate after a process restart', () => {
+    const beforeRestart = [
+      taskMessage('m1', 'run-1', '1', 1),
+      plainMessage('m2'),
+      taskMessage('m3', 'run-1', '2', 4),
+    ];
+    const afterRestart = JSON.parse(JSON.stringify(beforeRestart)) as ChatMessage[];
+
+    expect(aggregateServiceEvents(afterRestart)).toEqual(
+      aggregateServiceEvents(beforeRestart),
+    );
+  });
+
+  it('uses the located historical message identity to expand its aggregate', () => {
+    const messages = [
+      taskMessage('m1', 'run-1', '1', 1),
+      plainMessage('m2'),
+      taskMessage('m3', 'run-1', '2', 2),
+    ];
+    const located = messages.find(message => message.ulid === 'm1');
+    expect(located).toBeTruthy();
+    const locatedKey = serviceAggregationKey(located!);
+    const rows = aggregateServiceEvents(messages, new Set([locatedKey]));
+
+    expect(rows.map(row => row.message.ulid)).toEqual(['m1', 'm2', 'm3']);
+    expect(rows.find(row => row.aggregation)?.aggregation).toMatchObject({
+      key: locatedKey,
+      expanded: true,
+      knownCount: 2,
     });
   });
 });

@@ -138,6 +138,21 @@
       "tier": "local-evidence",
       "description": "Validate that acceptance-run preserves source artifact diagnostics, Phase, BOM, Spec, Gate, and PARTIAL/UNPROVEN metadata in latest-run evidence."
     },
+    "chat-message-publishing-native-e2e": {
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.chat.message_publishing_native_e2e"
+      ],
+      "timeout_seconds": 5400,
+      "environment": "home-station",
+      "provisioner": "home-station",
+      "requiredRuntimeCells": [
+        "desktop-macos-native"
+      ],
+      "tier": "env-evidence",
+      "description": "Run one exact-source Home Station and one isolated Alice macOS Native Desktop through the owner-only generic Message Publishing lifecycle, receiver projection, semantic aggregation, restart recovery, human Direct regression, and cleanup."
+    },
     "chat-native-visible-static": {
       "command": "cd apps/station && go test ./frame/touch/actor -run 'TestBackfillPresetAvatar' -count=1 && go test ./frame/touch/federation/cache -count=1 && cd app && GOWORK=off go test ./subserver/social/application -run 'TestRelationshipListsHydrateActorProjections|TestRelationshipListsFilterBlockedEdges' -count=1 && cd ../../.. && pnpm --dir apps/desktop exec vitest run src/acceptance/chat/identity.test.ts src/acceptance/chat/passwordLogin.test.ts src/components/chat/CreateGroupModal.test.ts src/components/chat/contactSelection.test.ts src/components/chat/message/ChatMessageTimeline.test.ts src/components/common/SquareAvatar.test.ts src/services/chatPresence.test.ts src/services/errorMappings/chatErrorMapping.test.ts src/services/socialRealtime.test.ts src/store/federation.test.ts src/store/friendshipProjection.test.ts src/store/relationships.test.ts src/store/socialChat.conversationProjection.test.ts src/store/socialNormalizers.test.ts src/store/socialProfileProjection.test.ts && pnpm --filter @peers-touch/prototype-desktop-social-chat build && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --bin peers-touch-desktop group_creation_ && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --bin peers-touch-desktop typed_station_error_details_survive_json_transport && env -u PT_ACCEPTANCE_WORKSPACE_ID -u PT_ACCEPTANCE_GATE_ID -u PT_ACCEPTANCE_RUN_ID python3 -m unittest tooling.acceptance.gates.chat.lifecycle_regression_contract_test tooling.acceptance.gates.chat.lifecycle_onboarding_test tooling.acceptance.gates.chat.lifecycle_mixed_client_test tooling.acceptance.gates.chat.native_two_client_e2e_test tooling.acceptance.gates.chat.native_interactions_static_test tooling.acceptance.gates.chat.native_product_closure_static_test tooling.acceptance.gates.chat.native_runtime_cell_runner_test tooling.acceptance.gates.chat.native_recovery_runner_test tooling.acceptance.gates.chat.native_group_mls_runner_test tooling.acceptance.gates.chat.chat_native_reset_test tooling.acceptance.gates.chat.chat_submit_fault_proxy_test tooling.acceptance.gates.chat.chat_contact_message_fault_proxy_test",
       "timeout_seconds": 300,
