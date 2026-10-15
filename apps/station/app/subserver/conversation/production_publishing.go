@@ -3,6 +3,7 @@ package conversation
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -166,12 +167,18 @@ func (s *subServer) handlePublishMessage(
 	if err := (protojson.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(body, &input); err != nil {
 		return writePublishingError(response, http.StatusBadRequest, "invalid message publication")
 	}
+	normalized, err := normalizeProductionPublishingRequest(
+		&input,
+		publishingHeader(request.Header(), "Idempotency-Key"),
+	)
+	if err != nil {
+		return writePublishingDomainError(ctx, response, err)
+	}
 	result, err := s.composition.PublishingService.Publish(
 		ctx,
 		publishingID,
 		secret,
-		publishingHeader(request.Header(), "Idempotency-Key"),
-		&input,
+		normalized,
 	)
 	if err != nil {
 		return writePublishingDomainError(ctx, response, err)
@@ -181,7 +188,36 @@ func (s *subServer) handlePublishMessage(
 			logger.Errorf(ctx, "[message-publishing] post-commit notification wake failed: %v", err)
 		}
 	}
-	return writePublishingProto(response, result.Response)
+	output, err := productionPublishingResponse(result.Response)
+	if err != nil {
+		return writePublishingDomainError(ctx, response, err)
+	}
+	return writePublishingProto(response, output)
+}
+
+func productionPublishingResponse(
+	result *publishingapp.Response,
+) (*chat.PublishMessageResponse, error) {
+	if result == nil {
+		return nil, fmt.Errorf("publishing service returned no committed result")
+	}
+	var outcome chat.PublishMessageOutcome
+	switch result.Outcome {
+	case publishingapp.OutcomeAccepted:
+		outcome = chat.PublishMessageOutcome_PUBLISH_MESSAGE_OUTCOME_ACCEPTED
+	case publishingapp.OutcomeReplayed:
+		outcome = chat.PublishMessageOutcome_PUBLISH_MESSAGE_OUTCOME_REPLAYED
+	default:
+		return nil, fmt.Errorf("publishing service returned an invalid outcome")
+	}
+	return &chat.PublishMessageResponse{
+		CommandId:           result.CommandID,
+		MessageId:           string(result.MessageID),
+		ConversationId:      string(result.ConversationID),
+		ConversationEventId: string(result.ConversationEventID),
+		EventSequence:       int64(result.EventSequence),
+		Outcome:             outcome,
+	}, nil
 }
 
 func productionPublishingGrant(grant entity.PublishingGrant) *chat.MessagePublishingGrant {

@@ -11,10 +11,7 @@ import (
 	conversationdomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/entity"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
-	notificationdomain "github.com/peers-labs/peers-touch/station/app/subserver/notification/domain"
 	"github.com/peers-labs/peers-touch/station/frame/core/auth/credential"
-	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
-	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -38,7 +35,7 @@ type Service struct {
 }
 
 type Result struct {
-	Response         *chat.PublishMessageResponse
+	Response         *Response
 	NotificationWake *ports.ServiceNotificationWake
 }
 
@@ -63,24 +60,29 @@ func (s *Service) Publish(
 	ctx context.Context,
 	publishingID string,
 	presentedSecret string,
-	idempotencyKey string,
-	input *chat.PublishMessageRequest,
+	request Request,
 ) (Result, error) {
 	publishingID = strings.TrimSpace(publishingID)
 	if publishingID == "" || strings.TrimSpace(presentedSecret) == "" {
 		return Result{}, unauthorized()
 	}
-	normalized, err := Normalize(input, idempotencyKey)
+	request.CommandID = strings.TrimSpace(request.CommandID)
+	if request.Message == nil || len(request.IdentityBytes) == 0 {
+		return Result{}, invalid("request", "normalized message identity is required")
+	}
+	if request.CommandID == "" {
+		request.CommandID = s.ids.NewID()
+	}
+	commandID, err := valueobject.NewCommandID(request.CommandID)
 	if err != nil {
 		return Result{}, err
 	}
-	if normalized.Request.CommandId == "" {
-		normalized.Request.CommandId = s.ids.NewID()
+	if request.Target != "" {
+		if _, err := valueobject.NewConversationID(string(request.Target)); err != nil {
+			return Result{}, err
+		}
 	}
-	commandID, err := valueobject.NewCommandID(normalized.Request.CommandId)
-	if err != nil {
-		return Result{}, err
-	}
+	requestHash := valueobject.HashBytes(request.IdentityBytes)
 	now := s.clock.Now().UTC()
 	var result Result
 	err = s.unitOfWork.ExecuteSerialized(
@@ -108,7 +110,7 @@ func (s *Service) Publish(
 				return receiptErr
 			}
 			if found {
-				if receipt.RequestHash != normalized.Hash {
+				if receipt.RequestHash != requestHash {
 					return conflict("command_id", "was already committed with a different normalized request")
 				}
 				if receipt.Recipient != grant.Owner {
@@ -117,14 +119,14 @@ func (s *Service) Publish(
 				if err := grant.Authorize(receipt.Sender, receipt.Conversation, now); err != nil {
 					return err
 				}
-				result.Response = publicationResponse(receipt, chat.PublishMessageOutcome_PUBLISH_MESSAGE_OUTCOME_REPLAYED)
+				result.Response = publicationResponse(receipt, OutcomeReplayed)
 				return nil
 			}
 			if err := tx.Publishing.CheckRate(ctx, publishingID, grant.RatePerMinute, now); err != nil {
 				return err
 			}
 
-			target := valueobject.ConversationID(normalized.Request.Target)
+			target := request.Target
 			if target == "" {
 				target = grant.DefaultTarget
 			}
@@ -180,11 +182,12 @@ func (s *Service) Publish(
 				return conflict("target", "does not match the committed service Direct")
 			}
 
-			content := proto.Clone(normalized.Request.Content).(*chat.MessageContent)
-			for _, attachment := range content.Attachments {
+			objectIDs := request.Message.AttachmentObjectIDs()
+			attachments := make([]Attachment, 0, len(objectIDs))
+			for _, objectID := range objectIDs {
 				object, err := tx.PublishingObjects.ValidateObject(
 					ctx,
-					attachment.ObjectId,
+					objectID,
 					grant.Owner,
 					target,
 					now,
@@ -192,19 +195,19 @@ func (s *Service) Publish(
 				if err != nil {
 					return err
 				}
-				attachment.Filename = object.Filename
-				attachment.MediaType = object.MediaType
-				attachment.Size = object.Size
+				attachments = append(attachments, Attachment{
+					ObjectID:  objectID,
+					Filename:  object.Filename,
+					MediaType: object.MediaType,
+					Size:      object.Size,
+				})
 			}
-			payload, err := proto.MarshalOptions{Deterministic: true}.Marshal(
-				&chat.DirectServicePlaintextPayload{
-					MessageContent:  content,
-					SourceContext:   normalized.Request.SourceContext,
-					SourceNamespace: grant.SourceNamespace,
-				},
-			)
+			message, err := request.Message.Materialize(grant.SourceNamespace, attachments)
 			if err != nil {
 				return err
+			}
+			if len(message.Payload) == 0 {
+				return fmt.Errorf("publishing message adapter returned an empty payload")
 			}
 			messageCommandID := valueobject.CommandID(
 				"publishing:" + publishingID + ":" + string(commandID),
@@ -219,7 +222,7 @@ func (s *Service) Publish(
 				Recipient:      grant.Owner,
 				CommandID:      messageCommandID,
 				MessageID:      messageID,
-				Payload:        payload,
+				Payload:        message.Payload,
 			})
 			if err != nil {
 				return err
@@ -227,7 +230,7 @@ func (s *Service) Publish(
 			receipt = entity.PublicationReceipt{
 				PublishingID:  publishingID,
 				CommandID:     string(commandID),
-				RequestHash:   normalized.Hash,
+				RequestHash:   requestHash,
 				Sender:        grant.Sender,
 				Recipient:     grant.Owner,
 				Conversation:  target,
@@ -238,19 +241,18 @@ func (s *Service) Publish(
 			}
 
 			if tx.ServiceNotifications != nil {
-				notificationType, category := notificationClassification(content)
 				notification, err := tx.ServiceNotifications.ProduceInTx(
 					ctx,
 					ports.ServiceNotificationInput{
 						RecipientPTID:  string(grant.Owner),
 						ActorPTID:      string(grant.Sender),
-						Type:           notificationType,
-						Category:       category,
+						Type:           message.NotificationType,
+						Category:       message.NotificationCategory,
 						TargetType:     "conversation",
 						TargetID:       string(target),
 						Title:          grant.Name,
-						Body:           content.FallbackText,
-						GroupKey:       notificationGroup(grant.SourceNamespace, content),
+						Body:           message.FallbackText,
+						GroupKey:       message.NotificationGroupKey,
 						IdempotencyKey: "publishing:" + publishingID + ":" + string(commandID),
 						Metadata: map[string]string{
 							"publishing_id":    publishingID,
@@ -268,9 +270,9 @@ func (s *Service) Publish(
 					result.NotificationWake = &ports.ServiceNotificationWake{
 						RecipientActor:   grant.Owner,
 						NotificationID:   notification.NotificationID,
-						NotificationType: notificationType,
-						Category:         category,
-						GroupKey:         notificationGroup(grant.SourceNamespace, content),
+						NotificationType: message.NotificationType,
+						Category:         message.NotificationCategory,
+						GroupKey:         message.NotificationGroupKey,
 						CreatedAtUnixMs:  now.UnixMilli(),
 					}
 				}
@@ -280,7 +282,7 @@ func (s *Service) Publish(
 			}
 			result.Response = publicationResponse(
 				receipt,
-				chat.PublishMessageOutcome_PUBLISH_MESSAGE_OUTCOME_ACCEPTED,
+				OutcomeAccepted,
 			)
 			return nil
 		},
@@ -290,39 +292,16 @@ func (s *Service) Publish(
 
 func publicationResponse(
 	receipt entity.PublicationReceipt,
-	outcome chat.PublishMessageOutcome,
-) *chat.PublishMessageResponse {
-	return &chat.PublishMessageResponse{
-		CommandId:           receipt.CommandID,
-		MessageId:           string(receipt.MessageID),
-		ConversationId:      string(receipt.Conversation),
-		ConversationEventId: string(receipt.EventID),
-		EventSequence:       int64(receipt.EventSequence),
+	outcome Outcome,
+) *Response {
+	return &Response{
+		CommandID:           receipt.CommandID,
+		MessageID:           receipt.MessageID,
+		ConversationID:      receipt.Conversation,
+		ConversationEventID: receipt.EventID,
+		EventSequence:       receipt.EventSequence,
 		Outcome:             outcome,
 	}
-}
-
-func notificationClassification(content *chat.MessageContent) (int32, int32) {
-	if event := content.GetEvent(); event != nil && event.GetTaskState() != nil {
-		return NotificationTypeTaskEvent, notificationdomain.CategoryTask
-	}
-	return NotificationTypeServiceMessage, notificationdomain.CategoryChat
-}
-
-func notificationGroup(namespace string, content *chat.MessageContent) string {
-	event := content.GetEvent()
-	if event == nil || event.GetTaskState() == nil || event.Subject == nil ||
-		event.Subject.Kind == "" || event.Subject.Id == "" ||
-		event.Subject.ExecutionId == "" {
-		return ""
-	}
-	return valueobject.HashBytes(valueobject.CanonicalTuple(
-		[]byte("publishing-notification-group"),
-		[]byte(namespace),
-		[]byte(event.Subject.Kind),
-		[]byte(event.Subject.Id),
-		[]byte(event.Subject.ExecutionId),
-	)).String()
 }
 
 type boundUnitOfWork struct {
@@ -339,22 +318,4 @@ func (u boundUnitOfWork) ExecuteSerialized(
 	fn func(ports.Transaction) error,
 ) error {
 	return fn(u.tx)
-}
-
-func unauthorized() error {
-	return conversationdomain.NewError(
-		conversationdomain.ErrorCodeUnauthorized,
-		"publishing.authenticate",
-		"credential",
-		"publishing credential is invalid",
-	)
-}
-
-func conflict(field, message string) error {
-	return conversationdomain.NewError(
-		conversationdomain.ErrorCodeCommandConflict,
-		"publishing.publish",
-		field,
-		message,
-	)
 }

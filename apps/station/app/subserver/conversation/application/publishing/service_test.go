@@ -17,12 +17,132 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/repository"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
 	conversationhttp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/interface/http"
+	notificationdomain "github.com/peers-labs/peers-touch/station/app/subserver/notification/domain"
 	"github.com/peers-labs/peers-touch/station/frame/core/auth/credential"
 	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
 	"google.golang.org/protobuf/proto"
 )
 
 var errUnexpectedPublishingTestCall = errors.New("unexpected publishing test call")
+
+type publishingTestMessage struct {
+	content       *chat.MessageContent
+	sourceContext *chat.MessageSourceContext
+}
+
+func textRequest(target string) *chat.PublishMessageRequest {
+	return &chat.PublishMessageRequest{
+		Target: target,
+		Content: &chat.MessageContent{
+			Primary: &chat.MessageContent_Text{
+				Text: &chat.MessageTextContent{Text: "build passed"},
+			},
+			FallbackText: "caller supplied",
+		},
+	}
+}
+
+func publishingTestRequest(
+	t *testing.T,
+	input *chat.PublishMessageRequest,
+) Request {
+	t.Helper()
+	request := proto.Clone(input).(*chat.PublishMessageRequest)
+	switch primary := request.Content.Primary.(type) {
+	case *chat.MessageContent_Text:
+		request.Content.FallbackText = primary.Text.Text
+	case *chat.MessageContent_Event:
+		request.Content.FallbackText = primary.Event.Title
+		if primary.Event.Body != "" {
+			request.Content.FallbackText += "\n" + primary.Event.Body
+		}
+	case *chat.MessageContent_Card:
+		request.Content.FallbackText = primary.Card.Title
+		if primary.Card.Body != "" {
+			request.Content.FallbackText += "\n" + primary.Card.Body
+		}
+	}
+	for _, attachment := range request.Content.Attachments {
+		attachment.Filename = ""
+		attachment.MediaType = ""
+		attachment.Size = 0
+	}
+	identity := proto.Clone(request).(*chat.PublishMessageRequest)
+	identity.CommandId = ""
+	identityBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(identity)
+	if err != nil {
+		t.Fatalf("marshal request identity: %v", err)
+	}
+	return Request{
+		CommandID:     request.CommandId,
+		Target:        valueobject.ConversationID(request.Target),
+		IdentityBytes: identityBytes,
+		Message: &publishingTestMessage{
+			content:       request.Content,
+			sourceContext: request.SourceContext,
+		},
+	}
+}
+
+func (m *publishingTestMessage) AttachmentObjectIDs() []string {
+	result := make([]string, 0, len(m.content.Attachments))
+	for _, attachment := range m.content.Attachments {
+		result = append(result, attachment.ObjectId)
+	}
+	return result
+}
+
+func (m *publishingTestMessage) Materialize(
+	sourceNamespace string,
+	attachments []Attachment,
+) (MaterializedMessage, error) {
+	content := proto.Clone(m.content).(*chat.MessageContent)
+	if len(content.Attachments) != len(attachments) {
+		return MaterializedMessage{}, errors.New("attachment count mismatch")
+	}
+	for index, attachment := range attachments {
+		if content.Attachments[index].ObjectId != attachment.ObjectID {
+			return MaterializedMessage{}, errors.New("attachment identity mismatch")
+		}
+		content.Attachments[index].Filename = attachment.Filename
+		content.Attachments[index].MediaType = attachment.MediaType
+		content.Attachments[index].Size = attachment.Size
+	}
+	payload, err := proto.MarshalOptions{Deterministic: true}.Marshal(
+		&chat.DirectServicePlaintextPayload{
+			MessageContent:  content,
+			SourceContext:   m.sourceContext,
+			SourceNamespace: sourceNamespace,
+		},
+	)
+	if err != nil {
+		return MaterializedMessage{}, err
+	}
+	notificationType := NotificationTypeServiceMessage
+	category := int32(notificationdomain.CategoryChat)
+	groupKey := ""
+	if event := content.GetEvent(); event != nil && event.GetTaskState() != nil {
+		notificationType = NotificationTypeTaskEvent
+		category = int32(notificationdomain.CategoryTask)
+		if event.Subject != nil && event.Subject.Kind != "" &&
+			event.Subject.Id != "" && event.Subject.ExecutionId != "" {
+			groupKey = valueobject.HashBytes(valueobject.CanonicalTuple(
+				[]byte("publishing-notification-group"),
+				[]byte(sourceNamespace),
+				[]byte(event.Subject.Kind),
+				[]byte(event.Subject.Id),
+				[]byte(event.Subject.ExecutionId),
+			)).String()
+		}
+	}
+	return MaterializedMessage{
+		Payload:              payload,
+		FallbackText:         content.FallbackText,
+		NotificationType:     notificationType,
+		NotificationCategory: category,
+		NotificationGroupKey: groupKey,
+	}, nil
+}
 
 type publishingTestClock struct {
 	now time.Time
@@ -796,8 +916,7 @@ func (h *publishingHarness) publish(
 		context.Background(),
 		h.grant.ID,
 		secret,
-		request.CommandId,
-		request,
+		publishingTestRequest(t, request),
 	)
 }
 
@@ -832,9 +951,8 @@ func TestPublishReplayPreservesReceiptAcrossCredentialLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("accepted publish: %v", err)
 	}
-	if accepted.Response.GetOutcome() !=
-		chat.PublishMessageOutcome_PUBLISH_MESSAGE_OUTCOME_ACCEPTED {
-		t.Fatalf("accepted outcome = %v", accepted.Response.GetOutcome())
+	if accepted.Response.Outcome != OutcomeAccepted {
+		t.Fatalf("accepted outcome = %v", accepted.Response.Outcome)
 	}
 	if accepted.NotificationWake == nil {
 		t.Fatal("accepted publish did not return its durable notification wake")
@@ -846,21 +964,14 @@ func TestPublishReplayPreservesReceiptAcrossCredentialLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("replay publish: %v", err)
 	}
-	if replayed.Response.GetOutcome() !=
-		chat.PublishMessageOutcome_PUBLISH_MESSAGE_OUTCOME_REPLAYED {
-		t.Fatalf("replay outcome = %v", replayed.Response.GetOutcome())
+	if replayed.Response.Outcome != OutcomeReplayed {
+		t.Fatalf("replay outcome = %v", replayed.Response.Outcome)
 	}
-	if !proto.Equal(
-		accepted.Response,
-		&chat.PublishMessageResponse{
-			CommandId:           replayed.Response.CommandId,
-			MessageId:           replayed.Response.MessageId,
-			ConversationId:      replayed.Response.ConversationId,
-			ConversationEventId: replayed.Response.ConversationEventId,
-			EventSequence:       replayed.Response.EventSequence,
-			Outcome:             accepted.Response.Outcome,
-		},
-	) {
+	if accepted.Response.CommandID != replayed.Response.CommandID ||
+		accepted.Response.MessageID != replayed.Response.MessageID ||
+		accepted.Response.ConversationID != replayed.Response.ConversationID ||
+		accepted.Response.ConversationEventID != replayed.Response.ConversationEventID ||
+		accepted.Response.EventSequence != replayed.Response.EventSequence {
 		t.Fatalf(
 			"replay changed committed identity: accepted=%v replayed=%v",
 			accepted.Response,
@@ -885,8 +996,8 @@ func TestPublishReplayPreservesReceiptAcrossCredentialLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rotated credential replay: %v", err)
 	}
-	if rotatedReplay.Response.MessageId != accepted.Response.MessageId ||
-		rotatedReplay.Response.ConversationEventId != accepted.Response.ConversationEventId {
+	if rotatedReplay.Response.MessageID != accepted.Response.MessageID ||
+		rotatedReplay.Response.ConversationEventID != accepted.Response.ConversationEventID {
 		t.Fatalf("rotated replay changed identity: %v", rotatedReplay.Response)
 	}
 
@@ -917,14 +1028,14 @@ func TestPublishLostResponseAndConcurrentRetryConverge(t *testing.T) {
 	if err != nil {
 		t.Fatalf("retry after lost response: %v", err)
 	}
-	if replayed.Response.GetOutcome() !=
-		chat.PublishMessageOutcome_PUBLISH_MESSAGE_OUTCOME_REPLAYED {
-		t.Fatalf("retry outcome = %v", replayed.Response.GetOutcome())
+	if replayed.Response.Outcome != OutcomeReplayed {
+		t.Fatalf("retry outcome = %v", replayed.Response.Outcome)
 	}
 	assertPublishingEffects(t, harness.unitOfWork.snapshot(), 1, 1, 2)
 
 	concurrent := newPublishingHarness(t)
 	concurrentRequest := publishTextRequest("command-concurrent", "deploy complete")
+	normalizedConcurrentRequest := publishingTestRequest(t, concurrentRequest)
 	type outcome struct {
 		result Result
 		err    error
@@ -938,8 +1049,7 @@ func TestPublishLostResponseAndConcurrentRetryConverge(t *testing.T) {
 				context.Background(),
 				concurrent.grant.ID,
 				concurrent.secret,
-				concurrentRequest.CommandId,
-				concurrentRequest,
+				normalizedConcurrentRequest,
 			)
 			results <- outcome{result: result, err: err}
 		}()
@@ -952,16 +1062,15 @@ func TestPublishLostResponseAndConcurrentRetryConverge(t *testing.T) {
 			t.Fatalf("concurrent publish: %v", result.err)
 		}
 	}
-	outcomes := map[chat.PublishMessageOutcome]int{
+	outcomes := map[Outcome]int{
 		first.result.Response.Outcome:  1,
 		second.result.Response.Outcome: 1,
 	}
-	if outcomes[chat.PublishMessageOutcome_PUBLISH_MESSAGE_OUTCOME_ACCEPTED] != 1 ||
-		outcomes[chat.PublishMessageOutcome_PUBLISH_MESSAGE_OUTCOME_REPLAYED] != 1 {
+	if outcomes[OutcomeAccepted] != 1 || outcomes[OutcomeReplayed] != 1 {
 		t.Fatalf("concurrent outcomes = %v", outcomes)
 	}
-	if first.result.Response.MessageId != second.result.Response.MessageId ||
-		first.result.Response.ConversationEventId != second.result.Response.ConversationEventId {
+	if first.result.Response.MessageID != second.result.Response.MessageID ||
+		first.result.Response.ConversationEventID != second.result.Response.ConversationEventID {
 		t.Fatalf("concurrent identities diverged: %v / %v", first.result.Response, second.result.Response)
 	}
 	assertPublishingEffects(t, concurrent.unitOfWork.snapshot(), 1, 1, 2)
@@ -995,11 +1104,11 @@ func TestPublishRejectsChangedReplayAndPreservesOriginalDefaultTarget(t *testing
 	if err != nil {
 		t.Fatalf("replay after default change: %v", err)
 	}
-	if replayed.Response.ConversationId != accepted.Response.ConversationId ||
-		replayed.Response.ConversationId != string(harness.conversation) {
+	if replayed.Response.ConversationID != accepted.Response.ConversationID ||
+		replayed.Response.ConversationID != harness.conversation {
 		t.Fatalf(
 			"replay target = %q, want original %q",
-			replayed.Response.ConversationId,
+			replayed.Response.ConversationID,
 			harness.conversation,
 		)
 	}

@@ -1,13 +1,17 @@
-package publishing
+package conversation
 
 import (
 	"testing"
 
+	publishingapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/publishing"
+	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
+	notificationdomain "github.com/peers-labs/peers-touch/station/app/subserver/notification/domain"
 	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func textRequest(target string) *chat.PublishMessageRequest {
+func productionPublishingTextRequest(target string) *chat.PublishMessageRequest {
 	return &chat.PublishMessageRequest{
 		Target: target,
 		Content: &chat.MessageContent{
@@ -19,50 +23,133 @@ func textRequest(target string) *chat.PublishMessageRequest {
 	}
 }
 
-func TestNormalizePreservesOmittedTargetIdentityAndDerivesFallback(t *testing.T) {
-	omitted, err := Normalize(textRequest(""), "")
+func TestNormalizeProductionPublishingRequestPreservesOmittedTargetIdentityAndDerivesFallback(
+	t *testing.T,
+) {
+	omitted, err := normalizeProductionPublishingRequest(
+		productionPublishingTextRequest(""),
+		"",
+	)
 	if err != nil {
 		t.Fatalf("normalize omitted target: %v", err)
 	}
-	explicit, err := Normalize(textRequest("conversation-a"), "")
+	explicit, err := normalizeProductionPublishingRequest(
+		productionPublishingTextRequest("conversation-a"),
+		"",
+	)
 	if err != nil {
 		t.Fatalf("normalize explicit target: %v", err)
 	}
-	if omitted.Hash == explicit.Hash {
+	if valueobject.HashBytes(omitted.IdentityBytes) ==
+		valueobject.HashBytes(explicit.IdentityBytes) {
 		t.Fatal("omitted and explicit targets must have different request identities")
 	}
-	if omitted.Request.Content.GetFallbackText() != "build passed" {
-		t.Fatalf("fallback = %q", omitted.Request.Content.GetFallbackText())
+	message := omitted.Message.(*productionPublishingMessage)
+	if message.content.GetFallbackText() != "build passed" {
+		t.Fatalf("fallback = %q", message.content.GetFallbackText())
 	}
 }
 
-func TestNormalizeRejectsMismatchedIdempotencyKeys(t *testing.T) {
-	request := textRequest("")
+func TestNormalizeProductionPublishingRequestRejectsMismatchedIdempotencyKeys(
+	t *testing.T,
+) {
+	request := productionPublishingTextRequest("")
 	request.CommandId = "body-command"
-	if _, err := Normalize(request, "header-command"); err == nil {
+	if _, err := normalizeProductionPublishingRequest(
+		request,
+		"header-command",
+	); err == nil {
 		t.Fatal("mismatched command identities must be rejected")
 	}
 }
 
-func TestNormalizeClearsUntrustedAttachmentMetadata(t *testing.T) {
-	request := textRequest("")
+func TestNormalizeProductionPublishingRequestClearsUntrustedAttachmentMetadata(
+	t *testing.T,
+) {
+	request := productionPublishingTextRequest("")
 	request.Content.Attachments = []*chat.MessageAttachmentReference{{
 		ObjectId:  "object-a",
 		Filename:  "claimed.txt",
 		MediaType: "text/plain",
 		Size:      999,
 	}}
-	normalized, err := Normalize(request, "")
+	normalized, err := normalizeProductionPublishingRequest(request, "")
 	if err != nil {
 		t.Fatalf("normalize attachment: %v", err)
 	}
-	attachment := normalized.Request.Content.Attachments[0]
+	message := normalized.Message.(*productionPublishingMessage)
+	attachment := message.content.Attachments[0]
 	if attachment.Filename != "" || attachment.MediaType != "" || attachment.Size != 0 {
 		t.Fatalf("untrusted object metadata was retained: %+v", attachment)
 	}
 }
 
-func TestNormalizeStructuredEventDerivesFallbackAndPreservesTaskIdentity(t *testing.T) {
+func TestProductionPublishingMessageMaterializesAuthorizedAttachmentAndNotification(
+	t *testing.T,
+) {
+	request := &chat.PublishMessageRequest{
+		Content: &chat.MessageContent{
+			Primary: &chat.MessageContent_Event{
+				Event: &chat.StructuredEventContent{
+					EventType: "ci.task.state",
+					Title:     "Build completed",
+					Subject: &chat.EventSubject{
+						Kind:        "task",
+						Id:          "build-42",
+						ExecutionId: "run-7",
+					},
+					Detail: &chat.StructuredEventContent_TaskState{
+						TaskState: &chat.TaskStateUpdate{
+							Revision: 2,
+							State:    chat.ReportedTaskState_REPORTED_TASK_STATE_COMPLETED,
+						},
+					},
+				},
+			},
+			Attachments: []*chat.MessageAttachmentReference{{
+				ObjectId:  "object-report",
+				Filename:  "untrusted.txt",
+				MediaType: "text/plain",
+				Size:      1,
+			}},
+		},
+	}
+	normalized, err := normalizeProductionPublishingRequest(request, "")
+	if err != nil {
+		t.Fatalf("normalize publication: %v", err)
+	}
+	message, err := normalized.Message.Materialize(
+		"ci.build",
+		[]publishingapp.Attachment{{
+			ObjectID:  "object-report",
+			Filename:  "report.pdf",
+			MediaType: "application/pdf",
+			Size:      2048,
+		}},
+	)
+	if err != nil {
+		t.Fatalf("materialize publication: %v", err)
+	}
+	var payload chat.DirectServicePlaintextPayload
+	if err := proto.Unmarshal(message.Payload, &payload); err != nil {
+		t.Fatalf("decode service plaintext: %v", err)
+	}
+	attachment := payload.MessageContent.Attachments[0]
+	if attachment.Filename != "report.pdf" ||
+		attachment.MediaType != "application/pdf" ||
+		attachment.Size != 2048 {
+		t.Fatalf("materialized attachment = %+v", attachment)
+	}
+	if message.NotificationType != publishingapp.NotificationTypeTaskEvent ||
+		message.NotificationCategory != notificationdomain.CategoryTask ||
+		message.NotificationGroupKey == "" {
+		t.Fatalf("materialized notification = %+v", message)
+	}
+}
+
+func TestNormalizeProductionPublishingRequestStructuredEvent(
+	t *testing.T,
+) {
 	request := &chat.PublishMessageRequest{
 		Content: &chat.MessageContent{
 			Primary: &chat.MessageContent_Event{
@@ -92,13 +179,14 @@ func TestNormalizeStructuredEventDerivesFallbackAndPreservesTaskIdentity(t *test
 		},
 	}
 
-	normalized, err := Normalize(request, "")
+	normalized, err := normalizeProductionPublishingRequest(request, "")
 	if err != nil {
 		t.Fatalf("normalize event: %v", err)
 	}
-	event := normalized.Request.Content.GetEvent()
-	if normalized.Request.Content.FallbackText != "Build completed\nAll checks passed" {
-		t.Fatalf("fallback = %q", normalized.Request.Content.FallbackText)
+	message := normalized.Message.(*productionPublishingMessage)
+	event := message.content.GetEvent()
+	if message.content.FallbackText != "Build completed\nAll checks passed" {
+		t.Fatalf("fallback = %q", message.content.FallbackText)
 	}
 	if event.Subject.Kind != "task" || event.Subject.Id != "build-42" ||
 		event.Subject.ExecutionId != "run-7" ||
@@ -107,7 +195,7 @@ func TestNormalizeStructuredEventDerivesFallbackAndPreservesTaskIdentity(t *test
 	}
 }
 
-func TestNormalizeCardDerivesFallbackAndAcceptsAbsoluteHTTPAction(t *testing.T) {
+func TestNormalizeProductionPublishingRequestCard(t *testing.T) {
 	request := &chat.PublishMessageRequest{
 		Content: &chat.MessageContent{
 			Primary: &chat.MessageContent_Card{
@@ -122,16 +210,19 @@ func TestNormalizeCardDerivesFallbackAndAcceptsAbsoluteHTTPAction(t *testing.T) 
 			},
 		},
 	}
-	normalized, err := Normalize(request, "")
+	normalized, err := normalizeProductionPublishingRequest(request, "")
 	if err != nil {
 		t.Fatalf("normalize card: %v", err)
 	}
-	if normalized.Request.Content.FallbackText != "Review ready\nChange 123" {
-		t.Fatalf("fallback = %q", normalized.Request.Content.FallbackText)
+	message := normalized.Message.(*productionPublishingMessage)
+	if message.content.FallbackText != "Review ready\nChange 123" {
+		t.Fatalf("fallback = %q", message.content.FallbackText)
 	}
 }
 
-func TestNormalizeRejectsMalformedContentWithoutMutatingCaller(t *testing.T) {
+func TestNormalizeProductionPublishingRequestRejectsMalformedContentWithoutMutation(
+	t *testing.T,
+) {
 	tests := []struct {
 		name    string
 		request *chat.PublishMessageRequest
@@ -205,20 +296,23 @@ func TestNormalizeRejectsMalformedContentWithoutMutatingCaller(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if _, err := Normalize(test.request, ""); err == nil {
+			if _, err := normalizeProductionPublishingRequest(
+				test.request,
+				"",
+			); err == nil {
 				t.Fatal("malformed content was accepted")
 			}
 		})
 	}
 
-	request := textRequest("")
+	request := productionPublishingTextRequest("")
 	request.Content.Attachments = []*chat.MessageAttachmentReference{{
 		ObjectId:  "object-a",
 		Filename:  "caller.txt",
 		MediaType: "text/plain",
 		Size:      99,
 	}}
-	if _, err := Normalize(request, ""); err != nil {
+	if _, err := normalizeProductionPublishingRequest(request, ""); err != nil {
 		t.Fatalf("normalize valid attachment: %v", err)
 	}
 	original := request.Content.Attachments[0]
@@ -229,10 +323,10 @@ func TestNormalizeRejectsMalformedContentWithoutMutatingCaller(t *testing.T) {
 	}
 }
 
-func TestNormalizeRejectsUnknownProtoFields(t *testing.T) {
-	request := textRequest("")
+func TestNormalizeProductionPublishingRequestRejectsUnknownProtoFields(t *testing.T) {
+	request := productionPublishingTextRequest("")
 	request.ProtoReflect().SetUnknown([]byte{0xA0, 0x06, 0x01})
-	if _, err := Normalize(request, ""); err == nil {
+	if _, err := normalizeProductionPublishingRequest(request, ""); err == nil {
 		t.Fatal("request with unknown fields was accepted")
 	}
 }

@@ -162,6 +162,12 @@ resetting human databases. Old service payloads are explicitly unsupported
 after the coordinated source/client cutover; removing source does not authorize
 runtime data deletion.
 
+The Conversation production adapter exclusively owns generated Chat protobuf
+parsing, normalization, deterministic identity bytes, and service-plaintext
+encoding. The publishing application service accepts only a domain-neutral
+request, an attachment materialization port, and domain-neutral committed
+results. Application code must not import generated transport models.
+
 The dependency order is common contract → publishing and all consumers →
 semantic aggregation → removal and documentation → exact-source verification.
 Each producer/consumer replacement is completed before delivery.

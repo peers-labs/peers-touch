@@ -7,9 +7,11 @@ import (
 	"testing"
 	"time"
 
+	publishingapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/publishing"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/entity"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
+	chat "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
 )
 
 type publishingStreamingRequest struct {
@@ -83,5 +85,47 @@ func TestProductionPublishingGrantProjectsLifecycleState(t *testing.T) {
 	if projected.CreatedAt.AsTime() != createdAt ||
 		projected.ExpiresAt.AsTime() != expiresAt {
 		t.Fatalf("projected timestamps = %+v", projected)
+	}
+}
+
+func TestProductionPublishingResponseMapsDomainOutcomeAndFailsClosed(t *testing.T) {
+	result := &publishingapp.Response{
+		CommandID:           "command-1",
+		MessageID:           "message-1",
+		ConversationID:      "conversation-1",
+		ConversationEventID: "event-1",
+		EventSequence:       7,
+		Outcome:             publishingapp.OutcomeAccepted,
+	}
+	response, err := productionPublishingResponse(result)
+	if err != nil {
+		t.Fatalf("map accepted response: %v", err)
+	}
+	if response.Outcome !=
+		chat.PublishMessageOutcome_PUBLISH_MESSAGE_OUTCOME_ACCEPTED ||
+		response.CommandId != result.CommandID ||
+		response.MessageId != string(result.MessageID) ||
+		response.ConversationId != string(result.ConversationID) ||
+		response.ConversationEventId != string(result.ConversationEventID) ||
+		response.EventSequence != int64(result.EventSequence) {
+		t.Fatalf("mapped response = %+v", response)
+	}
+
+	result.Outcome = publishingapp.OutcomeReplayed
+	response, err = productionPublishingResponse(result)
+	if err != nil {
+		t.Fatalf("map replayed response: %v", err)
+	}
+	if response.Outcome !=
+		chat.PublishMessageOutcome_PUBLISH_MESSAGE_OUTCOME_REPLAYED {
+		t.Fatalf("replayed outcome = %v", response.Outcome)
+	}
+
+	if _, err := productionPublishingResponse(nil); err == nil {
+		t.Fatal("nil committed result must fail closed")
+	}
+	result.Outcome = publishingapp.Outcome(255)
+	if _, err := productionPublishingResponse(result); err == nil {
+		t.Fatal("unknown publication outcome must fail closed")
 	}
 }
