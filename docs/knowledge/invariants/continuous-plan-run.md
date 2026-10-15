@@ -30,9 +30,10 @@ compaction do not become repeated confirmation boundaries while authorized
 ready work remains.
 
 Agent-led review fixes source-backed findings and reruns affected checks.
-Escalation is limited to scope changes, separately governed or destructive
-operations, missing external permission/resources, unresolved semantic choices,
-or an empty ready frontier.
+Reviewed non-stable Profile operations and coherent local commits continue
+without another prompt. Escalation is limited to scope changes, stable
+mutation, push/PR/merge/release/history operations, missing external
+permission/resources, unresolved semantic choices, or an empty ready frontier.
 
 An explicit user grant remains valid for its exact operation and scope. A Plan,
 task record, Hook event, chat identity, or prior unrelated command never

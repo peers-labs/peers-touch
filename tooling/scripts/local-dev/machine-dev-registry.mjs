@@ -133,7 +133,7 @@ function requiredIdentifier(value, field) {
 
 export function resetPolicyForProfile(profile) {
   const profileId = requiredIdentifier(profile, 'profile');
-  return profileId.toLowerCase().includes('stable')
+  return profileId.toLowerCase().endsWith('stable')
     ? 'stable-protected'
     : 'agent-resettable';
 }
@@ -420,12 +420,6 @@ function resolveDeployDefinition(envRepo, deployEnvironment) {
   return { file, values: parseEnvFile(file) };
 }
 
-function environmentAuthorizationHelperPath() {
-  return fileURLToPath(
-    new URL('./environment-creation-authorization.py', import.meta.url),
-  );
-}
-
 export function resolveProfileDefinition(options) {
   const workspaceRoot = captureWorkspace(options.workspaceRoot ?? repoRoot)
     .canonicalRoot;
@@ -456,29 +450,7 @@ export function resolveProfileDefinition(options) {
         ],
       });
     }
-    try {
-      execFileSync(
-        options.python ?? 'python3',
-        [
-          environmentAuthorizationHelperPath(),
-          'verify',
-          '--workspace-root',
-          workspaceRoot,
-          '--profile',
-          profile,
-          '--profile-file',
-          profileFile,
-        ],
-        { stdio: ['ignore', 'pipe', 'pipe'] },
-      );
-    } catch (error) {
-      fail(
-        'ENVIRONMENT_CREATION_AUTHORIZATION_INVALID',
-        'machine-local profile lacks a valid consumed authorization receipt',
-        { profile, cause: error?.stderr?.toString().trim() || String(error) },
-      );
-    }
-    sourceState = 'authorized-local';
+    sourceState = 'local';
   }
 
   const values = parseEnvFile(profileFile);

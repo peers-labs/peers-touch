@@ -165,7 +165,8 @@
         "DWF-D25",
         "DWF-D39",
         "DWF-D40",
-        "DWF-D42"
+        "DWF-D42",
+        "DWF-D43"
       ],
       "governedPaths": [
         "docs/architecture/engineering/development-workflow",
@@ -325,12 +326,11 @@
         "LDCP-D06",
         "LDCP-D07",
         "LDCP-D08",
-        "LDCP-D09",
         "LDCP-D13",
-        "LDCP-D15",
         "LDCP-D16",
         "LDCP-D17",
-        "LDCP-D19"
+        "LDCP-D19",
+        "LDCP-D21"
       ],
       "governedPaths": [
         "docs/architecture/engineering/local-dev",
@@ -340,7 +340,6 @@
         "tooling/scripts/local-dev/config.sh",
         "tooling/scripts/local-dev/desktop-dev.sh",
         "tooling/scripts/local-dev/env.sh",
-        "tooling/scripts/local-dev/environment-creation-authorization.py",
         "tooling/scripts/local-dev/git-workspace.mjs",
         "tooling/scripts/local-dev/machine-dev-lease.py",
         "tooling/scripts/local-dev/machine-dev-registry.mjs",

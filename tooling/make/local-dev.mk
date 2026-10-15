@@ -2,7 +2,7 @@
 # Profile-based, worktree-isolated development environment.
 
 .PHONY: worktree-create worktree-creation-status env-register env-update env-unregister env-check env-status-all dev-observe workflow-snapshot workflow-doctor \
-        profile profile-authorize profile-init profiles config \
+        profile profile-init profiles config \
         dev-start dev-update dev-status dev-status-all dev-close \
         completion-review-prepare completion-review-assess \
         plan-validate plan-inspect plan-task \
@@ -112,12 +112,8 @@ profile:
 		$(if $(SLOT),--slot "$(SLOT)",) \
 		--owner "$(ENV_OWNER_ARG)"
 
-profile-authorize:
-	@if [ -z "$(PROFILE_ARG)" ]; then echo "Usage: make profile-authorize <name> [SLOT=0]  or  make profile-authorize PROFILE=<name> [SLOT=0]"; exit 1; fi
-	@SLOT=$(SLOT_ARG) /bin/bash $(LOCAL_DEV_SCRIPTS)/profile.sh authorize $(PROFILE_ARG)
-
 profile-init:
-	@if [ -z "$(PROFILE_ARG)" ]; then echo "Usage: make profile-init <name> [SLOT=0]  or  make profile-init PROFILE=<name> [SLOT=0] (requires profile-authorize)"; exit 1; fi
+	@if [ -z "$(PROFILE_ARG)" ]; then echo "Usage: make profile-init <name> [SLOT=0]  or  make profile-init PROFILE=<name> [SLOT=0]"; exit 1; fi
 	@SLOT=$(SLOT_ARG) /bin/bash $(LOCAL_DEV_SCRIPTS)/profile.sh init $(PROFILE_ARG)
 
 profiles:
@@ -259,7 +255,7 @@ restart:
 	@$(DEVCTL) restart all
 
 .DEFAULT:
-	@if [[ "$(firstword $(MAKECMDGOALS))" == "profile" || "$(firstword $(MAKECMDGOALS))" == "profile-authorize" || "$(firstword $(MAKECMDGOALS))" == "profile-init" || "$(firstword $(MAKECMDGOALS))" == "run-prototype" ]]; then \
+	@if [[ "$(firstword $(MAKECMDGOALS))" == "profile" || "$(firstword $(MAKECMDGOALS))" == "profile-init" || "$(firstword $(MAKECMDGOALS))" == "run-prototype" ]]; then \
 		:; \
 	else \
 		echo "make: *** No rule to make target '$@'."; \

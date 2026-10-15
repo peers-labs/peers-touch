@@ -1,8 +1,8 @@
 # Local Dev Control Plane - Architecture Design
 
 > **Status**: active
-> **Version**: v1.5
-> **Created**: 2026-09-13 | **Updated**: 2026-10-13
+> **Version**: v1.6
+> **Created**: 2026-09-13 | **Updated**: 2026-10-15
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/`
 
@@ -27,12 +27,12 @@
 8. **Repository cleanliness**: transient debug sessions, logs, traces,
    screenshots, DOM dumps, and ad-hoc reports are machine development state,
    not repository-root content.
-9. **Human-authorized environment lifecycle**: an AI agent may select an
-   existing approved environment, but may not create, copy, derive, or register
-   a profile or deploy environment without explicit human developer approval
-   for the exact name and target.
+9. **Profile-authorized environment lifecycle**: a reviewed Profile authorizes
+   routine selection, registration, provisioning, deploy, restart, and reset
+   within its declared capabilities. A worktree-local Profile may be created
+   directly; remote topology still comes from tracked source.
 10. **Profile-ID reset policy**: the canonical Profile ID is the only reset
-    policy source. A case-insensitive `stable` substring protects the Profile
+    policy source. A case-insensitive terminal `stable` suffix protects the Profile
     from autonomous reset; every other reviewed Profile is Agent-resettable.
     The policy never replaces capabilities, exact reset scope,
     leases, topology validation, or source identity.
@@ -58,7 +58,6 @@ Sibling env repository
 Machine Dev Control Plane
   ~/.peers-touch/dev/
   - workspace registry
-  - human environment-creation authorizations
   - local slot allocation
   - Station capability leases
   - observed process/port projection
@@ -94,8 +93,8 @@ not remain as a symlink, fallback, or second read owner.
 | State | Owner | Canonical source |
 |-------|-------|------------------|
 | Deployable Station/Relay topology | Environment repository | `env/peers-touch/<profile>/` |
-| Profile reset policy | Canonical profile identity | Case-insensitive `stable` substring in the verified directory/`PT_DEV_PROFILE` ID |
-| Machine-local environment creation approval | Human developer | `~/.peers-touch/dev/authorizations/environment-creation/` |
+| Profile reset policy | Canonical profile identity | Case-insensitive terminal `stable` suffix in the verified directory/`PT_DEV_PROFILE` ID |
+| Machine-local Profile creation | Current worktree | `make profile-init PROFILE=<name> SLOT=<n>` |
 | Worktree registration identity | Canonical filesystem path + registered branch | `workspaceId = sha256(realpath(root))[0:16]` |
 | Current worktree source identity | Git | Current branch and HEAD captured at operation time |
 | Worktree profile selection | Machine Dev Control Plane | `bindings[workspaceId].profile` |
@@ -115,11 +114,11 @@ the authority for machine-local slot allocation.
 Owns named, reviewable environment definitions. It must not record which local
 worktree currently uses an environment.
 
-Missing topology is a fail-closed boundary. It does not authorize an agent to
-create `env/peers-touch/<name>/`, a local-only profile cache, or a deploy
-environment. Creation requires explicit human developer approval naming the
-environment and target; task scope, an execution plan, an existing host, or an
-Acceptance requirement is not implied approval.
+Missing remote topology is a fail-closed boundary. It does not authorize an
+agent to invent a host, credential, or untracked deploy definition. A new
+tracked remote Profile is an ordinary source change only when the environment
+repository is explicitly in task scope. A worktree-local development Profile
+may be created directly with `make profile-init`.
 
 Remote deployment resolves exactly one Git-tracked, clean deploy definition
 directly from this repository. A `.local/deploy/envs/` copy is never topology
@@ -130,8 +129,8 @@ Reset policy is derived after the selected directory name and
 
 | Derived policy | Canonical Profile ID | Agent reset authority |
 |---|---|---|
-| `stable-protected` | contains `stable`, case-insensitive | autonomous `station.reset` is denied |
-| `agent-resettable` | does not contain `stable` | Agent may choose exact-scope reset without human involvement |
+| `stable-protected` | ends in `stable`, case-insensitive | autonomous `station.reset` is denied |
+| `agent-resettable` | does not end in `stable` | Agent may choose exact-scope reset without human involvement |
 
 No profile field stores or overrides this policy. Former control-mode metadata
 has no reader. Renaming a Profile across the `stable` boundary is therefore a
@@ -144,16 +143,15 @@ reset lease. These are scope, topology, identity, and concurrency guards; none
 is a human-permission prompt. A stable Profile fails with
 `PROFILE_RESET_PROTECTED` before lease acquisition.
 
-Existing-profile deploy authorization remains resolved from exact user grants
-and the accepted Plan's `authorization.runtime.deployProfiles`. Mere Plan
-existence grants nothing, and Plan fields never authorize profile or
-deploy-environment creation.
+An existing reviewed Profile and the current workspace binding authorize deploy
+and restart within their capabilities. Non-stable reset is likewise
+Profile-authorized. Every operation still resolves the exact target, current
+source, clean remote topology when applicable, and OS-held lease. Stable reset
+fails before lease acquisition.
 
-Human developers may create a short-lived, exact machine authorization for one
-`workspaceId + profile + mode + slot` tuple. `profile-init` consumes it once
-and writes a digest-bound receipt. Agents may consume a pre-existing grant when
-the requested tuple matches, but may not create the grant. A machine-local
-compose profile is selectable only while its bytes match that consumed receipt.
+`profile-init` creates one worktree-local compose Profile and never overwrites
+an existing definition. It creates development topology, not another worktree
+and not delivery permission.
 
 ### 4.2 Machine Registry
 
@@ -312,14 +310,14 @@ Allowed:
 
 - Multiple worktrees share one remote Station with `station.connect`.
 - One worktree holds `station.deploy` while other clients remain connected,
-  provided the deployment policy explicitly allows it.
-- An exact user grant or accepted Plan `deployProfiles` entry authorizes direct
-  deploy operation of the matching existing reviewed remote profile.
+  provided the Profile capability and lease checks allow it.
+- A reviewed non-stable Profile authorizes direct deploy, restart, runtime
+  provisioning, and exact-scope reset without another prompt.
 - An Agent may add `station.reset` to the current binding and request an exact
   reset scope for any non-stable reviewed Profile without human confirmation.
 - Each worktree has its own profile and slot binding.
-- A human-authorized machine-local compose profile has one consumed,
-  digest-bound authorization receipt for its exact workspace and slot.
+- A worktree-local compose profile is created only by canonical
+  `make profile-init` and remains scoped to that worktree.
 - Acceptance acquires stronger temporary leases without changing the user's
   durable worktree binding.
 
@@ -330,8 +328,8 @@ Forbidden:
 - A profile's static `PT_DEV_SLOT` silently overrides the machine allocation.
 - One worktree's `.local/dev/active` acts as global truth.
 - Runtime commands read untracked environment definitions as approved topology.
-- An AI agent creates or registers a profile or deploy environment without
-  explicit human developer approval for the exact environment and target.
+- An Agent invents a remote host, credential, or untracked deploy definition
+  outside the canonical Profile pipeline.
 - A stored field, alias, Station mode, worktree name, or legacy cache overrides
   the canonical Profile ID reset policy.
 - An existing non-stable Profile reset is converted into a user authorization
@@ -343,8 +341,6 @@ Forbidden:
   workflow, or runtime state.
 - A workflow inspection command starts a server, opens a browser, or reserves a
   fixed port.
-- An Agent runs `profile-authorize`, creates an authorization file, reuses a
-  consumed grant, or edits an authorized local profile after receipt creation.
 - An arbitrary `PT_DEV_PROFILE_FILE` bypasses reviewed topology; only a
   contained Acceptance runtime-manifest profile is allowed.
 - Machine registry stores secrets or product data.
@@ -362,8 +358,6 @@ Forbidden:
 | Stable Profile requests `station.reset` | `PROFILE_RESET_PROTECTED` |
 | Workspace binding lacks a requested capability | `WORKSPACE_CAPABILITY_MISSING` |
 | Reset command scope differs from the requested resource | `RESET_SCOPE_MISMATCH` |
-| Environment creation lacks explicit human approval | `ENVIRONMENT_CREATION_UNAUTHORIZED` |
-| Authorization is expired, mismatched, reused, or digest-invalid | `ENVIRONMENT_CREATION_AUTHORIZATION_INVALID` |
 | Slot already live | `LOCAL_SLOT_CONFLICT` |
 | Station capability held | `STATION_CAPABILITY_CONFLICT` |
 | Deploy host/URL mismatch | `DEPLOY_TARGET_MISMATCH` |
@@ -385,7 +379,8 @@ The target implementation must prove:
 - `make env-status-all` reports declared binding and observed runtime separately.
 - Every reviewed profile derives exactly one reset policy from its canonical
   ID and the resolved status projection exposes it.
-- Mixed-case `stable` IDs reject `station.reset`; IDs without `stable` admit it
+- Mixed-case terminal `stable` suffixes reject `station.reset`; IDs with only a
+  non-terminal `stable` token admit it
   only when binding capability, exact scope, current source, and lease all
   match.
 - Workflow Snapshot joins every worktree's active requirements/Journeys and

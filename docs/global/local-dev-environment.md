@@ -90,8 +90,8 @@ A deployable profile is a `.env` source at
 `../env/peers-touch/<name>/profile.env.example` that configures one complete
 development topology: which Station to use, which ports, and which mode.
 `.local/dev/profiles/<name>.env` is an imported cache, not a competing source
-for a same-named deployable profile. The only local-authority exception is a
-human-authorized compose profile whose bytes match its consumed machine receipt.
+for a same-named deployable profile. A worktree-local compose Profile may be
+created with `make profile-init` and never authorizes remote deployment.
 
 Each Git worktree selects its profile through the machine registry binding keyed
 by canonical `workspaceId`. `make profile PROFILE=<name>` creates a minimum
@@ -116,37 +116,28 @@ Local slot and Desktop/Mobile ports come from the machine binding. A profile's
 cannot override the allocation. See
 [`local-dev-control-plane/design.md`](../architecture/engineering/local-dev/design.md).
 
-### 2.2 Environment Creation Authorization
+### 2.2 Environment Creation And Operation
 
-AI agents may inspect and activate an existing approved profile, but MUST NOT
-create, copy, derive, or register a profile or deploy environment without
-explicit human developer approval for the exact environment name and target.
-This includes `env/peers-touch/<name>/`, `.local/dev/profiles/`,
-`.local/deploy/envs/`, `make profile-authorize`, and `make profile-init`.
+Existing reviewed Profiles are direct development-operation authority. Agents
+may select and register them, create their runtime instances, deploy, restart,
+and reset non-stable Profiles as needed by the task without another approval
+prompt. The concrete operation still checks binding capability, exact target or
+reset scope, current source identity, topology, and OS-held lease.
 
-A missing profile or deploy environment fails closed and must be reported. A
-task, mere Plan existence, available host, old profile pointer, or Acceptance
-need does not imply creation permission. Only an exact user grant or a formal
-Plan field explicitly dedicated to environment creation could authorize it;
-the current `ExecutionAuthorization` schema has no such field. Untracked
-env-repository definitions and local definitions without a matching consumed
-authorization receipt cannot authorize profile selection, deployment, restart,
-or reset.
-
-Human local-profile creation is a two-step, single-use flow:
+A local compose Profile can be created directly:
 
 ```bash
-make profile-authorize PROFILE=<name> SLOT=<n>
 make profile-init PROFILE=<name> SLOT=<n>
 ```
 
-The first command requires an interactive exact-tuple confirmation and writes a
-30-minute pending grant under
-`~/.peers-touch/dev/authorizations/environment-creation/`. The second consumes
-that grant, creates one compose profile, and records its digest. It never
-overwrites an existing profile. Agents may consume an already approved grant
-for the exact requested tuple but must not run the authorization command or
-create its files.
+This creates one non-overwriting Profile under the current worktree. It does
+not create a worktree or grant remote delivery permission.
+
+Remote deployment continues to require exactly one Git-tracked, clean Profile
+and deploy definition from the sibling `env` repository. New remote topology is
+an ordinary source change only when that repository is explicitly in task
+scope. Agents must not invent hosts, credentials, or dirty local deploy
+fallbacks.
 
 `PT_DEV_PROFILE_FILE` is not a general override. It is accepted only with
 `PT_DEV_PROFILE_FILE_AUTHORITY=acceptance-runtime-manifest`, and the owned
@@ -159,7 +150,7 @@ env-repository topology or an authorized local compose profile.
 The selected directory name and `PT_DEV_PROFILE` value must match exactly. The
 verified canonical ID then determines reset policy:
 
-- case-insensitive ID containing `stable`: `stable-protected`, so autonomous
+- case-insensitive ID ending in `stable`: `stable-protected`, so autonomous
   `station.reset` is rejected;
 - every other reviewed ID: `agent-resettable`, so the Agent may choose reset
   without human involvement.
@@ -170,10 +161,9 @@ capability, a live declaration for the same Profile and exact exclusive scope,
 the same command scope, matching tracked-clean remote topology and source
 identity, and the OS-held reset lease.
 
-Deploy/restart of an existing reviewed remote Profile continues to consume an
-exact user grant or the accepted Plan's `authorization.runtime.deployProfiles`
-entry. Neither deploy admission nor reset policy authorizes profile or
-deploy-environment creation.
+Deploy/restart of an existing reviewed non-stable remote Profile is authorized
+by the Profile and workspace capability binding. It needs no separate Plan or
+chat grant. Stable mutations remain separately protected.
 
 ### 2.4 Profile Fields
 
@@ -492,22 +482,23 @@ SELECT id, conversation_id, created_at FROM device_queue_lanes ORDER BY created_
    slots may not.
 4. **Health check is the contract** — `make station` is not done until health passes.
 5. **Current branch deploys** — remote mode pushes HEAD, not necessarily main.
-6. **Environment repository is authoritative** — do not repurpose a canonical
-   profile by editing only its `.local` cache. If no approved profile fits,
-   stop and request explicit human authorization before creating a distinctly
-   named environment profile or deploy environment.
+6. **Environment repository is authoritative for remote topology** — do not
+   repurpose a canonical Profile by editing only its `.local` cache. New remote
+   topology must be a tracked source change in the explicitly selected
+   environment-repository worktree.
 7. **No implicit global fallback** — an unregistered or stale worktree fails
    closed; do not infer profile or slot from another worktree, a legacy pointer,
    profile metadata, basename, or branch.
-8. **Local creation consumes authorization** — `profile-init` requires one
-   unexpired exact-tuple machine grant and produces a digest-bound receipt.
+8. **Local creation is direct** — `profile-init` creates one non-overwriting
+   worktree-local development Profile.
 9. **Operation admission, then lease** — each runtime operation validates the
    authoritative binding, current source, target, Profile policy, exact scope,
    and operation-specific authorization before acquiring its OS-held lease.
 10. **Station deploy lease covers the closure** — `make station` holds
     `station.deploy` across deploy, restart, and health readback, and releases
     on success, failure, signal, or timeout.
-11. **Apply Profile-ID reset policy once** — non-stable Profiles may be reset by
+11. **Apply Profile-ID reset policy once** — Profiles whose ID does not end in
+    `stable`, case-insensitively, may be reset by
     the Agent without human confirmation; stable Profiles fail before lease
     acquisition. Runtime scope and ownership guards still apply.
 12. **Explicit unregister** — normal task completion retains the registration.

@@ -23,7 +23,7 @@ detected: 2026-09-21
 After the Profile directory name and `PT_DEV_PROFILE` value match exactly,
 reset policy is derived only from the canonical ID:
 
-- case-insensitive ID containing `stable` is `stable-protected`;
+- case-insensitive ID ending in `stable` is `stable-protected`;
 - every other reviewed ID is `agent-resettable`.
 
 No environment field, registry field, Plan field, Station mode, worktree name,
@@ -48,7 +48,8 @@ continuous Plan execution without adding a real safety boundary.
 
 - `rg -n 'AGENT_CONTROL|agentControl' AGENTS.md docs tooling` returns
   no reset-policy metadata readers.
-- Mixed-case `stable` Profile fixtures reject a reset capability.
+- Mixed-case `stable` suffix fixtures reject a reset capability, while a
+  non-terminal `stable` token remains Agent-resettable.
 - Non-stable Profile fixtures accept reset only with matching workspace
   binding, exact scope, current Git identity, and lease.
 - Machine Dev status projects `resetPolicy`, never a stored control mode.

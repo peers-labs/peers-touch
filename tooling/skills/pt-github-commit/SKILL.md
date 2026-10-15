@@ -15,6 +15,14 @@ next: "pt-github-pr"
 Generate and execute standardized git commits following Conventional Commits
 format with Peers-Touch project conventions and AI traceability.
 
+## Commit Authority
+
+A local commit is a normal Development Workflow checkpoint. The Agent may
+invoke this Skill without another user prompt when one coherent scoped change
+has passed its required checks and only task-owned files are staged. This does
+not authorize amend, rebase, history rewrite, push, PR, merge, release, or
+worktree operations.
+
 ## Commit Format
 
 ```

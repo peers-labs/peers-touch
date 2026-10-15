@@ -1,8 +1,8 @@
 # Local Dev Control Plane - Integration
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-09-13 | **Updated**: 2026-09-30
+> **Version**: v1.4
+> **Created**: 2026-09-13 | **Updated**: 2026-10-15
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/`
 
@@ -13,7 +13,7 @@
 | Existing path | Current role | Target role |
 |---------------|--------------|-------------|
 | `env/peers-touch/<profile>/` | Profile and deploy topology | Remains canonical topology owner |
-| `<worktree>/.local/dev/profiles/` | Imported cache or authorized local compose profile | Cache is not authority; local profile requires a digest-bound receipt |
+| `<worktree>/.local/dev/profiles/` | Imported cache or local compose profile | Worktree-local Profile created by canonical `profile-init`; never remote deploy authority |
 | `<worktree>/.local/dev/active/` | Legacy worktree profile pointer | No runtime reader; replaced by machine registry binding |
 | `<worktree>/.local/dev/pids|logs|data/` | Legacy worktree/profile runtime state | New runtime state resolves under the workspace-scoped global dev root |
 | `<worktree>/.local/deploy/envs/` | Legacy imported deploy cache | Never deployment authority; deploy resolves a unique tracked-clean env-repository definition |
@@ -33,11 +33,6 @@ permanent dual-read precedence between global registry and `.local/dev/active`.
 ├── README.md
 ├── registry.json
 ├── registry.lock
-├── authorizations/
-│   └── environment-creation/
-│       ├── pending/
-│       ├── claims/
-│       └── receipts/
 ├── acceptance/
 │   └── <workspaceId>/<gateId>/<runId>/
 ├── leases/
@@ -76,8 +71,7 @@ Target command behavior:
 | `make plan-validate PLAN=<path>` | Validate one explicit frozen Plan Version |
 | `make plan-inspect PLAN=<path>` | Inspect one explicit Plan without machine occupancy |
 | `make plan-task PLAN=<path> TASK=<id>` | Read one explicit Plan task |
-| `make profile-authorize <name> SLOT=<n>` | Human-only interactive grant for one exact local compose profile |
-| `make profile-init <name> SLOT=<n>` | Consume the exact pending grant and persist a digest-bound receipt |
+| `make profile-init <name> SLOT=<n>` | Create one non-overwriting worktree-local compose Profile |
 | `make profile <name>` | Call canonical `env-update` behavior for only the current `workspaceId` binding |
 | `make config` | Resolve current binding + env definition + allocation |
 | `make status` | Show current worktree declared and observed state |
@@ -133,17 +127,13 @@ promotes it. This permits visibility without silently changing active runtimes.
 
 - Preserve each worktree's independent profile choice.
 - Derive reset policy only from the verified canonical Profile ID. A
-  case-insensitive `stable` substring is protected; all other reviewed Profile
+  case-insensitive terminal `stable` suffix is protected; all other reviewed Profile
   IDs are Agent-resettable. Do not read a control-mode field or legacy cache.
 - Do not select a default profile for unbound worktrees.
 - Do not assign slot 0 as a fallback.
-- Do not create, copy, derive, or register an environment-repository profile,
-  deploy environment, or local-only profile cache without explicit human
-  developer approval for the exact environment name and target. A missing
-  environment blocks execution and must be reported.
-- Agents must not run `make profile-authorize` or create authorization files.
-  Pending authorizations are short-lived and single-use; authorized local
-  profiles must continue to match their consumed receipt digest.
+- Agents may create a worktree-local Profile with `make profile-init`; remote
+  topology must remain tracked source in the explicitly scoped environment
+  repository.
 - `PT_DEV_PROFILE_FILE` is reserved for a profile directly contained by a
   declared Acceptance runtime profile root with
   `acceptance-runtime-manifest` authority.
@@ -192,11 +182,10 @@ Required negative fixtures:
 - Live process whose PID file points to another executable.
 - Missing registry, malformed registry, and unsupported schema.
 - Dirty/untracked environment repository definition.
-- Missing profile with no explicit human authorization to create it.
+- Missing or ambiguous remote target or credential.
 - Mixed-case `stable` Profile requesting `station.reset`.
 - Non-stable reset with missing binding capability, exact scope, current
   source identity, or OS lease.
-- Expired, mismatched, reused, or digest-invalid environment authorization.
 
 Focused implementation verification:
 

@@ -109,19 +109,18 @@ interface ProfileDefinition {
   relayUrl?: string;
   relayDeployEnvironment?: string;
   sourceCommit?: string;
-  authorizationReceipt?: string;
   sourceState:
     | 'tracked'
     | 'tracked-clean'
     | 'tracked-dirty'
     | 'untracked'
-    | 'authorized-local';
+    | 'local';
 }
 ```
 
 `resetPolicy` is not stored in the profile. The reader first requires the
 profile directory name and `PT_DEV_PROFILE` to match exactly, then applies
-`lowercase(profileId).includes("stable")`:
+`lowercase(profileId).endsWith("stable")`:
 
 - `stable-protected`: autonomous `station.reset` is denied with
   `PROFILE_RESET_PROTECTED`;
@@ -202,46 +201,18 @@ type WorkspaceActivity = 'active' | 'idle' | 'stale';
 An unregistered discovered worktree has no `WorkspaceActivity`; it is simply
 outside the managed cohort.
 
-## 5. Environment Creation Authorization
+## 5. Worktree-Local Profile
 
-An interactive human grant is short-lived and exact:
+`make profile-init PROFILE=<name> SLOT=<n>` creates one local compose Profile
+under `.local/dev/profiles/`. It never overwrites an existing Profile and its
+identity must match the selected name.
 
-```ts
-interface EnvironmentCreationAuthorization {
-  schemaVersion: 1;
-  kind: 'peers-touch-environment-creation-authorization';
-  state: 'pending' | 'consumed';
-  workspaceId: string;
-  workspaceRoot: string;
-  profile: string;
-  target: {
-    mode: 'compose';
-    slot: number;
-  };
-  approvedBy: string;
-  approvedAt: string;
-  expiresAt: string;
-  nonce: string;
-  consumedAt?: string;
-  profileSha256?: string;
-}
-```
-
-Rules:
-
-- Only a human developer may create `pending` authorization through an
-  interactive terminal confirmation of the exact tuple.
-- An Agent may not invoke the grant command or write the authorization file.
-- `profile-init` atomically claims one pending authorization and produces one
-  immutable consumed receipt bound to the generated profile bytes.
-- A pending grant expires after 30 minutes and cannot be reused.
-- A machine-local profile whose current digest does not match a consumed
-  receipt is unavailable.
-- Git-tracked, clean env-repository profiles remain canonical and do not use
-  this machine-local authorization path.
-- `PT_DEV_PROFILE_FILE` is reserved for run-scoped Acceptance composition and
-  must declare `acceptance-runtime-manifest` authority plus an absolute profile
-  root containing the owned regular file.
+Git-tracked, clean environment-repository Profiles remain canonical for remote
+deployment. A local Profile cannot authorize remote deploy or reset because it
+has no tracked deploy definition. `PT_DEV_PROFILE_FILE` remains reserved for
+run-scoped Acceptance composition and must declare
+`acceptance-runtime-manifest` authority plus an absolute profile root
+containing the owned regular file.
 
 ## 6. Lease Record
 

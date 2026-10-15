@@ -1,8 +1,8 @@
 # Local Dev Control Plane - Architecture Decisions
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-09-13 | **Updated**: 2026-10-05
+> **Version**: v1.4
+> **Created**: 2026-09-13 | **Updated**: 2026-10-15
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/`
 
@@ -20,18 +20,19 @@
 | LDCP-D06 | Bootstrap with a non-authoritative observed snapshot | accepted |
 | LDCP-D07 | Place Acceptance Evidence under the machine Dev root | accepted |
 | LDCP-D08 | Registration is explicit and activity is runtime-derived | accepted |
-| LDCP-D09 | Require human authorization for environment creation | accepted |
+| LDCP-D09 | Require human authorization for environment creation | superseded by LDCP-D21 |
 | LDCP-D10 | Declare Agent control mode in each profile | superseded by LDCP-D15 |
 | LDCP-D11 | Provide one read-only Development Control Plane dashboard | superseded by LDCP-D19 |
 | LDCP-D12 | Run one machine-wide Peers Dev application | superseded by LDCP-D19 |
 | LDCP-D13 | Project Plan progress separately from environment health | accepted |
 | LDCP-D14 | Reserve immutable workspace Plan ownership under the machine Dev root | superseded by DWF-D38 |
-| LDCP-D15 | Derive reset protection from the canonical Profile ID | accepted |
+| LDCP-D15 | Derive reset protection from the canonical Profile ID | superseded by LDCP-D21 |
 | LDCP-D16 | Bootstrap minimum registration from explicit Profile selection | accepted |
 | LDCP-D17 | Separate durable workspace binding from current Git HEAD | accepted |
 | LDCP-D18 | Require committed resource-plan provenance for planner-owned leases | superseded by DWF-D42 |
 | LDCP-D19 | Retire the Peers Dev browser service and keep Workflow Snapshot read-only | accepted |
 | LDCP-D20 | Unregister environments only through coordinated Development close | superseded by DWF-D42 |
+| LDCP-D21 | Let reviewed Profiles authorize development operations and protect only the stable suffix | accepted |
 
 ## LDCP-D01: Machine Control-Plane Root
 
@@ -312,7 +313,7 @@ not share one status field.
 
 ## LDCP-D09: Human-Authorized Environment Creation
 
-**Status**: accepted
+**Status**: superseded by LDCP-D21
 **Date**: 2026-09-13
 
 ### Context
@@ -600,7 +601,7 @@ registration.
 
 ## LDCP-D15: Canonical Profile-ID Reset Protection
 
-**Status**: accepted
+**Status**: superseded by LDCP-D21
 **Date**: 2026-09-21
 
 ### Context
@@ -948,3 +949,58 @@ prevents worktree deletion from bypassing live lifecycle owners.
 - Worktree removal remains an explicit Owner operation.
 - Tests must prove PlanMount blocks unregister and exact identity recovery works
   after the source root is gone.
+
+## LDCP-D21: Reviewed Profiles Authorize Development Operations
+
+**Status**: accepted
+**Date**: 2026-10-15
+
+### Context
+
+The internal development environment is intentionally disposable. Requiring a
+separate human receipt for local Profile creation, then another prompt for
+deploy or reset, duplicated authority already present in the reviewed Profile
+and interrupted exact-source verification.
+
+The old reset matcher also protected any ID containing `stable`, although the
+operator convention is a terminal `stable` suffix.
+
+### Decision
+
+- A reviewed Profile and its workspace binding capabilities authorize
+  selection, registration, runtime provisioning, deploy, restart, and reset.
+- A worktree-local Profile may be created directly with `make profile-init`.
+  The environment-creation authorization receipt and `profile-authorize`
+  command are removed.
+- Profile IDs ending in `stable`, case-insensitively, are
+  `stable-protected`; every other Profile is `agent-resettable`.
+- A non-stable operation still requires exact target or reset scope, current
+  source identity, clean topology where remote deployment is involved, and the
+  matching OS-held lease.
+- Remote Profile definitions remain tracked source in the sibling environment
+  repository. Runtime code may not invent a host, credential, or dirty
+  topology definition.
+
+### Rationale
+
+The Profile is the reviewed capability boundary. Removing duplicate chat and
+receipt authorization keeps routine development autonomous without weakening
+target identity, stable protection, source fencing, or resource exclusion.
+
+### Alternatives Considered
+
+- Keep the human receipt for local Profile creation: rejected because it
+  duplicates worktree scope and blocks disposable development setup.
+- Treat every Profile as mutable: rejected because stable environments need a
+  visible protection boundary.
+- Remove capabilities or leases: rejected because they still own operation
+  scope and real resource exclusion.
+
+### Consequences
+
+- Non-stable development environments can be prepared and reset as part of an
+  ordinary verification loop.
+- A non-terminal `stable` token no longer protects a Profile.
+- Stable reset remains rejected before lease acquisition.
+- Push, PR, merge, release, history rewrite, and worktree lifecycle remain
+  separately governed operations.

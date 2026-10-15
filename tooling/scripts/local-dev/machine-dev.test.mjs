@@ -24,6 +24,7 @@ import {
   checkWorkspace,
   observeLeases,
   registerWorkspace,
+  resetPolicyForProfile,
   selectWorkspaceProfile,
   statusAll,
   unregisterWorkspace,
@@ -584,6 +585,9 @@ test('unregisters a deleted worktree by exact workspace identity', () => {
 });
 
 test('profile reset policy is derived from the canonical identifier', () => {
+  assert.equal(resetPolicyForProfile('dailyStable'), 'stable-protected');
+  assert.equal(resetPolicyForProfile('stable-canary'), 'agent-resettable');
+
   const stableScope = fixture();
   try {
     addProfile(stableScope, {

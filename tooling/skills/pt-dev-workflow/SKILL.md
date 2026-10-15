@@ -120,8 +120,10 @@ or caller-authored PASS is not proof. Fix failures and rerun affected evidence.
 
 Run findings-first completion review from explicit obligations and current
 source. Report implemented, proven, unverified, and blocked scope separately.
-Commit, push, PR, merge, deploy, publish, reset, and destructive cleanup each
-require their own authorization.
+Create a local commit autonomously when one coherent scoped change has passed
+its required checks and only task-owned files are staged. Push, PR, merge,
+publish/release, history rewrite, worktree lifecycle, and destructive cleanup
+remain separately governed.
 
 Release only resources owned by this request. Explicitly retained resources
 must name their owner and purpose. Do not close unrelated services or seal the
@@ -138,14 +140,16 @@ Use canonical Local Dev / Acceptance entrypoints. Runtime admission requires:
 - stable Profile protection;
 - tracked-clean topology;
 - OS-held lease and post-lock revalidation;
-- operation-specific authorization where required.
+- explicit user direction only for stable mutation or separately governed
+  delivery operations.
 
 Task declarations, OWNER, PlanMount, resource-plan receipts, Hook receipts, and
 task completion neither grant nor block runtime acquisition.
 
-Environment creation remains human-authorized for the exact name and target.
-Agent operation of local/compose Station remains forbidden unless an applicable
-source explicitly permits it.
+An existing reviewed non-stable Profile authorizes selection, registration,
+runtime provisioning, deploy, restart, and exact-scope reset. A worktree-local
+Profile may be created with `make profile-init`. Remote topology must remain
+tracked source and may not be invented from ambient hosts or credentials.
 
 ## Goal And Concurrency
 

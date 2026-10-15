@@ -136,7 +136,7 @@ Instead:
 Before Acceptance injection:
 
 1. Run focused unit/type/contract checks for the owning layer.
-2. Create an authorized clean checkpoint commit when the Journey needs remote
+2. Create a clean checkpoint commit autonomously when the Journey needs remote
    or exact-source runtime.
 3. Deploy and launch only through Local Dev Control Plane / Make owners.
 4. Run the real product Journey in its required runtime and receiver

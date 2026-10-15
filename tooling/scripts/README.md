@@ -50,7 +50,6 @@ export VITE_PORT=3000
 | `local-dev/worktree-create.mjs` | 推荐 | 以可恢复事务创建经用户授权的 Agent worktree，并持久化主会话来源 | `make worktree-create WORKTREE=<absolute-path> BRANCH=<new-branch> PURPOSE='<text>' [START=<ref>]`；`START` 先解析为 commit，Git 创建与 provenance 发布可重试；禁止 Agent 直接运行 `git worktree add` |
 | `local-dev/machine-dev.mjs` | 推荐 | 管理 machine-authoritative workspace registration 与 runtime lease | `make env-{register,update,check,status-all}`；显式删除 worktree 前用 `make env-unregister`，禁止手改 registry |
 | `local-dev/task-progress-store.mjs` | 可选 | 保存显式 taskId 的单一原子快照、checksum、CAS、证据失效与局部损坏隔离 | `.dev-workflow/tasks/<taskId>/task.json`；不参与写入或运行准入 |
-| `local-dev/environment-creation-authorization.py` | 内部依赖 | 管理 human-only environment creation grant | `make profile-authorize` 交互创建 30 分钟 exact-tuple grant；`profile-init` 单次消费并保留 profile digest receipt；Agent 不得创建 grant |
 | `check-social-runtime-boundaries.sh` | 可用 | 校验双端社交 Runtime 边界 | 禁止页面/组件直接拥有社交实时流、reconcile、长期 freshness |
 | `check-frontend-runtime-registry.sh` | 可用 | 校验 Frontend Runtime registry 门禁 | 检查 registry 必填字段、alive/status 枚举、evidence、`needs audit` owner/revisit wording，并支持 review diff-range warning |
 | `apps/mobile/scripts/check-social-wire-contract.sh` | 可用 | 校验 Mobile 社交实时协议契约 | 禁止回退到手写 protobuf wire decoder |
