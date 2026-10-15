@@ -185,7 +185,7 @@ class NativeSourceIdentityTest(unittest.TestCase):
         with patch(f"{MODULE}.call_async_harness", return_value=self.identity):
             read_native_source_identity(self.session, self.binding, "a" * 40)
         self.session.execute_script.assert_called_once_with(
-            "return location.href",
+            "return location.origin",
         )
         self.session.get_current_url.assert_not_called()
 
