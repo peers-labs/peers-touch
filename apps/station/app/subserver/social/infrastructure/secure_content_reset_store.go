@@ -3217,8 +3217,7 @@ type postgresCanonicalIndexRow struct {
 	Ordinal                  int     `gorm:"column:ordinal"`
 	IsUnique                 bool    `gorm:"column:is_unique"`
 	IsPrimary                bool    `gorm:"column:is_primary"`
-	IsPartial                bool    `gorm:"column:is_partial"`
-	PartialPredicateApproved bool    `gorm:"column:partial_predicate_approved"`
+	PartialPredicateApproved int     `gorm:"column:partial_predicate_approved"`
 	IsValid                  bool    `gorm:"column:is_valid"`
 	IsReady                  bool    `gorm:"column:is_ready"`
 }
@@ -3623,20 +3622,19 @@ SELECT
   index_column.ordinality AS ordinal,
   index_definition.indisunique AS is_unique,
   index_definition.indisprimary AS is_primary,
-  index_definition.indpred IS NOT NULL AS is_partial,
   CASE
-    WHEN index_definition.indpred IS NULL THEN TRUE
+    WHEN index_definition.indpred IS NULL THEN 0
     WHEN index_relation.relname = 'uidx_social_private_post_id' THEN
-      pg_catalog.pg_get_expr(
+      CASE WHEN pg_catalog.pg_get_expr(
         index_definition.indpred,
         index_definition.indrelid
-      ) = ?
+      ) = ? THEN 1 ELSE 0 END
     WHEN index_relation.relname = 'uidx_social_private_post_content' THEN
-      pg_catalog.pg_get_expr(
+      CASE WHEN pg_catalog.pg_get_expr(
         index_definition.indpred,
         index_definition.indrelid
-      ) = ?
-    ELSE FALSE
+      ) = ? THEN 1 ELSE 0 END
+    ELSE 0
   END AS partial_predicate_approved,
   index_definition.indisvalid AS is_valid,
   index_definition.indisready AS is_ready
@@ -3688,10 +3686,11 @@ ORDER BY index_relation.relname, index_column.ordinality
 				row.IndexName,
 			)
 		}
-		if row.IsPartial && !row.PartialPredicateApproved {
+		if row.PartialPredicateApproved != 0 &&
+			row.PartialPredicateApproved != 1 {
 			return nil, resetError(
 				ResetCodeSchemaTargetUnreviewed,
-				"index %s.%s has an unreviewed partial predicate",
+				"index %s.%s has invalid partial-predicate metadata",
 				table,
 				row.IndexName,
 			)
@@ -3707,7 +3706,7 @@ ORDER BY index_relation.relname, index_column.ordinality
 		}
 		index.Unique = row.IsUnique
 		index.Columns = append(index.Columns, strings.ToLower(*row.ColumnName))
-		if row.IsPartial {
+		if row.PartialPredicateApproved == 1 {
 			switch row.IndexName {
 			case "uidx_social_private_post_id":
 				index.PartialPredicate =
