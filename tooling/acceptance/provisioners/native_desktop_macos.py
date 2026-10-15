@@ -390,7 +390,9 @@ class NativeDesktopMacOSProvisioner:
                     "macOS runtime-cell probe process identity is unavailable"
                 )
             adapter = MacOSNativeDesktopAdapter()
-            adapter.position_main_window(
+            self._await_window_bounds(process_id)
+            self._position_main_window_when_ready(
+                adapter,
                 process_id,
                 _PRIMARY_DISPLAY_WINDOW_ORIGIN,
             )
@@ -599,6 +601,34 @@ class NativeDesktopMacOSProvisioner:
                             f"become visible within {timeout_seconds:.1f}s"
                         ),
                         resource="runtime-cell-window-bounds",
+                    ) from error
+                if interval_seconds > 0:
+                    time.sleep(interval_seconds)
+
+    @staticmethod
+    def _position_main_window_when_ready(
+        adapter: MacOSNativeDesktopAdapter,
+        process_id: int,
+        position: tuple[float, float],
+        *,
+        timeout_seconds: float = 5.0,
+        interval_seconds: float = 0.1,
+    ) -> None:
+        deadline = time.monotonic() + max(0.0, timeout_seconds)
+        while True:
+            try:
+                adapter.position_main_window(process_id, position)
+                return
+            except DriverError as error:
+                if "main window is absent" not in str(error):
+                    raise
+                if time.monotonic() >= deadline:
+                    raise BlockedError(
+                        reason=(
+                            "macOS runtime-cell Accessibility window did not "
+                            f"become available within {timeout_seconds:.1f}s"
+                        ),
+                        resource="runtime-cell-window-position",
                     ) from error
                 if interval_seconds > 0:
                     time.sleep(interval_seconds)

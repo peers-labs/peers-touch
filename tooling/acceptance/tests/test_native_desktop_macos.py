@@ -160,8 +160,30 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
             42,
             (0.0, 32.0),
         )
-        self.assertEqual(events[:2], ["position", "bounds"])
+        self.assertEqual(events[:3], ["bounds", "position", "bounds"])
         session.stop.assert_called_once_with()
+
+    def test_window_position_retries_transient_accessibility_window(
+        self,
+    ) -> None:
+        adapter = Mock(spec=MacOSNativeDesktopAdapter)
+        adapter.position_main_window.side_effect = (
+            DriverError(
+                "macOS main-window positioning failed: "
+                "main window is absent"
+            ),
+            None,
+        )
+
+        NativeDesktopMacOSProvisioner._position_main_window_when_ready(
+            adapter,
+            42,
+            (0.0, 32.0),
+            timeout_seconds=1,
+            interval_seconds=0,
+        )
+
+        self.assertEqual(adapter.position_main_window.call_count, 2)
 
     def test_window_bounds_wait_retries_transient_visibility(self) -> None:
         transient = BlockedError(
