@@ -155,6 +155,9 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
             },
         )
         adapter.position_main_window.assert_not_called()
+        session.invoke_app_result.assert_called_once_with(
+            "acceptance_request_activation"
+        )
         session.stop.assert_called_once_with()
 
     def test_window_bounds_wait_retries_transient_visibility(self) -> None:

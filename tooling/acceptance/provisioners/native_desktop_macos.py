@@ -388,6 +388,7 @@ class NativeDesktopMacOSProvisioner:
                 )
             adapter = MacOSNativeDesktopAdapter()
             bounds = self._await_window_bounds(process_id)
+            session.invoke_app_result("acceptance_request_activation")
             point, pointer, stack, input_probe, attempted_points = (
                 self._probe_owned_point(
                     adapter,
