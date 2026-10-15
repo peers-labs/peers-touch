@@ -3,7 +3,7 @@
 > Single authoritative source for all AI coding agents.
 > `docs/.agent/<platform>.md` is the agent entry layer: use it to find the real source documents, hard constraints, and verification commands.
 >
-> Last updated: 2026-10-07
+> Last updated: 2026-10-15
 
 ---
 
@@ -142,25 +142,16 @@ Example:
     or Suite scope. Scenarios are attach-only and own only namespaced data,
     reset, real product actions, and receiver-visible assertions. Declare
     `runtimeReuse` and audit it with `pt-acceptance-pipeline-auditor`.
-12. **Execution worktree binding first** — A skill source path selects
-    instructions, never the execution worktree. Before dispatch and before the
-    first edit, bind the explicitly selected current worktree through
-    `tooling/scripts/verify-worktree-binding.py` and resolve its canonical root,
-    branch, `workspaceId`, immutable initial HEAD, and current expected HEAD.
-    Expected HEAD is advancing source identity outside the stable Plan; only
-    an explicitly authorized refresh operation defined in §13.5.1 may change
-    it.
-13. **Development declaration first** — Read-only intake may inspect any
-    permitted source, but every non-trivial task MUST publish and confirm its
-    source/runtime intent through `make dev-start` before the first repository
-    write or runtime acquisition. Scope growth uses `make dev-update`;
-    completion/cancellation/abandonment uses the coordinated `make dev-close`
-    and requires a `CLOSED` `DevelopmentCloseReceipt`; `dev-release` is only a
-    low-level declaration owner primitive. See
-    `docs/architecture/engineering/development-workflow/README.md`. Source overlap across
-    different worktrees on different branches is a coordination warning, not a
-    lock; same-workspace, same-branch, and exclusive runtime conflicts still
-    block.
+12. **Explicit worktree first** — A skill source path never selects the
+    execution worktree. Use the canonical worktree explicitly selected for the
+    request. Creating, switching, removing, or pruning a worktree requires the
+    user's explicit request for that operation.
+13. **Records are optional; real guards are mandatory** — Ordinary source work
+    requires no declaration, OWNER, PlanMount, Session, or close receipt.
+    Complex tasks may use an explicit `.dev-workflow/tasks/<taskId>` record.
+    Runtime operations still require reviewed Profile, capability, exact
+    target/scope, current source identity, stable protection, and OS-held
+    lease. See `docs/global/workflow.md`.
 
 ---
 
@@ -198,6 +189,13 @@ Use domain-specific loggers only (see platform docs for specifics).
 - All secrets via environment variables.
 - `.gitignore` must cover: `*.key`, `*.pem`, `*.local.yml`, `*.jks`, `*.keystore`.
 
+### No Fabricated Evidence
+
+- Never invent, forge, rewrite, or relabel test results, runtime observations,
+  review findings, approvals, or Acceptance evidence.
+- Report missing or stale proof as unverified. Internal workflow tooling does
+  not need signatures, HMACs, or reviewer receipt chains to enforce this rule.
+
 ### No User-Home Absolute Paths
 
 - Committed docs, plans, prompts, reports, knowledge, skills, fixtures, and
@@ -230,27 +228,23 @@ compose project isolation, and health-check contracts. Bypassing it has caused
 silent deployment to the wrong remote machine and schema mismatches that took
 hours to diagnose.
 
-### Development Resources Are Declared Before Use
+### Runtime Resources Use Concrete Guards
 
-- `~/.peers-touch/dev/work.json` is the machine-wide public intent ledger.
-- Non-trivial work MUST use `make dev-start` before its first write or runtime
-  acquisition and `make dev-check` before each mutation slice.
-- An authorized commit, rebase or merge MUST be followed by `make dev-update`
-  before the next mutation so the public declaration exposes the current HEAD.
-- `RESOURCE_DECLARATION_CONFLICT` blocks the overlapping action. Do not evade it
-  by changing worktree, Profile, path or resource.
-- A declaration exposes intent only. Runtime exclusivity still requires Local
-  Dev Control Plane leases. Delivery and history operations require their
-  explicit authorizations. Station reset follows the canonical Profile ID
-  policy: IDs containing `stable` case-insensitively are protected; every other
-  reviewed Profile is Agent-resettable when binding capability, exact
-  declaration scope, source identity, topology, and lease all match.
-- `active_work`, branch names, process discovery and private `.local` files are
-  not substitutes for public resource intent.
-- Before runtime acquisition, every affected module emits one standard
-  `ModuleImpact`. `pt-dev-workflow` alone resolves the combined target graph,
-  peak capacity, reuse action, and concrete claims into a fenced
-  `PlanResourcePlan`.
+- Source and documentation work do not require a machine task ledger.
+- Local Dev and Acceptance Suite Runtime own physical resource lifecycle,
+  contention, and quarantine.
+- Station reset follows the canonical Profile ID policy: IDs ending in
+  `stable` case-insensitively are protected; every other reviewed Profile is
+  Agent-resettable when binding capability, exact scope, current source
+  identity, topology, and OS-held lease all match.
+- An existing reviewed non-stable Profile is direct authority for the
+  operations declared by its binding capabilities. Selecting or registering
+  it, creating its runtime instance, deploying, restarting, and exact-scope
+  reset do not require a separate chat authorization prompt.
+- Optional task progress, Plan files, Hook state, and chat identity neither
+  grant nor block runtime acquisition.
+- Do not evade an actual resource conflict by changing worktree, Profile,
+  target alias, path, or caller-supplied resource ID.
 - Module Skills must not allocate concrete accounts, services, clients,
   devices, Fixtures, or automation sessions. Business Gates are attach-only;
   Local Dev or Acceptance Suite Runtime owns physical lifecycle and quarantine.
@@ -258,34 +252,33 @@ hours to diagnose.
   Capacity conflict parks only that target and its dependents; independent
   target lanes continue without a global lock.
 
-### No Unauthorized Development Environments
+### Profile-Scoped Development Environment Operations
 
-AI agents MUST NOT create, copy, derive, or register a development profile or
-deploy environment unless a human developer explicitly authorizes the exact
-environment name and target in the current conversation. This prohibition
-includes:
+AI agents may create and operate development runtime instances as needed by the
+task. `make profile-init` may create a worktree-local Profile, while an existing
+reviewed non-stable Profile may be selected, registered, provisioned, deployed,
+restarted, and reset without a separate approval round.
 
-- adding files under the sibling `env/peers-touch/<name>/` repository;
-- creating local-only definitions under `.local/dev/profiles/` or
-  `.local/deploy/envs/`;
-- supplying an arbitrary `PT_DEV_PROFILE_FILE`; run-scoped overrides require
-  the Acceptance runtime-manifest authority and containment checks;
-- running `make profile-authorize`, minting an authorization receipt, or
-  running `make profile-init` without a pre-existing matching grant; and
-- turning an ad-hoc host, port, existing pointer, execution plan, or Acceptance
-  need into implied creation permission.
+These operations remain bounded:
 
-A missing environment is a blocker to report, not permission to create one.
-Untracked env-repository definitions and local profiles without a matching
-consumed human authorization receipt cannot authorize profile selection,
-deployment, restart, or reset.
+- the canonical Profile or worktree-local Profile owns topology; do not invent
+  an ad-hoc host, port, credential, or arbitrary `PT_DEV_PROFILE_FILE`;
+- worktree-local Profiles must remain current-user-owned private regular files
+  with shell-safe literal assignments and are parsed into quoted exports, not
+  sourced as executable shell;
+- environment-repository definitions used for remote mutation must be
+  Git-tracked and clean;
+- adding or changing a tracked Profile in the sibling `env` repository is an
+  ordinary source change only when that repository is explicitly in task scope;
+- Profile capability, exact target or reset scope, current source identity,
+  stable protection, and OS-held lease must all pass at the concrete entrypoint;
+- Profile IDs ending in `stable`, case-insensitively, remain protected from
+  autonomous reset; stable selection grants connect only, stable deploy needs
+  an explicit user-directed capability binding, and stable reset is forbidden.
 
-For an existing reviewed Profile, reset policy is derived only after the
-directory name and `PT_DEV_PROFILE` value match exactly. No control-mode field,
-legacy cache, or machine-state override is allowed. A non-stable Profile reset
-never requires human confirmation; a stable Profile fails closed before lease
-acquisition. Creating or renaming a Profile remains human-authorized topology
-work.
+Profile selection and runtime provisioning are not worktree creation. They may
+proceed automatically inside the user-selected worktree. A missing target or
+credential is a real blocker; it must not be guessed.
 
 ### No Mocking
 
@@ -377,9 +370,8 @@ fixtures. Cross-model conformance requires a separate evaluation.
 - **Readability**: Well-structured code with appropriate comments, blank lines, logical grouping.
 - **Change tracking**: Record reason, content, impact in comments for every modification.
 - **Feature iteration**: Establish accepted business logic and directory
-  architecture before generating. Use project review Skills by default. Ask
-  the user to explicitly approve each generated Plan North Star; after that,
-  ask again only when an unresolved choice would change, weaken, or abandon it.
+  architecture before generating. Use project review Skills by default; ask
+  the user only when accepted sources cannot resolve a material semantic choice.
 - **Desktop UI**: LobeUI first, antd fallback.
 - **Subserver code**: Must follow DDD (aggregate root, domain service, domain event).
 
@@ -423,7 +415,7 @@ Error code ranges: `10000s` (business), `20000s` (protocol), `30000s` (content).
 
 **Completion criteria**: Implementation complete + focused source checks +
 required exact-source Journeys at `FUNCTIONAL_PASS` + required formal
-Acceptance proof + released Development declaration and runtime resources.
+Acceptance proof + explicit disposition of resources owned by the request.
 
 ---
 
@@ -468,7 +460,7 @@ Current project skills:
 
 | Skill | Purpose |
 |-------|---------|
-| `pt-dev-workflow` | Own one non-trivial Development Run from verified intake and declaration through stage dispatch, execution, proof, delivery, and resource release |
+| `pt-dev-workflow` | Organize one request from verified intake through implementation, proof, delivery, and owned-resource release; task progress is optional |
 | `pt-god-view` | Thin facade: classify intent and route exactly one owning workflow or specialist; never execute or persist state |
 | `pt-goal-orchestrator` | Host-neutral scheduler: project bounded Ready/Parked work, ordering, and safe concurrency from an owner-supplied graph |
 | `pt-trae-host-adapter` | Bind approved worker/UI actions to capabilities actually exposed by a detected TRAE host |
@@ -478,12 +470,12 @@ Current project skills:
 | `pt-acceptance-engineering` | Deterministically add, complete, upgrade, or audit Acceptance contracts, runtime scenarios, gates, and evidence |
 | `pt-acceptance-pipeline-auditor` | Audit multi-scenario Suite lifecycle reuse, proof strength, resource budgets, and cleanup without modifying product code or evidence |
 | `pt-acceptance-gap-detector` | Enforce "No Silent Pass" iron law — detect 25+ bypass patterns (mocks, stale evidence, single-actor, hardcoded creds, downgraded gates) before marking any claim proven |
-| `pt-dev-runtime-handoff` | Own host-neutral runtime launch, interaction, exact-source Journey verification, Session result projection, and cleanup |
+| `pt-dev-runtime-handoff` | Own host-neutral runtime launch, interaction, exact-source Journey verification, result evidence, and cleanup |
 | `pt-architecture-design-methodology` | Design source-backed architecture boundaries, ownership, contracts, topology, and ADR decisions before execution planning (referenced from §4.3) |
 | `pt-architecture-execution-methodology` | Derive vertical Journey/functional closures, dependencies, cutovers, and risk-based verification from accepted architecture |
 | `pt-branch-conflict-guardian` | Guide semantic conflict resolution across parallel branches: separate mechanical conflicts from ownership/behavior divergence, escalate unclear intent, and verify integrated behavior |
-| `pt-context-anchor` | Read-only projection of verified tracked-work state into chat; report owner mismatches without repairing them |
-| `pt-execution-plan-guardian` | Read-only policy guard that allows, denies, or escalates one scheduler-proposed action |
+| `pt-context-anchor` | Read-only projection of current Git, an optional explicit task, runtime facts, and evidence |
+| `pt-execution-plan-guardian` | Read-only check of one proposed action against explicit scope, architecture, authorization, and real resources |
 | `pt-agent-development` | Emit Agent `ModuleImpact`, proof invalidation, and failure ownership for aggregation by the Development Workflow |
 | `pt-official-applet-development` | Create, scaffold, implement, and validate official applet product units under `apps/applets/` using the applet architecture contract |
 | `pt-desktop-runtime-projections` | Enforce Page / Runtime / Boot kernel contracts under `apps/desktop/src/{kernel,runtimes,services,store,pages,components}` |
@@ -496,7 +488,7 @@ Current project skills:
 | `pt-github-review` | Structured PR code review and comment submission |
 | `pt-local-dev-env` | Select and activate local development environment profiles |
 | `pt-oauth2-client-2-vercel` | Publish and verify the OAuth2 Client on Vercel with fail-closed provider, environment, callback, and persistence checks |
-| `pt-plan-and-document` | Persist accepted models into canonical stable Plans, record amendments, and optionally mount one to an explicitly selected execution worktree |
+| `pt-plan-and-document` | Persist accepted models into canonical frozen Plan Versions and validate them without creating runtime workspace occupancy |
 | `pt-prototype-design` | Create, modify, and review executable UI / UX prototypes under the project prototype system |
 | `pt-prototype-sync-guardian` | Keep product implementation and prototypes aligned when visible behavior changes |
 | `pt-completion-auditor` | Audit Peers-Touch work for completion, architecture, code quality, safety, evidence, and overclaim risk |
@@ -518,29 +510,22 @@ Agent responsibilities at startup:
 1. **Discover**: read every `tooling/skills/*/SKILL.md` in the repo.
 2. **Integrate**: run `make skills IDE=<trae|cursor|codex>` at a durable
    boundary. For a TRAE multi-root workspace, pass
-   `WORKSPACE=<absolute-.code-workspace-path>`. It projects Skills and Hooks
-   only in the selected worktree; the descriptor supplies the allowed runtime
-   root set and is never a cross-worktree projection target.
+   `WORKSPACE=<absolute-.code-workspace-path>`. It projects Skills in the
+   selected source worktree and one descriptor-selected workspace hook
+   bootstrap.
 3. **Resolve conflicts**: if a same-named skill already exists in the IDE-private directory, the project copy in `tooling/skills/` wins.
 4. **Never write back**: do not edit, generate, or persist project skills inside the IDE-private directory.
-5. **Never mutate global or sibling hooks**: Cursor, Codex, and TRAE integration
-   write only this worktree's projection. TRAE preserves unrelated local hook
-   entries and never creates, rewrites, or cleans another worktree's `.trae`
-   directory. The first blockable tool event selects authority from an
-   explicit declared task root or one mutation root, never from Hook location
-   or folder order.
+5. **Never mutate global hooks**: install only in the explicitly selected
+   project scope. Preserve unrelated Hook entries and other workspace roots.
+   Hook location and folder order never establish authority.
 
 This keeps `tooling/skills/` as the single git-tracked truth and prevents skill drift across IDE instances or contributors.
 
 After a governance-source update, follow
 `docs/architecture/engineering/development-workflow/host-neutral-agent-integration.md`.
-Installation rejects every live machine declaration, child assignment, and
-workflow action except the current exact OWNER-bound `make skills` action.
-Persist a Context Anchor, release the declaration, run
-`make skills IDE=<host> [WORKSPACE=<absolute-.code-workspace-path>]`, restart
-the IDE when hooks changed, audit, then resume. The hard cut deletes only the
-old conversation and workflow-action stores; it does not migrate or read them.
-Do not hot-swap Skills during an in-flight action.
+Run `make skills IDE=<host>` only for the explicitly selected project scope.
+Skill projection and optional Hook diagnostics are reported separately. Hook
+failure does not disable project Skills or ordinary development.
 
 ### 13.3 Hard Constraints
 
@@ -568,11 +553,11 @@ execution without a Plan. **Agent MUST detect the current stage, preserve that
 Plan policy, and dispatch to the correct skill.**
 
 An explicit user instruction such as `no plan`, `不要 plan`, or `直接做，不创建计划`
-is authoritative for the current request. It forbids creating or mounting a
-Plan, invoking Plan persistence, and fabricating Plan/Task/Session or
-active-work state. The Agent may still publish the required untracked
-Development declaration, execute against existing accepted product and
-architecture sources, run focused verification, and deliver a standalone PR.
+is authoritative for the current request. It forbids creating a Plan Version
+or substitute task record. The Agent may execute against existing accepted
+product and architecture sources, run focused verification, and deliver the
+authorized result.
+
 If the work cannot be executed safely without a new formal Plan, report that
 boundary instead of silently creating one.
 
@@ -580,40 +565,38 @@ boundary instead of silently creating one.
 |-------|----------------|--------------------|-----------------------|----------|
 | **PRODUCT** | New capability, workflow, user journey, or visible state is undefined | `pt-dev-workflow` → `pt-product-design-methodology` | Product contract accepted; required prototype confirmed or explicitly blocked | Product docs + optional prototype |
 | **DESIGN** | New architecture / boundary / ownership decision needed | `pt-dev-workflow` → `pt-architecture-design-methodology` | Architecture review prompt generated → agent review/remediation loop passes, or one precise hard-boundary decision is escalated | `docs/architecture/<taxonomy>/<module>/` |
-| **PLAN** | Architecture accepted and formal planning is authorized | `pt-dev-workflow` → `pt-architecture-execution-methodology` (vertical model) → `pt-plan-and-document` (stable Plan + optional explicit PlanMount + review prompt) | Plan review prompt generated → agent review/remediation loop passes, or one precise hard-boundary decision is escalated | Plan |
-| **EXECUTE** | Plan accepted, or explicit standalone no-Plan work has sufficient accepted sources | `pt-dev-workflow` coordinates host-neutral execution and, for tracked work only, the scheduler (`pt-goal-orchestrator`) + policy guard (`pt-execution-plan-guardian`) | required Journeys reach `FUNCTIONAL_PASS`, formal proof obligations pass, and `pt-completion-auditor` accepts the named scope | Code + tests + functional and formal evidence |
+| **PLAN** | Architecture accepted and formal planning is authorized | `pt-dev-workflow` → `pt-architecture-execution-methodology` → `pt-plan-and-document` (frozen Plan Version + review prompt) | Plan review passes or one precise hard-boundary decision is escalated | Plan Version |
+| **EXECUTE** | Plan accepted, or no-Plan work has sufficient accepted sources | `pt-dev-workflow` coordinates host-neutral execution and optional task progress | required Journeys and proof obligations pass; `pt-completion-auditor` accepts the named scope | Code + tests + functional and formal evidence |
 | **DELIVER** | Code complete, tests pass | `pt-dev-workflow` → `pt-github-commit` → `pt-github-pr` → `pt-github-review` | PR merged | Merged PR |
 
 **Dispatch rules:**
 
-1. `pt-dev-workflow` is the single orchestrator for non-trivial development.
-   Read-only intake may precede declaration; the first write/runtime acquisition
-   requires a confirmed public declaration.
+1. `pt-dev-workflow` is the single organizer for non-trivial development.
+   Ordinary writes need no declaration. Runtime acquisition uses its concrete
+   operation guard.
 2. `pt-god-view` is only a facade/router. It never executes, schedules, guards,
    or persists workflow state.
-3. During EXECUTE, Goal Orchestrator schedules **what** is ready, Execution Plan
-   Guardian decides whether one proposed action **may** run, and Dev Workflow
-   executes allowed work and persists owner state. Context Anchor is read-only.
-4. Tracked work MUST pass each stage gate before entering the next. Explicit
-   standalone no-Plan work omits PLAN modeling/persistence and all tracked
-   Plan/Task/Session projections; it does not weaken source, verification,
-   review, delivery, or cleanup requirements.
+3. During EXECUTE, Goal Orchestrator may schedule **what** is ready from an
+   explicit work graph. Execution Plan Guardian checks concrete scope and
+   authorization. Context Anchor is read-only.
+4. Planned work and no-Plan work share the same source, verification, review,
+   delivery, and cleanup requirements. A Plan and optional task record do not
+   add execution authority.
 5. Review pattern is uniform across stages: generate a structured review prompt
    → invoke the applicable project Review Skills → fix source-backed findings
    → rerun affected checks/review → pass. The user is not the default reviewer.
    Escalate only an operation absent from the accepted authorization envelope,
    a destructive/irreversible or separately governed operation (including
    version/schema bump and worktree topology), a missing external resource, or
-   a product/architecture/security/privacy/compatibility/rollout choice that
-   would change, weaken, or abandon the accepted North Star and cannot be
-   resolved from accepted sources.
+   a material product/architecture/security/privacy/compatibility/rollout
+   choice that accepted sources cannot resolve.
 6. **Small fixes** (single-file bug fix, cosmetic tweak) skip DESIGN + PLAN.
    Mutating fixes enter EXECUTE through `pt-dev-workflow`, which dispatches
    `pt-small-fix-discipline`; only a trivial text-only correction may invoke
    the specialist directly.
-7. **Stage detection**: read this workspace's machine-local
-   `workflow/active-work.json` → validate its Plan/Task/Session owners →
-   determine current stage. Project memory and chat are never runtime inputs.
+7. **Stage detection**: use the explicit request and, when selected, one
+   `.dev-workflow/tasks/<taskId>` record. Do not guess from mtime, branch,
+   project memory, chat, or historical active-work.
 8. If no active work exists and user's request is ambiguous, ask: "Is this a new architecture decision, or implementation of an existing plan?" Never ask
    this after the user explicitly selected no-Plan standalone execution.
 9. **Acceptance ownership dispatch**:
@@ -627,11 +610,8 @@ boundary instead of silently creating one.
 11. **Acceptance scenario selection**: derive scenarios from product states,
     changed failure semantics, receiver outcomes, and concrete architecture
     risks; never require a generic five-variant matrix for every closure.
-12. **Anchor creation boundary**: PRODUCT/DESIGN work without a formal execution
-    plan is not tracked work and has no Context Anchor. After
-    `pt-plan-and-document` creates and binds the plan, Dev Workflow derives this
-    workspace's active-work record from owners; only then may
-    `pt-context-anchor` emit a chat projection.
+12. **Anchor boundary**: Context Anchor may project any explicit request.
+    Without task progress it reports no selected task; it does not create one.
 13. **Continuous Plan Run**: one explicit `continue`, `resume`, `execute the
     plan`, or equivalent request authorizes `pt-dev-workflow` to continue across
     Task closures, successor activation, internal review gates, and context
@@ -639,242 +619,67 @@ boundary instead of silently creating one.
     remains a single-Task internal scheduling unit. Do not ask `Continue?`
     after a Task, review, or Context Anchor while dependency-ready work remains.
 14. **Host-neutral execution**: project Skills own scheduling, runtime
-    verification, Session state, and evidence semantics. Detect TRAE, Cursor,
+    verification, and evidence semantics. Detect TRAE, Cursor,
     Codex, or another host only when selecting an optional tool transport.
     `pt-goal-orchestrator` projects the capability request; after Guardian
     admission, `pt-dev-workflow` dispatches the matching `pt-*-host-adapter`.
     Repository-native
     Make/Harness/WebDriver/Appium paths take priority. Missing host capability
     degrades only that transport and never changes the required proof. Adapters
-    do not execute repository-native fallback. Failed cleanup enters one
-    bounded `HOST_CLEANUP_QUARANTINED` state; it cannot recursively invoke
-    cleanup or block independent ready Tasks. Missing capability and cleanup
-    observations persist immutable request identity in the Development Session.
-    Only `UNAVAILABLE -> AVAILABLE` or post-expiry
-    `QUARANTINED -> RELEASED | ESCALATION_REQUIRED` may update the blocked
-    observation; unchanged requests cannot retry at zero progress.
+    do not execute repository-native fallback or create repository authority.
+    Failed transport cleanup cannot block independent ready work.
 
-#### 13.5.1 Owner-Rooted Workflow Binding Contract
+#### 13.5.1 Current-Source Workflow Contract
 
-This contract is fail-closed and applies before stage dispatch, execution,
-edits, status claims, and completion claims.
+1. The user-selected canonical worktree and current request define scope.
+   Hook, host identity, Plan state, task progress, chat history, and memory do
+   not authorize repository or runtime operations.
+2. Every mutating tool call uses the selected canonical root as explicit
+   `workdir`; file edits use absolute paths under that root. Reading or writing
+   another worktree requires explicit scope.
+3. Do not create, switch, remove, or prune a worktree unless the user explicitly
+   requested that exact worktree operation.
+4. Ordinary work requires no formal Plan and no task record. A frozen Plan is
+   read only from an explicit path. A task record is created only when durable
+   recovery is useful and is selected by explicit `taskId`.
+5. Optional task records live under `.dev-workflow/tasks/<taskId>/`, use one
+   checksum-protected atomic snapshot with revision/CAS, and never grant write,
+   runtime, delivery, or evidence authority.
+6. Resume and status derive from the current request, current Git/runtime facts,
+   one explicit task ID, an explicit Plan/task selector when supplied, and
+   current evidence. Never infer a task from branch, mtime, chat, or memory.
+7. The Agent may create a local checkpoint commit at any useful coherent
+   boundary for traceability, rollback, integration, or exact-source runtime.
+   Stage only task-owned files and run checkpoint-appropriate source and secret
+   checks. A commit is not proof, completion, or delivery. Push, PR, merge,
+   release, history rewrite, and worktree operations remain separately
+   governed.
+8. Hook events are advisory. Unknown events, missing identity, ambiguous host
+   context, and Hook failures return neutral output. Real permission, stable
+   protection, data scope, and OS-held resource locks stay in concrete
+   operation entrypoints.
+9. Current-source evidence must bind the current commit and workspace digest.
+   Source changes invalidate prior evidence. Caller-authored PASS values do not
+   become formal proof.
+10. Completion review consumes explicit obligations, current source, and current
+   evidence. Closing affects only the selected task and resources it actually
+   owns; it never seals the worktree.
 
-1. One visible chat creates exactly one immutable `OWNER` binding at the first
-   blockable `PreToolUse`. TRAE uses only `chat_session_id` for owner identity;
-   its `session_id` is execution-session identity and never creates another
-   owner. Cursor uses only `conversation_id`; Codex uses only `session_id`.
-   The canonical root ID is persisted only in owner-controlled machine-local
-   state together with its hash and binding digest so another Agent can identify
-   the originating main session. Host-field aliases and process-global identity
-   fallbacks are forbidden.
-2. `WORKER` and `REVIEWER` are create-once assigned children. Every child
-   preserves `rootBindingDigest`, direct `parentBindingDigest`, assignment,
-   Development Session, role, and bounded lease. Expired or terminal children
-   are history and cannot make current claims. OWNER authority has no generic
-   TTL.
-3. The canonical `BindingProjection` is not a worktree lease or cross-agent
-   lock. It constrains one lineage: reads may use another `subjectRoot`, while
-   every cross-worktree write is denied.
-4. If the host exposes no required root-chat ID or no blockable pre-tool
-   event, report `OBSERVE_ONLY`; never claim that hook enforcement is active.
-   If a manual execution root remains ambiguous, stop and ask the user rather
-   than inferring it from a Skill path, Plan path, branch name, or nearby repo.
-5. From the bound current worktree root, capture its identity:
-   `python3 tooling/scripts/verify-worktree-binding.py --root '<absolute-root>' --capture`.
-6. Reconcile the captured identity with this workspace's active-work record,
-   the formal plan, and the latest Context Anchor. Any mismatch,
-   or any later root, branch, HEAD, or `workspaceId` drift,
-   returns `WORKTREE_IDENTITY_MISMATCH` and stops. Do not repair a mismatch by
-   automatically changing directories, switching branches, or selecting a
-   different worktree.
-7. From the same root, immediately verify all captured values:
-   `python3 tooling/scripts/verify-worktree-binding.py --root '<absolute-root>' --branch '<branch>' --workspace-id '<workspaceId>' --head '<expected-head>'`.
-   Every materialized value must be one POSIX shell-safe argument.
-   Bind the verified canonical root, branch, `workspaceId`, initial HEAD,
-   and expected HEAD. On first registration, expected HEAD equals initial HEAD.
-   A missing verifier or unresolved field is
-   `WORKTREE_IDENTITY_UNAVAILABLE`; a wrong invocation directory, identity
-   mismatch, or later drift is `WORKTREE_IDENTITY_MISMATCH`. Both stop work.
-8. Every mutating tool call must carry the OWNER's canonical root as its
-   explicit `workdir`. File mutation tools must use absolute paths beneath that
-   root. Subagents require an assigned child binding; an unassigned internal
-   session inherits OWNER admission and cannot claim independent worker or
-   reviewer authority.
-9. Revalidate the same `BindingProjection` after resume or compaction and
-   before status, readiness, handoff, worker result, review, or completion
-   claims. Completion Review is repository-native: it binds successful
-   Development Session provenance into an immutable request and delegates one
-   review-scoped capability. The capability proves assessment provenance, not
-   reviewer independence; independent reviewer launch is a Dev Workflow
-   obligation. Completion Review never consumes Action Receipts or worktree
-   bindings.
-10. The initial HEAD remains the audit baseline. Expected HEAD may refresh only
-   after a commit, rebase, or merge that the user explicitly authorized.
-   Resume and context compaction verify the persisted values; they MUST NOT
-   recapture current Git state as a replacement baseline. Unrelated sibling
-   worktree inventory is machine topology and never part of this binding.
-11. Do not run `git switch`, `git checkout`, raw `git worktree add`,
-   `git worktree remove`, or `git worktree prune`, and do not create a
-   worktree, unless the user explicitly requested that exact operation.
-   Authorized Agent creation must use `make worktree-create` so the target
-   workspace receives immutable main-session provenance. A Plan mount or
-   lifecycle conflict is never implicit permission to create another worktree.
-12. A repository or PR may contain multiple stable Plans. A Plan contains no
-    execution worktree identity; branch scans, directory order, lifecycle state
-    and synchronized foreign Plans never select execution ownership.
-13. Plan authoring produces `northStarApproval=null`. The Plan remains a
-    non-executable candidate until the user explicitly approves its current
-    `planId + northStarDigest` through `planctl approve-north-star`.
-    `make plan-mount PLAN=<path>` then binds one stable `planId + planPath` to
-    one selected execution `workspaceId` and creates an immutable
-    ExecutionPlanSnapshot with
-    mount/workspace/branch/initial-HEAD binding. The same tuple is idempotent;
-    a second live Plan returns
-    `PLAN_MOUNT_CONFLICT`.
-14. A PlanMount has no TTL and occupies the worktree until completion,
-    cancellation, or explicit owner unmount. Ordinary Plan repairs retain the
-    same `planId`, `mountId`, and `runId`; `planctl amend` appends the reason
-    and impact and advances only the internal snapshot. Agents MUST NOT change
-    the Plan North Star, switch its worktree, expand authorization, or unmount
-    it without explicit owner authorization. A North Star edit invalidates its
-    prior approval; Task/Gate/criterion-coverage amendments do not.
-15. ExecutionRun, tracked declaration, workspace active-work record, Session
-    and Context Anchor must match the mount and immutable snapshot. A mounted
-    workspace cannot publish untracked work. CI has no machine mount and must
-    receive an explicit Plan.
+### 13.6 Resume And Goal Continuity
 
-Legacy shared `project_memory.md ## active_work` rows are not runtime state and
-cannot resume directly. The bounded Plan migration flow may read a declared
-legacy registry to verify a reviewed `NONE -> NONE` or source crosswalk, but no
-compatibility writer updates that Markdown. Resume requires the current
-worktree's PlanMount, ExecutionRun, declaration and Session owners to validate first, then
-`make active-work-sync WORK_ITEM=<id>` creates the workspace-owned record.
-Missing or contradictory owners fail closed; another workspace's record is
-never read as a fallback.
+When the user invokes `pt-god-view` for status or resume:
 
-### 13.6 Session Continuity Protocol
-
-**This protocol is triggered explicitly via `pt-god-view` skill, not automatically on every session start.**
-
-When a user invokes `pt-god-view` (by saying "继续做" / "接着" / "看看状态" / "resume" etc.):
-
-1. `pt-god-view` classifies the intent and selects exactly one owner.
-2. Status/handoff routes to read-only `pt-context-anchor`.
-3. Continue/resume routes to `pt-dev-workflow`, which verifies mount/snapshot/run,
-   reconciles Task/Session/workspace active-work, and starts or resumes the
-   authorized Plan Run.
-4. Dev Workflow asks `pt-goal-orchestrator` for the Ready/Parked schedule
-   and concurrency lanes.
-5. Every proposed action is evaluated by `pt-execution-plan-guardian`; only
-   `ACTION_ALLOWED` work executes.
-6. Dev Workflow persists meaningful results through owner commands, performs
-   required agent review/remediation, activates a dependency-ready successor,
-   and repeats until the Plan is terminal or a hard boundary exhausts the
-   runnable frontier.
-7. Context Anchor may project meaningful progress or support context compaction,
-   but it does not pause the Plan Run or request confirmation.
-8. Multiple plausible tracked items return `TRACKED_WORK_SELECTION_REQUIRED`.
-   Empty/completed registries route to new-task intake.
-
-For EXECUTE work, the Goal scheduler applies one explicit concurrency decision
-before source edits.
-Choose parallel, serial, or hybrid execution from actual dependencies,
-write-set overlap, generated outputs, shared runtime resources, verification
-isolation, and integration order. Parallel lanes require reserved exclusive
-write sets; shared contracts, generated artifacts, reconciliation, commits,
-deployments, Fixture mutation, and final product Gates retain one integrator
-owner unless the plan proves stronger isolation. Only live,
-backend-addressable agents with the same Goal identity conflict. Listed but
-backend-unaddressable entries are stale metadata, not a reason to serialize the
-Goal or persist a blanket no-subagent constraint.
-
-God View, Goal Orchestrator, Execution Plan Guardian, Context Anchor and Peers
-Dev are read-only with respect to Plan/Task/Session/workspace active-work.
-Dev Workflow coordinates writes through owner commands.
-
-**Workspace active-work record**
-
-```text
-~/.peers-touch/dev/workspaces/<workspaceId>/workflow/active-work.json
-```
-
-The closed record contains revision/digest, workspace/work-item identity,
-Plan/Task locator and lifecycle, Session/Journey locator and `devState`, branch,
-immutable initial HEAD, advancing expected HEAD and update time. It is derived
-from owners by `make active-work-sync WORK_ITEM=<id>`; callers cannot submit
-arbitrary replacement JSON.
-
-**Lifecycle rules:**
-
-- **New pre-plan work** → run PRODUCT/DESIGN without an Anchor; do not create a
-  placeholder record or fabricate a plan path.
-- **Explicit standalone no-Plan work** → keep the request unmounted for its
-  entire lifecycle; publish only the untracked Development declaration, and do
-  not create Plan, Task, Session, active-work, or Context Anchor state.
-- **Plan generated** → validate its source-backed North Star and criterion
-  coverage as a candidate; after explicit user approval is recorded and an
-  owner selects the execution worktree, create PlanMount and
-  ExecutionPlanSnapshot, publish the tracked declaration, then derive this
-  workspace's record.
-- **Plan execution detail changed** → update the Plan/Task source, run
-  `planctl amend`, refresh the declaration, and continue the same Plan Run.
-  A North Star change first returns `NORTH_STAR_APPROVAL_REQUIRED`, then
-  requires a matching owner-approved amendment.
-- **Next Plan created** → mount it only after the prior mount is released by
-  completion, cancellation, or explicit owner unmount. Never create a worktree
-  as an Agent workaround.
-- **Worktree created** → record the verified `workspace_id`, branch, initial
-  HEAD, purpose, creation Action Receipt, and the creating OWNER's host,
-  `rootChatId`, `rootChatHash`, and `rootBindingDigest`.
-- **Worktree binding created** → record `initial_head` and `expected_head`;
-  initially both are identical. Never derive either identity from a skill path,
-  Git actor, or another worktree.
-- **Task/Session transition** → Dev Workflow updates manifest/Task/Session
-  owners first, then invokes active-work sync with revision/CAS.
-- **Task done with ready successor** → Dev Workflow advances the manifest,
-  refreshes the declaration locator and active-work record, asks Goal
-  Orchestrator for the successor Slice, and continues the same Plan Run without
-  user confirmation.
-- **Action blocked** → the scheduler parks the action in its projection; Dev
-  Workflow persists only owner-defined blocker state and resynchronizes.
-- **Goal blocked** → Plan/Task/Session owners record fixed-point exhaustion;
-  active-work only mirrors those owners.
-- **Close** → `make dev-close WORK_ITEM=<id> MODE=<tracked|standalone>
-  CLOSE_REASON=<completed|cancelled|owner-abandon>
-  ENVIRONMENT_POLICY=<retain|unregister>` invokes each owner in order and
-  persists one resumable close receipt. `active-work-close`, `dev-release`,
-  Session archive, Plan unmount, and environment unregister are low-level
-  owner operations, not independent completion claims.
-- **Distribution** → `peers-dev-workflow` publishes the implementation; the
-  installed copy derives the consuming worktree's canonical root and
-  `workspaceId`. The source repository owns no consumer runtime state.
-
-Context Anchor rules:
-
-- The workspace active-work file is a durable locator projection; Plan, Task,
-  Session, declaration and Git remain the state owners.
-- Execution plans MUST NOT contain a `## Context Anchor` section.
-- Context Anchor validates and projects; it never writes or repairs active-work.
-- The Workflow Kernel renders the exact Anchor at Stop and stores only its
-  machine-local receipt. A terminal or blocked conversation releases only
-  after that exact projection is observable in the assistant response or host
-  transcript.
-- The chat projection records `<worktree-name> (<repo-root>)`, verified branch,
-  `workspaceId`, main-session ID, initial HEAD, and expected/verified HEAD.
-  It never persists a developer or CI user-home absolute path or an ambiguous
-  bare `<repo-root>`.
-- The chat projection also records completed delta, dependency-ready queue,
-  execution mode and live backend-addressable lanes, conflict controls,
-  critical path, Plan Run queue/mandate/autonomous horizon/stop conditions, and
-  an evidence-backed ETA or `unknown`.
-- Resume verification is internal workflow state. It must not interrupt an
-  authorized execution turn merely to emit an Anchor.
-- Task closure, review success, Context Anchor output, and context compaction
-  are internal Plan Run boundaries; none consumes the user's continuation
-  authorization.
-- Tracked-work status, resume, handoff, blocker, readiness, and close responses end with the single fenced chat projection required by `pt-context-anchor`.
-- Project memory and chat are outputs only. No normal path writes a shared
-  cross-workspace `active_work` table.
+1. Route status/handoff to read-only `pt-context-anchor`.
+2. Route continuation to `pt-dev-workflow`.
+3. Use `pt-goal-orchestrator` only for a bounded work graph derived from the
+   accepted scope.
+4. Schedule from actual dependencies, write overlap, generated outputs,
+   runtime resources, verification isolation, and integration order.
+5. Continue while the ready frontier contains authorized work. Park only the
+   blocked action. Mark the Goal blocked only when the frontier is empty and an
+   external decision or state change is required.
+6. Context compaction, internal review, task closure, and optional checkpoint
+   output do not consume the user's existing continuation authorization.
 
 ---
 

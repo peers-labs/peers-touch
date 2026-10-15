@@ -1,166 +1,78 @@
-# Development Workflow 产品定义
+# 开发流程工具的产品定义
 
 > **Status**: active
-> **Created**: 2026-09-26 | **Updated**: 2026-10-09
+> **Created**: 2026-09-26 | **Updated**: 2026-10-14
 > **Owner**: Platform Team
-> **Module**: `tooling/scripts/local-dev/`, `tooling/scripts/plan/`
 
----
+## 1. 北极星
 
-## 1. 产品命题
+> 在用户选择的既有 worktree 中，以尽量少的机械前置，把每个已授权需求持续转化为
+> 当前源码上可验证的实际结果，同时不降低真实权限、数据和共享资源保护。
 
-Development Workflow 是 Peers Touch 面向人类开发者与 Agent 并行研发的操作产品。它把
-已经接受的产品、架构和计划工作投影为一个可观察、有边界、可由当前源码证据
-验证的交付闭环。
+目标用户是长期复用固定 worktree、与 Agent 协同开发并需要可靠验证的开发者。
+第一项有用结果是：一个已明确的小改动可以不依赖旧流程身份和登记完成并得到针对性
+验证。持续价值是：复杂任务可恢复、固定工作区可复用、危险操作仍受真实入口保护，
+完成结论始终能回到当前源码和实际结果。
 
-目标用户包括：
+流程北极星不替代各业务域的产品北极星。每项开发工作继承对应产品或工程目标，
+流程只负责把本次贡献推进到可验证结果，不能把流程状态、任务数量或 Gate 数量当作
+产品成功。
 
-- 需要判断每个 worktree 实际工作状态的开发者；
-- 需要稳定 OWNER 身份、单 Action workspace 和当前 Task 边界的 Agent；
-- 需要核对完成声明是否匹配当前源码与义务的 reviewer；
-- 需要通过一份可执行指南理解工作流的维护者。
+## 2. 产品目标
 
-Development Workflow 不是通用项目管理器、CI 替代品、IDE 或运行时部署平台。
+开发流程工具帮助开发者和 Agent 在明确的 worktree 内完成需求：读取项目标准，
+继承产品或工程北极星，按需确认方案，实施、验证和交付。复杂任务能恢复进度；
+小改动不需要先完成一套登记手续。
 
-## 2. 产品承诺
+工具服务于[规范研发流程](../../../global/workflow.md)，不再建立另一条机器准入流程。实现位于本仓库，复用已有 Skill、运行工具和证据存储，不引入外部流程依赖。
 
-开发者从一个明确选定的 worktree 执行规范安装后，应能观察：
+## 3. 开发者应得到什么
 
-1. 哪个 Plan 和 Task 拥有当前工作；
-2. Agent 正在执行什么动作；
-3. 工作是推进、等待、阻塞、停滞、循环还是发生漂移；
-4. 完成声明是否通过独立的当前源码审查；
-5. 每项声明由哪个 owner、命令和证据义务支撑。
-6. 同一 Plan 为什么被修订、影响哪些 Task/Gate，以及是否触及 North Star。
+- 提出局部修改后，Agent 能按已有规则完成修改和针对性检查；未安装 Hook 也能工作。
+- 提出复杂需求后，能看到必要方案、实施顺序、完成标准和待确认事项。
+- 指定恢复任务后，能知道当前源码、已做部分、有效验证、下一步及尚持有的资源。
+- 可以长期复用自己固定的几个 worktree；一项任务结束后，同一 worktree 可继续承接下一项开发，工具不会要求一次一建或永久占用。
+- 两个 worktree 可以各自推进不冲突工作；共享 Station、数据库和设备仍按实际影响协调。
+- 报告“通过”时能找到本次源码的实际结果；未验证范围不会被隐藏。
+- 收尾只处理本次资源，无关旧记录损坏不会阻止新的独立任务。
 
-Conversation 的 OWNER 身份不得静默改变；每个 mutation Action 必须明确解析
-且只写一个 workspace。Task 或 Plan 不得因聊天文本、陈旧证据或实现者自报成功
-而被判定完成。
+以上是当前产品承诺；是否满足由当前源码测试和对应运行证据判断。
 
-## 3. Canonical 决策映射
+## 4. 必要能力
 
-`decisions.md` 是决策状态的唯一 owner。本表只提供产品追踪关系，不替代 ADR：
+**工作组织。** 按目标和影响范围选择方法论、编码标准与验证；复用已给出的授权。正式方案按需使用，不能从缺少计划推导缺少写权限。
 
-| ID | Canonical 含义 | 在本产品中的作用 | 状态 |
-|---|---|---|---|
-| DWF-D24 | Source invalidation | 当前源码证据失效时，由 Plan 声明的单一 owner 重开最早失效闭环 | accepted |
-| DWF-D25 | Machine-local interaction overlay | Overlay 只能改变交互呈现，不能改变执行政策 | accepted |
-| DWF-D33 | Owner-rooted binding lineage | 一个可见开发会话拥有一个 OWNER root，内部 WORKER/REVIEWER 只能作为 assigned child | accepted |
-| DWF-D27 | Workflow Snapshot | 跨 owner 的只读一致性投影 | accepted |
-| DWF-D28 | Completion Review | 独立的当前源码完成审查 | accepted |
-| DWF-D29 | Action Receipt | 有界、脱敏的 Agent 动作收据 | accepted |
-| DWF-D30 | Workflow Doctor | 可执行的工作流自诊断 | accepted |
-| DWF-D38 | Frozen Plan and PlanMount | 已由 DWF-D42 取代 frozen-version 语义，保留显式 worktree 占用 | superseded |
-| DWF-D32 | Cross-module resource aggregation | runtime acquisition 前统一解析 target、复用、容量与 park | accepted |
-| DWF-D40 | Explicit no-Plan standalone | 用户拒绝 Plan 时不制造 tracked owner state | accepted |
-| DWF-D41 | Coordinated Development close | 一个可恢复收据编排独立 owner 的关闭顺序 | accepted |
-| DWF-D42 | Stable Plan amendments | North Star 必须显式批准；普通执行调整原地记录并继续，只有 North Star 变化需要重新批准与 owner 决策 | accepted |
-| DWF-D43 | Worktree main-session provenance | Agent 创建 worktree 时持久化创建会话，当前 Development 状态传播已验证 OWNER 引用 | accepted |
-| DWF-D44 | Per-action workspace selection | OWNER 身份与 worktree 解耦；每个 mutation Action 只选择并校验一个 workspace | accepted |
-| DWF-D45 | Workspace-isolated ledger adoption | machine ledger 保持全机冲突可见，但 schema/lifecycle 迁移只修改选中 workspace | accepted |
+**可选进度。** 只为需要恢复的复杂任务保存单一原子快照。多任务明确选择，不用“最新记录”猜归属；记录损坏只影响对应任务恢复。
 
-Accepted 决策定义目标合同，不等于实现或验收已经通过。在当前源码完成验证前，
-消费者仍须把尚未证明的能力投影为 `UNPROVEN`。
+**规范提示。** 可选 Hook 补充当前工作区相关规范和知识。身份、PATH、配置加载或未知事件故障只降低提示能力。
 
-## 4. 能力画像
+**运行保护。** 已评审非 stable Profile 直接授予其 capability 覆盖的开发操作；
+Runtime 核对目标、当前源码、真实资源锁和清理归属。任务状态不授予额外权限。
 
-| ID | Capability | Class | Decision | Readiness claim |
-|---|---|---|---|---|
-| DEV-C01 | Owner-rooted execution | required | DWF-D33/D44 | 首个可阻断工具事件绑定不可变 OWNER 身份；每个 mutation Action 独立选择一个 workspace；内部会话必须携带 assignment；缺少强制能力时 fail closed |
-| DEV-C02 | Truthful completion review | required | DWF-D28 | Task 和 Plan 完成需要绑定当前源码与义务的独立审查收据 |
-| DEV-C03 | Development observability | required | DWF-D27/DWF-D29 | Workflow Snapshot 一次性输出 worktree、Plan、Task、活动、阻塞、漂移、循环和停滞 |
-| DEV-C04 | Human and agent operating guide | required | DWF-D30 | 人类指南中的可执行声明均有机器检查 |
-| DEV-C05 | Self-diagnosis | required | DWF-D30 | 一个 Doctor 入口检查安装、Hook、mount/run、状态 owner 和完成 Gate |
-| DEV-C06 | Mutation from Workflow Snapshot | unsupported | DWF-D27 | Snapshot 保持只读，所有写入由 owner CLI 执行 |
-| DEV-C07 | Cross-worktree writes | bounded | DWF-D44 | OWNER 可在连续 Action 间切换 worktree；单个 Action 只能写一个已选择 workspace，child 不能离开 assignment workspace |
-| DEV-C08 | Plan mount occupancy | required | DWF-D42 | 一个 worktree 在完成、取消或显式 unmount 前只执行一个 stable Plan；普通修订不重挂 |
-| DEV-C09 | Plan-level resource preparation | required | DWF-D32 | 多模块影响在 runtime acquisition 前聚合；复用、容量、冲突和 park 由一个资源计划裁决 |
-| DEV-C10 | Resumable Development close | required | DWF-D41 | exact selector 串行关闭 owner；只有 `DevelopmentCloseReceipt=CLOSED` 支持 close-ready |
-| DEV-C11 | Explicit North Star approval | required | DWF-D42 | Agent 生成的 North Star 是 candidate；只有绑定当前 `planId + northStarDigest` 的用户决定允许 mount/execute |
+**真实验证。** 检查与审查接收明确范围、源码和证据。正式 Acceptance 保留规范入口和真实性要求。
 
-## 5. 首次可用结果
+**状态说明。** 查询一次性输出当前事实与未知项。工作进度、提示可用性、服务健康和验收结果分别表达。
 
-目标首次闭环是：
+## 5. 不承诺的能力
 
-1. 开发者运行 `make skills IDE=trae`；
-2. 运行 `make workflow-snapshot`；
-3. 命令输出当前 worktree 由 owner state 推导的状态记录并退出；
-4. 安装路径的合成 `PreToolUse` 验证能够绑定新 conversation；
-5. Doctor 对缺失或不一致环节返回 typed failure，而不是伪报
-   `INSTALLED`、`COMPLETE` 或 `HEALTHY`。
+- 不实现通用项目管理器、后台服务、可视化工作台或新流程引擎。
+- 不把 Hook 描述为任意 shell 写入的安全沙箱。
+- 不自动创建、复制、选择、切换或修改 worktree；只有用户显式要求创建时才允许创建。
+- 不把计划、冲突、脏工作区、验证或恢复解释成 worktree 创建授权。
+- 不自动选择或修改目标外 worktree，也不默认安装到全局 IDE。
+- 不重置 stable Profile；stable 部署需要用户明确指令和显式 capability binding。
+  不自主发布、合并或改写历史；非 stable 开发环境可按需创建和操作。
+- 不导入旧记录的成功状态来证明本次代码。
+- 不要求所有任务都具备 Plan、Session、OWNER 或关闭回执。
 
-这些步骤是产品验收目标，不是本文档对当前实现结果的声明。
+## 6. 主要风险与验证办法
 
-## 6. 持续价值
+提示降级可能降低规范召回，因此无 Hook 场景必须验证 Agent 能直接读取 Skill 和知识。取消机器准入不会取消编码规范，Review 与 CI 继续检查产生的改动。
 
-- Agent 动作产生有界且脱敏的活动证据。
-- Plan 百分比只来自 Task closure，Task 不使用虚构百分比。
-- 源码或义务漂移会使完成审查失效；只有 source invalidation 通过 DWF-D24 的
-  owner 路径重开。
-- 每个 worktree 可独立诊断，无需读取其他 conversation。
-- 文档中的操作声明由 Doctor 持续校验。
+资源权限脱离任务账本可能漏掉真实冲突，因此在实际操作入口测试同目标竞争、锁内复查、别人的资源和 stable 保护。
 
-## 7. Non-Goals
+可选任务记录可能丢失上下文，因此测试中断、损坏、多任务与源码变化；无法确定副作用结果时禁止重放。
 
-- 自动修改声明 worktree 之外的产品源码。
-- 替代 Git、Plan Package、Development Session、Acceptance 或 CI。
-- 把生成状态、截图或 Agent 摘要当作完成证据。
-- 为旧 Hook、旧 rollout 或 completion bypass 保留兼容路径。
-- 从 Skill 路径、branch 名或相邻仓库推断 OWNER identity；把任一工具 `cwd`
-  固化为 conversation 的永久 worktree。
-- 为绕过 Plan binding、lifecycle 或资源冲突而由 Agent 自建 worktree。
-- 让 DWF-D25 Overlay 扩大范围、授权、证据强度或停止条件。
+分批迁移可能留下内部旧门禁，因此每批从消费者入口验证，并在整体切换时搜索剩余调用，同步 Skill、文档、Gate 和安装器。
 
-## 8. 产品风险
-
-- IDE Hook 能力可能随宿主而异。安装必须执行宿主级合成回调，并明确报告
-  unsupported contract。
-- Agent 活动可能产生噪声。DWF-D29 只保留有界收据，并由 DWF-D27 reducer
-  归并为稳定状态。
-- 完成审查可能流于形式。DWF-D28/DWF-D37 必须绑定 source、obligation、
-  delegated assessment provenance、findings 和 verdict，并在漂移后失效；
-  独立 reviewer launch 由 Dev Workflow 编排。
-- Doctor 可能误把局部成功当作整体健康。DWF-D30 必须逐项检查产品承诺并以
-  非零退出码暴露 required failure。
-
-## 9. 平台适配
-
-| Capability | TRAE | Cursor/Codex | Browser |
-|---|---|---|---|
-| Binding projection | DWF-D33/D44 目标能力；需 installed-path proof | 保留 host adapter 合同；逐宿主证明 owner/child lineage 与 Action workspace 选择 | 不适用 |
-| Completion Review | DWF-D28 host-neutral 目标 | 同一 host-neutral 合同 | 只读投影 |
-| Progress and activity | DWF-D29 收据输入 | adapter 能力需单独证明 | DWF-D27 Snapshot 投影 |
-| Workflow Doctor | DWF-D30 完整检查目标 | 未证明能力必须显示 unsupported/unproven | 只展示 server/read-model 状态 |
-
-本文档不宣称任何平台单元已经通过；平台 readiness 必须由当前目标源码和对应
-Acceptance 单元独立证明。
-
-## 10. 可行性闭环
-
-| Capability | Canonical basis | Missing closure | Smallest executable proof |
-|---|---|---|---|
-| DEV-C01 | DWF-D33/D44 已定义 owner/child binding 与 Action workspace 约束 | 对目标源码、安装投影和宿主回调做当前验证 | 临时宿主目录安装并用同一 OWNER 连续写两个 worktree |
-| DEV-C02 | Plan、Task、Session 和 lifecycle owner 已定义 | 实现并验证独立 request/receipt 与 closure guard | 缺失/陈旧 receipt 被拒，精确 receipt 通过 |
-| DEV-C03 | Workflow Snapshot 是按需只读投影 | 接入 owner snapshot、action reducer 与 review state | CLI/library contract 验证投影一致性 |
-| DEV-C04 | 架构文档和应用 README 已存在 | 确立唯一操作指南并将每条命令纳入 truth audit | 从干净 worktree 执行所有已声明命令 |
-| DEV-C05 | 现有 audit 可作为候选检查输入 | 组合为一个 typed Doctor 并验证公开承诺 | healthy fixture 与故障注入 fixture |
-| DEV-C08 | PlanMount 隔离同步进入仓库的外来 Plan | 增加 stable Plan、snapshot history、run、in-place amendment 与显式 unmount | mount conflict、amendment、snapshot immutability 与并发测试 |
-| DEV-C09 | Machine ledger、Local Dev lease 和 Acceptance runtime manifest 已有明确 owner | 增加标准 ModuleImpact、target closure 与 fenced PlanResourcePlan | 多模块、复用、容量不足、all-or-none、quarantine replacement 与跨 Plan 冲突测试 |
-| DEV-C10 | Declaration、Session、active-work、PlanMount、lease 与 environment 已有独立 owner | 增加幂等 close coordinator、receipt 与新任务准入守卫 | 中断恢复、错误 owner、tracked/standalone、cancel 和 deleted-worktree orphan 测试 |
-
-表中 `Canonical basis` 只说明可继续设计或实现的当前输入，不构成实现完成或
-Acceptance 通过证明。
-
-## 11. Snapshot 证据边界
-
-Workflow Snapshot 以一次性 JSON 保留以下信息层级：
-
-```text
-worktree identity
-  -> Plan progress
-      -> current Task progress
-          -> agent activity / blocker / review state
-```
-
-Snapshot 不启动 server 或 browser，也不持有刷新状态。其他 worktree 的端口
-状态、测试计数或历史运行结果不能作为当前证明。
+具体操作见[体验合同](./experience-contract.md)，场景与证明要求见[验收清单](./acceptance-matrix.md)。

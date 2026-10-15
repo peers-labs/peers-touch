@@ -4,7 +4,7 @@
 
 - Exact completion or proof claim.
 - Git range or explicit changed paths.
-- Explicit Development Session in `ACCEPTANCE_PASS | DELIVERY_READY`.
+- Current Git source identity and explicit completion obligations.
 - External Evidence Store role `acceptance-plan` / `plan`.
 - External Evidence Store role `acceptance-run` / `run`.
 - Feature, Capability, Domain, Registry, Gate, Runtime Manifest, and source
@@ -89,16 +89,15 @@ Do not retry, downgrade, substitute, or edit evidence to change the state.
 python3 tooling/scripts/acceptance-gap-detect.py \
   --claim "<claim>" \
   --range <range> \
-  --session <development-session.json>
+  --plan <acceptance-plan.json> \
+  --run <acceptance-run.json>
 
 python3 tooling/scripts/acceptance-gap-detect-test.py
 ```
-The detector is read-only with respect to product and repository state. A
-successful admitted run writes an immutable `acceptance-gap-report` to the
-external Evidence Store.
-
-`--run` only to select an Acceptance run artifact; it never substitutes for
-the required `--session` admission input.
+The detector is read-only with respect to product and repository state. It
+resolves changed paths plus explicit or canonical Plan/run evidence directly,
+then writes an immutable `acceptance-gap-report` to the external Evidence
+Store.
 
 ## Artifacts
 

@@ -6,11 +6,10 @@ description: Produces deterministic Agent ModuleImpact, proof invalidation, and 
 # Agent Development
 
 Apply this domain policy inside `pt-dev-workflow`. Dev Workflow still owns
-declaration, cross-module aggregation, target resolution, resource planning,
-scheduling, authorization, Session state, review, delivery, and resource
-release. This Skill emits only one standard `ModuleImpact`: what an Agent
-change affects, which target capabilities it needs, and what evidence remains
-valid.
+cross-module aggregation, target resolution, scheduling, authorization,
+review, delivery, and owned-resource release. This Skill emits only one
+standard `ModuleImpact`: what an Agent change affects, which target
+capabilities it needs, and what evidence remains valid.
 
 ## Invoke When
 
@@ -33,8 +32,8 @@ Read in this order:
    `failureBehavior`, checks, and write set.
 2. [`modern-chat-agent/README.md`](../../../docs/architecture/domains/agent/modern-chat-agent/README.md)
    and the architecture documents it prioritizes.
-3. The current Development Session, latest formal Gate manifest, and current
-   Completion Review receipt.
+3. Current Git source, latest formal Gate manifest, and current Completion
+   Review material.
 4. [`impact-policy.json`](./impact-policy.json).
 
 Do not copy Agent architecture facts, Gate commands, or environment topology

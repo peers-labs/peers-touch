@@ -221,8 +221,8 @@
   （active；定义 `~/.peers-touch/dev/` 机器级注册表、独立 worktree 绑定、slot 与
   Station capability lease，当前仅有 observed snapshot，尚未接管运行时）
 - 开发工作流控制面：`architecture/engineering/development-workflow/README.md`
-  （active；定义从首次写入前资源声明到 `EXECUTE` 内以 Journey 为单位的产品优先开发循环、checkpoint
-  授权、exact-source 功能验证与 Acceptance 晋级边界）
+  （active；以北极星和用户选定 worktree 为上游，定义轻量普通工作、可选复杂任务
+  恢复、提示降级、真实运行保护、当前源码验证与 Acceptance 晋级边界）
 - 架构模块治理：`architecture/engineering/architecture-governance/README.md`
   （active；定义架构模块内容完整性、正向能力登记、编辑前上下文回执，以及
   Plan、Review、CI 共享的 fail-closed 校验）

@@ -1,9 +1,9 @@
 ---
 name: "pt-plan-and-document"
-description: "Persists accepted product, architecture, or execution models. For execution planning it renders and validates one stable Plan, records amendments, and optionally mounts it to a selected execution worktree."
+description: "Persists accepted product, architecture, or execution models. For execution planning it renders and validates an explicit frozen Plan Version without creating runtime workspace occupancy."
 stage: "PLAN"
 requires: ["accepted source model", "repository documentation rules"]
-produces: ["persisted documents", "validated stable Plan", "append-only Amendment Log", "optional owner-authorized PlanMount", "review prompt"]
+produces: ["persisted documents", "validated frozen Plan Version", "review prompt"]
 next: "pt-dev-workflow agent review loop"
 ---
 
@@ -19,10 +19,9 @@ next: "pt-dev-workflow agent review loop"
 - 查找并执行文档规范；
 - 选择落盘目录和文件名；
 - 渲染 accepted model；
-- 创建 stable Plan / Task Slice 文件；
+- 创建 frozen Plan Version / Task Slice 文件；
 - 运行结构校验；
 - 更新导航；
-- 在 owner 已明确选择执行 worktree 时建立 PlanMount；
 - 生成 review prompt。
 
 本 Skill 不负责：
@@ -38,7 +37,7 @@ next: "pt-dev-workflow agent review loop"
 
 - 用户要求将讨论结果落盘为正式文档。
 - `pt-architecture-execution-methodology` 已产出 accepted plan model。
-- 正式 Plan 需要创建、机械修订或迁移。
+- 正式 Plan Version 需要创建、机械修订或迁移。
 - 文档需要按项目规范更新导航和 review prompt。
 
 若输入仍包含产品/架构/计划语义分歧，返回对应 owner，不在本 Skill 内解决。
@@ -48,8 +47,7 @@ next: "pt-dev-workflow agent review loop"
 若当前用户请求明确包含 `no plan`、`不要 plan`、`不创建计划` 或等价指令：
 
 - 返回 `PLAN_PERSISTENCE_FORBIDDEN`；
-- 不创建或修改 Plan、Task Slice、PlanMount、Execution snapshot、
-  Session 或 active-work；
+- 不创建或修改 Plan Version、Task Slice 或可选任务记录；
 - 不把任务规模、仓库规范、测试、Acceptance 或 PR 提交要求解释成隐式 Plan
   授权；
 - 将执行权返回 `pt-dev-workflow` 的 standalone 路径。
@@ -100,7 +98,7 @@ docs/architecture/<taxonomy>/<module>/
 `requiredDocuments`，登记非重叠 `governedPaths`、当前 capability allowlist
 和外部 capability ID 引用；不得登记已删除名称、历史别名或迁移黑名单。
 
-## 3. 持久化 Plan
+## 3. 持久化 Plan Version
 
 将 accepted plan model 渲染为：
 
@@ -113,29 +111,12 @@ execution-plans/<date>-<slug>/
 
 `plan.md` 持有：
 
-- machine-readable `northStar`，每个 success criterion 都有稳定 ID 与
-  source refs；
-- 初始为 `null` 的 `northStarApproval`，以及完整
-  criterion -> Task/closure/Gate crosswalk；
-- scope/non-goals；
+- stable goal、scope/non-goals；
 - product/architecture traceability；
 - Task index 和 dependency DAG；
-- stable `planId`、authorization 与 append-only `amendments`；
+- version identity 与 authorization；
 - 唯一的 `Acceptance Execution` contract；
 - 不包含 execution worktree、Task lifecycle 或 current selection。
-
-生成后的 Plan 只是 candidate，不得把 Agent 的归纳视为用户接受。先运行
-`planctl validate` 展示 objective、criteria、coverage 与 digest；只有用户明确
-批准后，才运行：
-
-```bash
-make plan-approve-north-star PLAN=<package-plan.md> \
-  DECISION_REF=<durable-user-decision-ref>
-```
-
-该命令记录 actor、timestamp、decision ref 与当前
-`planId + northStarDigest`。没有该记录或摘要已 stale 时，不得 mount、创建
-Execution Run 或开始 Task。
 
 每个 Task Slice 只持有一个 vertical closure：
 
@@ -146,21 +127,16 @@ Execution Run 或开始 Task。
 - done/failure/non-claim；
 - 不包含 durable evidence 或 current execution snapshot。
 
-每个 Task Slice 同时是一个 progress unit。它必须小到一个 bounded Progress
-Slice 能把 lifecycle 推进到 `done`，并让 `planctl status` 计算出精确的
-`+1` closure、percentage-point delta 和新解锁 Task。若做不到，回到
+每个 Task Slice 同时是一个 progress unit。它必须小到一次 bounded execution
+能直接验证 `doneWhen` 并明确解锁哪些后继 Task。若做不到，回到
 `pt-architecture-execution-methodology` 按真实依赖拆分，禁止加入主观权重或
-命令级百分比。
-
-Task 文件不复制 lifecycle，ExecutionRun、Session 和 evidence 不进入 Git。
+命令级百分比。Task 文件不保存可变 lifecycle 或 evidence。
 
 ## 4. 机械边界
 
 - manifest 不超过 300 行 / 20 KiB；
 - Task Slice 不超过 200 行 / 12 KiB；
-- Plan 在同一北极星目标下原地修订，不创建 `vN` 身份；
-- 每次修订必须通过 `planctl amend` 追加 actor、时间、原因、变化摘要、
-  受影响 Task/Gate、approval class 和 before/after content digest；
+- Plan Version 冻结后不可原地修改；
 - archive 不参与 discovery、resume 或状态；
 - 每个 closure 在 `Acceptance Execution` 中恰好出现一次；
 - repository path 使用 repo-relative POSIX 表示；
@@ -168,8 +144,8 @@ Task 文件不复制 lifecycle，ExecutionRun、Session 和 evidence 不进入 G
 
 Execution plans MUST NOT contain a `## Context Anchor` section.
 
-Context Anchor 只存在于聊天；workspace active-work 只由 Dev Workflow 在
-消费 worktree 中从 owner state 派生。
+Context Anchor 只存在于聊天；执行进度如需跨会话恢复，由 Dev Workflow 在
+消费 worktree 的 `.dev-workflow/tasks/<taskId>/` 中明确创建。
 
 ## 5. 校验和登记
 
@@ -181,27 +157,16 @@ make plan-validate PLAN=<package-plan.md>
 node tooling/scripts/architecture/module-governance.mjs validate
 ```
 
-3. 计算内部 `planContentDigest` 与 `planDigest`；不得把 digest 当作 Plan 版本，
-   也不得把 authoring worktree 写入 Plan。
-4. 用户尚未明确批准时停止在 candidate，不得自行运行 approval 命令。取得
-   明确决定后，以 decision ref 运行 `plan-approve-north-star`。
-5. 只有 North Star 已批准且 owner 已明确选择 execution worktree 时，运行
-   `make plan-mount PLAN=<package-plan.md>`。同值调用幂等；同一 workspace
-   已有其他 live mount 时返回 `PLAN_MOUNT_CONFLICT`。Agent 通过
-   `planctl amend` 修订当前 Plan，但不得 rebind、unmount 或自建 worktree
-   绕过该检查。
-6. Stable Plan 没有 current Task，因此本 Skill 不创建 active-work
-   占位记录。计划评审通过后，Development Run 从 immutable
-   ExecutionPlanSnapshot 创建 ExecutionRun，通过 owner command 选择 current
-   Task、发布 tracked declaration，再运行
-   `make active-work-sync WORK_ITEM=<id>`。
-7. 同一 workspace 只有一个 machine-local active-work 文件；同步进入仓库
-   的其他 Plan 不参与选择。`peers-dev-workflow` 只发布实现，不持有消费
-   worktree 的 runtime record。
-8. 落盘后将 review prompt 返回 Development Run。Development Run 调用项目
+3. 生成并记录完整 Plan Version digest；不得把 authoring worktree 写入 Plan。
+4. 使用 `planctl inspect --plan <package-plan.md>` 从明确路径读取冻结版本；
+   不创建 PlanMount、ExecutionRun、declaration、Session 或 active-work。
+5. 复杂任务如需恢复，由 Development Run 以明确 `taskId` 创建可选任务记录，
+   并把 Plan 路径与 digest 作为普通 `planRef` 保存。多个任务互不占用整个
+   workspace。
+6. 落盘后将 review prompt 返回 Development Run。Development Run 调用项目
    Review Skills 完成评审、修复与重审；通过后，current Task 的选择由
-   Development Run 通过 owner command 原子完成。本 Skill 不自行启动
-   EXECUTE，也不写 project memory。
+   Development Run 从明确 Plan 和 taskId 完成。本 Skill 不自行启动 EXECUTE，
+   不创建任务记录，也不写 project memory。
 
 ## 6. 修订
 
@@ -213,24 +178,8 @@ node tooling/scripts/architecture/module-governance.mjs validate
 - risk/state proof mapping 更新；
 - authorization 或 execution-worktree selection 的已批准更新。
 
-普通 inventory/path、dependency/deliverable、Task 拆分/合并、顺序、check 与
-Gate 映射变化由 Agent 直接写入当前 Plan，并运行：
-
-```bash
-make plan-amend PLAN=<package-plan.md> \
-  REASON='<why>' CHANGE='<what changed>'
-```
-
-该命令保留 `planId`、`mountId` 与 `runId`，追加 Amendment Log，生成新的
-immutable internal snapshot，并重校验受影响 Task 的运行状态。Execution
-worktree 变化仍属于 mount owner 操作，不修改 Plan source。
-
-若修订改变任何 `northStar` 内容，旧批准立即 stale，先返回
-`NORTH_STAR_APPROVAL_REQUIRED`，说明冲突、受影响目标/验收、可选方案及代价、
-推荐方案。取得用户明确决定后先运行 `plan-approve-north-star`，再使用
-`APPROVAL=owner DECISION_REF=<same-ref>` 发布 amendment。只改变
-`criterionCoverage`、Task 或 Gate 映射时保留批准。授权包扩张返回
-`OPERATION_AUTHORIZATION_REQUIRED`。
+任何已冻结内容变更都创建新的 `versionId` 和 digest；不得原地修改冻结版本。
+执行 worktree 是调用方的显式输入，不修改 Plan source。
 
 若修订改变 Journey、架构 ownership、协议、failure semantics 或 proof
 strength，返回 `PRODUCT_AMENDMENT_REQUIRED`、`DESIGN_AMENDMENT_REQUIRED` 或
@@ -246,7 +195,6 @@ strength，返回 `PRODUCT_AMENDMENT_REQUIRED`、`DESIGN_AMENDMENT_REQUIRED` 或
 - scope/cutover/deletion 审查；
 - risk/state-based verification 审查；
 - authorization 和 claim boundary；
-- North Star criterion source refs、coverage 完整性与 approval status；
 - `planctl validate` 结果。
 
 Reviewer 输出 `通过 / 有条件通过 / 需要修改` 和具体 source-backed
@@ -260,17 +208,13 @@ sources 已能裁决的问题，Agent 自动修复并重审；仅当存在 DWF-D
 
 - [ ] 输入模型已被 owning methodology 接受
 - [ ] 文件位置、命名、元数据、导航正确
-- [ ] Stable Plan 和所有 Task Slice 通过 `planctl validate`
-- [ ] 每个 North Star criterion 有稳定 ID/source refs 和精确
-      Task/closure/Gate coverage
-- [ ] 新生成 Plan 保持 candidate；如需 mount，已取得并记录用户显式批准
+- [ ] Plan Version 和所有 Task Slice 通过 `planctl validate`
 - [ ] 涉及的 active 架构模块已登记并通过共享 module governance validator
-- [ ] Plan digest 仅作为内部完整性/CAS 标识，不含 execution worktree identity
-- [ ] 如已选择 execution worktree，PlanMount 与 current snapshot 匹配
-- [ ] 修订已追加原因和影响，且没有用户可见版本身份或版本目录
+- [ ] Plan Version digest 已冻结且不含 execution worktree identity
+- [ ] `planctl inspect` 可直接读取明确 Plan Version 和 Task Slice
 - [ ] `Acceptance Execution` 唯一且 closure 完整
 - [ ] scenario/Gate 映射来自 product state 或 concrete risk
-- [ ] stable Plan 未伪造 active-work 占位记录
+- [ ] frozen version 未伪造任务进度或 workspace 占位记录
 - [ ] 没有 `## Context Anchor`
 - [ ] review prompt 已生成
 - [ ] review prompt 已交回 Development Run，未把例行评审委托给用户
@@ -294,11 +238,9 @@ sources 已能裁决的问题，Agent 自动修复并重审；仅当存在 DWF-D
 - 从文件清单反推产品或架构；
 - 把通用 success/network/timeout/invalid/cancel 套餐写进每个 closure；
 - 创建 active 单文件计划或第二套状态表；
-- 把 Session 日志、raw output 或 Context Anchor 写进 package；
-- 在 current Task、declaration 和 Session owner 就绪前创建 active-work；
+- 把 runtime 日志、raw output 或 Context Anchor 写进 package；
 - 写共享 `project_memory.md active_work` 表；
-- 从 branch、目录或 active Plan 数量推断 workspace Plan；
-- 绕过 `planctl amend` 修改已挂载 Plan，或把新建 worktree 当作 mount workaround；
-- 把生成的 North Star 自动标记为 approved，或在 approval missing/stale 时 mount；
+- 从 branch、目录、mtime 或历史 active-work 猜选 Plan/Task；
+- 为 Plan 使用创建或切换 worktree；
 - 把 plan review prompt 当作用户交互停点；
 - 由本 Skill 选择 current Task、执行或宣称完成。

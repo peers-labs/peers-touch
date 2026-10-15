@@ -1,126 +1,66 @@
-# Development Workflow 产品状态模型
+# 工作进度、工具状态与验证状态
 
 > **Status**: active
-> **Created**: 2026-09-26 | **Updated**: 2026-10-09
+> **Created**: 2026-09-26 | **Updated**: 2026-10-14
 > **Owner**: Platform Team
-> **Module**: `tooling/scripts/local-dev/workflow-snapshot.mjs`
 
----
+本文约束当前状态呈现，存储字段见[数据约定](./data-model.md)。状态查询只读，不签发权限，不修复上游记录。
 
-## 1. 决策边界
+## 1. 各种状态分别表达
 
-- Worktree lifecycle 由现有 owner state 决定。
-- Source invalidation 和受影响 closure 的重开只由 DWF-D24 定义的 Plan owner
-  执行。
-- 普通执行模型修订由 DWF-D42 的 `planctl amend` 追加记录并重校验 Task；
-  新建 Plan 在 `northStarApproval=null` 时为 candidate，不能 mount/execute。
-  North Star 变化先进入 `NORTH_STAR_APPROVAL_REQUIRED`，显式批准后仍需
-  owner-approved amendment；coverage/Task/Gate 调整保留批准。
-- DWF-D25 Overlay 不得改变任何状态或转换。
-- OWNER lineage 由 DWF-D33 约束；每个 mutating OWNER Action 的 workspace
-  由 DWF-D44 选择。切换 Action workspace 不迁移 PlanMount、declaration、
-  Session 或 active-work。
-- Workflow Snapshot、Completion Review 和 Action Receipt 分别由
-  DWF-D27、DWF-D28、DWF-D29 定义；accepted 不等于 implemented 或 proven。
-- DWF-D32 的 Resource Plan 只投影跨模块 target 和资源准备状态，不替代
-  Plan/Task lifecycle 或物理 Runtime Owner 状态。
+工作进度回答“这项需求推进到哪里”；提示状态回答“自动规范提示是否可用”；运行状态回答“实际服务和资源怎样”；验证状态回答“哪些结果已有证据”。
 
-## 2. Worktree State
+北极星不是状态。它是这些状态共同服务的上游结果；任何 `completed`、百分比、
+健康状态或 PASS 都不能单独证明北极星已经实现。
 
-| State | Meaning | Allowed action |
-|---|---|---|
-| `unregistered` | Source 可被发现，但没有 Local Dev registration | register 或 inspect |
-| `idle` | 已注册且没有 active declaration | start work |
-| `active` | Declaration 和 current Task 正在执行 | inspect 或 continue |
-| `waiting` | 等待已准入的依赖或资源 | inspect owner 和解除条件 |
-| `blocked` | Typed hard boundary 阻止进度 | resolve named boundary |
-| `stalled` | 在 freshness interval 内没有有效 Action Receipt | inspect agent/session |
-| `looping` | 等价 action fingerprint 重复且 Task progress 未改变 | stop loop 并 review |
-| `drift` | Source、Plan、Session、declaration、review 或 rollout 不一致 | 修复被点名的 owner |
-| `completed` | Plan 已完成且当前 Completion Review 有效 | deliver 或 archive |
+无进度记录不等于工作区不可用，Hook 不可用不等于产品失败，服务健康不等于当前功能通过。查询必须保留这些区别。
 
-`stalled` 和 `looping` 是诊断投影，不是 Plan 或 Task lifecycle 状态。
+## 2. 可选任务状态
 
-## 3. Completion Review State
-
-**Decision**：DWF-D28。
-
-```text
-MISSING -> PENDING -> PASS
-   |          |        |
-   +----------+--------+-> STALE -> PENDING
-              |
-              +-> FAIL -> PENDING
+```mermaid
+stateDiagram-v2
+    [*] --> active: 明确选择并建立记录
+    active --> waiting_user: 具体决定或授权待确认
+    active --> blocked: 具体动作无法推进
+    waiting_user --> active: 获得所需输入
+    blocked --> active: 阻碍解除并重新核对
+    active --> completed: 约定结果与交付完成
+    active --> cancelled: 明确取消并交代收尾
 ```
 
-| State | Meaning |
-|---|---|
-| `MISSING` | 当前 closure 没有 review |
-| `PENDING` | Review 已创建但没有 terminal verdict |
-| `PASS` | 独立 review 对精确 source 和 obligation digest 通过 |
-| `FAIL` | 至少一个 required finding 仍为 open |
-| `STALE` | 既有 terminal receipt 不再匹配当前 source 或 obligations |
+图中的 `waiting_user` 对应记录值 `waiting-user`。阶段使用规范七步；阶段和状态是两项字段。未选择任务时不创建 `idle` 任务来填空。
 
-只有当前 `PASS` 可以授权 Task 或 Plan completion。若 `PASS` 因源码失效而变为
-`STALE`，重开动作遵循 DWF-D24，Snapshot 和 UI 不得自行修改 lifecycle。
+`blocked` 必须指明受影响动作、事实原因和解除条件。其他可独立推进的动作继续；不能因记录问题把整个 worktree 标成禁止开发。
 
-## 4. Agent Activity State
+`completed` 需要约定结果对应的有效证据。记录曾经完成不表示新源码已通过；源码改变后呈现受影响结论过期，重新评估需要的工作。资源明确保留时显示去向；收尾未知不能显示全部释放。
 
-**Decision**：DWF-D29。
+## 3. 提示与安装状态
 
-Action Receipt reducer 产生：
+- Skill 投影有效：可以读取项目能力。
+- 自动提示已离线验证：落盘命令和输出合同通过，宿主真实执行仍待观察。
+- 自动提示已在宿主验证：实际工具事件产生正确工作区上下文。
+- 自动提示不可用：缺解释器、配置未加载、回调失败或归属不明；直接读取规范继续。
 
-- `working`：最近存在 admitted action，且没有 hard failure；
-- `waiting`：明确等待外部条件或依赖；
-- `blocked`：最后一个 terminal action 是 typed hard blocker；
-- `stalled`：receipt lease 过期后仍无新 receipt；
-- `looping`：等价 action fingerprint 超过有界阈值，且 Task revision 未推进；
-- `complete`：没有 active Task，且 Completion Review 仍为 current。
+这些是诊断说明，不是新的强制生命周期。未知宿主事件不产生权限拒绝。
 
-Reducer 不解析日志文案，只使用 receipt kind、fingerprint、result、时间和 Plan
-progress revision。
+## 4. 验证与审查状态
 
-## 5. Workflow Snapshot State
+每项证据使用其既有分类和结果，显示当前、过期、缺失或不可读取。源码、功能、正式验收分别呈现；禁止汇成没有依据的全局“已通过”。
 
-**Decision**：DWF-D27。
+审查可为待审、通过、有问题或过期。未选择 Plan 时直接审查需求范围和完成标准，不补造计划。过期判断覆盖本次源码与产物、义务、检查实现和依赖；不能只比较一个分支名称。
 
-Snapshot 从 owner state 只读派生以下 continuation：
+## 5. 运行状态
 
-| Continuation | Meaning |
-|---|---|
-| `CONTINUE` | 存在 dependency-ready、已授权且未到 hard boundary 的工作 |
-| `HARD_BLOCK` | Ready frontier 已耗尽，且 typed blocker 需要外部解决 |
-| `COMPLETE` | Plan lifecycle 完成，且 DWF-D28 Completion Review 为 current `PASS` |
+从运行入口读取目标、权限、健康、实际进程、锁及操作结果。保留 prepared、running、succeeded、failed、outcome-unknown 等既有操作语义。
 
-缺失或冲突 owner 产生 typed finding。Snapshot 不修复、不补写、不选择替代
-workspace，也不从 branch、目录顺序或聊天内容推断 owner。
+锁是否持有由 OS 锁和实际运行对象核对，不由任务、Hook 或聊天存活推断。不同 Profile 名称如果解析到同一部署目标，必须显示同一真实资源竞争。
 
-## 6. Resource Plan State
+等待资源只影响需要它的动作。资源结果未知要求核对目标，不能自动重启或重置来恢复“绿色”。
 
-**Decision**：DWF-D32。
+## 6. 状态查询的约束
 
-| Projection | Meaning |
-|---|---|
-| `allocationState=READY` | 所有 target 已获得完整声明 claims |
-| `allocationState=PARTIALLY_READY` | 至少一个 target ready，至少一个 target 因容量或依赖 park |
-| `allocationState=PARKED` | 没有 target 可执行，且没有部分 target claim |
-| `runtimeState=PENDING` | Runtime Owner 尚未完成 build/restart/provision |
-| `runtimeState=READY` | 所有可执行 target 的资源已有 manifest-bound READY 结果 |
-| `runtimeState=QUARANTINED` | 至少一个资源被 owner 隔离，不能复用 |
+明确 worktree；复杂任务还需明确任务选择。查询输出当前 Git、相关任务、验证和运行事实，无关机器记录损坏只产生局部诊断。
 
-相同 request 和 source 保留 fencing token；request、source 或 allocation 改变
-都会推进 token。旧 token 的 Runtime Owner 结果不得改变当前状态。
+不创建监听器、后台刷新、任务、租约或修复事件。没有可靠活动事件时显示“最近活动未知”，不能仅凭缺少 Hook 心跳断言 Agent 停滞。
 
-## 7. Snapshot Projection State
-
-Workflow Snapshot projects:
-
-- PRODUCT、DESIGN、PLAN、EXECUTE、DELIVER stage;
-- numeric Plan progress derived only from completed Task closures;
-- current Task source/functional/acceptance/review state;
-- activity freshness and typed partial-owner failures;
-- review source identity and terminal timestamp.
-
-Unless ExecutionRun lifecycle and current Completion Review both authorize it,
-Snapshot cannot emit `COMPLETE` or `100%`. DWF-D27..DWF-D29 proof must come
-from current source; historical browser results cannot populate the projection.
+有效证据和未知项同时保留。任何投影都不能授予源码之外的写权限或合并、发布、重置权限。

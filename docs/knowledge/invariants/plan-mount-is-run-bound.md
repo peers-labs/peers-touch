@@ -1,14 +1,8 @@
 ---
 kind: invariant
 title: Plan mounts bind frozen versions to execution worktrees
-status: superseded-by:docs/knowledge/invariants/stable-plan-amendments.md
-owns:
-  - AGENTS.md
-  - tooling/acceptance/core/execution_plan.py
-  - tooling/scripts/local-dev/dev-work-ledger.mjs
-  - tooling/scripts/plan/
-  - tooling/skills/pt-dev-workflow/
-  - tooling/skills/pt-plan-and-document/
+status: superseded-by:DWF-D46
+owns: []
 referenced-by:
   - docs/architecture/engineering/development-workflow/decisions.md
 related:
@@ -19,9 +13,9 @@ detected: 2026-10-04
 
 # Plan mounts bind frozen versions to execution worktrees
 
-This invariant is retained as historical context. Its frozen-version rule is
-superseded by `stable-plan-amendments.md`; the explicit worktree occupancy and
-owner-controlled release rules remain in force there.
+> Superseded by DWF-D46. Retained as historical context only. Plans remain
+> explicit versioned inputs when a task needs one, but querying or executing a
+> plan does not require a machine-wide PlanMount.
 
 ## What must hold
 

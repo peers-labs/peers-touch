@@ -146,111 +146,53 @@
         "integration.md"
       ],
       "decisionIds": [
-        "DWF-D01",
         "DWF-D02",
         "DWF-D03",
         "DWF-D04",
-        "DWF-D05",
         "DWF-D06",
         "DWF-D07",
         "DWF-D08",
         "DWF-D09",
         "DWF-D10",
-        "DWF-D11",
         "DWF-D12",
-        "DWF-D13",
         "DWF-D14",
-        "DWF-D15",
-        "DWF-D16",
         "DWF-D17",
-        "DWF-D19",
         "DWF-D20",
         "DWF-D21",
         "DWF-D22",
         "DWF-D23",
-        "DWF-D24",
         "DWF-D25",
-        "DWF-D27",
-        "DWF-D28",
-        "DWF-D29",
-        "DWF-D30",
-        "DWF-D32",
-        "DWF-D33",
-        "DWF-D34",
-        "DWF-D35",
-        "DWF-D36",
-        "DWF-D37",
         "DWF-D39",
         "DWF-D40",
-        "DWF-D41",
-        "DWF-D42",
-        "DWF-D43",
-        "DWF-D44",
-        "DWF-D45"
+        "DWF-D46",
+        "DWF-D47"
       ],
       "governedPaths": [
         "docs/architecture/engineering/development-workflow",
         "docs/global/workflow.md",
         "tooling/scripts/README.md",
-        "tooling/scripts/local-dev/active-work-store.mjs",
-        "tooling/scripts/local-dev/active-work-store.test.mjs",
-        "tooling/scripts/local-dev/active-work.mjs",
         "tooling/scripts/local-dev/completion-review.mjs",
         "tooling/scripts/local-dev/completion-review.test.mjs",
-        "tooling/scripts/local-dev/development-close-store.mjs",
         "tooling/scripts/local-dev/development-close.mjs",
         "tooling/scripts/local-dev/development-close.test.mjs",
-        "tooling/scripts/local-dev/dev-resource-plan.mjs",
-        "tooling/scripts/local-dev/dev-resource-plan.test.mjs",
-        "tooling/scripts/local-dev/dev-session-schema.mjs",
-        "tooling/scripts/local-dev/dev-session-store.mjs",
-        "tooling/scripts/local-dev/dev-session.mjs",
-        "tooling/scripts/local-dev/dev-session.test.mjs",
-        "tooling/scripts/local-dev/dev-work-ledger.mjs",
-        "tooling/scripts/local-dev/dev-work-schema.mjs",
+        "tooling/scripts/local-dev/development-flow-residue.mjs",
+        "tooling/scripts/local-dev/development-flow-residue.test.mjs",
+        "tooling/scripts/local-dev/development-flow.integration.test.mjs",
         "tooling/scripts/local-dev/dev-work.mjs",
         "tooling/scripts/local-dev/dev-work.test.mjs",
-        "tooling/scripts/local-dev/workflow-action-store.mjs",
-        "tooling/scripts/local-dev/workflow-action-store.test.mjs",
-        "tooling/scripts/local-dev/workflow-anchor.mjs",
-        "tooling/scripts/local-dev/workflow-anchor.test.mjs",
-        "tooling/scripts/local-dev/workflow-binding-projection.mjs",
-        "tooling/scripts/local-dev/workflow-binding-projection.test.mjs",
-        "tooling/scripts/local-dev/workflow-binding-store.mjs",
-        "tooling/scripts/local-dev/workflow-binding-store.test.mjs",
-        "tooling/scripts/local-dev/workflow-binding.mjs",
-        "tooling/scripts/local-dev/workflow-binding.test.mjs",
-        "tooling/scripts/local-dev/workflow-owner-context.mjs",
-        "tooling/scripts/local-dev/workflow-owner-context.test.mjs",
-        "tooling/scripts/local-dev/workflow-owner-command-policy.mjs",
-        "tooling/scripts/local-dev/workflow-owner-reference.mjs",
+        "tooling/scripts/local-dev/task-progress-store.mjs",
         "tooling/scripts/local-dev/workflow-doctor.mjs",
         "tooling/scripts/local-dev/workflow-doctor.test.mjs",
-        "tooling/scripts/local-dev/workflow-snapshot-core.mjs",
         "tooling/scripts/local-dev/workflow-snapshot.mjs",
         "tooling/scripts/local-dev/workflow-snapshot.test.mjs",
         "tooling/scripts/local-dev/workflow-state-inspector.mjs",
         "tooling/scripts/local-dev/workflow-state-inspector.test.mjs",
-        "tooling/scripts/local-dev/workflow-tool-intent.mjs",
-        "tooling/scripts/local-dev/workflow-tool-intent.test.mjs",
         "tooling/scripts/local-dev/workspace-lifecycle-lock.mjs",
         "tooling/scripts/local-dev/workspace-lifecycle-lock.test.mjs",
         "tooling/scripts/local-dev/worktree-observation-store.mjs",
         "tooling/scripts/local-dev/worktree-observation-store.test.mjs",
         "tooling/scripts/local-dev/worktree-observe.mjs",
-        "tooling/scripts/local-dev/worktree-create.mjs",
-        "tooling/scripts/local-dev/worktree-create.test.mjs",
-        "tooling/scripts/plan/acceptance-admission.mjs",
-        "tooling/scripts/plan/acceptance-admission.test.mjs",
-        "tooling/scripts/plan/acceptance_admission.py",
-        "tooling/scripts/plan/acceptance_admission_test.py",
-        "tooling/scripts/plan/plan-completion.mjs",
-        "tooling/scripts/plan/plan-completion.test.mjs",
-        "tooling/scripts/plan/plan-mount.mjs",
-        "tooling/scripts/plan/plan-mount.test.mjs",
         "tooling/scripts/plan/planctl.mjs",
-        "tooling/scripts/plan/stable-plan-state-migration.mjs",
-        "tooling/scripts/plan/stable-plan-state-migration.test.mjs",
         "tooling/skills/pt-acceptance-gap-detector",
         "tooling/skills/pt-agent-development",
         "tooling/skills/pt-completion-auditor",
@@ -288,7 +230,7 @@
       "decisionIds": [
         "MCA-D14",
         "MCA-D15",
-      "MCA-D16A",
+        "MCA-D16A",
         "MCA-D17",
         "MCA-D18",
         "MCA-D20",
@@ -297,7 +239,7 @@
       ],
       "governedPaths": [
         "apps/desktop/src-tauri/src/application/agent_turn",
-      "apps/desktop/src-tauri/src/application/desktop_executor_worker",
+        "apps/desktop/src-tauri/src/application/desktop_executor_worker",
         "apps/desktop/src-tauri/src/application/mcp",
         "apps/station/app/subserver/agent",
         "docs/architecture/domains/agent",
@@ -326,26 +268,26 @@
           "evidenceGates": [
             "agent-minimum-usable-chat-native-e2e"
           ]
-    },
-    {
-      "id": "agent.mcp.dual-runtime",
-      "owner": "agent.station",
-      "contractRoots": [
-        "apps/station/app/subserver/agent",
-        "model/domain/agent"
-      ],
-      "consumers": [
-        "apps/desktop/src-tauri/src/application/desktop_executor_worker",
-        "apps/desktop/src-tauri/src/application/mcp"
-      ],
-      "allowedDependencies": [
-        "desktop.application.mcp",
-        "model.domain.agent",
-        "station.agent"
-      ],
-      "evidenceGates": [
-        "agent-v2-mcp-lifecycle-e2e"
-      ]
+        },
+        {
+          "id": "agent.mcp.dual-runtime",
+          "owner": "agent.station",
+          "contractRoots": [
+            "apps/station/app/subserver/agent",
+            "model/domain/agent"
+          ],
+          "consumers": [
+            "apps/desktop/src-tauri/src/application/desktop_executor_worker",
+            "apps/desktop/src-tauri/src/application/mcp"
+          ],
+          "allowedDependencies": [
+            "desktop.application.mcp",
+            "model.domain.agent",
+            "station.agent"
+          ],
+          "evidenceGates": [
+            "agent-v2-mcp-lifecycle-e2e"
+          ]
         }
       ],
       "externalCapabilityRegistries": []
@@ -381,14 +323,11 @@
         "LDCP-D06",
         "LDCP-D07",
         "LDCP-D08",
-        "LDCP-D09",
         "LDCP-D13",
-        "LDCP-D15",
         "LDCP-D16",
         "LDCP-D17",
-        "LDCP-D18",
         "LDCP-D19",
-        "LDCP-D20"
+        "LDCP-D21"
       ],
       "governedPaths": [
         "docs/architecture/engineering/local-dev",
@@ -398,7 +337,6 @@
         "tooling/scripts/local-dev/config.sh",
         "tooling/scripts/local-dev/desktop-dev.sh",
         "tooling/scripts/local-dev/env.sh",
-        "tooling/scripts/local-dev/environment-creation-authorization.py",
         "tooling/scripts/local-dev/git-workspace.mjs",
         "tooling/scripts/local-dev/machine-dev-lease.py",
         "tooling/scripts/local-dev/machine-dev-registry.mjs",

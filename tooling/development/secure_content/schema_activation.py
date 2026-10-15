@@ -1484,7 +1484,7 @@ def _validate_declaration(
     return declaration
 
 
-class DevelopmentSessionSourceCheckpointRunner:
+class CurrentSourceCheckpointRunner:
     def __init__(
         self,
         *,
@@ -1500,11 +1500,13 @@ class DevelopmentSessionSourceCheckpointRunner:
         *,
         budget_seconds: int,
     ) -> Mapping[str, Any]:
-        completed = self.command_runner(
+        status_completed = self.command_runner(
             [
-                "make",
-                "dev-session-status",
-                f"WORK_ITEM={request['work_item_id']}",
+                "git",
+                "status",
+                "--porcelain=v2",
+                "--branch",
+                "--untracked-files=normal",
             ],
             cwd=self.repo_root,
             capture_output=True,
@@ -1512,56 +1514,65 @@ class DevelopmentSessionSourceCheckpointRunner:
             timeout=budget_seconds,
             check=False,
         )
-        payload = _decode_process_json(
-            completed,
-            "Development Session checkpoint",
+        if status_completed.returncode != 0:
+            raise ValidationError("current Git source status is unavailable")
+        status_lines = status_completed.stdout.splitlines()
+        oid_line = next(
+            (line for line in status_lines if line.startswith("# branch.oid ")),
+            "",
         )
-        session = payload.get("session") if isinstance(payload, Mapping) else None
-        state = session.get("state") if isinstance(session, Mapping) else None
-        source = state.get("source") if isinstance(state, Mapping) else None
+        branch_line = next(
+            (line for line in status_lines if line.startswith("# branch.head ")),
+            "",
+        )
+        source_commit = oid_line.removeprefix("# branch.oid ")
+        branch = branch_line.removeprefix("# branch.head ")
+        dirty = any(not line.startswith("# ") for line in status_lines)
+        workspace_id = hashlib.sha256(
+            str(self.repo_root.resolve(strict=True)).encode("utf-8")
+        ).hexdigest()[:16]
         if (
-            not isinstance(session, Mapping)
-            or not isinstance(state, Mapping)
-            or not isinstance(source, Mapping)
-            or state.get("state") != "CHECKPOINTED"
-            or state.get("workItemId") != request["work_item_id"]
-            or state.get("planId") != request["plan_id"]
-            or state.get("taskId") != request["task_id"]
-            or state.get("workspaceId") != request["workspace_id"]
-            or state.get("branch") != request["branch"]
-            or source.get("commit") != request["source_commit"]
-            or source.get("branch") != request["branch"]
-            or source.get("clean") is not True
-            or source.get("purpose") != "development-runtime"
+            source_commit != request["source_commit"]
+            or branch != request["branch"]
+            or workspace_id != request["workspace_id"]
+            or dirty
         ):
-            raise ValidationError(
-                "Development Session does not own the exact source checkpoint"
-            )
+            raise ValidationError("current Git source does not match checkpoint request")
+        tree_completed = self.command_runner(
+            ["git", "rev-parse", "HEAD^{tree}"],
+            cwd=self.repo_root,
+            capture_output=True,
+            text=True,
+            timeout=budget_seconds,
+            check=False,
+        )
+        if tree_completed.returncode != 0:
+            raise ValidationError("current Git source tree is unavailable")
         source_tree = _require_text(
-            source.get("tree"),
-            "Development Session source tree",
+            tree_completed.stdout.strip(),
+            "current Git source tree",
             pattern=GIT_COMMIT,
         )
-        event_digest = _require_text(
-            session.get("eventDigest"),
-            "Development Session event digest",
-            pattern=SHA256,
+        source_digest = canonical_digest(
+            {
+                "workspace_id": workspace_id,
+                "branch": branch,
+                "source_commit": source_commit,
+                "source_tree": source_tree,
+            }
         )
-        completed_at = _require_timestamp(
-            source.get("createdAt"),
-            "Development Session source createdAt",
-        )
+        completed_at = datetime.now(timezone.utc)
         receipt = {
             "kind": SOURCE_RECEIPT_KIND,
             "state": "COMPLETE",
             "purpose": request["purpose"],
-            "checkpoint_id": state["sessionId"],
+            "checkpoint_id": f"source-{source_commit[:16]}",
             "plan_id": request["plan_id"],
             "task_id": request["task_id"],
             "workspace_id": request["workspace_id"],
             "source_commit": request["source_commit"],
             "source_tree": source_tree,
-            "session_event_digest": event_digest,
+            "session_event_digest": source_digest,
             "declaration_digest": request["declaration_digest"],
             "completed_at": completed_at.isoformat(
                 timespec="milliseconds"
@@ -1931,7 +1942,7 @@ class SchemaActivationOwner:
             self.profile_declaration_loader = self._activate_profile_declaration
         self.clean_checker = clean_checker or self._check_clean
         self.source_checkpoint_runner = source_checkpoint_runner or (
-            DevelopmentSessionSourceCheckpointRunner(
+            CurrentSourceCheckpointRunner(
                 repo_root=self.repo_root,
                 command_runner=command_runner,
             )

@@ -65,7 +65,13 @@ class WindowsSourceSyncTests(unittest.TestCase):
             patch.object(
                 synchronizer,
                 "_publish_source",
-                return_value=("url", "https://example.invalid/repo.git", None, False),
+                return_value=(
+                    "url",
+                    "https://example.invalid/repo.git",
+                    "refs/heads/main",
+                    None,
+                    False,
+                ),
             ),
             patch.object(
                 synchronizer.transport,
@@ -112,6 +118,10 @@ class WindowsSourceSyncTests(unittest.TestCase):
             "--bare",
         ])
         push.assert_called_once()
+        self.assertEqual(
+            push.call_args.args[2],
+            "refs/peers-touch/deploy/windows-cell/main",
+        )
 
     def test_checkout_script_has_cross_platform_lock_and_exact_identity(self) -> None:
         script = _remote_checkout_script()
@@ -151,7 +161,10 @@ class WindowsSourceSyncTests(unittest.TestCase):
             branch = _git(source, "branch", "--show-current")
             commit = _git(source, "rev-parse", "HEAD")
             digest = _git_tree_digest(source, commit)
-            _git(source, "push", str(bare), f"HEAD:refs/heads/{branch}")
+            transport_ref = (
+                f"refs/peers-touch/deploy/test-cell/{branch}"
+            )
+            _git(source, "push", str(bare), f"HEAD:{transport_ref}")
 
             completed = subprocess.run(
                 [
@@ -162,6 +175,7 @@ class WindowsSourceSyncTests(unittest.TestCase):
                     "runtime/repo",
                     "url",
                     str(bare),
+                    transport_ref,
                     branch,
                     commit,
                     digest,

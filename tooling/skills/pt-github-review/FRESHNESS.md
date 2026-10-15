@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-10-14
-covered_docs_hash: 9a4decd459e516565ed2fc4970ed0c6cf3fadd8c285056d5ffafffca2fb5ea1a
+last_verified_at: 2026-10-15
+covered_docs_hash: 6dd848ad8a06b8d9597e69d8343231157de2716a0083da85a4d87ac87a856742
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,32 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-10-15 Development Operation Authority Review
+
+DWF-D47 and LDCP-D21 make reviewed non-stable Profiles the authority for
+routine environment provisioning, deploy, restart, and exact-scope reset.
+Worktree-local Profile creation no longer uses a human authorization receipt,
+and coherent local commits are workflow-owned checkpoints that may precede
+exact-source runtime proof. A checkpoint is not Acceptance or delivery.
+
+Review replaces `unauthorized-environment-creation` with
+`unreviewed-environment-topology`: invented remote hosts or credentials,
+dirty/untracked deploy definitions, unsafe worktree-local Profile files, and
+Profile-pipeline bypasses remain blocking. Stable selection is connect-only by
+default, stable reset remains forbidden, and namespaced deployment transport
+refs are not collaboration publication. Push, PR, merge, release, history
+rewrite, worktree lifecycle, and stable mutation remain separately governed.
+Focused Machine Dev and source-sync tests cover these boundaries; no new
+general review fixture is required.
+
+## 2026-10-14 Lightweight Development Flow Review
+
+DWF-D46 now uses one optional atomic task snapshot, runner-owned Acceptance
+scope, advisory Hook output, and one public task-close entrypoint. Review keeps
+current-source evidence, real runtime admission, fixture coverage, and Skill
+freshness, but does not require event sourcing, host capture, or cryptographic
+review receipts for trusted internal development.
 
 ## 2026-10-14 Cross-Branch Preservation Review
 
@@ -61,144 +87,6 @@ new identity, Host ownership, private-CA health, failover/replay, hard-cut, and
 exact-source proof boundaries are reusable review requirements. Existing NCP
 Gates and hard rules provide executable coverage, so no generic review fixture
 or new knowledge entry is required.
-
-## 2026-10-10 Mobile And Relay Local Sync Review
-
-The local convergence keeps the accepted opaque inner-TLS Relay data plane and
-the Mobile Social/runtime work in one tree. Review must reject restoration of
-transparent Relay Request/Response frames or route-aware Relay plaintext
-handling. DWF-D44 remains per-action workspace selection; workspace-isolated
-machine-ledger adoption is renumbered DWF-D45. Session-class proof remains
-SAL-G08 and retains the reusable Suite Runtime requirement.
-
-## 2026-10-10 Worktree-Local TRAE Hook Review
-
-DWF-D35 now forbids one worktree's integration install from creating,
-rewriting, cleaning, or auditing another worktree's `.trae` projection. Review
-must reject workspace-descriptor fan-out, descriptor-first bootstrap ownership,
-selected-source Hook paths written into siblings, and fleet PASS inferred from
-one local install. Each worktree's managed Hook must call its own local plugin;
-the descriptor only validates membership and supplies runtime roots. The
-owner-rooted invariant and installer regression prove sibling byte preservation
-and independent local audit. GitHub Review severity and fixtures are otherwise
-unchanged, so `SKILL.md` needs no behavior update.
-
-## 2026-10-10 Ownerless Legacy Close Recovery Review
-
-Pre-OWNER legacy state may use only the bounded `owner-abandon` recovery
-defined by DWF-D41. Review must reject normal completion/cancellation,
-OWNER-bound active-work or Session fallback, missing exact
-`workspaceId + mountId + workItemId + mountedBy`, active declaration or lease,
-and environment unregister. A matching stale ownerless declaration may be
-released, but live or OWNER-bound declarations remain blocking. Focused
-active-work and Development-close tests cover both the admitted legacy cleanup
-and OWNER-bound denial; no generic review fixture or `SKILL.md` behavior change
-is required.
-
-## 2026-10-09 Projection Bootstrap Review
-
-DWF-D36 now makes non-destructive integration repair independent from existing
-PlanMount, declaration, Session, and active-work schema health. Review must
-reject projection code that parses those owners, a projection-only PASS that
-claims workflow health, or a full audit that ignores workflow identity
-findings. The install wrapper uses explicit `--projection-only`; standalone
-audit remains full and fail-closed. Installer fixtures cover retired-schema
-bootstrap plus post-install full-audit failure.
-
-## 2026-10-09 Per-Action Workspace Review
-
-DWF-D44 separates stable OWNER identity from workspace selection. Review must
-reject first-action permanent worktree binding, OWNER record rebinding,
-multi-root mutations, undeclared workspace selection, shell mutation from a
-foreign `cwd`, selected-root escape, and child movement outside its assignment
-workspace. It must allow one OWNER to select different worktrees in separate
-actions while each workspace independently validates declaration, PlanMount,
-Session, active-work, Git identity, and write claims. The review Skill,
-owner-rooted invariant, binding/Kernel tests, and assignment persistence tests
-cover these boundaries; no generic review fixture is required.
-
-## 2026-10-07 Integrated Ownership Review
-
-The stable-Plan and main-session ownership hardening from `master`, the
-canonical Chat ownership hard cut, and the Federation managed-domain cleanup
-were reviewed together. The merged contracts retain the new Plan and worktree
-ownership rules while keeping retired Chat and `fedp5` paths deleted.
-
-## 2026-10-07 Canonical Chat Ownership Review
-
-Desktop and Station coding guides now reflect the completed Chat hard cut:
-`messagingRuntime` and the Device Messaging Engine own Chat lifecycle and
-projection freshness, `socialRealtime` is limited to Social projections, and
-Conversation-owned persistence replaces the retired Friend/Group store
-families. The governing runtime-projection Skill was updated with the same
-boundary.
-
-Existing GitHub Review rules already require one business truth, proto-first
-contracts, generated-output integrity, runtime-owned freshness, and complete
-consumer migration. The nine-dimensional Chat zero-reference Gate provides the
-specific old-path regression coverage. No `pt-github-review/SKILL.md`, generic
-review fixture, or new knowledge entry is required.
-
-## 2026-10-07 Plan And Ownership Hardening Review
-
-DWF-D42 and DWF-D43 now require source-only CI Plan validation, immutable
-digest-bound completion attestations, full-source amendment fences, exact root
-OWNER receipts, and recoverable worktree creation transactions. Review rejects
-machine-state-dependent CI checks, child-session OWNER substitution,
-ownerless lifecycle mutation, unvalidated legacy migration input, and
-non-transactional provenance publication.
-
-## 2026-10-07 Workspace-Isolated Ledger Adoption Review
-
-DWF-D45 makes machine work and Plan-mount ledgers global coordination
-projections without making them global lifecycle owners. Review now rejects
-all-machine idle requirements for workspace schema adoption, foreign-record
-rewrites, ignored legacy conflict claims, overlapping legacy/stable Plan
-indexes, executable legacy snapshot fallbacks, missing exact-owner close and
-mixed-envelope removal paths, terminal-state trust without stable snapshot
-validation, and stale writers that can overwrite a newer revision.
-
-The GitHub Review Skill now checks these ownership and convergence boundaries.
-The machine-ledger workspace-isolation invariant plus focused Development work,
-Plan mount, and migration regressions provide executable coverage; no generic
-text-pattern fixture is required.
-
-## 2026-10-07 Main-Session Worktree Provenance Review
-
-DWF-D43 requires explicitly authorized Agent-created worktrees to persist the
-creating main-session reference independently from current Development Run
-ownership. Review now rejects raw Git creation presented as a supported Agent
-path, Git actor substitution, Action Receipt substitution for user
-authorization, guessed legacy provenance, owner mutation across declaration,
-Session, or active-work, and active ownerless legacy state. The review Skill,
-workflow invariant, installation fixture, and focused owner/worktree tests
-cover these boundaries; no generic review fixture is required.
-
-## 2026-10-07 Explicit North Star Approval Review
-
-DWF-D42 now treats generated North Stars as non-executable candidates.
-Review must reject missing or stale digest-bound user approval, incomplete
-criterion-to-Task/closure/Gate coverage, and any attempt to publish a changed
-North Star without the matching owner amendment decision. Plan mount/CLI
-fixtures and the stable-plan invariant cover these boundaries; no generic
-review fixture is required.
-
-## 2026-10-06 Stable Plan Amendment Review
-
-DWF-D42 replaces frozen Plan versions with one stable Plan identity and an
-append-only amendment trail. Review must reject unrecorded Plan mutation,
-rewritten amendment history, stale snapshot execution, silent North Star
-changes, and authorization expansion without an owner decision. The new
-stable-plan invariant and Plan mount/CLI regressions cover these boundaries; no
-generic review fixture is required.
-
-## 2026-10-06 Knowledge Index Review
-
-The Knowledge index now links the Conversation production schema migration
-single-source pitfall. The entry documents Station migration ownership and does
-not change GitHub Review behavior, severity, or evidence contracts. Existing
-review rules already reject split ownership and duplicate authority, so no
-`SKILL.md` update or review fixture is required.
 
 ## 2026-10-05 Architecture Taxonomy Review
 
@@ -260,13 +148,12 @@ owner, product contract, host-neutral invariant, and focused regression suite
 carry this boundary.
 
 DWF-D34 through DWF-D36 separate non-destructive Agent integration projection
-from machine-wide cleanup and remove the projection's circular dependency on a
-grant issued by the Hook being installed. DWF-D35 originally projected one
-source Hook into participating roots; its 2026-10-10 amendment above replaces
-that behavior with worktree-local projection. Review still rejects ordinary
+from machine-wide cleanup, project one equivalent canonical TRAE Hook into
+every participating root, and remove the projection's circular dependency on a
+grant issued by the Hook being installed. Review now rejects ordinary
 projection that depends on unrelated-worktree idle state or a Hook-issued
-grant, implicit cleanup, interchangeable cleanup grants, or destructive
-cleanup without global-idle proof.
+grant, singleton bootstrap assumptions, implicit cleanup, interchangeable
+cleanup grants, or destructive cleanup without global-idle proof.
 `SKILL.md`, the owner-rooted workflow invariant, and dedicated multi-root,
 control, Kernel, and Action Store fixtures cover these checks; no generic
 review fixture is required.
@@ -316,12 +203,11 @@ never loaded or migrated.
 Owner-rooted workflow binding replaced peer conversation bindings. Review now
 requires canonical OWNER/WORKER/REVIEWER lineage, exact current Action Receipt
 selection, live assigned reviewers, and no worktree-wide identity fallback.
-The original TRAE multi-root cut also required descriptor bootstrap and
-first-root selection rules; DWF-D44's 2026-10-09 review above supersedes those
-workspace-selection details. Global-idle hard-cut admission and deletion
-limited to old conversation and Action Receipt stores remain. `SKILL.md`,
-workflow regression fixtures, and the owner-rooted invariant cover omission,
-stale-child, and bootstrap-authority risks.
+TRAE multi-root review also requires one descriptor-selected bootstrap,
+target-derived owner selection, active-editor mismatch rejection, global-idle
+hard-cut admission, and deletion limited to the old conversation and Action
+Receipt stores. `SKILL.md`, workflow regression fixtures, and the owner-rooted
+invariant cover the new omission, stale-child, and bootstrap-authority risks.
 
 Resource-plan selection no longer treats healthy reusable inventory as
 Runtime Owner readiness, and incompatible non-null digest expectations cannot
@@ -382,19 +268,6 @@ The review interface now accepts one range, path/depth, or PR selector and
 derives file classification, advisory signals, source identity, rubric hash,
 verdict fields, and per-file coverage. Reviewers submit semantic findings only;
 the source-bound and fail-closed requirements are unchanged.
-
-## 2026-10-03 Social EventBus Acceptance Review
-
-Cross-Station Private Social now makes the accepted Desktop runtime projection
-contract explicit in its Plan and Acceptance Review. `pt-github-review` was
-updated because the escaped-defect pattern is reusable: a typed event may exist
-without a producer, consumer, unique runtime owner, reconcile path, scope
-teardown, or receiver-visible proof. Desktop Social review must trace the full
-producer-to-`momentsRuntime` path, reject direct module-private listener
-bypasses and duplicate owners, and require hidden-page plus missed-event
-recovery evidence. The plan-owned
-`social-cross-station-eventbus-contract` supplies the deterministic fixture;
-the Native two-client Gate remains the product-behavior proof.
 
 ## 2026-09-29 Suite Runtime Review
 
@@ -620,21 +493,9 @@ were updated; `pt-github-review/SKILL.md` needs no behavior change. The canonica
 skill check now enforces declaration, functional-fence, first-failure and
 release markers directly.
 
-Machine Dev Control Plane and Acceptance Evidence Store changes make
-repository-root debug artifacts, Station profile bypasses, and unauthorized
-environment creation explicit violations. `pt-github-review/SKILL.md` now
-treats all three as blocking hard rules, and `review/skill-check.sh` pins their
-markers. Local Dev architecture and the global environment specification are
-now covered freshness sources.
-
-No new golden fixture is required for unauthorized environment creation because
-the decisive approval is a human-created exact-tuple machine grant rather than
-diff content. Focused Local Dev tests prove non-interactive grant rejection,
-single-use consumption, untracked env rejection, and profile-digest binding.
-Remote deployment and Foundation restart now resolve only unique,
-Git-tracked-clean env-repository definitions; arbitrary profile-file overrides
-are confined to declared Acceptance runtime roots. Existing repository hygiene
-checks and profile-only startup invariants own the other two rules.
+At that time, Machine Dev used a human-created exact-tuple environment receipt.
+DWF-D47 and LDCP-D21 supersede that receipt in the active workflow while
+retaining tracked-clean remote topology and profile-only startup.
 
 ## 2026-09-14 Review
 
@@ -651,7 +512,7 @@ The covered-document drift records source-bound Native Desktop Runtime evidence,
 scope boundaries, and navigation to the already-reviewed cross-platform
 `devctl` architecture. It does not change PR review severity, ownership, or
 evidence semantics. Existing Acceptance review rules and the
-`station-profile-bypass` and `unauthorized-environment-creation` hard rules
+`station-profile-bypass` and `unreviewed-environment-topology` hard rules
 already cover these changes, so no `pt-github-review/SKILL.md` update or new
 review fixture is required.
 

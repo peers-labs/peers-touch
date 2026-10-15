@@ -8,6 +8,8 @@ description: Audits exact Peers-Touch implementation, delivery, or close readine
 Audit one exact target. Report concrete findings before any readiness summary.
 This Skill owns completion judgment; its script validates lifecycle evidence
 only and never replaces code, architecture, security, or product review.
+The Agent authors findings directly and must never invent, forge, or relabel
+evidence. No cryptographic reviewer identity or receipt chain is required.
 
 Architecture source:
 `docs/architecture/engineering/development-workflow/README.md`.
@@ -27,33 +29,26 @@ formal Acceptance.
 
 Select exactly one:
 
-- workspace ID plus work item ID;
-- repository root plus work item ID;
-- the same selector plus mount ID for tracked work.
+- repository root plus explicit requirement scope;
+- optionally one explicit taskId and Plan path.
 
 Declare:
 
 ```text
-mode = tracked | standalone
 claimClass = implementation-ready | delivery-ready | close-ready
 ```
 
 Never infer the target from branch scans, synchronized Plan files, chat
-history, a nearby worktree, or the newest declaration.
+history, a nearby worktree, mtime, or historical active-work.
 
-Run the lifecycle validator:
+Prepare current-source review material:
 
 ```bash
-node tooling/skills/pt-completion-auditor/scripts/completion-audit.mjs \
+node tooling/scripts/local-dev/completion-review.mjs standalone \
   --repo-root <root> \
-  --work-item <id> \
-  --mode <tracked|standalone> \
-  --claim-class <implementation-ready|delivery-ready|close-ready> \
-  [--mount-id <id>]
+  --obligations '<json-array>' \
+  --evidence '<json-array>'
 ```
-
-For deleted-worktree recovery, replace `--repo-root` with
-`--workspace-id <id>` and provide `--mount-id`.
 
 ## Claim Classes
 
@@ -61,9 +56,7 @@ For deleted-worktree recovery, replace `--repo-root` with
 
 Use while source work is active.
 
-- Require the exact ACTIVE Development declaration.
-- Tracked mode requires the exact mounted Plan and non-terminal Execution Run.
-- Standalone mode requires no PlanMount, Development Session, or active-work.
+- Use the explicit request or selected Plan Version as obligation input.
 - This claim says only that implementation may proceed. It does not claim
   product behavior, Acceptance proof, or delivery readiness.
 
@@ -71,22 +64,15 @@ Use while source work is active.
 
 Use after implementation and required review, before resource close.
 
-- Tracked mode requires a completed Execution Run and terminal Session.
-- Standalone mode remains unmounted with no tracked projections.
 - Independently verify requested scope, code structure, tests, docs, security,
   product-functional evidence, and formal Acceptance obligations.
 - Keep absent formal proof `NOT RUN/UNPROVEN`.
 
 ### `close-ready`
 
-Use only after `make dev-close`.
-
-- Require one exact `DevelopmentCloseReceipt` in `CLOSED`.
-- Require its resource matrix to contain no `PENDING` state.
-- Require declaration and tracked projections to be released/absent.
-- Tracked mode requires the exact PlanMount to be `released`.
-- Standalone mode must remain unmounted.
-- A released declaration alone is never close-ready evidence.
+Use only after the selected task's owned resources are released or explicitly
+retained and the requested completion obligations are satisfied. No
+workspace-wide close receipt is required.
 
 ## Required Audit Dimensions
 
@@ -148,34 +134,21 @@ Use `pt-acceptance-gap-detector` only when the audited claim includes formal
 product/runtime proof. Carry every detected gap as `UNPROVEN`; do not invoke it
 for source-only standalone work with no proof claim.
 
-## Mode Rules
+## Input Rules
 
-### Tracked
-
-- Consume only the selected PlanMount, immutable snapshot, Execution Run,
-  declaration, Session, active-work, review, and evidence records.
-- Do not require release for `implementation-ready` or `delivery-ready`; close
-  happens afterward.
-- Require a `CLOSED` close receipt only for `close-ready`.
-- Do not infer completion from archive, chat, task count, or a synchronized
-  foreign Plan.
-
-### Standalone
-
-- Do not require or manufacture a Plan, Task, Session, active-work, Context
-  Anchor, BindingProjection, or Completion Review receipt.
-- Use the explicit request, accepted architecture sources, diff, focused
-  checks, and findings-first review as the completion basis.
-- Require the standalone close receipt only for `close-ready`.
-- Formal Acceptance remains `NOT RUN/UNPROVEN` unless exact standalone proof
-  was actually produced by its normal owner.
+- Do not require or manufacture OWNER, PlanMount, declaration, Session,
+  active-work, Context Anchor, or a close receipt.
+- With no Plan, use explicit request obligations, accepted architecture
+  sources, current diff, focused checks, and findings-first review.
+- With a Plan, read only the explicitly provided frozen version and taskId.
+- Formal Acceptance remains `NOT RUN/UNPROVEN` unless exact current-source
+  proof was produced by its normal owner.
 
 ## Workflow
 
-1. Establish the exact selector, mode, claim class, user request, changed
+1. Establish the exact selector, claim class, user request, changed
    range, and touched domains.
-2. Run `completion-audit.mjs`; carry every blocked lifecycle check into
-   findings.
+2. Prepare standalone completion-review material and reject stale evidence.
 3. Read accepted product/architecture sources and the changed code plus
    cross-layer counterparts.
 4. Run the applicable structure, quality, security, and Acceptance owners.
@@ -219,12 +192,11 @@ areas. Use the weakest readiness claim supported by the evidence.
 
 ```bash
 node --test \
-  tooling/skills/pt-completion-auditor/scripts/completion-audit.test.mjs
-node tooling/skills/pt-completion-auditor/scripts/completion-audit.mjs \
+  tooling/scripts/local-dev/completion-review.test.mjs
+node tooling/scripts/local-dev/completion-review.mjs standalone \
   --repo-root "$PWD" \
-  --work-item <id> \
-  --mode <tracked|standalone> \
-  --claim-class <claim>
+  --obligations '<json-array>' \
+  --evidence '<json-array>'
 tooling/scripts/review/skill-check.sh
 ```
 
@@ -233,9 +205,9 @@ tooling/scripts/review/skill-check.sh
 Never:
 
 - audit an unspecified branch, worktree, Plan, or "latest" task;
-- require a formal Plan or BindingProjection for explicit standalone work;
+- require a formal Plan, OWNER, or BindingProjection for explicit work;
 - require released resources before a delivery-ready audit;
-- claim close-ready without consuming `DevelopmentCloseReceipt`;
+- claim close-ready while selected task resources are unsettled;
 - infer product readiness from static checks, Gate count, docs, or mocks;
 - let the lifecycle script replace architecture/security/code judgment;
 - send source-backed findings to the user instead of remediating them inside

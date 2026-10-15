@@ -1,142 +1,48 @@
-# Progress And Agent Activity Observability 产品合同
+# 工作状态的只读呈现
 
 > **Status**: active
-> **Created**: 2026-09-26 | **Updated**: 2026-10-06
+> **Created**: 2026-09-26 | **Updated**: 2026-10-14
 > **Owner**: Platform Team
-> **Module**: `tooling/scripts/local-dev/`
 
----
+## 1. 查询目的
 
-## 1. Scope
+帮助开发者理解当前工作区、选定任务、验证结果和运行资源。状态含义见[状态模型](./product-state-model.md)。
 
-本文定义让人类无需解释原始日志即可理解 worktree、Plan、Task 和 Agent execution
-的只读投影。
+查询不修复记录、不改变任务、不授予权限，也不要求多个机器记录先一致才能输出。
 
-它不拥有或修改任何 source state。
+## 2. 事实来源
 
-Workflow Snapshot 与 Action Receipt 分别由 canonical 决策 DWF-D27 和
-DWF-D29 定义；DWF-D33 提供 binding projection 输入，DWF-D28 提供
-Completion Review 输入。决策接受不构成实现或 proof 声明。
-
-## 2. Owner Join
-
-```text
-Git + BindingProjection + PlanMount + ExecutionPlanSnapshot + ExecutionRun
-    + Development Session + Completion Review + resource declaration
-    + runtime registration/leases + Action Receipts
-                              |
-                              v
-                     Workflow Snapshot
-                              |
-                     CLI / Context Anchor / Doctor
+```mermaid
+flowchart TD
+    G[当前 Git 与文件] --> Q[一次性状态查询]
+    T[明确选定的可选任务] --> Q
+    R[实际 Runtime 与资源锁] --> Q
+    E[当前验证及审查证据] --> Q
+    H[可选提示诊断] -.-> Q
+    Q --> C[CLI 或聊天中的简短说明]
 ```
 
-Snapshot 独立读取每个 upstream owner。缺失或冲突状态产生 typed finding；
-Snapshot 不修复 owner，不选择替代 workspace，也不从 branch 或聊天推断状态。
+Git 决定源码事实；明确选定的任务快照决定已记录进度；Runtime 决定操作和资源持有；证据存储决定验证。Hook 只提供提示诊断，不能成为其他来源的前提。
 
-## 3. Action Receipt
+任务不存在时显示未选择记录。某一来源不可读时保留其他有效结果，说明受影响部分；不自动选择另一个 worktree 或最近任务。
 
-```ts
-interface ActionReceipt {
-  schemaVersion: 1;
-  kind: 'peers-touch-workflow-action';
-  sequence: number;
-  actionId: string;
-  actor: {
-    host: string;
-    bindingDigest: string;
-    role: 'OWNER' | 'WORKER' | 'REVIEWER';
-    rootBindingDigest: string;
-    parentBindingDigest: string | null;
-    assignmentDigest: string | null;
-  };
-  binding: {
-    workspaceId: string;
-    workItemId: string | null;
-    planId: string | null;
-    taskId: string | null;
-    sessionId: string | null;
-  };
-  event: 'STARTED' | 'HEARTBEAT' | 'FINISHED';
-  result:
-    | 'RUNNING'
-    | 'WAITING'
-    | 'PASS'
-    | 'FAIL'
-    | 'BLOCKED'
-    | 'DENIED'
-    | 'CANCELLED';
-  operation: {
-    family: string;
-    label: string;
-    targetRef: string | null;
-  };
-  fingerprint: string;
-  progressStamp: string;
-  at: string;
-  leaseUntil: string | null;
-  durationMs: number | null;
-  previousDigest: string | null;
-  digest: string;
-}
-```
+## 3. 输出约定
 
-依据 DWF-D23，`schemaVersion` 只是 machine record 的 closed-shape 完整性
-字段，不是 workflow release label。Receipt 排除原始工具参数、prompt、
-stdout、secret 和 raw conversation identifier；记录按 conversation 有界，并
-原子写入 machine Dev root。
+一次查询说明当前工作区和源码、继承的北极星、本次贡献、明确目标、最近已记录
+步骤、下一步、验证结果、阻碍及相关资源去向。无关机器记录不纳入当前任务准入。
 
-Action Receipt store 按 root binding lineage 有界。Child lease 过期或 terminal
-只影响 activity projection，不改变 OWNER authority。Rollout 删除旧 Action
-Receipt store；reader 只接受当前 actor shape，不做兼容解析。
+活动信息只使用有界、脱敏的诊断事实。不保存原始工具参数、stdout、prompt、凭据或原始会话 ID；无可靠事件时显示未知，不凭沉默推断 Agent 卡死。
 
-## 4. Reducer
+不以执行命令数、测试数或 Hook 心跳计算任务百分比。明确分步计划可显示已经完成的闭环数量，但状态不得替代有效证据。
 
-每个 worktree 的 reducer 必须：
+## 4. 完成与资源呈现
 
-1. 只从 Task lifecycle 派生 Plan progress。
-2. 从 Session 和 Completion Review 派生 current Task stage，不虚构
-   intra-Task percentage。
-3. 按 sequence 和时间校验并排序 Action Receipt。
-4. 在十分钟内出现四个等价 terminal fingerprint 且 `progressStamp` 不变时，
-   标记 `looping`。
-5. Active action 每十秒产生 heartbeat；receipt lease 过期三十秒后标记
-   `stalled`。
-6. 让显式 `blocked` 和 cross-owner `drift` 优先于 heuristic state。
+已完成进度、当前验证、正式证明和资源释放分别显示。某任务历史完成后源码变了，不能继续用历史百分比表示新源码已经通过。
 
-Loop 和 stall 仅为诊断投影。Effective-state precedence 为：
+工作结束不自动停止保留给用户的服务。收尾未完成时列明真实资源及下一步；无关旧关闭记录只作诊断。
 
-```text
-drift -> blocked -> completed -> looping -> stalled -> waiting -> working -> idle
-```
+## 5. 运行成本与验证
 
-阈值属于 DWF-D29 目标合同；实现必须通过 injected clock 测试，历史运行数据
-不能替代该证明。
+状态查询输出后退出，不启动 server、browser、SSE、polling 或新租约。不跨全机强制恢复记录，不吞掉已读取的局部事实。
 
-## 5. Projection Contract
-
-Each invocation emits one bounded redacted snapshot containing:
-
-- project/worktree identity and source status;
-- PlanMount, Plan, ExecutionRun, and closure progress;
-- current internal Plan digest, amendment count, and latest amendment reason;
-- current Task and source/functional/acceptance/review state;
-- Agent state, last action, age, and result;
-- Completion Review state;
-- typed blocker and drift findings;
-- profile, Station, Relay, and live lease summary.
-
-The command computes one current view and exits. It has no server, browser,
-SSE, polling, keep-alive, cached last view, or retry lifecycle.
-
-## 6. Quality Gates
-
-- Reducer 使用 injected clock 的 deterministic test。
-- Invalid、oversized、symlinked 或 foreign receipt 被拒绝。
-- 仅 Action Receipt 更新时，worktree/Plan/Task progress 保持稳定。
-- Worktree stage, Plan closure percentage, and Task lifecycle remain distinct
-  structured fields; only Plan progress uses numeric percentage.
-- Completed Plan cannot project `COMPLETE` while Completion Review is missing
-  or stale.
-- 所有 proof 必须从当前目标源码重新生成，不得引用来源 worktree 的端口、
-  screenshot、test count、branch、commit 或 completion state。
+验证查询前后任务文件、机器存储、进程和端口无新增；验证无 Hook、无任务、部分损坏与旧证据场景。具体映射见 FLOW-A18 的[验收清单](./acceptance-matrix.md)。

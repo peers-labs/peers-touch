@@ -2,61 +2,59 @@
 
 import { isDirectInvocation } from '../lib/machine-dev-paths.mjs';
 import {
-  checkDeclaration,
-  heartbeatDeclaration,
-  releaseDeclaration,
-  startOrUpdateDeclaration,
-  statusAll,
-  statusCurrent,
-} from './dev-work-ledger.mjs';
-import {
-  DevWorkError,
-  canonicalize,
-  digestDeclaration,
-} from './dev-work-schema.mjs';
-import {
-  ResourcePlanError,
-  prepareDevelopmentResources,
-  recordDevelopmentResourceResult,
-  statusDevelopmentResources,
-} from './dev-resource-plan.mjs';
-import {
-  resolveWorkflowOwnerCommandContext,
-} from './workflow-owner-context.mjs';
+  createTaskProgress,
+  listTaskProgress,
+  readTaskProgress,
+  TaskProgressError,
+  updateTaskProgress,
+} from './task-progress-store.mjs';
 
-export { DevWorkError, digestDeclaration };
 export {
-  checkDeclaration,
-  heartbeatDeclaration,
-  processStartIdentity,
-  readLedger,
-  releaseDeclaration,
-  requireActiveDeclaration,
-  startOrUpdateDeclaration,
-  statusAll,
-  statusCurrent,
-} from './dev-work-ledger.mjs';
+  createTaskProgress,
+  inspectTaskProgress,
+  inspectTaskProgressList,
+  listTaskProgress,
+  readTaskProgress,
+  TaskProgressError,
+  updateTaskProgress,
+} from './task-progress-store.mjs';
 
 const OPTION_NAMES = {
-  'work-item': 'workItemId',
-  session: 'sessionId',
-  journey: 'journeyId',
-  plan: 'planPath',
-  'plan-id': 'planId',
   task: 'taskId',
-  owner: 'owner',
-  purpose: 'purpose',
-  branch: 'branch',
-  'source-head': 'sourceHead',
-  'source-claims': 'sourceClaims',
-  'runtime-claims': 'runtimeClaims',
-  'resource-input': 'resourceInput',
-  'resource-result': 'resourceResultFile',
-  'expires-minutes': 'expiresMinutes',
+  goal: 'goal',
+  contribution: 'contribution',
+  'north-star-ref': 'northStarRef',
+  stage: 'stage',
+  state: 'state',
+  'next-action': 'nextAction',
+  'expected-revision': 'expectedRevision',
+  reason: 'reason',
+  'plan-ref': 'planRefJson',
+  'scope-paths': 'scopePaths',
+  'scope-exclusions': 'scopeExclusions',
+  'authorization-refs': 'authorizationRefsJson',
+  'evidence-refs': 'evidenceRefsJson',
+  'resource-refs': 'resourceRefsJson',
+  blocker: 'blockerJson',
   'workspace-root': 'workspaceRoot',
-  'workspace-id': 'workspaceId',
-  home: 'home',
 };
+
+function parseJson(value, field) {
+  try {
+    return JSON.parse(value);
+  } catch (error) {
+    throw new TaskProgressError(
+      'TASK_PROGRESS_INVALID',
+      `${field} is not valid JSON`,
+      { cause: String(error) },
+    );
+  }
+}
+
+function parseList(value) {
+  if (value === undefined || value === '') return [];
+  return value.split(',').map((item) => item.trim()).filter(Boolean);
+}
 
 function parseArguments(argv) {
   const [action, ...rest] = argv;
@@ -64,82 +62,72 @@ function parseArguments(argv) {
   for (let index = 0; index < rest.length; index += 1) {
     const token = rest[index];
     if (!token.startsWith('--')) {
-      throw new DevWorkError('INVALID_ARGUMENT', `unexpected argument: ${token}`);
+      throw new TaskProgressError(
+        'TASK_PROGRESS_INVALID',
+        `unexpected argument: ${token}`,
+      );
     }
     const key = token.slice(2);
-    const value = rest[index + 1];
-    if (value === undefined || value.startsWith('--')) {
-      throw new DevWorkError('INVALID_ARGUMENT', `missing value for --${key}`);
-    }
-    index += 1;
-    const optionKey = OPTION_NAMES[key];
-    if (!optionKey) {
-      throw new DevWorkError(
-        'INVALID_ARGUMENT',
+    const optionName = OPTION_NAMES[key];
+    if (!optionName) {
+      throw new TaskProgressError(
+        'TASK_PROGRESS_INVALID',
         `unsupported option: --${key}`,
       );
     }
-    options[optionKey] = value;
+    const value = rest[index + 1];
+    if (value === undefined || value.startsWith('--')) {
+      throw new TaskProgressError(
+        'TASK_PROGRESS_INVALID',
+        `missing value for --${key}`,
+      );
+    }
+    options[optionName] = value;
+    index += 1;
+  }
+  for (const field of ['scopePaths', 'scopeExclusions']) {
+    if (options[field] !== undefined) options[field] = parseList(options[field]);
+  }
+  for (const [source, target] of [
+    ['planRefJson', 'planRef'],
+    ['authorizationRefsJson', 'authorizationRefs'],
+    ['evidenceRefsJson', 'evidenceRefs'],
+    ['resourceRefsJson', 'resourceRefs'],
+    ['blockerJson', 'blocker'],
+  ]) {
+    if (options[source] !== undefined) {
+      options[target] = parseJson(options[source], source);
+      delete options[source];
+    }
   }
   return { action, options };
 }
 
 function output(value, stream = process.stdout) {
-  stream.write(`${JSON.stringify(canonicalize(value), null, 2)}\n`);
+  stream.write(`${JSON.stringify(value, null, 2)}\n`);
 }
 
 export function runCli(argv, io = {}) {
   const { action, options } = parseArguments(argv);
   const write = io.output ?? output;
-  const ownerContext = resolveWorkflowOwnerCommandContext(
-    'dev-work',
-    action,
-    {
-      home: options.home,
-      workspaceRoot: options.workspaceRoot ?? process.cwd(),
-      resolveCurrentWorkflowOwnerContext:
-        io.dependencies?.resolveCurrentWorkflowOwnerContext,
-    },
-  );
-  if (ownerContext !== null) {
-    options.workflowOwner = ownerContext.workflowOwner;
-  }
   let result;
   switch (action) {
     case 'start':
-      result = startOrUpdateDeclaration(options);
+      result = createTaskProgress(options);
       break;
     case 'update':
-      result = startOrUpdateDeclaration(options, { requireExisting: true });
+      result = updateTaskProgress(options);
       break;
     case 'status':
-      result = statusCurrent(options);
+      result = readTaskProgress(options);
       break;
     case 'status-all':
-      result = statusAll(options);
-      break;
-    case 'check':
-      result = checkDeclaration(options);
-      break;
-    case 'heartbeat':
-      result = heartbeatDeclaration(options);
-      break;
-    case 'release':
-      result = releaseDeclaration(options);
-      break;
-    case 'prepare-resources':
-      result = prepareDevelopmentResources(options);
-      break;
-    case 'resource-status':
-      result = statusDevelopmentResources(options);
-      break;
-    case 'record-resource':
-      result = recordDevelopmentResourceResult(options);
+      result = listTaskProgress(options);
       break;
     default:
-      throw new DevWorkError(
-        'INVALID_ARGUMENT',
-        'action must be start, update, status, status-all, check, heartbeat, release, prepare-resources, resource-status, or record-resource',
+      throw new TaskProgressError(
+        'TASK_PROGRESS_INVALID',
+        'action must be start, update, status, or status-all',
       );
   }
   write(result);
@@ -148,8 +136,6 @@ export function runCli(argv, io = {}) {
 
 function reportError(error) {
   const payload =
-    error instanceof DevWorkError ||
-    error instanceof ResourcePlanError ||
     typeof error?.code === 'string'
       ? {
           status: 'BLOCKED',
@@ -159,7 +145,7 @@ function reportError(error) {
         }
       : {
           status: 'BLOCKED',
-          code: 'DEV_WORK_INTERNAL_ERROR',
+          code: 'TASK_PROGRESS_INTERNAL_ERROR',
           message: String(error),
         };
   output(payload, process.stderr);

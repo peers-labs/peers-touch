@@ -26,11 +26,11 @@ branch, HEAD, dirty state, reporter event, and report time.
 
 Observation and `git worktree list` discovery MUST NOT register a workspace,
 allocate profile/slot, assert runtime activity, grant authorization, select a
-Plan, advance a Session, rewrite active-work, or count as Acceptance evidence.
+Plan or task, update task progress, or count as Acceptance evidence.
 
-Workflow Snapshot is a read-only union projection. Current Git discovery owns the row's
-branch and HEAD. Registration, declaration, active-work, observation, and
-snapshot check times remain separate clocks.
+Workflow Snapshot is a read-only projection. Current Git owns branch and HEAD.
+Registration, observation, optional task progress, and snapshot check times
+remain separate clocks.
 
 ## Why this is non-negotiable
 
@@ -45,8 +45,7 @@ reconciliation provides visibility without changing control-plane ownership.
   proves disjoint workspace paths, atomic records, monotonic time, and corrupt
   record isolation.
 - `node --test tooling/scripts/local-dev/workflow-snapshot.test.mjs` proves
-  stale Owner identity cannot override Git branch/HEAD.
-- Public snapshot tests assert canonical roots never appear.
+  stale observations cannot override Git branch/HEAD.
 - `rg -n 'reportWorktreeObservation' tooling/plugins/pt-ew-plugin
   tooling/scripts/local-dev` finds only the reporter and thin hook adapter.
 

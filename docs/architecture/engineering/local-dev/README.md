@@ -1,8 +1,8 @@
 # Local Dev Control Plane
 
 > **Status**: active
-> **Version**: v1.4
-> **Created**: 2026-09-13 | **Updated**: 2026-10-06
+> **Version**: v1.6
+> **Created**: 2026-09-13 | **Updated**: 2026-10-15
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/`
 
@@ -13,12 +13,10 @@
 本文档集定义：
 
 - 单机多 worktree 开发环境的全局控制面。
-- Development Workflow 发布的机器级 source/runtime intent 公共账本。
 - 环境定义、worktree 绑定、本机 slot、Station 权限和运行租约的唯一 Owner。
 - `~/.peers-touch/dev/` 的机器级持久化边界。
 - Acceptance Evidence Store 的开发期持久化边界。
 - 每个 worktree 独立选择 profile、slot 和 Station 使用方式的身份模型。
-- Project Ledger PlanMount 的执行 worktree 占用边界。
 
 本文档集不定义：
 
@@ -54,25 +52,20 @@ Application Support namespace，不适合承载开发期产物；目标路径统
    slot、Station、Relay、database、进程和租约。
 7. 将 Acceptance Evidence Store 收敛到同一 Dev Control Plane 根。
 8. 所有冲突 fail closed，不依赖人工记忆或 worktree 私有缓存。
-9. 让所有 worktree 在首次写入或运行前看到其它任务的资源意图。
-10. 环境创建必须由研发人员对精确名称和目标显式授权；Agent 不得自行生成授权。
-11. 仅由 canonical Profile ID 派生 reset 策略：大小写不敏感包含
-    `stable` 的 Profile 禁止 Agent 自主 reset，其余已评审 Profile 允许
-    Agent 在完整声明、能力、精确 scope 和 lease 约束下选择 reset。
+9. 让所有 worktree 在实际资源入口看到已持有的 OS lease 和冲突。
+10. 已评审非 stable Profile 直接授权 capability 覆盖的开发环境操作；
+    worktree-local Profile 可由 canonical `profile-init` 直接创建。
+11. 仅由 canonical Profile ID 派生 reset 策略：大小写不敏感、以
+    `stable` 结尾的 Profile 禁止 Agent 自主 reset，其余已评审 Profile 允许
+    Agent 在能力、精确 scope、当前源码和 lease 约束下选择 reset。
 12. Workflow Snapshot 通过按需 CLI/API 提供只读开发状态，不启动常驻服务、
     不占用端口，也不成为控制面真源。
-13. 同一仓库或 PR 可同步多个 stable Plan，但每个 workspace 只执行
-    Project Ledger 显式挂载的 PlanMount。
-14. Plan 的普通执行修订保留 `planId`、`mountId` 和 `runId`，只推进内部
-    snapshot；Local Dev 只消费新的 `planDigest`，不解释修订语义。
-15. Workflow Snapshot 将工作状态与环境健康分开；stale 声明可见但不拥有
+13. Workflow Snapshot 将可选任务状态与环境健康分开；旧声明可见但不拥有
     资源。
-16. Peers Dev browser dashboard、固定 4177 endpoint 和 browser Gate 不属于
+14. Peers Dev browser dashboard、固定 4177 endpoint 和 browser Gate 不属于
     Local Dev Control Plane。
-16. 现有非 stable Profile 的 reset 不要求人工授权；已有 Profile 的 deploy
+15. 现有非 stable Profile 的 reset 不要求人工授权；已有 Profile 的 deploy
     与 reset 都不得因内部能力刷新或执行边界重复询问。
-17. 对 Dev Workflow 计划器新增的 runtime claim，物理 lease 准入必须验证
-    当前 `COMMITTED` resource-plan fence；既有手工声明保持独立 provenance。
 
 ## 4. Runtime Authority
 
@@ -82,25 +75,20 @@ machine-local authority at:
 ```text
 ~/.peers-touch/dev/registry.json
 ~/.peers-touch/dev/leases/
-~/.peers-touch/dev/plan-mounts/
 ```
 
-An existing `authority: observed-snapshot` file remains diagnostic until an
-Owner explicitly runs `make profile <name>` or `make env-register`. Either
+An existing `authority: observed-snapshot` file remains diagnostic until the
+canonical `make profile <name>` or `make env-register` action runs. Either
 operation promotes the registry to `authority: machine-control-plane` and adds
 the verified current workspace binding atomically. `make profile` allocates the
-lowest free slot and the Profile's minimum operational capabilities, never
-`station.reset`; `make env-register` remains available for explicit allocation.
+the lowest free slot and the Profile's minimum operational capabilities, never
+`station.reset`; stable Profiles default to `station.connect` only.
+`make env-register` remains available for explicit allocation.
 Discovery and legacy profile pointers never perform promotion or registration.
 
 Git worktree discovery does not create a registration. The initial registered
 cohort is owner-declared; until that list is provided, the machine registry may
 record observations but must keep `registrations` empty.
-
-An Agent may create a worktree only after explicit user authorization and only
-through `make worktree-create`. That command records the creating main-session
-OWNER, source workspace, purpose, branch, and initial HEAD in machine-local
-target-workspace state before the worktree is used by another Agent.
 
 Normal `make config`, `make station`, Desktop, and Mobile resolution requires
 the authoritative binding. `make profile` creates that binding on first
@@ -109,15 +97,10 @@ only live owners for `local.slot`, `station.deploy`, and `station.reset`; JSON
 in a lock file is diagnostic metadata only.
 
 The authoritative binding deliberately excludes Git HEAD. Commands capture
-current source from Git at operation time; Development declarations and
-runtime build identity fence source-sensitive mutation.
-Planner-owned claims additionally require the matching committed DWF-D32
-resource-plan receipt. A `RESERVING`, stale, or mismatched receipt cannot
-authorize a Local Dev lease.
-
-The authoritative binding deliberately excludes Git HEAD. Commands capture
-current source from Git at operation time; Development declarations and
-runtime build identity fence source-sensitive mutation.
+current source from Git at operation time. Lease acquisition snapshots branch
+and HEAD, then revalidates that identity with the binding after the OS lock is
+held and before the child command starts. Optional task progress, formal Plans,
+host identity, and Hook output are not runtime authorization inputs.
 
 ## 5. 文档导航
 
