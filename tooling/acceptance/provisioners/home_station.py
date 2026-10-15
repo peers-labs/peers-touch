@@ -1788,6 +1788,9 @@ class HomeStationProvisioner(EnvironmentProvisioner):
 
         deploy_environment = os.environ.copy()
         deploy_environment["PT_STATION_FORCE_DEPLOY"] = "true"
+        deploy_environment["PT_ACCEPTANCE_ENVIRONMENT"] = ""
+        deploy_environment["PT_AGENT_CAPABILITY_SCENARIO_CONTROL"] = ""
+        deploy_environment["PT_ACCEPTANCE_RUN_ID"] = ""
         completed = subprocess.run(
             ["make", "station"],
             cwd=REPO_ROOT,
@@ -1873,12 +1876,16 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                     deployment_environment=deployment_environment,
                 )
             if profile_env.get("PT_STATION_MODE", "local") == "remote":
-                self._ensure_remote_station_exact_source(
-                    station_url=station_url,
-                    deployment_environment=deployment_environment,
-                    profile_env=profile_env,
-                    source_commit=manifest.source_commit,
-                )
+                if (
+                    gate_id not in AGENT_V2_SCENARIO_CONTROL_GATES
+                    and gate_id != AGENT_V2_EXTERNAL_RUNTIME_GATE
+                ):
+                    self._ensure_remote_station_exact_source(
+                        station_url=station_url,
+                        deployment_environment=deployment_environment,
+                        profile_env=profile_env,
+                        source_commit=manifest.source_commit,
+                    )
                 self.acquire_remote_git_source_lease(
                     deployment_environment,
                     f"acceptance:{gate_id}:{manifest.run_id}",

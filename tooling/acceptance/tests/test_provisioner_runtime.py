@@ -834,6 +834,20 @@ class ProvisionerBlockingTests(unittest.TestCase):
             run.call_args.kwargs["env"]["PT_STATION_FORCE_DEPLOY"],
             "true",
         )
+        self.assertEqual(
+            run.call_args.kwargs["env"]["PT_ACCEPTANCE_ENVIRONMENT"],
+            "",
+        )
+        self.assertEqual(
+            run.call_args.kwargs["env"][
+                "PT_AGENT_CAPABILITY_SCENARIO_CONTROL"
+            ],
+            "",
+        )
+        self.assertEqual(
+            run.call_args.kwargs["env"]["PT_ACCEPTANCE_RUN_ID"],
+            "",
+        )
 
     def test_home_station_requests_required_station_runtime_identity(self):
         contract = EnvironmentContract.from_yaml(
