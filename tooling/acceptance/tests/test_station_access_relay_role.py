@@ -227,6 +227,7 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
 
     def test_desktop_relay_gate_declares_native_station_binding(self) -> None:
         provisioner = StationAccessRelayRoleProvisioner(self.contract)
+        lifecycle_order: list[str] = []
         profile = {
             "PT_STATION_MODE": "remote",
             "PT_STATION_URL": "http://station.example",
@@ -254,9 +255,21 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
                 provisioner,
                 acquire_profile_lease=Mock(),
                 _activate_direct_station_proxy=Mock(
-                    return_value="https://station-proxy.example"
+                    side_effect=lambda **_: (
+                        lifecycle_order.append("station-restart")
+                        or "https://station-proxy.example"
+                    ),
                 ),
-                _prepare_native_relay_fixture=Mock(),
+                _install_station_relay_ca=Mock(
+                    side_effect=lambda *_: lifecycle_order.append(
+                        "relay-ca"
+                    )
+                ),
+                _prepare_native_relay_fixture=Mock(
+                    side_effect=lambda **_: lifecycle_order.append(
+                        "relay-fixture"
+                    )
+                ),
             ),
             patch(
                 "tooling.acceptance.provisioners.station_access_relay_role."
@@ -346,6 +359,10 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
             (client.gateway_port, client.renderer_port, client.webdriver_port),
             (18101, 18102, 18103),
         )
+        self.assertEqual(
+            lifecycle_order,
+            ["relay-ca", "station-restart", "relay-fixture"],
+        )
         self.assertTrue(manifest.cleanup_registered)
         self.assertEqual(
             manifest.cleanup_resources,
@@ -357,6 +374,7 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
         self,
     ) -> None:
         provisioner = StationAccessRelayRoleProvisioner(self.contract)
+        lifecycle_order: list[str] = []
         profile = {
             "PT_STATION_MODE": "remote",
             "PT_STATION_URL": "http://station.example",
@@ -393,9 +411,21 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
                 provisioner,
                 acquire_profile_lease=Mock(),
                 _activate_direct_station_proxy=Mock(
-                    return_value="https://station-proxy.example"
+                    side_effect=lambda **_: (
+                        lifecycle_order.append("station-restart")
+                        or "https://station-proxy.example"
+                    ),
                 ),
-                _prepare_native_relay_fixture=Mock(),
+                _install_station_relay_ca=Mock(
+                    side_effect=lambda *_: lifecycle_order.append(
+                        "relay-ca"
+                    )
+                ),
+                _prepare_native_relay_fixture=Mock(
+                    side_effect=lambda **_: lifecycle_order.append(
+                        "relay-fixture"
+                    )
+                ),
             ),
             patch(
                 "tooling.acceptance.provisioners.station_access_relay_role."
@@ -531,6 +561,10 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
         self.assertEqual(
             {actor.device_policy for actor in actor_manifest.actors},
             {"persistent-acceptance"},
+        )
+        self.assertEqual(
+            lifecycle_order,
+            ["relay-ca", "station-restart", "relay-fixture"],
         )
         prepare_storage.assert_called_once()
         self.assertEqual(len(provisioner.cleanup()), 0)
