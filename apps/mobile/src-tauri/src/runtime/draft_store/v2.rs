@@ -709,6 +709,17 @@ fn validate_envelope(
 }
 
 fn validate_chat_payload(payload: &ChatDraftPayload) -> ReliabilityResult<()> {
+    let submission_ids_empty =
+        payload.submitted_command_id.is_empty() && payload.submitted_message_id.is_empty();
+    let submission_ids_valid = !payload.submitted_command_id.is_empty()
+        && payload.submitted_command_id.trim() == payload.submitted_command_id
+        && !payload.submitted_message_id.is_empty()
+        && payload.submitted_message_id.trim() == payload.submitted_message_id;
+    if !submission_ids_empty && !submission_ids_valid {
+        return Err(ReliabilityError::invalid(
+            "Chat draft submission identity must be complete and canonical",
+        ));
+    }
     validate_blob_references(
         payload
             .attachment_refs
@@ -922,6 +933,8 @@ mod tests {
                 attachment_refs: vec![EncryptedBlobReference {
                     blob_id: "encrypted-blob-1".to_string(),
                 }],
+                submitted_command_id: String::new(),
+                submitted_message_id: String::new(),
             })),
         }
     }
@@ -1058,6 +1071,24 @@ mod tests {
         let store = open_store(&root, &vault, scope.clone());
         let mut invalid = chat_envelope(&scope, "conversation-1", "text");
         invalid.surface_kind = MobileDraftSurfaceKind::MomentComposer as i32;
+        assert!(store.save(&invalid).is_err());
+        assert_eq!(store.count().unwrap(), 0);
+    }
+
+    #[test]
+    fn chat_submission_identity_requires_command_and_message_ids() {
+        let app_data = TempAppData::new();
+        let root = CanonicalReliabilityRoot::from_trusted_app_data(&app_data.0).unwrap();
+        let vault = MemoryVault::default();
+        let scope = ExactScope::new("station-a", "ptid-a").unwrap();
+        let store = open_store(&root, &vault, scope.clone());
+        let mut invalid = chat_envelope(&scope, "conversation-1", "text");
+        let Some(mobile_draft_envelope_v2::Payload::Chat(payload)) = invalid.payload.as_mut()
+        else {
+            panic!("expected Chat draft");
+        };
+        payload.submitted_command_id = "command-1".to_string();
+
         assert!(store.save(&invalid).is_err());
         assert_eq!(store.count().unwrap(), 0);
     }

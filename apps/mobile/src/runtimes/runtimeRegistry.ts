@@ -47,6 +47,12 @@ import {
   fenceAccessRuntimeProjection,
 } from './accessRuntime';
 import { createDeviceSettingsRuntimeDescriptor } from './deviceSettingsRuntime';
+import { createEntryRuntimeDescriptor } from './entryRuntime';
+import { createSecurityRuntimeDescriptor } from './securityRuntime';
+import {
+  createStationRequestScope,
+  type StationRequestScope,
+} from '../services/stationTransport';
 import { installMobileNativeEventBridge } from './mobileNativeEventBridge';
 import { fetchLifecycleGeneration } from './nativeLifecycleBridge';
 import { createMessagingRuntimeDescriptor } from './messagingRuntime';
@@ -209,6 +215,8 @@ function createNativeEventBridgeDescriptor(): MobileRuntimeDescriptor {
 
 function createSocialRuntimeDescriptor(): MobileRuntimeDescriptor {
   let controller: SocialRuntimeController | null = null;
+  let requests: StationRequestScope | null = null;
+  let closing = false;
   let unsubscribe: (() => void) | null = null;
   let suspended = false;
   let lifecycleRevision = 0;
@@ -217,15 +225,18 @@ function createSocialRuntimeDescriptor(): MobileRuntimeDescriptor {
 
   const synchronize: RuntimeSessionOperation = async (session, isCurrent) => {
     const previousController = controller;
+    requests?.close();
     await previousController?.teardown();
     await previousController?.drain();
     controller = null;
     if (!isCurrent()) return;
-    useSocialStore.getState().bindSession(session);
+    requests = createStationRequestScope();
+    useSocialStore.getState().bindSession(session, requests.signal);
     if (!session || suspended) return;
     controller = await startSocialRuntime(
       session,
       useSocialStore.getState,
+      requests,
     );
     if (!isCurrent()) {
       await controller.teardown();
@@ -248,7 +259,7 @@ function createSocialRuntimeDescriptor(): MobileRuntimeDescriptor {
     const task = runRuntimeSessionTransition({
       previous: transition,
       context: runtimeContext,
-      isScopeCurrent: () => runtimeSessionKey(admittedRuntimeSession(useAuthStore.getState())) === runtimeSessionKey(session),
+      isScopeCurrent: () => !closing && runtimeSessionKey(admittedRuntimeSession(useAuthStore.getState())) === runtimeSessionKey(session),
       run: (isCurrent) => operation(session, isCurrent),
       onError: (error) => reportRuntimeDescriptorError('social', error),
     });
@@ -265,6 +276,7 @@ function createSocialRuntimeDescriptor(): MobileRuntimeDescriptor {
 
     async bootstrap(context): Promise<void> {
       runtimeContext = context;
+      closing = false;
       lifecycleRevision += 1;
       suspended = false;
       unsubscribe = useAuthStore.subscribe((state, previous) => {
@@ -279,6 +291,7 @@ function createSocialRuntimeDescriptor(): MobileRuntimeDescriptor {
     async suspend(): Promise<void> {
       const revision = ++lifecycleRevision;
       suspended = true;
+      requests?.suspend();
       await transition;
       if (revision !== lifecycleRevision || !suspended) return;
       const activeController = controller;
@@ -294,10 +307,11 @@ function createSocialRuntimeDescriptor(): MobileRuntimeDescriptor {
       runtimeContext = context;
       lifecycleRevision += 1;
       suspended = false;
+      requests?.resume();
       const session = admittedRuntimeSession(useAuthStore.getState());
       await enqueueSession(session, async (activeSession, isCurrent) => {
         if (controller && activeSession) {
-          useSocialStore.getState().bindSession(activeSession);
+          useSocialStore.getState().bindSession(activeSession, requests?.signal);
           await controller.resume();
         } else {
           await synchronize(activeSession, isCurrent);
@@ -311,6 +325,8 @@ function createSocialRuntimeDescriptor(): MobileRuntimeDescriptor {
       unsubscribe = null;
       lifecycleRevision += 1;
       suspended = true;
+      closing = true;
+      requests?.close();
       await transition;
       const activeController = controller;
       await activeController?.teardown();
@@ -685,9 +701,11 @@ export function createMobileRuntimeDescriptors(): MobileRuntimeDescriptor[] {
   return [
     createDeviceSettingsRuntimeDescriptor(),
     createSecureStorageDescriptor(),
+    createSecurityRuntimeDescriptor(),
     createStationRuntimeDescriptor(),
     createAuthRuntimeDescriptor(),
     createAccessRuntimeDescriptor(),
+    createEntryRuntimeDescriptor(),
     createSessionRuntimeDescriptor(),
     createNativeEventBridgeDescriptor(),
     createMessagingRuntimeDescriptor(),

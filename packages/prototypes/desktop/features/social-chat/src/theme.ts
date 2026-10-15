@@ -2,13 +2,17 @@
  * Design tokens for the social chat prototype.
  * Single source of truth for spacing, colors, typography, and layout constants.
  */
+import { getDesignTokens } from '../../../../shared/design-tokens';
+
+const light = getDesignTokens('light');
+
 export const T = {
   // Brand
-  primary: '#6b5bd6',
-  primaryHover: '#5a4bc5',
-  primaryActive: '#4a3cb4',
+  primary: light.color.brand,
+  primaryHover: light.color.brandHover,
+  primaryActive: '#4658bd',
   // Canonical quiet fill behind primary icon actions (decision ✓ etc).
-  primaryWash: '#f3f1fb',
+  primaryWash: light.color.surfaceSubtle,
 
   // Federated (cross-station) deviation cue. Quiet marker for a peer who lives
   // on another station: distinct from both the selection/brand purple and from
@@ -17,30 +21,30 @@ export const T = {
   federated: '#5b8def',
 
   // Surfaces
-  bg: '#ffffff',
-  bgElevated: '#ffffff',
-  bgSubtle: '#fafafa',
-  bgMuted: '#f5f5f5',
-  bgHover: '#f0f0f0',
-  bgActive: '#e8e8e8',
+  bg: light.color.surface,
+  bgElevated: light.color.surfaceRaised,
+  bgSubtle: light.color.surfaceSubtle,
+  bgMuted: light.color.canvas,
+  bgHover: light.color.surfaceSubtle,
+  bgActive: light.color.border,
 
   // Text
-  text: '#1a1a1a',
-  textSecondary: '#595959',
-  textTertiary: '#8c8c8c',
-  textQuaternary: '#bfbfbf',
-  textOnPrimary: '#ffffff',
-  textDanger: '#e53e3e',
+  text: light.color.textPrimary,
+  textSecondary: light.color.textSecondary,
+  textTertiary: light.color.textMuted,
+  textQuaternary: light.color.textMuted,
+  textOnPrimary: light.color.textOnBrand,
+  textDanger: light.color.danger,
 
   // Borders
-  border: '#e8e8e8',
-  borderSubtle: '#f0f0f0',
+  border: light.color.borderStrong,
+  borderSubtle: light.color.border,
 
   // Semantic
-  success: '#38a169',
-  danger: '#e53e3e',
+  success: light.color.success,
+  danger: light.color.danger,
   dangerBg: '#fff5f5',
-  warning: '#d69e2e',
+  warning: light.color.warning,
 
   // Layout constants
   headerHeight: 56,
@@ -63,11 +67,11 @@ export const T = {
   space12: 48,
 
   // Radius
-  radiusSm: 4,
-  radiusMd: 8,
-  radiusLg: 12,
-  radiusXl: 16,
-  radiusFull: 9999,
+  radiusSm: light.radius.xs,
+  radiusMd: light.radius.md,
+  radiusLg: light.radius.lg,
+  radiusXl: light.radius.xl,
+  radiusFull: light.radius.full,
 
   // Typography
   fontXs: 11,
@@ -79,9 +83,9 @@ export const T = {
   fontHeading: 18,
 
   // Shadows
-  shadowSm: '0 1px 2px rgba(0,0,0,0.04)',
-  shadowMd: '0 2px 8px rgba(0,0,0,0.08)',
-  shadowLg: '0 4px 16px rgba(0,0,0,0.12)',
+  shadowSm: light.shadow.soft,
+  shadowMd: light.shadow.soft,
+  shadowLg: light.shadow.float,
 
   // Context menu
   menuMinWidth: 180,

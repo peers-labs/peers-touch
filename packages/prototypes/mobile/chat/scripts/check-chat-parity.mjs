@@ -21,7 +21,7 @@ const require = createRequire(resolve(repoRoot, 'apps/desktop/package.json'));
 const { chromium } = require('@playwright/test');
 
 const mobileUrl = process.env.MOBILE_URL ?? process.env.PROTOTYPE_URL ?? 'http://localhost:3210';
-const desktopUrl = process.env.DESKTOP_URL ?? 'http://localhost:3211';
+const desktopUrl = process.env.DESKTOP_URL ?? mobileUrl;
 
 const TAIL = { max: 6 };        // small cluster-start tail corner
 const FULL = { value: 12, tol: 2 }; // full rounded-square corner
@@ -46,14 +46,14 @@ async function measureMobile(page) {
     };
     const pick = (rows, own) => [...rows].map((row) => {
       const avatar = row.querySelector('.mp-message-avatar-slot .mp-identity-avatar');
-      const name = row.querySelector('.mp-message-sender');
       const bubble = row.querySelector('.mp-bubble') ?? row.querySelector('.mp-message-file');
       if (!bubble) return null;
       const ab = avatar?.getBoundingClientRect();
-      const nb = name?.getBoundingClientRect();
       const bb = bubble.getBoundingClientRect();
-      const identityTop = nb ? nb.top : bb.top;
+      const primary = row.querySelector('.mp-reply-quote, .mp-message-image, .mp-message-file, .mp-bubble');
+      const identityTop = primary?.getBoundingClientRect().top ?? bb.top;
       return {
+        id: row.getAttribute('data-chat-message-id') ?? row.getAttribute('data-scroll-anchor-id'),
         own,
         hasAvatar: Boolean(ab),
         avatar: ab ? { w: Math.round(ab.width), h: Math.round(ab.height) } : null,
@@ -76,6 +76,7 @@ async function measureMobile(page) {
     const dock = document.querySelector('.mp-composer-dock');
     const send = document.querySelector('.mp-composer-send');
     const emoji = document.querySelector('.mp-composer-tool[aria-label="Emoji"]');
+    const attach = document.querySelector('.mp-composer-tool[aria-label="Attach"]');
     const barRect = bar.getBoundingClientRect();
     const dockRect = dock.getBoundingClientRect();
     const dockStyle = getComputedStyle(dock);
@@ -104,6 +105,8 @@ async function measureMobile(page) {
         },
         sendInside: dock.contains(send),
         emojiInside: dock.contains(emoji),
+        attachInside: dock.contains(attach),
+        attachCount: document.querySelectorAll('.mp-composer-tool[aria-label="Attach"]').length,
         exteriorAttach: document.querySelectorAll('.mp-composer-attach').length,
         dockBg: dockStyle.backgroundColor,
       },
@@ -113,9 +116,15 @@ async function measureMobile(page) {
 
 async function measureDesktop(page) {
   await page.goto(`${desktopUrl}/`, { waitUntil: 'networkidle' });
-  await page.waitForTimeout(500);
+  const desktopSite = page.getByRole('button', { name: 'desktop Desktop Prototypes', exact: true });
+  if (await desktopSite.count() && await desktopSite.getAttribute('aria-pressed') !== 'true') {
+    await desktopSite.click();
+  }
   const railChat = page.locator('[aria-label="聊天"]').first();
-  if (await railChat.count()) await railChat.click();
+  if (await desktopSite.count()) {
+    await railChat.waitFor();
+    await railChat.click();
+  } else if (await railChat.count()) await railChat.click();
   await page.locator('[data-chat-composer-bar]').first().waitFor();
 
   // Ensure the Release Room review conversation (the one carrying the failed
@@ -128,34 +137,32 @@ async function measureDesktop(page) {
     if (await row.count()) await row.click();
     await page.locator('[data-chat-inline-retry]').first().waitFor();
   }
-  await page.waitForTimeout(200);
-
   return page.evaluate(() => {
     const radii = (el) => {
       const s = getComputedStyle(el);
       return [s.borderTopLeftRadius, s.borderTopRightRadius, s.borderBottomRightRadius, s.borderBottomLeftRadius]
         .map((v) => Math.round(Number.parseFloat(v)));
     };
-    // Desktop repeats identity per message; every rendered peer row is a start.
     const peerStarts = [];
     const ownStarts = [];
+    const midPeer = [];
     for (const row of document.querySelectorAll('[data-chat-message-id]')) {
       const own = row.getAttribute('data-chat-message-own') === 'true';
       const bubble = row.querySelector('.msg-bubble');
       if (!bubble) continue;
+      if (row.getAttribute('data-chat-cluster-start') === 'false') {
+        if (!own) midPeer.push(radii(bubble));
+        continue;
+      }
       const column = bubble.parentElement;
       const flexRow = column?.parentElement;
-      const avatar = [...flexRow?.children ?? []]
-        .find((child) => {
-          const r = child.getBoundingClientRect();
-          return r.width >= 24 && r.width <= 40 && Math.abs(r.width - r.height) <= 2;
-        }) ?? null;
+      const avatar = row.querySelector('[data-chat-avatar-slot] > *');
       const bb = bubble.getBoundingClientRect();
-      const name = [...column.children]
-        .find((child) => child !== bubble && child.getBoundingClientRect().top < bb.top - 1) ?? null;
+      const name = row.querySelector('[data-chat-sender]');
       const identityTop = name ? name.getBoundingClientRect().top : bb.top;
       const ab = avatar?.getBoundingClientRect();
       const record = {
+        id: row.getAttribute('data-chat-message-id'),
         own,
         hasAvatar: Boolean(avatar),
         avatar: ab ? { w: Math.round(ab.width), h: Math.round(ab.height) } : null,
@@ -183,6 +190,7 @@ async function measureDesktop(page) {
       platform: 'desktop',
       peerStarts,
       ownStarts,
+      midPeer,
       retry: {
         inlineCount: document.querySelectorAll('[data-chat-inline-retry]').length,
         inlineInMeta: true, // desktop retry is rendered inside the own meta row
@@ -215,7 +223,7 @@ function assertPlatformContract(label, m) {
     assert(Math.abs(row.avatar.w - row.avatar.h) <= 2,
       `${label}: identity avatar must be square, got ${row.avatar.w}x${row.avatar.h}`);
     assert(Math.abs(row.avatarIdentityDelta) <= 8,
-      `${label}: avatar must top-align with identity, delta ${row.avatarIdentityDelta}px`);
+      `${label}: ${row.id} avatar must top-align with message body, delta ${row.avatarIdentityDelta}px`);
     const [tl, tr, br, bl] = row.radii;
     assert(tl <= TAIL.max, `${label}: peer tail must be top-left small corner, got ${tl}`);
     assert(Math.abs(tr - FULL.value) <= FULL.tol && Math.abs(br - FULL.value) <= FULL.tol && Math.abs(bl - FULL.value) <= FULL.tol,
@@ -227,12 +235,9 @@ function assertPlatformContract(label, m) {
     assert(Math.abs(tl - FULL.value) <= FULL.tol && Math.abs(br - FULL.value) <= FULL.tol && Math.abs(bl - FULL.value) <= FULL.tol,
       `${label}: own non-tail corners must stay full 12, got ${[tl, tr, br, bl].join('/')}`);
   }
-  // Mobile clusters middle/end peer bubbles; desktop has no cluster concept.
-  if (m.platform === 'mobile') {
-    for (const radii of m.midPeer) {
-      assert(radii.every((r) => Math.abs(r - FULL.value) <= FULL.tol),
-        `${label}: non-start cluster bubble must keep full corners, got ${radii.join('/')}`);
-    }
+  for (const radii of m.midPeer) {
+    assert(radii.every((r) => Math.abs(r - FULL.value) <= FULL.tol),
+      `${label}: non-start cluster bubble must keep full corners, got ${radii.join('/')}`);
   }
   assert(m.retry.inlineCount >= 1, `${label}: failed message must expose an inline retry`);
   assert(m.retry.inlineInMeta, `${label}: inline retry must live in the message meta row`);
@@ -251,6 +256,10 @@ function assertPlatformContract(label, m) {
     `${label}: composer dock frame must be equal, got ${JSON.stringify(m.composer.insets)}`);
   assert(m.composer.sendInside && m.composer.emojiInside,
     `${label}: send and emoji must live inside the composer dock`);
+  if (label === 'mobile') {
+    assert(m.composer.attachInside && m.composer.attachCount === 1,
+      'mobile: exactly one attachment entry must live inside the composer dock');
+  }
   assert.equal(m.composer.exteriorAttach, 0, `${label}: no exterior composer attach button`);
 }
 
@@ -292,7 +301,7 @@ try {
   assertParity(desktop, mobile);
   assert.deepEqual(pageErrors, [], `page errors: ${JSON.stringify(pageErrors)}`);
 
-  console.log(JSON.stringify({
+  process.stdout.write(`${JSON.stringify({
     status: 'passed',
     desktop: {
       peerStarts: desktop.peerStarts.length,
@@ -312,7 +321,7 @@ try {
       inlineRetryHeight: mobile.retry.inlineHeight,
       composer: mobile.composer,
     },
-  }, null, 2));
+  }, null, 2)}\n`);
 } finally {
   await browser.close();
 }

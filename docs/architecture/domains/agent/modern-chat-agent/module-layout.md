@@ -49,7 +49,8 @@ apps/station/app/subserver/agent/
 │   ├── runtime_resolver_service.go
 │   ├── provider_service.go
 │   ├── mcp_server_service.go       # Canonical config and Tool manifests
-│   ├── mcp_runtime.go              # Station-local stdio/http/sse executor
+│   ├── mcp_runtime.go              # Runtime policy, stdio executor, result mapping
+│   ├── mcp_http_runtime.go         # SDK remote HTTP/SSE session and transport
 │   ├── external_runtime_service.go # Binding/reset transaction owner
 │   ├── externalruntime/
 │   │   ├── manager.go              # Session/process/home lifecycle

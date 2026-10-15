@@ -72,6 +72,9 @@ func (s *AgentService) GetAgent(ctx context.Context, actorPTID, agentID string) 
 }
 
 func (s *AgentService) CreateAgent(ctx context.Context, options domain.AgentUpsertOptions) (*domain.Agent, error) {
+	if _, err := memoryPreferences(options.ConfigJSON); err != nil {
+		return nil, err
+	}
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, err
@@ -125,6 +128,9 @@ func (s *AgentService) createAgentTx(
 }
 
 func (s *AgentService) UpdateAgent(ctx context.Context, options domain.AgentUpsertOptions) (*domain.Agent, error) {
+	if _, err := memoryPreferences(options.ConfigJSON); err != nil {
+		return nil, err
+	}
 	db, err := s.getDB(ctx)
 	if err != nil {
 		return nil, err

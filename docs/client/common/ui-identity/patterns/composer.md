@@ -49,7 +49,7 @@ Rules:
 - Publish/send button must align with the composer action row.
 - Audience/target must be visible enough to prevent mistakes.
 
-### 5.1 Grounded chat composer (desktop)
+### 5.1 Grounded chat composer (Desktop and Mobile)
 
 The conversation composer is one grounded gray writing dock with a closed,
 symmetric boundary — never a floating white card, never a flat full-width color
@@ -62,9 +62,18 @@ slab, and never a surface glued to one window edge:
   frame on all four sides**: 4px compact / 6px regular (a hair-thin gap, never
   a card-width margin). Top, right, bottom, and left insets must be identical
   within 1px — an open or glued edge breaks the boundary.
-- Text and the tool row live inside the one dock; focus is expressed by a
+- Empty and single-line drafts occupy one row: tools, transparent borderless
+  textarea, and Send are aligned inside the dock. The input grows only as the
+  draft gains lines, up to its bounded maximum, then scrolls internally.
+  The actual textarea and its border must be measured; checking only the
+  surrounding dock misses component-library form styles.
+- Text and tools live inside the one dock; focus is expressed by a
   brand-tinted border plus a soft outer ring, not by lifting the surface.
-- Expand/collapse must change the surface immediately (reserve a multi-line
+- Transient tool drawers are mutually exclusive and return focus ownership to
+  the composer. Outside focus/pointer, Escape, source context change,
+  and app-window blur dismiss them without clearing the draft or accepted
+  attachment context.
+- Desktop's explicit expand/collapse changes the surface immediately (reserve a multi-line
   min-height), so the control has visible effect even with an empty draft.
 - Geometry is verified, not eyeballed: the four frame insets, full-radius
   border, single-line content box, and expand/collapse heights are covered by

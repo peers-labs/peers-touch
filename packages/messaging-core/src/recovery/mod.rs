@@ -1,4 +1,7 @@
 pub mod codec;
+pub mod reconciliation;
+#[cfg(feature = "sqlite-recovery")]
+pub mod sqlite;
 pub mod types;
 
 pub use codec::{

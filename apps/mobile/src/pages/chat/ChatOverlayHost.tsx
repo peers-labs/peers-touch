@@ -19,11 +19,12 @@ import {
   Forward as ForwardIcon,
   ShieldX,
 } from 'lucide-react';
-import { CHAT_EMOJIS, isRecalledChatMessage } from '@peers-touch/client-chat-core';
+import { isRecalledChatMessage } from '@peers-touch/client-chat-core';
 
 import { useMobileI18n } from '../../app/mobileI18n';
 import { BoundedList } from '../../components/BoundedList';
 import { MobileAvatar } from '../../components/MobileAvatar';
+import { ReactionPicker } from '../../components/reactions/ReactionPicker';
 import {
   CHAT_BACKGROUND_OPTIONS,
   type ChatBackgroundId,
@@ -125,26 +126,13 @@ export function MessageActionSheet({
         <div className="chat-action-list">
           <div className="chat-background-section message-action-reactions">
             <Text type="secondary" className="chat-background-title">{t('mobile.chat.addReaction')}</Text>
-            <div className="chat-background-grid">
-              {CHAT_EMOJIS.map((reaction) => {
-                const active = metadata.reactions.some(
-                  (item) => item.actorPtid === currentUserPtid && item.reaction === reaction,
-                );
-                return (
-                  <button
-                    key={reaction}
-                    type="button"
-                    className={`chat-background-choice message-reaction-choice ${active ? 'active' : ''}`}
-                    aria-label={t('mobile.chat.reactWith', { reaction })}
-                    aria-pressed={active}
-                    disabled={commandBusy}
-                    onClick={() => onToggleReaction(reaction)}
-                  >
-                    <span>{reaction}</span>
-                  </button>
-                );
-              })}
-            </div>
+            <ReactionPicker
+              selectedEmojis={new Set(metadata.reactions
+                .filter((item) => item.actorPtid === currentUserPtid)
+                .map((item) => item.reaction))}
+              disabled={commandBusy || unavailable}
+              onToggle={onToggleReaction}
+            />
           </div>
           <div className="chat-action-group">
             <ChatActionButton icon={<CornerUpLeft size={18} />} title={t('mobile.chat.reply')} onClick={onReply} />

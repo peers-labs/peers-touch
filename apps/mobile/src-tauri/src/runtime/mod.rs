@@ -1,6 +1,7 @@
 pub mod command_ledger;
 pub mod draft_store;
 pub mod oauth;
+pub mod pin;
 pub mod reliability;
 pub mod reliability_proto;
 pub mod station_transport;

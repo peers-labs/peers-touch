@@ -1,8 +1,8 @@
 # Secure Content - Operational Contract
 
 > **Status**: active
-> **Version**: v1.8
-> **Created**: 2026-09-13 | **Updated**: 2026-09-21
+> **Version**: v1.9
+> **Created**: 2026-09-13 | **Updated**: 2026-10-15
 > **Owner**: Architecture Team
 
 ---
@@ -306,9 +306,12 @@ Accepted `SC-D23` defines the only legal reset targets:
 |---|---|---|
 | `four` | `station-four` | `station-four-social-private` |
 | `fiveArm` | `station-five-arm` | `station-five-arm-social-private` |
+| `chat-native-five` | `chat-native-five` | `chat-native-five-social-private` |
 
-The canonical workspace binding is restored to profile `four`, slot `5`.
-Profile `one`, production targets, and any inferred alias fail closed.
+The first two targets retain the canonical `four`, slot `5` restoration rule.
+The `chat-native-five` target is admitted only by SC-D30 under
+`MWPU-07-FRONTIER` with `SCHEMA_ACTIVATION`. Profile `one`, production
+targets, inferred aliases, and `FINAL_CUT` on `chat-native-five` fail closed.
 
 Accepted `SC-D24` defines two reset intents over the same closed operation:
 

@@ -1456,6 +1456,44 @@ pub struct MobilePrivateSocialRuntime {
 }
 
 impl MobilePrivateSocialRuntime {
+    pub(crate) fn store_recovery_master(
+        &self,
+        data_root: &Path,
+        storage: &SecureStorage,
+        station_peer_id: &str,
+        actor_ptid: &str,
+        phrase: &str,
+        epoch: u64,
+    ) -> MobileResult<()> {
+        let engine = self
+            .active
+            .lock()
+            .map_err(|_| MobileError::social("private Social runtime lock poisoned"))?
+            .as_ref()
+            .map(|active| active.engine.clone());
+        if let Some(engine) = engine {
+            if engine.session.scope.station_peer_id != station_peer_id
+                || engine.session.scope.actor_ptid != actor_ptid
+            {
+                return Err(MobileError::social("private Social recovery scope changed"));
+            }
+            let _operation = engine
+                .operation_lock
+                .lock()
+                .map_err(|_| MobileError::social("private Social operation lock poisoned"))?;
+            return store_recovery_phrase(&engine.store, actor_ptid, epoch, phrase)
+                .map_err(MobileError::social);
+        }
+        // Identity recovery happens before the private runtime can enroll.
+        let profile = private_social_profile_id(station_peer_id, actor_ptid);
+        let key = load_or_create_database_key(storage, &profile).map_err(MobileError::social)?;
+        let path =
+            private_social_database_path(data_root, &profile).map_err(MobileError::social)?;
+        let store = PrivateSocialStore::open(&path, &key, station_peer_id, actor_ptid)
+            .map_err(MobileError::social)?;
+        store_recovery_phrase(&store, actor_ptid, epoch, phrase).map_err(MobileError::social)
+    }
+
     fn activate(
         &self,
         data_root: &Path,
@@ -1548,6 +1586,7 @@ impl MobilePrivateSocialRuntime {
         actor_ptid: &str,
         activation_generation: u64,
     ) -> MobileResult<Arc<PrivateSocialEngine>> {
+        crate::runtime::pin::require_runtime_unlocked(station_peer_id, actor_ptid)?;
         let active = self
             .active
             .lock()

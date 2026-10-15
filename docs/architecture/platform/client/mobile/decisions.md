@@ -756,7 +756,10 @@ and a schema-v2 Rust persistence boundary:
    `station_peer_id + actor_ptid + surface_kind + target_id`. Its v2 payload
    membership is exactly Chat composer draft and Moment composer draft.
    Payloads contain text and encrypted blob references, never media bytes,
-   credentials, provider secrets, or command frames.
+   credentials, provider secrets, or command frames. Chat payloads may retain
+   one complete `submitted_command_id + submitted_message_id` correlation pair
+   so the Messaging owner can hide in-flight submissions, restore failed ones,
+   and delete only committed drafts after exact conversation-scope validation.
 7. Rust owns key material. It generates a random per-install key-encryption key
    in native Keychain/Keystore and a random data-encryption key for each exact
    Station/PTID scope. The install key wraps the scope key, whose wrapped record

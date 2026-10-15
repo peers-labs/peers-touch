@@ -25,6 +25,7 @@ from tooling.development.secure_content.schema_activation import (
     CROSS_STATION_SOCIAL_OWNER,
     DATABASE_TARGET_SPECS,
     JOURNAL_STATES,
+    MOBILE_USABILITY_OWNER,
     PLAN_ID,
     PLAN_PATH,
     PROFILE_ORDER,
@@ -875,6 +876,61 @@ class SchemaActivationOwnerTest(unittest.TestCase):
                 generation_id=COMMIT,
                 budget_seconds=3600,
             )
+
+    def test_mobile_usability_owner_reuses_one_exact_active_declaration(
+        self,
+    ) -> None:
+        descriptor = MOBILE_USABILITY_OWNER
+        binding = descriptor.activation_bindings["chat-native-five"]
+        declaration = self._profile_declaration(
+            binding.work_item_id,
+            binding.task_id,
+            "4" * 64,
+            "chat-native-five",
+            owner=descriptor,
+        )
+        source_runner = FakeSourceRunner("4" * 64)
+        owner = SchemaActivationOwner(
+            repo_root=self.repo_root,
+            result_root=self.result_root,
+            owner_descriptor=descriptor,
+            identity_loader=lambda: copy.deepcopy(self.identity),
+            declaration_loader=lambda _: copy.deepcopy(declaration),
+            profile_declaration_loader=lambda *_: copy.deepcopy(declaration),
+            clean_checker=lambda: None,
+            source_checkpoint_runner=source_runner,
+            maintenance_boundary=self.boundary,
+            station_deployment_runner=self.deployment_runner,
+            station_quiescence_runner=self.quiescence_runner,
+            clock=lambda: AT,
+            id_factory=lambda: next(self.ids),
+        )
+
+        source = owner.source_freeze(
+            generation_id=COMMIT,
+            budget_seconds=1800,
+        )
+        child = owner.run_profile(
+            workstream_id="MWPU-PROOF",
+            profile_id="chat-native-five",
+            intent="SCHEMA_ACTIVATION",
+            generation_id=COMMIT,
+            budget_seconds=3600,
+        )
+        aggregate = owner.aggregate(
+            intent="SCHEMA_ACTIVATION",
+            generation_id=COMMIT,
+            profiles=("chat-native-five",),
+        )
+
+        self.assertEqual("MWPU-PROOF", source["workstream_id"])
+        self.assertEqual("chat-native-five", child["profile_id"])
+        self.assertEqual(1, child["activation_ordinal"])
+        self.assertEqual(["chat-native-five"], aggregate["profiles"])
+        self.assertEqual(
+            descriptor.plan_id,
+            source_runner.requests[0]["plan_id"],
+        )
 
     def test_cross_station_owner_rejects_secure_content_declaration(self) -> None:
         owner = SchemaActivationOwner(

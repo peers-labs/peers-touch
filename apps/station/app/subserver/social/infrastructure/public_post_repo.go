@@ -11,6 +11,8 @@ import (
 	"gorm.io/gorm"
 )
 
+const nonNegativeCommentsCountDeltaSQL = "CASE WHEN COALESCE(comments_count, 0) + ? < 0 THEN 0 ELSE COALESCE(comments_count, 0) + ? END"
+
 // publicPostRepo implements `domain.PublicPostRepository` against the
 // `social_public_posts` table. PUBLIC posts have no per-viewer
 // permission filter — `viewerID` is intentionally absent from every
@@ -223,7 +225,10 @@ func (r *publicPostRepo) UpdateCommentsCount(ctx context.Context, id uint64, del
 	if err := r.db.WithContext(ctx).
 		Model(&db.SocialPublicPost{}).
 		Where("id = ?", id).
-		Update("comments_count", gorm.Expr("MAX(0, COALESCE(comments_count,0) + ?)", delta)).Error; err != nil {
+		Update(
+			"comments_count",
+			gorm.Expr(nonNegativeCommentsCountDeltaSQL, delta, delta),
+		).Error; err != nil {
 		return 0, err
 	}
 	var count int64

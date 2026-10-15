@@ -186,6 +186,17 @@ export interface BlockedUsersController {
   readonly unblock: (targetPtid: string) => Promise<void>;
 }
 
+export interface SettingsControllerDomains {
+  readonly profile: boolean;
+  readonly device: boolean;
+  readonly permissions: boolean;
+  readonly version: boolean;
+}
+
+const ALL_SETTINGS_DOMAINS: SettingsControllerDomains = {
+  profile: true, device: true, permissions: true, version: true,
+};
+
 // ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------
@@ -195,8 +206,9 @@ export function useSettingsController(
   currentProfile: PeerProfile | null,
   updateCurrentProfile: (input: EditableProfileInput) => Promise<ProfileUpdateResult>,
   reloadCurrentProfile: () => Promise<void>,
+  domains: SettingsControllerDomains = ALL_SETTINGS_DOMAINS,
 ): SettingsController {
-  const profileRuntime = readCurrentActiveProfileRuntime();
+  const profileRuntime = domains.profile ? readCurrentActiveProfileRuntime() : null;
   const [profileProjectionState, setProfileProjectionState] = useState(
     () => profileRuntime?.projection.state() ?? null,
   );
@@ -227,7 +239,7 @@ export function useSettingsController(
   const [devicePreferencesSaveError, setDevicePreferencesSaveError] =
     useState<string | null>(null);
   const [permissions, setPermissions] = useState<readonly DevicePermission[]>([]);
-  const [permissionsLoading, setPermissionsLoading] = useState(true);
+  const [permissionsLoading, setPermissionsLoading] = useState(domains.permissions);
   const [permissionsUnavailable, setPermissionsUnavailable] = useState(false);
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [cacheClearStatus, setCacheClearStatus] = useState<CacheClearStatus>('idle');
@@ -253,12 +265,13 @@ export function useSettingsController(
     setLoading(true);
 
     const [permissionReadback, versionReadback] = await Promise.all([
-      loadDevicePermissions()
+      domains.permissions ? loadDevicePermissions()
         .then((value) => ({ value, unavailable: false }))
-        .catch(() => ({ value: [] as DevicePermission[], unavailable: true })),
-      loadAppVersion()
+        .catch(() => ({ value: [] as DevicePermission[], unavailable: true }))
+        : Promise.resolve({ value: [] as DevicePermission[], unavailable: false }),
+      domains.version ? loadAppVersion()
         .then((value) => value.trim() || null)
-        .catch(() => null),
+        .catch(() => null) : Promise.resolve(null),
     ]);
     if (!mountedRef.current) return;
     setPermissions(permissionReadback.value);
@@ -267,7 +280,7 @@ export function useSettingsController(
     setAppVersion(versionReadback);
 
     if (mountedRef.current) setLoading(false);
-  }, []);
+  }, [domains.permissions, domains.version]);
 
   useEffect(() => { void loadAll(); }, [loadAll]);
 
@@ -292,6 +305,7 @@ export function useSettingsController(
   }, [serverDevicePrefs, draftDevicePrefs]);
 
   useEffect(() => {
+    if (!domains.device) return;
     const sync = () => {
       const snapshot = readDeviceSettingsRuntimeSnapshot();
       setDevicePreferencesLoading(snapshot.status === 'loading');
@@ -319,7 +333,7 @@ export function useSettingsController(
     };
     sync();
     return subscribeDeviceSettingsRuntime(sync);
-  }, []);
+  }, [domains.device]);
 
   useEffect(() => {
     if (!profileProjectionState?.availability.available) return;
@@ -382,7 +396,9 @@ export function useSettingsController(
     setProfileSaveError(null);
     const profileDraft = draftProfile;
     try {
-      const result = await updateCurrentProfile(profileDraft);
+      const result = await updateCurrentProfile(
+        profilePatchFromDraft(serverProfile, profileDraft),
+      );
       if (!mountedRef.current) return false;
       const next = reconcileEditableProfileDraft(
         serverProfile,
@@ -614,8 +630,19 @@ export function useSettingsController(
   };
 }
 
-export function useNotificationPreferencesController(): NotificationPreferencesController {
-  const runtime = readCurrentActiveProfileRuntime();
+export function profilePatchFromDraft(
+  server: EditableProfileDraft | null,
+  draft: EditableProfileDraft,
+): EditableProfileInput {
+  return Object.fromEntries(
+    Object.entries(draft).filter(([key, value]) => (
+      server?.[key as keyof EditableProfileDraft] !== value
+    )),
+  ) as EditableProfileInput;
+}
+
+export function useNotificationPreferencesController(enabled = true): NotificationPreferencesController {
+  const runtime = enabled ? readCurrentActiveProfileRuntime() : null;
   const [projectionState, setProjectionState] = useState(
     () => runtime?.notificationPreferences.state() ?? null,
   );

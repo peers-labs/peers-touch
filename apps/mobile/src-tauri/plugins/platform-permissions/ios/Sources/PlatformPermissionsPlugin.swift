@@ -623,7 +623,7 @@ final class PlatformPermissionsPlugin: Plugin, UNUserNotificationCenterDelegate,
   ) {
     switch kind {
     case .camera:
-      completion(mapCaptureStatus(AVCaptureDevice.authorizationStatus(for: .video)))
+      completion(cameraPermissionResponse())
     case .microphone:
       completion(mapCaptureStatus(AVCaptureDevice.authorizationStatus(for: .audio)))
     case .storage:
@@ -645,8 +645,12 @@ final class PlatformPermissionsPlugin: Plugin, UNUserNotificationCenterDelegate,
   ) {
     switch kind {
     case .camera:
+      guard AVCaptureDevice.default(for: .video) != nil else {
+        completion(PermissionResponse(status: .unsupported, canRequest: false))
+        return
+      }
       AVCaptureDevice.requestAccess(for: .video) { _ in
-        completion(self.mapCaptureStatus(AVCaptureDevice.authorizationStatus(for: .video)))
+        completion(self.cameraPermissionResponse())
       }
     case .microphone:
       AVCaptureDevice.requestAccess(for: .audio) { _ in
@@ -669,6 +673,13 @@ final class PlatformPermissionsPlugin: Plugin, UNUserNotificationCenterDelegate,
         self.checkPermission(.notifications, completion: completion)
       }
     }
+  }
+
+  private func cameraPermissionResponse() -> PermissionResponse {
+    guard AVCaptureDevice.default(for: .video) != nil else {
+      return PermissionResponse(status: .unsupported, canRequest: false)
+    }
+    return mapCaptureStatus(AVCaptureDevice.authorizationStatus(for: .video))
   }
 
   private func mapCaptureStatus(_ status: AVAuthorizationStatus) -> PermissionResponse {
@@ -989,9 +1000,9 @@ final class PlatformPermissionsPlugin: Plugin, UNUserNotificationCenterDelegate,
             url.stopAccessingSecurityScopedResource()
           }
         }
-        let destination = root.appendingPathComponent(
-          "\(UUID().uuidString).stage"
-        )
+        let destination = root
+          .appendingPathComponent(UUID().uuidString)
+          .appendingPathExtension(stagingExtension(url))
         try FileManager.default.copyItem(at: url, to: destination)
         created.append(destination)
         let attributes = try FileManager.default.attributesOfItem(
@@ -1086,6 +1097,17 @@ final class PlatformPermissionsPlugin: Plugin, UNUserNotificationCenterDelegate,
     default:
       return "file"
     }
+  }
+
+  private func stagingExtension(_ source: URL) -> String {
+    let candidate = source.pathExtension.lowercased()
+    guard !candidate.isEmpty,
+      candidate.count <= 16,
+      candidate.rangeOfCharacter(from: CharacterSet.alphanumerics.inverted) == nil
+    else {
+      return "stage"
+    }
+    return candidate
   }
 
   private func mimeTypeForPath(_ path: String, mediaKind: String) -> String {

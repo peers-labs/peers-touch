@@ -295,8 +295,8 @@ confirmation:
    scenario or real action.
 3. A single failed message has one message-local recovery owner. Aggregate
    banners are reserved for aggregate impact.
-4. Pinned content uses a compact banner plus a dedicated list, not a permanent
-   `Chat / Pinned` thread switcher.
+4. Pinned content uses a compact single-line carousel plus a dedicated list,
+   not a permanent `Chat / Pinned` thread switcher.
 5. Incoming messages use sender clusters rather than one avatar per bubble.
 6. Existing content remains visible during refresh; skeletons are first-load
    only.
@@ -327,8 +327,10 @@ Current executable source and rendered evidence resolve:
   deterministic fallback, presence, and cluster placement.
 - MUX-04: single failure and unknown outcome each have one message-local owner;
   route unavailability has one route-local owner.
-- MUX-05: sender clustering, final-message metadata, compact pinned banner, and
-  dedicated pinned page replace the permanent thread switcher.
+- MUX-05: sender clustering without repeated names, final-message metadata,
+  inline replies with a compact full-Thread entry, a single-line multi-pin
+  carousel, and the dedicated pinned page replace the permanent thread
+  switcher.
 - MUX-07: unread total derives from the projected conversation rows and row
   anatomy separates relationship state from preview/unread state.
 - MUX-08: shared semantic tokens drive CSS and antd in light/dark themes.
@@ -336,10 +338,12 @@ Current executable source and rendered evidence resolve:
   relationship block, and safety report hierarchy.
 - MUX-10: Station/Login, Chat/Contacts/Detail, Social, and Settings use one
   continuous Mobile shell language. Social now preserves Desktop master scope
-  ownership (`Home / Public / Search / Circles`), post detail, actor routing,
-  follow actions, and circle management. Settings preserves Desktop master's
-  four groups and all 20 meaningful sections; generic placeholder detail
-  pages are forbidden.
+  ownership (`Home / Public / Circles`), with Search beside New Post rather
+  than as a content scope. Search covers people and posts and returns to its
+  originating scope. Circle publishing requires a concrete circle ID; create,
+  edit, member add/remove, targeted publishing, and confirmed delete are one
+  tested journey. Settings preserves Desktop master's four groups and all 20
+  meaningful sections; generic placeholder detail pages are forbidden.
 
 Partially resolved:
 
@@ -347,8 +351,11 @@ Partially resolved:
   and sticky older-history loading are rendered. Real attachment/media loading
   and failure recovery remain `UNPROVEN`.
 - MUX-06: covered visible Chat actions meet the 44 px target and the composer
-  reserves safe-area clearance. Real software keyboard and input-panel
-  switching remain `UNPROVEN`.
+  reserves safe-area clearance. Emoji/attachment drawers are mutually
+  exclusive and dismiss on outside pointer/focus, Escape, context replacement,
+  or app-window blur; photo, camera, file selection and attachment-only send
+  are covered in the executable prototype. Real software keyboard and native
+  picker behavior remain `UNPROVEN`.
 
 Still open:
 
@@ -387,14 +394,25 @@ mounted Plan.
 
 The 2026-10-14 whole-product alignment is guarded by:
 
-- `scripts/check-layout.mjs`: 78 rendered captures across three viewports,
-  including Station validation, inline OAuth state, Social scopes/detail, all
+- `scripts/check-layout.mjs`: 81 rendered captures across three viewports,
+  including Station validation, inline OAuth state, Social scopes/detail and
+  inline comments, all
   20 Settings detail routes, overflow, touch geometry, and negative controls.
-- `scripts/check-chat-parity.mjs`: live Desktop master versus Mobile measured
-  Chat geometry and interaction parity.
+- `scripts/check-chat-parity.mjs`: current-worktree Desktop and Mobile measured
+  Chat geometry and interaction parity. Both site previews can share one Portal.
+- `scripts/check-message-presentation.mjs`: actor-aware clusters, Direct/self
+  label suppression, retained identity tracks, compact reaction tags and
+  nonoverlapping hit bounds. It also checks Mobile dark/narrow states and
+  Moments inline comments. Deliberate old sender/actor/reaction behavior must
+  fail its negative controls.
 - `scripts/check-product-parity.mjs`: live Desktop master versus Mobile auth,
   Contacts/Group detail commands, Social scope/detail, and exact Settings
   group/section ownership.
 
 These are prototype gates only. Native runtime and production evidence remain
 owned by the mounted execution Plan.
+
+The current craft review remains `changes-required`: Contact/Group dark-theme
+surfaces and Appearance action outcomes are not covered by these parity
+assertions. See the prototype README's craft review disposition. Comment
+actions stay in the current feed; opening post detail is a separate action.

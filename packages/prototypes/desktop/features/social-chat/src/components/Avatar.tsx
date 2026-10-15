@@ -24,7 +24,7 @@ function getInitials(name: string): string {
 }
 
 function hashColor(name: string): string {
-  const colors = ['#6b5bd6', '#38a169', '#d69e2e', '#e53e3e', '#3182ce', '#805ad5', '#d53f8c', '#319795'];
+  const colors = [T.primary, '#38a169', '#d69e2e', '#e53e3e', '#3182ce', '#805ad5', '#d53f8c', '#319795'];
   let hash = 0;
   for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
   return colors[Math.abs(hash) % colors.length];

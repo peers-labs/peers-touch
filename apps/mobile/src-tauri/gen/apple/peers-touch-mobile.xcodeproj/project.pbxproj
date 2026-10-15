@@ -83,6 +83,7 @@
 		8812B4A526D63A6D3F5F7FE3 /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
 		8946C8E0E861397A0A360108 /* android.rs */ = {isa = PBXFileReference; path = android.rs; sourceTree = "<group>"; };
 		8A62445753AB038964CD44D6 /* private_reaction.rs */ = {isa = PBXFileReference; path = private_reaction.rs; sourceTree = "<group>"; };
+		8C8BB50CFF345F9EB4D81B89 /* agent_settings.rs */ = {isa = PBXFileReference; path = agent_settings.rs; sourceTree = "<group>"; };
 		8D1DAEC12B1C08C49BF8F5E2 /* runtime_owner.rs */ = {isa = PBXFileReference; path = runtime_owner.rs; sourceTree = "<group>"; };
 		942974224E23162B2BB1BF54 /* peers-touch-mobile_iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "peers-touch-mobile_iOS.entitlements"; sourceTree = "<group>"; };
 		9766B784729AEF6ADA9206F7 /* credential_envelope_go.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = credential_envelope_go.json; sourceTree = "<group>"; };
@@ -91,6 +92,7 @@
 		A17A9297DBC2437ECA875E8B /* native_events.rs */ = {isa = PBXFileReference; path = native_events.rs; sourceTree = "<group>"; };
 		A3A6CA12AAFD2977F7655A8F /* friend_request.rs */ = {isa = PBXFileReference; path = friend_request.rs; sourceTree = "<group>"; };
 		A3AB9134448CE6FBFD60A512 /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
+		A419569C173D9790FD129C72 /* federation_settings.rs */ = {isa = PBXFileReference; path = federation_settings.rs; sourceTree = "<group>"; };
 		A55C175C1A520398B803796D /* background_bridge.rs */ = {isa = PBXFileReference; path = background_bridge.rs; sourceTree = "<group>"; };
 		A5BECDF3FD4E40CA94A186BB /* libapp.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libapp.a; sourceTree = "<group>"; };
 		A79A3B45B358D69926E90206 /* platform_bridge.rs */ = {isa = PBXFileReference; path = platform_bridge.rs; sourceTree = "<group>"; };
@@ -131,9 +133,11 @@
 		E4FC84D7CDC2E2BEDB46A5AE /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
 		E65F528A9E12625A00FDD20B /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
 		E8E542B0DA8D5A847DEFC65D /* credential_envelope.rs */ = {isa = PBXFileReference; path = credential_envelope.rs; sourceTree = "<group>"; };
+		EC3A61FC566A19F26FB0F216 /* native_recovery.rs */ = {isa = PBXFileReference; path = native_recovery.rs; sourceTree = "<group>"; };
 		ED5CBDD96180964D2B0D8658 /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
 		EE8B009CF540C29ED3D8142D /* lib.rs */ = {isa = PBXFileReference; path = lib.rs; sourceTree = "<group>"; };
 		FBA453103F046EF8AAD0B88D /* engine.rs */ = {isa = PBXFileReference; path = engine.rs; sourceTree = "<group>"; };
+		FBDFD7420181003F849579C1 /* pin.rs */ = {isa = PBXFileReference; path = pin.rs; sourceTree = "<group>"; };
 		FD5CE4FAFCCFB425B5FA52C2 /* deep_link.rs */ = {isa = PBXFileReference; path = deep_link.rs; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -249,6 +253,7 @@
 			isa = PBXGroup;
 			children = (
 				3BDD68EE88959D535CCA896B /* mod.rs */,
+				FBDFD7420181003F849579C1 /* pin.rs */,
 				04EE79673F068760A28AFAAE /* reliability_proto.rs */,
 				7AE460EC8C6D12C92A8BD0DD /* command_ledger */,
 				4B0AFBCEE81D1061A47AAA31 /* draft_store */,
@@ -345,6 +350,7 @@
 				6C94AACD7CD5117C5E45584C /* lifecycle.rs */,
 				01FC2F501F7E983544FAFD0D /* mls_leave_intent.rs */,
 				B6B3CC6DB5C80C26D44A2CC2 /* mod.rs */,
+				EC3A61FC566A19F26FB0F216 /* native_recovery.rs */,
 				67154E328E371551B02F6335 /* recovery.rs */,
 				D44D4A3F64DDCD50C3EC1F34 /* storage_governance_test.rs */,
 				53FB9CCCA75CF2A55BABE7B9 /* transport.rs */,
@@ -364,6 +370,8 @@
 		9F1CC59C9B70E9E574425B45 /* station_transport */ = {
 			isa = PBXGroup;
 			children = (
+				8C8BB50CFF345F9EB4D81B89 /* agent_settings.rs */,
+				A419569C173D9790FD129C72 /* federation_settings.rs */,
 				CAB0F434175A26F921E26A43 /* mod.rs */,
 			);
 			path = station_transport;

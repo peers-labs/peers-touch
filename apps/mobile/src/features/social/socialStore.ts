@@ -176,7 +176,7 @@ export interface SocialState {
   loading: boolean;
   error: SocialApiError | null;
   lastReconcileAt: number | null;
-  bindSession: (session: MobileAuthSession | null) => void;
+  bindSession: (session: MobileAuthSession | null, requestSignal?: () => AbortSignal) => void;
   reconcile: () => Promise<void>;
   refreshFriendRequests: () => Promise<void>;
   refreshSessions: () => Promise<void>;
@@ -363,8 +363,17 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   error: null,
   lastReconcileAt: null,
 
-  bindSession: (session) => {
-    if (session && get().sessionKey === mobileAuthScopeKey(session)) return;
+  bindSession: (session, requestSignal) => {
+    const gateways = session ? {
+      socialGateway: createSocialGateway(session, requestSignal),
+      notificationGateway: createNotificationGateway(session, requestSignal),
+      profileGateway: createProfileGateway(session, requestSignal),
+      momentsGateway: createMomentsGateway(session, requestSignal),
+    } : null;
+    if (session && get().sessionKey === mobileAuthScopeKey(session)) {
+      set({ authSession: session, ...gateways });
+      return;
+    }
     messagingScope = {};
     sessionRefresh = null;
     socialReconcile = null;
@@ -426,10 +435,7 @@ export const useSocialStore = create<SocialState>((set, get) => ({
       sessionKey,
       authSession: session,
       currentUserPtid,
-      socialGateway: createSocialGateway(session),
-      notificationGateway: createNotificationGateway(session),
-      profileGateway: createProfileGateway(session),
-      momentsGateway: createMomentsGateway(session),
+      ...gateways,
       storage: createMobileClientStorageRuntime(session),
       sessions: [],
       messagingConversations: [],

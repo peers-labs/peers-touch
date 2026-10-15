@@ -23,10 +23,29 @@ import (
 // Delegates all domain logic to MemoryService.
 type MemoryHandlers struct {
 	memoryService *service.MemoryService
+	agentService  *service.AgentService
 }
 
 func NewMemoryHandlers(memoryService *service.MemoryService) *MemoryHandlers {
-	return &MemoryHandlers{memoryService: memoryService}
+	return &MemoryHandlers{memoryService: memoryService, agentService: service.NewAgentService()}
+}
+
+func (h *MemoryHandlers) authorizeAgent(ctx context.Context, agentID string, write bool) error {
+	if strings.TrimSpace(subjectActorPTID(ctx)) == "" {
+		return toHandlerError(errcode.New(errcode.AgentUnauthorized, 401, "actor authentication is required", nil))
+	}
+	if agentID == "" && !write {
+		// Aggregate reads are filtered at the Memory query owner.
+		return nil
+	}
+	agent, err := h.agentService.GetAgent(ctx, subjectActorPTID(ctx), agentID)
+	if err != nil {
+		return toHandlerError(err)
+	}
+	if write && agent.OwnerActorPTID != subjectActorPTID(ctx) {
+		return toHandlerError(errcode.New(errcode.AgentNotFound, 404, "agent not found", nil))
+	}
+	return nil
 }
 
 var domainToModelMemoryLayer = map[domain.MemoryLayer]model.MemoryLayer{
@@ -61,6 +80,9 @@ func modelMemoryLayerToDomain(layer model.MemoryLayer) domain.MemoryLayer {
 
 // HandleListMemories retrieves all memory entries for a given agent and target.
 func (h *MemoryHandlers) HandleListMemories(ctx context.Context, req *model.ListMemoriesRequest) (*model.ListMemoriesResponse, error) {
+	if err := h.authorizeAgent(ctx, req.GetAgentId(), false); err != nil {
+		return nil, err
+	}
 	since, until, err := resolveMemoryTimeRange(req.GetSince(), req.GetUntil(), req.GetPeriod())
 	if err != nil {
 		return nil, toHandlerError(errcode.New(errcode.AgentInvalidRequest, 400, err.Error(), nil))
@@ -98,6 +120,9 @@ func (h *MemoryHandlers) HandleGetSnapshot(ctx context.Context, req *model.GetMe
 	if req.GetAgentId() == "" {
 		return nil, toHandlerError(errcode.New(errcode.AgentInvalidRequest, 400, "agent_id is required", nil))
 	}
+	if err := h.authorizeAgent(ctx, req.GetAgentId(), false); err != nil {
+		return nil, err
+	}
 
 	snapshot, err := h.memoryService.BuildSnapshot(ctx, req.GetAgentId())
 	if err != nil {
@@ -118,6 +143,9 @@ func (h *MemoryHandlers) HandleGetMemory(ctx context.Context, req *model.GetMemo
 	if err != nil {
 		return nil, toHandlerError(err)
 	}
+	if err := h.authorizeAgent(ctx, item.AgentID, false); err != nil {
+		return nil, err
+	}
 	return &model.GetMemoryResponse{Item: memoryItemToProto(item)}, nil
 }
 
@@ -125,13 +153,16 @@ func (h *MemoryHandlers) HandleDeleteMemory(ctx context.Context, req *model.Dele
 	if req.GetId() == "" {
 		return nil, toHandlerError(errcode.New(errcode.AgentInvalidRequest, 400, "id is required", nil))
 	}
-	agentID := req.GetAgentId()
-	if agentID == "" {
-		item, err := h.memoryService.GetMemory(ctx, req.GetId())
-		if err != nil {
-			return nil, toHandlerError(err)
-		}
-		agentID = item.AgentID
+	item, err := h.memoryService.GetMemory(ctx, req.GetId())
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	agentID := item.AgentID
+	if req.GetAgentId() != "" && req.GetAgentId() != agentID {
+		return nil, toHandlerError(errcode.New(errcode.AgentNotFound, 404, "memory not found", nil))
+	}
+	if err := h.authorizeAgent(ctx, agentID, true); err != nil {
+		return nil, err
 	}
 	if err := h.memoryService.DeleteMemoryByID(ctx, agentID, req.GetId()); err != nil {
 		return nil, toHandlerError(err)
@@ -143,6 +174,16 @@ func (h *MemoryHandlers) HandleUpdateMemory(ctx context.Context, req *model.Writ
 	memoryID := req.GetOldContent()
 	if memoryID == "" {
 		return nil, toHandlerError(errcode.New(errcode.AgentInvalidRequest, 400, "old_content field used as memory_id is required", nil))
+	}
+	current, err := h.memoryService.GetMemory(ctx, memoryID)
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	if req.GetAgentId() != "" && req.GetAgentId() != current.AgentID {
+		return nil, toHandlerError(errcode.New(errcode.AgentNotFound, 404, "memory not found", nil))
+	}
+	if err := h.authorizeAgent(ctx, current.AgentID, true); err != nil {
+		return nil, err
 	}
 	newContent := req.GetContent()
 	if newContent == "" {
@@ -160,6 +201,9 @@ func (h *MemoryHandlers) HandleUpdateMemory(ctx context.Context, req *model.Writ
 }
 
 func (h *MemoryHandlers) HandleSearchMemories(ctx context.Context, req *model.SearchMemoriesRequest) (*model.SearchMemoriesResponse, error) {
+	if err := h.authorizeAgent(ctx, req.GetAgentId(), false); err != nil {
+		return nil, err
+	}
 	since, until, err := resolveMemoryTimeRange(req.GetSince(), req.GetUntil(), req.GetPeriod())
 	if err != nil {
 		return nil, toHandlerError(errcode.New(errcode.AgentInvalidRequest, 400, err.Error(), nil))
@@ -192,6 +236,9 @@ func (h *MemoryHandlers) HandleSearchMemories(ctx context.Context, req *model.Se
 }
 
 func (h *MemoryHandlers) HandleGetPersona(ctx context.Context, req *model.GetMemoryPersonaRequest) (*model.GetMemoryPersonaResponse, error) {
+	if err := h.authorizeAgent(ctx, req.GetAgentId(), false); err != nil {
+		return nil, err
+	}
 	persona, err := h.memoryService.GetPersona(ctx, req.GetAgentId())
 	if err != nil {
 		return nil, toHandlerError(err)
@@ -200,6 +247,9 @@ func (h *MemoryHandlers) HandleGetPersona(ctx context.Context, req *model.GetMem
 }
 
 func (h *MemoryHandlers) HandleGetStats(ctx context.Context, req *model.GetMemoryStatsRequest) (*model.GetMemoryStatsResponse, error) {
+	if err := h.authorizeAgent(ctx, req.GetAgentId(), false); err != nil {
+		return nil, err
+	}
 	stats, err := h.memoryService.Stats(ctx, req.GetAgentId())
 	if err != nil {
 		return nil, toHandlerError(err)
@@ -216,6 +266,9 @@ func (h *MemoryHandlers) HandleGetStats(ctx context.Context, req *model.GetMemor
 }
 
 func (h *MemoryHandlers) HandleListEvents(ctx context.Context, req *model.ListMemoryEventsRequest) (*model.ListMemoryEventsResponse, error) {
+	if err := h.authorizeAgent(ctx, req.GetAgentId(), false); err != nil {
+		return nil, err
+	}
 	since, until, err := resolveMemoryTimeRange(req.GetSince(), req.GetUntil(), req.GetPeriod())
 	if err != nil {
 		return nil, toHandlerError(errcode.New(errcode.AgentInvalidRequest, 400, err.Error(), nil))
@@ -239,6 +292,9 @@ func (h *MemoryHandlers) HandleListEvents(ctx context.Context, req *model.ListMe
 }
 
 func (h *MemoryHandlers) HandleExport(ctx context.Context, req *model.ExportMemoriesRequest) (*model.ExportMemoriesResponse, error) {
+	if err := h.authorizeAgent(ctx, req.GetAgentId(), false); err != nil {
+		return nil, err
+	}
 	items, persona, err := h.memoryService.Export(ctx, req.GetAgentId(), domain.MemoryLayer(req.GetLayer()))
 	if err != nil {
 		return nil, toHandlerError(err)
@@ -260,7 +316,14 @@ func (h *MemoryHandlers) HandleImport(ctx context.Context, req *model.ImportMemo
 		return nil, toHandlerError(errcode.New(errcode.AgentInvalidRequest, 400, "data is required", nil))
 	}
 	items := make([]domain.MemoryItem, 0, len(req.GetData().GetMemories()))
+	authorized := make(map[string]bool)
 	for _, item := range req.GetData().GetMemories() {
+		if !authorized[item.GetAgentId()] {
+			if err := h.authorizeAgent(ctx, item.GetAgentId(), true); err != nil {
+				return nil, err
+			}
+			authorized[item.GetAgentId()] = true
+		}
 		items = append(items, memoryItemFromProto(item))
 	}
 	imported, skipped, failed := h.memoryService.Import(ctx, items, req.GetSkipDuplicates())
@@ -273,6 +336,9 @@ func (h *MemoryHandlers) HandleImport(ctx context.Context, req *model.ImportMemo
 }
 
 func (h *MemoryHandlers) HandleEmbeddingStatus(ctx context.Context, _ *model.EmbeddingStatusRequest) (*model.EmbeddingStatusResponse, error) {
+	if err := h.authorizeAgent(ctx, "", false); err != nil {
+		return nil, err
+	}
 	provider, modelName, dimensions, vectorCount := h.memoryService.EmbeddingStatus(ctx)
 	return &model.EmbeddingStatusResponse{
 		Provider:    provider,
@@ -283,6 +349,9 @@ func (h *MemoryHandlers) HandleEmbeddingStatus(ctx context.Context, _ *model.Emb
 }
 
 func (h *MemoryHandlers) HandleReEmbed(ctx context.Context, _ *model.ReEmbedRequest) (*model.ReEmbedResponse, error) {
+	if err := h.authorizeAgent(ctx, "", false); err != nil {
+		return nil, err
+	}
 	count, err := h.memoryService.ReEmbed(ctx)
 	if err != nil {
 		return nil, toHandlerError(err)
@@ -291,6 +360,13 @@ func (h *MemoryHandlers) HandleReEmbed(ctx context.Context, _ *model.ReEmbedRequ
 }
 
 func (h *MemoryHandlers) HandleFeedback(ctx context.Context, req *model.MemoryFeedbackRequest) (*model.MemoryFeedbackResponse, error) {
+	current, err := h.memoryService.GetMemory(ctx, req.GetMemoryId())
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	if err := h.authorizeAgent(ctx, current.AgentID, true); err != nil {
+		return nil, err
+	}
 	item, err := h.memoryService.RecordFeedback(ctx, req.GetMemoryId(), req.GetHelpful(), req.GetReason())
 	if err != nil {
 		return nil, toHandlerError(err)

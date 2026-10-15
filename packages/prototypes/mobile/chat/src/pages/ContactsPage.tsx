@@ -9,6 +9,7 @@ import { PrototypeListWindow } from '../components/PrototypeListWindow';
 import type { PrototypeListMemory } from '../listPresentation';
 import type { RequestRowSample } from '../longListDemo';
 import { IdentityAvatar } from '../components/IdentityAvatar';
+import { AccessibleClearIcon } from '../components/AccessibleClearIcon';
 
 const { Text } = Typography;
 const contactKey = (contact: Contact) => contact.key;
@@ -61,7 +62,7 @@ export function ContactsPage({
         <Input
           prefix={<Search size={16} className="mp-search-icon" />}
           placeholder={copy['mobile.contacts.searchPlaceholder']}
-          allowClear
+          allowClear={{ clearIcon: <AccessibleClearIcon label="Clear contacts search" /> }}
           value={searchQuery}
           onChange={(e) => {
             setSearchQuery(e.target.value);

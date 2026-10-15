@@ -47,6 +47,7 @@ describe('Chat logical history and rendering', () => {
       onBack={() => undefined}
       onStartConversation={() => undefined}
       onOpenConversation={() => undefined}
+      onOpenContact={() => undefined}
     />);
     expect(html.match(/data-message-ulid=/g)).toHaveLength(200);
     expect(html).toContain('mobile.list.previous');

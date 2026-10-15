@@ -1,0 +1,17 @@
+.recent-chat-searches {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 40dvh;
+  overflow-y: auto;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--brand-border);
+  background: var(--brand-surface);
+}
+.recent-chat-searches-heading { display: flex; align-items: center; justify-content: space-between; font-size: 13px; }
+.recent-chat-searches button { border: 0; background: transparent; color: inherit; cursor: pointer; min-height: 44px; }
+.recent-chat-searches-heading button { color: var(--brand-primary); font-size: 13px; }
+.recent-chat-search-row { display: flex; align-items: center; }
+.recent-chat-search-replay { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; text-align: start; }
+.recent-chat-search-replay span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-chat-search-remove { display: grid; place-items: center; width: 44px; flex: 0 0 44px; }
+.recent-chat-searches button:focus-visible { outline: 2px solid var(--brand-primary); outline-offset: -2px; border-radius: 8px; }

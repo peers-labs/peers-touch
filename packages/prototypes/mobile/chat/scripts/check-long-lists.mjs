@@ -134,7 +134,11 @@ try {
       () => device.getByRole('button', { name: 'Me', exact: true }).click(),
       () => device.getByRole('button', { name: new RegExp(`^${copy['mobile.chat.title']}(?:,|$)`) }).click());
 
-    const chatSearch = device.getByPlaceholder('Search conversations', { exact: true });
+    await device.getByRole('button', { name: 'Search chats', exact: true }).click();
+    const chatSearch = device.getByPlaceholder(
+      'Search people, chats, and messages',
+      { exact: true },
+    );
     await chatSearch.fill(copy['mobile.chat.thread']);
     assert.equal(await traverse(conversations, 240, 100), 240);
     await chatSearch.fill('240');
@@ -169,7 +173,7 @@ try {
 
     // Reply-thread detail must unmount the message window and restore its reader.
     const olderOffset = await offset(older);
-    await older.getByRole('button', { name: copy['mobile.chat.threadReplyCount'].replace('{{count}}', '3'), exact: true }).click();
+    await older.getByRole('button', { name: 'Open thread with 3 replies', exact: true }).click();
     await expect(messages()).toHaveCount(0);
     await expect(device.locator('.mp-thread-view')).toHaveCount(1);
     await device.getByRole('button', { name: 'Back', exact: true }).click();

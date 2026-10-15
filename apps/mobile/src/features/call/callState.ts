@@ -35,6 +35,12 @@ export type CallEndReason =
   | 'network-failed'
   | 'handled-elsewhere';
 
+export type CallMediaFailure =
+  | 'permission-denied'
+  | 'device-unavailable'
+  | 'unsupported'
+  | 'unknown';
+
 export interface CallSnapshot {
   callId: string;
   mediaKind: CallMediaKind;
@@ -47,6 +53,7 @@ export interface CallSnapshot {
   remoteStream?: MediaStream;
   micMuted?: boolean;
   cameraOff?: boolean;
+  mediaFailure?: CallMediaFailure;
 }
 
 export type CallStateListener = (snapshot: CallSnapshot | null) => void;
@@ -58,6 +65,7 @@ interface ActiveCall {
   peerConnection: RTCPeerConnection | null;
   pendingCandidates: RTCIceCandidateInit[];
   remoteDescriptionApplied: boolean;
+  reconnectRestartAttempted: boolean;
 }
 
 interface CallResolutionWire {
@@ -127,6 +135,13 @@ export class MobileCallManager {
   async resume(): Promise<void> {
     if (!this.call?.snapshot.callId) return;
     await this.enqueue(() => this.reconcileResolution(this.call!.snapshot.callId));
+    const call = this.call;
+    if (!call || call.snapshot.state !== 'reconnecting') return;
+    if (call.peerConnection?.connectionState === 'connected') {
+      this.restoreActiveCall(call);
+      return;
+    }
+    this.enterReconnect(call);
   }
 
   ingestRealtimeSignal(
@@ -147,7 +162,6 @@ export class MobileCallManager {
         session.actorRef.ptid,
         peerPtid,
       );
-      const localStream = await acquireMedia(mediaKind);
       this.call = {
         direction: 'outgoing',
         signalingSessionId,
@@ -156,13 +170,21 @@ export class MobileCallManager {
           mediaKind,
           state: 'outgoing',
           peerPtid,
-          localStream,
         },
         peerConnection: null,
         pendingCandidates: [],
         remoteDescriptionApplied: false,
+        reconnectRestartAttempted: false,
       };
       this.emit();
+      try {
+        const localStream = await acquireMedia(mediaKind);
+        this.call.snapshot = { ...this.call.snapshot, localStream };
+        this.emit();
+      } catch (error) {
+        this.endLocal('media-failed', classifyMediaFailure(error));
+        throw error;
+      }
       try {
         await this.sendSignal(
           'CALL_REQUEST',
@@ -206,9 +228,14 @@ export class MobileCallManager {
         this.attachLocalTracks(call);
         this.emit();
       } catch (error) {
-        await this.sendSignal('CALL_END', { callId, reason: 'media-failed' }, callId)
+        const mediaFailure = classifyMediaFailure(error);
+        await this.sendSignal(
+          'CALL_END',
+          { callId, reason: 'media-failed', mediaFailure },
+          callId,
+        )
           .catch(() => undefined);
-        this.endLocal('media-failed');
+        this.endLocal('media-failed', mediaFailure);
         throw error;
       }
       return this.getSnapshot();
@@ -248,6 +275,16 @@ export class MobileCallManager {
       this.endLocal(reason);
       return this.getSnapshot();
     });
+  }
+
+  retryCall(): Promise<CallSnapshot | null> {
+    const call = this.call;
+    if (!call || !isTerminal(call.snapshot.state)) {
+      return Promise.resolve(this.getSnapshot());
+    }
+    const { peerPtid, mediaKind } = call.snapshot;
+    this.dismiss();
+    return this.startOutgoingCall(peerPtid, mediaKind);
   }
 
   toggleMicrophone(): void {
@@ -410,6 +447,7 @@ export class MobileCallManager {
       peerConnection: null,
       pendingCandidates: [],
       remoteDescriptionApplied: false,
+      reconnectRestartAttempted: false,
     };
     this.emit();
     this.armRingTimeout(callId);
@@ -421,7 +459,14 @@ export class MobileCallManager {
   ): Promise<void> {
     const call = this.call;
     const callId = stringValue(payload.callId) || event.callId;
-    if (!call || call.direction !== 'outgoing' || call.snapshot.callId !== callId) return;
+    if (
+      !call
+      || call.direction !== 'outgoing'
+      || call.snapshot.callId !== callId
+      || call.snapshot.state !== 'outgoing'
+    ) {
+      return;
+    }
     this.clearRingTimeout();
     call.snapshot = {
       ...call.snapshot,
@@ -451,7 +496,10 @@ export class MobileCallManager {
       : payload.reason === 'media-failed'
         ? 'media-failed'
         : 'rejected';
-    this.endLocal(reason);
+    this.endLocal(
+      reason,
+      reason === 'media-failed' ? mediaFailureValue(payload.mediaFailure) : undefined,
+    );
   }
 
   private handleRemoteEnd(
@@ -460,11 +508,17 @@ export class MobileCallManager {
   ): void {
     const callId = stringValue(payload.callId) || event.callId;
     if (!this.call || this.call.snapshot.callId !== callId) return;
-    const reason = this.call.snapshot.state === 'active_here'
-      || this.call.snapshot.state === 'reconnecting'
-      ? 'hangup'
-      : 'no-answer';
-    this.endLocal(reason);
+    const signaledReason = callEndReasonValue(payload.reason);
+    const reason = signaledReason ?? (
+      this.call.snapshot.state === 'active_here'
+        || this.call.snapshot.state === 'reconnecting'
+        ? 'hangup'
+        : 'no-answer'
+    );
+    this.endLocal(
+      reason,
+      reason === 'media-failed' ? mediaFailureValue(payload.mediaFailure) : undefined,
+    );
   }
 
   private async handleOffer(
@@ -555,11 +609,7 @@ export class MobileCallManager {
     };
     peerConnection.onconnectionstatechange = () => {
       if (peerConnection.connectionState === 'connected') {
-        this.clearReconnectTimeout();
-        if (call.snapshot.state === 'reconnecting') {
-          call.snapshot = { ...call.snapshot, state: 'active_here' };
-          this.emit();
-        }
+        this.restoreActiveCall(call);
       } else if (
         peerConnection.connectionState === 'disconnected'
         || peerConnection.connectionState === 'failed'
@@ -720,11 +770,24 @@ export class MobileCallManager {
       && call.direction === 'incoming'
       && winningDeviceId === this.deviceId
       && call.snapshot.state === 'reconnecting'
-      && call.peerConnection?.connectionState === 'connected'
     ) {
-      this.clearReconnectTimeout();
-      call.snapshot = { ...call.snapshot, state: 'active_here' };
-      this.emit();
+      if (call.peerConnection?.connectionState === 'connected') {
+        this.restoreActiveCall(call);
+      } else {
+        this.enterReconnect(call);
+      }
+      return;
+    }
+    if (
+      resolution.state === 'ACCEPTED'
+      && call.direction === 'outgoing'
+      && call.snapshot.state === 'reconnecting'
+    ) {
+      if (call.peerConnection?.connectionState === 'connected') {
+        this.restoreActiveCall(call);
+      } else {
+        this.enterReconnect(call);
+      }
     }
   }
 
@@ -745,6 +808,46 @@ export class MobileCallManager {
       this.reconnectTimer = null;
       if (this.call?.snapshot.callId === callId) this.endLocal('network-failed');
     }, RECONNECT_TIMEOUT_MS);
+    this.requestIceRestart(call);
+  }
+
+  private requestIceRestart(call: ActiveCall): void {
+    if (
+      call.direction !== 'outgoing'
+      || call.reconnectRestartAttempted
+      || !call.peerConnection
+    ) {
+      return;
+    }
+    call.reconnectRestartAttempted = true;
+    void this.enqueue(async () => {
+      if (
+        this.call !== call
+        || call.snapshot.state !== 'reconnecting'
+        || !call.peerConnection
+      ) {
+        return;
+      }
+      call.peerConnection.restartIce?.();
+      const offer = await call.peerConnection.createOffer({ iceRestart: true });
+      await call.peerConnection.setLocalDescription(offer);
+      await this.sendSignal('OFFER', {
+        callId: call.snapshot.callId,
+        sdp: offer.sdp ?? '',
+      });
+    }).catch(() => {
+      if (this.call === call && call.snapshot.state === 'reconnecting') {
+        this.endLocal('network-failed');
+      }
+    });
+  }
+
+  private restoreActiveCall(call: ActiveCall): void {
+    this.clearReconnectTimeout();
+    call.reconnectRestartAttempted = false;
+    if (call.snapshot.state !== 'reconnecting') return;
+    call.snapshot = { ...call.snapshot, state: 'active_here' };
+    this.emit();
   }
 
   private markHandledElsewhere(winningDeviceId: string): void {
@@ -762,7 +865,10 @@ export class MobileCallManager {
     this.emit();
   }
 
-  private endLocal(reason: CallEndReason): void {
+  private endLocal(
+    reason: CallEndReason,
+    mediaFailure?: CallMediaFailure,
+  ): void {
     if (!this.call) return;
     this.clearRingTimeout();
     this.clearReconnectTimeout();
@@ -773,6 +879,9 @@ export class MobileCallManager {
       endReason: reason,
       localStream: undefined,
       remoteStream: undefined,
+      mediaFailure: reason === 'media-failed'
+        ? mediaFailure ?? this.call.snapshot.mediaFailure ?? 'unknown'
+        : undefined,
     };
     this.emit();
   }
@@ -786,6 +895,7 @@ export class MobileCallManager {
     call.peerConnection = null;
     call.pendingCandidates = [];
     call.remoteDescriptionApplied = false;
+    call.reconnectRestartAttempted = false;
   }
 
   private armRingTimeout(callId: string): void {
@@ -870,6 +980,27 @@ function numberValue(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isInteger(value) ? value : undefined;
 }
 
+function callEndReasonValue(value: unknown): CallEndReason | undefined {
+  return value === 'hangup'
+    || value === 'rejected'
+    || value === 'no-answer'
+    || value === 'busy'
+    || value === 'canceled'
+    || value === 'media-failed'
+    || value === 'network-failed'
+    ? value
+    : undefined;
+}
+
+function mediaFailureValue(value: unknown): CallMediaFailure | undefined {
+  return value === 'permission-denied'
+    || value === 'device-unavailable'
+    || value === 'unsupported'
+    || value === 'unknown'
+    ? value
+    : undefined;
+}
+
 async function acquireMedia(kind: CallMediaKind): Promise<MediaStream> {
   if (!navigator.mediaDevices?.getUserMedia) {
     throw new Error('mobile.call.mediaUnavailable');
@@ -903,6 +1034,26 @@ function isRetryableMediaAcquisitionError(error: unknown): boolean {
     && typeof error.name === 'string'
     && RETRYABLE_MEDIA_ACQUISITION_ERRORS.has(error.name)
   );
+}
+
+function classifyMediaFailure(error: unknown): CallMediaFailure {
+  if (error === null || typeof error !== 'object' || !('name' in error)) {
+    return 'unknown';
+  }
+  if (error.name === 'NotAllowedError' || error.name === 'SecurityError') {
+    return 'permission-denied';
+  }
+  if (
+    error.name === 'NotFoundError'
+    || error.name === 'NotReadableError'
+    || error.name === 'OverconstrainedError'
+  ) {
+    return 'device-unavailable';
+  }
+  if (error.name === 'NotSupportedError' || error.name === 'TypeError') {
+    return 'unsupported';
+  }
+  return 'unknown';
 }
 
 export const mobileCallManager = new MobileCallManager();

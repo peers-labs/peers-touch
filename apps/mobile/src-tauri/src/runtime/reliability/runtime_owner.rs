@@ -608,6 +608,8 @@ mod tests {
                     text: "retained".to_string(),
                     reply_to_message_id: String::new(),
                     attachment_refs: Vec::new(),
+                    submitted_command_id: String::new(),
+                    submitted_message_id: String::new(),
                 })),
             })
             .unwrap();
@@ -667,6 +669,8 @@ mod tests {
                 text: "retained".to_string(),
                 reply_to_message_id: String::new(),
                 attachment_refs: Vec::new(),
+                submitted_command_id: String::new(),
+                submitted_message_id: String::new(),
             })),
         };
         active.save_draft(&draft).unwrap();

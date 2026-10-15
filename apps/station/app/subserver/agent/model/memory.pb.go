@@ -2296,6 +2296,84 @@ func (x *MemoryFeedbackResponse) GetHelpful() bool {
 	return false
 }
 
+// Agent-owned memory policy stored under Agent.config_json.memory. Missing
+// fields inherit Station defaults; disabling retains existing memory records.
+type MemoryPreferences struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Enabled       *bool                  `protobuf:"varint,1,opt,name=enabled,proto3,oneof" json:"enabled,omitempty"`
+	TuningEnabled *bool                  `protobuf:"varint,2,opt,name=tuning_enabled,json=tuningEnabled,proto3,oneof" json:"tuning_enabled,omitempty"`
+	VectorWeight  *float64               `protobuf:"fixed64,3,opt,name=vector_weight,json=vectorWeight,proto3,oneof" json:"vector_weight,omitempty"`
+	KeywordWeight *float64               `protobuf:"fixed64,4,opt,name=keyword_weight,json=keywordWeight,proto3,oneof" json:"keyword_weight,omitempty"`
+	Effort        string                 `protobuf:"bytes,5,opt,name=effort,proto3" json:"effort,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MemoryPreferences) Reset() {
+	*x = MemoryPreferences{}
+	mi := &file_domain_agent_memory_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MemoryPreferences) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MemoryPreferences) ProtoMessage() {}
+
+func (x *MemoryPreferences) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_agent_memory_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MemoryPreferences.ProtoReflect.Descriptor instead.
+func (*MemoryPreferences) Descriptor() ([]byte, []int) {
+	return file_domain_agent_memory_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *MemoryPreferences) GetEnabled() bool {
+	if x != nil && x.Enabled != nil {
+		return *x.Enabled
+	}
+	return false
+}
+
+func (x *MemoryPreferences) GetTuningEnabled() bool {
+	if x != nil && x.TuningEnabled != nil {
+		return *x.TuningEnabled
+	}
+	return false
+}
+
+func (x *MemoryPreferences) GetVectorWeight() float64 {
+	if x != nil && x.VectorWeight != nil {
+		return *x.VectorWeight
+	}
+	return 0
+}
+
+func (x *MemoryPreferences) GetKeywordWeight() float64 {
+	if x != nil && x.KeywordWeight != nil {
+		return *x.KeywordWeight
+	}
+	return 0
+}
+
+func (x *MemoryPreferences) GetEffort() string {
+	if x != nil {
+		return x.Effort
+	}
+	return ""
+}
+
 var File_domain_agent_memory_proto protoreflect.FileDescriptor
 
 const file_domain_agent_memory_proto_rawDesc = "" +
@@ -2480,7 +2558,18 @@ const file_domain_agent_memory_proto_rawDesc = "" +
 	"\tmemory_id\x18\x01 \x01(\tR\bmemoryId\x12\x1f\n" +
 	"\vtrust_score\x18\x02 \x01(\x01R\n" +
 	"trustScore\x12\x18\n" +
-	"\ahelpful\x18\x03 \x01(\bR\ahelpful*\xb5\x01\n" +
+	"\ahelpful\x18\x03 \x01(\bR\ahelpful\"\x90\x02\n" +
+	"\x11MemoryPreferences\x12\x1d\n" +
+	"\aenabled\x18\x01 \x01(\bH\x00R\aenabled\x88\x01\x01\x12*\n" +
+	"\x0etuning_enabled\x18\x02 \x01(\bH\x01R\rtuningEnabled\x88\x01\x01\x12(\n" +
+	"\rvector_weight\x18\x03 \x01(\x01H\x02R\fvectorWeight\x88\x01\x01\x12*\n" +
+	"\x0ekeyword_weight\x18\x04 \x01(\x01H\x03R\rkeywordWeight\x88\x01\x01\x12\x16\n" +
+	"\x06effort\x18\x05 \x01(\tR\x06effortB\n" +
+	"\n" +
+	"\b_enabledB\x11\n" +
+	"\x0f_tuning_enabledB\x10\n" +
+	"\x0e_vector_weightB\x11\n" +
+	"\x0f_keyword_weight*\xb5\x01\n" +
 	"\vMemoryLayer\x12\x1c\n" +
 	"\x18MEMORY_LAYER_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15MEMORY_LAYER_IDENTITY\x10\x01\x12\x1b\n" +
@@ -2502,7 +2591,7 @@ func file_domain_agent_memory_proto_rawDescGZIP() []byte {
 }
 
 var file_domain_agent_memory_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_domain_agent_memory_proto_msgTypes = make([]protoimpl.MessageInfo, 35)
+var file_domain_agent_memory_proto_msgTypes = make([]protoimpl.MessageInfo, 36)
 var file_domain_agent_memory_proto_goTypes = []any{
 	(MemoryLayer)(0),                  // 0: peers_touch.model.agent.v1.MemoryLayer
 	(*MemoryItem)(nil),                // 1: peers_touch.model.agent.v1.MemoryItem
@@ -2539,15 +2628,16 @@ var file_domain_agent_memory_proto_goTypes = []any{
 	(*ReEmbedResponse)(nil),           // 32: peers_touch.model.agent.v1.ReEmbedResponse
 	(*MemoryFeedbackRequest)(nil),     // 33: peers_touch.model.agent.v1.MemoryFeedbackRequest
 	(*MemoryFeedbackResponse)(nil),    // 34: peers_touch.model.agent.v1.MemoryFeedbackResponse
-	nil,                               // 35: peers_touch.model.agent.v1.GetMemoryStatsResponse.ByLayerEntry
-	(*timestamppb.Timestamp)(nil),     // 36: google.protobuf.Timestamp
+	(*MemoryPreferences)(nil),         // 35: peers_touch.model.agent.v1.MemoryPreferences
+	nil,                               // 36: peers_touch.model.agent.v1.GetMemoryStatsResponse.ByLayerEntry
+	(*timestamppb.Timestamp)(nil),     // 37: google.protobuf.Timestamp
 }
 var file_domain_agent_memory_proto_depIdxs = []int32{
-	36, // 0: peers_touch.model.agent.v1.MemoryItem.created_at:type_name -> google.protobuf.Timestamp
-	36, // 1: peers_touch.model.agent.v1.MemoryItem.updated_at:type_name -> google.protobuf.Timestamp
+	37, // 0: peers_touch.model.agent.v1.MemoryItem.created_at:type_name -> google.protobuf.Timestamp
+	37, // 1: peers_touch.model.agent.v1.MemoryItem.updated_at:type_name -> google.protobuf.Timestamp
 	0,  // 2: peers_touch.model.agent.v1.MemoryItem.layer:type_name -> peers_touch.model.agent.v1.MemoryLayer
-	36, // 3: peers_touch.model.agent.v1.MemoryItem.last_accessed_at:type_name -> google.protobuf.Timestamp
-	36, // 4: peers_touch.model.agent.v1.MemorySnapshot.captured_at:type_name -> google.protobuf.Timestamp
+	37, // 3: peers_touch.model.agent.v1.MemoryItem.last_accessed_at:type_name -> google.protobuf.Timestamp
+	37, // 4: peers_touch.model.agent.v1.MemorySnapshot.captured_at:type_name -> google.protobuf.Timestamp
 	1,  // 5: peers_touch.model.agent.v1.MemorySnapshot.relevant_items:type_name -> peers_touch.model.agent.v1.MemoryItem
 	0,  // 6: peers_touch.model.agent.v1.ListMemoriesRequest.layer:type_name -> peers_touch.model.agent.v1.MemoryLayer
 	1,  // 7: peers_touch.model.agent.v1.ListMemoriesResponse.items:type_name -> peers_touch.model.agent.v1.MemoryItem
@@ -2558,11 +2648,11 @@ var file_domain_agent_memory_proto_depIdxs = []int32{
 	9,  // 12: peers_touch.model.agent.v1.ScoredMemory.explain:type_name -> peers_touch.model.agent.v1.MemoryScoreExplain
 	0,  // 13: peers_touch.model.agent.v1.SearchMemoriesRequest.layers:type_name -> peers_touch.model.agent.v1.MemoryLayer
 	10, // 14: peers_touch.model.agent.v1.SearchMemoriesResponse.results:type_name -> peers_touch.model.agent.v1.ScoredMemory
-	36, // 15: peers_touch.model.agent.v1.MemoryPersona.updated_at:type_name -> google.protobuf.Timestamp
+	37, // 15: peers_touch.model.agent.v1.MemoryPersona.updated_at:type_name -> google.protobuf.Timestamp
 	13, // 16: peers_touch.model.agent.v1.GetMemoryPersonaResponse.persona:type_name -> peers_touch.model.agent.v1.MemoryPersona
-	35, // 17: peers_touch.model.agent.v1.GetMemoryStatsResponse.by_layer:type_name -> peers_touch.model.agent.v1.GetMemoryStatsResponse.ByLayerEntry
+	36, // 17: peers_touch.model.agent.v1.GetMemoryStatsResponse.by_layer:type_name -> peers_touch.model.agent.v1.GetMemoryStatsResponse.ByLayerEntry
 	0,  // 18: peers_touch.model.agent.v1.MemoryEvent.layer:type_name -> peers_touch.model.agent.v1.MemoryLayer
-	36, // 19: peers_touch.model.agent.v1.MemoryEvent.timestamp:type_name -> google.protobuf.Timestamp
+	37, // 19: peers_touch.model.agent.v1.MemoryEvent.timestamp:type_name -> google.protobuf.Timestamp
 	18, // 20: peers_touch.model.agent.v1.ListMemoryEventsResponse.events:type_name -> peers_touch.model.agent.v1.MemoryEvent
 	1,  // 21: peers_touch.model.agent.v1.GetMemoryResponse.item:type_name -> peers_touch.model.agent.v1.MemoryItem
 	1,  // 22: peers_touch.model.agent.v1.ExportMemoriesResponse.memories:type_name -> peers_touch.model.agent.v1.MemoryItem
@@ -2580,13 +2670,14 @@ func file_domain_agent_memory_proto_init() {
 	if File_domain_agent_memory_proto != nil {
 		return
 	}
+	file_domain_agent_memory_proto_msgTypes[34].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_agent_memory_proto_rawDesc), len(file_domain_agent_memory_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   35,
+			NumMessages:   36,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

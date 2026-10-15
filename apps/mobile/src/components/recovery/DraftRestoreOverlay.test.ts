@@ -1,5 +1,7 @@
 // @ts-nocheck -- Vitest is supplied by the repository test runner.
 
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const recovery = vi.hoisted(() => ({
@@ -18,7 +20,10 @@ vi.mock('../../runtimes/recoveryProjection', () => ({
   }),
 }));
 
-import { executeDraftRestoreAction } from './DraftRestoreOverlay';
+import {
+  DraftRestoreOverlay,
+  executeDraftRestoreAction,
+} from './DraftRestoreOverlay';
 
 describe('DraftRestoreOverlay owner action', () => {
   beforeEach(() => {
@@ -46,5 +51,26 @@ describe('DraftRestoreOverlay owner action', () => {
     await expect(executeDraftRestoreAction('restore', drafts))
       .rejects.toThrow('mobile.reliability.draftMissing');
     expect(recovery.clearDraftRestore).not.toHaveBeenCalled();
+  });
+
+  it('matches the mobile recovery sheet structure and primary-first action order', () => {
+    const html = renderToStaticMarkup(
+      createElement(DraftRestoreOverlay, {
+        state: {
+          kind: 'draft-restore-pending',
+          drafts: [{ key: 'chat:one', kind: 'chat' }],
+          discoveredAtMs: 1,
+        },
+        t: (key) => key,
+      }),
+    );
+
+    expect(html).toContain('recovery-action-sheet__handle');
+    expect(html).toContain('recovery-action-sheet__icon');
+    expect(html).toContain('data-blocks-unrelated-content="true"');
+    expect(html).not.toContain('recovery-draft-list');
+    expect(html.indexOf('recovery-draft-restore-action')).toBeLessThan(
+      html.indexOf('recovery-draft-discard'),
+    );
   });
 });

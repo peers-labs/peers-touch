@@ -3,34 +3,38 @@
  * New/migrated pages should use `theme.useToken()` from antd ConfigProvider instead.
  * Kept for backward compatibility; values aligned with antd default + brand primary.
  */
+import { getDesignTokens } from '../../../shared/design-tokens';
+
+const light = getDesignTokens('light');
+
 export const T = {
-  primary: '#6b5bd6',
-  primaryHover: '#5a4bc5',
-  primarySoft: 'rgba(110,91,214,0.1)',
-  primaryWash: '#f3f1fb',
-  primaryWash2: '#ece9fb',
-  primaryWash3: '#eceaf6',
-  primaryDisabled: '#d8d3fb',
-  danger: '#ff4d4f',
-  success: '#52c41a',
-  warning: '#faad14',
-  text: '#262626',
-  textSecondary: '#595959',
-  textTertiary: '#8c8c8c',
-  textQuaternary: '#bfbfbf',
-  border: '#f0f0f0',
-  borderSoft: '#e8e8e8',
-  bg: '#ffffff',
+  primary: light.color.brand,
+  primaryHover: light.color.brandHover,
+  primarySoft: 'rgba(102,126,234,0.1)',
+  primaryWash: light.color.surfaceSubtle,
+  primaryWash2: '#eef1fb',
+  primaryWash3: '#f0f2f9',
+  primaryDisabled: '#cdd3f6',
+  danger: light.color.danger,
+  success: light.color.success,
+  warning: light.color.warning,
+  text: light.color.textPrimary,
+  textSecondary: light.color.textSecondary,
+  textTertiary: light.color.textMuted,
+  textQuaternary: light.color.textMuted,
+  border: light.color.border,
+  borderSoft: light.color.borderStrong,
+  bg: light.color.surface,
   navBg: '#fbfbfb',
-  surface: '#fafafa',
-  white: '#ffffff',
+  surface: light.color.surfaceSubtle,
+  white: light.color.surface,
   fillQuaternary: 'rgba(0,0,0,0.02)',
   fillTertiary: '#f0f0f0',
-  radiusSm: 6,
-  radiusMd: 8,
-  radiusLg: 12,
-  shadowSm: '0 1px 2px rgba(15,23,42,0.04)',
-  shadowMd: '0 4px 18px rgba(15,23,42,0.04)',
+  radiusSm: light.radius.sm,
+  radiusMd: light.radius.md,
+  radiusLg: light.radius.lg,
+  shadowSm: light.shadow.soft,
+  shadowMd: light.shadow.float,
 } as const;
 
 /**

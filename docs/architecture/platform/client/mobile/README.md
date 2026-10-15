@@ -43,6 +43,9 @@ runtime registry 仅是状态说明，Moments/Profile/Settings 与已确认原�
 
 ## 4. Document Navigation
 
+本轮 iOS 完整产品实施采用已确认的
+[双 iOS、单 Station 实施契约](./execution-plans/20261008-mobile-whole-product-usability/ios-product.md)。
+
 | Document | Purpose |
 |---|---|
 | [product-definition.md](./product-definition.md) | Product promise and capability profile |

@@ -17,28 +17,131 @@ touch targets:
   Login uses one focused card with Station trust context, OAuth,
   remembered-account PIN unlock, account switching, and cancellable in-place
   provider states.
-- Chat includes compose, search, Direct/Group detail, audio/video entry,
-  reactions, reply/forward/edit/delete, threads, pins, media/files, safety,
-  role-aware Group moderation, ownership transfer, leave, and dissolve.
-- Social owns `Home / Public / Search / Circles`, continuous feed rows, post
-  detail/comments, actor profiles, follow state, composer, and circle member
-  management.
-- Settings owns the exact Desktop groups and sections: General (4), Network
-  (3), AI (5), and Advanced (8). Every row opens meaningful controls; generic
-  placeholder detail pages are prohibited.
+- Chat keeps search unmounted until the header search command is invoked, then
+  searches people, conversations, and message previews in one selected-only
+  surface; a person result starts or resumes the Direct conversation. Enter
+  and result selection commit a normalized recent search. The Shell retains
+  the ten newest case-insensitive unique searches across selected-only
+  remounts; each entry supports replay and individual deletion, while Clear
+  all removes the collection without closing search. Chat also includes
+  Direct/Group detail, audio/video entry, reactions,
+  reply/forward/edit/delete, threads, pins, media/files, safety, role-aware
+  Group moderation, ownership transfer, leave, and dissolve.
+- Social owns the `Home / Public / Circles` content scopes; Search is a header
+  command beside New Post and returns to its originating scope. Search covers
+  people and posts. Circle publishing requires one concrete circle ID, and the
+  management journey covers create, edit, member add/remove, and confirmed
+  delete. Post reactions are independent multi-select values: choosing one
+  Emoji never removes another, each type can be removed separately, and the
+  picker must not cover the selected-reaction summary. Home has no redundant
+  scope explanation, Public keeps only its functional sort toolbar, and
+  Circles alone owns instructional copy. Public and Circles use the same 44px
+  toolbar height. Toolbars leave with normal scrolling and return at the list
+  origin; pulling down at the origin replaces that same toolbar's controls with
+  centered refresh feedback, never inserts a second row, and asks the
+  Shell-owned Moments projection to publish a new snapshot. Reversing or
+  cancelling the gesture disarms refresh. Moment mutations, Circle state,
+  follow state, comment drafts, active scope, query, and scroll restoration
+  survive the selected-only Mobile tab remount. A floating back-to-top action
+  appears only after the origin has left the viewport.
+- Desktop Shell, Desktop Social Chat, and Mobile Shell consume the same shared
+  semantic token source. Brand/action/focus use `#667eea`; platform adaptation
+  may change density and navigation mechanics, but not color meaning.
+- Settings follows production Desktop's current 8 groups and 19 sections:
+  General, Federation, AI, Tools, Channels, Applets, Data, and Help.
+  The Me cover owns the top page boundary and the profile card is the sole
+  account-edit entry; no duplicate header Settings action is rendered.
+  `src/settingsCapabilities.json` is the single capability catalog; every
+  supported or Mobile-adapted control has a durable state outcome, and
+  Desktop-only local CLI, stdio, filesystem, shell, direct PostgreSQL, and
+  local-directory capabilities remain visible only as disabled rows with a
+  reason.
+- Storage includes measurement freshness and retry, four retention presets,
+  confirmed cache cleanup, per-conversation search/sort, batch selection and
+  estimate, confirmation, progress, partial failure, and failed-item retry.
+  My Files and Logs are separate selected-only Data sections.
 
-Verification against the live exact-master Desktop portal:
+Verification against production Desktop Settings source and the current
+worktree Portal:
 
 ```bash
 PROTOTYPE_URL=http://localhost:3210 node packages/prototypes/mobile/chat/scripts/check-layout.mjs
-MOBILE_URL=http://localhost:3210 DESKTOP_URL=http://localhost:3212 \
-  node packages/prototypes/mobile/chat/scripts/check-chat-parity.mjs
-MOBILE_URL=http://localhost:3210 DESKTOP_URL=http://localhost:3212 \
+PROTOTYPE_URL=http://localhost:3210 pnpm --dir packages/prototypes/mobile/chat check:controls
+MOBILE_URL=http://localhost:3210 DESKTOP_URL=http://localhost:3210 \
   node packages/prototypes/mobile/chat/scripts/check-product-parity.mjs
 ```
 
-The checks prove prototype semantics and rendered geometry, not native runtime
-or backend behavior.
+The current checks cover 136 Settings capability markers, 75 behavior/control
+checks, and 177 layout captures across 390px, 554px, and 1440px with zero
+reported geometry defects. The agent inspected Settings home, Account,
+Security, General, Providers, MCP, Skills, Channels, Applets, Storage, My
+Files, Logs, Help, and dark Storage renders. This proves prototype semantics
+and rendered geometry, not native runtime or backend behavior.
+
+## Chat Message Presentation
+
+Both prototypes implement the shared
+[`Chat UX contract`](../../../../../client/chat/chat-ux-contract.md):
+Direct chats and own messages omit sender labels; Group chats display the
+message actor once per cluster. Reply, thread root, pinned and search
+contexts preserve the actor's name. Group names never occupy actor slots.
+
+`packages/prototypes/shared/message-presentation.ts` owns cluster policy.
+`ReactionChip.tsx` owns the common 28px capsule and separate 44px hit bounds.
+`ReactionPicker.tsx` owns the shared five-reaction, independent
+multi-select surface used by Chat and Moments; unrestricted Emoji remain an
+input-composer concern. Mobile adapts its message DTO in
+`src/messagePresentation.ts`. Desktop uses the same message policy and
+reaction tag.
+
+Verify changed Desktop and Mobile from the same current-worktree Portal:
+
+```bash
+MOBILE_URL=http://localhost:3210 DESKTOP_URL=http://localhost:3210 \
+  node packages/prototypes/mobile/chat/scripts/check-chat-parity.mjs
+PROTOTYPE_URL=http://localhost:3210 \
+  node packages/prototypes/mobile/chat/scripts/check-message-presentation.mjs
+```
+
+The presentation gate supplies explicit actor/time fixtures at the prototype
+data boundary and operates the rendered UI. It covers Direct/Group/self,
+continuation tracks, actor changes, time gaps, system boundaries, unresolved
+actors, long names, reaction selection/addition, Mobile dark/narrow layouts,
+and the Moments inline-comment regression. This is prototype evidence.
+
+## Moments Comment Interaction
+
+The Mobile feed owns inline comments. The comment action must expand the
+selected post's comments and focus its reply field without navigating,
+replacing the feed, hiding the tab bar, or resetting its scroll context.
+Only one feed reply field mounts at a time; drafts remain keyed by post when
+the user switches posts, collapses comments, or changes Social scope.
+Escape closes the field and restores focus to the post's comment action.
+Enter submits; an IME composition Enter must not submit.
+
+Post-body navigation remains a separate explicit detail action. Feed and
+detail compose the same comment section and mutate the same post/comment
+state. The prototype gates must exercise commenting from Home and Public,
+including a post with no comments, draft preservation, keyboard operation,
+and submission without navigation.
+
+## Craft Review Disposition
+
+Craft verdict: `changes-required`. Prototype parity and layout checks do not
+establish FWA quality or production readiness. Rendered review found white
+Contact/Group detail surfaces under dark text tokens, making primary names
+nearly unreadable (about 1.11:1 contrast), and Appearance controls that change
+selection without changing the Shell theme. These remain open design defects.
+Further work must also address small metadata, competing detail actions,
+narrow Station input width, incomplete command outcomes, and a meaningful
+Peers interaction signature.
+
+Inline comment verification is shared by the maintained layout and product
+parity gates through `scripts/verify-inline-comments.mjs`. The checks cover
+Home/Public, an empty-comment post, focus, draft isolation, whitespace,
+Escape/Enter and IME handling. Current layout evidence contains 81 captures.
+Native keyboard, assistive technology and production performance remain
+`UNPROVEN`.
 
 ## 2026-10-13 Human Content & Trust Slots
 
@@ -554,6 +657,34 @@ Run the added regression against an already running Portal:
 PROTOTYPE_URL=http://localhost:3262 \
 node packages/prototypes/mobile/chat/scripts/check-residual-parity.mjs
 ```
+
+### 2026-10-14 Chat Thread Refinement
+
+Desktop and Mobile now share the same message presentation contract:
+
+- timelines omit repeated sender names; cluster-start avatars expose identity;
+- up to ten replies render below the root message, while larger sets expand
+  in place from the first ten;
+- the compact `Thread · N replies` entry opens the full Thread surface and
+  replies written there immediately update the inline view;
+- the composer is a single compact tool/input/send row that grows for
+  multiline text and preserves IME composition;
+- attachment and emoji entries share that row; photo, camera, and file drawers
+  are mutually exclusive, dismiss on outside pointer/focus, Escape, context
+  replacement, or window blur, and retain accepted attachment context;
+- pinned messages use a single-line horizontal carousel with current/total
+  metadata, swipe/keyboard navigation, stable selection, and message jump.
+
+`check-message-presentation.mjs` proves reply counts 0/3/10/11, full Thread
+open/reply/return, multi-pin add/remove/recall, compact composer geometry,
+photo/file selection, attachment-only send, transient-layer dismissal,
+dark/narrow rendering, identity inspection, and negative controls. The same
+gate audits Message Actions, Forward, Find People, New Post, and Command
+Palette dismissal. Blocking recovery, active calls, and dangerous
+confirmations intentionally remain explicit-decision surfaces.
+`check-chat-parity.mjs`, `check-layout.mjs`, `check-long-lists.mjs`, Mobile
+TypeScript, Portal build, and production-source Settings capability parity
+also pass. Native runtime remains `UNPROVEN`.
 
 ## Acceptance Notes
 

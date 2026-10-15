@@ -5,8 +5,13 @@ import { isRecalledChatMessage } from '@peers-touch/client-chat-core';
 
 import { useMobileI18n } from '../../app/mobileI18n';
 import { BoundedList, type BoundedListHandle } from '../../components/BoundedList';
+import { ReactionChip } from '../../components/reactions/ReactionChip';
+import { MessageAuthor } from '../../components/chat/MessageAuthor';
+import { InlineMessageReplies } from '../../components/chat/InlineMessageReplies';
+import { MobileAvatar } from '../../components/MobileAvatar';
 import {
   chatMessageAttachments,
+  chatMessageAuthorName,
   formatRelativeTime,
   messageDisplayText,
   isOwnChatMessage,
@@ -47,6 +52,9 @@ interface ChatMessageSectionBoundaryProps {
   readonly background: string;
   readonly messages: SocialMessage[];
   readonly historyById: ReadonlyMap<string, SocialMessage>;
+  readonly repliesByRoot?: ReadonlyMap<string, SocialMessage[]>;
+  readonly isThread?: boolean;
+  readonly isGroup?: boolean;
   readonly currentUserPtid: string | null;
   readonly highlightedMessageUlid: string;
   readonly ownAvatar: string;
@@ -66,6 +74,7 @@ interface ChatMessageSectionBoundaryProps {
   readonly renderMetaRow: (input: MessageMetaRenderInput) => ReactNode;
   readonly onScrollToMessage: (messageUlid: string) => void;
   readonly onToggleReaction: (message: SocialMessage, reaction: string) => void;
+  readonly onOpenThread?: (message: SocialMessage) => void;
 }
 
 export function ChatMessageSectionBoundary({
@@ -73,6 +82,9 @@ export function ChatMessageSectionBoundary({
   background,
   messages,
   historyById,
+  repliesByRoot,
+  isThread = false,
+  isGroup = false,
   currentUserPtid,
   highlightedMessageUlid,
   ownAvatar,
@@ -80,7 +92,6 @@ export function ChatMessageSectionBoundary({
   peerProfiles,
   peerMessageAvatar,
   peerName,
-  title,
   flaggedMessageIds,
   messageCommandOutcomes,
   windowSize,
@@ -89,8 +100,12 @@ export function ChatMessageSectionBoundary({
   renderMetaRow,
   onScrollToMessage,
   onToggleReaction,
+  onOpenThread,
 }: ChatMessageSectionBoundaryProps) {
   const { t } = useMobileI18n();
+  const authorName = (message: SocialMessage) => chatMessageAuthorName(
+    message, currentUserPtid, ownName, peerProfiles, !isGroup ? peerName : '',
+  );
   const clusteredMessages = useMemo(
     () => projectChatMessageClusters(
       messages,
@@ -168,10 +183,14 @@ export function ChatMessageSectionBoundary({
                 {!mine
                   ? entry.showAvatar
                     ? (
-                        <MessageAvatar
-                          src={messageAvatarUrl(message, peerProfiles, peerMessageAvatar)}
-                          fallback={(peerName || title || message.senderPtid || '').slice(0, 1).toUpperCase()}
-                        />
+                        <MessageAuthor name={authorName(message)}>
+                          <MessageAvatar
+                            name={authorName(message)}
+                            identityKey={message.senderPtid}
+                            src={messageAvatarUrl(message, peerProfiles, isGroup ? undefined : peerMessageAvatar)}
+                            fallback={authorName(message).slice(0, 1).toUpperCase()}
+                          />
+                        </MessageAuthor>
                       )
                     : <span className="message-avatar-spacer" aria-hidden="true" />
                   : null}
@@ -193,6 +212,7 @@ export function ChatMessageSectionBoundary({
                     >
                       <CornerUpLeft size={12} />
                       <span>
+                        {replyMessage ? `${authorName(replyMessage)}: ` : ''}
                         {replyMessage
                           ? messageContentForSearch(replyMessage, t)
                           : t('mobile.chat.noPreview')}
@@ -208,20 +228,42 @@ export function ChatMessageSectionBoundary({
                   {!recalled && !moderated && reactions.length > 0 ? (
                     <div className="message-reaction-row">
                       {reactions.map((reaction) => (
-                        <button
+                        <ReactionChip
                           key={reaction.reaction}
-                          type="button"
-                          className={`message-reaction-chip ${reaction.reactedByCurrentUser ? 'active' : ''}`}
-                          aria-label={t('mobile.chat.reactWith', { reaction: reaction.reaction })}
-                          aria-pressed={reaction.reactedByCurrentUser}
+                          emoji={reaction.reaction}
+                          count={reaction.count}
+                          selected={reaction.reactedByCurrentUser}
+                          label={t('mobile.chat.reactWith', { reaction: reaction.reaction })}
                           disabled={commandBusy}
                           onClick={() => onToggleReaction(message, reaction.reaction)}
-                        >
-                          <span>{reaction.reaction}</span>
-                          <span>{reaction.count}</span>
-                        </button>
+                        />
                       ))}
                     </div>
+                  ) : null}
+                  {!isThread && !recalled && !moderated && onOpenThread ? (
+                    <InlineMessageReplies
+                      replies={(repliesByRoot?.get(message.ulid) ?? []).map((reply) => ({
+                        id: reply.ulid,
+                        avatar: (
+                          <MessageAuthor name={authorName(reply)}>
+                            <MobileAvatar size={24} name={authorName(reply)} identityKey={reply.senderPtid}
+                              src={isOwnChatMessage(reply, currentUserPtid) ? ownAvatar
+                                : messageAvatarUrl(reply, peerProfiles, isGroup ? undefined : peerMessageAvatar)} />
+                          </MessageAuthor>
+                        ),
+                        body: (
+                          <>
+                            {messageContentForSearch(reply, t)}
+                            {!isRecalledChatMessage(reply) && !messageProjectionMetadata(reply).moderated
+                              && chatMessageAttachments(reply).length
+                              ? renderAttachments(chatMessageAttachments(reply), isOwnChatMessage(reply, currentUserPtid))
+                              : null}
+                          </>
+                        ),
+                        time: formatRelativeTime(messageTimestampMillis(reply), t),
+                      }))}
+                      onOpenThread={() => onOpenThread(message)}
+                    />
                   ) : null}
                   {entry.showMetadata ? metaRow : null}
                 </div>
@@ -229,10 +271,10 @@ export function ChatMessageSectionBoundary({
                 {mine
                   ? entry.showAvatar
                     ? (
-                        <MessageAvatar
-                          src={ownAvatar}
-                          fallback={ownName.slice(0, 1).toUpperCase()}
-                        />
+                        <MessageAuthor name={ownName}>
+                          <MessageAvatar src={ownAvatar} name={ownName} identityKey={currentUserPtid ?? ''}
+                            fallback={ownName.slice(0, 1).toUpperCase()} />
+                        </MessageAuthor>
                       )
                     : <span className="message-avatar-spacer" aria-hidden="true" />
                   : null}

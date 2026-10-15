@@ -41,15 +41,27 @@ import {
 } from './components/ExperienceRecovery';
 import { MobileCallSurface } from './components/MobileCallSurface';
 import {
+  createInitialMobileSettingsState,
+  type MobileSettingsState,
+} from './settingsState';
+import {
+  createInitialMomentsPageState,
+  type MomentsPageState,
+} from './momentsState';
+import { mobileSettingGroups } from './settingsModel';
+import {
   callSnapshotForScenario,
   type PrototypeCallMediaKind,
   type PrototypeCallScenario,
   type PrototypeCallSnapshot,
 } from './callPrototype';
+import type { DesignThemeMode } from '../../../shared/design-tokens';
 
 export function MobileShell({
   stationLabel,
   onChangeStation,
+  themeMode,
+  onThemeModeChange,
   recoveryScenario,
   onRecoveryClose,
   socialScenario,
@@ -65,6 +77,8 @@ export function MobileShell({
 }: {
   stationLabel: string;
   onChangeStation: () => void;
+  themeMode: DesignThemeMode;
+  onThemeModeChange: (theme: DesignThemeMode) => void;
   recoveryScenario?: ShellEvidenceScenario;
   onRecoveryClose?: () => void;
   socialScenario?: SocialEvidenceScenario;
@@ -109,6 +123,13 @@ export function MobileShell({
   >(null);
   const [socialDetailOpen, setSocialDetailOpen] = useState(false);
   const [selectedSetting, setSelectedSetting] = useState<SettingEntry | null>(null);
+  const [settingsState, setSettingsState] = useState<MobileSettingsState>(
+    createInitialMobileSettingsState,
+  );
+  const [momentsState, setMomentsState] = useState<MomentsPageState>(
+    createInitialMomentsPageState,
+  );
+  const [momentComposerRequest, setMomentComposerRequest] = useState(0);
   const [shellToast, setShellToast] = useState<string | null>(null);
   const [shellToastKey, setShellToastKey] = useState(0);
   const [callSnapshot, setCallSnapshot] = useState<PrototypeCallSnapshot | null>(
@@ -203,6 +224,25 @@ export function MobileShell({
     setSelectedSetting(setting);
   }
 
+  function handleSettingCommand(command: 'Open Chats' | 'New Post' | 'Switch Station') {
+    setSelectedSetting(null);
+    if (command === 'Open Chats') {
+      setActiveTab('chat');
+      return;
+    }
+    if (command === 'New Post') {
+      setActiveTab('moments');
+      setMomentComposerRequest((current) => current + 1);
+      return;
+    }
+    setActiveTab('profile');
+    setSelectedSetting(
+      mobileSettingGroups
+        .flatMap((group) => group.items)
+        .find((entry) => entry.id === 'federation') ?? null,
+    );
+  }
+
   function handleContactMessage(contact: Contact) {
     dispatchSocialDemo({ type: 'open-direct', contactKey: contact.key });
   }
@@ -250,6 +290,15 @@ export function MobileShell({
 
   function handleAddContact() {
     setFindPeopleOpen(true);
+  }
+
+  function refreshMomentsProjection() {
+    setMomentsState((current) => ({
+      ...current,
+      moments: current.moments.map((moment) => ({ ...moment })),
+      refreshRevision: current.refreshRevision + 1,
+      lastRefreshedAt: Date.now(),
+    }));
   }
 
   function handleRecoveryAction(action: 'primary' | 'secondary') {
@@ -373,6 +422,11 @@ export function MobileShell({
     if (activeTab === 'profile' && selectedSetting) {
       return <SettingDetailView
         setting={selectedSetting}
+        settingsState={settingsState}
+        onSettingsStateChange={setSettingsState}
+        themeMode={themeMode}
+        onThemeModeChange={onThemeModeChange}
+        onCommand={handleSettingCommand}
         onBack={() => setSelectedSetting(null)}
         onChangeStation={onChangeStation}
       />;
@@ -382,6 +436,13 @@ export function MobileShell({
         listMemory={listMemory} uiEvidence={uiEvidence} onConversationClick={handleConversationClick} />;
       case 'moments': return <MomentsPage
         avatarState={uiEvidence.avatarState}
+        state={momentsState}
+        onStateChange={setMomentsState}
+        listMemory={listMemory}
+        onRefresh={refreshMomentsProjection}
+        composerRequest={momentComposerRequest}
+        defaultAudience={settingsState.defaultVisibility}
+        onComposerRequestHandled={() => setMomentComposerRequest(0)}
         onOpenAuthor={openMomentAuthor}
         onDetailChange={setSocialDetailOpen}
       />;
@@ -394,6 +455,8 @@ export function MobileShell({
         avatarState={uiEvidence.avatarState}
         onContactClick={handleContactClick} onGroupClick={handleGroupClick} onAddContact={handleAddContact} />;
       case 'profile': return <ProfilePage avatarState={uiEvidence.avatarState}
+        settingsState={settingsState}
+        themeMode={themeMode}
         onChangeStation={onChangeStation} onSettingClick={handleSettingClick} />;
     }
   }
@@ -423,6 +486,7 @@ export function MobileShell({
                 key={tab.id}
                 type="button"
                 className={`mp-tabbar-item ${isActive ? 'active' : ''}`}
+                data-tab-id={tab.id}
                 aria-label={unread > 0 ? `${tab.label}, ${unread} unread` : tab.label}
                 aria-current={isActive ? 'page' : undefined}
                 onClick={() => {
@@ -445,8 +509,11 @@ export function MobileShell({
           })}
         </nav>
       )}
-      {/* Shell-level toast */}
-      {shellToast && <div key={shellToastKey} className="mp-toast">{shellToast}</div>}
+      {shellToast && (
+        <div key={shellToastKey} className="mp-toast" role="status" aria-live="polite">
+          {shellToast}
+        </div>
+      )}
       {findPeopleOpen && socialDemo.runtime === 'ready' && (
         <FindPeopleSheet state={socialDemo} dispatch={dispatchSocialDemo}
           onClose={() => setFindPeopleOpen(false)} />

@@ -1,7 +1,7 @@
 /**
  * Demo data for the Mobile Prototype.
  */
-import type { StationEntry, Conversation, Message, Moment, Contact, GroupItem } from './types';
+import type { StationEntry, Conversation, Message, MessageSender, Moment, Contact, GroupItem } from './types';
 import { GRADIENTS } from './types';
 import {
   CHAT_JOURNEY,
@@ -58,28 +58,32 @@ export const demoConversations: Conversation[] = [
   { key: 'emma', name: 'Emma Liu', avatar: 'EL', avatarUrl: demoAvatarUrls.emma, avatarGradient: GRADIENTS[7], lastMessage: 'Lunch on Friday?', time: '4d', unread: 1, online: true },
 ];
 
+const aliceSender: MessageSender = { id: 'alice', name: 'Alice Chen', avatar: 'AC' };
+const emmaSender: MessageSender = { id: 'user-3', name: 'Emma Wang', avatar: 'EW' };
+export const releaseSender: MessageSender = { id: 'user-1', name: 'Sarah Kim', avatar: 'SK' };
+
 export const demoMessages: Message[] = [
   { id: 'd1', mine: false, time: '', dateLabel: 'Today' },
-  { id: 'm1', mine: false, text: 'Hey! Are you coming to the meetup tomorrow?', time: '10:24 AM', status: 'read', threadCount: 3, threadReplies: [
+  { id: 'm1', mine: false, sender: aliceSender, text: 'Hey! Are you coming to the meetup tomorrow?', time: '10:24 AM', status: 'read', pinned: true, threadReplies: [
     { id: 'tr1', mine: true, text: 'Yes, definitely going!', time: '10:25 AM', status: 'read' },
-    { id: 'tr2', mine: false, text: 'Great, see you there. I will bring snacks.', time: '10:26 AM', status: 'read' },
+    { id: 'tr2', mine: false, sender: aliceSender, text: 'Great, see you there. I will bring snacks.', time: '10:26 AM', status: 'read' },
     { id: 'tr3', mine: true, text: 'Awesome, looking forward to it', time: '10:28 AM', status: 'read' },
   ] },
   { id: 'm2', mine: true, text: 'Yes! Looking forward to it', time: '10:26 AM', status: 'read' },
-  { id: 'm3', mine: false, text: "Great, I'll save you a seat. The talk on federated networks starts at 2pm.", time: '10:27 AM', status: 'read', reply: { name: 'You', text: 'Yes! Looking forward to it' } },
+  { id: 'm3', mine: false, sender: aliceSender, text: "Great, I'll save you a seat. The talk on federated networks starts at 2pm.", time: '10:27 AM', status: 'read', reply: { name: 'You', text: 'Yes! Looking forward to it' } },
   { id: 'm4', mine: true, text: 'Perfect. Should I bring the prototype demo?', time: '10:28 AM', status: 'read', pinned: true },
-  { id: 'm5', mine: false, text: 'Absolutely, everyone would love to see it', time: '10:30 AM', status: 'read', reactions: [{ kind: 'like', byMe: false, count: 1 }] },
+  { id: 'm5', mine: false, sender: aliceSender, text: 'Absolutely, everyone would love to see it', time: '10:30 AM', status: 'read', reactions: [{ kind: 'like', byMe: false, count: 1 }] },
   { id: 'd2', mine: false, time: '', dateLabel: 'Yesterday' },
   { id: 'm6', mine: true, image: demoMediaBackgrounds.waterfront, time: '6:42 PM', status: 'delivered' },
-  { id: 'm7', mine: false, text: 'Love this view! Where was this taken?', time: '6:45 PM', status: 'read', reactions: [{ kind: 'love', byMe: true, count: 2 }, { kind: 'wow', byMe: false, count: 1 }] },
+  { id: 'm7', mine: false, sender: aliceSender, text: 'Love this view! Where was this taken?', time: '6:45 PM', status: 'read', reactions: [{ kind: 'love', byMe: true, count: 2 }, { kind: 'wow', byMe: false, count: 1 }] },
   { id: 'm8', mine: true, text: 'Took it at the waterfront park near the office', time: '6:46 PM', status: 'delivered' },
   { id: 'm9', mine: true, file: { name: 'design-spec-v3.pdf', size: '2.4 MB' }, time: '6:48 PM', status: 'sent' },
-  { id: 'm10', mine: false, text: "Thanks, I'll review it tonight", time: '6:50 PM', status: 'read' },
+  { id: 'm10', mine: false, sender: aliceSender, text: "Thanks, I'll review it tonight", time: '6:50 PM', status: 'read' },
   { id: 'm11', mine: true, text: 'No rush, we can discuss tomorrow', time: '6:52 PM', status: 'read' },
-  { id: 'release-context', mine: false, text: chatJourneyLocale === 'zh' ? '我还在确认重连是否恢复。' : "I'm still verifying the reconnect.", time: '10:26 AM', status: 'read' },
-  { id: 'release-question', mine: false, text: CHAT_JOURNEY.messages.inbound[chatJourneyLocale], time: '10:28 AM', status: 'read' },
+  { id: 'release-context', mine: false, sender: emmaSender, text: chatJourneyLocale === 'zh' ? '我还在确认重连是否恢复。' : "I'm still verifying the reconnect.", time: '10:26 AM', status: 'read' },
+  { id: 'release-question', mine: false, sender: releaseSender, text: CHAT_JOURNEY.messages.inbound[chatJourneyLocale], time: '10:28 AM', status: 'read' },
   { id: CHAT_JOURNEY_MESSAGE_ID, mine: true, text: CHAT_JOURNEY.messages.outbound[chatJourneyLocale], time: '10:29 AM', status: 'read' },
-  { id: 'release-hold-mobile-ack', mine: false, text: CHAT_JOURNEY.messages.followup[chatJourneyLocale], time: CHAT_JOURNEY.timestamps.recovered, status: 'read' },
+  { id: 'release-hold-mobile-ack', mine: false, sender: releaseSender, text: CHAT_JOURNEY.messages.followup[chatJourneyLocale], time: CHAT_JOURNEY.timestamps.recovered, status: 'read' },
 ];
 
 export const directDemoMessages: Message[] = demoMessages.filter((message) => (
@@ -108,7 +112,7 @@ export const demoMoments: Moment[] = [
     id: 'mo1', name: 'Carol Li', avatar: 'CL', avatarUrl: demoAvatarUrls.carol, avatarGradient: GRADIENTS[3], time: '2 hours ago',
     text: 'Just shipped the new onboarding flow. The team did an amazing job tightening up every interaction.',
     audience: 'followers',
-    likes: 24, myReaction: 'like',
+    likes: 24, myReactions: ['like'],
     reactionCounts: { like: 20, love: 3, celebrate: 1 },
     comments: [
       { id: 'c1', name: 'Alice Chen', avatar: 'AC', avatarUrl: demoAvatarUrls.alice, avatarGradient: GRADIENTS[0], text: 'Looks great! The flow is so smooth now.', time: '1h' },
@@ -141,8 +145,8 @@ export const demoMoments: Moment[] = [
   {
     id: 'mo5', name: 'Design Systems', avatar: 'DS', avatarGradient: GRADIENTS[6], time: '3 days ago',
     text: 'Token documentation is live. Components are now fully themeable through the new token pipeline.',
-    audience: 'circles',
-    likes: 42, myReaction: 'celebrate',
+    audience: 'circles', circleId: 'design', circleName: 'Design peers',
+    likes: 42, myReactions: ['celebrate'],
     reactionCounts: { like: 30, love: 8, celebrate: 4 },
     comments: [
       { id: 'c6', name: 'Alice Chen', avatar: 'AC', avatarUrl: demoAvatarUrls.alice, avatarGradient: GRADIENTS[0], text: 'This is huge for the team.', time: '3d' },

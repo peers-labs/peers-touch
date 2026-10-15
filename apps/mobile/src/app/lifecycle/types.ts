@@ -139,6 +139,13 @@ export interface MobileRuntimeDescriptor {
    */
   readonly dependsOn: readonly string[];
 
+  /** Optional user decision after bounded bootstrap/resume I/O. The Kernel
+   * awaits this gate before admitting dependents and cancels it before close. */
+  readonly userGate?: {
+    wait(): Promise<void>;
+    cancel(): void;
+  };
+
   /**
    * Initialize the runtime. Called once during BOOTSTRAPPING phase.
    * Must resolve when the runtime is ready to serve requests.

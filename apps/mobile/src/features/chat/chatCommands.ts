@@ -263,7 +263,18 @@ export async function dispatchGroupTransferOwnership(
 
 export async function dispatchGroupLeave(conversationId: string) {
   const result = await useSocialStore.getState().leaveGroup(conversationId);
-  await wakeActiveMessagingSession();
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    await wakeActiveMessagingSession();
+    const stillActive = useSocialStore.getState().messagingConversations.some(
+      (conversation) => (
+        conversation.active && conversation.conversationId === conversationId
+      ),
+    );
+    if (!stillActive) break;
+    await new Promise<void>((resolve) => {
+      window.setTimeout(resolve, 500);
+    });
+  }
   return result;
 }
 

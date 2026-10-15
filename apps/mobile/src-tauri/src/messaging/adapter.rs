@@ -1977,6 +1977,19 @@ pub(crate) struct ConversationMutationReceiveCommit<'a> {
     pub consumed_at_unix_ms: i64,
 }
 
+pub(crate) struct ConversationMutationReplay<'a> {
+    pub event_id: &'a str,
+    pub conversation_id: &'a str,
+    pub command_id: &'a str,
+    pub event_sequence: i64,
+    pub event_hash: &'a [u8],
+    pub previous_event_hash: &'a [u8],
+    pub membership_epoch: i64,
+    pub mls_epoch: i64,
+    pub mutation: ConversationMutation<'a>,
+    pub observed_at_unix_ms: i64,
+}
+
 const CONVERSATION_MESSAGE_ROWS: &str = "WITH conversation_messages AS (
         SELECT event_id, event_sequence, message_id,
                sender_ptid, sender_device_id, plaintext,
@@ -2352,6 +2365,62 @@ impl MobileMessagingStore {
             .map_err(|error| error.to_string())
     }
 
+    pub(crate) fn export_recovery_archive(
+        &self,
+        actor: &str,
+        seed: &[u8; 32],
+        profile_version: u64,
+    ) -> Result<messaging_core::recovery::MessagingRecoveryArchive, String> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| "mobile messaging store lock poisoned".to_string())?;
+        messaging_core::recovery::sqlite::export_archive(&connection, actor, seed, profile_version)
+    }
+
+    pub(crate) fn import_recovery_history(
+        &self,
+        archive: &messaging_core::recovery::MessagingRecoveryArchive,
+        reconciliation: &messaging_core::recovery::RecoveryReconciliation,
+        device_id: &str,
+    ) -> Result<(), String> {
+        let prepared = archive
+            .redaction_tombstones
+            .iter()
+            .chain(&reconciliation.redactions)
+            .map(|tombstone| {
+                let kind = match tombstone.kind.as_str() {
+                    "retracted" => MessageRedactionKind::Retracted,
+                    "hidden_for_actor" => MessageRedactionKind::HiddenForActor,
+                    _ => return Err("messaging recovery redaction kind invalid".to_string()),
+                };
+                let plan = prepare_message_redaction(MessageRedactionInput {
+                    event_id: &format!("recovery:{}", tombstone.authority_sequence),
+                    conversation_id: &tombstone.conversation_id,
+                    message_id: &tombstone.message_id,
+                    kind,
+                    authority_sequence: tombstone.authority_sequence,
+                    authority_event_hash: &tombstone.authority_event_hash,
+                    applied_at_unix_ms: tombstone.applied_at_unix_ms,
+                })
+                .map_err(|error| error.to_string())?;
+                let cleanup = self.prepare_message_redaction_cleanup(&plan)?;
+                Ok((plan, cleanup))
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        self.with_transaction(|transaction| {
+            for (plan, cleanup) in &prepared {
+                apply_message_redaction(transaction, plan, cleanup)?;
+            }
+            messaging_core::recovery::sqlite::import_history(
+                transaction,
+                archive,
+                reconciliation,
+                device_id,
+            )
+        })
+    }
+
     pub(crate) fn storage_compact(&self) -> Result<(), String> {
         self.connection
             .lock()
@@ -2677,6 +2746,10 @@ impl MobileMessagingStore {
     pub(crate) fn replace_fresh_install_identity(
         &self,
         state: &FreshDeviceIdentityState,
+        history: Option<(
+            &messaging_core::recovery::MessagingRecoveryArchive,
+            &messaging_core::recovery::RecoveryReconciliation,
+        )>,
     ) -> Result<(), String> {
         let enrollment = &state.enrollment;
         let certificate = &enrollment.certificate;
@@ -2773,6 +2846,19 @@ impl MobileMessagingStore {
                     [],
                 )
                 .map_err(|error| error.to_string())?;
+            if let Some((archive, reconciliation)) = history {
+                messaging_core::recovery::sqlite::import_history(
+                    transaction,
+                    archive,
+                    reconciliation,
+                    &device.device_id,
+                )?;
+                // Fresh endpoints bootstrap at their first committed delivery;
+                // old projections do not give this new endpoint authority.
+                transaction
+                    .execute("DELETE FROM messaging_authority_heads", [])
+                    .map_err(|error| error.to_string())?;
+            }
             Ok(())
         })
     }
@@ -2924,6 +3010,33 @@ impl MobileMessagingStore {
                 )
                 .map_err(|error| error.to_string())?;
             Ok(())
+        })
+    }
+
+    pub(crate) fn retire_conversation_after_membership_loss(
+        &self,
+        conversation_id: &str,
+    ) -> Result<bool, String> {
+        if conversation_id.trim().is_empty() {
+            return Err("mobile messaging retired Conversation ID is empty".to_string());
+        }
+        self.with_transaction(|transaction| {
+            let changed = transaction
+                .execute(
+                    "UPDATE messaging_conversations
+                     SET active = 0
+                     WHERE conversation_id = ?1 AND active = 1",
+                    params![conversation_id],
+                )
+                .map_err(|error| error.to_string())?;
+            transaction
+                .execute(
+                    "DELETE FROM messaging_mls_pending_transitions
+                     WHERE conversation_id = ?1",
+                    params![conversation_id],
+                )
+                .map_err(|error| error.to_string())?;
+            Ok(changed == 1)
         })
     }
 
@@ -4728,12 +4841,19 @@ impl MobileMessagingStore {
                         message.edited_text, message.edited_at_unix_ms, message.retracted,
                         message.hidden_for_actor, message.moderated,
                         message.moderation_reason_code
-                 FROM messaging_message_search_fts
-                 JOIN messaging_message_projections message
-                   ON message.conversation_id = messaging_message_search_fts.conversation_id
-                  AND message.message_id = messaging_message_search_fts.message_id
-                 WHERE messaging_message_search_fts MATCH ?1
-                   AND messaging_message_search_fts.conversation_id = ?2
+                 FROM messaging_message_projections message
+                 WHERE message.conversation_id = ?2
+                   AND message.message_id IN (
+                     SELECT message_id FROM messaging_message_search_fts
+                     WHERE messaging_message_search_fts MATCH ?1 AND conversation_id = ?2
+                     UNION
+                     SELECT message_id FROM messaging_message_search_fts
+                     WHERE conversation_id = ?2 AND ?6 = 1
+                       AND (
+                         instr(lower(plaintext), lower(?7)) > 0
+                         OR instr(lower(attachment_filenames), lower(?7)) > 0
+                       )
+                   )
                    AND message.retracted = 0
                    AND message.hidden_for_actor = 0
                    AND message.moderated = 0
@@ -4756,7 +4876,11 @@ impl MobileMessagingStore {
                     before_timestamp,
                     before_message_id,
                     i64::try_from(limit)
-                        .map_err(|_| "mobile messaging search limit exceeds i64")?
+                        .map_err(|_| "mobile messaging search limit exceeds i64")?,
+                    // unicode61 treats unspaced CJK as whole tokens and omits emoji.
+                    // Search the same device-local index for literal Unicode fragments.
+                    i64::from(!query.is_ascii()),
+                    query.trim(),
                 ],
                 conversation_message_from_row,
             )
@@ -5180,90 +5304,18 @@ impl MobileMessagingStore {
             if result == ReceiveCommitResult::AlreadyCommitted {
                 return Ok(result);
             }
-            validate_authority_event(
+            apply_conversation_mutation(
                 transaction,
                 commit.conversation_id,
+                commit.command_id,
                 commit.event_sequence,
                 commit.event_hash,
                 commit.previous_event_hash,
-                false,
+                commit.membership_epoch,
+                commit.mls_epoch,
+                &commit.mutation,
+                commit.consumed_at_unix_ms,
             )?;
-            let local_intent = transaction
-                .query_row(
-                    "SELECT intent.intent_kind, command.command_bytes
-                     FROM messaging_conversation_command_intents intent
-                     JOIN messaging_local_commands command
-                       ON command.command_id = intent.command_id
-                     WHERE intent.command_id = ?1",
-                    params![commit.command_id],
-                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
-                )
-                .optional()
-                .map_err(|error| error.to_string())?;
-            if let Some((intent_kind, command_bytes)) = local_intent.as_ref() {
-                validate_conversation_mutation_readback(commit, intent_kind, command_bytes)?;
-            }
-            let changed = match &commit.mutation {
-                ConversationMutation::Update { name, description } => transaction.execute(
-                    "UPDATE messaging_conversations
-                     SET name = COALESCE(?2, name),
-                         description = COALESCE(?3, description),
-                         membership_epoch = ?4,
-                         mls_epoch = ?5,
-                         updated_at_unix_ms = ?6
-                     WHERE conversation_id = ?1 AND active = 1",
-                    params![
-                        commit.conversation_id,
-                        name,
-                        description,
-                        commit.membership_epoch,
-                        commit.mls_epoch,
-                        commit.consumed_at_unix_ms
-                    ],
-                ),
-                ConversationMutation::Dissolve => transaction.execute(
-                    "UPDATE messaging_conversations
-                     SET active = 0,
-                         membership_epoch = ?2,
-                         mls_epoch = ?3,
-                         updated_at_unix_ms = ?4
-                     WHERE conversation_id = ?1 AND active = 1",
-                    params![
-                        commit.conversation_id,
-                        commit.membership_epoch,
-                        commit.mls_epoch,
-                        commit.consumed_at_unix_ms
-                    ],
-                ),
-            }
-            .map_err(|error| error.to_string())?;
-            if changed != 1 {
-                return Err(
-                    "mobile messaging Conversation mutation projection is unavailable".to_string(),
-                );
-            }
-            if local_intent.is_some() {
-                for table in [
-                    "messaging_local_commands",
-                    "messaging_command_outbox",
-                    "messaging_command_attempts",
-                    "messaging_conversation_command_intents",
-                ] {
-                    let changed = transaction
-                        .execute(
-                            &format!(
-                                "UPDATE {table} SET state = 'committed' WHERE command_id = ?1"
-                            ),
-                            params![commit.command_id],
-                        )
-                        .map_err(|error| error.to_string())?;
-                    if changed != 1 {
-                        return Err(
-                            "mobile messaging Conversation command transition mismatch".to_string()
-                        );
-                    }
-                }
-            }
             finish_authority_receive(
                 transaction,
                 commit.conversation_id,
@@ -5274,6 +5326,107 @@ impl MobileMessagingStore {
                 commit.receipt_bytes,
                 commit.consumed_at_unix_ms,
             )?;
+            Ok(result)
+        })
+    }
+
+    pub(crate) fn replay_conversation_mutation_event(
+        &self,
+        replay: &ConversationMutationReplay<'_>,
+    ) -> Result<(), String> {
+        if replay.event_id.trim().is_empty()
+            || replay.conversation_id.trim().is_empty()
+            || replay.command_id.trim().is_empty()
+            || replay.event_sequence <= 0
+            || replay.event_hash.len() != 32
+            || replay.observed_at_unix_ms <= 0
+        {
+            return Err("mobile messaging Conversation mutation replay is incomplete".to_string());
+        }
+        self.with_transaction(|transaction| {
+            apply_conversation_mutation(
+                transaction,
+                replay.conversation_id,
+                replay.command_id,
+                replay.event_sequence,
+                replay.event_hash,
+                replay.previous_event_hash,
+                replay.membership_epoch,
+                replay.mls_epoch,
+                &replay.mutation,
+                replay.observed_at_unix_ms,
+            )?;
+            finish_authority_event(
+                transaction,
+                replay.conversation_id,
+                replay.event_sequence,
+                replay.event_hash,
+                replay.event_id,
+                replay.observed_at_unix_ms,
+            )
+        })
+    }
+
+    pub(crate) fn commit_replayed_conversation_mutation_delivery(
+        &self,
+        commit: &ConversationMutationReceiveCommit<'_>,
+    ) -> Result<ReceiveCommitResult, String> {
+        self.with_transaction(|transaction| {
+            let result = Self::commit_claimed_item(
+                transaction,
+                commit.item_id,
+                commit.event_id,
+                commit.conversation_id,
+                commit.lane_sequence,
+                commit.consumer_epoch,
+                commit.payload_sha256,
+                commit.consumed_at_unix_ms,
+            )?;
+            if result == ReceiveCommitResult::AlreadyCommitted {
+                return Ok(result);
+            }
+            let authority_matches = transaction
+                .query_row(
+                    "SELECT EXISTS(
+                        SELECT 1
+                        FROM messaging_authority_events event
+                        JOIN messaging_authority_heads head
+                          ON head.conversation_id = event.conversation_id
+                        WHERE event.conversation_id = ?1
+                          AND event.event_id = ?2
+                          AND event.event_sequence = ?3
+                          AND event.event_hash = ?4
+                          AND head.event_sequence = event.event_sequence
+                          AND head.event_hash = event.event_hash
+                     )",
+                    params![
+                        commit.conversation_id,
+                        commit.event_id,
+                        commit.event_sequence,
+                        commit.event_hash
+                    ],
+                    |row| row.get::<_, bool>(0),
+                )
+                .map_err(|error| error.to_string())?;
+            if !authority_matches {
+                return Err(
+                    "mobile messaging replayed Conversation mutation does not match local authority"
+                        .to_string(),
+                );
+            }
+            transaction
+                .execute(
+                    "INSERT INTO messaging_receipt_outbox(
+                        receipt_id, event_id, receipt_bytes, state, created_at_unix_ms
+                     ) VALUES (?1, ?2, ?3, 'pending', ?4)",
+                    params![
+                        commit.receipt_id,
+                        commit.event_id,
+                        commit.receipt_bytes,
+                        commit.consumed_at_unix_ms
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
             Ok(result)
         })
     }
@@ -9275,6 +9428,33 @@ fn finish_authority_receive(
     if receipt_id.trim().is_empty() || receipt_bytes.is_empty() {
         return Err("mobile messaging consumption receipt is incomplete".to_string());
     }
+    finish_authority_event(
+        transaction,
+        conversation_id,
+        event_sequence,
+        event_hash,
+        event_id,
+        now_unix_ms,
+    )?;
+    transaction
+        .execute(
+            "INSERT INTO messaging_receipt_outbox(
+                receipt_id, event_id, receipt_bytes, state, created_at_unix_ms
+             ) VALUES (?1, ?2, ?3, 'pending', ?4)",
+            params![receipt_id, event_id, receipt_bytes, now_unix_ms],
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+fn finish_authority_event(
+    transaction: &Transaction<'_>,
+    conversation_id: &str,
+    event_sequence: i64,
+    event_hash: &[u8],
+    event_id: &str,
+    now_unix_ms: i64,
+) -> Result<(), String> {
     let recorded = transaction
         .execute(
             "INSERT INTO messaging_authority_events(
@@ -9303,14 +9483,6 @@ fn finish_authority_receive(
                 event_hash=excluded.event_hash,
                 updated_at_unix_ms=excluded.updated_at_unix_ms",
             params![conversation_id, event_sequence, event_hash, now_unix_ms],
-        )
-        .map_err(|error| error.to_string())?;
-    transaction
-        .execute(
-            "INSERT INTO messaging_receipt_outbox(
-                receipt_id, event_id, receipt_bytes, state, created_at_unix_ms
-             ) VALUES (?1, ?2, ?3, 'pending', ?4)",
-            params![receipt_id, event_id, receipt_bytes, now_unix_ms],
         )
         .map_err(|error| error.to_string())?;
     Ok(())
@@ -9760,18 +9932,120 @@ fn create_mobile_messaging_adapter_schema(connection: &Connection) -> Result<(),
     }
 }
 
+fn apply_conversation_mutation(
+    transaction: &Transaction<'_>,
+    conversation_id: &str,
+    command_id: &str,
+    event_sequence: i64,
+    event_hash: &[u8],
+    previous_event_hash: &[u8],
+    membership_epoch: i64,
+    mls_epoch: i64,
+    mutation: &ConversationMutation<'_>,
+    observed_at_unix_ms: i64,
+) -> Result<(), String> {
+    validate_authority_event(
+        transaction,
+        conversation_id,
+        event_sequence,
+        event_hash,
+        previous_event_hash,
+        false,
+    )?;
+    let local_intent = transaction
+        .query_row(
+            "SELECT intent.intent_kind, command.command_bytes
+             FROM messaging_conversation_command_intents intent
+             JOIN messaging_local_commands command
+               ON command.command_id = intent.command_id
+             WHERE intent.command_id = ?1",
+            params![command_id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    if let Some((intent_kind, command_bytes)) = local_intent.as_ref() {
+        validate_conversation_mutation_readback(
+            command_id,
+            conversation_id,
+            mutation,
+            intent_kind,
+            command_bytes,
+        )?;
+    }
+    let changed = match mutation {
+        ConversationMutation::Update { name, description } => transaction.execute(
+            "UPDATE messaging_conversations
+             SET name = COALESCE(?2, name),
+                 description = COALESCE(?3, description),
+                 membership_epoch = ?4,
+                 mls_epoch = ?5,
+                 updated_at_unix_ms = ?6
+             WHERE conversation_id = ?1 AND active = 1",
+            params![
+                conversation_id,
+                name,
+                description,
+                membership_epoch,
+                mls_epoch,
+                observed_at_unix_ms
+            ],
+        ),
+        ConversationMutation::Dissolve => transaction.execute(
+            "UPDATE messaging_conversations
+             SET active = 0,
+                 membership_epoch = ?2,
+                 mls_epoch = ?3,
+                 updated_at_unix_ms = ?4
+             WHERE conversation_id = ?1 AND active = 1",
+            params![
+                conversation_id,
+                membership_epoch,
+                mls_epoch,
+                observed_at_unix_ms
+            ],
+        ),
+    }
+    .map_err(|error| error.to_string())?;
+    if changed != 1 {
+        return Err("mobile messaging Conversation mutation projection is unavailable".to_string());
+    }
+    if local_intent.is_some() {
+        for table in [
+            "messaging_local_commands",
+            "messaging_command_outbox",
+            "messaging_command_attempts",
+            "messaging_conversation_command_intents",
+        ] {
+            let changed = transaction
+                .execute(
+                    &format!("UPDATE {table} SET state = 'committed' WHERE command_id = ?1"),
+                    params![command_id],
+                )
+                .map_err(|error| error.to_string())?;
+            if changed != 1 {
+                return Err(
+                    "mobile messaging Conversation command transition mismatch".to_string()
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
 fn validate_conversation_mutation_readback(
-    commit: &ConversationMutationReceiveCommit<'_>,
+    command_id: &str,
+    conversation_id: &str,
+    mutation: &ConversationMutation<'_>,
     intent_kind: &str,
     command_bytes: &[u8],
 ) -> Result<(), String> {
     let command = ChatCommand::decode(command_bytes)
         .map_err(|_| "mobile messaging Conversation command bytes are invalid".to_string())?;
-    if command.command_id != commit.command_id || command.conversation_id != commit.conversation_id
-    {
+    if command.command_id != command_id || command.conversation_id != conversation_id {
         return Err("mobile messaging Conversation command readback binding mismatch".to_string());
     }
-    let matches = match (&commit.mutation, command.payload.as_ref()) {
+    let matches = match (mutation, command.payload.as_ref()) {
         (
             ConversationMutation::Update { name, description },
             Some(chat_command::Payload::UpdateConversation(update)),
@@ -11831,6 +12105,144 @@ mod tests {
     }
 
     #[test]
+    fn conversation_mutation_replay_advances_authority_without_fabricating_inbox_receipt() {
+        let store = store();
+        let genesis_hash = seed_group_conversation(&store);
+        let update = conversation_command(
+            "update-replay-command",
+            chat_command::Payload::UpdateConversation(
+                messaging_core::proto::chat::UpdateConversationIntent {
+                    description: Some("Replayed description".to_string()),
+                    ..Default::default()
+                },
+            ),
+        );
+        store
+            .persist_conversation_command(&ConversationCommandCommit {
+                command: &update,
+                expected_authority_sequence: 1,
+                expected_authority_hash: &genesis_hash,
+                created_at_unix_ms: 20,
+            })
+            .unwrap();
+        store
+            .mark_command_submitted("update-replay-command", &update.encode_to_vec(), 0)
+            .unwrap();
+        let receipts_before = store
+            .connection
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT COUNT(*) FROM messaging_receipt_outbox",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap();
+        let update_hash = [6u8; 32];
+
+        store
+            .replay_conversation_mutation_event(&ConversationMutationReplay {
+                event_id: "update-replay-event",
+                conversation_id: "conversation-group",
+                command_id: "update-replay-command",
+                event_sequence: 2,
+                event_hash: &update_hash,
+                previous_event_hash: &genesis_hash,
+                membership_epoch: 1,
+                mls_epoch: 1,
+                mutation: ConversationMutation::Update {
+                    name: None,
+                    description: Some("Replayed description"),
+                },
+                observed_at_unix_ms: 22,
+            })
+            .unwrap();
+
+        let projection = store.mobile_conversation_projections().unwrap().remove(0);
+        assert_eq!(projection.description, "Replayed description");
+        assert_eq!(
+            MessagingRepository::authority_head(&store, "conversation-group").unwrap(),
+            (2, update_hash.to_vec())
+        );
+        assert_eq!(
+            store
+                .command_status("update-replay-command")
+                .unwrap()
+                .unwrap()
+                .state,
+            "committed"
+        );
+        let connection = store.connection.lock().unwrap();
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM messaging_receipt_outbox",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            receipts_before
+        );
+        drop(connection);
+
+        let delivery_hash = [9u8; 32];
+        MessagingRepository::persist_claimed_item(
+            &store,
+            "update-replay-item",
+            "update-replay-event",
+            "conversation-group",
+            2,
+            2,
+            &delivery_hash,
+            b"replayed-update-delivery",
+            23,
+        )
+        .unwrap();
+        store
+            .commit_replayed_conversation_mutation_delivery(
+                &ConversationMutationReceiveCommit {
+                    item_id: "update-replay-item",
+                    event_id: "update-replay-event",
+                    conversation_id: "conversation-group",
+                    command_id: "update-replay-command",
+                    event_sequence: 2,
+                    lane_sequence: 2,
+                    consumer_epoch: 2,
+                    payload_sha256: &delivery_hash,
+                    event_hash: &update_hash,
+                    previous_event_hash: &genesis_hash,
+                    membership_epoch: 1,
+                    mls_epoch: 1,
+                    mutation: ConversationMutation::Update {
+                        name: None,
+                        description: Some("Replayed description"),
+                    },
+                    receipt_id: "update-replay-receipt",
+                    receipt_bytes: b"update-replay-receipt",
+                    consumed_at_unix_ms: 24,
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            MessagingRepository::lane_checkpoint(&store).unwrap(),
+            (2, 2)
+        );
+        assert_eq!(
+            store
+                .connection
+                .lock()
+                .unwrap()
+                .query_row(
+                    "SELECT COUNT(*) FROM messaging_receipt_outbox",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            receipts_before + 1
+        );
+    }
+
+    #[test]
     fn conversation_update_and_dissolve_use_one_outbox_and_ordered_readback() {
         let store = store();
         let genesis_hash = seed_group_conversation(&store);
@@ -12970,6 +13382,68 @@ mod tests {
     fn message_pin_enrichment_preserves_history_thread_and_search() {
         let (store, expected) = pin_projection_fixture();
         assert_pin_projection_reads(&store, &expected);
+    }
+
+    #[test]
+    fn unicode_search_matches_fragments_and_filenames_with_visibility_and_cursor_policy() {
+        let (store, _) = pin_projection_fixture();
+        let connection = store.connection.lock().unwrap();
+        for message_id in [
+            "a-root",
+            "b-reply",
+            "c-unpinned",
+            "d-wrong-conversation",
+            "e-retracted",
+        ] {
+            connection
+                .execute(
+                    "UPDATE messaging_message_projections
+                     SET plaintext = '收到，原生双向通信正常 👍', edited_text = NULL,
+                         moderated = (message_id = 'c-unpinned'),
+                         hidden_for_actor = (message_id = 'd-wrong-conversation')
+                     WHERE conversation_id = 'conversation-1' AND message_id = ?1",
+                    params![message_id],
+                )
+                .unwrap();
+            index_message_search(
+                &connection,
+                "conversation-1",
+                message_id,
+                "收到，原生双向通信正常 👍",
+                &[messaging_core::proto::chat::AttachmentPlaintextMetadata {
+                    filename: "会议纪要.pdf".to_string(),
+                    ..Default::default()
+                }],
+            )
+            .unwrap();
+        }
+        drop(connection);
+        for query in ["原生", "👍", "纪要"] {
+            let first = store
+                .search_message_projections("conversation-1", query, None, 1)
+                .unwrap();
+            assert_eq!(first.len(), 1);
+            assert_eq!(first[0].message_id, "b-reply");
+            let second = store
+                .search_message_projections(
+                    "conversation-1",
+                    query,
+                    Some((first[0].timestamp_unix_ms, &first[0].message_id)),
+                    10,
+                )
+                .unwrap();
+            assert_eq!(
+                second
+                    .iter()
+                    .map(|message| message.message_id.as_str())
+                    .collect::<Vec<_>>(),
+                vec!["a-root"]
+            );
+            assert!(store
+                .search_message_projections("conversation-2", query, None, 10)
+                .unwrap()
+                .is_empty());
+        }
     }
 
     #[test]
@@ -14544,7 +15018,9 @@ mod tests {
         let recovered =
             generate_fresh_device_identity_for_device("ptid:alice", "session-device", [7; 32], 4)
                 .unwrap();
-        store.replace_fresh_install_identity(&recovered).unwrap();
+        store
+            .replace_fresh_install_identity(&recovered, None)
+            .unwrap();
 
         assert_eq!(
             DeviceEnrollmentRepository::pending_device_enrollment(&store)
@@ -14649,7 +15125,7 @@ mod tests {
                 .unwrap();
 
         let error = store
-            .replace_fresh_install_identity(&recovered)
+            .replace_fresh_install_identity(&recovered, None)
             .unwrap_err();
         assert!(error.contains("refuses non-empty local data"));
         assert_eq!(

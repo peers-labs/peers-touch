@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   AlertCircle,
   Check,
@@ -41,6 +41,11 @@ import {
 import { T } from '../theme';
 import { Avatar } from './Avatar';
 import { USERS, type MockMessage, type MockConversation } from '../mock';
+import { presentMessageClusters, type MessagePresentation } from '../../../../../shared/message-presentation';
+import { ReactionChip } from '../../../../../shared/ReactionChip';
+import { InlineMessageReplies } from '../../../../../shared/InlineMessageReplies';
+import { MessageAuthor } from '../../../../../shared/MessageAuthor';
+import { PinnedMessageCarousel } from '../../../../../shared/PinnedMessageCarousel';
 import {
   CHAT_JOURNEY_COPY,
   resolveChatJourneyLocale,
@@ -59,7 +64,7 @@ interface ChatAreaProps {
   messages: MockMessage[];
   conversations: MockConversation[];
   onToggleDetail: () => void;
-  onSendMessage: (conversationId: string, content: string) => void;
+  onSendMessage: (conversationId: string, content: string, replyTo?: string) => void;
   onSendAttachment: (conversationId: string, file: File) => void;
   onRetryMessage: (conversationId: string, messageId: string) => void;
   onEditMessage: (conversationId: string, messageId: string, content: string) => void;
@@ -364,7 +369,12 @@ function InBubbleReplyQuote({ target, isOwn }: { target: MockMessage; isOwn: boo
         whiteSpace: 'nowrap',
       }}
     >
-      {target.content || target.attachmentName || ''}
+      <div data-chat-quote-sender style={{ fontWeight: 600, marginBottom: 2 }}>
+        {target.senderId === 'user-self' ? 'You' : USERS[target.senderId]?.name ?? 'Unknown sender'}
+      </div>
+      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        {target.content || target.attachmentName || ''}
+      </div>
     </div>
   );
 }
@@ -420,12 +430,16 @@ function MessageBubble({
   compact,
   replyTarget,
   onRetry,
+  presentation = { start: true, end: true, showSender: false },
+  accessories,
 }: {
   message: MockMessage;
   isOwn: boolean;
   compact?: boolean;
   replyTarget?: MockMessage | null;
   onRetry?: () => void;
+  presentation?: MessagePresentation;
+  accessories?: ReactNode;
 }) {
   if (message.type === 'system') {
     return (
@@ -452,11 +466,12 @@ function MessageBubble({
   const isMediaOnly = !message.content && (message.type === 'image' || message.type === 'voice');
   const emojiOnly = Boolean(message.content) && isEmojiOnly(message.content) && message.type === 'text';
 
-  const metaRow = (
+  const metaRow = (presentation.end || message.status === 'failed') ? (
     <div
+      data-chat-time
       style={{
         display: 'flex', alignItems: 'center', gap: 5,
-        fontSize: T.fontXs, color: T.textQuaternary,
+        fontSize: T.fontXs, color: T.textTertiary,
         marginTop: 2, height: 16,
         paddingLeft: isOwn ? 0 : 4,
         paddingRight: isOwn ? 4 : 0,
@@ -471,7 +486,14 @@ function MessageBubble({
       ) : null}
       {isOwn ? <span style={{ marginLeft: T.space1 }}><MessageStatus status={message.status} onRetry={onRetry} /></span> : null}
     </div>
-  );
+  ) : null;
+
+  const avatarSlot = !isOwn ? (
+    <span data-chat-avatar-slot style={{ display: 'flex', width: 32, minWidth: 32 }}>
+      {presentation.start && <MessageAuthor name={sender?.name ?? 'Unknown sender'}>
+        <Avatar name={sender?.name ?? 'Unknown sender'} size={32} /></MessageAuthor>}
+    </span>
+  ) : null;
 
   // Emoji-only messages render large, without a chat bubble (matches real client).
   if (emojiOnly) {
@@ -480,22 +502,26 @@ function MessageBubble({
         style={{
           display: 'flex',
           flexDirection: isOwn ? 'row-reverse' : 'row',
-          alignItems: 'flex-end',
+          alignItems: 'flex-start',
           gap: T.space2,
-          padding: `${T.space1}px 0`,
         }}
       >
-        {!isOwn && <Avatar name={sender?.name ?? 'Unknown'} size={32} />}
+        {avatarSlot}
         <div style={{ maxWidth: compact ? '82%' : '72%', minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: isOwn ? 'flex-end' : 'flex-start' }}>
           <div style={{ fontSize: 32, lineHeight: '40px' }}>{message.content}</div>
+          {accessories}
           {metaRow}
         </div>
       </div>
     );
   }
 
-  const ownBubbleRadius = { borderRadius: `${T.radiusLg}px ${T.radiusSm}px ${T.radiusLg}px ${T.radiusLg}px` };
-  const peerBubbleRadius = { borderRadius: `${T.radiusSm}px ${T.radiusLg}px ${T.radiusLg}px ${T.radiusLg}px` };
+  const bubbleRadius = {
+    borderTopLeftRadius: presentation.start && !isOwn ? T.radiusSm : T.radiusLg,
+    borderTopRightRadius: presentation.start && isOwn ? T.radiusSm : T.radiusLg,
+    borderBottomLeftRadius: T.radiusLg,
+    borderBottomRightRadius: T.radiusLg,
+  };
 
   return (
     <div
@@ -504,16 +530,10 @@ function MessageBubble({
         flexDirection: isOwn ? 'row-reverse' : 'row',
         alignItems: 'flex-start',
         gap: T.space2,
-        padding: `${T.space1}px 0`,
       }}
     >
-      {!isOwn && <Avatar name={sender?.name ?? 'Unknown'} size={32} />}
+      {avatarSlot}
       <div style={{ maxWidth: compact ? '82%' : '72%', minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: isOwn ? 'flex-end' : 'flex-start' }}>
-        {!isOwn && (
-          <div style={{ fontSize: T.fontXs, color: T.textTertiary, marginBottom: 2, paddingLeft: 4 }}>
-            {sender?.name ?? 'Unknown'}
-          </div>
-        )}
         {isMediaOnly ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: isOwn ? 'flex-end' : 'flex-start' }}>
             {message.type === 'voice'
@@ -541,7 +561,7 @@ function MessageBubble({
             className="msg-bubble"
             style={{
               padding: message.type === 'file' || message.type === 'image' ? T.space2 : `${T.space2}px ${T.space3}px`,
-              ...(isOwn ? ownBubbleRadius : peerBubbleRadius),
+              ...bubbleRadius,
               background: isOwn ? T.primary : T.bg,
               border: isOwn ? '1px solid transparent' : `1px solid ${T.borderSubtle}`,
               boxShadow: isOwn ? '0 1px 2px rgba(15,23,42,0.10)' : '0 1px 2px rgba(15,23,42,0.06)',
@@ -561,6 +581,7 @@ function MessageBubble({
               : null}
           </div>
         )}
+        {accessories}
         {metaRow}
       </div>
     </div>
@@ -581,10 +602,11 @@ function MessageRow({
   onReact,
   onAction,
   replyTarget,
-  threadCount,
+  replies,
   onOpenThread,
   pinned,
   highlighted,
+  presentation,
 }: {
   message: MockMessage;
   isOwn: boolean;
@@ -599,24 +621,40 @@ function MessageRow({
   onReact: (emoji: string) => void;
   onAction: (action: MessageActionKey) => void;
   replyTarget?: MockMessage | null;
-  threadCount: number;
+  replies: MockMessage[];
   onOpenThread: () => void;
   pinned: boolean;
   highlighted?: boolean;
+  presentation: MessagePresentation;
 }) {
   const [hovered, setHovered] = useState(false);
+  const rowRef = useRef<HTMLDivElement | null>(null);
   const toolbarRef = useRef<HTMLDivElement | null>(null);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
   const [dropUp, setDropUp] = useState(true);
+  const [popoverTop, setPopoverTop] = useState(38);
+  const [popoverInline, setPopoverInline] = useState(false);
+  const [popoverWidth, setPopoverWidth] = useState(0);
   const withinMutationWindow = Date.now() - message.timestamp < MESSAGE_MUTATION_WINDOW_MS;
   const popoverOpen = activeMenu || reactionOpen;
 
-  // Open the popover above the toolbar (toward earlier messages) unless there is
-  // not enough room above; it must never cover the message it acts on.
-  useEffect(() => {
-    if (!popoverOpen || !toolbarRef.current) return;
-    const rect = toolbarRef.current.getBoundingClientRect();
-    setDropUp(rect.top > 230);
-  }, [popoverOpen]);
+  useLayoutEffect(() => {
+    if (!popoverOpen) {
+      setPopoverInline(false);
+      return;
+    }
+    if (!popoverOpen || !toolbarRef.current || !rowRef.current || !popoverRef.current) return;
+    const toolbar = toolbarRef.current.getBoundingClientRect();
+    const row = rowRef.current.getBoundingClientRect();
+    const viewport = rowRef.current.closest('[data-chat-message-viewport]')?.getBoundingClientRect();
+    const popover = popoverRef.current.getBoundingClientRect();
+    const above = toolbar.top - (viewport?.top ?? 0) >= popover.height + 38;
+    const below = (viewport?.bottom ?? window.innerHeight) - row.bottom >= popover.height + 8;
+    setDropUp(above);
+    setPopoverInline(!above && !below);
+    setPopoverWidth(popover.width);
+    setPopoverTop(row.bottom - toolbar.top + 8);
+  }, [popoverOpen, reactionOpen, activeMenu]);
 
   if (recalled) {
     // Keep the persistent row wrapper so message identity (id/own/highlight)
@@ -654,13 +692,19 @@ function MessageRow({
 
   return (
     <div
+      ref={rowRef}
       data-chat-message-id={message.id}
       data-chat-message-own={isOwn ? 'true' : 'false'}
+      data-chat-cluster-start={presentation.start}
+      data-chat-cluster-end={presentation.end}
       data-chat-message-highlight={highlighted ? 'true' : undefined}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
         position: 'relative',
+        display: 'flex',
+        flexDirection: 'column',
+        marginTop: presentation.start ? T.space2 : 0,
         borderRadius: 12,
         transition: 'background-color 240ms ease',
         backgroundColor: highlighted ? 'rgba(107,91,214,0.12)' : 'transparent',
@@ -670,9 +714,15 @@ function MessageRow({
         <div
           ref={toolbarRef}
           style={{
-            position: 'absolute',
-            top: -8,
-            [isOwn ? 'right' : 'left']: 44,
+            position: popoverInline ? 'relative' : 'absolute',
+            top: popoverInline ? 0 : -8,
+            [isOwn ? 'right' : 'left']: popoverInline ? 0 : 44,
+            order: 1,
+            alignSelf: isOwn ? 'flex-end' : 'flex-start',
+            marginTop: popoverInline ? 8 : 0,
+            width: popoverInline ? popoverWidth : undefined,
+            maxWidth: '100%',
+            flexWrap: popoverInline ? 'wrap' : undefined,
             zIndex: 12,
             display: 'flex',
             alignItems: 'center',
@@ -680,7 +730,7 @@ function MessageRow({
             padding: '2px 4px',
             background: T.bg,
             border: `1px solid ${T.border}`,
-            borderRadius: T.radiusFull,
+            borderRadius: popoverInline ? T.radiusMd : T.radiusFull,
             boxShadow: '0 6px 18px rgba(15,23,42,0.14)',
           }}
         >
@@ -698,11 +748,14 @@ function MessageRow({
           </ToolbarIconButton>
           {reactionOpen ? (
             <div
+              ref={popoverRef}
+              data-chat-inline-popover={popoverInline || undefined}
               role="dialog"
               aria-label="All emojis"
               style={{
-                position: 'absolute',
-                [dropUp ? 'bottom' : 'top']: 38,
+                position: popoverInline ? 'static' : 'absolute',
+                flexBasis: popoverInline ? '100%' : undefined,
+                [dropUp ? 'bottom' : 'top']: dropUp ? 38 : popoverTop,
                 [isOwn ? 'right' : 'left']: 0,
                 zIndex: 14,
                 display: 'grid',
@@ -734,9 +787,12 @@ function MessageRow({
           ) : null}
           {activeMenu ? (
             <div
+              ref={popoverRef}
+              data-chat-inline-popover={popoverInline || undefined}
               style={{
-                position: 'absolute',
-                [dropUp ? 'bottom' : 'top']: 38,
+                position: popoverInline ? 'static' : 'absolute',
+                flexBasis: popoverInline ? '100%' : undefined,
+                [dropUp ? 'bottom' : 'top']: dropUp ? 38 : popoverTop,
                 right: 0,
                 minWidth: 168,
                 padding: 4,
@@ -781,16 +837,14 @@ function MessageRow({
           ) : null}
         </div>
       ) : null}
-      <MessageBubble message={message} isOwn={isOwn} compact={compact} onRetry={onRetry} replyTarget={replyTarget} />
-      {reactions.length > 0 || threadCount > 0 || pinned ? (
-        <div
+      <MessageBubble message={message} isOwn={isOwn} compact={compact} onRetry={onRetry}
+        replyTarget={replyTarget} presentation={presentation}
+        accessories={<>
+        {(reactions.length > 0 || pinned) && <div
           data-chat-message-meta={message.id}
           style={{
-            display: 'flex', gap: 4, alignItems: 'center',
+            display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap', maxWidth: '100%',
             justifyContent: isOwn ? 'flex-end' : 'flex-start',
-            paddingLeft: isOwn ? 0 : 4,
-            paddingRight: isOwn ? 4 : 0,
-            marginTop: 1,
           }}
         >
           {pinned ? (
@@ -807,53 +861,20 @@ function MessageRow({
               <Pin size={10} /> Pinned
             </span>
           ) : null}
-          {reactions.map((emoji, index) => (
-            <button
-              key={`${emoji}-${index}`}
-              type="button"
-              data-chat-message-reaction={emoji}
-              aria-label={`React ${emoji}`}
-              onClick={(event) => {
-                event.stopPropagation();
-                onReact(emoji);
-              }}
-              style={{
-                fontSize: 11, lineHeight: 1,
-                height: 20, padding: '0 5px',
-                borderRadius: 8,
-                background: T.bgMuted,
-                border: 'none',
-                color: T.textSecondary,
-                cursor: 'pointer',
-              }}
-            >
-              {emoji}
-            </button>
+          {reactions.map((emoji) => (
+            <ReactionChip key={emoji} emoji={emoji} count={1} selected
+              label={`React ${emoji}`} onClick={() => onReact(emoji)} />
           ))}
-          {threadCount > 0 ? (
-            <button
-              type="button"
-              data-message-thread-summary={threadCount}
-              aria-label={`${threadCount} thread replies`}
-              title={`${threadCount} thread replies`}
-              onClick={(event) => {
-                event.stopPropagation();
-                onOpenThread();
-              }}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 4,
-                height: 20, padding: '0 6px',
-                border: 0, borderRadius: 8,
-                background: T.bgMuted, color: T.textTertiary,
-                cursor: 'pointer', fontSize: 11,
-              }}
-            >
-              <MessagesSquare size={11} />
-              {threadCount}
-            </button>
-          ) : null}
-        </div>
-      ) : null}
+          {reactions.length > 0 && <ReactionChip label="Add reaction" onClick={onToggleReactions} />}
+        </div>}
+        <InlineMessageReplies onOpenThread={onOpenThread} replies={replies.map((reply) => {
+          const name = USERS[reply.senderId]?.name ?? 'Unknown sender';
+          return { id: reply.id, time: formatMessageTime(reply.timestamp),
+            body: reply.content || `[${reply.type}]`,
+            avatar: <MessageAuthor name={name}><Avatar name={name} size={20} /></MessageAuthor>,
+          };
+        })} />
+        </>} />
     </div>
   );
 }
@@ -1520,7 +1541,8 @@ export function ChatArea({
   const [reactionsByMessage, setReactionsByMessage] = useState<Record<string, string[]>>({});
   const [recalledIds, setRecalledIds] = useState<Set<string>>(new Set());
   const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
-  const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
+  const [pinOverrides, setPinOverrides] = useState<Record<string, boolean>>({});
+  const isPinned = (message: MockMessage) => pinOverrides[message.id] ?? message.pinned ?? false;
   const [editingId, setEditingId] = useState<string | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const highlightTimer = useRef<number | null>(null);
@@ -1611,7 +1633,7 @@ export function ChatArea({
     };
     setThreadReplies((prev) => ({
       ...prev,
-      [threadRoot.id]: [...(prev[threadRoot.id] ?? []), reply],
+      [threadRoot.id]: [...(prev[threadRoot.id] ?? threadRoot.threadReplies ?? []), reply],
     }));
     setThreadDraft('');
   };
@@ -1636,15 +1658,7 @@ export function ChatArea({
       return;
     }
     if (action === 'pin') {
-      setPinnedIds((prev) => {
-        const next = new Set(prev);
-        if (next.has(message.id)) {
-          next.delete(message.id);
-        } else {
-          next.add(message.id);
-        }
-        return next;
-      });
+      setPinOverrides((prev) => ({ ...prev, [message.id]: !(prev[message.id] ?? message.pinned ?? false) }));
       return;
     }
     if (action === 'edit') {
@@ -1760,13 +1774,18 @@ export function ChatArea({
       if (event.key === 'Escape') setOverlay(null);
     };
     const scroller = messagesScrollRef.current;
-    const onScroll = () => setOverlay(null);
+    const onScroll = () => {
+      if (!scroller?.querySelector('[data-chat-inline-popover]')) setOverlay(null);
+    };
+    const onResize = () => setOverlay(null);
     document.addEventListener('pointerdown', onPointerDown, true);
     document.addEventListener('keydown', onKeyDown);
+    window.addEventListener('resize', onResize);
     scroller?.addEventListener('scroll', onScroll, { passive: true });
     return () => {
       document.removeEventListener('pointerdown', onPointerDown, true);
       document.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('resize', onResize);
       scroller?.removeEventListener('scroll', onScroll);
     };
   }, [overlay]);
@@ -1776,6 +1795,13 @@ export function ChatArea({
     if (highlightTimer.current) window.clearTimeout(highlightTimer.current);
   }, []);
   const visibleMessages = messages.filter((message) => !deletedIds.has(message.id));
+  const clusterPositions = presentMessageClusters(visibleMessages.map((message) => ({
+    id: message.id,
+    senderId: message.senderId,
+    own: message.senderId === 'user-self',
+    timestamp: message.timestamp,
+    barrier: message.type === 'system' || recalledIds.has(message.id),
+  })), conversation?.type === 'group');
   // Recalled tombstones and system events are never user-searchable content.
   const isSearchableMessage = (message: MockMessage) =>
     !recalledIds.has(message.id) && message.type !== 'system';
@@ -1865,7 +1891,7 @@ export function ChatArea({
       setPendingAttachment(null);
     }
     if (inputValue.trim()) {
-      onSendMessage(conversation.id, inputValue);
+      onSendMessage(conversation.id, inputValue, replyTo?.id);
     }
     setInputValue('');
     setReplyTo(null);
@@ -2004,6 +2030,13 @@ export function ChatArea({
         </div>
       </div>
 
+      <PinnedMessageCarousel messages={visibleMessages.filter((message) =>
+        isPinned(message) && !recalledIds.has(message.id) && message.type !== 'system',
+      ).map((message) => ({
+        id: message.id, text: message.content || message.attachmentName || '[Media]',
+        author: USERS[message.senderId]?.name ?? 'Unknown sender',
+      }))} onJump={flashMessage} />
+
       {searchOpen && (
         <div
           style={{
@@ -2053,6 +2086,7 @@ export function ChatArea({
       {/* Messages */}
       <div
         ref={messagesScrollRef}
+        data-chat-message-viewport
         style={{
           flex: 1,
           overflowY: 'auto',
@@ -2060,7 +2094,7 @@ export function ChatArea({
           padding: compact ? `${T.space3}px` : `${T.space4}px ${T.space5}px`,
           display: 'flex',
           flexDirection: 'column',
-          gap: T.space2,
+          gap: 2,
           background: backgroundImageUrl
             ? `linear-gradient(rgba(255,255,255,0.72), rgba(255,255,255,0.72)), url("${backgroundImageUrl}") center / cover`
             : conversation.background === 'Graphite' ? '#f7f7f8' : T.bg,
@@ -2098,10 +2132,11 @@ export function ChatArea({
             onReact={(emoji) => toggleReaction(msg.id, emoji)}
             onAction={(action) => handleMessageAction(msg, action)}
             replyTarget={msg.replyTo ? (visibleMessages.find((candidate) => candidate.id === msg.replyTo) ?? null) : null}
-            threadCount={threadReplies[msg.id]?.length ?? 0}
+            replies={threadReplies[msg.id] ?? msg.threadReplies ?? []}
             onOpenThread={() => setThreadRoot(msg)}
-            pinned={pinnedIds.has(msg.id)}
+            pinned={isPinned(msg)}
             highlighted={highlightedId === msg.id}
+            presentation={clusterPositions.get(msg.id)!}
           />
         ))}
         {peerTyping && !searchQuery.trim() ? (
@@ -2188,13 +2223,18 @@ export function ChatArea({
           data-focused={composerFocused ? 'true' : 'false'}
           style={{
             position: 'relative',
+            display: 'grid',
+            gridTemplateColumns: 'auto minmax(0, 1fr) auto',
+            gridTemplateAreas: pendingAttachment ? '"attachment attachment attachment" "tools input send"' : '"tools input send"',
+            alignItems: 'end',
+            gap: 2,
             background: T.bgMuted,
             borderColor: composerFocused ? 'rgba(107,91,214,0.35)' : T.borderSubtle,
             borderWidth: 1,
             borderStyle: 'solid',
             borderRadius: T.radiusLg,
             boxShadow: composerFocused ? '0 0 0 3px rgba(107,91,214,0.10)' : 'none',
-            padding: '6px 6px 4px',
+            padding: 2,
             overflow: 'visible',
             transition: 'border-color 0.12s ease, box-shadow 0.12s ease',
           }}
@@ -2205,7 +2245,7 @@ export function ChatArea({
               style={{
                 position: 'absolute',
                 left: 0,
-                bottom: 44,
+                bottom: 'calc(100% + 6px)',
                 width: 420,
                 maxWidth: '70vw',
                 padding: 14,
@@ -2269,6 +2309,7 @@ export function ChatArea({
             <div
               data-chat-pending-attachment
               style={{
+                gridArea: 'attachment',
                 margin: '2px 2px 4px',
                 display: 'flex',
                 alignItems: 'center',
@@ -2322,6 +2363,7 @@ export function ChatArea({
             aria-label={editingId ? 'Edit message composer' : 'Message composer'}
             data-chat-composer-mode={editingId ? 'editing' : 'compose'}
             style={{
+              gridArea: 'input',
               display: 'block',
               width: '100%',
               minHeight: inputExpanded ? COMPOSER_EXPANDED_MIN_HEIGHT : COMPOSER_MIN_HEIGHT,
@@ -2331,7 +2373,7 @@ export function ChatArea({
               border: 'none',
               outline: 'none',
               boxShadow: 'none',
-              padding: '9px 8px 2px',
+              padding: '11px 8px',
               background: 'transparent',
               color: T.text,
               caretColor: T.primary,
@@ -2342,16 +2384,9 @@ export function ChatArea({
             }}
           />
           <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              height: 34,
-              padding: 0,
-              background: 'transparent',
-            }}
+            style={{ display: 'contents' }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <div style={{ gridArea: 'tools', display: 'flex', alignItems: 'center', gap: 2, height: 44 }}>
               <ComposerToolButton
                 label="Emoji"
                 active={emojiOpen}
@@ -2380,7 +2415,7 @@ export function ChatArea({
                 <Mic size={20} />
               </ComposerToolButton>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ gridArea: 'send', display: 'flex', alignItems: 'center', gap: 2, height: 44 }}>
               <span
                 aria-hidden
                 style={{ width: 1, height: 18, background: T.border, marginRight: 2, flexShrink: 0 }}
@@ -2405,8 +2440,8 @@ export function ChatArea({
                 disabled={editingId ? !inputValue.trim() : !inputValue.trim() && !pendingAttachment}
                 onClick={send}
                 style={{
-                  width: 34,
-                  height: 34,
+                  width: 40,
+                  height: 40,
                   border: 0,
                   borderRadius: 8,
                   background: canSend ? T.primary : 'transparent',
@@ -2508,16 +2543,17 @@ export function ChatArea({
               message={threadRoot}
               isOwn={threadRoot.senderId === 'user-self'}
               compact
+              presentation={{ start: true, end: true, showSender: false }}
               replyTarget={threadRoot.replyTo ? (visibleMessages.find((candidate) => candidate.id === threadRoot.replyTo) ?? null) : null}
             />
             <div style={{ borderTop: `1px solid ${T.borderSubtle}`, margin: `${T.space3}px 0` }} />
-            {(threadReplies[threadRoot.id] ?? []).length === 0 ? (
+            {(threadReplies[threadRoot.id] ?? threadRoot.threadReplies ?? []).length === 0 ? (
               <div style={{ color: T.textTertiary, fontSize: T.fontSm, textAlign: 'center', padding: `${T.space4}px 0` }}>
                 No replies yet
               </div>
             ) : (
-              (threadReplies[threadRoot.id] ?? []).map((reply) => (
-                <MessageBubble key={reply.id} message={reply} isOwn compact />
+              (threadReplies[threadRoot.id] ?? threadRoot.threadReplies ?? []).map((reply) => (
+                <MessageBubble key={reply.id} message={reply} isOwn={reply.senderId === 'user-self'} compact />
               ))
             )}
           </div>
@@ -2533,7 +2569,7 @@ export function ChatArea({
               value={threadDraft}
               onChange={(event) => setThreadDraft(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === 'Enter' && !event.shiftKey) {
+                if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) {
                   event.preventDefault();
                   submitThreadReply();
                 }
@@ -2586,6 +2622,14 @@ export function ChatArea({
               <button type="button" aria-label="Close forward" onClick={() => setForwardMessage(null)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: T.textTertiary }}>
                 <X size={16} />
               </button>
+            </div>
+            <div style={{ padding: '8px 16px', color: T.textSecondary, fontSize: T.fontSm }}>
+              <strong data-chat-forward-sender>
+                {forwardMessage.senderId === 'user-self' ? 'You' : USERS[forwardMessage.senderId]?.name ?? 'Unknown sender'}
+              </strong>
+              <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 3 }}>
+                {forwardMessage.content || forwardMessage.attachmentName}
+              </div>
             </div>
             <div style={{ maxHeight: 320, overflowY: 'auto', padding: 6 }}>
               {conversations.filter((item) => item.id !== conversation?.id).map((item) => (

@@ -54,11 +54,20 @@ export interface MessageReaction {
   count: number;
 }
 
+export interface MessageSender {
+  id: string;
+  name: string;
+  avatar?: string;
+  avatarUrl?: string;
+}
+
 export interface Message {
   id: string;
   text?: string;
   mine: boolean;
   time: string;
+  timestamp?: number;
+  sender?: MessageSender;
   status?: MessageStatus;
   reply?: MessageReply;
   image?: string;
@@ -69,7 +78,6 @@ export interface Message {
   moderated?: boolean;
   pinned?: boolean;
   threadReplies?: Message[];
-  threadCount?: number;
   flagged?: boolean;
 }
 
@@ -96,9 +104,11 @@ export interface Moment {
   text: string;
   images?: string[];
   audience?: MomentAudience;
+  circleId?: string;
+  circleName?: string;
   likes: number;
   liked?: boolean;
-  myReaction?: ReactionKind;
+  myReactions?: ReactionKind[];
   reactionCounts?: Partial<Record<ReactionKind, number>>;
   comments: MomentComment[];
 }
@@ -125,30 +135,30 @@ export interface GroupItem {
 
 export type SettingId =
   | 'account'
-  | 'notifications'
-  | 'privacy'
-  | 'appearance'
-  | 'station'
-  | 'discovery'
+  | 'security'
+  | 'general'
   | 'federation'
   | 'providers'
   | 'models'
   | 'memory'
   | 'skills'
   | 'mcp'
-  | 'storage'
-  | 'channels'
-  | 'applets'
-  | 'statistics'
-  | 'logs'
+  | 'tts'
   | 'cron'
   | 'command-menu'
-  | 'about';
+  | 'tools'
+  | 'channels'
+  | 'applets'
+  | 'storage'
+  | 'oss'
+  | 'logs'
+  | 'help';
 
 export interface SettingEntry {
   id: SettingId;
   label: string;
   description: string;
+  capabilities: string[];
   value?: string;
   icon: React.ComponentType<{ size?: number }>;
   tint: 'primary' | 'success' | 'warning' | 'danger' | 'neutral';
@@ -180,7 +190,7 @@ export const REACTION_EMOJI: Record<ReactionKind, string> = {
   celebrate: '\u{1F389}',
 };
 
-export const REACTION_EMOJI_EXTENDED: string[] = ['\u{1F44D}', '\u{1F602}', '\u{1F63A}', '\u{1F44C}', '\u{2705}', '\u{1F914}', '\u{2764}\u{FE0F}', '\u{1F389}'];
+export const REACTION_KINDS: ReactionKind[] = ['like', 'love', 'laugh', 'wow', 'celebrate'];
 
 export const FULL_EMOJI_GRID = [
   '\u{1F44D}', '\u{1F602}', '\u{1F63A}', '\u{1F44C}', '\u{2705}', '\u{1F914}', '\u{2764}\u{FE0F}', '\u{1F389}',

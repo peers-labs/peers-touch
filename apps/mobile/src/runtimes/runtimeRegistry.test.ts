@@ -384,6 +384,36 @@ describe('mobile runtime registry', () => {
 
     await social!.teardown({ reason: 'app-unmount' });
   });
+
+  it('cancels an in-flight Social startup before waiting for its transition', async () => {
+    const started = Promise.withResolvers<void>();
+    const released = vi.fn(async () => undefined);
+    socialRuntimeMocks.startSocialRuntime.mockImplementation(async (_session, _get, requests) => {
+      started.resolve();
+      await new Promise<void>((resolve) => {
+        requests.signal().addEventListener('abort', () => resolve(), { once: true });
+      });
+      return {
+        teardown: released,
+        drain: vi.fn(async () => undefined),
+        suspend: vi.fn(async () => undefined),
+        resume: vi.fn(async () => undefined),
+      };
+    });
+    useAuthStore.setState({
+      session: mobileSession('ptid:alice', 'session-alice'),
+      accessDecision: grantedDecision(),
+    });
+    const social = createMobileRuntimeDescriptors().find((descriptor) => descriptor.id === 'social')!;
+    const bootstrap = social.bootstrap(runtimeContext());
+    await started.promise;
+
+    await expect(social.teardown({ reason: 'app-unmount' })).resolves.toMatchObject({
+      success: true,
+    });
+    await bootstrap;
+    expect(released).toHaveBeenCalledOnce();
+  });
 });
 
 function mobileSession(ptid: string, sessionId: string) {

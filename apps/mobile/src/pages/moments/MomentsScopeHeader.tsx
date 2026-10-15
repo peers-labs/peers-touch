@@ -1,4 +1,4 @@
-import { ImagePlus, Search, SlidersHorizontal, UsersRound } from 'lucide-react';
+import { ImagePlus, Search, SlidersHorizontal } from 'lucide-react';
 
 import { useMobileI18n } from '../../app/mobileI18n';
 import { TimelineSort } from '../../gen/proto/domain/social/post_pb';
@@ -29,7 +29,10 @@ export function MomentsScopeHeader({
   return (
     <>
       <header className="moments-header">
-        <h1>{t('mobile.moments.title')}</h1>
+        <div className="moments-header-title">
+          <h1>{t('mobile.moments.title')}</h1>
+          <span>{t('mobile.moments.subtitle')}</span>
+        </div>
         <div className="moments-header-actions">
           <button
             type="button"
@@ -38,14 +41,6 @@ export function MomentsScopeHeader({
             onClick={onOpenSearch}
           >
             <Search size={19} />
-          </button>
-          <button
-            type="button"
-            data-acceptance-id="social-circles-open"
-            aria-label={t('mobile.social.circles.title')}
-            onClick={onOpenCircles}
-          >
-            <UsersRound size={19} />
           </button>
           <button
             type="button"
@@ -76,17 +71,19 @@ export function MomentsScopeHeader({
             {t(`mobile.moments.scope.${item}`)}
           </button>
         ))}
+        <button
+          type="button"
+          role="tab"
+          data-acceptance-id="social-circles-open"
+          aria-selected={false}
+          onClick={onOpenCircles}
+        >
+          {t('mobile.social.circles.title')}
+        </button>
       </div>
 
-      <div className="moments-context-row">
-        <span>
-          {t(
-            scope === 'home'
-              ? 'mobile.moments.scope.homeDescription'
-              : 'mobile.moments.scope.exploreDescription',
-          )}
-        </span>
-        {scope === 'explore' ? (
+      {scope === 'explore' ? (
+        <div className="moments-context-row">
           <button
             type="button"
             data-acceptance-id="social-explore-sort-open"
@@ -99,10 +96,8 @@ export function MomentsScopeHeader({
               }`,
             )}
           </button>
-        ) : (
-          <span>{t('mobile.moments.sort.latest')}</span>
-        )}
-      </div>
+        </div>
+      ) : null}
     </>
   );
 }

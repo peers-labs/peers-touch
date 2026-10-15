@@ -608,9 +608,10 @@ results from their exact required runtime/platform variants.
 
 ### 13.3 Reset ownership
 
-SC-D23 defines one full purge of private Social Development state on only
-`four` and `fiveArm`, followed by canonical schema rebuild. It preserves public
-Social and every non-Social authority.
+SC-D23 defines one full purge of private Social Development state on `four`
+and `fiveArm`, followed by canonical schema rebuild. SC-D30 admits the same
+operation for the exact `chat-native-five` Mobile frontier target. Every target
+preserves public Social and every non-Social authority.
 
 ```text
 immutable pre-audit + object target manifest
@@ -739,6 +740,9 @@ The DESIGN gate requires:
     Chat, infrastructure, Development, and formal Acceptance evidence distinct.
 15. `SC-D28` keeps canonical schema-attestation identity separate from live
     connection routing, with both endpoints owner-published and fail-closed.
+16. `SC-D30` admits only `chat-native-five` /
+    `chat-native-five-social-private` for `MWPU-07-FRONTIER`
+    `SCHEMA_ACTIVATION`, using the unchanged SC-D23 operation.
 
 ## 15. Non-Claims
 

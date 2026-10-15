@@ -14,10 +14,16 @@ export interface ChatDraftScope {
   readonly actorPtid: string;
 }
 
+export interface ChatDraftSubmission {
+  readonly commandId: string;
+  readonly messageId: string;
+}
+
 export interface ChatComposerDraft {
   readonly text: string;
   readonly replyToMessageId: string;
   readonly encryptedAttachmentRefs: readonly string[];
+  readonly submission?: ChatDraftSubmission;
 }
 
 export interface RestoredChatComposerDraft extends ChatComposerDraft {
@@ -45,6 +51,8 @@ export function buildChatDraftEnvelope(
         attachmentRefs: normalizeEncryptedAttachmentRefs(
           draft.encryptedAttachmentRefs,
         ).map((blobId) => create(EncryptedBlobReferenceSchema, { blobId })),
+        submittedCommandId: draft.submission?.commandId ?? '',
+        submittedMessageId: draft.submission?.messageId ?? '',
       }),
     },
   });
@@ -54,12 +62,17 @@ export function readChatDraftEnvelope(
   envelope: MobileDraftEnvelopeV2,
 ): RestoredChatComposerDraft | null {
   if (envelope.payload.case !== 'chat') return null;
+  const submission = readChatDraftSubmission(
+    envelope.payload.value.submittedCommandId,
+    envelope.payload.value.submittedMessageId,
+  );
   return {
     text: envelope.payload.value.text,
     replyToMessageId: envelope.payload.value.replyToMessageId,
     encryptedAttachmentRefs: normalizeEncryptedAttachmentRefs(
       envelope.payload.value.attachmentRefs.map((reference) => reference.blobId),
     ),
+    ...(submission ? { submission } : {}),
     savedAtMs: envelope.updatedAt ? timestampMs(envelope.updatedAt) : 0,
   };
 }
@@ -67,7 +80,8 @@ export function readChatDraftEnvelope(
 export function isChatComposerDraftEmpty(draft: ChatComposerDraft): boolean {
   return !draft.text
     && !draft.replyToMessageId
-    && draft.encryptedAttachmentRefs.length === 0;
+    && draft.encryptedAttachmentRefs.length === 0
+    && !draft.submission;
 }
 
 export function normalizeEncryptedAttachmentRefs(
@@ -76,4 +90,20 @@ export function normalizeEncryptedAttachmentRefs(
   return [...new Set(references.filter((reference) => (
     Boolean(reference) && reference.trim() === reference
   )))];
+}
+
+function readChatDraftSubmission(
+  commandId: string,
+  messageId: string,
+): ChatDraftSubmission | undefined {
+  if (!commandId && !messageId) return undefined;
+  if (
+    !commandId
+    || !messageId
+    || commandId.trim() !== commandId
+    || messageId.trim() !== messageId
+  ) {
+    throw new Error('mobile.reliability.draftSubmissionInvalid');
+  }
+  return { commandId, messageId };
 }

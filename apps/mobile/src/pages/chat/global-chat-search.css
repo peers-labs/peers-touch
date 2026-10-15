@@ -1,0 +1,20 @@
+.global-chat-search-results { display: grid; gap: 16px; padding: 0 16px 12px; }
+.global-chat-search-results section { min-width: 0; }
+.global-chat-search-results h2, .chat-search-section-title {
+  padding: 8px 0; font-size: 12px; line-height: 16px; font-weight: 600;
+}
+.chat-search-section-title { padding-inline: 16px; }
+.global-chat-contact-result {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px;
+  padding: 6px 0; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer;
+}
+.global-chat-contact-result span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.global-chat-search-results .message-search-result {
+  grid-template-columns: minmax(0, 1fr); width: 100%; gap: 2px; min-height: 44px;
+  border-radius: 0; background: transparent;
+}
+.global-chat-search-results .message-search-result > * {
+  min-width: 0; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.global-chat-search-results .message-search-result > :last-child { font-size: 12px; }
+.global-chat-contact-result:focus-visible { outline: 2px solid var(--brand-primary); outline-offset: 1px; }

@@ -11,7 +11,6 @@ const messageSectionSource = source('./ChatMessageSectionBoundary.tsx');
 const messagePresentationSource = source('./ChatMessagePresentation.tsx');
 const messageClusterSource = source('./chatMessageClusters.ts');
 const overlayHostSource = source('./ChatOverlayHost.tsx');
-const senderTypingFeedbackSource = source('./SenderTypingFeedback.tsx');
 const bottomOcclusionSource = source('./chatBottomOcclusion.ts');
 const stylesSource = source('../../styles.css');
 const extractedSources = [
@@ -20,7 +19,6 @@ const extractedSources = [
   messagePresentationSource,
   messageClusterSource,
   overlayHostSource,
-  senderTypingFeedbackSource,
   bottomOcclusionSource,
 ].join('\n');
 
@@ -72,13 +70,13 @@ describe('Chat component ownership boundaries', () => {
     expect(messageClusterSource).toContain('projectChatMessageClusters');
     expect(messageClusterSource).toContain('showMetadata: endsCluster');
     expect(messageSectionSource).toContain('data-message-cluster-position');
-    expect(pageSource).toContain('<PinnedMessageBanner');
+    expect(pageSource).toContain('<PinnedMessageCarousel');
     expect(pageSource).toContain('<PinnedMessagesSheet');
     expect(messagePresentationSource).toContain('message-check-status-button');
     expect(messagePresentationSource).toContain("'mobile.chat.checkStatus'");
   });
 
-  it('composes measured bottom layers and exposes recoverable sender typing', () => {
+  it('composes measured bottom layers without elevating ephemeral typing into composer feedback', () => {
     expect(pageSource).toContain('useChatBottomOcclusion');
     expect(pageSource).toContain('chatBottomOcclusion.composerRef');
     expect(pageSource).toContain('chatBottomOcclusion.inputPanelRef');
@@ -89,11 +87,10 @@ describe('Chat component ownership boundaries', () => {
       'padding: 10px 8px calc(var(--safe-area-bottom) + 92px)',
     );
 
-    expect(pageSource).toContain('<SenderTypingFeedback');
+    expect(pageSource).not.toContain('<SenderTypingFeedback');
     expect(pageSource).toContain('dispatchSenderTypingRequest');
-    expect(pageSource).not.toContain('void sendTypingState');
-    expect(senderTypingFeedbackSource).toContain('data-sender-typing-state');
-    expect(senderTypingFeedbackSource).toContain('onClick={onRetry}');
+    expect(pageSource).toContain('void emitTypingState(false)');
+    expect(pageSource).not.toContain('await emitTypingState');
   });
 
   it('keeps the established selectors and accessibility semantics', () => {

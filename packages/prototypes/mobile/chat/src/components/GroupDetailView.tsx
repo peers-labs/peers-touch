@@ -19,6 +19,8 @@ import copy from '../../../../../locales/en/common.json';
 import type { PrototypeListMemory } from '../listPresentation';
 import { PrototypeListWindow } from './PrototypeListWindow';
 import { IdentityAvatar } from './IdentityAvatar';
+import { AccessibleClearIcon } from './AccessibleClearIcon';
+import { ConfirmationDialog } from './ConfirmationDialog';
 
 const { Text } = Typography;
 const defaultMembers = demoContacts.slice(0, 4);
@@ -85,33 +87,27 @@ export function GroupDetailView({
       {sampleOnly && <div className="mp-direct-state" role="status">{copy['mobile.launch.unavailable']}</div>}
 
       {showLeaveConfirm && (
-        <div className="mp-confirm-backdrop" onClick={() => setShowLeaveConfirm(false)}>
-          <div className="mp-confirm-dialog" onClick={(e) => e.stopPropagation()}>
-            <div className="mp-confirm-title">{group.isOwner && !sampleOnly ? 'Dissolve Group?' : 'Leave Group?'}</div>
-            <div className="mp-confirm-desc">
-              {group.isOwner && !sampleOnly
-                ? `${group.name} will be removed for every member.`
-                : `You will no longer receive messages from ${group.name}.`}
-            </div>
-            <div className="mp-confirm-actions">
-              <button type="button" className="mp-confirm-btn" onClick={() => setShowLeaveConfirm(false)}>Cancel</button>
-              <button type="button" className="mp-confirm-btn mp-confirm-btn--danger" onClick={() => {
-                setShowLeaveConfirm(false);
-                onExit?.(group);
-                onBack();
-              }}>
-                {group.isOwner && !sampleOnly ? 'Dissolve' : 'Leave'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmationDialog
+          title={group.isOwner && !sampleOnly ? 'Dissolve Group?' : 'Leave Group?'}
+          description={group.isOwner && !sampleOnly
+            ? `${group.name} will be removed for every member.`
+            : `You will no longer receive messages from ${group.name}.`}
+          confirmLabel={group.isOwner && !sampleOnly ? 'Dissolve' : 'Leave'}
+          onCancel={() => setShowLeaveConfirm(false)}
+          onConfirm={() => {
+            setShowLeaveConfirm(false);
+            onExit?.(group);
+            onBack();
+          }}
+        />
       )}
 
       <div className="mp-member-list">
         <div className="mp-member-list-title">{copy['mobile.group.members']} ({group.memberCount})</div>
         {sampleOnly && (
           <div className="mp-search-bar">
-            <Input prefix={<Search size={16} />} allowClear
+            <Input prefix={<Search size={16} />}
+              allowClear={{ clearIcon: <AccessibleClearIcon label="Clear member search" /> }}
               aria-label={copy['mobile.group.members']} placeholder={copy['common.action.search']}
               value={query} onChange={(event) => {
                 setQuery(event.target.value);

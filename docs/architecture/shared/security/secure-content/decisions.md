@@ -40,6 +40,7 @@
 | SC-D27 | Recovery replacement separates admission proof from append-only execution provenance | accepted |
 | SC-D28 | Runtime services separate canonical schema identity from live connection routing | accepted |
 | SC-D29 | Audience targets are typed and v1 private expansion remains locally enumerable | accepted |
+| SC-D30 | The reviewed chat-native-five profile may run the canonical private reset | accepted |
 
 ---
 
@@ -864,6 +865,67 @@ prove wrong actor/epoch/key ID divergence, and open a real HPKE envelope with a
 derived recovery key. Any future transcript change requires a new version and
 cannot silently reinterpret existing recovery PreKey IDs.
 The Owner accepted this decision on 2026-09-14.
+
+---
+
+## SC-D30: The Reviewed chat-native-five Profile May Run The Canonical Private Reset
+
+**Status**: accepted
+**Date**: 2026-10-15
+
+### Context
+
+The Mobile whole-product frontier uses the reviewed, non-stable
+`chat-native-five` Development profile. Its PostgreSQL
+`social_private_posts` table retains the plaintext-era `id NOT NULL` shape, so
+the canonical private writer cannot publish a Circle-scoped Moment. SC-D23
+already defines the only accepted reset algorithm, but its target allowlist
+names only `four` and `fiveArm`.
+
+### Decision
+
+Add exactly one Development target:
+
+| Profile | Deploy environment | Destructive scope | Intent | Plan / Task |
+|---|---|---|---|---|
+| `chat-native-five` | `chat-native-five` | `chat-native-five-social-private` | `SCHEMA_ACTIVATION` | `mobile-whole-product-usability-20261008` / `MWPU-07-FRONTIER` |
+
+This target reuses the complete SC-D23 database/object allowlist, transaction,
+public snapshot, journal, quiescence, deployment, post-audit, lease, and
+failure contract. The current tracked declaration may own source checkpoint,
+deploy, and reset claims together; it must name exactly this profile,
+environment, and scope. `FINAL_CUT`, aliases, other profiles, broader deletion,
+direct SQL/DDL, and an HTTP reset route remain forbidden.
+
+### Rationale
+
+Reusing the canonical reset owner removes the retained mixed schema without
+adding a compatibility writer or a second migration path. Exact Plan, Task,
+profile, environment, scope, source, declaration, and lease binding preserves
+the fail-closed boundary.
+
+### Alternatives Considered
+
+- Populate retired plaintext columns: rejected as a live compatibility path.
+- Drop the database volume: rejected because public, Chat, Identity, and other
+  Station state must remain intact.
+- Execute ad-hoc SQL: rejected because it bypasses the SC-D23 owner, journal,
+  object cleanup, and public-preservation proof.
+- Reuse `fiveArm`: rejected because it does not prove the active Mobile
+  frontier's Station and actor state.
+
+### Consequences
+
+- Private Social Development data on `chat-native-five` is intentionally
+  deleted; public and non-Social state must remain byte-equal.
+- The reset owner and Station maintenance boundary must recognize only the
+  exact Plan/Task/profile tuple above.
+- The resulting attestation proves canonical schema activation only; Mobile
+  receiver-visible publish/readback remains a separate product Journey.
+
+The Owner accepted this decision and authorized the exact local checkpoint,
+deployment, and `chat-native-five-social-private` reset on 2026-10-15 under
+`trae-chat:6ac3c21a832b0391483a590a:20261015:authorize-chat-native-five-social-private-reset-and-checkpoint`.
 
 ---
 

@@ -165,7 +165,10 @@ export function SocialCircleMemberPickerPage({
                       {actor.displayName || actor.username || actor.ptid}
                     </Text>
                     <Text type="secondary" ellipsis>
-                      {actor.federation?.handle || actor.ptid}
+                      {actor.federation?.handle
+                        || (actor.username
+                          ? `@${actor.username}`
+                          : t('mobile.social.circles.localPerson'))}
                     </Text>
                   </span>
                   <Checkbox checked={checked} disabled={disabled} />

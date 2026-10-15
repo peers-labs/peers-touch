@@ -349,6 +349,7 @@ export function MomentComposer({
   const draftRestoreRequestedRef = useRef(false);
   const draftIdRef = useRef(globalThis.crypto.randomUUID());
   const circles = useSocialCirclesStore((state) => state.circles);
+  const refreshCircles = useSocialCirclesStore((state) => state.refreshCircles);
   const messagingConversations = useSocialStore(
     (state) => state.messagingConversations,
   );
@@ -428,6 +429,16 @@ export function MomentComposer({
     pendingImagesRef.current = pendingImages;
   }, [pendingImages]);
 
+  useEffect(() => {
+    if (
+      audienceChoice === 'CIRCLE'
+      && circleId
+      && !circles.some((circle) => circle.id.toString() === circleId)
+    ) {
+      void refreshCircles();
+    }
+  }, [audienceChoice, circleId, circles, refreshCircles]);
+
   // Cleanup preview URLs on unmount
   useEffect(() => () => {
     pendingImagesRef.current.forEach((item) => {
@@ -466,13 +477,27 @@ export function MomentComposer({
     [pendingImages],
   );
   const slotsLeft = MAX_IMAGES_PER_POST - pendingImages.length;
+  const selectedCircle = circles.find(
+    (circle) => circle.id.toString() === circleId,
+  );
+  const selectedGroup = groups.find(
+    (group) => group.conversationId === groupConversationId,
+  );
+  const audienceTargetReady = audienceChoice === 'CIRCLE'
+    ? Boolean(selectedCircle)
+    : audienceChoice === 'GROUP'
+      ? Boolean(selectedGroup)
+      : audienceChoice === 'CUSTOM_ALLOW'
+        || audienceChoice === 'CUSTOM_DENY'
+        ? selectedActorPtids.length > 0
+        : true;
   const canPublish = canPublishMoment(
     text,
     successfulMediaRefs.length,
     uploadingCount,
     errorCount,
     publishing,
-    Boolean(audience),
+    Boolean(audience) && audienceTargetReady,
   ) && !saving && !discarding && !closing && !pendingDraftRemoval;
   const editingDisabled =
     publishing || closing || Boolean(pendingDraftRemoval);
@@ -486,12 +511,6 @@ export function MomentComposer({
   );
   const audiencePresentation = SOCIAL_AUDIENCE_PRESENTATION[audienceChoice];
   const AudienceIcon = audiencePresentation.icon;
-  const selectedCircle = circles.find(
-    (circle) => circle.id.toString() === circleId,
-  );
-  const selectedGroup = groups.find(
-    (group) => group.conversationId === groupConversationId,
-  );
   const selectedActorNames = selectedActorPtids.map(
     (actorPtid) => audienceActorLabels[actorPtid] ?? actorPtid,
   );
@@ -889,12 +908,12 @@ export function MomentComposer({
         <header className="moments-sheet-header moment-composer-header">
           <button
             type="button"
-            className="moment-composer-clear"
-            data-acceptance-id="social-composer-clear"
-            disabled={editingDisabled || saving || discarding || !canClear}
-            onClick={() => void handleClear()}
+            className="moment-composer-cancel"
+            data-acceptance-id="social-composer-cancel"
+            disabled={publishing || closing || Boolean(pendingDraftRemoval)}
+            onClick={() => void handleClose()}
           >
-            {t('mobile.moments.composer.clear')}
+            {t('common.action.cancel')}
           </button>
           <h2>{t('mobile.moments.newPost')}</h2>
           <button
@@ -1032,7 +1051,19 @@ export function MomentComposer({
             <ShieldCheck size={14} />
             {t('mobile.moments.composer.privacyHint')}
           </span>
-          <span>{text.length}/5000</span>
+          <span className="moment-composer-meta-actions">
+            {canClear ? (
+              <button
+                type="button"
+                data-acceptance-id="social-composer-clear"
+                disabled={editingDisabled || saving || discarding}
+                onClick={() => void handleClear()}
+              >
+                {t('mobile.moments.composer.clear')}
+              </button>
+            ) : null}
+            <span>{text.length}/5000</span>
+          </span>
         </div>
       </section>
 

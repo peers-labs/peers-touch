@@ -36,6 +36,9 @@ describe('Mobile Chat draft persistence contract', () => {
     expect(pageSource).not.toMatch(
       /encryptedAttachmentRefs:\s*attachmentDrafts|blobId:\s*.*stageId/,
     );
+    expect(pageSource).toMatch(
+      /submission:\s*outcome\.state === 'pending'[\s\S]*commandId:\s*outcome\.commandId[\s\S]*messageId:\s*outcome\.messageId/,
+    );
   });
 
   it('deletes persisted state only after an authoritative projection or edit submission', () => {

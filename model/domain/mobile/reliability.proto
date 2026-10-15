@@ -78,6 +78,8 @@ message ChatDraftPayload {
   string text = 1;
   string reply_to_message_id = 2;
   repeated EncryptedBlobReference attachment_refs = 3;
+  string submitted_command_id = 4;
+  string submitted_message_id = 5;
 }
 
 message MomentDraftPayload {

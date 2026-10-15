@@ -872,11 +872,16 @@ Receipt aggregate 必须按 conversation kind 使用正确的 endpoint truth：
   `waiting-for-epoch`且不得ACK。
 - Recovery 恢复 actor identity/history/trust，排除 SPK/OPK、ratchet、MLS live state。
 - fresh install 完成 restore 后才 enroll fresh device，随后重建 sessions/leaves。
-- same-device in-place restore 不把 continuity 写入 archive；它在停止当前 worker 后，
+- Desktop same-device profile replacement 不把 continuity 写入 archive；它在停止当前 worker 后，
   直接把该 endpoint 的 enrollment、SPK/OPK、MLS bootstrap inventory、lane
   cursor、consumption markers、authority heads 与 retired checkpoints 从 live
   SQLCipher store 转移到 staging，同时清除 Direct ratchet、MLS
   group/session/transition、pending command 与 transfer state。
+- Mobile 的恢复操作在停止 worker 后，用一次 SQLCipher transaction 合并缺失历史，
+  保留当前 endpoint、ratchet、MLS、cursor、pending commands 和 drafts。当前 authority
+  state 不被旧归档覆盖；本地 retention floor 和 redaction tombstone 优先，归档之后的
+  撤回/隐藏须向 authority snapshot 校验。新安装实例在同一事务中替换尚未 enrollment
+  的临时身份并导入合法历史，继续使用认证 Session 的 device ID，随后 enroll。
 - Restore为每个conversation写one-shot `recovery_ready`；只有当前fresh endpoint的
   ADD Welcome可在无head/session/marker时原子安装current checkpoint并清除该状态，
   同时保留archive中的合法旧history。

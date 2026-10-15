@@ -101,6 +101,7 @@ export function MomentCommentsSection({
 }: MomentCommentsSectionProps) {
   const { t } = useMobileI18n();
   const { facade, projection } = useSocialExperience();
+  const viewerActorPtid = projection?.scope.actorPtid ?? '';
   const privateRoute = Boolean(
     post?.audience && !isPublicSocialAudience(post.audience),
   );
@@ -310,6 +311,7 @@ export function MomentCommentsSection({
               onOpenComments={() => undefined}
               onOpenAuthor={onOpenAuthor}
               reactionMutation={reactionMutation}
+              commentCount={comments.length}
             />
             <div className="moments-detail-comments-title">
               <Text strong>{t('mobile.moments.comment.title')}</Text>
@@ -380,7 +382,10 @@ export function MomentCommentsSection({
                     setReplyTarget({ comment: target, authorName })
                   }
                   onDelete={
-                    comment.route === 'PUBLIC' ? handleDelete : undefined
+                    comment.route === 'PUBLIC'
+                    && commentViewAuthorPtid(comment) === viewerActorPtid
+                      ? handleDelete
+                      : undefined
                   }
                 />
               </div>

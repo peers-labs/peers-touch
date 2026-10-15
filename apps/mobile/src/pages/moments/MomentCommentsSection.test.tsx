@@ -110,6 +110,18 @@ describe('Moment detail', () => {
     expect(source).toContain('className="moments-comment-reply-clear"');
   });
 
+  it('offers public comment deletion only to the comment author', () => {
+    const source = readFileSync(
+      new URL('./MomentCommentsSection.tsx', import.meta.url),
+      'utf8',
+    );
+
+    expect(source).toContain(
+      'commentViewAuthorPtid(comment) === viewerActorPtid',
+    );
+    expect(source).toContain('commentCount={comments.length}');
+  });
+
   it('detects when a selected reply target disappears from the thread', () => {
     const target = {
       route: 'PUBLIC',

@@ -117,8 +117,11 @@ export interface NotificationPreferenceGateway {
 // Factory
 // ---------------------------------------------------------------------------
 
-export function createProfileGateway(session: MobileAuthSession): ProfileGateway {
-  const { command } = createGatewayTransport(session, 'profile');
+export function createProfileGateway(
+  session: MobileAuthSession,
+  requestSignal?: () => AbortSignal,
+): ProfileGateway {
+  const { command } = createGatewayTransport(session, 'profile', undefined, requestSignal);
   const getCurrentProfile = async (): Promise<CommandOutcome<PeerProfile>> => {
     const result = await command<Partial<PeerProfile>>({
       method: 'GET',
@@ -338,8 +341,9 @@ export function createProfileGateway(session: MobileAuthSession): ProfileGateway
 
 export function createNotificationPreferenceGateway(
   session: MobileAuthSession,
+  requestSignal?: () => AbortSignal,
 ): NotificationPreferenceGateway {
-  const { command } = createGatewayTransport(session, 'notification');
+  const { command } = createGatewayTransport(session, 'notification', undefined, requestSignal);
   const actorPtid = session.actorRef.ptid;
 
   return {

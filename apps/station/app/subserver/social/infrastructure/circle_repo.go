@@ -219,17 +219,15 @@ func (r *circleRepo) RemoveMembers(ctx context.Context, circleID uint64, actorPT
 			return result.Error
 		}
 		removed = int32(result.RowsAffected)
-		if removed > 0 {
-			if err := tx.
-				Model(&db.SocialCircle{}).
-				Where("id = ?", circleID).
-				Update("member_count", gorm.Expr("MAX(0, COALESCE(member_count,0) - ?)", removed)).Error; err != nil {
-				return err
-			}
-		}
-		return tx.Model(&db.SocialCircleMember{}).
+		if err := tx.Model(&db.SocialCircleMember{}).
 			Where("circle_id = ?", circleID).
-			Count(&total).Error
+			Count(&total).Error; err != nil {
+			return err
+		}
+		return tx.
+			Model(&db.SocialCircle{}).
+			Where("id = ?", circleID).
+			Update("member_count", total).Error
 	})
 	return removed, total, err
 }

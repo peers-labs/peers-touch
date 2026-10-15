@@ -178,6 +178,7 @@ export class MobileLifecycleKernel {
   stopRuntimeGraph(
     reason: LifecycleTransitionReason = 'app-unmount',
   ): Promise<AggregateTeardownResult> {
+    this.cancelUserGates();
     return this.enqueueOperation(async () => {
       if (this.state.phase === 'COLD') return emptyTeardownResult();
       return this.teardownRuntimes({ reason });
@@ -187,6 +188,7 @@ export class MobileLifecycleKernel {
   restartRuntimeGraph(
     reason: LifecycleTransitionReason = 'acceptance-restart',
   ): Promise<LifecycleKernelSnapshot> {
+    this.cancelUserGates();
     return this.enqueueOperation(async () => {
       const teardown = await this.fenceAndTeardown({ reason });
       if (!teardown.allSuccessful) {
@@ -214,6 +216,7 @@ export class MobileLifecycleKernel {
       readonly draftDisposition?: DraftDisposition;
     } = {},
   ): Promise<T> {
+    this.cancelUserGates();
     return this.enqueueOperation(async () => {
       this.enterScopeLaunchTransition(reason);
       const teardown = await this.fenceAndTeardown(
@@ -237,6 +240,7 @@ export class MobileLifecycleKernel {
   suspend(
     _reason: LifecycleTransitionReason = 'app-background',
   ): Promise<LifecycleKernelSnapshot> {
+    this.cancelUserGates();
     return this.enqueueOperation(async () => {
       if (this.state.phase === 'SUSPENDED') return this.getSnapshot();
       if (this.state.launchState === 'shell') {
@@ -498,6 +502,7 @@ export class MobileLifecycleKernel {
         runtimeId,
         'bootstrap',
         () => entry.descriptor.bootstrap(this.runtimeContext(entry.descriptor)),
+        entry.descriptor.userGate,
       );
       results.push(result);
       if (result.success) {
@@ -609,6 +614,7 @@ export class MobileLifecycleKernel {
         runtimeId,
         'resume',
         () => entry.descriptor.resume(this.runtimeContext(entry.descriptor)),
+        entry.descriptor.userGate,
       );
       if (result.success) {
         this.dispatch({ type: 'RUNTIME_RESUMED', runtimeId });
@@ -821,6 +827,10 @@ export class MobileLifecycleKernel {
     this.stateListeners.forEach((listener) => listener());
   }
 
+  private cancelUserGates(): void {
+    for (const entry of this.state.runtimes.values()) entry.descriptor.userGate?.cancel();
+  }
+
   private emitEvent(event: LifecycleEvent): void {
     this.eventListeners.forEach((listener) => listener(event));
   }
@@ -838,6 +848,7 @@ async function runVoidRuntimeOperation(
   runtimeId: string,
   operation: Exclude<RuntimeOperation, 'teardown'>,
   run: () => Promise<void>,
+  userGate?: MobileRuntimeDescriptor['userGate'],
 ): Promise<RuntimeOperationResult> {
   const start = performance.now();
   try {
@@ -846,6 +857,7 @@ async function runVoidRuntimeOperation(
       RUNTIME_OPERATION_TIMEOUT_MS[operation],
       `mobile.lifecycle.runtimeTimedOut:${runtimeId}:${operation}`,
     );
+    await userGate?.wait();
     return {
       runtimeId,
       success: true,

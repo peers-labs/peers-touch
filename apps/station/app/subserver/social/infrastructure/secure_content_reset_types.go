@@ -19,6 +19,8 @@ const (
 	SecureContentResetPlanID         = "SECURE-CONTENT-HARD-CUT-20260913"
 	CrossStationSocialResetPlanID    = "CROSS-STATION-SOCIAL-NATIVE-20261003"
 	CrossStationSocialActivationTask = "CSS-08A-schema-activation"
+	MobileUsabilityResetPlanID       = "mobile-whole-product-usability-20261008"
+	MobileUsabilityResetTask         = "MWPU-07-FRONTIER"
 
 	ResetIntentSchemaActivation ResetIntent = "SCHEMA_ACTIVATION"
 	ResetIntentFinalCut         ResetIntent = "FINAL_CUT"
@@ -528,11 +530,11 @@ func expectedResetTask(
 	intent ResetIntent,
 	profileID string,
 ) (string, bool) {
-	if profileID != "four" && profileID != "fiveArm" {
-		return "", false
-	}
 	switch planID {
 	case SecureContentResetPlanID:
+		if profileID != "four" && profileID != "fiveArm" {
+			return "", false
+		}
 		switch intent {
 		case ResetIntentSchemaActivation:
 			return "W12D", true
@@ -540,8 +542,14 @@ func expectedResetTask(
 			return "W12", true
 		}
 	case CrossStationSocialResetPlanID:
-		if intent == ResetIntentSchemaActivation {
+		if (profileID == "four" || profileID == "fiveArm") &&
+			intent == ResetIntentSchemaActivation {
 			return CrossStationSocialActivationTask, true
+		}
+	case MobileUsabilityResetPlanID:
+		if profileID == "chat-native-five" &&
+			intent == ResetIntentSchemaActivation {
+			return MobileUsabilityResetTask, true
 		}
 	}
 
@@ -554,6 +562,8 @@ func expectedResetTarget(profileID string) (string, string, bool) {
 		return "station-four", "station-four-social-private", true
 	case "fiveArm":
 		return "station-five-arm", "station-five-arm-social-private", true
+	case "chat-native-five":
+		return "chat-native-five", "chat-native-five-social-private", true
 	default:
 		return "", "", false
 	}

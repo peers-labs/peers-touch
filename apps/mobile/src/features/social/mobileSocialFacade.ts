@@ -59,6 +59,7 @@ export interface MobileSocialFacadeController {
 
 export interface MobileSocialFacadeDependencies {
   readonly retry: () => Promise<boolean>;
+  readonly requestSignal?: () => AbortSignal;
 }
 
 const activeFacadeListeners = new Set<() => void>();
@@ -88,7 +89,7 @@ export function createMobileSocialFacade(
     deviceId: session.deviceId,
     lifecycleGeneration: String(session.lifecycleGeneration),
   });
-  const gateway = createMomentsGateway(session);
+  const gateway = createMomentsGateway(session, dependencies.requestSignal);
   const homeFeed = createMomentsFeedStore(gateway);
   const exploreFeed = createMomentsFeedStore(gateway, { scope: 'explore' });
   const feed: MomentsFeedStoreController = {

@@ -6,3 +6,7 @@
 "recover" = "恢复";
 "cancel" = "取消";
 "acceptance_autofill" = "填充恢复短语";
+"backup_title" = "保存恢复短语";
+"backup_message" = "请妥善保存这 24 个单词。持有短语的人可以恢复你的身份和加密历史。Station 只接收加密备份。";
+"backup_create" = "已保存 · 创建备份";
+"backup_copy_create" = "复制 · 创建备份";

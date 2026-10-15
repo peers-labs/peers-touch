@@ -14,6 +14,7 @@ import {
   buildNotificationPreferenceUpdates,
   patchNotificationPreferences,
   profileDraftFromReadback,
+  profilePatchFromDraft,
   reconcileEditableProfileDraft,
   reconcileNotificationPreferenceDraft,
 } from './useSettingsController';
@@ -143,6 +144,13 @@ describe('notification preference settings state', () => {
 });
 
 describe('profile privacy settings state', () => {
+  it('sends only edited fields and preserves explicit empty clearing', () => {
+    const server = profileDraftFromReadback(profile({ note: 'old', header: 'oss://cover' }))!;
+    expect(profilePatchFromDraft(server, { ...server, note: 'first\nsecond', header: '' }))
+      .toEqual({ note: 'first\nsecond', header: '' });
+    expect(profilePatchFromDraft(server, server)).toEqual({});
+  });
+
   it('keeps every Station-owned privacy field in the editable draft', () => {
     expect(profileDraftFromReadback(profile())).toMatchObject({
       defaultVisibility: 'followers',

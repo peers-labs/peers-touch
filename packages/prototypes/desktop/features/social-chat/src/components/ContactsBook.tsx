@@ -557,7 +557,7 @@ function ContactsDetail({ compact = false, request, friend, group, copiedKey, on
             width: '100%', height: 88, flexShrink: 0,
             background: profileCover
               ? `center / cover url("${profileCover}")`
-              : 'linear-gradient(120deg,#6b5bd6 0%,#8b7df0 55%,#b794f6 100%)',
+              : `linear-gradient(120deg, ${token.colorPrimary} 0%, color-mix(in srgb, ${token.colorPrimary} 72%, white) 55%, color-mix(in srgb, ${token.colorPrimary} 42%, white) 100%)`,
           }}
         />
         <Flexbox align="center" gap={10} style={{ width: '100%', padding: `0 ${compact ? 20 : 28}px ${compact ? 20 : 24}px`, marginTop: -4 }}>

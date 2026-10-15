@@ -11,6 +11,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 }));
 
 import {
+  ChatDraftPayloadSchema,
   MobileDraftEnvelopeV2Schema,
   MobileDraftSurfaceKind,
   MobileDurableCommandState,
@@ -225,6 +226,72 @@ describe('commandRuntime draft recovery', () => {
       .rejects.toThrow('mobile.reliability.draftDiscardIncomplete');
   });
 
+  it('removes a submitted Chat draft only after Messaging reports commit', async () => {
+    const draft = chatDraft('committed-chat');
+    invokeMock
+      .mockResolvedValueOnce([
+        Array.from(toBinary(MobileDraftEnvelopeV2Schema, draft)),
+      ])
+      .mockResolvedValueOnce({
+        commandId: 'command-1',
+        conversationId: 'committed-chat',
+        state: 'committed',
+      })
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(null);
+
+    await expect(getDraftRestorationPort().list(
+      draft.stationPeerId,
+      draft.actorPtid,
+    )).resolves.toEqual([]);
+    expect(invokeMock.mock.calls.map(([command]) => command)).toEqual([
+      'draft_list',
+      'messaging_command_status',
+      'draft_remove',
+      'draft_load',
+    ]);
+  });
+
+  it('keeps an in-flight Chat submission durable without restoring it', async () => {
+    const draft = chatDraft('pending-chat');
+    invokeMock
+      .mockResolvedValueOnce([
+        Array.from(toBinary(MobileDraftEnvelopeV2Schema, draft)),
+      ])
+      .mockResolvedValueOnce({
+        commandId: 'command-1',
+        conversationId: 'pending-chat',
+        state: 'submitted',
+      });
+
+    await expect(getDraftRestorationPort().list(
+      draft.stationPeerId,
+      draft.actorPtid,
+    )).resolves.toEqual([]);
+    expect(invokeMock.mock.calls.map(([command]) => command)).toEqual([
+      'draft_list',
+      'messaging_command_status',
+    ]);
+  });
+
+  it('restores a submitted Chat draft when Messaging reports failure', async () => {
+    const draft = chatDraft('failed-chat');
+    invokeMock
+      .mockResolvedValueOnce([
+        Array.from(toBinary(MobileDraftEnvelopeV2Schema, draft)),
+      ])
+      .mockResolvedValueOnce({
+        commandId: 'command-1',
+        conversationId: 'failed-chat',
+        state: 'failed',
+      });
+
+    await expect(getDraftRestorationPort().list(
+      draft.stationPeerId,
+      draft.actorPtid,
+    )).resolves.toEqual([projection(draft)]);
+  });
+
   it('schedules the earliest persisted retry without exceeding timer bounds', () => {
     const commands = [
       retryProjection(8_000),
@@ -437,13 +504,33 @@ function momentDraft(targetId = 'compose') {
   });
 }
 
+function chatDraft(targetId: string) {
+  return create(MobileDraftEnvelopeV2Schema, {
+    schemaRevision: 2,
+    stationPeerId: 'station-a',
+    actorPtid: 'ptid:alice',
+    surfaceKind: MobileDraftSurfaceKind.CHAT_COMPOSER,
+    targetId,
+    updatedAt: timestampFromMs(42),
+    payload: {
+      case: 'chat',
+      value: create(ChatDraftPayloadSchema, {
+        text: 'submitted draft',
+        submittedCommandId: 'command-1',
+        submittedMessageId: 'message-1',
+      }),
+    },
+  });
+}
+
 function projection(
   envelope: ReturnType<typeof momentDraft>,
 ): DraftProjection {
+  const chat = envelope.surfaceKind === MobileDraftSurfaceKind.CHAT_COMPOSER;
   return {
     key: `${envelope.surfaceKind}:${envelope.targetId}`,
-    kind: 'moments',
-    surfaceKind: 'moment',
+    kind: chat ? 'chat' : 'moments',
+    surfaceKind: chat ? 'chat' : 'moment',
     targetId: envelope.targetId,
     updatedAtMs: 42,
     envelope,

@@ -2,11 +2,26 @@ package infrastructure
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	domain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 )
+
+func TestCommentsCountDeltaExpressionIsPostgresPortable(t *testing.T) {
+	if strings.Contains(strings.ToUpper(nonNegativeCommentsCountDeltaSQL), "MAX(") {
+		t.Fatal("comments_count delta must not use SQLite scalar MAX in PostgreSQL")
+	}
+	for _, token := range []string{"CASE WHEN", "COALESCE", "THEN 0", "ELSE"} {
+		if !strings.Contains(nonNegativeCommentsCountDeltaSQL, token) {
+			t.Fatalf("comments_count delta expression missing %q", token)
+		}
+	}
+	if strings.Count(nonNegativeCommentsCountDeltaSQL, "?") != 2 {
+		t.Fatal("comments_count delta expression must bind the same delta twice")
+	}
+}
 
 // These tests lock in the "Create panics on wrong audience class"
 // invariant at the storage-separation boundary. The panic happens

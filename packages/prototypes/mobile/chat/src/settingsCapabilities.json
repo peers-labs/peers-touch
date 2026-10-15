@@ -1,0 +1,330 @@
+{
+  "groups": [
+    {
+      "id": "general",
+      "label": "General",
+      "sections": [
+        {
+          "id": "account",
+          "label": "Account",
+          "description": "Public profile and technical identity",
+          "capabilities": [
+            "account.profile.edit",
+            "account.profile.avatar",
+            "account.profile.background",
+            "account.identity.copy",
+            "account.blocked.unblock"
+          ]
+        },
+        {
+          "id": "security",
+          "label": "Security",
+          "description": "PIN, recovery, and authorized devices",
+          "capabilities": [
+            "security.pin.change",
+            "security.pin.remove",
+            "security.recovery.generate",
+            "security.recovery.copy",
+            "security.recovery.backup",
+            "security.recovery.restore",
+            "security.devices.remove"
+          ]
+        },
+        {
+          "id": "general",
+          "label": "General",
+          "description": "Language, notifications, and Agent defaults",
+          "capabilities": [
+            "general.language.select",
+            "general.theme.select",
+            "general.notifications.configure",
+            "general.social.default-audience",
+            "general.agent.default-provider",
+            "general.agent.default-model",
+            "general.agent.default-effort",
+            "general.chat.shortcut"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "federation",
+      "label": "Federation",
+      "sections": [
+        {
+          "id": "federation",
+          "label": "Federation",
+          "description": "Station identity, discovery, and network contexts",
+          "capabilities": [
+            "federation.identity.copy-handle",
+            "federation.visibility.select",
+            "federation.discovery.toggle",
+            "federation.discovery.reach",
+            "federation.context.join",
+            "federation.context.leave",
+            "federation.context.delete",
+            "federation.station.switch"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ai",
+      "label": "AI",
+      "sections": [
+        {
+          "id": "providers",
+          "label": "Providers",
+          "description": "Model service connections",
+          "capabilities": [
+            "providers.search",
+            "providers.select",
+            "providers.create",
+            "providers.enable",
+            "providers.credentials.edit",
+            "providers.connection.test",
+            "providers.models.refresh",
+            "providers.local-runtime"
+          ]
+        },
+        {
+          "id": "models",
+          "label": "Model Service",
+          "description": "Models assigned to product tasks",
+          "capabilities": [
+            "models.route.default",
+            "models.route.topic",
+            "models.route.translation",
+            "models.route.history",
+            "models.route.cron",
+            "models.route.agent"
+          ]
+        },
+        {
+          "id": "memory",
+          "label": "Memory",
+          "description": "Durable memory and retrieval settings",
+          "capabilities": [
+            "memory.enable",
+            "memory.embedding.select",
+            "memory.tuning.toggle",
+            "memory.storage.select",
+            "memory.storage.postgres",
+            "memory.weights.edit",
+            "memory.entries.review",
+            "memory.entries.remove",
+            "memory.reset",
+            "memory.save"
+          ]
+        },
+        {
+          "id": "skills",
+          "label": "Skills",
+          "description": "Installed and built-in Agent capabilities",
+          "capabilities": [
+            "skills.search",
+            "skills.filter",
+            "skills.toggle",
+            "skills.detail",
+            "skills.create",
+            "skills.import-url",
+            "skills.upload",
+            "skills.market",
+            "skills.local-directory"
+          ]
+        },
+        {
+          "id": "mcp",
+          "label": "MCP",
+          "description": "External tool servers",
+          "capabilities": [
+            "mcp.server.add-remote",
+            "mcp.server.import",
+            "mcp.server.test",
+            "mcp.server.toggle",
+            "mcp.server.reconnect",
+            "mcp.server.edit",
+            "mcp.server.delete",
+            "mcp.server.local-stdio"
+          ]
+        },
+        {
+          "id": "tts",
+          "label": "Voice",
+          "description": "Text-to-speech and speech input",
+          "capabilities": [
+            "voice.tts.provider",
+            "voice.tts.voice",
+            "voice.tts.speed",
+            "voice.tts.auto-read",
+            "voice.tts.preview",
+            "voice.stt.provider",
+            "voice.stt.language",
+            "voice.stt.auto-stop"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tools",
+      "label": "Tools",
+      "sections": [
+        {
+          "id": "cron",
+          "label": "Cron Jobs",
+          "description": "Recurring Agent work",
+          "capabilities": [
+            "cron.search",
+            "cron.create",
+            "cron.run",
+            "cron.history",
+            "cron.toggle",
+            "cron.edit",
+            "cron.delete"
+          ]
+        },
+        {
+          "id": "command-menu",
+          "label": "Command Palette",
+          "description": "Search and run product actions",
+          "capabilities": [
+            "command.open",
+            "command.search",
+            "command.run"
+          ]
+        },
+        {
+          "id": "tools",
+          "label": "Tools",
+          "description": "Search engines and Agent tool catalog",
+          "capabilities": [
+            "tools.search-provider.select",
+            "tools.catalog.inspect",
+            "tools.local-filesystem",
+            "tools.local-shell"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "channels",
+      "label": "Channels",
+      "sections": [
+        {
+          "id": "channels",
+          "label": "Channels",
+          "description": "External message delivery",
+          "capabilities": [
+            "channels.refresh",
+            "channels.create",
+            "channels.toggle",
+            "channels.test",
+            "channels.edit",
+            "channels.delete",
+            "channels.send-test",
+            "channels.events",
+            "channels.statistics"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "applets",
+      "label": "Applets",
+      "sections": [
+        {
+          "id": "applets",
+          "label": "Applets",
+          "description": "Installed product applets",
+          "capabilities": [
+            "applets.list",
+            "applets.toggle",
+            "applets.settings"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "data",
+      "label": "Data",
+      "sections": [
+        {
+          "id": "storage",
+          "label": "Storage",
+          "description": "Messages, media, cache, and retention",
+          "capabilities": [
+            "storage.measure.refresh",
+            "storage.measure.stale",
+            "storage.categories.inspect",
+            "storage.retention.select",
+            "storage.cache.clear",
+            "storage.cache.confirm",
+            "storage.cache.result",
+            "storage.conversations.search",
+            "storage.conversations.sort",
+            "storage.batch.select",
+            "storage.batch.estimate",
+            "storage.batch.confirm",
+            "storage.batch.progress",
+            "storage.batch.partial-retry"
+          ]
+        },
+        {
+          "id": "oss",
+          "label": "My Files",
+          "description": "Uploaded files and visibility",
+          "capabilities": [
+            "files.refresh",
+            "files.filter",
+            "files.upload",
+            "files.visibility.edit",
+            "files.download",
+            "files.delete",
+            "files.restore",
+            "files.deleted.include"
+          ]
+        },
+        {
+          "id": "logs",
+          "label": "Logs",
+          "description": "Diagnostics and runtime logs",
+          "capabilities": [
+            "logs.filter",
+            "logs.levels",
+            "logs.pause",
+            "logs.refresh",
+            "logs.export",
+            "logs.clear",
+            "logs.auto-follow"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "help",
+      "label": "Help",
+      "sections": [
+        {
+          "id": "help",
+          "label": "Help",
+          "description": "Version, documentation, and recovery",
+          "capabilities": [
+            "help.release-notes",
+            "help.licenses",
+            "help.support",
+            "help.reset-onboarding"
+          ]
+        }
+      ]
+    }
+  ],
+  "degraded": {
+    "general.chat.shortcut": "Global keyboard shortcuts are managed by the operating system on Mobile.",
+    "providers.local-runtime": "Local CLI providers require a Desktop process and local executable access.",
+    "memory.storage.postgres": "Direct database connections are configured on Desktop or Station.",
+    "skills.local-directory": "Opening the local skills directory is only available on Desktop.",
+    "mcp.server.local-stdio": "Local stdio servers require a Desktop process. Mobile supports Station or remote HTTP servers.",
+    "tools.local-filesystem": "Direct local filesystem tools are not exposed to Mobile Agent sessions.",
+    "tools.local-shell": "Local shell execution is not exposed to Mobile Agent sessions."
+  }
+}

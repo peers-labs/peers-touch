@@ -74,9 +74,12 @@ describe('MessageActionSheet', () => {
     expect(markup).toContain('mobile.chat.deleteForMe');
   });
 
-  it('offers forty emoji-only reactions and names every icon command', () => {
+  it('offers exactly the five shared reactions and names every icon command', () => {
     const markup = render(false);
-    expect(markup.match(/class="chat-background-choice message-reaction-choice/g)).toHaveLength(40);
+    expect(markup.match(/data-reaction-picker-item=/g)).toHaveLength(5);
+    for (const emoji of ['👍', '❤️', '😄', '😮', '🎉']) {
+      expect(markup).toContain(`data-reaction-picker-item="${emoji}"`);
+    }
     expect(markup).not.toContain('lucide-laugh');
     for (const action of ['reply', 'forward', 'thread', 'pinMessage', 'recall', 'deleteForMe']) {
       expect(markup).toContain(`aria-label="mobile.chat.${action}"`);

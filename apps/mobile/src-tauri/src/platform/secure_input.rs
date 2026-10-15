@@ -87,6 +87,38 @@ pub async fn request_actor_identity_recovery_phrase<R: Runtime>(
     request_recovery_phrase(app, lifecycle_generation, ACTOR_IDENTITY_RECOVERY_PURPOSE).await
 }
 
+pub async fn confirm_actor_backup_phrase<R: Runtime>(
+    app: &AppHandle<R>,
+    lifecycle_generation: u64,
+    phrase: &str,
+) -> MobileResult<()> {
+    let result = app
+        .state::<SecureInput<R>>()
+        .request_secret(NativeSecretInputRequest {
+            request_id: &Ulid::new().to_string(),
+            purpose: "actor_identity_backup",
+            lifecycle_generation,
+            deadline_ms: PRIVATE_SOCIAL_RECOVERY_DEADLINE_MS,
+            acceptance_autofill_allowed: false,
+            initial_secret: Some(phrase),
+        })
+        .await
+        .map_err(|_| {
+            MobileError::coded(
+                "MOBILE_SECURE_INPUT_PLATFORM_FAILURE",
+                "native secure display is unavailable",
+            )
+        })?;
+    let confirmed = map_native_result(result)?;
+    if confirmed.as_str() != phrase {
+        return Err(MobileError::coded(
+            "MOBILE_SECURE_INPUT_STALE_SCOPE",
+            "native backup display changed",
+        ));
+    }
+    Ok(())
+}
+
 async fn request_recovery_phrase<R: Runtime>(
     app: &AppHandle<R>,
     lifecycle_generation: u64,
@@ -107,6 +139,7 @@ async fn request_recovery_phrase<R: Runtime>(
             lifecycle_generation,
             deadline_ms: PRIVATE_SOCIAL_RECOVERY_DEADLINE_MS,
             acceptance_autofill_allowed: cfg!(feature = "acceptance-harness"),
+            initial_secret: None,
         })
         .await
         .map_err(|_| {

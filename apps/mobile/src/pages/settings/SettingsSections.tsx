@@ -60,6 +60,7 @@ import {
   mobileChatStorageProjectionRuntime,
   useMobileChatStorageProjection,
 } from '../../runtimes/chatStorageRuntime';
+import { SettingsChoiceField } from './SettingsChoiceField';
 
 const { Text } = Typography;
 
@@ -101,6 +102,7 @@ export function ProfileSection({
       <label className="settings-profile-field">
         <Text type="secondary">{t('mobile.settings.profile.bio')}</Text>
         <Input.TextArea
+          allowClear
           value={profile?.note ?? ''}
           disabled={disabled || !profile}
           autoSize={{ minRows: 2, maxRows: 5 }}
@@ -306,7 +308,7 @@ function aggregateNotificationPreference(
 // Privacy section (Actor Profile owner)
 // ---------------------------------------------------------------------------
 
-const VISIBILITY_OPTIONS = [
+export const VISIBILITY_OPTIONS = [
   { value: 'public', labelKey: 'mobile.settings.privacy.visibility.public' },
   { value: 'unlisted', labelKey: 'mobile.settings.privacy.visibility.unlisted' },
   { value: 'followers', labelKey: 'mobile.settings.privacy.visibility.followers' },
@@ -464,36 +466,16 @@ export function DevicePrefsSection({
         </>
       ) : (
         <>
-          <div className="settings-row">
-            <Text>{t('mobile.settings.device.theme')}</Text>
-            <Select
-              size="small"
-              value={prefs.theme}
-              onChange={(value) => onPatch({ theme: value })}
-              options={THEME_OPTIONS.map(({ value, labelKey }) => ({
-                value,
-                label: t(labelKey),
-              }))}
-              style={{ width: 120 }}
-            />
-          </div>
-          <div className="settings-row">
-            <Text>{t('mobile.settings.device.fontSize')}</Text>
-            <Select
-              size="small"
-              value={prefs.fontSize}
-              onChange={(value) => onPatch({ fontSize: value })}
-              options={FONT_SIZE_OPTIONS.map(({ value, labelKey }) => ({
-                value,
-                label: t(labelKey),
-              }))}
-              style={{ width: 100 }}
-            />
-          </div>
+          <SettingsChoiceField label={t('mobile.settings.device.theme')} field="theme" value={prefs.theme}
+            options={THEME_OPTIONS.map(({ value, labelKey }) => ({ value, label: t(labelKey) }))}
+            onChange={(value) => onPatch({ theme: value as ThemeMode })} />
+          <SettingsChoiceField label={t('mobile.settings.device.fontSize')} field="font-size" value={prefs.fontSize}
+            options={FONT_SIZE_OPTIONS.map(({ value, labelKey }) => ({ value, label: t(labelKey) }))}
+            onChange={(value) => onPatch({ fontSize: value as FontSizePreset })} />
           <div className="settings-row">
             <Text>{t('mobile.settings.device.compactMode')}</Text>
             <Switch
-              size="small"
+              aria-label={t('mobile.settings.device.compactMode')}
               checked={prefs.compactMode}
               onChange={(checked) => onPatch({ compactMode: checked })}
             />
@@ -528,21 +510,9 @@ export function LanguageSection() {
         <Globe size={16} />
         <Text strong>{t('mobile.settings.section.language')}</Text>
       </div>
-      <div className="settings-row">
-        <Text>{t('mobile.settings.section.language')}</Text>
-        <Select
-          size="small"
-          value={language}
-          loading={languageStatus === 'saving'}
-          disabled={languageStatus === 'saving'}
-          onChange={(value) => void setLanguage(value)}
-          options={languages.map((option) => ({
-            value: option.code,
-            label: option.nativeName,
-          }))}
-          style={{ width: 140 }}
-        />
-      </div>
+      <SettingsChoiceField label={t('mobile.settings.section.language')} field="language" value={language}
+        disabled={languageStatus === 'saving'} onChange={(value) => void setLanguage(value)}
+        options={languages.map((option) => ({ value: option.code, label: option.nativeName }))} />
       {languageStatus === 'failed' ? (
         <div className="settings-row" role="alert">
           <Text type="danger">

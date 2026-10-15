@@ -1,52 +1,85 @@
+import { useState } from 'react';
 import { Typography } from 'antd';
-import { ChevronRight, Settings as SettingsIcon } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import type { AvatarRenderState, SettingEntry } from '../types';
-import { demoAvatarUrls } from '../data';
+import { ConfirmationDialog } from '../components/ConfirmationDialog';
 import { IdentityAvatar } from '../components/IdentityAvatar';
 import { accountSetting, mobileSettingGroups } from '../settingsModel';
+import type { MobileSettingsState } from '../settingsState';
+import type { DesignThemeMode } from '../../../../shared/design-tokens';
 
 const { Text } = Typography;
 
 export function ProfilePage({
   avatarState,
+  settingsState,
+  themeMode,
   onChangeStation,
   onSettingClick,
 }: {
   avatarState: AvatarRenderState;
+  settingsState: MobileSettingsState;
+  themeMode: DesignThemeMode;
   onChangeStation: () => void;
   onSettingClick: (setting: SettingEntry) => void;
 }) {
+  const [signOutConfirmOpen, setSignOutConfirmOpen] = useState(false);
+  const { profile, toggles } = settingsState;
+  const storageGb = (
+    settingsState.storage.messagesMb
+    + settingsState.storage.mediaMb
+    + settingsState.storage.cacheMb
+    + settingsState.storage.systemMb
+  ) / 1024;
+
+  function valueForSetting(item: SettingEntry): string | undefined {
+    switch (item.id) {
+      case 'security': return toggles.pinLock ? 'PIN active' : 'No PIN';
+      case 'general': return `${themeMode === 'dark' ? 'Dark' : 'Light'} · ${settingsState.language === 'en' ? 'English' : '简体中文'}`;
+      case 'federation': return `${settingsState.federations.length} contexts`;
+      case 'providers': return `${settingsState.providers.filter((provider) => provider.status === 'ready').length} ready`;
+      case 'models': return settingsState.defaultModel;
+      case 'memory': return settingsState.memory.enabled ? `${settingsState.memory.entries.length} saved` : 'Off';
+      case 'skills': return `${settingsState.skills.filter((skill) => skill.enabled).length} enabled`;
+      case 'mcp': return `${settingsState.mcpServers.filter((server) => server.status === 'connected').length} connected`;
+      case 'tts': return settingsState.voice.voice;
+      case 'cron': return `${settingsState.cronTasks.filter((task) => task.enabled).length} active`;
+      case 'tools': return settingsState.primarySearchProvider;
+      case 'channels': return `${settingsState.channels.filter((channel) => channel.enabled).length} enabled`;
+      case 'applets': return `${settingsState.applets.filter((applet) => applet.enabled).length} enabled`;
+      case 'storage': return `${storageGb.toFixed(1)} GB`;
+      case 'oss': return `${settingsState.files.filter((file) => !file.deleted).length} files`;
+      case 'logs': return `${settingsState.logs.length} entries`;
+      case 'help': return 'v1.0.0';
+      default: return item.value;
+    }
+  }
+
   return (
     <div className="mp-page" data-prototype-page="settings">
-      <header className="mp-header">
-        <h1 className="mp-header-title">Me</h1>
-        <button
-          type="button"
-          className="mp-header-action"
-          aria-label="Open account settings"
-          onClick={() => onSettingClick(accountSetting)}
-        >
-          <SettingsIcon size={20} />
-        </button>
-      </header>
-
       <div className="mp-profile-body">
         <button
           type="button"
           className="mp-profile-header-card"
+          aria-label="Edit profile"
           onClick={() => onSettingClick(accountSetting)}
         >
-          <div className="mp-profile-cover" aria-hidden="true" />
+          <div
+            className="mp-profile-cover"
+            aria-hidden="true"
+            style={profile.coverSrc ? { backgroundImage: `url("${profile.coverSrc}")` } : undefined}
+          />
+          <span className="mp-profile-page-title">Me</span>
           <div className="mp-profile-header">
             <IdentityAvatar
-              name="Alice Chen"
+              name={profile.displayName}
               initials="AC"
-              src={demoAvatarUrls.alice}
+              src={profile.avatarSrc}
               size={64}
               renderState={avatarState}
             />
             <div className="mp-profile-info">
-              <Text strong className="mp-profile-name">Alice Chen</Text>
+              <Text strong className="mp-profile-name">{profile.displayName}</Text>
               <Text type="secondary" className="mp-profile-handle">@alice@alpha.peers.social</Text>
               <Text type="secondary" className="mp-profile-did">Local Station · 3 federations</Text>
             </div>
@@ -63,7 +96,6 @@ export function ProfilePage({
 
         <div className="mp-settings-intro">
           <Text strong>Settings</Text>
-          <Text type="secondary">Account, network, AI, and device controls</Text>
         </div>
 
         {mobileSettingGroups.map((group) => (
@@ -72,6 +104,7 @@ export function ProfilePage({
             <div className="mp-settings-card">
               {group.items.map((item, index) => {
                 const Icon = item.icon;
+                const value = valueForSetting(item);
                 return (
                   <button
                     key={item.id}
@@ -87,7 +120,7 @@ export function ProfilePage({
                       <Text className="mp-setting-label">{item.label}</Text>
                       <Text type="secondary" className="mp-setting-description">{item.description}</Text>
                     </span>
-                    {item.value && <Text type="secondary" className="mp-setting-value">{item.value}</Text>}
+                    {value && <Text type="secondary" className="mp-setting-value">{value}</Text>}
                     <ChevronRight size={17} className="mp-row-chevron" />
                   </button>
                 );
@@ -96,10 +129,19 @@ export function ProfilePage({
           </section>
         ))}
 
-        <button type="button" className="mp-sign-out" onClick={onChangeStation}>
+        <button type="button" className="mp-sign-out" onClick={() => setSignOutConfirmOpen(true)}>
           Sign out and switch Station
         </button>
       </div>
+      {signOutConfirmOpen && (
+        <ConfirmationDialog
+          title="Sign out and switch Station?"
+          description="Local conversations stay on this device."
+          confirmLabel="Sign out"
+          onCancel={() => setSignOutConfirmOpen(false)}
+          onConfirm={onChangeStation}
+        />
+      )}
     </div>
   );
 }

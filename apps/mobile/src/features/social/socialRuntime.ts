@@ -35,7 +35,11 @@ import type {
   EditableProfileInput,
   ProfileUpdateResult,
 } from '../../services/gateways/profileGateway';
-import { executeStationOperation } from '../../services/stationTransport';
+import {
+  createStationRequestScope,
+  executeStationOperation,
+  type StationRequestScope,
+} from '../../services/stationTransport';
 
 const RECONCILE_INTERVAL_MS = 30000;
 const TYPING_TTL_MS = 6000;
@@ -334,6 +338,7 @@ interface ForegroundResources {
 export async function startSocialRuntime(
   session: MobileAuthSession,
   getSocialStore: () => SocialState,
+  requests: StationRequestScope = createStationRequestScope(),
 ): Promise<SocialRuntimeController> {
   let torn = false;
   let suspended = false;
@@ -352,6 +357,7 @@ export async function startSocialRuntime(
     session,
     getSocialStore,
     {
+      requestSignal: requests.signal,
       wakeMessaging,
       revalidateSession: async () => {
         await restoreAndRevalidateAccessRuntime();
@@ -369,6 +375,7 @@ export async function startSocialRuntime(
     await projectionRuntime.bootstrap();
     await wakeMessaging();
   } catch (error) {
+    requests.close();
     try {
       await projectionRuntime.teardown();
       await projectionRuntime.drain();
@@ -396,6 +403,7 @@ export async function startSocialRuntime(
     },
     reconcile: async (reason, domains) => {
       if (projectionRuntime.ingress.state().lifecycle === 'suspended') {
+        requests.resume();
         await projectionRuntime.resume();
         suspended = false;
         startForeground();
@@ -435,9 +443,11 @@ export async function startSocialRuntime(
     suspend: async () => {
       if (torn || suspended) return;
       suspended = true;
+      requests.suspend();
+      const foregroundStopped = stopForeground('runtime_suspend');
       await projectionRuntime.suspend();
       mobileCallManager.suspend();
-      await stopForeground('runtime_suspend');
+      await foregroundStopped;
     },
     resume: async () => {
       if (
@@ -448,6 +458,7 @@ export async function startSocialRuntime(
           && projectionRuntime.ingress.state().lifecycle === 'active'
         )
       ) return;
+      requests.resume();
       await projectionRuntime.resume();
       await mobileCallManager.resume();
       suspended = false;
@@ -456,14 +467,19 @@ export async function startSocialRuntime(
     teardown: async () => {
       if (torn) return;
       torn = true;
+      requests.close();
       if (externalReconcileTimer) {
         window.clearTimeout(externalReconcileTimer);
         externalReconcileTimer = null;
       }
-      await stopForeground('runtime_teardown');
-      await projectionRuntime.teardown();
-      mobileCallManager.reset();
-      if (activeRuntime === runtimeRef) activeRuntime = null;
+      const foregroundStopped = stopForeground('runtime_teardown');
+      try {
+        await projectionRuntime.teardown();
+        await foregroundStopped;
+      } finally {
+        mobileCallManager.reset();
+        if (activeRuntime === runtimeRef) activeRuntime = null;
+      }
     },
     drain: async () => {
       await drainPendingOperations(pendingOperations);
@@ -484,7 +500,7 @@ export async function startSocialRuntime(
     }, TYPING_SWEEP_INTERVAL_MS);
     const presenceHeartbeatTimer = window.setInterval(() => {
       if (!torn && !suspended) {
-        void track(() => postPresence(session, 'heartbeat', 'heartbeat'));
+        void track(() => postPresence(session, 'heartbeat', 'heartbeat', requests.signal()));
       }
     }, PRESENCE_HEARTBEAT_INTERVAL_MS);
     foreground = {
@@ -493,7 +509,7 @@ export async function startSocialRuntime(
       typingSweepTimer,
       presenceHeartbeatTimer,
     };
-    void track(() => postPresence(session, 'heartbeat', 'runtime_start'));
+    void track(() => postPresence(session, 'heartbeat', 'runtime_start', requests.signal()));
     void track(() => superviseRealtimeStream(
       session,
       abortController.signal,
@@ -509,8 +525,9 @@ export async function startSocialRuntime(
     window.clearInterval(resources.typingSweepTimer);
     window.clearInterval(resources.presenceHeartbeatTimer);
     resources.abortController.abort();
-    await postPresence(session, 'offline', reason);
-    await drainPendingOperations(pendingOperations);
+    const stoppedOperations = [...pendingOperations];
+    await postPresence(session, 'offline', reason, AbortSignal.timeout(1000));
+    await Promise.allSettled(stoppedOperations);
   }
 }
 
@@ -518,6 +535,7 @@ async function postPresence(
   session: MobileAuthSession,
   kind: 'heartbeat' | 'offline',
   reason: string,
+  signal?: AbortSignal,
 ) {
   try {
     await executeStationOperation(session, {
@@ -525,7 +543,7 @@ async function postPresence(
         ? 'presence_heartbeat'
         : 'presence_offline',
       reason,
-    });
+    }, signal);
   } catch {
     // Presence is lease-based; the next heartbeat or server-side TTL heals failures.
   }

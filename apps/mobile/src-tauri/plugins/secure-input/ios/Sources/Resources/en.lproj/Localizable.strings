@@ -6,3 +6,7 @@
 "recover" = "Recover";
 "cancel" = "Cancel";
 "acceptance_autofill" = "Fill recovery phrase";
+"backup_title" = "Save your recovery phrase";
+"backup_message" = "Keep these 24 words in a safe place. Anyone with them can restore your identity and encrypted history. The Station receives only an encrypted backup.";
+"backup_create" = "Saved · Create backup";
+"backup_copy_create" = "Copy · Create backup";

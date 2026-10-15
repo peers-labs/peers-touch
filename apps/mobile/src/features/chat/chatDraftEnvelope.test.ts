@@ -64,4 +64,38 @@ describe('Chat draft generated contract', () => {
       encryptedAttachmentRefs: [],
     })).toBe(true);
   });
+
+  it('round-trips the exact Messaging submission identity until commit', () => {
+    const envelope = buildChatDraftEnvelope(
+      {
+        stationPeerId: 'station-1',
+        actorPtid: 'ptid:alice',
+      },
+      'conversation-1',
+      {
+        text: 'Submitted message',
+        replyToMessageId: '',
+        encryptedAttachmentRefs: [],
+        submission: {
+          commandId: 'command-1',
+          messageId: 'message-1',
+        },
+      },
+      1_700_000_000_000,
+    );
+
+    expect(readChatDraftEnvelope(envelope)?.submission).toEqual({
+      commandId: 'command-1',
+      messageId: 'message-1',
+    });
+    expect(isChatComposerDraftEmpty({
+      text: '',
+      replyToMessageId: '',
+      encryptedAttachmentRefs: [],
+      submission: {
+        commandId: 'command-1',
+        messageId: 'message-1',
+      },
+    })).toBe(false);
+  });
 });

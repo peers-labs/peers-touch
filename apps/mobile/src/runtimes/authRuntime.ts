@@ -306,7 +306,7 @@ export function createAuthRuntimeDescriptor(): MobileRuntimeDescriptor {
     title: 'Auth Runtime',
     responsibility:
       'Owns Station-scoped credential attempts, OAuth callbacks, candidate isolation, cancellation, and typed recovery.',
-    dependsOn: ['secure-storage', 'station'],
+    dependsOn: ['secure-storage', 'station', 'security'],
 
     async bootstrap(): Promise<void> {
       await restoreAuthRuntimeProjection();

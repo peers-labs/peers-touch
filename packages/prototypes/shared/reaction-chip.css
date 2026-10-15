@@ -1,0 +1,55 @@
+.prototype-reaction-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--pt-text-secondary, #595959);
+  font: inherit;
+  cursor: pointer;
+  flex: 0 0 auto;
+  -webkit-tap-highlight-color: transparent;
+}
+.prototype-reaction-chip.touch { min-width: 44px; height: 44px; }
+.prototype-reaction-chip-visual {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 28px;
+  height: 28px;
+  box-sizing: border-box;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--pt-radius-full, 999px);
+  background: var(--pt-surface-subtle, #fafafa);
+  font-size: 13px;
+  line-height: 1;
+  transition: background-color 100ms ease, color 100ms ease, transform 100ms ease;
+}
+.prototype-reaction-chip-count { font-size: 11px; font-variant-numeric: tabular-nums; }
+.prototype-reaction-chip[aria-pressed='true'] .prototype-reaction-chip-visual {
+  color: var(--pt-action-primary, #6b5bd6);
+  background: color-mix(in srgb, var(--pt-action-primary, #6b5bd6) 8%, var(--pt-surface-base, white));
+}
+.prototype-reaction-chip-visual.add { padding: 0 5px; background: transparent; }
+.prototype-reaction-chip:hover .prototype-reaction-chip-visual {
+  background: color-mix(in srgb, var(--pt-action-primary, #6b5bd6) 10%, var(--pt-surface-base, white));
+}
+.prototype-reaction-chip:active .prototype-reaction-chip-visual {
+  transform: scale(0.94);
+}
+.prototype-reaction-chip:focus-visible {
+  outline: 2px solid var(--pt-action-primary, #6b5bd6);
+  outline-offset: 1px;
+  border-radius: var(--pt-radius-full, 999px);
+}
+@media (pointer: coarse) {
+  .prototype-reaction-chip { min-width: 44px; height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .prototype-reaction-chip-visual { transition: none; }
+}

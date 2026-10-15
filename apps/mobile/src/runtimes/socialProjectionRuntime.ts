@@ -72,6 +72,7 @@ export interface ActiveProfileRuntime {
 }
 
 export interface SocialProjectionRuntimeDependencies {
+  readonly requestSignal?: () => AbortSignal;
   readonly wakeMessaging: () => Promise<void>;
   readonly revalidateSession: () => Promise<void>;
   readonly ingestCallSignal: (
@@ -153,9 +154,9 @@ export function createSocialProjectionRuntime(
   dependencies: SocialProjectionRuntimeDependencies,
 ): SocialProjectionRuntimeController {
   const sessionKey = mobileAuthScopeKey(session);
-  const profileGateway = createProfileGateway(session);
+  const profileGateway = createProfileGateway(session, dependencies.requestSignal);
   const profileProjection = createProfileProjection(profileGateway);
-  const notificationPreferenceGateway = createNotificationPreferenceGateway(session);
+  const notificationPreferenceGateway = createNotificationPreferenceGateway(session, dependencies.requestSignal);
   const notificationPreferenceProjection = createNotificationPreferenceProjection(
     notificationPreferenceGateway,
   );
@@ -165,6 +166,7 @@ export function createSocialProjectionRuntime(
   let reconcileTail: Promise<void> = Promise.resolve();
 
   const moments = createMobileSocialFacade(session, {
+    requestSignal: dependencies.requestSignal,
     retry: async () => {
       await scheduleReconcile(
         ['moments'],
@@ -543,12 +545,12 @@ export function createSocialProjectionRuntime(
         }
       };
       await cleanup(() => ingress.teardown());
-      await cleanup(() => ingress.drain());
-      await cleanup(() => reconcileTail);
-      await cleanup(() => getSocialStore().drainProfileCacheWrites());
       await cleanup(() => moments.teardown());
       await cleanup(() => notificationPreferenceProjection.teardown());
       await cleanup(() => profileProjection.teardown());
+      await cleanup(() => ingress.drain());
+      await cleanup(() => reconcileTail);
+      await cleanup(() => getSocialStore().drainProfileCacheWrites());
       if (activeRuntime === publicRuntime) activeRuntime = null;
       await cleanup(() => releaseMutationAdmission?.());
       releaseMutationAdmission = null;

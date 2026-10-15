@@ -860,7 +860,8 @@
         "SC-D26",
         "SC-D27",
         "SC-D28",
-        "SC-D29"
+        "SC-D29",
+        "SC-D30"
       ],
       "governedPaths": [
         "docs/architecture/shared/security/secure-content"

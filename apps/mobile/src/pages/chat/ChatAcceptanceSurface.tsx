@@ -44,8 +44,9 @@ import {
 import {
   MessageCommandStatus,
   MessageDeliveryStatus,
-  PinnedMessageBanner,
 } from './ChatMessagePresentation';
+import { PinnedMessageCarousel } from '../../components/chat/PinnedMessageCarousel';
+import { MobileSearchField } from '../../components/MobileSearchField';
 import { ChatThreadPageContent } from './ChatPageContent';
 import {
   chatInputPanelState,
@@ -366,12 +367,12 @@ function ChatFixtureThread({
             <h1 className="chat-search-title">
               {t('mobile.chat.quickSearch')}
             </h1>
-            <Input
+            <MobileSearchField
               className="chat-header-search"
-              prefix={<Search size={16} />}
-              value={surfaceId === 'chat.thread-search-empty' ? 'Unavailable message' : 'launch'}
-              readOnly
-              aria-label={t('mobile.chat.searchMessagesPlaceholder')}
+              query={surfaceId === 'chat.thread-search-empty' ? 'Unavailable message' : 'launch'}
+              onChange={() => undefined}
+              onSearch={() => undefined}
+              placeholder={t('mobile.chat.searchMessagesPlaceholder')}
             />
             <button className="header-action" type="button" aria-label={t('common.action.cancel')}>
               <X size={18} />
@@ -434,10 +435,9 @@ function ChatFixtureThread({
       ) : null}
 
       {!isEmpty ? (
-        <PinnedMessageBanner
-          count={1}
-          preview="The revised launch checklist is ready for review."
-          onOpen={() => undefined}
+        <PinnedMessageCarousel
+          messages={[{ id: 'fixture-pin', text: 'The revised launch checklist is ready for review.', author: 'Avery' }]}
+          onJump={() => undefined}
         />
       ) : null}
 

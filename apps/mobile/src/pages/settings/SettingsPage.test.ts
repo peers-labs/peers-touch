@@ -1,10 +1,15 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-const pageSource = readFileSync(
+const summarySource = readFileSync(
   new URL('../SettingsPage.tsx', import.meta.url),
   'utf8',
 );
+const pageSource = [
+  summarySource,
+  readFileSync(new URL('./SettingsDetail.tsx', import.meta.url), 'utf8'),
+  readFileSync(new URL('./SettingsExitBoundary.tsx', import.meta.url), 'utf8'),
+].join('\n');
 const sectionsSource = readFileSync(
   new URL('./SettingsSections.tsx', import.meta.url),
   'utf8',
@@ -31,7 +36,7 @@ describe('Settings functional surface contract', () => {
       'const momentsCount = visibleProfile?.statusesCount ?? unavailableLabel',
     );
     expect(pageSource).toContain(
-      'const visibleProfile = controller.profileAvailable ? currentUserProfile : null',
+      'const visibleProfile = profileProjection?.availability.available ? currentUserProfile : null',
     );
     expect(pageSource).toContain('projectAcceptedContacts(');
     expect(pageSource).not.toContain('state.friendshipStatus');
@@ -48,7 +53,7 @@ describe('Settings functional surface contract', () => {
   });
 
   it('fences stale Profile data and consumes the canonical Social blocked-user owner', () => {
-    expect(pageSource).toContain('controller.profileAvailable ? (');
+    expect(pageSource).toContain('controller.profileAvailable ? <');
     expect(pageSource).toContain('<ProfileUnavailable');
     expect(pageSource).toContain('onRetry={controller.retryProfile}');
     expect(pageSource).toContain('function BlockedUsersDetail()');
@@ -74,7 +79,7 @@ describe('Settings functional surface contract', () => {
   });
 
   it('uses native build truth and marks ownerless encryption unavailable', () => {
-    expect(pageSource).toContain('controller.appVersion ?? unavailableLabel');
+    expect(pageSource).toContain("controller.appVersion ?? t('mobile.launch.unavailable')");
     expect(controllerSource).toContain('loadAppVersion()');
     expect(pageSource).not.toContain('mobile.settings.encryptionActive');
     expect(pageSource).not.toContain('mobile.settings.appVersion');
@@ -158,14 +163,13 @@ describe('Settings functional surface contract', () => {
 
   it('routes every user-requested Settings exit through save, discard, or stay', () => {
     expect(pageSource).toContain('registerSettingsExitGuard(requestExit)');
-    expect(pageSource).toContain(
-      'const settingsDirty = selectedOwner?.dirty ?? false',
-    );
+    expect(summarySource).not.toContain('useSettingsController(');
+    expect(pageSource).toContain('owner?.dirty');
     expect(pageSource).toContain('save: controller.saveProfile');
     expect(pageSource).toContain('save: controller.saveDevicePreferences');
     expect(pageSource).toContain("case 'notifications':");
     expect(pageSource).toContain(
-      'const saved = selectedOwner ? await selectedOwner.save() : true',
+      'if (save && owner && !(await owner.save())) return',
     );
     expect(pageSource).not.toContain('saveAllSettings');
     expect(pageSource).not.toContain('aggregateSaveStatus');
@@ -174,8 +178,8 @@ describe('Settings functional surface contract', () => {
     expect(pageSource).toContain("t('mobile.settings.exit.discard')");
     expect(pageSource).toContain("t('mobile.settings.exit.stay')");
     expect(pageSource).toContain('onClick={() => requestExit(onBack)}');
-    expect(pageSource).toContain('onChangeStation={async () => requestExit(onChangeStation)}');
-    expect(pageSource).toContain('onClick={requestLogout}');
+    expect(pageSource).toContain('onChangeStation={async () => requestSettingsExit(onChangeStation)}');
+    expect(pageSource).toContain('onLogout={requestLogout}');
   });
 
   it('commits language storage before changing the visible canonical selection', () => {

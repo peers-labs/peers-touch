@@ -1,0 +1,113 @@
+.settings-agent-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-agent-copy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  overflow-wrap: anywhere;
+}
+
+.settings-agent-provider {
+  width: 100%;
+  min-height: 56px;
+  text-align: start;
+  color: inherit;
+  background: transparent;
+  border: 0;
+}
+
+.settings-agent-provider[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--brand-primary) 8%, transparent);
+}
+
+.settings-agent-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding-block: 12px;
+}
+
+.settings-agent-editor h2 {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.settings-agent-editor input {
+  min-height: 44px;
+}
+
+.settings-agent-actions button,
+.settings-agent-editor button {
+  min-height: 44px;
+}
+
+.settings-file-input {
+  display: none;
+}
+
+.settings-agent-item-trigger {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  gap: 8px;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  text-align: start;
+}
+
+.settings-agent-item-trigger:focus-visible {
+  outline: 2px solid var(--brand-primary);
+  outline-offset: 2px;
+}
+
+.settings-agent-tool summary {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  list-style: none;
+  cursor: pointer;
+}
+
+.settings-agent-tool summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-agent-tool[open] summary svg {
+  transform: rotate(90deg);
+}
+
+.settings-agent-tool p {
+  overflow-wrap: anywhere;
+}
+
+.settings-choice-trigger {
+  min-height: 44px;
+  max-width: 65%;
+}
+
+.settings-choice-trigger > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.settings-choice-option {
+  width: 100%;
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: start;
+}

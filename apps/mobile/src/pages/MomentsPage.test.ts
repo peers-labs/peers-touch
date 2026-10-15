@@ -143,7 +143,13 @@ describe('Moments feed-first interaction source contract', () => {
     expect(scopeHeaderSource).toContain(
       'data-acceptance-id="social-circles-open"',
     );
+    expect(scopeHeaderSource).toContain("t('mobile.moments.subtitle')");
+    expect(scopeHeaderSource).toContain("t('mobile.social.circles.title')");
+    expect(scopeHeaderSource).toContain("scope === 'explore' ? (");
     expect(scopeHeaderSource).toContain('className="moments-context-row"');
+    expect(moduleStyles).toContain(
+      'grid-template-columns: repeat(3, minmax(0, 1fr))',
+    );
     expect(sortSheetSource).toContain(
       'className="moments-sheet-backdrop moments-sort-backdrop"',
     );

@@ -202,6 +202,12 @@ Mobile 迁移到 Tauri 后，生成链应跟随真实消费端重新收敛：
 
 ## 9. 验收标准
 
+iOS 的静态 Swift plugin library 和 SPM resource bundle 是两个独立构建产物。
+Plugin build metadata 必须声明当前 target/profile 的 bundle 路径；Mobile build
+script 汇总这些路径，Xcode 的 Rust build phase 将实际 bundle 嵌入 App resources。
+缺失当前 manifest 或 bundle 时构建失败。不能只链接静态库后依赖开发机的
+SPM build 目录查找本地化资源。原生安全输入的中英文资源必须随 App 一同打包。
+
 - Mobile 主 UI 路径是 `apps/mobile/src` 的 Web UI。
 - Native plugin 不直接拥有业务状态。
 - Android / iOS 原生代码只作为系统能力层或迁移参考。

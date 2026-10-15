@@ -200,6 +200,10 @@ describe('Moment composer media restoration', () => {
       'if (event.target === event.currentTarget) void handleClose();',
     );
     expect(source).toContain('void restoreDraft().catch(() => undefined)');
+    expect(source).toContain(
+      'data-acceptance-id="social-composer-cancel"',
+    );
+    expect(source).toContain('onClick={() => void handleClose()}');
     expect(source).toContain('data-acceptance-id="social-composer-clear"');
     expect(source).toContain('if (!await discardDraft()) return;');
     expect(source).toContain(
@@ -259,6 +263,18 @@ describe('Moment composer media restoration', () => {
     expect(source).not.toContain('publishPublic');
     expect(source).not.toContain('<Select');
     expect(source).not.toContain('<Input');
+  });
+
+  it('revalidates restored Circle targets before enabling publish', () => {
+    const source = readFileSync(
+      new URL('./MomentComposer.tsx', import.meta.url),
+      'utf8',
+    );
+
+    expect(source).toContain('void refreshCircles()');
+    expect(source).toContain("audienceChoice === 'CIRCLE'");
+    expect(source).toContain('Boolean(selectedCircle)');
+    expect(source).toContain('Boolean(audience) && audienceTargetReady');
   });
 
   it('renders authoring and Audience as selected-only bottom sheets', () => {

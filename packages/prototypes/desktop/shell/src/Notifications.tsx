@@ -54,7 +54,7 @@ export const INITIAL_NOTIFICATIONS: NotifItem[] = [
   {
     id: 'n-4', kind: 'reaction', title: 'Bob',
     body: 'Reacted 👍 to “Sprint planning moved to Friday”.', time: '3h', read: true,
-    initials: 'BO', avatarBg: '#6b5bd6', targetPage: 'chat',
+    initials: 'BO', avatarBg: T.primary, targetPage: 'chat',
   },
   {
     id: 'n-5', kind: 'reply', title: 'Carol',
@@ -84,7 +84,7 @@ export const INITIAL_NOTIFICATIONS: NotifItem[] = [
   {
     id: 'n-10', kind: 'reaction', title: 'Bob',
     body: 'Reacted 👍 to your project update.', time: '3d', read: true,
-    initials: 'BO', avatarBg: '#6b5bd6', targetPage: 'chat',
+    initials: 'BO', avatarBg: T.primary, targetPage: 'chat',
   },
 ];
 

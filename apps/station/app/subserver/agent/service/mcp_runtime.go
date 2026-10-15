@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -20,11 +19,10 @@ import (
 )
 
 const (
-	mcpProtocolVersion     = "2024-11-05"
-	mcpRuntimeTimeout      = 8 * time.Second
-	mcpMaxFrameBytes       = 8 * 1024 * 1024
-	mcpReservedEnvPrefix   = "PEERS_TOUCH_"
-	mcpHTTPResponseMaxSize = 8 * 1024 * 1024
+	mcpProtocolVersion   = "2024-11-05"
+	mcpRuntimeTimeout    = 8 * time.Second
+	mcpMaxFrameBytes     = 8 * 1024 * 1024
+	mcpReservedEnvPrefix = "PEERS_TOUCH_"
 )
 
 type mcpRuntimeConfig struct {
@@ -202,101 +200,6 @@ func readMcpFrame(reader *bufio.Reader, expectedID int64) (map[string]interface{
 			return response, nil
 		}
 	}
-}
-
-func callHTTPMcp(
-	ctx context.Context,
-	config mcpRuntimeConfig,
-	sse bool,
-	method string,
-	params interface{},
-) (map[string]interface{}, error) {
-	client := &http.Client{Timeout: mcpRuntimeTimeout}
-	if _, err := postMcpJSON(ctx, client, config, sse, mcpRequest(
-		1,
-		"initialize",
-		map[string]interface{}{
-			"protocolVersion": mcpProtocolVersion,
-			"capabilities":    map[string]interface{}{},
-			"clientInfo": map[string]string{
-				"name":    "peers-touch-station",
-				"version": "1",
-			},
-		},
-	)); err != nil {
-		return nil, fmt.Errorf("initialize HTTP MCP server: %w", err)
-	}
-	_, _ = postMcpJSON(ctx, client, config, sse, map[string]interface{}{
-		"jsonrpc": "2.0",
-		"method":  "notifications/initialized",
-		"params":  map[string]interface{}{},
-	})
-	return postMcpJSON(ctx, client, config, sse, mcpRequest(2, method, params))
-}
-
-func postMcpJSON(
-	ctx context.Context,
-	client *http.Client,
-	config mcpRuntimeConfig,
-	sse bool,
-	payload interface{},
-) (map[string]interface{}, error) {
-	encoded, err := json.Marshal(payload)
-	if err != nil {
-		return nil, fmt.Errorf("encode MCP HTTP request: %w", err)
-	}
-	request, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodPost,
-		config.URL,
-		bytes.NewReader(encoded),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("create MCP HTTP request: %w", err)
-	}
-	request.Header.Set("Content-Type", "application/json")
-	if sse {
-		request.Header.Set("Accept", "text/event-stream")
-	}
-	for key, value := range config.Headers {
-		request.Header.Set(key, value)
-	}
-	response, err := client.Do(request)
-	if err != nil {
-		return nil, fmt.Errorf("MCP HTTP request failed: %w", err)
-	}
-	defer response.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(response.Body, mcpHTTPResponseMaxSize+1))
-	if err != nil {
-		return nil, fmt.Errorf("read MCP HTTP response: %w", err)
-	}
-	if len(body) > mcpHTTPResponseMaxSize {
-		return nil, fmt.Errorf("MCP HTTP response exceeds %d bytes", mcpHTTPResponseMaxSize)
-	}
-	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return nil, fmt.Errorf("MCP HTTP request failed with status %d", response.StatusCode)
-	}
-	if sse {
-		body = extractMcpSSEData(body)
-	}
-	var decoded map[string]interface{}
-	if err := json.Unmarshal(body, &decoded); err != nil {
-		return nil, fmt.Errorf("decode MCP HTTP response: %w", err)
-	}
-	if remoteError, exists := decoded["error"]; exists {
-		return nil, fmt.Errorf("MCP server returned error: %v", remoteError)
-	}
-	return decoded, nil
-}
-
-func extractMcpSSEData(body []byte) []byte {
-	for _, line := range strings.Split(string(body), "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "data:") {
-			return []byte(strings.TrimSpace(strings.TrimPrefix(line, "data:")))
-		}
-	}
-	return body
 }
 
 func mcpRequest(id int64, method string, params interface{}) map[string]interface{} {

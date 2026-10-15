@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const stores = vi.hoisted(() => ({
   social: {
+    messagingConversations: [],
     sendMessage: vi.fn(),
     editMessage: vi.fn(),
     recallMessage: vi.fn(),

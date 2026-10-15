@@ -71,6 +71,10 @@ class IOSSimulatorArchiveBuildTest(unittest.TestCase):
             archive = cargo_target / target / configuration / "libpeers_touch_mobile_lib.a"
             archive.parent.mkdir(parents=True)
             archive.write_text("stale archive", encoding="utf-8")
+            resources = root / "native resources.bundle"
+            resources.mkdir()
+            (resources / "Localizable.strings").write_text("current localization", encoding="utf-8")
+            (archive.parent / "mobile-native-resource-bundles").write_text(str(resources), encoding="utf-8")
             external = apple / "Externals" / external_arch / configuration / "libapp.a"
             external.parent.mkdir(parents=True)
             external.write_text("prior packaged archive", encoding="utf-8")
@@ -104,6 +108,8 @@ class IOSSimulatorArchiveBuildTest(unittest.TestCase):
                 "BUILD_CALLS": str(calls),
                 "BUILD_FAIL": "1" if fail else "0",
                 "EXPECTED_ARCHIVE": str(archive),
+                "TARGET_BUILD_DIR": str(root / "product"),
+                "UNLOCALIZED_RESOURCES_FOLDER_PATH": "Peers.app",
             }
             if dev:
                 config = root / "dev.json"
@@ -125,6 +131,9 @@ class IOSSimulatorArchiveBuildTest(unittest.TestCase):
                 timeout=10,
                 check=False,
             )
+            if result.returncode == 0:
+                embedded = root / "product/Peers.app/native resources.bundle/Localizable.strings"
+                self.assertEqual(embedded.read_text(encoding="utf-8"), "current localization")
             return (
                 result,
                 calls.read_text(encoding="utf-8").splitlines() if calls.exists() else [],
