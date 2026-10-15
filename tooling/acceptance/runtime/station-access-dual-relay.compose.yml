@@ -55,6 +55,17 @@ services:
 
   station:
     <<: *runtime-image
+    entrypoint:
+      - /bin/sh
+      - -lc
+    command:
+      - >-
+        cp /app/ral-ca/relay-a.crt
+        /usr/local/share/ca-certificates/ral-relay-a.crt &&
+        cp /app/ral-ca/relay-b.crt
+        /usr/local/share/ca-certificates/ral-relay-b.crt &&
+        update-ca-certificates >/dev/null &&
+        exec /entrypoint.sh ./peers-touch-station --config ./conf/peers.yml
     environment:
       PEERS_NODE_ROLE: station
       PEERS_AUTH_SECRET: ${PEERS_AUTH_SECRET:?PEERS_AUTH_SECRET is required}
@@ -72,6 +83,8 @@ services:
       - ${PT_RAL_STATION_LIBP2P_PORT}:4001
     volumes:
       - station-data:/app/data
+      - ${PT_RAL_RELAY_A_SECRET_ROOT:?PT_RAL_RELAY_A_SECRET_ROOT is required}/relay-ca.crt:/app/ral-ca/relay-a.crt:ro
+      - ${PT_RAL_RELAY_B_SECRET_ROOT:?PT_RAL_RELAY_B_SECRET_ROOT is required}/relay-ca.crt:/app/ral-ca/relay-b.crt:ro
     depends_on:
       station-postgres:
         condition: service_healthy
