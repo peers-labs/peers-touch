@@ -148,7 +148,7 @@ func login(
 	}
 	if includeDeviceAuthority {
 		devices := &authpb.ListActorDevicesResponse{}
-		if err := getPeersProto(
+		if err := getDirectProtoAuth(
 			origin+"/device/list",
 			result.Token,
 			devices,
@@ -304,26 +304,15 @@ func postPeersProto(endpoint string, request proto.Message, response proto.Messa
 	return nil
 }
 
-func getPeersProto(endpoint, token string, response proto.Message) error {
+func getDirectProtoAuth(
+	endpoint, token string,
+	response proto.Message,
+) error {
 	raw, err := executeRequest(http.MethodGet, endpoint, nil, token)
 	if err != nil {
 		return err
 	}
-	envelope := &types.PeersResponse{}
-	if err := proto.Unmarshal(raw, envelope); err != nil {
-		return fmt.Errorf("decode Peers response: %w", err)
-	}
-	if envelope.GetData() == nil {
-		return fmt.Errorf(
-			"Peers response has no data: code=%s msg=%s",
-			envelope.GetCode(),
-			envelope.GetMsg(),
-		)
-	}
-	if err := envelope.GetData().UnmarshalTo(response); err != nil {
-		return fmt.Errorf("decode Peers response data: %w", err)
-	}
-	return nil
+	return proto.Unmarshal(raw, response)
 }
 
 func requestBytes(message proto.Message) ([]byte, error) {
