@@ -734,6 +734,31 @@ class ActorFixtureOwnerTests(unittest.TestCase):
         self.assertNotIn("/actor/federation/resolve", source)
         self.assertNotIn("urllib.request", source)
 
+    def test_existing_actor_resolution_uses_canonical_access_client(self) -> None:
+        root = Path(__file__).resolve().parents[3]
+        helper = (
+            root
+            / "tooling"
+            / "acceptance"
+            / "provisioners"
+            / "preset_actor.py"
+        ).read_text(encoding="utf-8")
+        for provisioner in (
+            "home_station.py",
+            "native_tauri_current_profile.py",
+        ):
+            source = (
+                root
+                / "tooling"
+                / "acceptance"
+                / "provisioners"
+                / provisioner
+            ).read_text(encoding="utf-8")
+            self.assertNotIn("/actor/login", source)
+            self.assertIn("resolve_existing_preset_actor(", source)
+        self.assertIn('"run", "./tests/access_client"', helper)
+        self.assertIn("/actor/logout", helper)
+
     def test_reset_requires_explicit_authorization(self) -> None:
         with self.assertRaisesRegex(BlockedError, "CHAT_ACCEPTANCE_RESET=1"):
             produce_actor_manifest(

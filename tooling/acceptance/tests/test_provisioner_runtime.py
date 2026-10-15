@@ -14,6 +14,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from tooling.acceptance.core import (
+    ActorIdentity,
     BlockedError,
     ClientRuntime,
     ClientServiceBinding,
@@ -44,6 +45,9 @@ from tooling.acceptance.provisioners.home_station import (
     agent_profile_for_gate,
     audit_remote_station_cli_processes,
     resolve_existing_actor,
+)
+from tooling.acceptance.provisioners.preset_actor import (
+    resolve_existing_preset_actor,
 )
 
 
@@ -1291,31 +1295,69 @@ class ProvisionerBlockingTests(unittest.TestCase):
         audit.assert_called_once_with("station-two")
 
     def test_existing_actor_resolution_logs_out_without_reset(self):
-        login = MagicMock()
-        login.__enter__.return_value.read.return_value = json.dumps(
-            {
-                "data": {
-                    "actor_ref": {"ptid": "ptid:alice"},
-                    "tokens": {"access_token": "access-token"},
-                }
-            }
-        ).encode("utf-8")
         logout = MagicMock()
-
         with patch(
-            "tooling.acceptance.provisioners.home_station.urllib.request.urlopen",
-            side_effect=[login, logout],
+            "tooling.acceptance.provisioners.preset_actor.shutil.which",
+            return_value="/usr/bin/go",
+        ), patch(
+            "tooling.acceptance.provisioners.preset_actor.subprocess.run",
+            return_value=MagicMock(
+                returncode=0,
+                stdout=json.dumps(
+                    {"token": "access-token", "ptid": "ptid:alice"}
+                ),
+                stderr="",
+            ),
+        ) as run, patch(
+            "tooling.acceptance.provisioners.preset_actor."
+            "urllib.request.urlopen",
+            return_value=logout,
         ) as urlopen:
+            actor = resolve_existing_preset_actor(
+                station_url="http://station.example:18080",
+                role="alice",
+                account="alice@p.t",
+                password="fixture-password",
+                device_policy="ephemeral-acceptance",
+            )
+
+        self.assertEqual(actor.ptid, "ptid:alice")
+        self.assertEqual(actor.device_policy, "ephemeral-acceptance")
+        environment = run.call_args.kwargs["env"]
+        self.assertEqual(environment["PT_ACCESS_CLIENT_EMAIL"], "alice@p.t")
+        self.assertEqual(
+            environment["PT_ACCESS_CLIENT_PASSWORD"],
+            "fixture-password",
+        )
+        self.assertEqual(urlopen.call_count, 1)
+        logout.close.assert_called_once_with()
+
+    def test_home_station_existing_actor_uses_canonical_access_client(self):
+        expected = ActorIdentity(
+            role="alice",
+            account_ref="station-account:alice@p.t",
+            ptid="ptid:alice",
+            device_policy="ephemeral-acceptance",
+        )
+        with patch(
+            "tooling.acceptance.provisioners.home_station."
+            "resolve_existing_preset_actor",
+            return_value=expected,
+        ) as resolve:
             actor = resolve_existing_actor(
                 "http://station.example:18080",
                 "alice",
                 "fixture-password",
             )
 
-        self.assertEqual(actor.ptid, "ptid:alice")
-        self.assertEqual(actor.device_policy, "ephemeral-acceptance")
-        self.assertEqual(urlopen.call_count, 2)
-        logout.close.assert_called_once_with()
+        self.assertEqual(actor, expected)
+        resolve.assert_called_once_with(
+            station_url="http://station.example:18080",
+            role="alice",
+            account="alice@p.t",
+            password="fixture-password",
+            device_policy="ephemeral-acceptance",
+        )
 
     def test_agent_stream_credentials_must_come_from_one_profile(self):
         provisioner = HomeStationProvisioner(

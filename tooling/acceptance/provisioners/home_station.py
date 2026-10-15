@@ -42,6 +42,9 @@ from tooling.acceptance.provisioners.remote_source_identity import (
     reviewed_remote_transport,
     resolve_remote_source_identity,
 )
+from tooling.acceptance.provisioners.preset_actor import (
+    resolve_existing_preset_actor,
+)
 
 
 GATE_ROLES = {
@@ -255,82 +258,13 @@ def resolve_existing_actor(
             reason=f"Unsupported Agent native actor role: {role}",
             resource=f"fixture-actor:{role}",
         )
-    request = urllib.request.Request(
-        f"{station_url.rstrip('/')}/actor/login",
-        data=json.dumps(
-            {
-                "email": account,
-                "password": password,
-                "device_type": "desktop",
-            }
-        ).encode("utf-8"),
-        headers={"Accept": "application/json", "Content-Type": "application/json"},
-        method="POST",
+    return resolve_existing_preset_actor(
+        station_url=station_url,
+        role=role,
+        account=account,
+        password=password,
+        device_policy="ephemeral-acceptance",
     )
-    token = ""
-    try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            envelope = json.loads(response.read().decode("utf-8"))
-        data = (
-            envelope.get("data")
-            if isinstance(envelope, dict)
-            and isinstance(envelope.get("data"), dict)
-            else {}
-        )
-        actor_ref = (
-            data.get("actor_ref")
-            if isinstance(data.get("actor_ref"), dict)
-            else {}
-        )
-        tokens = (
-            data.get("tokens")
-            if isinstance(data.get("tokens"), dict)
-            else {}
-        )
-        ptid = str(actor_ref.get("ptid") or "")
-        token = str(tokens.get("access_token") or "")
-        if not ptid.startswith("ptid:") or not token:
-            raise BlockedError(
-                reason=f"Station login did not resolve canonical actor {role}",
-                resource=f"fixture-actor:{role}",
-            )
-        return ActorIdentity(
-            role=role,
-            account_ref=f"station-account:{account}",
-            ptid=ptid,
-            device_policy="ephemeral-acceptance",
-        )
-    except (
-        urllib.error.URLError,
-        OSError,
-        TimeoutError,
-        json.JSONDecodeError,
-    ) as error:
-        raise BlockedError(
-            reason=f"Cannot resolve existing actor {role}: {error}",
-            resource=f"fixture-actor:{role}",
-        ) from error
-    finally:
-        if token:
-            logout = urllib.request.Request(
-                f"{station_url.rstrip('/')}/actor/logout",
-                data=b"{}",
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "Content-Type": "application/json",
-                },
-                method="POST",
-            )
-            try:
-                urllib.request.urlopen(logout, timeout=15).close()
-            except (urllib.error.URLError, OSError, TimeoutError) as error:
-                raise BlockedError(
-                    reason=(
-                        f"Existing actor {role} discovery session could not "
-                        f"be released: {error}"
-                    ),
-                    resource=f"fixture-session:{role}",
-                ) from error
 
 
 class HomeStationProvisioner(EnvironmentProvisioner):
