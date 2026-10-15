@@ -3628,12 +3628,14 @@ SELECT
       CASE WHEN pg_catalog.pg_get_expr(
         index_definition.indpred,
         index_definition.indrelid
-      ) = ? THEN 1 ELSE 0 END
+      ) = $reset$((post_id IS NOT NULL) AND ((post_id)::text <> ''::text))$reset$
+      THEN 1 ELSE 0 END
     WHEN index_relation.relname = 'uidx_social_private_post_content' THEN
       CASE WHEN pg_catalog.pg_get_expr(
         index_definition.indpred,
         index_definition.indrelid
-      ) = ? THEN 1 ELSE 0 END
+      ) = $reset$((content_id IS NOT NULL) AND ((content_id)::text <> ''::text))$reset$
+      THEN 1 ELSE 0 END
     ELSE 0
   END AS partial_predicate_approved,
   index_definition.indisvalid AS is_valid,
@@ -3658,8 +3660,6 @@ WHERE table_namespace.nspname = current_schema()
   AND index_column.ordinality <= index_definition.indnkeyatts
 ORDER BY index_relation.relname, index_column.ordinality
 `,
-		canonicalPostgresPrivateIndexPredicate("post_id"),
-		canonicalPostgresPrivateIndexPredicate("content_id"),
 		table,
 	).Rows()
 	if err != nil {
