@@ -237,6 +237,18 @@ class MessagePublishingNativeGate(AcceptanceGate):
                 or login.get("actorPtid") != self.owner_ptid
             ):
                 raise GateError("Alice Native login identity is invalid")
+            hydration = call_async_harness(
+                client,
+                "hydrateActiveActor",
+                {},
+                namespace="chat",
+                script_timeout=30,
+            )
+            if (
+                not isinstance(hydration, dict)
+                or hydration.get("actorPtid") != self.owner_ptid
+            ):
+                raise GateError("Alice Native messaging identity did not hydrate")
             self.lifecycles.mark_authenticated(client)
             self.client = client
 
@@ -250,6 +262,7 @@ class MessagePublishingNativeGate(AcceptanceGate):
                     isinstance(value, dict)
                     and value.get("actorPtid") == self.owner_ptid
                     and value.get("deviceId")
+                    and value.get("active") is True
                 ):
                     return value
                 return None
@@ -311,6 +324,7 @@ class MessagePublishingNativeGate(AcceptanceGate):
                     isinstance(value, dict)
                     and value.get("actorPtid") == self.owner_ptid
                     and value.get("deviceId")
+                    and value.get("active") is True
                 ):
                     return value
                 return None
@@ -1629,30 +1643,30 @@ class MessagePublishingNativeGate(AcceptanceGate):
             SuiteRuntimeAction.ACCOUNT_PROVISION,
             resource_id="alice-reviewed-existing-account",
         )
-        self._launch_client()
-        self.suite.record(
-            SuiteRuntimeAction.CLIENT_LAUNCH,
-            resource_id="alice-native-initial",
-        )
-        self.suite.record(
-            SuiteRuntimeAction.LOGIN,
-            resource_id="alice-owner-session",
-        )
-        self.owner_token = self._session_token()
-        restart_seed = self._create_grant_and_restart_seed()
-
-        self._relaunch_client()
-        self.suite.record(
-            SuiteRuntimeAction.CLIENT_LAUNCH,
-            resource_id="alice-native-relaunch",
-        )
-        self.owner_token = self._session_token()
-        if len(self.runtime_launches) != 2:
-            raise GateError("Message Publishing exceeded one client restart")
-        enter_chat_page(self.client)
-
         cleanup: dict[str, Any] = {}
         try:
+            self._launch_client()
+            self.suite.record(
+                SuiteRuntimeAction.CLIENT_LAUNCH,
+                resource_id="alice-native-initial",
+            )
+            self.suite.record(
+                SuiteRuntimeAction.LOGIN,
+                resource_id="alice-owner-session",
+            )
+            self.owner_token = self._session_token()
+            restart_seed = self._create_grant_and_restart_seed()
+
+            self._relaunch_client()
+            self.suite.record(
+                SuiteRuntimeAction.CLIENT_LAUNCH,
+                resource_id="alice-native-relaunch",
+            )
+            self.owner_token = self._session_token()
+            if len(self.runtime_launches) != 2:
+                raise GateError("Message Publishing exceeded one client restart")
+            enter_chat_page(self.client)
+
             self._run_scenario(
                 "grant-lifecycle",
                 self.scenario_grant_text,
