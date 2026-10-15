@@ -407,6 +407,12 @@ class SimulatorSocialGateTests(unittest.TestCase):
         open_script, owner_selector = session.execute_script.call_args_list[0].args
         option_script, option_selector = session.execute_script.call_args_list[1].args
         self.assertIn("MouseEvent('mousedown'", open_script)
+        self.assertIn(
+            "const trigger = document.querySelector(arguments[0]);",
+            open_script,
+        )
+        self.assertNotIn(".ant-select-selector", open_script)
+        self.assertNotIn("trigger.click()", open_script)
         self.assertEqual(owner_selector, '[data-acceptance-id="federation"]')
         self.assertIn("closest(", option_script)
         self.assertEqual(
