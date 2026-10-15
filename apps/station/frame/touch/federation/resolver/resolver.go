@@ -208,6 +208,17 @@ func (r *Resolver) resolveByHandle(
 		}
 	}
 
+	if localHandle, isLocal := localHandlePart(canon, id.StationDomain); isLocal {
+		return r.resolveAuthoritativeLocal(
+			ctx,
+			canon,
+			localHandle,
+			id,
+			fetcher,
+			keys,
+		)
+	}
+
 	// Cache fast-path: serve a fresh remote_cached row without touching
 	// the DHT. We skip the cache entirely when the handle is locally
 	// owned (the local fast-path is already cheaper than a DB lookup
@@ -284,6 +295,72 @@ func (r *Resolver) resolveByHandle(
 		logger.Warnf(ctx, "[resolver] cache upsert failed handle=%s err=%v", canon, cerr)
 	}
 	return res, nil
+}
+
+func localHandlePart(canon string, stationDomain string) (string, bool) {
+	localPart, host, found := strings.Cut(canon, "@")
+	return localPart,
+		found &&
+			localPart != "" &&
+			host != "" &&
+			strings.EqualFold(host, strings.TrimSpace(stationDomain))
+}
+
+func (r *Resolver) resolveAuthoritativeLocal(
+	ctx context.Context,
+	canon string,
+	localHandle string,
+	identity fednode.LocalIdentity,
+	fetcher fedprofile.LocalProfileFetcher,
+	keys *authfed.KeyCache,
+) (*Resolved, error) {
+	metadataFetcher, ok := fetcher.(fedprofile.LocalResolutionMetadataFetcher)
+	if !ok {
+		return nil, errors.New("resolver: local resolution metadata fetcher missing")
+	}
+	metadata, err := metadataFetcher.FetchLocalResolutionMetadata(ctx, localHandle)
+	if err != nil {
+		if errors.Is(err, fedprofile.ErrHandleNotLocal) {
+			return nil, fmt.Errorf("resolver: local actor: %w", locator.ErrNotFound)
+		}
+		return nil, fmt.Errorf("resolver: load local resolution metadata: %w", err)
+	}
+	if metadata == nil {
+		return nil, fmt.Errorf("resolver: local actor: %w", locator.ErrNotFound)
+	}
+	metadataHandle, err := locator.CanonicalHandle(metadata.FederatedHandle)
+	if err != nil ||
+		metadataHandle != canon ||
+		metadata.HomeStationPeerID != identity.StationPeerID.String() ||
+		!strings.EqualFold(
+			strings.TrimSpace(metadata.HomeStationDomain),
+			strings.TrimSpace(identity.StationDomain),
+		) {
+		return nil, errors.New("resolver: local actor identity is inconsistent")
+	}
+	if metadata.Visibility != modelpb.ActorVisibility_ACTOR_VISIBILITY_BY_HANDLE &&
+		metadata.Visibility != modelpb.ActorVisibility_ACTOR_VISIBILITY_INDEXED {
+		return nil, ErrTombstoned
+	}
+	if keys == nil {
+		return nil, errors.New("resolver: local fast-path requested but key cache missing")
+	}
+	localKey, err := keys.Get(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("resolver: load local station key: %w", err)
+	}
+	record, _, err := locator.Sign(locator.SignInput{
+		Handle:            canon,
+		HomeStationPeerID: identity.StationPeerID.String(),
+		HomeStationDomain: identity.StationDomain,
+		Seq:               metadata.LocatorSeq,
+		Now:               r.now(),
+		LocalKey:          localKey,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("resolver: build local locator projection: %w", err)
+	}
+	return r.resolveLocal(ctx, canon, record, fetcher, keys)
 }
 
 func requireActiveMembership(

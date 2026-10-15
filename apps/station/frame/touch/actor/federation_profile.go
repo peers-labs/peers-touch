@@ -48,6 +48,26 @@ func (f federationProfileFetcher) FetchByLocalHandle(ctx context.Context, localH
 	return WebProfileToActorProfileProto(resp), nil
 }
 
+func (f federationProfileFetcher) FetchLocalResolutionMetadata(
+	ctx context.Context,
+	localHandle string,
+) (*fedprofile.LocalResolutionMetadata, error) {
+	actorRecord, err := GetActorByName(ctx, localHandle)
+	if err != nil {
+		return nil, err
+	}
+	if actorRecord == nil {
+		return nil, fedprofile.ErrHandleNotLocal
+	}
+	return &fedprofile.LocalResolutionMetadata{
+		FederatedHandle:   actorRecord.FederatedHandle,
+		HomeStationPeerID: actorRecord.HomeStationPeerID,
+		HomeStationDomain: actorRecord.HomeStationDomain,
+		Visibility:        modelpb.ActorVisibility(actorRecord.Visibility),
+		LocatorSeq:        actorRecord.LocatorSeq,
+	}, nil
+}
+
 func (f federationProfileFetcher) FetchDeviceSigningKeys(
 	ctx context.Context,
 	localHandle string,
