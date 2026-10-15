@@ -428,9 +428,7 @@ class AcceptanceRunTest(unittest.TestCase):
             output.write_text(
                 json.dumps(
                     {
-                        "execution": {
-                            "formalPlan": "plans/active/plan.md",
-                        },
+                        "range": "HEAD",
                         "gates": [],
                     }
                 ),
@@ -445,9 +443,17 @@ class AcceptanceRunTest(unittest.TestCase):
         ) as run:
             plan, source = module.load_plan(None, store)
 
-        self.assertEqual(run.call_args.args[0][0], sys.executable)
+        command = run.call_args.args[0]
+        self.assertEqual(command[0], sys.executable)
+        self.assertNotIn("--active-plan", command)
         self.assertEqual(plan["gates"], [])
-        self.assertEqual(source, "plans/active/plan.md")
+        self.assertEqual(
+            source,
+            {
+                "artifactKind": "acceptance-current-source-projection",
+                "range": "HEAD",
+            },
+        )
 
     def test_source_identity_drift_preserves_aggregate_baseline(self) -> None:
         module = load_module()

@@ -68,6 +68,9 @@ class MobileSocialSearchProfileNativeGate(AcceptanceGate):
             "apps/mobile/src/app/navigation/navigationStore.ts"
         )
         shell = self._read("apps/mobile/src/components/MobileShell.tsx")
+        page_host = self._read(
+            "apps/mobile/src/components/MobilePageHost.tsx"
+        )
         search = self._read(
             "apps/mobile/src/pages/moments/SocialSearchPage.tsx"
         )
@@ -99,12 +102,16 @@ class MobileSocialSearchProfileNativeGate(AcceptanceGate):
             "navigation route state",
         )
         self._require_markers(
-            shell,
+            page_host,
             (
                 "<SocialSearchPage",
                 "<SocialProfilePage",
-                "const hideTabbar = activeDetail !== null",
             ),
+            "Mobile page host",
+        )
+        self._require_markers(
+            shell,
+            ("const hideTabbar = activeDetail !== null",),
             "Mobile shell",
         )
         self._require_markers(
@@ -122,7 +129,9 @@ class MobileSocialSearchProfileNativeGate(AcceptanceGate):
             profile,
             (
                 "loadAuthoredPosts(actorPtid)",
-                "dispatchOpenContactChat(actorPtid, directFederationId)",
+                "dispatchOpenContactChat(",
+                "selectSession(sessionUlid)",
+                "onOpenChat({ routeId: 'detail:chat-conversation', sessionUlid })",
                 "requestSocialPeerProfile(actorPtid, true)",
                 "facade?.feeds.home.refresh()",
                 "facade?.feeds.explore.refresh()",

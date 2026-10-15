@@ -785,9 +785,7 @@ def load_plan(
         sys.executable,
         "tooling/scripts/acceptance-plan.py",
     ]
-    if execution_plan_path is None:
-        command.append("--active-plan")
-    else:
+    if execution_plan_path is not None:
         command.extend(["--execution-plan", str(execution_plan_path)])
     if execution_mode == "completion":
         command.append("--completion")
@@ -811,15 +809,23 @@ def load_plan(
         if generated.returncode != 0:
             detail = generated.stderr.strip() or generated.stdout.strip()
             raise SystemExit(
-                "active execution plan projection failed with exit code "
+                "Acceptance plan projection failed with exit code "
                 f"{generated.returncode}: {detail}"
             )
         plan = json.loads(projection_path.read_text(encoding="utf-8"))
     finally:
         projection_path.unlink(missing_ok=True)
-    source = plan.get("execution", {}).get("formalPlan")
-    if not isinstance(source, str) or not source:
-        raise SystemExit("active execution plan projection has no formal plan")
+    if execution_plan_path is None:
+        source = {
+            "artifactKind": "acceptance-current-source-projection",
+            "range": plan.get("range"),
+        }
+    else:
+        source = plan.get("execution", {}).get("formalPlan")
+        if not isinstance(source, str) or not source:
+            raise SystemExit(
+                "explicit execution plan projection has no formal plan"
+            )
     return plan, source
 
 
@@ -2015,7 +2021,7 @@ def main() -> int:
         raise SystemExit("--plan and --execution-plan are mutually exclusive")
     if (args.completion or args.full) and (args.plan or args.gate):
         raise SystemExit(
-            "--completion/--full use the active formal plan and cannot be "
+            "--completion/--full use the current-source projection and cannot be "
             "combined with --plan or --gate"
         )
     selected_execution_mode = (

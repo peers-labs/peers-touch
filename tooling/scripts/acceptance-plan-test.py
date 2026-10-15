@@ -3,17 +3,14 @@
 from __future__ import annotations
 
 import importlib.util
-import io
 import json
 import os
 import subprocess
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import patch
 
 
@@ -36,43 +33,6 @@ SPEC.loader.exec_module(MODULE)
 
 
 class ChangedPathsTests(unittest.TestCase):
-    def test_explicit_plan_reuses_matching_live_mount(self) -> None:
-        explicit = ROOT / "mounted-plan.md"
-        mounted = SimpleNamespace(path=explicit)
-        with (
-            patch.object(
-                MODULE,
-                "discover_active_plan",
-                return_value=mounted,
-            ),
-            patch.object(MODULE, "load_formal_plan") as load_source,
-        ):
-            resolved = MODULE.resolve_execution_plan(explicit)
-
-        self.assertIs(resolved, mounted)
-        load_source.assert_not_called()
-
-    def test_explicit_unmounted_plan_uses_repository_projection(self) -> None:
-        explicit = ROOT / "source-plan.md"
-        mounted = SimpleNamespace(path=ROOT / "mounted-plan.md")
-        source = SimpleNamespace(path=explicit)
-        with (
-            patch.object(
-                MODULE,
-                "discover_active_plan",
-                return_value=mounted,
-            ),
-            patch.object(
-                MODULE,
-                "load_formal_plan",
-                return_value=source,
-            ) as load_source,
-        ):
-            resolved = MODULE.resolve_execution_plan(explicit)
-
-        self.assertIs(resolved, source)
-        load_source.assert_called_once_with(explicit.resolve())
-
     def test_make_entrypoints_default_to_external_evidence_store(self) -> None:
         makefile = (
             ROOT / "tooling" / "make" / "acceptance.mk"
@@ -86,8 +46,9 @@ class ChangedPathsTests(unittest.TestCase):
             'ACCEPTANCE_PLAN_OUTPUT_ARG = $(if $(ACCEPTANCE_PLAN),--output "$(ACCEPTANCE_PLAN)",)',
             makefile,
         )
+        self.assertNotIn("--active-plan", makefile)
         self.assertIn(
-            "acceptance-plan.py --root tooling/acceptance --active-plan",
+            'acceptance-plan.py --root tooling/acceptance --range "$(ACCEPTANCE_RANGE)"',
             makefile,
         )
         self.assertIn(
@@ -162,54 +123,25 @@ class ChangedPathsTests(unittest.TestCase):
                 encoding="utf-8",
             )
             output = root / "projection.json"
-            plan_projection = SimpleNamespace(
-                path=execution_plan,
-                plan_id="PLAN-1",
-                plan_format="stable",
-                status="active",
-                branch="feat/example",
-                workspace_id="1" * 16,
-                initial_head="a" * 40,
-                current_task_id="TASK-1",
-                current_task_path="tasks/TASK-1.md",
-                current_task_write_set=("src",),
-                current_closure="C1",
-                closure_statuses={"C1": "in_progress"},
-                acceptance={
-                    "closures": {"C1": ["cheap-gate"]},
-                    "completion": ["cheap-gate"],
-                    "full": ["cheap-gate", "runtime-gate"],
-                },
-                all_declared_gate_ids=lambda: {"cheap-gate", "runtime-gate"},
-                gate_ids=lambda mode: (
-                    ["cheap-gate", "runtime-gate"]
-                    if mode == "full"
-                    else ["cheap-gate"]
-                ),
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--root",
+                    str(acceptance),
+                    "--execution-plan",
+                    str(execution_plan),
+                    "--changed-file",
+                    "src/example.py",
+                    "--output",
+                    str(output),
+                ],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
             )
-            with (
-                patch.object(MODULE, "load_formal_plan", return_value=plan_projection),
-                patch.object(
-                    sys,
-                    "argv",
-                    [
-                        str(SCRIPT),
-                        "--root",
-                        str(acceptance),
-                        "--execution-plan",
-                        str(execution_plan),
-                        "--changed-file",
-                        "src/example.py",
-                        "--output",
-                        str(output),
-                    ],
-                ),
-                redirect_stdout(io.StringIO()),
-                redirect_stderr(io.StringIO()),
-            ):
-                result = MODULE.main()
 
-            self.assertEqual(result, 0)
+            self.assertEqual(result.returncode, 0, result.stderr)
             projection = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(projection["candidate_gates"], ["cheap-gate", "runtime-gate"])
             self.assertEqual(
@@ -218,29 +150,25 @@ class ChangedPathsTests(unittest.TestCase):
             )
             self.assertEqual(projection["execution"]["mode"], "closure")
 
-            with (
-                patch.object(MODULE, "load_formal_plan", return_value=plan_projection),
-                patch.object(
-                    sys,
-                    "argv",
-                    [
-                        str(SCRIPT),
-                        "--root",
-                        str(acceptance),
-                        "--execution-plan",
-                        str(execution_plan),
-                        "--changed-file",
-                        "src/example.py",
-                        "--full",
-                        "--output",
-                        str(output),
-                    ],
-                ),
-                redirect_stdout(io.StringIO()),
-                redirect_stderr(io.StringIO()),
-            ):
-                full = MODULE.main()
-            self.assertEqual(full, 0)
+            full = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--root",
+                    str(acceptance),
+                    "--execution-plan",
+                    str(execution_plan),
+                    "--changed-file",
+                    "src/example.py",
+                    "--full",
+                    "--output",
+                    str(output),
+                ],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(full.returncode, 0, full.stderr)
             full_projection = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(
                 [gate["id"] for gate in full_projection["selected_gates"]],
@@ -255,31 +183,25 @@ class ChangedPathsTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            plan_projection.all_declared_gate_ids = lambda: {"cheap-gate"}
-            stderr = io.StringIO()
-            with (
-                patch.object(MODULE, "load_formal_plan", return_value=plan_projection),
-                patch.object(
-                    sys,
-                    "argv",
-                    [
-                        str(SCRIPT),
-                        "--root",
-                        str(acceptance),
-                        "--execution-plan",
-                        str(execution_plan),
-                        "--changed-file",
-                        "src/example.py",
-                        "--output",
-                        str(output),
-                    ],
-                ),
-                redirect_stdout(io.StringIO()),
-                redirect_stderr(stderr),
-            ):
-                drift = MODULE.main()
-            self.assertEqual(drift, 2)
-            self.assertIn("ACCEPTANCE_PLAN_DRIFT", stderr.getvalue())
+            drift = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--root",
+                    str(acceptance),
+                    "--execution-plan",
+                    str(execution_plan),
+                    "--changed-file",
+                    "src/example.py",
+                    "--output",
+                    str(output),
+                ],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(drift.returncode, 2)
+            self.assertIn("ACCEPTANCE_PLAN_DRIFT", drift.stderr)
 
     def test_head_includes_untracked_files(self) -> None:
         responses = [

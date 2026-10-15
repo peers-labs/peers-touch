@@ -713,10 +713,10 @@ select,
   flex: 0 0 auto;
   width: min(100%, 400px);
   min-height: 356px;
-  border: 0 !important;
-  border-radius: 0 !important;
-  box-shadow: none !important;
-  background: transparent !important;
+  border: 1px solid rgba(15, 23, 42, 0.08) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 16px 48px rgba(27, 31, 59, 0.1);
+  background: var(--brand-surface) !important;
 }
 
 .auth-gate-card > .ant-card-body {

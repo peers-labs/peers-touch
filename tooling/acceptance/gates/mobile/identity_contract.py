@@ -29,6 +29,10 @@ SOURCE_SUFFIXES = {".go", ".rs", ".ts", ".tsx"}
 PROTO_NON_ACTOR_ID_ALLOWLIST = {
     Path("model/domain/applet/applet.proto"): {"owner_id"},
     Path("model/domain/oauth/oauth.proto"): {"provider_user_id"},
+    Path("model/domain/oauth/broker_bridge.proto"): {
+        "provider_user_id",
+        "receiver_id",
+    },
 }
 LEGACY_MIGRATION_ALLOWLIST = {
     Path("apps/station/frame/touch/model/db/automigrate.go"): {
@@ -100,6 +104,13 @@ LEGACY_MIGRATION_ALLOWLIST = {
         "member_did",
         "sender_did",
         "receiver_did",
+        "peer_did",
+    },
+    Path(
+        "apps/station/app/subserver/social/infrastructure/"
+        "relationship_schema_test.go"
+    ): {
+        "actor_did",
         "peer_did",
     },
 }
@@ -226,8 +237,9 @@ def validate_identity_contract() -> None:
         "bytes root_signature = 3;",
         "message StationIdentityResponse",
         "bytes statement_bytes = 1;",
-        "bytes node_signature = 2;",
-        "StationNodeAuthorization node_authorization = 3;",
+        "reserved 2, 3;",
+        "bytes node_signature = 4;",
+        "StationNodeAuthorization node_authorization = 5;",
     )
     missing_tokens = [
         token for token in required_tokens if token not in identity_proto
