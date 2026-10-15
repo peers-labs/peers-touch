@@ -561,7 +561,7 @@ class MobileMessagingJourneyTests(unittest.TestCase):
         self.network.friend_requests.append(
             {
                 "requestId": "existing-accepted",
-                "federationId": "federation-1",
+                "federationId": "federation-existing",
                 "senderPtid": self.receiver.ptid,
                 "receiverPtid": self.sender.ptid,
                 "senderHomeStationPeerId": self.receiver.station_peer_id,
@@ -587,7 +587,12 @@ class MobileMessagingJourneyTests(unittest.TestCase):
         self.assertEqual(len(self.network.friend_requests), 1)
         self.assertEqual(
             self.sender_session.contact_open_inputs,
-            [{"peerPtid": "ptid:bob", "federationId": "federation-1"}],
+            [
+                {
+                    "peerPtid": "ptid:bob",
+                    "federationId": "federation-existing",
+                }
+            ],
         )
 
     def test_contact_direct_admission_timeout_retains_last_public_reason(

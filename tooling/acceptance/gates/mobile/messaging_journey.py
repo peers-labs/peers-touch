@@ -370,25 +370,30 @@ class MobileMessagingJourney:
     ) -> str:
         if sender.federation_id != receiver.federation_id:
             raise GateError("Mobile actors do not share one explicit Federation")
-        if not self._accepted_relationship_visible(
+        accepted = self._accepted_relationship(
             sender_session,
             request_id=None,
             sender_ptid=sender.ptid,
             receiver_ptid=receiver.ptid,
-            federation_id=sender.federation_id,
-        ):
+            federation_id=None,
+        )
+        if accepted is None:
             return self._create_direct(
                 sender_session,
                 receiver_session,
                 sender,
                 receiver,
             )
+        accepted_federation_id = self._text(
+            accepted.get("federationId"),
+            "Accepted relationship Federation ID",
+        )
         return self._open_contact_direct(
             sender_session,
             receiver_session,
             sender,
             receiver,
-            sender.federation_id,
+            accepted_federation_id,
         )
 
     def _open_contact_direct(
@@ -430,22 +435,54 @@ class MobileMessagingJourney:
         receiver_ptid: str,
         federation_id: str,
     ) -> bool:
+        return self._accepted_relationship(
+            session,
+            request_id=request_id,
+            sender_ptid=sender_ptid,
+            receiver_ptid=receiver_ptid,
+            federation_id=federation_id,
+        ) is not None
+
+    def _accepted_relationship(
+        self,
+        session: MessagingJourneySession,
+        *,
+        request_id: str | None,
+        sender_ptid: str,
+        receiver_ptid: str,
+        federation_id: str | None,
+    ) -> dict[str, Any] | None:
         session.call_action("social.reconcile")
         projection = self._mapping(
             session.call_action("social.projection.read"),
             "Accepted relationship projection",
         )
         requests = projection.get("friendRequests")
-        return isinstance(requests, list) and any(
-            isinstance(value, Mapping)
-            and (request_id is None or value.get("requestId") == request_id)
-            and {
-                value.get("senderPtid"),
-                value.get("receiverPtid"),
-            } == {sender_ptid, receiver_ptid}
-            and value.get("federationId") == federation_id
-            and value.get("status") == FRIEND_REQUEST_STATUS_ACCEPTED
-            for value in requests
+        if not isinstance(requests, list):
+            return None
+        return next(
+            (
+                dict(value)
+                for value in requests
+                if (
+                    isinstance(value, Mapping)
+                    and (
+                        request_id is None
+                        or value.get("requestId") == request_id
+                    )
+                    and {
+                        value.get("senderPtid"),
+                        value.get("receiverPtid"),
+                    } == {sender_ptid, receiver_ptid}
+                    and (
+                        federation_id is None
+                        or value.get("federationId") == federation_id
+                    )
+                    and value.get("status")
+                    == FRIEND_REQUEST_STATUS_ACCEPTED
+                )
+            ),
+            None,
         )
 
     def _await_write_admission(
