@@ -833,6 +833,8 @@ _CONTROL_KINDS = {
     "AXTextField": "text-field",
 }
 _MEDIA_PERMISSION_ALLOW_BUTTON_IDENTIFIER = "action-button-1"
+_FOCUS_CONVERGENCE_TIMEOUT_SECONDS = 5.0
+_FOCUS_CONVERGENCE_INTERVAL_SECONDS = 0.1
 
 
 @dataclass(frozen=True)
@@ -1155,6 +1157,34 @@ class MacOSNativeDesktopAdapter(NativeDesktopAdapter):
             )
         return completed.stdout.strip()
 
+    def activate_and_focused_control(
+        self,
+        process_id: int,
+    ) -> NativeControlSnapshot:
+        process_id = self._validated_process_id(process_id)
+        deadline = time.monotonic() + _FOCUS_CONVERGENCE_TIMEOUT_SECONDS
+        last_control = NativeControlSnapshot()
+        while True:
+            try:
+                self.activate_process(process_id)
+            except DriverError as error:
+                last_control = NativeControlSnapshot(error=str(error))
+            else:
+                time.sleep(_FOCUS_CONVERGENCE_INTERVAL_SECONDS)
+                last_control = self.focused_control(process_id)
+                if (
+                    not last_control.error
+                    and last_control.frontmost
+                    and last_control.actual_frontmost_pid == process_id
+                    and last_control.window_count > 0
+                ):
+                    return last_control
+            if time.monotonic() >= deadline:
+                raise DriverError(
+                    "Native actor focus did not converge for exact process "
+                    f"{process_id}: {last_control.to_dict()}"
+                )
+
     def post_mouse(
         self,
         actions: tuple[MouseAction, ...],
@@ -1316,16 +1346,7 @@ class MacOSNativeDesktopAdapter(NativeDesktopAdapter):
             raise DriverError(
                 "Native file chooser target must be staged under the user home"
             ) from error
-        self.activate_process(process_id)
-        owner = self.focused_control(process_id)
-        if (
-            not owner.frontmost
-            or owner.actual_frontmost_pid != process_id
-        ):
-            raise DriverError(
-                "Native file chooser selection target is not frontmost: "
-                f"{owner.to_dict()}"
-            )
+        self.activate_and_focused_control(process_id)
         try:
             completed = subprocess.run(
                 (
