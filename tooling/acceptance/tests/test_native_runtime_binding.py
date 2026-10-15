@@ -318,6 +318,73 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             ],
         )
 
+    def test_station_configuration_selects_refreshed_direct_candidate(
+        self,
+    ) -> None:
+        lifecycle = SyntheticRemoteNativeLifecycle(
+            "/workspace/run/actors/alice/fixture.png"
+        )
+        binding = LinuxNativeDesktopRuntimeBinding(
+            "chat-native",
+            "source-commit",
+            lifecycle,
+        )
+        session = Mock(spec=TauriSession)
+        session.invoke_app_result.return_value = {
+            "data": {
+                "status": json.dumps(
+                    {
+                        "entries": [
+                            {
+                                "station_peer_id": "station-peer-four",
+                                "routes": [
+                                    {
+                                        "route_id": "direct-primary",
+                                        "route_type": "direct",
+                                        "endpoint_origin": (
+                                            "https://old-proxy.example:18443"
+                                        ),
+                                        "health": "available",
+                                    }
+                                ],
+                                "candidate_route_refreshes": [
+                                    {
+                                        "route_id": "direct-primary",
+                                        "route_type": "direct",
+                                        "endpoint_origin": (
+                                            "https://new-proxy.example:19443"
+                                        ),
+                                        "health": "available",
+                                        "attestation_expires_at_unix_ms": 20,
+                                        "route_generation": 1,
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                )
+            }
+        }
+
+        binding._configure_session_station(
+            session,
+            "https://new-proxy.example:19443",
+            "station-four",
+        )
+
+        self.assertEqual(
+            session.invoke_app_result.call_args_list[-1],
+            call(
+                "station_set_active",
+                {
+                    "input": {
+                        "station_peer_id": "station-peer-four",
+                        "route_id": "direct-primary",
+                    }
+                },
+            ),
+        )
+
     def test_station_configuration_prefers_fresh_available_route(self) -> None:
         lifecycle = SyntheticRemoteNativeLifecycle(
             "/workspace/run/actors/alice/fixture.png"

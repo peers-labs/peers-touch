@@ -643,21 +643,32 @@ class NativeDesktopRuntimeBinding(ABC):
             routes = entry.get("routes")
             if not station_peer_id or not isinstance(routes, list):
                 continue
+            refreshes = entry.get("candidate_route_refreshes")
+            candidates = [
+                *routes,
+                *(
+                    refreshes
+                    if isinstance(refreshes, list)
+                    else []
+                ),
+            ]
             if (
                 len(entries) == 1
-                and len(routes) == 1
-                and isinstance(routes[0], dict)
+                and len(candidates) == 1
+                and isinstance(candidates[0], dict)
                 and _route_matches_bound_service(
                     station_service_id,
                     expected_url,
-                    routes[0],
+                    candidates[0],
                 )
-                and routes[0].get("health") != "unavailable"
+                and candidates[0].get("health") != "unavailable"
             ):
-                route_id = str(routes[0].get("route_id") or "").strip()
+                route_id = str(
+                    candidates[0].get("route_id") or ""
+                ).strip()
                 if route_id:
                     fallback = (station_peer_id, route_id)
-            for route in routes:
+            for route in candidates:
                 if (
                     isinstance(route, dict)
                     and _route_matches_bound_service(
