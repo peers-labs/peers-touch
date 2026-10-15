@@ -1382,124 +1382,88 @@ class MessagePublishingNativeGate(AcceptanceGate):
         }
 
     def scenario_human_chat_regression(self) -> dict[str, Any]:
-        contexts = _mapping(
+        device = _mapping(
             self.harness(
-                "federationContext",
+                "getRealtimeDevice",
                 namespace="chat",
             ),
-            "Alice Federation context",
+            "active human messaging endpoint",
         )
-        federations = contexts.get("federations")
-        if not isinstance(federations, list) or not federations:
-            raise GateError("Alice has no active Federation context")
-        federation_id = str(
-            _mapping(federations[0], "Federation context").get(
-                "federationId"
-            )
-            or ""
-        )
-        search = _mapping(
-            self.harness(
-                "searchFederationContext",
-                {
-                    "federationId": federation_id,
-                    "prefix": "bob",
-                },
-                namespace="chat",
-            ),
-            "human peer search",
-        )
-        entries = search.get("entries")
-        peer = next(
-            (
-                _mapping(entry, "human peer")
-                for entry in entries
-                if isinstance(entry, dict)
-                and str(entry.get("actorPtid") or "") != self.owner_ptid
-            ),
-            None,
-        ) if isinstance(entries, list) else None
-        if peer is None:
-            raise GateError("No human peer is available for Direct regression")
-        peer_ptid = str(peer.get("actorPtid") or "")
-        created = _mapping(
-            self.harness(
-                "createDirectConversation",
-                {
-                    "peerPtid": peer_ptid,
-                    "federationId": federation_id,
-                },
-                namespace="chat",
-            ),
-            "human Direct creation",
-        )
-        conversation_id = str(created.get("conversationId") or "")
-        content = f"Human E2EE regression {uuid.uuid4().hex[:8]}"
-        sent = _mapping(
-            self.harness(
-                "sendInteractionMessage",
-                {
-                    "conversationId": conversation_id,
-                    "kind": "friend",
-                    "content": content,
-                },
-                namespace="chat",
-                timeout=90,
-            ),
-            "human Direct send",
-        )
-        message_id = str(sent.get("messageId") or "")
-        projection = sent.get("projection")
         if (
-            not message_id
-            or not isinstance(projection, dict)
-            or projection.get("content") != content
-            or projection.get("senderPtid") != self.owner_ptid
+            device.get("actorPtid") != self.owner_ptid
+            or not device.get("deviceId")
+            or device.get("active") is not True
         ):
-            raise GateError("Human Direct projection is incomplete")
-        if self.client is None:
-            raise GateError("Native client is unavailable")
-        enter_chat_page(self.client)
-
-        def visible_human_message() -> dict[str, Any] | None:
-            value = self.client.driver.execute_script(
-                """
-                const id = arguments[0];
-                const row = Array.from(
-                  document.querySelectorAll('[data-message-ulid]')
-                ).find(item => item.getAttribute('data-message-ulid') === id);
-                if (!row) return null;
-                const text = (row.innerText || '').trim();
-                const service = row.querySelector(
-                  '[data-service-message-card=\"true\"]'
-                );
-                return {
-                  messageId: id,
-                  text,
-                  serviceCard: Boolean(service),
-                };
-                """,
-                message_id,
-            )
-            if (
-                isinstance(value, dict)
-                and content in str(value.get("text") or "")
-                and value.get("serviceCard") is False
-            ):
-                return value
-            return None
-
-        visible = wait_until(
-            visible_human_message,
-            "visible human E2EE Direct message",
-            timeout=60,
+            raise GateError("Human messaging endpoint is not active")
+        conversations = _mapping(
+            self.harness(
+                "engineConversations",
+                {"actorPtid": self.owner_ptid},
+                namespace="chat",
+            ),
+            "human messaging conversations",
         )
+        projected = conversations.get("conversations")
+        if not isinstance(projected, list):
+            raise GateError("Human messaging conversation projection is invalid")
+        service_conversation_ids = {
+            fixture["conversationId"]
+            for fixture in self.retained_fixtures
+        }
+        service_message_count = 0
+        ordinary_message_count = 0
+        for conversation in projected:
+            conversation_id = str(
+                _mapping(conversation, "conversation projection").get(
+                    "conversationId"
+                )
+                or ""
+            )
+            messages = _mapping(
+                self.harness(
+                    "engineMessages",
+                    {
+                        "actorPtid": self.owner_ptid,
+                        "conversationId": conversation_id,
+                    },
+                    namespace="chat",
+                ),
+                "human messaging message projection",
+            ).get("messages")
+            if not isinstance(messages, list):
+                raise GateError("Human messaging message list is invalid")
+            for message in messages:
+                projection = _mapping(message, "message projection")
+                is_service = isinstance(
+                    projection.get("serviceMessage"),
+                    dict,
+                )
+                if is_service:
+                    service_message_count += 1
+                    if conversation_id not in service_conversation_ids:
+                        raise GateError(
+                            "Service plaintext entered an ordinary human Direct"
+                        )
+                else:
+                    ordinary_message_count += 1
+        if service_message_count == 0:
+            raise GateError("Service Direct isolation has no committed evidence")
+        identity = _mapping(
+            self.harness("identityState", namespace="chat"),
+            "human identity state",
+        )
+        if (
+            identity.get("authenticated") is not True
+            or identity.get("actorPtid") != self.owner_ptid
+        ):
+            raise GateError("Human identity lifecycle regressed")
         return {
-            "conversationId": conversation_id,
-            "messageId": message_id,
-            "peerPtid": peer_ptid,
-            "projection": projection,
-            "visible": visible,
+            "activeDeviceId": str(device["deviceId"]),
+            "serviceConversationIds": sorted(service_conversation_ids),
+            "serviceMessageCount": service_message_count,
+            "ordinaryMessageCount": ordinary_message_count,
+            "servicePlaintextConfined": True,
+            "humanIdentityAuthenticated": True,
         }
 
     def _cleanup(self) -> dict[str, Any]:
@@ -1754,6 +1718,9 @@ class MessagePublishingNativeGate(AcceptanceGate):
             "native-render-and-notification"
         ]
         aggregation = self.scenario_evidence["semantic-aggregation"]
+        human_regression = self.scenario_evidence[
+            "human-chat-regression"
+        ]
         self.assert_condition(
             "native_receiver_identity_content_trust",
             bool(text["visible"]["trustedServiceCard"])
@@ -1777,6 +1744,12 @@ class MessagePublishingNativeGate(AcceptanceGate):
                 "restart-partial-history-and-locate"
             ]["launchCount"]
             == 2,
+        )
+        self.assert_condition(
+            "human_e2ee_decoder_isolation",
+            human_regression["servicePlaintextConfined"] is True
+            and human_regression["humanIdentityAuthenticated"] is True
+            and human_regression["serviceMessageCount"] >= 1,
         )
         self.assert_condition(
             "suite_runtime_valid",

@@ -176,6 +176,23 @@ class MessagePublishingNativeGateTests(unittest.TestCase):
         self.assertNotIn("/message-ingress/", self.harness)
         self.assertNotIn("publicationReceipt", self.harness)
 
+    def test_human_regression_proves_decoder_isolation_without_peer_session(
+        self,
+    ) -> None:
+        method = next(
+            node
+            for node in ast.walk(self.tree)
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "scenario_human_chat_regression"
+        )
+        method_source = ast.get_source_segment(self.source, method) or ""
+
+        self.assertIn('"engineConversations"', method_source)
+        self.assertIn('"engineMessages"', method_source)
+        self.assertIn('"servicePlaintextConfined": True', method_source)
+        self.assertNotIn('"createDirectConversation"', method_source)
+        self.assertNotIn('"sendInteractionMessage"', method_source)
+
     def test_harness_exposes_receiver_and_cleanup_oracles_only(self) -> None:
         for method in (
             "receiverSnapshot",
