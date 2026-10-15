@@ -3212,15 +3212,15 @@ type canonicalIndexExpectation struct {
 }
 
 type postgresCanonicalIndexRow struct {
-	IndexName  string  `gorm:"column:index_name"`
-	ColumnName *string `gorm:"column:column_name"`
-	Ordinal    int     `gorm:"column:ordinal"`
-	IsUnique   bool    `gorm:"column:is_unique"`
-	IsPrimary  bool    `gorm:"column:is_primary"`
-	IsPartial  bool    `gorm:"column:is_partial"`
-	Predicate  *string `gorm:"column:predicate"`
-	IsValid    bool    `gorm:"column:is_valid"`
-	IsReady    bool    `gorm:"column:is_ready"`
+	IndexName        string  `gorm:"column:index_name"`
+	ColumnName       *string `gorm:"column:column_name"`
+	Ordinal          int     `gorm:"column:ordinal"`
+	IsUnique         bool    `gorm:"column:is_unique"`
+	IsPrimary        bool    `gorm:"column:is_primary"`
+	IsPartial        bool    `gorm:"column:is_partial"`
+	PartialPredicate string  `gorm:"column:partial_predicate"`
+	IsValid          bool    `gorm:"column:is_valid"`
+	IsReady          bool    `gorm:"column:is_ready"`
 }
 
 func validateCanonicalPrivateContentSchema(database *gorm.DB) error {
@@ -3624,10 +3624,13 @@ SELECT
   index_definition.indisunique AS is_unique,
   index_definition.indisprimary AS is_primary,
   index_definition.indpred IS NOT NULL AS is_partial,
-  pg_catalog.pg_get_expr(
-    index_definition.indpred,
-    index_definition.indrelid
-  ) AS predicate,
+  COALESCE(
+    pg_catalog.pg_get_expr(
+      index_definition.indpred,
+      index_definition.indrelid
+    ),
+    ''
+  ) AS partial_predicate,
   index_definition.indisvalid AS is_valid,
   index_definition.indisready AS is_ready
 FROM pg_catalog.pg_index AS index_definition
@@ -3674,7 +3677,7 @@ ORDER BY index_relation.relname, index_column.ordinality
 				row.IndexName,
 			)
 		}
-		if row.IsPartial != (row.Predicate != nil) {
+		if row.IsPartial != (row.PartialPredicate != "") {
 			return nil, resetError(
 				ResetCodeSchemaTargetUnreviewed,
 				"index %s.%s has inconsistent partial-index metadata",
@@ -3693,8 +3696,8 @@ ORDER BY index_relation.relname, index_column.ordinality
 		}
 		index.Unique = row.IsUnique
 		index.Columns = append(index.Columns, strings.ToLower(*row.ColumnName))
-		if row.Predicate != nil {
-			predicate := normalizePostgresIndexPredicate(*row.Predicate)
+		if row.PartialPredicate != "" {
+			predicate := normalizePostgresIndexPredicate(row.PartialPredicate)
 			if found && index.PartialPredicate != predicate {
 				return nil, resetError(
 					ResetCodeSchemaTargetUnreviewed,
