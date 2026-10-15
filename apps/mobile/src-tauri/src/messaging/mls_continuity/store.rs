@@ -8,8 +8,8 @@ use rusqlite::{params, Connection, OptionalExtension};
 use sha2::{Digest, Sha256};
 
 use super::{
-    MlsContinuityBackup, MlsContinuityBinding, MlsContinuityKeyPackage, MlsContinuityProviderPool,
-    MlsContinuityScope, MlsContinuityState,
+    MlsContinuityBackup, MlsContinuityBinding, MlsContinuityKeyPackage,
+    MlsContinuityPendingGenesis, MlsContinuityProviderPool, MlsContinuityScope, MlsContinuityState,
 };
 use crate::messaging::adapter::MobileMessagingStore;
 
@@ -35,7 +35,7 @@ impl MobileMessagingStore {
                 .lock()
                 .map_err(|_| "mobile messaging store lock poisoned".to_string())?;
             require_empty_or_initialized_mls_continuity(&connection)?;
-            if mls_continuity_table_counts(&connection)?.0 > 0 {
+            if mls_continuity_table_counts(&connection)?.identity > 0 {
                 return Ok(());
             }
         }
@@ -46,7 +46,7 @@ impl MobileMessagingStore {
 
         self.with_transaction(|transaction| {
             require_empty_or_initialized_mls_continuity(transaction)?;
-            if mls_continuity_table_counts(transaction)?.0 > 0 {
+            if mls_continuity_table_counts(transaction)?.identity > 0 {
                 return Ok(());
             }
             transaction
@@ -86,18 +86,44 @@ impl MobileMessagingStore {
                     )
                     .map_err(|error| error.to_string())?;
             }
+            for pending in &state.pending_genesis_transitions {
+                transaction
+                    .execute(
+                        "INSERT INTO messaging_mls_pending_transitions(
+                            conversation_id, transition_id, command_id, transition_state
+                         ) VALUES (?1, ?2, ?3, ?4)",
+                        params![
+                            pending.conversation_id,
+                            pending.transition_id,
+                            pending.command_id,
+                            pending.state
+                        ],
+                    )
+                    .map_err(|error| error.to_string())?;
+                transaction
+                    .execute(
+                        "INSERT INTO messaging_mls_continuity_restored_transitions(
+                            conversation_id, transition_id, command_id
+                         ) VALUES (?1, ?2, ?3)",
+                        params![
+                            pending.conversation_id,
+                            pending.transition_id,
+                            pending.command_id
+                        ],
+                    )
+                    .map_err(|error| error.to_string())?;
+            }
             Ok(())
         })
     }
 
     pub(crate) fn persist_mls_continuity_backup(&self) -> Result<(), String> {
-        let Some(binding) = self.mls_continuity.as_ref() else {
-            return Ok(());
-        };
-        let Some(state) = self.mls_continuity_state(binding)? else {
-            return Ok(());
-        };
-        binding.backup.store(&state)
+        if let Some(binding) = self.mls_continuity.as_ref() {
+            if let Some(state) = self.mls_continuity_state(binding)? {
+                binding.backup.store(&state)?;
+            }
+        }
+        self.activate_continuity_backed_commands()
     }
 
     fn mls_continuity_state(
@@ -124,8 +150,12 @@ impl MobileMessagingStore {
             .optional()
             .map_err(|error| error.to_string())?;
         let Some((ptid, device_id, actor_identity_state)) = actor_identity else {
-            let (_, provider_count, package_count) = mls_continuity_table_counts(&connection)?;
-            if provider_count != 0 || package_count != 0 {
+            let counts = mls_continuity_table_counts(&connection)?;
+            if counts.provider != 0
+                || counts.packages != 0
+                || counts.pending != 0
+                || counts.restored != 0
+            {
                 return Err("mobile messaging MLS continuity is missing actor identity".to_string());
             }
             return Ok(None);
@@ -167,41 +197,124 @@ impl MobileMessagingStore {
             .collect::<Result<Vec<_>, _>>()
             .map_err(|error| error.to_string())?;
         drop(statement);
+        let mut statement = connection
+            .prepare(
+                "SELECT conversation_id, transition_id, command_id, transition_state
+                 FROM messaging_mls_pending_transitions
+                 ORDER BY conversation_id",
+            )
+            .map_err(|error| error.to_string())?;
+        let pending_transitions = statement
+            .query_map([], |row| {
+                Ok(MlsContinuityPendingGenesis {
+                    conversation_id: row.get(0)?,
+                    transition_id: row.get(1)?,
+                    command_id: row.get(2)?,
+                    state: row.get(3)?,
+                })
+            })
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        drop(statement);
         drop(connection);
+        let mut pending_genesis_transitions = Vec::new();
+        for pending in pending_transitions {
+            if pending_transition_is_genesis(
+                &pending.conversation_id,
+                &pending.transition_id,
+                &pending.state,
+            )? {
+                pending_genesis_transitions.push(pending);
+            }
+        }
 
         let state = MlsContinuityState {
             scope: binding.scope.clone(),
             actor_identity_state,
             provider_pool,
             key_packages,
+            pending_genesis_transitions,
         };
         validate_mls_continuity_state(&state, &binding.scope)?;
         Ok(Some(state))
     }
+
+    fn activate_continuity_backed_commands(&self) -> Result<(), String> {
+        self.with_transaction(|transaction| {
+            let orphan_count = transaction
+                .query_row(
+                    "SELECT COUNT(*)
+                     FROM messaging_command_outbox outbox
+                     WHERE outbox.state = 'continuity_pending'
+                       AND NOT EXISTS (
+                         SELECT 1 FROM messaging_mls_pending_transitions pending
+                         WHERE pending.command_id = outbox.command_id
+                           AND pending.conversation_id = outbox.conversation_id
+                       )",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .map_err(|error| error.to_string())?;
+            if orphan_count != 0 {
+                return Err(
+                    "mobile messaging MLS continuity command binding is incomplete".to_string(),
+                );
+            }
+            transaction
+                .execute(
+                    "UPDATE messaging_command_outbox
+                     SET state = 'pending', last_error_code = ''
+                     WHERE state = 'continuity_pending'",
+                    [],
+                )
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        })
+    }
 }
 
 fn require_empty_or_initialized_mls_continuity(connection: &Connection) -> Result<(), String> {
-    let (identity_count, provider_count, package_count) = mls_continuity_table_counts(connection)?;
-    if identity_count == 0 && (provider_count > 0 || package_count > 0) {
+    let counts = mls_continuity_table_counts(connection)?;
+    if counts.identity == 0
+        && (counts.provider > 0 || counts.packages > 0 || counts.pending > 0 || counts.restored > 0)
+    {
         return Err("mobile messaging MLS continuity tables are partially initialized".to_string());
+    }
+    if counts.restored > counts.pending {
+        return Err("mobile messaging MLS continuity restore markers are invalid".to_string());
     }
     Ok(())
 }
 
-fn mls_continuity_table_counts(connection: &Connection) -> Result<(i64, i64, i64), String> {
+struct MlsContinuityTableCounts {
+    identity: i64,
+    provider: i64,
+    packages: i64,
+    pending: i64,
+    restored: i64,
+}
+
+fn mls_continuity_table_counts(
+    connection: &Connection,
+) -> Result<MlsContinuityTableCounts, String> {
     connection
         .query_row(
             "SELECT
                (SELECT COUNT(*) FROM messaging_mls_actor_identity),
                (SELECT COUNT(*) FROM messaging_mls_join_provider_pool),
-               (SELECT COUNT(*) FROM messaging_mls_key_packages)",
+               (SELECT COUNT(*) FROM messaging_mls_key_packages),
+               (SELECT COUNT(*) FROM messaging_mls_pending_transitions),
+               (SELECT COUNT(*) FROM messaging_mls_continuity_restored_transitions)",
             [],
             |row| {
-                Ok((
-                    row.get::<_, i64>(0)?,
-                    row.get::<_, i64>(1)?,
-                    row.get::<_, i64>(2)?,
-                ))
+                Ok(MlsContinuityTableCounts {
+                    identity: row.get(0)?,
+                    provider: row.get(1)?,
+                    packages: row.get(2)?,
+                    pending: row.get(3)?,
+                    restored: row.get(4)?,
+                })
             },
         )
         .map_err(|error| error.to_string())
@@ -254,7 +367,42 @@ fn validate_mls_continuity_state(
             return Err("mobile messaging MLS continuity KeyPackage is invalid".to_string());
         }
     }
+    let mut conversation_ids = HashSet::with_capacity(state.pending_genesis_transitions.len());
+    let mut transition_ids = HashSet::with_capacity(state.pending_genesis_transitions.len());
+    let mut command_ids = HashSet::with_capacity(state.pending_genesis_transitions.len());
+    for pending in &state.pending_genesis_transitions {
+        if pending.command_id.trim().is_empty()
+            || !conversation_ids.insert(pending.conversation_id.as_str())
+            || !transition_ids.insert(pending.transition_id.as_str())
+            || !command_ids.insert(pending.command_id.as_str())
+            || !pending_transition_is_genesis(
+                &pending.conversation_id,
+                &pending.transition_id,
+                &pending.state,
+            )?
+        {
+            return Err("mobile messaging MLS continuity pending genesis is invalid".to_string());
+        }
+    }
     Ok(())
+}
+
+pub(super) fn pending_transition_is_genesis(
+    conversation_id: &str,
+    transition_id: &str,
+    state: &[u8],
+) -> Result<bool, String> {
+    if conversation_id.trim().is_empty() || transition_id.trim().is_empty() || state.is_empty() {
+        return Err("mobile messaging MLS pending transition is invalid".to_string());
+    }
+    let manager = MlsGroupManager::new();
+    let prepared = manager.import_pending_transition(conversation_id, state)?;
+    if prepared.transition_id != transition_id
+        || prepared.to_mls_epoch != prepared.from_mls_epoch.saturating_add(1)
+    {
+        return Err("mobile messaging MLS pending transition binding mismatch".to_string());
+    }
+    Ok(prepared.from_mls_epoch == 0 && prepared.to_mls_epoch == 1)
 }
 
 #[cfg(test)]
@@ -265,7 +413,10 @@ mod tests {
         generate_fresh_device_identity_for_device, DeviceEnrollmentRepository,
     };
     use messaging_core::mls::group::MlsMemberKeyPackage;
-    use messaging_core::store::{MlsKeyPackageRepository, MlsStartupRepository};
+    use messaging_core::store::{
+        MlsKeyPackageRepository, MlsStartupRepository, MlsTransitionRepository,
+        MlsTransitionSendCommit,
+    };
     use ulid::Ulid;
 
     use super::*;
@@ -426,6 +577,142 @@ mod tests {
             b"continuity"
         );
 
+        drop(second);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn mls_continuity_restores_pending_genesis_after_database_loss() {
+        let root = std::env::temp_dir().join(format!(
+            "peers-mobile-mls-genesis-continuity-{}-{}",
+            std::process::id(),
+            Ulid::new()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let first_path = root.join("first.sqlite3");
+        let second_path = root.join("second.sqlite3");
+        let key = [23u8; 32];
+        let scope = MlsContinuityScope::new("station-1", "ptid:alice", "alice-device").unwrap();
+        let backup = Arc::new(MemoryMlsContinuityBackup::default());
+        let first = MobileMessagingStore::open_with_mls_continuity(
+            &first_path,
+            &key,
+            scope.clone(),
+            backup.clone(),
+        )
+        .unwrap();
+        let alice_identity = Arc::new(ActorDeviceIdentity::new());
+        alice_identity.init("ptid:alice", "alice-device").unwrap();
+        first
+            .save_mls_actor_identity(
+                "ptid:alice",
+                "alice-device",
+                &alice_identity.export("ptid:alice", "alice-device").unwrap(),
+            )
+            .unwrap();
+        let alice = MlsGroupManager::with_actor_identity(alice_identity);
+        let bob = MlsGroupManager::new();
+        bob.actor_identity().init("ptid:bob", "bob-device").unwrap();
+        let created = alice
+            .create_group(
+                "group-pending-genesis",
+                &[MlsMemberKeyPackage {
+                    ptid: "ptid:bob".to_string(),
+                    device_id: "bob-device".to_string(),
+                    key_package: bob.generate_key_package().unwrap(),
+                }],
+            )
+            .unwrap();
+        let pending_state = alice
+            .export_pending_transition("group-pending-genesis")
+            .unwrap();
+        MlsTransitionRepository::persist_mls_transition(
+            &first,
+            &MlsTransitionSendCommit {
+                logical_intent_id: None,
+                command_id: "command-pending-genesis",
+                conversation_id: "group-pending-genesis",
+                transition_id: &created.transition_id,
+                delivery_plan_sha256: &[24; 32],
+                command_bytes: b"pending-genesis-command",
+                pending_transition_state: &pending_state,
+                created_at_unix_ms: 25,
+                from_mls_epoch: created.from_mls_epoch,
+            },
+        )
+        .unwrap();
+        MlsTransitionRepository::persist_mls_continuity(&first).unwrap();
+        assert_eq!(
+            first
+                .connection
+                .lock()
+                .unwrap()
+                .query_row(
+                    "SELECT state FROM messaging_command_outbox
+                     WHERE command_id = 'command-pending-genesis'",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )
+                .unwrap(),
+            "pending"
+        );
+        assert_eq!(
+            backup
+                .state
+                .lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .pending_genesis_transitions
+                .len(),
+            1
+        );
+        drop(first);
+
+        let second =
+            MobileMessagingStore::open_with_mls_continuity(&second_path, &key, scope, backup)
+                .unwrap();
+        second.restore_mls_continuity_if_empty().unwrap();
+        let restored = MlsStartupRepository::list_pending_mls_transitions(&second).unwrap();
+        assert_eq!(
+            restored,
+            vec![("group-pending-genesis".to_string(), pending_state)]
+        );
+        let restored_manager = MlsGroupManager::new();
+        let prepared = restored_manager
+            .import_pending_transition("group-pending-genesis", &restored[0].1)
+            .unwrap();
+        assert_eq!(prepared.transition_id, created.transition_id);
+        let connection = second.connection.lock().unwrap();
+        for table in [
+            "messaging_local_commands",
+            "messaging_command_outbox",
+            "messaging_command_attempts",
+        ] {
+            assert_eq!(
+                connection
+                    .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                        row.get::<_, i64>(0)
+                    })
+                    .unwrap(),
+                0
+            );
+        }
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*)
+                     FROM messaging_mls_continuity_restored_transitions
+                     WHERE conversation_id = 'group-pending-genesis'
+                       AND transition_id = ?1
+                       AND command_id = 'command-pending-genesis'",
+                    params![created.transition_id],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            1
+        );
+        drop(connection);
         drop(second);
         let _ = std::fs::remove_dir_all(root);
     }

@@ -146,12 +146,17 @@ pub struct MlsTransitionSendCommit<'a> {
     pub command_bytes: &'a [u8],
     pub pending_transition_state: &'a [u8],
     pub created_at_unix_ms: i64,
+    pub from_mls_epoch: u64,
 }
 
 pub trait MlsTransitionRepository: Send + Sync {
     fn authority_head(&self, conversation_id: &str) -> Result<(i64, Vec<u8>), String>;
 
     fn persist_mls_transition(&self, commit: &MlsTransitionSendCommit<'_>) -> Result<(), String>;
+
+    fn persist_mls_continuity(&self) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 pub trait MlsKeyPackageRepository: Send + Sync {

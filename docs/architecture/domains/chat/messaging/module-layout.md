@@ -1,7 +1,7 @@
 # Messaging Platform — 模块目录结构
 
 > **Status**: active
-> **Version**: v1.2
+> **Version**: v1.3
 > **Created**: 2026-08-08 | **Updated**: 2026-10-15
 > **Owner**: Messaging Platform Team
 >
@@ -148,8 +148,10 @@ Recovery 的归档导出与 authority replay 校验分别收口于
 Mobile `mls_continuity/` 是 app-data 丢失后的单一 MLS bootstrap continuity owner：
 `mod.rs` 定义 scoped state/backup port，`backup.rs` 负责 native secure storage
 编码与完整性校验，`store.rs` 负责 SQLCipher 空库恢复、publication history 与
-provider pool 校验。`lifecycle.rs` 只组装平台备份实现，`adapter.rs` 只暴露通用
-repository hooks，不复制 continuity transaction。
+provider pool 校验，以及 pending Genesis 的备份、恢复和 provenance。
+`lifecycle.rs` 只组装平台备份实现；`adapter.rs` 负责在 continuity durable 前
+fence Genesis outbox，并只允许完整 command bookkeeping 或经验证的 continuity
+零-bookkeeping sender commit，不复制 OpenMLS 状态算法。
 
 ## 2. Registration And Source Rules
 

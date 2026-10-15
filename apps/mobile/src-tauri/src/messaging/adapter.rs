@@ -7025,6 +7025,22 @@ impl MessagingRepository for MobileMessagingStore {
     }
 
     fn next_command(&self, now_unix_ms: i64) -> Result<Option<CommandOutboxEntry>, String> {
+        let continuity_pending = self
+            .connection
+            .lock()
+            .map_err(|_| "mobile messaging store lock poisoned".to_string())?
+            .query_row(
+                "SELECT EXISTS(
+                    SELECT 1 FROM messaging_command_outbox
+                    WHERE state = 'continuity_pending'
+                 )",
+                [],
+                |row| row.get::<_, bool>(0),
+            )
+            .map_err(|error| error.to_string())?;
+        if continuity_pending {
+            self.persist_mls_continuity_backup()?;
+        }
         self.connection
             .lock()
             .map_err(|_| "mobile messaging store lock poisoned".to_string())?
@@ -8323,12 +8339,17 @@ impl MlsTransitionRepository for MobileMessagingStore {
                     );
                 }
             }
-            persist_local_command(
+            persist_local_command_with_outbox_state(
                 transaction,
                 commit.command_id,
                 commit.conversation_id,
                 commit.command_bytes,
                 commit.created_at_unix_ms,
+                if commit.from_mls_epoch == 0 {
+                    "continuity_pending"
+                } else {
+                    "pending"
+                },
             )?;
             transaction
                 .execute(
@@ -8360,6 +8381,10 @@ impl MlsTransitionRepository for MobileMessagingStore {
                 .map_err(|error| error.to_string())?;
             Ok(())
         })
+    }
+
+    fn persist_mls_continuity(&self) -> Result<(), String> {
+        self.persist_mls_continuity_backup()
     }
 }
 
@@ -8879,6 +8904,50 @@ impl MlsInboundRepository for MobileMessagingStore {
             {
                 return Err("mobile messaging MLS pending transition binding mismatch".to_string());
             }
+            let bookkeeping = transaction
+                .query_row(
+                    "SELECT
+                       (SELECT COUNT(*) FROM messaging_local_commands
+                        WHERE command_id = ?1),
+                       (SELECT COUNT(*) FROM messaging_command_outbox
+                        WHERE command_id = ?1),
+                       (SELECT COUNT(*) FROM messaging_command_attempts
+                        WHERE command_id = ?1),
+                       (SELECT COUNT(*)
+                        FROM messaging_mls_continuity_restored_transitions
+                        WHERE conversation_id = ?2),
+                       EXISTS(
+                         SELECT 1
+                         FROM messaging_mls_continuity_restored_transitions
+                         WHERE conversation_id = ?2
+                           AND transition_id = ?3
+                           AND command_id = ?1
+                       )",
+                    params![
+                        commit.command_id,
+                        commit.conversation_id,
+                        commit.transition_id
+                    ],
+                    |row| {
+                        Ok((
+                            row.get::<_, i64>(0)?,
+                            row.get::<_, i64>(1)?,
+                            row.get::<_, i64>(2)?,
+                            row.get::<_, i64>(3)?,
+                            row.get::<_, bool>(4)?,
+                        ))
+                    },
+                )
+                .map_err(|error| error.to_string())?;
+            let restored_without_bookkeeping = match bookkeeping {
+                (1, 1, 1, 0, false) => false,
+                (0, 0, 0, 1, true) => true,
+                _ => {
+                    return Err(
+                        "mobile messaging MLS sender command bookkeeping is partial".to_string()
+                    )
+                }
+            };
             persist_mls_session(
                 transaction,
                 commit.conversation_id,
@@ -8888,21 +8957,25 @@ impl MlsInboundRepository for MobileMessagingStore {
                 commit.consumed_at_unix_ms,
             )?;
             persist_mls_conversation(transaction, projection, commit.consumed_at_unix_ms)?;
-            for table in [
-                "messaging_local_commands",
-                "messaging_command_outbox",
-                "messaging_command_attempts",
-            ] {
-                let changed = transaction
-                    .execute(
-                        &format!("UPDATE {table} SET state = 'committed' WHERE command_id = ?1"),
-                        params![commit.command_id],
-                    )
-                    .map_err(|error| error.to_string())?;
-                if changed != 1 {
-                    return Err(
-                        "mobile messaging MLS sender command transition mismatch".to_string()
-                    );
+            if !restored_without_bookkeeping {
+                for table in [
+                    "messaging_local_commands",
+                    "messaging_command_outbox",
+                    "messaging_command_attempts",
+                ] {
+                    let changed = transaction
+                        .execute(
+                            &format!(
+                                "UPDATE {table} SET state = 'committed' WHERE command_id = ?1"
+                            ),
+                            params![commit.command_id],
+                        )
+                        .map_err(|error| error.to_string())?;
+                    if changed != 1 {
+                        return Err(
+                            "mobile messaging MLS sender command transition mismatch".to_string()
+                        );
+                    }
                 }
             }
             transaction
@@ -8912,6 +8985,20 @@ impl MlsInboundRepository for MobileMessagingStore {
                     params![commit.command_id],
                 )
                 .map_err(|error| error.to_string())?;
+            let restored_deleted = transaction
+                .execute(
+                    "DELETE FROM messaging_mls_continuity_restored_transitions
+                     WHERE conversation_id = ?1 AND transition_id = ?2 AND command_id = ?3",
+                    params![
+                        commit.conversation_id,
+                        commit.transition_id,
+                        commit.command_id
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+            if restored_deleted != i64::from(restored_without_bookkeeping) as usize {
+                return Err("mobile messaging MLS continuity restore marker mismatch".to_string());
+            }
             let deleted = transaction
                 .execute(
                     "DELETE FROM messaging_mls_pending_transitions
@@ -9049,6 +9136,27 @@ fn persist_local_command(
     command_bytes: &[u8],
     created_at_unix_ms: i64,
 ) -> Result<(), String> {
+    persist_local_command_with_outbox_state(
+        transaction,
+        command_id,
+        conversation_id,
+        command_bytes,
+        created_at_unix_ms,
+        "pending",
+    )
+}
+
+fn persist_local_command_with_outbox_state(
+    transaction: &Transaction<'_>,
+    command_id: &str,
+    conversation_id: &str,
+    command_bytes: &[u8],
+    created_at_unix_ms: i64,
+    outbox_state: &str,
+) -> Result<(), String> {
+    if !matches!(outbox_state, "pending" | "continuity_pending") {
+        return Err("mobile messaging command outbox state is invalid".to_string());
+    }
     transaction
         .execute(
             "INSERT INTO messaging_local_commands(
@@ -9067,11 +9175,12 @@ fn persist_local_command(
             "INSERT INTO messaging_command_outbox(
                 command_id, conversation_id, command_bytes, state, attempt_count,
                 next_attempt_at_unix_ms, last_error_code, created_at_unix_ms
-             ) VALUES (?1, ?2, ?3, 'pending', 0, ?4, '', ?4)",
+             ) VALUES (?1, ?2, ?3, ?4, 0, ?5, '', ?5)",
             params![
                 command_id,
                 conversation_id,
                 command_bytes,
+                outbox_state,
                 created_at_unix_ms
             ],
         )
@@ -14379,6 +14488,7 @@ mod tests {
                 command_bytes: b"transition-command",
                 pending_transition_state: b"pending-transition",
                 created_at_unix_ms: 31,
+                from_mls_epoch: 1,
             },
         )
         .unwrap();
@@ -14759,6 +14869,7 @@ mod tests {
                 command_bytes: b"transition-command",
                 pending_transition_state: b"pending-transition",
                 created_at_unix_ms: 51,
+                from_mls_epoch: 1,
             },
         )
         .unwrap();
@@ -14862,6 +14973,7 @@ mod tests {
                 command_bytes: b"genesis-command-bytes",
                 pending_transition_state: b"pending-genesis-state",
                 created_at_unix_ms: 100,
+                from_mls_epoch: 0,
             },
         )
         .unwrap();
@@ -14962,6 +15074,243 @@ mod tests {
                 ("ptid:alice".to_string(), MemberRole::Owner as i32),
                 ("ptid:bob".to_string(), MemberRole::Member as i32),
             ]
+        );
+    }
+
+    #[test]
+    fn mls_sender_genesis_accepts_only_validated_continuity_restore_without_bookkeeping() {
+        let projection = MlsConversationProjection {
+            conversation_id: "group-restored-genesis".to_string(),
+            authority_station_id: "station-authority".to_string(),
+            federation_id: "federation-1".to_string(),
+            kind: ConversationKind::Group as i32,
+            name: "Restored genesis".to_string(),
+            description: String::new(),
+            avatar_object_id: String::new(),
+            owner_ptid: "ptid:alice".to_string(),
+            members: vec![
+                authority_member("ptid:alice", MemberRole::Owner as i32),
+                authority_member("ptid:bob", MemberRole::Member as i32),
+            ],
+            membership_epoch: 1,
+            mls_epoch: 1,
+            active: true,
+            updated_at_unix_ms: 201,
+        };
+        let store = store();
+        {
+            let connection = store.connection.lock().unwrap();
+            connection
+                .execute(
+                    "INSERT INTO messaging_mls_pending_transitions(
+                        conversation_id, transition_id, command_id, transition_state
+                     ) VALUES (?1, ?2, ?3, ?4)",
+                    params![
+                        "group-restored-genesis",
+                        "restored-transition",
+                        "restored-command",
+                        b"restored-state"
+                    ],
+                )
+                .unwrap();
+            connection
+                .execute(
+                    "INSERT INTO messaging_mls_continuity_restored_transitions(
+                        conversation_id, transition_id, command_id
+                     ) VALUES (?1, ?2, ?3)",
+                    params![
+                        "group-restored-genesis",
+                        "restored-transition",
+                        "restored-command"
+                    ],
+                )
+                .unwrap();
+        }
+        MlsInboundRepository::persist_claimed_item(
+            &store,
+            "restored-item",
+            "restored-event",
+            "group-restored-genesis",
+            1,
+            1,
+            &[71; 32],
+            b"restored-delivery",
+            201,
+        )
+        .unwrap();
+        assert_eq!(
+            MlsInboundRepository::commit_mls_sender_transition(
+                &store,
+                &MlsSenderTransitionReceiveCommit {
+                    item_id: "restored-item",
+                    event_id: "restored-event",
+                    conversation_id: "group-restored-genesis",
+                    command_id: "restored-command",
+                    transition_id: "restored-transition",
+                    event_sequence: 1,
+                    lane_sequence: 1,
+                    consumer_epoch: 1,
+                    payload_sha256: &[71; 32],
+                    event_hash: &[72; 32],
+                    previous_event_hash: &[],
+                    session_state: b"restored-committed-state",
+                    membership_epoch: 1,
+                    mls_epoch: 1,
+                    authority_projection: &projection,
+                    receipt_id: "restored-receipt",
+                    receipt_bytes: b"restored-receipt",
+                    consumed_at_unix_ms: 201,
+                },
+            )
+            .unwrap(),
+            ReceiveCommitResult::Committed
+        );
+        let connection = store.connection.lock().unwrap();
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM messaging_mls_pending_transitions",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*)
+                     FROM messaging_mls_continuity_restored_transitions",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn mls_sender_genesis_rejects_partial_continuity_bookkeeping_atomically() {
+        let store = store();
+        {
+            let connection = store.connection.lock().unwrap();
+            connection
+                .execute(
+                    "INSERT INTO messaging_local_commands(
+                        command_id, conversation_id, command_bytes, state, created_at_unix_ms
+                     ) VALUES (?1, ?2, ?3, 'prepared', ?4)",
+                    params![
+                        "partial-command",
+                        "group-partial-genesis",
+                        b"partial-command",
+                        301
+                    ],
+                )
+                .unwrap();
+            connection
+                .execute(
+                    "INSERT INTO messaging_mls_pending_transitions(
+                        conversation_id, transition_id, command_id, transition_state
+                     ) VALUES (?1, ?2, ?3, ?4)",
+                    params![
+                        "group-partial-genesis",
+                        "partial-transition",
+                        "partial-command",
+                        b"partial-state"
+                    ],
+                )
+                .unwrap();
+            connection
+                .execute(
+                    "INSERT INTO messaging_mls_continuity_restored_transitions(
+                        conversation_id, transition_id, command_id
+                     ) VALUES (?1, ?2, ?3)",
+                    params![
+                        "group-partial-genesis",
+                        "partial-transition",
+                        "partial-command"
+                    ],
+                )
+                .unwrap();
+        }
+        MlsInboundRepository::persist_claimed_item(
+            &store,
+            "partial-item",
+            "partial-event",
+            "group-partial-genesis",
+            1,
+            1,
+            &[81; 32],
+            b"partial-delivery",
+            301,
+        )
+        .unwrap();
+        let projection = MlsConversationProjection {
+            conversation_id: "group-partial-genesis".to_string(),
+            authority_station_id: "station-authority".to_string(),
+            federation_id: "federation-1".to_string(),
+            kind: ConversationKind::Group as i32,
+            name: "Partial genesis".to_string(),
+            description: String::new(),
+            avatar_object_id: String::new(),
+            owner_ptid: "ptid:alice".to_string(),
+            members: vec![
+                authority_member("ptid:alice", MemberRole::Owner as i32),
+                authority_member("ptid:bob", MemberRole::Member as i32),
+            ],
+            membership_epoch: 1,
+            mls_epoch: 1,
+            active: true,
+            updated_at_unix_ms: 301,
+        };
+        let error = MlsInboundRepository::commit_mls_sender_transition(
+            &store,
+            &MlsSenderTransitionReceiveCommit {
+                item_id: "partial-item",
+                event_id: "partial-event",
+                conversation_id: "group-partial-genesis",
+                command_id: "partial-command",
+                transition_id: "partial-transition",
+                event_sequence: 1,
+                lane_sequence: 1,
+                consumer_epoch: 1,
+                payload_sha256: &[81; 32],
+                event_hash: &[82; 32],
+                previous_event_hash: &[],
+                session_state: b"partial-committed-state",
+                membership_epoch: 1,
+                mls_epoch: 1,
+                authority_projection: &projection,
+                receipt_id: "partial-receipt",
+                receipt_bytes: b"partial-receipt",
+                consumed_at_unix_ms: 301,
+            },
+        )
+        .unwrap_err();
+        assert_eq!(
+            error,
+            "mobile messaging MLS sender command bookkeeping is partial"
+        );
+        let connection = store.connection.lock().unwrap();
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM messaging_consumption_markers",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM messaging_mls_pending_transitions",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            1
         );
     }
 
