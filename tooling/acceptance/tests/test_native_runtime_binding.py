@@ -22,6 +22,9 @@ from tooling.acceptance.drivers.native.base import (
     NativeDesktopAdapter,
     NativeInputMode,
     NativeKey,
+    NativeWindowBounds,
+    NativeWindowSnapshot,
+    NativeWindowStack,
     admit_local_native_input_mode,
     resolve_native_input_mode,
 )
@@ -1566,6 +1569,166 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             "acceptance_request_activation"
         )
         activate.assert_called_once_with(49712)
+
+    def test_macos_activation_clicks_verified_title_bar_for_external_frontmost(
+        self,
+    ) -> None:
+        with patch.dict(
+            "os.environ",
+            {"PT_ACCEPTANCE_NATIVE_DEV": "1"},
+        ):
+            binding = LocalMacOSRuntimeBinding()
+        target = Mock(spec=TauriSession)
+        target.process_id = 49712
+        target.invoke_app_result.return_value = {"ok": True}
+        target.execute_script.return_value = {
+            "innerHeight": 512,
+            "ratio": 2,
+        }
+        target.driver.get_window_rect.return_value = {
+            "x": 200,
+            "y": 80,
+            "width": 1200,
+            "height": 1080,
+        }
+        external_control = NativeControlSnapshot(
+            window_count=1,
+            actual_frontmost_pid=49629,
+        )
+        converged = NativeControlSnapshot(
+            window_count=1,
+            frontmost=True,
+            actual_frontmost_pid=49712,
+        )
+        owned_stack = NativeWindowStack(
+            windows=(
+                NativeWindowSnapshot(
+                    index=0,
+                    owner_pid=49712,
+                    owner_name="Peers Touch",
+                    window_name="Peers Touch",
+                    layer=0,
+                    alpha=1,
+                    bounds=NativeWindowBounds(
+                        left=100,
+                        top=40,
+                        width=600,
+                        height=540,
+                    ),
+                ),
+            ),
+        )
+
+        with patch.object(
+            binding.native_adapter,
+            "focused_control",
+            side_effect=(external_control, converged),
+        ), patch.object(
+            binding.native_adapter,
+            "window_stack_at_point",
+            return_value=owned_stack,
+        ) as window_stack, patch.object(
+            binding.native_adapter,
+            "activate_process",
+        ) as activate, patch.object(
+            binding.native_adapter,
+            "post_mouse",
+        ) as post_mouse, patch(
+            "tooling.acceptance.drivers.native.runtime.time.sleep",
+        ):
+            activated = binding.request_cooperative_activation(
+                target,
+                (target,),
+            )
+
+        self.assertTrue(activated)
+        target.invoke_app_result.assert_called_once_with(
+            "acceptance_request_activation"
+        )
+        activate.assert_called_once_with(49712)
+        window_stack.assert_called_once_with((400.0, 54.0))
+        post_mouse.assert_called_once_with(
+            (
+                MouseAction.MOVE,
+                MouseAction.LEFT_DOWN,
+                MouseAction.LEFT_UP,
+            ),
+            (400.0, 54.0),
+        )
+
+    def test_macos_activation_does_not_click_unowned_title_bar(self) -> None:
+        with patch.dict(
+            "os.environ",
+            {"PT_ACCEPTANCE_NATIVE_DEV": "1"},
+        ):
+            binding = LocalMacOSRuntimeBinding()
+        target = Mock(spec=TauriSession)
+        target.process_id = 49712
+        target.invoke_app_result.return_value = {"ok": True}
+        target.execute_script.return_value = {
+            "innerHeight": 512,
+            "ratio": 2,
+        }
+        target.driver.get_window_rect.return_value = {
+            "x": 200,
+            "y": 80,
+            "width": 1200,
+            "height": 1080,
+        }
+        external_control = NativeControlSnapshot(
+            window_count=1,
+            actual_frontmost_pid=49629,
+        )
+        unowned_stack = NativeWindowStack(
+            windows=(
+                NativeWindowSnapshot(
+                    index=0,
+                    owner_pid=49629,
+                    owner_name="External",
+                    window_name="External",
+                    layer=0,
+                    alpha=1,
+                    bounds=NativeWindowBounds(
+                        left=100,
+                        top=40,
+                        width=600,
+                        height=540,
+                    ),
+                ),
+            ),
+        )
+
+        with patch.object(
+            binding.native_adapter,
+            "focused_control",
+            return_value=external_control,
+        ), patch.object(
+            binding.native_adapter,
+            "window_stack_at_point",
+            return_value=unowned_stack,
+        ) as window_stack, patch.object(
+            binding.native_adapter,
+            "activate_process",
+        ), patch.object(
+            binding.native_adapter,
+            "post_mouse",
+        ) as post_mouse, patch(
+            "tooling.acceptance.drivers.native.runtime."
+            "_MACOS_COOPERATIVE_ACTIVATION_TIMEOUT_SECONDS",
+            0,
+        ), patch(
+            "tooling.acceptance.drivers.native.runtime.time.sleep",
+        ), self.assertRaisesRegex(
+            DriverError,
+            "no verified process-owned title-bar point",
+        ):
+            binding.request_cooperative_activation(
+                target,
+                (target,),
+            )
+
+        self.assertEqual(window_stack.call_count, 3)
+        post_mouse.assert_not_called()
 
     def test_macos_activation_replays_process_owned_handoff_until_converged(
         self,
