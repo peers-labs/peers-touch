@@ -818,6 +818,12 @@ class ProvisionerBlockingTests(unittest.TestCase):
             ),
             stderr="",
         )
+        source_mismatch = subprocess.CompletedProcess(
+            args=["make", "station"],
+            returncode=2,
+            stdout='{"code":"DEVCTL_REMOTE_SOURCE_MISMATCH"}',
+            stderr="",
+        )
         with patch(
             "tooling.acceptance.provisioners.home_station."
             "source_proto_digest",
@@ -832,7 +838,12 @@ class ProvisionerBlockingTests(unittest.TestCase):
             return_value=("foreign", "clean", "foreign-proto"),
         ), patch(
             "tooling.acceptance.provisioners.home_station.subprocess.run",
-            side_effect=(conflict, source_conflict, completed),
+            side_effect=(
+                conflict,
+                source_conflict,
+                source_mismatch,
+                completed,
+            ),
         ) as run, patch(
             "tooling.acceptance.provisioners.home_station.time.sleep",
         ) as sleep:
@@ -845,10 +856,10 @@ class ProvisionerBlockingTests(unittest.TestCase):
                 source_commit="abc1234",
             )
 
-        self.assertEqual(run.call_count, 3)
+        self.assertEqual(run.call_count, 4)
         self.assertEqual(
             [call.args for call in sleep.call_args_list],
-            [(5,), (5,)],
+            [(5,), (5,), (5,)],
         )
         self.assertEqual(run.call_args.args[0], ["make", "station"])
         self.assertEqual(
