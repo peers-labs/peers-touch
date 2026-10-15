@@ -104,9 +104,11 @@ fn acceptance_yield_activation(target_pid: i32) -> error::AppResult<serde_json::
 
 #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
 #[tauri::command]
-fn acceptance_request_activation() -> error::AppResult<serde_json::Value> {
+fn acceptance_request_activation(
+    window: tauri::WebviewWindow,
+) -> error::AppResult<serde_json::Value> {
     use objc2::MainThreadMarker;
-    use objc2_app_kit::NSApplication;
+    use objc2_app_kit::{NSApplication, NSWindow};
 
     let Some(main_thread) = MainThreadMarker::new() else {
         return error::AppResult::fail(
@@ -117,17 +119,18 @@ fn acceptance_request_activation() -> error::AppResult<serde_json::Value> {
     };
 
     let application = NSApplication::sharedApplication(main_thread);
-    let Some(window) = application
-        .keyWindow()
-        .or_else(|| application.mainWindow())
-    else {
-        return error::AppResult::fail(
-            error::ErrorCode::InternalError,
-            "acceptance activation target has no keyable window",
-            None,
-        );
+    let ns_window = match window.ns_window() {
+        Ok(ns_window) => ns_window,
+        Err(error) => {
+            return error::AppResult::fail(
+                error::ErrorCode::InternalError,
+                "acceptance activation target native window is unavailable",
+                Some(serde_json::json!({ "error": error.to_string() })),
+            );
+        }
     };
-    window.makeKeyAndOrderFront(None);
+    let ns_window = unsafe { &*(ns_window as *mut NSWindow) };
+    ns_window.makeKeyAndOrderFront(None);
     let api = if objc2::available!(macos = 14.0) {
         application.activate();
         "activate"
