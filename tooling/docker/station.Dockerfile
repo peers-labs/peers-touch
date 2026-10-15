@@ -1,15 +1,13 @@
 # Station Dockerfile — multi-stage build
 # Build: from project root, e.g. docker build -f tooling/docker/station.Dockerfile .
 
-ARG BUILDER_IMAGE=golang:1.24.6
-ARG BASE_IMAGE=ubuntu:22.04
-ARG GO_VERSION=1.24.6
+ARG BUILDER_IMAGE=ccr.ccs.tencentyun.com/library/ubuntu:22.04
+ARG BASE_IMAGE=ccr.ccs.tencentyun.com/library/ubuntu:22.04
 
 # ─── Stage 1: Builder ─────────────────────────────────────────────────────────
 FROM ${BUILDER_IMAGE} AS builder
 
-ARG GO_VERSION
-
+ARG GO_VERSION=1.24.6
 RUN if ! command -v go >/dev/null 2>&1; then \
       sed -i \
         -e 's|http://archive.ubuntu.com|http://mirrors.tuna.tsinghua.edu.cn|g' \
