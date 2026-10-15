@@ -120,6 +120,7 @@ class MobileSocialSearchProfileNativeGate(AcceptanceGate):
                 "readRouteQuery(SEARCH_ROUTE_KEY)",
                 "saveListAnchor(SEARCH_ROUTE_KEY, result.ptid)",
                 "data-focus-id=\"social-search-input\"",
+                "data-acceptance-id=\"social-search-federation\"",
                 "data-acceptance-id=\"social-search-submit\"",
                 "actorPtid: result.ptid",
                 "federationId",

@@ -205,6 +205,14 @@ class AndroidSocialGateTests(unittest.TestCase):
         self.assertIn('social-search-submit', source)
         self.assertIn('social-circle-member-search-submit', source)
         self.assertNotIn('ant-input-search-button', source)
+        self.assertLess(
+            source.index('social-search-federation'),
+            source.index('social-search-submit'),
+        )
+        self.assertLess(
+            source.index('social-circle-member-federation-option'),
+            source.index('social-circle-member-search-submit'),
+        )
 
     def test_android_social_consumes_generic_installation_evidence(self) -> None:
         source = inspect.getsource(AndroidSocialGate._start_physical_session)

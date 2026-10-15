@@ -377,6 +377,14 @@ class SimulatorSocialGateTests(unittest.TestCase):
         self.assertIn('social-search-submit', source)
         self.assertIn('social-circle-member-search-submit', source)
         self.assertNotIn('ant-input-search-button', source)
+        self.assertLess(
+            source.index('social-search-federation'),
+            source.index('social-search-submit'),
+        )
+        self.assertLess(
+            source.index('social-circle-member-federation-option'),
+            source.index('social-circle-member-search-submit'),
+        )
 
     def test_failed_ios_scenario_ends_before_suite_cleanup(self) -> None:
         gate = SimulatorSocialGate("ios-social-parity")

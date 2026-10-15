@@ -823,6 +823,11 @@ class AndroidSocialGate(AcceptanceGate):
             '[data-acceptance-id="social-search-page"]',
             "Android Social Search page",
         )
+        self._click_ui(
+            session,
+            '[data-acceptance-id="social-search-federation"]',
+            "Android Social Search Federation",
+        )
         self._set_ui_value(
             session,
             '[data-acceptance-id="social-search-input"] input',
@@ -932,6 +937,16 @@ class AndroidSocialGate(AcceptanceGate):
             sender_session,
             '[data-acceptance-id="social-circle-add-members"]',
             "Android Add Circle members",
+        )
+        self._click_ui(
+            sender_session,
+            '[data-acceptance-id="social-circle-member-federation"]',
+            "Android Circle member Federation selector",
+        )
+        self._click_ui(
+            sender_session,
+            '[data-acceptance-id="social-circle-member-federation-option"]',
+            "Android Circle member Federation option",
         )
         self._set_ui_value(
             sender_session,

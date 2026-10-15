@@ -902,6 +902,11 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             '[data-acceptance-id="social-search-page"]',
             "Social Search page",
         )
+        self._click_ui(
+            session,
+            '[data-acceptance-id="social-search-federation"]',
+            "Social Search Federation",
+        )
         self._set_ui_value(
             session,
             '[data-acceptance-id="social-search-input"] input',
@@ -1022,6 +1027,16 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             sender_session,
             '[data-acceptance-id="social-circle-member-picker"]',
             "Circle member picker",
+        )
+        self._click_ui(
+            sender_session,
+            '[data-acceptance-id="social-circle-member-federation"]',
+            "Circle member Federation selector",
+        )
+        self._click_ui(
+            sender_session,
+            '[data-acceptance-id="social-circle-member-federation-option"]',
+            "Circle member Federation option",
         )
         self._set_ui_value(
             sender_session,
