@@ -81,6 +81,7 @@ CLIENT_ASSIGNMENTS = {
     "sim-ios": ("station", "alice"),
     "sim-ios-peer": ("station", "bob"),
 }
+WRITE_ADMISSION_ERROR_KEY = "mobile.recovery.writeRevocation.body"
 SCENARIO_METADATA = {
     "ios-social-parity": {
         "phase": "MPS-09 iOS Social Parity",
@@ -1007,17 +1008,7 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             "MPS-09 iOS same-Station audience",
             "Circle description",
         )
-        self._click_ui(
-            sender_session,
-            '[data-acceptance-id="social-circle-create-submit"]',
-            "Create Circle submit",
-        )
-        circle_id = self._wait_ui_attribute_value(
-            sender_session,
-            '[data-acceptance-id="social-circle-detail"]',
-            "data-circle-id",
-            "Circle detail",
-        )
+        circle_id = self._submit_circle_create(sender_session)
         self._click_ui(
             sender_session,
             '[data-acceptance-id="social-circle-add-members"]',
@@ -1612,6 +1603,62 @@ return node?.getAttribute(arguments[1]) || null;
                 attribute,
             ),
             label,
+        ))
+
+    @staticmethod
+    def _submit_circle_create(session: Any) -> str:
+        submit_selector = '[data-acceptance-id="social-circle-create-submit"]'
+        SimulatorSocialGate._click_ui(
+            session,
+            submit_selector,
+            "Create Circle submit",
+        )
+
+        def read() -> str | None:
+            state = session.execute_script(
+                """
+const detail = document.querySelector(
+  '[data-acceptance-id="social-circle-detail"]'
+);
+const form = document.querySelector(
+  '[data-acceptance-id="social-circle-create-form"]'
+);
+return {
+  circleId: detail?.getAttribute('data-circle-id') || '',
+  errorKey: form?.getAttribute('data-error-key') || '',
+};
+"""
+            )
+            if not isinstance(state, Mapping):
+                return None
+            circle_id = state.get("circleId")
+            if isinstance(circle_id, str) and circle_id:
+                return circle_id
+            error_key = state.get("errorKey")
+            if not isinstance(error_key, str) or not error_key:
+                return None
+            if error_key != WRITE_ADMISSION_ERROR_KEY:
+                raise GateError(f"Circle create failed: {error_key}")
+            snapshot = session.call_action("recovery.snapshot")
+            if not isinstance(snapshot, Mapping):
+                return None
+            admission = snapshot.get("writeAdmission")
+            if not isinstance(admission, Mapping) or admission.get("open") is not True:
+                return None
+            session.execute_script(
+                """
+const button = document.querySelector(arguments[0]);
+if (!button || button.disabled) return false;
+button.click();
+return true;
+""",
+                submit_selector,
+            )
+            return None
+
+        return str(SimulatorSocialGate._wait_for_value(
+            read,
+            "Circle detail",
         ))
 
     @staticmethod
