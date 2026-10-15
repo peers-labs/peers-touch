@@ -809,6 +809,15 @@ class ProvisionerBlockingTests(unittest.TestCase):
             stdout='{"code":"STATION_CAPABILITY_CONFLICT"}',
             stderr="",
         )
+        source_conflict = subprocess.CompletedProcess(
+            args=["make", "station"],
+            returncode=2,
+            stdout=(
+                "remote source lease 'station-1' is unavailable: "
+                "SSH lease handshake timed out"
+            ),
+            stderr="",
+        )
         with patch(
             "tooling.acceptance.provisioners.home_station."
             "source_proto_digest",
@@ -823,7 +832,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
             return_value=("foreign", "clean", "foreign-proto"),
         ), patch(
             "tooling.acceptance.provisioners.home_station.subprocess.run",
-            side_effect=(conflict, completed),
+            side_effect=(conflict, source_conflict, completed),
         ) as run, patch(
             "tooling.acceptance.provisioners.home_station.time.sleep",
         ) as sleep:
@@ -836,8 +845,11 @@ class ProvisionerBlockingTests(unittest.TestCase):
                 source_commit="abc1234",
             )
 
-        self.assertEqual(run.call_count, 2)
-        sleep.assert_called_once_with(5)
+        self.assertEqual(run.call_count, 3)
+        self.assertEqual(
+            [call.args for call in sleep.call_args_list],
+            [(5,), (5,)],
+        )
         self.assertEqual(run.call_args.args[0], ["make", "station"])
         self.assertEqual(
             run.call_args.kwargs["env"]["PT_STATION_FORCE_DEPLOY"],

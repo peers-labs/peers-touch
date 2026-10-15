@@ -1811,7 +1811,16 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 or "unknown Station deployment failure"
             )
             if (
-                "STATION_CAPABILITY_CONFLICT" in detail
+                (
+                    "STATION_CAPABILITY_CONFLICT" in detail
+                    or (
+                        "remote source lease" in detail
+                        and (
+                            "unavailable" in detail
+                            or "handshake timed out" in detail
+                        )
+                    )
+                )
                 and time.monotonic() < deadline
             ):
                 time.sleep(5)
