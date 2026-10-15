@@ -16,6 +16,7 @@ from tooling.acceptance.gates.desktop.profile_notifications_e2e import (
     DesktopProfileNotificationsGate,
 )
 from tooling.acceptance.gates.desktop.profile_notifications_journey import (
+    _reject_pending_friend_request,
     native_click,
 )
 from tooling.acceptance.provisioners.desktop_profile_notifications_suite import (
@@ -104,6 +105,49 @@ class NativePointerDeliveryTest(unittest.TestCase):
             )
 
         self.assertEqual(click_once.call_count, 3)
+
+
+class NotificationFixtureRecoveryTest(unittest.TestCase):
+    def test_conflict_is_recovered_when_authority_is_terminal(self) -> None:
+        receiver = MagicMock()
+        receiver.invoke_app_result.return_value = {
+            "ok": False,
+            "error": {"code": "CONFLICT"},
+        }
+        with patch(
+            f"{JOURNEY_MODULE}.call_async_harness",
+            return_value={"requests": [{"id": "request-1", "status": 3}]},
+        ):
+            _reject_pending_friend_request(
+                receiver,
+                "ptid:sender",
+                {"home_station_peer_id": "station-1"},
+                "request-1",
+                "federation-1",
+                "recovery failed",
+            )
+
+    def test_conflict_fails_when_authority_remains_pending(self) -> None:
+        receiver = MagicMock()
+        receiver.invoke_app_result.return_value = {
+            "ok": False,
+            "error": {"code": "CONFLICT"},
+        }
+        with (
+            patch(
+                f"{JOURNEY_MODULE}.call_async_harness",
+                return_value={"requests": [{"id": "request-1", "status": 1}]},
+            ),
+            self.assertRaisesRegex(GateError, "recovery failed"),
+        ):
+            _reject_pending_friend_request(
+                receiver,
+                "ptid:sender",
+                {"home_station_peer_id": "station-1"},
+                "request-1",
+                "federation-1",
+                "recovery failed",
+            )
 
 
 class NativeSourceIdentityTest(unittest.TestCase):

@@ -438,6 +438,32 @@ def run_profile_journey(
     return result
 
 
+def _reject_pending_friend_request(
+    receiver: TauriSession,
+    sender_ptid: str,
+    sender_profile: dict[str, Any],
+    request_id: str,
+    federation_id: str,
+    failure_message: str,
+) -> None:
+    response = receiver.invoke_app_result("social_friend_request_reject", {"input": {
+        "request_id": request_id,
+        "sender_ptid": sender_ptid,
+        "sender_home_station_peer_id": sender_profile["home_station_peer_id"],
+        "federation_id": federation_id,
+    }})
+    if response.get("ok") is True:
+        return
+    refreshed = call_async_harness(receiver, "refreshOnboardingProjection", {
+        "peerPtid": sender_ptid,
+    }, namespace="chat")
+    if any(
+        request["id"] == request_id and request["status"] == 1
+        for request in refreshed["requests"]
+    ):
+        raise GateError(f"{failure_message}: {response.get('error')}")
+
+
 def run_notifications_journey(
     receiver: TauriSession,
     sender: TauriSession,
@@ -465,13 +491,14 @@ def run_notifications_journey(
             continue
         if not request["message"].startswith("desktop-notification-"):
             raise GateError("notification fixture has an unrelated pending request")
-        response = receiver.invoke_app_result("social_friend_request_reject", {"input": {
-            "request_id": request["id"], "sender_ptid": sender_ptid,
-            "sender_home_station_peer_id": sender_profile["home_station_peer_id"],
-            "federation_id": request["federationId"],
-        }})
-        if response.get("ok") is not True:
-            raise GateError("prior namespaced notification request recovery failed")
+        _reject_pending_friend_request(
+            receiver,
+            sender_ptid,
+            sender_profile,
+            request["id"],
+            request["federationId"],
+            "prior namespaced notification request recovery failed",
+        )
     baseline = read_payload(receiver, "notification_unread_counts")["total"]
     sender_baseline = read_payload(sender, "notification_unread_counts")["total"]
     original_policy = receiver_profile["contact_policy"]
@@ -638,13 +665,14 @@ def run_notifications_journey(
         result["assertions"]["C8"] = True
     finally:
         if pending_request and not accept_attempted:
-            response = receiver.invoke_app_result("social_friend_request_reject", {"input": {
-                "request_id": pending_request, "sender_ptid": sender_ptid,
-                "sender_home_station_peer_id": sender_profile["home_station_peer_id"],
-                "federation_id": federation_id,
-            }})
-            if response.get("ok") is not True:
-                raise GateError("namespaced pending request cleanup failed")
+            _reject_pending_friend_request(
+                receiver,
+                sender_ptid,
+                sender_profile,
+                pending_request,
+                federation_id,
+                "namespaced pending request cleanup failed",
+            )
         if accept_attempted:
             for client, peer, originally_following in (
                 (receiver, sender_ptid, initial_relationship["relationship"]["following"]),
