@@ -891,6 +891,58 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
             )
         )
 
+    def test_window_stack_ignores_cursor_composition_overlay(self) -> None:
+        process_id = 42
+        completed = Mock(
+            returncode=0,
+            stderr="",
+            stdout=json.dumps({
+                "windows": [
+                    {
+                        "index": 0,
+                        "ownerPid": 415,
+                        "ownerName": "Window Server",
+                        "windowName": "Cursor",
+                        "layer": 2147483630,
+                        "alpha": 1,
+                        "bounds": {
+                            "left": 23,
+                            "top": 746,
+                            "width": 28,
+                            "height": 40,
+                        },
+                    },
+                    {
+                        "index": 1,
+                        "ownerPid": process_id,
+                        "ownerName": "peers-touch-desktop",
+                        "windowName": "Peers",
+                        "layer": 1000,
+                        "alpha": 1,
+                        "bounds": {
+                            "left": 0,
+                            "top": 33,
+                            "width": 864,
+                            "height": 800,
+                        },
+                    },
+                ],
+            }),
+        )
+        adapter = MacOSNativeDesktopAdapter()
+
+        with patch(
+            "tooling.acceptance.drivers.native.macos.subprocess.run",
+            return_value=completed,
+        ):
+            stack = adapter.window_stack_at_point((28.5, 751))
+
+        self.assertTrue(stack.point_owned_by(process_id))
+        self.assertEqual(
+            [window.owner_pid for window in stack.windows],
+            [process_id],
+        )
+
     def test_media_permission_targets_positive_webkit_action_by_process(
         self,
     ) -> None:

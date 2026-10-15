@@ -79,6 +79,13 @@ def _pixel_buffer_has_visible_alpha(
     )
 
 
+def _is_noninteractive_window_server_overlay(
+    owner_name: str,
+    window_name: str,
+) -> bool:
+    return owner_name == "Window Server" and window_name == "Cursor"
+
+
 _ACCESSIBILITY_PROBE = r"""
 import ctypes
 import json
@@ -1558,14 +1565,21 @@ class MacOSNativeDesktopAdapter(NativeDesktopAdapter):
         for raw_window in value.get("windows") or []:
             if not isinstance(raw_window, dict):
                 continue
+            owner_name = str(raw_window.get("ownerName") or "")
+            window_name = str(raw_window.get("windowName") or "")
+            if _is_noninteractive_window_server_overlay(
+                owner_name,
+                window_name,
+            ):
+                continue
             raw_bounds = raw_window.get("bounds")
             bounds = raw_bounds if isinstance(raw_bounds, dict) else {}
             windows.append(
                 NativeWindowSnapshot(
                     index=int(raw_window.get("index") or 0),
                     owner_pid=int(raw_window.get("ownerPid") or 0),
-                    owner_name=str(raw_window.get("ownerName") or ""),
-                    window_name=str(raw_window.get("windowName") or ""),
+                    owner_name=owner_name,
+                    window_name=window_name,
                     layer=int(raw_window.get("layer") or 0),
                     alpha=float(raw_window.get("alpha") or 0),
                     bounds=NativeWindowBounds(
