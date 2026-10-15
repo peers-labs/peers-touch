@@ -450,6 +450,20 @@ def _persist_direct_station_attestation(
     )
 
 
+def _persist_station_origin_attestation(
+    station_attestation: ServiceAttestation,
+    station_url: str,
+) -> ServiceAttestation:
+    return persist_service_attestation(
+        dataclasses.replace(
+            station_attestation,
+            service_id="station-origin",
+            endpoint=station_url,
+            artifact_ref={},
+        )
+    )
+
+
 def _persist_station_route_attestation(
     *,
     environment_id: str,
@@ -1161,6 +1175,12 @@ server {
                     remote_source_identity_provider=resolve_remote_source_identity,
                 )
             )
+            station_origin_attestation = (
+                _persist_station_origin_attestation(
+                    station_attestation,
+                    station_url,
+                )
+            )
             relay_attestation = _persist_relay_attestation(
                 environment_id=self.environment_id,
                 relay_url=relay_url,
@@ -1283,6 +1303,7 @@ server {
                 state=ProvisioningState.PROVISIONED,
                 services={
                     "station": station_attestation,
+                    "station-origin": station_origin_attestation,
                     "relay": relay_attestation,
                     "station-via-relay": station_route_attestation,
                 },

@@ -193,6 +193,11 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
             ),
             patch(
                 "tooling.acceptance.provisioners.station_access_relay_role."
+                "_persist_station_origin_attestation",
+                return_value=_attestation("station-origin", "station"),
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
                 "_persist_relay_attestation",
                 return_value=_attestation("relay", "relay"),
             ),
@@ -207,7 +212,12 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
         self.assertEqual(manifest.state, ProvisioningState.FIXTURE_READY)
         self.assertEqual(
             set(manifest.services),
-            {"station", "relay", "station-via-relay"},
+            {
+                "station",
+                "station-origin",
+                "relay",
+                "station-via-relay",
+            },
         )
         self.assertEqual(manifest.clients, ())
         self.assertFalse(manifest.cleanup_registered)
@@ -283,13 +293,13 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
             ),
             patch(
                 "tooling.acceptance.provisioners.station_access_relay_role."
-                "produce_station_attestation",
+                "_persist_direct_station_attestation",
                 return_value=_attestation("station", "station"),
             ),
             patch(
                 "tooling.acceptance.provisioners.station_access_relay_role."
-                "_persist_direct_station_attestation",
-                return_value=_attestation("station", "station"),
+                "_persist_station_origin_attestation",
+                return_value=_attestation("station-origin", "station"),
             ),
             patch(
                 "tooling.acceptance.provisioners.station_access_relay_role."
@@ -420,13 +430,13 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
             ),
             patch(
                 "tooling.acceptance.provisioners.station_access_relay_role."
-                "produce_station_attestation",
+                "_persist_direct_station_attestation",
                 return_value=_attestation("station", "station"),
             ),
             patch(
                 "tooling.acceptance.provisioners.station_access_relay_role."
-                "_persist_direct_station_attestation",
-                return_value=_attestation("station", "station"),
+                "_persist_station_origin_attestation",
+                return_value=_attestation("station-origin", "station"),
             ),
             patch(
                 "tooling.acceptance.provisioners.station_access_relay_role."

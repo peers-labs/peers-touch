@@ -121,7 +121,10 @@ class NodeConnectivityNativeGate(
                 f"{runtime_binding.cell_id}"
             )
         services = _mapping(manifest.get("services"), "runtime services")
-        station = _mapping(services.get("station"), "direct Station service")
+        station = _mapping(
+            services.get("station-origin"),
+            "Station identity service",
+        )
         self.services = services
         super().__init__(
             manifest=manifest,

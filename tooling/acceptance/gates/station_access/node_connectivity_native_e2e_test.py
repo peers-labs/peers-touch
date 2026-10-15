@@ -144,6 +144,7 @@ class NodeConnectivityNativeGateTest(unittest.TestCase):
             "state": "FIXTURE_READY",
             "services": {
                 "station": station,
+                "station-origin": station,
                 "relay": relay,
                 "station-via-relay": via_relay,
             },
