@@ -31,8 +31,6 @@ const PROFILE_MAX_LIFETIME_MS: i64 = 60 * 60 * 1_000;
 const PROFILE_CLOCK_SKEW_MS: i64 = 30_000;
 const FEDERATION_KEY_ID_LENGTH: usize = 26;
 const ACTOR_PROFILE_TYPE_URL: &str = "type.googleapis.com/peers_touch.model.actor.v1.ActorProfile";
-const FEDERATION_RESOLVE_TYPE_URL: &str =
-    "type.googleapis.com/peers_touch.model.federation.v1.FederationResolveView";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TransportDisposition {
@@ -449,13 +447,12 @@ impl NativeSocialTransport {
             if context.status != "active" || context.federation_id.trim().is_empty() {
                 continue;
             }
-            match self.get_peers_proto::<federation::FederationResolveView>(
+            match self.get_proto::<federation::FederationResolveView>(
                 "/actor/federation/resolve",
                 Some(&[
                     ("federation_id", context.federation_id.clone()),
                     ("handle", handle.to_string()),
                 ]),
-                FEDERATION_RESOLVE_TYPE_URL,
             ) {
                 Ok(view) if view.federation_id == context.federation_id => return Ok(view),
                 Ok(_) => last_error = Some(local_error(20005)),
@@ -575,30 +572,6 @@ impl NativeSocialTransport {
             request.send().map_err(network_error)?,
             CommitSemantics::ReadOnly,
         )
-    }
-
-    fn get_peers_proto<Resp>(
-        &self,
-        path: &str,
-        query: Option<&[(&str, String)]>,
-        expected_type_url: &str,
-    ) -> Result<Resp, TransportError>
-    where
-        Resp: Message + Default,
-    {
-        let request = with_proto_content_negotiation(
-            self.client
-                .request(
-                    reqwest::Method::GET,
-                    endpoint_url(&self.session.scope.station_origin, path, query)?,
-                )
-                .header(
-                    AUTHORIZATION,
-                    format!("Bearer {}", self.session.access_token()),
-                )
-                .header("X-Device-ID", &self.session.scope.device_id),
-        );
-        decode_peers_proto_response(request.send().map_err(network_error)?, expected_type_url)
     }
 
     fn request(&self, method: reqwest::Method, path: &str) -> reqwest::blocking::RequestBuilder {
@@ -1279,24 +1252,12 @@ mod tests {
         );
     }
 
-    fn spawn_peers_proto_response<Payload: Message>(
-        payload: &Payload,
-        type_url: &str,
-    ) -> (String, thread::JoinHandle<String>) {
+    fn spawn_proto_body_response(body: Vec<u8>) -> (String, thread::JoinHandle<String>) {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind test Station");
         let origin = format!(
             "http://{}",
             listener.local_addr().expect("test Station address")
         );
-        let body = common::PeersResponse {
-            code: "200".to_string(),
-            msg: "ok".to_string(),
-            data: Some(prost_types::Any {
-                type_url: type_url.to_string(),
-                value: payload.encode_to_vec(),
-            }),
-        }
-        .encode_to_vec();
         let handle = thread::spawn(move || {
             let (mut stream, _) = listener.accept().expect("accept trust request");
             let mut request = vec![0_u8; 8_192];
@@ -1312,6 +1273,23 @@ mod tests {
             String::from_utf8(request).expect("request is HTTP text")
         });
         (origin, handle)
+    }
+
+    fn spawn_peers_proto_response<Payload: Message>(
+        payload: &Payload,
+        type_url: &str,
+    ) -> (String, thread::JoinHandle<String>) {
+        spawn_proto_body_response(
+            common::PeersResponse {
+                code: "200".to_string(),
+                msg: "ok".to_string(),
+                data: Some(prost_types::Any {
+                    type_url: type_url.to_string(),
+                    value: payload.encode_to_vec(),
+                }),
+            }
+            .encode_to_vec(),
+        )
     }
 
     fn signed_sender_profile(
@@ -1582,35 +1560,43 @@ mod tests {
     }
 
     #[test]
-    fn federation_resolve_envelope_requires_exact_type() {
+    fn federation_resolve_request_decodes_raw_typed_response() {
         let view = federation::FederationResolveView {
             federated_handle: "@bob@station.test".to_string(),
             home_station_peer_id: "station-1".to_string(),
+            federation_id: "federation-1".to_string(),
             ..Default::default()
         };
-        let response = common::PeersResponse {
-            code: "200".to_string(),
-            msg: "federation resolve verified".to_string(),
-            data: Some(prost_types::Any {
-                type_url: FEDERATION_RESOLVE_TYPE_URL.to_string(),
-                value: view.encode_to_vec(),
-            }),
+        let (station_origin, request) = spawn_proto_body_response(view.encode_to_vec());
+        let scope = PrivateSocialScope {
+            profile_id: "profile-1".to_string(),
+            station_peer_id: "station-1".to_string(),
+            station_origin,
+            actor_ptid: "ptid:alice".to_string(),
+            device_id: "device-1".to_string(),
         };
 
-        let decoded = decode_peers_payload::<federation::FederationResolveView>(
-            &response.encode_to_vec(),
-            FEDERATION_RESOLVE_TYPE_URL,
+        let decoded: federation::FederationResolveView = get_proto_at(
+            &http_client().expect("build test client"),
+            &scope,
+            "access-token",
+            "/actor/federation/resolve",
+            Some(&[
+                ("federation_id", "federation-1".to_string()),
+                ("handle", "@bob@station.test".to_string()),
+            ]),
         )
         .unwrap();
         assert_eq!(decoded, view);
 
-        let mut wrong_type = response;
-        wrong_type.data.as_mut().unwrap().type_url = ACTOR_PROFILE_TYPE_URL.to_string();
-        assert!(decode_peers_payload::<federation::FederationResolveView>(
-            &wrong_type.encode_to_vec(),
-            FEDERATION_RESOLVE_TYPE_URL,
-        )
-        .is_err());
+        let request = request.join().expect("join test Station").to_lowercase();
+        assert!(request.starts_with("get /actor/federation/resolve?"));
+        assert!(request.contains("federation_id=federation-1"));
+        assert!(request.contains("handle=%40bob%40station.test"));
+        assert!(request.contains("authorization: bearer access-token"));
+        assert!(request.contains("x-device-id: device-1"));
+        assert!(request.contains("content-type: application/protobuf"));
+        assert!(request.contains("accept: application/protobuf"));
     }
 
     #[test]
