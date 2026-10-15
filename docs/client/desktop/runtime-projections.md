@@ -109,6 +109,15 @@ The push-device list is read-only: native provider registration and unregister
 remain Mobile-owned. Provider credentials and binding fingerprints do not
 enter the Desktop renderer.
 
+The `desktop-profile-notifications-e2e` Gate consumes one parent-owned Native
+Suite through an ephemeral `run-suite` capability. Its Profile and notification
+scenarios reuse the development Journey functions and the same two logged-in
+clients. The Suite attests the existing remote Station, binds both live Native
+clients to the current source, preserves fixture installation identity, restores
+namespaced business state, and verifies final process/port/session cleanup before
+publishing the complete result generation. Neither scenario nor Gate provisions,
+launches, logs in, or releases Suite resources.
+
 ## 4.1 Moments Runtime Contract
 
 `momentsRuntime` is responsible for the first runtime-owned Moments projection slice:

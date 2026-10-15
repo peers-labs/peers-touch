@@ -122,6 +122,32 @@ def native_click(
             "geometry": geometry, "window": window}
 
 
+def open_notification_preview(
+    session: TauriSession,
+    binding: NativeDesktopRuntimeBinding,
+    sessions: tuple[TauriSession, ...],
+) -> dict[str, Any]:
+    selector = '[role="button"][aria-haspopup="dialog"]'
+    pointer = native_click(session, binding, selector, sessions)
+    try:
+        wait(session, lambda: session.find_element(selector).get_attribute(
+            "aria-expanded",
+        ) == "true", "notification preview opens after Native click")
+    finally:
+        pointer["events"] = session.execute_script(
+            """const probe = window.__PT_POINTER_PROBE__;
+            for (const type of ['pointerdown', 'pointerup', 'click']) {
+              document.removeEventListener(type, probe.listener, true);
+            }
+            delete window.__PT_POINTER_PROBE__;
+            return probe.events;""",
+        )
+    if not any(event["type"] == "click" and event["trusted"] and event["hitsTrigger"]
+               for event in pointer["events"]):
+        raise GateError("Native notification click did not reach the trigger")
+    return pointer
+
+
 def select_native_image(
     session: TauriSession,
     binding: NativeDesktopRuntimeBinding,
@@ -415,6 +441,7 @@ def run_notifications_journey(
         if response.get("ok") is not True:
             raise GateError("prior namespaced notification request recovery failed")
     baseline = read_payload(receiver, "notification_unread_counts")["total"]
+    sender_baseline = read_payload(sender, "notification_unread_counts")["total"]
     original_policy = receiver_profile["contact_policy"]
     original_preferences = read_payload(receiver, "notification_preferences")
     chat_preference = next(item for item in original_preferences["preferences"] if item["category"] == 2)
@@ -466,25 +493,9 @@ def run_notifications_journey(
                   === String(arguments[1]);""",
                 bell_selector, baseline + 1,
             ), "receiver Native notification badge increment")
-            result["nativeInput"] = native_click(
-                receiver, binding, bell_selector, (receiver, sender),
+            result["nativeInput"] = open_notification_preview(
+                receiver, binding, (receiver, sender),
             )
-            try:
-                wait(receiver, lambda: receiver.find_element(bell_selector).get_attribute(
-                    "aria-expanded",
-                ) == "true", "notification preview opens after Native click")
-            finally:
-                result["nativeInput"]["events"] = receiver.execute_script(
-                    """const probe = window.__PT_POINTER_PROBE__;
-                    for (const type of ['pointerdown', 'pointerup', 'click']) {
-                      document.removeEventListener(type, probe.listener, true);
-                    }
-                    delete window.__PT_POINTER_PROBE__;
-                    return probe.events;""",
-                )
-            if not any(event["type"] == "click" and event["trusted"] and event["hitsTrigger"]
-                       for event in result["nativeInput"]["events"]):
-                raise GateError("Native notification click did not reach the trigger")
             row = receiver.find_element(f'[data-shell-notification="{item["id"]}"]', 30)
             if f"{marker}-{index}" not in row.text:
                 raise GateError("receiver notification body differs from the production command")
@@ -515,6 +526,22 @@ def run_notifications_journey(
                     })["notifications"] if candidate["targetId"] == item["targetId"]
                 ), None), "sender acceptance notification")
                 sender_notification_ids.append(accepted_notification["id"])
+                wait(sender, lambda: sender.execute_script(
+                    """const bell = document.querySelector(arguments[0]);
+                    return bell?.parentElement?.querySelector('.ant-badge-count')?.title
+                      === String(arguments[1]);""",
+                    bell_selector, sender_baseline + 1,
+                ), "sender Native acceptance badge")
+                result["senderNativeInput"] = open_notification_preview(
+                    sender, binding, (receiver, sender),
+                )
+                wait(sender, lambda: sender.find_element(
+                    f'[data-shell-notification="{accepted_notification["id"]}"]',
+                ).is_displayed(), "sender Native acceptance notification row")
+                sender.save_screenshot(artifacts / "sender-acceptance.png")
+                result["senderAcceptanceVisible"] = True
+                sender.find_element(bell_selector).click()
+                binding.request_cooperative_activation(receiver, (receiver, sender))
             pending_request = ""
             receiver.save_screenshot(artifacts / f"notification-{decision.lower()}-{index}.png")
             click_text(receiver, "More notifications")
@@ -610,6 +637,8 @@ def run_notifications_journey(
             read_payload(sender, "notification_delete", {"input": {
                 "notification_ids": sender_notification_ids,
             }})
+            wait(sender, lambda: read_payload(sender, "notification_unread_counts")["total"]
+                 == sender_baseline, "sender notification cleanup restores unread")
             result["senderNotificationsCleaned"] = True
         if preferences_changed:
             current = read_payload(receiver, "notification_preferences")

@@ -2,6 +2,29 @@
   "version": 1,
   "rules": [
     {
+      "id": "desktop-profile-notifications",
+      "features": ["desktop-profile-notifications"],
+      "when": {
+        "paths": [
+          "apps/desktop/src/components/settings/AccountTab.tsx",
+          "apps/desktop/src/components/settings/Notification*.tsx",
+          "apps/desktop/src/components/NotificationBell.tsx",
+          "apps/desktop/src/components/notifications/**",
+          "apps/desktop/src/store/profile.ts",
+          "apps/desktop/src/store/notification.ts",
+          "apps/desktop/src/store/pushDevices.ts",
+          "apps/desktop/src/runtimes/settingsRuntime.ts",
+          "apps/station/app/subserver/notification/**",
+          "tooling/acceptance/features/desktop-profile-notifications.yaml",
+          "tooling/acceptance/fixtures/desktop_profile*.py",
+          "tooling/acceptance/gates/desktop/profile_notifications*.py",
+          "tooling/acceptance/provisioners/desktop_profile_notifications*.py",
+          "tooling/acceptance/environments/desktop-profile-notifications-native.yaml"
+        ]
+      },
+      "require": ["desktop-profile-notifications-e2e"]
+    },
+    {
       "id": "oauth2-client-vercel-publication",
       "features": [
         "oauth2-client-vercel-publication"

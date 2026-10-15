@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "id": "desktop-profile-notifications",
+  "domain": "station-access",
+  "status": "active",
+  "owners": [
+    "docs/client/desktop/runtime-projections.md",
+    "apps/desktop/src/components/settings/AccountTab.tsx",
+    "apps/desktop/src/components/notifications/NotificationCenter.tsx",
+    "tooling/acceptance/gates/desktop/profile_notifications_journey.py"
+  ],
+  "truth_sources": [
+    "Station revisioned Actor profile",
+    "Station Social friend request authority",
+    "Station notification list, counts, preferences and redacted push registrations"
+  ],
+  "visible_surfaces": [
+    {"type": "native-desktop", "route": "settings/account"},
+    {"type": "native-desktop", "route": "shell/notifications"}
+  ],
+  "required_gates": ["desktop-profile-notifications-e2e"],
+  "acceptance": {
+    "service": [
+      "profile drafts, writes, empty collections and conflicts preserve the revisioned Actor authority",
+      "accept and reject use message-free signed Social decisions",
+      "every supported notification category persists its real preferences"
+    ],
+    "surface": [
+      "Native avatar and header uploads reach OSS and load in Account",
+      "a receiving Native client renders eight real notifications and resolves seven declines and one acceptance",
+      "notification search, six-row pagination and shell badges agree with authoritative records",
+      "push registrations are accurate and read-only, including the empty state"
+    ]
+  },
+  "negative": [
+    "a conflicting profile write cannot discard the local draft or overwrite the newer authority",
+    "disabled categories disable push and sound controls",
+    "unsupported Desktop push registration mutations and provider tokens are absent",
+    "a failed scenario or failed cleanup cannot publish a successful Suite result"
+  ]
+}

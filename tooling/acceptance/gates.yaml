@@ -1,6 +1,16 @@
 {
   "version": 1,
   "gates": {
+    "desktop-profile-notifications-e2e": {
+      "argv": ["python3", "-m", "tooling.acceptance.gates.desktop.profile_notifications_e2e"],
+      "ephemeralCapabilities": ["desktop.profile-notifications-suite"],
+      "timeout_seconds": 2400,
+      "environment": "desktop-profile-notifications-native",
+      "provisioner": "desktop-profile-notifications-native",
+      "requiredRuntimeCells": ["desktop-macos-native"],
+      "tier": "env-evidence",
+      "description": "Reuse two parent-owned Native clients to prove revisioned Account editing and OSS uploads, category preferences, bilateral Social notification decisions, search, pagination, push-device readback, authoritative unread badges and terminal resource cleanup."
+    },
     "oauth-login-broker-handoff-contract": {
       "command": "sh -c 'cd apps/oauth2-client && go test ./internal/application/oauth/usecase && cd ../station && go test ./app/subserver/oauth ./frame/touch ./frame/touch/auth ./frame/touch/model/db && cd ../desktop && pnpm exec vitest run src/store/oauth2.test.ts && pnpm run check && cargo test --manifest-path src-tauri/Cargo.toml oauth'",
       "timeout_seconds": 1200,

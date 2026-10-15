@@ -36,12 +36,26 @@
     "docs/client/desktop/runtime-projections.md",
     "docs/client/common/ui-identity"
   ],
-  "budgets": {"focusedCheckSeconds": 1200, "functionalRunSeconds": 1800, "cleanupSeconds": 180},
+  "budgets": {"focusedCheckSeconds": 1200, "functionalRunSeconds": 2400, "cleanupSeconds": 180},
   "checks": [
     {"id":"dui-profile-notification-source","command":"pnpm --dir apps/desktop run check","verificationClass":"SOURCE_CHECK"},
-    {"id":"dui-profile-notification-functional","command":"pnpm --dir apps/desktop exec vitest run src/components/settings/accountIdentityPresentation.test.ts src/kernel/identityRuntime.test.ts src/runtimes/settingsRuntime.test.ts src/store/settings.test.ts src/store/relationships.test.ts src/store/profile.test.ts src/store/notification.test.ts src/store/pushDevices.test.ts","verificationClass":"FUNCTIONAL_CHECK"},
-    {"id":"dui-profile-notification-proof","command":"python3 tooling/scripts/acceptance-run.py --gate desktop-check","verificationClass":"ACCEPTANCE_PROOF"}
+    {"id":"dui-profile-notification-unit","command":"pnpm --dir apps/desktop exec vitest run src/components/settings/accountIdentityPresentation.test.ts src/kernel/identityRuntime.test.ts src/runtimes/settingsRuntime.test.ts src/store/settings.test.ts src/store/relationships.test.ts src/store/profile.test.ts src/store/notification.test.ts src/store/pushDevices.test.ts","verificationClass":"SOURCE_CHECK"},
+    {"id":"dui-profile-notification-contract","command":"make acceptance-validate DOMAIN=station-access","verificationClass":"SOURCE_CHECK"},
+    {"id":"dui-profile-notification-suite-source","command":"python3 tooling/acceptance/gates/desktop/profile_notifications_suite_test.py","verificationClass":"SOURCE_CHECK"},
+    {"id":"dui-profile-notification-functional","command":"python3 tooling/acceptance/gates/desktop/profile_notifications_journey.py","verificationClass":"FUNCTIONAL_CHECK"},
+    {"id":"dui-profile-notification-proof","command":"python3 tooling/scripts/acceptance-run.py --gate desktop-profile-notifications-e2e","verificationClass":"ACCEPTANCE_PROOF"}
   ],
+  "runtimeReuse": {
+    "scope": "suite",
+    "entryCheckId": "dui-profile-notification-functional",
+    "scenarioIds": ["desktop-account-profile", "desktop-notification-center"],
+    "maxProvisioningRuns": 1,
+    "maxClientLaunches": 2,
+    "minWarmReuseRate": 0.5,
+    "requireAttachOnlyScenarios": true,
+    "requireReceiverVisibleProof": true,
+    "allowClientReplacement": false
+  },
   "doneWhen": [
     "C1-C6 read and mutate one revision-fenced Actor profile projection",
     "Avatar and cover use Native OSS flows and unsupported cover history is absent",
@@ -53,7 +67,7 @@
     "Do not invent provider, locale, identity, notification category, or push registration data",
     "Keep runtime-backed state in the owning runtime/store"
   ],
-  "updatedAt": "2026-10-14T20:05:00.000Z"
+  "updatedAt": "2026-10-15T08:00:00.000Z"
 }
 ```
 
@@ -69,3 +83,12 @@ second profile or notification authority.
 - C8 reads redacted push registrations; registration mutations remain Mobile-owned.
 - C9 reconciles authoritative counts through the Social runtime.
 - C1-C9 remain formally open.
+
+## Runtime Proof
+
+The development Journey and formal Gate share the same Profile and notification
+actions. The Environment owner attests the existing remote Station without a
+reset, prepares two persistent fixture installations, and launches and logs in
+each client once after the Native runtime cell is leased. Both scenarios attach
+to that Suite. Native actions, receiver-visible assertions, source bindings and
+terminal cleanup precede publication of the complete result generation.

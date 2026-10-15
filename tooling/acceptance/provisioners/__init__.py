@@ -10,6 +10,7 @@ from tooling.acceptance.core import (
 )
 
 from .chat_storage_native import ChatStorageNativeProvisioner
+from .desktop_profile_notifications_native import DesktopProfileNotificationsNativeProvisioner
 from .desktop_primary_navigation_native import (
     DesktopPrimaryNavigationNativeProvisioner,
 )
@@ -73,6 +74,9 @@ _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
     ChatStorageNativeProvisioner.environment_id: ChatStorageNativeProvisioner,
     CrossStationSocialNativeProvisioner.environment_id: (
         CrossStationSocialNativeProvisioner
+    ),
+    DesktopProfileNotificationsNativeProvisioner.environment_id: (
+        DesktopProfileNotificationsNativeProvisioner
     ),
     DesktopPrimaryNavigationNativeProvisioner.environment_id: (
         DesktopPrimaryNavigationNativeProvisioner
@@ -241,6 +245,7 @@ __all__ = [
     "CrossStationSocialNativeProvisioner",
     "DesktopPrimaryNavigationNativeProvisioner",
     "DesktopShellNativeProvisioner",
+    "DesktopProfileNotificationsNativeProvisioner",
     "HomeStationProvisioner",
     "MobileDirectSimulatorProvisioner",
     "MobileIOSLayoutSimulatorProvisioner",

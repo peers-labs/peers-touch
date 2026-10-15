@@ -2,6 +2,42 @@
   "version": 1,
   "capabilities": [
     {
+      "id": "desktop-profile-notifications",
+      "domain": "station-access",
+      "direction": "acceptance_validates_product",
+      "features": ["desktop-profile-notifications"],
+      "required_gates": ["desktop-profile-notifications-e2e"],
+      "synthetic_paths": [
+        "apps/desktop/src/components/settings/AccountTab.tsx",
+        "apps/desktop/src/components/settings/NotificationSettings.tsx",
+        "apps/desktop/src/components/NotificationBell.tsx",
+        "apps/desktop/src/components/notifications/NotificationCenter.tsx",
+        "apps/desktop/src/store/profile.ts",
+        "apps/desktop/src/store/notification.ts",
+        "tooling/acceptance/gates/desktop/profile_notifications_journey.py"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station revisioned Actor profile and notification preferences",
+          "Station Social request decisions and notification records",
+          "native executable and renderer source identities",
+          "source-bound Suite lifecycle and cleanup"
+        ],
+        "surfaces": ["native macOS Desktop Account", "native macOS Desktop notification center"],
+        "proven_by": ["desktop-profile-notifications-e2e"],
+        "proven_scope": [
+          "C1-C6 profile editing, conflict preservation, native OSS uploads and canonical identity",
+          "all category preferences persist after remount and restore exactly",
+          "C7-C9 receiver-visible notification decisions, search, pagination, push-device readback and badge reconciliation",
+          "two isolated clients reuse one provisioned Suite and release owned processes, ports and sessions"
+        ],
+        "unproven_scope": [
+          "provider push delivery and Desktop push registration mutations",
+          "Mobile, Linux and Windows profile and notification UI"
+        ]
+      }
+    },
+    {
       "id": "station-access-wire-contract",
       "domain": "station-access",
       "direction": "acceptance_validates_product",

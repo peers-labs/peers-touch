@@ -16,7 +16,8 @@
     "node-connectivity-cluster",
     "node-connectivity-shared-objects",
     "station-access-desktop-relay-binding",
-    "station-access-interface-integrity"
+    "station-access-interface-integrity",
+    "desktop-profile-notifications"
   ],
   "validation_gate_id": "station-access-domain-validation"
 }
