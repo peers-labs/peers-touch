@@ -1276,16 +1276,25 @@ class MacOSNativeDesktopAdapter(NativeDesktopAdapter):
                 self.activate_process(process_id)
             except DriverError as error:
                 last_control = NativeControlSnapshot(error=str(error))
-            else:
-                time.sleep(_FOCUS_CONVERGENCE_INTERVAL_SECONDS)
-                last_control = self.focused_control(process_id)
-                if (
-                    not last_control.error
-                    and last_control.frontmost
-                    and last_control.actual_frontmost_pid == process_id
-                    and last_control.window_count > 0
-                ):
-                    return last_control
+            activation_point = self.process_owned_activation_point(process_id)
+            if activation_point is not None:
+                self.post_mouse(
+                    (
+                        MouseAction.MOVE,
+                        MouseAction.LEFT_DOWN,
+                        MouseAction.LEFT_UP,
+                    ),
+                    activation_point,
+                )
+            time.sleep(_FOCUS_CONVERGENCE_INTERVAL_SECONDS)
+            last_control = self.focused_control(process_id)
+            if (
+                not last_control.error
+                and last_control.frontmost
+                and last_control.actual_frontmost_pid == process_id
+                and last_control.window_count > 0
+            ):
+                return last_control
             if time.monotonic() >= deadline:
                 raise DriverError(
                     "Native actor focus did not converge for exact process "

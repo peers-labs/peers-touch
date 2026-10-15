@@ -1022,6 +1022,46 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
 
         self.assertEqual(run.call_count, 2)
 
+    def test_exact_process_focus_uses_owned_activation_point(self) -> None:
+        process_id = 42
+        accepted = NativeControlSnapshot(
+            window_count=1,
+            frontmost=True,
+            actual_frontmost_pid=process_id,
+        )
+        adapter = MacOSNativeDesktopAdapter()
+
+        with patch.object(
+            adapter,
+            "activate_process",
+        ) as activate, patch.object(
+            adapter,
+            "process_owned_activation_point",
+            return_value=(432.0, 45.0),
+        ) as activation_point, patch.object(
+            adapter,
+            "post_mouse",
+        ) as post_mouse, patch.object(
+            adapter,
+            "focused_control",
+            return_value=accepted,
+        ), patch(
+            "tooling.acceptance.drivers.native.macos.time.sleep",
+        ):
+            control = adapter.activate_and_focused_control(process_id)
+
+        self.assertEqual(control.actual_frontmost_pid, process_id)
+        activate.assert_called_once_with(process_id)
+        activation_point.assert_called_once_with(process_id)
+        post_mouse.assert_called_once_with(
+            (
+                MouseAction.MOVE,
+                MouseAction.LEFT_DOWN,
+                MouseAction.LEFT_UP,
+            ),
+            (432.0, 45.0),
+        )
+
     def test_process_targeted_mouse_waits_for_exact_process_focus(
         self,
     ) -> None:
@@ -1168,6 +1208,12 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
                 patch.object(adapter, "activate_process") as activate,
                 patch.object(
                     adapter,
+                    "process_owned_activation_point",
+                    return_value=(432.0, 45.0),
+                ),
+                patch.object(adapter, "post_mouse"),
+                patch.object(
+                    adapter,
                     "focused_control",
                     side_effect=(focused, focused),
                 ),
@@ -1218,6 +1264,12 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
             )
             with (
                 patch.object(adapter, "activate_process") as activate,
+                patch.object(
+                    adapter,
+                    "process_owned_activation_point",
+                    return_value=(432.0, 45.0),
+                ),
+                patch.object(adapter, "post_mouse"),
                 patch.object(
                     adapter,
                     "focused_control",
