@@ -70,6 +70,7 @@ class DesktopPrimaryNavigationAcceptanceTests(unittest.TestCase):
             "adapter.post_mouse",
             "native_adapter.capture_screenshot",
             "desktop-primary-navigation-native-screenshot",
+            "official_note_applet_command_enabled",
             "official_note_applet_launchable",
             "selected_only_stops_hidden_cron_polling",
             "command_palette_uses_one_global_overlay",

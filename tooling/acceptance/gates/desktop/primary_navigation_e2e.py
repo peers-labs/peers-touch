@@ -374,10 +374,37 @@ class DesktopPrimaryNavigationGate(AcceptanceGate):
         )
         self._wait(
             session,
+            "window.location.hash === '#/applets'",
+            "Applets route",
+        )
+        self._wait(
+            session,
             "document.querySelector('[data-applet-open=\"peers.note\"]')",
             "official Note applet",
         )
-        self._click(session, '[data-applet-open="peers.note"]')
+        note_command = session.find_element(
+            '[data-applet-open="peers.note"]',
+            30,
+        )
+        note_status = session.execute_script(
+            """
+            return arguments[0]
+              .closest('[data-applet-status]')
+              ?.getAttribute('data-applet-status') || 'unknown';
+            """,
+            note_command,
+        )
+        self.assert_condition(
+            "official_note_applet_command_enabled",
+            note_command.is_enabled(),
+            f"status={note_status}",
+        )
+        note_command.click()
+        self._wait(
+            session,
+            "window.location.hash === '#/applet:peers.note'",
+            "official Note applet route",
+        )
         self._wait(
             session,
             "document.querySelector('[data-applet-container-shell=\"peers.note\"]')",
@@ -389,6 +416,7 @@ class DesktopPrimaryNavigationGate(AcceptanceGate):
                 "#/applet:peers.note"
             ),
         )
+        assertions["official_note_applet_command_enabled"] = True
         assertions["official_note_applet_launchable"] = True
 
         native_input = self._native_click(
