@@ -635,6 +635,9 @@ class WindowsProvisionerContractTest(unittest.TestCase):
         provisioner = NativeDesktopWindowsProvisioner.__new__(
             NativeDesktopWindowsProvisioner
         )
+        provisioner.contract = RuntimeCellContract.from_yaml(
+            RUNTIME_CELLS_DIR / "desktop-windows-native.yaml"
+        )
         state = {
             "brokerRoot": "C:\\runtime",
             "runId": "run-1",
@@ -658,10 +661,64 @@ class WindowsProvisionerContractTest(unittest.TestCase):
             payload["storageRoot"],
             "C:\\runtime\\state\\run-1\\alice",
         )
+        self.assertEqual(payload["storageLifecycle"], "ephemeral")
         self.assertEqual(
             payload["logPath"],
             "C:\\runtime\\actors\\run-1\\alice\\logs\\desktop.log",
         )
+
+    def test_persistent_actor_storage_is_stable_outside_broker_root(self) -> None:
+        provisioner = NativeDesktopWindowsProvisioner.__new__(
+            NativeDesktopWindowsProvisioner
+        )
+        provisioner.contract = RuntimeCellContract.from_yaml(
+            RUNTIME_CELLS_DIR / "desktop-windows-native.yaml"
+        )
+        client_spec = {
+            "storage_lifecycle": "persistent",
+            "storage_root": "/orchestrator/ncp/alice",
+        }
+        first, first_lifecycle = provisioner._actor_storage(
+            state={"brokerRoot": "C:\\runtime", "runId": "run-1"},
+            actor="alice",
+            profile="chat-native-alice",
+            client_spec=client_spec,
+        )
+        second, second_lifecycle = provisioner._actor_storage(
+            state={"brokerRoot": "C:\\runtime", "runId": "run-2"},
+            actor="alice",
+            profile="chat-native-alice",
+            client_spec=client_spec,
+        )
+
+        self.assertEqual(first, second)
+        self.assertEqual(
+            (first_lifecycle, second_lifecycle),
+            ("persistent", "persistent"),
+        )
+        self.assertEqual(
+            PureWindowsPath(first).parent,
+            PureWindowsPath("C:\\runtime-persistent-state"),
+        )
+        self.assertFalse(
+            _windows_path_is_descendant(first, "C:\\runtime")
+        )
+
+    def test_actor_storage_rejects_unknown_lifecycle(self) -> None:
+        provisioner = NativeDesktopWindowsProvisioner.__new__(
+            NativeDesktopWindowsProvisioner
+        )
+        provisioner.contract = RuntimeCellContract.from_yaml(
+            RUNTIME_CELLS_DIR / "desktop-windows-native.yaml"
+        )
+
+        with self.assertRaisesRegex(ProvisioningError, "lifecycle"):
+            provisioner._actor_storage(
+                state={"brokerRoot": "C:\\runtime", "runId": "run-1"},
+                actor="alice",
+                profile="chat-native-alice",
+                client_spec={"storage_lifecycle": "retained"},
+            )
 
     def test_actor_ports_are_stable_distinct_and_actor_scoped(self) -> None:
         provisioner = NativeDesktopWindowsProvisioner.__new__(
