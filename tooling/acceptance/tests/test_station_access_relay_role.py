@@ -254,6 +254,7 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
             patch.multiple(
                 provisioner,
                 acquire_profile_lease=Mock(),
+                acquire_remote_git_source_lease=Mock(),
                 _activate_direct_station_proxy=Mock(
                     side_effect=lambda **_: (
                         lifecycle_order.append("station-restart")
@@ -389,6 +390,22 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
             "sha256": "3" * 64,
             "mediaType": "application/json",
         }
+
+        def resolve_source_identity(
+            deployment: str,
+        ) -> tuple[str, str, str]:
+            self.assertEqual(
+                lifecycle_order[:4],
+                [
+                    "profile-lease:station-1",
+                    "profile-lease:relay-1",
+                    "source-lease:station-1",
+                    "source-lease:relay-1",
+                ],
+            )
+            lifecycle_order.append(f"source-identity:{deployment}")
+            return COMMIT, "clean", PROTO_DIGEST
+
         with (
             patch.object(provisioner, "_git_commit", return_value=COMMIT),
             patch.object(
@@ -404,7 +421,16 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
             patch.object(provisioner, "_station_ready", return_value=True),
             patch.multiple(
                 provisioner,
-                acquire_profile_lease=Mock(),
+                acquire_profile_lease=Mock(
+                    side_effect=lambda resource, _owner: lifecycle_order.append(
+                        f"profile-lease:{resource}"
+                    )
+                ),
+                acquire_remote_git_source_lease=Mock(
+                    side_effect=lambda resource, _owner: lifecycle_order.append(
+                        f"source-lease:{resource}"
+                    )
+                ),
                 _activate_direct_station_proxy=Mock(
                     side_effect=lambda **_: (
                         lifecycle_order.append("station-restart")
@@ -425,7 +451,7 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
             patch(
                 "tooling.acceptance.provisioners.station_access_relay_role."
                 "resolve_remote_source_identity",
-                return_value=(COMMIT, "clean", PROTO_DIGEST),
+                side_effect=resolve_source_identity,
             ),
             patch(
                 "tooling.acceptance.provisioners.station_access_relay_role."
@@ -554,7 +580,16 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
         )
         self.assertEqual(
             lifecycle_order,
-            ["station-restart", "relay-fixture"],
+            [
+                "profile-lease:station-1",
+                "profile-lease:relay-1",
+                "source-lease:station-1",
+                "source-lease:relay-1",
+                "source-identity:station-1",
+                "source-identity:relay-1",
+                "station-restart",
+                "relay-fixture",
+            ],
         )
         prepare_storage.assert_called_once()
         self.assertEqual(len(provisioner.cleanup()), 0)

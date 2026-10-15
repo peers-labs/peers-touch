@@ -1487,6 +1487,22 @@ server {
             )
             self._station_config = station_config
             self._relay_config = relay_config
+            owns_native_runtime = gate_id in {
+                NODE_CONNECTIVITY_NATIVE_GATE_ID,
+                *DESKTOP_RELAY_GATE_IDS,
+            }
+            owner = f"acceptance:{gate_id}:{manifest.run_id}"
+            if owns_native_runtime:
+                self.acquire_profile_lease(station_deployment, owner)
+                self.acquire_profile_lease(relay_deployment, owner)
+                self.acquire_remote_git_source_lease(
+                    station_deployment,
+                    owner,
+                )
+                self.acquire_remote_git_source_lease(
+                    relay_deployment,
+                    owner,
+                )
 
             station_identity = resolve_remote_source_identity(
                 station_deployment
@@ -1549,13 +1565,7 @@ server {
                 trust_anchor,
             )
             station_endpoint = station_url
-            if gate_id in {
-                NODE_CONNECTIVITY_NATIVE_GATE_ID,
-                *DESKTOP_RELAY_GATE_IDS,
-            }:
-                owner = f"acceptance:{gate_id}:{manifest.run_id}"
-                self.acquire_profile_lease(station_deployment, owner)
-                self.acquire_profile_lease(relay_deployment, owner)
+            if owns_native_runtime:
                 station_endpoint = self._activate_direct_station_proxy(
                     manifest=manifest,
                     station_config=station_config,
