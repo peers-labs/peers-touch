@@ -117,6 +117,17 @@ fn acceptance_request_activation() -> error::AppResult<serde_json::Value> {
     };
 
     let application = NSApplication::sharedApplication(main_thread);
+    let Some(window) = application
+        .keyWindow()
+        .or_else(|| application.mainWindow())
+    else {
+        return error::AppResult::fail(
+            error::ErrorCode::InternalError,
+            "acceptance activation target has no keyable window",
+            None,
+        );
+    };
+    window.makeKeyAndOrderFront(None);
     let api = if objc2::available!(macos = 14.0) {
         application.activate();
         "activate"
