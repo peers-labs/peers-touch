@@ -146,4 +146,3 @@ export type DiscoverProviderModelsResponse = Message<"peers_touch.model.agent.v1
  */
 export const DiscoverProviderModelsResponseSchema: GenMessage<DiscoverProviderModelsResponse> = /*@__PURE__*/
   messageDesc(file_domain_agent_provider_operations, 3);
-
