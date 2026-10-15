@@ -400,6 +400,8 @@ class SimulatorSocialGateTests(unittest.TestCase):
 
         self.assertEqual(source.count('"social-reaction-open"'), 1)
         self.assertIn('data-reaction-picker-item', source)
+        self.assertIn('[aria-pressed="true"]', source)
+        self.assertIn('Reaction kind {reaction_kind} readback', source)
         self.assertNotIn('social-reaction-choice', source)
 
     def test_antd_option_selection_opens_the_control_before_clicking_option(

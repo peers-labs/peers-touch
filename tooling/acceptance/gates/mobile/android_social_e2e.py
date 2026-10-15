@@ -1143,21 +1143,45 @@ class AndroidSocialGate(AcceptanceGate):
             f"MPS11A UI comment {journey_id}",
             "Android inline comment readback",
         )
-        self._click_ui_for_post(
-            session,
-            post_id,
-            "social-reaction-open",
-            "Android Reaction picker",
-        )
         for reaction_kind in range(1, 6):
+            choice_selector = (
+                '[data-reaction-picker] '
+                '[data-reaction-picker-item]'
+                f':nth-child({reaction_kind})'
+            )
+            choice = session.social_ui(
+                "query",
+                {"selector": choice_selector},
+            )
+            if (
+                not isinstance(choice, Mapping)
+                or choice.get("exists") is not True
+            ):
+                self._click_ui_for_post(
+                    session,
+                    post_id,
+                    "social-reaction-open",
+                    "Android Reaction picker",
+                )
+                self._wait_ui(
+                    session,
+                    choice_selector,
+                    f"Android Reaction picker kind {reaction_kind}",
+                )
             self._click_ui(
                 session,
-                (
-                    '[data-reaction-picker] '
-                    '[data-reaction-picker-item]'
-                    f':nth-child({reaction_kind})'
-                ),
+                choice_selector,
                 f"Android Reaction kind {reaction_kind}",
+            )
+            self._wait_ui(
+                session,
+                (
+                    '[data-acceptance-id="social-moment-card"]'
+                    f'[data-post-id="{post_id}"] '
+                    f'[data-reaction-kind="{reaction_kind}"]'
+                    '[aria-pressed="true"]'
+                ),
+                f"Android Reaction kind {reaction_kind} readback",
             )
         return {
             "uiAction": f"android-thread-comment-reactions:{post_id}",
