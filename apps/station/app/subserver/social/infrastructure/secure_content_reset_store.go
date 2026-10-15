@@ -4381,6 +4381,7 @@ func extractLegacyAttachmentKeys(postType string, raw string) ([]string, error) 
 		if err := decodeStrictJSON([]byte(raw), &identifiers); err == nil {
 			return normalizeObjectKeys(identifiers)
 		}
+		identifiers = nil
 		var attachments []struct {
 			ID              string          `json:"id"`
 			URL             string          `json:"url"`
@@ -4451,7 +4452,7 @@ func normalizeObjectKeys(values []string) ([]string, error) {
 	for _, value := range values {
 		key, err := extractOssKey(value)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("object key %q: %w", value, err)
 		}
 		keys = append(keys, key)
 	}

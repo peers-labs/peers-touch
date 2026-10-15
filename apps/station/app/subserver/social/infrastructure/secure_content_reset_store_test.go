@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1502,6 +1503,19 @@ CREATE TABLE social_reactions (
 	}
 	if !strings.Contains(err.Error(), "social_reactions.post_id") {
 		t.Fatalf("schema validation error does not identify reaction post_id: %v", err)
+	}
+}
+
+func TestExtractLegacyAttachmentKeysAcceptsCurrentPublicImageShape(t *testing.T) {
+	keys, err := extractLegacyAttachmentKeys(
+		"IMAGE",
+		`[{"id":"oss://self/2026/10/15/image.bin","url":"oss://self/2026/10/15/image.bin","size_bytes":55183,"media_encryption":{"encrypted":true,"version":2,"suite":"AES-256-GCM-CHUNKED"}}]`,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(keys, []string{"2026/10/15/image.bin"}) {
+		t.Fatalf("keys = %v", keys)
 	}
 }
 
