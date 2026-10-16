@@ -8089,7 +8089,7 @@ class MobileSocialIOSSimulatorProvisioner(
     environment_id = "mobile-social-ios-simulator"
     overlay_filename = "mobile-social-ios-simulator.yaml"
     station_profile_keys = MOBILE_DIRECT_STATION_PROFILE_KEYS
-    requires_actor_reset = False
+    requires_actor_reset = True
     actor_manifest_kind = "mobile-social-ios-simulator-actor-manifest"
     actor_manifest_path = "runtime/mobile-social-ios-simulator-actors.json"
     additional_fixture_roles_by_gate = {

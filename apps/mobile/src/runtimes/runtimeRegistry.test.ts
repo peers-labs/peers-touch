@@ -238,7 +238,11 @@ describe('mobile runtime registry', () => {
     expect(auth?.dependsOn).toContain('station');
     expect(access?.dependsOn).toEqual(['station', 'auth']);
     expect(session?.dependsOn).toEqual(['station', 'auth', 'access']);
-    expect(privateSocial?.dependsOn).toEqual(['session', 'secure-storage']);
+    expect(privateSocial?.dependsOn).toEqual([
+      'session',
+      'secure-storage',
+      'messaging',
+    ]);
     expect(privateSocial?.responsibility).toContain(
       'Native private Social durability',
     );

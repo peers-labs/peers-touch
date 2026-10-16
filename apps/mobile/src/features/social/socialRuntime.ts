@@ -358,9 +358,15 @@ export async function startSocialRuntime(
     getSocialStore,
     {
       requestSignal: requests.signal,
-      wakeMessaging,
+      wakeMessaging: () => runWithinRequestScope(
+        wakeMessaging,
+        requests.signal(),
+      ),
       revalidateSession: async () => {
-        await restoreAndRevalidateAccessRuntime();
+        await runWithinRequestScope(
+          restoreAndRevalidateAccessRuntime,
+          requests.signal(),
+        );
       },
       ingestCallSignal: (event) => {
         void mobileCallManager
@@ -373,7 +379,6 @@ export async function startSocialRuntime(
   try {
     await mobileCallManager.activate(session);
     await projectionRuntime.bootstrap();
-    await wakeMessaging();
   } catch (error) {
     requests.close();
     try {
@@ -615,6 +620,39 @@ async function drainPendingOperations(
   while (pendingOperations.size > 0) {
     await Promise.allSettled([...pendingOperations]);
   }
+}
+
+function runWithinRequestScope<T>(
+  operation: () => Promise<T>,
+  signal: AbortSignal,
+): Promise<T> {
+  if (signal.aborted) return Promise.reject(requestScopeAbortReason(signal));
+
+  const pending = operation();
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const settle = (complete: () => void) => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener('abort', onAbort);
+      complete();
+    };
+    const onAbort = () => {
+      settle(() => reject(requestScopeAbortReason(signal)));
+    };
+
+    signal.addEventListener('abort', onAbort, { once: true });
+    pending.then(
+      (value) => settle(() => resolve(value)),
+      (error) => settle(() => reject(error)),
+    );
+  });
+}
+
+function requestScopeAbortReason(signal: AbortSignal): Error {
+  return signal.reason instanceof Error
+    ? signal.reason
+    : new DOMException('The operation was aborted.', 'AbortError');
 }
 
 async function wakeMessaging(): Promise<void> {

@@ -714,6 +714,24 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
             self.assertTrue(storage.is_dir())
             self.assertEqual(list(storage.iterdir()), [])
 
+    def test_reset_maps_eve_to_the_canonical_charlie_storage(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            stale = root / "charlie" / "storage" / "stale.json"
+            stale.parent.mkdir(parents=True)
+            stale.write_text("stale", encoding="utf-8")
+
+            reset = reset_local_client_storage(
+                ["charlie", "eve"],
+                root,
+            )
+
+            self.assertEqual(reset, 1)
+            storage = root / "charlie" / "storage"
+            self.assertTrue(storage.is_dir())
+            self.assertEqual(list(storage.iterdir()), [])
+            self.assertFalse((root / "eve").exists())
+
     @patch.dict(os.environ, {"CHAT_ACCEPTANCE_RESET": "1"})
     def test_local_source_reset_recreates_only_profile_database(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

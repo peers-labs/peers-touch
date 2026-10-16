@@ -1209,12 +1209,12 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       await restoreReliabilityDrafts(drafts);
     } else if (input.action === 'discard') {
       await discardReliabilityDrafts(drafts);
-      getRecoveryProjection().clearDraftRestore();
     } else {
       throw new Error(
         'acceptance.mobile.invalidInput:reliability.draft.action',
       );
     }
+    getRecoveryProjection().clearDraftRestore();
     return readPublicReliabilitySnapshot();
   },
 
