@@ -1360,31 +1360,20 @@ func (s *subServer) handleReact(ctx context.Context, req *model.ReactToPostReque
 		model.ReactionKind_name[int32(req.Kind)] == "" {
 		return nil, server.BadRequest("reaction kind is required")
 	}
-	if _, public := canonicalPublicSocialID(req.PostId); !public &&
-		s.privateContentSvc != nil {
-		remote, err := s.privateContentSvc.IsRemotePrivateMoment(
+	if _, public := canonicalPublicSocialID(req.PostId); !public {
+		author, err := s.privateContentAuthor(ctx)
+		if err != nil {
+			return nil, err
+		}
+		response, err := s.privateContentSvc.ReactPrivateMoment(
 			ctx,
-			req.PostId,
-			actorPTID,
+			author,
+			req,
 		)
 		if err != nil {
 			return nil, privateContentHandlerError(err)
 		}
-		if remote {
-			author, err := s.privateContentAuthor(ctx)
-			if err != nil {
-				return nil, err
-			}
-			response, err := s.privateContentSvc.ReactPrivateMoment(
-				ctx,
-				author,
-				req,
-			)
-			if err != nil {
-				return nil, privateContentHandlerError(err)
-			}
-			return response, nil
-		}
+		return response, nil
 	}
 	if err := s.assertReactionTargetReadable(ctx, req.PostId, actorPTID); err != nil {
 		return nil, err
@@ -1411,31 +1400,20 @@ func (s *subServer) handleUnreact(ctx context.Context, req *model.UnreactToPostR
 		model.ReactionKind_name[int32(req.Kind)] == "" {
 		return nil, server.BadRequest("reaction kind is required")
 	}
-	if _, public := canonicalPublicSocialID(req.PostId); !public &&
-		s.privateContentSvc != nil {
-		remote, err := s.privateContentSvc.IsRemotePrivateMoment(
+	if _, public := canonicalPublicSocialID(req.PostId); !public {
+		author, err := s.privateContentAuthor(ctx)
+		if err != nil {
+			return nil, err
+		}
+		response, err := s.privateContentSvc.UnreactPrivateMoment(
 			ctx,
-			req.PostId,
-			actorPTID,
+			author,
+			req,
 		)
 		if err != nil {
 			return nil, privateContentHandlerError(err)
 		}
-		if remote {
-			author, err := s.privateContentAuthor(ctx)
-			if err != nil {
-				return nil, err
-			}
-			response, err := s.privateContentSvc.UnreactPrivateMoment(
-				ctx,
-				author,
-				req,
-			)
-			if err != nil {
-				return nil, privateContentHandlerError(err)
-			}
-			return response, nil
-		}
+		return response, nil
 	}
 	if err := s.assertReactionTargetReadable(ctx, req.PostId, actorPTID); err != nil {
 		return nil, err

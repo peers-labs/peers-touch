@@ -377,6 +377,277 @@ func TestFederatedPrivateCommentParentRevalidation(t *testing.T) {
 	)
 }
 
+func TestPrivateReactionSameStationCommandReceipt(t *testing.T) {
+	fixture := newPrivateContentServiceFixture(t)
+	ctx := context.Background()
+	if err := fixture.database.AutoMigrate(
+		&dbmodel.Actor{},
+		&dbmodel.Follow{},
+		&dbmodel.SocialReaction{},
+	); err != nil {
+		t.Fatal(err)
+	}
+	for _, actor := range []dbmodel.Actor{
+		{
+			PTID:              "ptid:alice",
+			Namespace:         "peers",
+			PreferredUsername: "alice",
+			Email:             "alice@station.test",
+			PasswordHash:      "test",
+			FederatedHandle:   "alice@station.test",
+			HomeStationPeerID: "station-local",
+		},
+		{
+			PTID:              "ptid:bob",
+			Namespace:         "peers",
+			PreferredUsername: "bob",
+			Email:             "bob@station.test",
+			PasswordHash:      "test",
+			FederatedHandle:   "bob@station.test",
+			HomeStationPeerID: "station-local",
+		},
+	} {
+		if err := fixture.database.
+			Where("ptid = ?", actor.PTID).
+			FirstOrCreate(&actor).Error; err != nil {
+			t.Fatalf("seed local reaction actor %s: %v", actor.PTID, err)
+		}
+	}
+	eventBus, err := events.NewDurableEventBus(
+		fixture.database,
+		events.WithIDGenerator(func() string {
+			return fmt.Sprintf(
+				"local-reaction-event-%d",
+				time.Now().UnixNano(),
+			)
+		}),
+		events.WithClock(func() time.Time { return fixture.clock.now }),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(eventBus.Close)
+	publisher := NewMomentEventPublisher()
+	publisher.bus = func() events.EventBus { return eventBus }
+	publisher.now = func() time.Time { return fixture.clock.now }
+	if err := fixture.service.ConfigureFederatedPrivateDelivery(
+		"station-local",
+		allowFederatedPrivateMembership{},
+		publisher,
+	); err != nil {
+		t.Fatal(err)
+	}
+	postID := publishPrivateCommentParent(t, fixture, "local-reaction")
+	bobPublicKey, bobPrivateKey, err := ed25519.GenerateKey(
+		bytes.NewReader(bytes.Repeat([]byte{0x42}, ed25519.SeedSize)),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture.service.signatureVerifier = privateContentTestAuthorVerifier{
+		publicKey: bobPublicKey,
+	}
+	bobAuthor := socialdomain.PrivateContentAuthor{
+		Endpoint: &actormodel.ActorDeviceRef{
+			Actor: &actormodel.ActorRef{
+				Ptid: "ptid:bob",
+				Acct: "bob@station.test",
+				Kind: actormodel.ActorKind_ACTOR_KIND_PERSON,
+			},
+			DeviceId: "bob-device",
+		},
+		HomeStationPeerID: "station-local",
+	}
+	signedReact := func(
+		commandID string,
+		kind actormodel.ReactionKind,
+	) *actormodel.ReactToPostRequest {
+		request := &actormodel.ReactToPostRequest{
+			PostId:            postID,
+			Kind:              kind,
+			CommandId:         commandID,
+			ActorSigningKeyId: "author-key",
+		}
+		signingBytes, err :=
+			canonicalFederatedPrivateInteractionRequestSigningBytes(
+				privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_REACT,
+				request,
+			)
+		if err != nil {
+			t.Fatal(err)
+		}
+		request.ActorDeviceSignature = ed25519.Sign(
+			bobPrivateKey,
+			signingBytes,
+		)
+		return request
+	}
+	invalid := signedReact(
+		"react-local-invalid-signature",
+		actormodel.ReactionKind_REACTION_LIKE,
+	)
+	invalid.ActorDeviceSignature[0] ^= 1
+	if _, err := fixture.service.ReactPrivateMoment(
+		ctx,
+		bobAuthor,
+		invalid,
+	); !socialdomain.IsPrivateContentCode(
+		err,
+		socialdomain.PrivateContentUnauthorized,
+	) {
+		t.Fatalf("invalid local reaction signature error = %v", err)
+	}
+	assertTableCount(t, fixture.database, "social_reactions", 0)
+	assertTableCount(
+		t,
+		fixture.database,
+		"social_remote_private_commands",
+		0,
+	)
+	react := signedReact(
+		"react-local",
+		actormodel.ReactionKind_REACTION_LIKE,
+	)
+	response, err := fixture.service.ReactPrivateMoment(
+		ctx,
+		bobAuthor,
+		react,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !response.GetSuccess() ||
+		response.GetCommandId() != react.GetCommandId() ||
+		response.GetExactReplay() ||
+		response.GetProjectionRevision() != 1 {
+		t.Fatalf("local react response = %+v", response)
+	}
+	assertFederatedPrivateReactionSummary(
+		t,
+		response.GetReactions(),
+		actormodel.ReactionKind_REACTION_LIKE,
+		1,
+		true,
+	)
+	readback, err := fixture.service.GetPrivateMoment(
+		ctx,
+		bobAuthor.Endpoint,
+		postID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if readback.GetReactionProjectionRevision() != 1 ||
+		readback.GetPost().GetStats().GetLikesCount() != 1 {
+		t.Fatalf("local react readback = %+v", readback)
+	}
+	assertFederatedPrivateReactionSummary(
+		t,
+		readback.GetPost().GetReactions(),
+		actormodel.ReactionKind_REACTION_LIKE,
+		1,
+		true,
+	)
+
+	replayed, err := fixture.service.ReactPrivateMoment(
+		ctx,
+		bobAuthor,
+		proto.Clone(react).(*actormodel.ReactToPostRequest),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !replayed.GetExactReplay() ||
+		replayed.GetProjectionRevision() != response.GetProjectionRevision() ||
+		!proto.Equal(
+			&actormodel.Post{Reactions: response.GetReactions()},
+			&actormodel.Post{Reactions: replayed.GetReactions()},
+		) {
+		t.Fatalf("local reaction replay = %+v, first = %+v", replayed, response)
+	}
+	conflict := signedReact(
+		react.GetCommandId(),
+		actormodel.ReactionKind_REACTION_LOVE,
+	)
+	if _, err := fixture.service.ReactPrivateMoment(
+		ctx,
+		bobAuthor,
+		conflict,
+	); !socialdomain.IsPrivateContentCode(
+		err,
+		socialdomain.PrivateContentConflict,
+	) {
+		t.Fatalf("local reaction changed-hash error = %v, want conflict", err)
+	}
+	assertTableCount(t, fixture.database, "social_reactions", 1)
+
+	unreact := &actormodel.UnreactToPostRequest{
+		PostId:            postID,
+		Kind:              actormodel.ReactionKind_REACTION_LIKE,
+		CommandId:         "unreact-local",
+		ActorSigningKeyId: "author-key",
+	}
+	unreactSigningBytes, err :=
+		canonicalFederatedPrivateInteractionRequestSigningBytes(
+			privatecontentpb.FederatedPrivateInteractionOperation_FEDERATED_PRIVATE_INTERACTION_OPERATION_UNREACT,
+			unreact,
+		)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unreact.ActorDeviceSignature = ed25519.Sign(
+		bobPrivateKey,
+		unreactSigningBytes,
+	)
+	unreacted, err := fixture.service.UnreactPrivateMoment(
+		ctx,
+		bobAuthor,
+		unreact,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !unreacted.GetSuccess() ||
+		unreacted.GetCommandId() != unreact.GetCommandId() ||
+		unreacted.GetExactReplay() ||
+		unreacted.GetProjectionRevision() != 2 ||
+		len(unreacted.GetReactions()) != 0 {
+		t.Fatalf("local unreact response = %+v", unreacted)
+	}
+	replayedUnreact, err := fixture.service.UnreactPrivateMoment(
+		ctx,
+		bobAuthor,
+		proto.Clone(unreact).(*actormodel.UnreactToPostRequest),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !replayedUnreact.GetExactReplay() ||
+		replayedUnreact.GetProjectionRevision() != 2 {
+		t.Fatalf("local unreact replay = %+v", replayedUnreact)
+	}
+	readback, err = fixture.service.GetPrivateMoment(
+		ctx,
+		bobAuthor.Endpoint,
+		postID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if readback.GetReactionProjectionRevision() != 2 ||
+		readback.GetPost().GetStats().GetLikesCount() != 0 ||
+		len(readback.GetPost().GetReactions()) != 0 {
+		t.Fatalf("local unreact readback = %+v", readback)
+	}
+	assertTableCount(t, fixture.database, "social_reactions", 0)
+	assertTableCount(
+		t,
+		fixture.database,
+		"social_remote_private_commands",
+		2,
+	)
+}
+
 func TestFederatedPrivateReactionReactUnreact(t *testing.T) {
 	fixture := newFederatedPrivateReactionFixture(t)
 	react := fixture.reactRequest(t, "react-remote", actormodel.ReactionKind_REACTION_LIKE)
