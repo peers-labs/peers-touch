@@ -1265,6 +1265,9 @@ pub(crate) fn auth_restore_session_for_device(
         Ok(session) => session,
         Err(error) => return map_domain_error(error),
     };
+    if let Err(error) = access_scope::<AuthSessionPayload>(&state.station) {
+        return error;
+    }
     let token = match takeover_station_session_token_for_restore(
         station_client,
         &blob.token,
