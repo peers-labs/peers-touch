@@ -1371,14 +1371,6 @@ func (s *subServer) handleReact(ctx context.Context, req *model.ReactToPostReque
 			req,
 		)
 		if err != nil {
-			logger.Error(
-				ctx,
-				"failed to react to private moment",
-				"post_id",
-				req.GetPostId(),
-				"error",
-				err,
-			)
 			return nil, privateContentHandlerError(err)
 		}
 		return response, nil
@@ -1419,14 +1411,6 @@ func (s *subServer) handleUnreact(ctx context.Context, req *model.UnreactToPostR
 			req,
 		)
 		if err != nil {
-			logger.Error(
-				ctx,
-				"failed to remove private moment reaction",
-				"post_id",
-				req.GetPostId(),
-				"error",
-				err,
-			)
 			return nil, privateContentHandlerError(err)
 		}
 		return response, nil
