@@ -2,6 +2,8 @@
 
 import { readFileSync } from 'node:fs';
 
+import { create, toBinary } from '@bufbuild/protobuf';
+import { timestampFromMs } from '@bufbuild/protobuf/wkt';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const invokeMock = vi.hoisted(() => vi.fn());
@@ -38,9 +40,15 @@ import {
 import { resetMobileNavigation } from '../app/navigation';
 import { useAuthStore } from '../features/auth/authStore';
 import {
+  MobileDraftEnvelopeV2Schema,
+  MobileDraftSurfaceKind,
+  MomentDraftPayloadSchema,
+} from '../gen/proto/domain/mobile/reliability_pb';
+import {
   bindMobileMutationAdmission,
   bindMobileSessionMutationAdmission,
 } from '../runtimes/mutationAdmission';
+import { getRecoveryProjection } from '../runtimes/recoveryProjection';
 import { runRuntimeSessionTransition } from '../runtimes/runtimeSessionTransition';
 import {
   fenceSessionRuntimeProjection,
@@ -535,6 +543,71 @@ describe('Mobile Acceptance Harness', () => {
       'draft_save',
       'draft_list',
     ]);
+  });
+
+  it('clears blocking draft recovery after harness restore succeeds', async () => {
+    activateAcceptanceSession();
+    const envelope = create(MobileDraftEnvelopeV2Schema, {
+      schemaRevision: 2,
+      stationPeerId: 'station-peer',
+      actorPtid: 'ptid:alice',
+      surfaceKind: MobileDraftSurfaceKind.MOMENT_COMPOSER,
+      targetId: 'compose',
+      updatedAt: timestampFromMs(1),
+      payload: {
+        case: 'moment',
+        value: create(MomentDraftPayloadSchema, {
+          text: 'Restored Moment',
+          mediaRefs: [],
+        }),
+      },
+    });
+    const draft = {
+      key: 'moment:compose',
+      kind: 'moments' as const,
+      surfaceKind: 'moment' as const,
+      targetId: 'compose',
+      updatedAtMs: 1,
+      envelope,
+    };
+    const encoded = Array.from(
+      toBinary(MobileDraftEnvelopeV2Schema, envelope),
+    );
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === 'reliability_status') {
+        return {
+          active: true,
+          stationPeerId: 'station-peer',
+          actorPtid: 'ptid:alice',
+          runtimeGeneration: 1,
+        };
+      }
+      if (command === 'reliability_list_commands') return [];
+      if (command === 'draft_list') return [encoded];
+      if (command === 'draft_load') return encoded;
+      if (command === 'reliability_list_projection_checkpoints') return [];
+      throw new Error(`unexpected command: ${command}`);
+    });
+    const recovery = getRecoveryProjection();
+    recovery.reportDraftRestorePending([draft]);
+
+    await expect(createMobileAcceptanceHarness()['reliability.draft.action']({
+      action: 'restore',
+      kind: 'moment',
+      targetId: 'compose',
+    })).resolves.toMatchObject({
+      drafts: [{
+        kind: 'moments',
+        surfaceKind: 'moment',
+        targetId: 'compose',
+      }],
+    });
+
+    expect(recovery.getSnapshot().states).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'draft-restore-pending' }),
+      ]),
+    );
   });
 
   it.each([false, true])(

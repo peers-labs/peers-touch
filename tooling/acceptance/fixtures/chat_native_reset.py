@@ -2430,9 +2430,14 @@ def reset_local_client_storage(
     storage_root = root or (
         REPO_ROOT / ".local" / "acceptance" / "embedded-webdriver"
     )
+    storage_accounts: list[str] = []
     for account in accounts:
-        if account not in {"alice", "bob", "charlie"}:
+        storage_account = "charlie" if account == "eve" else account
+        if storage_account not in {"alice", "bob", "charlie"}:
             raise RuntimeError(f"unsupported native Chat fixture account: {account}")
+        if storage_account not in storage_accounts:
+            storage_accounts.append(storage_account)
+    for account in storage_accounts:
         storage = storage_root / account / "storage"
         if storage.exists():
             shutil.rmtree(storage)

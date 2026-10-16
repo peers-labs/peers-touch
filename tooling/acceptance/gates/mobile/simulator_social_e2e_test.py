@@ -240,7 +240,7 @@ class SimulatorSocialGateTests(unittest.TestCase):
             .additional_fixture_roles_by_gate["mobile-social-ios-native"],
             ("eve",),
         )
-        self.assertFalse(
+        self.assertTrue(
             MobileSocialIOSSimulatorProvisioner.requires_actor_reset,
         )
         self.assertEqual(
@@ -353,6 +353,156 @@ class SimulatorSocialGateTests(unittest.TestCase):
         self.assertEqual(report["metrics"]["provisioningRuns"], 1)
         self.assertEqual(report["metrics"]["clientLaunches"], 2)
         self.assertEqual(report["metrics"]["completedScenarios"], 6)
+
+    def test_ios_recovery_restores_exact_persisted_moment_draft(self) -> None:
+        payload_sha256 = "a" * 64
+        draft = {
+            "kind": "moments",
+            "surfaceKind": "moment",
+            "targetId": "compose",
+            "payloadSha256": payload_sha256,
+        }
+        calls: list[tuple[str, object]] = []
+        ui_selectors: list[str] = []
+
+        class Session:
+            def call_action(
+                self,
+                action: str,
+                payload: object = None,
+            ) -> object:
+                calls.append((action, payload))
+                if action == "navigation.apply":
+                    return {}
+                if action == "reliability.draft.read":
+                    return [draft]
+                if action == "lifecycle.restart":
+                    return {"requested": True, "scope": "webview"}
+                if action == "reliability.draft.action":
+                    return {"drafts": [draft]}
+                if action == "session.logout":
+                    return {}
+                if action == "lifecycle.scope.read":
+                    return {"activeActorPtid": "ptid:eve"}
+                if action == "moments.private.snapshot":
+                    return {"reads": [], "publish": []}
+                raise AssertionError((action, payload))
+
+            def execute_script(
+                self,
+                script: str,
+                *args: object,
+            ) -> object:
+                if args and isinstance(args[0], str):
+                    ui_selectors.append(args[0])
+                if "'value' in node" in script:
+                    return "MPS09 recovery draft journey"
+                return True
+
+        class Journey:
+            def authenticate(self, *_args: object, **_kwargs: object) -> None:
+                return None
+
+        result = SimulatorSocialGate(
+            "ios-social-parity"
+        )._run_ios_recovery_lifecycle(
+            session=Session(),
+            eve=self._actor("sim-ios", "eve"),
+            journey=Journey(),  # type: ignore[arg-type]
+            journey_id="journey",
+            state={"privatePostId": "private-post"},
+        )
+
+        self.assertEqual(
+            calls.count((
+                "reliability.draft.read",
+                {"kind": "moment", "targetId": "compose"},
+            )),
+            2,
+        )
+        self.assertIn((
+            "reliability.draft.action",
+            {
+                "action": "restore",
+                "kind": "moment",
+                "targetId": "compose",
+            },
+        ), calls)
+        self.assertEqual(
+            calls.count((
+                "navigation.apply",
+                {"kind": "primary", "routeId": "tab:moments"},
+            )),
+            2,
+        )
+        self.assertEqual(
+            ui_selectors.count(
+                '[data-acceptance-id="social-composer-open"]'
+            ),
+            2,
+        )
+        self.assertTrue(result["draftRestored"])
+        self.assertIn(payload_sha256, result["supportingObservation"])
+
+    def test_ios_native_quality_accepts_three_accessible_social_tabs(self) -> None:
+        class Session:
+            def call_action(
+                self,
+                action: str,
+                payload: object = None,
+            ) -> object:
+                self.assert_navigation(action, payload)
+                return {}
+
+            @staticmethod
+            def assert_navigation(action: str, payload: object) -> None:
+                if (
+                    action != "navigation.apply"
+                    or payload != {
+                        "kind": "primary",
+                        "routeId": "tab:moments",
+                    }
+                ):
+                    raise AssertionError((action, payload))
+
+            def execute_script(self, script: str, *_args: object) -> object:
+                if "viewportWidth" in script:
+                    return {
+                        "viewportWidth": 402,
+                        "viewportHeight": 874,
+                        "tabCount": 3,
+                        "cardCount": 0,
+                        "searchLabelled": True,
+                        "circlesLabelled": True,
+                        "composerLabelled": True,
+                        "scopeWidth": 370,
+                        "pageWidth": 402,
+                        "flatFeed": True,
+                    }
+                return {
+                    "text": "Moments",
+                    "acceptanceId": "social-moments-page",
+                }
+
+            def switch_to_native(self) -> None:
+                return None
+
+            def get_page_source(self) -> str:
+                return "<AppiumAUT />"
+
+            def screenshot_bytes(self) -> bytes:
+                return b"x" * 1024
+
+            def switch_to_app_webview(self) -> None:
+                return None
+
+        result = SimulatorSocialGate(
+            "ios-social-parity"
+        )._run_ios_native_quality(Session())
+
+        self.assertEqual(result["metrics"]["tabCount"], 3)
+        self.assertEqual(result["nativeAxBytes"], len("<AppiumAUT />"))
+        self.assertEqual(result["screenshotBytes"], 1024)
 
     def test_ios_explore_opens_sort_sheet_before_selecting_hot(self) -> None:
         source = inspect.getsource(

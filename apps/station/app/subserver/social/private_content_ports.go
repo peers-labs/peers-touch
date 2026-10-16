@@ -319,11 +319,25 @@ func (d *privateContentRecipientDirectory) ValidateActiveEndpoint(
 		return err
 	}
 	for _, entry := range manifest.GetActiveEndpoints() {
-		if proto.Equal(entry.GetEndpoint(), endpoint) {
+		if sameActorEndpointIdentity(entry.GetEndpoint(), endpoint) {
 			return nil
 		}
 	}
 	return application.ErrPrivateContentInactiveEndpoint
+}
+
+func sameActorEndpointIdentity(
+	left *actormodel.ActorDeviceRef,
+	right *actormodel.ActorDeviceRef,
+) bool {
+	return left != nil &&
+		right != nil &&
+		left.GetActor() != nil &&
+		right.GetActor() != nil &&
+		left.GetActor().GetPtid() != "" &&
+		left.GetActor().GetPtid() == right.GetActor().GetPtid() &&
+		left.GetDeviceId() != "" &&
+		left.GetDeviceId() == right.GetDeviceId()
 }
 
 func (d *privateContentRecipientDirectory) endpointManifest(
