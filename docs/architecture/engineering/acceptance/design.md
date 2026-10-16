@@ -1674,6 +1674,14 @@ Desktop Rust receipt/decrypt path
 - reviewed long-lived evidence进入明确的repository archive owner，但runtime writer
   不得直接写该owner。
 
+Manifest 的 `artifacts` 是由已验证 `ArtifactRef` 构成的 typed ArtifactMap。
+其 role 是逻辑标识符；`pre-auth`、`token-accounting` 等名称不得被当作 payload
+敏感字段而替换整条引用。ArtifactMap 在 payload 脱敏完成后序列化，保留完整
+reference identity、path、SHA-256 与 media type。写入时及 finalization 时均扫描
+role 和 reference 字段的文本及已解析秘密的编码形式；发现秘密必须拒绝写入或
+发布，不能脱敏后继续发布损坏的引用。Result、runtime 与 artifact 内容继续使用
+通用脱敏规则，ArtifactMap 边界不扩大任意 payload 的白名单。
+
 禁止：
 
 - runtime writer写repo root、`tooling/`、`docs/`或`.git/`；

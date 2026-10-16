@@ -715,14 +715,31 @@ class ArtifactRef:
             ) from error
 
 
+def _validate_artifact_metadata(
+    role: str,
+    metadata: Mapping[str, str],
+    secret_values: tuple[str, ...],
+) -> None:
+    if not isinstance(role, str) or not role or "\x00" in role or len(role) > 256:
+        raise EvidenceManifestInvalid("invalid artifact role")
+    # Roles are identifiers, not payload field names. Scan their text and the
+    # closed ArtifactRef fields without interpreting the role as a secret key.
+    if (
+        redact_text_with_values(role, secret_values) != role
+        or redact_value_with_values(metadata, secret_values) != metadata
+    ):
+        raise EvidenceManifestInvalid(
+            "Acceptance artifact metadata contains secret material"
+        )
+
+
 def _register_current_artifact_role(
     reference: ArtifactRef,
     role: str,
     *,
     repo_root: Path,
 ) -> None:
-    if not role or "\x00" in role or len(role) > 256:
-        raise EvidenceManifestInvalid("invalid artifact role")
+    _validate_artifact_metadata(role, reference.to_dict(), _redaction_values())
     run_dir = current_run_directory(repo_root=repo_root)
     target = run_dir.joinpath(*PurePosixPath(reference.path).parts)
     if (
@@ -1301,6 +1318,11 @@ class RunHandle:
             if self.state != "ACTIVE":
                 raise EvidenceConflict("artifacts can only be written to an active run")
             normalized, target = self._target(relative_path)
+            _validate_artifact_metadata(
+                role if role is not None else normalized,
+                {"path": normalized, "mediaType": media_type},
+                self._redaction_values,
+            )
             if (
                 redact_text_with_values(normalized, self._redaction_values)
                 != normalized
@@ -1402,16 +1424,19 @@ class RunHandle:
                     self._redaction_values,
                 ),
                 "result": redacted_result,
-                "artifacts": {
-                    role: reference.to_dict()
-                    for role, reference in sorted(self._artifacts.items())
-                },
                 "redaction": {"status": redaction_status},
             }
             manifest = redact_value_with_values(
                 manifest,
                 self._redaction_values,
             )
+            # ArtifactMap is a typed metadata boundary. Payload redaction must
+            # not replace an ArtifactRef based on its logical role identifier.
+            manifest["artifacts"] = {}
+            for role, reference in sorted(self._artifacts.items()):
+                metadata = reference.to_dict()
+                _validate_artifact_metadata(role, metadata, self._redaction_values)
+                manifest["artifacts"][role] = metadata
             if redacted_secret_scan is not None:
                 manifest["result"]["secretScan"] = redacted_secret_scan
             encoded = (
@@ -1580,6 +1605,12 @@ class ArtifactSession:
                 media_type=media_type,
                 role=role,
             )
+        normalized = _validate_relative_path(relative_path).as_posix()
+        _validate_artifact_metadata(
+            role if role is not None else normalized,
+            {"path": normalized, "mediaType": media_type},
+            _redaction_values(),
+        )
         write_current_artifact(
             relative_path,
             value,

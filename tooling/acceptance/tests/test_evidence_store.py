@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import errno
+import hashlib
 import json
 import multiprocessing
 import os
@@ -270,6 +271,85 @@ class EvidenceStoreTests(unittest.TestCase):
         self.assertEqual(persisted["source"]["authorization"], REDACTED)
         self.assertEqual(persisted["runtime"]["password"], REDACTED)
         self.assertNotIn(secret, json.dumps(persisted))
+
+    def test_manifest_preserves_artifact_roles_while_redacting_payloads(self) -> None:
+        secret = "fixture credential value"
+        run = self.store.begin_run("metadata-redaction-gate", source={})
+        run.configure_redaction((secret,))
+        references = {}
+        for index, role in enumerate(("auth", "reports/pre-auth.json", "token-accounting")):
+            references[role] = run.write_json(
+                f"reports/result-{index}.json",
+                {"authorization": secret, "detail": secret},
+                role=role,
+            )
+        with patch.dict(os.environ, run.subprocess_environment({}), clear=True):
+            child = ArtifactSession(repo_root=self.worktree, gate_id=run.gate_id)
+            references["pre-auth-snapshot"] = child.write_bytes(
+                "reports/child.json",
+                json.dumps({"password": secret}).encode(),
+                role="pre-auth-snapshot",
+            )
+        run.collect_existing_artifacts()
+        manifest = run.finalize(
+            result={"status": "passed", "auth": {"value": secret}},
+            runtime={"credentials": {"value": secret}},
+        )
+        run.publish_latest()
+        run.close()
+        persisted = self.store.latest(run.gate_id)
+        self.assertEqual(manifest["artifacts"], persisted["artifacts"])
+        self.assertEqual(set(persisted["artifacts"]), set(references))
+        self.assertEqual(persisted["result"]["auth"], REDACTED)
+        self.assertEqual(persisted["runtime"]["credentials"], REDACTED)
+        for role, reference in references.items():
+            self.assertEqual(persisted["artifacts"][role], reference.to_dict())
+            value = self.store.resolve(ArtifactRef.from_dict(persisted["artifacts"][role])).read_bytes()
+            self.assertEqual(hashlib.sha256(value).hexdigest(), reference.sha256)
+            self.assertNotIn(secret.encode(), value)
+            self.assertIn(REDACTED.encode(), value)
+
+    def test_secret_artifact_metadata_is_rejected_before_persistence(self) -> None:
+        secret = "fixture credential value"
+        run = self.store.begin_run("secret-metadata-gate", source={})
+        run.configure_redaction((secret,))
+        for writer_kind in ("parent", "child"):
+            with patch.dict(os.environ, run.subprocess_environment({}), clear=True):
+                writer = (
+                    run
+                    if writer_kind == "parent"
+                    else ArtifactSession(repo_root=self.worktree, gate_id=run.gate_id)
+                )
+                for index, (role, media_type) in enumerate((
+                    (secret, "text/plain"),
+                    ("fixture%20credential%20value", "text/plain"),
+                    ("ghp_" + "x" * 24, "text/plain"),
+                    ("report", secret),
+                    ("report", "text/plain;token=credential"),
+                )):
+                    with self.subTest(writer=writer_kind, role=role, media_type=media_type):
+                        relative = f"reports/{writer_kind}-{index}.txt"
+                        with self.assertRaises(EvidenceManifestInvalid):
+                            writer.write_bytes(relative, b"safe", role=role, media_type=media_type)
+                        self.assertFalse((run.run_dir / relative).exists())
+        run.close()
+
+    def test_finalization_rechecks_metadata_after_credentials_are_resolved(self) -> None:
+        for index, (relative, role, media_type) in enumerate((
+            ("reports/result.json", "fixture credential value", "text/plain"),
+            ("reports/fixture%20credential%20value.json", "report", "text/plain"),
+            ("reports/result.json", "report", "fixture credential value"),
+        )):
+            with self.subTest(role=role, path=relative, media_type=media_type):
+                run = self.store.begin_run(f"late-secret-metadata-{index}", source={})
+                run.write_bytes(relative, b"safe", role=role, media_type=media_type)
+                run.configure_redaction(("fixture credential value",))
+                with self.assertRaises(EvidenceManifestInvalid):
+                    run.finalize(result={"status": "passed"})
+                self.assertFalse((run.run_dir / "manifest.json").exists())
+                with self.assertRaises(EvidenceConflict):
+                    run.publish_latest()
+                run.close()
 
     def test_finalize_rejects_noncanonical_secret_scan_object(self) -> None:
         invalid_scans = (
