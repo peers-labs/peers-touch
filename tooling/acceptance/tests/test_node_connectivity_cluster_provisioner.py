@@ -26,7 +26,7 @@ class NodeConnectivityClusterProvisionerTest(unittest.TestCase):
         environment = (
             NodeConnectivityClusterProvisioner._compose_environment(
                 project="pt-ncp-0123456789abcdef",
-                host="10.37.246.80",
+                host="192.0.2.10",
                 source_commit="a" * 40,
                 node_a_http=38121,
                 node_a_libp2p=38122,
@@ -36,11 +36,11 @@ class NodeConnectivityClusterProvisionerTest(unittest.TestCase):
         )
         self.assertEqual(
             environment["PT_NCP_NODE_A_URL"],
-            "http://10.37.246.80:38121",
+            "http://192.0.2.10:38121",
         )
         self.assertEqual(
             environment["PT_NCP_NODE_B_URL"],
-            "http://10.37.246.80:38123",
+            "http://192.0.2.10:38123",
         )
         self.assertNotEqual(
             environment["PT_NCP_NODE_A_LIBP2P_PORT"],

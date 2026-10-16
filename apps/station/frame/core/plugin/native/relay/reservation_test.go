@@ -23,9 +23,9 @@ func TestCloneTargetPreservesControlPlaneConfiguration(t *testing.T) {
 	original := Target{
 		RelayPeerID: relayPeerID,
 		Addresses: []string{
-			"/ip4/10.37.118.48/tcp/4501/p2p/" + relayPeerID.String(),
+			"/ip4/192.0.2.20/tcp/4501/p2p/" + relayPeerID.String(),
 		},
-		ControlOrigin:  "https://10.37.118.48:18081",
+		ControlOrigin:  "https://192.0.2.20:18081",
 		InviteToken:    "invite",
 		CredentialFile: "/app/data/relay.json",
 		TLSCAFile:      "/app/relay-ca/relay.crt",
@@ -101,7 +101,7 @@ func TestCircuitDialMultiaddrsIncludeRelayTransportAddress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	base := multiaddr.StringCast("/ip4/10.37.118.48/tcp/4501")
+	base := multiaddr.StringCast("/ip4/192.0.2.20/tcp/4501")
 
 	addresses, err := circuitDialMultiaddrs(
 		peer.AddrInfo{

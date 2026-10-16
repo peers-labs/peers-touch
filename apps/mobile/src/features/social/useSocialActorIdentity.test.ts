@@ -8,10 +8,10 @@ describe('resolveSocialActorIdentity', () => {
       resolveSocialActorIdentity(
         {
           actorPtid: 'ptid:bob',
-          displayName: 'bob@10.37.221.38:18080',
+          displayName: 'bob@192.0.2.50:18080',
         },
         {
-          acct: 'bob@10.37.221.38:18080',
+          acct: 'bob@192.0.2.50:18080',
           avatar: 'https://station.example/bob.png',
           displayName: 'Bob',
           username: 'bob',

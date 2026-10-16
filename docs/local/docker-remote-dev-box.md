@@ -44,7 +44,7 @@ make docker-station REMOTE=<name>
 
 | Context Name | Host | SSH User | Notes |
 |-------------|------|----------|-------|
-| `dev-box` | `10.37.118.48` | `shuxian` | Office dev server, Docker 26.1.4 |
+| `dev-box` | `192.0.2.20` | `operator` | Documentation-only TEST-NET example |
 
 > Add more rows as you create new contexts.
 

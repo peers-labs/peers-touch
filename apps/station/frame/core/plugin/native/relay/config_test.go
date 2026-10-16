@@ -66,8 +66,8 @@ peers:
       relays:
         - peer-id: "12D3KooWLpZy2EgZ6SC2pgJFHjM13j1ygz7DXCfm9HiPeNQZ1uaW"
           addresses:
-            - "/ip4/10.37.118.48/tcp/4001/p2p/12D3KooWLpZy2EgZ6SC2pgJFHjM13j1ygz7DXCfm9HiPeNQZ1uaW"
-          control-origin: "https://10.37.118.48:18081"
+            - "/ip4/192.0.2.20/tcp/4001/p2p/12D3KooWLpZy2EgZ6SC2pgJFHjM13j1ygz7DXCfm9HiPeNQZ1uaW"
+          control-origin: "https://192.0.2.20:18081"
           credential-file: "/tmp/relay.json"
 `)),
 			),

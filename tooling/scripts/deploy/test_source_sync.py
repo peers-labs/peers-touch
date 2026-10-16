@@ -35,7 +35,7 @@ def _write_environment(path: Path, *, platform: str = "windows") -> None:
                 f"PT_DEPLOY_PLATFORM={platform}",
                 "PT_DEPLOY_HTTP_PORT=18080",
                 "PT_DEPLOY_HEALTH_PATH=/sub-oss/healthz",
-                "PT_DEPLOY_PUBLIC_BASE_URL=http://10.36.3.187:18080",
+                "PT_DEPLOY_PUBLIC_BASE_URL=http://198.51.100.60:18080",
                 "PT_DEPLOY_TASK_NAME=PeersTouch-sixwin-station",
                 "PT_DEPLOY_FIREWALL_REMOTE_ADDRESS=10.0.0.0/8",
                 "",

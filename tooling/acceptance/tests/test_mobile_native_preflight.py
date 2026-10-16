@@ -1313,14 +1313,14 @@ class AndroidUsbNetworkTransportTests(unittest.TestCase):
                 "ip",
                 "route",
                 "get",
-                "10.37.221.38",
+                "192.0.2.50",
             ):
                 return CommandResult(
                     0,
                     (
-                        "10.37.221.38 dev tun0 src 10.0.0.2 uid 2000\n"
+                        "192.0.2.50 dev tun0 src 10.0.0.2 uid 2000\n"
                         if self.route_active
-                        else "10.37.221.38 dev wlan0 src 192.0.2.2\n"
+                        else "192.0.2.50 dev wlan0 src 192.0.2.2\n"
                     ),
                 )
             if (
@@ -1439,7 +1439,7 @@ class AndroidUsbNetworkTransportTests(unittest.TestCase):
             return process
 
         transport = _AndroidUsbNetworkTransport(
-            "http://10.37.221.38:18080",
+            "http://192.0.2.50:18080",
             relay_port=49181,
             executor=executor,
             process_factory=spawn,
@@ -1450,9 +1450,9 @@ class AndroidUsbNetworkTransportTests(unittest.TestCase):
 
         self.assertEqual(
             attestation["canonicalOrigin"],
-            "http://10.37.221.38:18080",
+            "http://192.0.2.50:18080",
         )
-        self.assertEqual(attestation["route"], "10.37.221.38/32")
+        self.assertEqual(attestation["route"], "192.0.2.50/32")
         self.assertEqual(
             spawned[0][0],
             (
@@ -1508,7 +1508,7 @@ class AndroidUsbNetworkTransportTests(unittest.TestCase):
             return process
 
         transport = _AndroidUsbNetworkTransport(
-            "https://10.37.221.38:18443",
+            "https://192.0.2.50:18443",
             relay_port=49181,
             executor=executor,
             process_factory=spawn,
@@ -1536,7 +1536,7 @@ class AndroidUsbNetworkTransportTests(unittest.TestCase):
             return process
 
         transport = _AndroidUsbNetworkTransport(
-            "http://10.37.221.38:18080",
+            "http://192.0.2.50:18080",
             relay_port=49181,
             executor=executor,
             process_factory=spawn,
@@ -1568,7 +1568,7 @@ class AndroidUsbNetworkTransportTests(unittest.TestCase):
             return process
 
         transport = _AndroidUsbNetworkTransport(
-            "http://10.37.221.38:18080",
+            "http://192.0.2.50:18080",
             relay_port=49181,
             executor=executor,
             process_factory=spawn,
@@ -1609,7 +1609,7 @@ class AndroidUsbNetworkTransportTests(unittest.TestCase):
         )
         executor.dialog_visible = True
         transport = _AndroidUsbNetworkTransport(
-            "http://10.37.221.38:18080",
+            "http://192.0.2.50:18080",
             relay_port=49181,
             executor=executor,
             tool=self.tool(),
@@ -1636,7 +1636,7 @@ class AndroidUsbNetworkTransportTests(unittest.TestCase):
             return process
 
         transport = _AndroidUsbNetworkTransport(
-            "http://10.37.221.38:18080",
+            "http://192.0.2.50:18080",
             relay_port=49181,
             executor=executor,
             process_factory=spawn,
@@ -1657,7 +1657,7 @@ class AndroidUsbNetworkTransportTests(unittest.TestCase):
                 command[-2:]
                 == (
                     "5",
-                    "http://10.37.221.38:18080/sub-oss/healthz",
+                    "http://192.0.2.50:18080/sub-oss/healthz",
                 )
                 for command in executor.commands
             )
@@ -1697,7 +1697,7 @@ class AndroidUsbNetworkTransportTests(unittest.TestCase):
         executor = CancelAfterDumpExecutor(consent_required=True)
         executor.dialog_visible = True
         transport = _AndroidUsbNetworkTransport(
-            "http://10.37.221.38:18080",
+            "http://192.0.2.50:18080",
             relay_port=49181,
             executor=executor,
             tool=self.tool(),
@@ -1734,7 +1734,7 @@ class AndroidUsbNetworkTransportTests(unittest.TestCase):
             raise OSError("relay unavailable")
 
         transport = _AndroidUsbNetworkTransport(
-            "http://10.37.221.38:18080",
+            "http://192.0.2.50:18080",
             relay_port=49181,
             executor=executor,
             process_factory=spawn,
@@ -1775,7 +1775,7 @@ class AndroidUsbNetworkTransportTests(unittest.TestCase):
             return_value=tool,
         ):
             transport = _AndroidUsbNetworkTransport(
-                "http://10.37.221.38:18080",
+                "http://192.0.2.50:18080",
                 relay_port=49181,
                 executor=executor,
                 process_factory=spawn,
@@ -1819,7 +1819,7 @@ class AndroidUsbNetworkTransportTests(unittest.TestCase):
             return_value=tool,
         ):
             transport = _AndroidUsbNetworkTransport(
-                "http://10.37.221.38:18080",
+                "http://192.0.2.50:18080",
                 relay_port=49181,
                 executor=executor,
                 tool=None,
@@ -1861,8 +1861,8 @@ class AndroidUsbNetworkTransportTests(unittest.TestCase):
     def test_transport_rejects_non_origin_or_non_ipv4_station(self) -> None:
         for value in (
             "http://station.example:18080",
-            "http://10.37.221.38:18080/path",
-            "http://user@10.37.221.38:18080",
+            "http://192.0.2.50:18080/path",
+            "http://user@192.0.2.50:18080",
             "http://[::1]:18080",
         ):
             with self.subTest(value=value), self.assertRaisesRegex(
@@ -1889,7 +1889,7 @@ class AndroidUsbNetworkTransportTests(unittest.TestCase):
                 return {
                     "activeStationPeerId": "peer-five-arm",
                     "verifiedStationPeerId": "peer-five-arm",
-                    "canonicalOrigin": "http://10.37.221.38:18080",
+                    "canonicalOrigin": "http://192.0.2.50:18080",
                     "entries": [],
                 }
 
@@ -1912,7 +1912,7 @@ class AndroidUsbNetworkTransportTests(unittest.TestCase):
                 "sessionRef": "session-ref",
                 "action": "station.add",
                 "actionPayload": {
-                    "url": "http://10.37.221.38:18080",
+                    "url": "http://192.0.2.50:18080",
                 },
             },
             deadline_monotonic=time.monotonic() + 5,
@@ -1924,7 +1924,7 @@ class AndroidUsbNetworkTransportTests(unittest.TestCase):
             [
                 (
                     "station.add",
-                    {"url": "http://10.37.221.38:18080"},
+                    {"url": "http://192.0.2.50:18080"},
                 )
             ],
         )
