@@ -356,6 +356,7 @@ class MessagePublishingNativeGateTests(unittest.TestCase):
 
         self.assertIn('"engineConversations"', method_source)
         self.assertIn('"engineMessages"', method_source)
+        self.assertIn('"engineServiceMessages"', method_source)
         self.assertIn('"servicePlaintextConfined": True', method_source)
         self.assertNotIn('"createDirectConversation"', method_source)
         self.assertNotIn('"sendInteractionMessage"', method_source)
@@ -391,26 +392,24 @@ class MessagePublishingNativeGateTests(unittest.TestCase):
                     ]
                 }
             if method == "engineMessages":
-                conversation_id = str(
-                    (payload or {}).get("conversationId") or ""
-                )
+                return {
+                    "messages": [
+                        {
+                            "id": "human-message-1",
+                        }
+                    ]
+                }
+            if method == "engineServiceMessages":
+                conversation_id = str((payload or {}).get("conversationId") or "")
                 if conversation_id == "service-direct-1":
                     return {
                         "messages": [
                             {
                                 "id": "service-message-1",
-                                "serviceMessage": {"messageId": "service-message-1"},
                             }
                         ]
                     }
-                return {
-                    "messages": [
-                        {
-                            "id": "human-message-1",
-                            "serviceMessage": None,
-                        }
-                    ]
-                }
+                return {"messages": []}
             if method == "identityState":
                 return {
                     "authenticated": True,
@@ -427,7 +426,7 @@ class MessagePublishingNativeGateTests(unittest.TestCase):
         queried_conversations = {
             call.args[1]["conversationId"]
             for call in gate.harness.call_args_list
-            if call.args and call.args[0] == "engineMessages"
+            if call.args and call.args[0] == "engineServiceMessages"
         }
         self.assertEqual(
             queried_conversations,

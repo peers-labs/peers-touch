@@ -1455,12 +1455,11 @@ class MessagePublishingNativeGate(AcceptanceGate):
             )
             for conversation in projected
         }
-        conversation_ids = sorted(
-            projected_conversation_ids | service_conversation_ids
-        )
         service_message_count = 0
         ordinary_message_count = 0
-        for conversation_id in conversation_ids:
+        for conversation_id in sorted(
+            projected_conversation_ids - service_conversation_ids
+        ):
             if not conversation_id:
                 raise GateError("Human messaging conversation identity is empty")
             messages = _mapping(
@@ -1476,20 +1475,41 @@ class MessagePublishingNativeGate(AcceptanceGate):
             ).get("messages")
             if not isinstance(messages, list):
                 raise GateError("Human messaging message list is invalid")
-            for message in messages:
-                projection = _mapping(message, "message projection")
-                is_service = isinstance(
-                    projection.get("serviceMessage"),
-                    dict,
+            ordinary_message_count += len(messages)
+            service_messages = _mapping(
+                self.harness(
+                    "engineServiceMessages",
+                    {
+                        "actorPtid": self.owner_ptid,
+                        "conversationId": conversation_id,
+                    },
+                    namespace="chat",
+                ),
+                "ordinary Direct service-message projection",
+            ).get("messages")
+            if not isinstance(service_messages, list):
+                raise GateError("Service-message projection is invalid")
+            if service_messages:
+                raise GateError(
+                    "Service plaintext entered an ordinary human Direct"
                 )
-                if is_service:
-                    service_message_count += 1
-                    if conversation_id not in service_conversation_ids:
-                        raise GateError(
-                            "Service plaintext entered an ordinary human Direct"
-                        )
-                else:
-                    ordinary_message_count += 1
+        for conversation_id in sorted(service_conversation_ids):
+            if not conversation_id:
+                raise GateError("Service Direct conversation identity is empty")
+            service_messages = _mapping(
+                self.harness(
+                    "engineServiceMessages",
+                    {
+                        "actorPtid": self.owner_ptid,
+                        "conversationId": conversation_id,
+                    },
+                    namespace="chat",
+                ),
+                "Service Direct service-message projection",
+            ).get("messages")
+            if not isinstance(service_messages, list):
+                raise GateError("Service-message projection is invalid")
+            service_message_count += len(service_messages)
         if service_message_count == 0:
             raise GateError("Service Direct isolation has no committed evidence")
         identity = _mapping(

@@ -47,6 +47,7 @@ function lifecycleDependencies() {
   return {
     createRestorableCommand: vi.fn(),
     prepareSubmittedCommand: vi.fn(),
+    readServiceMessages: vi.fn(),
     resumeMessagingLifecycle: vi.fn(),
     seedConversationClear: vi.fn(),
   };
@@ -183,6 +184,7 @@ describe('nativeAcceptanceBridge', () => {
       createRestorableCommand: vi.fn(),
       resumeMessagingLifecycle,
       readMessages: vi.fn(),
+      readServiceMessages: vi.fn(),
       readConversations: vi.fn(),
       readMemberSettings: vi.fn(),
       openAttachment: vi.fn(),
@@ -288,6 +290,17 @@ describe('nativeAcceptanceBridge', () => {
 
   it('routes bounded readbacks through the matching Tauri-window actor', async () => {
     const messages: MessagingProjection[] = [];
+    const serviceMessages = [{
+      eventId: 'service-event-1',
+      eventSequence: 1,
+      messageId: 'service-message-1',
+      senderPtid: 'ptid:v1:actor:service',
+      fallbackText: 'Service message',
+      sourceNamespace: 'service.acceptance',
+      content: { primary: { kind: 'text', text: 'Service message' } },
+      sourceContext: { program: '', workspace: '', sessionId: '', labels: {} },
+      timestampUnixMs: 1,
+    }];
     const conversations: MessagingConversationProjection[] = [];
     const settings = {
       nickname: '',
@@ -304,6 +317,7 @@ describe('nativeAcceptanceBridge', () => {
       completeLogoutLifecycle: vi.fn(),
       readInteractionSnapshot: vi.fn(),
       readMessages: vi.fn().mockResolvedValue(messages),
+      readServiceMessages: vi.fn().mockResolvedValue(serviceMessages),
       readConversations: vi.fn().mockResolvedValue(conversations),
       readMemberSettings: vi.fn().mockResolvedValue(settings),
       openAttachment: vi.fn().mockResolvedValue('/tmp/attachment'),
@@ -314,6 +328,10 @@ describe('nativeAcceptanceBridge', () => {
       actorPtid: ACTOR_PTID,
       conversationId: ' conversation-1 ',
     })).resolves.toEqual({ messages });
+    await expect(bridge.engineServiceMessages({
+      actorPtid: ACTOR_PTID,
+      conversationId: ' conversation-1 ',
+    })).resolves.toEqual({ messages: serviceMessages });
     await expect(bridge.engineConversations({
       actorPtid: ACTOR_PTID,
     })).resolves.toEqual({ conversations });
