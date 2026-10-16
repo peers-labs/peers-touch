@@ -8,6 +8,11 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/bot/domain"
 )
 
+const (
+	opaqueCredentialOne = "fixture-credential-1"
+	opaqueCredentialTwo = "fixture-credential-2"
+)
+
 type memoryRepository struct {
 	bots map[string]*domain.Bot
 }
@@ -99,7 +104,7 @@ func (m *fakePublishingManager) CreateForBot(
 		AllowedTargets:     []string{"conversation-1"},
 		RateLimitPerMinute: 120,
 	}
-	m.secret = "secret-1"
+	m.secret = opaqueCredentialOne
 	return PublishingCreated{Grant: m.grant, Secret: m.secret}, nil
 }
 func (m *fakePublishingManager) Get(
@@ -123,7 +128,7 @@ func (m *fakePublishingManager) Rotate(
 		owner:        owner,
 		publishingID: publishingID,
 	})
-	return PublishingCreated{Grant: m.grant, Secret: "secret-2"}, nil
+	return PublishingCreated{Grant: m.grant, Secret: opaqueCredentialTwo}, nil
 }
 func (m *fakePublishingManager) SetDisabled(
 	_ context.Context,
@@ -176,7 +181,7 @@ func TestBotCreateDelegatesToGenericPublishing(t *testing.T) {
 	}
 	if created.Bot.PublishingID != publishing.grant.ID ||
 		created.Publishing.ID != publishing.grant.ID ||
-		created.Secret != "secret-1" {
+		created.Secret != opaqueCredentialOne {
 		t.Fatalf("created Bot = %+v", created)
 	}
 	if len(publishing.createCalls) != 1 {
