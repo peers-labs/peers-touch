@@ -239,7 +239,7 @@ def find(value):
 hits = find(payload)
 if hits is None:
     raise SystemExit("cache_hits field missing from sccache statistics")
-print(int(hits))
+sys.stdout.write(str(int(hits)) + "\n")
 '
 }
 
