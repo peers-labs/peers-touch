@@ -20,6 +20,7 @@ from tooling.acceptance.core import (
 from tooling.acceptance.core.errors import BlockedError, ProvisioningError
 from tooling.acceptance.provisioners.native_desktop_windows import (
     NativeDesktopWindowsProvisioner,
+    WINDOWS_SOURCE_COPY_TIMEOUT_SECONDS,
     WindowsCellProfile,
     _json_output,
     _normalized_windows_path,
@@ -234,6 +235,19 @@ class WindowsCellProfileTest(unittest.TestCase):
 
 
 class WindowsProvisionerContractTest(unittest.TestCase):
+    def test_source_bundle_copy_budget_covers_slow_remote_links(self) -> None:
+        source = WINDOWS_PROVISIONER_PATH.read_text(encoding="utf-8")
+
+        self.assertEqual(WINDOWS_SOURCE_COPY_TIMEOUT_SECONDS, 900)
+        self.assertIn(
+            "timeout=WINDOWS_SOURCE_COPY_TIMEOUT_SECONDS",
+            source,
+        )
+        self.assertNotIn(
+            "copy_file(bundle, remote_bundle, timeout=300)",
+            source,
+        )
+
     def test_orchestrator_endpoint_uses_distinct_remote_port(self) -> None:
         provisioner = NativeDesktopWindowsProvisioner.__new__(
             NativeDesktopWindowsProvisioner

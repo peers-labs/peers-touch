@@ -66,6 +66,7 @@ _BROKER_RELATIVE_PATH = (
 )
 _BINARY_RELATIVE_PATH = "debug/peers-touch-desktop.exe"
 _BUILD_SCRIPT_RELATIVE_PATH = "tooling/scripts/windows-desktop-build.ps1"
+WINDOWS_SOURCE_COPY_TIMEOUT_SECONDS = 900
 
 
 def _required(values: dict[str, str], key: str, source: Path) -> str:
@@ -1312,7 +1313,11 @@ class NativeDesktopWindowsProvisioner:
                     "Temp",
                     f"pt-source-{secrets.token_hex(8)}.bundle",
                 )
-                self.transport.copy_file(bundle, remote_bundle, timeout=300)
+                self.transport.copy_file(
+                    bundle,
+                    remote_bundle,
+                    timeout=WINDOWS_SOURCE_COPY_TIMEOUT_SECONDS,
+                )
                 try:
                     self.transport.run_argv(
                         (
