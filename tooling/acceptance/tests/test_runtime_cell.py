@@ -362,6 +362,19 @@ class RuntimeCellManifestTests(unittest.TestCase):
             non_interference_probe=True,
             non_interference=baseline,
         )
+        sampling_jitter = replace(
+            baseline,
+            pointer_x_after=120.25,
+            pointer_y_after=239.75,
+        )
+        replace(
+            manifest,
+            native_adapter=replace(
+                adapter,
+                non_interference=sampling_jitter,
+            ),
+        ).validate(contract)
+
         changed_states = (
             replace(baseline, frontmost_pid_after=42),
             replace(baseline, pointer_x_after=121.0),

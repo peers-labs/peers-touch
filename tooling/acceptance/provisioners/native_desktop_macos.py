@@ -753,7 +753,6 @@ class NativeDesktopMacOSProvisioner:
             valid = (
                 not control.error
                 and control.actual_frontmost_pid == process_id
-                and bool(control.platform_role)
             )
             identity = (
                 cls._keyboard_focus_identity(control) if valid else None

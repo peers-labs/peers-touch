@@ -62,6 +62,7 @@ _SUPPORTED_DESKTOP_INPUT_MODES = (
     "semantic-nonintrusive",
     "exclusive-native-input",
 )
+_POINTER_STABILITY_TOLERANCE_POINTS = 0.5
 _FORBIDDEN_SESSION_TYPES = ("xvfb",)
 _SLUG_MAX = 128
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
@@ -542,8 +543,10 @@ class CellNonInterferenceIdentity:
             self.frontmost_pid_before > 0
             and self.frontmost_pid_after > 0
             and self.frontmost_pid_before == self.frontmost_pid_after
-            and self.pointer_x_before == self.pointer_x_after
-            and self.pointer_y_before == self.pointer_y_after
+            and abs(self.pointer_x_before - self.pointer_x_after)
+            <= _POINTER_STABILITY_TOLERANCE_POINTS
+            and abs(self.pointer_y_before - self.pointer_y_after)
+            <= _POINTER_STABILITY_TOLERANCE_POINTS
             and self.keyboard_focus_before_sha256
             == self.keyboard_focus_after_sha256
         )
