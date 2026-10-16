@@ -215,7 +215,7 @@ class DevRuntimeProfileResolutionTest(unittest.TestCase):
         self.assertIn("metadata.st_uid != os.getuid()", src)
         self.assertIn("profile.parent != root", src)
 
-    def test_machine_registry_rejects_unreviewed_or_unauthorized_profiles(self) -> None:
+    def test_machine_registry_accepts_local_and_rejects_unreviewed_remote_profiles(self) -> None:
         src = self.source(
             "tooling/scripts/local-dev/machine-dev-registry.mjs"
         )
@@ -229,17 +229,8 @@ class DevRuntimeProfileResolutionTest(unittest.TestCase):
             src,
             "machine resolution must reject dirty profile directories",
         )
-        self.assertIn(
-            "environmentAuthorizationHelperPath()",
-            src,
-            "machine resolution must use the canonical authorization helper",
-        )
-        self.assertIn(
-            "'verify'",
-            src,
-            "machine-local profiles require a consumed authorization receipt",
-        )
-        self.assertIn("sourceState = 'authorized-local'", src)
+        self.assertIn("sourceState = 'local'", src)
+        self.assertNotIn("environmentAuthorizationHelperPath()", src)
 
     def test_env_sh_scopes_runtime_dirs_by_profile(self) -> None:
         src = self.source("tooling/scripts/local-dev/env.sh")
@@ -260,22 +251,17 @@ class DevRuntimeProfileResolutionTest(unittest.TestCase):
         )
         self.assertIn('--profile "$(PROFILE_ARG)" \\', make_src)
         self.assertIn('--owner "$(ENV_OWNER_ARG)"', make_src)
-        self.assertIn("profile.sh {authorize|init|list}", profile_src)
+        self.assertIn("profile.sh {init|list}", profile_src)
         self.assertNotIn("activate)", profile_src)
         self.assertNotIn("ln -sfn", profile_src)
 
-    def test_profile_init_consumes_human_authorization(self) -> None:
+    def test_profile_init_directly_creates_non_overwriting_local_profile(self) -> None:
         src = self.source("tooling/scripts/local-dev/profile.sh")
-        self.assertIn(
-            '"$AUTHORIZATION_SCRIPT" consume',
-            src,
-            "profile-init must consume an exact machine authorization before "
-            "creating a local profile",
-        )
+        self.assertNotIn("AUTHORIZATION_SCRIPT", src)
         self.assertIn(
             "profile-init never overwrites an existing environment",
             src,
-            "profile-init must not turn one authorization into overwrite authority",
+            "profile-init must not overwrite an existing local Profile",
         )
 
     def test_remote_deploy_resolves_reviewed_env_repository_definition(self) -> None:

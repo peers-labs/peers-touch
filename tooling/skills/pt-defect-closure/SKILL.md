@@ -136,7 +136,7 @@ Instead:
 Before Acceptance injection:
 
 1. Run focused unit/type/contract checks for the owning layer.
-2. Create an authorized clean checkpoint commit when the Journey needs remote
+2. Create a clean checkpoint commit autonomously when the Journey needs remote
    or exact-source runtime.
 3. Deploy and launch only through Local Dev Control Plane / Make owners.
 4. Run the real product Journey in its required runtime and receiver
@@ -269,7 +269,8 @@ After recording the growth asset:
 ## Anti-Patterns
 
 Never:
-- Write or acquire runtime resources before the public declaration.
+- Acquire runtime resources without the concrete entrypoint's binding,
+  permission, target, source, and lease checks.
 - Fix a bug without checking which layer owns the state
 - Fix a UI defect without writing an interaction contract
 - Skip prototype sync for UI changes
@@ -281,7 +282,7 @@ Never:
   verification owner
 - Ask the user to operate a deterministic Journey that the repository driver or
   detected host adapter can execute
-- Leave a source-bound functional PASS outside the Development Session
+- Leave a source-bound functional PASS without current evidence references
 - Use `pt-acceptance-infra-engineering` for business-domain injection
 - Treat product implementation as the design source when it differs from prototype
 - Let the interaction contract format limitation block the fix — record the gap and proceed

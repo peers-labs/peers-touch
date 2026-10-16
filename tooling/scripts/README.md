@@ -47,10 +47,8 @@ export VITE_PORT=3000
 | `proto-gen-mobile.sh` | 可用 | 生成 Mobile proto 产物 | 支持 `kotlin` / `swift` / `web` / `all`；`web` 通过临时目录生成，只替换真实变化并统一新文件/变化文件的 EOF |
 | `verify-worktree-binding.py` | 推荐 | capture/verify 当前执行 worktree 的 fail-closed identity | 校验 canonical root、branch、`workspaceId` 与 expected HEAD；必须从被绑定 root 运行，且不受无关 sibling worktree 变更影响 |
 | `verify-worktree-binding-test.py` | 可用 | 回归验证 worktree identity guard 与 Goal 队列契约 | 覆盖 wrong cwd、detached HEAD、identity drift、sibling worktree churn、持久 schema，以及 Ready/Parked queue 与 exhaustion-proof 阻塞语义 |
-| `local-dev/worktree-create.mjs` | 推荐 | 以可恢复事务创建经用户授权的 Agent worktree，并持久化主会话来源 | `make worktree-create WORKTREE=<absolute-path> BRANCH=<new-branch> PURPOSE='<text>' [START=<ref>]`；`START` 先解析为 commit，Git 创建与 provenance 发布可重试；禁止 Agent 直接运行 `git worktree add` |
 | `local-dev/machine-dev.mjs` | 推荐 | 管理 machine-authoritative workspace registration 与 runtime lease | `make env-{register,update,check,status-all}`；显式删除 worktree 前用 `make env-unregister`，禁止手改 registry |
-| `local-dev/dev-resource-plan.mjs` | 内部 owner | 聚合标准 `ModuleImpact`、解析 target 依赖、计算峰值容量并把 ready target 的具体资源 claims 原子写入现有 Development declaration | 由 `make dev-resources-prepare/status` 与 `make dev-resource-record` 调用；不启动或清理物理资源，业务 Gate 只 attach 到 Runtime Owner manifest |
-| `local-dev/environment-creation-authorization.py` | 内部依赖 | 管理 human-only environment creation grant | `make profile-authorize` 交互创建 30 分钟 exact-tuple grant；`profile-init` 单次消费并保留 profile digest receipt；Agent 不得创建 grant |
+| `local-dev/task-progress-store.mjs` | 可选 | 保存显式 taskId 的单一原子快照、checksum、CAS、证据失效与局部损坏隔离 | `.dev-workflow/tasks/<taskId>/task.json`；不参与写入或运行准入 |
 | `check-social-runtime-boundaries.sh` | 可用 | 校验双端社交 Runtime 边界 | 禁止页面/组件直接拥有社交实时流、reconcile、长期 freshness |
 | `check-frontend-runtime-registry.sh` | 可用 | 校验 Frontend Runtime registry 门禁 | 检查 registry 必填字段、alive/status 枚举、evidence、`needs audit` owner/revisit wording，并支持 review diff-range warning |
 | `apps/mobile/scripts/check-social-wire-contract.sh` | 可用 | 校验 Mobile 社交实时协议契约 | 禁止回退到手写 protobuf wire decoder |
@@ -61,12 +59,11 @@ export VITE_PORT=3000
 | `review/hard-rules.sh` | 推荐 | 自动拦截 Review 铁律违规 | 检查 debug 语句、泄密、生成物手改、mock API、硬编码 UI 文案、静默吞错及已退役产品标识（tracked 内容与路径）；无 Proto diff 时仅允许与隔离目录内 canonical Mobile Web regeneration 完全一致的生成物变更 |
 | `review/knowledge-match.sh` | 推荐 | 匹配 `docs/knowledge/` 的 `owns:` | 输出 PR 必读 invariant / pitfall / playbook，并支持 strict 新鲜度校验 |
 | `review/skill-check.sh` | 推荐 | 校验 Review Skill 完整性与新鲜度 | 检查 skill 结构、上游文档 hash、golden fixtures 和危险指令 |
-| `agent-integration-control.py` | 推荐 | 通过 `make skills IDE=<host>` 安装 worktree-local Agent 集成 | 投影 canonical Skills、Codex `pt-ew-plugin` 或 host workspace hooks；拒绝 active declaration 和路径逃逸，不存在独立 ACK 流程 |
-| `agent-integration-audit.py` | 推荐 | 审计单 worktree 或 fleet Agent 集成 | 校验 Skill/plugin/hook 精确投影、receipt、Plan binding、声明与 Acceptance matcher |
-| `local-dev/workflow-{kernel,state-inspector,host-adapters,conversation-binding,owner-command-policy,tool-intent,anchor}.mjs` | 内部依赖 | conversation-bound IDE 工具准入与 Stop/Anchor 协议 | OWNER 命令注册、receipt 身份和持久化 owner 匹配由共享策略定义；首次可阻断工具调用绑定 `executionRoot` |
-| `local-dev/workflow-snapshot.mjs` | 推荐 | 生成统一只读 workflow owner projection | `make workflow-snapshot`；CLI、Context Anchor、Doctor 与 Peers Dev 共享语义 |
-| `local-dev/workflow-action-store.mjs` | 内部依赖 | 写入并归约有界、脱敏的 Action Receipt | activity 不替代 Plan Task closure progress |
-| `local-dev/completion-review.mjs` | 推荐 | 创建、提交并验证独立 current-source Completion Review | 通过 `make completion-review-{prepare,submit,status}` 调用 |
+| `agent-integration-control.py` | 推荐 | 通过 `make skills IDE=<host>` 投影当前 worktree 的 Skills 与可选提示 Hook | 只修改选定根；Hook 失败不撤销 Skills，不读取任务或会话 authority |
+| `agent-integration-audit.py` | 推荐 | 分别审计当前根的 Skill 与 Hook 能力 | 校验绝对解释器、精确 Hook 原文与受限 PATH 回放；无 Hook 为降级而非研发准入失败 |
+| `local-dev/workflow-{kernel,state-inspector,host-adapters}.mjs` | 内部依赖 | IDE 规范上下文与中性提示 | 只输出 `ALLOW`、`CONTEXT` 或 `NOOP`，不解析 shell 权限 |
+| `local-dev/workflow-snapshot.mjs` | 推荐 | 生成当前源码、可选任务和可选 runtime 状态的一次性只读投影 | `make workflow-snapshot` |
+| `local-dev/completion-review.mjs` | 推荐 | 从显式义务、当前源码和新鲜证据准备/评估 standalone Completion Review | 通过 `make completion-review-{prepare,assess}` 调用 |
 | `local-dev/workflow-doctor.mjs` | 推荐 | 检查公开工作流承诺与实际安装/状态/服务 | `make workflow-doctor IDE=<host>` |
 | `skill-overlay-control.py` | 推荐 | 管理 machine-local 用户 Skill Overlay | 提供 install/list/enable/disable/uninstall/resolve；安装为 digest-addressed immutable copy，不写 host Skill 投影 |
 | `skill-overlay-control-test.py` | 可用 | 回归验证用户 Overlay 控制面 | 覆盖生命周期、排序、显式替换、symlink 拒绝、registry 校验和 installed-copy 篡改 |
@@ -74,10 +71,8 @@ export VITE_PORT=3000
 | `quality-evidence.py` | 推荐 | 聚合 review route、knowledge、acceptance plan、gate tier 和 proven/unproven scope | 通过 `make quality-evidence REVIEW_RANGE=<range>` 调用；产出 JSON/Markdown evidence |
 | `acceptance-plan.py` | 推荐 | 根据 git diff 生成 Gate 影响投影，并与正式 Plan 校验 | `make acceptance-plan` 只投影当前 closure |
 | `acceptance-run.py` | 推荐 | 执行正式 Plan 当前 closure 的 Gate 并记录日志 | completion/full 必须显式请求 |
-| `execution-plan.py` | 推荐 | 本地解析 mounted Plan/ExecutionRun，CI 解析仓库 Plan/completion contract | tracked PR 用 `--require-complete`；CI 不读取 machine-local mount；本地 `--allow-untracked` 仅把 `PLAN_MOUNT_REQUIRED` 分类为 standalone |
-| `plan/plan-completion.mjs` | 内部 owner | 发布并校验绑定最终 Plan digest 的不可变仓库 completion attestation | `make plan-seal-completion PLAN=<path>` 仅接受全部 Task 为 `done` 的当前 ExecutionRun |
-| `plan/plan-mount.mjs` | 推荐 | 管理显式批准后的 stable PlanMount、immutable snapshot history、in-place amendment 与 mutable ExecutionRun | `make plan-approve-north-star ...` 记录用户决定，`make plan-mount PLAN=<path>` 挂载，`make plan-amend ...` 修订，终态后用 `make plan-unmount` 释放 |
-| `plan/stable-plan-state-migration.mjs` | workspace 迁移 | 在短 machine lock/CAS 下只迁移当前 workspace 的 Plan Version declaration 且保持 lifecycle；保留 foreign live 记录，legacy mount 只允许显式授权的 exact-owner `owner-unmount`，并在最后一个 legacy mount 释放后收敛 mixed index | `make plan-state-migrate`；不会执行或信任 retired snapshot |
+| `execution-plan.py` | 推荐 | 解析显式 Plan Version；CI 必须显式输入 | 本地 `--allow-untracked` 在没有显式 Plan 时分类为 standalone |
+| `plan/planctl.mjs` | 推荐 | 直接 validate/inspect/select 一个显式 Plan Version 或 taskId | 不创建机器占用或隐式当前 Plan |
 | `review/pr-plan-input.py` | 推荐 | 从 PR 正文的 `Execution Plans` 区段读取显式 Plan 列表或 `- None` standalone 标记 | CI 只对显式 Plan 路径执行 `execution-plan.py --plan`，不扫描 branch |
 | `acceptance-cell.py` | 推荐 | 管理 Native Desktop runtime cell 的 ready/status/logs/stop 生命周期 | 通过 `make acceptance-cell-{ready,status,logs,stop} CELL=<cell-id>` 调用；host 等敏感配置只从本地 profile 解析 |
 | `acceptance-report.py` | 推荐 | 汇总最新验收计划和执行结果 | 通过 `make acceptance-report` 调用 |

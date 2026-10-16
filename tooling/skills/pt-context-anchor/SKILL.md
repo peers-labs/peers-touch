@@ -1,230 +1,108 @@
 ---
 name: "pt-context-anchor"
-description: "Reads verified tracked-work sources and renders one copyable chat projection for status, resume, handoff, blockers, readiness, or close. It never repairs or mutates workflow state."
+description: "Reads current Git, one explicitly selected optional task, runtime facts, and evidence; renders a copyable status, resume, handoff, blocker, readiness, or close projection without mutating state."
 stage: "cross-stage"
-requires: ["canonical BindingProjection", "valid PlanMount and ExecutionRun", "matching workspace active-work record", "verified worktree identity"]
-produces: ["verified read-only Context Anchor"]
+requires: ["explicit canonical worktree", "optional explicit taskId"]
+produces: ["read-only Context Anchor"]
 ---
 
 # Context Anchor
 
-Context Anchor is a read-only projection adapter.
-
-```text
-durable owner state -> validate -> project to chat
-```
-
-It does not synchronize, repair, or write durable state.
-At a host Stop boundary, `workflow-anchor.mjs` is the rendering owner: the
-Skill emits the exact machine-rendered block and does not reconstruct or edit
-it. The Kernel stores the machine-local receipt and validates response
-completeness before release.
+Context Anchor is a read-only projection. It never grants authority, creates a
+task, repairs a record, mounts a Plan, or blocks ordinary work.
 
 ## Invoke When
 
-- Reporting tracked-work status, progress, blocker, readiness, handoff, or
-  close.
-- Preparing for context compaction.
-- A resume needs a verified projection before or after continued execution.
+- Reporting status, progress, blockers, readiness, handoff, or close.
+- Preparing a cross-session resume.
+- The user requests a concise copyable state projection.
 
-Do not invoke before a formal plan and matching workspace active-work record
-exist.
+Do not invoke merely because a Plan, Hook, OWNER, declaration, Session, or
+active-work record is absent.
 
-## Boundary
+## Inputs
 
-This Skill may read:
+Always read:
 
-- the current canonical `BindingProjection`;
-- the current workspace's `workflow/active-work.json`;
-- the stable Plan through its current immutable ExecutionPlanSnapshot;
-- the ExecutionRun's current Task Slice;
-- matching Development `session.json`;
-- referenced durable evidence;
-- verified Git/worktree identity;
-- scheduler lane state supplied by the current Development Run.
+- the exact canonical worktree and current branch/HEAD;
+- the explicit request and governing product/architecture sources;
+- current runtime facts and evidence relevant to the claim.
 
-It must not:
-
-- update active-work state;
-- change PlanMount, ExecutionRun, or Task lifecycle;
-- append Session events;
-- recompute or persist a scheduler queue;
-- acquire resources or execute work;
-- infer missing facts from chat;
-- write a `## Context Anchor` section into any repository document.
-- rewrite, abbreviate, or manually recreate a Kernel-rendered Stop Anchor.
-
-When sources disagree, return `CONTEXT_PROJECTION_STALE` with the mismatched
-fields and their owning writer. `pt-dev-workflow` coordinates repair through
-the owner, then invokes this Skill again.
-
-## Source Ownership
-
-| Projected field | Read owner |
-|---|---|
-| Worktree, branch, `workspaceId` | verified Git binding |
-| Initial HEAD | ExecutionPlanSnapshot execution binding |
-| Expected HEAD | workspace active-work projection verified against declaration and Git |
-| Main task, scope, architecture/product decisions | accepted sources |
-| Stage and tracked locator | workspace active-work record |
-| Task lifecycle/current Task/dependencies | ExecutionRun plus immutable snapshot DAG |
-| Current transition and first failure | Development Session |
-| Completed delta and evidence | Task snapshot plus referenced evidence |
-| Remaining frontier, lanes, conflict controls, critical path | scheduler output backed by the current graph |
-| Overall progress and next completion effect | `planctl status.progress` |
-| Next Progress Slice | current Task plus scheduler horizon |
-| Plan Run queue | ordered dependency-ready successor frontier from the Plan DAG and scheduler |
-| Execution mandate and autonomous horizon | verified Plan Run input supplied by `pt-dev-workflow` plus accepted Plan authorization |
-| Stop conditions | DWF-D20 hard boundaries plus current verified blockers |
-| ETA | remaining critical path plus observed throughput |
-
-No global precedence rule exists. Each field comes from its owner.
-
-## Active Work Locator
-
-Tracked work reads exactly:
+When the caller provides `taskId`, also read exactly:
 
 ```text
-~/.peers-touch/dev/workspaces/<workspaceId>/workflow/active-work.json
+<worktree>/.dev-workflow/tasks/<taskId>/task.json
 ```
 
-Validation rules:
+Do not guess a task from mtime, branch, chat history, old active-work, or the
+number of Plan files. A corrupt selected task is reported locally. Corrupt
+unrelated task records do not erase valid Git, runtime, or evidence facts.
 
-- schema, revision and digest validate;
-- `mountId/runId/snapshotDigest/planId/planPath` match current Plan owners;
-- `currentTaskId/currentTaskPath/taskStatus` mirror the run-selected Task;
-- `devState` mirrors `session.json` or is `null`;
-- branch, workspace and expected HEAD match declaration and verified Git state;
-- initial HEAD matches the Plan's immutable baseline.
-
-The Anchor reports a mismatch; it never rewrites the record. Project memory is
-not an input.
+When the caller provides a Plan path, read that exact frozen Plan Version and
+optional taskId with `planctl inspect` / `planctl task`. PlanMount and
+ExecutionRun are not required.
 
 ## Read Procedure
 
-1. Resolve the workspace's current PlanMount, snapshot, and ExecutionRun; read only that
-   workspace's active-work record with `make active-work-status`.
-2. Revalidate the current `BindingProjection`. Its role, binding/root/parent
-   digests, assignment, and release/child state must match the invoking
-   lineage. Its workspace must match the current OWNER action selection or the
-   child's fixed assignment. Never select a binding by enumerating a worktree.
-3. Verify the persisted worktree and mount. Do not recapture a snapshot,
-   replace a live mount, or change an unfinished run.
-4. Run `planctl validate`, `planctl current`, and `planctl status`.
-5. Read the immutable snapshot, only `current_task_path`, and matching
-   `session.json`.
-6. Validate each projected field against its owner.
-7. Use `unknown` for ETA when critical-path or throughput evidence is
-   insufficient.
-8. Require one source-backed Next Progress Slice for an active non-blocked
-   package. It must target the current Task's `in_progress -> done` boundary,
-   copy `completedAfter` and `percentageAfter` from
-   `planctl status.progress.nextProgressBoundary`, state the exact
-   percentage-point and unlock delta, and identify the post-closure successor
-   frontier or the Plan terminal state. Never derive the target by adding a
-   rounded percentage or by counting unlocked Tasks as complete.
-9. Render one final chat block.
+1. Verify `$PWD` is the requested canonical Git root.
+2. Run the standalone workflow snapshot once.
+3. If `taskId` is explicit, read its checksum-protected snapshot without repair.
+4. Read current runtime ownership and evidence from their existing owners.
+5. Mark missing, stale, corrupt, and unverified facts independently.
+6. Render one projection and exit.
 
-When invoked by the Workflow Kernel at Stop, steps 1-8 are already represented
-by the supplied receipt. Emit its `content` byte-for-byte; do not append fields
-or replace unknown values.
+Never write snapshot, task, Plan, runtime, evidence, or project-memory state.
 
-Do not scan archive files, every Task body, raw command logs, or conversation
-history.
+## Required Projection
 
-## Required Chat Projection
-
-Every user-facing Context Anchor is one fenced `markdown` block exactly like:
-
-````markdown
 ```markdown
 **Context Anchor**
-- **Main task**:
-- **Execution mandate**: <status-only or authorized Plan Run>
-- **Autonomous horizon**: <Plan terminal state or named hard boundary>
-- **Execution horizon**:
-- **Current closure / state**:
-- **Worktree / branch / workspace**:
-- **Initial HEAD**:
-- **Expected / verified HEAD**:
-- **Progress**: <done>/<total> Task closures (<percentage>%)
+- **North star / contribution**:
+- **Request / completion obligations**:
+- **Worktree / branch / HEAD**:
+- **Selected task**: <taskId or none>
+- **Task stage / state**:
+- **Plan reference**: <explicit path+digest or none>
 - **Completed delta**:
-- **Next Progress Slice**: <Task ID, outcome, and completion boundary>
-- **Projected progress after Next**: <completedAfter>/<total> Task closures (<percentageAfter>%)
-- **Expected progress effect**: <+1 closure, percentage-point delta, unlocked Task IDs>
-- **Plan Run queue**: <ordered dependency-ready successor Tasks/Slices after the current closure>
-- **Remaining frontier**:
-- **Execution mode / lanes**:
-- **Conflict controls**:
-- **Critical path / ETA**:
+- **Next action**:
+- **Runtime resources**:
 - **Evidence**:
-- **Stop conditions / decisions**:
-- **Tracking document**:
+- **Blockers / decisions**:
+- **Unverified scope**:
 ```
-````
 
-The block is the final section of tracked status/handoff responses. Render the
-worktree as `<worktree-name> (<repo-root>)`; never persist a user-home absolute
-path.
+Use `none`, `unknown`, or `unverified` rather than inventing a lifecycle.
+Omit absolute user-home paths from the chat projection.
 
 ## Resume Behavior
 
-For status-only requests, emit the projection and stop.
+For status-only requests, emit the projection and stop. For `continue` or
+`resume`, use it as a checkpoint and continue immediately unless a concrete
+decision, permission, or real resource conflict blocks the requested action.
 
-For `continue`/`resume`, projection must not pause execution. `pt-dev-workflow`
-continues first and invokes this Skill at the next meaningful report boundary.
-A successful declaration, authorization, status check, diagnostic, checkpoint,
-deploy, or focused check is internal Slice activity and must not trigger a new
-Anchor while the Task remains open. Task closure, review success, and Anchor
-emission are also internal Plan Run boundaries when a dependency-ready
-successor exists. A zero-delta Anchor is valid only at a hard boundary after the
-complete ready frontier is exhausted.
+## Errors
 
-## Output Errors
-
-- `TRACKED_WORK_NOT_FOUND`
-- `TRACKED_WORK_AMBIGUOUS`
 - `WORKTREE_IDENTITY_UNAVAILABLE`
 - `WORKTREE_IDENTITY_MISMATCH`
+- `TASK_PROGRESS_NOT_FOUND`
+- `TASK_PROGRESS_SNAPSHOT_INVALID`
+- `TASK_PROGRESS_CHECKSUM_INVALID`
 - `PLAN_PACKAGE_INVALID`
-- `CONTEXT_PROJECTION_STALE`
 
-Each error names the mismatched field and owning writer.
+Each error names only the affected fact and its owner.
 
 ## Verification
 
-- The PlanMount, snapshot, ExecutionRun, and matching locator exist.
-- Git identity matches persisted binding.
-- Binding role and lineage match the current canonical `BindingProjection`;
-  expired or terminal child state cannot support a status or final claim.
-- `planctl current`, current Task, Session, declaration, Git and workspace
-  active-work agree.
-- Progress, completed delta, Next Progress Slice, projected progress after
-  Next, expected progress effect, Plan Run queue, remaining frontier,
-  execution mandate, autonomous horizon, stop conditions, lanes, conflict
-  controls, and critical path are source-backed.
-- Evidence distinguishes `PASS`, `FAIL`, `NOT RUN`, and `UNPROVEN`.
-- No file, registry, plan, Session, or runtime state was mutated.
-- The response ends with one fenced chat projection.
-- A terminal or blocked host Stop has a matching machine-local Anchor receipt
-  and create-once release receipt.
+```bash
+node --test \
+  tooling/scripts/local-dev/workflow-snapshot.test.mjs \
+  tooling/scripts/local-dev/dev-work.test.mjs
+```
 
 ## Anti-Patterns
 
-Never:
-
-- repair stale owner state;
-- create or update active-work state;
-- read project memory as runtime truth;
-- reconstruct state from chat;
-- recapture Git identity during resume;
-- invent progress or ETA;
-- emit a free-text administrative `Next action`;
-- end an authorized Plan Run with `Continue?` or imply that Anchor output needs
-  user confirmation;
-- emit a successful zero-delta continuation while the current Task remains
-  closable;
-- report stale agent metadata as a live lane;
-- treat one parked action as a Goal-wide blocker;
-- use the Anchor as completion authority;
-- persist secrets, transient logs, or absolute user-home paths.
+- Require Hook, OWNER, declaration, PlanMount, Session, or active-work.
+- Repair task progress while answering a status request.
+- Infer completion from task count, Gate count, or an arbitrary PASS file.
+- Treat a missing optional task as an unusable worktree.
+- Create or switch worktrees while projecting status.

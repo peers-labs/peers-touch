@@ -29,7 +29,6 @@ ACCEPTANCE_RANGE ?= HEAD
 ACCEPTANCE_PLAN ?=
 ACCEPTANCE_PLAN_OUTPUT_ARG = $(if $(ACCEPTANCE_PLAN),--output "$(ACCEPTANCE_PLAN)",)
 ACCEPTANCE_RUN_PLAN_ARG = $(if $(PLAN),--plan "$(PLAN)",$(if $(ACCEPTANCE_PLAN),--plan "$(ACCEPTANCE_PLAN)",))
-ACCEPTANCE_SESSION_ARG = $(if $(SESSION),--session "$(SESSION)",)
 ACCEPTANCE_DRIVER_BINARY ?= .local/acceptance/bin/peers-touch-desktop
 CELL ?= desktop-linux-native
 CELL_GATE ?= runtime-cell-preflight
@@ -70,31 +69,31 @@ acceptance-plan-self:
 	python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --self-check $(ACCEPTANCE_PLAN_OUTPUT_ARG)
 
 acceptance-run:
-	python3 tooling/scripts/acceptance-run.py $(ACCEPTANCE_RUN_PLAN_ARG) $(ACCEPTANCE_SESSION_ARG)
+	python3 tooling/scripts/acceptance-run.py $(ACCEPTANCE_RUN_PLAN_ARG)
 
 acceptance-run-completion:
-	python3 tooling/scripts/acceptance-run.py --completion $(ACCEPTANCE_SESSION_ARG)
+	python3 tooling/scripts/acceptance-run.py --completion
 
 acceptance-run-full:
-	python3 tooling/scripts/acceptance-run.py --full $(ACCEPTANCE_SESSION_ARG)
+	python3 tooling/scripts/acceptance-run.py --full
 
 acceptance-run-ci:
-	$(if $(PLAN),python3 tooling/scripts/acceptance-run.py --plan "$(PLAN)" --tier ci-structure --tier ci-cheap $(ACCEPTANCE_SESSION_ARG),python3 tooling/scripts/acceptance-run.py --completion --tier ci-structure --tier ci-cheap $(ACCEPTANCE_SESSION_ARG))
+	$(if $(PLAN),python3 tooling/scripts/acceptance-run.py --plan "$(PLAN)" --tier ci-structure --tier ci-cheap,python3 tooling/scripts/acceptance-run.py --completion --tier ci-structure --tier ci-cheap)
 
 acceptance-run-local-evidence:
-	python3 tooling/scripts/acceptance-run.py $(ACCEPTANCE_RUN_PLAN_ARG) --tier local-evidence $(ACCEPTANCE_SESSION_ARG)
+	python3 tooling/scripts/acceptance-run.py $(ACCEPTANCE_RUN_PLAN_ARG) --tier local-evidence
 
 acceptance-run-env-evidence:
-	python3 tooling/scripts/acceptance-run.py $(ACCEPTANCE_RUN_PLAN_ARG) --tier env-evidence $(ACCEPTANCE_SESSION_ARG)
+	python3 tooling/scripts/acceptance-run.py $(ACCEPTANCE_RUN_PLAN_ARG) --tier env-evidence
 
 acceptance-run-nightly:
-	python3 tooling/scripts/acceptance-run.py $(ACCEPTANCE_RUN_PLAN_ARG) --tier nightly $(ACCEPTANCE_SESSION_ARG)
+	python3 tooling/scripts/acceptance-run.py $(ACCEPTANCE_RUN_PLAN_ARG) --tier nightly
 
 acceptance-report:
 	python3 tooling/scripts/acceptance-report.py
 
 acceptance:
-	python3 tooling/scripts/acceptance-run.py $(ACCEPTANCE_RUN_PLAN_ARG) $(ACCEPTANCE_SESSION_ARG)
+	python3 tooling/scripts/acceptance-run.py $(ACCEPTANCE_RUN_PLAN_ARG)
 	python3 tooling/scripts/acceptance-report.py
 
 acceptance-validate:

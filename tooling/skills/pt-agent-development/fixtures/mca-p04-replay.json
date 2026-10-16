@@ -143,8 +143,8 @@
       "changedPaths": [
         "docs/architecture/domains/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md",
         "docs/architecture/domains/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/tasks/MCA-P04.md",
-        "tooling/scripts/local-dev/dev-session.mjs",
-        "tooling/scripts/local-dev/dev-session.test.mjs"
+        "tooling/scripts/local-dev/task-progress-store.mjs",
+        "tooling/scripts/local-dev/dev-work.test.mjs"
       ],
       "expected": {
         "impactClasses": [

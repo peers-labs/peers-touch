@@ -1,8 +1,8 @@
 # Local Dev Control Plane - Data Model
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-09-13 | **Updated**: 2026-10-06
+> **Version**: v1.4
+> **Created**: 2026-09-13 | **Updated**: 2026-10-15
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/`
 
@@ -77,7 +77,6 @@ interface WorkspaceRecord {
   allowedCapabilities: StationCapability[];
   purpose: string;
   owner: string;
-  createdBy?: WorkflowOwnerReference;
   registeredAt: string;
   updatedAt: string;
   updatedBy: string;
@@ -90,11 +89,6 @@ ID, and registered branch before every resolved command. Current Git HEAD is
 captured from the worktree at operation time and is never persisted in the
 registration. A root or branch mismatch makes the registration `stale`;
 ordinary commits, merges, rebases, and pulls do not.
-
-`owner` remains the Git/user actor label. `createdBy`, when present, is the
-verified main-session reference captured by the Workflow Kernel during
-worktree creation or first registration. It must not be inferred from `owner`,
-branch names, or process-global environment variables.
 
 Schema v1 authoritative registrations exclude `WorkspaceRecord.head`. This is
 a development-stage hard correction, not a version migration. Runtime has no
@@ -115,25 +109,24 @@ interface ProfileDefinition {
   relayUrl?: string;
   relayDeployEnvironment?: string;
   sourceCommit?: string;
-  authorizationReceipt?: string;
   sourceState:
     | 'tracked'
     | 'tracked-clean'
     | 'tracked-dirty'
     | 'untracked'
-    | 'authorized-local';
+    | 'local';
 }
 ```
 
 `resetPolicy` is not stored in the profile. The reader first requires the
 profile directory name and `PT_DEV_PROFILE` to match exactly, then applies
-`lowercase(profileId).includes("stable")`:
+`lowercase(profileId).endsWith("stable")`:
 
 - `stable-protected`: autonomous `station.reset` is denied with
   `PROFILE_RESET_PROTECTED`;
 - `agent-resettable`: the Agent may choose reset without human involvement
-  when the workspace capability, live declaration, exact scope, source
-  identity, remote topology, and OS lease all match.
+  when the workspace capability, exact scope, current source identity, remote
+  topology, and OS lease all match.
 
 The derived policy is projected into status but is not copied into
 `WorkspaceRecord`. No environment variable, Station mode, or legacy cache may
@@ -167,33 +160,34 @@ type StationCapability =
 Rules:
 
 - One workspace has at most one active profile binding.
-- Registration requires an explicit Owner action; discovery never writes a
-  `WorkspaceBinding`.
+- Registration is created only by the canonical `profile` or `env-register`
+  action; discovery never writes a `WorkspaceBinding`.
 - Slot is allocated independently of profile.
 - `station.connect` does not imply deploy or reset.
-- `station.deploy` consumes an exact user grant or accepted Plan
-  `authorization.runtime.deployProfiles` entry for the existing reviewed
-  profile.
+- A reviewed non-stable remote Profile receives `station.deploy` on canonical
+  first selection and may use it without another Plan or chat grant.
+- A stable Profile receives only `station.connect` by default. A user-directed
+  explicit capability binding may add `station.deploy`; reset remains
+  forbidden.
 - `station.reset` may be added by the Agent for an `agent-resettable` Profile.
-  It still requires an exact exclusive runtime declaration and lease.
+  It still requires an exact command scope and OS-held lease.
 - `station.reset` cannot be added for a `stable-protected` Profile.
 - Missing capability is `WORKSPACE_CAPABILITY_MISSING`, not an authorization
   request.
 
-### 4.1 Plan Mount
+### 4.1 Optional Task Progress
 
-Development Workflow owns the machine Project Ledger under
-`~/.peers-touch/dev/plan-mounts/`. Its live index binds one stable `planId` to
-one execution `workspaceId`; immutable mount records preserve occupancy
-history. The corresponding Execution Run points to the current immutable Plan
-snapshot and advances that pointer when `planctl amend` records a valid
-in-place amendment.
+Task recovery state is repository-local and explicitly selected:
 
-PlanMount is not part of `WorkspaceRecord`: Profile, slot, capabilities, and
-branch may change under their existing guards, while current HEAD belongs to
-ExecutionPlanSnapshot, Development intent, and Session source records. A
-mounted Plan occupies the workspace until completion, cancellation, or explicit
-owner unmount.
+```text
+.dev-workflow/tasks/<taskId>/
+└── task.json
+```
+
+It is not part of `WorkspaceRecord`, does not occupy the workspace, and is not
+read by runtime admission. The checksum-protected snapshot is the only task
+record. Revision/CAS protects concurrent updates and source changes invalidate
+stale evidence.
 
 Activity is derived and not manually asserted:
 
@@ -209,46 +203,23 @@ type WorkspaceActivity = 'active' | 'idle' | 'stale';
 An unregistered discovered worktree has no `WorkspaceActivity`; it is simply
 outside the managed cohort.
 
-## 5. Environment Creation Authorization
+## 5. Worktree-Local Profile
 
-An interactive human grant is short-lived and exact:
+`make profile-init PROFILE=<name> SLOT=<n>` creates one local compose Profile
+under `.local/dev/profiles/`. It never overwrites an existing Profile and its
+identity must match the selected name. Runtime accepts it only when it is a
+non-symlink regular file directly inside that worktree-local directory, owned
+by the current user, inaccessible to group/other users, and composed only of
+shell-safe literal `KEY=VALUE` assignments. Machine resolution parses those
+values and emits shell-quoted exports; normal development never executes the
+local Profile with `source`.
 
-```ts
-interface EnvironmentCreationAuthorization {
-  schemaVersion: 1;
-  kind: 'peers-touch-environment-creation-authorization';
-  state: 'pending' | 'consumed';
-  workspaceId: string;
-  workspaceRoot: string;
-  profile: string;
-  target: {
-    mode: 'compose';
-    slot: number;
-  };
-  approvedBy: string;
-  approvedAt: string;
-  expiresAt: string;
-  nonce: string;
-  consumedAt?: string;
-  profileSha256?: string;
-}
-```
-
-Rules:
-
-- Only a human developer may create `pending` authorization through an
-  interactive terminal confirmation of the exact tuple.
-- An Agent may not invoke the grant command or write the authorization file.
-- `profile-init` atomically claims one pending authorization and produces one
-  immutable consumed receipt bound to the generated profile bytes.
-- A pending grant expires after 30 minutes and cannot be reused.
-- A machine-local profile whose current digest does not match a consumed
-  receipt is unavailable.
-- Git-tracked, clean env-repository profiles remain canonical and do not use
-  this machine-local authorization path.
-- `PT_DEV_PROFILE_FILE` is reserved for run-scoped Acceptance composition and
-  must declare `acceptance-runtime-manifest` authority plus an absolute profile
-  root containing the owned regular file.
+Git-tracked, clean environment-repository Profiles remain canonical for remote
+deployment. A local Profile cannot authorize remote deploy or reset because it
+has no tracked deploy definition. `PT_DEV_PROFILE_FILE` remains reserved for
+run-scoped Acceptance composition and must declare
+`acceptance-runtime-manifest` authority plus an absolute profile root
+containing the owned regular file.
 
 ## 6. Lease Record
 
@@ -273,9 +244,9 @@ and clears metadata before unlocking on success, command failure, signal, or
 timeout. The mutation child inherits the locked descriptor, so supervisor
 `SIGKILL` cannot release exclusivity while the child continues. After acquiring
 the resource lock and before launching the mutation, the holder revalidates the
-registry binding, current Git source identity, capability, and Development
-intent under the registry lock; binding updates inspect leases under the same
-lock order.
+registry binding, prepared Git source identity, capability, reviewed Profile,
+target, reset policy, and exact scope under the registry lock; binding updates
+inspect leases under the same lock order.
 
 JSON metadata is diagnostic and cannot establish a held lease without the live
 OS lock and matching PID/process-start identity. Metadata left by `SIGKILL` or
@@ -308,111 +279,23 @@ unowned runtime conflict.
 ```ts
 interface DevelopmentWorkflowSnapshot {
   observedAt: string;
-  profiles: Array<{
-    name: string;
-    resetPolicy: 'stable-protected' | 'agent-resettable' | null;
-    stationMode: string | null;
-    stationUrl: string | null;
-    stationDeployEnvironment: string | null;
-    relayUrl: string | null;
-    relayDeployEnvironment: string | null;
-    sourceState: string;
-    status: 'available' | 'blocked';
-    error: null | { code: string; message: string };
-  }>;
-  registrations: WorkspaceRecord[];
-  declarations: DevelopmentResourceDeclaration[];
-  activeLeases: LeaseRecord[];
-  staleLeaseMetadata: unknown[];
   worktrees: Array<{
     workspaceId: string;
-    name: string | null;
-    createdBy: WorkflowOwnerReference | null;
-    workflowOwner: WorkflowOwnerReference | null;
-    branches: string[];
-    workState:
-      | 'in-progress'
-      | 'stale'
-      | 'reserved'
-      | 'blocked';
-    environmentHealth: {
-      state: 'ready' | 'warning' | 'blocked' | 'conflict' | 'unregistered';
-      issues: string[];
-    };
-    requirements: Array<{
-      workItemId: string;
-      journeyId: string | null;
-      purpose: string;
-      workflowOwner: WorkflowOwnerReference | null;
-      state: 'DECLARED' | 'ACTIVE' | 'RELEASING' | 'STALE';
-      plan: null | {
-        mountId: string;
-        runId: string;
-        planId: string;
-        planDigest: string;
-        taskId: string;
-        status:
-          | 'available'
-          | 'untracked'
-          | 'missing'
-          | 'legacy'
-          | 'invalid'
-          | 'mismatch'
-          | 'unregistered';
-        progress: null | {
-          completed: number;
-          total: number;
-          percentage: number;
-        };
-      };
-    }>;
-    environment: {
-      profile: string | null;
-      slot: number | string | null;
-      resetPolicy: 'stable-protected' | 'agent-resettable' | null;
-      sourceState: string | null;
-    };
-    resources: {
-      station: RuntimeResourceProjection;
-      relay: RuntimeResourceProjection;
-      databases: RuntimeClaimProjection[];
-      other: RuntimeClaimProjection[];
-    };
-    leases: LeaseRecord[];
+    canonicalRoot: string;
+    source: CurrentGitSource;
+    tasks: TaskProgress[];
+    taskErrors: TaskProgressError[];
   }>;
-  occupancy: Array<{
-    profile: string;
-    workspaceIds: string[];
-    slots: number[];
-    workItemIds: string[];
-    leaseIds: string[];
-    state: 'free' | 'reserved' | 'active' | 'conflict' | 'blocked';
-  }>;
-}
-
-interface RuntimeClaimProjection {
-  kind: string;
-  resourceId: string;
-  mode: 'shared' | 'exclusive';
-  workItemIds: string[];
-}
-
-interface RuntimeResourceProjection {
-  url: string | null;
-  deployEnvironment: string | null;
-  claims: RuntimeClaimProjection[];
+  errors: SnapshotError[];
+  runtime: unknown | null;
+  digest: string;
 }
 ```
 
-This object is generated by `workflow-snapshot-core.mjs` on request and never
-persisted as authority. Secret
-profile fields, canonical roots and raw profile documents are excluded by
-construction. `worktrees` is the primary operator projection; `occupancy`
-remains a secondary profile-capacity projection.
-
-Workflow Snapshot has no service identity, listener, PID, refresh loop, or
-runtime lifecycle. The CLI computes one snapshot, writes it to stdout, and
-exits.
+`workflow-snapshot.mjs` generates this object on request and never persists it.
+One corrupt task or unavailable workspace becomes a local typed finding and
+does not hide other rows. The CLI has no listener, browser, PID, refresh loop,
+or runtime lifecycle.
 
 ## 8. Conflict Model
 
@@ -437,27 +320,14 @@ interface RegistryConflict {
 Static slot reuse is reported during migration. It becomes blocking when two
 workspaces attempt to run local clients on the same slot.
 
-## 9. Development Work Intent
+## 9. Runtime Admission Boundary
 
-Development Workflow publishes machine-visible intent in:
-
-```text
-~/.peers-touch/dev/work.json
-```
-
-The full schema is owned by
-[`development-workflow/data-model.md`](../development-workflow/data-model.md).
-This control plane consumes only projected runtime claims for status and
-conflict reporting.
-
-Rules:
-
-- Intent declaration precedes resource acquisition.
-- Declaration does not establish a lease.
-- Live lease and process observation determine active resource possession.
-- Missing or released intent prevents new workflow mutation but does not
-  fabricate process cleanup.
-- Secrets and raw runtime handles are invalid in both registry and work ledger.
+Runtime admission reads the authoritative workspace binding, reviewed Profile,
+normalized target, current Git source, stable protection, operation-specific
+authorization, and OS-held lease. Optional task records, Plans, and Hook
+context neither grant nor block acquisition. Live leases and process
+observation determine actual resource possession. Secrets and raw handles are
+invalid in registry and lease metadata.
 
 ## 10. Atomicity
 

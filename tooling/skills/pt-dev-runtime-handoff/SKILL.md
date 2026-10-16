@@ -1,6 +1,6 @@
 ---
 name: pt-dev-runtime-handoff
-description: Owns host-neutral Peers-Touch runtime launch, interaction, exact-source verification, Session projection, and cleanup. Use after code changes need a real product Journey or formal Acceptance.
+description: Owns host-neutral Peers-Touch runtime launch, interaction, exact-source verification, evidence classification, and cleanup. Use after code changes need a real product Journey or formal Acceptance.
 ---
 
 # Dev Runtime Handoff
@@ -21,7 +21,7 @@ weaken product actions and assertions.
 
 This Skill is the project owner for runtime verification. TRAE, Cursor, Codex,
 and future hosts are optional tool transports. They never own the Journey,
-PASS/FAIL interpretation, Development Session transition, or cleanup policy.
+PASS/FAIL interpretation, evidence classification, or cleanup policy.
 
 ## Control Layers
 
@@ -30,7 +30,7 @@ pt-dev-workflow
   -> pt-dev-runtime-handoff
        -> repository-native runtime and Journey driver
        -> deterministic Journey oracle
-       -> Development Session result commit
+       -> current-source evidence result
        -> scoped cleanup
        -> missing Host Capability Need
   -> pt-goal-orchestrator projects Host Capability Request
@@ -88,7 +88,7 @@ When a project-native path lacks a required interaction:
    request.
 
 An unknown future host follows the same capability contract. Add a new child
-adapter without changing Journey or Session semantics.
+adapter without changing Journey or evidence semantics.
 
 ## Runtime Selection
 
@@ -102,14 +102,10 @@ Restart Station when changes touch Station, schema, or generated protocol code.
 Rebuild the Acceptance binary when changes touch Desktop Rust, Desktop UI, the
 Acceptance harness, or driver feature wiring.
 
-Before either policy:
-
-```bash
-make dev-check WORK_ITEM=<id>
-```
-
-The public declaration must name the Profile, local slot, client storage and
-Station capability intent. The declaration does not replace Local Dev leases.
+Before either policy, resolve the exact canonical worktree binding, reviewed
+Profile, current source identity, requested target or reset scope, and required
+capability. The runtime entrypoint owns the OS-held lease and post-lock
+revalidation; optional task records do not authorize it.
 
 ## Agent Station Safety Gate
 
@@ -201,46 +197,23 @@ Require:
 Do not claim Acceptance from a smoke check, API result, browser render, or
 manual screenshot.
 
-## Functional Result Commit
+## Functional Result
 
-The runtime result and Development Session must not diverge:
-
-1. Before the Journey, transition the Session through the legal source,
-   checkpoint, deploy, and `FUNCTIONAL_RUNNING` states owned by
-   `pt-dev-workflow`.
-2. Bind the runner result to the same work item, Plan, Task, Journey, source
-   commit/tree, runtime binding, and artifact root.
-3. On deterministic PASS, persist `FUNCTIONAL_CHECK/PASS` and
-   `FUNCTIONAL_PASS` in the same owner-controlled result-commit slice.
-4. On deterministic FAIL, persist the first actionable failure and return to
-   the owning implementation loop.
-5. On environment or driver failure, persist a typed runtime blocker without
+1. Capture the canonical worktree, branch, commit, and workspace digest before
+   the Journey.
+2. Bind the runner result to the same Journey, source identity, runtime target,
+   and artifact root.
+3. On deterministic PASS, record `FUNCTIONAL_CHECK/PASS` with direct result and
+   cleanup references.
+4. On deterministic FAIL, return the first actionable product failure to the
+   implementation loop.
+5. On environment or driver failure, record a typed runtime blocker without
    classifying product behavior.
-6. Reject stale, substituted, or out-of-order evidence with
-   `SESSION_EVIDENCE_OUT_OF_SEQUENCE`.
+6. Reject stale or substituted evidence after source changes.
 
-Use the owner command for PASS:
-
-```bash
-make dev-functional-result \
-  WORK_ITEM=<id> \
-  REASON='<run and commit current closure>' \
-  [RUNTIME_CELL=<cell>]
-```
-
-The owner command starts the Acceptance Development runner itself for the
-current Task closure; it accepts no caller-selected Gate or result path. The
-runner returns one private aggregate manifest reference containing every
-required Gate. The Session owner verifies canonical run manifests and every
-referenced source/runtime/cleanup artifact, seals a self-contained evidence
-bundle, and only then derives the Session verification and runtime binding
-digest.
-
-A report that says PASS while the Session remains `CHECKPOINTING`,
-`CHECKPOINTED`, `DEPLOYING`, `DEPLOYED`, or `FUNCTIONAL_RUNNING` is
-`SESSION_PROJECTION_STALE`. Dev Workflow repairs the projection from the
-source-bound runner result before Task closure; Context Anchor only reports the
-mismatch.
+If optional task recovery is enabled, update that explicit task with
+revision/CAS and evidence references. The task record mirrors evidence; it does
+not create or upgrade the verdict.
 
 ## Debug Lifecycle
 
@@ -252,9 +225,8 @@ runtime owner:
 - Use a bounded lease and idle timeout; `--idle 0` is forbidden.
 - Request host diagnostics only through the admitted adapter's isolated
   diagnostic sidecar. Never enter a host debugger workflow in this owner turn.
-- Commit the deterministic project result and Session transition before any
-  host diagnostic cleanup or confirmation wait; Task progression remains with
-  Dev Workflow.
+- Commit the deterministic current-source result before host diagnostic
+  cleanup or confirmation wait; Task progression remains with Dev Workflow.
 - After that commit, remove runtime-owned instrumentation and stop
   runtime-owned processes automatically.
 - A host tool's optional confirmation or retention workflow is host-local
@@ -292,7 +264,7 @@ Report:
 - evidence paths;
 - process/port/storage cleanup result;
 - selected host adapter or `none`;
-- Session result-commit status;
+- current-source result status;
 - explicit unproven scope.
 
 For development policy, report only verification class, Journey, first failure,
@@ -303,17 +275,16 @@ references and proof state.
 
 Never:
 
-- Run without a current public Development declaration.
 - Use Acceptance policy to diagnose the first product failure.
 - Publish Development diagnostics as Acceptance proof.
 - Maintain separate Dev and Acceptance Journey implementations.
 - Replace Native actions with browser, coordinate-only, Harness-only or
   API-only shortcuts.
 - Require TRAE, Cursor, Codex, or another host for a project-native Journey.
-- Let a host adapter decide PASS, write Session state, or weaken the required
-  runtime.
+- Let a host adapter decide PASS, write project evidence, or weaken the
+  required runtime.
 - Ask the user to perform a deterministic interaction available to a project
   driver or exposed host adapter.
-- Leave a deterministic PASS in a non-functional Session state.
+- Leave a deterministic PASS without a current-source evidence reference.
 - Let host debugger confirmation or cleanup policy block Task progress.
 - Start an unbounded debug server or leak an owned runtime resource.

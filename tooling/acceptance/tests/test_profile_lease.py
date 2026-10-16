@@ -139,7 +139,9 @@ class ProfileLeaseTests(unittest.TestCase):
         station_source = (
             REPO_ROOT / "tooling" / "scripts" / "local-dev" / "station-dev.sh"
         ).read_text(encoding="utf-8")
-        self.assertIn("--owner-action make.station", station_source)
+        self.assertNotIn("--owner-action", station_source)
+        self.assertIn("--resource-kind station.deploy", station_source)
+        self.assertIn("verify-held", station_source)
 
     def test_deploy_script_forwards_only_valid_acceptance_runtime_environment(
         self,

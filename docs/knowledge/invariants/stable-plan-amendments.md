@@ -1,15 +1,8 @@
 ---
 kind: invariant
 title: Plan identity survives execution amendments
-status: active
-owns:
-  - AGENTS.md
-  - tooling/acceptance/core/execution_plan.py
-  - tooling/scripts/local-dev/
-  - tooling/scripts/plan/
-  - tooling/skills/pt-dev-workflow/
-  - tooling/skills/pt-execution-plan-guardian/
-  - tooling/skills/pt-plan-and-document/
+status: superseded-by:DWF-D46
+owns: []
 referenced-by:
   - docs/architecture/engineering/development-workflow/decisions.md
 related:
@@ -19,6 +12,11 @@ detected: 2026-10-06
 ---
 
 # Plan identity survives execution amendments
+
+> Superseded by DWF-D46. Retained as historical context only. The 2026-10-15
+> hard cut retired stable Plan identity, append-only amendments, immutable
+> snapshots, and digest-bound completion attestations; a Plan is an explicit
+> optional versioned input rather than a mounted machine state.
 
 ## What must hold
 
