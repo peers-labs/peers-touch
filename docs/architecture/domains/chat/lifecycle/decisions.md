@@ -1,8 +1,8 @@
 # Chat Lifecycle - Design Decisions
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-09-16 | **Updated**: 2026-09-20
+> **Version**: v1.4
+> **Created**: 2026-09-16 | **Updated**: 2026-10-16
 > **Owner**: Chat Product Team
 
 ---
@@ -21,6 +21,7 @@
 | CHAT-D08 | Old NDR and Messaging execution plans are historical only | accepted |
 | CHAT-D09 | Group live calls are required and need a separate SFU design | accepted |
 | CHAT-D10 | Presence measures authenticated reachability, not window focus | accepted |
+| CHAT-D11 | Group admission is actor-controlled before MLS membership | accepted |
 
 ## CHAT-D01: Full Lifecycle Product Boundary
 
@@ -264,3 +265,75 @@ snapshot cannot overwrite a newer realtime transition.
 - Cross-Station presence is bounded eventual state with immediate refresh on
   active conversation traffic and reconnect.
 - Presence remains tri-state at client boundaries: online, offline, or unknown.
+
+## CHAT-D11: Actor-Controlled Group Admission Before MLS Membership
+
+**Status**: accepted
+**Date**: 2026-10-16
+
+### Context
+
+The canonical `ADD_ACTOR` path immediately prepares an MLS commit and Welcome.
+It therefore represents direct membership, not an invitation. The Desktop
+prototype already exposes a group-invitation decision, but production has no
+durable invitation owner behind that control.
+
+The product owner requires friend-only group admission with direct add enabled
+by default, optional confirmation, and a per-group rejection list shared with
+the leave flow.
+
+### Decision
+
+The invitee's Home Station owns a revision-fenced admission preference and
+rejected-group set. Only accepted friends are eligible:
+
+- direct add enabled, the default: an authorized group member may run the
+  existing `ADD_ACTOR` transition;
+- direct add disabled: the same action creates a durable invitation requiring
+  the invitee's signed accept or decline;
+- rejected group: both direct add and invitation creation are denied.
+
+The invitee Home Station Conversation capability owns each invitation,
+terminal decision, derived notification, and resulting admission grant in one
+local transaction. Acceptance is not membership. Group authority consumes the
+grant but does not persist a second invitation. The fulfillment completes only
+when an authorized active member commits the existing MLS membership
+transition bound to the grant and the invitee consumes its Welcome.
+
+`Leave and reject future invitations` commits the Home-Station rejection
+before submitting the signed leave intent. Cross-authority partial completion
+remains visible and retryable; the rejection is not rolled back merely because
+MLS leave is waiting.
+
+### Rationale
+
+- User consent is evaluated before any private group state or MLS key reaches
+  the invitee.
+- The existing membership/MLS authority remains unchanged.
+- Mutable actor policy remains at the actor's Home Station instead of becoming
+  a stale group-authority cache.
+- A group-specific rejection closes the leave/reinvite loop without blocking
+  unrelated groups or actors.
+
+### Alternatives Considered
+
+- Treat `ADD_ACTOR` as an invitation: rejected because it already commits
+  membership and Welcome delivery.
+- Put invitation truth in Notification: rejected because notifications are
+  dismissible attention projections.
+- Make confirmation mandatory for every friend: rejected because the accepted
+  product default is direct add.
+- Roll back rejection when leave completion fails: rejected because it reopens
+  the exact reinvite race the user chose to close.
+- Let the invitee produce an MLS external commit: rejected for this contract
+  because the current accepted Messaging architecture uses member-generated
+  commits and Welcome delivery.
+
+### Consequences
+
+- Conversation gains actor-policy, rejection, invitation, decision, and
+  fulfillment contracts while retaining one membership authority.
+- Accepted invitations may wait for an authorized active member to fulfill the
+  MLS transition; clients must render this state honestly.
+- Desktop and Mobile Settings require the same global toggle and rejected-group
+  list semantics, with platform-native presentation.

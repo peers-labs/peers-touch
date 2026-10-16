@@ -1,8 +1,8 @@
 # Chat Lifecycle - 数据模型
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-09-22 | **Updated**: 2026-09-22
+> **Version**: v1.1
+> **Created**: 2026-09-22 | **Updated**: 2026-10-16
 > **Owner**: Chat Product Team
 > **Module**: `model/domain/chat/`, `model/domain/realtime/`, `packages/messaging-core/`
 
@@ -139,3 +139,156 @@ UNIQUE(callee_actor_ptid, call_id)
 - Endpoint 使用当前 Actor Directory 验证的 `device_id`。
 - Home Station 路由 metadata 与 crypto endpoint identity 分离。
 - Station 只持有业务路由和短时仲裁信息；private content 与媒体仍由端侧 owner 持有。
+
+## 7. Group Admission Policy
+
+```protobuf
+enum GroupAdmissionMode {
+  GROUP_ADMISSION_MODE_UNSPECIFIED = 0;
+  GROUP_ADMISSION_MODE_FRIENDS_DIRECT_ADD = 1;
+  GROUP_ADMISSION_MODE_FRIENDS_REQUIRE_CONFIRMATION = 2;
+}
+
+message GroupAdmissionPreference {
+  string actor_ptid = 1;
+  GroupAdmissionMode mode = 2;
+  uint64 revision = 3;
+  google.protobuf.Timestamp updated_at = 4;
+}
+
+message RejectedGroup {
+  string conversation_id = 1;
+  string federation_id = 2;
+  string authority_station_peer_id = 3;
+  string group_name_snapshot = 4;
+  uint64 policy_revision = 5;
+  google.protobuf.Timestamp rejected_at = 6;
+}
+```
+
+Home Station 为每个 actor 保存一条 preference 和零到多条 rejected-group
+记录。默认值是 `FRIENDS_DIRECT_ADD`，初始 revision 为 1。所有更新携带
+`observed_revision`；冲突返回当前 snapshot，不做 last-write-wins。
+
+拒绝项身份绑定
+`(actor_ptid, conversation_id, federation_id, authority_station_peer_id)`。
+显示名只是快照，不参与鉴权。移除拒绝项只增加 policy revision，不恢复成员资格。
+
+## 8. Group Invitation
+
+```protobuf
+enum GroupInvitationState {
+  GROUP_INVITATION_STATE_UNSPECIFIED = 0;
+  GROUP_INVITATION_STATE_PENDING = 1;
+  GROUP_INVITATION_STATE_ACCEPTED_WAITING_FOR_MLS = 2;
+  GROUP_INVITATION_STATE_JOINED = 3;
+  GROUP_INVITATION_STATE_DECLINED = 4;
+  GROUP_INVITATION_STATE_EXPIRED = 5;
+  GROUP_INVITATION_STATE_REVOKED = 6;
+}
+
+message GroupInvitation {
+  uint32 version = 1;
+  string invitation_id = 2;
+  string conversation_id = 3;
+  string federation_id = 4;
+  string authority_station_peer_id = 5;
+  int64 authority_epoch = 6;
+  string inviter_ptid = 7;
+  string invitee_ptid = 8;
+  string invitee_home_station_peer_id = 9;
+  GroupInvitationState state = 10;
+  string group_name_snapshot = 11;
+  int64 observed_membership_epoch = 12;
+  int64 observed_mls_epoch = 13;
+  int64 authority_sequence = 14;
+  bytes authority_hash = 15;
+  google.protobuf.Timestamp created_at = 16;
+  google.protobuf.Timestamp expires_at = 17;
+  google.protobuf.Timestamp decided_at = 18;
+  string decision_command_id = 19;
+  string fulfillment_transition_id = 20;
+}
+```
+
+Invitee Home Station 持久化 invitation 与 exact decision command/result。唯一活动约束为
+`(conversation_id, invitee_ptid)` 上最多一条 `PENDING` 或
+`ACCEPTED_WAITING_FOR_MLS`。重复创建返回原 invitation；相同 command 重放返回原
+结果；不同 decision 复用 command ID 返回 conflict。
+
+状态转换：
+
+```text
+PENDING
+  -> ACCEPTED_WAITING_FOR_MLS
+  -> DECLINED
+  -> EXPIRED
+  -> REVOKED
+
+ACCEPTED_WAITING_FOR_MLS
+  -> JOINED
+  -> EXPIRED
+  -> REVOKED
+```
+
+`JOINED` 只能在 invitee Home Station 观察到绑定 grant 的 accepted `ADD_ACTOR`
+authority transition 后提交。通知已读、删除、客户端本地状态或 acceptance fixture
+均不能改变 invitation。
+
+## 9. Admission Grant And Membership Binding
+
+每次准备 Group 创建或 `ADD_ACTOR` 前，Group authority 从 invitee Home Station
+取得 source-bound admission result：
+
+```text
+DENIED
+DIRECT_ADD(grant_id, policy_revision, expires_at)
+CONFIRMATION_REQUIRED(invitation_id, policy_revision)
+```
+
+grant 绑定：
+
+```text
+conversation_id
+authority head
+inviter/requester endpoint
+invitee PTID + Home Station
+friendship proof revision
+admission policy revision
+expiry
+```
+
+`PrepareConversationMembershipRequest` 的 `ADD_ACTOR` 必须携带未消费 grant 或已接受
+invitation 的 fulfillment identity。该 identity 显式携带
+`grant_id + invitation_id + invitee_ptid + invitee_home_station_peer_id +
+grant_sha256`，禁止仅凭列表顺序推断被邀请人。Authority plan hash 覆盖该 identity；最终
+`MembershipTransitionIntent.authority_plan_sha256` 继续校验完整 MLS transition，
+但不承担 invitation 或 preference 语义。
+
+Invitation decision 与 Notification 由 invitee Home Station 在同一 transaction
+更新。接受时生成一次性 admission grant；Group authority 只验证并消费 grant，不保存
+第二条 invitation row。authority event 回到 invitee Home Station 后，grant 与
+invitation 一起转为 consumed/JOINED。
+
+Group genesis 对每个初始目标执行相同 admission。Direct-add 目标可进入 genesis；
+confirmation-required 目标只在 group commit 后生成 invitation，不进入 genesis
+member/endpoints/MLS Welcome。
+
+## 10. Leave And Reject Saga
+
+`Leave and reject future invitations` 使用 actor Home Station 持久化 saga：
+
+```text
+PREPARING
+  -> REJECTION_COMMITTED
+  -> LEAVE_INTENT_SUBMITTED
+  -> COMPLETED
+
+REJECTION_COMMITTED | LEAVE_INTENT_SUBMITTED
+  -> LEAVE_RETRY_REQUIRED
+```
+
+幂等键是 actor 生成的 `operation_id`。rejection revision、signed leave intent ID
+和最终 membership transition ID 均写入 saga。重试不得创建新的拒绝项或逻辑 leave
+操作。只有 authority membership projection 显示 actor 已离开后才能进入
+`COMPLETED`。

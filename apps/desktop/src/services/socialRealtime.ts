@@ -20,6 +20,7 @@ import {
 import { api, type NotificationData } from './desktop_api';
 import { NotificationType } from '../gen/proto/domain/notification/notification_pb';
 import { useNotificationStore } from '../store/notification';
+import { useGroupInvitationStore } from '../store/groupInvitations';
 import { useRelationshipsStore } from '../store/relationships';
 import { currentAuthenticatedActorPtid, useSessionStore } from '../store/session';
 import { useFederationStore } from '../store/federation';
@@ -155,6 +156,7 @@ export async function refreshSocialProjection(label: string, includeNotification
       refreshFriendshipProjection(true),
       useRelationshipsStore.getState().loadBlockedActors(),
       notifications.refreshUnreadCounts(),
+      useGroupInvitationStore.getState().refresh(),
       includeNotifications ? notifications.loadNotifications() : Promise.resolve(),
     ]);
 
@@ -230,6 +232,7 @@ async function bootstrapSocialProjection(actorPtid: string, sequence: number): P
     refreshFriendshipProjection(true),
     useRelationshipsStore.getState().loadBlockedActors(),
     notifications.refreshUnreadCounts(),
+    useGroupInvitationStore.getState().refresh(),
   ]);
 
   if (sequence !== bootstrapSequence) return;
@@ -256,6 +259,7 @@ async function bootstrapSocialProjection(actorPtid: string, sequence: number): P
     refreshFriendStationIdentities(),
     refreshPeerPresence(peerPtids),
     notifications.loadNotifications(),
+    useGroupInvitationStore.getState().refresh(),
   ]);
 
   if (sequence !== bootstrapSequence) return;
@@ -434,10 +438,13 @@ export function installSocialRealtimeBridge(): void {
     if (scope === notificationScope) return;
     notificationScope = scope;
     const notifications = useNotificationStore.getState();
+    const invitations = useGroupInvitationStore.getState();
     notifications.reset();
+    invitations.reset();
     if (scope) {
       notifications.startPolling();
       reconcileNotifications();
+      void invitations.refresh();
     }
   };
   const unsubs = [
@@ -488,6 +495,7 @@ function reconcileNotifications(): void {
     await Promise.all([
       notifications.loadNotifications(),
       notifications.refreshUnreadCounts(),
+      useGroupInvitationStore.getState().refresh(),
     ]);
   });
 }

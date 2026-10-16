@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Prove MLS group creation, member add, encrypted send, and member removal."""
+"""Prove MLS Group lifecycle, actor admission, and leave/reject recovery."""
 
 from __future__ import annotations
 
 import json
 import os
 import random
+import socket
 import time
 from typing import Any, Callable
 
@@ -17,6 +18,9 @@ from tooling.acceptance.core import (
 from tooling.acceptance.drivers.native import NativeDesktopRuntimeBinding
 from tooling.acceptance.drivers.native.runtime import NativeLaunchOptions
 from tooling.acceptance.drivers.tauri import TauriSession
+from tooling.acceptance.fixtures.chat_group_leave_fault_proxy import (
+    AcceptanceGroupLeaveFaultProxy,
+)
 from tooling.acceptance.gates.chat.native_support import (
     DEV_ACCOUNT_PASSWORD,
     NativeClientLifecycleLedger,
@@ -32,6 +36,7 @@ from tooling.acceptance.gates.chat.native_support import (
     read_station_version,
     runtime_station_service,
     selected_native_runtime,
+    shared_federation_id,
     stop_client,
     wait_until,
     verify_runtime_fixture_ready,
@@ -59,6 +64,14 @@ REQUIRED_ASSERTIONS = {
     "group_message_delivered",
     "group_restart_recovered",
     "member_removed",
+    "admission_default_direct_add",
+    "admission_confirmation_pre_membership",
+    "admission_accept_waiting",
+    "admission_fulfillment_joined",
+    "rejected_group_blocks_reinvite",
+    "leave_reject_retry_persisted",
+    "leave_reject_restart_recovered",
+    "leave_reject_completed",
 }
 
 class VisibleGroupCreationFailure(GateError):
@@ -66,7 +79,7 @@ class VisibleGroupCreationFailure(GateError):
 
 SELECTORS = {
     "chat_nav": '[data-pt-primary-nav="chat"]',
-    "chat_nav": '[data-pt-primary-nav="chat"]',
+    "settings_nav": '[data-pt-primary-nav="settings"]',
     "contacts_subpage": '[data-chat-subpage="contacts"]',
     "contact_message": "[data-chat-contact-message]",
     "new_menu": "[data-chat-new-menu]",
@@ -86,6 +99,8 @@ SELECTORS = {
     "group_add_select": "[data-chat-group-add-member-select]",
     "group_add_submit": "[data-chat-group-add-member-submit]",
     "group_manage": "[data-chat-group-manage-members]",
+    "notification_trigger": "[data-shell-notification-trigger]",
+    "leave_reject": "[data-chat-group-leave-reject]",
 }
 
 
@@ -209,7 +224,7 @@ class NativeGroupMlsGate(AcceptanceGate):
                     if runtime_binding is not None
                     else "native-tauri-embedded-webdriver"
                 ),
-                "journey": "mls-group-add-send-remove",
+                "journey": "mls-group-admission-leave-reject",
                 "steps": self.steps,
                 "cleanup": {},
             }
@@ -1003,6 +1018,64 @@ class NativeGroupMlsGate(AcceptanceGate):
                 )
             raise
 
+    def restart_admission_client(self, actor: str) -> dict[str, Any]:
+        if self.runtime_binding is None:
+            raise GateError("Native Desktop runtime binding is required")
+        predecessor = self.clients[actor]
+        self.client_lifecycles.stop_preserving_session(predecessor)
+        client = self.runtime_binding.create_bound_session(
+            actor,
+            NativeLaunchOptions(
+                window_slot=ACTORS.index(actor),
+                window_count=len(ACTORS),
+                restore_session=True,
+            ),
+        )
+        self.runtime_instances.append(client)
+        expected_ptid = self.ptids[actor]
+        self.client_lifecycles.register(client, expected_ptid)
+        self.client_lifecycles.transfer_preserved_session(
+            predecessor,
+            client,
+        )
+        self.client_lifecycles.mark_live(client)
+        try:
+            readiness = wait_until(
+                lambda: (
+                    status
+                    if (
+                        isinstance(
+                            status := async_harness(
+                                client,
+                                "mlsReadiness",
+                                {},
+                                timeout=10,
+                            ),
+                            dict,
+                        )
+                        and status.get("actorPtid") == expected_ptid
+                        and status.get("deviceId") == self.device_ids[actor]
+                        and status.get("active") is True
+                    )
+                    else None
+                ),
+                f"{actor} restored admission session",
+                120,
+                interval=1,
+            )
+            self.client_lifecycles.mark_authenticated(client)
+            self.register_driver(client)
+            self.clients[actor] = client
+            return readiness
+        except Exception:
+            cleanup_errors = self.client_lifecycles.release(client)
+            if cleanup_errors:
+                raise GateError(
+                    "restored admission client cleanup failed: "
+                    f"{json.dumps(cleanup_errors, sort_keys=True)}"
+                )
+            raise
+
     def visible_group_projection(self, group_id: str) -> dict[str, Any]:
         expected_members = sorted(self.ptids.values())
         projections: dict[str, Any] = {}
@@ -1190,6 +1263,466 @@ class NativeGroupMlsGate(AcceptanceGate):
                 interval=1,
             )
         return projections
+
+    @staticmethod
+    def port_is_free(port: int) -> bool:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as connection:
+            return connection.connect_ex(("127.0.0.1", port)) != 0
+
+    def wait_group_members(
+        self,
+        actor: str,
+        group_id: str,
+        expected: set[str],
+    ) -> dict[str, Any]:
+        return wait_until(
+            lambda: (
+                snapshot
+                if (
+                    isinstance(
+                        snapshot := async_harness(
+                            self.clients[actor],
+                            "syncGroup",
+                            {"groupUlid": group_id},
+                            timeout=30,
+                        ),
+                        dict,
+                    )
+                    and set(snapshot.get("memberPtids") or []) == expected
+                    and snapshot.get("securityState") == "ready"
+                )
+                else None
+            ),
+            f"{actor} Group admission membership {sorted(expected)}",
+            180,
+            interval=1,
+        )
+
+    def invitation_snapshot(
+        self,
+        actor: str,
+        invitation_id: str,
+        state: int,
+    ) -> dict[str, Any] | None:
+        snapshot = async_harness(
+            self.clients[actor],
+            "refreshGroupAdmissionProjection",
+            {},
+            timeout=30,
+        )
+        if not isinstance(snapshot, dict):
+            return None
+        invitation = next(
+            (
+                item
+                for item in snapshot.get("invitations", [])
+                if isinstance(item, dict)
+                and item.get("invitationId") == invitation_id
+                and int(item.get("state") or 0) == state
+            ),
+            None,
+        )
+        return invitation
+
+    def rejected_group_snapshot(
+        self,
+        actor: str,
+        group_id: str,
+        state: int,
+    ) -> dict[str, Any] | None:
+        snapshot = async_harness(
+            self.clients[actor],
+            "refreshGroupAdmissionProjection",
+            {},
+            timeout=30,
+        )
+        if not isinstance(snapshot, dict):
+            return None
+        settings = snapshot.get("settings")
+        if not isinstance(settings, dict):
+            return None
+        return next(
+            (
+                item
+                for item in settings.get("rejectedGroups", [])
+                if isinstance(item, dict)
+                and item.get("conversationId") == group_id
+                and int(item.get("leaveRejectState") or 0) == state
+            ),
+            None,
+        )
+
+    def prove_group_admission(self) -> dict[str, Any]:
+        charlie = self.clients["charlie"]
+        default_settings = async_harness(
+            charlie,
+            "groupAdmissionSettings",
+            {},
+        )
+        preference = (default_settings or {}).get("preference") or {}
+        if int(preference.get("mode") or 0) != 1:
+            raise GateError(
+                "default Group admission preference is not direct add"
+            )
+        updated = async_harness(
+            charlie,
+            "updateGroupAdmissionMode",
+            {"mode": 2},
+        )
+        if int(((updated or {}).get("preference") or {}).get("mode") or 0) != 2:
+            raise GateError("confirmation-required preference did not persist")
+
+        federation_id = shared_federation_id(self.clients, ACTORS)
+        created = async_harness(
+            self.clients["alice"],
+            "createGroup",
+            {
+                "name": f"Admission {time.time_ns()}",
+                "federationId": federation_id,
+                "memberPtids": [self.ptids["bob"]],
+            },
+            timeout=60,
+        )
+        group_id = str((created or {}).get("groupUlid") or "")
+        if not group_id:
+            raise GateError("admission scenario Group creation returned no ID")
+        expected_initial = {self.ptids["alice"], self.ptids["bob"]}
+        initial = {
+            actor: self.wait_group_members(
+                actor,
+                group_id,
+                expected_initial,
+            )
+            for actor in ("alice", "bob")
+        }
+        if async_harness(
+            charlie,
+            "groupLifecycleSnapshot",
+            {"groupUlid": group_id},
+        ) is not None:
+            raise GateError(
+                "confirmation target received a Group before invitation"
+            )
+
+        invited = async_harness(
+            self.clients["alice"],
+            "inviteToGroup",
+            {
+                "groupUlid": group_id,
+                "memberPtids": [self.ptids["charlie"]],
+            },
+            timeout=60,
+        )
+        outcomes = (invited or {}).get("outcomes") or []
+        if (
+            len(outcomes) != 1
+            or outcomes[0].get("state") != "invitation_pending"
+            or not outcomes[0].get("invitationId")
+        ):
+            raise GateError(
+                "confirmation-required add did not return one invitation"
+            )
+        invitation_id = str(outcomes[0]["invitationId"])
+        pending = wait_until(
+            lambda: self.invitation_snapshot(
+                "charlie",
+                invitation_id,
+                1,
+            ),
+            "Charlie pending Group invitation",
+            STEP_TIMEOUT,
+            interval=1,
+        )
+        if async_harness(
+            charlie,
+            "groupLifecycleSnapshot",
+            {"groupUlid": group_id},
+        ) is not None:
+            raise GateError(
+                "pending invitation fabricated Group membership"
+            )
+
+        charlie.find_element(SELECTORS["notification_trigger"], 30).click()
+        invitation_row = (
+            f'[data-group-invitation-id={json.dumps(invitation_id)}]'
+        )
+        wait_until(
+            lambda: next(
+                iter(charlie.find_elements(invitation_row)),
+                None,
+            ),
+            "Charlie visible pending invitation",
+            STEP_TIMEOUT,
+        )
+        self.save_screenshot(charlie, "charlie-group-invitation-pending")
+        charlie.find_element(
+            f'{invitation_row} [data-group-invitation-action="accept"]',
+            20,
+        ).click()
+        accepted = wait_until(
+            lambda: self.invitation_snapshot(
+                "charlie",
+                invitation_id,
+                2,
+            ),
+            "Charlie accepted invitation waiting for MLS",
+            STEP_TIMEOUT,
+            interval=1,
+        )
+        wait_until(
+            lambda: (
+                row
+                if (
+                    (
+                        rows := charlie.find_elements(invitation_row)
+                    )
+                    and (
+                        row := rows[0]
+                    ).get_attribute("data-group-invitation-state") == "2"
+                )
+                else None
+            ),
+            "Charlie visible accepted-waiting invitation",
+            STEP_TIMEOUT,
+        )
+        if async_harness(
+            charlie,
+            "groupLifecycleSnapshot",
+            {"groupUlid": group_id},
+        ) is not None:
+            raise GateError(
+                "accepted invitation fabricated membership before fulfillment"
+            )
+
+        fulfilled = async_harness(
+            self.clients["alice"],
+            "inviteToGroup",
+            {
+                "groupUlid": group_id,
+                "memberPtids": [self.ptids["charlie"]],
+            },
+            timeout=60,
+        )
+        fulfillment_outcomes = (fulfilled or {}).get("outcomes") or []
+        if (
+            len(fulfillment_outcomes) != 1
+            or fulfillment_outcomes[0].get("state") != "pending"
+            or not fulfillment_outcomes[0].get("commandId")
+        ):
+            raise GateError(
+                "accepted invitation did not prepare a membership command"
+            )
+        joined_members = set(self.ptids.values())
+        joined = {
+            actor: self.wait_group_members(
+                actor,
+                group_id,
+                joined_members,
+            )
+            for actor in ACTORS
+        }
+        joined_invitation = wait_until(
+            lambda: self.invitation_snapshot(
+                "charlie",
+                invitation_id,
+                3,
+            ),
+            "Charlie joined invitation terminal state",
+            STEP_TIMEOUT,
+            interval=1,
+        )
+        return {
+            "groupId": group_id,
+            "invitationId": invitation_id,
+            "default": default_settings,
+            "initial": initial,
+            "pending": pending,
+            "accepted": accepted,
+            "joined": joined,
+            "joinedInvitation": joined_invitation,
+        }
+
+    def prove_leave_and_reject(
+        self,
+        group_id: str,
+    ) -> dict[str, Any]:
+        if self.runtime_binding is None:
+            raise GateError("Native Desktop runtime binding is required")
+        proxy = AcceptanceGroupLeaveFaultProxy(self.station_url)
+        proxy.start()
+        proxy_port = proxy.port
+        override = self.runtime_binding.create_transport_override(
+            "charlie",
+            "station",
+            proxy.url,
+        )
+        self.runtime_binding.apply_transport_override(
+            "charlie",
+            "station",
+            override,
+        )
+        proxy.arm()
+        try:
+            charlie = self.clients["charlie"]
+            enter_chat_page(charlie)
+            charlie.find_element(
+                f'[data-chat-group-ulid={json.dumps(group_id)}]',
+                30,
+            ).click()
+            charlie.find_element(SELECTORS["detail_toggle"], 20).click()
+            charlie.find_element(SELECTORS["leave_reject"], 20).click()
+            charlie.find_element(
+                '[role="dialog"] .ant-btn-primary',
+                20,
+            ).click()
+            retrying = wait_until(
+                lambda: self.rejected_group_snapshot(
+                    "charlie",
+                    group_id,
+                    5,
+                ),
+                "Charlie rejection-active leave retry",
+                STEP_TIMEOUT,
+                interval=1,
+            )
+            operation_id = str(
+                retrying.get("leaveRejectOperationId") or ""
+            )
+            if not operation_id:
+                raise GateError(
+                    "leave-and-reject retry has no durable operation ID"
+                )
+            fault = proxy.evidence()
+            if (
+                fault.get("rejectionStarted") is not True
+                or int(fault.get("connectionLossCount") or 0) != 1
+            ):
+                raise GateError(
+                    "leave fault did not occur after rejection commit"
+                )
+        finally:
+            self.runtime_binding.clear_transport_override(
+                "charlie",
+                "station",
+                override,
+            )
+            proxy.stop()
+
+        wait_until(
+            lambda: self.port_is_free(proxy_port),
+            "Group leave fault proxy port release",
+            10,
+            interval=0.1,
+        )
+        restart = self.restart_admission_client("charlie")
+        retrying_after_restart = wait_until(
+            lambda: self.rejected_group_snapshot(
+                "charlie",
+                group_id,
+                5,
+            ),
+            "Charlie leave retry survives restart",
+            STEP_TIMEOUT,
+            interval=1,
+        )
+        if (
+            retrying_after_restart.get("leaveRejectOperationId")
+            != operation_id
+        ):
+            raise GateError("leave retry operation changed across restart")
+
+        charlie = self.clients["charlie"]
+        charlie.find_element(SELECTORS["settings_nav"], 30).click()
+        charlie.find_element('[data-group-key="general"]', 20).click()
+        charlie.find_element('[data-section-key="privacy"]', 20).click()
+        rejected_row = (
+            f'[data-rejected-group={json.dumps(group_id)}]'
+        )
+        wait_until(
+            lambda: next(
+                (
+                    row
+                    for row in charlie.find_elements(rejected_row)
+                    if row.get_attribute("data-leave-reject-state") == "5"
+                    and row.get_attribute("data-leave-reject-operation")
+                    == operation_id
+                ),
+                None,
+            ),
+            "Charlie visible durable leave retry",
+            STEP_TIMEOUT,
+        )
+        self.save_screenshot(charlie, "charlie-leave-reject-retry")
+        charlie.find_element(
+            f'[data-leave-reject-retry={json.dumps(operation_id)}]',
+            20,
+        ).click()
+
+        def completed() -> dict[str, Any] | None:
+            async_harness(
+                self.clients["alice"],
+                "resumeMessagingLifecycle",
+                {"actorPtid": self.ptids["alice"]},
+                timeout=30,
+            )
+            return self.rejected_group_snapshot(
+                "charlie",
+                group_id,
+                4,
+            )
+
+        completed_rejection = wait_until(
+            completed,
+            "Charlie leave-and-reject completion",
+            180,
+            interval=1,
+        )
+        remaining = self.wait_group_members(
+            "alice",
+            group_id,
+            {self.ptids["alice"], self.ptids["bob"]},
+        )
+        before_reinvite = async_harness(
+            charlie,
+            "groupInvitations",
+            {"states": [1]},
+        )
+        reinvite = async_harness(
+            self.clients["alice"],
+            "attemptInviteToGroup",
+            {
+                "groupUlid": group_id,
+                "memberPtid": self.ptids["charlie"],
+            },
+            timeout=60,
+        )
+        after_reinvite = async_harness(
+            charlie,
+            "groupInvitations",
+            {"states": [1]},
+        )
+        if (
+            (reinvite or {}).get("accepted") is not False
+            or len((before_reinvite or {}).get("invitations") or [])
+            != len((after_reinvite or {}).get("invitations") or [])
+        ):
+            raise GateError(
+                "rejected Group created membership or another invitation"
+            )
+        return {
+            "operationId": operation_id,
+            "retrying": retrying,
+            "fault": fault,
+            "restart": restart,
+            "retryingAfterRestart": retrying_after_restart,
+            "completed": completed_rejection,
+            "remaining": remaining,
+            "reinvite": reinvite,
+            "pendingBefore": before_reinvite,
+            "pendingAfter": after_reinvite,
+            "proxyPort": proxy_port,
+            "proxyPortReleased": True,
+        }
 
     def prove_group_creation_failure_recovery(self) -> dict[str, Any]:
         revoked = async_harness(
@@ -1489,6 +2022,134 @@ class NativeGroupMlsGate(AcceptanceGate):
                 json.dumps(removal, sort_keys=True),
             )
 
+            admission = self.step(
+                "group.admission",
+                self.prove_group_admission,
+                "alice,charlie",
+            )
+            self.assert_condition(
+                "admission_default_direct_add",
+                int(
+                    (
+                        admission["default"].get("preference")
+                        or {}
+                    ).get("mode")
+                    or 0
+                )
+                == 1,
+                json.dumps(admission["default"], sort_keys=True),
+            )
+            self.assert_condition(
+                "admission_confirmation_pre_membership",
+                int(admission["pending"].get("state") or 0) == 1
+                and self.ptids["charlie"]
+                not in set(
+                    admission["initial"]["alice"].get(
+                        "memberPtids",
+                    )
+                    or []
+                ),
+                json.dumps(admission["pending"], sort_keys=True),
+            )
+            self.assert_condition(
+                "admission_accept_waiting",
+                int(admission["accepted"].get("state") or 0) == 2,
+                json.dumps(admission["accepted"], sort_keys=True),
+            )
+            self.assert_condition(
+                "admission_fulfillment_joined",
+                int(admission["joinedInvitation"].get("state") or 0) == 3
+                and all(
+                    set(snapshot.get("memberPtids") or [])
+                    == set(self.ptids.values())
+                    for snapshot in admission["joined"].values()
+                ),
+                json.dumps(
+                    {
+                        "invitation": admission["joinedInvitation"],
+                        "members": admission["joined"],
+                    },
+                    sort_keys=True,
+                ),
+            )
+
+            leave_reject = self.step(
+                "group.leave_reject",
+                lambda: self.prove_leave_and_reject(
+                    admission["groupId"],
+                ),
+                "charlie",
+            )
+            self.assert_condition(
+                "leave_reject_retry_persisted",
+                int(
+                    leave_reject["retrying"].get(
+                        "leaveRejectState",
+                    )
+                    or 0
+                )
+                == 5
+                and bool(leave_reject["operationId"])
+                and leave_reject["fault"].get(
+                    "rejectionStarted"
+                )
+                is True,
+                json.dumps(leave_reject["retrying"], sort_keys=True),
+            )
+            self.assert_condition(
+                "leave_reject_restart_recovered",
+                leave_reject["retryingAfterRestart"].get(
+                    "leaveRejectOperationId",
+                )
+                == leave_reject["operationId"]
+                and int(
+                    leave_reject["retryingAfterRestart"].get(
+                        "leaveRejectState",
+                    )
+                    or 0
+                )
+                == 5,
+                json.dumps(
+                    leave_reject["retryingAfterRestart"],
+                    sort_keys=True,
+                ),
+            )
+            self.assert_condition(
+                "leave_reject_completed",
+                int(
+                    leave_reject["completed"].get(
+                        "leaveRejectState",
+                    )
+                    or 0
+                )
+                == 4
+                and self.ptids["charlie"]
+                not in set(
+                    leave_reject["remaining"].get(
+                        "memberPtids",
+                    )
+                    or []
+                ),
+                json.dumps(leave_reject["completed"], sort_keys=True),
+            )
+            self.assert_condition(
+                "rejected_group_blocks_reinvite",
+                leave_reject["reinvite"].get("accepted") is False
+                and len(
+                    leave_reject["pendingBefore"].get(
+                        "invitations",
+                    )
+                    or []
+                )
+                == len(
+                    leave_reject["pendingAfter"].get(
+                        "invitations",
+                    )
+                    or []
+                ),
+                json.dumps(leave_reject["reinvite"], sort_keys=True),
+            )
+
             group_failure = self.step(
                 "group.create_failure_recovery",
                 self.prove_group_creation_failure_recovery,
@@ -1523,7 +2184,7 @@ class NativeGroupMlsGate(AcceptanceGate):
                 if self.runtime_binding is not None
                 else "native-tauri-embedded-webdriver"
             ),
-            "journey": "mls-group-add-send-remove",
+            "journey": "mls-group-admission-leave-reject",
             "testedCommit": self.tested_commit,
             "testedWorkspaceDigest": self.workspace_digest,
             "stationLive": version,

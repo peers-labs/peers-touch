@@ -55,6 +55,7 @@ impl StationMembershipTransitionTransport {
                 target_actor: Some(actor_ref(input.target_ptid.clone())),
                 target_device_id: input.target_device_id.clone(),
                 role: canonical_role(&input.role)? as i32,
+                admission_fulfillment: input.admission_fulfillment.clone(),
             }),
             &self.endpoint.device_id,
         )

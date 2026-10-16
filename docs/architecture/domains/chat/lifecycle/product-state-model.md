@@ -1,8 +1,8 @@
 # Chat Lifecycle - Product State Model
 
 > **Status**: active
-> **Version**: v1.2
-> **Created**: 2026-09-16 | **Updated**: 2026-09-18
+> **Version**: v1.3
+> **Created**: 2026-09-16 | **Updated**: 2026-10-16
 > **Owner**: Chat Product Team
 
 ---
@@ -176,13 +176,37 @@ uncompensated.
 creating -> active
 active -> transition_pending -> active
 active -> leaving -> left
+active -> leave_and_reject_pending -> rejected_and_left
+                                  \-> rejection_active_leave_retry
 active -> dissolving -> dissolved
 active -> waiting_for_epoch -> recovering -> active
+
+eligible_friend
+  -> direct_add_pending -> active
+  -> invitation_pending -> accepted_waiting_for_mls -> joining -> active
+                        \-> declined
+                        \-> expired
+                        \-> revoked
+
+any_non_member_state -> group_rejected
+group_rejected -> eligible_friend
 ```
 
 Group actions remain pending until authoritative membership and MLS projections
 agree. `left`, `removed`, and `dissolved` preserve entitled read-only history
 and reject new sends.
+
+The actor-level default permits accepted friends to add the actor directly.
+Disabling direct add changes eligible friend actions into invitations; it does
+not permit non-friends. A group-specific rejection overrides both branches.
+`accepted_waiting_for_mls` is consent, not membership: the conversation does
+not enter the session list and no Welcome is delivered until the canonical
+membership transition commits.
+
+`Leave and reject future invitations` may cross authority boundaries. The
+rejection becomes durable first. If delegated MLS leave completion fails, the
+visible state is `rejection_active_leave_retry`, never false `left`; retry
+preserves the same leave intent and rejection.
 
 ## 9. Live One-To-One Voice And Video
 
@@ -270,6 +294,11 @@ or fall back to a legacy authority.
   failure.
 - Failed message rendered as read.
 - Group marked ready before authoritative projection.
+- Pending or accepted group invitation rendered as active membership before
+  the MLS Welcome and authoritative membership projection commit.
+- Rejected group directly added or shown as a new decision-inbox item.
+- `Leave and reject future invitations` shown as complete while the actor
+  remains an active member.
 - Voice note shown as sent when capture or transfer failed.
 - Chunked upload described as streaming voice.
 - Call controls enabled only because an unrelated P2P status is connected.

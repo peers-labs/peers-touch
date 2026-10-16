@@ -426,6 +426,44 @@ func MapSubmitCommand(
 		mapped.Deliveries, err = mapMembershipDeliveries(wire, payload.MembershipTransition, *plan)
 		result.AuthorityPlanID = plan.ID
 		result.AuthorityPlanHash = plan.Hash
+		fulfillment := payload.MembershipTransition.GetAdmissionFulfillment()
+		genesisFulfillments := payload.MembershipTransition.GetGenesisAdmissionFulfillments()
+		if fulfillment != nil && len(genesisFulfillments) > 0 {
+			return command.SubmitRequest{}, invalid(
+				"interface.map_submit_command",
+				"admission_fulfillment",
+				"single and genesis admission fulfillments are mutually exclusive",
+			)
+		}
+		if fulfillment != nil {
+			encodedFulfillment, encodeErr := (proto.MarshalOptions{
+				Deterministic: true,
+			}).Marshal(fulfillment)
+			if encodeErr != nil {
+				return command.SubmitRequest{}, fmt.Errorf(
+					"encode group admission fulfillment: %w",
+					encodeErr,
+				)
+			}
+			result.AdmissionFulfillmentHash = valueobject.HashBytes(
+				encodedFulfillment,
+			)
+		} else if len(genesisFulfillments) > 0 {
+			encodedFulfillments, encodeErr := (proto.MarshalOptions{
+				Deterministic: true,
+			}).Marshal(&chat.GroupAdmissionFulfillmentSet{
+				Fulfillments: genesisFulfillments,
+			})
+			if encodeErr != nil {
+				return command.SubmitRequest{}, fmt.Errorf(
+					"encode group genesis admission fulfillments: %w",
+					encodeErr,
+				)
+			}
+			result.AdmissionFulfillmentHash = valueobject.HashBytes(
+				encodedFulfillments,
+			)
+		}
 		result.Membership = &aggregate.MembershipTransition{
 			Command:           mapped,
 			TransitionID:      valueobject.TransitionID(payload.MembershipTransition.GetTransitionId()),

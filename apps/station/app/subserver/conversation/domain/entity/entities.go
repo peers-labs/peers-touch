@@ -2,6 +2,7 @@ package entity
 
 import (
 	"bytes"
+	"sort"
 	"time"
 
 	conversationdomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain"
@@ -346,6 +347,9 @@ type AuthorityPlan struct {
 	RemovedEndpoints          []valueobject.Endpoint
 	EndpointManifestSetHash   valueobject.Hash
 	EndpointManifestStateHash valueobject.Hash
+	AdmissionFulfillmentHash  valueobject.Hash
+	GenesisAdmissionHash      valueobject.Hash
+	DeferredInvitationHomes   []valueobject.StationID
 	Hash                      valueobject.Hash
 	State                     AuthorityPlanState
 	ExpiresAt                 time.Time
@@ -389,6 +393,9 @@ func NewAuthorityPlan(plan AuthorityPlan) (*AuthorityPlan, error) {
 	plan.PostEndpoints = valueobject.SortEndpoints(plan.PostEndpoints)
 	plan.AddedEndpoints = valueobject.SortEndpoints(plan.AddedEndpoints)
 	plan.RemovedEndpoints = valueobject.SortEndpoints(plan.RemovedEndpoints)
+	plan.DeferredInvitationHomes = canonicalStationIDs(
+		plan.DeferredInvitationHomes,
+	)
 	plan.KeyPackageReservations = valueobject.SortKeyPackageReservations(
 		plan.KeyPackageReservations,
 	)
@@ -424,6 +431,9 @@ func RehydrateAuthorityPlan(plan AuthorityPlan) (*AuthorityPlan, error) {
 	plan.PostEndpoints = valueobject.SortEndpoints(plan.PostEndpoints)
 	plan.AddedEndpoints = valueobject.SortEndpoints(plan.AddedEndpoints)
 	plan.RemovedEndpoints = valueobject.SortEndpoints(plan.RemovedEndpoints)
+	plan.DeferredInvitationHomes = canonicalStationIDs(
+		plan.DeferredInvitationHomes,
+	)
 	plan.KeyPackageReservations = valueobject.SortKeyPackageReservations(
 		plan.KeyPackageReservations,
 	)
@@ -433,6 +443,23 @@ func RehydrateAuthorityPlan(plan AuthorityPlan) (*AuthorityPlan, error) {
 		}
 	}
 	return &plan, nil
+}
+
+func canonicalStationIDs(stations []valueobject.StationID) []valueobject.StationID {
+	unique := make(map[valueobject.StationID]struct{}, len(stations))
+	for _, station := range stations {
+		if station != "" {
+			unique[station] = struct{}{}
+		}
+	}
+	result := make([]valueobject.StationID, 0, len(unique))
+	for station := range unique {
+		result = append(result, station)
+	}
+	sort.Slice(result, func(left int, right int) bool {
+		return result[left] < result[right]
+	})
+	return result
 }
 
 func (p *AuthorityPlan) Consume(expected valueobject.Hash, at time.Time) error {

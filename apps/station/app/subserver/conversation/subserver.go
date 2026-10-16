@@ -10,6 +10,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/clusterreadiness"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/query"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
+	groupadmission "github.com/peers-labs/peers-touch/station/app/subserver/conversation/groupadmission"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
 	"github.com/peers-labs/peers-touch/station/frame/core/facility/appdir"
@@ -32,14 +33,15 @@ const (
 type subServer struct {
 	mu sync.RWMutex
 
-	status        server.Status
-	jwtWrapper    server.Wrapper
-	composition   *ProductionComposition
-	localStation  valueobject.StationID
-	gate          *ConversationGateEvaluator
-	relationships *ConversationRelationshipAdapter
-	database      *gorm.DB
-	attachments   storage.Backend
+	status         server.Status
+	jwtWrapper     server.Wrapper
+	composition    *ProductionComposition
+	localStation   valueobject.StationID
+	gate           *ConversationGateEvaluator
+	relationships  *ConversationRelationshipAdapter
+	groupAdmission *groupadmission.Service
+	database       *gorm.DB
+	attachments    storage.Backend
 
 	cancel context.CancelFunc
 	wait   sync.WaitGroup
@@ -107,12 +109,21 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 		database,
 		composition.QueryService,
 	)
+	groupAdmission, err := newProductionGroupAdmissionService(
+		composition,
+		relationships,
+	)
+	if err != nil {
+		return s.failInitialization(err)
+	}
+	composition.groupAdmission = groupAdmission
 
 	s.mu.Lock()
 	s.composition = composition
 	s.localStation = localStation
 	s.jwtWrapper = jwtWrapper
 	s.relationships = relationships
+	s.groupAdmission = groupAdmission
 	s.gate = NewConversationGateEvaluator(relationships, nil, nil)
 	s.database = database
 	s.attachments = attachmentBackend
@@ -507,6 +518,69 @@ func (s *subServer) Handlers() []server.Handler {
 			"/conversation/mls/leave-intents",
 			server.GET,
 			s.handleListLeaveIntents,
+			authenticatedDevice...,
+		),
+		server.NewTypedHandler(
+			"conversation-group-admission-settings-get",
+			"/conversation/group-admission/settings",
+			server.GET,
+			s.handleGetGroupAdmissionSettings,
+			authenticatedActor...,
+		),
+		server.NewTypedHandler(
+			"conversation-group-admission-settings-update",
+			"/conversation/group-admission/settings",
+			server.PUT,
+			s.handleUpdateGroupAdmissionPreference,
+			authenticatedActor...,
+		),
+		server.NewTypedHandler(
+			"conversation-rejected-group-remove",
+			"/conversation/group-admission/rejected-groups/remove",
+			server.POST,
+			s.handleRemoveRejectedGroup,
+			authenticatedActor...,
+		),
+		server.NewTypedHandler(
+			"conversation-group-invitations-list",
+			"/conversation/group-invitations",
+			server.POST,
+			s.handleListGroupInvitations,
+			authenticatedActor...,
+		),
+		server.NewTypedHandler(
+			"conversation-group-invitation-decide",
+			"/conversation/group-invitations/decide",
+			server.POST,
+			s.handleDecideGroupInvitation,
+			authenticatedDevice...,
+		),
+		server.NewTypedHandler(
+			"conversation-group-leave-reject-start",
+			"/conversation/group-leave-reject",
+			server.POST,
+			s.handleStartGroupLeaveReject,
+			authenticatedDevice...,
+		),
+		server.NewTypedHandler(
+			"conversation-group-leave-reject-intent-submit",
+			"/conversation/group-leave-reject/leave-intent",
+			server.POST,
+			s.handleSubmitGroupLeaveRejectIntent,
+			authenticatedDevice...,
+		),
+		server.NewTypedHandler(
+			"conversation-group-leave-reject-get",
+			"/conversation/group-leave-reject/get",
+			server.POST,
+			s.handleGetGroupLeaveRejectOperation,
+			authenticatedActor...,
+		),
+		server.NewTypedHandler(
+			"conversation-group-leave-reject-retry",
+			"/conversation/group-leave-reject/retry",
+			server.POST,
+			s.handleRetryGroupLeaveReject,
 			authenticatedDevice...,
 		),
 		server.NewTypedHandler(

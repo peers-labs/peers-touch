@@ -424,6 +424,114 @@ capabilities:
       - peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionRequest
       - peers_touch.model.chat.v1.PrepareMessagingMembershipTransitionResponse
 
+  - id: chat.group.admission.settings.read
+    domain_owner: station.conversation
+    truth_owner: conversation.group_admission
+    exposure: client
+    canonical_route: { method: GET, path: /conversation/group-admission/settings }
+    request_proto: peers_touch.model.chat.v1.GetGroupAdmissionSettingsRequest
+    response_proto: peers_touch.model.chat.v1.GetGroupAdmissionSettingsResponse
+    truth_stores: [conversation_group_admission_preferences, conversation_rejected_groups]
+    allowed_dependencies: []
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: chat.group.admission.settings.update
+    domain_owner: station.conversation
+    truth_owner: conversation.group_admission
+    exposure: client
+    canonical_route: { method: PUT, path: /conversation/group-admission/settings }
+    request_proto: peers_touch.model.chat.v1.UpdateGroupAdmissionPreferenceRequest
+    response_proto: peers_touch.model.chat.v1.UpdateGroupAdmissionPreferenceResponse
+    truth_stores: [conversation_group_admission_preferences]
+    allowed_dependencies: []
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: chat.group.admission.rejected.remove
+    domain_owner: station.conversation
+    truth_owner: conversation.group_admission
+    exposure: client
+    canonical_route: { method: POST, path: /conversation/group-admission/rejected-groups/remove }
+    request_proto: peers_touch.model.chat.v1.RemoveRejectedGroupRequest
+    response_proto: peers_touch.model.chat.v1.RemoveRejectedGroupResponse
+    truth_stores: [conversation_group_admission_preferences, conversation_rejected_groups]
+    allowed_dependencies: []
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: chat.group.invitation.list
+    domain_owner: station.conversation
+    truth_owner: conversation.group_admission
+    exposure: client
+    canonical_route: { method: POST, path: /conversation/group-invitations }
+    request_proto: peers_touch.model.chat.v1.ListGroupInvitationsRequest
+    response_proto: peers_touch.model.chat.v1.ListGroupInvitationsResponse
+    truth_stores: [conversation_group_invitations]
+    allowed_dependencies: []
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: chat.group.invitation.decide
+    domain_owner: station.conversation
+    truth_owner: conversation.group_admission
+    exposure: client
+    canonical_route: { method: POST, path: /conversation/group-invitations/decide }
+    request_proto: peers_touch.model.chat.v1.DecideGroupInvitationRequest
+    response_proto: peers_touch.model.chat.v1.DecideGroupInvitationResponse
+    truth_stores: [conversation_group_invitations, conversation_group_admission_grants]
+    allowed_dependencies: [social.relationship.read, notification.write]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: chat.group.leave_reject.start
+    domain_owner: station.conversation
+    truth_owner: conversation.group_admission
+    exposure: client
+    canonical_route: { method: POST, path: /conversation/group-leave-reject }
+    request_proto: peers_touch.model.chat.v1.StartGroupLeaveRejectRequest
+    response_proto: peers_touch.model.chat.v1.StartGroupLeaveRejectResponse
+    truth_stores: [conversation_group_leave_reject_operations, conversation_rejected_groups]
+    allowed_dependencies: []
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: chat.group.leave_reject.intent
+    domain_owner: station.conversation
+    truth_owner: conversation.group_admission
+    exposure: client
+    canonical_route: { method: POST, path: /conversation/group-leave-reject/leave-intent }
+    request_proto: peers_touch.model.chat.v1.SubmitGroupLeaveRejectIntentRequest
+    response_proto: peers_touch.model.chat.v1.SubmitGroupLeaveRejectIntentResponse
+    truth_stores: [conversation_group_leave_reject_operations]
+    allowed_dependencies: [conversation.membership.write, federation.delivery.enqueue]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: chat.group.leave_reject.read
+    domain_owner: station.conversation
+    truth_owner: conversation.group_admission
+    exposure: client
+    canonical_route: { method: POST, path: /conversation/group-leave-reject/get }
+    request_proto: peers_touch.model.chat.v1.GetGroupLeaveRejectOperationRequest
+    response_proto: peers_touch.model.chat.v1.GetGroupLeaveRejectOperationResponse
+    truth_stores: [conversation_group_leave_reject_operations]
+    allowed_dependencies: []
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: chat.group.leave_reject.retry
+    domain_owner: station.conversation
+    truth_owner: conversation.group_admission
+    exposure: client
+    canonical_route: { method: POST, path: /conversation/group-leave-reject/retry }
+    request_proto: peers_touch.model.chat.v1.RetryGroupLeaveRejectRequest
+    response_proto: peers_touch.model.chat.v1.RetryGroupLeaveRejectResponse
+    truth_stores: [conversation_group_leave_reject_operations, conversation_rejected_groups]
+    allowed_dependencies: [conversation.membership.write, federation.delivery.enqueue]
+    forbidden_aliases: []
+    superseded_symbols: []
+
   - id: chat.read_cursor.submit
     domain_owner: station.conversation
     truth_owner: conversation.authority
@@ -1244,6 +1352,54 @@ capabilities:
     forbidden_aliases: []
     superseded_symbols:
       - peers_touch.model.chat.v1.FederatedPrepareMessagingSendRequest
+
+  - id: federation.conversation.group_admission.evaluate
+    domain_owner: station.federation
+    truth_owner: conversation.group_admission
+    exposure: peer
+    canonical_route: { method: POST, path: /federation/conversation/group-admission/evaluate }
+    request_proto: peers_touch.model.chat.v1.EvaluateFederatedGroupAdmissionRequest
+    response_proto: peers_touch.model.chat.v1.EvaluateFederatedGroupAdmissionResponse
+    truth_stores: [conversation_group_admission_preferences, conversation_group_admission_evaluations, conversation_group_invitations, conversation_group_admission_grants, conversation_rejected_groups]
+    allowed_dependencies: [federation.auth.verify, social.relationship.read, notification.write]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: federation.conversation.group_admission.bind
+    domain_owner: station.federation
+    truth_owner: conversation.group_admission
+    exposure: peer
+    canonical_route: { method: POST, path: /federation/conversation/group-admission/bind }
+    request_proto: peers_touch.model.chat.v1.BindFederatedGroupAdmissionFulfillmentRequest
+    response_proto: peers_touch.model.chat.v1.BindFederatedGroupAdmissionFulfillmentResponse
+    truth_stores: [conversation_group_admission_grants]
+    allowed_dependencies: [federation.auth.verify, conversation.authority_plan.read]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: federation.conversation.group_admission.complete
+    domain_owner: station.federation
+    truth_owner: conversation.group_admission
+    exposure: peer
+    canonical_route: { method: POST, path: /federation/conversation/group-admission/complete }
+    request_proto: peers_touch.model.chat.v1.CompleteFederatedGroupAdmissionTransitionRequest
+    response_proto: peers_touch.model.chat.v1.CompleteFederatedGroupAdmissionTransitionResponse
+    truth_stores: [conversation_group_invitations, conversation_group_admission_grants, conversation_group_leave_reject_operations, conversation_rejected_groups]
+    allowed_dependencies: [federation.auth.verify, conversation.authority_event.verify]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: federation.conversation.group_admission.activate
+    domain_owner: station.federation
+    truth_owner: conversation.group_admission
+    exposure: peer
+    canonical_route: { method: POST, path: /federation/conversation/group-admission/activate }
+    request_proto: peers_touch.model.chat.v1.ActivateFederatedGroupGenesisInvitationsRequest
+    response_proto: peers_touch.model.chat.v1.ActivateFederatedGroupGenesisInvitationsResponse
+    truth_stores: [conversation_group_admission_evaluations, conversation_group_invitations]
+    allowed_dependencies: [federation.auth.verify, notification.write]
+    forbidden_aliases: []
+    superseded_symbols: []
 
   - id: federation.key_exchange.mls_key_package.claim
     domain_owner: station.federation

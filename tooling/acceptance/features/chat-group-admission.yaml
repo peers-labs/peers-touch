@@ -1,0 +1,84 @@
+{
+  "id": "chat-group-admission",
+  "status": "active",
+  "product_area": "chat",
+  "owners": [
+    "model/domain/chat/group_admission.proto",
+    "model/domain/chat/command.proto",
+    "model/domain/chat/conversation_api.proto",
+    "apps/station/app/subserver/conversation/groupadmission/**",
+    "apps/station/app/subserver/conversation/infrastructure/persistence/group_admission_store.go",
+    "apps/station/app/subserver/conversation/production_group_admission.go",
+    "apps/station/app/subserver/conversation/production_http.go",
+    "apps/station/app/subserver/conversation/production_federation.go",
+    "apps/station/app/subserver/conversation/production_peer_routes.go",
+    "apps/station/frame/core/federation/routes.go",
+    "apps/station/frame/core/federation/scope.go",
+    "packages/messaging-core/src/mls/group_genesis.rs",
+    "packages/messaging-core/src/mls/membership_transition.rs",
+    "apps/desktop/src-tauri/src/interface/tauri_commands/group_admission.rs",
+    "apps/desktop/src-tauri/src/messaging/engine.rs",
+    "apps/desktop/src/acceptance/chat/harness.ts",
+    "apps/desktop/src/store/groupInvitations.ts",
+    "apps/desktop/src/store/settings.ts",
+    "apps/desktop/src/runtimes/settingsRuntime.ts",
+    "apps/desktop/src/runtimes/settingsRuntime.test.ts",
+    "apps/desktop/src/components/notifications/NotificationRow.tsx",
+    "apps/desktop/src/components/settings/PrivacySettings.tsx",
+    "apps/desktop/src/components/chat/ChatDetailPanel.tsx",
+    "tooling/acceptance/fixtures/chat_group_leave_fault_proxy.py",
+    "tooling/acceptance/gates/chat/native_group_mls_runner.py"
+  ],
+  "truth_sources": [
+    "invitee Home Station GroupAdmissionPreference and rejected-group rows",
+    "invitee Home Station GroupInvitation and GroupAdmissionGrant rows",
+    "Conversation authority plan and membership event hash chain",
+    "actor Home Station GroupLeaveRejectOperation and exact signed leave intent",
+    "Desktop notification, Group, and Privacy projections"
+  ],
+  "visible_surfaces": [
+    {"type": "desktop-native", "selector": "[data-group-invitation-id]"},
+    {"type": "desktop-native", "selector": "[data-group-invitation-action]"},
+    {"type": "desktop-native", "selector": "[data-chat-group-leave]"},
+    {"type": "desktop-native", "selector": "[data-chat-group-leave-reject]"},
+    {"type": "desktop-native", "selector": "[data-rejected-group]"},
+    {"type": "desktop-native", "selector": "[data-leave-reject-retry]"}
+  ],
+  "required_gates": [
+    "proto-build",
+    "station-api-ownership",
+    "station-messaging-unit",
+    "messaging-platform-contract",
+    "desktop-check",
+    "chat-native-visible-static",
+    "chat-native-group-mls-e2e"
+  ],
+  "acceptance": {
+    "service": [
+      "friends_direct_add is the revision-fenced default and non-friends are denied",
+      "friends_require_confirmation creates one durable invitation and no authority plan, membership, MLS commit, Welcome, session, or recovery entitlement before acceptance",
+      "acceptance creates a source-bound grant and remains accepted_waiting_for_mls until an authorized member commits the bound membership transition",
+      "the committed authority event atomically advances the Home Station grant and invitation to joined with one fulfillment transition identity",
+      "a rejected-group entry denies both direct add and invitation creation",
+      "leave-and-reject persists rejection before one exact signed leave intent and reaches completed only after the authoritative leave transition",
+      "a failed delegated leave retains the same operation, rejection, intent when available, and retry state across restart"
+    ],
+    "visible": [
+      "the receiver sees one pending invitation with accept and decline actions while the Group is absent",
+      "after accept, the invitation visibly remains waiting and the Group is still absent",
+      "after authorized fulfillment, the receiver sees the ready Group and the invitation reaches joined",
+      "leave presents separate normal and leave-and-reject actions",
+      "partial leave-and-reject appears in Privacy as rejection-active with a retry action",
+      "restart preserves the same operation and retry state; successful retry removes membership and retains the rejected Group"
+    ]
+  },
+  "negative": [
+    "confirmation-required admission must not prepare or emit MLS material before acceptance",
+    "notification read or deletion must not decide an invitation",
+    "acceptance must not be projected as membership before the bound authority event commits",
+    "a mutable preference revision or rejected Group must not be bypassed by grant replay",
+    "leave failure must not roll back rejection or render false left/completed state",
+    "retry must not allocate a second logical leave operation or replace a persisted leave intent",
+    "static, Harness, unit, prototype, or API-only evidence must not be reported as Native proof"
+  ]
+}

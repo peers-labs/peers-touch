@@ -38,6 +38,7 @@ import {
   type MockMessage,
   type MockUser,
 } from '../mock';
+import type { GroupLeaveRejectState } from '@peers-touch/prototype-desktop-shell';
 
 interface DetailPanelProps {
   conversation: MockConversation;
@@ -55,6 +56,11 @@ interface DetailPanelProps {
   onToggleMemberMute: (conversationId: string, userId: string) => void;
   onTransferOwnership: (conversationId: string, nextOwnerId: string) => void;
   onSearchMessages: () => void;
+  onLeaveGroup?: (
+    conversationId: string,
+    groupName: string,
+    rejectFutureInvitations: boolean,
+  ) => Promise<{ state: GroupLeaveRejectState }>;
 }
 
 /**
@@ -296,6 +302,7 @@ export function DetailPanel({
   onToggleMemberMute,
   onTransferOwnership,
   onSearchMessages,
+  onLeaveGroup,
 }: DetailPanelProps) {
   const [muted, setMuted] = useState(conversation.muted);
   const [pinned, setPinned] = useState(conversation.pinned);
@@ -333,6 +340,7 @@ export function DetailPanel({
   const [browse, setBrowse] = useState<null | 'media' | 'files'>(null);
   const [mediaVisible, setMediaVisible] = useState(BROWSE_MEDIA_STEP);
   const [filesVisible, setFilesVisible] = useState(BROWSE_FILES_STEP);
+  const [leaveRetryRequired, setLeaveRetryRequired] = useState(false);
 
   useEffect(() => {
     setMuted(conversation.muted);
@@ -349,6 +357,7 @@ export function DetailPanel({
     setMediaVisible(BROWSE_MEDIA_STEP);
     setFilesVisible(BROWSE_FILES_STEP);
     setJustAdded(new Set());
+    setLeaveRetryRequired(false);
   }, [conversation.id, conversation.muted, conversation.name, conversation.pinned]);
 
   const isGroup = conversation.type === 'group';
@@ -958,21 +967,80 @@ export function DetailPanel({
               </button>
             )}
           />
-          {isGroup ? (
+          {isGroup && isOwner ? (
             <DetailActionRow
-              icon={isOwner ? <Trash2 size={18} /> : <LogOut size={18} />}
-              label={isOwner ? 'Dissolve group' : 'Leave group'}
+              icon={<Trash2 size={18} />}
+              label="Dissolve group"
               danger
               onClick={() => requestConfirm({
-                title: isOwner ? 'Dissolve this group?' : 'Leave this group?',
-                body: isOwner
-                  ? 'Owner-only destructive action. The group disappears for everyone and cannot be recovered.'
-                  : 'You will stop receiving messages. Your message history stays visible until cleared.',
-                confirmLabel: isOwner ? 'Dissolve' : 'Leave',
+                title: 'Dissolve this group?',
+                body: 'Owner-only destructive action. The group disappears for everyone and cannot be recovered.',
+                confirmLabel: 'Dissolve',
                 danger: true,
                 run: () => onDeleteConversation(conversation.id),
               })}
             />
+          ) : isGroup ? (
+            <>
+              <DetailActionRow
+                icon={<LogOut size={18} />}
+                label="Leave group"
+                danger
+                onClick={() => requestConfirm({
+                  title: 'Leave this group?',
+                  body: 'You will stop receiving messages. Friends may invite you again later.',
+                  confirmLabel: 'Leave',
+                  danger: true,
+                  run: () => {
+                    if (onLeaveGroup) {
+                      void onLeaveGroup(conversation.id, conversation.name, false);
+                    } else {
+                      onDeleteConversation(conversation.id);
+                    }
+                  },
+                })}
+              />
+              <DetailActionRow
+                icon={<ShieldCheck size={18} />}
+                label="Leave and reject future invitations"
+                danger
+                onClick={() => requestConfirm({
+                  title: 'Leave and reject future invitations?',
+                  body: 'Future invitations from this group are blocked first. If secure leave cannot finish, Privacy settings keeps a visible retry action.',
+                  confirmLabel: 'Leave and reject',
+                  danger: true,
+                  run: () => {
+                    if (!onLeaveGroup) {
+                      onDeleteConversation(conversation.id);
+                      return;
+                    }
+                    void onLeaveGroup(
+                      conversation.id,
+                      conversation.name,
+                      true,
+                    ).then(result => {
+                      setLeaveRetryRequired(
+                        result.state === 'leave-retry-required',
+                      );
+                    });
+                  },
+                })}
+              />
+              {leaveRetryRequired ? (
+                <div
+                  role="status"
+                  data-group-leave-retry-required
+                  style={{
+                    padding: '9px 12px',
+                    color: T.warning,
+                    fontSize: T.fontSm,
+                    lineHeight: 1.45,
+                  }}
+                >
+                  Future invitations are blocked. Retry secure leave from Privacy settings.
+                </div>
+              ) : null}
+            </>
           ) : (
             <DetailActionRow
               icon={<Trash2 size={18} />}

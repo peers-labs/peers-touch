@@ -54,6 +54,7 @@ import {
   useActiveSocialChatSlice,
 } from './useActiveSocialChatStore';
 import { useSocialChatStore } from '../../store/socialChat';
+import { useSettingsStore } from '../../store/settings';
 import {
   messagingCommands,
 } from '../../messaging/runtime';
@@ -696,6 +697,9 @@ export function ChatDetailPanel() {
   const [historyActionPending, setHistoryActionPending] = useState(false);
   const [conversationActionPending, setConversationActionPending] = useState<string | null>(null);
   const [backgroundRetryPath, setBackgroundRetryPath] = useState<string | null>(null);
+  const groupAdmissionPreference = useSettingsStore(
+    (state) => state.groupAdmissionPreference,
+  );
 
   const peerPtid = !isGroup
     ? activeConversation?.peerPtid || getFriendPeerDid(activeFriendSession, currentUserPtid)
@@ -999,18 +1003,35 @@ export function ChatDetailPanel() {
     setInviteSubmitting(true);
     const pendingDids = [...inviteDids];
     try {
-      setGroupSecurityState(activeUlid, 'establishing');
+      let directAddCount = 0;
+      let invitationCount = 0;
       for (const did of pendingDids) {
-        await messagingCommands.submitMembershipIntent({
+        const outcome = await messagingCommands.submitMembershipIntent({
           conversationId: activeUlid,
           action: 'add_actor',
           targetPtid: did,
-        })
+        });
+        if (outcome.state === 'invitation_pending') {
+          invitationCount += 1;
+        } else {
+          directAddCount += 1;
+        }
       }
-      await loadSessions();
+      if (directAddCount > 0) {
+        setGroupSecurityState(activeUlid, 'establishing');
+        await loadSessions();
+      }
       setInviteDids([]);
       setInviteModalOpen(false);
-      toast.success(t('chat.social.detail.addMemberSuccess'));
+      toast.success(
+        invitationCount > 0
+          ? t(
+              directAddCount > 0
+                ? 'chat.social.detail.addMemberMixedSuccess'
+                : 'chat.social.detail.invitationSent',
+            )
+          : t('chat.social.detail.addMemberSuccess'),
+      );
     } catch (error) {
       setGroupSecurityState(activeUlid, 'error');
       log.error('chat', 'invite group members failed', { groupUlid: activeUlid, inviteeCount: inviteDids.length, error });
@@ -1119,6 +1140,45 @@ export function ChatDetailPanel() {
         } catch (error) {
           log.error('chat', 'leave group failed', { groupUlid: activeUlid, error });
           toast.error(t('chat.social.detail.leaveGroupFailed'));
+          throw error;
+        }
+      },
+    });
+  };
+
+  const confirmLeaveAndRejectGroup = () => {
+    if (!activeUlid || !activeGroup || !groupAdmissionPreference) return;
+    Modal.confirm({
+      title: t('chat.social.detail.leaveRejectConfirmTitle'),
+      content: t('chat.social.detail.leaveRejectConfirmBody'),
+      okText: t('chat.social.detail.leaveReject'),
+      cancelText: t('chat.social.messageArea.cancel'),
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          const operationId = crypto.randomUUID();
+          const result = await api.leaveAndRejectGroup({
+            operation_id: operationId,
+            conversation_id: activeUlid,
+            federation_id: activeGroup.federationId || '',
+            authority_station_peer_id: activeGroup.authorityStationPeerId || '',
+            group_name_snapshot: activeGroup.name || '',
+            observed_policy_revision: groupAdmissionPreference.revision,
+          });
+          await useSettingsStore.getState().refreshGroupAdmission();
+          if (result.state === 5) {
+            toast.error(t('chat.social.detail.leaveRejectRetryRequired'));
+            return;
+          }
+          setGroupSecurityState(activeUlid, 'establishing');
+          setShowDetail(false);
+        } catch (error) {
+          await useSettingsStore.getState().refreshGroupAdmission();
+          log.error('chat', 'leave and reject group failed', {
+            groupUlid: activeUlid,
+            error,
+          });
+          toast.error(t('chat.social.detail.leaveRejectFailed'));
           throw error;
         }
       },
@@ -1696,16 +1756,44 @@ export function ChatDetailPanel() {
             {t('chat.social.detail.clearHistory')}
           </Button>
           {isGroup ? (
-            <Button
-              type="text"
-              danger
-              icon={isGroupOwner ? <Trash2 size={14} /> : <LogOut size={14} />}
-              style={{ justifyContent: 'flex-start', height: 36 }}
-              block
-              onClick={isGroupOwner ? confirmDissolveGroup : confirmLeaveGroup}
-            >
-              {isGroupOwner ? t('chat.social.detail.dissolveGroup') : t('chat.social.detail.leaveGroup')}
-            </Button>
+            isGroupOwner ? (
+              <Button
+                type="text"
+                danger
+                icon={<Trash2 size={14} />}
+                style={{ justifyContent: 'flex-start', height: 36 }}
+                block
+                onClick={confirmDissolveGroup}
+              >
+                {t('chat.social.detail.dissolveGroup')}
+              </Button>
+            ) : (
+              <>
+                <Button
+                  data-chat-group-leave
+                  type="text"
+                  danger
+                  icon={<LogOut size={14} />}
+                  style={{ justifyContent: 'flex-start', height: 36 }}
+                  block
+                  onClick={confirmLeaveGroup}
+                >
+                  {t('chat.social.detail.leaveGroup')}
+                </Button>
+                <Button
+                  data-chat-group-leave-reject
+                  type="text"
+                  danger
+                  icon={<ShieldCheck size={14} />}
+                  style={{ justifyContent: 'flex-start', height: 36 }}
+                  block
+                  disabled={!groupAdmissionPreference}
+                  onClick={confirmLeaveAndRejectGroup}
+                >
+                  {t('chat.social.detail.leaveReject')}
+                </Button>
+              </>
+            )
           ) : null}
         </DetailSection>
 

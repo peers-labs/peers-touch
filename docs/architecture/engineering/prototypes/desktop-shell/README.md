@@ -60,6 +60,29 @@ make run-prototype
 - 继承 shared UI Identity 与 Social Desktop 合同；保持安静的连续列表、单一强调色、方形头像和统一决策按钮。拒绝独立通知页面、重复实体控件、装饰动效和全部历史行同时挂载。
 - 验证入口：`packages/prototypes/desktop/features/social-chat/qa/geometry_checks.py`，覆盖宽窄窗口、对齐、搜索无结果及恢复、分页、决策、标记已读、删除末页、键盘关闭与回焦。数据为本地 mock，无网络加载和服务端失败态；生产状态同步、高数据量搜索性能与读屏器实测为 UNPROVEN。
 
+### Group admission 与拒绝群恢复
+
+- Notification 不再在 `Shell.tsx` 内直接改写邀请结果；Shell、Chat 与 Settings
+  共同消费注入的 `GroupAdmissionAdapter` command/projection。
+- 接受邀请只进入 `accepted-waiting-for-mls`，不会伪装为已经入群；拒绝移除该
+  decision-inbox 条目。
+- Privacy & Security 展示好友直加/先确认策略，以及按 Conversation identity
+  投影的拒绝群清单。`leave-retry-required` 保留明确 Retry leave；重试完成后
+  拒绝项仍保留，只有用户选择 Allow again 才解除后续邀请阻断。
+- `leaveRetry=1` 是显式 Browser failure fixture，只用于触达 rejection 已提交、
+  secure leave 待重试状态，不代表 Native 或 Station 证明。
+
+L2 evidence（light）：
+
+- [`20261016-rejected-group-retry-wide.png`](./evidence-l2/20261016-rejected-group-retry-wide.png)：
+  1440×1000，拒绝生效与退群重试并列但不混淆。
+- [`20261016-rejected-group-after-retry-narrow.png`](./evidence-l2/20261016-rejected-group-after-retry-narrow.png)：
+  900×800，重试动作消失、拒绝项继续保留，无横向 overflow。
+
+L3：真实点击覆盖邀请接受、两种退群动作、失败后 Settings 重试，以及重试后
+拒绝项留存。Browser console 无错误；真实 Station revision conflict、Native
+restart 和 MLS completion 仍为 UNPROVEN。
+
 ## Login 与 General Settings（DUI-03）
 
 本轮对齐 C19-C24。Settings 属于高频工作流，复用 shared UI Identity 的

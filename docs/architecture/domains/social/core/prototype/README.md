@@ -27,6 +27,9 @@
   - Contacts：按 PTID 去重的联系人行，同名 Bob / Carol 按不同 Home Station 保留独立行；右侧详情空态为 “Select a contact or saved group to view details”，选中后显示身份、Station/Federation 技术明细（可复制）与 Message 入口。
 - stream call：从 Chat 会话头部的语音 / 视频按钮进入；语音、呼出和来电复用 Agent 后台执行 tray 的紧凑尺寸与右下角锚点，视频可切换紧凑、覆盖 Chat 模块和全屏三种显示范围。
 - Conversation action surface：静音、置顶、背景、搜索、清空历史、退出/解散/删除。
+- Group admission：好友直加/先确认策略由注入 adapter 投影；邀请接受保持
+  `accepted-waiting-for-mls`，群详情为普通退群与“退群并拒绝后续邀请”两个独立动作，
+  部分完成会在 Privacy rejected-group 清单保留 retry。
 
 Contacts 和私聊详情共用 `ContactSafetyBoundary`。浏览器没有已认证的
 Station relationship projection，屏蔽操作保持禁用，并明确显示不可用状态；
@@ -164,6 +167,25 @@ Owner 确认；确认前不得作为新的 Desktop Chat 落地参照。
   `~/.peers-touch/dev/workspaces/48035cb460a725a5/evidence/chat-craft/20261011/`。
 - `UNPROVEN`：真实 Station/Relay、Native Desktop、screen reader 实机和生产
   field performance。
+
+## CHAT-D11 Group Admission Evidence（2026-10-16）
+
+- Product thesis：用户同意发生在 MLS membership/Welcome 之前；退群拒绝即使
+  leave 暂时失败也不会静默失效。
+- State ownership：`GroupAdmissionAdapter` 是 Browser command/projection owner；
+  Notification、群详情和 Privacy 只读取 projection 并提交 intent。
+- L2：
+  [`20261016-group-invitation-pending-wide.png`](./evidence-l2/20261016-group-invitation-pending-wide.png)、
+  [`20261016-group-invitation-accepted-waiting-wide.png`](./evidence-l2/20261016-group-invitation-accepted-waiting-wide.png)、
+  [`20261016-group-leave-options-wide.png`](./evidence-l2/20261016-group-leave-options-wide.png)、
+  [`20261016-group-leave-retry-required-wide.png`](./evidence-l2/20261016-group-leave-retry-required-wide.png)。
+- L3：邀请接受后 decision controls 消失但 waiting 状态保留；member 群详情同时
+  显示普通退群与拒绝型退群；failure fixture 进入可见 retry-required，随后从
+  Privacy 完成同 operation retry。
+- Layout：1440×1000 与 900×800 无横向 overflow；动作、状态文案和详情 panel
+  没有覆盖消息或相邻控件。
+- UNPROVEN：真实跨 Station invitation transaction、Native restart、
+  authority-bound MLS fulfillment 与 screen reader 实机。
 
 ## L2 Visual Evidence（2026-09-20）
 

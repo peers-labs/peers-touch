@@ -1,9 +1,10 @@
 import { Button } from '@lobehub/ui';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Alert, Avatar, Modal, Spin, Typography, message, theme } from 'antd';
-import { Shield, UserRoundCheck } from 'lucide-react';
+import { Alert, Avatar, Modal, Radio, Spin, Typography, message, theme } from 'antd';
+import { RotateCcw, Shield, Trash2, UserRoundCheck, UsersRound } from 'lucide-react';
 import { useSessionStore } from '../../store/session';
+import { useSettingsStore } from '../../store/settings';
 
 import {
   useActiveRelationshipsSlice,
@@ -33,6 +34,25 @@ export function PrivacySettings() {
     unblockActor: state.unblockActor,
   }));
   const peerProfiles = useActiveSocialChatSlice((state) => state.peerProfiles);
+  const {
+    groupAdmissionPreference,
+    rejectedGroups,
+    groupAdmissionLoading,
+    groupAdmissionError,
+    groupAdmissionMutating,
+    updateGroupAdmissionMode,
+    removeRejectedGroup,
+    retryRejectedGroupLeave,
+  } = useSettingsStore((state) => ({
+    groupAdmissionPreference: state.groupAdmissionPreference,
+    rejectedGroups: state.rejectedGroups,
+    groupAdmissionLoading: state.groupAdmissionLoading,
+    groupAdmissionError: state.groupAdmissionError,
+    groupAdmissionMutating: state.groupAdmissionMutating,
+    updateGroupAdmissionMode: state.updateGroupAdmissionMode,
+    removeRejectedGroup: state.removeRejectedGroup,
+    retryRejectedGroupLeave: state.retryRejectedGroupLeave,
+  }));
 
   const confirmUnblock = (actorPtid: string, displayName: string) => {
     const sessionEpoch = useSessionStore.getState().sessionEpoch;
@@ -59,6 +79,119 @@ export function PrivacySettings() {
 
   return (
     <SettingsContainer>
+      <SettingsSection
+        icon={<UsersRound size={18} />}
+        title={t('settings.privacy.groupInvites.title')}
+        subtitle={t('settings.privacy.groupInvites.subtitle')}
+      >
+        {groupAdmissionError ? (
+          <Alert
+            type="warning"
+            showIcon
+            message={t('settings.privacy.groupInvites.loadFailed')}
+            description={groupAdmissionError}
+          />
+        ) : null}
+        {groupAdmissionLoading && !groupAdmissionPreference ? (
+          <Spin size="small" />
+        ) : groupAdmissionPreference ? (
+          <Radio.Group
+            value={groupAdmissionPreference.mode}
+            disabled={groupAdmissionMutating}
+            onChange={(event) => {
+              void updateGroupAdmissionMode(event.target.value).catch(() => {
+                message.error(t('settings.privacy.groupInvites.updateFailed'));
+              });
+            }}
+          >
+            <Flexbox gap={8}>
+              <Radio value={1}>
+                {t('settings.privacy.groupInvites.directAdd')}
+              </Radio>
+              <Radio value={2}>
+                {t('settings.privacy.groupInvites.requireConfirmation')}
+              </Radio>
+            </Flexbox>
+          </Radio.Group>
+        ) : null}
+
+        <Flexbox gap={6} style={{ marginTop: 16 }}>
+          <Text strong>{t('settings.privacy.groupInvites.rejectedTitle')}</Text>
+          {rejectedGroups.length === 0 ? (
+            <Text type="secondary">
+              {t('settings.privacy.groupInvites.rejectedEmpty')}
+            </Text>
+          ) : rejectedGroups.map((group, index) => (
+            <Flexbox
+              key={group.conversationId}
+              data-rejected-group={group.conversationId}
+              data-leave-reject-operation={group.leaveRejectOperationId || undefined}
+              data-leave-reject-state={group.leaveRejectState}
+              horizontal
+              align="center"
+              justify="space-between"
+              gap={12}
+              style={{
+                borderTop: index === 0
+                  ? undefined
+                  : `1px solid ${token.colorBorderSecondary}`,
+                minHeight: 48,
+                paddingBlock: 8,
+              }}
+            >
+              <Flexbox gap={1} style={{ minWidth: 0 }}>
+                <Text ellipsis>
+                  {group.groupNameSnapshot
+                    || t('settings.privacy.groupInvites.unknownGroup')}
+                </Text>
+                <Text type="secondary" ellipsis style={{ fontSize: 12 }}>
+                  {group.conversationId}
+                </Text>
+                {group.leaveRejectState === 5 ? (
+                  <Text type="warning" style={{ fontSize: 12 }}>
+                    {t('settings.privacy.groupInvites.leaveRetryRequired')}
+                  </Text>
+                ) : null}
+              </Flexbox>
+              <Flexbox horizontal gap={8}>
+                {group.leaveRejectState === 5 && group.leaveRejectOperationId ? (
+                  <Button
+                    data-leave-reject-retry={group.leaveRejectOperationId}
+                    size="small"
+                    type="primary"
+                    icon={<RotateCcw size={14} />}
+                    loading={groupAdmissionMutating}
+                    onClick={() => {
+                      void retryRejectedGroupLeave(
+                        group.leaveRejectOperationId,
+                      ).catch(() => {
+                        message.error(
+                          t('settings.privacy.groupInvites.leaveRetryFailed'),
+                        );
+                      });
+                    }}
+                  >
+                    {t('settings.privacy.groupInvites.leaveRetry')}
+                  </Button>
+                ) : null}
+                <Button
+                  size="small"
+                  icon={<Trash2 size={14} />}
+                  disabled={groupAdmissionMutating}
+                  onClick={() => {
+                    void removeRejectedGroup(group.conversationId).catch(() => {
+                      message.error(t('settings.privacy.groupInvites.removeFailed'));
+                    });
+                  }}
+                >
+                  {t('settings.privacy.groupInvites.remove')}
+                </Button>
+              </Flexbox>
+            </Flexbox>
+          ))}
+        </Flexbox>
+      </SettingsSection>
+
       <SettingsSection
         icon={<Shield size={18} />}
         title={t('settings.privacy.title')}

@@ -53,6 +53,20 @@ import { WelcomeLoginPrototype } from './WelcomeLoginPrototype';
 import { createAdvancedSettingsAdapter, type AdvancedSettingsAdapter } from './advancedSettingsAdapter';
 import { advancedSettingsScenario } from './advancedSettingsScenarios';
 import { bindAppletSettings } from './appletSettingsProjection';
+import {
+  createGroupAdmissionAdapter,
+  type GroupAdmissionAdapter,
+} from './groupAdmissionAdapter';
+
+export type {
+  GroupAdmissionAdapter,
+  GroupAdmissionMode,
+  GroupAdmissionProjection,
+  GroupInvitationProjection,
+  GroupLeaveRejectState,
+  RejectedGroupProjection,
+} from './groupAdmissionAdapter';
+export { createGroupAdmissionAdapter } from './groupAdmissionAdapter';
 
 /** Kernel-style top nav entries — placeholders. */
 const NAV_ITEMS: { id: string; icon: LucideIcon; title: string }[] = [
@@ -380,6 +394,7 @@ export interface DesktopShellProps {
   pages?: Record<string, () => React.ReactNode>;
   initialPage?: string;
   initialNotifications?: readonly NotifItem[];
+  groupAdmissionAdapter?: GroupAdmissionAdapter;
   advancedSettingsAdapter?: AdvancedSettingsAdapter;
   appletCatalogAdapter?: AppletCatalogAdapter;
 }
@@ -424,6 +439,7 @@ export function DesktopShell({
   pages,
   initialPage,
   initialNotifications,
+  groupAdmissionAdapter,
   advancedSettingsAdapter,
   appletCatalogAdapter,
 }: DesktopShellProps = {}) {
@@ -459,9 +475,57 @@ export function DesktopShell({
   const notifOpen = notificationView !== 'closed';
   const notificationViewRef = useRef(notificationView);
   notificationViewRef.current = notificationView;
-  const [notifications, setNotifications] = useState<NotifItem[]>(
-    () => initialNotifications?.map((item) => ({ ...item })) ?? [],
+  const admissionAdapter = useMemo(
+    () => groupAdmissionAdapter ?? createGroupAdmissionAdapter({
+      invitations: initialNotifications
+        ?.filter(item => item.kind === 'group_invite' && item.pending)
+        .map(item => ({
+          invitationId: item.id,
+          conversationId: item.targetPage ?? 'chat',
+          groupName: item.body.match(/“(.+?)”/)?.[1] ?? 'Group',
+          inviterName: item.title,
+          inviterInitials: item.initials,
+          inviterAvatarBackground: item.avatarBg,
+          timeLabel: item.time,
+          policyRevision: 1,
+          state: 'pending' as const,
+        })) ?? [],
+    }),
+    [groupAdmissionAdapter, initialNotifications],
   );
+  const admissionProjection = useSyncExternalStore(
+    admissionAdapter.subscribe,
+    admissionAdapter.getSnapshot,
+    admissionAdapter.getSnapshot,
+  );
+  const [notifications, setNotifications] = useState<NotifItem[]>(
+    () => initialNotifications
+      ?.filter(item => item.kind !== 'group_invite')
+      .map((item) => ({ ...item })) ?? [],
+  );
+  const [dismissedGroupInvitations, setDismissedGroupInvitations] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [readGroupInvitations, setReadGroupInvitations] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const groupInvitationNotifications = admissionProjection.invitations
+    .filter(invitation => !dismissedGroupInvitations.has(invitation.invitationId))
+    .map<NotifItem>(invitation => ({
+      id: invitation.invitationId,
+      kind: 'group_invite',
+      title: invitation.inviterName,
+      body: invitation.state === 'pending'
+        ? `Invited you to join “${invitation.groupName}”.`
+        : `Invitation accepted. Waiting for secure membership in “${invitation.groupName}”.`,
+      time: invitation.timeLabel,
+      read: readGroupInvitations.has(invitation.invitationId),
+      initials: invitation.inviterInitials,
+      avatarBg: invitation.inviterAvatarBackground,
+      pending: invitation.state === 'pending',
+      targetPage: 'chat',
+    }));
+  const visibleNotifications = [...groupInvitationNotifications, ...notifications];
   const [authPrototypeComplete, setAuthPrototypeComplete] = useState(false);
   const [onboardingReset, setOnboardingReset] = useState(false);
   const catalogAdapter = useMemo(() => appletCatalogAdapter ?? appletCatalogScenario(modernChatState), [appletCatalogAdapter, modernChatState]);
@@ -475,7 +539,7 @@ export function DesktopShell({
       onResetOnboarding: () => { setOnboardingReset(true); setPaletteOpen(false); },
     }), catalogAdapter);
   }, [advancedSettingsAdapter, catalogAdapter]);
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  const unreadCount = visibleNotifications.filter((n) => !n.read).length;
   const [visitedAgentSurfaces, setVisitedAgentSurfaces] = useState<Set<AgentSurfaceId>>(() => {
     const initialSurface = getAgentSurfaceId(defaultPage);
     return initialSurface ? new Set([initialSurface]) : new Set();
@@ -507,7 +571,11 @@ export function DesktopShell({
   };
 
   const openNotification = (item: NotifItem) => {
-    setNotifications((prev) => prev.map((n) => (n.id === item.id ? { ...n, read: true } : n)));
+    if (item.kind === 'group_invite') {
+      setReadGroupInvitations(current => new Set(current).add(item.id));
+    } else {
+      setNotifications((prev) => prev.map((n) => (n.id === item.id ? { ...n, read: true } : n)));
+    }
     setNotificationView('closed');
     if (item.targetPage) navigate(item.targetPage);
   };
@@ -566,7 +634,7 @@ export function DesktopShell({
   } else if (page === 'applets') {
     body = <AppletWorkspacePage adapter={catalogAdapter} onOpen={id => void openApplet(id)} />;
   } else if (page === 'chat') {
-    body = <SocialChatPage />;
+    body = <SocialChatPage groupAdmissionAdapter={admissionAdapter} />;
   } else if (page === 'agent') {
     body = (
       <AgentChatPage
@@ -588,7 +656,13 @@ export function DesktopShell({
   } else if (page === 'agent-orchestration') {
     body = <AgentCanvasPage embedded onBack={() => navigate('agent')} />;
   } else if (page === 'settings') {
-    body = <SettingsPage onOpenCommandPalette={() => setPaletteOpen(true)} advancedAdapter={settingsAdapter} />;
+    body = (
+      <SettingsPage
+        onOpenCommandPalette={() => setPaletteOpen(true)}
+        advancedAdapter={settingsAdapter}
+        groupAdmissionAdapter={admissionAdapter}
+      />
+    );
   } else {
     body = <PagePlaceholder page={page} />;
   }
@@ -626,15 +700,35 @@ export function DesktopShell({
             // targets an element that has already unmounted.
             onRestoreFocus={() => window.setTimeout(
               () => notificationButtonRef.current?.focus(), 0)}
-            items={notifications}
-            onMarkAllRead={() => setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))}
+            items={visibleNotifications}
+            onMarkAllRead={() => {
+              setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+              setReadGroupInvitations(
+                new Set(admissionProjection.invitations.map(item => item.invitationId)),
+              );
+            }}
             onOpenItem={openNotification}
-            onDismiss={(id) => setNotifications((prev) => prev.filter((n) => n.id !== id))}
-            onInviteDecision={(id, accept) => setNotifications((prev) => prev.map((n) =>
-              n.id === id
-                ? { ...n, read: true, pending: false, body: accept ? 'Invite accepted — group added to your chats.' : 'Invite declined.' }
-                : n,
-            ))}
+            onDismiss={(id) => {
+              if (admissionProjection.invitations.some(item => item.invitationId === id)) {
+                setDismissedGroupInvitations(current => new Set(current).add(id));
+              } else {
+                setNotifications((prev) => prev.filter((n) => n.id !== id));
+              }
+            }}
+            onInviteDecision={(id, accept) => {
+              const invitation = admissionProjection.invitations.find(
+                item => item.invitationId === id,
+              );
+              if (!invitation) return;
+              void admissionAdapter.decideInvitation({
+                invitationId: id,
+                accept,
+                observedState: invitation.state,
+                observedPolicyRevision: invitation.policyRevision,
+              }).then(() => {
+                setReadGroupInvitations(current => new Set(current).add(id));
+              });
+            }}
           />
       ) : null}
       <div style={{ flex: 1, minWidth: 0, minHeight: 0, position: 'relative', overflow: 'hidden' }}>

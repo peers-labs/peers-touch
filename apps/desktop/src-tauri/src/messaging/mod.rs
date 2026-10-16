@@ -96,8 +96,8 @@ pub use drain::{
 };
 pub(crate) use engine::now_unix_ms;
 pub use engine::{
-    EngineEndpoint, EngineRegistry, LocalAttachmentIntent, MessagingEngine,
-    MessagingProjectionChange, MessagingProjectionNotifier, MetadataInteraction,
+    EngineEndpoint, EngineRegistry, LocalAttachmentIntent, MembershipTransitionPreparation,
+    MessagingEngine, MessagingProjectionChange, MessagingProjectionNotifier, MetadataInteraction,
     PreparedGroupConversation, RetryMessageOutcome, SubmitMessageOutcome,
 };
 pub use group_genesis::StationGroupGenesisTransport;

@@ -1,9 +1,10 @@
 use super::group::{MlsGroupManager, MlsMemberKeyPackage, MlsPreparedTransition};
 use super::leave_intent::validate_signed_leave_intent;
 use crate::proto::chat::{
-    chat_command, ChatCommand, CryptoEndpoint, MembershipTransitionIntent,
-    MessagingMembershipAction, MessagingMembershipChangeIntent, MlsLeaveIntent,
-    PrepareConversationMembershipResponse, PreparedEndpointPayload, PreparedEndpointPayloadKind,
+    chat_command, ChatCommand, CryptoEndpoint, GroupAdmissionFulfillment,
+    MembershipTransitionIntent, MessagingMembershipAction, MessagingMembershipChangeIntent,
+    MlsLeaveIntent, PrepareConversationMembershipResponse, PreparedEndpointPayload,
+    PreparedEndpointPayloadKind,
 };
 use crate::proto::key_exchange::MlsKeyPackageReservation;
 use crate::proto::{actor_device_ptid, chat_endpoint};
@@ -21,6 +22,7 @@ pub struct MembershipTransitionIntentInput {
     pub target_device_id: String,
     pub role: String,
     pub leave_intent: Option<MlsLeaveIntent>,
+    pub admission_fulfillment: Option<GroupAdmissionFulfillment>,
 }
 
 pub struct MembershipTransitionPreparer<R> {
@@ -141,6 +143,8 @@ impl<R: MlsTransitionRepository> MembershipTransitionPreparer<R> {
                     leave_intent_id,
                     authority_plan_id: plan.authority_plan_id.clone(),
                     authority_plan_sha256: plan.authority_plan_sha256.clone(),
+                    admission_fulfillment: plan.admission_fulfillment.clone(),
+                    genesis_admission_fulfillments: Vec::new(),
                 },
             )),
         };
@@ -347,6 +351,9 @@ mod tests {
             reserved_key_packages: Vec::new(),
             endpoint_manifests: Vec::new(),
             authority_plan_sha256: vec![8; 32],
+            admission_grant: None,
+            admission_fulfillment: None,
+            admission: None,
         }
     }
 
@@ -447,6 +454,9 @@ mod tests {
             reserved_key_packages,
             endpoint_manifests: Vec::new(),
             authority_plan_sha256: vec![8; 32],
+            admission_grant: None,
+            admission_fulfillment: None,
+            admission: None,
         };
         let input = MembershipTransitionIntentInput {
             conversation_id: "group-1".to_string(),
@@ -455,6 +465,7 @@ mod tests {
             target_device_id: String::new(),
             role: "member".to_string(),
             leave_intent: None,
+            admission_fulfillment: None,
         };
 
         let command = MembershipTransitionPreparer::new(
@@ -499,6 +510,7 @@ mod tests {
             target_device_id: String::new(),
             role: String::new(),
             leave_intent: Some(leave_intent("group-leave", "ptid:bob")),
+            admission_fulfillment: None,
         };
 
         let command = MembershipTransitionPreparer::new(
@@ -537,6 +549,7 @@ mod tests {
             target_device_id: String::new(),
             role: String::new(),
             leave_intent: Some(leave_intent("group-leave", "ptid:bob")),
+            admission_fulfillment: None,
         };
         let mut invalid_inputs = Vec::new();
         let mut wrong_conversation = base_input.clone();
@@ -607,6 +620,7 @@ mod tests {
             target_device_id: String::new(),
             role: String::new(),
             leave_intent: None,
+            admission_fulfillment: None,
         };
 
         let command = MembershipTransitionPreparer::new(
@@ -658,6 +672,7 @@ mod tests {
             target_device_id: String::new(),
             role: String::new(),
             leave_intent: Some(leave_intent("group-leave", "ptid:bob")),
+            admission_fulfillment: None,
         };
 
         let error = MembershipTransitionPreparer::new(

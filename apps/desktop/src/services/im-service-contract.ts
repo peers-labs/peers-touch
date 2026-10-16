@@ -227,7 +227,11 @@ export interface MessagingServiceContract {
   }>
   submitMembershipIntent(
     intent: MessagingActorMembershipIntent,
-  ): Promise<{ commandId: string; state: 'pending' }>
+  ): Promise<{
+    commandId: string
+    invitationId?: string
+    state: 'pending' | 'invitation_pending'
+  }>
   updateConversation(
     conversationId: string,
     update: { name?: string; description?: string; avatarObjectId?: string },

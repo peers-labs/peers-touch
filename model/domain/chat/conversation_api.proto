@@ -8,6 +8,7 @@ import "domain/actor/actor.proto";
 import "domain/chat/command.proto";
 import "domain/chat/conversation.proto";
 import "domain/chat/event.proto";
+import "domain/chat/group_admission.proto";
 import "domain/key_exchange/key_exchange.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -198,6 +199,7 @@ message PrepareConversationGroupResponse {
   repeated peers_touch.model.key_exchange.v1.MlsKeyPackageReservation reserved_key_packages = 5;
   repeated peers_touch.model.actor.v1.ActorEndpointManifest endpoint_manifests = 6;
   bytes authority_plan_sha256 = 7;
+  repeated GroupAdmissionFulfillment admission_fulfillments = 8;
 }
 
 message PrepareConversationMembershipRequest {
@@ -207,6 +209,7 @@ message PrepareConversationMembershipRequest {
   peers_touch.model.actor.v1.ActorRef target_actor = 4;
   string target_device_id = 5;
   MemberRole role = 6;
+  GroupAdmissionFulfillment admission_fulfillment = 7;
 }
 
 message PrepareConversationMembershipResponse {
@@ -224,6 +227,9 @@ message PrepareConversationMembershipResponse {
   repeated peers_touch.model.key_exchange.v1.MlsKeyPackageReservation reserved_key_packages = 12;
   repeated peers_touch.model.actor.v1.ActorEndpointManifest endpoint_manifests = 13;
   bytes authority_plan_sha256 = 14;
+  GroupAdmissionGrant admission_grant = 15;
+  GroupAdmissionFulfillment admission_fulfillment = 16;
+  GroupAdmissionEvaluationResponse admission = 17;
 }
 
 message PrepareFederatedConversationCommandRequest {
@@ -307,6 +313,136 @@ message ListFederatedMlsLeaveIntentsRequest {
 
 message ListFederatedMlsLeaveIntentsResponse {
   repeated MlsLeaveIntent intents = 1;
+}
+
+message GetGroupAdmissionSettingsRequest {}
+
+message GetGroupAdmissionSettingsResponse {
+  GroupAdmissionPreference preference = 1;
+  repeated RejectedGroup rejected_groups = 2;
+}
+
+message UpdateGroupAdmissionPreferenceRequest {
+  GroupAdmissionMode mode = 1;
+  uint64 observed_revision = 2;
+}
+
+message UpdateGroupAdmissionPreferenceResponse {
+  GroupAdmissionPreference preference = 1;
+}
+
+message RemoveRejectedGroupRequest {
+  string conversation_id = 1;
+  uint64 observed_policy_revision = 2;
+}
+
+message RemoveRejectedGroupResponse {
+  GroupAdmissionPreference preference = 1;
+}
+
+message ListGroupInvitationsRequest {
+  repeated GroupInvitationState states = 1;
+}
+
+message ListGroupInvitationsResponse {
+  repeated GroupInvitation invitations = 1;
+}
+
+message DecideGroupInvitationRequest {
+  GroupInvitationDecisionCommand command = 1;
+}
+
+message DecideGroupInvitationResponse {
+  GroupInvitation invitation = 1;
+  GroupAdmissionGrant grant = 2;
+}
+
+message StartGroupLeaveRejectRequest {
+  string operation_id = 1;
+  string conversation_id = 2;
+  string federation_id = 3;
+  string authority_station_peer_id = 4;
+  string group_name_snapshot = 5;
+  uint64 observed_policy_revision = 6;
+  peers_touch.model.actor.v1.ActorDeviceRef actor = 7;
+}
+
+message StartGroupLeaveRejectResponse {
+  GroupLeaveRejectOperation operation = 1;
+  GroupAdmissionPreference preference = 2;
+}
+
+message SubmitGroupLeaveRejectIntentRequest {
+  string operation_id = 1;
+  MlsLeaveIntent leave_intent = 2;
+}
+
+message SubmitGroupLeaveRejectIntentResponse {
+  GroupLeaveRejectOperation operation = 1;
+}
+
+message RetryGroupLeaveRejectRequest {
+  string operation_id = 1;
+}
+
+message RetryGroupLeaveRejectResponse {
+  GroupLeaveRejectOperation operation = 1;
+}
+
+message GetGroupLeaveRejectOperationRequest {
+  string operation_id = 1;
+}
+
+message GetGroupLeaveRejectOperationResponse {
+  GroupLeaveRejectOperation operation = 1;
+}
+
+message EvaluateFederatedGroupAdmissionRequest {
+  GroupAdmissionEvaluationRequest request = 1;
+  string source_authority_station_peer_id = 2;
+}
+
+message EvaluateFederatedGroupAdmissionResponse {
+  GroupAdmissionEvaluationResponse result = 1;
+}
+
+message BindFederatedGroupAdmissionFulfillmentRequest {
+  GroupAdmissionFulfillmentRequest request = 1;
+  string source_authority_station_peer_id = 2;
+}
+
+message BindFederatedGroupAdmissionFulfillmentResponse {
+  GroupAdmissionFulfillmentResponse result = 1;
+}
+
+message CompleteGroupAdmissionTransitionRequest {
+  string target_home_station_peer_id = 1;
+  string actor_ptid = 2;
+  string authority_plan_id = 3;
+  GroupAdmissionFulfillment admission_fulfillment = 4;
+  ConversationEvent committed_event = 5;
+}
+
+message CompleteGroupAdmissionTransitionResponse {
+  bool completed = 1;
+}
+
+message CompleteFederatedGroupAdmissionTransitionRequest {
+  CompleteGroupAdmissionTransitionRequest request = 1;
+  string source_authority_station_peer_id = 2;
+}
+
+message CompleteFederatedGroupAdmissionTransitionResponse {
+  CompleteGroupAdmissionTransitionResponse result = 1;
+}
+
+message ActivateFederatedGroupGenesisInvitationsRequest {
+  ActivateGroupGenesisInvitationsRequest request = 1;
+  string source_authority_station_peer_id = 2;
+}
+
+message ActivateFederatedGroupGenesisInvitationsResponse {
+  ActivateGroupGenesisInvitationsResponse result = 1;
 }
 
 message ListConversationEventsRequest {

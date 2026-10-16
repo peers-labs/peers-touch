@@ -1,0 +1,266 @@
+syntax = "proto3";
+
+package peers_touch.model.chat.v1;
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/chat;chat";
+
+import "domain/actor/actor.proto";
+import "google/protobuf/timestamp.proto";
+
+enum GroupAdmissionMode {
+  GROUP_ADMISSION_MODE_UNSPECIFIED = 0;
+  GROUP_ADMISSION_MODE_FRIENDS_DIRECT_ADD = 1;
+  GROUP_ADMISSION_MODE_FRIENDS_REQUIRE_CONFIRMATION = 2;
+}
+
+message GroupAdmissionPreference {
+  string actor_ptid = 1;
+  GroupAdmissionMode mode = 2;
+  uint64 revision = 3;
+  google.protobuf.Timestamp updated_at = 4;
+}
+
+message RejectedGroup {
+  string conversation_id = 1;
+  string federation_id = 2;
+  string authority_station_peer_id = 3;
+  string group_name_snapshot = 4;
+  uint64 policy_revision = 5;
+  google.protobuf.Timestamp rejected_at = 6;
+  string leave_reject_operation_id = 7;
+  GroupLeaveRejectState leave_reject_state = 8;
+  string leave_reject_failure_code = 9;
+}
+
+enum GroupInvitationState {
+  GROUP_INVITATION_STATE_UNSPECIFIED = 0;
+  GROUP_INVITATION_STATE_PENDING = 1;
+  GROUP_INVITATION_STATE_ACCEPTED_WAITING_FOR_MLS = 2;
+  GROUP_INVITATION_STATE_JOINED = 3;
+  GROUP_INVITATION_STATE_DECLINED = 4;
+  GROUP_INVITATION_STATE_EXPIRED = 5;
+  GROUP_INVITATION_STATE_REVOKED = 6;
+}
+
+message GroupInvitation {
+  uint32 version = 1;
+  string invitation_id = 2;
+  string conversation_id = 3;
+  string federation_id = 4;
+  string authority_station_peer_id = 5;
+  int64 authority_epoch = 6;
+  string inviter_ptid = 7;
+  string invitee_ptid = 8;
+  string invitee_home_station_peer_id = 9;
+  GroupInvitationState state = 10;
+  string group_name_snapshot = 11;
+  int64 observed_membership_epoch = 12;
+  int64 observed_mls_epoch = 13;
+  int64 authority_sequence = 14;
+  bytes authority_hash = 15;
+  google.protobuf.Timestamp created_at = 16;
+  google.protobuf.Timestamp expires_at = 17;
+  google.protobuf.Timestamp decided_at = 18;
+  string decision_command_id = 19;
+  string fulfillment_transition_id = 20;
+  string inviter_device_id = 21;
+  uint64 policy_revision = 22;
+  string source_request_id = 23;
+}
+
+enum GroupInvitationDecisionAction {
+  GROUP_INVITATION_DECISION_ACTION_UNSPECIFIED = 0;
+  GROUP_INVITATION_DECISION_ACTION_ACCEPT = 1;
+  GROUP_INVITATION_DECISION_ACTION_DECLINE = 2;
+}
+
+message GroupInvitationDecisionCommand {
+  uint32 version = 1;
+  string command_id = 2;
+  string invitation_id = 3;
+  peers_touch.model.actor.v1.ActorDeviceRef actor = 4;
+  string actor_signing_key_id = 5;
+  GroupInvitationDecisionAction action = 6;
+  GroupInvitationState observed_state = 7;
+  uint64 observed_policy_revision = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp expires_at = 10;
+  bytes actor_signature = 11;
+}
+
+message GroupInvitationDecisionSigningInput {
+  uint32 version = 1;
+  string command_id = 2;
+  string invitation_id = 3;
+  peers_touch.model.actor.v1.ActorDeviceRef actor = 4;
+  string actor_signing_key_id = 5;
+  GroupInvitationDecisionAction action = 6;
+  GroupInvitationState observed_state = 7;
+  uint64 observed_policy_revision = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp expires_at = 10;
+}
+
+enum GroupAdmissionGrantState {
+  GROUP_ADMISSION_GRANT_STATE_UNSPECIFIED = 0;
+  GROUP_ADMISSION_GRANT_STATE_ISSUED = 1;
+  GROUP_ADMISSION_GRANT_STATE_BOUND_TO_PLAN = 2;
+  GROUP_ADMISSION_GRANT_STATE_JOINED = 3;
+  GROUP_ADMISSION_GRANT_STATE_EXPIRED = 4;
+  GROUP_ADMISSION_GRANT_STATE_REVOKED = 5;
+}
+
+message GroupAdmissionGrant {
+  uint32 version = 1;
+  string grant_id = 2;
+  string conversation_id = 3;
+  string federation_id = 4;
+  string authority_station_peer_id = 5;
+  int64 authority_epoch = 6;
+  string inviter_ptid = 7;
+  string inviter_device_id = 8;
+  string invitee_ptid = 9;
+  string invitee_home_station_peer_id = 10;
+  string source_request_id = 11;
+  string invitation_id = 12;
+  string friendship_proof_id = 13;
+  uint64 admission_policy_revision = 14;
+  GroupAdmissionGrantState state = 15;
+  int64 authority_sequence = 16;
+  bytes authority_hash = 17;
+  google.protobuf.Timestamp issued_at = 18;
+  google.protobuf.Timestamp expires_at = 19;
+  string bound_authority_plan_id = 20;
+  string fulfillment_transition_id = 21;
+  bytes home_station_signature = 22;
+  string home_station_signing_key_id = 23;
+}
+
+message GroupAdmissionGrantSigningInput {
+  uint32 version = 1;
+  string grant_id = 2;
+  string conversation_id = 3;
+  string federation_id = 4;
+  string authority_station_peer_id = 5;
+  int64 authority_epoch = 6;
+  string inviter_ptid = 7;
+  string inviter_device_id = 8;
+  string invitee_ptid = 9;
+  string invitee_home_station_peer_id = 10;
+  string source_request_id = 11;
+  string invitation_id = 12;
+  string friendship_proof_id = 13;
+  uint64 admission_policy_revision = 14;
+  GroupAdmissionGrantState state = 15;
+  int64 authority_sequence = 16;
+  bytes authority_hash = 17;
+  google.protobuf.Timestamp issued_at = 18;
+  google.protobuf.Timestamp expires_at = 19;
+  string bound_authority_plan_id = 20;
+  string home_station_signing_key_id = 21;
+  string fulfillment_transition_id = 22;
+}
+
+message GroupAdmissionFulfillment {
+  string grant_id = 1;
+  string invitation_id = 2;
+  string invitee_home_station_peer_id = 3;
+  bytes grant_sha256 = 4;
+  string invitee_ptid = 5;
+}
+
+message GroupAdmissionFulfillmentSet {
+  repeated GroupAdmissionFulfillment fulfillments = 1;
+}
+
+message GroupGenesisAdmissionEvaluation {
+  string invitee_ptid = 1;
+  GroupAdmissionEvaluationResponse response = 2;
+}
+
+message GroupGenesisAdmissionSet {
+  repeated GroupGenesisAdmissionEvaluation evaluations = 1;
+}
+
+enum GroupAdmissionOutcome {
+  GROUP_ADMISSION_OUTCOME_UNSPECIFIED = 0;
+  GROUP_ADMISSION_OUTCOME_DENIED = 1;
+  GROUP_ADMISSION_OUTCOME_DIRECT_ADD = 2;
+  GROUP_ADMISSION_OUTCOME_CONFIRMATION_REQUIRED = 3;
+}
+
+message GroupAdmissionEvaluationRequest {
+  uint32 version = 1;
+  string request_id = 2;
+  string conversation_id = 3;
+  string federation_id = 4;
+  string authority_station_peer_id = 5;
+  int64 authority_epoch = 6;
+  peers_touch.model.actor.v1.ActorDeviceRef inviter = 7;
+  peers_touch.model.actor.v1.ActorRef invitee = 8;
+  string invitee_home_station_peer_id = 9;
+  string group_name_snapshot = 10;
+  int64 observed_membership_epoch = 11;
+  int64 observed_mls_epoch = 12;
+  int64 authority_sequence = 13;
+  bytes authority_hash = 14;
+  google.protobuf.Timestamp expires_at = 15;
+  string authority_plan_id = 16;
+  bool defer_invitation_until_group_commit = 17;
+}
+
+message GroupAdmissionEvaluationResponse {
+  GroupAdmissionOutcome outcome = 1;
+  uint64 policy_revision = 2;
+  GroupAdmissionGrant grant = 3;
+  GroupInvitation invitation = 4;
+  string denial_code = 5;
+}
+
+message GroupAdmissionFulfillmentRequest {
+  uint32 version = 1;
+  string request_id = 2;
+  GroupAdmissionFulfillment fulfillment = 3;
+  string authority_plan_id = 4;
+  google.protobuf.Timestamp plan_expires_at = 5;
+}
+
+message GroupAdmissionFulfillmentResponse {
+  GroupAdmissionGrant grant = 1;
+}
+
+enum GroupLeaveRejectState {
+  GROUP_LEAVE_REJECT_STATE_UNSPECIFIED = 0;
+  GROUP_LEAVE_REJECT_STATE_PREPARING = 1;
+  GROUP_LEAVE_REJECT_STATE_REJECTION_COMMITTED = 2;
+  GROUP_LEAVE_REJECT_STATE_LEAVE_INTENT_SUBMITTED = 3;
+  GROUP_LEAVE_REJECT_STATE_COMPLETED = 4;
+  GROUP_LEAVE_REJECT_STATE_LEAVE_RETRY_REQUIRED = 5;
+}
+
+message GroupLeaveRejectOperation {
+  uint32 version = 1;
+  string operation_id = 2;
+  string actor_ptid = 3;
+  string conversation_id = 4;
+  string federation_id = 5;
+  string authority_station_peer_id = 6;
+  string group_name_snapshot = 7;
+  GroupLeaveRejectState state = 8;
+  uint64 rejection_policy_revision = 9;
+  string leave_intent_id = 10;
+  string fulfillment_transition_id = 11;
+  string failure_code = 12;
+  google.protobuf.Timestamp created_at = 13;
+  google.protobuf.Timestamp updated_at = 14;
+}
+
+message ActivateGroupGenesisInvitationsRequest {
+  string authority_plan_id = 1;
+  string conversation_id = 2;
+  string authority_station_peer_id = 3;
+}
+
+message ActivateGroupGenesisInvitationsResponse {
+  uint32 activated_count = 1;
+}

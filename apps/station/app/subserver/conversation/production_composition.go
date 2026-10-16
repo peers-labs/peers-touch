@@ -20,6 +20,7 @@ import (
 	reconciliationapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/reconciliation"
 	conversationdomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
+	groupadmission "github.com/peers-labs/peers-touch/station/app/subserver/conversation/groupadmission"
 	attachmentinfra "github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure/attachment"
 	deliveryinfra "github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure/delivery"
 	conversationfederation "github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure/federation"
@@ -172,10 +173,12 @@ type ProductionComposition struct {
 	database               *gorm.DB
 	localStation           valueobject.StationID
 	clock                  productionClock
+	ids                    productionIDGenerator
 	realtime               ProductionRealtime
 	deviceInboxLimits      deliveryapp.QueueLimits
 	transactionalAdapters  *ProductionTransactionalAdapterFactory
 	federationSender       *conversationfederation.Sender
+	groupAdmission         *groupadmission.Service
 	shared                 *productionSharedDependencies
 	federationMu           sync.Mutex
 	federationRegistered   bool
@@ -467,6 +470,7 @@ func NewProductionComposition(
 		database:              config.Database,
 		localStation:          config.LocalStationID,
 		clock:                 config.Clock,
+		ids:                   config.IDs,
 		realtime:              config.Realtime,
 		deviceInboxLimits:     config.DeviceInboxLimits,
 		transactionalAdapters: adapterFactory,

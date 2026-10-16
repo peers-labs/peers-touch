@@ -231,6 +231,14 @@ class NativeGroupMlsRuntimeBindingTests(unittest.TestCase):
                 "group_message_delivered",
                 "group_restart_recovered",
                 "member_removed",
+                "admission_default_direct_add",
+                "admission_confirmation_pre_membership",
+                "admission_accept_waiting",
+                "admission_fulfillment_joined",
+                "rejected_group_blocks_reinvite",
+                "leave_reject_retry_persisted",
+                "leave_reject_restart_recovered",
+                "leave_reject_completed",
             },
         )
         self.assertEqual(
@@ -289,7 +297,7 @@ class NativeGroupMlsRuntimeBindingTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn("projectMutualFriends(followers, following)", relationships)
-        self.assertIn("loadMutualFriends(actorPtid, true)", realtime)
+        self.assertIn("refreshFriendshipProjection(true)", realtime)
         self.assertIn("EVENT.RELATIONSHIP_CHANGED", realtime)
         self.assertIn("data-chat-find-people-result", find_people)
         self.assertIn("data-chat-friend-state", find_people)
@@ -345,6 +353,37 @@ class NativeGroupMlsRuntimeBindingTests(unittest.TestCase):
                 self.assertIn(field, source)
         self.assertIn("visible ready Group projection", source)
         self.assertIn("restored Group projection", source)
+
+    def test_group_admission_and_leave_reject_contract_is_native_visible(
+        self,
+    ) -> None:
+        source = RUNNER.read_text(encoding="utf-8")
+        harness = (
+            ROOT / "apps/desktop/src/acceptance/chat/harness.ts"
+        ).read_text(encoding="utf-8")
+        notifications = (
+            ROOT / "apps/desktop/src/components/notifications/NotificationRow.tsx"
+        ).read_text(encoding="utf-8")
+        privacy = (
+            ROOT / "apps/desktop/src/components/settings/PrivacySettings.tsx"
+        ).read_text(encoding="utf-8")
+
+        for action in (
+            '"updateGroupAdmissionMode"',
+            '"inviteToGroup"',
+            '"refreshGroupAdmissionProjection"',
+            '"attemptInviteToGroup"',
+            '"resumeMessagingLifecycle"',
+        ):
+            self.assertIn(action, source)
+        self.assertIn("AcceptanceGroupLeaveFaultProxy", source)
+        self.assertIn("create_transport_override", source)
+        self.assertIn("restore_session=True", source)
+        self.assertIn("data-group-invitation-action", notifications)
+        self.assertIn("data-leave-reject-retry", privacy)
+        self.assertIn("async updateGroupAdmissionMode", harness)
+        self.assertIn("async leaveAndRejectGroup", harness)
+        self.assertIn("async retryLeaveAndRejectGroup", harness)
 
 
 if __name__ == "__main__":

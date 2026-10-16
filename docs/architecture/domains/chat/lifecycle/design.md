@@ -1,8 +1,8 @@
 # Chat Lifecycle - Architecture Design
 
 > **Status**: active
-> **Version**: v1.2
-> **Created**: 2026-09-16 | **Updated**: 2026-09-20
+> **Version**: v1.3
+> **Created**: 2026-09-16 | **Updated**: 2026-10-16
 > **Owner**: Chat Product Team
 > **Module**: `apps/desktop/`, `apps/mobile/`, `apps/station/app/subserver/`
 
@@ -38,6 +38,11 @@ Upstream sources:
 | Existing domain ownership should remain unchanged | accepted_decision | CHAT-D01 through CHAT-D06 | accepted |
 | Active peers can be rendered offline | verified_fact | Desktop sends offline on blur, renews every 300s against a 90s lease, and local Station queries cannot resolve remote authority | high |
 | Dynamic badges and interaction metadata shift Chat geometry | verified_fact | Conversation rows have no reserved unread lane; message virtualization remeasures conditionally inserted thread/reaction content | high |
+| Current `ADD_ACTOR` immediately prepares an MLS commit and Welcome | verified_fact | `MembershipTransitionPreparer` maps `ADD_ACTOR` to `added_endpoints` and emits Welcome payloads | high |
+| Production has no current group-invitation authority or decision command | verified_fact | canonical Chat Proto contains membership transition and leave intent, but no invitation lifecycle contract | high |
+| Notification UI can render `GROUP_INVITED` text but resolves decisions only for Friend Requests | verified_fact | `NotificationRow` binds decision buttons only to a pending Friend Request projection | high |
+| Friend-only direct add is the default and confirmation is an actor choice | accepted_decision | Owner decision on 2026-10-16 | accepted |
+| Per-group rejection must survive leave and override direct add or invitation | accepted_decision | Owner decision on 2026-10-16 | accepted |
 
 ## 3. Core Principles
 
@@ -93,6 +98,8 @@ flowchart LR
 | Actor identity and discoverability | Actor / Federation Discovery | Client profile cache |
 | Friendship and block state | Social | Client relationship projection |
 | Conversation and membership | Conversation | Device Messaging Engine projection |
+| Group admission preference and rejected-group set | Actor Home Station Conversation capability | Desktop/Mobile Settings runtime |
+| Group invitation and decision lifecycle | Invitee Home Station Conversation capability | Recipient Home Station inbox projection |
 | Message and interaction order | Conversation event sequence | Engine SQLCipher projection |
 | Device delivery and consumption | Device Inbox | Engine cursor/marker |
 | Plaintext, ratchet, MLS private state | Device Messaging Engine | Encrypted local store only |
@@ -141,6 +148,32 @@ flowchart LR
 
 - Group creation and all membership/role/owner/name/dissolve changes are
   Conversation commands and ordered events.
+- An actor's Home Station Conversation capability owns the revision-fenced
+  `friends_direct_add` preference and rejected-group set. Friendship remains
+  Social truth and is read through a declared gate; Conversation does not copy
+  relationship state.
+- Group authority asks the invitee Home Station for one peer-authenticated,
+  source-bound admission decision before preparing `ADD_ACTOR`: `DENIED`,
+  `DIRECT_ADD`, or
+  `CONFIRMATION_REQUIRED`. Missing, stale, unauthenticated, or unresolved
+  admission fails closed.
+- `DIRECT_ADD` reuses the existing membership transition unchanged.
+  `CONFIRMATION_REQUIRED` creates one authority-owned invitation and one
+  recipient notification; it creates no member, MLS commit, Welcome, session,
+  or recovery entitlement.
+- The invitee Home Station persists invitation, exact signed actor-device
+  decision, admission grant, rejected-group state, and notification in one
+  local ownership boundary. Group authority does not duplicate invitation
+  truth; it consumes the source-bound grant and submits the existing
+  `ADD_ACTOR` transition. An authorized active member may claim accepted
+  invitations that still require an MLS commit.
+- Invitation notification is derived attention. Its `target_id` is the
+  invitation ID; deleting or reading the notification cannot decide the
+  invitation.
+- `Leave and reject future invitations` is a durable Home-Station saga:
+  revision-fenced rejection commits before the signed leave intent is
+  submitted. The rejected-group projection remains active if delegated MLS
+  leave is delayed or fails.
 - MLS transition and membership fact are one accepted transition.
 - UI cannot mark a group ready before authoritative membership and local MLS
   projection agree.
@@ -194,6 +227,10 @@ flowchart LR
 | Microphone denied | Preserve draft context; show permission action |
 | Camera denied | Preserve the conversation; expose retry or audio-only exit without false video-active state |
 | MLS/membership mismatch | Stop send; reconcile before ready |
+| Admission policy unavailable | Reject direct add/invite preparation with a typed retryable failure |
+| Invitation accepted but no fulfiller is online | Keep `accepted_waiting_for_mls`; reconcile and retry without fabricating membership |
+| Invitation decision replay | Return the original terminal decision; conflicting decision is rejected |
+| Leave-and-reject partial completion | Keep rejection active and expose leave retry with the original intent |
 | Call network loss | Enter reconnecting, then recover or terminate visibly |
 | Station/restart loss | Reopen durable projections and workers |
 | Presence authority unavailable | Render unknown; retry through bounded runtime reconciliation |
@@ -209,6 +246,8 @@ Allowed:
 - Conversation -> Device Inbox and Federation for ordered delivery.
 - Realtime -> Federation for sealed cross-Station call signaling.
 - Engine -> encrypted object plane for attachments and voice notes.
+- Conversation authority -> invitee Home Station admission capability.
+- Notification projection -> invitation ID for navigation and decision lookup.
 
 Forbidden:
 
@@ -221,6 +260,10 @@ Forbidden:
 - Window focus/visibility -> authoritative actor offline state.
 - Missing or failed remote presence read -> offline.
 - Legacy friend/group Chat route -> fallback business owner.
+- Notification row or client store -> invitation or membership authority.
+- Group authority -> cached mutable copy of actor admission preference.
+- Invitation acceptance -> direct membership mutation without a bound MLS
+  transition and Welcome.
 
 ## 9. Quality Gates
 

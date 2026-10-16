@@ -1,8 +1,8 @@
 # Chat Lifecycle - Integration And Cutover
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-09-16 | **Updated**: 2026-09-17
+> **Version**: v1.2
+> **Created**: 2026-09-16 | **Updated**: 2026-10-16
 > **Owner**: Chat Product Team
 
 ---
@@ -20,6 +20,7 @@
 | Voice notes | Desktop recorder/composer/audio attachment renderer; Mobile foundation only |
 | Interactions/typing | Conversation interaction services and Desktop/Mobile projections |
 | Groups | Conversation MLS commands plus remaining legacy Group mutation consumers |
+| Group admission and decisions | Conversation membership preparation, Social relationship gate, Notification projection, Desktop Settings/notification surfaces |
 | Live voice/video | `callP2p`, `CallSurface`, Realtime signaling, TURN discovery |
 | Acceptance | `tooling/acceptance/capabilities`, registry, Gates, native provisioners |
 
@@ -35,6 +36,8 @@
 | Contact identity summary | Federation Station directory joined by Station peer ID, with raw IDs in expandable details | Raw peer ID as primary identity text or display-name deduplication |
 | Screenshot capture | Native capture lifecycle with stable window geometry | Hide/show resize or scale flash |
 | Group mutations | Conversation commands/events | Active `/group-chat/*` mutation ownership |
+| Group admission | Home-Station policy + authority invitation/grant before Conversation membership preparation | Treating `ADD_ACTOR`, Notification, or UI state as an invitation |
+| Leave and reject | Home-Station rejected-group saga + signed Conversation leave intent | Best-effort UI chaining or rollback of the rejection |
 | Voice note | Typed audio private content over attachment plane | Generic file-only UX and duration loss |
 | Live voice/video | Runtime-owned WebRTC call projection | Page-owned or P2P-status-gated call availability |
 | Mobile proof | Real native Journey/Gate implementation | Fake-memory or missing-metadata success |
@@ -52,6 +55,8 @@ The replacement plan reuses rather than rewrites:
   state contract;
 - Realtime stream, sealed call signaling, WebRTC, ICE, and TURN foundations;
 - current Acceptance runtime-cell infrastructure.
+- existing revision fencing, Conversation authority plans, signed leave
+  intents, post-commit notification refresh, and runtime reconciliation.
 
 Reuse never imports historical completion status.
 
@@ -65,6 +70,8 @@ Each cutover must include a zero-reference check for:
 - duplicate message send/retry owners;
 - fake Mobile Chat success adapters used as product evidence;
 - obsolete plan discovery and active-work locators.
+- unbound `ADD_ACTOR` preparation paths that bypass group admission;
+- Notification decision handlers that mutate invitation state locally.
 
 Rollback uses version/deployment rollback. No compatibility alias, fallback
 read, or dual write remains after a cutover.

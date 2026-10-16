@@ -1969,6 +1969,7 @@ mod tests {
             }],
             endpoint_manifests: Vec::new(),
             authority_plan_sha256: vec![8; 32],
+            admission_fulfillments: Vec::new(),
         };
         let command = GroupGenesisPreparer::new(
             store.clone(),

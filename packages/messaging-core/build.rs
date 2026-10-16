@@ -18,6 +18,7 @@ fn main() {
         "domain/chat/direct_crypto.proto",
         "domain/chat/endpoint.proto",
         "domain/chat/event.proto",
+        "domain/chat/group_admission.proto",
         "domain/chat/group_mls.proto",
         "domain/chat/queue.proto",
         "domain/chat/receipt.proto",

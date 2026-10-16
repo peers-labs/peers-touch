@@ -55,5 +55,6 @@
   "layout.notifications.type.postReposted": "{{actor}} shared your post",
   "layout.notifications.type.mentioned": "{{actor}} mentioned you",
   "layout.notifications.type.message": "{{actor}} sent you a message",
-  "layout.notifications.type.groupInvited": "{{actor}} invited you to a group"
+  "layout.notifications.type.groupInvited": "{{actor}} invited you to a group",
+  "layout.notifications.groupInvitationWaiting": "Accepted. Waiting for a group member to complete secure membership."
 }

@@ -35,7 +35,7 @@ function SessionNotificationBell() {
       >
         <div ref={triggerRef}>
           <Badge count={unread} size="small" offset={[-2, 2]}>
-            <ActionIcon icon={Bell} size="large" title={t('layout.notifications.title')}
+            <ActionIcon data-shell-notification-trigger icon={Bell} size="large" title={t('layout.notifications.title')}
               aria-haspopup="dialog" aria-expanded={open || expanded} />
           </Badge>
         </div>

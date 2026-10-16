@@ -1924,7 +1924,7 @@ pub(crate) fn messaging_membership_transition_with_engine(
             None,
         );
     }
-    let command = match engine.prepare_membership_transition(
+    let preparation = match engine.prepare_membership_transition(
         token,
         &messaging_core::mls::membership_transition::MembershipTransitionIntentInput {
             conversation_id: input.conversation_id,
@@ -1933,10 +1933,20 @@ pub(crate) fn messaging_membership_transition_with_engine(
             target_device_id: input.target_device_id,
             role: input.role,
             leave_intent: None,
+            admission_fulfillment: None,
         },
     ) {
-        Ok(command) => command,
+        Ok(preparation) => preparation,
         Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
+    };
+    let command = match preparation {
+        crate::messaging::MembershipTransitionPreparation::Command(command) => command,
+        crate::messaging::MembershipTransitionPreparation::InvitationPending { invitation_id } => {
+            return AppResult::success(json!({
+                "invitation_id": invitation_id,
+                "state": "invitation_pending",
+            }))
+        }
     };
     let command_id = command.command_id.clone();
     let progress = engine.dispatch_command_once(

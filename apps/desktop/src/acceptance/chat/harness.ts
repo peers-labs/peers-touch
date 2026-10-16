@@ -147,6 +147,19 @@ interface GroupLifecycleInput {
   groupUlid: string;
 }
 
+interface GroupAdmissionModeInput {
+  mode: number;
+}
+
+interface GroupInvitationDecisionAcceptanceInput {
+  invitationId: string;
+  accept: boolean;
+}
+
+interface GroupLeaveRejectAcceptanceInput extends GroupLifecycleInput {
+  operationId?: string;
+}
+
 interface TransferGroupOwnershipInput extends GroupLifecycleInput {
   memberPtid: string;
 }
@@ -514,6 +527,57 @@ export function installAcceptanceHarness(): void {
           online: actorPtid in peerOnline ? peerOnline[actorPtid] : null,
         })),
       };
+    },
+
+    async groupAdmissionSettings() {
+      return api.groupAdmissionSettings();
+    },
+
+    async updateGroupAdmissionMode({ mode }: GroupAdmissionModeInput) {
+      const snapshot = await api.groupAdmissionSettings();
+      if (!snapshot.preference) {
+        throw new Error('acceptance.chat.groupAdmissionPreferenceMissing');
+      }
+      const preference = await api.updateGroupAdmissionPreference(
+        mode,
+        snapshot.preference.revision,
+      );
+      return {
+        preference,
+        rejectedGroups: snapshot.rejectedGroups,
+      };
+    },
+
+    async groupInvitations({ states = [] }: { states?: number[] }) {
+      return api.groupInvitations(states);
+    },
+
+    async refreshGroupAdmissionProjection() {
+      await refreshSocialProjection('acceptance:group-admission', true);
+      const [settings, invitations] = await Promise.all([
+        api.groupAdmissionSettings(),
+        api.groupInvitations([]),
+      ]);
+      return { settings, invitations: invitations.invitations };
+    },
+
+    async decideGroupInvitation({
+      invitationId,
+      accept,
+    }: GroupInvitationDecisionAcceptanceInput) {
+      const snapshot = await api.groupInvitations([1, 2]);
+      const invitation = snapshot.invitations.find(
+        (candidate) => candidate.invitationId === invitationId,
+      );
+      if (!invitation) {
+        throw new Error('acceptance.chat.groupInvitationMissing');
+      }
+      return api.decideGroupInvitation({
+        invitation_id: invitation.invitationId,
+        accept,
+        observed_state: invitation.state,
+        observed_policy_revision: invitation.policyRevision,
+      });
     },
 
     async searchMessages({ conversationId, query }: SearchMessagesInput) {
@@ -1016,12 +1080,17 @@ export function installAcceptanceHarness(): void {
 
     async inviteToGroup({ groupUlid, memberPtids }: { groupUlid: string; memberPtids: string[] }) {
       const social = useSocialChatStore.getState();
+      const outcomes: Array<{
+        commandId: string;
+        invitationId?: string;
+        state: 'pending' | 'invitation_pending';
+      }> = [];
       for (const did of memberPtids) {
-        await imServiceV1.messaging.submitMembershipIntent({
+        outcomes.push(await imServiceV1.messaging.submitMembershipIntent({
           conversationId: groupUlid,
           action: 'add_actor',
           targetPtid: did,
-        });
+        }));
       }
       await social.loadGroups();
       await social.loadGroupMembers(groupUlid);
@@ -1030,7 +1099,31 @@ export function installAcceptanceHarness(): void {
       return {
         groupUlid,
         memberCount: useSocialChatStore.getState().groupMembers[groupUlid]?.length ?? 0,
+        outcomes,
       };
+    },
+
+    async attemptInviteToGroup({
+      groupUlid,
+      memberPtid,
+    }: {
+      groupUlid: string;
+      memberPtid: string;
+    }) {
+      try {
+        const outcome = await imServiceV1.messaging.submitMembershipIntent({
+          conversationId: groupUlid,
+          action: 'add_actor',
+          targetPtid: memberPtid,
+        });
+        return { accepted: true, outcome, error: '' };
+      } catch (error) {
+        return {
+          accepted: false,
+          outcome: null,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
     },
 
     async removeGroupMember({ groupUlid, memberPtid }: RemoveGroupMemberInput) {
@@ -1078,6 +1171,41 @@ export function installAcceptanceHarness(): void {
 
     async leaveGroup({ groupUlid }: GroupLifecycleInput) {
       return imServiceV1.messaging.leaveConversation(groupUlid);
+    },
+
+    async leaveAndRejectGroup({
+      groupUlid,
+      operationId = crypto.randomUUID(),
+    }: GroupLeaveRejectAcceptanceInput) {
+      const [conversation, admission] = await Promise.all([
+        imServiceV1.messaging.listConversations().then((conversations) => (
+          conversations.find((candidate) => candidate.conversationId === groupUlid)
+        )),
+        api.groupAdmissionSettings(),
+      ]);
+      if (!conversation || !admission.preference) {
+        throw new Error('acceptance.chat.groupLeaveRejectContextMissing');
+      }
+      const operation = await api.leaveAndRejectGroup({
+        operation_id: operationId,
+        conversation_id: groupUlid,
+        federation_id: conversation.federationId,
+        authority_station_peer_id: conversation.authorityStationId,
+        group_name_snapshot: conversation.name,
+        observed_policy_revision: admission.preference.revision,
+      });
+      return {
+        operation,
+        settings: await api.groupAdmissionSettings(),
+      };
+    },
+
+    async retryLeaveAndRejectGroup({ operationId }: { operationId: string }) {
+      const operation = await api.retryLeaveAndRejectGroup(operationId);
+      return {
+        operation,
+        settings: await api.groupAdmissionSettings(),
+      };
     },
 
     async dissolveGroup({ groupUlid }: GroupLifecycleInput) {

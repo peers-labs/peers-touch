@@ -288,8 +288,24 @@ func (s *subServer) handlePrepareGroup(
 	if err != nil {
 		return nil, mapProductionConversationError(ctx, err)
 	}
+	planID := s.composition.ids.NewPlanID()
+	admissions, err := s.prepareGroupGenesisAdmissions(
+		ctx,
+		planID,
+		conversationID,
+		federationID,
+		request.GetName(),
+		owner,
+		members,
+	)
+	if err != nil {
+		return nil, mapProductionConversationError(ctx, err)
+	}
 	actors := uniqueProductionActors(
-		append(append([]valueobject.PTID(nil), members...), owner.Actor),
+		append(
+			append([]valueobject.PTID(nil), admissions.DirectMembers...),
+			owner.Actor,
+		),
 	)
 	manifests, err := s.composition.productionEndpointManifests(ctx, actors)
 	if err != nil {
@@ -311,23 +327,47 @@ func (s *subServer) handlePrepareGroup(
 	plan, err := s.composition.CommandService.PrepareGroup(
 		ctx,
 		command.PrepareGroupRequest{
-			ConversationID:    conversationID,
-			FederationID:      federationID,
-			AuthorityEpoch:    initialConversationAuthorityEpoch,
-			Name:              request.GetName(),
-			Owner:             owner,
-			Members:           members,
-			VerifiedRoutes:    verifiedRoutes,
-			ManifestSetHash:   manifestSetHash,
-			ManifestStateHash: manifestStateHash,
-			TTL:               defaultAuthorityPlanTTL,
+			PlanID:                   planID,
+			ConversationID:           conversationID,
+			FederationID:             federationID,
+			AuthorityEpoch:           initialConversationAuthorityEpoch,
+			Name:                     request.GetName(),
+			Owner:                    owner,
+			Members:                  admissions.DirectMembers,
+			VerifiedRoutes:           verifiedRoutes,
+			ManifestSetHash:          manifestSetHash,
+			ManifestStateHash:        manifestStateHash,
+			AdmissionFulfillmentHash: admissions.FulfillmentHash,
+			GenesisAdmissionHash:     admissions.GenesisHash,
+			DeferredInvitationHomes:  admissions.DeferredHomes,
+			TTL:                      defaultAuthorityPlanTTL,
 		},
 	)
 	if err != nil {
 		return nil, mapProductionConversationError(ctx, err)
 	}
 
-	return s.productionGroupPlanResponse(plan, manifests), nil
+	scope := aggregate.Snapshot{
+		ID:               conversationID,
+		FederationID:     federationID,
+		AuthorityStation: s.localStation,
+		AuthorityEpoch:   initialConversationAuthorityEpoch,
+	}
+	for _, fulfillment := range admissions.Fulfillments {
+		if _, err := s.bindMembershipAdmission(
+			ctx,
+			scope,
+			owner,
+			fulfillment.GetInviteeHomeStationPeerId(),
+			fulfillment,
+			plan,
+		); err != nil {
+			return nil, mapProductionConversationError(ctx, err)
+		}
+	}
+	response := s.productionGroupPlanResponse(plan, manifests)
+	response.AdmissionFulfillments = admissions.Fulfillments
+	return response, nil
 }
 
 func (s *subServer) handleCreateGroupConversation(
@@ -379,7 +419,19 @@ func (s *subServer) handleCreateGroupConversation(
 		return nil, mapProductionConversationError(ctx, err)
 	}
 	if replayed {
-		response, replayErr := productionGroupCreationResponse(replayedResult)
+		plan, loadErr := s.loadAuthorityPlan(
+			ctx,
+			valueobject.PlanID(transition.GetAuthorityPlanId()),
+		)
+		if loadErr != nil {
+			return nil, mapProductionConversationError(ctx, loadErr)
+		}
+		response, replayErr := s.finalizeGroupCreationAdmission(
+			ctx,
+			transition,
+			plan,
+			replayedResult,
+		)
 		return response, mapProductionConversationError(ctx, replayErr)
 	}
 	plan, err := s.loadAuthorityPlan(
@@ -428,15 +480,16 @@ func (s *subServer) handleCreateGroupConversation(
 	result, err := s.composition.CommandService.CreateGroup(
 		ctx,
 		command.CreateGroupRequest{
-			ConversationID:    mapped.Command.ConversationID,
-			Owner:             owner,
-			VerifiedRoutes:    verifiedRoutes,
-			ManifestStateHash: manifestStateHash,
-			CommandID:         mapped.Command.ID,
-			AuthorityPlanID:   plan.ID,
-			AuthorityPlanHash: plan.Hash,
-			Deliveries:        mapped.Command.Deliveries,
-			ExactCommandBytes: exactBytes,
+			ConversationID:           mapped.Command.ConversationID,
+			Owner:                    owner,
+			VerifiedRoutes:           verifiedRoutes,
+			ManifestStateHash:        manifestStateHash,
+			AdmissionFulfillmentHash: mapped.AdmissionFulfillmentHash,
+			CommandID:                mapped.Command.ID,
+			AuthorityPlanID:          plan.ID,
+			AuthorityPlanHash:        plan.Hash,
+			Deliveries:               mapped.Command.Deliveries,
+			ExactCommandBytes:        exactBytes,
 		},
 	)
 	if err != nil {
@@ -452,8 +505,42 @@ func (s *subServer) handleCreateGroupConversation(
 			),
 		)
 	}
-	response, err := productionGroupCreationResponse(result)
+	response, err := s.finalizeGroupCreationAdmission(
+		ctx,
+		transition,
+		plan,
+		result,
+	)
 	return response, mapProductionConversationError(ctx, err)
+}
+
+func (s *subServer) finalizeGroupCreationAdmission(
+	ctx context.Context,
+	transition *chatmodel.MembershipTransitionIntent,
+	plan entity.AuthorityPlan,
+	result command.Result,
+) (*chatmodel.CreateGroupConversationResponse, error) {
+	response, err := productionGroupCreationResponse(result)
+	if err != nil {
+		return nil, err
+	}
+	completions, err := groupAdmissionTransitionCompletions(
+		transition,
+		response.GetEvent(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.composition.completeGroupAdmissionTransitions(
+		ctx,
+		completions,
+	); err != nil {
+		return nil, err
+	}
+	if err := s.activateGroupGenesisInvitations(ctx, plan); err != nil {
+		return nil, err
+	}
+	return response, nil
 }
 
 func productionGroupCreationResponse(
@@ -590,6 +677,42 @@ func (s *subServer) prepareMembershipPlan(
 	if err != nil {
 		return nil, err
 	}
+	view, err := s.composition.QueryService.Get(
+		ctx,
+		conversationID,
+		requester.Actor,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if view.Source != query.SourceAuthority ||
+		view.Conversation.AuthorityStation != s.localStation {
+		return nil, conversationdomain.NewError(
+			conversationdomain.ErrorCodeProposalBinding,
+			"production_http.prepare_membership",
+			"authority_station_peer_id",
+			"does not match the local authority projection",
+		)
+	}
+	planID := s.composition.ids.NewPlanID()
+	admission, fulfillment, targetHome, err := s.prepareMembershipAdmission(
+		ctx,
+		request,
+		requester,
+		view.Conversation,
+		planID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if request.GetAction() ==
+		chatmodel.ConversationMembershipAction_CONVERSATION_MEMBERSHIP_ACTION_ADD_ACTOR &&
+		fulfillment == nil {
+		return &chatmodel.PrepareConversationMembershipResponse{
+			AuthorityStationPeerId: string(s.localStation),
+			Admission:              admission,
+		}, nil
+	}
 	change, err := productionMembershipChange(request)
 	if err != nil {
 		return nil, err
@@ -620,23 +743,53 @@ func (s *subServer) prepareMembershipPlan(
 	if err != nil {
 		return nil, err
 	}
+	var admissionFulfillmentHash valueobject.Hash
+	if fulfillment != nil {
+		encodedFulfillment, encodeErr := (proto.MarshalOptions{
+			Deterministic: true,
+		}).Marshal(fulfillment)
+		if encodeErr != nil {
+			return nil, fmt.Errorf(
+				"encode group admission fulfillment: %w",
+				encodeErr,
+			)
+		}
+		admissionFulfillmentHash = valueobject.HashBytes(encodedFulfillment)
+	}
 	plan, err := s.composition.CommandService.PrepareMembership(
 		ctx,
 		command.PrepareMembershipRequest{
-			ConversationID:    conversationID,
-			Requester:         requester,
-			Changes:           []entity.MembershipChange{change},
-			VerifiedRoutes:    verifiedRoutes,
-			ManifestSetHash:   manifestSetHash,
-			ManifestStateHash: manifestStateHash,
-			TTL:               defaultAuthorityPlanTTL,
+			PlanID:                   planID,
+			ConversationID:           conversationID,
+			Requester:                requester,
+			Changes:                  []entity.MembershipChange{change},
+			VerifiedRoutes:           verifiedRoutes,
+			ManifestSetHash:          manifestSetHash,
+			ManifestStateHash:        manifestStateHash,
+			AdmissionFulfillmentHash: admissionFulfillmentHash,
+			TTL:                      defaultAuthorityPlanTTL,
 		},
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	return s.productionMembershipPlanResponse(plan, manifests), nil
+	grant, err := s.bindMembershipAdmission(
+		ctx,
+		view.Conversation,
+		requester,
+		targetHome,
+		fulfillment,
+		plan,
+	)
+	if err != nil {
+		return nil, err
+	}
+	response := s.productionMembershipPlanResponse(plan, manifests)
+	response.Admission = admission
+	response.AdmissionFulfillment = fulfillment
+	response.AdmissionGrant = grant
+	return response, nil
 }
 
 func (s *subServer) handleSubmitAuthorityCommand(
@@ -744,6 +897,19 @@ func (s *subServer) handleSubmitAuthorityCommand(
 	event, err := conversationhttp.MapEvent(result.Event)
 	if err != nil {
 		return nil, mapProductionConversationError(ctx, err)
+	}
+	completions, completionErr := groupAdmissionTransitionCompletions(
+		wireCommand.GetMembershipTransition(),
+		event,
+	)
+	if completionErr != nil {
+		return nil, mapProductionConversationError(ctx, completionErr)
+	}
+	if completionErr = s.composition.completeGroupAdmissionTransitions(
+		ctx,
+		completions,
+	); completionErr != nil {
+		return nil, mapProductionConversationError(ctx, completionErr)
 	}
 
 	return &chatmodel.SubmitConversationAuthorityCommandResponse{Event: event}, nil

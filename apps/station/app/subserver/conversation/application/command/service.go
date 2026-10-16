@@ -196,28 +196,30 @@ type CreateDirectRequest struct {
 }
 
 type CreateGroupRequest struct {
-	ConversationID    valueobject.ConversationID
-	Owner             valueobject.Endpoint
-	VerifiedRoutes    []ports.EndpointRoute
-	ManifestStateHash valueobject.Hash
-	CommandID         valueobject.CommandID
-	AuthorityPlanID   valueobject.PlanID
-	AuthorityPlanHash valueobject.Hash
-	Deliveries        []valueobject.PreparedDelivery
-	ExactCommandBytes []byte
+	ConversationID           valueobject.ConversationID
+	Owner                    valueobject.Endpoint
+	VerifiedRoutes           []ports.EndpointRoute
+	ManifestStateHash        valueobject.Hash
+	AdmissionFulfillmentHash valueobject.Hash
+	CommandID                valueobject.CommandID
+	AuthorityPlanID          valueobject.PlanID
+	AuthorityPlanHash        valueobject.Hash
+	Deliveries               []valueobject.PreparedDelivery
+	ExactCommandBytes        []byte
 }
 
 type SubmitRequest struct {
-	Command           aggregate.Command
-	Membership        *aggregate.MembershipTransition
-	MemberAuthority   *aggregate.MemberAuthorityCommand
-	Settings          *valueobject.SettingsPatch
-	Dissolve          bool
-	VerifiedRoutes    []ports.EndpointRoute
-	ManifestStateHash valueobject.Hash
-	AuthorityPlanID   valueobject.PlanID
-	AuthorityPlanHash valueobject.Hash
-	ExactCommandBytes []byte
+	Command                  aggregate.Command
+	Membership               *aggregate.MembershipTransition
+	MemberAuthority          *aggregate.MemberAuthorityCommand
+	Settings                 *valueobject.SettingsPatch
+	Dissolve                 bool
+	VerifiedRoutes           []ports.EndpointRoute
+	ManifestStateHash        valueobject.Hash
+	AuthorityPlanID          valueobject.PlanID
+	AuthorityPlanHash        valueobject.Hash
+	AdmissionFulfillmentHash valueobject.Hash
+	ExactCommandBytes        []byte
 }
 
 type ForwardedCommandClaims struct {
@@ -260,13 +262,15 @@ type Result struct {
 }
 
 type PrepareMembershipRequest struct {
-	ConversationID    valueobject.ConversationID
-	Requester         valueobject.Endpoint
-	Changes           []entity.MembershipChange
-	VerifiedRoutes    []ports.EndpointRoute
-	ManifestSetHash   valueobject.Hash
-	ManifestStateHash valueobject.Hash
-	TTL               time.Duration
+	PlanID                   valueobject.PlanID
+	ConversationID           valueobject.ConversationID
+	Requester                valueobject.Endpoint
+	Changes                  []entity.MembershipChange
+	VerifiedRoutes           []ports.EndpointRoute
+	ManifestSetHash          valueobject.Hash
+	ManifestStateHash        valueobject.Hash
+	AdmissionFulfillmentHash valueobject.Hash
+	TTL                      time.Duration
 }
 
 type PrepareCommandRequest struct {
@@ -277,16 +281,20 @@ type PrepareCommandRequest struct {
 }
 
 type PrepareGroupRequest struct {
-	ConversationID    valueobject.ConversationID
-	FederationID      valueobject.FederationID
-	AuthorityEpoch    valueobject.AuthorityEpoch
-	Name              string
-	Owner             valueobject.Endpoint
-	Members           []valueobject.PTID
-	VerifiedRoutes    []ports.EndpointRoute
-	ManifestSetHash   valueobject.Hash
-	ManifestStateHash valueobject.Hash
-	TTL               time.Duration
+	PlanID                   valueobject.PlanID
+	ConversationID           valueobject.ConversationID
+	FederationID             valueobject.FederationID
+	AuthorityEpoch           valueobject.AuthorityEpoch
+	Name                     string
+	Owner                    valueobject.Endpoint
+	Members                  []valueobject.PTID
+	VerifiedRoutes           []ports.EndpointRoute
+	ManifestSetHash          valueobject.Hash
+	ManifestStateHash        valueobject.Hash
+	AdmissionFulfillmentHash valueobject.Hash
+	GenesisAdmissionHash     valueobject.Hash
+	DeferredInvitationHomes  []valueobject.StationID
+	TTL                      time.Duration
 }
 
 func (s *Service) PrepareGroup(
@@ -372,7 +380,10 @@ func (s *Service) PrepareGroup(
 		changes := genesisMembershipChanges(actors, request.Owner.Actor, routes)
 		now := s.clock.Now()
 		expiresAt := now.Add(ttl)
-		planID := s.idGenerator.NewPlanID()
+		planID := request.PlanID
+		if planID == "" {
+			planID = s.idGenerator.NewPlanID()
+		}
 		reservationRoutes := make([]ports.EndpointRoute, 0, len(routes)-1)
 		for _, route := range routes {
 			if route.Endpoint != request.Owner {
@@ -405,6 +416,8 @@ func (s *Service) PrepareGroup(
 			expiresAt,
 			request.ManifestSetHash,
 			request.ManifestStateHash,
+			request.AdmissionFulfillmentHash,
+			request.GenesisAdmissionHash,
 		)
 		plan, err := entity.NewAuthorityPlan(entity.AuthorityPlan{
 			ID:                        planID,
@@ -419,6 +432,9 @@ func (s *Service) PrepareGroup(
 			AddedEndpoints:            postEndpoints,
 			EndpointManifestSetHash:   request.ManifestSetHash,
 			EndpointManifestStateHash: request.ManifestStateHash,
+			AdmissionFulfillmentHash:  request.AdmissionFulfillmentHash,
+			GenesisAdmissionHash:      request.GenesisAdmissionHash,
+			DeferredInvitationHomes:   request.DeferredInvitationHomes,
 			Hash:                      planHash,
 			ExpiresAt:                 expiresAt,
 			KeyPackageReservations:    reservations,
@@ -938,6 +954,8 @@ func (s *Service) CreateGroup(
 				plan.ExpiresAt,
 				plan.EndpointManifestSetHash,
 				plan.EndpointManifestStateHash,
+				plan.AdmissionFulfillmentHash,
+				plan.GenesisAdmissionHash,
 			)
 			if verifiedPlanHash != plan.Hash {
 				if supersedeErr := supersedePlan(ctx, transaction, &plan, now); supersedeErr != nil {
@@ -951,7 +969,8 @@ func (s *Service) CreateGroup(
 				)
 				return persistRejection(rejection, now)
 			}
-			if request.ManifestStateHash != plan.EndpointManifestStateHash {
+			if request.ManifestStateHash != plan.EndpointManifestStateHash ||
+				request.AdmissionFulfillmentHash != plan.AdmissionFulfillmentHash {
 				if supersedeErr := supersedePlan(ctx, transaction, &plan, now); supersedeErr != nil {
 					return supersedeErr
 				}
@@ -959,7 +978,7 @@ func (s *Service) CreateGroup(
 					conversationdomain.ErrorCodeAuthorityPlanStale,
 					"application.create_group",
 					"endpoint_manifest",
-					"active directory state changed after preparation",
+					"active directory or admission state changed after preparation",
 				)
 				return persistRejection(rejection, now)
 			}
@@ -1305,7 +1324,10 @@ func (s *Service) PrepareMembership(
 		preview.AddedEndpoints = endpointDifference(preview.PostEndpoints, preview.PreEndpoints)
 		preview.RemovedEndpoints = endpointDifference(preview.PreEndpoints, preview.PostEndpoints)
 		now := s.clock.Now()
-		planID := s.idGenerator.NewPlanID()
+		planID := request.PlanID
+		if planID == "" {
+			planID = s.idGenerator.NewPlanID()
+		}
 		expiresAt := now.Add(ttl)
 		reservations, err := transaction.KeyPackageReservations.Reserve(
 			ctx,
@@ -1329,6 +1351,7 @@ func (s *Service) PrepareMembership(
 			expiresAt,
 			request.ManifestSetHash,
 			request.ManifestStateHash,
+			request.AdmissionFulfillmentHash,
 		)
 		plan, err := entity.NewAuthorityPlan(entity.AuthorityPlan{
 			ID:                        planID,
@@ -1344,6 +1367,7 @@ func (s *Service) PrepareMembership(
 			RemovedEndpoints:          preview.RemovedEndpoints,
 			EndpointManifestSetHash:   request.ManifestSetHash,
 			EndpointManifestStateHash: request.ManifestStateHash,
+			AdmissionFulfillmentHash:  request.AdmissionFulfillmentHash,
 			Hash:                      planHash,
 			ExpiresAt:                 expiresAt,
 			KeyPackageReservations:    reservations,
@@ -1840,6 +1864,39 @@ func (s *Service) applyMembership(
 			"application.submit_membership",
 			"authority_plan",
 			"does not match the command",
+		), nil
+	}
+	verifiedPlanHash := authorityPlanHash(
+		plan.ID,
+		plan.ConversationID,
+		plan.FederationID,
+		plan.AuthorityEpoch,
+		plan.Requester,
+		plan.PreparedName,
+		aggregate.MembershipPreview{
+			Head:             plan.AuthorityHead,
+			PreEndpoints:     plan.PreEndpoints,
+			PostEndpoints:    plan.PostEndpoints,
+			AddedEndpoints:   plan.AddedEndpoints,
+			RemovedEndpoints: plan.RemovedEndpoints,
+		},
+		plan.Changes,
+		plan.KeyPackageReservations,
+		plan.ExpiresAt,
+		plan.EndpointManifestSetHash,
+		plan.EndpointManifestStateHash,
+		plan.AdmissionFulfillmentHash,
+	)
+	if verifiedPlanHash != plan.Hash ||
+		request.AdmissionFulfillmentHash != plan.AdmissionFulfillmentHash {
+		if err := supersedePlan(ctx, transaction, &plan, now); err != nil {
+			return aggregate.Transition{}, nil, err
+		}
+		return aggregate.Transition{}, conversationdomain.NewError(
+			conversationdomain.ErrorCodeAuthorityPlanStale,
+			"application.submit_membership",
+			"admission_fulfillment",
+			"does not match the prepared authority plan",
 		), nil
 	}
 	if request.Membership.TransitionID == "" ||

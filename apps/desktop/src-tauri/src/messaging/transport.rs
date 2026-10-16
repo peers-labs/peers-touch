@@ -1065,6 +1065,8 @@ mod tests {
                 leave_intent_id: String::new(),
                 authority_plan_id: "plan-1".to_string(),
                 authority_plan_sha256: vec![7; 32],
+                admission_fulfillment: None,
+                genesis_admission_fulfillments: Vec::new(),
             },
         ))
     }

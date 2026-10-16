@@ -32,35 +32,46 @@ func NewConversationRelationshipAdapter(
 }
 
 func (a *ConversationRelationshipAdapter) AreMutualFollowers(ctx context.Context, ptidA, ptidB string) (bool, error) {
-	idA, idB, err := a.resolveActorPair(ctx, ptidA, ptidB)
-	if err != nil || idA == 0 || idB == 0 {
-		return false, err
-	}
+	_, mutual, err := a.FriendshipProofID(ctx, ptidA, ptidB)
+	return mutual, err
+}
 
-	var aFollowsB int
+// FriendshipProofID reads canonical Social acceptance truth without copying it
+// into Conversation. Both actor-local projections must point at the same
+// accepted request; that request identity fences every admission grant.
+func (a *ConversationRelationshipAdapter) FriendshipProofID(
+	ctx context.Context,
+	ptidA string,
+	ptidB string,
+) (string, bool, error) {
+	type relationshipRow struct {
+		OwnerPTID string `gorm:"column:owner_ptid"`
+		PeerPTID  string `gorm:"column:peer_ptid"`
+		RequestID string `gorm:"column:request_id"`
+	}
+	var rows []relationshipRow
 	if err := a.db.WithContext(ctx).
-		Table("follows").
-		Select("1").
-		Where("follower_id = ? AND following_id = ?", idA, idB).
-		Limit(1).
-		Scan(&aFollowsB).Error; err != nil {
-		return false, err
+		Table("social_relationship_projections").
+		Select("owner_ptid, peer_ptid, request_id").
+		Where(
+			"(owner_ptid = ? AND peer_ptid = ?) OR "+
+				"(owner_ptid = ? AND peer_ptid = ?)",
+			ptidA,
+			ptidB,
+			ptidB,
+			ptidA,
+		).
+		Find(&rows).Error; err != nil {
+		return "", false, err
 	}
-	if aFollowsB == 0 {
-		return false, nil
+	if len(rows) != 2 {
+		return "", false, nil
 	}
-
-	var bFollowsA int
-	if err := a.db.WithContext(ctx).
-		Table("follows").
-		Select("1").
-		Where("follower_id = ? AND following_id = ?", idB, idA).
-		Limit(1).
-		Scan(&bFollowsA).Error; err != nil {
-		return false, err
+	requestID := rows[0].RequestID
+	if requestID == "" || rows[1].RequestID != requestID {
+		return "", false, nil
 	}
-
-	return bFollowsA == 1, nil
+	return requestID, true, nil
 }
 
 func (a *ConversationRelationshipAdapter) IsBlocked(ctx context.Context, blockerPtid, blockedPtid string) (bool, error) {

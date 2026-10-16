@@ -35,6 +35,7 @@ async function refreshSessionProjection(): Promise<void> {
     store.refreshActiveAccount(),
     store.refreshDevices(),
     store.refreshNotificationPreferences(),
+    store.refreshGroupAdmission(),
     useProfileStore.getState().refresh(),
     usePushDevicesStore.getState().refresh(),
   ]);

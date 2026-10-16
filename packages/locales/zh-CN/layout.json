@@ -55,5 +55,6 @@
   "layout.notifications.type.postReposted": "{{actor}} 分享了你的动态",
   "layout.notifications.type.mentioned": "{{actor}} 提到了你",
   "layout.notifications.type.message": "{{actor}} 向你发送了消息",
-  "layout.notifications.type.groupInvited": "{{actor}} 邀请你加入群组"
+  "layout.notifications.type.groupInvited": "{{actor}} 邀请你加入群组",
+  "layout.notifications.groupInvitationWaiting": "已接受，等待群成员完成安全入群。"
 }

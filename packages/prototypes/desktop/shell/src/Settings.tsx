@@ -10,7 +10,13 @@
  *
  * Standalone web prototype: mock-data only, no real store / kernel / tauri.
  */
-import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
+import {
+  useEffect,
+  useState,
+  useSyncExternalStore,
+  type Dispatch,
+  type SetStateAction,
+} from 'react';
 import {
   Settings,
   Sparkles,
@@ -58,11 +64,16 @@ import {
   Wifi,
   Wrench,
   MonitorSmartphone,
+  RotateCcw,
   type LucideIcon,
 } from 'lucide-react';
 import { T } from './theme';
 import { createAdvancedSettingsSections } from './AdvancedSettings';
 import type { AdvancedSection, AdvancedSettingsAdapter } from './advancedSettingsAdapter';
+import type {
+  GroupAdmissionAdapter,
+  GroupAdmissionMode,
+} from './groupAdmissionAdapter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // DESIGN SYSTEM (canonical atoms — ui-identity components.md §3 scale)
@@ -700,7 +711,11 @@ function NotificationsSettingsSection() {
 }
 
 // ── General · Privacy & Security ─────────────────────────────────────────────
-function PrivacySection() {
+function PrivacySection({
+  groupAdmissionAdapter,
+}: {
+  groupAdmissionAdapter: GroupAdmissionAdapter;
+}) {
   const [pinLock, setPinLock] = useState(true);
   const [pinEditor, setPinEditor] = useState<'set' | 'change' | null>(null);
   const [pinValue, setPinValue] = useState('');
@@ -709,6 +724,26 @@ function PrivacySection() {
   const [recoveryPhrase, setRecoveryPhrase] = useState('');
   const [restoreState, setRestoreState] = useState<'idle' | 'invalid' | 'restored'>('idle');
   const recoveryWordCount = recoveryPhrase.trim().split(/\s+/).filter(Boolean).length;
+  const groupAdmission = useSyncExternalStore(
+    groupAdmissionAdapter.subscribe,
+    groupAdmissionAdapter.getSnapshot,
+    groupAdmissionAdapter.getSnapshot,
+  );
+  const [groupAdmissionError, setGroupAdmissionError] = useState('');
+  const [groupAdmissionPending, setGroupAdmissionPending] = useState(false);
+
+  const updateGroupAdmissionMode = (mode: GroupAdmissionMode) => {
+    setGroupAdmissionPending(true);
+    setGroupAdmissionError('');
+    void groupAdmissionAdapter.updateMode(
+      mode,
+      groupAdmission.policyRevision,
+    ).catch(error => {
+      setGroupAdmissionError(
+        error instanceof Error ? error.message : 'Group invitation policy update failed.',
+      );
+    }).finally(() => setGroupAdmissionPending(false));
+  };
 
   const savePin = () => {
     if (!/^\d{6}$/.test(pinValue)) return;
@@ -719,6 +754,105 @@ function PrivacySection() {
 
   return (
     <SettingsContainer>
+      <SettingsSection
+        icon={Users}
+        title="Group invitations"
+        subtitle="Only friends can invite you. Choose whether they add you directly or ask first."
+      >
+        <div role="radiogroup" aria-label="Group invitation preference" style={{ display: 'grid', gap: 8 }}>
+          {([
+            ['friends-direct-add', 'Allow friends to add me directly'],
+            ['friends-require-confirmation', 'Require my confirmation'],
+          ] as const).map(([mode, label]) => (
+            <label
+              key={mode}
+              style={{
+                minHeight: 36,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                color: T.text,
+                fontSize: 13,
+              }}
+            >
+              <input
+                type="radio"
+                name="group-admission-mode"
+                value={mode}
+                checked={groupAdmission.mode === mode}
+                disabled={groupAdmissionPending}
+                onChange={() => updateGroupAdmissionMode(mode)}
+              />
+              {label}
+            </label>
+          ))}
+        </div>
+        {groupAdmissionError ? (
+          <div role="alert" style={{ color: T.danger, fontSize: 12, paddingTop: 8 }}>
+            {groupAdmissionError}
+          </div>
+        ) : null}
+        <div style={{ paddingTop: 18 }}>
+          <strong style={{ display: 'block', fontSize: 13, color: T.text, marginBottom: 8 }}>
+            Rejected groups
+          </strong>
+          {groupAdmission.rejectedGroups.length === 0 ? (
+            <span style={{ color: T.textTertiary, fontSize: 12 }}>
+              You have not rejected future invitations from any group.
+            </span>
+          ) : groupAdmission.rejectedGroups.map(group => (
+            <div
+              key={group.conversationId}
+              data-rejected-group={group.conversationId}
+              style={{
+                minHeight: 52,
+                display: 'grid',
+                gridTemplateColumns: 'minmax(0, 1fr) max-content',
+                alignItems: 'center',
+                gap: 12,
+                borderTop: `1px solid ${T.borderSoft}`,
+                paddingBlock: 9,
+              }}
+            >
+              <span style={{ minWidth: 0 }}>
+                <strong style={{ display: 'block', color: T.text, fontSize: 13 }}>
+                  {group.groupName}
+                </strong>
+                {group.leaveState === 'leave-retry-required' ? (
+                  <span style={{ color: T.warning, fontSize: 12 }}>
+                    Future invitations are blocked. Secure leave still needs a retry.
+                  </span>
+                ) : (
+                  <span style={{ color: T.textTertiary, fontSize: 12 }}>
+                    Future invitations remain blocked.
+                  </span>
+                )}
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {group.leaveState === 'leave-retry-required' && group.operationId ? (
+                  <PrimaryBtn
+                    label="Retry leave"
+                    icon={RotateCcw}
+                    onClick={() => {
+                      setGroupAdmissionPending(true);
+                      void groupAdmissionAdapter.retryLeave(group.operationId!).finally(
+                        () => setGroupAdmissionPending(false),
+                      );
+                    }}
+                  />
+                ) : null}
+                <GhostBtn
+                  label="Allow again"
+                  onClick={() => void groupAdmissionAdapter.removeRejectedGroup(
+                    group.conversationId,
+                  )}
+                />
+              </span>
+            </div>
+          ))}
+        </div>
+      </SettingsSection>
+
       <SettingsSection icon={Lock} title="App access" subtitle="Protect Peers Touch on this device.">
         <SettingsRow label="PIN lock" desc="A local PIN protects the encrypted session on this device.">
           <Tag text={pinLock ? 'Enabled' : 'Not set'} color={pinLock ? T.success : T.textTertiary} />
@@ -1833,11 +1967,12 @@ const GROUPS: GroupDef[] = [
 
 function renderSection(sectionId: SectionId, onOpenCommandPalette: () => void,
   federations: JoinedFederation[], setFederations: Dispatch<SetStateAction<JoinedFederation[]>>,
-  advancedAdapter: AdvancedSettingsAdapter, onNavigateAdvanced: (section: AdvancedSection) => void) {
+  advancedAdapter: AdvancedSettingsAdapter, onNavigateAdvanced: (section: AdvancedSection) => void,
+  groupAdmissionAdapter: GroupAdmissionAdapter) {
   switch (sectionId) {
     case 'account': return <AccountSection federations={federations} />;
     case 'notifications': return <NotificationsSettingsSection />;
-    case 'privacy': return <PrivacySection />;
+    case 'privacy': return <PrivacySection groupAdmissionAdapter={groupAdmissionAdapter} />;
     case 'language': return <LanguageSection />;
     case 'station': return <StationSection />;
     case 'discovery': return <DiscoverySection federations={federations} />;
@@ -1855,7 +1990,15 @@ function renderSection(sectionId: SectionId, onOpenCommandPalette: () => void,
   }
 }
 
-export function SettingsPage({ onOpenCommandPalette, advancedAdapter }: { onOpenCommandPalette: () => void; advancedAdapter: AdvancedSettingsAdapter }) {
+export function SettingsPage({
+  onOpenCommandPalette,
+  advancedAdapter,
+  groupAdmissionAdapter,
+}: {
+  onOpenCommandPalette: () => void;
+  advancedAdapter: AdvancedSettingsAdapter;
+  groupAdmissionAdapter: GroupAdmissionAdapter;
+}) {
   const [activeGroup, setActiveGroup] = useState<GroupId>('general');
   const [activeSection, setActiveSection] = useState<SectionId>('account');
   const [federations, setFederations] = useState<JoinedFederation[]>(MOCK_FEDERATIONS);
@@ -1948,7 +2091,15 @@ export function SettingsPage({ onOpenCommandPalette, advancedAdapter }: { onOpen
         ) : null}
 
         <div style={{ flex: 1, minWidth: 0, overflowY: 'auto' }}>
-          {renderSection(current.id, onOpenCommandPalette, federations, setFederations, advancedAdapter, setActiveSection)}
+          {renderSection(
+            current.id,
+            onOpenCommandPalette,
+            federations,
+            setFederations,
+            advancedAdapter,
+            setActiveSection,
+            groupAdmissionAdapter,
+          )}
         </div>
       </div>
     </div>

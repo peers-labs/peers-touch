@@ -6,6 +6,7 @@ import "domain/chat/attachment.proto";
 import "domain/chat/content.proto";
 import "domain/chat/conversation.proto";
 import "domain/chat/endpoint.proto";
+import "domain/chat/group_admission.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/chat;chat";
@@ -158,6 +159,8 @@ message MembershipTransitionIntent {
   string leave_intent_id = 9;
   string authority_plan_id = 10;
   bytes authority_plan_sha256 = 11;
+  GroupAdmissionFulfillment admission_fulfillment = 12;
+  repeated GroupAdmissionFulfillment genesis_admission_fulfillments = 13;
 }
 
 message DissolveConversationIntent {}

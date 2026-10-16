@@ -398,10 +398,14 @@
       "features": [
         "chat-native-visible-clients",
         "chat-native-friendship-projection",
-        "chat-presence-layout-stability"
+        "chat-presence-layout-stability",
+        "chat-group-admission"
       ],
       "required_gates": [
         "proto-build",
+        "station-api-ownership",
+        "station-messaging-unit",
+        "messaging-platform-contract",
         "desktop-check",
         "chat-native-visible-static",
         "chat-lifecycle-interactions-group-e2e",
@@ -470,7 +474,20 @@
         "apps/desktop/src/components/common/SquareAvatar.tsx",
         "apps/station/app/conf/actor.yml",
         "apps/station/frame/touch/actor/seed.go",
-        "apps/desktop/src/components/settings/RecoverySettings.tsx"
+        "apps/desktop/src/components/settings/RecoverySettings.tsx",
+        "model/domain/chat/group_admission.proto",
+        "apps/station/app/subserver/conversation/groupadmission/**",
+        "apps/station/app/subserver/conversation/infrastructure/persistence/group_admission_store.go",
+        "apps/station/app/subserver/conversation/production_group_admission.go",
+        "apps/desktop/src-tauri/src/interface/tauri_commands/group_admission.rs",
+        "apps/desktop/src/store/groupInvitations.ts",
+        "apps/desktop/src/store/settings.ts",
+        "apps/desktop/src/runtimes/settingsRuntime.ts",
+        "apps/desktop/src/runtimes/settingsRuntime.test.ts",
+        "apps/desktop/src/components/notifications/NotificationRow.tsx",
+        "apps/desktop/src/components/settings/PrivacySettings.tsx",
+        "tooling/acceptance/fixtures/chat_group_leave_fault_proxy.py",
+        "tooling/acceptance/features/chat-group-admission.yaml"
       ],
       "evidence": {
         "truth_sources": [
@@ -492,7 +509,9 @@
           "Immediate local background preview with asynchronous durable persistence",
           "Canonical local message search with bounded clear affordance",
           "Device-local conversation clearing and later-message continuity",
-          "recoverable visible Group creation failure"
+          "recoverable visible Group creation failure",
+          "friend-only Group admission preference, invitation decision, and fulfillment",
+          "rejected-Group and leave-and-reject retry projection"
         ],
         "proven_by": [
           "chat-lifecycle-onboarding-e2e",
@@ -513,14 +532,16 @@
           "CHAT-UR09: Current-profile Native onboarding proves an authoritative Station-name summary plus expandable copyable raw identity details",
           "Current-source Native Direct sends keep the newest row clear of the composer and render seeded peer avatars from bundled image data",
           "Three source-bound Native clients distinguish same-name PTIDs by Federation and Home Station, render one avatar identity per PTID, converge on the UI-created MLS Group, and restore that Group after a member restart",
-          "Unavailable-member Group preparation preserves the visible selection and exposes typed inline retry"
+          "Unavailable-member Group preparation preserves the visible selection and exposes typed inline retry",
+          "Source and focused contract evidence proves revision-fenced admission, bound fulfillment, terminal invitation/grant convergence, and durable leave-and-reject operation semantics"
         ],
         "unproven_scope": [
           "W8 remains unproven until all four environment-evidence gates pass",
         "Presence and layout stability on Linux, Windows, and Mobile remain UNPROVEN until those runtime cells execute the dedicated journey",
           "CHAT-UR10 through CHAT-UR13 remain UNPROVEN until chat-lifecycle-direct-e2e passes on exact source",
           "The corrected friendship and Group creation projections remain Native-UI UNPROVEN until chat-native-group-mls-e2e passes on exact source",
-          "Cross-Station onboarding remains UNPROVEN until the continuity closure runs the onboarding Journey across distinct Station bindings"
+          "Cross-Station onboarding remains UNPROVEN until the continuity closure runs the onboarding Journey across distinct Station bindings",
+          "CHAT-UR14 and CHAT-UR15 remain Native-UI UNPROVEN until chat-native-group-mls-e2e passes on exact source"
         ]
       }
     },

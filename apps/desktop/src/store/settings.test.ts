@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const api = vi.hoisted(() => ({
   accountGetActive: vi.fn(),
+  groupAdmissionSettings: vi.fn(),
   notificationPreferences: vi.fn(),
   notificationPreferencesUpdate: vi.fn(),
+  retryLeaveAndRejectGroup: vi.fn(),
 }));
 const session = vi.hoisted(() => ({
   actorPtid: 'ptid:self' as string | null,
@@ -291,5 +293,70 @@ describe('settings notification preference projection', () => {
       notificationPreferences: [],
       notificationPreferencesRevision: 0,
     });
+  });
+});
+
+describe('settings group leave-and-reject projection', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    session.actorPtid = 'ptid:self';
+    session.sessionEpoch = 1;
+    useSettingsStore.setState({
+      groupAdmissionPreference: {
+        actorPtid: 'ptid:self',
+        mode: 1,
+        revision: 4,
+        updatedAt: null,
+      },
+      rejectedGroups: [{
+        conversationId: 'group-1',
+        federationId: 'federation-1',
+        authorityStationPeerId: 'station-authority',
+        groupNameSnapshot: 'Trusted group',
+        policyRevision: 4,
+        rejectedAt: null,
+        leaveRejectOperationId: 'operation-1',
+        leaveRejectState: 5,
+        leaveRejectFailureCode: 'LEAVE_INTENT_CREATE_REQUIRED',
+      }],
+      groupAdmissionLoading: false,
+      groupAdmissionError: null,
+      groupAdmissionMutating: false,
+    });
+  });
+
+  it('retries the same operation and reconciles the rejected-group state', async () => {
+    api.retryLeaveAndRejectGroup.mockResolvedValue({
+      operationId: 'operation-1',
+      conversationId: 'group-1',
+      state: 3,
+      rejectionPolicyRevision: 4,
+      leaveIntentId: 'leave-intent-1',
+      fulfillmentTransitionId: '',
+      failureCode: '',
+    });
+    api.groupAdmissionSettings.mockResolvedValue({
+      preference: {
+        actorPtid: 'ptid:self',
+        mode: 1,
+        revision: 4,
+        updatedAt: null,
+      },
+      rejectedGroups: [{
+        ...useSettingsStore.getState().rejectedGroups[0],
+        leaveRejectState: 3,
+        leaveRejectFailureCode: '',
+      }],
+    });
+
+    await useSettingsStore.getState().retryRejectedGroupLeave('operation-1');
+
+    expect(api.retryLeaveAndRejectGroup).toHaveBeenCalledWith('operation-1');
+    expect(useSettingsStore.getState().rejectedGroups[0]).toMatchObject({
+      leaveRejectOperationId: 'operation-1',
+      leaveRejectState: 3,
+      leaveRejectFailureCode: '',
+    });
+    expect(useSettingsStore.getState().groupAdmissionMutating).toBe(false);
   });
 });

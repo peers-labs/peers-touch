@@ -7,12 +7,12 @@
 
 | Domain | Features | Wired | Proven | Coverage |
 |--------|----------|-------|--------|----------|
-| Chat | 22 | 22 | 0 | 0% |
+| Chat | 23 | 23 | 0 | 0% |
 | Mobile | 9 | 9 | 0 | 0% |
 | Federation | 5 | 4 | 0 | 0% |
 | Applet | 1 | 1 | 0 | 0% |
 | Station Dashboard | 2 | 2 | 0 | 0% |
-| **Total** | 39 | 38 | 0 | 0% |
+| **Total** | 40 | 39 | 0 | 0% |
 
 ## Infra (Core Self-Validation)
 
@@ -26,6 +26,7 @@
 |---------|---------------|------------|--------|--------|
 | `chat-client-unification-integrity` | `chat-lifecycle-tree-zero-reference-e2e` | 1/1 | 0/1 | WIRED |
 | `chat-direct-delivered-receipt` | `station-messaging-unit`, `messaging-platform-contract`, `desktop-check`, `chat-native-visible-static`, `chat-native-current-profile-two-client-e2e`, `chat-native-submitted-command-recovery-e2e`, `chat-native-two-client-e2e` | 7/7 | 0/7 | WIRED |
+| `chat-group-admission` | `proto-build`, `station-api-ownership`, `station-messaging-unit`, `messaging-platform-contract`, `desktop-check`, `chat-native-visible-static`, `chat-native-group-mls-e2e` | 7/7 | 0/7 | WIRED |
 | `chat-group-live` | `desktop-check`, `chat-native-visible-static`, `chat-lifecycle-group-live-e2e` | 3/3 | 0/3 | WIRED |
 | `chat-live-voice-video` | `desktop-check`, `chat-native-visible-static`, `chat-lifecycle-live-voice-e2e` | 3/3 | 0/3 | WIRED |
 | `chat-message-interactions` | `station-messaging-unit`, `messaging-platform-contract`, `desktop-check`, `chat-native-visible-static`, `chat-native-interactions-e2e`, `chat-lifecycle-interactions-group-e2e` | 6/6 | 0/6 | WIRED |

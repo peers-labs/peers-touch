@@ -21,6 +21,7 @@ import (
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
 	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 	federationruntime "github.com/peers-labs/peers-touch/station/frame/core/federation"
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	chatmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/chat"
 	"google.golang.org/protobuf/proto"
@@ -41,6 +42,14 @@ func (s *subServer) FederationPeerHandler(
 	switch route {
 	case federationruntime.PeerRouteConversationCommandPrepare:
 		return s.handleFederatedCommandPrepare, nil
+	case federationruntime.PeerRouteConversationGroupAdmissionEvaluate:
+		return s.handleFederatedGroupAdmissionEvaluate, nil
+	case federationruntime.PeerRouteConversationGroupAdmissionBind:
+		return s.handleFederatedGroupAdmissionBind, nil
+	case federationruntime.PeerRouteConversationGroupAdmissionComplete:
+		return s.handleFederatedGroupAdmissionComplete, nil
+	case federationruntime.PeerRouteConversationGroupInvitationActivate:
+		return s.handleFederatedGroupInvitationActivate, nil
 	case federationruntime.PeerRouteConversationLeaveIntentSubmit:
 		return s.handleFederatedLeaveIntentSubmit, nil
 	case federationruntime.PeerRouteConversationLeaveIntentList:
@@ -69,6 +78,204 @@ func (s *subServer) FederationPeerHandler(
 	}
 }
 
+func (s *subServer) handleFederatedGroupAdmissionEvaluate(
+	ctx context.Context,
+	request server.Request,
+	response server.Response,
+) error {
+	input := &chatmodel.EvaluateFederatedGroupAdmissionRequest{}
+	if err := productionDecodePeerRequest(request, input); err != nil {
+		return err
+	}
+	claims := httpadapter.GetVerifiedClaims(ctx)
+	evaluation := input.GetRequest()
+	if claims == nil || evaluation == nil ||
+		evaluation.GetInviter() == nil ||
+		evaluation.GetInviter().GetActor() == nil ||
+		input.GetSourceAuthorityStationPeerId() != claims.Issuer ||
+		evaluation.GetAuthorityStationPeerId() != claims.Issuer ||
+		evaluation.GetInviteeHomeStationPeerId() != string(s.localStation) ||
+		claims.Custom[federationruntime.ClaimFederationID] != evaluation.GetFederationId() ||
+		claims.Custom[federationruntime.ClaimConversationID] != evaluation.GetConversationId() ||
+		claims.Custom[federationruntime.ClaimActorPTID] !=
+			evaluation.GetInviter().GetActor().GetPtid() ||
+		claims.Custom[federationruntime.ClaimDeviceID] !=
+			evaluation.GetInviter().GetDeviceId() ||
+		claims.Custom[federationruntime.ClaimRequestID] != evaluation.GetRequestId() ||
+		claims.Custom[federationruntime.ClaimSourceStationPeerID] != claims.Issuer ||
+		claims.Custom[federationruntime.ClaimTargetStationPeerID] != claims.Audience {
+		return server.Forbidden(
+			"Federation claims do not match the group-admission evaluation",
+		)
+	}
+	result, wake, err := s.groupAdmission.Evaluate(ctx, evaluation)
+	if err != nil {
+		return mapProductionConversationError(ctx, err)
+	}
+	if wake != nil {
+		if err := s.composition.realtime.PublishServiceNotification(
+			ctx,
+			ports.ServiceNotificationWake{
+				RecipientActor:   valueobject.PTID(wake.RecipientPTID),
+				NotificationID:   wake.NotificationID,
+				NotificationType: wake.Type,
+				Category:         wake.Category,
+				GroupKey:         wake.GroupKey,
+				CreatedAtUnixMs:  wake.CreatedAt.UTC().UnixMilli(),
+			},
+		); err != nil {
+			logger.Warn(
+				ctx,
+				"Conversation group-invitation wake failed",
+				"invitation_id",
+				result.GetInvitation().GetInvitationId(),
+				"error",
+				err,
+			)
+		}
+	}
+	return productionWritePeerResponse(
+		response,
+		&chatmodel.EvaluateFederatedGroupAdmissionResponse{
+			Result: result,
+		},
+	)
+}
+
+func (s *subServer) handleFederatedGroupAdmissionBind(
+	ctx context.Context,
+	request server.Request,
+	response server.Response,
+) error {
+	input := &chatmodel.BindFederatedGroupAdmissionFulfillmentRequest{}
+	if err := productionDecodePeerRequest(request, input); err != nil {
+		return err
+	}
+	claims := httpadapter.GetVerifiedClaims(ctx)
+	binding := input.GetRequest()
+	if claims == nil || binding == nil || binding.GetFulfillment() == nil ||
+		input.GetSourceAuthorityStationPeerId() != claims.Issuer ||
+		binding.GetFulfillment().GetInviteeHomeStationPeerId() !=
+			string(s.localStation) ||
+		claims.Custom[federationruntime.ClaimRequestID] != binding.GetRequestId() ||
+		claims.Custom[federationruntime.ClaimAuthorityPlanID] !=
+			binding.GetAuthorityPlanId() ||
+		claims.Custom[federationruntime.ClaimSourceStationPeerID] != claims.Issuer ||
+		claims.Custom[federationruntime.ClaimTargetStationPeerID] != claims.Audience {
+		return server.Forbidden(
+			"Federation claims do not match the group-admission binding",
+		)
+	}
+	grant, err := s.groupAdmission.BindFulfillment(ctx, binding)
+	if err != nil {
+		return mapProductionConversationError(ctx, err)
+	}
+	return productionWritePeerResponse(
+		response,
+		&chatmodel.BindFederatedGroupAdmissionFulfillmentResponse{
+			Result: &chatmodel.GroupAdmissionFulfillmentResponse{
+				Grant: grant,
+			},
+		},
+	)
+}
+
+func (s *subServer) handleFederatedGroupAdmissionComplete(
+	ctx context.Context,
+	request server.Request,
+	response server.Response,
+) error {
+	input := &chatmodel.CompleteFederatedGroupAdmissionTransitionRequest{}
+	if err := productionDecodePeerRequest(request, input); err != nil {
+		return err
+	}
+	claims := httpadapter.GetVerifiedClaims(ctx)
+	completion := input.GetRequest()
+	event := completion.GetCommittedEvent()
+	fact := event.GetMembershipTransitionCommitted()
+	if claims == nil || completion == nil || event == nil || fact == nil ||
+		input.GetSourceAuthorityStationPeerId() != claims.Issuer ||
+		completion.GetTargetHomeStationPeerId() != string(s.localStation) ||
+		event.GetAuthorityStationPeerId() != claims.Issuer ||
+		claims.Custom[federationruntime.ClaimFederationID] !=
+			fact.GetPostState().GetFederationId() ||
+		claims.Custom[federationruntime.ClaimConversationID] !=
+			event.GetConversationId() ||
+		claims.Custom[federationruntime.ClaimActorPTID] !=
+			completion.GetActorPtid() ||
+		claims.Custom[federationruntime.ClaimAuthorityPlanID] !=
+			completion.GetAuthorityPlanId() ||
+		claims.Custom[federationruntime.ClaimTransitionID] !=
+			fact.GetTransitionId() ||
+		claims.Custom[federationruntime.ClaimAuthorityEpoch] !=
+			strconv.FormatInt(fact.GetPostState().GetAuthorityEpoch(), 10) ||
+		claims.Custom[federationruntime.ClaimSourceStationPeerID] != claims.Issuer ||
+		claims.Custom[federationruntime.ClaimTargetStationPeerID] != claims.Audience {
+		return server.Forbidden(
+			"Federation claims do not match group-admission completion",
+		)
+	}
+	if err := s.composition.applyGroupAdmissionTransitionCompletion(
+		ctx,
+		completion,
+	); err != nil {
+		return mapProductionConversationError(ctx, err)
+	}
+	return productionWritePeerResponse(
+		response,
+		&chatmodel.CompleteFederatedGroupAdmissionTransitionResponse{
+			Result: &chatmodel.CompleteGroupAdmissionTransitionResponse{
+				Completed: true,
+			},
+		},
+	)
+}
+
+func (s *subServer) handleFederatedGroupInvitationActivate(
+	ctx context.Context,
+	request server.Request,
+	response server.Response,
+) error {
+	input := &chatmodel.ActivateFederatedGroupGenesisInvitationsRequest{}
+	if err := productionDecodePeerRequest(request, input); err != nil {
+		return err
+	}
+	claims := httpadapter.GetVerifiedClaims(ctx)
+	activation := input.GetRequest()
+	if claims == nil || activation == nil ||
+		input.GetSourceAuthorityStationPeerId() != claims.Issuer ||
+		activation.GetAuthorityStationPeerId() != claims.Issuer ||
+		claims.Custom[federationruntime.ClaimConversationID] !=
+			activation.GetConversationId() ||
+		claims.Custom[federationruntime.ClaimAuthorityPlanID] !=
+			activation.GetAuthorityPlanId() ||
+		claims.Custom[federationruntime.ClaimSourceStationPeerID] != claims.Issuer ||
+		claims.Custom[federationruntime.ClaimTargetStationPeerID] != claims.Audience {
+		return server.Forbidden(
+			"Federation claims do not match deferred group-invitation activation",
+		)
+	}
+	wakes, activated, err := s.groupAdmission.ActivateDeferredInvitations(
+		ctx,
+		activation.GetAuthorityPlanId(),
+		activation.GetConversationId(),
+	)
+	if err != nil {
+		return mapProductionConversationError(ctx, err)
+	}
+	for _, wake := range wakes {
+		s.publishGroupAdmissionWake(ctx, wake)
+	}
+	return productionWritePeerResponse(
+		response,
+		&chatmodel.ActivateFederatedGroupGenesisInvitationsResponse{
+			Result: &chatmodel.ActivateGroupGenesisInvitationsResponse{
+				ActivatedCount: activated,
+			},
+		},
+	)
+}
+
 func (s *subServer) handleFederatedCommandPrepare(
 	ctx context.Context,
 	request server.Request,
@@ -79,6 +286,45 @@ func (s *subServer) handleFederatedCommandPrepare(
 		return err
 	}
 	claims := httpadapter.GetVerifiedClaims(ctx)
+	if membership := input.GetMembershipRequest(); membership != nil {
+		if claims == nil ||
+			membership.GetSender() == nil ||
+			membership.GetSender().GetActor() == nil ||
+			input.GetSourceHomeStationPeerId() != claims.Issuer ||
+			claims.Custom[federationruntime.ClaimConversationID] !=
+				membership.GetConversationId() ||
+			claims.Custom[federationruntime.ClaimActorPTID] !=
+				membership.GetSender().GetActor().GetPtid() ||
+			claims.Custom[federationruntime.ClaimDeviceID] !=
+				membership.GetSender().GetDeviceId() ||
+			claims.Custom[federationruntime.ClaimSourceStationPeerID] !=
+				claims.Issuer ||
+			claims.Custom[federationruntime.ClaimTargetStationPeerID] !=
+				claims.Audience {
+			return server.Forbidden(
+				"Federation claims do not match the Conversation membership preparation",
+			)
+		}
+		requester, err := valueobject.NewEndpoint(
+			membership.GetSender().GetActor().GetPtid(),
+			membership.GetSender().GetDeviceId(),
+		)
+		if err != nil {
+			return mapProductionConversationError(ctx, err)
+		}
+		plan, err := s.prepareMembershipPlan(ctx, membership, requester)
+		if err != nil {
+			return mapProductionConversationError(ctx, err)
+		}
+		return productionWritePeerResponse(
+			response,
+			&chatmodel.PrepareFederatedConversationCommandResponse{
+				Preparation: &chatmodel.PrepareFederatedConversationCommandResponse_MembershipPlan{
+					MembershipPlan: plan,
+				},
+			},
+		)
+	}
 	nested := input.GetRequest()
 	if claims == nil ||
 		nested == nil ||

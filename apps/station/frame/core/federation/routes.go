@@ -26,6 +26,14 @@ const (
 	FederationCatalogSearchRoute = "/federation/catalog/search"
 	// ConversationCommandPrepareRoute prepares a command at its authority.
 	ConversationCommandPrepareRoute = "/federation/conversation/command/prepare"
+	// ConversationGroupAdmissionEvaluateRoute evaluates group admission at the invitee Home Station.
+	ConversationGroupAdmissionEvaluateRoute = "/federation/conversation/group-admission/evaluate"
+	// ConversationGroupAdmissionBindRoute binds one admission grant to an authority plan.
+	ConversationGroupAdmissionBindRoute = "/federation/conversation/group-admission/bind"
+	// ConversationGroupAdmissionCompleteRoute projects a committed membership transition at the actor Home Station.
+	ConversationGroupAdmissionCompleteRoute = "/federation/conversation/group-admission/complete"
+	// ConversationGroupInvitationActivateRoute activates deferred invitations after Group genesis commits.
+	ConversationGroupInvitationActivateRoute = "/federation/conversation/group-admission/activate"
 	// ConversationLeaveIntentSubmitRoute submits a signed leave intent.
 	ConversationLeaveIntentSubmitRoute = "/federation/conversation/mls/leave-intent"
 	// ConversationLeaveIntentListRoute lists pending leave intents.
@@ -70,29 +78,33 @@ const (
 type PeerRoute string
 
 const (
-	PeerRouteActorEndpointManifest            PeerRoute = "actor-endpoint-manifest"
-	PeerRoutePresenceQuery                    PeerRoute = "presence-query"
-	PeerRouteFederationCatalogSearch          PeerRoute = "federation-catalog-search"
-	PeerRouteConversationCommandPrepare       PeerRoute = "conversation-command-prepare"
-	PeerRouteConversationLeaveIntentSubmit    PeerRoute = "conversation-leave-intent-submit"
-	PeerRouteConversationLeaveIntentList      PeerRoute = "conversation-leave-intent-list"
-	PeerRouteConversationFollowerEvents       PeerRoute = "conversation-follower-events"
-	PeerRouteConversationEventSync            PeerRoute = "conversation-event-sync"
-	PeerRouteConversationAttachmentObject     PeerRoute = "conversation-attachment-object"
-	PeerRouteConversationAttachmentStatus     PeerRoute = "conversation-attachment-status"
-	PeerRouteConversationAttachmentBegin      PeerRoute = "conversation-attachment-begin"
-	PeerRouteConversationAttachmentChunk      PeerRoute = "conversation-attachment-chunk"
-	PeerRouteConversationAttachmentComplete   PeerRoute = "conversation-attachment-complete"
-	PeerRouteConversationAttachmentCancel     PeerRoute = "conversation-attachment-cancel"
-	PeerRouteKeyExchangeDirectFetch           PeerRoute = "key-exchange-direct-fetch"
-	PeerRouteKeyExchangeMLSFetch              PeerRoute = "key-exchange-mls-fetch"
-	PeerRouteKeyExchangeMLSClaim              PeerRoute = "key-exchange-mls-claim"
-	PeerRouteKeyExchangeContentPreKeyClaim    PeerRoute = "key-exchange-content-prekey-claim"
-	PeerRouteKeyExchangeContentPreKeyValidate PeerRoute = "key-exchange-content-prekey-validate"
-	PeerRouteRealtimeCallResolution           PeerRoute = "realtime-call-resolution"
-	PeerRouteRealtimeSignal                   PeerRoute = "realtime-signal"
-	PeerRouteGroupCallAuthorityJoin           PeerRoute = "group-call-authority-join"
-	PeerRouteSocialPrivateObjectRead          PeerRoute = "social-private-object-read"
+	PeerRouteActorEndpointManifest               PeerRoute = "actor-endpoint-manifest"
+	PeerRoutePresenceQuery                       PeerRoute = "presence-query"
+	PeerRouteFederationCatalogSearch             PeerRoute = "federation-catalog-search"
+	PeerRouteConversationCommandPrepare          PeerRoute = "conversation-command-prepare"
+	PeerRouteConversationGroupAdmissionEvaluate  PeerRoute = "conversation-group-admission-evaluate"
+	PeerRouteConversationGroupAdmissionBind      PeerRoute = "conversation-group-admission-bind"
+	PeerRouteConversationGroupAdmissionComplete  PeerRoute = "conversation-group-admission-complete"
+	PeerRouteConversationGroupInvitationActivate PeerRoute = "conversation-group-invitation-activate"
+	PeerRouteConversationLeaveIntentSubmit       PeerRoute = "conversation-leave-intent-submit"
+	PeerRouteConversationLeaveIntentList         PeerRoute = "conversation-leave-intent-list"
+	PeerRouteConversationFollowerEvents          PeerRoute = "conversation-follower-events"
+	PeerRouteConversationEventSync               PeerRoute = "conversation-event-sync"
+	PeerRouteConversationAttachmentObject        PeerRoute = "conversation-attachment-object"
+	PeerRouteConversationAttachmentStatus        PeerRoute = "conversation-attachment-status"
+	PeerRouteConversationAttachmentBegin         PeerRoute = "conversation-attachment-begin"
+	PeerRouteConversationAttachmentChunk         PeerRoute = "conversation-attachment-chunk"
+	PeerRouteConversationAttachmentComplete      PeerRoute = "conversation-attachment-complete"
+	PeerRouteConversationAttachmentCancel        PeerRoute = "conversation-attachment-cancel"
+	PeerRouteKeyExchangeDirectFetch              PeerRoute = "key-exchange-direct-fetch"
+	PeerRouteKeyExchangeMLSFetch                 PeerRoute = "key-exchange-mls-fetch"
+	PeerRouteKeyExchangeMLSClaim                 PeerRoute = "key-exchange-mls-claim"
+	PeerRouteKeyExchangeContentPreKeyClaim       PeerRoute = "key-exchange-content-prekey-claim"
+	PeerRouteKeyExchangeContentPreKeyValidate    PeerRoute = "key-exchange-content-prekey-validate"
+	PeerRouteRealtimeCallResolution              PeerRoute = "realtime-call-resolution"
+	PeerRouteRealtimeSignal                      PeerRoute = "realtime-signal"
+	PeerRouteGroupCallAuthorityJoin              PeerRoute = "group-call-authority-join"
+	PeerRouteSocialPrivateObjectRead             PeerRoute = "social-private-object-read"
 )
 
 // PeerEndpointResolver resolves a resource-owner endpoint lazily at request
@@ -129,6 +141,10 @@ var peerRouteSpecs = []peerRouteSpec{
 	{PeerRoutePresenceQuery, "federation-presence-query", PresenceQueryRoute, server.POST, PresenceQueryScope},
 	{PeerRouteFederationCatalogSearch, "federation-catalog-search", FederationCatalogSearchRoute, server.POST, FederationCatalogSearchScope},
 	{PeerRouteConversationCommandPrepare, "federation-conversation-command-prepare", ConversationCommandPrepareRoute, server.POST, ConversationCommandPrepareScope},
+	{PeerRouteConversationGroupAdmissionEvaluate, "federation-conversation-group-admission-evaluate", ConversationGroupAdmissionEvaluateRoute, server.POST, ConversationGroupAdmissionScope},
+	{PeerRouteConversationGroupAdmissionBind, "federation-conversation-group-admission-bind", ConversationGroupAdmissionBindRoute, server.POST, ConversationGroupAdmissionScope},
+	{PeerRouteConversationGroupAdmissionComplete, "federation-conversation-group-admission-complete", ConversationGroupAdmissionCompleteRoute, server.POST, ConversationGroupAdmissionScope},
+	{PeerRouteConversationGroupInvitationActivate, "federation-conversation-group-invitation-activate", ConversationGroupInvitationActivateRoute, server.POST, ConversationGroupAdmissionScope},
 	{PeerRouteConversationLeaveIntentSubmit, "federation-conversation-leave-intent-submit", ConversationLeaveIntentSubmitRoute, server.POST, ConversationLeaveIntentScope},
 	{PeerRouteConversationLeaveIntentList, "federation-conversation-leave-intent-list", ConversationLeaveIntentListRoute, server.POST, ConversationLeaveIntentScope},
 	{PeerRouteConversationFollowerEvents, "federation-conversation-follower-events", ConversationFollowerEventsRoute, server.POST, ConversationFollowerEventsScope},
@@ -252,6 +268,34 @@ func (f *PeerRouteFactory) Handlers() []server.Handler {
 			server.POST,
 			f.dispatchRoute(PeerRouteConversationCommandPrepare),
 			f.wrappers[PeerRouteConversationCommandPrepare],
+		),
+		server.NewSimpleHandler(
+			"federation-conversation-group-admission-evaluate",
+			ConversationGroupAdmissionEvaluateRoute,
+			server.POST,
+			f.dispatchRoute(PeerRouteConversationGroupAdmissionEvaluate),
+			f.wrappers[PeerRouteConversationGroupAdmissionEvaluate],
+		),
+		server.NewSimpleHandler(
+			"federation-conversation-group-admission-bind",
+			ConversationGroupAdmissionBindRoute,
+			server.POST,
+			f.dispatchRoute(PeerRouteConversationGroupAdmissionBind),
+			f.wrappers[PeerRouteConversationGroupAdmissionBind],
+		),
+		server.NewSimpleHandler(
+			"federation-conversation-group-admission-complete",
+			ConversationGroupAdmissionCompleteRoute,
+			server.POST,
+			f.dispatchRoute(PeerRouteConversationGroupAdmissionComplete),
+			f.wrappers[PeerRouteConversationGroupAdmissionComplete],
+		),
+		server.NewSimpleHandler(
+			"federation-conversation-group-invitation-activate",
+			ConversationGroupInvitationActivateRoute,
+			server.POST,
+			f.dispatchRoute(PeerRouteConversationGroupInvitationActivate),
+			f.wrappers[PeerRouteConversationGroupInvitationActivate],
 		),
 		server.NewSimpleHandler(
 			"federation-conversation-leave-intent-submit",

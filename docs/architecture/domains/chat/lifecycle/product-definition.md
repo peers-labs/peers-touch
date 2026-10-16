@@ -1,8 +1,8 @@
 # Chat Lifecycle - Product Definition
 
 > **Status**: active
-> **Version**: v1.2
-> **Created**: 2026-09-16 | **Updated**: 2026-09-18
+> **Version**: v1.3
+> **Created**: 2026-09-16 | **Updated**: 2026-10-16
 > **Owner**: Chat Product Team
 
 ---
@@ -62,7 +62,7 @@ current-source claim.
 | CHAT-C06 | Rich attachments | required | Image, file, and screenshot content is captured without resizing the app, encrypted, resumable, visible, downloadable, and recoverable |
 | CHAT-C07 | Recorded voice messages | required | Record, preview/cancel, send, receive, play, seek, retry, and restore an encrypted voice note with truthful duration/progress |
 | CHAT-C08 | Message interactions and presence | required | Reply/thread, edit, retract, reaction, pin, read, and typing converge across members and restart without false failure after authority acceptance; visible presence is reconciled from the Presence owner and never guessed |
-| CHAT-C09 | Group lifecycle | required | Create, add/remove/leave, role/owner changes, rename, dissolve, message, and preserve entitled history |
+| CHAT-C09 | Group lifecycle | required | Create and manage groups, apply the actor's friend-only direct-add policy, decide pending invitations, reject future invitations per group, leave or leave-and-reject, change membership/roles/owner/settings, dissolve, message, and preserve entitled history |
 | CHAT-C10 | Live one-to-one voice and video | required | Ring, accept/reject, connect audio/video, mute, toggle or change camera/input, reconnect, and end through WebRTC direct/TURN paths |
 | CHAT-C11 | Continuity and portability | required | Cross-Station, multi-device, revoke, offline delivery, fresh-install recovery, and failure diagnostics preserve product truth |
 | CHAT-C12 | Group live voice and video | required | Start or join an audio/video call from an active group, converge participant/media state across active members, recover from reconnect, and end without leaking media to removed or revoked members |
@@ -110,6 +110,10 @@ Resumable chunk upload is not called streaming voice. Group calling is
 - Acceptance fixtures do not inject expected identity into the observed result
   and then claim verification.
 - UI never converts failure into success, read, delivered, or ready state.
+- A user is never added through the confirmation-required path before an
+  accepted invitation is fulfilled by one authoritative membership transition.
+- A rejected-group entry blocks both direct add and decision-inbox creation
+  until the user removes that exact group from the list.
 - No legacy route, local fallback, alias, or dual-write path may become a
   second business owner.
 

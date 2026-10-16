@@ -4,8 +4,10 @@ import {
   type AccountIdentity,
   type ActorDevice,
   type Agent,
+  type GroupAdmissionPreferenceData,
   type NotificationPreferenceData,
   type NotificationPreferencePatchInput,
+  type RejectedGroupData,
 } from '../services/desktop_api';
 import { toolService, type ToolInfo } from '../services/tool-service';
 import { log } from '../utils/logger';
@@ -66,6 +68,11 @@ interface SettingsState extends RevalidationState {
   notificationPreferencesLoading: boolean;
   notificationPreferencesError: string | null;
   notificationPreferenceSavingCategory: number | null;
+  groupAdmissionPreference: GroupAdmissionPreferenceData | null;
+  rejectedGroups: RejectedGroupData[];
+  groupAdmissionLoading: boolean;
+  groupAdmissionError: string | null;
+  groupAdmissionMutating: boolean;
   chatScreenshotShortcut: string;
 
   loadChatPreferences: () => Promise<void>;
@@ -82,6 +89,11 @@ interface SettingsState extends RevalidationState {
     patch: Omit<NotificationPreferencePatchInput, 'category'>,
   ) => Promise<void>;
   clearNotificationPreferences: () => void;
+  refreshGroupAdmission: () => Promise<void>;
+  updateGroupAdmissionMode: (mode: number) => Promise<void>;
+  removeRejectedGroup: (conversationId: string) => Promise<void>;
+  retryRejectedGroupLeave: (operationId: string) => Promise<void>;
+  clearGroupAdmission: () => void;
   setChatScreenshotShortcut: (shortcut: string) => void;
   setCurrentAgent: (name: string) => void;
   setDefaultAgent: (id: string) => Promise<void>;
@@ -103,6 +115,11 @@ export const useSettingsStore = createDesktopStore<SettingsState>('settings', (s
   notificationPreferencesLoading: false,
   notificationPreferencesError: null,
   notificationPreferenceSavingCategory: null,
+  groupAdmissionPreference: null,
+  rejectedGroups: [],
+  groupAdmissionLoading: false,
+  groupAdmissionError: null,
+  groupAdmissionMutating: false,
   chatScreenshotShortcut: DEFAULT_CHAT_SCREENSHOT_SHORTCUT,
   loading: false,
   error: null,
@@ -189,6 +206,11 @@ export const useSettingsStore = createDesktopStore<SettingsState>('settings', (s
     notificationPreferencesLoading: false,
     notificationPreferencesError: null,
     notificationPreferenceSavingCategory: null,
+    groupAdmissionPreference: null,
+    rejectedGroups: [],
+    groupAdmissionLoading: false,
+    groupAdmissionError: null,
+    groupAdmissionMutating: false,
   }),
 
   refreshDevices: async () => {
@@ -355,6 +377,117 @@ export const useSettingsStore = createDesktopStore<SettingsState>('settings', (s
     notificationPreferencesLoading: false,
     notificationPreferencesError: null,
     notificationPreferenceSavingCategory: null,
+  }),
+
+  refreshGroupAdmission: async () => {
+    const fence = currentSettingsSessionFence();
+    if (!fence) {
+      get().clearGroupAdmission();
+      return;
+    }
+    set({ groupAdmissionLoading: true, groupAdmissionError: null });
+    try {
+      const snapshot = await api.groupAdmissionSettings();
+      if (!settingsSessionFenceMatches(fence)) return;
+      set({
+        groupAdmissionPreference: snapshot.preference,
+        rejectedGroups: snapshot.rejectedGroups,
+        groupAdmissionLoading: false,
+        groupAdmissionError: null,
+      });
+    } catch (error) {
+      if (!settingsSessionFenceMatches(fence)) return;
+      const message = toStoreError(error);
+      log.warn('settings', 'Failed to refresh group admission settings', { error: message });
+      set({ groupAdmissionLoading: false, groupAdmissionError: message });
+    }
+  },
+
+  updateGroupAdmissionMode: async (mode) => {
+    const fence = currentSettingsSessionFence();
+    const preference = get().groupAdmissionPreference;
+    if (!fence || !preference) {
+      throw new Error('settings.groupAdmission.sessionUnavailable');
+    }
+    set({ groupAdmissionMutating: true, groupAdmissionError: null });
+    try {
+      const updated = await api.updateGroupAdmissionPreference(
+        mode,
+        preference.revision,
+      );
+      if (!settingsSessionFenceMatches(fence)) return;
+      set({ groupAdmissionPreference: updated });
+    } catch (error) {
+      if (!settingsSessionFenceMatches(fence)) return;
+      const message = toStoreError(error);
+      set({ groupAdmissionError: message });
+      throw error;
+    } finally {
+      if (settingsSessionFenceMatches(fence)) {
+        set({ groupAdmissionMutating: false });
+      }
+    }
+  },
+
+  removeRejectedGroup: async (conversationId) => {
+    const fence = currentSettingsSessionFence();
+    const preference = get().groupAdmissionPreference;
+    if (!fence || !preference) {
+      throw new Error('settings.groupAdmission.sessionUnavailable');
+    }
+    set({ groupAdmissionMutating: true, groupAdmissionError: null });
+    try {
+      const updated = await api.removeRejectedGroup(
+        conversationId,
+        preference.revision,
+      );
+      if (!settingsSessionFenceMatches(fence)) return;
+      set((state) => ({
+        groupAdmissionPreference: updated,
+        rejectedGroups: state.rejectedGroups.filter(
+          (group) => group.conversationId !== conversationId,
+        ),
+      }));
+    } catch (error) {
+      if (!settingsSessionFenceMatches(fence)) return;
+      const message = toStoreError(error);
+      set({ groupAdmissionError: message });
+      throw error;
+    } finally {
+      if (settingsSessionFenceMatches(fence)) {
+        set({ groupAdmissionMutating: false });
+      }
+    }
+  },
+
+  retryRejectedGroupLeave: async (operationId) => {
+    const fence = currentSettingsSessionFence();
+    if (!fence || !operationId) {
+      throw new Error('settings.groupAdmission.sessionUnavailable');
+    }
+    set({ groupAdmissionMutating: true, groupAdmissionError: null });
+    try {
+      await api.retryLeaveAndRejectGroup(operationId);
+      if (!settingsSessionFenceMatches(fence)) return;
+      await get().refreshGroupAdmission();
+    } catch (error) {
+      if (!settingsSessionFenceMatches(fence)) return;
+      const message = toStoreError(error);
+      set({ groupAdmissionError: message });
+      throw error;
+    } finally {
+      if (settingsSessionFenceMatches(fence)) {
+        set({ groupAdmissionMutating: false });
+      }
+    }
+  },
+
+  clearGroupAdmission: () => set({
+    groupAdmissionPreference: null,
+    rejectedGroups: [],
+    groupAdmissionLoading: false,
+    groupAdmissionError: null,
+    groupAdmissionMutating: false,
   }),
 
   setCurrentAgent: (name: string) => {

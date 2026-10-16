@@ -7876,6 +7876,50 @@ export const api = {
       'notification_list', { category, status, cursor, limit },
     ),
 
+  groupAdmissionSettings: () =>
+    invokeRustData<void, GroupAdmissionSettingsSnapshot>(
+      'group_admission_settings_get',
+    ),
+
+  updateGroupAdmissionPreference: (mode: number, observedRevision: number) =>
+    invokeRustData<GroupAdmissionPreferenceUpdateInput, GroupAdmissionPreferenceData>(
+      'group_admission_preference_update',
+      { mode, observed_revision: observedRevision },
+    ),
+
+  removeRejectedGroup: (conversationId: string, observedPolicyRevision: number) =>
+    invokeRustData<RejectedGroupRemoveInput, GroupAdmissionPreferenceData>(
+      'group_admission_rejected_group_remove',
+      {
+        conversation_id: conversationId,
+        observed_policy_revision: observedPolicyRevision,
+      },
+    ),
+
+  groupInvitations: (states: number[]) =>
+    invokeRustData<{ states: number[] }, GroupInvitationsSnapshot>(
+      'group_invitations_list',
+      { states },
+    ),
+
+  decideGroupInvitation: (input: GroupInvitationDecisionInput) =>
+    invokeRustData<GroupInvitationDecisionInput, GroupInvitationDecisionResult>(
+      'group_invitation_decide',
+      input,
+    ),
+
+  leaveAndRejectGroup: (input: GroupLeaveRejectInput) =>
+    invokeRustData<GroupLeaveRejectInput, GroupLeaveRejectResult>(
+      'group_leave_reject_start',
+      input,
+    ),
+
+  retryLeaveAndRejectGroup: (operationId: string) =>
+    invokeRustData<{ operation_id: string }, GroupLeaveRejectResult>(
+      'group_leave_reject_retry',
+      { operation_id: operationId },
+    ),
+
   notificationUnreadCounts: () =>
     invokeRustDataFromStatus<void, NotificationUnreadCountsResponse>(
       'notification_unread_counts',
@@ -8157,6 +8201,95 @@ export interface NotificationData {
   groupKey: string;
   createdAt: string | null;
   readAt?: string | null;
+}
+
+export interface GroupAdmissionPreferenceData {
+  actorPtid: string;
+  mode: number;
+  revision: number;
+  updatedAt: { seconds: number; nanos: number } | null;
+}
+
+export interface RejectedGroupData {
+  conversationId: string;
+  federationId: string;
+  authorityStationPeerId: string;
+  groupNameSnapshot: string;
+  policyRevision: number;
+  rejectedAt: { seconds: number; nanos: number } | null;
+  leaveRejectOperationId: string;
+  leaveRejectState: number;
+  leaveRejectFailureCode: string;
+}
+
+export interface GroupAdmissionSettingsSnapshot {
+  preference: GroupAdmissionPreferenceData | null;
+  rejectedGroups: RejectedGroupData[];
+}
+
+export interface GroupAdmissionPreferenceUpdateInput {
+  mode: number;
+  observed_revision: number;
+}
+
+export interface RejectedGroupRemoveInput {
+  conversation_id: string;
+  observed_policy_revision: number;
+}
+
+export interface GroupInvitationData {
+  version: number;
+  invitationId: string;
+  conversationId: string;
+  federationId: string;
+  authorityStationPeerId: string;
+  authorityEpoch: number;
+  inviterPtid: string;
+  inviteePtid: string;
+  inviteeHomeStationPeerId: string;
+  state: number;
+  groupNameSnapshot: string;
+  createdAt: { seconds: number; nanos: number } | null;
+  expiresAt: { seconds: number; nanos: number } | null;
+  decidedAt: { seconds: number; nanos: number } | null;
+  decisionCommandId: string;
+  fulfillmentTransitionId: string;
+  policyRevision: number;
+}
+
+export interface GroupInvitationsSnapshot {
+  invitations: GroupInvitationData[];
+}
+
+export interface GroupInvitationDecisionInput {
+  invitation_id: string;
+  accept: boolean;
+  observed_state: number;
+  observed_policy_revision: number;
+}
+
+export interface GroupInvitationDecisionResult {
+  invitation: GroupInvitationData;
+  grantId?: string;
+}
+
+export interface GroupLeaveRejectInput {
+  operation_id: string;
+  conversation_id: string;
+  federation_id: string;
+  authority_station_peer_id: string;
+  group_name_snapshot: string;
+  observed_policy_revision: number;
+}
+
+export interface GroupLeaveRejectResult {
+  operationId: string;
+  conversationId: string;
+  state: number;
+  rejectionPolicyRevision: number;
+  leaveIntentId: string;
+  fulfillmentTransitionId: string;
+  failureCode: string;
 }
 
 export interface NotificationListInput {

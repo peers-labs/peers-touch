@@ -22,6 +22,8 @@ const (
 	FederationCatalogSearchScope = "federation-catalog-search"
 	// ConversationCommandPrepareScope authenticates authority command preparation.
 	ConversationCommandPrepareScope = "conversation-command-prepare"
+	// ConversationGroupAdmissionScope authenticates invitee Home Station admission operations.
+	ConversationGroupAdmissionScope = "conversation-group-admission"
 	// ConversationLeaveIntentScope authenticates MLS leave-intent operations.
 	ConversationLeaveIntentScope = "conversation-mls-leave-intent"
 	// ConversationEventSyncScope authenticates authority event catch-up.
@@ -65,6 +67,7 @@ const (
 	ClaimRequesterPTID           = "requester_ptid"
 	ClaimRequesterDeviceID       = "requester_device_id"
 	ClaimAuthorityPlanID         = "authority_plan_id"
+	ClaimTransitionID            = "transition_id"
 	ClaimPlanExpiresAt           = "plan_expires_at"
 	ClaimPlanRequestSHA256       = "plan_request_sha256"
 	ClaimCanonicalRequestSHA256  = "canonical_request_sha256"
@@ -159,6 +162,26 @@ var peerScopes = []scope.Scope{
 				ClaimConversationID,
 				ClaimActorPTID,
 				ClaimDeviceID,
+				ClaimAuthorityEpoch,
+				ClaimSourceStationPeerID,
+				ClaimTargetStationPeerID,
+			},
+		},
+	},
+	{
+		Name:        ConversationGroupAdmissionScope,
+		Description: "evaluate, bind, complete, and activate group admission at an invitee Home Station",
+		Policy: scope.Policy{
+			TTLMax:           time.Minute,
+			AudienceRequired: true,
+			AllowedClaimKeys: []string{
+				ClaimFederationID,
+				ClaimConversationID,
+				ClaimActorPTID,
+				ClaimDeviceID,
+				ClaimRequestID,
+				ClaimAuthorityPlanID,
+				ClaimTransitionID,
 				ClaimAuthorityEpoch,
 				ClaimSourceStationPeerID,
 				ClaimTargetStationPeerID,

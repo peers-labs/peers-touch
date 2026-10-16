@@ -1107,20 +1107,22 @@ func (x *MessagingMembershipChangeIntent) GetRole() string {
 }
 
 type MembershipTransitionIntent struct {
-	state               protoimpl.MessageState             `protogen:"open.v1"`
-	TransitionId        string                             `protobuf:"bytes,1,opt,name=transition_id,json=transitionId,proto3" json:"transition_id,omitempty"`
-	FromMembershipEpoch int64                              `protobuf:"varint,2,opt,name=from_membership_epoch,json=fromMembershipEpoch,proto3" json:"from_membership_epoch,omitempty"`
-	FromMlsEpoch        int64                              `protobuf:"varint,3,opt,name=from_mls_epoch,json=fromMlsEpoch,proto3" json:"from_mls_epoch,omitempty"`
-	ToMlsEpoch          int64                              `protobuf:"varint,4,opt,name=to_mls_epoch,json=toMlsEpoch,proto3" json:"to_mls_epoch,omitempty"`
-	Changes             []*MessagingMembershipChangeIntent `protobuf:"bytes,5,rep,name=changes,proto3" json:"changes,omitempty"`
-	MlsCommit           []byte                             `protobuf:"bytes,6,opt,name=mls_commit,json=mlsCommit,proto3" json:"mls_commit,omitempty"`
-	MlsCommitSha256     []byte                             `protobuf:"bytes,7,opt,name=mls_commit_sha256,json=mlsCommitSha256,proto3" json:"mls_commit_sha256,omitempty"`
-	WelcomePayloads     []*PreparedEndpointPayload         `protobuf:"bytes,8,rep,name=welcome_payloads,json=welcomePayloads,proto3" json:"welcome_payloads,omitempty"`
-	LeaveIntentId       string                             `protobuf:"bytes,9,opt,name=leave_intent_id,json=leaveIntentId,proto3" json:"leave_intent_id,omitempty"`
-	AuthorityPlanId     string                             `protobuf:"bytes,10,opt,name=authority_plan_id,json=authorityPlanId,proto3" json:"authority_plan_id,omitempty"`
-	AuthorityPlanSha256 []byte                             `protobuf:"bytes,11,opt,name=authority_plan_sha256,json=authorityPlanSha256,proto3" json:"authority_plan_sha256,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	state                        protoimpl.MessageState             `protogen:"open.v1"`
+	TransitionId                 string                             `protobuf:"bytes,1,opt,name=transition_id,json=transitionId,proto3" json:"transition_id,omitempty"`
+	FromMembershipEpoch          int64                              `protobuf:"varint,2,opt,name=from_membership_epoch,json=fromMembershipEpoch,proto3" json:"from_membership_epoch,omitempty"`
+	FromMlsEpoch                 int64                              `protobuf:"varint,3,opt,name=from_mls_epoch,json=fromMlsEpoch,proto3" json:"from_mls_epoch,omitempty"`
+	ToMlsEpoch                   int64                              `protobuf:"varint,4,opt,name=to_mls_epoch,json=toMlsEpoch,proto3" json:"to_mls_epoch,omitempty"`
+	Changes                      []*MessagingMembershipChangeIntent `protobuf:"bytes,5,rep,name=changes,proto3" json:"changes,omitempty"`
+	MlsCommit                    []byte                             `protobuf:"bytes,6,opt,name=mls_commit,json=mlsCommit,proto3" json:"mls_commit,omitempty"`
+	MlsCommitSha256              []byte                             `protobuf:"bytes,7,opt,name=mls_commit_sha256,json=mlsCommitSha256,proto3" json:"mls_commit_sha256,omitempty"`
+	WelcomePayloads              []*PreparedEndpointPayload         `protobuf:"bytes,8,rep,name=welcome_payloads,json=welcomePayloads,proto3" json:"welcome_payloads,omitempty"`
+	LeaveIntentId                string                             `protobuf:"bytes,9,opt,name=leave_intent_id,json=leaveIntentId,proto3" json:"leave_intent_id,omitempty"`
+	AuthorityPlanId              string                             `protobuf:"bytes,10,opt,name=authority_plan_id,json=authorityPlanId,proto3" json:"authority_plan_id,omitempty"`
+	AuthorityPlanSha256          []byte                             `protobuf:"bytes,11,opt,name=authority_plan_sha256,json=authorityPlanSha256,proto3" json:"authority_plan_sha256,omitempty"`
+	AdmissionFulfillment         *GroupAdmissionFulfillment         `protobuf:"bytes,12,opt,name=admission_fulfillment,json=admissionFulfillment,proto3" json:"admission_fulfillment,omitempty"`
+	GenesisAdmissionFulfillments []*GroupAdmissionFulfillment       `protobuf:"bytes,13,rep,name=genesis_admission_fulfillments,json=genesisAdmissionFulfillments,proto3" json:"genesis_admission_fulfillments,omitempty"`
+	unknownFields                protoimpl.UnknownFields
+	sizeCache                    protoimpl.SizeCache
 }
 
 func (x *MembershipTransitionIntent) Reset() {
@@ -1226,6 +1228,20 @@ func (x *MembershipTransitionIntent) GetAuthorityPlanId() string {
 func (x *MembershipTransitionIntent) GetAuthorityPlanSha256() []byte {
 	if x != nil {
 		return x.AuthorityPlanSha256
+	}
+	return nil
+}
+
+func (x *MembershipTransitionIntent) GetAdmissionFulfillment() *GroupAdmissionFulfillment {
+	if x != nil {
+		return x.AdmissionFulfillment
+	}
+	return nil
+}
+
+func (x *MembershipTransitionIntent) GetGenesisAdmissionFulfillments() []*GroupAdmissionFulfillment {
+	if x != nil {
+		return x.GenesisAdmissionFulfillments
 	}
 	return nil
 }
@@ -2043,7 +2059,7 @@ var File_domain_chat_command_proto protoreflect.FileDescriptor
 
 const file_domain_chat_command_proto_rawDesc = "" +
 	"\n" +
-	"\x19domain/chat/command.proto\x12\x19peers_touch.model.chat.v1\x1a\x1cdomain/chat/attachment.proto\x1a\x19domain/chat/content.proto\x1a\x1edomain/chat/conversation.proto\x1a\x1adomain/chat/endpoint.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9c\x02\n" +
+	"\x19domain/chat/command.proto\x12\x19peers_touch.model.chat.v1\x1a\x1cdomain/chat/attachment.proto\x1a\x19domain/chat/content.proto\x1a\x1edomain/chat/conversation.proto\x1a\x1adomain/chat/endpoint.proto\x1a!domain/chat/group_admission.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9c\x02\n" +
 	"\x1dDirectServicePlaintextPayload\x12R\n" +
 	"\x0fmessage_content\x18\n" +
 	" \x01(\v2).peers_touch.model.chat.v1.MessageContentR\x0emessageContent\x12V\n" +
@@ -2116,7 +2132,7 @@ const file_domain_chat_command_proto_rawDesc = "" +
 	"\x06action\x18\x01 \x01(\x0e24.peers_touch.model.chat.v1.MessagingMembershipActionR\x06action\x12\x12\n" +
 	"\x04ptid\x18\x02 \x01(\tR\x04ptid\x12\x1b\n" +
 	"\tdevice_id\x18\x03 \x01(\tR\bdeviceId\x12\x12\n" +
-	"\x04role\x18\x05 \x01(\tR\x04roleJ\x04\b\x04\x10\x05R\x0fhome_station_id\"\xc5\x04\n" +
+	"\x04role\x18\x05 \x01(\tR\x04roleJ\x04\b\x04\x10\x05R\x0fhome_station_id\"\xac\x06\n" +
 	"\x1aMembershipTransitionIntent\x12#\n" +
 	"\rtransition_id\x18\x01 \x01(\tR\ftransitionId\x122\n" +
 	"\x15from_membership_epoch\x18\x02 \x01(\x03R\x13fromMembershipEpoch\x12$\n" +
@@ -2131,7 +2147,9 @@ const file_domain_chat_command_proto_rawDesc = "" +
 	"\x0fleave_intent_id\x18\t \x01(\tR\rleaveIntentId\x12*\n" +
 	"\x11authority_plan_id\x18\n" +
 	" \x01(\tR\x0fauthorityPlanId\x122\n" +
-	"\x15authority_plan_sha256\x18\v \x01(\fR\x13authorityPlanSha256\"\x1c\n" +
+	"\x15authority_plan_sha256\x18\v \x01(\fR\x13authorityPlanSha256\x12i\n" +
+	"\x15admission_fulfillment\x18\f \x01(\v24.peers_touch.model.chat.v1.GroupAdmissionFulfillmentR\x14admissionFulfillment\x12z\n" +
+	"\x1egenesis_admission_fulfillments\x18\r \x03(\v24.peers_touch.model.chat.v1.GroupAdmissionFulfillmentR\x1cgenesisAdmissionFulfillments\"\x1c\n" +
 	"\x1aDissolveConversationIntent\"\xb7\a\n" +
 	"\"ConversationMemberAuthorityCommand\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\x12\x1d\n" +
@@ -2294,9 +2312,10 @@ var file_domain_chat_command_proto_goTypes = []any{
 	(*CryptoEndpoint)(nil),                          // 25: peers_touch.model.chat.v1.CryptoEndpoint
 	(*EncryptedObjectDescriptor)(nil),               // 26: peers_touch.model.chat.v1.EncryptedObjectDescriptor
 	(GroupVisibilityV1)(0),                          // 27: peers_touch.model.chat.v1.GroupVisibilityV1
-	(MemberRole)(0),                                 // 28: peers_touch.model.chat.v1.MemberRole
-	(*timestamppb.Timestamp)(nil),                   // 29: google.protobuf.Timestamp
-	(ConversationCommandKind)(0),                    // 30: peers_touch.model.chat.v1.ConversationCommandKind
+	(*GroupAdmissionFulfillment)(nil),               // 28: peers_touch.model.chat.v1.GroupAdmissionFulfillment
+	(MemberRole)(0),                                 // 29: peers_touch.model.chat.v1.MemberRole
+	(*timestamppb.Timestamp)(nil),                   // 30: google.protobuf.Timestamp
+	(ConversationCommandKind)(0),                    // 31: peers_touch.model.chat.v1.ConversationCommandKind
 }
 var file_domain_chat_command_proto_depIdxs = []int32{
 	23, // 0: peers_touch.model.chat.v1.DirectServicePlaintextPayload.message_content:type_name -> peers_touch.model.chat.v1.MessageContent
@@ -2314,33 +2333,35 @@ var file_domain_chat_command_proto_depIdxs = []int32{
 	3,  // 12: peers_touch.model.chat.v1.MessagingMembershipChangeIntent.action:type_name -> peers_touch.model.chat.v1.MessagingMembershipAction
 	16, // 13: peers_touch.model.chat.v1.MembershipTransitionIntent.changes:type_name -> peers_touch.model.chat.v1.MessagingMembershipChangeIntent
 	6,  // 14: peers_touch.model.chat.v1.MembershipTransitionIntent.welcome_payloads:type_name -> peers_touch.model.chat.v1.PreparedEndpointPayload
-	25, // 15: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand.operator:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	4,  // 16: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand.action:type_name -> peers_touch.model.chat.v1.ConversationMemberAuthorityAction
-	28, // 17: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand.role:type_name -> peers_touch.model.chat.v1.MemberRole
-	29, // 18: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand.muted_until:type_name -> google.protobuf.Timestamp
-	29, // 19: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand.client_timestamp:type_name -> google.protobuf.Timestamp
-	29, // 20: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand.deadline:type_name -> google.protobuf.Timestamp
-	25, // 21: peers_touch.model.chat.v1.ChatCommand.sender:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	29, // 22: peers_touch.model.chat.v1.ChatCommand.client_timestamp:type_name -> google.protobuf.Timestamp
-	7,  // 23: peers_touch.model.chat.v1.ChatCommand.send_message:type_name -> peers_touch.model.chat.v1.SendMessageIntent
-	8,  // 24: peers_touch.model.chat.v1.ChatCommand.edit_message:type_name -> peers_touch.model.chat.v1.EditMessageIntent
-	9,  // 25: peers_touch.model.chat.v1.ChatCommand.retract_message:type_name -> peers_touch.model.chat.v1.RetractMessageIntent
-	13, // 26: peers_touch.model.chat.v1.ChatCommand.reaction:type_name -> peers_touch.model.chat.v1.ReactionIntent
-	14, // 27: peers_touch.model.chat.v1.ChatCommand.pin_message:type_name -> peers_touch.model.chat.v1.PinMessageIntent
-	15, // 28: peers_touch.model.chat.v1.ChatCommand.update_conversation:type_name -> peers_touch.model.chat.v1.UpdateConversationIntent
-	17, // 29: peers_touch.model.chat.v1.ChatCommand.membership_transition:type_name -> peers_touch.model.chat.v1.MembershipTransitionIntent
-	18, // 30: peers_touch.model.chat.v1.ChatCommand.dissolve_conversation:type_name -> peers_touch.model.chat.v1.DissolveConversationIntent
-	10, // 31: peers_touch.model.chat.v1.ChatCommand.hide_message_for_actor:type_name -> peers_touch.model.chat.v1.HideMessageForActorIntent
-	11, // 32: peers_touch.model.chat.v1.ChatCommand.moderate_message:type_name -> peers_touch.model.chat.v1.ModerateMessageIntent
-	12, // 33: peers_touch.model.chat.v1.ChatCommand.forward_message:type_name -> peers_touch.model.chat.v1.ForwardMessageIntent
-	20, // 34: peers_touch.model.chat.v1.ConversationCommandProposal.command:type_name -> peers_touch.model.chat.v1.ChatCommand
-	19, // 35: peers_touch.model.chat.v1.ConversationCommandProposal.member_authority_command:type_name -> peers_touch.model.chat.v1.ConversationMemberAuthorityCommand
-	30, // 36: peers_touch.model.chat.v1.ConversationCommandProposalSigningInput.command_kind:type_name -> peers_touch.model.chat.v1.ConversationCommandKind
-	37, // [37:37] is the sub-list for method output_type
-	37, // [37:37] is the sub-list for method input_type
-	37, // [37:37] is the sub-list for extension type_name
-	37, // [37:37] is the sub-list for extension extendee
-	0,  // [0:37] is the sub-list for field type_name
+	28, // 15: peers_touch.model.chat.v1.MembershipTransitionIntent.admission_fulfillment:type_name -> peers_touch.model.chat.v1.GroupAdmissionFulfillment
+	28, // 16: peers_touch.model.chat.v1.MembershipTransitionIntent.genesis_admission_fulfillments:type_name -> peers_touch.model.chat.v1.GroupAdmissionFulfillment
+	25, // 17: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand.operator:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	4,  // 18: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand.action:type_name -> peers_touch.model.chat.v1.ConversationMemberAuthorityAction
+	29, // 19: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand.role:type_name -> peers_touch.model.chat.v1.MemberRole
+	30, // 20: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand.muted_until:type_name -> google.protobuf.Timestamp
+	30, // 21: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand.client_timestamp:type_name -> google.protobuf.Timestamp
+	30, // 22: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand.deadline:type_name -> google.protobuf.Timestamp
+	25, // 23: peers_touch.model.chat.v1.ChatCommand.sender:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	30, // 24: peers_touch.model.chat.v1.ChatCommand.client_timestamp:type_name -> google.protobuf.Timestamp
+	7,  // 25: peers_touch.model.chat.v1.ChatCommand.send_message:type_name -> peers_touch.model.chat.v1.SendMessageIntent
+	8,  // 26: peers_touch.model.chat.v1.ChatCommand.edit_message:type_name -> peers_touch.model.chat.v1.EditMessageIntent
+	9,  // 27: peers_touch.model.chat.v1.ChatCommand.retract_message:type_name -> peers_touch.model.chat.v1.RetractMessageIntent
+	13, // 28: peers_touch.model.chat.v1.ChatCommand.reaction:type_name -> peers_touch.model.chat.v1.ReactionIntent
+	14, // 29: peers_touch.model.chat.v1.ChatCommand.pin_message:type_name -> peers_touch.model.chat.v1.PinMessageIntent
+	15, // 30: peers_touch.model.chat.v1.ChatCommand.update_conversation:type_name -> peers_touch.model.chat.v1.UpdateConversationIntent
+	17, // 31: peers_touch.model.chat.v1.ChatCommand.membership_transition:type_name -> peers_touch.model.chat.v1.MembershipTransitionIntent
+	18, // 32: peers_touch.model.chat.v1.ChatCommand.dissolve_conversation:type_name -> peers_touch.model.chat.v1.DissolveConversationIntent
+	10, // 33: peers_touch.model.chat.v1.ChatCommand.hide_message_for_actor:type_name -> peers_touch.model.chat.v1.HideMessageForActorIntent
+	11, // 34: peers_touch.model.chat.v1.ChatCommand.moderate_message:type_name -> peers_touch.model.chat.v1.ModerateMessageIntent
+	12, // 35: peers_touch.model.chat.v1.ChatCommand.forward_message:type_name -> peers_touch.model.chat.v1.ForwardMessageIntent
+	20, // 36: peers_touch.model.chat.v1.ConversationCommandProposal.command:type_name -> peers_touch.model.chat.v1.ChatCommand
+	19, // 37: peers_touch.model.chat.v1.ConversationCommandProposal.member_authority_command:type_name -> peers_touch.model.chat.v1.ConversationMemberAuthorityCommand
+	31, // 38: peers_touch.model.chat.v1.ConversationCommandProposalSigningInput.command_kind:type_name -> peers_touch.model.chat.v1.ConversationCommandKind
+	39, // [39:39] is the sub-list for method output_type
+	39, // [39:39] is the sub-list for method input_type
+	39, // [39:39] is the sub-list for extension type_name
+	39, // [39:39] is the sub-list for extension extendee
+	0,  // [0:39] is the sub-list for field type_name
 }
 
 func init() { file_domain_chat_command_proto_init() }
@@ -2352,6 +2373,7 @@ func file_domain_chat_command_proto_init() {
 	file_domain_chat_content_proto_init()
 	file_domain_chat_conversation_proto_init()
 	file_domain_chat_endpoint_proto_init()
+	file_domain_chat_group_admission_proto_init()
 	file_domain_chat_command_proto_msgTypes[10].OneofWrappers = []any{}
 	file_domain_chat_command_proto_msgTypes[14].OneofWrappers = []any{}
 	file_domain_chat_command_proto_msgTypes[15].OneofWrappers = []any{

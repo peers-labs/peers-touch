@@ -9,6 +9,7 @@ import { SearchMessagesModal } from '../components/SearchMessagesModal';
 import { useChatState } from '../state';
 import { Contact, MessageCircle } from 'lucide-react';
 import { USERS } from '../mock';
+import type { GroupAdmissionAdapter } from '@peers-touch/prototype-desktop-shell';
 
 type SocialChatTab = 'chat' | 'contacts';
 
@@ -64,7 +65,11 @@ function ChatRail({ activeTab, onSelect }: { activeTab: SocialChatTab; onSelect:
   );
 }
 
-export function SocialChatPage() {
+export function SocialChatPage({
+  groupAdmissionAdapter,
+}: {
+  groupAdmissionAdapter?: GroupAdmissionAdapter;
+} = {}) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [rootWidth, setRootWidth] = useState(0);
   const [activeTab, setActiveTab] = useState<SocialChatTab>('chat');
@@ -220,6 +225,19 @@ export function SocialChatPage() {
               onToggleMemberMute={toggleMemberMute}
               onTransferOwnership={transferOwnership}
               onSearchMessages={() => openMessageSearch(activeConversation.id)}
+              onLeaveGroup={groupAdmissionAdapter
+                ? async (conversationId, groupName, rejectFutureInvitations) => {
+                    const result = await groupAdmissionAdapter.leaveGroup({
+                      conversationId,
+                      groupName,
+                      rejectFutureInvitations,
+                    });
+                    if (result.state !== 'leave-retry-required') {
+                      deleteConversation(conversationId);
+                    }
+                    return result;
+                  }
+                : undefined}
             />
           </div>
         ) : (
@@ -239,6 +257,19 @@ export function SocialChatPage() {
             onToggleMemberMute={toggleMemberMute}
             onTransferOwnership={transferOwnership}
             onSearchMessages={() => openMessageSearch(activeConversation.id)}
+            onLeaveGroup={groupAdmissionAdapter
+              ? async (conversationId, groupName, rejectFutureInvitations) => {
+                  const result = await groupAdmissionAdapter.leaveGroup({
+                    conversationId,
+                    groupName,
+                    rejectFutureInvitations,
+                  });
+                  if (result.state !== 'leave-retry-required') {
+                    deleteConversation(conversationId);
+                  }
+                  return result;
+                }
+              : undefined}
           />
         )
       )}

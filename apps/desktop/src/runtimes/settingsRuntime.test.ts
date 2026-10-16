@@ -6,6 +6,7 @@ const settingsStore = vi.hoisted(() => ({
   loadChatPreferences: vi.fn(),
   refreshDevices: vi.fn(),
   refreshNotificationPreferences: vi.fn(),
+  refreshGroupAdmission: vi.fn(),
   clearSessionProjection: vi.fn(),
 }));
 
@@ -55,6 +56,7 @@ describe('settingsRuntime', () => {
     settingsStore.loadChatPreferences.mockResolvedValue(undefined);
     settingsStore.refreshDevices.mockResolvedValue(undefined);
     settingsStore.refreshNotificationPreferences.mockResolvedValue(undefined);
+    settingsStore.refreshGroupAdmission.mockResolvedValue(undefined);
     sessionStore.subscribe.mockReturnValue(() => undefined);
     sessionStore.getState.mockReturnValue({ authenticated: true });
     profileStore.refresh.mockResolvedValue(undefined);
@@ -71,6 +73,7 @@ describe('settingsRuntime', () => {
     expect(settingsStore.loadChatPreferences).toHaveBeenCalledTimes(1);
     expect(settingsStore.refreshDevices).toHaveBeenCalledTimes(1);
     expect(settingsStore.refreshNotificationPreferences).toHaveBeenCalledTimes(1);
+    expect(settingsStore.refreshGroupAdmission).toHaveBeenCalledTimes(1);
     expect(profileStore.refresh).toHaveBeenCalledTimes(1);
     expect(pushDevicesStore.refresh).toHaveBeenCalledTimes(1);
   });
@@ -83,6 +86,7 @@ describe('settingsRuntime', () => {
     expect(settingsStore.loadChatPreferences).toHaveBeenCalledTimes(1);
     expect(settingsStore.refreshDevices).toHaveBeenCalledTimes(1);
     expect(settingsStore.refreshNotificationPreferences).toHaveBeenCalledTimes(1);
+    expect(settingsStore.refreshGroupAdmission).toHaveBeenCalledTimes(1);
   });
 
   it('clears actor-scoped projections when the authenticated actor leaves', () => {
@@ -110,6 +114,7 @@ describe('settingsRuntime', () => {
 
     expect(settingsStore.refreshDevices).toHaveBeenCalledTimes(1);
     expect(settingsStore.refreshNotificationPreferences).toHaveBeenCalledTimes(1);
+    expect(settingsStore.refreshGroupAdmission).toHaveBeenCalledTimes(1);
     expect(settingsStore.clearSessionProjection).toHaveBeenCalledTimes(2);
     expect(pushDevicesStore.reset).toHaveBeenCalledTimes(2);
     settingsRuntime.teardown();
@@ -145,6 +150,7 @@ describe('settingsRuntime', () => {
     );
     expect(settingsStore.refreshDevices).toHaveBeenCalledTimes(1);
     expect(settingsStore.refreshNotificationPreferences).toHaveBeenCalledTimes(1);
+    expect(settingsStore.refreshGroupAdmission).toHaveBeenCalledTimes(1);
     settingsRuntime.teardown();
   });
 

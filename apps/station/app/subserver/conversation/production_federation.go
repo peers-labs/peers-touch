@@ -379,6 +379,47 @@ func (p *productionAuthorityCommandPort) ApplyAuthorityCommand(
 	if err != nil {
 		return conversationfederation.AuthorityCommandOutcome{}, err
 	}
+	if proposalCommand.Chat != nil {
+		completions, completionErr := groupAdmissionTransitionCompletions(
+			proposalCommand.Chat.GetMembershipTransition(),
+			event,
+		)
+		if completionErr != nil {
+			return conversationfederation.AuthorityCommandOutcome{},
+				completionErr
+		}
+		if len(completions) > 0 {
+			registrar, ok := transaction.(federationdelivery.AfterCommitRegistrar)
+			if !ok {
+				return conversationfederation.AuthorityCommandOutcome{},
+					fmt.Errorf(
+						"group admission completion requires a post-commit registrar",
+					)
+			}
+			pending := make(
+				[]*chatmodel.CompleteGroupAdmissionTransitionRequest,
+				0,
+				len(completions),
+			)
+			for _, completion := range completions {
+				pending = append(
+					pending,
+					proto.Clone(completion).(*chatmodel.CompleteGroupAdmissionTransitionRequest),
+				)
+			}
+			if completionErr = registrar.AfterCommit(
+				func(callbackContext context.Context) error {
+					return p.composition.completeGroupAdmissionTransitions(
+						callbackContext,
+						pending,
+					)
+				},
+			); completionErr != nil {
+				return conversationfederation.AuthorityCommandOutcome{},
+					completionErr
+			}
+		}
+	}
 
 	return conversationfederation.AuthorityCommandOutcome{
 		Result: &chatmodel.ConversationCommandProposalResult{

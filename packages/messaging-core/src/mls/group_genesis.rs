@@ -139,6 +139,8 @@ impl<R: MlsTransitionRepository> GroupGenesisPreparer<R> {
                     leave_intent_id: String::new(),
                     authority_plan_id: plan.authority_plan_id.clone(),
                     authority_plan_sha256: plan.authority_plan_sha256.clone(),
+                    admission_fulfillment: None,
+                    genesis_admission_fulfillments: plan.admission_fulfillments.clone(),
                 },
             )),
         };
@@ -223,6 +225,7 @@ mod tests {
             }],
             endpoint_manifests: Vec::new(),
             authority_plan_sha256: vec![8; 32],
+            admission_fulfillments: Vec::new(),
         };
 
         let command = GroupGenesisPreparer::new(

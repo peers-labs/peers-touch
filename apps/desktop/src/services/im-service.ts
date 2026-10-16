@@ -628,7 +628,11 @@ const messagingService: MessagingServiceContract = {
         target_device_id?: string
         role?: string
       },
-      { command_id: string; state: 'pending' }
+      {
+        command_id?: string
+        invitation_id?: string
+        state: 'pending' | 'invitation_pending'
+      }
     >('messaging_membership_transition', {
       conversation_id: intent.conversationId,
       action: intent.action,
@@ -639,7 +643,10 @@ const messagingService: MessagingServiceContract = {
       ...('role' in intent && intent.role ? { role: intent.role } : {}),
     })
     return {
-      commandId: response.command_id,
+      commandId: response.command_id ?? '',
+      ...(response.invitation_id
+        ? { invitationId: response.invitation_id }
+        : {}),
       state: response.state,
     }
   },

@@ -1,8 +1,8 @@
 # Chat Lifecycle - Acceptance Matrix
 
 > **Status**: active
-> **Version**: v1.4
-> **Created**: 2026-09-16 | **Updated**: 2026-09-22
+> **Version**: v1.5
+> **Created**: 2026-09-16 | **Updated**: 2026-10-16
 > **Owner**: Chat Product Team
 
 ---
@@ -31,7 +31,7 @@ supporting evidence only.
 | CHAT-C06 attachments | J03 | CHAT-G06 | Receiver opens byte-identical encrypted image/file/screenshot content after retry and restart; screenshot selection preserves Desktop geometry |
 | CHAT-C07 voice notes | J03 | CHAT-G07 | Receiver plays byte-identical recorded audio with duration, progress, seek, and retry |
 | CHAT-C08 interactions | J02/J04 | CHAT-G08 | Reply/thread/edit/retract/reaction/pin/read/typing converge for Direct and Group without false failure after accepted submission |
-| CHAT-C09 group lifecycle | J04 | CHAT-G09 | All active members agree on membership, role, MLS epoch, content, and terminal history state |
+| CHAT-C09 group lifecycle | J04 | CHAT-G09 | Admission policy, invitation decisions, rejected groups, membership, role, MLS epoch, content, leave outcome, and terminal history state converge |
 | CHAT-C10 live voice/video | J05 | CHAT-G10 | Both users exchange the requested audio/video media through direct and TURN paths and converge on terminal state |
 | CHAT-C11 continuity | J07 | CHAT-G11 | Offline, restart, multi-device, revoke, recovery, and cross-Station flows preserve exact truth |
 | CHAT-C12 group live voice/video | J09 | CHAT-G14 | Three or more authorized members exchange group audio/video, converge on participant state, and exclude removed or revoked endpoints |
@@ -124,6 +124,21 @@ supporting evidence only.
   message IDs and order.
 - Group create, add/remove, leave, role/owner change, rename, dissolve, and
   entitled-history behavior use Conversation-owned commands.
+- With the default preference, an accepted friend can be added directly and
+  receives exactly one Welcome. With confirmation required, the same add
+  creates one decision-inbox invitation and no membership, session, recovery
+  entitlement, MLS commit, or Welcome before acceptance.
+- Accept, decline, duplicate decision, expiry, revocation, offline fulfiller,
+  restart, and cross-Station replay converge on one invitation identity.
+- Accepted invitation remains `accepted_waiting_for_mls` until an authorized
+  active member commits the bound transition; only then does the receiver see
+  the group in the session list.
+- A rejected-group entry blocks both direct add and invitation creation.
+  Removing it restores only future eligibility under the current global
+  preference.
+- `Leave and reject future invitations` proves the rejection first, then
+  authoritative leave. Injected leave failure preserves the rejection and
+  exposes retry; restart resumes the same operation without duplicate intents.
 - Removed/revoked endpoints observe no future private content.
 
 ### CHAT-G10: Live One-To-One Voice And Video
@@ -297,6 +312,8 @@ when its named assertion is absent from the Gate report.
 | CHAT-UR11 | Selecting a local chat background waits for upload before changing the visible surface | `chat-direct` | `chat-lifecycle-direct-e2e` | The selected local image previews in the same interaction frame; upload/persistence completes in background and failure rolls back with retry |
 | CHAT-UR12 | Search cannot find known conversation messages and the clear affordance is detached from the input edge | `chat-direct` | `chat-lifecycle-direct-e2e` | Search resolves the active canonical conversation and finds exact durable text; the clear control remains inside the input suffix boundary |
 | CHAT-UR13 | Current-device conversation cleanup is reversible, affects another device, or allows old plaintext to return | `chat-direct` | `chat-lifecycle-direct-e2e` | Clear commits a verified sequence/hash floor, removes eligible local projection and search data, offers no undo, remains effective after restart, leaves the peer device unchanged, and accepts later messages |
+| CHAT-UR14 | A confirmation-required friend is silently added or a rejected group can invite again | `chat-interactions-group` | `chat-native-group-mls-e2e` | Native receiver sees one pending invitation and no group session before accept; rejected-group readback blocks direct add and notification creation |
+| CHAT-UR15 | Leave-and-reject reports success after only one side commits | `chat-interactions-group` | `chat-native-group-mls-e2e` | Native UI distinguishes completed leave from rejection-active leave-retry, survives restart, and never loses the rejected-group entry |
 
 ## 5. Required Runtime Cells
 

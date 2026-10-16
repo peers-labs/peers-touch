@@ -1,5 +1,5 @@
 import { ActionIcon, Button } from '@lobehub/ui';
-import { theme } from 'antd';
+import { message, theme } from 'antd';
 import { Bell, Check, Trash2, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
@@ -7,6 +7,7 @@ import type { NotificationData } from '../../services/desktop_api';
 import { NotificationType } from '../../gen/proto/domain/notification/notification_pb';
 import { useSocialChatStore } from '../../store/socialChat';
 import { useSessionStore } from '../../store/session';
+import { useGroupInvitationStore } from '../../store/groupInvitations';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 
 export function notificationText(item: NotificationData, t: TFunction<'layout'>): string {
@@ -48,6 +49,24 @@ export function NotificationRow({
     && candidate.status === 1
   )));
   const profile = useSocialChatStore((state) => state.peerProfiles[item.actorPtid]);
+  const groupInvitation = useGroupInvitationStore((state) => (
+    item.type === NotificationType.GROUP_INVITED
+      ? state.invitations.find((candidate) => (
+          candidate.invitationId === item.targetId && candidate.state === 1
+        ))
+      : undefined
+  ));
+  const acceptedGroupInvitation = useGroupInvitationStore((state) => (
+    item.type === NotificationType.GROUP_INVITED
+      ? state.invitations.find((candidate) => (
+          candidate.invitationId === item.targetId && candidate.state === 2
+        ))
+      : undefined
+  ));
+  const decidingGroupInvitation = useGroupInvitationStore(
+    (state) => state.decidingId === item.targetId,
+  );
+  const decideGroupInvitation = useGroupInvitationStore((state) => state.decide);
   const name = profile?.display_name || profile?.username
     || item.metadata.sender_name || t('layout.notifications.person');
   const unread = item.status === 1;
@@ -61,6 +80,16 @@ export function NotificationRow({
   return (
     <div
       data-shell-notification={item.id} data-ui-row
+      data-group-invitation-id={
+        groupInvitation?.invitationId
+        || acceptedGroupInvitation?.invitationId
+        || undefined
+      }
+      data-group-invitation-state={
+        groupInvitation?.state
+        || acceptedGroupInvitation?.state
+        || undefined
+      }
       style={{
         display: 'grid', gridColumn: '1 / -1', gridTemplateColumns: 'subgrid',
         alignItems: 'center', paddingBlock: 10,
@@ -80,6 +109,11 @@ export function NotificationRow({
         {item.body && <div style={{ fontSize: 12, color: token.colorTextSecondary, overflowWrap: 'anywhere', marginTop: 2 }}>
           {item.body}
         </div>}
+        {acceptedGroupInvitation && (
+          <div style={{ fontSize: 12, color: token.colorTextSecondary, marginTop: 2 }}>
+            {t('layout.notifications.groupInvitationWaiting')}
+          </div>
+        )}
         {unread && <Button type="text" size="small" disabled={busy} onClick={onRead}>
           {t('layout.notifications.markRead')}
         </Button>}
@@ -89,16 +123,34 @@ export function NotificationRow({
         {time}
       </time>
       <div data-ui-column="actions" style={{ gridColumn: 5, display: 'flex', justifyContent: 'flex-end', gap: 5 }}>
-        {request ? <>
-          <ActionIcon icon={Check} size="small" disabled={busy}
+        {request || groupInvitation ? <>
+          <ActionIcon icon={Check} size="small" disabled={busy || decidingGroupInvitation}
+            data-group-invitation-action="accept"
             title={t('layout.notifications.accept', { name })}
             aria-label={t('layout.notifications.accept', { name })}
             style={{ color: token.colorPrimary, background: token.colorPrimaryBg, borderRadius: 8 }}
-            onClick={() => onDecision(true)} />
-          <ActionIcon icon={X} size="small" disabled={busy}
+            onClick={() => {
+              if (groupInvitation) {
+                void decideGroupInvitation(groupInvitation.invitationId, true).catch(() => {
+                  message.error(t('layout.notifications.actionFailed'));
+                });
+              } else {
+                onDecision(true);
+              }
+            }} />
+          <ActionIcon icon={X} size="small" disabled={busy || decidingGroupInvitation}
+            data-group-invitation-action="decline"
             title={t('layout.notifications.decline', { name })}
             aria-label={t('layout.notifications.decline', { name })}
-            onClick={() => onDecision(false)} />
+            onClick={() => {
+              if (groupInvitation) {
+                void decideGroupInvitation(groupInvitation.invitationId, false).catch(() => {
+                  message.error(t('layout.notifications.actionFailed'));
+                });
+              } else {
+                onDecision(false);
+              }
+            }} />
         </> : <ActionIcon icon={Trash2} size="small" disabled={busy}
           title={t('layout.notifications.dismiss')} aria-label={t('layout.notifications.dismiss')} onClick={onDelete} />}
       </div>

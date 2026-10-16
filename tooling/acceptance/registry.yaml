@@ -1324,6 +1324,71 @@
       ]
     },
     {
+      "id": "chat-group-admission",
+      "features": [
+        "chat-group-admission"
+      ],
+      "when": {
+        "paths": [
+          "model/domain/chat/group_admission.proto",
+          "model/domain/chat/command.proto",
+          "model/domain/chat/conversation_api.proto",
+          "apps/station/app/subserver/conversation/groupadmission/**",
+          "apps/station/app/subserver/conversation/infrastructure/persistence/group_admission_store.go",
+          "apps/station/app/subserver/conversation/infrastructure/persistence/models.go",
+          "apps/station/app/subserver/conversation/infrastructure/persistence/schema.go",
+          "apps/station/app/subserver/conversation/production_group_admission.go",
+          "apps/station/app/subserver/conversation/production_http.go",
+          "apps/station/app/subserver/conversation/production_federation.go",
+          "apps/station/app/subserver/conversation/production_peer_routes.go",
+          "apps/station/app/subserver/conversation/subserver.go",
+          "apps/station/frame/core/federation/routes.go",
+          "apps/station/frame/core/federation/scope.go",
+          "packages/messaging-core/src/mls/group_genesis.rs",
+          "packages/messaging-core/src/mls/membership_transition.rs",
+          "apps/desktop/src-tauri/src/interface/tauri_commands/group_admission.rs",
+          "apps/desktop/src-tauri/src/interface/tauri_commands/messaging.rs",
+          "apps/desktop/src-tauri/src/messaging/engine.rs",
+          "apps/desktop/src/acceptance/chat/harness.ts",
+          "apps/desktop/src/services/desktop_api.ts",
+          "apps/desktop/src/services/im-service.ts",
+          "apps/desktop/src/services/im-service-contract.ts",
+          "apps/desktop/src/services/socialRealtime.ts",
+          "apps/desktop/src/store/groupInvitations.ts",
+          "apps/desktop/src/store/groupInvitations.test.ts",
+          "apps/desktop/src/store/settings.ts",
+          "apps/desktop/src/store/settings.test.ts",
+          "apps/desktop/src/runtimes/settingsRuntime.ts",
+          "apps/desktop/src/runtimes/settingsRuntime.test.ts",
+          "apps/desktop/src/components/NotificationBell.tsx",
+          "apps/desktop/src/components/notifications/NotificationRow.tsx",
+          "apps/desktop/src/components/settings/PrivacySettings.tsx",
+          "apps/desktop/src/components/chat/ChatDetailPanel.tsx",
+          "packages/locales/en/chat.json",
+          "packages/locales/en/layout.json",
+          "packages/locales/en/settings.json",
+          "packages/locales/zh-CN/chat.json",
+          "packages/locales/zh-CN/layout.json",
+          "packages/locales/zh-CN/settings.json",
+          "tooling/acceptance/features/chat-group-admission.yaml",
+          "tooling/acceptance/fixtures/chat_group_leave_fault_proxy.py",
+          "tooling/acceptance/gates/chat/chat_group_leave_fault_proxy_test.py",
+          "tooling/acceptance/gates/chat/native_group_mls_runner.py",
+          "tooling/acceptance/gates/chat/native_group_mls_runner_test.py",
+          "docs/architecture/domains/chat/lifecycle/**"
+        ]
+      },
+      "require": [
+        "proto-build",
+        "station-api-ownership",
+        "station-messaging-unit",
+        "messaging-platform-contract",
+        "desktop-check",
+        "chat-native-visible-static",
+        "chat-native-group-mls-e2e"
+      ]
+    },
+    {
       "id": "chat-message-interactions",
       "features": [
         "chat-message-interactions"

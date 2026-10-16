@@ -1,10 +1,10 @@
 # Chat Lifecycle - Current Capability Audit
 
 > **Status**: active
-> **Version**: v1.2
-> **Created**: 2026-09-16 | **Updated**: 2026-10-12
+> **Version**: v1.3
+> **Created**: 2026-09-16 | **Updated**: 2026-10-16
 > **Owner**: Chat Product Team
-> **Audited HEAD**: `3e615e94dca50ba04931ef81ad458c244d9f9770`
+> **Audited HEAD**: `e30dc12f089863f130acd449a3ccc1b776a5337e` plus current uncommitted worktree
 
 This is a current-source classification, not a product-readiness report.
 Historical Acceptance remains useful evidence but cannot promote this HEAD.
@@ -38,7 +38,7 @@ Historical proof is recorded separately and never upgrades current status.
 | Typing | `IMPLEMENTED_UNPROVEN` | Authenticated Direct/Group ingress, TTL projection, and best-effort Mobile publication exist | Current Mobile and mixed-client native typing evidence is absent |
 | Image/file attachments | `IMPLEMENTED_UNPROVEN` | Encrypted staging, resumable transfer, cache/open/download, retry, and Mobile media projection exist | Exact-source bidirectional byte/readback, interruption, restart, and permission proof are absent |
 | Recorded voice message | `IMPLEMENTED_UNPROVEN` | Desktop and Mobile record, cancel/finish, stage encrypted audio, persist duration/private metadata, render duration, and expose native audio playback controls | Current microphone permission, sender/receiver byte identity, seek/progress, retry, restart, and mixed-client Gate evidence is absent |
-| Group lifecycle | `IMPLEMENTED_UNPROVEN` | Canonical Conversation update/invite/remove/role/owner-transfer/leave/dissolve commands and ordered Mobile readback exist | Exact-source mixed-client role denial, epoch recovery, leave/dissolve, and restart proof are absent |
+| Group lifecycle and admission | `IMPLEMENTED_UNPROVEN` | Canonical Conversation lifecycle commands now include Home-Station-owned friend-only admission preferences, invitation/grant fulfillment, rejected groups, and rejection-first leave-and-reject retry with terminal authority-event convergence | `chat-native-group-mls-e2e` has not run on this exact source; cross-Station confirmation replay, receiver-visible restart recovery, and the required mixed-client matrix remain unproven |
 | Live one-to-one voice/video | `PARTIAL` | Desktop and Mobile have sealed signaling, WebRTC/TURN managers, Direct call actions, shell-level surfaces, media controls, reconnect, and cross-device resolution actions | Mobile production styling/i18n and device selection remain incomplete; native media, direct/TURN, cleanup, cross-Station, and mixed-client proof are absent |
 | Group live voice/video | `PARTIAL` | Station GroupCall authority + LiveKit adapter, Desktop group-call manager/surface, federation route, and native Gate exist | Mobile has generated contracts but no group-call runtime or product surface; no current multi-participant Gate proof |
 | Cross-Station/multi-device/recovery | `IMPLEMENTED_UNPROVEN` | Mixed-client Gates, sender-companion fan-out, actor read convergence, call arbitration, revoke, and federation paths exist | Current exact-source runtime matrix and full cross-Station recovery proof are absent |

@@ -34,12 +34,13 @@ use crate::model::chat::{
     CreateDirectConversationResponse, CryptoEndpoint, DeviceConsumptionReceipt,
     DeviceEventDelivery, DeviceInboxPayloadType, DissolveConversationIntent,
     DurableDeviceInboxItem, GetConversationPublicHeadRequest, GetConversationPublicHeadResponse,
-    GetConversationRequest, GetConversationResponse, ListConversationEventsRequest,
-    ListConversationEventsResponse, MemberRole, MessageMention, MessagingMembershipAction,
-    MessagingProjectionKind, MlsLeaveIntent, PrepareConversationCommandRequest,
-    PrepareConversationCommandResponse, PreparedEndpointPayloadKind,
-    SubmitConversationReadCursorRequest, SubmitConversationReadCursorResponse,
-    SubmitConversationTypingRequest, UpdateConversationIntent,
+    GetConversationRequest, GetConversationResponse, GroupAdmissionOutcome,
+    ListConversationEventsRequest, ListConversationEventsResponse, MemberRole, MessageMention,
+    MessagingMembershipAction, MessagingProjectionKind, MlsLeaveIntent,
+    PrepareConversationCommandRequest, PrepareConversationCommandResponse,
+    PreparedEndpointPayloadKind, SubmitConversationReadCursorRequest,
+    SubmitConversationReadCursorResponse, SubmitConversationTypingRequest,
+    UpdateConversationIntent,
 };
 use messaging_core::codec::verification::{verify_authority_event, verify_direct_genesis_event};
 use messaging_core::contracts::CryptoEndpoint as CoreCryptoEndpoint;
@@ -56,7 +57,8 @@ use messaging_core::mls::group::MlsGroupManager;
 use messaging_core::mls::group_genesis::GroupGenesisPreparer;
 use messaging_core::mls::key_packages::MlsKeyPackagePublisher;
 use messaging_core::mls::leave_intent::{
-    list_leave_intents, submit_leave_intent, MlsLeaveIntentInput,
+    build_signed_leave_intent, list_leave_intents, submit_leave_intent, MlsLeaveIntentInput,
+    MlsLeaveIntentTransport,
 };
 use messaging_core::mls::membership_transition::{
     MembershipTransitionIntentInput, MembershipTransitionPreparer,
@@ -101,6 +103,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use ulid::Ulid;
+
+pub enum MembershipTransitionPreparation {
+    Command(ChatCommand),
+    InvitationPending { invitation_id: String },
+}
 use zeroize::Zeroizing;
 
 const INTERACTION_PREFLIGHT_DRAIN_LIMIT: u32 = 100;
@@ -3244,12 +3251,41 @@ impl MessagingEngine {
         &self,
         token: &str,
         input: &MembershipTransitionIntentInput,
-    ) -> Result<ChatCommand, String> {
+    ) -> Result<MembershipTransitionPreparation, String> {
         let _guard = self
             .membership_transition_lock
             .lock()
             .map_err(|_| "messaging membership transition lock poisoned".to_string())?;
         let created_at_unix_ms = now_unix_ms();
+        let transport = StationMembershipTransitionTransport::new(
+            self.station_client.clone(),
+            token.to_string(),
+            self.endpoint.clone(),
+        )?;
+        let plan = transport.prepare(input)?;
+        if let Some(admission) = plan.admission.as_ref() {
+            match GroupAdmissionOutcome::try_from(admission.outcome)
+                .unwrap_or(GroupAdmissionOutcome::Unspecified)
+            {
+                GroupAdmissionOutcome::ConfirmationRequired => {
+                    let invitation_id = admission
+                        .invitation
+                        .as_ref()
+                        .map(|invitation| invitation.invitation_id.clone())
+                        .filter(|value| !value.is_empty())
+                        .ok_or_else(|| {
+                            "group admission confirmation omitted invitation identity".to_string()
+                        })?;
+                    return Ok(MembershipTransitionPreparation::InvitationPending {
+                        invitation_id,
+                    });
+                }
+                GroupAdmissionOutcome::Denied => {
+                    return Err(format!("group admission denied: {}", admission.denial_code));
+                }
+                GroupAdmissionOutcome::DirectAdd | GroupAdmissionOutcome::Unspecified => {}
+            }
+        }
         let intent_id = Ulid::new().to_string();
         self.store
             .create_membership_intent(&PendingMembershipIntent {
@@ -3261,13 +3297,7 @@ impl MessagingEngine {
                 role: input.role.clone(),
                 created_at_unix_ms,
             })?;
-        let transport = StationMembershipTransitionTransport::new(
-            self.station_client.clone(),
-            token.to_string(),
-            self.endpoint.clone(),
-        )?;
-        let plan = transport.prepare(input)?;
-        MembershipTransitionPreparer::new(
+        let command = MembershipTransitionPreparer::new(
             self.store.clone(),
             self.mls_manager.clone(),
             CryptoEndpoint {
@@ -3275,7 +3305,8 @@ impl MessagingEngine {
                 device_id: self.endpoint.device_id.clone(),
             },
         )?
-        .prepare(Some(&intent_id), input, &plan, created_at_unix_ms)
+        .prepare(Some(&intent_id), input, &plan, created_at_unix_ms)?;
+        Ok(MembershipTransitionPreparation::Command(command))
     }
 
     pub fn resume_membership_intent_once(&self, token: &str) -> Result<bool, String> {
@@ -3297,6 +3328,7 @@ impl MessagingEngine {
             target_device_id: intent.target_device_id,
             role: intent.role,
             leave_intent: None,
+            admission_fulfillment: None,
         };
         let transport = StationMembershipTransitionTransport::new(
             self.station_client.clone(),
@@ -3565,6 +3597,24 @@ impl MessagingEngine {
         token: &str,
         conversation_id: &str,
     ) -> Result<MlsLeaveIntent, String> {
+        let intent = self.create_leave_intent(token, conversation_id)?;
+        let transport = StationMlsLeaveIntentTransport::new(
+            self.station_client.clone(),
+            token.to_string(),
+            self.endpoint.device_id.clone(),
+        )?;
+        let submitted = transport.submit_leave_intent(&intent)?;
+        if submitted != intent {
+            return Err("Station returned a different MLS leave intent".to_string());
+        }
+        Ok(submitted)
+    }
+
+    pub fn create_leave_intent(
+        &self,
+        token: &str,
+        conversation_id: &str,
+    ) -> Result<MlsLeaveIntent, String> {
         let conversation = self.get_authoritative_conversation(token, conversation_id)?;
         if conversation.owner_ptid == self.endpoint.ptid {
             return Err("Conversation owner must transfer ownership or dissolve first".to_string());
@@ -3573,8 +3623,17 @@ impl MessagingEngine {
             .station_client
             .active_station_peer_id()
             .ok_or_else(|| "messaging Home Station identity is unavailable".to_string())?;
-        self.submit_mls_leave_intent(
-            token,
+        let (signing_key_id, signing_key) = self.device_signing_identity()?.ok_or_else(|| {
+            "messaging leave intent device signing identity is unavailable".to_string()
+        })?;
+        let (authority_sequence, authority_hash) = self.store.authority_head(conversation_id)?;
+        build_signed_leave_intent(
+            &signing_key_id,
+            &signing_key,
+            &CryptoEndpoint {
+                ptid: self.endpoint.ptid.clone(),
+                device_id: self.endpoint.device_id.clone(),
+            },
             &MlsLeaveIntentInput {
                 federation_id: conversation.federation_id,
                 authority_station_peer_id: conversation.authority_station_peer_id,
@@ -3583,9 +3642,11 @@ impl MessagingEngine {
                 conversation_id: conversation_id.to_string(),
                 observed_membership_epoch: conversation.membership_epoch,
                 observed_mls_epoch: conversation.mls_epoch,
-                authority_sequence: 0,
-                authority_hash: Vec::new(),
+                authority_sequence,
+                authority_hash,
             },
+            &Ulid::new().to_string(),
+            now_unix_ms(),
         )
     }
 
@@ -3667,6 +3728,7 @@ impl MessagingEngine {
             target_device_id: String::new(),
             role: String::new(),
             leave_intent: Some(leave_intent),
+            admission_fulfillment: None,
         };
         let transport = StationMembershipTransitionTransport::new(
             self.station_client.clone(),

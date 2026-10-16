@@ -221,6 +221,139 @@ func (*ConversationLeaveIntentModel) TableName() string {
 	return "conversation_mls_leave_intents"
 }
 
+type GroupAdmissionPreferenceModel struct {
+	ActorPTID string    `gorm:"column:actor_ptid;size:255;primaryKey"`
+	Mode      int32     `gorm:"column:mode;not null"`
+	Revision  uint64    `gorm:"column:revision;not null"`
+	UpdatedAt time.Time `gorm:"column:updated_at;not null"`
+}
+
+func (*GroupAdmissionPreferenceModel) TableName() string {
+	return "conversation_group_admission_preferences"
+}
+
+type GroupAdmissionEvaluationModel struct {
+	RequestID                 string     `gorm:"column:request_id;size:128;primaryKey"`
+	RequestSHA256             []byte     `gorm:"column:request_sha256;type:bytea;not null"`
+	RequestBytes              []byte     `gorm:"column:request_bytes;type:bytea;not null"`
+	ResponseBytes             []byte     `gorm:"column:response_bytes;type:bytea;not null"`
+	ConversationID            string     `gorm:"column:conversation_id;size:128;not null;index"`
+	InviteePTID               string     `gorm:"column:invitee_ptid;size:255;not null;index"`
+	AuthorityPlanID           string     `gorm:"column:authority_plan_id;size:128;index"`
+	InvitationActivationState string     `gorm:"column:invitation_activation_state;size:32;not null;default:none"`
+	InvitationActivatedAt     *time.Time `gorm:"column:invitation_activated_at"`
+	CreatedAt                 time.Time  `gorm:"column:created_at;not null"`
+}
+
+func (*GroupAdmissionEvaluationModel) TableName() string {
+	return "conversation_group_admission_evaluations"
+}
+
+type RejectedGroupModel struct {
+	ActorPTID              string    `gorm:"column:actor_ptid;size:255;primaryKey"`
+	ConversationID         string    `gorm:"column:conversation_id;size:128;primaryKey"`
+	FederationID           string    `gorm:"column:federation_id;size:128;not null"`
+	AuthorityStationPeerID string    `gorm:"column:authority_station_peer_id;size:255;not null"`
+	GroupNameSnapshot      string    `gorm:"column:group_name_snapshot;size:255;not null"`
+	PolicyRevision         uint64    `gorm:"column:policy_revision;not null"`
+	RejectedAt             time.Time `gorm:"column:rejected_at;not null"`
+	LeaveRejectOperationID string    `gorm:"column:leave_reject_operation_id;size:128;index"`
+	LeaveRejectState       int32     `gorm:"column:leave_reject_state;not null"`
+	LeaveRejectFailureCode string    `gorm:"column:leave_reject_failure_code;size:64"`
+}
+
+func (*RejectedGroupModel) TableName() string {
+	return "conversation_rejected_groups"
+}
+
+type GroupInvitationModel struct {
+	Version                  uint32     `gorm:"column:version;not null"`
+	InvitationID             string     `gorm:"column:invitation_id;size:128;primaryKey"`
+	SourceRequestID          string     `gorm:"column:source_request_id;size:128;not null;uniqueIndex"`
+	ConversationID           string     `gorm:"column:conversation_id;size:128;not null;index:idx_group_invitation_active,priority:1"`
+	FederationID             string     `gorm:"column:federation_id;size:128;not null"`
+	AuthorityStationPeerID   string     `gorm:"column:authority_station_peer_id;size:255;not null"`
+	AuthorityEpoch           uint64     `gorm:"column:authority_epoch;not null"`
+	InviterPTID              string     `gorm:"column:inviter_ptid;size:255;not null"`
+	InviterDeviceID          string     `gorm:"column:inviter_device_id;size:255;not null"`
+	InviteePTID              string     `gorm:"column:invitee_ptid;size:255;not null;index:idx_group_invitation_active,priority:2"`
+	InviteeHomeStationPeerID string     `gorm:"column:invitee_home_station_peer_id;size:255;not null"`
+	State                    int32      `gorm:"column:state;not null;index:idx_group_invitation_active,priority:3"`
+	GroupNameSnapshot        string     `gorm:"column:group_name_snapshot;size:255;not null"`
+	ObservedMembershipEpoch  uint64     `gorm:"column:observed_membership_epoch;not null"`
+	ObservedMLSEpoch         uint64     `gorm:"column:observed_mls_epoch;not null"`
+	AuthoritySequence        uint64     `gorm:"column:authority_sequence;not null"`
+	AuthorityHash            []byte     `gorm:"column:authority_hash;type:bytea;not null"`
+	PolicyRevision           uint64     `gorm:"column:policy_revision;not null"`
+	CreatedAt                time.Time  `gorm:"column:created_at;not null"`
+	ExpiresAt                time.Time  `gorm:"column:expires_at;not null;index"`
+	DecidedAt                *time.Time `gorm:"column:decided_at"`
+	DecisionCommandID        string     `gorm:"column:decision_command_id;size:128;index"`
+	DecisionCommandSHA256    []byte     `gorm:"column:decision_command_sha256;type:bytea"`
+	DecisionCommandBytes     []byte     `gorm:"column:decision_command_bytes;type:bytea"`
+	FulfillmentTransitionID  string     `gorm:"column:fulfillment_transition_id;size:128"`
+}
+
+func (*GroupInvitationModel) TableName() string {
+	return "conversation_group_invitations"
+}
+
+type GroupAdmissionGrantModel struct {
+	Version                    uint32     `gorm:"column:version;not null"`
+	GrantID                    string     `gorm:"column:grant_id;size:128;primaryKey"`
+	ConversationID             string     `gorm:"column:conversation_id;size:128;not null;index"`
+	FederationID               string     `gorm:"column:federation_id;size:128;not null"`
+	AuthorityStationPeerID     string     `gorm:"column:authority_station_peer_id;size:255;not null"`
+	AuthorityEpoch             uint64     `gorm:"column:authority_epoch;not null"`
+	InviterPTID                string     `gorm:"column:inviter_ptid;size:255;not null"`
+	InviterDeviceID            string     `gorm:"column:inviter_device_id;size:255;not null"`
+	InviteePTID                string     `gorm:"column:invitee_ptid;size:255;not null;index"`
+	InviteeHomeStationPeerID   string     `gorm:"column:invitee_home_station_peer_id;size:255;not null"`
+	SourceRequestID            string     `gorm:"column:source_request_id;size:128;not null;uniqueIndex"`
+	InvitationID               string     `gorm:"column:invitation_id;size:128;index"`
+	FriendshipProofID          string     `gorm:"column:friendship_proof_id;size:255;not null"`
+	AdmissionPolicyRevision    uint64     `gorm:"column:admission_policy_revision;not null"`
+	State                      int32      `gorm:"column:state;not null;index"`
+	AuthoritySequence          uint64     `gorm:"column:authority_sequence;not null"`
+	AuthorityHash              []byte     `gorm:"column:authority_hash;type:bytea;not null"`
+	IssuedAt                   time.Time  `gorm:"column:issued_at;not null"`
+	ExpiresAt                  time.Time  `gorm:"column:expires_at;not null;index"`
+	BoundAuthorityPlanID       string     `gorm:"column:bound_authority_plan_id;size:128;index"`
+	FulfillmentTransitionID    string     `gorm:"column:fulfillment_transition_id;size:128"`
+	HomeStationSigningKeyID    string     `gorm:"column:home_station_signing_key_id;size:255;not null"`
+	HomeStationSignature       []byte     `gorm:"column:home_station_signature;type:bytea;not null"`
+	CanonicalGrantBytes        []byte     `gorm:"column:canonical_grant_bytes;type:bytea;not null"`
+	CanonicalSigningInputBytes []byte     `gorm:"column:canonical_signing_input_bytes;type:bytea;not null"`
+	BoundAt                    *time.Time `gorm:"column:bound_at"`
+	JoinedAt                   *time.Time `gorm:"column:joined_at"`
+}
+
+func (*GroupAdmissionGrantModel) TableName() string {
+	return "conversation_group_admission_grants"
+}
+
+type GroupLeaveRejectOperationModel struct {
+	Version                 uint32    `gorm:"column:version;not null"`
+	OperationID             string    `gorm:"column:operation_id;size:128;primaryKey"`
+	ActorPTID               string    `gorm:"column:actor_ptid;size:255;not null;index"`
+	ConversationID          string    `gorm:"column:conversation_id;size:128;not null;index"`
+	FederationID            string    `gorm:"column:federation_id;size:128;not null"`
+	AuthorityStationPeerID  string    `gorm:"column:authority_station_peer_id;size:255;not null"`
+	GroupNameSnapshot       string    `gorm:"column:group_name_snapshot;size:255;not null"`
+	State                   int32     `gorm:"column:state;not null;index"`
+	RejectionPolicyRevision uint64    `gorm:"column:rejection_policy_revision;not null"`
+	LeaveIntentID           string    `gorm:"column:leave_intent_id;size:128"`
+	LeaveIntentBytes        []byte    `gorm:"column:leave_intent_bytes;type:bytea"`
+	FulfillmentTransitionID string    `gorm:"column:fulfillment_transition_id;size:128"`
+	FailureCode             string    `gorm:"column:failure_code;size:64"`
+	CreatedAt               time.Time `gorm:"column:created_at;not null"`
+	UpdatedAt               time.Time `gorm:"column:updated_at;not null"`
+}
+
+func (*GroupLeaveRejectOperationModel) TableName() string {
+	return "conversation_group_leave_reject_operations"
+}
+
 type ConversationFollowerHeadModel struct {
 	ConversationID         string    `gorm:"column:conversation_id;size:128;primaryKey"`
 	FederationID           string    `gorm:"column:federation_id;size:128;not null"`

@@ -40,11 +40,11 @@ pub mod peers_touch {
 use interface::tauri_commands::{
     account, actor, admin, agent_events, agent_growth, agent_orchestration, agent_scheduler,
     agent_turn, agents, applets, auth, bot, capability_authority, channels, conversation, cron,
-    crypto, desktop_capture, evaluation, federation, frontend_log, frontend_telemetry, home,
-    host_events, i18n, ice, key_exchange, mcp, memory, messaging as messaging_commands,
-    messaging_recovery, model_config, native_surface, notebook, notification, oauth2, oss,
-    presence, profile, provider, realtime, runtime_evidence, search, settings, skills,
-    skills_market, social as social_commands, station, system, tools, tts,
+    crypto, desktop_capture, evaluation, federation, frontend_log, frontend_telemetry,
+    group_admission, home, host_events, i18n, ice, key_exchange, mcp, memory,
+    messaging as messaging_commands, messaging_recovery, model_config, native_surface, notebook,
+    notification, oauth2, oss, presence, profile, provider, realtime, runtime_evidence, search,
+    settings, skills, skills_market, social as social_commands, station, system, tools, tts,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -1360,6 +1360,13 @@ fn main() {
             notification::notification_preferences,
             notification::notification_preferences_update,
             notification::notification_push_devices,
+            group_admission::group_admission_settings_get,
+            group_admission::group_admission_preference_update,
+            group_admission::group_admission_rejected_group_remove,
+            group_admission::group_invitations_list,
+            group_admission::group_invitation_decide,
+            group_admission::group_leave_reject_start,
+            group_admission::group_leave_reject_retry,
             host_events::desktop_native_event_emit,
             #[cfg(feature = "acceptance-webdriver")]
             station::acceptance_station_route_probe,

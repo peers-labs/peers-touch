@@ -1,8 +1,8 @@
 # Chat Lifecycle - Experience Contract
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-09-16 | **Updated**: 2026-09-22
+> **Version**: v1.4
+> **Created**: 2026-09-16 | **Updated**: 2026-10-16
 > **Owner**: Chat Product Team
 
 ---
@@ -177,23 +177,45 @@ never misrepresented as live voice.
 
 ## 5. CHAT-J04: Group Lifecycle
 
-1. Create a group from eligible contacts and see a pending state until the
+1. Configure `Friends can add me directly to groups`. It is enabled by
+   default. Disabling it keeps friend-only eligibility but requires an
+   explicit invitation decision. Non-friends cannot add or invite.
+2. Create a group from eligible friends and see a pending state until the
    authoritative Group projection is committed.
-2. Send and receive text, attachments, and voice messages.
-3. Reply, edit, retract, react, pin, read, and type under the same ordering and
+3. Add an eligible friend. When that friend allows direct add, one
+   authoritative membership transition adds them without an inbox decision.
+   When confirmation is required, they remain outside membership and MLS,
+   receive one durable invitation in the notification decision inbox, and may
+   accept or decline it.
+4. Accepting enters a visible `joining` state until an authorized active member
+   commits the current MLS transition and the invitee consumes its Welcome.
+   Declining, expiry, revocation, and group rejection are terminal and cannot
+   produce membership or Welcome delivery.
+5. Send and receive text, attachments, and voice messages.
+6. Reply, edit, retract, react, pin, read, and type under the same ordering and
    permission semantics as Direct.
-4. A successfully committed thread reply stays successful in the UI, updates
+7. A successfully committed thread reply stays successful in the UI, updates
    the root reply count, and appears in both participants' thread panels and
    main-thread summaries without manual refresh.
-5. Add and remove members/devices; retained members continue after the MLS
+8. Add and remove members/devices; retained members continue after the MLS
    transition and removed members receive no future content.
-6. Rename, change roles/owner, leave, or dissolve through Conversation-owned
+9. Rename, change roles/owner, leave, or dissolve through Conversation-owned
    commands.
-7. Restart all participants and preserve entitled history and terminal group
+10. A non-owner leaving a group chooses either `Leave group` or
+    `Leave and reject future invitations`. The second action immediately
+    protects against direct add and new invitations, then remains visibly
+    pending until the MLS leave transition commits. If leave completion fails,
+    the rejection remains durable and the UI offers leave retry.
+11. Privacy Settings lists rejected groups by stable Conversation identity.
+    Removing one entry restores only future eligibility under the global
+    policy; it never rejoins the group or revives an old invitation.
+12. Restart all participants and preserve invitation decisions, rejection
+    policy, entitled history, and terminal group
    state.
 
-Success: membership, MLS epoch, visible history, and permissions converge for
-all active participants without a legacy group owner.
+Success: admission policy, invitation state, membership, MLS epoch, visible
+history, and permissions converge without adding an unconsenting actor or
+creating a second group authority.
 
 ## 6. CHAT-J05: Live One-To-One Voice And Video
 
