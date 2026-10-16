@@ -247,6 +247,18 @@ class WindowsProvisionerContractTest(unittest.TestCase):
             "copy_file(bundle, remote_bundle, timeout=300)",
             source,
         )
+        sync_source = source[
+            source.index("    def _sync_source("):
+            source.index("    def _build_binary(")
+        ]
+        self.assertLess(
+            sync_source.index("try:", sync_source.index("remote_bundle =")),
+            sync_source.index("self.transport.copy_file("),
+        )
+        self.assertLess(
+            sync_source.index("self.transport.copy_file("),
+            sync_source.index("finally:"),
+        )
 
     def test_orchestrator_endpoint_uses_distinct_remote_port(self) -> None:
         provisioner = NativeDesktopWindowsProvisioner.__new__(

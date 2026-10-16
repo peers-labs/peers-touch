@@ -1313,12 +1313,12 @@ class NativeDesktopWindowsProvisioner:
                     "Temp",
                     f"pt-source-{secrets.token_hex(8)}.bundle",
                 )
-                self.transport.copy_file(
-                    bundle,
-                    remote_bundle,
-                    timeout=WINDOWS_SOURCE_COPY_TIMEOUT_SECONDS,
-                )
                 try:
+                    self.transport.copy_file(
+                        bundle,
+                        remote_bundle,
+                        timeout=WINDOWS_SOURCE_COPY_TIMEOUT_SECONDS,
+                    )
                     self.transport.run_argv(
                         (
                             "powershell.exe",
