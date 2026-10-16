@@ -58,6 +58,10 @@ _SUPPORTED_TRANSPORTS = ("ssh", "local")
 _SUPPORTED_SESSION_TYPES = ("x11", "wayland", "native-macos", "native-windows")
 _SUPPORTED_ISOLATION_KINDS = ("host", "container")
 _SUPPORTED_SOURCE_MODES = ("git-object-sync", "local-worktree")
+_SUPPORTED_DESKTOP_INPUT_MODES = (
+    "semantic-nonintrusive",
+    "exclusive-native-input",
+)
 _FORBIDDEN_SESSION_TYPES = ("xvfb",)
 _SLUG_MAX = 128
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
@@ -523,6 +527,49 @@ class CellSourceIdentity:
 
 
 @dataclass(frozen=True)
+class CellNonInterferenceIdentity:
+    frontmost_pid_before: int
+    frontmost_pid_after: int
+    pointer_x_before: float
+    pointer_y_before: float
+    pointer_x_after: float
+    pointer_y_after: float
+    keyboard_focus_before_sha256: str
+    keyboard_focus_after_sha256: str
+
+    def unchanged(self) -> bool:
+        return (
+            self.frontmost_pid_before > 0
+            and self.frontmost_pid_after > 0
+            and self.frontmost_pid_before == self.frontmost_pid_after
+            and self.pointer_x_before == self.pointer_x_after
+            and self.pointer_y_before == self.pointer_y_after
+            and self.keyboard_focus_before_sha256
+            == self.keyboard_focus_after_sha256
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "frontmostPidBefore": self.frontmost_pid_before,
+            "frontmostPidAfter": self.frontmost_pid_after,
+            "pointerBefore": {
+                "x": self.pointer_x_before,
+                "y": self.pointer_y_before,
+            },
+            "pointerAfter": {
+                "x": self.pointer_x_after,
+                "y": self.pointer_y_after,
+            },
+            "keyboardFocusBeforeSha256": (
+                self.keyboard_focus_before_sha256
+            ),
+            "keyboardFocusAfterSha256": (
+                self.keyboard_focus_after_sha256
+            ),
+        }
+
+
+@dataclass(frozen=True)
 class CellAdapterIdentity:
     input_backend: str
     window_backend: str
@@ -531,6 +578,12 @@ class CellAdapterIdentity:
     focus_probe: bool
     point_ownership_probe: bool
     screenshot_probe: bool
+    input_mode: str = "exclusive-native-input"
+    semantic_backend: str = ""
+    semantic_action_probe: bool = False
+    semantic_screenshot_probe: bool = False
+    non_interference_probe: bool = False
+    non_interference: CellNonInterferenceIdentity | None = None
 
 
 @dataclass(frozen=True)
@@ -631,7 +684,15 @@ class RuntimeCellManifest:
             raise ProvisioningError(
                 f"runtime cell {self.cell_id}: connected display output is required"
             )
-        if not (
+        input_mode = self.native_adapter.input_mode
+        if input_mode not in _SUPPORTED_DESKTOP_INPUT_MODES:
+            raise ProvisioningError(
+                f"runtime cell {self.cell_id}: unsupported Desktop input mode "
+                f"{input_mode!r}"
+            )
+        if input_mode == "semantic-nonintrusive":
+            self._validate_semantic_adapter_identity()
+        elif not (
             self.native_adapter.input_probe
             and self.native_adapter.focus_probe
             and self.native_adapter.point_ownership_probe
@@ -682,6 +743,53 @@ class RuntimeCellManifest:
             raise ProvisioningError(
                 f"runtime cell {self.cell_id}: cleanup resources missing: "
                 f"{sorted(missing_cleanup)}"
+            )
+
+    def _validate_semantic_adapter_identity(self) -> None:
+        adapter = self.native_adapter
+        if (
+            adapter.input_probe
+            or adapter.focus_probe
+            or adapter.point_ownership_probe
+            or adapter.screenshot_probe
+        ):
+            raise ProvisioningError(
+                f"runtime cell {self.cell_id}: semantic input must not claim "
+                "physical native adapter proof"
+            )
+        if (
+            adapter.semantic_backend != "tauri-embedded-webdriver"
+            or not adapter.semantic_action_probe
+            or not adapter.semantic_screenshot_probe
+            or not adapter.non_interference_probe
+        ):
+            raise ProvisioningError(
+                f"runtime cell {self.cell_id}: semantic adapter probes are incomplete"
+            )
+        identity = adapter.non_interference
+        if identity is None:
+            raise ProvisioningError(
+                f"runtime cell {self.cell_id}: semantic non-interference "
+                "identity is missing"
+            )
+        for name, value in (
+            (
+                "keyboardFocusBeforeSha256",
+                identity.keyboard_focus_before_sha256,
+            ),
+            (
+                "keyboardFocusAfterSha256",
+                identity.keyboard_focus_after_sha256,
+            ),
+        ):
+            if not _SHA256_PATTERN.fullmatch(value):
+                raise ProvisioningError(
+                    f"runtime cell {self.cell_id}: {name} is missing or invalid"
+                )
+        if not identity.unchanged():
+            raise ProvisioningError(
+                f"runtime cell {self.cell_id}: semantic input changed operator "
+                "frontmost app, pointer, or keyboard focus"
             )
 
     def is_ready_for_gate(self, contract: RuntimeCellContract) -> bool:
@@ -736,6 +844,7 @@ class RuntimeCellManifest:
                     "binarySha256": self.source.binary_sha256,
                 },
                 "nativeAdapter": {
+                    "inputMode": self.native_adapter.input_mode,
                     "inputBackend": self.native_adapter.input_backend,
                     "windowBackend": self.native_adapter.window_backend,
                     "screenshotBackend": self.native_adapter.screenshot_backend,
@@ -745,6 +854,21 @@ class RuntimeCellManifest:
                         self.native_adapter.point_ownership_probe
                     ),
                     "screenshotProbe": self.native_adapter.screenshot_probe,
+                    "semanticBackend": self.native_adapter.semantic_backend,
+                    "semanticActionProbe": (
+                        self.native_adapter.semantic_action_probe
+                    ),
+                    "semanticScreenshotProbe": (
+                        self.native_adapter.semantic_screenshot_probe
+                    ),
+                    "nonInterferenceProbe": (
+                        self.native_adapter.non_interference_probe
+                    ),
+                    "nonInterference": (
+                        self.native_adapter.non_interference.to_dict()
+                        if self.native_adapter.non_interference is not None
+                        else None
+                    ),
                 },
                 "lease": {
                     "ownerRunId": self.lease_owner_run_id,

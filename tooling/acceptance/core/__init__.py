@@ -105,6 +105,7 @@ from .launch_context import (
 from .runtime_cell import (
     CellAdapterIdentity,
     CellDisplayIdentity,
+    CellNonInterferenceIdentity,
     CellPlatformIdentity,
     CellSourceIdentity,
     CellTransportIdentity,
@@ -219,6 +220,7 @@ __all__ = [
     "GateProcessLauncher",
     "CellAdapterIdentity",
     "CellDisplayIdentity",
+    "CellNonInterferenceIdentity",
     "CellPlatformIdentity",
     "CellSourceIdentity",
     "CellTransportIdentity",

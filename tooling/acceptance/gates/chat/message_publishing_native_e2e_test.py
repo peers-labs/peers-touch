@@ -11,6 +11,7 @@ from tooling.acceptance.core import (
     SuiteRuntimeLedger,
     validate_suite_runtime_report,
 )
+from tooling.acceptance.drivers.native.base import NativeInputMode
 from tooling.acceptance.gates.chat.message_publishing_native_e2e import (
     GATE_ID,
     RUNTIME_CONTRACT,
@@ -103,14 +104,22 @@ class MessagePublishingNativeGateTests(unittest.TestCase):
             "actors": [{"role": "alice", "ptid": "ptid:alice"}],
         }
 
+        runtime_binding = MagicMock()
+        runtime_binding.input_mode = (
+            NativeInputMode.SEMANTIC_NON_INTRUSIVE
+        )
         gate = MessagePublishingNativeGate(
             manifest=manifest,
             actor_manifest=actor_manifest,
-            runtime_binding=MagicMock(),
+            runtime_binding=runtime_binding,
         )
         self.addCleanup(shutil.rmtree, gate.fixture_root, ignore_errors=True)
 
         self.assertEqual(gate.station_url, "http://station.example:18080")
+        self.assertEqual(
+            gate.report.runtime["desktopInputMode"],
+            "semantic-nonintrusive",
+        )
         self.assertEqual(
             manifest["clients"][0]["service_bindings"]["station"]["service_id"],
             "station-via-relay",

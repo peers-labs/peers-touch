@@ -226,6 +226,119 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
         )
         session.stop.assert_called_once_with()
 
+    def test_semantic_probe_uses_webdriver_without_native_input(self) -> None:
+        launcher = Mock(log_path=None)
+        session = Mock(process_id=42, log_path=None)
+        session.save_screenshot.side_effect = (
+            lambda path: path.write_bytes(b"semantic-screenshot")
+        )
+        hover = object()
+        click = object()
+        input_element = object()
+        key = object()
+        session.find_element.side_effect = (
+            hover,
+            click,
+            input_element,
+            key,
+        )
+        session.execute_script.side_effect = (
+            None,
+            {
+                "hovered": True,
+                "clicked": True,
+                "text": "semantic-probe",
+                "keyCount": 1,
+            },
+            None,
+        )
+        adapter = Mock(spec=MacOSNativeDesktopAdapter)
+        lifecycle = NativeDesktopMacOSProvisioner()
+        operator_state = {
+            "frontmostPid": 41,
+            "pointerX": 120.0,
+            "pointerY": 240.0,
+            "keyboardFocusSha256": "b" * 64,
+        }
+
+        with patch.dict(
+            "os.environ",
+            {
+                "PT_ACCEPTANCE_DESKTOP_INPUT_MODE": (
+                    "semantic-nonintrusive"
+                ),
+            },
+            clear=True,
+        ), patch(
+            "tooling.acceptance.provisioners.native_desktop_macos."
+            "resolve_smoke_port",
+            return_value=45123,
+        ), patch(
+            "tooling.acceptance.provisioners.native_desktop_macos."
+            "find_app_binary",
+            return_value="/tmp/peers-touch-desktop",
+        ), patch(
+            "tooling.acceptance.provisioners.native_desktop_macos."
+            "LocalTauriLauncher",
+            return_value=launcher,
+        ) as launcher_type, patch(
+            "tooling.acceptance.provisioners.native_desktop_macos."
+            "TauriSession",
+            return_value=session,
+        ), patch(
+            "tooling.acceptance.provisioners.native_desktop_macos."
+            "MacOSNativeDesktopAdapter",
+            return_value=adapter,
+        ), patch.object(
+            lifecycle,
+            "_snapshot_operator_state",
+            side_effect=(operator_state, operator_state),
+        ) as snapshot:
+            probes, webdriver_port = lifecycle._probe_native_adapter()
+
+        self.assertEqual(webdriver_port, 45123)
+        self.assertEqual(probes.input_mode, "semantic-nonintrusive")
+        self.assertEqual(
+            probes.semantic_backend,
+            "tauri-embedded-webdriver",
+        )
+        self.assertTrue(probes.semantic_action_probe)
+        self.assertTrue(probes.semantic_screenshot_probe)
+        self.assertTrue(probes.non_interference_probe)
+        self.assertFalse(probes.input_probe)
+        self.assertFalse(probes.focus_probe)
+        self.assertFalse(probes.point_ownership_probe)
+        self.assertFalse(probes.screenshot_probe)
+        self.assertEqual(snapshot.call_count, 2)
+        launcher_type.assert_called_once_with(
+            app_binary="/tmp/peers-touch-desktop",
+            port=45123,
+            profile="desktop-macos-native-probe",
+            environment={
+                "PT_ACCEPTANCE_WINDOW_SLOT": "0",
+                "PT_ACCEPTANCE_WINDOW_COUNT": "1",
+                "PT_ACCEPTANCE_DESKTOP_INPUT_MODE": (
+                    "semantic-nonintrusive"
+                ),
+                "PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION": (
+                    "shared-user-session"
+                ),
+            },
+        )
+        session.semantic_hover.assert_called_once_with(hover)
+        session.semantic_click.assert_called_once_with(click)
+        session.semantic_replace_text.assert_called_once_with(
+            input_element,
+            "semantic-probe",
+        )
+        session.semantic_key_sequence.assert_called_once()
+        session.driver.set_window_rect.assert_not_called()
+        session.invoke_app_result.assert_not_called()
+        adapter.position_main_window.assert_not_called()
+        adapter.post_mouse.assert_not_called()
+        adapter.capture_screenshot.assert_not_called()
+        session.stop.assert_called_once_with()
+
     def test_window_bounds_wait_uses_native_startup_budget(self) -> None:
         default = inspect.signature(
             NativeDesktopMacOSProvisioner._await_window_bounds

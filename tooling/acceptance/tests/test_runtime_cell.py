@@ -18,6 +18,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from tooling.acceptance.core import (
     CellAdapterIdentity,
     CellDisplayIdentity,
+    CellNonInterferenceIdentity,
     CellPlatformIdentity,
     CellSourceIdentity,
     CellTransportIdentity,
@@ -236,6 +237,153 @@ class RuntimeCellManifestTests(unittest.TestCase):
                 )
                 with self.assertRaises(ProvisioningError):
                     replace(manifest, native_adapter=adapter).validate(contract)
+
+    def test_semantic_manifest_requires_non_interference_without_physical_claims(
+        self,
+    ) -> None:
+        from dataclasses import replace
+
+        contract = RuntimeCellContract.from_dict(_valid_linux_contract())
+        manifest = _ready_manifest()
+        digest = "b" * 64
+        adapter = CellAdapterIdentity(
+            input_backend="x11-xtest",
+            window_backend="x11-ewmh",
+            screenshot_backend="webkitgtk-and-desktop",
+            input_probe=False,
+            focus_probe=False,
+            point_ownership_probe=False,
+            screenshot_probe=False,
+            input_mode="semantic-nonintrusive",
+            semantic_backend="tauri-embedded-webdriver",
+            semantic_action_probe=True,
+            semantic_screenshot_probe=True,
+            non_interference_probe=True,
+            non_interference=CellNonInterferenceIdentity(
+                frontmost_pid_before=41,
+                frontmost_pid_after=41,
+                pointer_x_before=120.0,
+                pointer_y_before=240.0,
+                pointer_x_after=120.0,
+                pointer_y_after=240.0,
+                keyboard_focus_before_sha256=digest,
+                keyboard_focus_after_sha256=digest,
+            ),
+        )
+        semantic_manifest = replace(manifest, native_adapter=adapter)
+
+        self.assertTrue(semantic_manifest.is_ready_for_gate(contract))
+        payload = semantic_manifest.to_dict()["nativeAdapter"]
+        self.assertEqual(payload["inputMode"], "semantic-nonintrusive")
+        self.assertTrue(payload["semanticActionProbe"])
+        self.assertTrue(payload["semanticScreenshotProbe"])
+        self.assertTrue(payload["nonInterferenceProbe"])
+        self.assertEqual(
+            payload["nonInterference"]["frontmostPidBefore"],
+            41,
+        )
+
+    def test_semantic_manifest_rejects_physical_native_claims(self) -> None:
+        from dataclasses import replace
+
+        contract = RuntimeCellContract.from_dict(_valid_linux_contract())
+        manifest = _ready_manifest()
+        digest = "b" * 64
+        adapter = CellAdapterIdentity(
+            input_backend="x11-xtest",
+            window_backend="x11-ewmh",
+            screenshot_backend="webkitgtk-and-desktop",
+            input_probe=False,
+            focus_probe=False,
+            point_ownership_probe=False,
+            screenshot_probe=False,
+            input_mode="semantic-nonintrusive",
+            semantic_backend="tauri-embedded-webdriver",
+            semantic_action_probe=True,
+            semantic_screenshot_probe=True,
+            non_interference_probe=True,
+            non_interference=CellNonInterferenceIdentity(
+                frontmost_pid_before=41,
+                frontmost_pid_after=41,
+                pointer_x_before=120.0,
+                pointer_y_before=240.0,
+                pointer_x_after=120.0,
+                pointer_y_after=240.0,
+                keyboard_focus_before_sha256=digest,
+                keyboard_focus_after_sha256=digest,
+            ),
+        )
+
+        for field in (
+            "input_probe",
+            "focus_probe",
+            "point_ownership_probe",
+            "screenshot_probe",
+        ):
+            with self.subTest(field=field):
+                claimed = replace(adapter, **{field: True})
+                with self.assertRaisesRegex(
+                    ProvisioningError,
+                    "must not claim physical",
+                ):
+                    replace(
+                        manifest,
+                        native_adapter=claimed,
+                    ).validate(contract)
+
+    def test_semantic_manifest_rejects_changed_operator_state(self) -> None:
+        from dataclasses import replace
+
+        contract = RuntimeCellContract.from_dict(_valid_linux_contract())
+        manifest = _ready_manifest()
+        digest = "b" * 64
+        baseline = CellNonInterferenceIdentity(
+            frontmost_pid_before=41,
+            frontmost_pid_after=41,
+            pointer_x_before=120.0,
+            pointer_y_before=240.0,
+            pointer_x_after=120.0,
+            pointer_y_after=240.0,
+            keyboard_focus_before_sha256=digest,
+            keyboard_focus_after_sha256=digest,
+        )
+        adapter = CellAdapterIdentity(
+            input_backend="x11-xtest",
+            window_backend="x11-ewmh",
+            screenshot_backend="webkitgtk-and-desktop",
+            input_probe=False,
+            focus_probe=False,
+            point_ownership_probe=False,
+            screenshot_probe=False,
+            input_mode="semantic-nonintrusive",
+            semantic_backend="tauri-embedded-webdriver",
+            semantic_action_probe=True,
+            semantic_screenshot_probe=True,
+            non_interference_probe=True,
+            non_interference=baseline,
+        )
+        changed_states = (
+            replace(baseline, frontmost_pid_after=42),
+            replace(baseline, pointer_x_after=121.0),
+            replace(
+                baseline,
+                keyboard_focus_after_sha256="c" * 64,
+            ),
+        )
+
+        for changed in changed_states:
+            with self.subTest(changed=changed):
+                with self.assertRaisesRegex(
+                    ProvisioningError,
+                    "changed operator",
+                ):
+                    replace(
+                        manifest,
+                        native_adapter=replace(
+                            adapter,
+                            non_interference=changed,
+                        ),
+                    ).validate(contract)
 
     def test_fixed_display_geometry_mismatch_fails(self) -> None:
         from dataclasses import replace

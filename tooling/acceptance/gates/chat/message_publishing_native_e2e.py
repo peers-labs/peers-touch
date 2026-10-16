@@ -100,6 +100,9 @@ class MessagePublishingNativeGate(AcceptanceGate):
         self.actor_manifest = actor_manifest
         self.runtime_binding = runtime_binding
         self.report.manifest = manifest
+        self.report.runtime["desktopInputMode"] = (
+            runtime_binding.input_mode.value
+        )
         station = require_runtime_service(manifest, "station", "station")
         self.station_url = str(station.get("endpoint") or "").rstrip("/")
         self.report.station_url = self.station_url

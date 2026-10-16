@@ -17,9 +17,12 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from selenium.webdriver.common.keys import Keys
+
 from tooling.acceptance.core import (
     CellAdapterIdentity,
     CellDisplayIdentity,
+    CellNonInterferenceIdentity,
     CellPlatformIdentity,
     CellSourceIdentity,
     CellTransportIdentity,
@@ -123,6 +126,17 @@ if event is None:
 point = Quartz.CGEventGetLocation(event)
 print(json.dumps({"x": float(point.x), "y": float(point.y)}, sort_keys=True))
 """
+
+_FRONTMOST_PID_PROBE = r"""
+import json
+
+import AppKit
+
+application = AppKit.NSWorkspace.sharedWorkspace().frontmostApplication()
+process_id = int(application.processIdentifier()) if application else -1
+print(json.dumps({"processId": process_id}, sort_keys=True))
+"""
+
 
 def _sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
@@ -413,25 +427,105 @@ class NativeDesktopMacOSProvisioner:
             },
         )
         session = TauriSession(launcher)
+        adapter = MacOSNativeDesktopAdapter(input_mode)
+        operator_before = (
+            self._snapshot_operator_state(adapter)
+            if input_mode is NativeInputMode.SEMANTIC_NON_INTRUSIVE
+            else None
+        )
         screenshot_root = Path(
             tempfile.mkdtemp(prefix="pt-macos-cell-probe-")
         )
         screenshot = screenshot_root / "desktop.png"
         log_path: Path | None = None
+        session_stopped = False
         try:
             session.start()
             session.wait_for_ready()
             session.wait_for_acceptance_harness()
+            if input_mode is NativeInputMode.SEMANTIC_NON_INTRUSIVE:
+                semantic_action_probe = self._probe_semantic_actions(session)
+                session.save_screenshot(screenshot)
+                semantic_screenshot_probe = (
+                    screenshot.is_file() and screenshot.stat().st_size > 0
+                )
+                log_path = session.log_path
+                session.stop()
+                session_stopped = True
+                operator_after = self._snapshot_operator_state(adapter)
+                if operator_before is None:
+                    raise ProvisioningError(
+                        "macOS semantic probe has no operator baseline"
+                    )
+                non_interference = CellNonInterferenceIdentity(
+                    frontmost_pid_before=int(
+                        operator_before["frontmostPid"]
+                    ),
+                    frontmost_pid_after=int(
+                        operator_after["frontmostPid"]
+                    ),
+                    pointer_x_before=float(operator_before["pointerX"]),
+                    pointer_y_before=float(operator_before["pointerY"]),
+                    pointer_x_after=float(operator_after["pointerX"]),
+                    pointer_y_after=float(operator_after["pointerY"]),
+                    keyboard_focus_before_sha256=str(
+                        operator_before["keyboardFocusSha256"]
+                    ),
+                    keyboard_focus_after_sha256=str(
+                        operator_after["keyboardFocusSha256"]
+                    ),
+                )
+                non_interference_probe = non_interference.unchanged()
+                probes = CellAdapterIdentity(
+                    input_backend=self.contract.native_adapter.input,
+                    window_backend=self.contract.native_adapter.window,
+                    screenshot_backend=self.contract.native_adapter.screenshot,
+                    input_probe=False,
+                    focus_probe=False,
+                    point_ownership_probe=False,
+                    screenshot_probe=False,
+                    input_mode=input_mode.value,
+                    semantic_backend="tauri-embedded-webdriver",
+                    semantic_action_probe=semantic_action_probe,
+                    semantic_screenshot_probe=semantic_screenshot_probe,
+                    non_interference_probe=non_interference_probe,
+                    non_interference=non_interference,
+                )
+                if not (
+                    probes.semantic_action_probe
+                    and probes.semantic_screenshot_probe
+                    and probes.non_interference_probe
+                ):
+                    raise BlockedError(
+                        reason=(
+                            "macOS semantic adapter probes are incomplete: "
+                            f"actions={probes.semantic_action_probe} "
+                            f"screenshot={probes.semantic_screenshot_probe} "
+                            f"frontmostPidBefore="
+                            f"{non_interference.frontmost_pid_before} "
+                            f"frontmostPidAfter="
+                            f"{non_interference.frontmost_pid_after} "
+                            f"pointerBefore=("
+                            f"{non_interference.pointer_x_before},"
+                            f"{non_interference.pointer_y_before}) "
+                            f"pointerAfter=("
+                            f"{non_interference.pointer_x_after},"
+                            f"{non_interference.pointer_y_after}) "
+                            f"keyboardFocusUnchanged="
+                            f"{non_interference.keyboard_focus_before_sha256 == non_interference.keyboard_focus_after_sha256}"
+                        ),
+                        resource="runtime-cell-semantic-adapter",
+                    )
+                return probes, webdriver_port
+
             session.driver.set_window_rect(x=100, y=100)
             process_id = session.process_id
             if process_id is None:
                 raise ProvisioningError(
                     "macOS runtime-cell probe process identity is unavailable"
                 )
-            adapter = MacOSNativeDesktopAdapter(input_mode)
-            if input_mode is NativeInputMode.EXCLUSIVE_NATIVE_INPUT:
-                session.invoke_app_result("acceptance_request_activation")
-                adapter.position_main_window(process_id, (100.0, 100.0))
+            session.invoke_app_result("acceptance_request_activation")
+            adapter.position_main_window(process_id, (100.0, 100.0))
             bounds = self._await_window_bounds(process_id)
             point, pointer, stack, input_probe, attempted_points = (
                 self._probe_owned_point(
@@ -472,6 +566,7 @@ class NativeDesktopMacOSProvisioner:
                 screenshot_probe=(
                     screenshot.is_file() and screenshot.stat().st_size > 0
                 ),
+                input_mode=input_mode.value,
             )
             if not (
                 probes.input_probe
@@ -492,12 +587,154 @@ class NativeDesktopMacOSProvisioner:
             log_path = session.log_path
             return probes, webdriver_port
         finally:
-            session.stop()
+            if not session_stopped:
+                session.stop()
             shutil.rmtree(screenshot_root, ignore_errors=True)
             if log_path is None:
                 log_path = launcher.log_path
             if log_path is not None:
                 log_path.unlink(missing_ok=True)
+
+    @staticmethod
+    def _probe_semantic_actions(session: TauriSession) -> bool:
+        session.execute_script(
+            """
+            document.querySelector('[data-pt-runtime-cell-probe]')?.remove();
+            const root = document.createElement('div');
+            root.dataset.ptRuntimeCellProbe = 'true';
+            root.style.cssText = [
+              'position:fixed',
+              'left:8px',
+              'bottom:8px',
+              'z-index:2147483647',
+              'display:flex',
+              'gap:4px',
+              'padding:4px',
+              'background:#fff',
+            ].join(';');
+            const hover = document.createElement('button');
+            hover.dataset.ptSemanticProbe = 'hover';
+            hover.textContent = 'Hover';
+            hover.addEventListener('mouseover', () => {
+              root.dataset.hovered = '1';
+            });
+            const click = document.createElement('button');
+            click.dataset.ptSemanticProbe = 'click';
+            click.textContent = 'Click';
+            click.addEventListener('click', () => {
+              root.dataset.clicked = '1';
+            });
+            const input = document.createElement('input');
+            input.dataset.ptSemanticProbe = 'input';
+            const key = document.createElement('button');
+            key.dataset.ptSemanticProbe = 'key';
+            key.textContent = 'Key';
+            key.addEventListener('click', () => {
+              root.dataset.keyCount = String(
+                Number(root.dataset.keyCount || '0') + 1,
+              );
+            });
+            root.append(hover, click, input, key);
+            document.body.append(root);
+            """
+        )
+        try:
+            hover = session.find_element(
+                '[data-pt-semantic-probe="hover"]'
+            )
+            click = session.find_element(
+                '[data-pt-semantic-probe="click"]'
+            )
+            input_element = session.find_element(
+                '[data-pt-semantic-probe="input"]'
+            )
+            key = session.find_element(
+                '[data-pt-semantic-probe="key"]'
+            )
+            session.semantic_hover(hover)
+            session.semantic_click(click)
+            session.semantic_replace_text(
+                input_element,
+                "semantic-probe",
+            )
+            session.semantic_key_sequence(key, Keys.ENTER)
+            result = session.execute_script(
+                """
+                const root = document.querySelector(
+                  '[data-pt-runtime-cell-probe]',
+                );
+                const input = root?.querySelector(
+                  '[data-pt-semantic-probe="input"]',
+                );
+                return {
+                  hovered: root?.dataset.hovered === '1',
+                  clicked: root?.dataset.clicked === '1',
+                  text: input?.value || '',
+                  keyCount: Number(root?.dataset.keyCount || '0'),
+                };
+                """
+            )
+            return (
+                isinstance(result, dict)
+                and result.get("hovered") is True
+                and result.get("clicked") is True
+                and result.get("text") == "semantic-probe"
+                and result.get("keyCount") == 1
+            )
+        finally:
+            session.execute_script(
+                """
+                document.querySelector(
+                  '[data-pt-runtime-cell-probe]',
+                )?.remove();
+                """
+            )
+
+    @classmethod
+    def _snapshot_operator_state(
+        cls,
+        adapter: MacOSNativeDesktopAdapter,
+    ) -> dict[str, Any]:
+        frontmost = cls._json_probe(
+            _FRONTMOST_PID_PROBE,
+            "frontmost application",
+        )
+        process_id = int(frontmost.get("processId") or -1)
+        if process_id <= 0:
+            raise BlockedError(
+                reason="macOS operator frontmost process is unavailable",
+                resource="runtime-cell-operator-focus",
+            )
+        control = adapter.focused_control(process_id)
+        if (
+            control.error
+            or control.actual_frontmost_pid != process_id
+        ):
+            raise BlockedError(
+                reason=(
+                    "macOS operator keyboard focus cannot be attested: "
+                    f"processId={process_id} kind={control.kind!r} "
+                    f"actualFrontmostPid={control.actual_frontmost_pid} "
+                    f"error={control.error!r}"
+                ),
+                resource="runtime-cell-operator-focus",
+            )
+        pointer = cls._json_probe(
+            _POINTER_LOCATION_PROBE,
+            "pointer location",
+        )
+        return {
+            "frontmostPid": process_id,
+            "pointerX": float(pointer["x"]),
+            "pointerY": float(pointer["y"]),
+            "keyboardFocusSha256": _sha256_text(
+                json.dumps(
+                    control.to_dict(),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+            ),
+        }
 
     @staticmethod
     def _await_webview_focus(
