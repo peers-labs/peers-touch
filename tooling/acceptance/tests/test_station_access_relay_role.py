@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -20,6 +21,9 @@ from tooling.acceptance.provisioners import (
     StationAccessRelayRoleProvisioner,
     get_provisioner,
 )
+from tooling.acceptance.provisioners.posix_service_runtime import (
+    PosixServiceRuntimeConfig,
+)
 from tooling.acceptance.provisioners.station_access_relay_role import (
     DESKTOP_RELAY_NATIVE_GATE_ID,
     NODE_CONNECTIVITY_NATIVE_GATE_ID,
@@ -29,6 +33,8 @@ from tooling.acceptance.provisioners.station_access_relay_role import (
     _relay_discovery_endpoint,
     _relay_peer_identity,
     _service_source_compatibility,
+    _station_compose_environment_file,
+    _station_runtime_config,
     _validate_runtime_status,
 )
 
@@ -46,9 +52,14 @@ def _config(role: str) -> SimpleNamespace:
         user="operator",
         ssh_port=22,
         known_hosts_file="",
+        deploy_path=f"peers-touch/{role}",
+        runtime_path=f".peers-touch/runtime/{role}",
         http_port=http_port,
         public_port=18080 if role == "station" else 18081,
         libp2p_port=4001 if role == "relay" else None,
+        public_base_url=f"http://{role}.example:{http_port}",
+        compose_project=f"pt-{role}",
+        compose_service=role,
         data_volume=f"pt-{role}_peers_data",
     )
 
@@ -182,6 +193,11 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
             ),
             patch(
                 "tooling.acceptance.provisioners.station_access_relay_role."
+                "_persist_station_origin_attestation",
+                return_value=_attestation("station-origin", "station"),
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
                 "_persist_relay_attestation",
                 return_value=_attestation("relay", "relay"),
             ),
@@ -196,7 +212,12 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
         self.assertEqual(manifest.state, ProvisioningState.FIXTURE_READY)
         self.assertEqual(
             set(manifest.services),
-            {"station", "relay", "station-via-relay"},
+            {
+                "station",
+                "station-origin",
+                "relay",
+                "station-via-relay",
+            },
         )
         self.assertEqual(manifest.clients, ())
         self.assertFalse(manifest.cleanup_registered)
@@ -206,6 +227,7 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
 
     def test_desktop_relay_gate_declares_native_station_binding(self) -> None:
         provisioner = StationAccessRelayRoleProvisioner(self.contract)
+        lifecycle_order: list[str] = []
         profile = {
             "PT_STATION_MODE": "remote",
             "PT_STATION_URL": "http://station.example",
@@ -229,6 +251,22 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
                 return_value=("one", Path("/profile"), 0, profile),
             ),
             patch.object(provisioner, "_station_ready", return_value=True),
+            patch.multiple(
+                provisioner,
+                acquire_profile_lease=Mock(),
+                acquire_remote_git_source_lease=Mock(),
+                _activate_direct_station_proxy=Mock(
+                    side_effect=lambda **_: (
+                        lifecycle_order.append("station-restart")
+                        or "https://station-proxy.example"
+                    ),
+                ),
+                _prepare_native_relay_fixture=Mock(
+                    side_effect=lambda **_: lifecycle_order.append(
+                        "relay-fixture"
+                    )
+                ),
+            ),
             patch(
                 "tooling.acceptance.provisioners.station_access_relay_role."
                 "PosixServiceRuntimeConfig.load",
@@ -266,8 +304,13 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
             ),
             patch(
                 "tooling.acceptance.provisioners.station_access_relay_role."
-                "produce_station_attestation",
+                "_persist_direct_station_attestation",
                 return_value=_attestation("station", "station"),
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "_persist_station_origin_attestation",
+                return_value=_attestation("station-origin", "station"),
             ),
             patch(
                 "tooling.acceptance.provisioners.station_access_relay_role."
@@ -312,6 +355,10 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
             (client.gateway_port, client.renderer_port, client.webdriver_port),
             (18101, 18102, 18103),
         )
+        self.assertEqual(
+            lifecycle_order,
+            ["station-restart", "relay-fixture"],
+        )
         self.assertTrue(manifest.cleanup_registered)
         self.assertEqual(
             manifest.cleanup_resources,
@@ -323,6 +370,7 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
         self,
     ) -> None:
         provisioner = StationAccessRelayRoleProvisioner(self.contract)
+        lifecycle_order: list[str] = []
         profile = {
             "PT_STATION_MODE": "remote",
             "PT_STATION_URL": "http://station.example",
@@ -342,6 +390,22 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
             "sha256": "3" * 64,
             "mediaType": "application/json",
         }
+
+        def resolve_source_identity(
+            deployment: str,
+        ) -> tuple[str, str, str]:
+            self.assertEqual(
+                lifecycle_order[:4],
+                [
+                    "profile-lease:station-1",
+                    "profile-lease:relay-1",
+                    "source-lease:station-1",
+                    "source-lease:relay-1",
+                ],
+            )
+            lifecycle_order.append(f"source-identity:{deployment}")
+            return COMMIT, "clean", PROTO_DIGEST
+
         with (
             patch.object(provisioner, "_git_commit", return_value=COMMIT),
             patch.object(
@@ -355,6 +419,30 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
                 return_value=("one", Path("/profile"), 0, profile),
             ),
             patch.object(provisioner, "_station_ready", return_value=True),
+            patch.multiple(
+                provisioner,
+                acquire_profile_lease=Mock(
+                    side_effect=lambda resource, _owner: lifecycle_order.append(
+                        f"profile-lease:{resource}"
+                    )
+                ),
+                acquire_remote_git_source_lease=Mock(
+                    side_effect=lambda resource, _owner: lifecycle_order.append(
+                        f"source-lease:{resource}"
+                    )
+                ),
+                _activate_direct_station_proxy=Mock(
+                    side_effect=lambda **_: (
+                        lifecycle_order.append("station-restart")
+                        or "https://station-proxy.example"
+                    ),
+                ),
+                _prepare_native_relay_fixture=Mock(
+                    side_effect=lambda **_: lifecycle_order.append(
+                        "relay-fixture"
+                    )
+                ),
+            ),
             patch(
                 "tooling.acceptance.provisioners.station_access_relay_role."
                 "PosixServiceRuntimeConfig.load",
@@ -363,7 +451,7 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
             patch(
                 "tooling.acceptance.provisioners.station_access_relay_role."
                 "resolve_remote_source_identity",
-                return_value=(COMMIT, "clean", PROTO_DIGEST),
+                side_effect=resolve_source_identity,
             ),
             patch(
                 "tooling.acceptance.provisioners.station_access_relay_role."
@@ -392,8 +480,13 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
             ),
             patch(
                 "tooling.acceptance.provisioners.station_access_relay_role."
-                "produce_station_attestation",
+                "_persist_direct_station_attestation",
                 return_value=_attestation("station", "station"),
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "_persist_station_origin_attestation",
+                return_value=_attestation("station-origin", "station"),
             ),
             patch(
                 "tooling.acceptance.provisioners.station_access_relay_role."
@@ -484,6 +577,19 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
         self.assertEqual(
             {actor.device_policy for actor in actor_manifest.actors},
             {"persistent-acceptance"},
+        )
+        self.assertEqual(
+            lifecycle_order,
+            [
+                "profile-lease:station-1",
+                "profile-lease:relay-1",
+                "source-lease:station-1",
+                "source-lease:relay-1",
+                "source-identity:station-1",
+                "source-identity:relay-1",
+                "station-restart",
+                "relay-fixture",
+            ],
         )
         prepare_storage.assert_called_once()
         self.assertEqual(len(provisioner.cleanup()), 0)
@@ -618,6 +724,181 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
         )
         self.assertEqual(evidence["platform"], "linux")
 
+
+    def test_runtime_wait_allows_http_ready_to_reach_docker_healthy(
+        self,
+    ) -> None:
+        expected = _status("station", 101)
+        with (
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "inspect_posix_runtime",
+                side_effect=(
+                    BlockedError(
+                        reason="runtime is starting",
+                        resource="runtime-status:station",
+                    ),
+                    expected,
+                ),
+            ) as inspect_runtime,
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "time.sleep",
+            ),
+        ):
+            result = StationAccessRelayRoleProvisioner._wait_posix_runtime(
+                _config("station"),
+            )
+
+        self.assertEqual(result, expected)
+        self.assertEqual(inspect_runtime.call_count, 2)
+
+    def test_disposable_station_runtime_uses_reviewed_acceptance_topology(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            environment = Path(directory) / "station.env.example"
+            environment.write_text(
+                "\n".join(
+                    (
+                        "PT_DEPLOY_HOST=10.37.94.156",
+                        "PT_DEPLOY_USER=operator",
+                        "PT_DEPLOY_PATH=peers-touch/acceptance/station/repo",
+                        "PT_DEPLOY_ROLE=station",
+                        "PT_DEPLOY_PLATFORM=posix",
+                        "PT_DEPLOY_RESTART_CMD='docker compose --env-file "
+                        "$HOME/peers-touch/branches/chat/.env up -d station'",
+                        "PT_ACCEPTANCE_DISPOSABLE=1",
+                        "PT_ACCEPTANCE_STATION_URL=http://10.37.94.156:18132",
+                        "PT_ACCEPTANCE_COMPOSE_PROJECT=pt-chat",
+                        "PT_ACCEPTANCE_STATION_CONTAINER=pt-chat-station-1",
+                    )
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            with patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "resolve_deployment_environment_path",
+                return_value=environment,
+            ):
+                config = _station_runtime_config("chat-station")
+                env_file = _station_compose_environment_file(
+                    config,
+                    "/home/operator",
+                )
+
+        self.assertEqual(config.compose_project, "pt-chat")
+        self.assertEqual(config.data_volume, "pt-chat_peers_data")
+        self.assertEqual(config.http_port, 18132)
+        self.assertEqual(
+            env_file,
+            "/home/operator/peers-touch/branches/chat/.env",
+        )
+
+    def test_disposable_station_restart_keeps_env_owned_libp2p_port(
+        self,
+    ) -> None:
+        config = _config("station")
+        transport = Mock()
+        transport.run_argv.return_value = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="",
+            stderr="",
+        )
+        config.transport = Mock(return_value=transport)
+        with (
+            patch.object(
+                PosixServiceRuntimeConfig,
+                "transport",
+                return_value=transport,
+            ),
+            patch.object(
+                StationAccessRelayRoleProvisioner,
+                "_remote_home",
+                return_value="/home/operator",
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "resolve_deployment_environment_path",
+                return_value=Path("/tmp/station.env"),
+            ),
+            patch(
+                "tooling.acceptance.provisioners.station_access_relay_role."
+                "load_env_file",
+                return_value={
+                    "PT_DEPLOY_RESTART_CMD": (
+                        "docker compose --env-file "
+                        "$HOME/peers-touch/station.env up -d station"
+                    )
+                },
+            ),
+        ):
+            StationAccessRelayRoleProvisioner._restart_station_origin(
+                config,
+                "https://station.example",
+            )
+
+        argv = transport.run_argv.call_args.args[0]
+        self.assertIn(
+            "PEERS_NODE_SERVER_BASEURL=https://station.example",
+            argv,
+        )
+        self.assertFalse(
+            any(value.startswith("LIBP2P_PORT=") for value in argv)
+        )
+
+    def test_relay_ca_install_restarts_the_same_station_container(self) -> None:
+        provisioner = StationAccessRelayRoleProvisioner(self.contract)
+        provisioner._manifest = SimpleNamespace(run_id="run-1")
+        config = _config("station")
+        transport = Mock()
+        transport.run_argv.return_value = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="",
+            stderr="",
+        )
+        config.transport = Mock(return_value=transport)
+        runtime_status = {
+            "containerId": "station-container",
+            "healthy": True,
+        }
+        with (
+            patch.object(
+                provisioner,
+                "_wait_posix_runtime",
+                side_effect=(runtime_status, runtime_status),
+            ) as wait_runtime,
+            patch.object(
+                provisioner,
+                "_remote_home",
+                return_value="/home/operator",
+            ),
+        ):
+            provisioner._install_station_relay_ca(
+                config,
+                b"certificate",
+            )
+
+        commands = [
+            call.args[0] for call in transport.run_argv.call_args_list
+        ]
+        update_index = commands.index(
+            (
+                "docker",
+                "exec",
+                "station-container",
+                "update-ca-certificates",
+            )
+        )
+        restart_index = commands.index(
+            ("docker", "restart", "station-container")
+        )
+        self.assertLess(update_index, restart_index)
+        self.assertEqual(wait_runtime.call_count, 2)
+
     def test_runtime_status_rejects_source_drift(self) -> None:
         status = _status("relay", 202)
         status["sourceCommit"] = "d" * 40
@@ -705,6 +986,16 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
             )
 
         self.assertIsNone(compatibility)
+
+    def test_source_compatibility_rejects_missing_runtime_commit(self) -> None:
+        with patch(
+            "tooling.acceptance.provisioners.station_access_relay_role."
+            "subprocess.run",
+        ) as run:
+            compatibility = _service_source_compatibility("", COMMIT)
+
+        self.assertIsNone(compatibility)
+        run.assert_not_called()
 
     def test_relay_discovery_endpoint_uses_public_https_listener(self) -> None:
         self.assertEqual(

@@ -6,6 +6,8 @@
 package federation
 
 import (
+	"sync"
+
 	"github.com/libp2p/go-libp2p/core/connmgr"
 	"github.com/libp2p/go-libp2p/core/control"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -34,7 +36,9 @@ func (p GaterPolicy) Active() bool {
 // libp2p host in the process gets its own Gater instance — they are cheap
 // to construct and there is no shared state.
 type Gater struct {
-	policy GaterPolicy
+	policy       GaterPolicy
+	lock         sync.RWMutex
+	runtimePeers map[peer.ID]struct{}
 }
 
 // NewGater builds a Gater for the supplied policy. The constructor is the
@@ -42,7 +46,10 @@ type Gater struct {
 // directions disabled, empty allow list) would block ALL libp2p
 // connectivity, which is never what callers want.
 func NewGater(p GaterPolicy) *Gater {
-	return &Gater{policy: p}
+	return &Gater{
+		policy:       p,
+		runtimePeers: make(map[peer.ID]struct{}),
+	}
 }
 
 // Compile-time assertion: any future ConnectionGater interface change in
@@ -57,8 +64,7 @@ func (g *Gater) InterceptPeerDial(p peer.ID) bool {
 	if g.policy.DirectOutbound {
 		return true
 	}
-	_, ok := g.policy.AllowedPeers[p]
-	return ok
+	return g.peerAllowed(p)
 }
 
 // InterceptAddrDial defers to InterceptPeerDial: the policy is per peer,
@@ -88,8 +94,7 @@ func (g *Gater) InterceptSecured(dir network.Direction, p peer.ID, _ network.Con
 	if g.policy.DirectInbound {
 		return true
 	}
-	_, ok := g.policy.AllowedPeers[p]
-	return ok
+	return g.peerAllowed(p)
 }
 
 // InterceptUpgraded is a no-op: by the time stream-multiplexer negotiation
@@ -97,4 +102,37 @@ func (g *Gater) InterceptSecured(dir network.Direction, p peer.ID, _ network.Con
 // target the establishment phase, not session lifetime.
 func (g *Gater) InterceptUpgraded(_ network.Conn) (bool, control.DisconnectReason) {
 	return true, 0
+}
+
+// AllowRuntimePeer admits one peer owned by a live runtime resource, such as a
+// dynamically imported Relay attachment. Static Bootstrap peers remain
+// independently governed by the immutable policy snapshot.
+func (g *Gater) AllowRuntimePeer(value peer.ID) {
+	if g == nil || value == "" {
+		return
+	}
+	g.lock.Lock()
+	g.runtimePeers[value] = struct{}{}
+	g.lock.Unlock()
+}
+
+// RemoveRuntimePeer withdraws only runtime-owned admission. A peer that is also
+// a configured Bootstrap seed remains admitted by the immutable policy.
+func (g *Gater) RemoveRuntimePeer(value peer.ID) {
+	if g == nil || value == "" {
+		return
+	}
+	g.lock.Lock()
+	delete(g.runtimePeers, value)
+	g.lock.Unlock()
+}
+
+func (g *Gater) peerAllowed(value peer.ID) bool {
+	if _, ok := g.policy.AllowedPeers[value]; ok {
+		return true
+	}
+	g.lock.RLock()
+	_, ok := g.runtimePeers[value]
+	g.lock.RUnlock()
+	return ok
 }

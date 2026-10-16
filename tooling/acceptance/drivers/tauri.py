@@ -16,10 +16,11 @@ from pathlib import Path
 from typing import Any, Callable, Generator, Mapping, Optional, Protocol
 
 from selenium import webdriver
+from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.common.by import By
 from selenium.common.exceptions import TimeoutException
 
 from tooling.acceptance.core import (
@@ -646,17 +647,40 @@ class MakeDesktopLauncher(AppLauncher):
         return pid
 
     def _prepare_runtime_profile(self) -> Path:
-        active_profile = (
-            self.worktree
-            / ".local"
-            / "dev"
-            / "active"
-            / f"{self.worktree.name}.env"
-        )
         try:
-            source = active_profile.resolve(strict=True)
+            completed = subprocess.run(
+                [
+                    "node",
+                    str(self.worktree / "tooling" / "devctl" / "index.mjs"),
+                    "--root",
+                    str(self.worktree),
+                    "--json",
+                    "config",
+                ],
+                cwd=self.worktree,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if completed.returncode != 0:
+                detail = completed.stderr.strip() or completed.stdout.strip()
+                raise DriverError(
+                    f"canonical Desktop profile resolution failed: {detail}"
+                )
+            resolved = json.loads(completed.stdout)
+            profile = resolved.get("profile")
+            resolved_path = (
+                profile.get("resolvedPath")
+                if isinstance(profile, dict)
+                else None
+            )
+            if not isinstance(resolved_path, str) or not resolved_path:
+                raise DriverError(
+                    "canonical Desktop profile response omitted resolvedPath"
+                )
+            source = Path(resolved_path).resolve(strict=True)
             lines = source.read_text(encoding="utf-8").splitlines()
-        except OSError as error:
+        except (json.JSONDecodeError, OSError) as error:
             raise DriverError(
                 f"active Desktop profile is unavailable: {error}"
             ) from error
@@ -921,6 +945,48 @@ class TauriSession(DomDriver):
 
     def find_elements(self, selector: str) -> list[Any]:
         return self._connected_driver().find_elements(selector)
+
+    def semantic_click(self, element: Any) -> None:
+        element.click()
+
+    def semantic_hover(self, element: Any) -> None:
+        self.execute_script(
+            """
+            const element = arguments[0];
+            element.scrollIntoView({ block: 'center', inline: 'nearest' });
+            const rect = element.getBoundingClientRect();
+            const init = {
+              bubbles: true,
+              cancelable: true,
+              clientX: rect.left + rect.width / 2,
+              clientY: rect.top + rect.height / 2,
+              pointerId: 1,
+              pointerType: 'mouse',
+            };
+            element.dispatchEvent(new PointerEvent('pointerover', init));
+            element.dispatchEvent(new PointerEvent('pointerenter', init));
+            element.dispatchEvent(new MouseEvent('mouseover', init));
+            element.dispatchEvent(new MouseEvent('mouseenter', init));
+            element.dispatchEvent(new MouseEvent('mousemove', init));
+            """,
+            element,
+        )
+
+    def semantic_replace_text(self, element: Any, text: str) -> None:
+        element.clear()
+        if text:
+            element.send_keys(text)
+
+    def semantic_key_sequence(
+        self,
+        element: Any,
+        *keys: str,
+    ) -> None:
+        self.execute_script(
+            "arguments[0].focus({ preventScroll: true });",
+            element,
+        )
+        ActionChains(self.driver).send_keys(*keys).perform()
 
     def save_screenshot(self, path: str | Path) -> None:
         self._connected_driver().save_screenshot(path)

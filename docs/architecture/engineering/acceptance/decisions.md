@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.3
-> **Created**: 2026-06-03 | **Updated**: 2026-09-18
+> **Created**: 2026-06-03 | **Updated**: 2026-10-16
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -32,6 +32,8 @@
 | D-18 | Client 通过 typed binding 引用 Runtime Manifest service | accepted |
 | D-19 | Cleanup后、run finalize前执行只读Evidence Finalizer | accepted |
 | D-20 | Formal Execution Plan owns Acceptance scheduling | accepted |
+| D-21 | Multi-Scenario Proof 使用一个 Suite Runtime | accepted |
+| D-22 | Desktop 输入按非侵入式语义与隔离原生证明分级 | accepted |
 
 ---
 
@@ -1694,3 +1696,63 @@ validator rejected Scenario-owned provisioning.
 Replace this decision only if every expensive Acceptance resource becomes
 stateless and negligible to recreate, while a stronger receiver-visible proof
 contract preserves the same source, isolation, and cleanup guarantees.
+
+---
+
+## D-22: Desktop Input Separates Non-Intrusive Semantics From Isolated Native Proof
+
+**Status**: accepted
+**Date**: 2026-10-16
+
+### Context
+
+The local macOS adapter historically implemented process-targeted mouse and
+keyboard helpers by activating the target application and posting events into
+the global HID event stream. Development runs therefore moved the operator's
+physical pointer, changed the frontmost application, and redirected keyboard
+input.
+
+The embedded Tauri WebDriver already executes WebView clicks, text input,
+pointer events, and key actions inside WKWebView through JavaScript evaluation.
+Those actions do not require AppKit activation or global CoreGraphics input.
+They prove visible product behavior, but they do not prove physical native
+focus or HID delivery.
+
+### Decision
+
+- Desktop interaction declares one of two closed modes:
+  `semantic-nonintrusive` or `exclusive-native-input`.
+- Local Desktop development defaults to `semantic-nonintrusive`.
+- Semantic interaction uses the embedded WebDriver and must not activate an
+  application, move the system pointer, or post global keyboard/mouse events.
+- A native Accessibility action may join the semantic mode only after a
+  focused non-interference contract proves that frontmost PID, pointer
+  location, and operator keyboard focus remain unchanged.
+- `exclusive-native-input` is the only mode allowed to use AppKit activation,
+  CoreGraphics HID events, native hover/drag, system file panels, permission
+  sheets, or physical-focus assertions.
+- A local exclusive run is admitted only with an explicit
+  `isolated-gui-session` declaration. A shared user session fails closed.
+- Remote runtime cells may retain exclusive native input because their
+  graphical session is owned by the cell lease.
+- Semantic evidence may prove the product Journey and receiver-visible result.
+  It must not satisfy a Gate claim that explicitly requires native input,
+  physical focus, or window ownership.
+
+### Consequences
+
+- Routine Desktop debugging no longer competes with the operator for mouse or
+  keyboard input.
+- Platform adapters reject accidental global input before the OS call.
+- Acceptance windows are not forced to always-on-top or screen-saver level in
+  semantic mode.
+- Native file chooser, permission, physical drag, and native-focus claims stay
+  `BLOCKED/UNPROVEN` without an isolated GUI session.
+- Business Gate assertions remain unchanged; only their admitted interaction
+  mechanism and evidence classification differ.
+
+### Reversal Trigger
+
+Replace this decision only if the operating system provides a verified
+process-scoped input primitive with equivalent native semantics and a
+non-interference proof across supported runtime cells.

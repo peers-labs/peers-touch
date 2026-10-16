@@ -132,6 +132,18 @@ class BlockedError(ProvisioningError):
         self.resource = resource
 
 
+class NativeInputBlocked(BlockedError):
+    code = "NATIVE_INPUT_ISOLATION_REQUIRED"
+
+    def __init__(self, operation: str, detail: str) -> None:
+        super().__init__(
+            reason=f"{self.code}: {operation}: {detail}",
+            resource="desktop-native-input-isolation",
+        )
+        self.operation = operation
+        self.detail = detail
+
+
 class EphemeralLaunchError(GateError):
     code = "EPHEMERAL_LAUNCH_ERROR"
 

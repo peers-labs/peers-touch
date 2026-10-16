@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.2
-> **Created**: 2026-08-16 | **Updated**: 2026-09-13
+> **Created**: 2026-08-16 | **Updated**: 2026-10-16
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
@@ -1386,6 +1386,27 @@ Validation rules:
 - `physical_monitor_required: false` 仍要求 connected virtual output 和 compositor。
 - Native proof 不接受 `session_type: xvfb`。
 - Cell contract 描述能力，不声明产品 actor、Fixture、selector 或 assertion。
+
+### 15.1 Desktop Input Dispatch Contract
+
+每个 Desktop session 在 launch 时携带一个 closed input mode：
+
+```text
+semantic-nonintrusive
+exclusive-native-input
+```
+
+- `PT_ACCEPTANCE_NATIVE_DEV=1` 的 development session 在 mode 缺失时解析为
+  `semantic-nonintrusive`；formal local runtime 在 mode 缺失时解析为
+  `exclusive-native-input`，并继续执行 isolation admission。
+- 本机 `exclusive-native-input` 还必须携带
+  `PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION=isolated-gui-session`；缺失或其它值在
+  app activation/HID mutation 前返回
+  `NATIVE_INPUT_ISOLATION_REQUIRED/BLOCKED/UNPROVEN`。
+- Remote Native Runtime Binding 由 cell GUI-session lease 提供 isolation，并把
+  mode 与 isolation 传给目标 Desktop process。
+- Gate report 的 `runtime.desktopInputMode` 记录实际模式。
+- semantic result 不得填充 native-input、physical-focus 或 point-ownership proof。
 
 ## 16. Runtime Cell Manifest
 

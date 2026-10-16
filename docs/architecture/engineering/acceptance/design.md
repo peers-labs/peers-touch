@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.3
-> **Created**: 2026-06-03 | **Updated**: 2026-09-29
+> **Created**: 2026-06-03 | **Updated**: 2026-10-16
 
 
 > **Owner**: Architecture Team
@@ -30,6 +30,9 @@
     设备、存储或登录态的多场景 Task 必须声明 `runtimeReuse`。昂贵资源在
     Task/Suite scope 创建一次，Scenario attach-only，并以真实产品动作和
     receiver-visible assertion 取证。
+12. **Non-intrusive input by default** — 本机 Desktop 开发使用 embedded
+    WebDriver 语义输入，不改变用户前台应用、系统光标或键盘焦点。真实 native
+    input/focus proof 只在拥有隔离 GUI session 的 Runtime Cell 中执行。
 
 ### 1.1 Runtime Provisioning 扩展证据账本
 
@@ -63,6 +66,8 @@
 | Embedded WebDriver 插件支持 macOS、Linux 与 Windows 原生 WebView backend | `verified_fact` | `tauri-plugin-wdio-webdriver` 1.3.0 README 与 `src/platform/{macos,linux,windows}.rs` | high | project Linux/Windows build smoke |
 | 当前 `TauriDriver` 只启动本机 binary 并连接 `127.0.0.1` | `verified_fact` | `tooling/acceptance/drivers/tauri.py` | high | none |
 | 当前 MP-W13 runner 直接依赖 AppKit、Quartz、CoreGraphics 与 `osascript` | `verified_fact` | `tooling/acceptance/gates/chat/native_product_closure_runner.py` | high | none |
+| macOS process-targeted helper 通过 activate + global HID 实现并干扰当前用户 session | `verified_fact` | `tooling/acceptance/drivers/native/{base,macos}.py` | high | none |
+| Embedded WebDriver click/text/actions 通过 WKWebView JavaScript evaluation 执行，不移动系统光标 | `verified_fact` | `tauri-plugin-wdio-webdriver` 1.3.0 `platform/{executor,macos}.rs` | high | sentinel runtime proof |
 | 当前 native environment 未表达 host、display、platform adapter 或远端 source staging | `verified_fact` | `tooling/acceptance/environments/native-tauri-embedded-webdriver.yaml` | high | none |
 | Linux 候选机已有 GDM、GNOME、QXL connected virtual output 与 WebKitGTK runtime | `verified_fact` | 2026-08-24 SSH read-only preflight | high | logged-in Acceptance desktop session |
 | Linux 候选机 Ubuntu 20.04 标准源缺少当前 Tauri 所需 `libwebkit2gtk-4.1-dev` | `verified_fact` | remote `apt-cache policy`; Tauri v2 Linux prerequisites | high | supported container userland proof |
@@ -70,6 +75,7 @@
 | SSH tunnel 可在不暴露 WebDriver 端口的前提下驱动远端 cell | `accepted_decision` | D-14 | high | disconnect/cleanup failure-path proof |
 | Linux 最终 Native proof 不需要物理显示器或 Xvfb | `accepted_decision` | D-15; connected QXL evidence | high | Xorg session, native input, focus and screenshot proof |
 | Remote cell 通过增量 Git objects 获取 clean source | `accepted_decision` | D-16; `tooling/scripts/deploy/deploy.sh` | high | remote source/build attestation proof |
+| 本机默认 semantic input，真实 native input 仅允许隔离 GUI session | `accepted_decision` | D-22 | high | isolated macOS runtime proof |
 
 ### 1.4 多服务客户端绑定证据账本
 
@@ -223,9 +229,15 @@ macOS WKWebView | Linux WebKitGTK | Windows WebView2
   source lease、Git push/fetch、exact commit checkout、remote build cache 和
   attestation；不得每次复制完整 worktree。
 - `TauriDriver` 只负责 W3C WebDriver/DOM 能力，不再假定 app process 必须在本机。
-- `NativeDesktopAdapter` 负责平台窗口激活、真实键鼠输入、焦点、窗口栈和屏幕观察。
+- `TauriDriver` 是本机开发默认 interaction owner；其 semantic input 不得调用
+  AppKit activation 或全局 HID。
+- `NativeDesktopAdapter` 负责平台真实键鼠输入、焦点、窗口栈和屏幕观察；mutating
+  input primitive 只允许 `exclusive-native-input`。
 - Business Gate 只调用稳定的 DOM 与 native action interface；不得导入 AppKit、
   Quartz、X11 或 Win32 API。
+- 本机 shared user session 只允许 `semantic-nonintrusive`。系统 file panel、
+  permission sheet、physical hover/drag 和 native-focus claim 必须绑定隔离 cell，
+  缺失时保持 `BLOCKED/UNPROVEN`。
 - Embedded WebDriver 仅绑定 cell 内 `127.0.0.1`；远端访问必须经过 run-scoped SSH
   tunnel，禁止开放到局域网。
 
@@ -1860,6 +1872,11 @@ domain 的业务接入缺口，也不提供 bypass 参数。
   软件包，不以 Xvfb 证据冒充最终 Native proof。
 - macOS、Linux、Windows adapter 均证明真实 input、document focus、window ownership
   与 screenshot；缺一项时对应 cell 保持 `UNPROVEN`。
+- 本机 semantic Journey 证明 WebView 产品行为时，运行前后 frontmost PID、系统
+  pointer location 和 operator keyboard focus 必须保持不变；该证据不得升级为
+  native-input proof。
+- shared user session 请求 `exclusive-native-input` 时必须在任何 activation 或
+  HID event 之前 fail closed。
 - 成功、失败、timeout、SSH disconnect 与 cancellation 都执行同一 reverse-order
   cleanup，并验证 tunnel、process、port、storage 和 lease 无残留。
 - Runtime manifest 和 Gate evidence 记录 cell ID、OS/WebView/display identity、

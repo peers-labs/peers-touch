@@ -269,6 +269,65 @@
       }
     },
     {
+      "id": "station-access-relay-attachment-lifecycle",
+      "domain": "station-access",
+      "direction": "acceptance_validates_product",
+      "features": ["station-access-relay-attachment-lifecycle"],
+      "required_gates": [
+        "RAL-G01",
+        "RAL-G02",
+        "RAL-G03",
+        "RAL-G04",
+        "RAL-G05",
+        "RAL-G06",
+        "RAL-G07",
+        "RAL-G08"
+      ],
+      "synthetic_paths": [
+        "apps/station/frame/core/plugin/native/relay/attachment_controller.go",
+        "apps/station/frame/core/plugin/native/relay/reservation.go",
+        "apps/station/frame/core/plugin/native/relay/station_control.go",
+        "apps/station/frame/core/plugin/native/subserver/relay/handler_admin.go",
+        "apps/station/app/subserver/dashboard/handler.go",
+        "apps/station/app/subserver/dashboard/web/src/pages/RelayAttachmentsPage.tsx"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station AttachmentController desired state",
+          "Relay invitation and enrollment repositories",
+          "Circuit reservation and signed-route projections"
+        ],
+        "surfaces": [
+          "Relay operator invitation and enrollment API",
+          "Station Dashboard Relay attachment API",
+          "Native Desktop Direct/Circuit route selection"
+        ],
+        "proven_by": [
+          "RAL-G01",
+          "RAL-G02",
+          "RAL-G03",
+          "RAL-G04",
+          "RAL-G05",
+          "RAL-G06",
+          "RAL-G07",
+          "RAL-G08"
+        ],
+        "proven_scope": [
+          "active invitation delete and targeted invitation mismatch are fail-closed",
+          "one Station attaches Relay A and Relay B as independent generation-1 active routes",
+          "Relay A failure and recovery preserve Relay B",
+          "Station restart restores both persisted attachment intents",
+          "offline detach becomes cleanup-pending without reactivating local use",
+          "cleanup retry, online detach, consumed-invite conflict, generation advancement, and repeated delete converge idempotently",
+          "Native Desktop Direct-only, Relay-only, and automatic failover preserve Session and route lease continuity"
+        ],
+        "unproven_scope": [
+          "production load, accessibility, and browser performance remain UNPROVEN",
+          "Mobile-specific dual-Relay migration remains UNPROVEN"
+        ]
+      }
+    },
+    {
       "id": "station-access-endpoint-discovery",
       "domain": "station-access",
       "direction": "acceptance_validates_product",

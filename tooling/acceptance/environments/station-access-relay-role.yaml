@@ -13,6 +13,14 @@
       "status_action": "station-status",
       "attestation_producer": "station-relay-role-attachment"
     },
+    "station-origin": {
+      "kind": "station",
+      "required": true,
+      "runtime_identity_required": true,
+      "health_action": "station-check",
+      "status_action": "station-status",
+      "attestation_producer": "station-relay-role-attachment"
+    },
     "relay": {
       "kind": "relay",
       "required": true,

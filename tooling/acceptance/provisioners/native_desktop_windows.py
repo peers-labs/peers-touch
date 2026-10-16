@@ -66,6 +66,8 @@ _BROKER_RELATIVE_PATH = (
 )
 _BINARY_RELATIVE_PATH = "debug/peers-touch-desktop.exe"
 _BUILD_SCRIPT_RELATIVE_PATH = "tooling/scripts/windows-desktop-build.ps1"
+WINDOWS_SOURCE_COPY_TIMEOUT_SECONDS = 900
+WINDOWS_SOURCE_IDENTITY_TIMEOUT_SECONDS = 60
 
 
 def _required(values: dict[str, str], key: str, source: Path) -> str:
@@ -683,6 +685,7 @@ class NativeDesktopWindowsProvisioner:
             gateway_port=gateway_port,
             profile=str(client_spec["profile"]),
             environment=environment,
+            client_spec=client_spec,
         )
         webdriver_tunnel: SshTunnel | None = None
         gateway_tunnel: SshTunnel | None = None
@@ -1269,7 +1272,7 @@ class NativeDesktopWindowsProvisioner:
         remote_source = _windows_join(remote_home, request.deploy_path)
         remote_head = self.transport.run_argv(
             ("git", "-C", remote_source, "rev-parse", "HEAD"),
-            timeout=15,
+            timeout=WINDOWS_SOURCE_IDENTITY_TIMEOUT_SECONDS,
             check=False,
         )
         current_commit = (
@@ -1311,8 +1314,12 @@ class NativeDesktopWindowsProvisioner:
                     "Temp",
                     f"pt-source-{secrets.token_hex(8)}.bundle",
                 )
-                self.transport.copy_file(bundle, remote_bundle, timeout=300)
                 try:
+                    self.transport.copy_file(
+                        bundle,
+                        remote_bundle,
+                        timeout=WINDOWS_SOURCE_COPY_TIMEOUT_SECONDS,
+                    )
                     self.transport.run_argv(
                         (
                             "powershell.exe",
@@ -1352,6 +1359,7 @@ class NativeDesktopWindowsProvisioner:
                         timeout=30,
                         check=False,
                     )
+        self._clean_remote_source(remote_source, commit)
         identity = self.transport.run_argv(
             (
                 "powershell.exe",
@@ -1475,6 +1483,7 @@ class NativeDesktopWindowsProvisioner:
         gateway_port: int,
         profile: str,
         environment: dict[str, str],
+        client_spec: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         state = self._require_state()
         actor_root = _windows_join(
@@ -1483,11 +1492,11 @@ class NativeDesktopWindowsProvisioner:
             str(state["runId"]),
             actor,
         )
-        actor_state_root = _windows_join(
-            str(state["brokerRoot"]),
-            "state",
-            str(state["runId"]),
-            actor,
+        actor_state_root, storage_lifecycle = self._actor_storage(
+            state=state,
+            actor=actor,
+            profile=profile,
+            client_spec=client_spec or {},
         )
         return self._broker_from_state(
             state,
@@ -1504,9 +1513,65 @@ class NativeDesktopWindowsProvisioner:
                 "gatewayPort": gateway_port,
                 "profile": profile,
                 "storageRoot": actor_state_root,
+                "storageLifecycle": storage_lifecycle,
                 "logPath": _windows_join(actor_root, "logs", "desktop.log"),
             },
         )
+
+    def _actor_storage(
+        self,
+        *,
+        state: dict[str, Any],
+        actor: str,
+        profile: str,
+        client_spec: dict[str, Any],
+    ) -> tuple[str, str]:
+        storage_lifecycle = str(
+            client_spec.get("storage_lifecycle") or "ephemeral"
+        ).strip()
+        if storage_lifecycle == "ephemeral":
+            return (
+                _windows_join(
+                    str(state["brokerRoot"]),
+                    "state",
+                    str(state["runId"]),
+                    actor,
+                ),
+                storage_lifecycle,
+            )
+        if storage_lifecycle != "persistent":
+            raise ProvisioningError(
+                "Windows runtime-cell client storage lifecycle must be "
+                "ephemeral or persistent"
+            )
+
+        declared_root = str(
+            client_spec.get("storage_root") or ""
+        ).strip()
+        if not declared_root:
+            raise ProvisioningError(
+                "Windows runtime-cell persistent client storage identity "
+                "is missing"
+            )
+        storage_identity = hashlib.sha256(
+            json.dumps(
+                {
+                    "actor": actor,
+                    "cellId": self.contract.cell_id,
+                    "profile": profile,
+                    "storageRoot": declared_root,
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        broker_root = PureWindowsPath(str(state["brokerRoot"]))
+        persistent_root = (
+            broker_root.parent
+            / f"{broker_root.name}-persistent-state"
+            / storage_identity
+        )
+        return str(persistent_root), storage_lifecycle
 
     def _stop_remote_actor(
         self,

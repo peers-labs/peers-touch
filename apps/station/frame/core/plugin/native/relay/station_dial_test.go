@@ -172,10 +172,10 @@ func TestSelectLiveRouteSupportsMultipleRelayTargets(t *testing.T) {
 	})
 	now := time.Now().UTC()
 	control := &StationControl{
-		pool: Pool{Targets: []Target{
-			{RelayPeerID: second},
-			{RelayPeerID: first},
-		}},
+		targets: map[peer.ID]Target{
+			second: {RelayPeerID: second},
+			first:  {RelayPeerID: first},
+		},
 		liveRoutes: func(time.Time) []CircuitRoute {
 			return []CircuitRoute{
 				{RelayPeerID: second, ExpiresAt: now.Add(time.Hour)},

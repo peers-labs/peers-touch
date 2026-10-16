@@ -77,7 +77,8 @@
 
 ### SAL-G06：Station enrollment 与撤销
 
-- invite 只显示一次并仅持久化 hash；并发注册只能成功一次。
+- invite 只显示一次并仅持久化 hash；active invite 永久有效，直到被原子消费或显式删除。
+- delete/consume 竞争只能有一个成功；consumed 行在重启后仍拒绝重放。
 - Relay 从 Station host-key proof 推导 `station_peer_id`，不信任请求头。
 - mount credential 具有独立 issuer/audience/scope/jti/expiry/generation。
 - 删除或撤销 mount 原子关闭流、递增 epoch，并拒绝刷新和重连。

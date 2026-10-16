@@ -1,0 +1,51 @@
+{
+  "id": "station-access-dual-relay",
+  "profile": {
+    "required": true,
+    "identity_match": true
+  },
+  "services": {
+    "station": {
+      "kind": "station",
+      "required": true,
+      "runtime_identity_required": true,
+      "health_action": "ephemeral-station-health",
+      "status_action": "ephemeral-station-status",
+      "attestation_producer": "station-access-dual-relay"
+    },
+    "relay-a": {
+      "kind": "relay",
+      "required": true,
+      "runtime_identity_required": true,
+      "health_action": "ephemeral-relay-health",
+      "status_action": "ephemeral-relay-status",
+      "attestation_producer": "station-access-dual-relay"
+    },
+    "relay-b": {
+      "kind": "relay",
+      "required": true,
+      "runtime_identity_required": true,
+      "health_action": "ephemeral-relay-health",
+      "status_action": "ephemeral-relay-status",
+      "attestation_producer": "station-access-dual-relay"
+    }
+  },
+  "fixtures": [
+    {
+      "id": "relay-attachment-empty-runtime",
+      "authorization_required": false
+    }
+  ],
+  "credentials": [],
+  "clients": [],
+  "cleanup": {
+    "resources": [
+      "processes",
+      "ports",
+      "source",
+      "volumes",
+      "credentials",
+      "operator-sessions"
+    ]
+  }
+}

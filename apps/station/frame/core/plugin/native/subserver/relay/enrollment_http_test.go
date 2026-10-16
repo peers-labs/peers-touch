@@ -7,12 +7,15 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/libp2p/go-libp2p"
 	libp2pcrypto "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
+	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	standardrelay "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/relay"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/application"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/domain"
@@ -65,7 +68,6 @@ func TestEnrollmentHTTPDerivesIdentityAndNeverListsInviteSecret(t *testing.T) {
 		"station",
 		4,
 		0,
-		time.Hour,
 	)
 	if err != nil {
 		t.Fatalf("create invite: %v", err)
@@ -195,5 +197,179 @@ func TestEnrollmentHTTPDerivesIdentityAndNeverListsInviteSecret(t *testing.T) {
 		strings.Contains(listResponse.Body.String(), `"token"`) ||
 		strings.Contains(listResponse.Body.String(), "secret_digest") {
 		t.Fatalf("invite list exposed secret material: %s", listResponse.Body.String())
+	}
+
+	retireIdentity, err := service.AuthenticateRetireCredential(
+		t.Context(),
+		registration.RelayToken,
+	)
+	if err != nil {
+		t.Fatalf("authenticate self-retire credential: %v", err)
+	}
+	for attempt := 0; attempt < 2; attempt++ {
+		retireRequest := httptest.NewRequest(
+			http.MethodDelete,
+			"/api/v1/relay/enrollment/self",
+			nil,
+		)
+		retireRequest = retireRequest.WithContext(coreauth.WithSubject(
+			retireRequest.Context(),
+			nodeIdentitySubject(retireIdentity, domain.ScopeNodeRetire),
+		))
+		retireResponse := httptest.NewRecorder()
+		handler.handleRetireEnrollment(retireResponse, retireRequest)
+		if retireResponse.Code != http.StatusOK {
+			t.Fatalf(
+				"self-retire attempt %d status=%d body=%s",
+				attempt,
+				retireResponse.Code,
+				retireResponse.Body.String(),
+			)
+		}
+	}
+}
+
+func TestInviteHTTPUsesPermanentDeleteContract(t *testing.T) {
+	db, err := gorm.Open(
+		sqlite.Open("file:relay-invite-http?mode=memory&cache=shared"),
+		&gorm.Config{},
+	)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("open database handle: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	defer sqlDB.Close()
+
+	repository := infrastructure.NewGormRepo(db)
+	if err := repository.AutoMigrate(); err != nil {
+		t.Fatalf("migrate Relay schema: %v", err)
+	}
+	authority, err := application.NewCredentialAuthority(
+		[]byte("relay-http-test-signing-material-32-bytes"),
+	)
+	if err != nil {
+		t.Fatalf("create credential authority: %v", err)
+	}
+	node, err := libp2p.New(libp2p.NoListenAddrs)
+	if err != nil {
+		t.Fatalf("create Relay Host: %v", err)
+	}
+	defer node.Close()
+	admission := standardrelay.NewAdmission()
+	handler := newRelayHandler(&SubServer{
+		opts: &Options{
+			MaxStations:   10,
+			PublicBaseURL: "https://relay.example",
+			Admission:     admission,
+			Host:          node,
+		},
+		svc: application.NewService(repository, authority, admission),
+	})
+
+	createResponse := httptest.NewRecorder()
+	handler.handleCreateInvite(
+		createResponse,
+		httptest.NewRequest(
+			http.MethodPost,
+			"/api/v1/relay/invite",
+			strings.NewReader(`{"label":"permanent"}`),
+		),
+	)
+	if createResponse.Code != http.StatusOK {
+		t.Fatalf(
+			"create invite status=%d body=%s",
+			createResponse.Code,
+			createResponse.Body.String(),
+		)
+	}
+	if strings.Contains(createResponse.Body.String(), "expires") {
+		t.Fatalf(
+			"permanent invite response contains expiry: %s",
+			createResponse.Body.String(),
+		)
+	}
+	var created struct {
+		InviteID   uint64            `json:"invite_id,string"`
+		Invitation invitationPackage `json:"invitation"`
+	}
+	if err := json.Unmarshal(createResponse.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode create invite response: %v", err)
+	}
+	if created.InviteID == 0 ||
+		created.Invitation.InviteToken == "" ||
+		created.Invitation.ControlOrigin != "https://relay.example" ||
+		created.Invitation.RelayPeerID != node.ID().String() {
+		t.Fatalf("unexpected invitation package: %+v", created)
+	}
+
+	listResponse := httptest.NewRecorder()
+	handler.handleListInvites(
+		listResponse,
+		httptest.NewRequest(http.MethodGet, "/api/v1/relay/invites", nil),
+	)
+	if listResponse.Code != http.StatusOK ||
+		strings.Contains(listResponse.Body.String(), "expires") {
+		t.Fatalf(
+			"list permanent invites status=%d body=%s",
+			listResponse.Code,
+			listResponse.Body.String(),
+		)
+	}
+
+	var browserPayload map[string]interface{}
+	if err := json.Unmarshal(createResponse.Body.Bytes(), &browserPayload); err != nil {
+		t.Fatal(err)
+	}
+	if browserPayload["invite_id"] != strconv.FormatUint(created.InviteID, 10) {
+		t.Fatalf("invite ID is not a lossless JSON string: %v", browserPayload["invite_id"])
+	}
+	var browserList struct {
+		Invites []struct {
+			ID string `json:"id"`
+		} `json:"invites"`
+	}
+	if err := json.Unmarshal(listResponse.Body.Bytes(), &browserList); err != nil ||
+		len(browserList.Invites) != 1 || browserList.Invites[0].ID != browserPayload["invite_id"] {
+		t.Fatalf("list ID lost precision: %+v, err=%v", browserList, err)
+	}
+	deleteBody, err := json.Marshal(map[string]interface{}{"invite_id": browserPayload["invite_id"]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deleteResponse := httptest.NewRecorder()
+	handler.handleDeleteInvite(
+		deleteResponse,
+		httptest.NewRequest(
+			http.MethodDelete,
+			"/api/v1/relay/invite",
+			bytes.NewReader(deleteBody),
+		),
+	)
+	if deleteResponse.Code != http.StatusOK {
+		t.Fatalf(
+			"delete active invite status=%d body=%s",
+			deleteResponse.Code,
+			deleteResponse.Body.String(),
+		)
+	}
+	repeatDeleteResponse := httptest.NewRecorder()
+	handler.handleDeleteInvite(
+		repeatDeleteResponse,
+		httptest.NewRequest(
+			http.MethodDelete,
+			"/api/v1/relay/invite",
+			bytes.NewReader(deleteBody),
+		),
+	)
+	if repeatDeleteResponse.Code != http.StatusConflict {
+		t.Fatalf(
+			"repeat delete status=%d body=%s",
+			repeatDeleteResponse.Code,
+			repeatDeleteResponse.Body.String(),
+		)
 	}
 }
