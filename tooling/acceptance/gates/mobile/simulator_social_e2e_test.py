@@ -363,6 +363,7 @@ class SimulatorSocialGateTests(unittest.TestCase):
             "payloadSha256": payload_sha256,
         }
         calls: list[tuple[str, object]] = []
+        ui_selectors: list[str] = []
 
         class Session:
             def call_action(
@@ -390,8 +391,10 @@ class SimulatorSocialGateTests(unittest.TestCase):
             def execute_script(
                 self,
                 script: str,
-                *_args: object,
+                *args: object,
             ) -> object:
+                if args and isinstance(args[0], str):
+                    ui_selectors.append(args[0])
                 if "'value' in node" in script:
                     return "MPS09 recovery draft journey"
                 return True
@@ -425,6 +428,12 @@ class SimulatorSocialGateTests(unittest.TestCase):
                 "targetId": "compose",
             },
         ), calls)
+        self.assertEqual(
+            ui_selectors.count(
+                '[data-acceptance-id="social-composer-open"]'
+            ),
+            2,
+        )
         self.assertTrue(result["draftRestored"])
         self.assertIn(payload_sha256, result["supportingObservation"])
 

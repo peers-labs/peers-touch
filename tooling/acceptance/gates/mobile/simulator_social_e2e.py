@@ -1398,6 +1398,11 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
                 "targetId": "compose",
             },
         )
+        self._click_ui(
+            session,
+            '[data-acceptance-id="social-composer-open"]',
+            "Open restored composer",
+        )
         self._wait_ui_value(
             session,
             '[data-acceptance-id="social-composer-text"]',
