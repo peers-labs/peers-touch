@@ -55,6 +55,8 @@ from tooling.acceptance.drivers.tauri import (
 
 
 NATIVE_WINDOW_READY_TIMEOUT_SECONDS = 30.0
+OPERATOR_FOCUS_STABILITY_TIMEOUT_SECONDS = 1.0
+OPERATOR_FOCUS_STABILITY_INTERVAL_SECONDS = 0.05
 
 
 _WINDOW_BOUNDS_PROBE = r"""
@@ -697,20 +699,10 @@ class NativeDesktopMacOSProvisioner:
                 reason="macOS operator frontmost process is unavailable",
                 resource="runtime-cell-operator-focus",
             )
-        control = adapter.focused_control(process_id)
-        if (
-            control.error
-            or control.actual_frontmost_pid != process_id
-        ):
-            raise BlockedError(
-                reason=(
-                    "macOS operator keyboard focus cannot be attested: "
-                    f"processId={process_id} kind={control.kind!r} "
-                    f"actualFrontmostPid={control.actual_frontmost_pid} "
-                    f"error={control.error!r}"
-                ),
-                resource="runtime-cell-operator-focus",
-            )
+        focus_identity = cls._stable_operator_focus_identity(
+            adapter,
+            process_id,
+        )
         pointer = cls._json_probe(
             _POINTER_LOCATION_PROBE,
             "pointer location",
@@ -721,7 +713,7 @@ class NativeDesktopMacOSProvisioner:
             "pointerY": float(pointer["y"]),
             "keyboardFocusSha256": _sha256_text(
                 json.dumps(
-                    cls._keyboard_focus_identity(control),
+                    focus_identity,
                     sort_keys=True,
                     separators=(",", ":"),
                 )
@@ -742,6 +734,49 @@ class NativeDesktopMacOSProvisioner:
             "platformSubrole": control.platform_subrole,
             "title": control.title,
         }
+
+    @classmethod
+    def _stable_operator_focus_identity(
+        cls,
+        adapter: MacOSNativeDesktopAdapter,
+        process_id: int,
+        *,
+        timeout_seconds: float = OPERATOR_FOCUS_STABILITY_TIMEOUT_SECONDS,
+        interval_seconds: float = OPERATOR_FOCUS_STABILITY_INTERVAL_SECONDS,
+    ) -> dict[str, object]:
+        deadline = time.monotonic() + max(0.0, timeout_seconds)
+        previous: dict[str, object] | None = None
+        last_control = NativeControlSnapshot()
+        while True:
+            control = adapter.focused_control(process_id)
+            last_control = control
+            valid = (
+                not control.error
+                and control.actual_frontmost_pid == process_id
+                and bool(control.platform_role)
+            )
+            identity = (
+                cls._keyboard_focus_identity(control) if valid else None
+            )
+            if identity is not None and identity == previous:
+                return identity
+            previous = identity
+            if time.monotonic() >= deadline:
+                raise BlockedError(
+                    reason=(
+                        "macOS operator keyboard focus did not stabilize: "
+                        f"processId={process_id} "
+                        f"kind={last_control.kind!r} "
+                        f"role={last_control.platform_role!r} "
+                        f"subrole={last_control.platform_subrole!r} "
+                        f"actualFrontmostPid="
+                        f"{last_control.actual_frontmost_pid} "
+                        f"error={last_control.error!r}"
+                    ),
+                    resource="runtime-cell-operator-focus",
+                )
+            if interval_seconds > 0:
+                time.sleep(interval_seconds)
 
     @staticmethod
     def _await_webview_focus(

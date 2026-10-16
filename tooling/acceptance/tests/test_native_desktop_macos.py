@@ -423,6 +423,53 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
             ),
         )
 
+    def test_operator_focus_waits_for_two_stable_ax_samples(self) -> None:
+        adapter = Mock(spec=MacOSNativeDesktopAdapter)
+        transient = NativeControlSnapshot(
+            actual_frontmost_pid=41,
+        )
+        stable = NativeControlSnapshot(
+            kind="web-area",
+            frontmost=True,
+            main_window=True,
+            actual_frontmost_pid=41,
+            platform_role="AXWebArea",
+        )
+        adapter.focused_control.side_effect = (
+            transient,
+            stable,
+            stable,
+        )
+
+        identity = (
+            NativeDesktopMacOSProvisioner._stable_operator_focus_identity(
+                adapter,
+                41,
+                timeout_seconds=1,
+                interval_seconds=0,
+            )
+        )
+
+        self.assertEqual(identity["platformRole"], "AXWebArea")
+        self.assertEqual(adapter.focused_control.call_count, 3)
+
+    def test_operator_focus_rejects_unstable_ax_samples(self) -> None:
+        adapter = Mock(spec=MacOSNativeDesktopAdapter)
+        adapter.focused_control.return_value = NativeControlSnapshot(
+            actual_frontmost_pid=41,
+        )
+
+        with self.assertRaisesRegex(
+            BlockedError,
+            "keyboard focus did not stabilize",
+        ):
+            NativeDesktopMacOSProvisioner._stable_operator_focus_identity(
+                adapter,
+                41,
+                timeout_seconds=0,
+                interval_seconds=0,
+            )
+
     def test_window_bounds_wait_uses_native_startup_budget(self) -> None:
         default = inspect.signature(
             NativeDesktopMacOSProvisioner._await_window_bounds
