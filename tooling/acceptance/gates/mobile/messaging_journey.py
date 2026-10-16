@@ -867,8 +867,30 @@ class MobileMessagingJourney:
     ) -> None:
         self._await_authenticated_runtime_scope(session, actor)
 
+        try:
+            restart_value = session.call_action("lifecycle.restart")
+        except DriverError as error:
+            snapshot = self._mapping(
+                session.call_action("lifecycle.snapshot"),
+                f"{actor.client_id} failed post-login restart snapshot",
+            )
+            failed_runtimes = [
+                {
+                    "id": runtime.get("id"),
+                    "status": runtime.get("status"),
+                    "errorKey": runtime.get("errorKey"),
+                }
+                for runtime in snapshot.get("runtimes", [])
+                if isinstance(runtime, Mapping)
+                and runtime.get("status") == "failed"
+            ]
+            raise GateError(
+                f"{actor.client_id} post-login restart failed "
+                f"(phase={snapshot.get('phase')!r}, "
+                f"failedRuntimes={failed_runtimes!r}): {error}"
+            ) from error
         restart = self._mapping(
-            session.call_action("lifecycle.restart"),
+            restart_value,
             f"{actor.client_id} post-login restart",
         )
         if restart != {"requested": True, "scope": "webview"}:
