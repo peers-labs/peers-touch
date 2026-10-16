@@ -74,12 +74,15 @@ export function normalizeHostPayload(raw, options = {}) {
   );
   const payloadWorkingDirectory = firstString(payload.cwd);
   const installationRoot = firstString(options.installationRoot);
-  const toolWorkingDirectory = firstString(
+  const explicitToolWorkingDirectory = firstString(
     toolInput.working_directory,
     toolInput.workingDirectory,
     toolInput.workdir,
     toolInput.cwd,
     payloadWorkingDirectory,
+  );
+  const toolWorkingDirectory = firstString(
+    explicitToolWorkingDirectory,
     repositoryWorkingDirectory,
     installationRoot,
   );
@@ -92,12 +95,15 @@ export function normalizeHostPayload(raw, options = {}) {
     executionRootHints: uniqueStrings([
       explicitTaskRoot,
       ...(workspaceRoots.length === 1 ? workspaceRoots : []),
-      repositoryWorkingDirectory,
-      payloadWorkingDirectory,
-      ...(workspaceRoots.length <= 1 ? [installationRoot] : []),
+      explicitToolWorkingDirectory,
+      ...(workspaceRoots.length <= 1
+        ? [repositoryWorkingDirectory, installationRoot]
+        : []),
     ]),
     workspaceRoots,
+    installationRoot,
     explicitTaskRoot,
+    explicitToolWorkingDirectory,
     repositoryWorkingDirectory,
     toolWorkingDirectory,
     willEditFilepaths: uniqueStrings([

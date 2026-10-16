@@ -35,6 +35,11 @@ Host adapters normalize payloads and render context. They do not create
 repository authority, infer the selected worktree, execute fallback, grant
 runtime capabilities, or upgrade observations into evidence.
 
+In a multi-root workspace, ambient repository cwd and descriptor order cannot
+select a worktree. One installed Hook may emit context only when an explicit
+task or tool root resolves to that Hook's own installation root. A sibling
+root produces `NOOP`; an ambiguous event produces no context or observation.
+
 Project Skill projection is scoped to the explicitly selected worktree. Hook
 projection is independently optional and uses an absolute interpreter. A
 managed Hook command resolves its plugin from the same selected worktree; a

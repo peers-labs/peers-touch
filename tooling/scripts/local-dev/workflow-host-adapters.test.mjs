@@ -28,6 +28,27 @@ test('FLOW-A04 normalizes workspace context without constructing OWNER authority
   assert.equal(Object.hasOwn(normalized, 'toolInput'), false);
 });
 
+test('FLOW-A04 multi-root ambient cwd does not select a sibling worktree', () => {
+  const normalized = normalizeHostPayload(
+    {
+      hook_event_name: 'PreToolUse',
+      repo_working_dir: '/workspace/second',
+      tool_name: 'write_stdin',
+      tool_input: {},
+    },
+    {
+      host: 'trae',
+      event: 'PreToolUse',
+      installationRoot: '/workspace/first',
+      workspaceRoots: ['/workspace/first', '/workspace/second'],
+    },
+  );
+  assert.equal(normalized.installationRoot, '/workspace/first');
+  assert.equal(normalized.explicitToolWorkingDirectory, null);
+  assert.equal(normalized.toolWorkingDirectory, '/workspace/second');
+  assert.deepEqual(normalized.executionRootHints, []);
+});
+
 test('FLOW-A04 unknown host events normalize to an ignorable payload', () => {
   const normalized = normalizeHostPayload(
     { hook_event_name: 'FutureEvent' },

@@ -16,6 +16,11 @@ TRAE、Cursor、Codex 使用仓库内同一组规范和 Skill，宿主 adapter �
 
 安装源目录、Hook 文件所在位置、活动编辑器和 folder 顺序不构成任务工作区。明确任务工作区仍是 Agent 的执行范围；Hook 不提供任意 shell 的强制跨目录写保护。
 
+每个项目 Hook 只响应解析结果等于自身安装 root 的事件。多根 workspace 中，宿主级
+`repo_working_dir` 不能单独选择 worktree；必须有明确 task root 或工具工作目录。
+解析到兄弟 root 时该 Hook 返回 `NOOP`，无法唯一解析时不注入上下文，也不写
+worktree observation。
+
 会话字段可用于脱敏诊断。缺少字段不伪造身份，不创建 OWNER，不领取 grant，也不要求另开会话才能使用 Skill。
 
 ## 3. 提示输出
