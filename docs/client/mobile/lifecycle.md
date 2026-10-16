@@ -84,14 +84,24 @@ The user must not enter the Station shell without passing the Station-driven acc
   identity is blocking and requires explicit Station replacement.
 - Production credentials and OAuth require TLS. HTTP is limited to an explicit
   development profile, is visibly marked, and cannot establish production trust.
-- Debug native Messaging accepts the exact profile origin injected through
-  `PT_MOBILE_DEV_STATION_ORIGIN`. Simulator launches forward it with
-  `SIMCTL_CHILD_PT_MOBILE_DEV_STATION_ORIGIN`; it is not saved in app preferences.
-  Production Release builds ignore this permission and require HTTPS. A
-  self-contained Release built with the explicit `acceptance-harness` feature
-  keeps development-origin policy so the installed simulator artifact can use
-  its declared HTTP Station profile without a debug server. An unrelated host,
-  port, credential-bearing URL, or non-root path remains rejected.
+- Development and acceptance Simulator runs do not read a launch-time Station
+  environment variable. The acceptance provisioner resolves the Station origin
+  from the active reviewed deploy profile and binds it through the same
+  identity-verified harness Station-add flow used for a manual add
+  (`apps/mobile/src/acceptance/actions.ts`, provisioner profile keys such as
+  `PT_MOBILE_DIRECT_STATION_URL`); the app never reads a `*_DEV_STATION_ORIGIN`
+  variable and no Simulator `SIMCTL_CHILD_*` forwarding exists.
+- Origin policy is build-gated. Debug builds and builds compiled with the
+  `acceptance-harness` Cargo feature permit an explicit HTTP development origin,
+  so a self-contained simulator acceptance artifact can use its declared HTTP
+  Station profile without a debug server. Production Release builds are
+  HTTPS-only.
+- Canonicalization in `normalize_station_origin`
+  (`apps/mobile/src-tauri/src/station_origin.rs`) accepts only
+  `http(s)://host:port/`. Any non-HTTP(S) scheme, embedded credentials,
+  non-root path, query, fragment, or missing/invalid port is rejected, and a
+  known origin that later presents a different challenge-signed `station_peer_id`
+  remains blocking and requires explicit Station replacement.
 
 ### 4.3 Access Gate Chain
 
