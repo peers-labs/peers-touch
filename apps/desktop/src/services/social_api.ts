@@ -103,6 +103,7 @@ import {
   UnfollowResponseSchema,
   UnblockSocialActorResponseSchema,
   GetRelationshipResponseSchema,
+  GetSocialRelationshipStatusResponseSchema,
   GetFollowersResponseSchema,
   GetFollowingResponseSchema,
   ListBlockedActorsResponseSchema,
@@ -111,6 +112,7 @@ import {
   type UnfollowResponse,
   type UnblockSocialActorResponse,
   type GetRelationshipResponse,
+  type GetSocialRelationshipStatusResponse,
   type GetFollowersResponse,
   type GetFollowingResponse,
   type ListBlockedActorsResponse,
@@ -642,6 +644,17 @@ export async function socialListBlockedActors(
   >('social_list_blocked_actors', ListBlockedActorsResponseSchema, {
     cursor,
     limit,
+  });
+}
+
+export async function socialGetRelationshipStatus(
+  targetActorPtid: string,
+): Promise<GetSocialRelationshipStatusResponse> {
+  return invokeRustProto<
+    { target_actor_ptid: string },
+    GetSocialRelationshipStatusResponse
+  >('social_get_relationship_status', GetSocialRelationshipStatusResponseSchema, {
+    target_actor_ptid: targetActorPtid,
   });
 }
 

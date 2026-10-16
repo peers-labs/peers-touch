@@ -93,6 +93,21 @@ after category-wide marking. Refresh preserves the amount of loaded history;
 search explicitly covers loaded rows and pagination renders at most six.
 Session epoch and request generation fence list/count reads and mutations.
 
+Contact safety reads `relationships.relationshipPolicies`, populated through
+the canonical Social relationship status command. Contact detail starts a lazy
+observation; `socialRealtime` refreshes observed policies on relationship
+events and periodic reconciliation. Unknown status never implies unblocked.
+The initial revision-zero projection may lack a directional block edge:
+the selected contact's authoritative Home Station identity supplies the command
+target, and conflicting Station identities disable the action.
+
+Contact detail and Privacy Settings dispatch the same revision-fenced
+`setActorBlocked` command. A matching committed Station projection updates the
+policy; block-list readback and relationship invalidation converge other
+surfaces. Session epoch, read generation, mutation generation and monotonic
+policy revision reject stale completions. Confirmations retain their opening
+session epoch and cannot submit for a replacement session.
+
 ### Account And Notification Settings
 
 `settingsRuntime` refreshes `profile`, authorized devices, category preferences,

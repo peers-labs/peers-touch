@@ -927,6 +927,7 @@ fn main() {
             social_commands::social_get_followers,
             social_commands::social_get_following,
             social_commands::social_get_relationship,
+            social_commands::social_get_relationship_status,
             social_commands::social_list_blocked_actors,
             social_commands::social_block_actor,
             social_commands::social_unblock_actor,

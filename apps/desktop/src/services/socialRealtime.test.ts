@@ -53,6 +53,7 @@ const mocks = vi.hoisted(() => ({
   loadPeerProfile: vi.fn(),
   initEncryption: vi.fn(),
   prewarmMessages: vi.fn(),
+  loadRelationshipPolicy: vi.fn(),
   resolveActorStations: vi.fn(),
   startEventStream: vi.fn(),
   stopEventStream: vi.fn(),
@@ -73,6 +74,7 @@ const mocks = vi.hoisted(() => ({
   conversationMembers: {} as Record<string, Array<{ ptid: string }>>,
   peerProfiles: {} as Record<string, { username?: string }>,
   blockedActors: [] as Array<{ actor?: { ptid: string } }>,
+  relationshipPolicies: {} as Record<string, unknown>,
 }));
 
 const originalWindow = globalThis.window;
@@ -98,10 +100,12 @@ vi.mock('../store/relationships', () => ({
     getState: () => ({
       loadMutualFriends: mocks.loadMutualFriends,
       loadRelationship: mocks.loadRelationship,
+      loadRelationshipPolicy: mocks.loadRelationshipPolicy,
       loadBlockedActors: mocks.loadBlockedActors,
       reset: mocks.resetRelationships,
       mutualFriends: [],
       blockedActors: mocks.blockedActors,
+      relationshipPolicies: mocks.relationshipPolicies,
     }),
   },
 }));
@@ -218,6 +222,7 @@ describe('social realtime group membership side effects', () => {
     mocks.ingestRealtimeMessage.mockResolvedValue(undefined);
     mocks.loadMutualFriends.mockResolvedValue(undefined);
     mocks.loadRelationship.mockResolvedValue(undefined);
+    mocks.loadRelationshipPolicy.mockResolvedValue(undefined);
     mocks.loadBlockedActors.mockResolvedValue(undefined);
     mocks.loadSessions.mockResolvedValue(undefined);
     mocks.loadGroups.mockResolvedValue(undefined);
@@ -247,6 +252,7 @@ describe('social realtime group membership side effects', () => {
     mocks.conversationMembers = {};
     mocks.peerProfiles = {};
     mocks.blockedActors = [];
+    mocks.relationshipPolicies = {};
     teardownSocialRealtimeBridge();
     installSocialRealtimeBridge();
   });
@@ -453,6 +459,15 @@ describe('social realtime group membership side effects', () => {
       );
       expect(mocks.loadMutualFriends).toHaveBeenCalledWith('ptid:bob', true);
     });
+  });
+
+  it('reconciles only relationship policies observed by contact details', async () => {
+    mocks.currentActorPtid = 'ptid:self';
+    mocks.relationshipPolicies = { 'ptid:alice': { revision: 7n } };
+    mocks.conversationMembers = { 'conversation-bob': [{ ptid: 'ptid:bob' }] };
+    await refreshSocialProjection('policy recovery');
+    expect(mocks.loadRelationshipPolicy).toHaveBeenCalledWith('ptid:alice', true);
+    expect(mocks.loadRelationshipPolicy).not.toHaveBeenCalledWith('ptid:bob', true);
   });
 });
 

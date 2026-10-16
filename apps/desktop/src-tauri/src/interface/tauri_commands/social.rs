@@ -1076,6 +1076,32 @@ pub fn social_get_relationship(
 }
 
 #[tauri::command]
+pub fn social_get_relationship_status(
+    input: SocialGetRelationshipInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    let token = match token_from_state_proto(&state, &window) {
+        Ok(token) => token,
+        Err(error) => return error,
+    };
+    if input.target_actor_ptid.trim().is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "Social relationship target is required",
+            None,
+        );
+    }
+    let query = vec![("target_actor_ptid", input.target_actor_ptid)];
+    let response: model::social::GetSocialRelationshipStatusResponse =
+        match get_proto("/api/v1/social/relationships/status", &token, Some(&query)) {
+            Ok(response) => response,
+            Err(error) => return station_error_proto(error, "get Social relationship status failed"),
+        };
+    AppResult::success(response.encode_to_vec())
+}
+
+#[tauri::command]
 pub fn social_list_blocked_actors(
     input: SocialListBlockedActorsInput,
     state: State<'_, Arc<AppState>>,

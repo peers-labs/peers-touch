@@ -29,6 +29,7 @@ import {
 import { T } from '../theme';
 import { Avatar } from './Avatar';
 import { GroupAvatar, type GroupAvatarTile } from './GroupAvatar';
+import { ContactSafetyBoundary } from './ContactSafetyBoundary';
 import {
   USERS,
   type MockConversation,
@@ -834,6 +835,11 @@ export function DetailPanel({
         </DetailSection>
 
         {/* === Identity & trust: technical, low-frequency, sits after shared content === */}
+        {!isGroup ? (
+          <DetailSection bare>
+            <ContactSafetyBoundary />
+          </DetailSection>
+        ) : null}
         {!isGroup ? (
           <DetailSection title="Identity & trust">
             <div style={{ padding: `${T.space2}px 0` }}>

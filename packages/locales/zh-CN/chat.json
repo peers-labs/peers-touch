@@ -918,5 +918,17 @@
   "chat.service.conflictingState": "已知历史中存在冲突状态",
   "chat.service.knownHistoryOnly": "基于已知历史的最新状态",
   "chat.service.notificationFallbackTitle": "自动化更新",
-  "chat.service.notificationFallbackBody": "打开 Peers Touch 查看详情"
+  "chat.service.notificationFallbackBody": "打开 Peers Touch 查看详情",
+  "chat.social.safety.block": "屏蔽",
+  "chat.social.safety.unblock": "解除屏蔽",
+  "chat.social.safety.blocked": "你已屏蔽此账号。",
+  "chat.social.safety.interactionUnavailable": "暂时无法与此账号互动。",
+  "chat.social.safety.blockTitle": "屏蔽 {{name}}？",
+  "chat.social.safety.unblockTitle": "解除对 {{name}} 的屏蔽？",
+  "chat.social.safety.blockBody": "此账号将无法再与你互动。",
+  "chat.social.safety.unblockBody": "此账号可再次与你互动，仍受你的联系设置约束。",
+  "chat.social.safety.cancel": "取消",
+  "chat.social.safety.refresh": "刷新",
+  "chat.social.safety.unavailable": "账号安全操作暂不可用。",
+  "chat.social.safety.actionFailed": "无法更新账号安全设置，请刷新状态后重试。"
 }

@@ -920,5 +920,17 @@
   "chat.service.conflictingState": "Conflicting reports in known history",
   "chat.service.knownHistoryOnly": "Latest state from known history",
   "chat.service.notificationFallbackTitle": "Automated update",
-  "chat.service.notificationFallbackBody": "Open Peers Touch for details"
+  "chat.service.notificationFallbackBody": "Open Peers Touch for details",
+  "chat.social.safety.block": "Block",
+  "chat.social.safety.unblock": "Unblock",
+  "chat.social.safety.blocked": "You blocked this account.",
+  "chat.social.safety.interactionUnavailable": "Interaction with this account is unavailable.",
+  "chat.social.safety.blockTitle": "Block {{name}}?",
+  "chat.social.safety.unblockTitle": "Unblock {{name}}?",
+  "chat.social.safety.blockBody": "This account will no longer be able to interact with you.",
+  "chat.social.safety.unblockBody": "This account will be able to interact with you again, subject to your contact settings.",
+  "chat.social.safety.cancel": "Cancel",
+  "chat.social.safety.refresh": "Refresh",
+  "chat.social.safety.unavailable": "Account safety controls are unavailable.",
+  "chat.social.safety.actionFailed": "Could not update account safety. Refresh its status and try again."
 }

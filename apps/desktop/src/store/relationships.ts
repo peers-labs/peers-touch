@@ -1,12 +1,15 @@
 import { createDesktopStore } from './createDesktopStore';
 import {
+  socialBlockActor,
   socialFollow,
   socialGetFollowers,
   socialGetFollowing,
   socialGetRelationship,
+  socialGetRelationshipStatus,
   socialListBlockedActors,
   socialUnblockActor,
   socialUnfollow,
+  type SocialRelationshipMutationInput,
 } from '../services/social_api';
 import {
   SocialRelationshipCommandResultKind,
@@ -14,6 +17,7 @@ import {
   type Follower,
   type Following,
   type Relationship,
+  type SocialRelationshipProjection,
 } from '../gen/proto/domain/social/relationship_pb';
 import { EVENT, eventBus } from '../kernel/events';
 import { log } from '../utils/logger';
@@ -93,6 +97,11 @@ interface RelationshipsState {
   blockedActorsError: string | null;
   blockedActorMutatingPtid: string | null;
   blockedActorMutationGeneration: number;
+  blockedActorsReadGeneration: number;
+  relationshipPolicies: Record<string, SocialRelationshipProjection>;
+  relationshipPolicyLoading: Record<string, boolean>;
+  relationshipPolicyErrors: Record<string, string>;
+  relationshipPolicyReadGeneration: Record<string, number>;
 
   loadRelationship: (targetActorPtid: string) => Promise<Relationship | undefined>;
   follow: (targetActorPtid: string) => Promise<void>;
@@ -101,8 +110,10 @@ interface RelationshipsState {
   loadFollowers: (actorPtid: string, refresh?: boolean) => Promise<void>;
   loadFollowing: (actorPtid: string, refresh?: boolean) => Promise<void>;
   loadMutualFriends: (actorPtid: string, refresh?: boolean) => Promise<void>;
-  loadBlockedActors: () => Promise<void>;
-  unblockActor: (targetActorPtid: string) => Promise<void>;
+  loadBlockedActors: (refresh?: boolean) => Promise<void>;
+  loadRelationshipPolicy: (targetActorPtid: string, refresh?: boolean) => Promise<void>;
+  setActorBlocked: (input: SocialRelationshipMutationInput, blocked: boolean, expectedSessionEpoch?: number) => Promise<void>;
+  unblockActor: (targetActorPtid: string, expectedSessionEpoch?: number) => Promise<void>;
   resetMutualFriends: () => void;
 
   reset: () => void;
@@ -125,6 +136,11 @@ const initialState: Pick<
   | 'blockedActorsError'
   | 'blockedActorMutatingPtid'
   | 'blockedActorMutationGeneration'
+  | 'blockedActorsReadGeneration'
+  | 'relationshipPolicies'
+  | 'relationshipPolicyLoading'
+  | 'relationshipPolicyErrors'
+  | 'relationshipPolicyReadGeneration'
 > = {
   relations: {},
   loading: {},
@@ -141,6 +157,11 @@ const initialState: Pick<
   blockedActorsError: null,
   blockedActorMutatingPtid: null,
   blockedActorMutationGeneration: 0,
+  blockedActorsReadGeneration: 0,
+  relationshipPolicies: {},
+  relationshipPolicyLoading: {},
+  relationshipPolicyErrors: {},
+  relationshipPolicyReadGeneration: {},
 };
 
 async function loadAllFollowers(actorPtid: string): Promise<Follower[]> {
@@ -315,7 +336,46 @@ export const useRelationshipsStore = createDesktopStore<RelationshipsState>('rel
     }
   },
 
-  loadBlockedActors: async () => {
+  loadRelationshipPolicy: async (targetActorPtid, refresh = false) => {
+    const fence = currentRelationshipSessionFence();
+    if (!fence || !targetActorPtid || targetActorPtid === fence.actorPtid) return;
+    const state = get();
+    if (!refresh && (state.relationshipPolicyLoading[targetActorPtid] || state.relationshipPolicies[targetActorPtid])) return;
+    const generation = (state.relationshipPolicyReadGeneration[targetActorPtid] ?? 0) + 1;
+    set((current) => ({
+      relationshipPolicyLoading: { ...current.relationshipPolicyLoading, [targetActorPtid]: true },
+      relationshipPolicyErrors: { ...current.relationshipPolicyErrors, [targetActorPtid]: '' },
+      relationshipPolicyReadGeneration: { ...current.relationshipPolicyReadGeneration, [targetActorPtid]: generation },
+    }));
+    const currentRead = () => relationshipSessionFenceMatches(fence)
+      && get().relationshipPolicyReadGeneration[targetActorPtid] === generation;
+    try {
+      const response = await socialGetRelationshipStatus(targetActorPtid);
+      if (!currentRead()) return;
+      const policy = response.relationship;
+      if (!policy || policy.targetActor?.ptid !== targetActorPtid) throw new Error('social.blockedActor.unavailable');
+      const cached = get().relationshipPolicies[targetActorPtid];
+      if (cached && policy.revision < cached.revision) return;
+      set((current) => ({
+        relationshipPolicies: { ...current.relationshipPolicies, [targetActorPtid]: policy },
+      }));
+    } catch (error) {
+      if (!currentRead()) return;
+      set((current) => ({
+        relationshipPolicyErrors: {
+          ...current.relationshipPolicyErrors,
+          [targetActorPtid]: error instanceof Error ? error.message : String(error),
+        },
+      }));
+      throw error;
+    } finally {
+      if (currentRead()) set((current) => ({
+        relationshipPolicyLoading: { ...current.relationshipPolicyLoading, [targetActorPtid]: false },
+      }));
+    }
+  },
+
+  loadBlockedActors: async (refresh = false) => {
     const fence = currentRelationshipSessionFence();
     if (!fence) {
       set({
@@ -326,14 +386,18 @@ export const useRelationshipsStore = createDesktopStore<RelationshipsState>('rel
       });
       return;
     }
-    if (get().blockedActorsLoading) return;
+    if (!refresh && get().blockedActorsLoading) return;
+    const readGeneration = get().blockedActorsReadGeneration + 1;
     set({
       blockedActorsLoading: true,
       blockedActorsError: null,
+      blockedActorsReadGeneration: readGeneration,
     });
+    const currentRead = () => relationshipSessionFenceMatches(fence)
+      && get().blockedActorsReadGeneration === readGeneration;
     try {
       const blockedActors = await loadAllBlockedActors();
-      if (!relationshipSessionFenceMatches(fence)) return;
+      if (!currentRead()) return;
       set({
         blockedActors,
         blockedActorsLoading: false,
@@ -341,7 +405,7 @@ export const useRelationshipsStore = createDesktopStore<RelationshipsState>('rel
         blockedActorsError: null,
       });
     } catch (err) {
-      if (!relationshipSessionFenceMatches(fence)) return;
+      if (!currentRead()) return;
       const error = err instanceof Error ? err.message : String(err);
       log.warn(TAG, 'loadBlockedActors failed', { error });
       set({
@@ -352,32 +416,36 @@ export const useRelationshipsStore = createDesktopStore<RelationshipsState>('rel
     }
   },
 
-  unblockActor: async (targetActorPtid) => {
+  setActorBlocked: async (input, blocked, expectedSessionEpoch) => {
+    const { targetActorPtid, targetHomeStationPeerId, observedRevision } = input;
     const fence = currentRelationshipSessionFence();
     if (!fence) throw new Error('settings.privacy.sessionUnavailable');
-    const blocked = get().blockedActors.find(
-      (item) => item.actor?.ptid === targetActorPtid,
-    );
-    if (!blocked || !blocked.homeStationPeerId) {
+    if (expectedSessionEpoch !== undefined && expectedSessionEpoch !== fence.sessionEpoch) {
+      throw new Error('settings.privacy.sessionUnavailable');
+    }
+    if (!targetActorPtid || targetActorPtid === fence.actorPtid || !targetHomeStationPeerId) {
       throw new Error('social.blockedActor.unavailable');
     }
-    const observedRevision = Number(blocked.revision);
     if (!Number.isSafeInteger(observedRevision) || observedRevision < 0) {
       throw new Error('social.blockedActor.invalidRevision');
     }
+    if (get().blockedActorMutatingPtid) throw new Error('social.blockedActor.busy');
 
     const mutationGeneration = get().blockedActorMutationGeneration + 1;
-    set({
+    set((current) => ({
       blockedActorMutatingPtid: targetActorPtid,
       blockedActorMutationGeneration: mutationGeneration,
       blockedActorsError: null,
-    });
+      blockedActorsReadGeneration: current.blockedActorsReadGeneration + 1,
+      blockedActorsLoading: false,
+      relationshipPolicyReadGeneration: {
+        ...current.relationshipPolicyReadGeneration,
+        [targetActorPtid]: (current.relationshipPolicyReadGeneration[targetActorPtid] ?? 0) + 1,
+      },
+      relationshipPolicyLoading: { ...current.relationshipPolicyLoading, [targetActorPtid]: false },
+    }));
     try {
-      const response = await socialUnblockActor({
-        targetActorPtid,
-        targetHomeStationPeerId: blocked.homeStationPeerId,
-        observedRevision,
-      });
+      const response = await (blocked ? socialBlockActor : socialUnblockActor)(input);
       if (!relationshipSessionFenceMatches(fence)) return;
       const kind = response.result?.kind
         ?? SocialRelationshipCommandResultKind.UNSPECIFIED;
@@ -387,20 +455,36 @@ export const useRelationshipsStore = createDesktopStore<RelationshipsState>('rel
       ) {
         throw new Error(
           kind === SocialRelationshipCommandResultKind.CONFLICT
-            ? 'settings.privacy.unblockConflict'
-            : 'settings.privacy.unblockRejected',
+            ? blocked ? 'social.blockedActor.conflict' : 'settings.privacy.unblockConflict'
+            : blocked ? 'social.blockedActor.rejected' : 'settings.privacy.unblockRejected',
         );
       }
-      await get().loadBlockedActors();
-      if (!relationshipSessionFenceMatches(fence)) return;
+      const projection = response.result?.projection;
+      if (
+        !projection
+        || projection.targetActor?.ptid !== targetActorPtid
+        || projection.blockedByViewer !== blocked
+        || projection.targetHomeStationPeerId !== targetHomeStationPeerId
+        || projection.revision < BigInt(observedRevision)
+      ) throw new Error('social.blockedActor.unavailable');
+      set((current) => ({
+        relationshipPolicies: { ...current.relationshipPolicies, [targetActorPtid]: projection },
+        relationshipPolicyErrors: { ...current.relationshipPolicyErrors, [targetActorPtid]: '' },
+        relationshipPolicyReadGeneration: {
+          ...current.relationshipPolicyReadGeneration,
+          [targetActorPtid]: (current.relationshipPolicyReadGeneration[targetActorPtid] ?? 0) + 1,
+        },
+        relationshipPolicyLoading: { ...current.relationshipPolicyLoading, [targetActorPtid]: false },
+      }));
       eventBus.publish(EVENT.RELATIONSHIP_CHANGED, {
         targetActorPtid,
-        action: 'unblock',
+        action: blocked ? 'block' : 'unblock',
       });
+      await get().loadBlockedActors(true);
     } catch (err) {
       if (!relationshipSessionFenceMatches(fence)) return;
       const error = err instanceof Error ? err.message : String(err);
-      log.warn(TAG, 'unblockActor failed', { targetActorPtid, error });
+      log.warn(TAG, 'setActorBlocked failed', { targetActorPtid, blocked, error });
       set({ blockedActorsError: error });
       throw err;
     } finally {
@@ -412,6 +496,16 @@ export const useRelationshipsStore = createDesktopStore<RelationshipsState>('rel
         ));
       }
     }
+  },
+
+  unblockActor: async (targetActorPtid, expectedSessionEpoch) => {
+    const blocked = get().blockedActors.find((item) => item.actor?.ptid === targetActorPtid);
+    if (!blocked) throw new Error('social.blockedActor.unavailable');
+    await get().setActorBlocked({
+      targetActorPtid,
+      targetHomeStationPeerId: blocked.homeStationPeerId,
+      observedRevision: Number(blocked.revision),
+    }, false, expectedSessionEpoch);
   },
 
   loadFollowers: async (actorPtid, refresh = false) => {

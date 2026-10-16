@@ -13,5 +13,10 @@ that person.
 
 ## Current Snapshot
 
-- S12-S17 have no alignment delta.
-- C15 supplies only the Settings half of block/unblock.
+- S12-S17 are implemented/unproven in the scope ledger.
+- S17 contact detail and C15 Privacy Settings share the canonical Social
+  relationship commands, projected revision, session epoch, and runtime
+  reconciliation. Initial revision-zero policy uses the selected contact's
+  Home Station identity without inventing an unblock state.
+- Native contextual block/unblock, receiver enforcement, restart readback,
+  and Settings convergence remain required before this Task closes.

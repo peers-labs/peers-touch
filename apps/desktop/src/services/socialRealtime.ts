@@ -173,6 +173,8 @@ export async function refreshSocialProjection(label: string, includeNotification
     await Promise.allSettled([
       refreshed.loadCurrentUserProfile(),
       ...peerPtids.map((ptid) => refreshed.loadPeerProfile(ptid, true)),
+      ...Object.keys(refreshedRelationships.relationshipPolicies)
+        .map((ptid) => refreshedRelationships.loadRelationshipPolicy(ptid, true)),
     ]);
     await Promise.allSettled([
       refreshFriendStationIdentities(),
@@ -396,6 +398,9 @@ function onRelationshipChanged(payload: RelationshipChangedPayload): void {
     await Promise.allSettled([
       refreshFriendshipProjection(true),
       relationships.loadRelationship(payload.targetActorPtid),
+      ...(relationships.relationshipPolicies[payload.targetActorPtid]
+        ? [relationships.loadRelationshipPolicy(payload.targetActorPtid, true)]
+        : []),
       ...(payload.action === 'block' || payload.action === 'unblock'
         ? [relationships.loadBlockedActors()]
         : []),

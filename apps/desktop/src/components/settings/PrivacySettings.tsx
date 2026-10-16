@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Alert, Avatar, Modal, Spin, Typography, message, theme } from 'antd';
 import { Shield, UserRoundCheck } from 'lucide-react';
+import { useSessionStore } from '../../store/session';
 
 import {
   useActiveRelationshipsSlice,
@@ -34,6 +35,7 @@ export function PrivacySettings() {
   const peerProfiles = useActiveSocialChatSlice((state) => state.peerProfiles);
 
   const confirmUnblock = (actorPtid: string, displayName: string) => {
+    const sessionEpoch = useSessionStore.getState().sessionEpoch;
     Modal.confirm({
       title: t('settings.privacy.unblockConfirmTitle', { name: displayName }),
       content: t('settings.privacy.unblockConfirmBody'),
@@ -41,7 +43,7 @@ export function PrivacySettings() {
       cancelText: t('settings.network.cancel'),
       onOk: async () => {
         try {
-          await unblockActor(actorPtid);
+          await unblockActor(actorPtid, sessionEpoch);
           message.success(t('settings.privacy.unblockSuccess'));
         } catch (unblockError) {
           message.error(

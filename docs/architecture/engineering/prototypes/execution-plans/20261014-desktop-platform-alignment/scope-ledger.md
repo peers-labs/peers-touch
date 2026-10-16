@@ -13,7 +13,7 @@
 - `NOT_STARTED`: no alignment delta for this ledger item is present in the current worktree.
 - Every row remains `OPEN` until its owning Task closes production behavior, prototype truthfulness, focused checks, and required receiver-side proof.
 
-Current source-side count: `94 IMPLEMENTED/UNPROVEN`, `9 PARTIAL`, `8 NOT_STARTED`, `0/111 formally closed`.
+Current source-side count: `95 IMPLEMENTED/UNPROVEN`, `9 PARTIAL`, `7 NOT_STARTED`, `0/111 formally closed`.
 
 ## Shell, identity, and login
 
@@ -65,7 +65,7 @@ Current source-side count: `94 IMPLEMENTED/UNPROVEN`, `9 PARTIAL`, `8 NOT_STARTE
 | S14 | Bind friend request send/accept/decline and DM creation | IMPLEMENTED/UNPROVEN | Social commands, Contacts decisions, realtime convergence, and DM opening are wired | DUI-05 |
 | S15 | Separate exact handle resolution from directory search | IMPLEMENTED/UNPROVEN | `FindPeopleModal` separates federation resolve from catalog search; prototype filters local contacts | DUI-05 |
 | S16 | Bind federated friend requests and receiver policy | IMPLEMENTED/UNPROVEN | federated request delivery and contact policy enforcement exist; prototype remains local | DUI-05 |
-| S17 | Add contextual block/unblock to Social surfaces | NOT_STARTED | C15 settings surface exists; Social UI remains absent | DUI-05 |
+| S17 | Add contextual block/unblock to Social surfaces | IMPLEMENTED/UNPROVEN | Contact detail and Privacy Settings share revision-fenced Station commands and runtime policy reconciliation; browser previews show the unavailable boundary; Native block/unblock and Settings convergence proof remain open | DUI-05 |
 | S18 | Create groups through prepare/create and MLS welcomes | IMPLEMENTED/UNPROVEN | group prepare/create, device selection, MLS packages, and modal flow are live | DUI-06 |
 | S19 | Enforce roles, authority, and owner transfer in UI | IMPLEMENTED/UNPROVEN | generated roles, permission helpers, member controls, and owner transfer are wired | DUI-06 |
 | S20 | Bind add/invite/leave intent lifecycle | IMPLEMENTED/UNPROVEN | membership transition, member-authority, add, remove, and leave paths are live | DUI-06 |

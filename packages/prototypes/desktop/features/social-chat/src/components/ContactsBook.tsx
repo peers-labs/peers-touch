@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { Avatar } from './Avatar';
 import { RequestDecisionButtons } from './RequestDecisionButtons';
+import { ContactSafetyBoundary } from './ContactSafetyBoundary';
 import {
   CONTACTS,
   INITIAL_FRIEND_REQUESTS,
@@ -645,6 +646,7 @@ function ContactsDetail({ compact = false, request, friend, group, copiedKey, on
             Message
           </button>
         ) : null}
+        {!group ? <ContactSafetyBoundary /> : null}
         </Flexbox>
       </Flexbox>
     </Flexbox>

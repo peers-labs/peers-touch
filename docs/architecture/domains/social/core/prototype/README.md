@@ -28,6 +28,22 @@
 - stream call：从 Chat 会话头部的语音 / 视频按钮进入；语音、呼出和来电复用 Agent 后台执行 tray 的紧凑尺寸与右下角锚点，视频可切换紧凑、覆盖 Chat 模块和全屏三种显示范围。
 - Conversation action surface：静音、置顶、背景、搜索、清空历史、退出/解散/删除。
 
+Contacts 和私聊详情共用 `ContactSafetyBoundary`。浏览器没有已认证的
+Station relationship projection，屏蔽操作保持禁用，并明确显示不可用状态；
+不得通过本地 toggle 模拟已提交的屏蔽/解除屏蔽。文案读取产品 locale。
+Desktop 的 `ContactSafetyActions` 使用真实 status/command 链路；Native
+屏蔽、解除屏蔽、接收端拒绝、重启回读和 Settings 收敛仍为 `UNPROVEN`。
+
+该浏览器边界的 7 项检查覆盖 unknown/disabled、控件宽度与容器一致、
+至少 28px 的点击高度、无横向溢出和无 page error。已查看的截图为：
+
+- 英文：[1440px](./evidence-l2/contact-safety-en-1440.png)、
+  [900px](./evidence-l2/contact-safety-en-900.png)。
+- 中文：[1440px](./evidence-l2/contact-safety-zh-1440.png)、
+  [900px](./evidence-l2/contact-safety-zh-900.png)。
+
+这些截图只证明浏览器不可用边界，不证明已提交的 Station 屏蔽状态。
+
 原型只用于确认终态交互形态；确认后仍需在 Desktop 真实工程按运行时、store、i18n 和权限模型重新实现。
 
 ## 怎么跑

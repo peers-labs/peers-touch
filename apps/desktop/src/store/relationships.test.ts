@@ -1,11 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { SocialRelationshipCommandResultKind } from '../gen/proto/domain/social/relationship_pb';
+import { create } from '@bufbuild/protobuf';
+import {
+  SocialRelationshipCommandResultKind,
+  SocialRelationshipProjectionSchema,
+} from '../gen/proto/domain/social/relationship_pb';
 
 const mocks = vi.hoisted(() => ({
+  socialBlockActor: vi.fn(),
   socialFollow: vi.fn(),
   socialGetFollowers: vi.fn(),
   socialGetFollowing: vi.fn(),
   socialGetRelationship: vi.fn(),
+  socialGetRelationshipStatus: vi.fn(),
   socialListBlockedActors: vi.fn(),
   socialUnblockActor: vi.fn(),
   socialUnfollow: vi.fn(),
@@ -23,6 +29,16 @@ vi.mock('./session', () => ({
 
 import { EVENT, eventBus } from '../kernel/events';
 import { useRelationshipsStore } from './relationships';
+
+function policy(blockedByViewer: boolean, revision = 8n) {
+  return create(SocialRelationshipProjectionSchema, {
+    targetActor: { ptid: 'ptid:alice' },
+    targetHomeStationPeerId: 'station-alice',
+    blockedByViewer,
+    interactionAllowed: !blockedByViewer,
+    revision,
+  });
+}
 
 describe('relationships mutual-friend projection', () => {
   beforeEach(() => {
@@ -222,7 +238,10 @@ describe('relationships mutual-friend projection', () => {
 
   it('unblocks with the projected revision and refreshes authoritative state', async () => {
     mocks.socialUnblockActor.mockResolvedValue({
-      result: { kind: SocialRelationshipCommandResultKind.COMMITTED },
+      result: {
+        kind: SocialRelationshipCommandResultKind.COMMITTED,
+        projection: policy(false),
+      },
     });
     mocks.socialListBlockedActors.mockResolvedValue({
       items: [],
@@ -324,5 +343,118 @@ describe('relationships mutual-friend projection', () => {
     expect(useRelationshipsStore.getState().blockedActorMutatingPtid).toBeNull();
     expect(publishSpy).not.toHaveBeenCalled();
     expect(mocks.socialListBlockedActors).not.toHaveBeenCalled();
+  });
+
+  it('blocks only after a matching committed Station projection', async () => {
+    mocks.socialBlockActor.mockResolvedValue({
+      result: { kind: SocialRelationshipCommandResultKind.COMMITTED, projection: policy(true) },
+    });
+    mocks.socialListBlockedActors.mockResolvedValue({ items: [], nextCursor: '' });
+    await useRelationshipsStore.getState().setActorBlocked({
+      targetActorPtid: 'ptid:alice',
+      targetHomeStationPeerId: 'station-alice',
+      observedRevision: 7,
+    }, true);
+    expect(useRelationshipsStore.getState().relationshipPolicies['ptid:alice'].blockedByViewer).toBe(true);
+    expect(mocks.socialBlockActor).toHaveBeenCalledWith({
+      targetActorPtid: 'ptid:alice',
+      targetHomeStationPeerId: 'station-alice',
+      observedRevision: 7,
+    });
+  });
+
+  it('does not accept a committed result for the wrong target', async () => {
+    mocks.socialBlockActor.mockResolvedValue({
+      result: {
+        kind: SocialRelationshipCommandResultKind.COMMITTED,
+        projection: { ...policy(true), targetActor: { ptid: 'ptid:bob' } },
+      },
+    });
+    await expect(useRelationshipsStore.getState().setActorBlocked({
+      targetActorPtid: 'ptid:alice',
+      targetHomeStationPeerId: 'station-alice',
+      observedRevision: 7,
+    }, true)).rejects.toThrow('social.blockedActor.unavailable');
+    expect(useRelationshipsStore.getState().relationshipPolicies['ptid:alice']).toBeUndefined();
+  });
+
+  it('preserves a known policy when Station rejects a stale revision', async () => {
+    useRelationshipsStore.setState({ relationshipPolicies: { 'ptid:alice': policy(false, 9n) } });
+    mocks.socialBlockActor.mockResolvedValue({
+      result: { kind: SocialRelationshipCommandResultKind.CONFLICT },
+    });
+    await expect(useRelationshipsStore.getState().setActorBlocked({
+      targetActorPtid: 'ptid:alice',
+      targetHomeStationPeerId: 'station-alice',
+      observedRevision: 7,
+    }, true)).rejects.toThrow('social.blockedActor.conflict');
+    expect(useRelationshipsStore.getState().relationshipPolicies['ptid:alice'].blockedByViewer).toBe(false);
+  });
+
+  it('rejects a stale policy read after a block commits', async () => {
+    let resolveRead: (value: unknown) => void = () => undefined;
+    mocks.socialGetRelationshipStatus.mockReturnValueOnce(new Promise((resolve) => { resolveRead = resolve; }));
+    const read = useRelationshipsStore.getState().loadRelationshipPolicy('ptid:alice', true);
+    mocks.socialBlockActor.mockResolvedValue({
+      result: { kind: SocialRelationshipCommandResultKind.COMMITTED, projection: policy(true) },
+    });
+    mocks.socialListBlockedActors.mockResolvedValue({ items: [], nextCursor: '' });
+    await useRelationshipsStore.getState().setActorBlocked({
+      targetActorPtid: 'ptid:alice',
+      targetHomeStationPeerId: 'station-alice',
+      observedRevision: 7,
+    }, true);
+    resolveRead({ relationship: policy(false, 7n) });
+    await read;
+    expect(useRelationshipsStore.getState().relationshipPolicies['ptid:alice'].blockedByViewer).toBe(true);
+  });
+
+  it('does not let an old session policy populate a replacement session', async () => {
+    let resolveRead: (value: unknown) => void = () => undefined;
+    mocks.socialGetRelationshipStatus.mockReturnValueOnce(new Promise((resolve) => { resolveRead = resolve; }));
+    const read = useRelationshipsStore.getState().loadRelationshipPolicy('ptid:alice', true);
+    mocks.sessionEpoch += 1;
+    useRelationshipsStore.getState().reset();
+    resolveRead({ relationship: policy(true) });
+    await read;
+    expect(useRelationshipsStore.getState().relationshipPolicies).toEqual({});
+  });
+
+  it('does not roll back a policy to an older Station revision', async () => {
+    mocks.socialGetRelationshipStatus.mockResolvedValueOnce({ relationship: policy(true, 10n) });
+    await useRelationshipsStore.getState().loadRelationshipPolicy('ptid:alice');
+    mocks.socialGetRelationshipStatus.mockResolvedValueOnce({ relationship: policy(false, 8n) });
+    await useRelationshipsStore.getState().loadRelationshipPolicy('ptid:alice', true);
+    expect(useRelationshipsStore.getState().relationshipPolicies['ptid:alice'].revision).toBe(10n);
+  });
+
+  it('rejects a confirmation opened in a prior session before issuing a command', async () => {
+    const previousEpoch = mocks.sessionEpoch;
+    mocks.sessionEpoch += 1;
+    await expect(useRelationshipsStore.getState().setActorBlocked({
+      targetActorPtid: 'ptid:alice',
+      targetHomeStationPeerId: 'station-alice',
+      observedRevision: 7,
+    }, true, previousEpoch)).rejects.toThrow('settings.privacy.sessionUnavailable');
+    expect(mocks.socialBlockActor).not.toHaveBeenCalled();
+  });
+
+  it('invalidates a policy read that began while the block command was pending', async () => {
+    let resolveCommand: (value: unknown) => void = () => undefined;
+    let resolveRead: (value: unknown) => void = () => undefined;
+    mocks.socialBlockActor.mockReturnValueOnce(new Promise((resolve) => { resolveCommand = resolve; }));
+    mocks.socialGetRelationshipStatus.mockReturnValueOnce(new Promise((resolve) => { resolveRead = resolve; }));
+    mocks.socialListBlockedActors.mockResolvedValue({ items: [], nextCursor: '' });
+    const command = useRelationshipsStore.getState().setActorBlocked({
+      targetActorPtid: 'ptid:alice',
+      targetHomeStationPeerId: 'station-alice',
+      observedRevision: 7,
+    }, true);
+    const read = useRelationshipsStore.getState().loadRelationshipPolicy('ptid:alice', true);
+    resolveCommand({ result: { kind: SocialRelationshipCommandResultKind.COMMITTED, projection: policy(true) } });
+    await command;
+    resolveRead({ relationship: policy(false, 7n) });
+    await read;
+    expect(useRelationshipsStore.getState().relationshipPolicies['ptid:alice'].blockedByViewer).toBe(true);
   });
 });

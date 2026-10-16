@@ -6,7 +6,12 @@ import { Empty, theme } from 'antd';
 import { MessageCircle, Users } from 'lucide-react';
 
 import { PublicProfileCard, type PublicProfileModel } from '../profile/PublicProfileCard';
-import { useActiveSocialChatSlice } from './useActiveSocialChatStore';
+import {
+  useActiveChatRelationshipsSlice,
+  useActiveChatSessionSlice,
+  useActiveSocialChatSlice,
+} from './useActiveSocialChatStore';
+import { ContactSafetyActions } from './ContactSafetyActions';
 import {
   findContactConversation,
   type ContactSelection,
@@ -42,6 +47,8 @@ export function ChatContactsDetailPanel({
   const peerPtid = selectedContact && selectedContact.kind !== 'group'
     ? selectedContact.peerPtid
     : '';
+  const sessionEpoch = useActiveChatSessionSlice((state) => state.sessionEpoch);
+  const policy = useActiveChatRelationshipsSlice((state) => state.relationshipPolicies[peerPtid]);
   const cachedPeer = peerPtid ? peerProfiles[peerPtid] : undefined;
 
   // Lazy peer profile load. The cache is single-owner (socialChat store);
@@ -202,22 +209,35 @@ export function ChatContactsDetailPanel({
             <Users size={34} />
           </Flexbox>
         ) : undefined}
-        actions={selectedContact.kind !== 'person' ? (
-          <Button
-            data-chat-contact-message
-            block
-            size="large"
-            type="primary"
-            icon={<MessageCircle size={16} />}
-            loading={
-              selectedContact.kind === 'friend'
-              && openingPeerPtid === selectedContact.peerPtid
-            }
-            onClick={() => onMessage(selectedContact)}
-          >
-            {t('chat.social.contacts.sendMessage')}
-          </Button>
-        ) : undefined}
+        actions={
+          <Flexbox gap={8}>
+            {selectedContact.kind !== 'person' ? (
+              <Button
+                data-chat-contact-message
+                block
+                size="large"
+                type="primary"
+                disabled={policy?.interactionAllowed === false}
+                icon={<MessageCircle size={16} />}
+                loading={
+                  selectedContact.kind === 'friend'
+                  && openingPeerPtid === selectedContact.peerPtid
+                }
+                onClick={() => onMessage(selectedContact)}
+              >
+                {t('chat.social.contacts.sendMessage')}
+              </Button>
+            ) : null}
+            {peerPtid && selectedContact.kind !== 'group' ? (
+              <ContactSafetyActions
+                key={`${peerPtid}:${sessionEpoch}`}
+                peerPtid={peerPtid}
+                homeStationPeerId={selectedContact.homeStationPeerId}
+                displayName={profile.displayName}
+              />
+            ) : null}
+          </Flexbox>
+        }
       />
     </Flexbox>
   );
