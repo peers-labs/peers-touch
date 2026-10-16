@@ -241,9 +241,9 @@ fn configure_acceptance_startup(
     acceptance_window: bool,
     mode: Option<&str>,
     isolation: Option<&str>,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     if !acceptance_window || acceptance_input_mode_is_exclusive(mode, isolation)? {
-        return Ok(());
+        return Ok(true);
     }
 
     let window = config
@@ -256,7 +256,7 @@ fn configure_acceptance_startup(
     window.focus = false;
     window.focusable = false;
     window.visible = false;
-    Ok(())
+    Ok(false)
 }
 
 #[cfg(feature = "acceptance-webdriver")]
@@ -450,7 +450,9 @@ mod acceptance_window_tests {
         assert!(config.app.windows[0].focusable);
         assert!(config.app.windows[0].visible);
 
-        configure_acceptance_startup(&mut config, true, None, None).expect("valid semantic mode");
+        let activation_allowed = configure_acceptance_startup(&mut config, true, None, None)
+            .expect("valid semantic mode");
+        assert!(!activation_allowed);
 
         let window = &config.app.windows[0];
         assert!(!window.focus);
@@ -471,8 +473,10 @@ mod acceptance_window_tests {
         ] {
             let mut config = product_config();
             let original = serde_json::to_value(&config).expect("config should serialize");
-            configure_acceptance_startup(&mut config, acceptance_window, mode, isolation)
-                .expect("valid startup mode");
+            assert!(
+                configure_acceptance_startup(&mut config, acceptance_window, mode, isolation)
+                    .expect("valid startup mode")
+            );
             assert_eq!(
                 serde_json::to_value(&config).expect("config should serialize"),
                 original,
@@ -483,10 +487,13 @@ mod acceptance_window_tests {
     #[test]
     fn invalid_acceptance_startup_fails_before_window_creation() {
         let mut config = product_config();
-        assert!(
-            configure_acceptance_startup(&mut config, true, Some("exclusive-native-input"), None)
-                .is_err()
-        );
+        assert!(configure_acceptance_startup(
+            &mut config,
+            true,
+            Some("exclusive-native-input"),
+            None
+        )
+        .is_err());
         assert!(configure_acceptance_startup(&mut config, true, Some("legacy"), None).is_err());
         config.app.windows.clear();
         assert!(configure_acceptance_startup(&mut config, true, None, None).is_err());
@@ -577,9 +584,9 @@ fn main() {
 
     let tauri_context = tauri::generate_context!();
     #[cfg(feature = "acceptance-webdriver")]
-    let tauri_context = {
+    let (tauri_context, _acceptance_activation_allowed) = {
         let mut context = tauri_context;
-        configure_acceptance_startup(
+        let activation_allowed = configure_acceptance_startup(
             context.config_mut(),
             std::env::var_os("PT_ACCEPTANCE_WINDOW_SLOT").is_some(),
             std::env::var("PT_ACCEPTANCE_DESKTOP_INPUT_MODE")
@@ -590,7 +597,7 @@ fn main() {
                 .as_deref(),
         )
         .expect("invalid acceptance startup configuration");
-        context
+        (context, activation_allowed)
     };
 
     let app_state = Arc::new(ctx.app_state);
@@ -698,6 +705,10 @@ fn main() {
     #[cfg(feature = "acceptance-webdriver")]
     let builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
 
+    // Tao launch activation is independent of the configured window's focus policy.
+    #[cfg(all(feature = "acceptance-webdriver", target_os = "macos"))]
+    let builder = builder.activate_ignoring_other_apps(_acceptance_activation_allowed);
+
     builder
         .manage(app_state)
         .manage(capability_worker_supervisor)
@@ -720,9 +731,7 @@ fn main() {
                 )
                 .map_err(std::io::Error::other)?;
                 if !exclusive_native_input {
-                    // Tao activates Accessory apps at run-loop startup; semantic clients must
-                    // reject application activation while keeping their configured WebView.
-                    app.set_activation_policy(tauri::ActivationPolicy::Prohibited);
+                    app.set_activation_policy(tauri::ActivationPolicy::Accessory);
                 }
             }
             app.state::<Arc<state::AppState>>()
