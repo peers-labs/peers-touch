@@ -1866,6 +1866,7 @@ pub async fn messaging_membership_transition(
             target_device_id: input.target_device_id,
             role: input.role,
             leave_intent: None,
+            admission_fulfillment: None,
         })
     })
     .await

@@ -8,7 +8,6 @@ use reqwest::redirect::Policy;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use station_trust::{verify_node_authorization_bytes, verify_station_route_attestation_bytes};
-use std::net::IpAddr;
 #[cfg(any(test, feature = "acceptance-webdriver"))]
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -239,7 +238,9 @@ fn verify_discovery_response(
         Some(AccessEndpointRole::DirectStation) => {
             canonical_origin == requested_origin.trim_end_matches('/')
         }
-        Some(AccessEndpointRole::Relay) => canonical_origin.starts_with("https://"),
+        Some(AccessEndpointRole::Relay) => {
+            canonical_origin == requested_origin.trim_end_matches('/')
+        }
         _ => false,
     };
     if statement.encode_to_vec() != response.endpoint_statement_bytes
@@ -533,21 +534,17 @@ fn parse_input(input: &str) -> Result<ParsedInput, StationDiscoveryError> {
 fn normalize_origin(value: &str) -> Result<String, StationDiscoveryError> {
     let url = reqwest::Url::parse(value)
         .map_err(|_| invalid_discovery("A valid Station or Relay origin is required"))?;
-    let host = url
-        .host_str()
+    url.host_str()
         .ok_or_else(|| invalid_discovery("A valid Station or Relay origin is required"))?;
-    let loopback = host.eq_ignore_ascii_case("localhost")
-        || host
-            .parse::<IpAddr>()
-            .map(|address| address.is_loopback())
-            .unwrap_or(false);
-    if !(url.scheme() == "https" || (url.scheme() == "http" && loopback))
+    if !matches!(url.scheme(), "http" | "https")
+        || !url.username().is_empty()
+        || url.password().is_some()
         || url.query().is_some()
         || url.fragment().is_some()
         || (url.path() != "/" && !url.path().is_empty())
     {
         return Err(invalid_discovery(
-            "Station or Relay input must be an HTTPS origin or loopback HTTP origin",
+            "Station or Relay input must be an HTTP or HTTPS origin",
         ));
     }
     Ok(value.trim().trim_end_matches('/').to_string())
@@ -667,11 +664,12 @@ mod tests {
         let node = Keypair::generate_ed25519();
         let challenge = [7_u8; DISCOVERY_CHALLENGE_SIZE];
         let now = unix_ms();
+        let origin = "http://station.example";
         let verified = verify_discovery_response(
-            "https://station.example",
+            origin,
             None,
             &challenge,
-            direct_response(&root, &node, &challenge, "https://station.example", now),
+            direct_response(&root, &node, &challenge, origin, now),
             now,
         )
         .unwrap();
@@ -694,7 +692,7 @@ mod tests {
     }
 
     #[test]
-    fn direct_station_rejects_missing_signed_route_and_remote_http_origin() {
+    fn direct_station_rejects_missing_signed_route_and_accepts_remote_http_origin() {
         let root = Keypair::generate_ed25519();
         let node = Keypair::generate_ed25519();
         let challenge = [8_u8; DISCOVERY_CHALLENGE_SIZE];
@@ -707,11 +705,16 @@ mod tests {
             verify_discovery_response("https://station.example", None, &challenge, response, now)
                 .unwrap_err();
         assert_eq!(error.code, "station_discovery_invalid");
-        assert!(normalize_origin("http://station.example").is_err());
+        assert_eq!(
+            normalize_origin("http://station.example").unwrap(),
+            "http://station.example"
+        );
         assert_eq!(
             normalize_origin("http://127.0.0.1:18080").unwrap(),
             "http://127.0.0.1:18080"
         );
+        assert!(normalize_origin("ftp://station.example").is_err());
+        assert!(normalize_origin("http://user:password@station.example").is_err());
     }
 
     #[test]

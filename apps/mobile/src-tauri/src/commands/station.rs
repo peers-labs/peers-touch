@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use station_trust::verify_station_identity_response_bytes;
 
 use crate::error::{MobileError, MobileResult};
-use crate::station_origin::{normalize_station_origin, StationOriginPolicy};
+use crate::station_origin::normalize_station_origin;
 
 #[derive(Debug, Serialize)]
 pub struct StationProbeResult {
@@ -71,8 +71,7 @@ pub(crate) fn verify_station_identity_proof(
     input: VerifyStationIdentityProofInput,
     now_unix_ms: i64,
 ) -> MobileResult<VerifiedStationIdentity> {
-    let origin_policy = StationOriginPolicy::current_build();
-    let requested_origin = normalize_station_origin(&input.requested_origin, origin_policy)
+    let requested_origin = normalize_station_origin(&input.requested_origin)
         .map_err(|_| identity_error("invalidRequestedOrigin"))?;
     let required: Vec<&str> = input
         .required_capabilities

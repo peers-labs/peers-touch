@@ -1163,6 +1163,7 @@ impl StationConversationTransport {
                 target_actor: Some(actor_ref(input.target_ptid.clone())),
                 target_device_id: input.target_device_id.clone(),
                 role: canonical_member_role(&input.role)? as i32,
+                admission_fulfillment: input.admission_fulfillment.clone(),
             },
         )
         .map_err(|error| error.to_string())
@@ -2385,6 +2386,8 @@ mod tests {
                     leave_intent_id: String::new(),
                     authority_plan_id: "plan-1".to_string(),
                     authority_plan_sha256: vec![7; 32],
+                    admission_fulfillment: None,
+                    genesis_admission_fulfillments: Vec::new(),
                 },
             )),
         }

@@ -6,7 +6,7 @@ use reqwest::header::{ACCEPT, CONTENT_TYPE};
 use super::proto::auth::v1::LoginResponse;
 use super::proto::common::v1::PeersResponse;
 use crate::error::{MobileError, MobileResult};
-use crate::station_origin::{normalize_station_origin, StationOriginError, StationOriginPolicy};
+use crate::station_origin::{normalize_station_origin, StationOriginError};
 
 pub(crate) const PROTOBUF_CONTENT_TYPE: &str = "application/protobuf";
 const JSON_CONTENT_TYPE: &str = "application/json";
@@ -278,12 +278,12 @@ fn validate_protobuf_response(response: &reqwest::Response) -> MobileResult<()> 
 }
 
 pub(crate) fn validate_station_origin(value: &str) -> MobileResult<String> {
-    normalize_station_origin(value, StationOriginPolicy::current_build()).map_err(|error| {
+    normalize_station_origin(value).map_err(|error| {
         MobileError::invalid_input(match error {
             StationOriginError::Invalid => "stationOrigin is invalid",
             StationOriginError::MissingHost => "stationOrigin must include a host",
-            StationOriginError::Insecure | StationOriginError::NonCanonical => {
-                "stationOrigin must be an HTTPS origin outside development builds and contain no credentials, path, query, or fragment"
+            StationOriginError::NonCanonical => {
+                "stationOrigin must be an HTTP or HTTPS origin and contain no credentials, path, query, or fragment"
             }
             StationOriginError::InvalidPort => "stationOrigin port is invalid",
         })
