@@ -84,6 +84,7 @@ import {
   startSocialRuntime,
   unblockSocialUser,
 } from './socialRuntime';
+import { createStationRequestScope } from '../../services/stationTransport';
 
 const session = {
   stationPeerId: 'station-primary',
@@ -293,5 +294,36 @@ describe('social runtime supervisor', () => {
     );
     expect(runtimeMocks.projectionRuntime.bootstrap).toHaveBeenCalledTimes(2);
     await controller.teardown();
+  });
+
+  it('releases partial startup when its request scope closes during Messaging wake', async () => {
+    const requests = createStationRequestScope();
+    const messagingWake = Promise.withResolvers<void>();
+    vi.mocked(wakeActiveMessagingSession)
+      .mockImplementationOnce(() => messagingWake.promise);
+
+    const startup = startSocialRuntime(
+      session,
+      () => ({
+        sessionKey: 'station-primary|ptid:alice',
+        refreshBlockedUsers: vi.fn(async () => undefined),
+        sweepTypingPeers: vi.fn(),
+        unblockUser: vi.fn(async () => undefined),
+      }),
+      requests,
+    );
+    await vi.waitFor(() => {
+      expect(wakeActiveMessagingSession).toHaveBeenCalledOnce();
+    });
+
+    requests.close();
+
+    await expect(startup).rejects.toMatchObject({ name: 'AbortError' });
+    expect(runtimeMocks.projectionRuntime.teardown).toHaveBeenCalledOnce();
+    expect(runtimeMocks.projectionRuntime.drain).toHaveBeenCalledOnce();
+    expect(callMocks.reset).toHaveBeenCalledOnce();
+
+    messagingWake.resolve();
+    await messagingWake.promise;
   });
 });
