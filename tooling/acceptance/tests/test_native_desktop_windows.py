@@ -11,7 +11,7 @@ import tempfile
 import unittest
 import zlib
 from pathlib import Path, PureWindowsPath
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from tooling.acceptance.core import (
     RUNTIME_CELLS_DIR,
@@ -20,6 +20,8 @@ from tooling.acceptance.core import (
 from tooling.acceptance.core.errors import BlockedError, ProvisioningError
 from tooling.acceptance.provisioners.native_desktop_windows import (
     NativeDesktopWindowsProvisioner,
+    WINDOWS_SOURCE_COPY_TIMEOUT_SECONDS,
+    WINDOWS_SOURCE_IDENTITY_TIMEOUT_SECONDS,
     WindowsCellProfile,
     _json_output,
     _normalized_windows_path,
@@ -234,6 +236,40 @@ class WindowsCellProfileTest(unittest.TestCase):
 
 
 class WindowsProvisionerContractTest(unittest.TestCase):
+    def test_source_bundle_copy_budget_covers_slow_remote_links(self) -> None:
+        source = WINDOWS_PROVISIONER_PATH.read_text(encoding="utf-8")
+
+        self.assertEqual(WINDOWS_SOURCE_COPY_TIMEOUT_SECONDS, 900)
+        self.assertIn(
+            "timeout=WINDOWS_SOURCE_COPY_TIMEOUT_SECONDS",
+            source,
+        )
+        self.assertNotIn(
+            "copy_file(bundle, remote_bundle, timeout=300)",
+            source,
+        )
+        sync_source = source[
+            source.index("    def _sync_source("):
+            source.index("    def _build_binary(")
+        ]
+        self.assertLess(
+            sync_source.index("try:", sync_source.index("remote_bundle =")),
+            sync_source.index("self.transport.copy_file("),
+        )
+        self.assertLess(
+            sync_source.index("self.transport.copy_file("),
+            sync_source.index("finally:"),
+        )
+
+    def test_source_identity_probe_has_a_bounded_remote_budget(self) -> None:
+        source = WINDOWS_PROVISIONER_PATH.read_text(encoding="utf-8")
+
+        self.assertEqual(WINDOWS_SOURCE_IDENTITY_TIMEOUT_SECONDS, 60)
+        self.assertIn(
+            "timeout=WINDOWS_SOURCE_IDENTITY_TIMEOUT_SECONDS",
+            source,
+        )
+
     def test_orchestrator_endpoint_uses_distinct_remote_port(self) -> None:
         provisioner = NativeDesktopWindowsProvisioner.__new__(
             NativeDesktopWindowsProvisioner
@@ -397,6 +433,60 @@ class WindowsProvisionerContractTest(unittest.TestCase):
         self.assertIn('"powershell.exe"', source)
         self.assertNotIn("class SshTransport", source)
         self.assertNotIn("class SourceSyncRequest", source)
+
+    def test_source_sync_cleans_an_already_current_checkout(self) -> None:
+        commit = "a" * 40
+        request = Mock(
+            deploy_path="peers-touch/repo",
+            environment_name="acceptance-windows",
+            branch="design/relay-operations-plane",
+            source_mode="central",
+        )
+        provisioner = NativeDesktopWindowsProvisioner.__new__(
+            NativeDesktopWindowsProvisioner
+        )
+        provisioner._source_request = Mock(return_value=request)
+        provisioner.transport = Mock()
+        provisioner.transport.run_argv.side_effect = (
+            subprocess.CompletedProcess(
+                ("git",),
+                0,
+                stdout=commit + "\n",
+                stderr="",
+            ),
+            subprocess.CompletedProcess(
+                ("powershell.exe",),
+                0,
+                stdout="",
+                stderr="",
+            ),
+            subprocess.CompletedProcess(
+                ("powershell.exe",),
+                0,
+                stdout=json.dumps(
+                    {"commit": commit, "clean": True}
+                ),
+                stderr="",
+            ),
+        )
+
+        with patch(
+            "tooling.acceptance.provisioners.native_desktop_windows."
+            "RemoteSourceSynchronizer"
+        ) as synchronizer:
+            synchronizer.return_value.preflight.return_value = (
+                commit,
+                "b" * 64,
+            )
+            result = provisioner._sync_source(
+                r"C:\Users\Administrator"
+            )
+
+        cleanup = provisioner.transport.run_argv.call_args_list[1].args[0]
+        self.assertIn("reset --hard", cleanup[-1])
+        self.assertIn("clean -ffdqx", cleanup[-1])
+        self.assertEqual(result.remote_commit, commit)
+        self.assertTrue(result.remote_checkout_clean)
 
     def test_build_script_preserves_toolchain_environment(self) -> None:
         source = WINDOWS_BUILD_SCRIPT_PATH.read_text(encoding="utf-8")
@@ -581,6 +671,9 @@ class WindowsProvisionerContractTest(unittest.TestCase):
         provisioner = NativeDesktopWindowsProvisioner.__new__(
             NativeDesktopWindowsProvisioner
         )
+        provisioner.contract = RuntimeCellContract.from_yaml(
+            RUNTIME_CELLS_DIR / "desktop-windows-native.yaml"
+        )
         state = {
             "brokerRoot": "C:\\runtime",
             "runId": "run-1",
@@ -604,10 +697,64 @@ class WindowsProvisionerContractTest(unittest.TestCase):
             payload["storageRoot"],
             "C:\\runtime\\state\\run-1\\alice",
         )
+        self.assertEqual(payload["storageLifecycle"], "ephemeral")
         self.assertEqual(
             payload["logPath"],
             "C:\\runtime\\actors\\run-1\\alice\\logs\\desktop.log",
         )
+
+    def test_persistent_actor_storage_is_stable_outside_broker_root(self) -> None:
+        provisioner = NativeDesktopWindowsProvisioner.__new__(
+            NativeDesktopWindowsProvisioner
+        )
+        provisioner.contract = RuntimeCellContract.from_yaml(
+            RUNTIME_CELLS_DIR / "desktop-windows-native.yaml"
+        )
+        client_spec = {
+            "storage_lifecycle": "persistent",
+            "storage_root": "/orchestrator/ncp/alice",
+        }
+        first, first_lifecycle = provisioner._actor_storage(
+            state={"brokerRoot": "C:\\runtime", "runId": "run-1"},
+            actor="alice",
+            profile="chat-native-alice",
+            client_spec=client_spec,
+        )
+        second, second_lifecycle = provisioner._actor_storage(
+            state={"brokerRoot": "C:\\runtime", "runId": "run-2"},
+            actor="alice",
+            profile="chat-native-alice",
+            client_spec=client_spec,
+        )
+
+        self.assertEqual(first, second)
+        self.assertEqual(
+            (first_lifecycle, second_lifecycle),
+            ("persistent", "persistent"),
+        )
+        self.assertEqual(
+            PureWindowsPath(first).parent,
+            PureWindowsPath("C:\\runtime-persistent-state"),
+        )
+        self.assertFalse(
+            _windows_path_is_descendant(first, "C:\\runtime")
+        )
+
+    def test_actor_storage_rejects_unknown_lifecycle(self) -> None:
+        provisioner = NativeDesktopWindowsProvisioner.__new__(
+            NativeDesktopWindowsProvisioner
+        )
+        provisioner.contract = RuntimeCellContract.from_yaml(
+            RUNTIME_CELLS_DIR / "desktop-windows-native.yaml"
+        )
+
+        with self.assertRaisesRegex(ProvisioningError, "lifecycle"):
+            provisioner._actor_storage(
+                state={"brokerRoot": "C:\\runtime", "runId": "run-1"},
+                actor="alice",
+                profile="chat-native-alice",
+                client_spec={"storage_lifecycle": "retained"},
+            )
 
     def test_actor_ports_are_stable_distinct_and_actor_scoped(self) -> None:
         provisioner = NativeDesktopWindowsProvisioner.__new__(

@@ -1,7 +1,7 @@
 ---
 kind: invariant
 title: Development resources are declared before mutation
-status: superseded-by:DWF-D42
+status: superseded-by:DWF-D46
 owns: []
 referenced-by:
   - docs/architecture/engineering/development-workflow/README.md
@@ -13,7 +13,7 @@ detected: 2026-09-13
 
 # Development resources are declared before mutation
 
-> Superseded by DWF-D42. Retained as historical context only. A task
+> Superseded by DWF-D46. Retained as historical context only. A task
 > declaration is optional coordination data and is never a prerequisite for a
 > repository write, runtime request, review, status query, or close.
 

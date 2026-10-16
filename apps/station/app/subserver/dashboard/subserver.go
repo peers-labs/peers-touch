@@ -308,6 +308,10 @@ func (s *subServer) getConnectionMaterialIssuer() nativeRelay.ConnectionMaterial
 	return nativeRelay.ConnectionMaterialIssuerSnapshot()
 }
 
+func (s *subServer) getAttachmentService() nativeRelay.AttachmentService {
+	return nativeRelay.AttachmentServiceSnapshot()
+}
+
 // deriveFallbackSecret returns a fallback JWT secret derived from environment.
 // If no environment variable is set, a random secret is generated per process
 // lifetime and a warning is logged.

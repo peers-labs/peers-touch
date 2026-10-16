@@ -1465,6 +1465,7 @@ ORDER BY owner_ptid
         self.assertIn("message_publishing_rates", CHAT_TABLES)
         self.assertIn("notifications", CHAT_TABLES)
         self.assertIn("notification_unread_counts", CHAT_TABLES)
+        self.assertIn("realtime_actor_event_sequences", CHAT_TABLES)
         self.assertIn("realtime_events", CHAT_TABLES)
         self.assertIn("friend_chat_friend_requests", RETIRED_CHAT_TABLES)
         self.assertIn("friend_chat_friendships", CHAT_TABLES)
@@ -1552,6 +1553,7 @@ ORDER BY owner_ptid
             "message_publishing_rates",
             "notification_unread_counts",
             "notifications",
+            "realtime_actor_event_sequences",
             "realtime_events",
             "recovery_revisions",
             "social_friend_request_commands",

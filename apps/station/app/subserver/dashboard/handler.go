@@ -72,6 +72,9 @@ const (
 
 	// Relay access
 	routeRelayConnectionMaterial = "/dashboard/api/relay/connection-material"
+	routeRelayAttachments        = "/dashboard/api/relay/attachments"
+	routeRelayAttachment         = "/dashboard/api/relay/attachments/:id"
+	routeRelayAttachmentRetry    = "/dashboard/api/relay/attachments/:id/retry"
 
 	// System
 	routeSystemInfo       = "/dashboard/api/system/info"
@@ -121,6 +124,21 @@ const (
 type dashboardHandler struct {
 	sub *subServer
 }
+
+type relayAttachmentsResponse struct {
+	Items []nativeRelay.RelayAttachment `json:"items"`
+}
+
+type relayAttachmentRequest struct {
+	ID string `json:"id"`
+}
+
+type relayAttachmentMutation int
+
+const (
+	relayAttachmentDelete relayAttachmentMutation = iota
+	relayAttachmentRetry
+)
 
 // handlers returns the full list of HTTP handlers for the dashboard SubServer.
 // All API endpoints use NewTypedHandler with the dashboard auth/meta wrapper;
@@ -196,6 +214,34 @@ func (h *dashboardHandler) handlers() []server.Handler {
 			h.handleIssueRelayConnectionMaterial,
 			auth,
 			h.connectionMaterialResponseWrapper(),
+		),
+		server.NewTypedHandler(
+			"dashboard-relay-attachments-list",
+			routeRelayAttachments,
+			server.GET,
+			h.handleListRelayAttachments,
+			auth,
+		),
+		server.NewStrictTypedHandler(
+			"dashboard-relay-attachments-import",
+			routeRelayAttachments,
+			server.POST,
+			h.handleImportRelayAttachment,
+			auth,
+		),
+		server.NewTypedHandler(
+			"dashboard-relay-attachment-delete",
+			routeRelayAttachment,
+			server.DELETE,
+			h.handleDeleteRelayAttachment,
+			auth,
+		),
+		server.NewTypedHandler(
+			"dashboard-relay-attachment-retry",
+			routeRelayAttachmentRetry,
+			server.POST,
+			h.handleRetryRelayAttachment,
+			auth,
 		),
 
 		// -- System --
@@ -811,6 +857,126 @@ func (h *dashboardHandler) handleIssueRelayConnectionMaterial(
 		DeepLink:        material.DeepLink,
 		ExpiresAtUnixMs: material.ExpiresAt.UnixMilli(),
 	}, nil
+}
+
+func (h *dashboardHandler) handleListRelayAttachments(
+	ctx context.Context,
+	_ *domain.EmptyRequest,
+) (*relayAttachmentsResponse, error) {
+	service := h.sub.getAttachmentService()
+	if service == nil {
+		return nil, serviceUnavailable("Relay attachment service is unavailable")
+	}
+	items, err := service.ListAttachments(ctx)
+	if err != nil {
+		log.Errorf(ctx, "[dashboard] list Relay attachments: %v", err)
+		return nil, server.InternalError("failed to list Relay attachments")
+	}
+	return &relayAttachmentsResponse{Items: items}, nil
+}
+
+func (h *dashboardHandler) handleImportRelayAttachment(
+	ctx context.Context,
+	invitation *nativeRelay.InvitationPackage,
+) (*nativeRelay.RelayAttachment, error) {
+	service := h.sub.getAttachmentService()
+	if service == nil {
+		return nil, serviceUnavailable("Relay attachment service is unavailable")
+	}
+	attachment, err := service.ImportAttachment(ctx, *invitation)
+	if err != nil {
+		switch {
+		case errors.Is(err, nativeRelay.ErrInvalidInvitation),
+			errors.Is(err, nativeRelay.ErrInvitationForStation):
+			return nil, server.BadRequest(err.Error())
+		case errors.Is(err, nativeRelay.ErrAttachmentExists):
+			return nil, server.Conflict(err.Error())
+		default:
+			log.Errorf(ctx, "[dashboard] import Relay attachment: %v", err)
+			return nil, serviceUnavailable("Relay attachment could not be activated")
+		}
+	}
+	h.recordRelayAttachmentAudit(
+		ctx,
+		"relay_attachment_import",
+		attachment.RelayPeerID,
+	)
+	return attachment, nil
+}
+
+func (h *dashboardHandler) handleDeleteRelayAttachment(
+	ctx context.Context,
+	req *relayAttachmentRequest,
+) (*nativeRelay.RelayAttachment, error) {
+	return h.mutateRelayAttachment(ctx, req.ID, relayAttachmentDelete)
+}
+
+func (h *dashboardHandler) handleRetryRelayAttachment(
+	ctx context.Context,
+	req *relayAttachmentRequest,
+) (*nativeRelay.RelayAttachment, error) {
+	return h.mutateRelayAttachment(ctx, req.ID, relayAttachmentRetry)
+}
+
+func (h *dashboardHandler) mutateRelayAttachment(
+	ctx context.Context,
+	relayPeerID string,
+	mutation relayAttachmentMutation,
+) (*nativeRelay.RelayAttachment, error) {
+	service := h.sub.getAttachmentService()
+	if service == nil {
+		return nil, serviceUnavailable("Relay attachment service is unavailable")
+	}
+
+	relayPeerID = strings.TrimSpace(relayPeerID)
+	if relayPeerID == "" {
+		return nil, server.BadRequest("Relay PeerID is required")
+	}
+
+	var attachment *nativeRelay.RelayAttachment
+	var auditAction string
+	var err error
+	switch mutation {
+	case relayAttachmentDelete:
+		auditAction = "relay_attachment_delete"
+		attachment, err = service.DeleteAttachment(ctx, relayPeerID)
+	case relayAttachmentRetry:
+		auditAction = "relay_attachment_retry"
+		attachment, err = service.RetryAttachment(ctx, relayPeerID)
+	default:
+		return nil, server.InternalError("unsupported Relay attachment operation")
+	}
+
+	if err != nil {
+		if errors.Is(err, nativeRelay.ErrAttachmentNotFound) {
+			return nil, server.NotFound("Relay attachment not found")
+		}
+		log.Errorf(ctx, "[dashboard] mutate Relay attachment %s: %v", relayPeerID, err)
+		return nil, serviceUnavailable("Relay attachment operation failed")
+	}
+
+	h.recordRelayAttachmentAudit(ctx, auditAction, relayPeerID)
+
+	return attachment, nil
+}
+
+func (h *dashboardHandler) recordRelayAttachmentAudit(
+	ctx context.Context,
+	action string,
+	relayPeerID string,
+) {
+	if claims := getClaims(ctx); claims != nil && h.sub.authSvc != nil {
+		h.sub.authSvc.RecordAudit(
+			ctx,
+			claims.AdminID,
+			claims.Username,
+			action,
+			"relay_attachment",
+			relayPeerID,
+			getClientIP(ctx),
+			getUserAgent(ctx),
+		)
+	}
 }
 
 // ===========================================================================

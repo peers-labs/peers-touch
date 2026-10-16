@@ -29,9 +29,9 @@
 | LDCP-D15 | Derive reset protection from the canonical Profile ID | superseded by LDCP-D21 |
 | LDCP-D16 | Bootstrap minimum registration from explicit Profile selection | accepted |
 | LDCP-D17 | Separate durable workspace binding from current Git HEAD | accepted |
-| LDCP-D18 | Require committed resource-plan provenance for planner-owned leases | superseded by DWF-D42 |
+| LDCP-D18 | Require committed resource-plan provenance for planner-owned leases | superseded by DWF-D46 |
 | LDCP-D19 | Retire the Peers Dev browser service and keep Workflow Snapshot read-only | accepted |
-| LDCP-D20 | Unregister environments only through coordinated Development close | superseded by DWF-D42 |
+| LDCP-D20 | Unregister environments only through coordinated Development close | superseded by DWF-D46 |
 | LDCP-D21 | Let reviewed Profiles authorize development operations and protect only the stable suffix | accepted |
 
 ## LDCP-D01: Machine Control-Plane Root
@@ -803,7 +803,7 @@ Stable workspace identity and advancing source identity change independently and
 
 ## LDCP-D18: Require Committed Resource-Plan Provenance For Planner-Owned Leases
 
-**Status**: superseded by DWF-D42
+**Status**: superseded by DWF-D46
 **Date**: 2026-09-30
 
 This decision is retained as historical context only. Runtime admission no
@@ -903,7 +903,7 @@ keeps authority with the underlying workflow stores.
 
 ## LDCP-D20: Unregister Environments Only Through Coordinated Development Close
 
-**Status**: superseded by DWF-D42
+**Status**: superseded by DWF-D46
 **Date**: 2026-10-05
 
 This decision is retained as historical context only. Unregister now checks

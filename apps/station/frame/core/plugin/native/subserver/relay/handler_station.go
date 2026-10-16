@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/application"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/subserver/relay/domain"
@@ -182,8 +183,6 @@ func (h *relayHandler) writeEnrollmentError(
 		writeJSON(w, http.StatusUnauthorized, errorBody("invalid invite token"))
 	case errors.Is(err, application.ErrInviteInactive):
 		writeJSON(w, http.StatusForbidden, errorBody("invite token is no longer active"))
-	case errors.Is(err, application.ErrInviteExpired):
-		writeJSON(w, http.StatusForbidden, errorBody("invite token has expired"))
 	case errors.Is(err, application.ErrChallengeInvalid),
 		errors.Is(err, application.ErrChallengeExpired),
 		errors.Is(err, application.ErrProofInvalid),
@@ -229,4 +228,48 @@ func (h *relayHandler) handleTokenRefresh(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeJSON(w, http.StatusOK, credentialResponse(credential))
+}
+
+func (h *relayHandler) handleRetireEnrollment(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	subject := coreauth.GetSubject(r.Context())
+	if subject == nil {
+		writeJSON(w, http.StatusUnauthorized, errorBody("missing relay access subject"))
+		return
+	}
+	identity, ok := nodeIdentityFromSubject(subject.ID, subject.Attributes)
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, errorBody("invalid relay access subject"))
+		return
+	}
+	enrollment, err := h.sub.svc.RetireEnrollment(r.Context(), identity)
+	if err != nil {
+		if errors.Is(err, application.ErrCredentialInvalid) {
+			writeJSON(w, http.StatusUnauthorized, errorBody("stale relay access subject"))
+			return
+		}
+		if errors.Is(err, application.ErrEnrollmentNotFound) {
+			writeJSON(w, http.StatusNotFound, errorBody("enrollment not found"))
+			return
+		}
+		logger.Errorf(
+			r.Context(),
+			"[relay] self-retire enrollment %s/%s: %v",
+			identity.StationPeerID,
+			identity.NodePeerID,
+			err,
+		)
+		writeJSON(
+			w,
+			http.StatusInternalServerError,
+			errorBody("failed to retire enrollment"),
+		)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":     "retired",
+		"generation": enrollment.Generation,
+	})
 }

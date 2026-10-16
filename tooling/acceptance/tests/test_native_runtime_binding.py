@@ -344,6 +344,7 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             session,
             "http://station.example",
             "station-four",
+            "station-peer-four",
         )
 
         self.assertEqual(
@@ -365,6 +366,74 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             ],
         )
 
+    def test_station_configuration_selects_refreshed_direct_candidate(
+        self,
+    ) -> None:
+        lifecycle = SyntheticRemoteNativeLifecycle(
+            "/workspace/run/actors/alice/fixture.png"
+        )
+        binding = LinuxNativeDesktopRuntimeBinding(
+            "chat-native",
+            "source-commit",
+            lifecycle,
+        )
+        session = Mock(spec=TauriSession)
+        session.invoke_app_result.return_value = {
+            "data": {
+                "status": json.dumps(
+                    {
+                        "entries": [
+                            {
+                                "station_peer_id": "station-peer-four",
+                                "routes": [
+                                    {
+                                        "route_id": "direct-primary",
+                                        "route_type": "direct",
+                                        "endpoint_origin": (
+                                            "https://old-proxy.example:18443"
+                                        ),
+                                        "health": "available",
+                                    }
+                                ],
+                                "candidate_route_refreshes": [
+                                    {
+                                        "route_id": "direct-primary",
+                                        "route_type": "direct",
+                                        "endpoint_origin": (
+                                            "https://new-proxy.example:19443"
+                                        ),
+                                        "health": "available",
+                                        "attestation_expires_at_unix_ms": 20,
+                                        "route_generation": 1,
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                )
+            }
+        }
+
+        binding._configure_session_station(
+            session,
+            "https://new-proxy.example:19443",
+            "station-four",
+            "station-peer-four",
+        )
+
+        self.assertEqual(
+            session.invoke_app_result.call_args_list[-1],
+            call(
+                "station_set_active",
+                {
+                    "input": {
+                        "station_peer_id": "station-peer-four",
+                        "route_id": "direct-primary",
+                    }
+                },
+            ),
+        )
+
     def test_station_configuration_prefers_fresh_available_route(self) -> None:
         lifecycle = SyntheticRemoteNativeLifecycle(
             "/workspace/run/actors/alice/fixture.png"
@@ -380,6 +449,23 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
                 "status": json.dumps(
                     {
                         "entries": [
+                            {
+                                "station_peer_id": "station-peer-foreign",
+                                "routes": [
+                                    {
+                                        "route_id": "relay-foreign-newer",
+                                        "route_type": "relay",
+                                        "endpoint_origin": (
+                                            "https://relay.example:18443"
+                                        ),
+                                        "health": "available",
+                                        "attestation_expires_at_unix_ms": 100,
+                                        "last_verified_at": (
+                                            "2026-10-14T10:00:00Z"
+                                        ),
+                                    }
+                                ],
+                            },
                             {
                                 "station_peer_id": "station-peer-four",
                                 "routes": [
@@ -431,6 +517,7 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             session,
             "https://relay.example:18443",
             "station-via-relay",
+            "station-peer-four",
         )
 
         self.assertEqual(
@@ -483,6 +570,7 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             session,
             "http://relay.example:18081",
             "station-via-relay",
+            "station-peer-four",
         )
 
         self.assertEqual(
@@ -1021,6 +1109,7 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             session,
             "http://station.example",
             "station-four",
+            "station-peer-four",
         )
         observe.assert_called_once()
         persist.assert_called_once()
@@ -1431,12 +1520,9 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
     def test_make_launcher_uses_allocated_ports_after_managed_handoff(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "peers-group-chat"
-            active = root / ".local" / "dev" / "active"
-            profiles = root / ".local" / "dev" / "profiles"
-            active.mkdir(parents=True)
-            profiles.mkdir(parents=True)
+            root.mkdir(parents=True)
             (root / "Makefile").write_text("desktop-stop:\n\t@true\n", encoding="utf-8")
-            profile = profiles / "four.env"
+            profile = Path(temp_dir) / "four.env"
             profile.write_text(
                 "\n".join(
                     (
@@ -1453,9 +1539,6 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
                 )
                 + "\n",
                 encoding="utf-8",
-            )
-            (active / "peers-group-chat.env").symlink_to(
-                Path("..") / "profiles" / "four.env"
             )
             launcher = MakeDesktopLauncher(
                 worktree=root,
@@ -1474,10 +1557,23 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             process = Mock(pid=1234)
             process.poll.return_value = 0
             response = Mock()
+            resolved_profile = Mock(
+                returncode=0,
+                stdout=json.dumps(
+                    {
+                        "ok": True,
+                        "profile": {"resolvedPath": str(profile)},
+                    }
+                ),
+                stderr="",
+            )
 
             with patch(
                 "tooling.acceptance.drivers.tauri.subprocess.Popen",
                 return_value=process,
+            ), patch(
+                "tooling.acceptance.drivers.tauri.subprocess.run",
+                return_value=resolved_profile,
             ), patch(
                 "tooling.acceptance.drivers.tauri.urllib.request.urlopen",
                 return_value=response,

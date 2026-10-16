@@ -1028,6 +1028,15 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             yield_source.index('"acceptance_request_activation"'),
         )
         self.assertNotIn("call_async_harness", yield_source)
+        self.assertIn(
+            'source.invoke_app_result(\n'
+            '                "acceptance_yield_activation"',
+            yield_source,
+        )
+        self.assertIn(
+            'target.invoke_app_result("acceptance_request_activation")',
+            yield_source,
+        )
         self.assertNotIn("acceptance_yield_activation", self.source)
         self.assertLess(semantic_return_index, recovery_index)
         self.assertLess(
@@ -1163,6 +1172,14 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "                private_source=True,",
             composer_source,
         )
+        self.assertIn("self.native_adapter.post_key(", composer_source)
+        self.assertIn("NativeKey.A,", composer_source)
+        self.assertIn(
+            "modifiers=(NativeModifier.PRIMARY,)",
+            composer_source,
+        )
+        self.assertIn("NativeKey.DELETE,", composer_source)
+        self.assertIn("private_source=True", composer_source)
         self.assertIn(
             'lambda _: (composer.get_attribute("value") or "") == ""',
             composer_source,
@@ -2557,6 +2574,10 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "NativeKey.ENTER, )",
             normalized_selection,
         )
+        self.assertEqual(selection_source.count("Keys.ENTER"), 3)
+        self.assertEqual(selection_source.count("Keys.TAB"), 1)
+        self.assertEqual(selection_source.count("NativeKey.ENTER"), 3)
+        self.assertEqual(selection_source.count("NativeKey.TAB"), 1)
         self.assertIn("reaction_picker_localized", selection_source)
         self.assertIn("return str(selected_emoji)", selection_source)
         self.assertEqual(

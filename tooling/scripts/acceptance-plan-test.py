@@ -629,6 +629,8 @@ class BehaviorRuleTests(unittest.TestCase):
         self.assertEqual(
             selected,
             {
+                # Master-era native mobile gates (#141 carryover) govern the
+                # shared social gateway alongside the simulator journeys.
                 "mobile-social-android-native",
                 "mobile-social-facade-contract",
                 "mobile-social-ios-native",

@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "id": "station-access-relay-attachment-lifecycle",
+  "domain": "station-access",
+  "status": "active",
+  "owners": [
+    "apps/station/frame/core/plugin/native/relay/attachment_controller.go",
+    "apps/station/frame/core/plugin/native/relay/reservation.go",
+    "apps/station/frame/core/plugin/native/relay/station_control.go",
+    "apps/station/frame/core/plugin/native/subserver/relay/handler_admin.go",
+    "apps/station/app/subserver/dashboard/handler.go",
+    "tooling/acceptance/gates/station_access/relay_attachment_lifecycle_e2e.py",
+    "tooling/acceptance/provisioners/station_access_dual_relay.py"
+  ],
+  "truth_sources": [
+    "Station AttachmentController durable desired state",
+    "Relay invitation and enrollment repositories",
+    "standard libp2p Circuit Relay v2 reservation and signed-route projections"
+  ],
+  "visible_surfaces": [
+    {
+      "type": "operator",
+      "route": "Relay invitation create/list/delete and enrollment observation API"
+    },
+    {
+      "type": "operator",
+      "route": "Station Dashboard Relay attachment import/list/retry/delete API"
+    },
+    {
+      "type": "native",
+      "route": "Native Desktop Direct/Circuit route continuity"
+    }
+  ],
+  "required_gates": [
+    "RAL-G01",
+    "RAL-G02",
+    "RAL-G03",
+    "RAL-G04",
+    "RAL-G05",
+    "RAL-G06",
+    "RAL-G07",
+    "RAL-G08"
+  ],
+  "acceptance": {
+    "service": [
+      "active invitations remain one-use operator resources until consumed or explicitly deleted",
+      "an invitation targeted at another Station is rejected before attachment intent is committed",
+      "credential persistence precedes active attachment intent and invitation secrets never appear in attachment projection evidence",
+      "Relay A and Relay B reach independent generation-1 active projections before source retirement",
+      "failure and recovery of Relay A preserve Relay B attachment state",
+      "Station restart restores both durable attachment intents and live routes",
+      "offline detach disables local Relay use before remote cleanup and preserves the unaffected Relay",
+      "cleanup retry, online detach, consumed-invite conflict, revocation generation, and repeated delete converge idempotently"
+    ],
+    "surface": [
+      "operator readback exposes the exact attachment lifecycle state without credential material",
+      "Native Desktop Direct-only, Relay-only, and automatic failover retain Session and route lease continuity"
+    ]
+  },
+  "negative": [
+    "Relay invitation, operator, enrollment, or Dashboard session secrets must not enter Runtime Manifest, argv, environment, logs, or evidence",
+    "a Scenario must not reprovision the shared Station or either Relay",
+    "failure, revoke, or detach of one Relay must not mutate the other Relay generation",
+    "cleanup-pending retirement must not re-add the removed Relay as a dial or route candidate",
+    "local or structural evidence must not replace RAL-G01 exact-source runtime proof or NCP-G03 Native receiver proof"
+  ]
+}

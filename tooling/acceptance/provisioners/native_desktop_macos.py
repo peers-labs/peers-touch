@@ -55,6 +55,7 @@ from tooling.acceptance.drivers.tauri import (
 
 
 NATIVE_WINDOW_READY_TIMEOUT_SECONDS = 30.0
+NATIVE_FOCUS_READY_TIMEOUT_SECONDS = 30.0
 OPERATOR_FOCUS_STABILITY_TIMEOUT_SECONDS = 1.0
 OPERATOR_FOCUS_STABILITY_INTERVAL_SECONDS = 0.05
 
@@ -925,7 +926,7 @@ class NativeDesktopMacOSProvisioner:
         adapter: MacOSNativeDesktopAdapter,
         process_id: int,
         *,
-        timeout_seconds: float = 15.0,
+        timeout_seconds: float = NATIVE_FOCUS_READY_TIMEOUT_SECONDS,
         interval_seconds: float = 0.1,
         activation_point: tuple[float, float] | None = None,
     ) -> NativeControlSnapshot:

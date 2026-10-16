@@ -1,7 +1,7 @@
 ---
 kind: invariant
 title: Plan mounts bind frozen versions to execution worktrees
-status: superseded-by:DWF-D42
+status: superseded-by:DWF-D46
 owns: []
 referenced-by:
   - docs/architecture/engineering/development-workflow/decisions.md
@@ -13,7 +13,7 @@ detected: 2026-10-04
 
 # Plan mounts bind frozen versions to execution worktrees
 
-> Superseded by DWF-D42. Retained as historical context only. Plans remain
+> Superseded by DWF-D46. Retained as historical context only. Plans remain
 > explicit versioned inputs when a task needs one, but querying or executing a
 > plan does not require a machine-wide PlanMount.
 

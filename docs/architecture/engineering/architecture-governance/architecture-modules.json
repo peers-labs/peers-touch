@@ -38,6 +38,7 @@
     "docs/architecture/platform/applet-runtime",
     "docs/architecture/platform/client/frontend-runtime",
     "docs/architecture/platform/client/mobile",
+    "docs/architecture/platform/runtime/node-connectivity/relay-attachment",
     "docs/architecture/domains/federation",
     "docs/architecture/shared/i18n",
     "docs/architecture/domains/notification",

@@ -47,5 +47,5 @@ control plane.
 
 ## Crosswalks
 
-- DWF-D42 removes auxiliary workflow state from ordinary admission.
+- DWF-D46 removes auxiliary workflow state from ordinary admission.
 - LDCP-D19 keeps status as an on-demand CLI projection.

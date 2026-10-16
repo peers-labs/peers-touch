@@ -145,6 +145,24 @@ wire protocol version. It contains signed routes, delegation and optional grant.
 Credentials never enter URL query, logs, analytics or Referer. Node/operator/
 client credentials use distinct issuer, audience, scopes and keys.
 
+Station-local durable attachment intent uses
+`station_peer_id + node_peer_id + relay_peer_id` as its composite primary key.
+Credential paths share the same scope within the resolved Station data directory.
+Bootstrap configuration is an initial import; it cannot overwrite persisted
+intent or a disabled tombstone.
+
+An expired Relay enrollment credential can locate a proof-based rotation.
+Recovery verifies the current non-revoked enrollment ID, generation and JTI,
+then requires fresh root-delegated Node proof before issuing another short-lived
+credential. Expired credentials never authorize ordinary route or transport use.
+Replacement JTI, monotonic authorization epoch and delegation expiry commit
+atomically before admission publication, ordered with revocation.
+
+Self-retirement revokes only the matching enrollment ID, generation and JTI.
+Revoked rows retain the predecessor JTI and generation fence for idempotent
+confirmation, including by an expired signed retirement locator. Such a locator
+cannot revoke an active enrollment, recover admission, or affect a replacement.
+
 ## 5. Binding And Runtime State
 
 ```text

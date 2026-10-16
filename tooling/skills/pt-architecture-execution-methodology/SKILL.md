@@ -198,8 +198,6 @@ Each selected scenario has:
 - observable expected result;
 - required runtime and receiver;
 - binary pass/fail oracle;
-- per-step execution channel and event mechanism (`touch` / `dom-event` /
-  `harness`) fixed in the model, not left to execution time;
 - evidence class and artifact;
 - explicit non-claim when not run.
 
@@ -245,10 +243,6 @@ Return `PLAN_MODEL_READY` only when:
 - dependencies and cutovers are explicit;
 - no required lifecycle step is unmapped;
 - deletion and rollback boundaries are complete;
-- when the acceptance system itself is the work, the three bootstrap layers
-  (plain unit tests, independent-oracle exemplar, product journeys) are mapped
-  and gate the deletion;
-- per-step channel and event mechanism are fixed in the model;
 - verification traces to product states or concrete risks;
 - no plan item redesigns architecture;
 - completion claims are bounded.

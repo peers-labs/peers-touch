@@ -92,6 +92,7 @@ CHAT_TABLES = (
     "mls_key_packages",
     "notification_unread_counts",
     "notifications",
+    "realtime_actor_event_sequences",
     "realtime_events",
     "recovery_revisions",
     "social_friend_request_commands",

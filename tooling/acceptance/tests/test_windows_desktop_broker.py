@@ -516,6 +516,68 @@ class WindowsDesktopBrokerLeaseTest(unittest.TestCase):
             )
             self.assertEqual(lease["actors"], {})
 
+    def test_persistent_storage_survives_final_stop_and_broker_cleanup(
+        self,
+    ) -> None:
+        scheduler = _RecordingScheduler()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "runtime"
+            actor_root = root / "actors" / "run-1" / "alice"
+            storage_root = Path(directory) / "persistent-state" / "alice"
+            storage_file = storage_root / "identity.seed"
+            storage_file.parent.mkdir(parents=True)
+            storage_file.write_text("durable", encoding="utf-8")
+            log_path = actor_root / "logs" / "desktop.log"
+            log_path.parent.mkdir(parents=True)
+            broker = WindowsDesktopBroker(
+                root,
+                desktop_user="administrator",
+                scheduler=scheduler,  # type: ignore[arg-type]
+                now=lambda: 1_000.0,
+            )
+            broker._write_json(
+                broker.lease_path,
+                {
+                    "artifactKind": "windows-desktop-broker-lease",
+                    "runId": "run-1",
+                    "desktopUser": "administrator",
+                    "expiresAtEpoch": 2_000,
+                    "actors": {
+                        "alice": {
+                            "taskName": "PeersTouch-Acceptance-run-1-actor-alice",
+                            "processId": 42,
+                            "webdriverPort": 4645,
+                            "gatewayPort": 3230,
+                            "storageRoot": str(storage_root),
+                            "storageLifecycle": "persistent",
+                            "logPath": str(log_path),
+                            "statePath": str(actor_root / "state.json"),
+                            "profile": "chat-native-alice",
+                        }
+                    },
+                },
+            )
+
+            with (
+                patch.object(broker, "_stop_process"),
+                patch.object(broker, "_process_alive", return_value=False),
+                patch.object(broker, "_port_listening", return_value=False),
+            ):
+                result = broker.stop_actor(
+                    {"runId": "run-1", "actor": "alice"}
+                )
+                cleanup = broker.cleanup({"runId": "run-1"})
+
+            self.assertTrue(result["storageReleased"])
+            self.assertEqual(result["storageLifecycle"], "persistent")
+            self.assertEqual(result["storageDisposition"], "retained")
+            self.assertTrue(cleanup["clean"])
+            self.assertFalse(root.exists())
+            self.assertEqual(
+                storage_file.read_text(encoding="utf-8"),
+                "durable",
+            )
+
     def test_actor_control_directory_is_scoped_by_run(self) -> None:
         scheduler = _RecordingScheduler()
         with tempfile.TemporaryDirectory() as directory:

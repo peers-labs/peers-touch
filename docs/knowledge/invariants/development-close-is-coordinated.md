@@ -1,7 +1,7 @@
 ---
 kind: invariant
 title: Development close is one coordinated transaction
-status: superseded-by:DWF-D42
+status: superseded-by:DWF-D46
 owns: []
 referenced-by:
   - docs/architecture/engineering/development-workflow/decisions.md
@@ -14,7 +14,7 @@ detected: 2026-10-05
 
 # Development close is one coordinated transaction
 
-> Superseded by DWF-D42. Retained as historical context only. Closing a task
+> Superseded by DWF-D46. Retained as historical context only. Closing a task
 > may summarize that task's own operations and release resources it actually
 > owns; there is no workspace-wide close transaction or admission guard.
 

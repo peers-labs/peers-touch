@@ -47,5 +47,5 @@ weakening Gate assertions, current-source evidence, or runtime admission.
 
 ## Crosswalks
 
-- DWF-D42 removes auxiliary workflow state from ordinary and formal admission.
+- DWF-D46 removes auxiliary workflow state from ordinary and formal admission.
 - Acceptance Infra still owns Gate execution and evidence semantics.

@@ -302,6 +302,7 @@ class NativeDesktopRuntimeBinding(ABC):
                     session,
                     station_url,
                     station_service_id,
+                    str(station_service.get("runtimeIdentity") or ""),
                 )
             runtime_identity = self._client_runtime_identity(
                 client_id,
@@ -443,7 +444,7 @@ class NativeDesktopRuntimeBinding(ABC):
     ) -> TransportOverrideHandle:
         if self._runtime_manifest is None:
             raise DriverError("Runtime Binding manifest is not set")
-        service_id, _ = require_runtime_client_service(
+        service_id, service = require_runtime_client_service(
             self._runtime_manifest,
             client_id,
             binding_role,
@@ -479,10 +480,18 @@ class NativeDesktopRuntimeBinding(ABC):
                 binding_role,
                 "bound client session is not live",
             )
+        if self._runtime_manifest is None:
+            raise DriverError("Runtime Binding manifest is not set")
+        _, service = require_runtime_client_service(
+            self._runtime_manifest,
+            client_id,
+            binding_role,
+        )
         self._configure_session_station(
             session,
             override.endpoint,
             override.service_id,
+            str(service.get("runtimeIdentity") or ""),
         )
 
     def apply_verified_direct_route_override(
@@ -562,6 +571,7 @@ class NativeDesktopRuntimeBinding(ABC):
                 session,
                 str(service.get("endpoint") or ""),
                 service_id,
+                str(service.get("runtimeIdentity") or ""),
             )
         self._transport_overrides.pop(handle._token, None)
         self._release_transport_endpoint(override.endpoint_lease_id)
@@ -625,9 +635,13 @@ class NativeDesktopRuntimeBinding(ABC):
         session: TauriSession,
         station_url: str,
         station_service_id: str,
+        expected_station_peer_id: str,
     ) -> None:
         if not station_url:
             raise DriverError("Runtime Binding Station endpoint is empty")
+        expected_station_peer_id = expected_station_peer_id.strip()
+        if not expected_station_peer_id:
+            raise DriverError("Runtime Binding Station identity is empty")
         discovery = session.invoke_app_result(
             "station_add",
             {"input": {"input": station_url}},
@@ -653,23 +667,37 @@ class NativeDesktopRuntimeBinding(ABC):
                 continue
             station_peer_id = str(entry.get("station_peer_id") or "").strip()
             routes = entry.get("routes")
-            if not station_peer_id or not isinstance(routes, list):
+            if (
+                station_peer_id != expected_station_peer_id
+                or not isinstance(routes, list)
+            ):
                 continue
+            refreshes = entry.get("candidate_route_refreshes")
+            candidates = [
+                *routes,
+                *(
+                    refreshes
+                    if isinstance(refreshes, list)
+                    else []
+                ),
+            ]
             if (
                 len(entries) == 1
-                and len(routes) == 1
-                and isinstance(routes[0], dict)
+                and len(candidates) == 1
+                and isinstance(candidates[0], dict)
                 and _route_matches_bound_service(
                     station_service_id,
                     expected_url,
-                    routes[0],
+                    candidates[0],
                 )
-                and routes[0].get("health") != "unavailable"
+                and candidates[0].get("health") != "unavailable"
             ):
-                route_id = str(routes[0].get("route_id") or "").strip()
+                route_id = str(
+                    candidates[0].get("route_id") or ""
+                ).strip()
                 if route_id:
                     fallback = (station_peer_id, route_id)
-            for route in routes:
+            for route in candidates:
                 if (
                     isinstance(route, dict)
                     and _route_matches_bound_service(

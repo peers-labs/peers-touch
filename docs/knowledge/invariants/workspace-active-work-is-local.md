@@ -1,7 +1,7 @@
 ---
 kind: invariant
 title: Active work state belongs to the consuming workspace
-status: superseded-by:DWF-D42
+status: superseded-by:DWF-D46
 owns: []
 referenced-by:
   - docs/architecture/engineering/development-workflow/decisions.md
@@ -13,7 +13,7 @@ detected: 2026-09-19
 
 # Active work state belongs to the consuming workspace
 
-> Superseded by DWF-D42. Retained as historical context only. Optional task
+> Superseded by DWF-D46. Retained as historical context only. Optional task
 > records are selected explicitly and stored with their task; no single
 > workspace-wide active-work record is authoritative or required for ordinary
 > work.

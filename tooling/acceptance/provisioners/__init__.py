@@ -62,6 +62,9 @@ from .oauth2_client_local import (
 from .station_access_desktop_oauth_native import (
     StationAccessDesktopOAuthNativeProvisioner,
 )
+from .station_access_dual_relay import (
+    StationAccessDualRelayProvisioner,
+)
 from .station_access_relay_role import StationAccessRelayRoleProvisioner
 
 
@@ -106,6 +109,9 @@ _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
     ),
     StationAccessDesktopOAuthNativeProvisioner.environment_id: (
         StationAccessDesktopOAuthNativeProvisioner
+    ),
+    StationAccessDualRelayProvisioner.environment_id: (
+        StationAccessDualRelayProvisioner
     ),
     StationAccessRelayRoleProvisioner.environment_id: (
         StationAccessRelayRoleProvisioner
@@ -246,6 +252,7 @@ __all__ = [
     "MobileSocialSimulatorProvisioner",
     "MobileStationLifecycleSimulatorProvisioner",
     "StationAccessDesktopOAuthNativeProvisioner",
+    "StationAccessDualRelayProvisioner",
     "StationAccessNativeProvisioner",
     "StationAccessRelayRoleProvisioner",
     "NativeDesktopLinuxProvisioner",

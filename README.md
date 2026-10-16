@@ -7,7 +7,7 @@
 Your friends, messages, and memories live in a **Station** you own — not on a company's servers.<br>
 Stations talk to each other like email. You reach anyone, anywhere, with no platform in the middle.
 
-[Website](https://peers-touch.com) · [How it works](https://peers-touch.com/en/product) · [Roadmap](https://peers-touch.com/en/roadmap)
+[Website](https://peers-touch.vercel.app/) · [How it works](https://peers-touch.vercel.app/en/product) · [Roadmap](https://peers-touch.vercel.app/en/roadmap)
 
 </div>
 
