@@ -236,6 +236,30 @@ fn acceptance_input_mode_is_exclusive(
 }
 
 #[cfg(feature = "acceptance-webdriver")]
+fn configure_acceptance_startup(
+    config: &mut tauri::Config,
+    acceptance_window: bool,
+    mode: Option<&str>,
+    isolation: Option<&str>,
+) -> Result<(), String> {
+    if !acceptance_window || acceptance_input_mode_is_exclusive(mode, isolation)? {
+        return Ok(());
+    }
+
+    let window = config
+        .app
+        .windows
+        .iter_mut()
+        .find(|window| window.label == "main")
+        .ok_or_else(|| "acceptance main window config is missing".to_string())?;
+    // Tauri creates configured windows before setup can apply the activation policy.
+    window.focus = false;
+    window.focusable = false;
+    window.visible = false;
+    Ok(())
+}
+
+#[cfg(feature = "acceptance-webdriver")]
 fn position_acceptance_window(
     window: &tauri::WebviewWindow,
     monitor_x: f64,
@@ -412,7 +436,61 @@ fn configure_acceptance_window(
 mod acceptance_window_tests {
     use super::{
         acceptance_input_mode_is_exclusive, acceptance_window_inner_width, acceptance_window_x,
+        configure_acceptance_startup,
     };
+
+    fn product_config() -> tauri::Config {
+        serde_json::from_str(include_str!("../tauri.conf.json")).expect("valid product config")
+    }
+
+    #[test]
+    fn semantic_startup_prevents_activation_before_setup() {
+        let mut config = product_config();
+        assert!(config.app.windows[0].focus);
+        assert!(config.app.windows[0].focusable);
+        assert!(config.app.windows[0].visible);
+
+        configure_acceptance_startup(&mut config, true, None, None).expect("valid semantic mode");
+
+        let window = &config.app.windows[0];
+        assert!(!window.focus);
+        assert!(!window.focusable);
+        assert!(!window.visible);
+        assert_eq!(window.min_width, Some(860.0));
+    }
+
+    #[test]
+    fn normal_and_isolated_exclusive_startup_preserve_product_config() {
+        for (acceptance_window, mode, isolation) in [
+            (false, None, None),
+            (
+                true,
+                Some("exclusive-native-input"),
+                Some("isolated-gui-session"),
+            ),
+        ] {
+            let mut config = product_config();
+            let original = serde_json::to_value(&config).expect("config should serialize");
+            configure_acceptance_startup(&mut config, acceptance_window, mode, isolation)
+                .expect("valid startup mode");
+            assert_eq!(
+                serde_json::to_value(&config).expect("config should serialize"),
+                original,
+            );
+        }
+    }
+
+    #[test]
+    fn invalid_acceptance_startup_fails_before_window_creation() {
+        let mut config = product_config();
+        assert!(
+            configure_acceptance_startup(&mut config, true, Some("exclusive-native-input"), None)
+                .is_err()
+        );
+        assert!(configure_acceptance_startup(&mut config, true, Some("legacy"), None).is_err());
+        config.app.windows.clear();
+        assert!(configure_acceptance_startup(&mut config, true, None, None).is_err());
+    }
 
     #[test]
     fn semantic_input_is_the_default() {
@@ -496,6 +574,24 @@ fn main() {
     let ctx = bootstrap::run();
 
     tracing::info!("Launching Tauri application");
+
+    let tauri_context = tauri::generate_context!();
+    #[cfg(feature = "acceptance-webdriver")]
+    let tauri_context = {
+        let mut context = tauri_context;
+        configure_acceptance_startup(
+            context.config_mut(),
+            std::env::var_os("PT_ACCEPTANCE_WINDOW_SLOT").is_some(),
+            std::env::var("PT_ACCEPTANCE_DESKTOP_INPUT_MODE")
+                .ok()
+                .as_deref(),
+            std::env::var("PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION")
+                .ok()
+                .as_deref(),
+        )
+        .expect("invalid acceptance startup configuration");
+        context
+    };
 
     let app_state = Arc::new(ctx.app_state);
     let capability_worker_supervisor = Arc::new(
@@ -1320,7 +1416,7 @@ fn main() {
             conversation::dkx_send,
             application::error_resolver::resolve_error_action
         ])
-        .build(tauri::generate_context!())
+        .build(tauri_context)
         .expect("error while building tauri application")
         .run(|app, event| {
             // Closing the symmetric pair to AppLaunch (fired from the

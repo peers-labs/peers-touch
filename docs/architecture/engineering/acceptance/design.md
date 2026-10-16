@@ -238,6 +238,10 @@ macOS WKWebView | Linux WebKitGTK | Windows WebView2
 - 本机 shared user session 只允许 `semantic-nonintrusive`。系统 file panel、
   permission sheet、physical hover/drag 和 native-focus claim 必须绑定隔离 cell，
   缺失时保持 `BLOCKED/UNPROVEN`。
+- Semantic Desktop 启动在 `Builder::build` 前修改生成的 main window config，
+  将 `focus`、`focusable`、`visible` 设为 false。Tauri 在 `setup` 前创建配置窗口，
+  因此 setup 中的焦点限制不能防止首次创建抢占。Setup 在应用非激活策略与窗口
+  不可聚焦策略生效后显示窗口；普通产品启动与隔离 exclusive 模式保留产品配置。
 - Embedded WebDriver 仅绑定 cell 内 `127.0.0.1`；远端访问必须经过 run-scoped SSH
   tunnel，禁止开放到局域网。
 

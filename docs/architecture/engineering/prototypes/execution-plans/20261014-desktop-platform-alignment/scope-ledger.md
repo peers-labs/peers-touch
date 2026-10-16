@@ -1,6 +1,6 @@
 # Desktop Prototype <-> Platform Alignment Scope Ledger
 
-> **Audit date**: 2026-10-15
+> **Audit date**: 2026-10-16
 > **Historical source**: `d2c487e27:docs/architecture/engineering/prototypes/desktop-alignment-gaps.md`
 > **Current source**: active Plan worktree; exact source identity is recorded by the Development Session and Acceptance evidence
 > **Owner**: Desktop Platform Alignment effort
@@ -13,21 +13,21 @@
 - `NOT_STARTED`: no alignment delta for this ledger item is present in the current worktree.
 - Every row remains `OPEN` until its owning Task closes production behavior, prototype truthfulness, focused checks, and required receiver-side proof.
 
-Current source-side count: `75 IMPLEMENTED/UNPROVEN`, `9 PARTIAL`, `18 NOT_STARTED`, `9/111 formally closed`.
+Current source-side count: `84 IMPLEMENTED/UNPROVEN`, `9 PARTIAL`, `18 NOT_STARTED`, `0/111 formally closed`.
 
 ## Shell, identity, and login
 
 | ID | Required outcome | Source state | Current evidence | Task |
 |---|---|---|---|---|
-| C1 | Persist display name and bio with revision conflict handling | CLOSED | canonical revision-fenced `profile` store, explicit Save/Discard draft, conflict preservation, and Native receiver proof | DUI-01 |
-| C2 | Upload avatar through Native picker and OSS | CLOSED | `AccountTab.tsx` uses Native picker/OSS; the Native Journey proves the selected image survives authoritative reload | DUI-01 |
-| C3 | Upload cover through OSS and remove unsupported local history | CLOSED | revision-fenced `profileUploadHeaderOss`, no cover-history fiction, and exact-source Native readback | DUI-01 |
-| C4 | Use free-text region and IANA timezone | CLOSED | production free-text region and IANA timezone projection persist through the revisioned profile Journey | DUI-01 |
-| C5 | Expose profile tags and links | CLOSED | canonical profile tags/link rows persist through explicit draft Save/Discard and authoritative reload | DUI-01 |
-| C6 | Render PTID/handle/home Station from one canonical projection | CLOSED | `settingsRuntime` and `identityRuntime` converge one canonical projection; two isolated Native actors prove identity separation | DUI-01 |
-| C7 | Bind searchable, paginated notification center and inline decisions | CLOSED | post-commit Social notifications, exact pending-request decisions, trusted Native pointer input, search, pagination, and receiver proof pass | DUI-01 |
-| C8 | Edit real per-category notification preferences and push registrations | CLOSED | all category preferences persist and restore; redacted push registrations prove the Desktop read-only boundary while mutation remains Mobile-owned | DUI-01 |
-| C9 | Bind unread badge to authoritative counts and reconciliation | CLOSED | authoritative unread increments/clears, polling/resync, session fencing, and sender acceptance visibility pass formal Native Acceptance | DUI-01 |
+| C1 | Persist display name and bio with revision conflict handling | IMPLEMENTED/UNPROVEN | canonical revision-fenced `profile` store, explicit Save/Discard draft, and conflict preservation exist; current-source Task proof remains open | DUI-01 |
+| C2 | Upload avatar through Native picker and OSS | IMPLEMENTED/UNPROVEN | `AccountTab.tsx` uses Native picker/OSS; physical picker proof requires an isolated GUI session and remains blocked | DUI-01 |
+| C3 | Upload cover through OSS and remove unsupported local history | IMPLEMENTED/UNPROVEN | revision-fenced `profileUploadHeaderOss` exists without cover-history fiction; physical picker and current-source readback proof remain open | DUI-01 |
+| C4 | Use free-text region and IANA timezone | IMPLEMENTED/UNPROVEN | production free-text region and IANA timezone use the revisioned profile path; current-source Task proof remains open | DUI-01 |
+| C5 | Expose profile tags and links | IMPLEMENTED/UNPROVEN | canonical profile tags/link rows use explicit draft Save/Discard; current-source authoritative reload proof remains open | DUI-01 |
+| C6 | Render PTID/handle/home Station from one canonical projection | IMPLEMENTED/UNPROVEN | `settingsRuntime` and `identityRuntime` converge one canonical projection; current-source two-actor proof remains open | DUI-01 |
+| C7 | Bind searchable, paginated notification center and inline decisions | IMPLEMENTED/UNPROVEN | post-commit Social notifications, pending-request decisions, search, and pagination exist; current-source receiver proof remains open | DUI-01 |
+| C8 | Edit real per-category notification preferences and push registrations | IMPLEMENTED/UNPROVEN | category preference persistence and redacted read-only push registrations exist; mutation remains Mobile-owned and current-source Task proof is open | DUI-01 |
+| C9 | Bind unread badge to authoritative counts and reconciliation | IMPLEMENTED/UNPROVEN | authoritative unread counts, polling/resync, and session fencing exist; current-source formal Native Acceptance remains open | DUI-01 |
 | C10 | Bind PIN set/change/remove, launch unlock, and lockout | IMPLEMENTED/UNPROVEN | Reviewed: production uses canonical account commands; prototype now exercises set/change/remove instead of no-op actions | DUI-02 |
 | C11 | Remove unsupported inactivity auto-lock or land accepted ownership | IMPLEMENTED/UNPROVEN | Reviewed: no accepted idle-lock owner exists; production and prototype expose no control | DUI-02 |
 | C12 | Keep biometric unlock absent until an accepted Native contract exists | IMPLEMENTED/UNPROVEN | Reviewed: no biometric command, setting, prototype control, or accepted contract exists; no change required | DUI-02 |
