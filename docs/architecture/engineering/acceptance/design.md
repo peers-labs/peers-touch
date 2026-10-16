@@ -779,6 +779,10 @@ class EphemeralCapabilityHandler:
   或越权请求fail closed。
 - frame有固定byte上限；每次请求有deadline；同一`requestId + requestDigest`
   可返回缓存结果，不同digest复用requestId是protocol conflict。
+- handshake从broker启动时开始计时；完成handshake后的空闲channel由Gate进程
+  生命周期持有，不计入请求deadline。下一frame首字节可读后才开始固定读取
+  deadline，覆盖不完整length prefix和body，后续字节不得延长它。handler deadline、
+  Gate launch timeout与bounded quiesce保持独立；空闲等待可被stop或EOF唤醒。
 - raw-handle-bound操作必须完全在parent handler内执行。Gate只能获得opaque session
   reference、脱敏structured result或ArtifactRef，不能获得UDID、serial、provider
   subject、token或correlation key。

@@ -440,6 +440,52 @@ class LaunchContextContractTests(unittest.TestCase):
 
 @unittest.skipUnless(os.name == "posix", "POSIX socketpair contract")
 class LaunchContextProtocolTests(unittest.TestCase):
+    def test_idle_channel_accepts_next_request_and_close(self) -> None:
+        handler = SyntheticHandler()
+        context = new_context(handler, request_timeout_seconds=0.05)
+        client, _binding = connect_client(context)
+        try:
+            time.sleep(0.2)
+            self.assertEqual(
+                client.invoke(
+                    "synthetic.echo",
+                    "echo",
+                    {"afterIdle": True},
+                    timeout_seconds=1,
+                ),
+                {"echo": {"afterIdle": True}},
+            )
+            time.sleep(0.2)
+            client.close()
+            self.assertIsNone(context.channel_error)
+            self.assertEqual(handler.calls, [("echo", {"afterIdle": True})])
+        finally:
+            context.quiesce()
+            self.assertTrue(context.close().succeeded)
+
+    def test_idle_channel_quiesces_within_cleanup_budget(self) -> None:
+        handler = SyntheticHandler()
+        context = new_context(
+            handler,
+            request_timeout_seconds=0.05,
+            quiesce_timeout_seconds=0.5,
+        )
+        client, _binding = connect_client(context)
+        try:
+            time.sleep(0.2)
+            self.assertIsNone(context.channel_error)
+            started = time.monotonic()
+            context.quiesce()
+            self.assertLess(time.monotonic() - started, 0.5)
+            self.assertIsNone(context.channel_error)
+            self.assertTrue(context.close().succeeded)
+        finally:
+            # Parent quiesce has closed the channel; no close ACK is possible.
+            with self.assertRaises(EphemeralLaunchProtocolError):
+                client.close()
+            context.quiesce()
+            context.close()
+
     def test_silent_peer_cannot_stall_handshake_past_deadline(self) -> None:
         parent_endpoint, child_endpoint = socket.socketpair()
         descriptor = child_endpoint.detach()

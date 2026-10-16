@@ -7,6 +7,7 @@ import json
 import math
 import os
 import re
+import select
 import signal
 import shutil
 import socket
@@ -795,7 +796,7 @@ class EphemeralGateLaunchContext:
                 self._max_frame_bytes,
             )
 
-            while not self._stop.is_set():
+            while self._wait_for_request(endpoint):
                 request = _recv_frame(
                     endpoint,
                     self._max_frame_bytes,
@@ -852,6 +853,23 @@ class EphemeralGateLaunchContext:
                         self._state = EphemeralLaunchContextState.CHANNEL_FAILED
             self._stop.set()
             self._close_endpoints()
+
+    def _wait_for_request(self, endpoint: socket.socket) -> bool:
+        # UI work may outlast a request deadline without using the channel.
+        # Start the bounded frame read only once bytes (or EOF) are available.
+        while not self._stop.is_set():
+            try:
+                readable, _, _ = select.select([endpoint], [], [], 0.1)
+            except (OSError, ValueError) as error:
+                if self._stop.is_set():
+                    return False
+                raise EphemeralLaunchProtocolError(
+                    "ephemeral launch channel readiness failed",
+                    operation="broker",
+                ) from error
+            if readable:
+                return not self._stop.is_set()
+        return False
 
     def _dispatch_request(self, request: Mapping[str, Any]) -> bytes:
         assert self._identity is not None
