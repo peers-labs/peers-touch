@@ -366,6 +366,69 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
         adapter.capture_screenshot.assert_not_called()
         session.stop.assert_called_once_with()
 
+    def test_semantic_probe_retries_concurrent_operator_activity(
+        self,
+    ) -> None:
+        lifecycle = NativeDesktopMacOSProvisioner()
+        session = Mock()
+        adapter = Mock(spec=MacOSNativeDesktopAdapter)
+        states = (
+            {
+                "frontmostPid": 41,
+                "pointerX": 100.0,
+                "pointerY": 200.0,
+                "keyboardFocusSha256": "b" * 64,
+            },
+            {
+                "frontmostPid": 41,
+                "pointerX": 120.0,
+                "pointerY": 220.0,
+                "keyboardFocusSha256": "b" * 64,
+            },
+            {
+                "frontmostPid": 41,
+                "pointerX": 120.0,
+                "pointerY": 220.0,
+                "keyboardFocusSha256": "b" * 64,
+            },
+            {
+                "frontmostPid": 41,
+                "pointerX": 120.0,
+                "pointerY": 220.0,
+                "keyboardFocusSha256": "b" * 64,
+            },
+        )
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            lifecycle,
+            "_snapshot_operator_state",
+            side_effect=states,
+        ) as snapshot, patch.object(
+            lifecycle,
+            "_probe_semantic_actions",
+            return_value=True,
+        ) as actions:
+            screenshot = Path(directory) / "semantic.png"
+            session.save_screenshot.side_effect = (
+                lambda path: path.write_bytes(b"semantic-screenshot")
+            )
+
+            action_ok, screenshot_ok, non_interference = (
+                lifecycle._probe_semantic_non_interference(
+                    session,
+                    adapter,
+                    screenshot,
+                    max_attempts=2,
+                    interval_seconds=0,
+                )
+            )
+
+        self.assertTrue(action_ok)
+        self.assertTrue(screenshot_ok)
+        self.assertTrue(non_interference.unchanged())
+        self.assertEqual(snapshot.call_count, 4)
+        self.assertEqual(actions.call_count, 2)
+        self.assertEqual(session.save_screenshot.call_count, 2)
+
     def test_keyboard_focus_identity_excludes_mutable_control_state(
         self,
     ) -> None:

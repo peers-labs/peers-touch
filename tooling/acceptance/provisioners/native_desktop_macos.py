@@ -441,34 +441,18 @@ class NativeDesktopMacOSProvisioner:
             session.wait_for_ready()
             session.wait_for_acceptance_harness()
             if input_mode is NativeInputMode.SEMANTIC_NON_INTRUSIVE:
-                operator_before = self._snapshot_operator_state(adapter)
-                semantic_action_probe = self._probe_semantic_actions(session)
-                session.save_screenshot(screenshot)
-                semantic_screenshot_probe = (
-                    screenshot.is_file() and screenshot.stat().st_size > 0
+                (
+                    semantic_action_probe,
+                    semantic_screenshot_probe,
+                    non_interference,
+                ) = self._probe_semantic_non_interference(
+                    session,
+                    adapter,
+                    screenshot,
                 )
-                operator_after = self._snapshot_operator_state(adapter)
                 log_path = session.log_path
                 session.stop()
                 session_stopped = True
-                non_interference = CellNonInterferenceIdentity(
-                    frontmost_pid_before=int(
-                        operator_before["frontmostPid"]
-                    ),
-                    frontmost_pid_after=int(
-                        operator_after["frontmostPid"]
-                    ),
-                    pointer_x_before=float(operator_before["pointerX"]),
-                    pointer_y_before=float(operator_before["pointerY"]),
-                    pointer_x_after=float(operator_after["pointerX"]),
-                    pointer_y_after=float(operator_after["pointerY"]),
-                    keyboard_focus_before_sha256=str(
-                        operator_before["keyboardFocusSha256"]
-                    ),
-                    keyboard_focus_after_sha256=str(
-                        operator_after["keyboardFocusSha256"]
-                    ),
-                )
                 non_interference_probe = non_interference.unchanged()
                 probes = CellAdapterIdentity(
                     input_backend=self.contract.native_adapter.input,
@@ -588,6 +572,59 @@ class NativeDesktopMacOSProvisioner:
                 log_path = launcher.log_path
             if log_path is not None:
                 log_path.unlink(missing_ok=True)
+
+    def _probe_semantic_non_interference(
+        self,
+        session: TauriSession,
+        adapter: MacOSNativeDesktopAdapter,
+        screenshot: Path,
+        *,
+        max_attempts: int = 5,
+        interval_seconds: float = 0.1,
+    ) -> tuple[bool, bool, CellNonInterferenceIdentity]:
+        if max_attempts < 1:
+            raise ValueError("semantic probe requires at least one attempt")
+        last: tuple[bool, bool, CellNonInterferenceIdentity] | None = None
+        for attempt in range(1, max_attempts + 1):
+            operator_before = self._snapshot_operator_state(adapter)
+            semantic_action_probe = self._probe_semantic_actions(session)
+            session.save_screenshot(screenshot)
+            semantic_screenshot_probe = (
+                screenshot.is_file() and screenshot.stat().st_size > 0
+            )
+            operator_after = self._snapshot_operator_state(adapter)
+            non_interference = CellNonInterferenceIdentity(
+                frontmost_pid_before=int(operator_before["frontmostPid"]),
+                frontmost_pid_after=int(operator_after["frontmostPid"]),
+                pointer_x_before=float(operator_before["pointerX"]),
+                pointer_y_before=float(operator_before["pointerY"]),
+                pointer_x_after=float(operator_after["pointerX"]),
+                pointer_y_after=float(operator_after["pointerY"]),
+                keyboard_focus_before_sha256=str(
+                    operator_before["keyboardFocusSha256"]
+                ),
+                keyboard_focus_after_sha256=str(
+                    operator_after["keyboardFocusSha256"]
+                ),
+            )
+            last = (
+                semantic_action_probe,
+                semantic_screenshot_probe,
+                non_interference,
+            )
+            if (
+                semantic_action_probe
+                and semantic_screenshot_probe
+                and non_interference.unchanged()
+            ):
+                return last
+            if not semantic_action_probe or not semantic_screenshot_probe:
+                return last
+            if attempt < max_attempts and interval_seconds > 0:
+                time.sleep(interval_seconds)
+        if last is None:
+            raise AssertionError("semantic probe attempts produced no result")
+        return last
 
     @staticmethod
     def _probe_semantic_actions(session: TauriSession) -> bool:
