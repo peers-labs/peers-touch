@@ -1404,7 +1404,7 @@ peers:
         turn:
           enabled: true
           port: 3478
-          realm: ${PEERS_DOMAIN}             # e.g., peers-touch.com
+          realm: ${PEERS_DOMAIN}             # e.g., peers-touch.vercel.app
           public-ip: auto                    # auto | <ip-address>
           auth-secret: ${TURN_AUTH_SECRET}   # HMAC secret for credentials
           relay-ip-range: 10.0.0.0/24        # Internal relay IP pool
@@ -1444,7 +1444,7 @@ PEERS_TURN_PUBLIC_IP=123.45.67.89
 TURN_AUTH_SECRET=your-secure-secret-key
 
 # 域名
-PEERS_DOMAIN=peers-touch.com
+PEERS_DOMAIN=peers-touch.vercel.app
 ```
 
 ---
