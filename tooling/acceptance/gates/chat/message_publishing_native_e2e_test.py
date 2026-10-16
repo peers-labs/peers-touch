@@ -227,6 +227,7 @@ class MessagePublishingNativeGateTests(unittest.TestCase):
             launch_source.index('"loginWithPassword"'),
             launch_source.index('"resumeMessagingLifecycle"'),
         )
+        self.assertIn("script_timeout=90", launch_source)
         self.assertNotIn('"hydrateActiveActor"', self.source)
         self.assertIn('"resumeMessagingLifecycle"', self.source)
         self.assertIn('resumed.get("activated") is not True', self.source)

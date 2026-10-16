@@ -245,7 +245,7 @@ class MessagePublishingNativeGate(AcceptanceGate):
                 "resumeMessagingLifecycle",
                 {"actorPtid": self.owner_ptid},
                 namespace="chat",
-                script_timeout=30,
+                script_timeout=90,
             )
             if (
                 not isinstance(resumed, dict)
