@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -25,9 +26,10 @@ TASK_BLOCK_PATTERN = re.compile(
     re.MULTILINE,
 )
 MANIFEST_BLOCK_PATTERN = re.compile(
-    r"^## (?:Plan|Plan Package)\s*$\s*```json\s*$\s*(\{[\s\S]*?\})\s*```",
+    r"^## (Plan|Plan Package|Plan Version)\s*$\s*```json\s*$\s*(\{[\s\S]*?\})\s*```",
     re.MULTILINE,
 )
+PLANCTL = REPO_ROOT / "tooling" / "scripts" / "plan" / "planctl.mjs"
 
 
 class PipelineAuditError(RuntimeError):
@@ -62,18 +64,68 @@ def _extract_json(pattern: re.Pattern[str], text: str, source: Path) -> Any:
         ) from error
 
 
+def _extract_plan_manifest(text: str, source: Path) -> dict[str, Any]:
+    matches = MANIFEST_BLOCK_PATTERN.findall(text)
+    if len(matches) != 1:
+        raise PipelineAuditError(
+            f"{source} must contain exactly one matching JSON block"
+        )
+    heading, encoded = matches[0]
+    try:
+        manifest = json.loads(encoded)
+    except json.JSONDecodeError as error:
+        raise PipelineAuditError(
+            f"{source} contains invalid JSON: {error}"
+        ) from error
+    if not isinstance(manifest, dict):
+        raise PipelineAuditError("Plan manifest must be an object")
+    if heading == "Plan Version":
+        if (
+            manifest.get("kind") != "peers-touch-plan-version"
+            or not isinstance(manifest.get("versionId"), str)
+            or not manifest["versionId"]
+        ):
+            raise PipelineAuditError(
+                "Plan Version must declare peers-touch-plan-version kind "
+                "and a non-empty versionId"
+            )
+        try:
+            completed = subprocess.run(
+                [
+                    "node",
+                    str(PLANCTL),
+                    "inspect",
+                    "--plan",
+                    str(source),
+                ],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise PipelineAuditError(
+                f"Plan Version canonical validation could not run: {error}"
+            ) from error
+        if completed.returncode != 0:
+            detail = completed.stderr.strip() or completed.stdout.strip()
+            raise PipelineAuditError(
+                f"Plan Version failed canonical validation: {detail}"
+            )
+    elif manifest.get("kind") == "peers-touch-plan-version":
+        raise PipelineAuditError(
+            "peers-touch-plan-version manifest requires a Plan Version heading"
+        )
+    return manifest
+
+
 def _load_plan_tasks(plan_path: Path) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
     try:
         plan_text = plan_path.read_text(encoding="utf-8")
     except OSError as error:
         raise PipelineAuditError(f"cannot read Plan {plan_path}: {error}") from error
-    manifest = _extract_json(
-        MANIFEST_BLOCK_PATTERN,
-        plan_text,
-        plan_path,
-    )
-    if not isinstance(manifest, dict):
-        raise PipelineAuditError("Plan Package must be an object")
+    manifest = _extract_plan_manifest(plan_text, plan_path)
     tasks: dict[str, dict[str, Any]] = {}
     for entry in manifest.get("tasks", []):
         if not isinstance(entry, dict):

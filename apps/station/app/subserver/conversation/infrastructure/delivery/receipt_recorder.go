@@ -124,13 +124,22 @@ func (r *ReceiptRecorder) Record(
 		if err != nil {
 			return err
 		}
-		originatorRoutes, err := loadOriginatorRoutes(
-			tx,
-			event,
-			conversationKind,
-		)
-		if err != nil {
-			return err
+		// Station-resident service publishers are the
+		// reserved keyless station-system device. They never receive an
+		// originator synchronization delivery (the conversation aggregate
+		// explicitly refuses queue items for that device), so requiring an
+		// originator route would permanently reject every owner receipt for
+		// their messages. There is no sender device to wake in that case.
+		var originatorRoutes []interaction.EndpointRoute
+		if event.Actor.Device != valueobject.SystemStationDeviceID {
+			originatorRoutes, err = loadOriginatorRoutes(
+				tx,
+				event,
+				conversationKind,
+			)
+			if err != nil {
+				return err
+			}
 		}
 		recorded = interaction.DeliveryRecordResult{
 			Aggregate:        aggregate,
@@ -722,6 +731,8 @@ func deliveryKindFromProto(
 		return valueobject.DeliveryKindConversation, nil
 	case chat.PreparedEndpointPayloadKind_PREPARED_ENDPOINT_PAYLOAD_KIND_MLS_RETIREMENT:
 		return valueobject.DeliveryKindMLSRetirement, nil
+	case chat.PreparedEndpointPayloadKind_PREPARED_ENDPOINT_PAYLOAD_KIND_DIRECT_SERVICE_PLAINTEXT:
+		return valueobject.DeliveryKindDirectServicePlaintext, nil
 	default:
 		return "", receiptIntegrityError(
 			"payload_kind",

@@ -27,6 +27,12 @@ const (
 	KindMemberAuthority       Kind = "member_authority_committed"
 	KindConversationSettings  Kind = "conversation_settings_changed"
 	KindConversationDissolved Kind = "conversation_dissolved"
+	// KindSystemServiceMessageCommitted is a Station-internal, non-E2EE
+	// service-plaintext message (BOT-D05). It is produced only through the
+	// aggregate's system-sender port — never from a human device command — and
+	// maps to the same wire message_committed arm with the SERVICE_PLAINTEXT
+	// delivery security marker.
+	KindSystemServiceMessageCommitted Kind = "system_service_message_committed"
 )
 
 type Fact struct {
@@ -85,6 +91,17 @@ func NewConversationCreatedFact(payload []byte) Fact {
 
 func NewCommandCommittedFact(kind Kind, messageID valueobject.MessageID, payload []byte) Fact {
 	return Fact{Kind: kind, MessageID: messageID, Payload: cloneBytes(payload)}
+}
+
+// NewSystemServiceMessageFact builds the internal-only non-E2EE service
+// plaintext fact. payload is the canonical DirectServicePlaintextPayload
+// bytes, also delivered to owner devices as endpoint payload kind 8.
+func NewSystemServiceMessageFact(messageID valueobject.MessageID, payload []byte) Fact {
+	return Fact{
+		Kind:      KindSystemServiceMessageCommitted,
+		MessageID: messageID,
+		Payload:   cloneBytes(payload),
+	}
 }
 
 func NewMembershipTransitionFact(

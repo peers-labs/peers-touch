@@ -201,7 +201,7 @@ function useTabGroups(): TabGroupDef[] {
         key: 'channels',
         label: t('settings.group.channels'),
         icon: Send,
-        sectionKeys: ['channels', 'connections'],
+        sectionKeys: ['channels', 'connections', 'bots'],
       },
       {
         key: 'applets',

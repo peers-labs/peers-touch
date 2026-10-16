@@ -1,0 +1,106 @@
+syntax = "proto3";
+
+package peers_touch.model.chat.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/chat;chat";
+
+// Logical message content. Human clients adapt it to MessagePrivateContent
+// before encryption; service publishing places it in a plaintext envelope.
+message MessageContent {
+  oneof primary {
+    MessageTextContent text = 1;
+    StructuredEventContent event = 2;
+    MessageCardContent card = 3;
+  }
+  repeated MessageAttachmentReference attachments = 4;
+  string fallback_text = 5;
+}
+
+message MessageTextContent {
+  string text = 1;
+}
+
+// References use the existing object/upload plane. No arbitrary remote URL,
+// inline file, encryption key, or sender authority is accepted here.
+message MessageAttachmentReference {
+  string object_id = 1;
+  string filename = 2;
+  string media_type = 3;
+  uint64 size = 4;
+}
+
+enum MessageEventSeverity {
+  MESSAGE_EVENT_SEVERITY_UNSPECIFIED = 0;
+  MESSAGE_EVENT_SEVERITY_INFO = 1;
+  MESSAGE_EVENT_SEVERITY_ATTENTION = 2;
+  MESSAGE_EVENT_SEVERITY_ERROR = 3;
+}
+
+message MessageSourceContext {
+  string program = 1;
+  string workspace = 2;
+  string session_id = 3;
+  map<string, string> labels = 4;
+}
+
+message EventSubject {
+  string kind = 1;
+  string id = 2;
+  string execution_id = 3;
+}
+
+enum ReportedTaskState {
+  REPORTED_TASK_STATE_UNSPECIFIED = 0;
+  REPORTED_TASK_STATE_QUEUED = 1;
+  REPORTED_TASK_STATE_RUNNING = 2;
+  REPORTED_TASK_STATE_WAITING_INPUT = 3;
+  REPORTED_TASK_STATE_COMPLETED = 4;
+  REPORTED_TASK_STATE_FAILED = 5;
+  REPORTED_TASK_STATE_CANCELLED = 6;
+}
+
+message TaskStateUpdate {
+  uint64 revision = 1;
+  ReportedTaskState state = 2;
+}
+
+// The initial supported action only opens a validated HTTPS or HTTP URL.
+message MessageOpenUrlAction {
+  string label = 1;
+  string url = 2;
+}
+
+message StructuredEventContent {
+  string event_type = 1;
+  string source_event_id = 2;
+  EventSubject subject = 3;
+  google.protobuf.Timestamp occurred_at = 4;
+  MessageEventSeverity severity = 5;
+  string title = 6;
+  string body = 7;
+  repeated MessageOpenUrlAction actions = 8;
+  oneof detail {
+    TaskStateUpdate task_state = 9;
+  }
+}
+
+message MessageCardContent {
+  string title = 1;
+  string body = 2;
+  repeated MessageOpenUrlAction actions = 3;
+}
+
+// Native-to-renderer projection of the persisted message content. Sender and
+// namespace are authority facts; neither comes from source_context labels.
+message ServiceMessageProjection {
+  string message_id = 1;
+  string conversation_id = 2;
+  string event_id = 3;
+  int64 event_sequence = 4;
+  string sender_ptid = 5;
+  string source_namespace = 6;
+  MessageContent content = 7;
+  MessageSourceContext source_context = 8;
+}

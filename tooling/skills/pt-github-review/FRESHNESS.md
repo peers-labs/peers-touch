@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-10-15
-covered_docs_hash: 6dd848ad8a06b8d9597e69d8343231157de2716a0083da85a4d87ac87a856742
+last_verified_at: 2026-10-16
+covered_docs_hash: 4aa8b8a855f6168f8dc4273a70baabfd1d69cbd7f01388a0547f9553f7b6196c
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,16 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-10-16 Bot Module Governance Review
+
+The existing Bot product architecture is now registered as an active module
+with machine-readable ownership, required-document metadata, and accepted
+ADR-lite decisions. This closes fail-closed architecture discovery without
+changing review severity or introducing a new product rule. The current
+GitHub Review Skill already rejects unregistered active modules and consumes
+the shared architecture validator, so no `SKILL.md`, generic review fixture,
+or knowledge entry is required.
 
 ## 2026-10-15 Development Operation Authority Review
 
@@ -87,6 +97,15 @@ new identity, Host ownership, private-CA health, failover/replay, hard-cut, and
 exact-source proof boundaries are reusable review requirements. Existing NCP
 Gates and hard rules provide executable coverage, so no generic review fixture
 or new knowledge entry is required.
+
+## 2026-10-15 Public API Documentation Index Review
+
+`docs/README.md` now routes external callers to the canonical `docs/api/`
+contracts and states that public HTTP contracts are defined there once. This
+clarifies documentation ownership without changing review severity, evidence
+requirements, or implementation boundaries. Existing single-source,
+API-contract, and documentation-consistency rules already cover the change, so
+no `SKILL.md` update, generic review fixture, or knowledge entry is required.
 
 ## 2026-10-05 Architecture Taxonomy Review
 

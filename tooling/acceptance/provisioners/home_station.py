@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 import urllib.error
 import urllib.request
+from collections.abc import Mapping
 from pathlib import Path
 
 from tooling.acceptance.core._paths import REPO_ROOT
@@ -18,15 +19,17 @@ from tooling.acceptance.core.attestation import (
     produce_station_attestation,
     source_proto_digest,
 )
-from tooling.acceptance.core.errors import BlockedError
+from tooling.acceptance.core.errors import BlockedError, ProvisioningError
 from tooling.acceptance.core.provisioner import EnvironmentProvisioner
 from tooling.acceptance.core.provisioning import (
     ActorIdentity,
     ActorManifest,
+    ClientServiceBinding,
     ClientRuntime,
     EnvironmentContract,
     ProvisioningState,
     RuntimeManifest,
+    ServiceAttestation,
     utc_now,
 )
 from tooling.acceptance.fixtures.chat_native_actors import (
@@ -41,6 +44,26 @@ from tooling.acceptance.gates.agent.external_runtime_fixture import (
 from tooling.acceptance.provisioners.remote_source_identity import (
     reviewed_remote_transport,
     resolve_remote_source_identity,
+)
+from tooling.acceptance.provisioners.posix_service_runtime import (
+    PosixServiceRuntimeConfig,
+    audit_posix_relay_security,
+    inspect_posix_runtime,
+    resolve_posix_relay_trust_anchor,
+)
+from tooling.acceptance.provisioners.station_access_relay_role import (
+    _persist_relay_attestation,
+    _persist_station_route_attestation,
+    _relay_discovery_endpoint,
+    _relay_peer_identity,
+    _required,
+    _service_source_compatibility,
+    _validate_runtime_status,
+)
+from tooling.acceptance.provisioners.preset_actor import (
+    ResolvedPresetActorIdentity,
+    resolve_existing_preset_actor,
+    resolve_existing_preset_actor_identity,
 )
 
 
@@ -58,6 +81,7 @@ GATE_ROLES = {
     "agent-v2-evaluation-lab-e2e": ("alice", "bob"),
     "agent-v2-external-runtime-e2e": ("bob",),
     "agent-marketplace-catalog-e2e": ("alice",),
+    "chat-message-publishing-native-e2e": ("alice",),
     "chat-native-two-client-e2e": ("alice", "bob"),
     "chat-presence-layout-e2e": ("alice", "bob"),
     "chat-native-interactions-e2e": ("alice", "bob", "charlie"),
@@ -83,6 +107,7 @@ AGENT_MARKETPLACE_GATE = "agent-marketplace-catalog-e2e"
 AGENT_CLI_PROVIDER_GATE = "agent-cli-provider-primary-native-e2e"
 AGENT_CORE_LIFECYCLE_GATE = "agent-core-lifecycle-native-e2e"
 AGENT_MINIMUM_USABLE_CHAT_GATE = "agent-minimum-usable-chat-native-e2e"
+MESSAGE_PUBLISHING_GATE = "chat-message-publishing-native-e2e"
 AGENT_NATIVE_GATES = frozenset(
     {
         "agent-attachment-e2e",
@@ -92,6 +117,7 @@ AGENT_NATIVE_GATES = frozenset(
         "agent-stream-resilience-e2e",
     }
 )
+HOME_SINGLE_NATIVE_GATES = AGENT_NATIVE_GATES | {MESSAGE_PUBLISHING_GATE}
 AGENT_V2_PROFILE = os.environ.get("PT_ACCEPTANCE_APPROVED_PROFILE", "one")
 AGENT_V2_BINDING_PROFILE = "two"
 AGENT_V2_BINDING_GATES = frozenset(
@@ -149,6 +175,7 @@ def agent_native_requires_disposable_fixture(gate_id: str) -> bool:
         AGENT_CLI_PROVIDER_GATE,
         AGENT_CORE_LIFECYCLE_GATE,
         AGENT_MINIMUM_USABLE_CHAT_GATE,
+        MESSAGE_PUBLISHING_GATE,
     }
 
 
@@ -157,6 +184,7 @@ def agent_native_requires_provider(gate_id: str) -> bool:
         AGENT_CLI_PROVIDER_GATE,
         AGENT_CORE_LIFECYCLE_GATE,
         AGENT_MINIMUM_USABLE_CHAT_GATE,
+        MESSAGE_PUBLISHING_GATE,
     }
 
 
@@ -250,89 +278,166 @@ def resolve_existing_actor(
             reason=f"Unsupported Agent native actor role: {role}",
             resource=f"fixture-actor:{role}",
         )
-    request = urllib.request.Request(
-        f"{station_url.rstrip('/')}/actor/login",
-        data=json.dumps(
-            {
-                "email": account,
-                "password": password,
-                "device_type": "desktop",
-            }
-        ).encode("utf-8"),
-        headers={"Accept": "application/json", "Content-Type": "application/json"},
-        method="POST",
+    return resolve_existing_preset_actor(
+        station_url=station_url,
+        role=role,
+        account=account,
+        password=password,
+        device_policy="ephemeral-acceptance",
     )
-    token = ""
-    try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            envelope = json.loads(response.read().decode("utf-8"))
-        data = (
-            envelope.get("data")
-            if isinstance(envelope, dict)
-            and isinstance(envelope.get("data"), dict)
-            else {}
-        )
-        actor_ref = (
-            data.get("actor_ref")
-            if isinstance(data.get("actor_ref"), dict)
-            else {}
-        )
-        tokens = (
-            data.get("tokens")
-            if isinstance(data.get("tokens"), dict)
-            else {}
-        )
-        ptid = str(actor_ref.get("ptid") or "")
-        token = str(tokens.get("access_token") or "")
-        if not ptid.startswith("ptid:") or not token:
-            raise BlockedError(
-                reason=f"Station login did not resolve canonical actor {role}",
-                resource=f"fixture-actor:{role}",
-            )
-        return ActorIdentity(
-            role=role,
-            account_ref=f"station-account:{account}",
-            ptid=ptid,
-            device_policy="ephemeral-acceptance",
-        )
-    except (
-        urllib.error.URLError,
-        OSError,
-        TimeoutError,
-        json.JSONDecodeError,
-    ) as error:
+
+
+def resolve_existing_actor_identity(
+    station_url: str,
+    station_peer_id: str,
+    role: str,
+    password: str,
+) -> ResolvedPresetActorIdentity:
+    account = ACTOR_ACCOUNTS.get(role)
+    if not account:
         raise BlockedError(
-            reason=f"Cannot resolve existing actor {role}: {error}",
+            reason=f"Unsupported Agent native actor role: {role}",
             resource=f"fixture-actor:{role}",
-        ) from error
-    finally:
-        if token:
-            logout = urllib.request.Request(
-                f"{station_url.rstrip('/')}/actor/logout",
-                data=b"{}",
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "Content-Type": "application/json",
-                },
-                method="POST",
-            )
-            try:
-                urllib.request.urlopen(logout, timeout=15).close()
-            except (urllib.error.URLError, OSError, TimeoutError) as error:
-                raise BlockedError(
-                    reason=(
-                        f"Existing actor {role} discovery session could not "
-                        f"be released: {error}"
-                    ),
-                    resource=f"fixture-session:{role}",
-                ) from error
+        )
+    return resolve_existing_preset_actor_identity(
+        station_url=station_url,
+        station_peer_id=station_peer_id,
+        role=role,
+        account=account,
+        password=password,
+        device_policy="ephemeral-acceptance",
+    )
+
+
+def attach_source_bound_relay_services(
+    *,
+    environment_id: str,
+    source_commit: str,
+    profile_name: str,
+    profile_env: dict[str, str],
+    station_attestation: ServiceAttestation,
+) -> dict[str, ServiceAttestation]:
+    if _required(profile_env, "PT_RELAY_MODE") != "remote":
+        raise BlockedError(
+            reason="Message Publishing requires the approved remote Relay",
+            resource=f"profile:{profile_name}",
+        )
+    if (
+        station_attestation.service_id != "station"
+        or station_attestation.service_kind != "station"
+        or not station_attestation.runtime_identity
+    ):
+        raise BlockedError(
+            reason="Message Publishing Relay route requires Station identity",
+            resource="service-identity:station",
+        )
+
+    station_deployment = _required(
+        profile_env,
+        "PT_STATION_DEPLOY_ENV",
+    )
+    relay_deployment = _required(profile_env, "PT_RELAY_DEPLOY_ENV")
+    relay_url = _required(profile_env, "PT_RELAY_URL").rstrip("/")
+    relay_health = _required(profile_env, "PT_RELAY_HEALTH_URL")
+    station_config = PosixServiceRuntimeConfig.load(
+        station_deployment,
+        expected_role="station",
+    )
+    relay_config = PosixServiceRuntimeConfig.load(
+        relay_deployment,
+        expected_role="relay",
+    )
+    relay_identity = resolve_remote_source_identity(relay_deployment)
+    if (
+        _service_source_compatibility(relay_identity[0], source_commit) is None
+        or relay_identity[1] != "clean"
+        or relay_identity[2] != source_proto_digest(REPO_ROOT)
+    ):
+        raise BlockedError(
+            reason=(
+                f"Relay deployment {relay_deployment} does not match the "
+                "clean local source and protocol"
+            ),
+            resource=f"source-identity:{relay_deployment}",
+        )
+
+    station_runtime = _validate_runtime_status(
+        inspect_posix_runtime(station_config),
+        config=station_config,
+        source_commit=source_commit,
+    )
+    relay_runtime = _validate_runtime_status(
+        inspect_posix_runtime(relay_config),
+        config=relay_config,
+        source_commit=source_commit,
+    )
+    if (
+        station_runtime["runtimeOwner"] == relay_runtime["runtimeOwner"]
+        or station_runtime["dataOwner"] == relay_runtime["dataOwner"]
+    ):
+        raise BlockedError(
+            reason="Station and Relay runtime ownership is not isolated",
+            resource=f"runtime-isolation:{profile_name}",
+        )
+    runtime_security = audit_posix_relay_security(
+        relay_config,
+        station_runtime=station_runtime,
+        relay_runtime=relay_runtime,
+    )
+    trust_anchor, trust_anchor_digest = resolve_posix_relay_trust_anchor(
+        relay_deployment
+    )
+    relay_peer_id = _relay_peer_identity(
+        relay_url,
+        relay_health,
+        trust_anchor,
+    )
+    relay_attestation = _persist_relay_attestation(
+        environment_id=environment_id,
+        relay_url=relay_url,
+        relay_deployment=relay_deployment,
+        relay_identity=relay_identity,
+        station_runtime=station_runtime,
+        relay_runtime=relay_runtime,
+        runtime_security=runtime_security,
+        trust_anchor=trust_anchor,
+        trust_anchor_digest=trust_anchor_digest,
+        relay_peer_id=relay_peer_id,
+    )
+    station_route_attestation = _persist_station_route_attestation(
+        environment_id=environment_id,
+        relay_locator=relay_url,
+        relay_discovery_endpoint=_relay_discovery_endpoint(
+            relay_url,
+            relay_runtime,
+        ),
+        station_attestation=station_attestation,
+        relay_attestation=relay_attestation,
+    )
+    return {
+        "station": station_attestation,
+        "relay": relay_attestation,
+        "station-via-relay": station_route_attestation,
+    }
 
 
 class HomeStationProvisioner(EnvironmentProvisioner):
     environment_id = "home-station"
 
-    def __init__(self, contract: EnvironmentContract) -> None:
+    def __init__(
+        self,
+        contract: EnvironmentContract,
+        *,
+        service_profiles: Mapping[str, str] | None = None,
+    ) -> None:
         super().__init__(contract)
+        self._service_profiles = dict(service_profiles or {})
+        unsupported = sorted(set(self._service_profiles) - {"relay"})
+        if unsupported:
+            raise ProvisioningError(
+                "home-station does not accept service profile bindings for: "
+                + ", ".join(unsupported)
+            )
 
     def _resolve_credentials(self) -> tuple[tuple[str, ...], dict[str, str]]:
         refs: list[str] = []
@@ -920,6 +1025,96 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             actor="charlie",
         )
 
+    def _message_publishing_client(
+        self,
+        run_id: str,
+        slot: int,
+        profile_env: dict[str, str],
+    ) -> ClientRuntime:
+        client = self._agent_native_client(
+            run_id,
+            slot,
+            profile_env,
+            journey="message-publishing",
+            profile=AGENT_V2_PROFILE,
+            worktree_variable="PT_MESSAGE_PUBLISHING_WORKTREE",
+            gateway_port_variable="PT_MESSAGE_PUBLISHING_GATEWAY_PORT",
+            renderer_port_variable="PT_MESSAGE_PUBLISHING_RENDERER_PORT",
+            webdriver_port_variable="PT_MESSAGE_PUBLISHING_WEBDRIVER_PORT",
+        )
+        return dataclasses.replace(
+            client,
+            id="alice",
+            required_service_roles=("station",),
+            service_bindings={
+                "station": ClientServiceBinding(
+                    service_id="station-via-relay",
+                    required_kind="station",
+                )
+            },
+        )
+
+    def _services_for_gate(
+        self,
+        *,
+        gate_id: str,
+        manifest: RuntimeManifest,
+        profile_name: str,
+        profile_env: dict[str, str],
+        station_attestation: ServiceAttestation,
+    ) -> dict[str, ServiceAttestation]:
+        services = {"station": station_attestation}
+        if gate_id != MESSAGE_PUBLISHING_GATE:
+            return services
+        relay_profile = self._service_profiles.get("relay", "")
+        if relay_profile and relay_profile != profile_name:
+            raise BlockedError(
+                reason=(
+                    f"Message Publishing Relay profile {relay_profile!r} "
+                    f"does not match active profile {profile_name!r}"
+                ),
+                resource="profile:relay",
+            )
+        for service_id, expected_kind in (
+            ("relay", "relay"),
+            ("station-via-relay", "station"),
+        ):
+            requirement = self.contract.services.get(service_id)
+            if (
+                requirement is None
+                or requirement.required
+                or requirement.kind != expected_kind
+            ):
+                raise BlockedError(
+                    reason=(
+                        "home-station must declare optional source-bound "
+                        f"{service_id!r} service kind {expected_kind!r}"
+                    ),
+                    resource=f"gate-environment:{MESSAGE_PUBLISHING_GATE}",
+                )
+        relay_deployment = _required(profile_env, "PT_RELAY_DEPLOY_ENV")
+        lease_owner = f"acceptance:{gate_id}:{manifest.run_id}:relay"
+        self.acquire_profile_lease(relay_deployment, lease_owner)
+        self.acquire_remote_git_source_lease(
+            relay_deployment,
+            lease_owner,
+        )
+        try:
+            return attach_source_bound_relay_services(
+                environment_id=self.environment_id,
+                source_commit=manifest.source_commit,
+                profile_name=profile_name,
+                profile_env=profile_env,
+                station_attestation=station_attestation,
+            )
+        except BlockedError:
+            raise
+        except (OSError, ProvisioningError, RuntimeError, ValueError) as error:
+            raise BlockedError(
+                reason=f"Message Publishing Relay attachment failed: {error}",
+                resource="service-attestation:station-via-relay",
+            ) from error
+
     def _export_profile_credential_refs(
         self,
         profile_env: dict[str, str],
@@ -1487,6 +1682,8 @@ class HomeStationProvisioner(EnvironmentProvisioner):
         else:
             credential_refs = ("profile:CHAT_NATIVE_DEMO_PASSWORD",)
         roles = GATE_ROLES[gate_id]
+        retained_fixtures = ()
+        identity_resolution = None
         if requires_reset:
             _, _, actor_ref = produce_actor_manifest(
                 environment_id=self.environment_id,
@@ -1498,14 +1695,27 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 reset_authorized=True,
             )
         else:
-            actors = tuple(
-                resolve_existing_actor(
+            if gate_id == MESSAGE_PUBLISHING_GATE:
+                station_peer_id = manifest.services[
+                    "station"
+                ].runtime_identity
+                identity_resolution = resolve_existing_actor_identity(
                     station_url,
-                    role,
+                    station_peer_id,
+                    roles[0],
                     profile_env["CHAT_NATIVE_DEMO_PASSWORD"],
                 )
-                for role in roles
-            )
+                actors = (identity_resolution.actor,)
+                retained_fixtures = (identity_resolution.fixture,)
+            else:
+                actors = tuple(
+                    resolve_existing_actor(
+                        station_url,
+                        role,
+                        profile_env["CHAT_NATIVE_DEMO_PASSWORD"],
+                    )
+                    for role in roles
+                )
             _, _, actor_ref = persist_actor_manifest(
                 ActorManifest(
                     fixture_id="chat-native-existing-actors",
@@ -1543,6 +1753,39 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 manifest.profile_slot,
                 profile_env,
             )
+        elif gate_id == MESSAGE_PUBLISHING_GATE:
+            client = self._message_publishing_client(
+                manifest.run_id,
+                manifest.profile_slot,
+                profile_env,
+            )
+            if identity_resolution is None:
+                raise RuntimeError(
+                    "Message Publishing actor identity fixture was not resolved"
+                )
+            runtime_root = Path(
+                tempfile.mkdtemp(
+                    prefix=f"pt-message-publishing-{manifest.run_id}-"
+                )
+            )
+            runtime_identity_root = runtime_root / "actor-identity"
+            try:
+                shutil.copytree(
+                    identity_resolution.fixture.root,
+                    runtime_identity_root,
+                )
+            except Exception:
+                shutil.rmtree(runtime_root, ignore_errors=True)
+                raise
+            self.register_cleanup(
+                f"message-publishing-runtime:{runtime_root}",
+                lambda: shutil.rmtree(runtime_root, ignore_errors=True),
+            )
+            client = dataclasses.replace(
+                client,
+                storage_root=str(runtime_root / "storage"),
+                actor_identity_root=str(runtime_identity_root),
+            )
         else:
             client = self._agent_stream_client(
                 manifest.run_id,
@@ -1555,6 +1798,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             actor_manifest_ref=actor_ref,
             credential_refs=credential_refs,
             clients=(client,),
+            retained_fixtures=retained_fixtures,
             cleanup_resources=self.contract.cleanup.resources,
         )
 
@@ -1606,7 +1850,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                     AGENT_V2_EVALUATION_GATE,
                     AGENT_V2_EXTERNAL_RUNTIME_GATE,
                 }
-                or gate_id in AGENT_NATIVE_GATES
+                or gate_id in HOME_SINGLE_NATIVE_GATES
             ):
                 self._validate_agent_profile(
                     gate_id,
@@ -1713,6 +1957,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 service_id="station",
                 station_url=station_url,
                 profile_env=profile_env,
+                require_runtime_identity=gate_id == MESSAGE_PUBLISHING_GATE,
                 remote_source_identity_provider=resolve_remote_source_identity,
             )
             local_proto_digest = source_proto_digest(REPO_ROOT)
@@ -1730,6 +1975,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 AGENT_V2_EXTERNAL_RUNTIME_GATE,
                 AGENT_MARKETPLACE_GATE,
                 AGENT_MINIMUM_USABLE_CHAT_GATE,
+                MESSAGE_PUBLISHING_GATE,
             }:
                 if manifest.workspace_digest != "clean":
                     raise BlockedError(
@@ -1751,6 +1997,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                     AGENT_V2_EXTERNAL_RUNTIME_GATE,
                     AGENT_MARKETPLACE_GATE,
                     AGENT_MINIMUM_USABLE_CHAT_GATE,
+                    MESSAGE_PUBLISHING_GATE,
                 }
                 and not attestation.is_clean_workspace
             ):
@@ -1772,7 +2019,13 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             manifest = dataclasses.replace(
                 manifest,
                 state=ProvisioningState.PROVISIONED,
-                services={attestation.service_id: attestation},
+                services=self._services_for_gate(
+                    gate_id=gate_id,
+                    manifest=manifest,
+                    profile_name=profile_name,
+                    profile_env=profile_env,
+                    station_attestation=attestation,
+                ),
             )
             self._manifest = manifest
             if gate_id == AGENT_V2_FOUNDATION_GATE:
@@ -1878,7 +2131,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 )
                 self._manifest = manifest
                 return self._ready(manifest)
-            if gate_id in AGENT_NATIVE_GATES:
+            if gate_id in HOME_SINGLE_NATIVE_GATES:
                 manifest = self._agent_native_manifest(
                     manifest,
                     gate_id=gate_id,

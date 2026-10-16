@@ -24,6 +24,7 @@ import (
 	federationinfra "github.com/peers-labs/peers-touch/station/app/subserver/federation/infrastructure"
 	keyexchangedomain "github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/domain"
 	keyexchangeinfra "github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/infrastructure"
+	notificationinfra "github.com/peers-labs/peers-touch/station/app/subserver/notification/infrastructure"
 	federationdelivery "github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	touchactor "github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
@@ -174,9 +175,23 @@ func (f *ProductionTransactionalAdapterFactory) Bind(
 		)
 	}
 
+	publishingStore := persistence.NewPublishingStore(tx)
+
 	return persistence.TransactionalAdapters{
-		Identity:            identity,
-		Federation:          federation,
+		Identity:     identity,
+		Federation:   federation,
+		SystemSender: publishingStore,
+		Publishing:   publishingStore,
+		PublishingObjects: &productionPublishedObjects{
+			db: tx,
+		},
+		ServiceNotifications: &productionServiceNotifications{
+			producer: notificationinfra.NewTxProducer(tx),
+		},
+		LocalScope: &productionLocalScope{
+			db:           tx,
+			localStation: f.localStation,
+		},
 		DeviceInbox:         deviceInbox,
 		FederationOutbox:    federationOutbox,
 		DeliveryCommitments: deliveryCommitments,

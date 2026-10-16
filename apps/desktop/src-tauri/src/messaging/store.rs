@@ -430,6 +430,68 @@ pub struct PublicEventReceiveCommit<'a> {
     pub consumed_at_unix_ms: i64,
 }
 
+pub struct ServiceMessageCommit<'a> {
+    pub source_namespace: &'a str,
+    pub content_bytes: &'a [u8],
+    pub source_context_bytes: &'a [u8],
+}
+
+/// Atomic receive commit for a non-E2EE Station service-plaintext publication.
+/// No crypto session exists; the message is stored as an
+/// ordinary direct-message projection plus an optional structured row.
+pub struct ServicePlaintextReceiveCommit<'a> {
+    pub item_id: &'a str,
+    pub event_id: &'a str,
+    pub conversation_id: &'a str,
+    pub event_sequence: i64,
+    pub lane_sequence: i64,
+    pub consumer_epoch: u64,
+    pub payload_sha256: &'a [u8],
+    pub event_hash: &'a [u8],
+    pub previous_event_hash: &'a [u8],
+    pub message_id: &'a str,
+    pub sender_ptid: &'a str,
+    pub sender_device_id: &'a str,
+    pub fallback_text: &'a str,
+    pub service_message: ServiceMessageCommit<'a>,
+    pub committed_at_unix_ms: i64,
+    pub receipt_id: &'a str,
+    pub receipt_bytes: &'a [u8],
+    pub consumed_at_unix_ms: i64,
+}
+
+/// Read-side row of common typed service content.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServiceMessageRow {
+    pub event_id: String,
+    pub event_sequence: i64,
+    pub message_id: String,
+    pub sender_ptid: String,
+    pub fallback_text: String,
+    pub source_namespace: String,
+    pub content_bytes: Vec<u8>,
+    pub source_context_bytes: Vec<u8>,
+    pub committed_at_unix_ms: i64,
+}
+
+/// Observe-only commit for an endpoint payload kind this build does not
+/// understand: the authority chain and consumption marker advance, but no
+/// message projection is created.
+pub struct SkippedEndpointReceiveCommit<'a> {
+    pub item_id: &'a str,
+    pub event_id: &'a str,
+    pub conversation_id: &'a str,
+    pub event_sequence: i64,
+    pub lane_sequence: i64,
+    pub consumer_epoch: u64,
+    pub payload_sha256: &'a [u8],
+    pub event_hash: &'a [u8],
+    pub previous_event_hash: &'a [u8],
+    pub receipt_id: &'a str,
+    pub receipt_bytes: &'a [u8],
+    pub consumed_at_unix_ms: i64,
+}
+
 pub enum InteractionMutation<'a> {
     ObserveOnly,
     Edit {
@@ -1920,6 +1982,42 @@ impl MessagingStore {
                    AND receipt_bytes = ?2
                    AND state = 'pending'",
                 params![receipt_id, receipt_bytes],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed != 1 {
+            return Err("messaging delivery receipt transition mismatch".to_string());
+        }
+        Ok(())
+    }
+
+    /// Terminal transition for a receipt the Station rejected with a
+    /// permanent verdict (malformed/unknown/conflict). The row is retained
+    /// for audit but leaves the pending queue so it can never block the
+    /// FIFO outbox head again.
+    pub fn mark_delivery_receipt_rejected(
+        &self,
+        receipt_id: &str,
+        receipt_bytes: &[u8],
+        error_code: &str,
+    ) -> Result<(), String> {
+        let now_unix_ms = i64::try_from(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|duration| duration.as_millis())
+                .unwrap_or(0),
+        )
+        .unwrap_or(0);
+        let changed = self
+            .connection()?
+            .execute(
+                "UPDATE messaging_receipt_outbox
+                 SET state = 'rejected',
+                     last_error_code = ?3,
+                     updated_at_unix_ms = ?4
+                 WHERE receipt_id = ?1
+                   AND receipt_bytes = ?2
+                   AND state = 'pending'",
+                params![receipt_id, receipt_bytes, error_code, now_unix_ms],
             )
             .map_err(|error| error.to_string())?;
         if changed != 1 {
@@ -4103,6 +4201,18 @@ impl MessagingStore {
             )
             .map_err(|error| error.to_string())?;
         Ok(())
+    }
+
+    /// Generic read-only query for receive-path tests that assert on internal
+    /// projection tables without a public read API yet.
+    #[cfg(test)]
+    pub fn test_query_row<T, F>(&self, sql: &str, map_row: F) -> Result<T, String>
+    where
+        F: FnOnce(&rusqlite::Row<'_>) -> rusqlite::Result<T>,
+    {
+        self.connection()?
+            .query_row(sql, [], map_row)
+            .map_err(|error| error.to_string())
     }
 
     pub fn create_message_draft(&self, draft: &PendingMessageDraft) -> Result<(), String> {
@@ -7125,6 +7235,139 @@ impl MessagingStore {
             }
             Ok(())
         })
+    }
+
+    /// Atomic receive for a non-E2EE Station service-plaintext message.
+    pub fn commit_service_plaintext_receive(
+        &self,
+        input: &ServicePlaintextReceiveCommit<'_>,
+    ) -> Result<ReceiveCommitResult, String> {
+        validate_service_plaintext_receive(input)?;
+        let projection = MessageProjection {
+            conversation_id: input.conversation_id.to_string(),
+            event_id: input.event_id.to_string(),
+            event_sequence: input.event_sequence,
+            message_id: input.message_id.to_string(),
+            sender_ptid: input.sender_ptid.to_string(),
+            sender_device_id: input.sender_device_id.to_string(),
+            plaintext: input.fallback_text.to_string(),
+            attachments: Vec::new(),
+            committed_at_unix_ms: input.committed_at_unix_ms,
+            reply_to_message_id: None,
+            thread_root_message_id: None,
+            edited_text: None,
+            edited_at_unix_ms: None,
+            retracted: false,
+        };
+        let core = ReceiveCommitCore {
+            item_id: input.item_id,
+            event_id: input.event_id,
+            conversation_id: input.conversation_id,
+            lane_sequence: input.lane_sequence,
+            consumer_epoch: input.consumer_epoch,
+            payload_sha256: input.payload_sha256,
+            event_hash: input.event_hash,
+            previous_event_hash: input.previous_event_hash,
+            event_sequence: input.event_sequence,
+            allow_join_checkpoint: false,
+            projection: Some(&projection),
+            receipt_id: input.receipt_id,
+            receipt_bytes: input.receipt_bytes,
+            consumed_at_unix_ms: input.consumed_at_unix_ms,
+        };
+        self.commit_receive_core(&core, ReceiveFailPoint::None, |transaction| {
+            transaction
+                .execute(
+                    "INSERT INTO messaging_service_messages(
+                        conversation_id, event_id, event_sequence, message_id,
+                        sender_ptid, sender_device_id, fallback_text,
+                        source_namespace, content_bytes, source_context_bytes,
+                        committed_at_unix_ms
+                     ) VALUES (
+                        ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11
+                     )",
+                    params![
+                        input.conversation_id,
+                        input.event_id,
+                        input.event_sequence,
+                        input.message_id,
+                        input.sender_ptid,
+                        input.sender_device_id,
+                        input.fallback_text,
+                        input.service_message.source_namespace,
+                        input.service_message.content_bytes,
+                        input.service_message.source_context_bytes,
+                        input.committed_at_unix_ms,
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+            Ok(())
+        })
+    }
+
+    /// Common service-content rows ordered on the authority sequence.
+    pub fn service_messages_for_conversation(
+        &self,
+        conversation_id: &str,
+    ) -> Result<Vec<ServiceMessageRow>, String> {
+        if conversation_id.trim().is_empty() {
+            return Err("messaging service conversation ID is required".to_string());
+        }
+        let connection = self.connection()?;
+        let mut statement = connection
+            .prepare(
+                "SELECT event_id, event_sequence, message_id, sender_ptid,
+                        fallback_text, source_namespace, content_bytes,
+                        source_context_bytes, committed_at_unix_ms
+                 FROM messaging_service_messages
+                 WHERE conversation_id = ?1
+                 ORDER BY event_sequence ASC, message_id ASC",
+            )
+            .map_err(|error| error.to_string())?;
+        let rows = statement
+            .query_map(params![conversation_id], |row| {
+                Ok(ServiceMessageRow {
+                    event_id: row.get(0)?,
+                    event_sequence: row.get(1)?,
+                    message_id: row.get(2)?,
+                    sender_ptid: row.get(3)?,
+                    fallback_text: row.get(4)?,
+                    source_namespace: row.get(5)?,
+                    content_bytes: row.get(6)?,
+                    source_context_bytes: row.get(7)?,
+                    committed_at_unix_ms: row.get(8)?,
+                })
+            })
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        Ok(rows)
+    }
+
+    /// Observe-only commit for an endpoint payload kind this build does not
+    /// understand: the item is durably consumed and the authority hash chain
+    /// advances, but no message projection is created.
+    pub fn commit_skipped_endpoint_payload(
+        &self,
+        input: &SkippedEndpointReceiveCommit<'_>,
+    ) -> Result<ReceiveCommitResult, String> {
+        let core = ReceiveCommitCore {
+            item_id: input.item_id,
+            event_id: input.event_id,
+            conversation_id: input.conversation_id,
+            lane_sequence: input.lane_sequence,
+            consumer_epoch: input.consumer_epoch,
+            payload_sha256: input.payload_sha256,
+            event_hash: input.event_hash,
+            previous_event_hash: input.previous_event_hash,
+            event_sequence: input.event_sequence,
+            allow_join_checkpoint: false,
+            projection: None,
+            receipt_id: input.receipt_id,
+            receipt_bytes: input.receipt_bytes,
+            consumed_at_unix_ms: input.consumed_at_unix_ms,
+        };
+        self.commit_receive_core(&core, ReceiveFailPoint::None, |_| Ok(()))
     }
 
     pub fn commit_interaction_event(
@@ -10945,6 +11188,57 @@ fn validate_public_event_receive(input: &PublicEventReceiveCommit<'_>) -> Result
         || input.committed_at_unix_ms <= 0
     {
         return Err("messaging public-event receive input is incomplete".to_string());
+    }
+    Ok(())
+}
+
+fn validate_service_plaintext_receive(
+    input: &ServicePlaintextReceiveCommit<'_>,
+) -> Result<(), String> {
+    let projection = MessageProjection {
+        conversation_id: input.conversation_id.to_string(),
+        event_id: input.event_id.to_string(),
+        event_sequence: input.event_sequence,
+        message_id: input.message_id.to_string(),
+        sender_ptid: input.sender_ptid.to_string(),
+        sender_device_id: input.sender_device_id.to_string(),
+        plaintext: input.fallback_text.to_string(),
+        attachments: Vec::new(),
+        committed_at_unix_ms: input.committed_at_unix_ms,
+        reply_to_message_id: None,
+        thread_root_message_id: None,
+        edited_text: None,
+        edited_at_unix_ms: None,
+        retracted: false,
+    };
+    validate_receive_core(&ReceiveCommitCore {
+        item_id: input.item_id,
+        event_id: input.event_id,
+        conversation_id: input.conversation_id,
+        lane_sequence: input.lane_sequence,
+        consumer_epoch: input.consumer_epoch,
+        payload_sha256: input.payload_sha256,
+        event_hash: input.event_hash,
+        previous_event_hash: input.previous_event_hash,
+        event_sequence: input.event_sequence,
+        allow_join_checkpoint: false,
+        projection: Some(&projection),
+        receipt_id: input.receipt_id,
+        receipt_bytes: input.receipt_bytes,
+        consumed_at_unix_ms: input.consumed_at_unix_ms,
+    })?;
+    if input.message_id.trim().is_empty()
+        || input.sender_ptid.trim().is_empty()
+        || input.sender_device_id.trim().is_empty()
+        || input.fallback_text.trim().is_empty()
+        || input.committed_at_unix_ms <= 0
+    {
+        return Err("messaging service-plaintext receive input is incomplete".to_string());
+    }
+    if input.service_message.source_namespace.trim().is_empty()
+        || input.service_message.content_bytes.is_empty()
+    {
+        return Err("messaging service content is incomplete".to_string());
     }
     Ok(())
 }
@@ -18590,5 +18884,54 @@ mod tests {
                 .len(),
             0
         );
+    }
+
+    #[test]
+    fn rejected_delivery_receipt_leaves_pending_head() {
+        let store = MessagingStore::in_memory().unwrap();
+        store
+            .connection()
+            .unwrap()
+            .execute(
+                "INSERT INTO messaging_receipt_outbox(
+                    receipt_id, event_id, receipt_bytes, state, created_at_unix_ms
+                 ) VALUES ('device-consumed:item-1', 'event-1', X'01', 'pending', 100)",
+                [],
+            )
+            .unwrap();
+        assert!(store.next_delivery_receipt().unwrap().is_some());
+
+        store
+            .mark_delivery_receipt_rejected("device-consumed:item-1", &[1u8], "http_409")
+            .unwrap();
+
+        // A permanently rejected receipt must not block the FIFO head: the
+        // pending queue is empty while the row is retained for audit.
+        assert!(store.next_delivery_receipt().unwrap().is_none());
+        let (state, code): (String, String) = store
+            .connection()
+            .unwrap()
+            .query_row(
+                "SELECT state, last_error_code FROM messaging_receipt_outbox WHERE receipt_id = 'device-consumed:item-1'",
+                [],
+                |row| Ok((row.get(0).unwrap(), row.get(1).unwrap())),
+            )
+            .unwrap();
+        assert_eq!(state, "rejected");
+        assert_eq!(code, "http_409");
+
+        // A newer pending receipt now dispatches.
+        store
+            .connection()
+            .unwrap()
+            .execute(
+                "INSERT INTO messaging_receipt_outbox(
+                    receipt_id, event_id, receipt_bytes, state, created_at_unix_ms
+                 ) VALUES ('device-consumed:item-2', 'event-2', X'02', 'pending', 200)",
+                [],
+            )
+            .unwrap();
+        let next = store.next_delivery_receipt().unwrap().unwrap();
+        assert_eq!(next.receipt_id, "device-consumed:item-2");
     }
 }

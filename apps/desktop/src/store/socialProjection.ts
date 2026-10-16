@@ -114,6 +114,7 @@ export interface SocialMessage {
   readByPtids?: string[];
   deliveryState?: string;
   senderDeviceId?: string;
+  serviceMessage?: DesktopServiceMessage;
 }
 
 export interface FriendChatSession {
@@ -282,7 +283,53 @@ export type DesktopIMMessageProjection = IMMessageProjection<ChatAttachmentLike>
   readByPtids: string[];
   eventSequence: number;
   deliveryState: string;
+  // Common typed content for non-E2EE Station service messages.
+  serviceMessage?: DesktopServiceMessage;
 };
+
+export interface DesktopServiceMessage {
+  eventId: string;
+  eventSequence: number;
+  messageId: string;
+  senderPtid: string;
+  fallbackText: string;
+  sourceNamespace: string;
+  content?: {
+    primary?: {
+      kind: 'text' | 'event' | 'card';
+      text?: string;
+      eventType?: string;
+      sourceEventId?: string;
+      subject?: {
+        kind: string;
+        id: string;
+        executionId: string;
+      };
+      occurredAtUnixMs?: number;
+      severity?: number;
+      title?: string;
+      body?: string;
+      actions?: Array<{ label: string; url: string }>;
+      taskState?: {
+        revision: string;
+        state: number;
+      };
+    };
+    attachments: Array<{
+      objectId: string;
+      filename: string;
+      mediaType: string;
+      size: string;
+    }>;
+  };
+  sourceContext?: {
+    program: string;
+    workspace: string;
+    sessionId: string;
+    labels: Record<string, string>;
+  };
+  timestampUnixMs: number;
+}
 
 export interface DesktopIMSenderProfileProjection {
   id: string;
@@ -436,6 +483,7 @@ export function projectDesktopIMMessage(
     readByPtids: (message as { readByPtids?: string[] }).readByPtids ?? [],
     eventSequence: messageGroupSeq(message),
     deliveryState: (message as { deliveryState?: string }).deliveryState ?? '',
+    serviceMessage: message.serviceMessage,
   };
 }
 

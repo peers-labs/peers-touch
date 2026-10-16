@@ -294,6 +294,46 @@
       "externalCapabilityRegistries": []
     },
     {
+      "id": "bot",
+      "root": "docs/architecture/domains/bot",
+      "status": "active",
+      "owner": "Peers-Touch Bot Team",
+      "characteristics": {
+        "protocol": true,
+        "stateMachine": true,
+        "persistence": true,
+        "ownership": true,
+        "moduleLayout": true,
+        "crossRuntime": true,
+        "integration": true
+      },
+      "requiredDocuments": [
+        "README.md",
+        "design.md",
+        "decisions.md",
+        "data-model.md",
+        "module-layout.md",
+        "integration.md"
+      ],
+      "decisionIds": [
+        "BOT-D01",
+        "BOT-D02",
+        "BOT-D03",
+        "BOT-D04",
+        "BOT-D05"
+      ],
+      "governedPaths": [
+        "apps/desktop/src-tauri/src/interface/tauri_commands/bot.rs",
+        "apps/desktop/src/components/settings/BotsSettings.tsx",
+        "apps/desktop/src/modules/bots.ts",
+        "apps/station/app/subserver/bot",
+        "docs/architecture/domains/bot",
+        "model/domain/bot"
+      ],
+      "capabilities": [],
+      "externalCapabilityRegistries": []
+    },
+    {
       "id": "local-dev-control-plane",
       "root": "docs/architecture/engineering/local-dev",
       "status": "active",

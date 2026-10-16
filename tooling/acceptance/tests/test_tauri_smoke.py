@@ -31,54 +31,47 @@ class TauriSmokePortTests(unittest.TestCase):
                     resolve_smoke_port(port)
 
 
-class TauriSemanticActionTests(unittest.TestCase):
+class TauriSessionSemanticActionTests(unittest.TestCase):
     def setUp(self) -> None:
         self.session = TauriSession(Mock())
+        self.native_driver = Mock()
+        self.session._driver = self.native_driver
         self.element = Mock()
 
-    def test_semantic_click_uses_webdriver_element(self) -> None:
+    def test_semantic_click_uses_element_click(self) -> None:
         self.session.semantic_click(self.element)
 
         self.element.click.assert_called_once_with()
 
-    def test_semantic_hover_dispatches_pointer_and_mouse_events(self) -> None:
-        with patch.object(self.session, "execute_script") as execute:
-            self.session.semantic_hover(self.element)
+    def test_semantic_hover_dispatches_webview_pointer_events(self) -> None:
+        self.session.semantic_hover(self.element)
 
-        script, element = execute.call_args.args
+        script, element = self.native_driver.execute_script.call_args.args
         self.assertIs(element, self.element)
         self.assertIn("new PointerEvent('pointerover'", script)
-        self.assertIn("new MouseEvent('mousemove'", script)
+        self.assertIn("new MouseEvent('mouseenter'", script)
 
-    def test_semantic_replace_text_uses_element_clear_and_send_keys(self) -> None:
+    def test_semantic_replace_text_clears_before_typing(self) -> None:
         self.session.semantic_replace_text(self.element, "replacement")
 
         self.element.clear.assert_called_once_with()
         self.element.send_keys.assert_called_once_with("replacement")
 
-    def test_semantic_key_sequence_uses_webdriver_actions(self) -> None:
-        webdriver = Mock()
-        driver_owner = Mock()
-        driver_owner.driver = webdriver
-        self.session._driver = driver_owner
-        actions = Mock()
-        actions.send_keys.return_value = actions
-        with (
-            patch.object(self.session, "execute_script") as execute,
-            patch(
-                "tooling.acceptance.drivers.tauri.ActionChains",
-                return_value=actions,
-            ) as action_chains,
-        ):
-            self.session.semantic_key_sequence(self.element, "ENTER", "TAB")
-
-        execute.assert_called_once_with(
-            "arguments[0].focus({ preventScroll: true });",
+    def test_semantic_key_sequence_targets_webview_focus(self) -> None:
+        self.session.semantic_key_sequence(
             self.element,
+            "ENTER",
+            "TAB",
         )
-        action_chains.assert_called_once_with(webdriver)
-        actions.send_keys.assert_called_once_with("ENTER", "TAB")
-        actions.perform.assert_called_once_with()
+
+        script, element, keys = self.native_driver.execute_script.call_args.args
+        self.assertIs(element, self.element)
+        self.assertIn("focus({ preventScroll: true })", script)
+        self.assertIn("new KeyboardEvent('keydown'", script)
+        self.assertIn("descriptor.key === 'Tab'", script)
+        self.assertIn("target.click()", script)
+        self.assertEqual(keys, ["ENTER", "TAB"])
+        self.element.send_keys.assert_not_called()
 
 
 class MakeDesktopLauncherProfileTests(unittest.TestCase):

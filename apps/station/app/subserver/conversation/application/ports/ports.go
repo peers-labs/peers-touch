@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/entity"
 	domainevent "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/event"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/repository"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
@@ -68,6 +69,104 @@ type FederationDirectory interface {
 		federationID valueobject.FederationID,
 		station valueobject.StationID,
 	) (bool, error)
+}
+
+// SystemSenderAuthorization verifies one live Conversation-owned delegation.
+type SystemSenderAuthorization interface {
+	AuthorizeSystemMessage(
+		ctx context.Context,
+		publishingID string,
+		sender valueobject.PTID,
+		conversation valueobject.ConversationID,
+		at time.Time,
+	) error
+}
+
+// PublishingStore uses the exact authority transaction for credentials,
+// frozen receipts, object ownership, and bounded producer admission.
+type PublishingStore interface {
+	GetGrant(ctx context.Context, id string) (entity.PublishingGrant, error)
+	CreateGrant(ctx context.Context, grant entity.PublishingGrant) error
+	SaveGrant(ctx context.Context, grant entity.PublishingGrant) error
+	ListGrants(ctx context.Context, owner valueobject.PTID) ([]entity.PublishingGrant, error)
+	GetPublication(ctx context.Context, id, commandID string) (entity.PublicationReceipt, bool, error)
+	RecordPublication(ctx context.Context, receipt entity.PublicationReceipt) error
+	CheckRate(ctx context.Context, id string, limit uint32, at time.Time) error
+}
+
+type PublishedObjectDirectory interface {
+	ValidateObject(ctx context.Context, objectID string, owner valueobject.PTID, target valueobject.ConversationID, at time.Time) (PublishedObject, error)
+}
+
+type PublishedObject struct {
+	ID        string
+	Filename  string
+	MediaType string
+	Size      uint64
+}
+
+// ServiceNotificationInput is a transaction-bound internal notification
+// production request. The implementation honors recipient
+// preferences and an idempotency key without leaving the caller transaction.
+type ServiceNotificationInput struct {
+	RecipientPTID  string
+	ActorPTID      string
+	Type           int32
+	Category       int32
+	TargetType     string
+	TargetID       string
+	Title          string
+	Body           string
+	GroupKey       string
+	IdempotencyKey string
+	Metadata       map[string]string
+}
+
+// ServiceNotificationResult reports whether a fresh notification committed.
+// NotificationID is the stable row id, used post-commit for the realtime wake.
+type ServiceNotificationResult struct {
+	Produced       bool
+	NotificationID string
+}
+
+// ServiceNotificationProducer writes a notification row inside the delivery
+// transaction. A zero Produced means a muted preference or an idempotent
+// replay; the causing message is still committed either way.
+type ServiceNotificationProducer interface {
+	ProduceInTx(
+		ctx context.Context,
+		input ServiceNotificationInput,
+		at time.Time,
+	) (ServiceNotificationResult, error)
+}
+
+// ServiceNotificationWake is the post-commit actor-level realtime descriptor.
+// The durable notification row
+// and the device inbox remain truth; this wake only reaches currently (and
+// ring-replaying) online owner devices and must never gate publication.
+type ServiceNotificationWake struct {
+	RecipientActor   valueobject.PTID
+	NotificationID   string
+	NotificationType int32
+	Category         int32
+	GroupKey         string
+	CreatedAtUnixMs  int64
+}
+
+// ServiceNotificationPublisher emits the actor-level notification wake after
+// the delivery transaction commits.
+type ServiceNotificationPublisher interface {
+	PublishServiceNotification(ctx context.Context, wake ServiceNotificationWake) error
+}
+
+// LocalScope resolves the internal Federation scope for system-authored
+// conversations (no client-supplied Federation id; v1 home-local only).
+type LocalScope interface {
+	LocalFederation(ctx context.Context) (
+		federationID valueobject.FederationID,
+		authorityEpoch valueobject.AuthorityEpoch,
+		err error,
+	)
 }
 
 type DeviceInboxIntent struct {
@@ -170,6 +269,11 @@ type Transaction struct {
 	Repositories           repository.Repositories
 	Identity               IdentityDirectory
 	Federation             FederationDirectory
+	SystemSender           SystemSenderAuthorization
+	Publishing             PublishingStore
+	PublishingObjects      PublishedObjectDirectory
+	ServiceNotifications   ServiceNotificationProducer
+	LocalScope             LocalScope
 	DeviceInbox            DeviceInboxWriter
 	FederationOutbox       FederationOutboxWriter
 	DeliveryCommitments    AuthorityDeliveryCommitmentWriter

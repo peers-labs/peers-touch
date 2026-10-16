@@ -15,6 +15,7 @@ import (
 	deliveryapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/delivery"
 	interactionapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/interaction"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/ports"
+	publishingapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/publishing"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/query"
 	reconciliationapp "github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/reconciliation"
 	conversationdomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain"
@@ -54,6 +55,7 @@ const (
 // canonical durable state commits.
 type ProductionRealtime interface {
 	ports.PostCommitPublisher
+	ports.ServiceNotificationPublisher
 	interactionapp.TypingPublisher
 }
 
@@ -146,11 +148,13 @@ type ProductionSharedDependencies struct {
 type ProductionComposition struct {
 	UnitOfWork *persistence.UnitOfWork
 
-	CommandService     *command.Service
-	QueryService       *query.Service
-	DeliveryService    *deliveryapp.Service
-	AttachmentService  *attachmentapp.Service
-	InteractionService *interactionapp.Service
+	CommandService       *command.Service
+	QueryService         *query.Service
+	DeliveryService      *deliveryapp.Service
+	AttachmentService    *attachmentapp.Service
+	InteractionService   *interactionapp.Service
+	PublishingService    *publishingapp.Service
+	PublishingManagement *publishingapp.ManagementService
 
 	DeviceInboxHandler   *conversationhttp.DeviceInboxHandler
 	CommandResultHandler *conversationhttp.CommandResultHandler
@@ -421,6 +425,26 @@ func NewProductionComposition(
 		return nil, fmt.Errorf("compose Conversation interaction handler: %w", err)
 	}
 
+	publishingService, err := publishingapp.NewService(
+		unitOfWork,
+		commandService,
+		config.Clock,
+		config.IDs,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("compose Conversation publishing service: %w", err)
+	}
+	publishingManagement, err := publishingapp.NewManagementService(
+		persistence.NewPublishingStore(config.Database),
+		unitOfWork,
+		productionPublishingActorMinter{},
+		config.Clock,
+		config.IDs,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("compose Conversation publishing management: %w", err)
+	}
+
 	return &ProductionComposition{
 		UnitOfWork:            unitOfWork,
 		CommandService:        commandService,
@@ -428,6 +452,8 @@ func NewProductionComposition(
 		DeliveryService:       deliveryService,
 		AttachmentService:     attachmentService,
 		InteractionService:    interactionService,
+		PublishingService:     publishingService,
+		PublishingManagement:  publishingManagement,
 		DeviceInboxHandler:    deviceInboxHandler,
 		CommandResultHandler:  commandResultHandler,
 		AttachmentHandler:     attachmentHandler,

@@ -72,6 +72,11 @@ def write_plan(
         },
         "checks": [
             {
+                "id": "suite-source",
+                "command": "check-suite",
+                "verificationClass": "SOURCE_CHECK",
+            },
+            {
                 "id": "suite-functional",
                 "command": "run-suite",
                 "verificationClass": "FUNCTIONAL_CHECK",
@@ -80,7 +85,6 @@ def write_plan(
         "doneWhen": ["suite passes"],
         "failureBehavior": ["fail closed"],
         "updatedAt": "2026-09-29T00:00:00.000Z",
-        "durableEvidence": [],
     }
     if include_contract:
         task["runtimeReuse"] = runtime_reuse()
@@ -104,29 +108,100 @@ def write_plan(
         encoding="utf-8",
     )
     manifest = {
-        "kind": "peers-touch-plan-package",
+        "kind": (
+            "peers-touch-plan-version"
+            if heading == "Plan Version"
+            else "peers-touch-plan-package"
+        ),
         "planId": "AUDIT-TEST",
         "tasks": [
             {
                 "id": "T1",
+                "workstreamId": "T1",
                 "path": "tasks/T1.md",
+                "dependsOn": [],
             }
         ],
     }
+    if heading == "Plan Version":
+        manifest.update(
+            {
+                "versionId": "audit-test-v1",
+                "createdAt": "2026-10-15T00:00:00.000Z",
+                "workClass": "infrastructure",
+                "architecture": {
+                    "sources": ["docs/README.md"],
+                    "decisions": ["TEST-D01"],
+                },
+                "scope": {
+                    "sourceClaims": [
+                        {
+                            "pathPrefix": "tooling",
+                            "mode": "exclusive-write",
+                        }
+                    ],
+                    "nonGoals": [],
+                },
+                "authorization": {
+                    "checkpoint": {
+                        "localCommit": "allowed",
+                        "amend": "denied",
+                    },
+                    "delivery": {
+                        "push": "denied",
+                        "pullRequest": "denied",
+                    },
+                    "runtime": {
+                        "deployProfiles": [],
+                        "destructiveResetScopes": [],
+                    },
+                    "history": {"rewrite": "denied"},
+                },
+            }
+        )
     plan_path = plan_dir / "plan.md"
-    plan_path.write_text(
-        "\n".join(
+    plan_lines = [
+        "# Audit Test",
+        "",
+    ]
+    if heading == "Plan Version":
+        plan_lines.extend(
             (
-                "# Audit Test",
+                "> **Plan ID**: AUDIT-TEST",
+                "> **Version ID**: audit-test-v1",
+                "> **Created**: 2026-10-15T00:00:00.000Z",
                 "",
-                f"## {heading}",
+            )
+        )
+    plan_lines.extend(
+        (
+            f"## {heading}",
+            "",
+            "```json",
+            json.dumps(manifest),
+            "```",
+            "",
+        )
+    )
+    if heading == "Plan Version":
+        plan_lines.extend(
+            (
+                "## Acceptance Execution",
                 "",
                 "```json",
-                json.dumps(manifest),
+                json.dumps(
+                    {
+                        "closures": {"audit-suite": []},
+                        "completion": [],
+                        "full": [],
+                    }
+                ),
                 "```",
                 "",
             )
-        ),
+        )
+    plan_path.write_text(
+        "\n".join(plan_lines),
         encoding="utf-8",
     )
     return plan_path
@@ -171,6 +246,45 @@ def valid_report() -> dict[str, object]:
 
 
 class AcceptancePipelineAuditTests(unittest.TestCase):
+    def test_canonical_plan_version_heading_is_supported(self) -> None:
+        with tempfile.TemporaryDirectory(dir=REPO_ROOT) as temp_dir:
+            plan_path = write_plan(
+                Path(temp_dir),
+                heading="Plan Version",
+            )
+            result = AUDIT.audit_pipeline(
+                plan_path=plan_path,
+                task_ids=("T1",),
+            )
+
+        self.assertEqual(result["result"], "PASS")
+
+    def test_plan_version_rejects_incomplete_canonical_manifest(self) -> None:
+        with tempfile.TemporaryDirectory(dir=REPO_ROOT) as temp_dir:
+            plan_path = write_plan(
+                Path(temp_dir),
+                heading="Plan Version",
+            )
+            text = plan_path.read_text(encoding="utf-8")
+            matches = AUDIT.MANIFEST_BLOCK_PATTERN.findall(text)
+            self.assertEqual(len(matches), 1)
+            encoded = matches[0][1]
+            manifest = json.loads(encoded)
+            del manifest["architecture"]
+            plan_path.write_text(
+                text.replace(encoded, json.dumps(manifest)),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                AUDIT.PipelineAuditError,
+                "canonical validation",
+            ):
+                AUDIT.audit_pipeline(
+                    plan_path=plan_path,
+                    task_ids=("T1",),
+                )
+
     def test_current_stable_plan_heading_is_supported(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             plan_path = write_plan(
@@ -183,6 +297,47 @@ class AcceptancePipelineAuditTests(unittest.TestCase):
             )
 
         self.assertEqual(result["result"], "PASS")
+
+    def test_plan_version_heading_rejects_legacy_manifest_kind(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            plan_path = write_plan(
+                Path(temp_dir),
+                heading="Plan Version",
+            )
+            plan_path.write_text(
+                plan_path.read_text(encoding="utf-8").replace(
+                    "peers-touch-plan-version",
+                    "peers-touch-plan-package",
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                AUDIT.PipelineAuditError,
+                "peers-touch-plan-version kind",
+            ):
+                AUDIT.audit_pipeline(
+                    plan_path=plan_path,
+                    task_ids=("T1",),
+                )
+
+    def test_multiple_supported_manifest_blocks_fail_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            plan_path = write_plan(Path(temp_dir))
+            plan_path.write_text(
+                plan_path.read_text(encoding="utf-8")
+                + "\n## Plan Version\n\n```json\n{}\n```\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                AUDIT.PipelineAuditError,
+                "exactly one matching JSON block",
+            ):
+                AUDIT.audit_pipeline(
+                    plan_path=plan_path,
+                    task_ids=("T1",),
+                )
 
     def test_plan_contract_passes_without_claiming_runtime_proof(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

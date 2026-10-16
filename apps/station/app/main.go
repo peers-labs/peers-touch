@@ -13,6 +13,7 @@ import (
 	actoridentity "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity"
 	appmeta "github.com/peers-labs/peers-touch/station/app/subserver/app_meta"
 	appletstore "github.com/peers-labs/peers-touch/station/app/subserver/applet_store"
+	botsub "github.com/peers-labs/peers-touch/station/app/subserver/bot"
 	"github.com/peers-labs/peers-touch/station/app/subserver/clusterreadiness"
 	convsub "github.com/peers-labs/peers-touch/station/app/subserver/conversation"
 	"github.com/peers-labs/peers-touch/station/app/subserver/events"
@@ -116,6 +117,11 @@ func stationApplicationSubservers() []option.Option {
 		server.WithClusterReadinessProbe(
 			"notification",
 			clusterreadiness.SharedPostgres("notification"),
+		),
+		server.WithSubServer("bot", botsub.NewBotSubServer),
+		server.WithClusterReadinessProbe(
+			"bot",
+			clusterreadiness.SharedPostgres("bot"),
 		),
 		server.WithSubServer("official_applet_note", officialapplets.NewNoteSubServer),
 		server.WithClusterReadinessProbe(

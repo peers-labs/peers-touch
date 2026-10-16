@@ -16,7 +16,6 @@ from pathlib import Path
 from typing import Any, Callable, Generator, Mapping, Optional, Protocol
 
 from selenium import webdriver
-from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.support.ui import WebDriverWait
@@ -983,10 +982,78 @@ class TauriSession(DomDriver):
         *keys: str,
     ) -> None:
         self.execute_script(
-            "arguments[0].focus({ preventScroll: true });",
+            """
+            const element = arguments[0];
+            const requestedKeys = arguments[1];
+            const descriptors = {
+              '\uE004': { key: 'Tab', code: 'Tab', keyCode: 9 },
+              '\uE007': { key: 'Enter', code: 'Enter', keyCode: 13 },
+              '\uE00C': { key: 'Escape', code: 'Escape', keyCode: 27 },
+            };
+            const focusables = () => [...document.querySelectorAll([
+              'a[href]',
+              'button:not([disabled])',
+              'input:not([disabled])',
+              'select:not([disabled])',
+              'textarea:not([disabled])',
+              '[tabindex]:not([tabindex="-1"])',
+            ].join(','))].filter((candidate) => {
+              const style = getComputedStyle(candidate);
+              const rect = candidate.getBoundingClientRect();
+              return style.display !== 'none'
+                && style.visibility !== 'hidden'
+                && rect.width > 0
+                && rect.height > 0;
+            });
+            element.focus({ preventScroll: true });
+            for (const requestedKey of requestedKeys) {
+              const descriptor = descriptors[requestedKey];
+              if (!descriptor) {
+                throw new Error(
+                  `unsupported semantic key ${JSON.stringify(requestedKey)}`,
+                );
+              }
+              const target = document.activeElement || element;
+              const init = {
+                bubbles: true,
+                cancelable: true,
+                composed: true,
+                key: descriptor.key,
+                code: descriptor.code,
+                keyCode: descriptor.keyCode,
+                which: descriptor.keyCode,
+              };
+              const keydown = new KeyboardEvent('keydown', init);
+              target.dispatchEvent(keydown);
+              if (!keydown.defaultPrevented) {
+                if (descriptor.key === 'Tab') {
+                  const candidates = focusables();
+                  const current = document.activeElement || target;
+                  const index = candidates.indexOf(current);
+                  const next = candidates[
+                    index >= 0 ? (index + 1) % candidates.length : 0
+                  ];
+                  next?.focus({ preventScroll: true });
+                } else if (
+                  descriptor.key === 'Enter'
+                  && document.activeElement === target
+                  && (
+                    target.matches('button, a[href], input[type="button"],'
+                      + ' input[type="submit"]')
+                    || target.getAttribute('role') === 'button'
+                  )
+                ) {
+                  target.click();
+                }
+              }
+              (document.activeElement || target).dispatchEvent(
+                new KeyboardEvent('keyup', init),
+              );
+            }
+            """,
             element,
+            list(keys),
         )
-        ActionChains(self.driver).send_keys(*keys).perform()
 
     def save_screenshot(self, path: str | Path) -> None:
         self._connected_driver().save_screenshot(path)

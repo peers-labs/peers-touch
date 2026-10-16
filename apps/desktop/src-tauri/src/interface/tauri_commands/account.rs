@@ -342,7 +342,6 @@ pub fn account_unlock(
     //
     // We probe `/actor/profile` because every authenticated actor has it
     // and the cost is one cheap GET.
-    use crate::application::station_runtime::client::StationClientErrorKind;
     use crate::model::actor::ActorProfile;
     let probe = state
         .station
@@ -358,10 +357,7 @@ pub fn account_unlock(
         // PIN unlock again, and surface a structured error so the frontend
         // can route the user straight to the right login form (password vs
         // OAuth) without spending an extra round-trip.
-        let stale = matches!(err.kind, StationClientErrorKind::SessionRevoked)
-            || err.message.to_ascii_lowercase().contains("unauthor")
-            || err.message.contains("401");
-        if stale {
+        if auth_service::station_verification_rejects_session(&err) {
             let _ = crate::infrastructure::auth_identity::clear_account_session(&account_id_clone);
             let provider = crate::infrastructure::auth_identity::read_state()
                 .ok()
@@ -397,12 +393,15 @@ pub fn account_unlock(
     let token = match auth_service::takeover_station_session_token(state.station.client(), &token) {
         Ok(token) => token,
         Err(err) => {
-            let _ = crate::infrastructure::auth_identity::clear_account_session(&account_id_clone);
             let provider = crate::infrastructure::auth_identity::read_state()
                 .ok()
                 .and_then(|s| s.accounts.into_iter().find(|a| a.id == account_id_clone))
                 .map(|a| a.provider)
                 .unwrap_or_default();
+            if auth_service::station_verification_rejects_session(&err) {
+                let _ =
+                    crate::infrastructure::auth_identity::clear_account_session(&account_id_clone);
+            }
             return auth_service::session_takeover_failed(
                 err,
                 Some(&account_id_clone),

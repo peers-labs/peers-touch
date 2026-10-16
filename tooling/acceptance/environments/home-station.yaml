@@ -12,6 +12,16 @@
       "health_action": "station-check",
       "status_action": "station-status",
       "attestation_producer": "station-deployment"
+    },
+    "relay": {
+      "kind": "relay",
+      "required": false,
+      "attestation_producer": "station-relay-role-attachment"
+    },
+    "station-via-relay": {
+      "kind": "station",
+      "required": false,
+      "attestation_producer": "station-relay-role-attachment"
     }
   },
   "fixtures": [

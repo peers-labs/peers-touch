@@ -46,6 +46,63 @@
       }
     },
     {
+      "id": "chat-message-publishing",
+      "domain": "chat",
+      "direction": "acceptance_validates_product",
+      "features": ["chat-message-publishing"],
+      "required_gates": [
+        "proto-build",
+        "station-api-ownership",
+        "station-messaging-unit",
+        "messaging-platform-contract",
+        "desktop-check",
+        "chat-message-publishing-native-e2e"
+      ],
+      "synthetic_paths": [
+        "model/domain/chat/publishing.proto",
+        "apps/station/app/subserver/conversation/application/publishing/service.go",
+        "apps/station/app/subserver/conversation/production_publishing.go",
+        "apps/station/app/subserver/conversation/infrastructure/persistence/publishing_store.go",
+        "apps/station/app/subserver/bot/application/registry/service.go",
+        "apps/station/app/subserver/bot/infrastructure/publishing_manager.go",
+        "packages/messaging-core/src/inbox/service_plaintext.rs",
+        "apps/desktop/src-tauri/src/messaging/service_plaintext.rs",
+        "apps/desktop/src/components/chat/message/serviceEventAggregation.ts",
+        "apps/desktop/src/store/socialChat.conversationProjection.test.ts",
+        "tooling/acceptance/gates/chat/message_publishing_contract_test.py"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Conversation publication receipts",
+          "Conversation message and event authority",
+          "per-device Device Inbox",
+          "Conversation transaction notification rows",
+          "Desktop message projection"
+        ],
+        "surfaces": [
+          "/message-publishing/grants/create",
+          "/message-publishing/grants/list",
+          "/message-publishing/grants/rotate-secret",
+          "/message-publishing/grants/revoke",
+          "/message-ingress/:publishing_id",
+          "Alice native service-message row and semantic activity card"
+        ],
+        "proven_by": ["chat-message-publishing-native-e2e"],
+        "proven_scope": [
+          "Owner grant lifecycle and one common ingress serve non-Bot programs and Bots",
+          "Conversation commits stable accepted or replayed identity, delivery, and notification effects",
+          "One exact-source macOS Native Desktop owner client renders and recovers service plaintext and semantic aggregation"
+        ],
+        "unproven_scope": [
+          "Cross-Station service plaintext and federated Message Publishing",
+          "Linux, Windows, Browser, and Mobile receiver cells",
+          "Bot replies, calls, friendship, and human-device sessions",
+          "Public multi-target grant management",
+          "Human E2EE Direct or MLS Group plaintext publishing"
+        ]
+      }
+    },
+    {
       "id": "chat-realtime-contract",
       "domain": "chat",
       "direction": "acceptance_validates_product",

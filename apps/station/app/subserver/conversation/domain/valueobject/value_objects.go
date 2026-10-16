@@ -244,6 +244,12 @@ type Endpoint struct {
 	Device DeviceID
 }
 
+// SystemStationDeviceID is the reserved device id under which the Station
+// commits internal, non-E2EE service-plaintext messages (BOT-D05). It is not a
+// human device, holds no keys, and never appears in ActiveEndpoints; the
+// aggregate system-sender port is the only path that may author with it.
+const SystemStationDeviceID DeviceID = "station-system"
+
 func NewEndpoint(actor string, device string) (Endpoint, error) {
 	ptid, err := NewPTID(actor)
 	if err != nil {
@@ -312,6 +318,11 @@ const (
 	DeliveryKindPublicEvent      DeliveryKind = "public_event"
 	DeliveryKindConversation     DeliveryKind = "conversation_state"
 	DeliveryKindMLSRetirement    DeliveryKind = "mls_retirement"
+	// DeliveryKindDirectServicePlaintext is non-E2EE, Station-resident
+	// plaintext produced only by the internal system sender port (BOT-D05).
+	// Human device commands can never construct it; v1 is direct, owner-only,
+	// and never federated. CommitmentCode follows PreparedEndpointPayloadKind=8.
+	DeliveryKindDirectServicePlaintext DeliveryKind = "direct_service_plaintext"
 )
 
 func (k DeliveryKind) CommitmentCode() (uint32, error) {
@@ -330,6 +341,8 @@ func (k DeliveryKind) CommitmentCode() (uint32, error) {
 		return 6, nil
 	case DeliveryKindMLSRetirement:
 		return 7, nil
+	case DeliveryKindDirectServicePlaintext:
+		return 8, nil
 	default:
 		return 0, conversationdomain.NewError(
 			conversationdomain.ErrorCodeInvalidArgument,

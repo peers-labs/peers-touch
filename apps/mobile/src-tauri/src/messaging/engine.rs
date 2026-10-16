@@ -31,7 +31,7 @@ use messaging_core::inbox::{
     AcknowledgedItemObserver, ClaimedItemConsumer, CommandResultLifecycle, CommandResultProcessor,
     ConsumerEpochObserver, ConversationStateProcessor, DeliveryReceiptProcessor,
     DirectMessageProcessor, DrainProgress, MessagingItemConsumer, MlsItemConsumer,
-    PublicEventProcessor, QueueDrain,
+    PublicEventProcessor, QueueDrain, ServicePlaintextProcessor, SkippedPayloadProcessor,
 };
 use messaging_core::mls::actor_device_identity::ActorDeviceIdentity;
 use messaging_core::mls::group::MlsGroupManager;
@@ -608,7 +608,9 @@ impl MobileMessagingEngine {
             PublicEventProcessor::new(store.clone(), endpoint.clone(), now_unix_ms)?,
             ConversationStateProcessor::new(store.clone(), endpoint.clone(), now_unix_ms)?,
             command_result,
-            DeliveryReceiptProcessor::new(store.clone(), endpoint, now_unix_ms)?,
+            DeliveryReceiptProcessor::new(store.clone(), endpoint.clone(), now_unix_ms)?,
+            ServicePlaintextProcessor::new(store.clone(), endpoint.clone(), now_unix_ms)?,
+            SkippedPayloadProcessor::new(store.clone(), endpoint.clone(), now_unix_ms)?,
         ));
         let consumer_id = random_consumer_id();
 

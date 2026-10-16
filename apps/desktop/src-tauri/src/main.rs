@@ -39,12 +39,12 @@ pub mod peers_touch {
 
 use interface::tauri_commands::{
     account, actor, admin, agent_events, agent_growth, agent_orchestration, agent_scheduler,
-    agent_turn, agents, applets, auth, capability_authority, channels, conversation, cron, crypto,
-    desktop_capture, evaluation, federation, frontend_log, frontend_telemetry, home, host_events,
-    i18n, ice, key_exchange, mcp, memory, messaging as messaging_commands, messaging_recovery,
-    model_config, notebook, notification, oauth2, oss, presence, profile, provider, realtime,
-    runtime_evidence, search, settings, skills, skills_market, social as social_commands, station,
-    system, tools, tts,
+    agent_turn, agents, applets, auth, bot, capability_authority, channels, conversation, cron,
+    crypto, desktop_capture, evaluation, federation, frontend_log, frontend_telemetry, home,
+    host_events, i18n, ice, key_exchange, mcp, memory, messaging as messaging_commands,
+    messaging_recovery, model_config, native_surface, notebook, notification, oauth2, oss,
+    presence, profile, provider, realtime, runtime_evidence, search, settings, skills,
+    skills_market, social as social_commands, station, system, tools, tts,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -573,6 +573,10 @@ fn main() {
         .manage(capability_worker_supervisor)
         .manage(desktop_capture::ChatScreenshotShortcutState::default())
         .manage(presence_supervisor)
+        .manage(application::window_lifecycle::TrayResidency::default())
+        .on_window_event(|window, event| {
+            application::window_lifecycle::handle_window_event(window, event);
+        })
         .setup(|app| {
             app.state::<Arc<state::AppState>>()
                 .secure_content
@@ -694,6 +698,29 @@ fn main() {
                 }
                 Err(e) => {
                     tracing::error!(error = %e, "Failed to resolve attachment cache dir at startup");
+                }
+            }
+
+            // Install the tray first and only mark the window resident once
+            // the tray is confirmed available; the
+            // window close hook otherwise keeps the default quit behavior.
+            // Disabled under WebDriver acceptance runs so multi-slot window
+            // teardown and native permission prompts never perturb automation.
+            #[cfg(not(feature = "acceptance-webdriver"))]
+            {
+                match application::tray::install(app.handle()) {
+                    Ok(()) => app
+                        .state::<application::window_lifecycle::TrayResidency>()
+                        .mark_resident(),
+                    Err(error) => tracing::warn!(
+                        error = %error,
+                        "tray unavailable; closing the main window will quit the app"
+                    ),
+                }
+                if let Err(error) =
+                    application::native_surface::init_notifications(app.handle())
+                {
+                    tracing::warn!(error = %error, "native notifications unavailable");
                 }
             }
             Ok(())
@@ -1150,6 +1177,12 @@ fn main() {
             agent_scheduler::agent_scheduler_status,
             agent_scheduler::agent_scheduler_add_job,
             notification::notification_list,
+            bot::bot_list,
+            bot::bot_create,
+            bot::bot_rotate_secret,
+            bot::bot_set_state,
+            bot::bot_set_profile,
+            bot::bot_upload_avatar,
             notification::notification_unread_counts,
             notification::notification_mark_read,
             notification::notification_mark_all_read,
@@ -1163,6 +1196,8 @@ fn main() {
             station::acceptance_station_transport_diagnostics,
             #[cfg(feature = "acceptance-webdriver")]
             station::acceptance_station_direct_route_override,
+            native_surface::native_dock_set_badge,
+            native_surface::native_notification_show,
             station::station_list,
             station::station_set_active,
             station::station_binding_complete,
@@ -1210,6 +1245,7 @@ fn main() {
             messaging_commands::messaging_submit_edit,
             messaging_commands::messaging_submit_metadata_interaction,
             messaging_commands::messaging_list_messages,
+            messaging_commands::messaging_list_service_messages,
             messaging_commands::messaging_list_thread_messages,
             messaging_commands::messaging_thread_counts,
             messaging_commands::messaging_get_member_settings,
@@ -1250,6 +1286,11 @@ fn main() {
                         &error.to_string(),
                     );
                 }
+            }
+            // Clicking the dock icon with the window resident-hidden reopens
+            // and focuses it, mirroring the tray Show action.
+            if matches!(event, tauri::RunEvent::Reopen { .. }) {
+                application::tray::restore_main_window(app);
             }
             if let tauri::RunEvent::ExitRequested { api, code, .. } = &event {
                 let _ = (api, code);

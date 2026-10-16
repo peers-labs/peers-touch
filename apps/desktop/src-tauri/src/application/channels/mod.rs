@@ -19,6 +19,11 @@ struct ChannelStore {
 
 impl ChannelStore {
     fn seeded() -> Self {
+        // The default Webhook channel is seeded on first launch, so its
+        // creation time is the process-local store initialization. The UI
+        // renders createdAt unconditionally; without it the row shows an
+        // "Invalid Date" label.
+        let created_at = now_unix_ms().to_string();
         Self {
             channels: vec![ChannelRecord {
                 id: "channel-1".to_string(),
@@ -27,11 +32,20 @@ impl ChannelStore {
                     "name":"i18n:channels.default.title",
                     "type":"webhook",
                     "config":"{}",
-                    "enabled":true
+                    "enabled":true,
+                    "createdAt": created_at,
+                    "updatedAt": created_at
                 }),
             }],
         }
     }
+}
+
+fn now_unix_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| i64::try_from(duration.as_millis()).unwrap_or(0))
+        .unwrap_or(0)
 }
 
 static CHANNEL_STORE: OnceLock<Mutex<ChannelStore>> = OnceLock::new();
@@ -97,12 +111,15 @@ pub fn channels_create(input: ChannelCreateInput) -> AppResult<StubPayload> {
         Err(e) => return store_lock_error(e),
     };
     let id = format!("channel-{}", guard.channels.len() + 1);
+    let now = now_unix_ms().to_string();
     let data = json!({
         "id": id,
         "name": input.name,
         "type": input.r#type,
         "config": input.config,
-        "enabled": input.enabled.unwrap_or(true)
+        "enabled": input.enabled.unwrap_or(true),
+        "createdAt": now,
+        "updatedAt": now
     });
     guard.channels.push(ChannelRecord {
         id: data
@@ -138,6 +155,7 @@ pub fn channels_update(input: ChannelUpdateInput) -> AppResult<StubPayload> {
             if let Some(enabled) = input.enabled {
                 obj.insert("enabled".to_string(), json!(enabled));
             }
+            obj.insert("updatedAt".to_string(), json!(now_unix_ms().to_string()));
         }
         return success_payload("channels_update", channel.data.clone());
     }

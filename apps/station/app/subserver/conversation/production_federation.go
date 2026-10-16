@@ -2147,8 +2147,8 @@ func productionFactFromWire(
 		message := payload.MessageForwarded
 		command.Payload = &chatmodel.ChatCommand_ForwardMessage{
 			ForwardMessage: &chatmodel.ForwardMessageIntent{
-				DestinationMessageId:  message.GetDestinationMessageId(),
-				ContentKind:           message.GetContentKind(),
+				DestinationMessageId:   message.GetDestinationMessageId(),
+				ContentKind:            message.GetContentKind(),
 				DestinationAttachments: message.GetDestinationAttachments(),
 			},
 		}

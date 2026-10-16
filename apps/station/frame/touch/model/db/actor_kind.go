@@ -22,6 +22,10 @@ func KindFromProto(k model.ActorKind) string {
 		return "a"
 	case model.ActorKind_ACTOR_KIND_NODE:
 		return "n"
+	// AGENT is an explicit branch; the default Person fallback must not
+	// collapse a bot into "p".
+	case model.ActorKind_ACTOR_KIND_AGENT:
+		return "b"
 	default:
 		return "p"
 	}
@@ -41,6 +45,8 @@ func ActorKindFromShorthand(s string) model.ActorKind {
 		return model.ActorKind_ACTOR_KIND_APPLICATION
 	case "n":
 		return model.ActorKind_ACTOR_KIND_NODE
+	case "b":
+		return model.ActorKind_ACTOR_KIND_AGENT
 	case "p", "":
 		return model.ActorKind_ACTOR_KIND_PERSON
 	default:

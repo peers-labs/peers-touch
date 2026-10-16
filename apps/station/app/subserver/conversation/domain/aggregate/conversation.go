@@ -35,6 +35,11 @@ type CreateInput struct {
 	EventPayload     []byte
 	CreatedAt        time.Time
 	EventSealer      domainevent.Sealer
+	// GenesisRecipients optionally narrows the exact genesis delivery set.
+	// It is reserved for system-authored Direct Conversations whose creator
+	// is the keyless station-system device and must not receive a queue item;
+	// ordinary creation leaves it nil and delivers to every active endpoint.
+	GenesisRecipients []valueobject.Endpoint
 }
 
 type Snapshot struct {
@@ -295,6 +300,19 @@ func create(
 		)
 	}
 	required := conversation.ActiveEndpoints()
+	if len(input.GenesisRecipients) > 0 {
+		for _, recipient := range input.GenesisRecipients {
+			if !conversation.isActiveEndpoint(recipient) {
+				return nil, Transition{}, conversationdomain.NewError(
+					conversationdomain.ErrorCodeDeliverySetMismatch,
+					"aggregate.create",
+					"genesis_recipients",
+					"system genesis recipient must be an active member device",
+				)
+			}
+		}
+		required = valueobject.SortEndpoints(append([]valueobject.Endpoint(nil), input.GenesisRecipients...))
+	}
 	if err := domainservice.ValidateExactDeliverySet(required, input.Deliveries); err != nil {
 		return nil, Transition{}, err
 	}
@@ -1217,6 +1235,17 @@ func (c *Conversation) validateOrdinaryCommand(command Command) error {
 		)
 	}
 	for _, delivery := range command.Deliveries {
+		// direct_service_plaintext is restricted to the internal system sender
+		// port (CommitSystemServiceMessage). A human device command presenting
+		// it through ApplyCommand is rejected before any kind matching.
+		if delivery.Kind == valueobject.DeliveryKindDirectServicePlaintext {
+			return conversationdomain.NewError(
+				conversationdomain.ErrorCodeUnauthorized,
+				"aggregate.validate_command",
+				"delivery_kind",
+				"direct_service_plaintext is restricted to the internal system sender",
+			)
+		}
 		expected := valueobject.DeliveryKindPublicEvent
 		if command.Kind == domainevent.KindMessageCommitted ||
 			command.Kind == domainevent.KindMessageForwarded ||

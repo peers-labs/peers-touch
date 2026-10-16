@@ -96,6 +96,54 @@ func (*ConversationCommandReceiptModel) TableName() string {
 	return "conversation_command_receipts"
 }
 
+type MessagePublishingGrantModel struct {
+	PublishingID       string     `gorm:"column:publishing_id;size:128;primaryKey"`
+	OwnerPTID          string     `gorm:"column:owner_ptid;size:255;not null;index"`
+	SenderPTID         string     `gorm:"column:sender_ptid;size:255;not null;uniqueIndex"`
+	Name               string     `gorm:"column:name;size:100;not null"`
+	SourceNamespace    string     `gorm:"column:source_namespace;size:255;not null"`
+	DefaultTarget      string     `gorm:"column:default_target;size:128;not null"`
+	AllowedTargets     []byte     `gorm:"column:allowed_targets;type:bytea;not null"`
+	SecretHash         string     `gorm:"column:secret_hash;size:64;not null"`
+	SecretHint         string     `gorm:"column:secret_hint;size:32;not null"`
+	Disabled           bool       `gorm:"column:disabled;not null;default:false"`
+	Revoked            bool       `gorm:"column:revoked;not null;default:false;index"`
+	CreatedAt          time.Time  `gorm:"column:created_at;not null"`
+	ExpiresAt          *time.Time `gorm:"column:expires_at;index"`
+	RateLimitPerMinute uint32     `gorm:"column:rate_limit_per_minute;not null"`
+}
+
+func (*MessagePublishingGrantModel) TableName() string {
+	return "message_publishing_grants"
+}
+
+type MessagePublicationReceiptModel struct {
+	PublishingID   string    `gorm:"column:publishing_id;size:128;primaryKey"`
+	CommandID      string    `gorm:"column:command_id;size:128;primaryKey"`
+	RequestHash    []byte    `gorm:"column:request_sha256;type:bytea;not null"`
+	SenderPTID     string    `gorm:"column:sender_ptid;size:255;not null"`
+	RecipientPTID  string    `gorm:"column:recipient_ptid;size:255;not null"`
+	ConversationID string    `gorm:"column:conversation_id;size:128;not null;index"`
+	MessageID      string    `gorm:"column:message_id;size:128;not null;uniqueIndex"`
+	EventID        string    `gorm:"column:event_id;size:128;not null;uniqueIndex"`
+	EventSequence  uint64    `gorm:"column:event_sequence;not null"`
+	CreatedAt      time.Time `gorm:"column:created_at;not null"`
+}
+
+func (*MessagePublicationReceiptModel) TableName() string {
+	return "message_publication_receipts"
+}
+
+type MessagePublishingRateModel struct {
+	PublishingID string    `gorm:"column:publishing_id;size:128;primaryKey"`
+	WindowStart  time.Time `gorm:"column:window_start;not null"`
+	Count        uint32    `gorm:"column:request_count;not null"`
+}
+
+func (*MessagePublishingRateModel) TableName() string {
+	return "message_publishing_rates"
+}
+
 type ConversationAuthorityPlanModel struct {
 	PlanID            string     `gorm:"column:plan_id;size:128;primaryKey"`
 	ConversationID    string     `gorm:"column:conversation_id;size:128;not null;index"`

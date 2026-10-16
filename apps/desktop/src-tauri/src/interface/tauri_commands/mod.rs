@@ -9,6 +9,7 @@ pub mod agent_turn;
 pub mod agents;
 pub mod applets;
 pub mod auth;
+pub mod bot;
 pub mod capability_authority;
 pub mod channels;
 pub mod conversation;
@@ -30,6 +31,7 @@ pub mod messaging;
 pub mod messaging_recovery;
 pub mod model_config;
 
+pub mod native_surface;
 pub mod notebook;
 pub mod notification;
 pub mod oauth2;

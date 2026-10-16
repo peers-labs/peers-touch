@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -35,17 +36,25 @@ var requiredCapabilities = []string{
 }
 
 type loginOutput struct {
-	Token string `json:"token"`
-	PTID  string `json:"ptid"`
+	Token                    string `json:"token"`
+	PTID                     string `json:"ptid"`
+	StationPeerID            string `json:"stationPeerId,omitempty"`
+	ActorIdentityAuthority   string `json:"actorIdentityAuthority,omitempty"`
+	ActorIdentityFingerprint string `json:"actorIdentityFingerprint,omitempty"`
 }
 
 func main() {
 	station := flag.String("station", os.Getenv("PT_ACCESS_CLIENT_STATION"), "Station base URL")
 	email := flag.String("email", os.Getenv("PT_ACCESS_CLIENT_EMAIL"), "Actor email")
 	password := flag.String("password", os.Getenv("PT_ACCESS_CLIENT_PASSWORD"), "Actor password")
+	includeDeviceAuthority := flag.Bool(
+		"include-device-authority",
+		false,
+		"Resolve the active actor identity fingerprint from Station authority",
+	)
 	flag.Parse()
 
-	result, err := login(*station, *email, *password)
+	result, err := login(*station, *email, *password, *includeDeviceAuthority)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -56,7 +65,10 @@ func main() {
 	}
 }
 
-func login(station, email, password string) (*loginOutput, error) {
+func login(
+	station, email, password string,
+	includeDeviceAuthority bool,
+) (*loginOutput, error) {
 	origin, err := normalizeOrigin(station)
 	if err != nil {
 		return nil, err
@@ -127,10 +139,64 @@ func login(station, email, password string) (*loginOutput, error) {
 	if session == nil || session.GetTokens().GetAccessToken() == "" || session.GetActorRef().GetPtid() == "" {
 		return nil, errors.New("access submit returned an incomplete session")
 	}
-	return &loginOutput{
+	result := &loginOutput{
 		Token: session.GetTokens().GetAccessToken(),
 		PTID:  session.GetActorRef().GetPtid(),
-	}, nil
+	}
+	if includeDeviceAuthority {
+		devices := &authpb.ListActorDevicesResponse{}
+		if err := getDirectProtoAuth(
+			origin+"/device/list",
+			result.Token,
+			devices,
+		); err != nil {
+			return nil, fmt.Errorf("list actor devices: %w", err)
+		}
+		authority, fingerprint, err := actorIdentityAuthority(
+			devices,
+			result.PTID,
+		)
+		if err != nil {
+			return nil, err
+		}
+		result.StationPeerID = stationPeerID
+		result.ActorIdentityAuthority = authority
+		result.ActorIdentityFingerprint = fingerprint
+	}
+	return result, nil
+}
+
+func actorIdentityAuthority(
+	response *authpb.ListActorDevicesResponse,
+	actorPTID string,
+) (string, string, error) {
+	fingerprints := map[string]struct{}{}
+	for _, device := range response.GetDevices() {
+		if device.GetRef().GetActor().GetPtid() != actorPTID {
+			return "", "", errors.New(
+				"Station returned a device lifecycle for another actor",
+			)
+		}
+		fingerprint := device.GetActorIdentityKeyFingerprint()
+		if len(fingerprint) != 32 {
+			return "", "", errors.New(
+				"Station returned an invalid actor identity fingerprint",
+			)
+		}
+		fingerprints[hex.EncodeToString(fingerprint)] = struct{}{}
+	}
+	if len(fingerprints) == 0 {
+		return "absent", "", nil
+	}
+	if len(fingerprints) != 1 {
+		return "", "", errors.New(
+			"Station returned ambiguous actor identity fingerprints",
+		)
+	}
+	for fingerprint := range fingerprints {
+		return "established", fingerprint, nil
+	}
+	panic("unreachable")
 }
 
 func verifyStationIdentity(origin string) (string, error) {
@@ -203,6 +269,17 @@ func postPeersProto(endpoint string, request proto.Message, response proto.Messa
 	return nil
 }
 
+func getDirectProtoAuth(
+	endpoint, token string,
+	response proto.Message,
+) error {
+	raw, err := executeRequest(http.MethodGet, endpoint, nil, token)
+	if err != nil {
+		return err
+	}
+	return proto.Unmarshal(raw, response)
+}
+
 func requestBytes(message proto.Message) ([]byte, error) {
 	body, err := proto.MarshalOptions{Deterministic: true}.Marshal(message)
 	if err != nil {
@@ -212,12 +289,23 @@ func requestBytes(message proto.Message) ([]byte, error) {
 }
 
 func executePost(endpoint string, body []byte) ([]byte, error) {
-	request, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
+	return executeRequest(http.MethodPost, endpoint, body, "")
+}
+
+func executeRequest(
+	method, endpoint string,
+	body []byte,
+	token string,
+) ([]byte, error) {
+	request, err := http.NewRequest(method, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 	request.Header.Set("Content-Type", protobufContentType)
 	request.Header.Set("Accept", protobufContentType)
+	if token != "" {
+		request.Header.Set("Authorization", "Bearer "+token)
+	}
 	client := &http.Client{Timeout: 20 * time.Second}
 	response, err := client.Do(request)
 	if err != nil {

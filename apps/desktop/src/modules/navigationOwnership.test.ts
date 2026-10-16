@@ -39,7 +39,7 @@ describe('Desktop navigation ownership', () => {
     const source = desktopSource('pages/SettingsPage.tsx');
 
     expect(source).toContain("sectionKeys: ['cron', 'command-menu', 'tools']");
-    expect(source).toContain("sectionKeys: ['channels', 'connections']");
+    expect(source).toContain("sectionKeys: ['channels', 'connections', 'bots']");
     expect(source).toContain("sectionKeys: ['storage', 'oss', 'logs']");
   });
 

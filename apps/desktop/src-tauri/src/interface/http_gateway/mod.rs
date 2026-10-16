@@ -6052,9 +6052,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     match app_auth::takeover_station_session_token(state.station.client(), &t) {
                         Ok(token) => token,
                         Err(err) => {
-                            let _ = crate::infrastructure::auth_identity::clear_account_session(
-                                &input.account_id,
-                            );
+                            if app_auth::station_verification_rejects_session(&err) {
+                                let _ = crate::infrastructure::auth_identity::clear_account_session(
+                                    &input.account_id,
+                                );
+                            }
                             return to_json(app_auth::session_takeover_failed::<
                                 crate::contracts::AuthSessionPayload,
                             >(
@@ -6099,7 +6101,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     state,
                     &input.account_id,
                     &session.actor_ptid,
-                    &token,
+                    &session.token,
                 ) {
                     return to_json(AppResult::<AuthSessionPayload>::fail(
                         ErrorCode::InternalError,
@@ -7397,6 +7399,34 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             to_json(
                 crate::interface::tauri_commands::messaging::messaging_list_messages_result(
+                    &engine, &input,
+                ),
+            )
+        }
+        "messaging_list_service_messages" => {
+            let input = match parse_args::<
+                crate::interface::tauri_commands::messaging::MessagingListServiceMessagesInput,
+            >(args)
+            {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let (account_id, _, _) = match gateway_access_context(state) {
+                Ok(context) => context,
+                Err(error) => return error,
+            };
+            let engine = match state.messaging_engines.get(&account_id) {
+                Ok(Some(e)) => e,
+                _ => {
+                    return to_json(AppResult::<Value>::fail(
+                        ErrorCode::InternalError,
+                        "messaging engine not active",
+                        None,
+                    ))
+                }
+            };
+            to_json(
+                crate::interface::tauri_commands::messaging::messaging_list_service_messages_result(
                     &engine, &input,
                 ),
             )

@@ -263,6 +263,9 @@ export interface MessagingServiceContract {
     conversationId: string,
     options?: { beforeSequence?: number; limit?: number },
   ): Promise<MessagingMessagePage>
+  listServiceMessages(
+    conversationId: string,
+  ): Promise<import('../store/socialProjection').DesktopServiceMessage[]>
   retryMessage(
     conversationId: string,
     messageId: string,

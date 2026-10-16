@@ -13,6 +13,7 @@ from .chat_storage_native import ChatStorageNativeProvisioner
 from .desktop_primary_navigation_native import (
     DesktopPrimaryNavigationNativeProvisioner,
 )
+from .desktop_shell_native import DesktopShellNativeProvisioner
 from .home_station import HomeStationProvisioner
 from .mobile_native import (
     MobileAndroidPhysicalProvisioner,
@@ -75,6 +76,9 @@ _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
     ),
     DesktopPrimaryNavigationNativeProvisioner.environment_id: (
         DesktopPrimaryNavigationNativeProvisioner
+    ),
+    DesktopShellNativeProvisioner.environment_id: (
+        DesktopShellNativeProvisioner
     ),
     HomeStationProvisioner.environment_id: HomeStationProvisioner,
     MobileNativeProvisioner.environment_id: MobileNativeProvisioner,
@@ -155,6 +159,15 @@ def get_provisioner(
         raise ProvisioningError(
             f"no provisioner registered for environment: {contract.id}"
         )
+    if provisioner_class is HomeStationProvisioner:
+        if station_profiles:
+            raise ProvisioningError(
+                f"environment {contract.id!r} does not accept station profile bindings"
+            )
+        return provisioner_class(
+            contract,
+            service_profiles=service_profiles,
+        )
     if provisioner_class is CrossStationSocialNativeProvisioner:
         if (
             station_profiles
@@ -227,6 +240,7 @@ __all__ = [
     "ChatStorageNativeProvisioner",
     "CrossStationSocialNativeProvisioner",
     "DesktopPrimaryNavigationNativeProvisioner",
+    "DesktopShellNativeProvisioner",
     "HomeStationProvisioner",
     "MobileDirectSimulatorProvisioner",
     "MobileIOSLayoutSimulatorProvisioner",

@@ -947,6 +947,9 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             focus_start,
         )
         focus_source = self.source[focus_start:focus_end]
+        semantic_return_index = focus_source.index(
+            "if self.input_mode is NativeInputMode.SEMANTIC_NON_INTRUSIVE:"
+        )
         recovery_index = focus_source.index(
             "if self.native_adapter.mouse_button_down():"
         )
@@ -1013,6 +1016,13 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertIn('"acceptance_request_activation"', yield_source)
         self.assertIn("if source is not None:", yield_source)
         self.assertNotIn("if source is None:\n            return False", yield_source)
+        exclusive_guard = yield_source.index(
+            "self.native_adapter.require_exclusive_input("
+        )
+        self.assertLess(
+            exclusive_guard,
+            yield_source.index("if source is not None:"),
+        )
         self.assertLess(
             yield_source.index("if source is not None:"),
             yield_source.index('"acceptance_request_activation"'),
@@ -1028,6 +1038,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             yield_source,
         )
         self.assertNotIn("acceptance_yield_activation", self.source)
+        self.assertLess(semantic_return_index, recovery_index)
         self.assertLess(
             self.macos_adapter.index("application.activateWithOptions_(options)"),
             self.macos_adapter.index('tell application "System Events"'),
@@ -1150,6 +1161,17 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "client.semantic_replace_text(composer, text)",
             composer_source,
         )
+        self.assertIn(
+            "self.native_adapter.post_key(\n"
+            "                NativeKey.A,\n"
+            "                modifiers=(NativeModifier.PRIMARY,),",
+            composer_source,
+        )
+        self.assertIn(
+            "NativeKey.DELETE,\n"
+            "                private_source=True,",
+            composer_source,
+        )
         self.assertIn("self.native_adapter.post_key(", composer_source)
         self.assertIn("NativeKey.A,", composer_source)
         self.assertIn(
@@ -1197,11 +1219,11 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             action_source,
         )
         self.assertIn(
-            "if self.input_mode is NativeInputMode.SEMANTIC_NON_INTRUSIVE",
-            action_source,
-        )
-        self.assertIn(
-            "else self.native_content_origin(client)",
+            "native_origin = (\n"
+            "            None\n"
+            "            if self.input_mode is "
+            "NativeInputMode.SEMANTIC_NON_INTRUSIVE\n"
+            "            else self.native_content_origin(client)",
             action_source,
         )
         self.assertIn(
@@ -2481,27 +2503,39 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "return document.activeElement === row && Boolean(toolbar);",
             row_focus,
         )
-        semantic_sequence_post = keyboard_path.index(
+        semantic_post = keyboard_path.index(
             "client.semantic_key_sequence(",
             row_focus_wait,
         )
-        native_sequence_post = keyboard_path.index(
-            "self.native_adapter.post_key_sequence_to_process(",
-            semantic_sequence_post,
+        semantic_keys = keyboard_path.index(
+            "Keys.ENTER,\n"
+            "                Keys.TAB,\n"
+            "                Keys.ENTER,",
+            semantic_post,
+        )
+        sequence_post = keyboard_path.index(
+            "self.native_adapter.post_key_sequence_to_process(\n"
+            "                process_id,\n"
+            "                (",
+            semantic_keys,
+        )
+        sequence_keys = keyboard_path.index(
+            "NativeKey.ENTER,\n"
+            "                    NativeKey.TAB,\n"
+            "                    NativeKey.ENTER,",
+            sequence_post,
         )
         picker_wait = keyboard_path.index(
             "WebDriverWait(client.driver, 15).until(",
-            native_sequence_post,
+            sequence_keys,
         )
         self.assertNotIn("self.click_element(actor, row)", keyboard_path)
         self.assertLess(row_focus, row_focus_wait)
-        self.assertLess(row_focus_wait, semantic_sequence_post)
-        self.assertLess(semantic_sequence_post, native_sequence_post)
-        self.assertLess(native_sequence_post, picker_wait)
-        self.assertIn("Keys.ENTER", keyboard_path)
-        self.assertIn("Keys.TAB", keyboard_path)
-        self.assertIn("NativeKey.ENTER", keyboard_path)
-        self.assertIn("NativeKey.TAB", keyboard_path)
+        self.assertLess(row_focus_wait, semantic_post)
+        self.assertLess(semantic_post, semantic_keys)
+        self.assertLess(semantic_keys, sequence_post)
+        self.assertLess(sequence_post, sequence_keys)
+        self.assertLess(sequence_keys, picker_wait)
         self.assertIn(
             "interval_seconds=NATIVE_KEY_SEQUENCE_INTERVAL_SECONDS",
             keyboard_path,
@@ -2528,9 +2562,17 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         reaction_source = self.source[reaction_start:reaction_end]
 
+        normalized_selection = " ".join(selection_source.split())
         self.assertIn(
-            "if self.input_mode is NativeInputMode.SEMANTIC_NON_INTRUSIVE:",
-            selection_source,
+            "client.semantic_key_sequence( row, Keys.ENTER, Keys.TAB, "
+            "Keys.ENTER, Keys.ENTER, )",
+            normalized_selection,
+        )
+        self.assertIn(
+            "self.native_adapter.post_key_sequence_to_process( process_id, "
+            "( NativeKey.ENTER, NativeKey.TAB, NativeKey.ENTER, "
+            "NativeKey.ENTER, )",
+            normalized_selection,
         )
         self.assertEqual(selection_source.count("Keys.ENTER"), 3)
         self.assertEqual(selection_source.count("Keys.TAB"), 1)

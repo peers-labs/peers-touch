@@ -21,6 +21,7 @@ development governance do not belong here.
 | Domain | Architecture | Primary code owners |
 |---|---|---|
 | Agent | [agent/](./agent/README.md) | `apps/station/app/subserver/agent`, Agent client runtimes |
+| Bot | [bot/](./bot/README.md) | Bot product metadata, owner lifecycle, client management surfaces |
 | Chat | [chat/](./chat/README.md) | Conversation, events, messaging core, Chat clients |
 | Social | [social/](./social/README.md) | Social authority and Social client projections |
 | Identity | [identity/](./identity/README.md) | Actor identity, presence, OAuth identity |

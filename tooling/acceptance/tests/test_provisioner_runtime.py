@@ -14,6 +14,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from tooling.acceptance.core import (
+    ActorIdentity,
     BlockedError,
     ClientRuntime,
     ClientServiceBinding,
@@ -23,6 +24,7 @@ from tooling.acceptance.core import (
     EnvironmentProvisioner,
     ProvisioningError,
     ProvisioningState,
+    RetainedRuntimeFixture,
     ServiceAttestation,
 )
 from tooling.acceptance.core._paths import ENVIRONMENTS_DIR
@@ -36,11 +38,19 @@ from tooling.acceptance.provisioners import (
     get_provisioner,
 )
 from tooling.acceptance.provisioners.home_station import (
+    GATE_ROLES,
+    HOME_SINGLE_NATIVE_GATES,
+    MESSAGE_PUBLISHING_GATE,
+    attach_source_bound_relay_services,
     agent_native_requires_disposable_fixture,
     agent_native_requires_provider,
     agent_profile_for_gate,
     audit_remote_station_cli_processes,
     resolve_existing_actor,
+)
+from tooling.acceptance.provisioners.preset_actor import (
+    ResolvedPresetActorIdentity,
+    resolve_existing_preset_actor,
 )
 
 
@@ -1028,6 +1038,384 @@ class ProvisionerBlockingTests(unittest.TestCase):
         self.assertEqual(client.webdriver_port, 14449)
         self.assertIn("pt-agent-stream-run-stream-resilience", client.storage_root)
 
+    def test_message_publishing_uses_one_alice_profile_without_reset(self):
+        provisioner = HomeStationProvisioner(
+            EnvironmentContract(id="home-station")
+        )
+        profile_env = {
+            "PT_DESKTOP_APP_GATEWAY_PORT": "13331",
+            "PT_DESKTOP_APP_WEB_PORT": "13511",
+        }
+        with patch.dict(
+            "os.environ",
+            {"PT_MESSAGE_PUBLISHING_WEBDRIVER_PORT": "14449"},
+            clear=True,
+        ), patch.object(provisioner, "_assert_client_ports_available"):
+            client = provisioner._message_publishing_client(
+                "run-message-publishing",
+                1,
+                profile_env,
+            )
+
+        self.assertEqual(GATE_ROLES[MESSAGE_PUBLISHING_GATE], ("alice",))
+        self.assertIn(MESSAGE_PUBLISHING_GATE, HOME_SINGLE_NATIVE_GATES)
+        self.assertFalse(
+            agent_native_requires_disposable_fixture(MESSAGE_PUBLISHING_GATE)
+        )
+        self.assertFalse(agent_native_requires_provider(MESSAGE_PUBLISHING_GATE))
+        self.assertEqual(agent_profile_for_gate(MESSAGE_PUBLISHING_GATE), "one")
+        self.assertEqual(client.actor, "alice")
+        self.assertEqual(client.id, "alice")
+        self.assertEqual(client.profile, "one")
+        self.assertEqual(client.required_service_roles, ("station",))
+        self.assertEqual(
+            client.service_bindings["station"],
+            ClientServiceBinding(
+                service_id="station-via-relay",
+                required_kind="station",
+            ),
+        )
+        self.assertEqual(client.gateway_port, 13331)
+        self.assertEqual(client.renderer_port, 13511)
+        self.assertEqual(client.webdriver_port, 14449)
+        self.assertIn(
+            "pt-agent-message-publishing-run-message-publishing",
+            client.storage_root,
+        )
+        source = (
+            Path(__file__).resolve().parents[3]
+            / "tooling"
+            / "acceptance"
+            / "provisioners"
+            / "home_station.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "require_runtime_identity=gate_id == MESSAGE_PUBLISHING_GATE",
+            source,
+        )
+
+    def test_home_station_factory_accepts_relay_profile_binding(self):
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "home-station.yaml"
+        )
+
+        provisioner = get_provisioner(
+            contract,
+            service_profiles={"relay": "one"},
+        )
+
+        self.assertIsInstance(provisioner, HomeStationProvisioner)
+        self.assertEqual(provisioner._service_profiles, {"relay": "one"})
+        with self.assertRaisesRegex(BlockedError, "does not match active profile"):
+            provisioner._services_for_gate(
+                gate_id=MESSAGE_PUBLISHING_GATE,
+                manifest=MagicMock(run_id="run", source_commit="commit"),
+                profile_name="two",
+                profile_env={},
+                station_attestation=self._station_attestation(),
+            )
+
+    def test_message_publishing_attaches_optional_source_bound_relay_services(
+        self,
+    ):
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "home-station.yaml"
+        )
+        provisioner = HomeStationProvisioner(contract)
+        with patch.object(
+            provisioner,
+            "_git_commit",
+            return_value="abc1234",
+        ), patch.object(
+            provisioner,
+            "_git_workspace_digest",
+            return_value="clean",
+        ):
+            manifest = provisioner._new_base_manifest(
+                MESSAGE_PUBLISHING_GATE
+            )
+        station = dataclasses.replace(
+            self._station_attestation(),
+            runtime_identity="station-peer-one",
+        )
+        relay = dataclasses.replace(
+            station,
+            service_id="relay",
+            service_kind="relay",
+            endpoint="https://relay.example:18081",
+            runtime_identity="relay-peer-one",
+        )
+        station_via_relay = dataclasses.replace(
+            station,
+            service_id="station-via-relay",
+            endpoint="https://relay.example:18081",
+        )
+        expected = {
+            "station": station,
+            "relay": relay,
+            "station-via-relay": station_via_relay,
+        }
+        self.assertFalse(contract.services["relay"].required)
+        self.assertFalse(contract.services["station-via-relay"].required)
+        with patch.object(
+            provisioner,
+            "acquire_profile_lease",
+        ) as profile_lease, patch.object(
+            provisioner,
+            "acquire_remote_git_source_lease",
+        ) as source_lease, patch(
+            "tooling.acceptance.provisioners.home_station."
+            "attach_source_bound_relay_services",
+            return_value=expected,
+        ) as attach:
+            profile_env = {
+                "PT_STATION_MODE": "remote",
+                "PT_RELAY_MODE": "remote",
+                "PT_RELAY_DEPLOY_ENV": "relay-1",
+            }
+            services = provisioner._services_for_gate(
+                gate_id=MESSAGE_PUBLISHING_GATE,
+                manifest=manifest,
+                profile_name="one",
+                profile_env=profile_env,
+                station_attestation=station,
+            )
+
+        self.assertEqual(services, expected)
+        profile_lease.assert_called_once_with(
+            "relay-1",
+            f"acceptance:{MESSAGE_PUBLISHING_GATE}:{manifest.run_id}:relay",
+        )
+        source_lease.assert_called_once_with(
+            "relay-1",
+            f"acceptance:{MESSAGE_PUBLISHING_GATE}:{manifest.run_id}:relay",
+        )
+        attach.assert_called_once_with(
+            environment_id="home-station",
+            source_commit="abc1234",
+            profile_name="one",
+            profile_env=profile_env,
+            station_attestation=station,
+        )
+
+    def test_message_publishing_reuses_relay_attestation_primitives(self):
+        station = dataclasses.replace(
+            self._station_attestation(),
+            runtime_identity="station-peer-one",
+        )
+        relay = dataclasses.replace(
+            station,
+            service_id="relay",
+            service_kind="relay",
+            endpoint="https://relay.example:18081",
+            runtime_identity="relay-peer-one",
+        )
+        station_via_relay = dataclasses.replace(
+            station,
+            service_id="station-via-relay",
+            endpoint="https://relay.example:18081",
+        )
+        station_config = MagicMock(environment_name="one-station")
+        relay_config = MagicMock(environment_name="one-relay")
+        station_runtime = {
+            "runtimeOwner": "docker-compose:station",
+            "dataOwner": "station-data",
+        }
+        relay_runtime = {
+            "runtimeOwner": "docker-compose:relay",
+            "dataOwner": "relay-data",
+            "publicPort": 18081,
+        }
+        profile_env = {
+            "PT_RELAY_MODE": "remote",
+            "PT_STATION_DEPLOY_ENV": "one-station",
+            "PT_RELAY_DEPLOY_ENV": "one-relay",
+            "PT_RELAY_URL": "https://relay.example:18081",
+            "PT_RELAY_HEALTH_URL": "https://relay.example:18081/healthz",
+        }
+        with patch(
+            "tooling.acceptance.provisioners.home_station."
+            "PosixServiceRuntimeConfig.load",
+            side_effect=(station_config, relay_config),
+        ), patch(
+            "tooling.acceptance.provisioners.home_station."
+            "resolve_remote_source_identity",
+            return_value=("abc1234", "clean", "proto-digest"),
+        ), patch(
+            "tooling.acceptance.provisioners.home_station."
+            "_service_source_compatibility",
+            return_value={"mode": "exact-commit"},
+        ), patch(
+            "tooling.acceptance.provisioners.home_station."
+            "source_proto_digest",
+            return_value="proto-digest",
+        ), patch(
+            "tooling.acceptance.provisioners.home_station."
+            "inspect_posix_runtime",
+            side_effect=({"role": "station"}, {"role": "relay"}),
+        ), patch(
+            "tooling.acceptance.provisioners.home_station."
+            "_validate_runtime_status",
+            side_effect=(station_runtime, relay_runtime),
+        ), patch(
+            "tooling.acceptance.provisioners.home_station."
+            "audit_posix_relay_security",
+            return_value={"rootAclProtected": True},
+        ), patch(
+            "tooling.acceptance.provisioners.home_station."
+            "resolve_posix_relay_trust_anchor",
+            return_value=(b"certificate", "trust-digest"),
+        ), patch(
+            "tooling.acceptance.provisioners.home_station."
+            "_relay_peer_identity",
+            return_value="relay-peer-one",
+        ), patch(
+            "tooling.acceptance.provisioners.home_station."
+            "_persist_relay_attestation",
+            return_value=relay,
+        ), patch(
+            "tooling.acceptance.provisioners.home_station."
+            "_persist_station_route_attestation",
+            return_value=station_via_relay,
+        ):
+            services = attach_source_bound_relay_services(
+                environment_id="home-station",
+                source_commit="abc1234",
+                profile_name="one",
+                profile_env=profile_env,
+                station_attestation=station,
+            )
+
+        self.assertIs(services["station"], station)
+        self.assertIs(services["relay"], relay)
+        self.assertIs(services["station-via-relay"], station_via_relay)
+        self.assertEqual(
+            services["station-via-relay"].runtime_identity,
+            services["station"].runtime_identity,
+        )
+
+    def test_message_publishing_records_and_retains_actor_identity_fixture(
+        self,
+    ):
+        provisioner = HomeStationProvisioner(
+            EnvironmentContract(id="home-station")
+        )
+        with patch.object(
+            provisioner,
+            "_git_commit",
+            return_value="abc1234",
+        ), patch.object(
+            provisioner,
+            "_git_workspace_digest",
+            return_value="clean",
+        ):
+            manifest = provisioner._new_base_manifest(
+                MESSAGE_PUBLISHING_GATE
+            )
+        attestation = dataclasses.replace(
+            self._station_attestation(),
+            runtime_identity="station-peer-one",
+        )
+        station_via_relay = dataclasses.replace(
+            attestation,
+            service_id="station-via-relay",
+            endpoint="https://relay.example:18081",
+        )
+        manifest = dataclasses.replace(
+            manifest,
+            profile_slot=1,
+            services={
+                "station": attestation,
+                "station-via-relay": station_via_relay,
+            },
+        )
+        actor = ActorIdentity(
+            role="alice",
+            account_ref="station-account:alice@p.t",
+            ptid="ptid:alice",
+            device_policy="ephemeral-acceptance",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            identity_root = Path(directory) / "actor-identity"
+            identity_root.mkdir()
+            fixture = RetainedRuntimeFixture(
+                fixture_id="preset-actor-identity-alice",
+                kind="actor-identity",
+                root=str(identity_root),
+                lifecycle="machine-retained",
+                scope_digest="f" * 64,
+            )
+            resolution = ResolvedPresetActorIdentity(
+                actor=actor,
+                station_peer_id="station-peer-one",
+                actor_identity_fingerprint="a" * 64,
+                fixture=fixture,
+            )
+            actor_ref = {
+                "artifactKind": "acceptance-artifact-ref",
+                "path": "runtime/actors.json",
+                "sha256": "0" * 64,
+                "mediaType": "application/json",
+            }
+            with patch(
+                "tooling.acceptance.provisioners.home_station."
+                "resolve_existing_actor_identity",
+                return_value=resolution,
+            ) as resolve, patch(
+                "tooling.acceptance.provisioners.home_station."
+                "persist_actor_manifest",
+                return_value=(None, None, actor_ref),
+            ), patch.dict(
+                "os.environ",
+                {"PT_MESSAGE_PUBLISHING_WEBDRIVER_PORT": "14449"},
+                clear=True,
+            ), patch.object(
+                provisioner,
+                "_assert_client_ports_available",
+            ):
+                prepared = provisioner._agent_native_manifest(
+                    manifest,
+                    gate_id=MESSAGE_PUBLISHING_GATE,
+                    station_url="http://station.example:18080",
+                    deployment_environment="station-one",
+                    profile_env={
+                        "CHAT_NATIVE_DEMO_PASSWORD": "fixture-password",
+                        "PT_DESKTOP_APP_GATEWAY_PORT": "13331",
+                        "PT_DESKTOP_APP_WEB_PORT": "13511",
+                    },
+                )
+
+            runtime_identity_root = Path(
+                prepared.clients[0].actor_identity_root
+            )
+            runtime_root = runtime_identity_root.parent
+            self.assertNotEqual(runtime_identity_root, identity_root)
+            self.assertTrue(runtime_identity_root.is_dir())
+            self.assertEqual(
+                Path(prepared.clients[0].storage_root).parent,
+                runtime_root,
+            )
+            (runtime_identity_root / "runtime-created").write_text(
+                "ephemeral",
+                encoding="utf-8",
+            )
+            self.assertFalse((identity_root / "runtime-created").exists())
+            self.assertEqual(prepared.retained_fixtures, (fixture,))
+            self.assertEqual(
+                prepared.to_dict()["retainedFixtures"],
+                [fixture.to_dict()],
+            )
+            resolve.assert_called_once_with(
+                "http://station.example:18080",
+                "station-peer-one",
+                "alice",
+                "fixture-password",
+            )
+            cleanup = provisioner.cleanup()
+            self.assertTrue(identity_root.is_dir())
+            self.assertFalse(runtime_root.exists())
+            self.assertEqual(len(cleanup), 1)
+
     def test_agent_core_lifecycle_uses_reviewed_two_profile(self):
         provisioner = HomeStationProvisioner(
             EnvironmentContract(id="home-station")
@@ -1252,31 +1640,69 @@ class ProvisionerBlockingTests(unittest.TestCase):
         audit.assert_called_once_with("station-two")
 
     def test_existing_actor_resolution_logs_out_without_reset(self):
-        login = MagicMock()
-        login.__enter__.return_value.read.return_value = json.dumps(
-            {
-                "data": {
-                    "actor_ref": {"ptid": "ptid:alice"},
-                    "tokens": {"access_token": "access-token"},
-                }
-            }
-        ).encode("utf-8")
         logout = MagicMock()
-
         with patch(
-            "tooling.acceptance.provisioners.home_station.urllib.request.urlopen",
-            side_effect=[login, logout],
+            "tooling.acceptance.provisioners.preset_actor.shutil.which",
+            return_value="/usr/bin/go",
+        ), patch(
+            "tooling.acceptance.provisioners.preset_actor.subprocess.run",
+            return_value=MagicMock(
+                returncode=0,
+                stdout=json.dumps(
+                    {"token": "access-token", "ptid": "ptid:alice"}
+                ),
+                stderr="",
+            ),
+        ) as run, patch(
+            "tooling.acceptance.provisioners.preset_actor."
+            "urllib.request.urlopen",
+            return_value=logout,
         ) as urlopen:
+            actor = resolve_existing_preset_actor(
+                station_url="http://station.example:18080",
+                role="alice",
+                account="alice@p.t",
+                password="fixture-password",
+                device_policy="ephemeral-acceptance",
+            )
+
+        self.assertEqual(actor.ptid, "ptid:alice")
+        self.assertEqual(actor.device_policy, "ephemeral-acceptance")
+        environment = run.call_args.kwargs["env"]
+        self.assertEqual(environment["PT_ACCESS_CLIENT_EMAIL"], "alice@p.t")
+        self.assertEqual(
+            environment["PT_ACCESS_CLIENT_PASSWORD"],
+            "fixture-password",
+        )
+        self.assertEqual(urlopen.call_count, 1)
+        logout.close.assert_called_once_with()
+
+    def test_home_station_existing_actor_uses_canonical_access_client(self):
+        expected = ActorIdentity(
+            role="alice",
+            account_ref="station-account:alice@p.t",
+            ptid="ptid:alice",
+            device_policy="ephemeral-acceptance",
+        )
+        with patch(
+            "tooling.acceptance.provisioners.home_station."
+            "resolve_existing_preset_actor",
+            return_value=expected,
+        ) as resolve:
             actor = resolve_existing_actor(
                 "http://station.example:18080",
                 "alice",
                 "fixture-password",
             )
 
-        self.assertEqual(actor.ptid, "ptid:alice")
-        self.assertEqual(actor.device_policy, "ephemeral-acceptance")
-        self.assertEqual(urlopen.call_count, 2)
-        logout.close.assert_called_once_with()
+        self.assertEqual(actor, expected)
+        resolve.assert_called_once_with(
+            station_url="http://station.example:18080",
+            role="alice",
+            account="alice@p.t",
+            password="fixture-password",
+            device_policy="ephemeral-acceptance",
+        )
 
     def test_agent_stream_credentials_must_come_from_one_profile(self):
         provisioner = HomeStationProvisioner(

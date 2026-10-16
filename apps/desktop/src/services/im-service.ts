@@ -15,6 +15,7 @@ import type {
   MessagingServiceContract,
 } from './im-service-contract'
 import type { Conversation } from '../gen/proto/domain/chat/conversation_pb'
+import type { DesktopServiceMessage } from '../store/socialProjection'
 import {
   ConversationMemberSchema,
   ConversationSchema,
@@ -317,6 +318,89 @@ interface MessagingMessageWire {
   pinned_by_ptid?: string
   pinned_at_unix_ms?: number
   read_by_ptids: string[]
+}
+
+interface ServiceMessageWire {
+  event_id: string
+  event_sequence: number
+  message_id: string
+  sender_ptid: string
+  fallback_text: string
+  source_namespace: string
+  content?: {
+    primary?: {
+      kind: 'text' | 'event' | 'card'
+      text?: string
+      event_type?: string
+      source_event_id?: string
+      subject?: { kind: string; id: string; execution_id: string }
+      occurred_at_unix_ms?: number
+      severity?: number
+      title?: string
+      body?: string
+      actions?: Array<{ label: string; url: string }>
+      task_state?: { revision: string; state: number }
+    }
+    attachments?: Array<{
+      object_id: string
+      filename: string
+      media_type: string
+      size: string
+    }>
+  }
+  source_context?: {
+    program: string
+    workspace: string
+    session_id: string
+    labels: Record<string, string>
+  }
+  timestamp_unix_ms: number
+}
+
+function normalizeServiceMessage(
+  event: ServiceMessageWire,
+): DesktopServiceMessage {
+  const primary = event.content?.primary
+  return {
+    eventId: event.event_id,
+    eventSequence: event.event_sequence,
+    messageId: event.message_id,
+    senderPtid: event.sender_ptid,
+    fallbackText: event.fallback_text,
+    sourceNamespace: event.source_namespace,
+    content: event.content ? {
+      primary: primary ? {
+        kind: primary.kind,
+        text: primary.text,
+        eventType: primary.event_type,
+        sourceEventId: primary.source_event_id,
+        subject: primary.subject ? {
+          kind: primary.subject.kind,
+          id: primary.subject.id,
+          executionId: primary.subject.execution_id,
+        } : undefined,
+        occurredAtUnixMs: primary.occurred_at_unix_ms,
+        severity: primary.severity,
+        title: primary.title,
+        body: primary.body,
+        actions: primary.actions ?? [],
+        taskState: primary.task_state,
+      } : undefined,
+      attachments: (event.content.attachments ?? []).map(attachment => ({
+        objectId: attachment.object_id,
+        filename: attachment.filename,
+        mediaType: attachment.media_type,
+        size: attachment.size,
+      })),
+    } : undefined,
+    sourceContext: event.source_context ? {
+      program: event.source_context.program,
+      workspace: event.source_context.workspace,
+      sessionId: event.source_context.session_id,
+      labels: event.source_context.labels ?? {},
+    } : undefined,
+    timestampUnixMs: event.timestamp_unix_ms,
+  }
 }
 
 function projectMessagingMessage(message: MessagingMessageWire): MessagingProjection {
@@ -758,6 +842,18 @@ const messagingService: MessagingServiceContract = {
       hasMore: response.has_more,
       nextBeforeSequence: response.next_before_sequence,
     }
+  },
+
+  async listServiceMessages(
+    conversationId,
+  ): Promise<DesktopServiceMessage[]> {
+    const response = await cmd<
+      { conversation_id: string },
+      { events: ServiceMessageWire[] }
+    >('messaging_list_service_messages', {
+      conversation_id: conversationId,
+    })
+    return (response.events ?? []).map(normalizeServiceMessage)
   },
 
   async retryMessage(conversationId, messageId) {

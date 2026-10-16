@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package peers_touch.model.chat.v1;
 
+import "domain/actor/actor.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/chat;chat";
@@ -102,6 +103,11 @@ message ConversationMember {
   string nickname = 10;
   bool muted = 11;
   google.protobuf.Timestamp muted_until = 12;
+
+  // Read projection of the member's actor kind. Conversation-level signal
+  // (alongside per-message delivery security) used to suppress the E2EE lock
+  // for AGENT members in service-plaintext bot conversations.
+  peers_touch.model.actor.v1.ActorKind actor_kind = 13;
 }
 
 enum MemberRole {

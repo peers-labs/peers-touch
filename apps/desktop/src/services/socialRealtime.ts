@@ -6,12 +6,17 @@ import {
 
 import { EVENT, eventBus } from '../kernel/events';
 import type {
+  RealtimeActorProfileChangedPayload,
   RealtimeConnectionStatePayload,
   RealtimePresenceFlipPayload,
   RealtimeSocialGraphEventPayload,
   RelationshipChangedPayload,
 } from '../kernel/events/types';
 import { installEventStreamBridge, startEventStream, stopEventStream } from './eventStream';
+import {
+  installServiceNotificationGate,
+  teardownServiceNotificationGate,
+} from './serviceNotificationGate';
 import { api, type NotificationData } from './desktop_api';
 import { NotificationType } from '../gen/proto/domain/notification/notification_pb';
 import { useNotificationStore } from '../store/notification';
@@ -182,6 +187,13 @@ export async function refreshSocialProjection(label: string, includeNotification
 
 export function dispatchSocialRuntimeHostEvent(event: SocialHostEvent): void {
   if (!currentAuthenticatedActorPtid()) return;
+
+  // A native notification tap carries the conversation ULID. Selecting it
+  // clears unread state and opens the social chat surface.
+  if (event.kind === 'notification-tap' && event.sessionUlid) {
+    useSocialChatStore.getState().selectSession(event.sessionUlid);
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'chat' });
+  }
 
   if (socialHostEventTargetsNotifications(event)) {
     runDetached('host notification refresh', async () => {
@@ -366,6 +378,12 @@ function onSocialGraphEvent(payload: RealtimeSocialGraphEventPayload): void {
   }
 }
 
+function onActorProfileChanged(payload: RealtimeActorProfileChangedPayload): void {
+  runDetached('actor profile changed refresh', () => (
+    useSocialChatStore.getState().refreshChangedActorProfile(payload.actorPtid)
+  ));
+}
+
 function onRelationshipChanged(_payload: RelationshipChangedPayload): void {
   runDetached('relationship friendship projection refresh', () => (
     refreshFriendshipProjection(true)
@@ -396,15 +414,19 @@ export function installSocialRealtimeBridge(): void {
     eventBus.subscribe(EVENT.REALTIME_PRESENCE_FLIP, onPresenceFlip),
     eventBus.subscribe(EVENT.REALTIME_CONNECTION_STATE, onRealtimeConnectionState),
     eventBus.subscribe(EVENT.REALTIME_SOCIAL_GRAPH_EVENT, onSocialGraphEvent),
+    eventBus.subscribe(EVENT.REALTIME_ACTOR_PROFILE_CHANGED, onActorProfileChanged),
     eventBus.subscribe(EVENT.RELATIONSHIP_CHANGED, onRelationshipChanged),
     eventBus.subscribe(EVENT.STATION_ACTIVE_CHANGED, restartRealtimeStreamForStationChange),
     useNotificationStore.subscribe(onNotificationProjectionChanged),
   ];
 
+  installServiceNotificationGate();
+
   reconcileAuthenticatedRuntime();
 
   teardownBridge = () => {
     unsubs.forEach((unsubscribe) => unsubscribe());
+    teardownServiceNotificationGate();
     stopSocialReconcile();
     if (externalHostReconcileTimer) {
       window.clearTimeout(externalHostReconcileTimer);

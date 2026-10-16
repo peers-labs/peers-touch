@@ -7,6 +7,7 @@ import {
 } from '@peers-touch/client-chat-core';
 
 import { useSocialChatStore } from './socialChat';
+import { api } from '../services/desktop_api';
 import { log } from '../utils/logger';
 import { conversationKey, visibleConversationUnread } from './socialProjection';
 
@@ -153,7 +154,28 @@ export const useNavigationBadgeStore = createDesktopStore<NavigationBadgeState>(
 // ── Lifecycle hooks (legacy bridge pattern, see runtime-projections.md §2) ──
 
 let reconcileTimer: ReturnType<typeof setInterval> | null = null;
+let unsubscribeStore: (() => void) | null = null;
 const RECONCILE_INTERVAL_MS = 30_000;
+
+/**
+ * Unread *conversation* count for the native dock badge (BOT-D13). The
+ * per-session map only retains conversations whose visible unread count is > 0.
+ */
+export function selectUnreadConversationCount(): number {
+  return Object.keys(useNavigationBadgeStore.getState().chatUnreadBySessions).length;
+}
+
+function isTauriRuntime(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+}
+
+function syncDockBadge(): void {
+  if (!isTauriRuntime()) return;
+  const count = selectUnreadConversationCount();
+  void api.nativeDockSetBadge(count).catch((error) => {
+    log.warn('navigationBadges', 'dock badge sync failed', error);
+  });
+}
 
 /**
  * Install the navigation badge projection. Sets up periodic reconciliation.
@@ -164,6 +186,10 @@ export function installNavigationBadgeProjection(): void {
 
   // Initial reconciliation
   useNavigationBadgeStore.getState().reconcileChatBadge();
+
+  // Mirror the unread-conversation count to the native dock/taskbar badge.
+  syncDockBadge();
+  unsubscribeStore = useNavigationBadgeStore.subscribe(syncDockBadge);
 
   // Periodic reconciliation to catch missed events
   reconcileTimer = setInterval(() => {
@@ -181,6 +207,13 @@ export function teardownNavigationBadgeProjection(): void {
   if (reconcileTimer) {
     clearInterval(reconcileTimer);
     reconcileTimer = null;
+  }
+  if (unsubscribeStore) {
+    unsubscribeStore();
+    unsubscribeStore = null;
+  }
+  if (isTauriRuntime()) {
+    void api.nativeDockSetBadge(0).catch(() => {});
   }
   useNavigationBadgeStore.getState().reset();
   log.info('navigationBadges', 'projection torn down');

@@ -126,10 +126,46 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
         )
         self.assertEqual(run.call_args_list[1].kwargs["cwd"], root.resolve())
 
-    def test_probe_launcher_places_window_on_primary_display(self) -> None:
+    def test_probe_launcher_places_probe_window_on_main_display(
+        self,
+    ) -> None:
         launcher = Mock(log_path=None)
-        session = Mock()
-        session.start.side_effect = RuntimeError("stop after launch")
+        session = Mock(process_id=42, log_path=None)
+        adapter = Mock(spec=MacOSNativeDesktopAdapter)
+        adapter.capture_screenshot.side_effect = (
+            lambda path: path.write_bytes(b"screenshot")
+        )
+        bounds = {
+            "left": 0.0,
+            "top": 32.0,
+            "width": 1280.0,
+            "height": 720.0,
+        }
+        stack = NativeWindowStack(
+            windows=(
+                NativeWindowSnapshot(
+                    index=0,
+                    owner_pid=42,
+                    owner_name="peers-touch-desktop",
+                    window_name="Peers",
+                    layer=0,
+                    alpha=1.0,
+                    bounds=NativeWindowBounds(
+                        left=0.0,
+                        top=32.0,
+                        width=1280.0,
+                        height=720.0,
+                    ),
+                ),
+            ),
+        )
+        point_probe = (
+            (640.0, 392.0),
+            {"x": 640.0, "y": 392.0},
+            stack,
+            True,
+            ((640.0, 392.0),),
+        )
         lifecycle = NativeDesktopMacOSProvisioner()
 
         with patch.dict(
@@ -154,10 +190,30 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
             "tooling.acceptance.provisioners.native_desktop_macos."
             "TauriSession",
             return_value=session,
+        ), patch(
+            "tooling.acceptance.provisioners.native_desktop_macos."
+            "MacOSNativeDesktopAdapter",
+            return_value=adapter,
+        ), patch.object(
+            NativeDesktopMacOSProvisioner,
+            "_await_window_bounds",
+            return_value=bounds,
+        ), patch.object(
+            NativeDesktopMacOSProvisioner,
+            "_probe_owned_point",
+            side_effect=(point_probe, point_probe),
+        ), patch.object(
+            NativeDesktopMacOSProvisioner,
+            "_await_webview_focus",
+            return_value=True,
         ):
-            with self.assertRaisesRegex(RuntimeError, "stop after launch"):
-                lifecycle._probe_native_adapter()
+            probes, webdriver_port = lifecycle._probe_native_adapter()
 
+        self.assertEqual(webdriver_port, 45123)
+        self.assertTrue(probes.input_probe)
+        self.assertTrue(probes.focus_probe)
+        self.assertTrue(probes.point_ownership_probe)
+        self.assertTrue(probes.screenshot_probe)
         launcher_type.assert_called_once_with(
             app_binary="/tmp/peers-touch-desktop",
             port=45123,
@@ -169,17 +225,414 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
                 "PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION": "isolated-gui-session",
             },
         )
+        adapter.position_main_window.assert_called_once_with(
+            42,
+            (100.0, 100.0),
+        )
+        session.invoke_app_result.assert_called_once_with(
+            "acceptance_request_activation"
+        )
         session.stop.assert_called_once_with()
 
-    def test_probe_repositions_window_before_native_point_checks(self) -> None:
-        source = inspect.getsource(
-            NativeDesktopMacOSProvisioner._probe_native_adapter
+    def test_semantic_probe_uses_webdriver_without_native_input(self) -> None:
+        events: list[str] = []
+        launcher = Mock(log_path=None)
+        session = Mock(process_id=42, log_path=None)
+        session.wait_for_acceptance_harness.side_effect = lambda: events.append(
+            "harness-ready"
+        )
+        session.save_screenshot.side_effect = lambda path: (
+            events.append("screenshot"),
+            path.write_bytes(b"semantic-screenshot"),
+        )[-1]
+        session.stop.side_effect = lambda: events.append("session-stop")
+        hover = object()
+        click = object()
+        input_element = object()
+        key = object()
+        session.find_element.side_effect = (
+            hover,
+            click,
+            input_element,
+            key,
+        )
+        session.execute_script.side_effect = (
+            None,
+            {
+                "hovered": True,
+                "clicked": True,
+                "text": "semantic-probe",
+                "keyCount": 1,
+            },
+            None,
+        )
+        session.semantic_hover.side_effect = lambda _element: events.append(
+            "semantic-action"
+        )
+        adapter = Mock(spec=MacOSNativeDesktopAdapter)
+        lifecycle = NativeDesktopMacOSProvisioner()
+        operator_state = {
+            "frontmostPid": 41,
+            "pointerX": 120.0,
+            "pointerY": 240.0,
+            "keyboardFocusSha256": "b" * 64,
+        }
+        operator_states = iter((operator_state, operator_state))
+
+        def snapshot_operator_state(
+            _adapter: MacOSNativeDesktopAdapter,
+        ) -> dict[str, object]:
+            events.append("operator-snapshot")
+            return next(operator_states)
+
+        with patch.dict(
+            "os.environ",
+            {
+                "PT_ACCEPTANCE_DESKTOP_INPUT_MODE": (
+                    "semantic-nonintrusive"
+                ),
+            },
+            clear=True,
+        ), patch(
+            "tooling.acceptance.provisioners.native_desktop_macos."
+            "resolve_smoke_port",
+            return_value=45123,
+        ), patch(
+            "tooling.acceptance.provisioners.native_desktop_macos."
+            "find_app_binary",
+            return_value="/tmp/peers-touch-desktop",
+        ), patch(
+            "tooling.acceptance.provisioners.native_desktop_macos."
+            "LocalTauriLauncher",
+            return_value=launcher,
+        ) as launcher_type, patch(
+            "tooling.acceptance.provisioners.native_desktop_macos."
+            "TauriSession",
+            return_value=session,
+        ), patch(
+            "tooling.acceptance.provisioners.native_desktop_macos."
+            "MacOSNativeDesktopAdapter",
+            return_value=adapter,
+        ), patch.object(
+            lifecycle,
+            "_snapshot_operator_state",
+            side_effect=snapshot_operator_state,
+        ) as snapshot:
+            probes, webdriver_port = lifecycle._probe_native_adapter()
+
+        self.assertEqual(webdriver_port, 45123)
+        self.assertEqual(probes.input_mode, "semantic-nonintrusive")
+        self.assertEqual(
+            probes.semantic_backend,
+            "tauri-embedded-webdriver",
+        )
+        self.assertTrue(probes.semantic_action_probe)
+        self.assertTrue(probes.semantic_screenshot_probe)
+        self.assertTrue(probes.non_interference_probe)
+        self.assertFalse(probes.input_probe)
+        self.assertFalse(probes.focus_probe)
+        self.assertFalse(probes.point_ownership_probe)
+        self.assertFalse(probes.screenshot_probe)
+        self.assertEqual(snapshot.call_count, 2)
+        self.assertEqual(
+            events,
+            [
+                "harness-ready",
+                "operator-snapshot",
+                "semantic-action",
+                "screenshot",
+                "operator-snapshot",
+                "session-stop",
+            ],
+        )
+        launcher_type.assert_called_once_with(
+            app_binary="/tmp/peers-touch-desktop",
+            port=45123,
+            profile="desktop-macos-native-probe",
+            environment={
+                "PT_ACCEPTANCE_WINDOW_SLOT": "0",
+                "PT_ACCEPTANCE_WINDOW_COUNT": "1",
+                "PT_ACCEPTANCE_DESKTOP_INPUT_MODE": (
+                    "semantic-nonintrusive"
+                ),
+                "PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION": (
+                    "shared-user-session"
+                ),
+            },
+        )
+        session.semantic_hover.assert_called_once_with(hover)
+        session.semantic_click.assert_called_once_with(click)
+        session.semantic_replace_text.assert_called_once_with(
+            input_element,
+            "semantic-probe",
+        )
+        session.semantic_key_sequence.assert_called_once()
+        session.driver.set_window_rect.assert_not_called()
+        session.invoke_app_result.assert_not_called()
+        adapter.position_main_window.assert_not_called()
+        adapter.post_mouse.assert_not_called()
+        adapter.capture_screenshot.assert_not_called()
+        session.stop.assert_called_once_with()
+
+    def test_semantic_probe_retries_concurrent_operator_activity(
+        self,
+    ) -> None:
+        lifecycle = NativeDesktopMacOSProvisioner()
+        session = Mock()
+        adapter = Mock(spec=MacOSNativeDesktopAdapter)
+        states = (
+            {
+                "frontmostPid": 41,
+                "pointerX": 100.0,
+                "pointerY": 200.0,
+                "keyboardFocusSha256": "b" * 64,
+            },
+            {
+                "frontmostPid": 41,
+                "pointerX": 120.0,
+                "pointerY": 220.0,
+                "keyboardFocusSha256": "b" * 64,
+            },
+            {
+                "frontmostPid": 41,
+                "pointerX": 120.0,
+                "pointerY": 220.0,
+                "keyboardFocusSha256": "b" * 64,
+            },
+            {
+                "frontmostPid": 41,
+                "pointerX": 120.0,
+                "pointerY": 220.0,
+                "keyboardFocusSha256": "b" * 64,
+            },
+        )
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            lifecycle,
+            "_snapshot_operator_state",
+            side_effect=states,
+        ) as snapshot, patch.object(
+            lifecycle,
+            "_probe_semantic_actions",
+            return_value=True,
+        ) as actions:
+            screenshot = Path(directory) / "semantic.png"
+            session.save_screenshot.side_effect = (
+                lambda path: path.write_bytes(b"semantic-screenshot")
+            )
+
+            action_ok, screenshot_ok, non_interference = (
+                lifecycle._probe_semantic_non_interference(
+                    session,
+                    adapter,
+                    screenshot,
+                    max_attempts=2,
+                    interval_seconds=0,
+                )
+            )
+
+        self.assertTrue(action_ok)
+        self.assertTrue(screenshot_ok)
+        self.assertTrue(non_interference.unchanged())
+        self.assertEqual(snapshot.call_count, 4)
+        self.assertEqual(actions.call_count, 2)
+        self.assertEqual(session.save_screenshot.call_count, 2)
+
+    def test_semantic_probe_retries_unstable_baseline_before_actions(
+        self,
+    ) -> None:
+        lifecycle = NativeDesktopMacOSProvisioner()
+        session = Mock()
+        adapter = Mock(spec=MacOSNativeDesktopAdapter)
+        stable = {
+            "frontmostPid": 41,
+            "pointerX": 120.0,
+            "pointerY": 220.0,
+            "keyboardFocusSha256": "b" * 64,
+        }
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            lifecycle,
+            "_snapshot_operator_state",
+            side_effect=(
+                BlockedError(
+                    reason="operator changed frontmost application",
+                    resource="runtime-cell-operator-focus",
+                ),
+                stable,
+                stable,
+            ),
+        ) as snapshot, patch.object(
+            lifecycle,
+            "_probe_semantic_actions",
+            return_value=True,
+        ) as actions:
+            screenshot = Path(directory) / "semantic.png"
+            session.save_screenshot.side_effect = (
+                lambda path: path.write_bytes(b"semantic-screenshot")
+            )
+
+            action_ok, screenshot_ok, non_interference = (
+                lifecycle._probe_semantic_non_interference(
+                    session,
+                    adapter,
+                    screenshot,
+                    max_attempts=2,
+                    interval_seconds=0,
+                )
+            )
+
+        self.assertTrue(action_ok)
+        self.assertTrue(screenshot_ok)
+        self.assertTrue(non_interference.unchanged())
+        self.assertEqual(snapshot.call_count, 3)
+        actions.assert_called_once_with(session)
+        session.save_screenshot.assert_called_once_with(screenshot)
+
+    def test_keyboard_focus_identity_excludes_mutable_control_state(
+        self,
+    ) -> None:
+        baseline = NativeControlSnapshot(
+            kind="text-input",
+            title="Composer",
+            value="before",
+            window_count=1,
+            dialog_count=0,
+            frontmost=True,
+            main_window=True,
+            focused_window=True,
+            actual_frontmost_pid=41,
+            platform_role="AXTextArea",
+            platform_subrole="",
+        )
+        mutable_state_changed = NativeControlSnapshot(
+            kind="text-input",
+            title="Composer",
+            value="after",
+            window_count=2,
+            dialog_count=1,
+            frontmost=True,
+            main_window=True,
+            focused_window=True,
+            actual_frontmost_pid=41,
+            platform_role="AXTextArea",
+            platform_subrole="",
+        )
+        focus_changed = NativeControlSnapshot(
+            kind="button",
+            title="Send",
+            frontmost=True,
+            main_window=True,
+            focused_window=True,
+            actual_frontmost_pid=41,
+            platform_role="AXButton",
+            platform_subrole="",
         )
 
-        self.assertLess(
-            source.index("session.driver.set_window_rect(x=100, y=100)"),
-            source.index("bounds = self._await_window_bounds(process_id)"),
+        self.assertEqual(
+            NativeDesktopMacOSProvisioner._keyboard_focus_identity(
+                baseline
+            ),
+            NativeDesktopMacOSProvisioner._keyboard_focus_identity(
+                mutable_state_changed
+            ),
         )
+        self.assertNotEqual(
+            NativeDesktopMacOSProvisioner._keyboard_focus_identity(
+                baseline
+            ),
+            NativeDesktopMacOSProvisioner._keyboard_focus_identity(
+                focus_changed
+            ),
+        )
+
+    def test_operator_focus_waits_for_two_stable_ax_samples(self) -> None:
+        adapter = Mock(spec=MacOSNativeDesktopAdapter)
+        transient = NativeControlSnapshot(
+            actual_frontmost_pid=41,
+        )
+        stable = NativeControlSnapshot(
+            kind="web-area",
+            frontmost=True,
+            main_window=True,
+            actual_frontmost_pid=41,
+            platform_role="AXWebArea",
+        )
+        adapter.focused_control.side_effect = (
+            transient,
+            stable,
+            stable,
+        )
+
+        identity = (
+            NativeDesktopMacOSProvisioner._stable_operator_focus_identity(
+                adapter,
+                41,
+                timeout_seconds=1,
+                interval_seconds=0,
+            )
+        )
+
+        self.assertEqual(identity["platformRole"], "AXWebArea")
+        self.assertEqual(adapter.focused_control.call_count, 3)
+
+    def test_operator_focus_accepts_stable_absence_of_focused_control(
+        self,
+    ) -> None:
+        adapter = Mock(spec=MacOSNativeDesktopAdapter)
+        adapter.focused_control.return_value = NativeControlSnapshot(
+            actual_frontmost_pid=41,
+        )
+
+        identity = (
+            NativeDesktopMacOSProvisioner._stable_operator_focus_identity(
+                adapter,
+                41,
+                timeout_seconds=1,
+                interval_seconds=0,
+            )
+        )
+
+        self.assertEqual(identity["actualFrontmostPid"], 41)
+        self.assertEqual(identity["platformRole"], "")
+        self.assertEqual(adapter.focused_control.call_count, 2)
+
+    def test_operator_focus_rejects_stale_frontmost_pid_immediately(
+        self,
+    ) -> None:
+        adapter = Mock(spec=MacOSNativeDesktopAdapter)
+        adapter.focused_control.return_value = NativeControlSnapshot(
+            actual_frontmost_pid=42,
+        )
+
+        with self.assertRaisesRegex(
+            BlockedError,
+            "frontmost process changed during focus sampling",
+        ):
+            NativeDesktopMacOSProvisioner._stable_operator_focus_identity(
+                adapter,
+                41,
+                timeout_seconds=1,
+                interval_seconds=0,
+            )
+
+        adapter.focused_control.assert_called_once_with(41)
+
+    def test_operator_focus_rejects_unstable_ax_samples(self) -> None:
+        adapter = Mock(spec=MacOSNativeDesktopAdapter)
+        adapter.focused_control.return_value = NativeControlSnapshot(
+            actual_frontmost_pid=41,
+            error="AX probe unavailable",
+        )
+
+        with self.assertRaisesRegex(
+            BlockedError,
+            "keyboard focus did not stabilize",
+        ):
+            NativeDesktopMacOSProvisioner._stable_operator_focus_identity(
+                adapter,
+                41,
+                timeout_seconds=0,
+                interval_seconds=0,
+            )
 
     def test_window_bounds_wait_uses_native_startup_budget(self) -> None:
         default = inspect.signature(
@@ -187,6 +640,26 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
         ).parameters["timeout_seconds"].default
 
         self.assertEqual(default, 30.0)
+
+    def test_webview_focus_clicks_process_owned_point(self) -> None:
+        session = Mock()
+        session.driver.execute_script.side_effect = [False, True]
+        adapter = Mock(spec=MacOSNativeDesktopAdapter)
+
+        focused = NativeDesktopMacOSProvisioner._await_webview_focus(
+            session,
+            adapter,
+            activation_point=(640.0, 400.0),
+            timeout_seconds=1,
+            interval_seconds=0,
+        )
+
+        self.assertTrue(focused)
+        self.assertEqual(adapter.post_mouse.call_count, 2)
+        adapter.post_mouse.assert_called_with(
+            (MouseAction.LEFT_DOWN, MouseAction.LEFT_UP),
+            (640.0, 400.0),
+        )
 
     def test_window_bounds_wait_retries_transient_visibility(self) -> None:
         transient = BlockedError(
@@ -422,6 +895,25 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
         accepted = NativeControlSnapshot(
             window_count=1,
             frontmost=True,
+            actual_frontmost_pid=42,
+        )
+        adapter = Mock(spec=MacOSNativeDesktopAdapter)
+        adapter.focused_control.return_value = accepted
+
+        control = NativeDesktopMacOSProvisioner._await_focused_process(
+            adapter,
+            42,
+            timeout_seconds=1,
+            interval_seconds=0,
+        )
+
+        self.assertEqual(control.actual_frontmost_pid, 42)
+        adapter.activate_process.assert_not_called()
+
+    def test_focus_wait_accepts_nsworkspace_pid_without_ax_window(self) -> None:
+        accepted = NativeControlSnapshot(
+            window_count=0,
+            frontmost=False,
             actual_frontmost_pid=42,
         )
         adapter = Mock(spec=MacOSNativeDesktopAdapter)

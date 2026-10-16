@@ -379,7 +379,10 @@ class AcceptanceRunTest(unittest.TestCase):
         self.assertEqual(contract.id, "home-station")
         self.assertEqual(
             get_provisioner.call_args.kwargs,
-            {"station_profiles": {}, "service_profiles": {}},
+            {
+                "station_profiles": {},
+                "service_profiles": {"relay": "one"},
+            },
         )
 
     def test_environment_provisioner_keeps_matching_profile_bindings(

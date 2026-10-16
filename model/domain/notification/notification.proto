@@ -31,6 +31,9 @@ message Notification {
   string group_key = 12;
   google.protobuf.Timestamp created_at = 13;
   google.protobuf.Timestamp read_at = 14;
+  // Producer idempotency key. Reusing the same key for one recipient returns
+  // the original notification; uniqueness is enforced by a DB unique index.
+  string idempotency_key = 15;
 }
 
 // NotificationGroup represents an aggregated notification group.
@@ -77,6 +80,7 @@ enum NotificationType {
   NOTIFICATION_TYPE_FRIEND_MESSAGE = 202;
   NOTIFICATION_TYPE_GROUP_INVITED = 203;
   NOTIFICATION_TYPE_CHAT_MENTIONED = 204;
+  NOTIFICATION_TYPE_SERVICE_MESSAGE = 205;
 
   // System (300-399)
   NOTIFICATION_TYPE_WELCOME = 300;
@@ -88,6 +92,9 @@ enum NotificationType {
   NOTIFICATION_TYPE_TASK_ASSIGNED = 400;
   NOTIFICATION_TYPE_TASK_COMPLETED = 401;
   NOTIFICATION_TYPE_TASK_REMINDER = 402;
+
+  // Structured task-state publication.
+  NOTIFICATION_TYPE_TASK_EVENT = 410;
 }
 
 enum NotificationStatus {

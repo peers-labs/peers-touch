@@ -245,6 +245,8 @@ func migrationActorKind(kind string) (int32, error) {
 		return int32(actormodel.ActorKind_ACTOR_KIND_APPLICATION), nil
 	case "n":
 		return int32(actormodel.ActorKind_ACTOR_KIND_NODE), nil
+	case "b":
+		return int32(actormodel.ActorKind_ACTOR_KIND_AGENT), nil
 	default:
 		return 0, fmt.Errorf("unsupported actor kind %q", kind)
 	}

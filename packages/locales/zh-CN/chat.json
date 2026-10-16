@@ -908,5 +908,13 @@
   "chat.groupCall.voiceCall": "语音通话",
   "chat.groupCall.you": "你",
   "chat.groupCall.fullscreen": "全屏",
-  "chat.groupCall.compact": "紧凑视图"
+  "chat.groupCall.compact": "紧凑视图",
+  "chat.automation.stationManagedTip": "自动化服务 · Station 托管，非端到端加密",
+  "chat.automation.stationManaged": "自动化服务 · Station 托管",
+  "chat.automation.oneWayComposer": "单向发布通道，暂不支持回复",
+  "chat.service.knownUpdates": "已知 {{count}} 条",
+  "chat.service.conflictingState": "已知历史中存在冲突状态",
+  "chat.service.knownHistoryOnly": "基于已知历史的最新状态",
+  "chat.service.notificationFallbackTitle": "自动化更新",
+  "chat.service.notificationFallbackBody": "打开 Peers Touch 查看详情"
 }
