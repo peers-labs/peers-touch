@@ -444,6 +444,66 @@ class SimulatorSocialGateTests(unittest.TestCase):
         self.assertTrue(result["draftRestored"])
         self.assertIn(payload_sha256, result["supportingObservation"])
 
+    def test_ios_native_quality_accepts_three_accessible_social_tabs(self) -> None:
+        class Session:
+            def call_action(
+                self,
+                action: str,
+                payload: object = None,
+            ) -> object:
+                self.assert_navigation(action, payload)
+                return {}
+
+            @staticmethod
+            def assert_navigation(action: str, payload: object) -> None:
+                if (
+                    action != "navigation.apply"
+                    or payload != {
+                        "kind": "primary",
+                        "routeId": "tab:moments",
+                    }
+                ):
+                    raise AssertionError((action, payload))
+
+            def execute_script(self, script: str, *_args: object) -> object:
+                if "viewportWidth" in script:
+                    return {
+                        "viewportWidth": 402,
+                        "viewportHeight": 874,
+                        "tabCount": 3,
+                        "cardCount": 0,
+                        "searchLabelled": True,
+                        "circlesLabelled": True,
+                        "composerLabelled": True,
+                        "scopeWidth": 370,
+                        "pageWidth": 402,
+                        "flatFeed": True,
+                    }
+                return {
+                    "text": "Moments",
+                    "acceptanceId": "social-moments-page",
+                }
+
+            def switch_to_native(self) -> None:
+                return None
+
+            def get_page_source(self) -> str:
+                return "<AppiumAUT />"
+
+            def screenshot_bytes(self) -> bytes:
+                return b"x" * 1024
+
+            def switch_to_app_webview(self) -> None:
+                return None
+
+        result = SimulatorSocialGate(
+            "ios-social-parity"
+        )._run_ios_native_quality(Session())
+
+        self.assertEqual(result["metrics"]["tabCount"], 3)
+        self.assertEqual(result["nativeAxBytes"], len("<AppiumAUT />"))
+        self.assertEqual(result["screenshotBytes"], 1024)
+
     def test_ios_explore_opens_sort_sheet_before_selecting_hot(self) -> None:
         source = inspect.getsource(
             SimulatorSocialGate._run_ios_home_explore

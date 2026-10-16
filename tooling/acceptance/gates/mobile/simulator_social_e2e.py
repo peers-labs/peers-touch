@@ -1476,6 +1476,9 @@ const cards = page?.querySelectorAll(
 const pageRect = page?.getBoundingClientRect();
 const scopeRect = page?.querySelector('[role="tablist"]')?.getBoundingClientRect();
 const firstCardStyle = cards[0] ? getComputedStyle(cards[0]) : null;
+const circles = page?.querySelector(
+  '[data-acceptance-id="social-circles-open"]'
+);
 return {
   viewportWidth: window.visualViewport?.width || window.innerWidth,
   viewportHeight: window.visualViewport?.height || window.innerHeight,
@@ -1485,7 +1488,11 @@ return {
     page?.querySelector('[data-acceptance-id="social-search-open"][aria-label]')
   ),
   circlesLabelled: Boolean(
-    page?.querySelector('[data-acceptance-id="social-circles-open"][aria-label]')
+    circles
+    && (
+      (circles.getAttribute('aria-label') || '').trim()
+      || (circles.textContent || '').trim()
+    )
   ),
   composerLabelled: Boolean(
     page?.querySelector('[data-acceptance-id="social-composer-open"][aria-label]')
@@ -1503,7 +1510,7 @@ return {
             not isinstance(metrics, Mapping)
             or int(metrics.get("viewportWidth", 0)) < 320
             or int(metrics.get("viewportHeight", 0)) < 480
-            or metrics.get("tabCount") != 2
+            or metrics.get("tabCount") != 3
             or int(metrics.get("cardCount", 101)) > 100
             or metrics.get("searchLabelled") is not True
             or metrics.get("circlesLabelled") is not True
@@ -1512,7 +1519,10 @@ return {
             < float(metrics.get("pageWidth", 0)) - 40
             or metrics.get("flatFeed") is not True
         ):
-            raise GateError("MPS-09 native quality metrics are invalid")
+            raise GateError(
+                "MPS-09 native quality metrics are invalid: "
+                f"{redact_text(json.dumps(metrics, sort_keys=True))}"
+            )
         session.switch_to_native()
         native_source = session.get_page_source()
         screenshot = session.screenshot_bytes()
