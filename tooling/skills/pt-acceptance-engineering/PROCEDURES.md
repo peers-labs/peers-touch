@@ -779,37 +779,69 @@ make status
 
 ### Inputs
 
-- Selected plan.
+- Selected plan or explicit Gate IDs.
 - Successful Step 7 preflight.
 - Connected contracts.
 - Evidence contract.
+- Requested execution mode and its authorization source.
 
 ### Procedure
 
-1. Run cheap/local tiers first.
-2. Diagnose failures before running dependent environment Gates.
+1. If the caller is still in `DEVELOPMENT_ITERATION`, stop formal proof
+   execution. Development runs only affected source checks and one focused
+   exact-source functional Journey.
+2. Select exactly one formal execution mode:
+   - `FOCUSED_DIAGNOSIS`: explicit Gate IDs needed to diagnose a known failure.
+   - `CLOSURE`: the current formal closure or explicitly selected closure
+     Gates, executed once.
+   - `COMPLETION`: completion Gates when the request is entering delivery.
+   - `FULL_RELEASE`: full/release Gates after an explicit current user request.
 3. Run environment-backed Gates only after their exact runtime preflight.
-4. Use explicit Gate IDs for focused diagnosis only.
-5. Run the planned Gate bundle for final proof.
-6. Record the first failed step, exit code, duration, log, and source evidence.
-7. Run structural validation.
-8. Run proof validation with `--require-proven`.
-9. Classify each Capability as Proven, Partial, Unproven, or Blocked.
+4. Execute the selected mode once. Tier filters may partition that selected
+   scope, but must not be followed by an unfiltered aggregate that reruns the
+   same Gates.
+5. Record the first failed step, exit code, duration, log, and source evidence.
+6. Run structural validation.
+7. Run proof validation with `--require-proven` only for the exact formal scope
+   that just executed. Validation does not authorize or backfill unrun Gates.
+8. Classify each Capability as Proven, Partial, Unproven, or Blocked.
+   Unrun Gates remain `UNPROVEN`.
 
 ### Commands
 
+Focused diagnosis:
+
 ```bash
-make acceptance-run-ci
-make acceptance-run-local-evidence
-make acceptance-run-env-evidence
+python3 tooling/scripts/acceptance-run.py --gate <gate-id>
+```
+
+Current closure:
+
+```bash
 make acceptance-run
 ```
 
-Plain `make acceptance-run` executes only the current formal-plan closure.
-`make acceptance-run-completion` executes plan-completion Gates.
-`make acceptance-run-full` is allowed only after an explicit user request for
-release or full Acceptance. Run only declared Gates whose environments are
-ready; environment availability alone does not authorize full execution.
+Completion:
+
+```bash
+make acceptance-run-completion
+```
+
+Explicit full/release:
+
+```bash
+make acceptance-run-full
+```
+
+These commands are alternatives. Plain `make acceptance-run` executes only the
+current formal-plan closure. `make acceptance-run-completion` is valid only at
+delivery. `make acceptance-run-full` is valid only after an explicit current
+user request for release or full Acceptance. The tier-specific targets
+`acceptance-run-ci`, `acceptance-run-local-evidence`, and
+`acceptance-run-env-evidence` are filtered alternatives for a deliberately
+partitioned formal scope, never a mandatory prelude to unfiltered
+`acceptance-run`. Environment availability alone does not authorize wider
+execution.
 
 Structural judgment:
 
@@ -855,6 +887,8 @@ Emit:
 - Every passed proof Gate has source-bound evidence.
 - Structure and proof statuses are reported separately.
 - No unrun Gate is labeled passed.
+- No execution mode auto-promotes into completion or full/release.
+- No Gate is rerun through a tier-plus-unfiltered aggregate sequence.
 
 ## Step 9. Report, Release Resources, And Update Coverage
 

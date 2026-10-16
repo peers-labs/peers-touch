@@ -54,7 +54,9 @@ function event(root, overrides = {}) {
     event: 'PRE_TOOL_USE',
     hostEvent: 'PreToolUse',
     workspaceRoots: [root],
+    installationRoot: root,
     explicitTaskRoot: root,
+    explicitToolWorkingDirectory: root,
     repositoryWorkingDirectory: root,
     toolWorkingDirectory: root,
     willEditFilepaths: [path.join(root, 'README.md')],
@@ -92,6 +94,54 @@ test('FLOW-A04 missing workspace context does not deny the tool', async () => {
   });
   assert.equal(result.action, 'ALLOW');
   assert.equal(result.code, 'WORKSPACE_CONTEXT_UNRESOLVED');
+});
+
+test('FLOW-A04 multi-root ambient cwd does not select a worktree', async () => {
+  const root = fixture();
+  const sibling = fixture();
+  try {
+    const result = await evaluateWorkflowEvent(
+      event(root, {
+        workspaceRoots: [root, sibling],
+        explicitTaskRoot: null,
+        explicitToolWorkingDirectory: null,
+        repositoryWorkingDirectory: sibling,
+        toolWorkingDirectory: sibling,
+        executionRootHints: [],
+      }),
+    );
+    assert.equal(result.action, 'ALLOW');
+    assert.equal(result.code, 'WORKSPACE_CONTEXT_UNRESOLVED');
+    assert.equal(result.executionRoot, null);
+    assert.equal(result.additionalContext, null);
+  } finally {
+    cleanupFixture(root);
+    cleanupFixture(sibling);
+  }
+});
+
+test('FLOW-A04 one root Hook ignores an explicit sibling tool root', async () => {
+  const root = fixture();
+  const sibling = fixture();
+  try {
+    const result = await evaluateWorkflowEvent(
+      event(root, {
+        workspaceRoots: [root, sibling],
+        explicitTaskRoot: null,
+        explicitToolWorkingDirectory: sibling,
+        repositoryWorkingDirectory: sibling,
+        toolWorkingDirectory: sibling,
+        executionRootHints: [sibling],
+      }),
+    );
+    assert.equal(result.action, 'NOOP');
+    assert.equal(result.code, 'HOOK_INSTALLATION_ROOT_MISMATCH');
+    assert.equal(result.executionRoot, null);
+    assert.equal(result.additionalContext, null);
+  } finally {
+    cleanupFixture(root);
+    cleanupFixture(sibling);
+  }
 });
 
 test('FLOW-A04 context lookup failure falls back to base project guidance', async () => {

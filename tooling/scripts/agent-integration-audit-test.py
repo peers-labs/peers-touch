@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import runpy
 import shlex
 import shutil
 import subprocess
@@ -316,9 +317,42 @@ class AgentIntegrationTests(unittest.TestCase):
     def test_flow_a20_multi_root_descriptor_changes_only_selected_root(self) -> None:
         other = self.base / "other root"
         other.mkdir()
+        other_script = (
+            other
+            / "tooling/plugins/pt-ew-plugin/scripts/hook-entry.mjs"
+        )
+        other_script.parent.mkdir(parents=True)
+        other_script.write_text("// other root hook\n", encoding="utf-8")
         other_hooks = other / ".trae/hooks.json"
         other_hooks.parent.mkdir()
-        other_hooks.write_text('{"hooks":{},"owner":"other"}\n', encoding="utf-8")
+        other_hooks.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "PreToolUse": [
+                            {
+                                "matcher": "*",
+                                "hooks": [
+                                    {
+                                        "type": "command",
+                                        "command": (
+                                            f"{shutil.which('node')} "
+                                            f"{shlex.quote(str(other_script))} "
+                                            "--host trae --event PreToolUse"
+                                        ),
+                                        "timeout": 5,
+                                    }
+                                ],
+                            }
+                        ]
+                    },
+                    "owner": "other",
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
         original = other_hooks.read_bytes()
         descriptor = self.base / "workspace file.code-workspace"
         descriptor.write_text(
@@ -336,6 +370,90 @@ class AgentIntegrationTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(other_hooks.read_bytes(), original)
         self.assertFalse((other / ".trae/skills").exists())
+
+    def test_cross_root_managed_hook_is_rejected_and_repaired(self) -> None:
+        self.write_unrelated_hook()
+        installed = self.control()
+        self.assertEqual(installed.returncode, 0, installed.stderr)
+
+        other_script = (
+            self.base
+            / "foreign root/tooling/plugins/pt-ew-plugin/scripts/hook-entry.mjs"
+        )
+        other_script.parent.mkdir(parents=True)
+        other_script.write_text("// foreign hook\n", encoding="utf-8")
+        hooks_path = self.root / ".trae/hooks.json"
+        hooks = json.loads(hooks_path.read_text(encoding="utf-8"))
+        local_script = str(
+            self.root
+            / "tooling/plugins/pt-ew-plugin/scripts/hook-entry.mjs"
+        )
+        for entries in hooks["hooks"].values():
+            for entry in entries:
+                for hook in entry.get("hooks", []):
+                    command = hook.get("command")
+                    if isinstance(command, str) and local_script in command:
+                        hook["command"] = command.replace(
+                            local_script,
+                            str(other_script),
+                        )
+        hooks_path.write_text(
+            json.dumps(hooks, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+        audited, report = self.audit()
+        self.assertEqual(audited.returncode, 0, audited.stderr)
+        self.assertEqual(report["status"], "DEGRADED")
+        self.assertEqual(report["hook"]["status"], "INVALID")
+        self.assertIn(
+            "HOOK_PROJECTION_CROSS_ROOT",
+            {finding["code"] for finding in report["hook"]["findings"]},
+        )
+        self.assertEqual(report["callbackProbe"]["status"], "NOT_RUN")
+
+        repaired = self.control()
+        self.assertEqual(repaired.returncode, 0, repaired.stderr)
+        audited, report = self.audit()
+        self.assertEqual(audited.returncode, 0, audited.stderr)
+        self.assertEqual(report["status"], "PASS")
+        self.assertEqual(report["hook"]["status"], "PASS")
+
+    def test_control_rejects_cross_root_managed_hook_before_write(self) -> None:
+        other_script = (
+            self.base
+            / "foreign root/tooling/plugins/pt-ew-plugin/scripts/hook-entry.mjs"
+        )
+        other_script.parent.mkdir(parents=True)
+        other_script.write_text("// foreign hook\n", encoding="utf-8")
+        control = runpy.run_path(
+            str(self.root / "tooling/scripts/agent-integration-control.py")
+        )
+        hooks = {
+            "hooks": {
+                "PreToolUse": [
+                    {
+                        "matcher": "*",
+                        "hooks": [
+                            {
+                                "type": "command",
+                                "command": (
+                                    f"{shutil.which('node')} "
+                                    f"{shlex.quote(str(other_script))} "
+                                    "--host trae --event PreToolUse"
+                                ),
+                                "timeout": 5,
+                            }
+                        ],
+                    }
+                ]
+            }
+        }
+        with self.assertRaisesRegex(RuntimeError, "HOST_HOOK_CROSS_ROOT"):
+            control["validate_managed_hook_locality"](
+                self.root,
+                hooks,
+            )
 
     def test_flow_a20_remove_hook_preserves_skills_and_unrelated_config(self) -> None:
         self.write_unrelated_hook()

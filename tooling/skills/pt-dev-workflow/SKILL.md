@@ -109,8 +109,7 @@ not stop ordinary work.
 
 ### 6. Verify
 
-Run focused source checks, then exact-source functional Journeys, then required
-formal Acceptance. Keep these evidence classes separate:
+Keep these evidence classes separate:
 
 - `SOURCE_CHECK`
 - `STRUCTURAL_CHECK`
@@ -118,9 +117,26 @@ formal Acceptance. Keep these evidence classes separate:
 - `FUNCTIONAL_CHECK`
 - `ACCEPTANCE_PROOF`
 
+Choose exactly one execution mode for each verification pass:
+
+- `DEVELOPMENT_ITERATION`: run affected source checks and one focused
+  exact-source functional Journey. Do not run formal Acceptance,
+  `--require-proven`, completion, or full/release.
+- `CLOSURE`: after the functional Journey passes, run the current formal
+  closure or explicitly selected Gate set once.
+- `COMPLETION`: run completion Gates only when the request is entering
+  delivery and its completion obligations are explicit.
+- `FULL_RELEASE`: run only when the current user request explicitly asks for
+  release or full Acceptance.
+
+Tier-specific and unfiltered aggregate commands are alternative selectors, not
+an ordered sequence. Never run tier targets and then rerun the same closure
+through unfiltered `acceptance-run`. Unrun Gates remain `UNPROVEN`; gaps,
+reports, or available environments do not trigger automatic backfill.
+
 Current-source evidence must bind the current commit/workspace digest. A stale
 or caller-authored PASS is not proof. Fix failures and rerun affected evidence.
-Until the required checks and Acceptance cover current source, report only
+Until the selected delivery obligations cover current source, report only
 implementation/checkpoint progress, failures, or blockers; do not present a
 candidate as a staged delivery.
 
@@ -218,5 +234,9 @@ task-owned resources are `released` or explicitly `retained`.
   product proof.
 - Stop after analysis when implementation is authorized and feasible.
 - Hand deterministic verification to the user before Agent verification.
+- Auto-promote a development iteration into closure, completion, or full
+  Acceptance.
+- Backfill every `UNPROVEN` Gate merely because it appears in impact or
+  coverage output.
 - Claim overall completion while required product/runtime proof remains
   unverified.

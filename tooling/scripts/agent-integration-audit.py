@@ -109,6 +109,63 @@ def expected_hooks(
     )
 
 
+def projected_managed_commands(value: object) -> list[str]:
+    commands: list[str] = []
+    if isinstance(value, list):
+        for item in value:
+            commands.extend(projected_managed_commands(item))
+    elif isinstance(value, dict):
+        command = value.get("command")
+        if (
+            isinstance(command, str)
+            and PLUGIN_NAME in command
+            and "hook-entry.mjs" in command
+        ):
+            commands.append(command)
+        for item in value.values():
+            commands.extend(projected_managed_commands(item))
+    return commands
+
+
+def hook_locality_findings(
+    root: Path,
+    value: dict[str, object],
+) -> list[dict[str, str]]:
+    hooks = value.get("hooks")
+    if not isinstance(hooks, dict):
+        return [{"code": "HOST_HOOKS_INVALID"}]
+
+    expected = (
+        root / "tooling" / "plugins" / PLUGIN_NAME / "scripts" / "hook-entry.mjs"
+    ).resolve(strict=True)
+    findings: list[dict[str, str]] = []
+    for command in projected_managed_commands(hooks):
+        try:
+            invocation = shlex.split(command)
+            script_tokens = [
+                token
+                for token in invocation
+                if PLUGIN_NAME in token and token.endswith("hook-entry.mjs")
+            ]
+            if len(script_tokens) != 1:
+                raise ValueError
+            script = Path(script_tokens[0])
+            actual = script.resolve(strict=True)
+        except (OSError, ValueError):
+            findings.append({"code": "HOOK_PROJECTION_COMMAND_INVALID"})
+            continue
+        if not script.is_absolute():
+            findings.append({"code": "HOOK_PROJECTION_COMMAND_INVALID"})
+        elif actual != expected:
+            findings.append(
+                {
+                    "path": str(script),
+                    "code": "HOOK_PROJECTION_CROSS_ROOT",
+                }
+            )
+    return findings
+
+
 def hook_projection(
     root: Path,
     host: str,
@@ -126,6 +183,12 @@ def hook_projection(
         return {
             "status": "INVALID",
             "findings": [{"code": str(error)}],
+        }
+    locality_findings = hook_locality_findings(root, actual)
+    if locality_findings:
+        return {
+            "status": "INVALID",
+            "findings": locality_findings,
         }
     if actual != expected:
         return {

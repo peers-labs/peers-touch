@@ -24,6 +24,10 @@ Each worktree may write only
 `workspaceId` is derived from its own canonical root. Observation may describe
 branch, HEAD, dirty state, reporter event, and report time.
 
+The Hook installed in one worktree reports only events resolved to that same
+installation root. It never writes an observation for a sibling worktree, and
+an ambiguous multi-root event produces no observation.
+
 Observation and `git worktree list` discovery MUST NOT register a workspace,
 allocate profile/slot, assert runtime activity, grant authorization, select a
 Plan or task, update task progress, or count as Acceptance evidence.
@@ -48,6 +52,8 @@ reconciliation provides visibility without changing control-plane ownership.
   stale observations cannot override Git branch/HEAD.
 - `rg -n 'reportWorktreeObservation' tooling/plugins/pt-ew-plugin
   tooling/scripts/local-dev` finds only the reporter and thin hook adapter.
+- Multi-root Hook tests prove sibling-root and ambiguous events leave the
+  observation reporter untouched.
 
 ## Crosswalks
 
