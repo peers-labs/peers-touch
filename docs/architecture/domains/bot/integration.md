@@ -1,5 +1,8 @@
 # Bot Integration
 
+> **Status**: active
+> **Owner**: Peers-Touch Bot Team
+
 Bot management remains JWT owner-scoped:
 
 - `/bot/create`

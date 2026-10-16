@@ -1,5 +1,8 @@
 # Bot Data Model
 
+> **Status**: active
+> **Owner**: Peers-Touch Bot Team
+
 `bot_registration` contains only:
 
 - `bot_ptid`

@@ -1,6 +1,7 @@
 # Bot Product
 
-> Status: current
+> **Status**: active
+> **Owner**: Peers-Touch Bot Team
 
 Bot is an optional product form over the generic Conversation-owned message
 publishing capability. It contributes:

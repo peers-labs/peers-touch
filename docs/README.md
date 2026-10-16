@@ -279,6 +279,8 @@
 - Applet / 小程序运行时架构：`architecture/platform/applet-runtime/README.md`
 - Agent 架构总入口：`architecture/domains/agent/README.md`（active；Station 单一真源、
   Desktop 本机能力执行、统一能力绑定与 Native 最小可用 Agent Chat 证明边界）
+- Bot 产品架构：`architecture/domains/bot/README.md`（active；定义 Bot 产品身份、
+  owner-scoped 生命周期及其对 Conversation Message Publishing 的依赖边界）
 - A2A 协议集成：`architecture/domains/agent/a2a/`（文档集，入口 `README.md`）
 - Agent Canvas 编排架构：`architecture/domains/agent/agent-canvas-orchestration.md`
 - Modern Chat Agent 产品与单 Agent 运行时：`architecture/domains/agent/modern-chat-agent/README.md`

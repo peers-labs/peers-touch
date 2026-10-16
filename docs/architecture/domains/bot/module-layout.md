@@ -1,5 +1,8 @@
 # Bot Module Layout
 
+> **Status**: active
+> **Owner**: Peers-Touch Bot Team
+
 ```text
 model/domain/bot/bot.proto
 apps/station/app/subserver/bot/

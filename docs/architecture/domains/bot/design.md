@@ -1,5 +1,8 @@
 # Bot Design
 
+> **Status**: active
+> **Owner**: Peers-Touch Bot Team
+
 Bot owns product metadata only:
 
 ```text
