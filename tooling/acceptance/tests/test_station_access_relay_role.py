@@ -761,7 +761,7 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
             environment.write_text(
                 "\n".join(
                     (
-                        "PT_DEPLOY_HOST=10.37.94.156",
+                        "PT_DEPLOY_HOST=192.0.2.30",
                         "PT_DEPLOY_USER=operator",
                         "PT_DEPLOY_PATH=peers-touch/acceptance/station/repo",
                         "PT_DEPLOY_ROLE=station",
@@ -769,7 +769,7 @@ class StationAccessRelayRoleProvisionerTest(unittest.TestCase):
                         "PT_DEPLOY_RESTART_CMD='docker compose --env-file "
                         "$HOME/peers-touch/branches/chat/.env up -d station'",
                         "PT_ACCEPTANCE_DISPOSABLE=1",
-                        "PT_ACCEPTANCE_STATION_URL=http://10.37.94.156:18132",
+                        "PT_ACCEPTANCE_STATION_URL=http://192.0.2.30:18132",
                         "PT_ACCEPTANCE_COMPOSE_PROJECT=pt-chat",
                         "PT_ACCEPTANCE_STATION_CONTAINER=pt-chat-station-1",
                     )

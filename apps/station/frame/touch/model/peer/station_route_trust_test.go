@@ -63,7 +63,7 @@ func TestRouteAddressesMatchKindAcceptsOnlyExactDirectNode(t *testing.T) {
 		NodePeerId: "12D3KooWGo2HxmjfSQZKTheDEbgDBpSuhUxTNsr8DnTkXCDzdaZL",
 		Kind:       StationRouteKind_STATION_ROUTE_KIND_DIRECT,
 		Addresses: []string{
-			"/ip4/10.37.118.48/tcp/4501/p2p/" +
+			"/ip4/192.0.2.20/tcp/4501/p2p/" +
 				"12D3KooWGo2HxmjfSQZKTheDEbgDBpSuhUxTNsr8DnTkXCDzdaZL",
 		},
 	}
@@ -73,7 +73,7 @@ func TestRouteAddressesMatchKindAcceptsOnlyExactDirectNode(t *testing.T) {
 	}
 
 	statement.Addresses = []string{
-		"/ip4/10.37.118.48/tcp/4501/p2p/" +
+		"/ip4/192.0.2.20/tcp/4501/p2p/" +
 			"12D3KooWRQ2Tc85YxU3gAnP4vbTaWLDtAz6JU6PURsHcspAun6ag",
 	}
 	if routeAddressesMatchKind(statement) {
@@ -87,7 +87,7 @@ func TestRouteAddressesMatchKindRequiresDialableCircuitPrefix(t *testing.T) {
 		RelayPeerId: "12D3KooWLpZy2EgZ6SC2pgJFHjM13j1ygz7DXCfm9HiPeNQZ1uaW",
 		Kind:        StationRouteKind_STATION_ROUTE_KIND_CIRCUIT,
 		Addresses: []string{
-			"/ip4/10.37.118.48/tcp/4501/p2p/" +
+			"/ip4/192.0.2.20/tcp/4501/p2p/" +
 				"12D3KooWLpZy2EgZ6SC2pgJFHjM13j1ygz7DXCfm9HiPeNQZ1uaW" +
 				"/p2p-circuit/p2p/" +
 				"12D3KooWGo2HxmjfSQZKTheDEbgDBpSuhUxTNsr8DnTkXCDzdaZL",
@@ -113,7 +113,7 @@ func TestRouteAddressesMatchKindRejectsCircuitIdentityMismatch(t *testing.T) {
 		RelayPeerId: "12D3KooWLpZy2EgZ6SC2pgJFHjM13j1ygz7DXCfm9HiPeNQZ1uaW",
 		Kind:        StationRouteKind_STATION_ROUTE_KIND_CIRCUIT,
 		Addresses: []string{
-			"/ip4/10.37.118.48/tcp/4501/p2p/" +
+			"/ip4/192.0.2.20/tcp/4501/p2p/" +
 				"12D3KooWRQ2Tc85YxU3gAnP4vbTaWLDtAz6JU6PURsHcspAun6ag" +
 				"/p2p-circuit/p2p/" +
 				"12D3KooWGo2HxmjfSQZKTheDEbgDBpSuhUxTNsr8DnTkXCDzdaZL",

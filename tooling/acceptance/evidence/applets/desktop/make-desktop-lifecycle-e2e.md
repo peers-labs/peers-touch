@@ -6,7 +6,7 @@ Date: 2026-07-01
 
 - Command: `make desktop`
 - Profile: `two`
-- Station: `http://10.37.118.48:18080`
+- Station: `http://192.0.2.20:18080`
 - Desktop app gateway: `127.0.0.1:3130`
 - Desktop app web: `http://localhost:3310`
 - Observation tool: integrated browser against `http://localhost:3310/#/applets`

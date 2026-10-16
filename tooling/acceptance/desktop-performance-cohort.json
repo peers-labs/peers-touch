@@ -7,7 +7,7 @@
   "profile": "one",
   "account": "345662927891595266",
   "expectedActorId": "345662927891595266",
-  "station": "http://10.37.246.80:18080",
+  "station": "http://192.0.2.10:18080",
   "dataRevision": "actor-345662927891595266-group-gcg-1783870022296784951-20260720-v1",
   "window": {
     "width": 1200,

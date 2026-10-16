@@ -25,7 +25,7 @@ from _acceptance_artifacts import (
 
 PRODUCER_GATE_ID = "desktop-telemetry-route-probe-gate"
 DEFAULT_OUTPUT = "reports/desktop-telemetry-route-probe.json"
-DEFAULT_STATION = "http://10.37.246.80:18080"
+DEFAULT_STATION = "http://192.0.2.10:18080"
 DEFAULT_ACCOUNT = "b@p.t"
 DEFAULT_PASSWORD = "1"
 ARTIFACT_KIND = "desktop-telemetry-route-probe"
