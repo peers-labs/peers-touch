@@ -13,7 +13,7 @@
 - `NOT_STARTED`: no alignment delta for this ledger item is present in the current worktree.
 - Every row remains `OPEN` until its owning Task closes production behavior, prototype truthfulness, focused checks, and required receiver-side proof.
 
-Current source-side count: `93 IMPLEMENTED/UNPROVEN`, `9 PARTIAL`, `9 NOT_STARTED`, `0/111 formally closed`.
+Current source-side count: `94 IMPLEMENTED/UNPROVEN`, `9 PARTIAL`, `8 NOT_STARTED`, `0/111 formally closed`.
 
 ## Shell, identity, and login
 
@@ -108,8 +108,8 @@ Current source-side count: `93 IMPLEMENTED/UNPROVEN`, `9 PARTIAL`, `9 NOT_STARTE
 
 | ID | Required outcome | Source state | Current evidence | Task |
 |---|---|---|---|---|
-| AP1 | Bind launcher/search to installed and catalog projections | IMPLEMENTED/UNPROVEN | `AppletsPage.tsx`, `store/applets.ts`; prototype still hardcoded | DUI-12 |
-| AP2 | Use directory-based local import, not `.bundle` fiction | IMPLEMENTED/UNPROVEN | production import path exists; applet-workspace prototype still `.bundle` | DUI-12 |
+| AP1 | Bind launcher/search to installed and catalog projections | IMPLEMENTED/UNPROVEN | Launcher, command search and Settings share `useAppletsStore`; prototype shares `AppletCatalogAdapter`; Native proof remains open | DUI-12 |
+| AP2 | Use directory-based local import, not `.bundle` fiction | IMPLEMENTED/UNPROVEN | canonical Native directory import retained; prototype `.bundle` picker deleted and Native availability shown; physical picker proof remains open | DUI-12 |
 | AP3 | Expose Station catalog/install surface | IMPLEMENTED/UNPROVEN | catalog cards and install action exist in `AppletsPage.tsx` | DUI-12 |
 | AP4 | Launch real Lynx surface through kernel/session gateway | NOT_STARTED | production runtime exists; prototype renders skeleton | DUI-13 |
 | AP5 | Project seven-state lifecycle and reclaim semantics | NOT_STARTED | kernel FSM exists; prototype shows a binary dot | DUI-13 |
@@ -120,8 +120,8 @@ Current source-side count: `93 IMPLEMENTED/UNPROVEN`, `9 PARTIAL`, `9 NOT_STARTE
 | AP10 | Surface permissions, approvals, audit, and quotas | NOT_STARTED | enforcement exists; prototype has one trust label | DUI-14 |
 | AP11 | Surface revoked/disabled/update/offline status | IMPLEMENTED/UNPROVEN | `RuntimeAppletStatus`, catalog/status tags | DUI-14 |
 | AP12 | Remove fictional launcher badges or land an accepted event contract | NOT_STARTED | no canonical badge projection | DUI-14 |
-| AP13 | Use real applet identities | IMPLEMENTED/UNPROVEN | production defaults `peers.note`/`peers.atelier`; shell settings still fictional | DUI-12 |
-| AP14 | Delete dead legacy registry path | NOT_STARTED | `apps/desktop/src/applets/registry.ts` remains a stub target | DUI-12 |
+| AP13 | Use real applet identities | IMPLEMENTED/UNPROVEN | production IDs preserved; explicit browser scenarios read package manifests; default inventory empty; Native proof remains open | DUI-12 |
+| AP14 | Delete dead legacy registry path | IMPLEMENTED/UNPROVEN | stub registry deleted; its Settings consumer migrated to the runtime projection; exact-source Native proof remains open | DUI-12 |
 
 ## Advanced settings
 
@@ -132,7 +132,7 @@ Current source-side count: `93 IMPLEMENTED/UNPROVEN`, `9 PARTIAL`, `9 NOT_STARTE
 | AD3 | Replace fictional whole-data export with real recovery/export journeys | IMPLEMENTED/UNPROVEN | only memory export and encrypted messaging recovery remain; browser recovery is visibly unavailable without its encrypted runtime; Native recovery proof remains open | DUI-15 |
 | AD4 | Bind and place real onboarding reset consistently | IMPLEMENTED/UNPROVEN | production owner retains session reset; prototype confirmation invokes Shell auth/onboarding callback; Native lifecycle proof remains open | DUI-15 |
 | AD5 | Use real outbound channels and remove Email/Matrix/core-messaging rows | IMPLEMENTED/UNPROVEN | Lark-only prototype commands use actual appId/appSecret fields, preserve error drafts, and remove fictional integrations; live channel proof remains open | DUI-15 |
-| AD6 | Bind applet settings to real install/enable/disable state | PARTIAL | prototype consumes injected installed list/settingsPanel and deletes six fictional applets; shared launcher catalog and lifecycle closure remain DUI-12 dependencies | DUI-15 |
+| AD6 | Bind applet settings to real install/enable/disable state | PARTIAL | production and prototype Settings now read the launcher inventory; installed list synchronization verified in browser; applet-owned settings/enable-disable lifecycle and Native closure remain open | DUI-15 |
 | AD7 | Delete fabricated user statistics section | IMPLEMENTED/UNPROVEN | Statistics navigation/component/heatmap/ranking constants are absent from prototype; production legacy API is absent; owning Task closure remains open | DUI-15 |
 | AD8 | Bind live logs/filter/follow/export | IMPLEMENTED/UNPROVEN | prototype consumes injected tail, six levels, bounded rows, selected-only polling, pause/follow and visible export; live Native log proof remains open | DUI-15 |
 | AD9 | Bind real cron builder/run/history and remove fake backup target | IMPLEMENTED/UNPROVEN | prototype uses real schedule/execution/delivery fields, requires projected destination, and separates run request from success; Native scheduler proof remains open | DUI-15 |

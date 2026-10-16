@@ -9,18 +9,12 @@
  *     a lightweight placeholder; applets render their own surface)
  *   - command palette (Cmd/Ctrl + K), also opened from Settings
  *
- * Atelier is NOT a standalone full-screen app — it is an *applet*. The rail
- * `▦` icon opens the **applets center** (`page === 'applets'`), which lists all
- * installed applets as cards; clicking an applet's "Open" enters its surface as
- * `applet:<id>` inside the content area. This mirrors the real desktop flow
- * (AppletsPage → handleOpen → navigate `applet:<id>`).
- *
- * This prototype exists to show that container relationship; the page bodies
- * other than atelier are intentionally thin placeholders.
- *
- * Standalone web prototype: no real store / kernel / tauri, mock-data only.
+ * Launcher, command search and Settings consume one injected applet catalog.
+ * Routes use canonical package IDs. The default browser inventory is empty;
+ * explicit applets-* scenarios use package manifest metadata. This browser
+ * prototype does not claim Native directory selection or Store execution.
  */
-import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from 'react';
 import {
   Search,
   MessageCircle,
@@ -32,16 +26,16 @@ import {
   PanelRightOpen,
   UserRoundCog,
   Sparkles,
-  Globe,
-  Wrench,
-  ChevronRight,
   Zap,
   Workflow as WorkflowIcon,
   type LucideIcon,
 } from 'lucide-react';
 import { AtelierPage } from '@peers-touch/prototype-desktop-atelier';
+import { Button } from '@lobehub/ui';
 import { AgentCanvasPage } from '@peers-touch/prototype-agent-canvas';
 import { AppletWorkspacePage } from '../../features/applet-workspace/src/AppletWorkspacePrototype';
+import { appletCatalogScenario } from '../../features/applet-workspace/src/appletCatalogScenarios';
+import { canOpenApplet, catalogInventory, type AppletCatalogAdapter, type CatalogApplet } from '../../features/applet-workspace/src/appletCatalogAdapter';
 import { SocialChatPage } from '../../features/social-chat/src/pages/SocialChatPage';
 import { Page as AgentFeaturePage } from '../../features/agent/src/Page';
 import { AgentChatPage } from './AgentChatPage';
@@ -58,62 +52,7 @@ import {
 import { WelcomeLoginPrototype } from './WelcomeLoginPrototype';
 import { createAdvancedSettingsAdapter, type AdvancedSettingsAdapter } from './advancedSettingsAdapter';
 import { advancedSettingsScenario } from './advancedSettingsScenarios';
-
-/** An installed applet (mirrors RuntimeAppletInfo.manifest + status). */
-interface AppletInfo {
-  id: string;
-  name: string;
-  version: string;
-  author: string;
-  description: string;
-  /** lucide icon + gradient for the card chip */
-  icon: LucideIcon;
-  gradient: string;
-  capabilities: string[];
-  /** active = entered at least once this session (mock) */
-  status: 'active' | 'inactive';
-  /** the applet surface; atelier renders the real prototype */
-  render: () => React.ReactNode;
-}
-
-const APPLETS: AppletInfo[] = [
-  {
-    id: 'atelier',
-    name: 'Atelier',
-    version: '0.1.0',
-    author: 'Peers-Touch',
-    description: '个人 Agent 工作台：多 Agent 协作、协商引擎、共识与裁决，把大项目当工程系统推进到完成。',
-    icon: Sparkles,
-    gradient: 'linear-gradient(135deg, #8b5cf6, #6d28d9)',
-    capabilities: ['agents', 'ai', 'skills', 'tasks'],
-    status: 'active',
-    render: () => <AtelierPage />,
-  },
-  {
-    id: 'web-explorer',
-    name: 'Web Explorer',
-    version: '0.0.3',
-    author: 'Peers-Touch',
-    description: '联网检索与网页摘要 applet（容器演示用占位，未细化）。',
-    icon: Globe,
-    gradient: 'linear-gradient(135deg, #0ea5e9, #2563eb)',
-    capabilities: ['search', 'network'],
-    status: 'inactive',
-    render: () => <AppletPlaceholder name="Web Explorer" />,
-  },
-  {
-    id: 'toolbox',
-    name: 'Toolbox',
-    version: '0.0.1',
-    author: 'Peers-Touch',
-    description: '本地工具集 applet（容器演示用占位，未细化）。',
-    icon: Wrench,
-    gradient: 'linear-gradient(135deg, #10b981, #059669)',
-    capabilities: ['tools', 'file'],
-    status: 'inactive',
-    render: () => <AppletPlaceholder name="Toolbox" />,
-  },
-];
+import { bindAppletSettings } from './appletSettingsProjection';
 
 /** Kernel-style top nav entries — placeholders. */
 const NAV_ITEMS: { id: string; icon: LucideIcon; title: string }[] = [
@@ -129,7 +68,6 @@ const COMMANDS: { id: string; label: string; desc: string; shortcut: string; tar
   { id: 'agent-atelier', label: 'Atelier', desc: '打开 Agent 工作台', shortcut: '⌘⇧A', target: 'agent-atelier' },
   { id: 'agent-orchestration', label: 'Agent 编排', desc: '从 Agent 页进入编排画板', shortcut: '⌘⇧J', target: 'agent-orchestration' },
   { id: 'applets', label: 'Applets', desc: '打开 Applets 中心', shortcut: '⌘⇧E', target: 'applets' },
-  { id: 'atelier', label: '打开 Atelier', desc: '进入 Atelier applet', shortcut: '⌘⇧A', target: 'applet:atelier' },
   { id: 'settings', label: '设置', desc: '打开设置', shortcut: '⌘,', target: 'settings' },
 ];
 
@@ -317,228 +255,27 @@ function PagePlaceholder({ page }: { page: string }) {
   );
 }
 
-/** Placeholder surface for applets we don't prototype (web-explorer / toolbox). */
-function AppletPlaceholder({ name }: { name: string }) {
-  return (
-    <div
-      style={{
-        height: '100%',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: T.textTertiary,
-        backgroundColor: T.bg,
-        gap: 12,
-      }}
-    >
-      <Blocks size={40} color={T.textQuaternary} />
-      <div style={{ fontSize: 17, fontWeight: 'bold', color: T.textSecondary }}>{name}</div>
-      <div style={{ fontSize: 13, maxWidth: 360, textAlign: 'center' }}>
-        该 applet 仅用于演示「Applets 列表 → 进入 applet」的容器关系，内容未细化。
-      </div>
-    </div>
-  );
-}
-
-/**
- * Applets center (`page === 'applets'`) — card grid of installed applets.
- * Mirrors the real desktop AppletsPage: click "Open" → enter `applet:<id>`.
- */
-function AppletsCenter({ onOpen }: { onOpen: (id: string) => void }) {
-  return (
-    <div style={{ height: '100%', overflow: 'auto', backgroundColor: T.bg }}>
-      {/* PageHeader */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          padding: '22px 40px 18px',
-          borderBottom: `1px solid ${T.borderSoft}`,
-        }}
-      >
-        <div
-          style={{
-            width: 38,
-            height: 38,
-            borderRadius: 10,
-            background: T.primaryWash,
-            color: T.primary,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <Blocks size={20} />
-        </div>
-        <div>
-          <div style={{ fontSize: 18, fontWeight: 700, color: T.text }}>Applets</div>
-          <div style={{ fontSize: 13, color: T.textTertiary }}>
-            已安装的 applet。点「打开」进入对应工作面。
-          </div>
-        </div>
-      </div>
-
-      {/* card grid */}
-      <div
-        style={{
-          padding: '28px 40px 48px',
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
-          gap: 20,
-          alignContent: 'start',
-        }}
-      >
-        {APPLETS.map((a) => (
-          <AppletCard key={a.id} applet={a} onOpen={() => onOpen(a.id)} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/** A single applet card in the applets center. */
-function AppletCard({ applet, onOpen }: { applet: AppletInfo; onOpen: () => void }) {
-  const [hover, setHover] = useState(false);
-  const isActive = applet.status === 'active';
-  const Icon = applet.icon;
-  return (
-    <div
-      onClick={onOpen}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      style={{
-        borderRadius: 16,
-        border: `1px solid ${hover ? T.primary : isActive ? T.primaryWash : T.border}`,
-        background: T.white,
-        overflow: 'hidden',
-        cursor: 'pointer',
-        transition: 'all 0.2s ease',
-        transform: hover ? 'translateY(-2px)' : 'none',
-        boxShadow: hover ? '0 4px 24px rgba(107,91,214,0.12)' : 'none',
-      }}
-    >
-      {/* top accent */}
-      <div style={{ height: 3, background: isActive ? applet.gradient : T.border }} />
-      <div style={{ padding: '20px 20px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-        {/* row 1: icon + name + status */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <div
-            style={{
-              width: 52,
-              height: 52,
-              borderRadius: 14,
-              background: applet.gradient,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-              opacity: isActive ? 1 : 0.6,
-            }}
-          >
-            <Icon size={26} color={T.white} />
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 16, fontWeight: 700, color: T.text }}>{applet.name}</span>
-              <span style={{ fontSize: 11, color: T.textTertiary }}>v{applet.version}</span>
-              <span
-                style={{
-                  fontSize: 11,
-                  color: isActive ? '#10b981' : T.textQuaternary,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 4,
-                }}
-              >
-                <span
-                  style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: '50%',
-                    background: isActive ? '#10b981' : T.textQuaternary,
-                  }}
-                />
-                {isActive ? '已启用' : '未启用'}
-              </span>
-            </div>
-            <div style={{ fontSize: 12, color: T.textTertiary, marginTop: 2 }}>by {applet.author}</div>
-          </div>
-        </div>
-
-        {/* row 2: description */}
-        <div
-          style={{
-            fontSize: 13,
-            lineHeight: 1.6,
-            color: T.textSecondary,
-            display: '-webkit-box',
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: 'vertical',
-            overflow: 'hidden',
-          }}
-        >
-          {applet.description}
-        </div>
-
-        {/* row 3: capabilities */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-          {applet.capabilities.map((c) => (
-            <span
-              key={c}
-              style={{
-                fontSize: 11,
-                lineHeight: '20px',
-                padding: '0 8px',
-                borderRadius: 6,
-                background: T.fillQuaternary,
-                color: T.textSecondary,
-                border: `1px solid ${T.borderSoft}`,
-              }}
-            >
-              {c}
-            </span>
-          ))}
-        </div>
-
-        {/* footer: open */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'flex-end',
-            gap: 4,
-            paddingTop: 4,
-            color: hover ? T.primary : T.textTertiary,
-            fontSize: 13,
-            fontWeight: 600,
-          }}
-        >
-          打开
-          <ChevronRight size={16} />
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /** Command palette (Cmd/Ctrl + Shift + P) — antd Modal form mocked in CSS. */
 function CommandPalette({
   open,
   onClose,
   onRun,
+  applets,
 }: {
   open: boolean;
   onClose: () => void;
   onRun: (target: string) => void;
+  applets: readonly CatalogApplet[];
 }) {
   const [query, setQuery] = useState('');
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return COMMANDS;
-    return COMMANDS.filter((c) => `${c.label} ${c.desc} ${c.shortcut}`.toLowerCase().includes(q));
-  }, [query]);
+    const commands = [...COMMANDS, ...applets.filter(canOpenApplet).map(applet => ({
+      id: `applet:${applet.id}`, label: applet.name, desc: applet.id, shortcut: '', target: `applet:${applet.id}`,
+    }))];
+    if (!q) return commands;
+    return commands.filter((c) => `${c.label} ${c.desc} ${c.shortcut}`.toLowerCase().includes(q));
+  }, [query, applets]);
 
   if (!open) return null;
   return (
@@ -644,6 +381,7 @@ export interface DesktopShellProps {
   initialPage?: string;
   initialNotifications?: readonly NotifItem[];
   advancedSettingsAdapter?: AdvancedSettingsAdapter;
+  appletCatalogAdapter?: AppletCatalogAdapter;
 }
 
 type AgentSurfaceId = 'agent' | 'agent-atelier' | 'agent-orchestration';
@@ -687,6 +425,7 @@ export function DesktopShell({
   initialPage,
   initialNotifications,
   advancedSettingsAdapter,
+  appletCatalogAdapter,
 }: DesktopShellProps = {}) {
   // page mirrors the real router: kernel ids (search/chat/agent/settings),
   // `applets` for the applets center, or `applet:<id>` for an applet surface.
@@ -725,14 +464,17 @@ export function DesktopShell({
   );
   const [authPrototypeComplete, setAuthPrototypeComplete] = useState(false);
   const [onboardingReset, setOnboardingReset] = useState(false);
+  const catalogAdapter = useMemo(() => appletCatalogAdapter ?? appletCatalogScenario(modernChatState), [appletCatalogAdapter, modernChatState]);
+  const catalog = useSyncExternalStore(catalogAdapter.subscribe, catalogAdapter.getSnapshot, catalogAdapter.getSnapshot);
+  const inventory = useMemo(() => catalogInventory(catalog), [catalog]);
   const settingsAdapter = useMemo(() => {
-    if (advancedSettingsAdapter) return advancedSettingsAdapter;
+    if (advancedSettingsAdapter) return bindAppletSettings(advancedSettingsAdapter, catalogAdapter);
     const scenario = advancedSettingsScenario();
-    return createAdvancedSettingsAdapter(scenario.projection, {
+    return bindAppletSettings(createAdvancedSettingsAdapter(scenario.projection, {
       ...scenario,
       onResetOnboarding: () => { setOnboardingReset(true); setPaletteOpen(false); },
-    });
-  }, [advancedSettingsAdapter]);
+    }), catalogAdapter);
+  }, [advancedSettingsAdapter, catalogAdapter]);
   const unreadCount = notifications.filter((n) => !n.read).length;
   const [visitedAgentSurfaces, setVisitedAgentSurfaces] = useState<Set<AgentSurfaceId>>(() => {
     const initialSurface = getAgentSurfaceId(defaultPage);
@@ -751,6 +493,17 @@ export function DesktopShell({
     }
     setNotificationView('closed');
     setPage(p);
+  };
+
+  const openApplet = async (id: string) => {
+    const target = catalogInventory(catalogAdapter.getSnapshot()).find(item => item.id === id);
+    if (!target || !canOpenApplet(target)) return;
+    navigate(`applet:${id}`);
+    if (target.status === 'available') {
+      try { await catalogAdapter.install(id); } catch { navigate('applets'); return; }
+    }
+    const installed = catalogInventory(catalogAdapter.getSnapshot()).find(item => item.id === id);
+    if (installed && installed.status !== 'available' && canOpenApplet(installed)) navigate(`applet:${id}`);
   };
 
   const openNotification = (item: NotifItem) => {
@@ -791,19 +544,27 @@ export function DesktopShell({
   }
 
   const applet = page.startsWith('applet:')
-    ? APPLETS.find((a) => `applet:${a.id}` === page)
+    ? inventory.find((a) => `applet:${a.id}` === page)
     : undefined;
 
   // Resolve the content body: applet surface > injected kernel page > built-in
   // prototype page > thin placeholder. Injected pages let a sibling prototype
   // mount its own block into a real kernel page without re-building the chrome.
   let body: React.ReactNode;
-  if (applet) {
-    body = applet.render();
+  if (page.startsWith('applet:')) {
+    const available = applet && applet.status !== 'available' && canOpenApplet(applet);
+    body = applet && catalog.pendingId === applet.id
+      ? <div className="catalog-empty" role="status">正在准备 {applet.name}…</div>
+      : available && pages?.[page] ? pages[page]!()
+      : available && applet.id === 'peers.atelier' ? <AtelierPage />
+        : <div className="catalog-empty" style={{ flexDirection: 'column', gap: 16 }} role="status">
+          <span>{applet?.name ?? '小程序'} 暂时无法打开。</span>
+          <Button onClick={() => navigate('applets')}>返回小程序</Button>
+        </div>;
   } else if (pages && pages[page]) {
     body = pages[page]!();
   } else if (page === 'applets') {
-    body = <AppletWorkspacePage />;
+    body = <AppletWorkspacePage adapter={catalogAdapter} onOpen={id => void openApplet(id)} />;
   } else if (page === 'chat') {
     body = <SocialChatPage />;
   } else if (page === 'agent') {
@@ -969,9 +730,11 @@ export function DesktopShell({
       </div>
       <CommandPalette
         open={paletteOpen}
+        applets={inventory}
         onClose={() => setPaletteOpen(false)}
         onRun={(target) => {
-          navigate(target);
+          if (target.startsWith('applet:')) void openApplet(target.slice('applet:'.length));
+          else navigate(target);
           setPaletteOpen(false);
         }}
       />

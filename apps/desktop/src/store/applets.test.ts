@@ -5,6 +5,7 @@ const manager = vi.hoisted(() => ({
   scanApplets: vi.fn<() => Promise<AppletInfo[]>>(),
   getLoadedApplets: vi.fn<() => string[]>(),
   getDiagnostics: vi.fn<() => []>(),
+  assertSupportedApplet: vi.fn<(manifest: AppletInfo) => void>(),
   loadApplet: vi.fn<(id: string) => Promise<AppletInfo>>(),
   unloadApplet: vi.fn<(id: string) => Promise<void>>(),
 }));
@@ -194,5 +195,72 @@ describe('applets runtime store', () => {
       useAppletsStore.getState().removeAppletInstallation(atelierManifest.id),
     ).rejects.toThrow('error.applet.bundledCannotUninstall');
     expect(desktopApi.appletStoreUninstall).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [3, 'disabled'],
+    [4, 'revoked'],
+  ] as const)('preserves Station policy %s across an installed local identity', async (status, label) => {
+    desktopApi.appletStoreListCatalog.mockResolvedValue({
+      items: [{ info: { id: manifest.id }, installState: { appletId: manifest.id, status } }],
+    });
+    const { useAppletsStore } = await import('./applets');
+    useAppletsStore.setState({ localDevInstalledAppletIds: [manifest.id] });
+    await useAppletsStore.getState().refresh();
+    const inventory = [...useAppletsStore.getState().applets, ...useAppletsStore.getState().catalogApplets];
+    expect(inventory.find(item => item.manifest.id === manifest.id)?.status).toBe(label);
+    await expect(useAppletsStore.getState().installApplet(manifest.id)).rejects.toThrow(`error.applet.${label}`);
+    await expect(useAppletsStore.getState().loadApplet(manifest.id)).rejects.toThrow(`error.applet.${label}`);
+    expect(desktopApi.appletStoreInstall).not.toHaveBeenCalled();
+    expect(manager.loadApplet).not.toHaveBeenCalled();
+
+    desktopApi.appletStoreListCatalog.mockRejectedValueOnce(new Error('Station unavailable'));
+    await useAppletsStore.getState().refresh();
+    expect(useAppletsStore.getState().stationUnavailable).toBe(true);
+    const offlineInventory = [...useAppletsStore.getState().applets, ...useAppletsStore.getState().catalogApplets];
+    expect(offlineInventory.find(item => item.manifest.id === manifest.id)?.status).toBe(label);
+    await expect(useAppletsStore.getState().loadApplet(manifest.id)).rejects.toThrow(`error.applet.${label}`);
+  });
+
+  it('honors revoked package metadata even without an installation policy', async () => {
+    manager.scanApplets.mockResolvedValue([atelierManifest]);
+    desktopApi.appletStoreListCatalog.mockResolvedValue({
+      items: [{ info: { id: atelierManifest.id }, version: { status: 4 } }],
+    });
+    const { useAppletsStore } = await import('./applets');
+    await useAppletsStore.getState().refresh();
+    expect(useAppletsStore.getState().applets).toEqual([]);
+    expect(useAppletsStore.getState().catalogApplets[0]?.status).toBe('revoked');
+  });
+
+  it('refuses an incompatible local install before changing installation preference', async () => {
+    const { useAppletsStore } = await import('./applets');
+    useAppletsStore.setState({
+      applets: [], catalogApplets: [{ manifest, status: 'available', source: 'local-dev' }],
+      localDevInstalledAppletIds: [],
+    });
+    manager.assertSupportedApplet.mockImplementationOnce(() => { throw new Error('error.applet.incompatiblePlatform'); });
+    await expect(useAppletsStore.getState().installApplet(manifest.id)).rejects.toThrow('error.applet.incompatiblePlatform');
+    expect(useAppletsStore.getState().localDevInstalledAppletIds).toEqual([]);
+    expect(desktopApi.appletStoreInstall).not.toHaveBeenCalled();
+  });
+
+  it('rejects direct install requests for an identity missing from the catalog', async () => {
+    const { useAppletsStore } = await import('./applets');
+    await expect(useAppletsStore.getState().installApplet('missing')).rejects.toThrow('error.applet.notFound');
+    expect(desktopApi.appletStoreInstall).not.toHaveBeenCalled();
+  });
+
+  it('destroys a newly opened session when revocation arrives during loading', async () => {
+    const { useAppletsStore } = await import('./applets');
+    manager.loadApplet.mockImplementationOnce(async () => {
+      useAppletsStore.setState({
+        applets: [], catalogApplets: [{ manifest, status: 'revoked', source: 'station' }],
+      });
+      return manifest;
+    });
+    await expect(useAppletsStore.getState().loadApplet(manifest.id)).rejects.toThrow('error.applet.revoked');
+    expect(manager.unloadApplet).toHaveBeenCalledWith(manifest.id);
+    expect(useAppletsStore.getState().catalogApplets[0]?.status).toBe('revoked');
   });
 });

@@ -138,6 +138,26 @@ content lease and Station trust checks and shares only artifact hashing.
 - keep HOME / Explore / Circle / Detail / User pages as pure readers for first-screen data;
 - allow explicit user actions (`Load more`, sort switch, comment submit) to call store actions, because those are interaction-driven pagination/write flows rather than mount-time projection freshness.
 
+## 4.2 Applet Catalog Projection
+
+`appletsRuntime` owns reconciliation of `useAppletsStore`. Launcher, command
+search and the lazy Settings applet section read that same installed/catalog
+projection. Settings declares the `applets` runtime and does not call the
+legacy `applets_list` registry or import applet product components.
+
+The store merges canonical package IDs from the local validated index and
+Station catalog. Station revoked/disabled state takes precedence over local
+installation, including bundled applets; a failed Station refresh preserves
+known denials. Installation checks the AppletManager schema/Desktop/platform
+version boundary before either changing local installation preferences or
+issuing a Store command. Loading rechecks policy after installation and after
+session creation, destroying a session if a denial arrives during load.
+
+Local import uses the Native directory selection command. Browser prototypes
+expose that availability boundary and share one injected catalog across
+Launcher, command search and Settings. Explicit browser scenarios use package
+manifest metadata; their installation results are not production Store proof.
+
 ## 5. Implementation Pattern
 
 When adding or fixing a runtime-backed feature:

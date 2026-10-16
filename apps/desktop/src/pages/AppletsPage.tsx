@@ -91,6 +91,11 @@ function appletIdentity(info: RuntimeAppletInfo) {
   };
 }
 
+function matchesAppletQuery(info: RuntimeAppletInfo, query: string): boolean {
+  return `${info.manifest.id} ${info.manifest.name} ${info.manifest.description}`
+    .toLowerCase().includes(query);
+}
+
 export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => void }) {
   const { t } = useTranslation('applet');
   const { token } = theme.useToken();
@@ -120,14 +125,14 @@ export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => voi
   const visibleApplets = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     return applets
-      .filter((info) => (normalized ? info.manifest.name.toLowerCase().includes(normalized) : true))
+      .filter((info) => matchesAppletQuery(info, normalized))
       .sort((left, right) => (right.lastOpenedAt ?? -1) - (left.lastOpenedAt ?? -1));
   }, [applets, query]);
 
   const visibleCatalogApplets = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     return catalogApplets
-      .filter((info) => (normalized ? info.manifest.name.toLowerCase().includes(normalized) : true))
+      .filter((info) => matchesAppletQuery(info, normalized))
       .sort((left, right) => left.manifest.name.localeCompare(right.manifest.name));
   }, [catalogApplets, query]);
 

@@ -33,7 +33,7 @@ make run-prototype
   - `topActions`：Search / 聊天 / Agent / Notes 等内核页入口 + **applet pins**（Blocks 图标，active 态对应 `page === 'applet:<id>'`）。
   - `bottomActions`：通知 / 命令面板 / 设置。
 - **内容区（页面路由）**：按 `page` 切换。Agent Chat、Agent Profile、Orchestration 和 Settings 使用已细化原型；其他未覆盖页面使用轻量占位。
-- **命令面板**（`⌘⇧P`）：mock 命令列表，可跳转各页/applet（对齐真实 AppSideNav 的 Command Palette）。
+- **命令面板**（`⌘K`）：核心页面命令与共享 applet 目录组合，不持有另一份 applet 身份列表。
 
 ## Agent 模块集成
 
@@ -209,13 +209,41 @@ file expiration clear/delete/restore、cron create/pause/run/history、
 log visible export/filter recovery、onboarding reset 和 section retry。
 L4 覆盖 selected-only tree、bounded logs、name-role-value 和按钮尺寸。
 Native storage/recovery/OSS/cron execution、真实读屏器、field performance、
-完整 localization 和 DUI-12 catalog 仍为 UNPROVEN。
+完整 localization 与 Native DUI-12 catalog 仍为 UNPROVEN。
 
 ## Atelier 是容器里的一个 applet
 
-- 左栏 Atelier pin（Blocks 图标）→ 进入 `applet:atelier` → 内容区渲染 `@peers-touch/prototype-desktop-atelier` 的 `AtelierPage`。
+- Applets 入口→共享 Installed 目录→`applet:peers.atelier`，内容区渲染
+  `@peers-touch/prototype-desktop-atelier` 的 `AtelierPage`。
 - atelier 原型壳由 `height: 100vh` 改为 `height: 100%`，以便自适应嵌入容器内容区。
-- 默认落在 `applet:atelier`，直观体现「容器 → applet」从属关系。
+- 默认进入 Applets，库存为空；显式 `?state=applets-installed` 场景读取
+  `apps/applets/{note,atelier}/applet.manifest.json` 的真实身份。
+
+## Applet 目录与 Settings（DUI-12）
+
+`AppletCatalogAdapter` 是 Browser 的唯一目录 owner。Launcher、命令搜索和
+Settings 同时读取 Installed/Catalog 投影；安装动作返回新投影后，Settings
+立即显示相同库存。默认不制造 applet 或已运行实例，不提供 `.bundle`
+导入。Native 文件选择器未注入时，目录导入禁用并说明原因。真实 Station
+Store、Native picker 与生命周期的证明仍为 UNPROVEN。
+
+评审场景：`applets-installed`、`applets-catalog`、`applets-install-error`、
+`applets-revoked`、`applets-offline`、`applets-loading`、`applets-empty`，
+通过 Portal URL 的 `state` 参数选择。这些场景是 MOCKED_HARNESS；
+名称、版本和 ID 从 package manifest 读取，policy/install 状态只用于 QA。
+
+Craft：继承 shared UI ID 与 Desktop Applet Launcher 合同。主体是 applet
+身份；打开是主动作，Catalog 安装与 policy 原因共享固定操作轨。保留
+icon grid、失败保留搜索、键盘打开和恢复入口；拒绝虚构卡片、实例、
+系统 pin/window 状态和静态 Settings 库存。
+
+L2 light evidence 已打开检查：`evidence-l2/20261016-applet-catalog-wide.png`
+（1440×1000 host，1062×780 content）、`20261016-applet-catalog-narrow.png`
+（760×850 host，658×780 content）、`20261016-applet-catalog-settings-sync.png`、
+`20261016-applet-catalog-revoked.png`、`20261016-applet-catalog-install-error.png`
+与 `20261016-applet-catalog-empty.png`。L3/L4 的 26 项 Browser 检查覆盖
+canonical ID 搜索、安装去重、跨面板库存同步、失败重试、键盘恢复、
+撤销/unsupported 禁用、加载态和固定操作轨。它们只证明 MOCKED_HARNESS。
 
 ## 对应设计
 

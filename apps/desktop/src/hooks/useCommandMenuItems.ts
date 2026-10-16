@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useAgentStore } from '../store/agent';
 import { useAgentTopicStore } from '../store/agentTopics';
 import { useCommandMenuStore } from '../store/commandMenu';
+import { useAppletsStore } from '../store/applets';
 import { fuzzyMatchMulti } from '../utils/fuzzyMatch';
 import type { CommandItem } from '../store/commandMenu';
 import type { Page } from '../types/navigation';
@@ -40,6 +41,8 @@ export function useCommandMenuItems(deps: CommandMenuDeps): GroupedCommands {
   const query = useCommandMenuStore((s) => s.query);
   const agents = useAgentStore((s) => s.agents);
   const topicsByAgentId = useAgentTopicStore((s) => s.topicsByAgentId);
+  const installedApplets = useAppletsStore(s => s.applets);
+  const catalogApplets = useAppletsStore(s => s.catalogApplets);
 
   return useMemo(() => {
     const allItems: CommandItem[] = [];
@@ -64,6 +67,19 @@ export function useCommandMenuItems(deps: CommandMenuDeps): GroupedCommands {
         title,
         icon: PAGE_ICONS[entry.page] ?? 'FileText',
         action: () => navigateTo(entry.page),
+      });
+    }
+
+    // The same runtime projection feeds Launcher and Settings; no static registry.
+    for (const applet of [...installedApplets, ...catalogApplets]) {
+      if (applet.status === 'revoked' || applet.status === 'disabled') continue;
+      allItems.push({
+        id: `applet:${applet.manifest.id}`,
+        type: 'page',
+        title: applet.manifest.name,
+        subtitle: `${applet.manifest.id} · ${applet.manifest.description}`,
+        icon: 'FileText',
+        action: () => navigateTo(`applet:${applet.manifest.id}`),
       });
     }
 
@@ -151,5 +167,5 @@ export function useCommandMenuItems(deps: CommandMenuDeps): GroupedCommands {
     }
 
     return grouped;
-  }, [query, agents, topicsByAgentId, navigateTo, navigateToAgentSurface, navigateToSettings, t]);
+  }, [query, agents, topicsByAgentId, installedApplets, catalogApplets, navigateTo, navigateToAgentSurface, navigateToSettings, t]);
 }

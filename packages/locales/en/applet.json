@@ -53,6 +53,11 @@
   "applet.uninstall.confirm": "Uninstall",
   "applet.uninstall.cancel": "Cancel",
   "error.applet.revoked": "This applet version has been revoked and cannot be opened.",
+  "error.applet.disabled": "This applet is disabled and cannot be opened.",
+  "error.applet.notFound": "This applet is no longer in the catalog. Refresh and try again.",
+  "error.applet.installUnconfirmed": "Installation has not been confirmed. Refresh and try again.",
+  "error.applet.unsupportedDesktop": "This applet does not support Desktop.",
+  "error.applet.incompatiblePlatform": "This applet requires a newer platform version.",
   "error.applet.bundledCannotUninstall": "Built-in applets cannot be uninstalled.",
   "error.applet.stationBundleUnavailable": "This Station applet is installed, but its desktop bundle is not cached locally yet.",
 

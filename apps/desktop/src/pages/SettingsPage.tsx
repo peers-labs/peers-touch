@@ -16,8 +16,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useProviderStore } from '../store/provider';
-import { api, type Agent, type AppletInfo, type AvailableModel, type HelpCategoryGroup, type SearchProviderInfo } from '../services/desktop_api';
-import { hasSettingsPanel, getAppletFrontend } from '../applets/registry';
+import { api, type Agent, type AvailableModel, type HelpCategoryGroup, type SearchProviderInfo } from '../services/desktop_api';
 import { getModulesWithSettings } from '../modules/registry';
 import { PageHeader } from '../components/PageHeader';
 import { LanguageSwitcher } from '../components/common/LanguageSwitcher';
@@ -49,6 +48,7 @@ import {
   formatChatScreenshotShortcut,
 } from '../utils/chatScreenshotShortcut';
 import { useActiveSettingsSlice } from './useActiveSettingsStore';
+import { useActiveAppletsSlice } from './useActiveAppletsStore';
 
 const { Text } = Typography;
 
@@ -163,6 +163,7 @@ function useSettingsSections(): SectionDef[] {
         label: t('settings.tab.applets'),
         icon: Puzzle,
         order: 60,
+        policy: { cache: 'selected-only' },
         render: () => <AppletsSettingsTab />,
       },
       {
@@ -498,137 +499,29 @@ export function SettingsPage({ activeTab, highlightId, onNavConsumed }: Settings
 }
 
 function AppletsSettingsTab() {
-  const [applets, setApplets] = useState<AppletInfo[]>([]);
-  const [selected, setSelected] = useState<string | null>(null);
-  const { token } = theme.useToken();
-  const { t } = useTranslation('settings');
-
-  useEffect(() => {
-    api.listApplets().then(setApplets).catch((e) => log.error('settings', 'Failed to list applets', e));
-  }, []);
-
-  const SettingsPanel = selected ? getAppletFrontend(selected)?.settingsPanel : undefined;
-
-  if (SettingsPanel) {
-    return (
-      <Flexbox style={{ overflow: 'hidden', padding: '0 24px' }}>
-        <Flexbox
-          horizontal
-          align="center"
-          gap={8}
-          style={{
-            padding: '12px 0',
-            borderBottom: `1px solid ${token.colorBorderSecondary}`,
-            flexShrink: 0,
-          }}
-        >
-          <div
-            onClick={() => setSelected(null)}
-            style={{
-              cursor: 'pointer',
-              padding: '4px 8px',
-              borderRadius: 6,
-              fontSize: 13,
-              color: token.colorPrimary,
-              transition: 'background 0.2s',
-            }}
-            onMouseEnter={(e) => { (e.currentTarget).style.background = token.colorPrimaryBg; }}
-            onMouseLeave={(e) => { (e.currentTarget).style.background = 'transparent'; }}
-          >
-            {t('settings.applets.backToApplets')}
-          </div>
-        </Flexbox>
-        <div style={{ flex: 1, overflow: 'auto' }}>
-          <SettingsPanel />
-        </div>
-      </Flexbox>
-    );
-  }
+  const { applets, loading, stationUnavailable } = useActiveAppletsSlice(state => ({
+    applets: state.applets, loading: state.loading, stationUnavailable: state.stationUnavailable,
+  }));
+  const { t } = useTranslation(['settings', 'applet']);
 
   return (
     <SettingsContainer>
-      <Text type="secondary" style={{ fontSize: 13 }}>
-        {t('settings.applets.description')}
-      </Text>
-
-      <Flexbox gap={10}>
-        {applets.map((applet) => {
-          const hasSettings = hasSettingsPanel(applet.manifest.id);
-          const IconComp = ICON_MAP[applet.manifest.icon];
-          return (
-            <Flexbox
-              key={applet.manifest.id}
-              horizontal
-              align="center"
-              gap={14}
-              onClick={hasSettings ? () => setSelected(applet.manifest.id) : undefined}
-              style={{
-                padding: '16px 20px',
-                borderRadius: 12,
-                background: token.colorBgContainer,
-                border: `1px solid ${token.colorBorderSecondary}`,
-                cursor: hasSettings ? 'pointer' : 'default',
-                transition: 'all 0.2s',
-              }}
-              onMouseEnter={(e) => {
-                if (hasSettings) {
-                  (e.currentTarget).style.borderColor = token.colorPrimary;
-                  (e.currentTarget).style.boxShadow = `0 2px 8px ${token.colorPrimaryBg}`;
-                }
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget).style.borderColor = token.colorBorderSecondary;
-                (e.currentTarget).style.boxShadow = 'none';
-              }}
-            >
-              <div
-                style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: 10,
-                  background: `linear-gradient(135deg, ${token.colorPrimaryBg}, ${token.colorPrimary}20)`,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                }}
-              >
-                {IconComp ? <IconComp size={20} style={{ color: token.colorPrimary }} /> : <Puzzle size={20} style={{ color: token.colorPrimary }} />}
-              </div>
-              <Flexbox flex={1} gap={2}>
-                <Flexbox horizontal align="center" gap={8}>
-                  <Text strong style={{ fontSize: 14 }}>{applet.manifest.name}</Text>
-                  <Tag
-                    color={applet.status === 'active' ? 'success' : applet.status === 'error' ? 'error' : 'default'}
-                    style={{ fontSize: 10, lineHeight: '16px', padding: '0 5px' }}
-                  >
-                    {t(`settings.applets.status.${applet.status}`, { defaultValue: applet.status })}
-                  </Tag>
-                  <Tag style={{ fontSize: 10, lineHeight: '16px', padding: '0 5px' }}>
-                    v{applet.manifest.version}
-                  </Tag>
-                </Flexbox>
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  {applet.manifest.description}
-                </Text>
-              </Flexbox>
-              {hasSettings && (
-                <Text type="secondary" style={{ fontSize: 18, flexShrink: 0 }}>›</Text>
-              )}
-              {!hasSettings && (
-                <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>{t('settings.applets.noSettings')}</Text>
-              )}
+      <SettingsSection title={t('settings.tab.applets')} icon={<Puzzle size={20} />}>
+        <Text type="secondary">{t('settings.applets.description')}</Text>
+        {stationUnavailable ? <Alert type="warning" showIcon
+          message={t('applet.page.stationUnavailableTitle', { ns: 'applet' })} /> : null}
+        {loading && applets.length === 0 ? <Spin /> : null}
+        {applets.map(applet => (
+          <SettingsRow key={applet.manifest.id} label={applet.manifest.name}
+            description={`${applet.manifest.id} · v${applet.manifest.version}`}>
+            <Flexbox gap={8} horizontal align="center">
+              <Tag>{t(`settings.applets.status.${applet.status}`, { defaultValue: applet.status })}</Tag>
+              <Text type="secondary">{t('settings.applets.noSettings')}</Text>
             </Flexbox>
-          );
-        })}
-      </Flexbox>
-
-      {applets.length === 0 && (
-        <Flexbox align="center" justify="center" gap={8} style={{ padding: 40 }}>
-          <Puzzle size={32} style={{ color: token.colorTextQuaternary }} />
-          <Text type="secondary">{t('settings.applets.noApplets')}</Text>
-        </Flexbox>
-      )}
+          </SettingsRow>
+        ))}
+        {!loading && applets.length === 0 ? <Text type="secondary">{t('settings.applets.noApplets')}</Text> : null}
+      </SettingsSection>
     </SettingsContainer>
   );
 }

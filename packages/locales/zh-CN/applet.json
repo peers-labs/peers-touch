@@ -53,6 +53,11 @@
   "applet.uninstall.confirm": "卸载",
   "applet.uninstall.cancel": "取消",
   "error.applet.revoked": "该应用版本已被撤销，不能打开。",
+  "error.applet.disabled": "该应用已停用，不能打开。",
+  "error.applet.notFound": "该应用已不在目录中，请刷新后重试。",
+  "error.applet.installUnconfirmed": "安装尚未确认，请刷新后重试。",
+  "error.applet.unsupportedDesktop": "该应用不支持 Desktop。",
+  "error.applet.incompatiblePlatform": "该应用需要更新的平台版本。",
   "error.applet.bundledCannotUninstall": "内置应用无法卸载。",
   "error.applet.stationBundleUnavailable": "该 Station 应用已安装，但桌面端包尚未缓存到本地。",
 

@@ -195,7 +195,8 @@ function toRuntimeStationApplets(
       if (!id) return null;
       const installState = item.installState ?? item.install_state ?? installedById.get(id);
       const manifest = stationManifest(item, localById.get(id));
-      const installedStatus = normalizeInstallStatus(installState) ?? 'available';
+      const packageRevoked = Number(item.info?.status) === 4 || Number(item.version?.status) === 4;
+      const installedStatus = packageRevoked ? 'revoked' : normalizeInstallStatus(installState) ?? 'available';
       const status = loadedAppletIds.has(id) && installedStatus === 'installed' ? 'active' : installedStatus;
       return {
         manifest,
@@ -222,6 +223,11 @@ function mergeRuntimeApplets(stationApplets: RuntimeAppletInfo[], localApplets: 
       byId.set(item.manifest.id, item);
       continue;
     }
+    // Local availability cannot override an authoritative policy denial.
+    if (stationItem.status === 'revoked' || stationItem.status === 'disabled') {
+      byId.set(item.manifest.id, { ...item, ...stationItem });
+      continue;
+    }
     if (item.status !== 'available' || item.source === 'bundled-official') {
       byId.set(item.manifest.id, { ...stationItem, ...item });
       continue;
@@ -231,6 +237,13 @@ function mergeRuntimeApplets(stationApplets: RuntimeAppletInfo[], localApplets: 
     }
   }
   return Array.from(byId.values());
+}
+
+function requireLaunchableApplet(target: RuntimeAppletInfo | undefined): RuntimeAppletInfo {
+  if (!target) throw new Error('error.applet.notFound');
+  if (target.status === 'revoked') throw new Error('error.applet.revoked');
+  if (target.status === 'disabled') throw new Error('error.applet.disabled');
+  return target;
 }
 
 function markAppletActive(items: RuntimeAppletInfo[], appletId: string, openedAt: number): RuntimeAppletInfo[] {
@@ -296,6 +309,16 @@ export const useAppletsStore = createDesktopStore<AppletsState>('applets', (set,
         stationError = error instanceof Error ? error.message : undefined;
         log.warn('applets', 'Station applet store projection unavailable', error);
       }
+      if (stationUnavailable) {
+        // Losing the authority must not turn a known denial into local availability.
+        const denials = [...get().applets, ...get().catalogApplets]
+          .filter(info => info.status === 'revoked' || info.status === 'disabled');
+        const deniedIds = new Set(denials.map(info => info.manifest.id));
+        stationApplets = [
+          ...stationApplets.filter(info => !deniedIds.has(info.manifest.id)),
+          ...denials,
+        ];
+      }
       const runtimeApplets = mergeRuntimeApplets(stationApplets, localApplets);
       set({
         applets: runtimeApplets.filter((info) => info.status !== 'available' && info.status !== 'revoked'),
@@ -324,8 +347,11 @@ export const useAppletsStore = createDesktopStore<AppletsState>('applets', (set,
   },
 
   installApplet: async (id) => {
-    const target = [...get().applets, ...get().catalogApplets].find((info) => info.manifest.id === id);
-    if (target?.source === 'local-dev') {
+    const target = requireLaunchableApplet(
+      [...get().applets, ...get().catalogApplets].find((info) => info.manifest.id === id),
+    );
+    AppletManager.getInstance().assertSupportedApplet(target.manifest);
+    if (target.source === 'local-dev') {
       const localDevInstalledAppletIds = persistLocalDevInstalledAppletIds([...get().localDevInstalledAppletIds, id]);
       set({ localDevInstalledAppletIds });
       await get().refresh();
@@ -371,14 +397,15 @@ export const useAppletsStore = createDesktopStore<AppletsState>('applets', (set,
         await get().refresh();
         target = [...get().applets, ...get().catalogApplets].find((info) => info.manifest.id === id);
       }
-      if (target?.status === 'revoked') {
-        throw new Error('error.applet.revoked');
-      }
-      if (!target || target.status === 'available') {
+      target = requireLaunchableApplet(target);
+      if (target.status === 'available') {
         await get().installApplet(id);
       }
-      const refreshedTarget = [...get().applets, ...get().catalogApplets].find((info) => info.manifest.id === id) ?? target;
-      if (refreshedTarget?.source === 'station' && !refreshedTarget.manifest.path) {
+      const refreshedTarget = requireLaunchableApplet(
+        [...get().applets, ...get().catalogApplets].find((info) => info.manifest.id === id),
+      );
+      if (refreshedTarget.status === 'available') throw new Error('error.applet.installUnconfirmed');
+      if (refreshedTarget.source === 'station' && !refreshedTarget.manifest.path) {
         const entry = refreshedTarget.manifest.load.desktop?.entry;
         if (!entry || !refreshedTarget.stationBundleUrl) {
           throw new Error('error.applet.stationBundleUnavailable');
@@ -405,7 +432,14 @@ export const useAppletsStore = createDesktopStore<AppletsState>('applets', (set,
           )),
         }));
       }
+      requireLaunchableApplet([...get().applets, ...get().catalogApplets].find((info) => info.manifest.id === id));
       await AppletManager.getInstance().loadApplet(id);
+      try {
+        requireLaunchableApplet([...get().applets, ...get().catalogApplets].find((info) => info.manifest.id === id));
+      } catch (error) {
+        await AppletManager.getInstance().unloadApplet(id);
+        throw error;
+      }
       const openedAt = Date.now();
       set((state) => ({
         applets: markAppletActive(state.applets, id, openedAt),

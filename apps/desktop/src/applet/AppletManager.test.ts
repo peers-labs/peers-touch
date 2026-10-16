@@ -308,6 +308,18 @@ describe('applet runtime loading', () => {
     resetManagerState()
   })
 
+  it('uses the same platform compatibility boundary before install and load', async () => {
+    const parsed = parseAppletInfo({ ...createValidManifest(), minPlatformVersion: '99.0.0', path: '/applets-dist/web-search' }, 'test.incompatible')
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) throw new Error('Invalid test manifest')
+    const manager = AppletManager.getInstance()
+    expect(() => manager.assertSupportedApplet(parsed.value)).toThrow('error.applet.incompatiblePlatform')
+    manager.registerApplet(parsed.value)
+    await expect(manager.loadApplet(parsed.value.id)).rejects.toThrow('error.applet.incompatiblePlatform')
+    expect(mockAppletCreateSession).not.toHaveBeenCalled()
+    expect(mockFetch).not.toHaveBeenCalled()
+  })
+
   it('refuses to load invalid applet from index', async () => {
     const invalidManifest = createValidManifest('Invalid_ID')
     mockFetch.mockResolvedValue({

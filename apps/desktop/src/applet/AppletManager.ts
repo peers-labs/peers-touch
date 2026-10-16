@@ -137,6 +137,19 @@ class AppletManager {
     this.applets.set(appletInfo.id, appletInfo)
   }
 
+  /** Validate the same contract before installation and before runtime load. */
+  public assertSupportedApplet(appletInfo: AppletInfo): void {
+    const runtimeCheck = parseAppletInfo(appletInfo, `runtime[${appletInfo.id}]`)
+    if (!runtimeCheck.ok) {
+      this.printDiagnostics(`Refused invalid applet "${appletInfo.id}"`, runtimeCheck.issues)
+      throw new Error(`Applet ${appletInfo.id} failed runtime validation:\n${runtimeCheck.issues.join('\n')}`)
+    }
+    if (!appletInfo.load.desktop?.entry) throw new Error('error.applet.unsupportedDesktop')
+    if (appletInfo.minPlatformVersion && this.compareSemver(appletInfo.minPlatformVersion, this.platformVersion) > 0) {
+      throw new Error('error.applet.incompatiblePlatform')
+    }
+  }
+
   /**
    * 加载Applet
    */
@@ -151,17 +164,7 @@ class AppletManager {
       throw new Error(`Applet ${appletId} not found`)
     }
 
-    const runtimeCheck = parseAppletInfo(appletInfo, `runtime[${appletId}]`)
-    if (!runtimeCheck.ok) {
-      this.printDiagnostics(`Refused to load invalid applet "${appletId}"`, runtimeCheck.issues)
-      throw new Error(`Applet ${appletId} failed runtime validation:\n${runtimeCheck.issues.join('\n')}`)
-    }
-
-    if (appletInfo.minPlatformVersion && this.compareSemver(appletInfo.minPlatformVersion, this.platformVersion) > 0) {
-      const issues = [`要求平台版本 ${appletInfo.minPlatformVersion}，当前仅 ${this.platformVersion}`]
-      this.printDiagnostics(`Refused to load incompatible applet "${appletId}"`, issues)
-      throw new Error(`Applet ${appletId} requires higher platform version: ${appletInfo.minPlatformVersion}`)
-    }
+    this.assertSupportedApplet(appletInfo)
 
     const integrityIssues = await this.verifyIntegrity(appletInfo)
     if (integrityIssues.length > 0) {

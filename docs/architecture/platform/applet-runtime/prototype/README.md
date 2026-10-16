@@ -3,7 +3,7 @@
 > **Status**: landed
 > **Prototype ID**: `applet-lifecycle`
 > **Site**: desktop
-> **Updated**: 2026-06-30
+> **Updated**: 2026-10-16
 
 ---
 
@@ -15,7 +15,10 @@
 
 `packages/prototypes/desktop/features/applet-workspace/`
 
-这是 Desktop 站点下的多实例 Applet Workspace 原型，用来验证“小程序像浏览器一样多开”的容器交互：固定 Home tab、运行实例 tabs、Pin to System、detach 到独立窗口、immersive 容器模式。它仍是 React web 原型，不碰 Lynx / applet runtime / SDK。
+这是 Desktop Shell 内的 Applet 目录原型。Launcher、命令搜索和 Settings
+共享一个注入的 `AppletCatalogAdapter`；默认库存为空，显式评审场景读取
+真实 package manifest 的名称、版本和 canonical ID。它不运行 Lynx、SDK
+或 Native 文件选择器。
 
 ## 落地目标
 
@@ -37,7 +40,7 @@ Prototype Portal 会自动发现 `applet-lifecycle` manifest。
 
 覆盖 applet-runtime 当前设计中的用户侧生命周期主路径：
 
-- Install：右上角从安装包导入。
+- Install：右上角导入目录；Browser 未注入 Native picker 时禁用并说明原因。
 - Display：我的 Applet 以极简 icon grid 展示。
 - Open：点击 icon 直接打开。
 - Running：运行中以中段 floating/runtime stage 表达；收起态展示动态尺寸的运行快照堆叠 + dots，数量少时放大占据更多美学空间，数量多时自动缩小并保持堆叠节奏，点击 dots 后展开 iOS 后台应用式运行快照卡片。
@@ -51,36 +54,52 @@ Prototype Portal 会自动发现 `applet-lifecycle` manifest。
 - `docs/client/common/ui-identity/README.md`
 - `docs/client/desktop/applet-launcher-ux-contract.md`
 
-`applet-workspace` 覆盖下一代 Desktop Applet 容器交互：
+`applet-workspace` 当前可执行范围：
 
-- Home：作为固定 tab 承载小程序入口、最近运行、全部小程序、搜索和 Open。
-- Multi-open：顶部 tabs 承载不同小程序实例；重复点击默认 focus，显式 `New instance` 才多开。
-- Container modes：默认 contained，支持 immersive，支持 detach 到独立窗口并保留 tab 恢复路径。
-- System pin：`Pin to System` 只作为系统快捷启动入口状态，不等于 standalone window，也不污染 launcher grid。
-- Management boundary：版本、权限、诊断、卸载不进入 Home grid；后续归入 runtime detail / management flow。
+- Installed 与 Catalog 由一个 owner 提供；搜索同时匹配 name、description、ID。
+- 安装成功投影进入 Installed 并退出 Catalog，Settings 自动读取相同库存。
+- failed install 保留搜索和条目，允许重试；撤销与不支持 Desktop 的条目禁用。
+- 目录导入只接受注入的目录选择动作，不存在 `.bundle` 文件选择器。
+- Launcher 直接导航，准备与错误状态属于目标内容区；未接入内容的真实
+  applet 显示恢复入口，不伪造运行内容。
+- Multi-instance、System pin、detach 与 immersive 的正式 Native 生命周期
+  仍由 DUI-13/DUI-14 验证；目录原型不提供虚构实例或系统状态。
 
 边界声明：
 
 - Page canvas：Applet Box 页面本身。
 - Content rail：`我的 Applet` icon grid，只负责识别与打开 applet。
 - Action rail：顶部搜索与右上角 `+` 导入入口。
-- Floating layer：安装包导入菜单、目录导入 dialog、中段运行快照 stage / switcher。
+- Floating layer：由 Native picker 和正式 runtime surface 拥有；Browser 目录页不伪造这些资源。
 - Recovery layer：空状态与导入识别失败提示。
 
 ## 总账状态
 
 `landed`（已落地到 `apps/desktop/src/pages/AppletsPage.tsx`，参照原型按 Desktop 运行时与真实 applets store 重新实现）
 
-`applet-workspace`: `drafting`（新一代 browser-like applet container 交互原型，待 Owner 评审确认后才允许作为落地依据）
+`applet-workspace`: `drafting`（目录投影与失败恢复可执行，Native catalog、
+picker 和运行生命周期仍为 UNPROVEN，不作为新生命周期设计的落地依据）
 
 ## 已知差异 / 待补
 
-- 暂不做商店；只表达从安装包导入。
+- Browser 表达注入的 Catalog/Install 结果；真实 Station Store proof 尚未完成。
 - 原型使用 mock 数据；落地实现复用真实 `useAppletsStore` 与原生目录导入，运行区只渲染真实 applet 身份（不伪造内容），符合 No-Mocking 铁律。
 - 原型不实现 Lynx 容器、SDK Bridge 或 Host session；落地的 runtime surface 由 `AppletRuntimePage.tsx` 承载。
 - 当前无 applet 专属 UI Identity module；本原型复用 shared UI Identity 与 Desktop Applet Launcher UX Contract。
 - 运行快照中的 `退出`/关闭是 runtime surface 动作，已迁出 launcher，归入 `AppletRuntimePage`；launcher grid 仍不展示卸载、诊断、权限、版本等管理内容。
 - 落地全部文案接入 i18n locale key，移除高饱和 identity 渐变（改用低饱和 tint）。
-- `applet-workspace` 使用 mock applet 内容表达容器布局，不代表 applet 内部页面 UI。
-- `Pin to System` 在原型里只展示入口和状态；真实 macOS Dock/Launchpad、Windows Start/Desktop shortcut、Linux desktop entry 集成需要后续运行时设计与系统 API 验证。
-- `Detach` 在原型里只展示 tab 状态；真实实现需要产品窗口生命周期、focus、close、session restore 与 applet runtime lease 对齐。
+- `applet-workspace` 没有虚构 applet 卡片或内容。显式 `applets-*` 场景属于
+  MOCKED_HARNESS，不代表本机安装状态或 Station policy。
+- `Pin to System` 不在当前目录原型中声明可用；macOS Dock/Launchpad、
+  Windows Start/Desktop shortcut 和 Linux desktop entry 需要真实系统 API 验证。
+- `Detach` 不在目录原型中制造窗口状态；真实实现需要产品窗口生命周期、
+  focus、close、session restore 与 applet runtime lease 对齐。
+
+评审场景：`?state=applets-installed`、`applets-catalog`、
+`applets-install-error`、`applets-revoked`、`applets-offline`、
+`applets-loading`、`applets-empty`。全部从 Portal 的唯一 Desktop Live Preview 进入。
+
+Craft：复用 shared UI ID 与 Launcher 合同。主体是 applet 身份，主动作是
+打开；安装与 policy 原因位于 Catalog 区，管理信息位于 Settings。
+保留安静 icon grid、失败保留输入和固定操作轨；拒绝虚构运行快照、装饰
+卡片和不存在的系统能力。安装 adapter 只接收动作结果，不自行制造成功。

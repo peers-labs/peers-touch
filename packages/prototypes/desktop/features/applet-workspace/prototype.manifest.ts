@@ -10,7 +10,7 @@ const manifest = {
   module: 'applet-runtime',
   path: 'packages/prototypes/desktop/features/applet-workspace/',
   docs: 'docs/architecture/platform/applet-runtime/prototype/README.md',
-  description: 'Browser-like Desktop applet workspace with pinned home, multi-instance tabs, pin-to-system, detach, and immersive modes.',
+  description: 'Shared installed/catalog projection for Desktop Launcher, command search and Settings; canonical package identities and recoverable install states.',
   order: 25,
   hidden: true,
   previewExport: 'AppletWorkspacePrototype',
