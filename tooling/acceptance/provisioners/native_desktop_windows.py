@@ -67,6 +67,7 @@ _BROKER_RELATIVE_PATH = (
 _BINARY_RELATIVE_PATH = "debug/peers-touch-desktop.exe"
 _BUILD_SCRIPT_RELATIVE_PATH = "tooling/scripts/windows-desktop-build.ps1"
 WINDOWS_SOURCE_COPY_TIMEOUT_SECONDS = 900
+WINDOWS_SOURCE_IDENTITY_TIMEOUT_SECONDS = 60
 
 
 def _required(values: dict[str, str], key: str, source: Path) -> str:
@@ -1271,7 +1272,7 @@ class NativeDesktopWindowsProvisioner:
         remote_source = _windows_join(remote_home, request.deploy_path)
         remote_head = self.transport.run_argv(
             ("git", "-C", remote_source, "rev-parse", "HEAD"),
-            timeout=15,
+            timeout=WINDOWS_SOURCE_IDENTITY_TIMEOUT_SECONDS,
             check=False,
         )
         current_commit = (
