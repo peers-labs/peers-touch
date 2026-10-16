@@ -82,16 +82,15 @@ The user must not enter the Station shell without passing the Station-driven acc
   auth endpoint availability, and required capabilities through `mobile-rust`.
 - The explicit first-add action pins the peer ID. A known URL returning another
   identity is blocking and requires explicit Station replacement.
-- Production credentials and OAuth require TLS. HTTP is limited to an explicit
-  development profile, is visibly marked, and cannot establish production trust.
-- Debug native Messaging accepts the exact profile origin injected through
+- Users may choose a canonical `http://` or `https://` Station/Relay origin in
+  every build. HTTPS retains ordinary certificate validation; HTTP is an
+  explicit user transport choice and does not weaken signed Station identity,
+  route attestation, access gates, or credential handling.
+- Native Messaging accepts the exact profile origin injected through
   `PT_MOBILE_DEV_STATION_ORIGIN`. Simulator launches forward it with
   `SIMCTL_CHILD_PT_MOBILE_DEV_STATION_ORIGIN`; it is not saved in app preferences.
-  Production Release builds ignore this permission and require HTTPS. A
-  self-contained Release built with the explicit `acceptance-harness` feature
-  keeps development-origin policy so the installed simulator artifact can use
-  its declared HTTP Station profile without a debug server. An unrelated host,
-  port, credential-bearing URL, or non-root path remains rejected.
+  An unrelated scheme, credential-bearing URL, non-root path, query, or
+  fragment remains rejected.
 
 ### 4.3 Access Gate Chain
 

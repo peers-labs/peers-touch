@@ -31,7 +31,7 @@ use crate::commands::station::{
 };
 use crate::error::{MobileError, MobileResult};
 use crate::platform::secure_storage::SecureStorage;
-use crate::station_origin::{normalize_station_origin, StationOriginPolicy};
+use crate::station_origin::normalize_station_origin;
 
 mod peer_proto {
     include!(concat!(env!("OUT_DIR"), "/peers_touch.model.peer.v1.rs"));
@@ -814,8 +814,7 @@ fn parse_input(input: &str) -> MobileResult<ParsedInput> {
 }
 
 fn normalize_origin(value: &str) -> MobileResult<String> {
-    normalize_station_origin(value, StationOriginPolicy::current_build())
-        .map_err(|_| discovery_error("originInvalid"))
+    normalize_station_origin(value).map_err(|_| discovery_error("originInvalid"))
 }
 
 fn route_source_ref(station_peer_id: &str, route_id: &str) -> String {

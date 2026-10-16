@@ -151,9 +151,9 @@ briefly while Session refresh or Social ingress reconciliation completes.
 
 ### What was done in code
 
-- Private Social transport now consumes the shared `StationOriginPolicy`:
-  development builds admit canonical HTTP origins and release builds remain
-  HTTPS-only.
+- Private Social transport now consumes the shared Station-origin normalizer.
+  Every build accepts the user's canonical HTTP or HTTPS choice; scheme
+  selection does not replace signed Station identity or route verification.
 - Private Social session transitions now use the generation-bound lifecycle
   readiness helper, wait for declared dependencies, and propagate current-scope
   activation failures.
@@ -201,8 +201,8 @@ briefly while Session refresh or Social ingress reconciliation completes.
 
 ### What guards against regression
 
-- `private_social_uses_the_shared_station_origin_policy` verifies development
-  HTTP admission and release HTTP rejection.
+- `private_social_uses_the_shared_user_selected_station_origin_policy` verifies
+  canonical HTTP and HTTPS admission plus malformed-origin rejection.
 - `publishes activation failure through lifecycle readiness` verifies that a
   failed native activation cannot resolve bootstrap as ready.
 - `restarts independently of failed degradable messaging and social runtimes`
@@ -272,7 +272,7 @@ reconciliation before invoking any mutating Fixture action.
 
 ## Crosswalks
 
-- `docs/client/mobile/lifecycle.md` defines debug/release Station-origin policy
+- `docs/client/mobile/lifecycle.md` defines user-selected Station-origin policy
   and generation-bound asynchronous runtime readiness.
 - `SC-D22` requires W9 Mobile product proof to use the real production runtime
   path on the exact source.
