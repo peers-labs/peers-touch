@@ -587,6 +587,27 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
         self.assertEqual(identity["platformRole"], "")
         self.assertEqual(adapter.focused_control.call_count, 2)
 
+    def test_operator_focus_rejects_stale_frontmost_pid_immediately(
+        self,
+    ) -> None:
+        adapter = Mock(spec=MacOSNativeDesktopAdapter)
+        adapter.focused_control.return_value = NativeControlSnapshot(
+            actual_frontmost_pid=42,
+        )
+
+        with self.assertRaisesRegex(
+            BlockedError,
+            "frontmost process changed during focus sampling",
+        ):
+            NativeDesktopMacOSProvisioner._stable_operator_focus_identity(
+                adapter,
+                41,
+                timeout_seconds=1,
+                interval_seconds=0,
+            )
+
+        adapter.focused_control.assert_called_once_with(41)
+
     def test_operator_focus_rejects_unstable_ax_samples(self) -> None:
         adapter = Mock(spec=MacOSNativeDesktopAdapter)
         adapter.focused_control.return_value = NativeControlSnapshot(

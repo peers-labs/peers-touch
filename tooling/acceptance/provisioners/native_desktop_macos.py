@@ -797,6 +797,18 @@ class NativeDesktopMacOSProvisioner:
         while True:
             control = adapter.focused_control(process_id)
             last_control = control
+            if (
+                not control.error
+                and control.actual_frontmost_pid != process_id
+            ):
+                raise BlockedError(
+                    reason=(
+                        "macOS operator frontmost process changed during "
+                        f"focus sampling: expected={process_id} "
+                        f"actual={control.actual_frontmost_pid}"
+                    ),
+                    resource="runtime-cell-operator-focus",
+                )
             valid = (
                 not control.error
                 and control.actual_frontmost_pid == process_id
