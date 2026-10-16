@@ -23,10 +23,11 @@
   },
   "fixtures": [
     {
-      "id": "mobile-social-ios-existing-actors",
-      "authorization_required": false,
-      "target_assertion": "the Station is an approved non-stable development target",
-      "initial_assertion": "Alice, Bob and Eve already exist with distinct canonical PTIDs on one Station"
+      "id": "chat-native-five-social-private",
+      "authorization_required": true,
+      "authorization_ref": "station.reset:chat-native-five-social-private",
+      "target_assertion": "the Station is the approved disposable chat-native-five target",
+      "initial_assertion": "Alice, Bob and Eve are reset with fresh Actor Device and Content PreKey state on one Station"
     }
   ],
   "credentials": [],
@@ -92,7 +93,7 @@
   },
   "proof_scope": {
     "proves": [
-      "one source-attested Station and three verified existing actors",
+      "one source-attested disposable Station and three reset fixture actors",
       "two isolated iOS Simulator clients",
       "one reusable Suite Runtime for six MPS-RC01 scenarios",
       "real Mobile UI actions and receiver-visible Social assertions",

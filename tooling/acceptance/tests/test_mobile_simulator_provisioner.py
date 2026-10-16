@@ -911,7 +911,7 @@ class MobileSimulatorContractTests(unittest.TestCase):
                     DIRECT_SIMULATOR_ENVIRONMENT_ID,
                 )
 
-    def test_mobile_social_ios_gate_uses_non_destructive_environment(
+    def test_mobile_social_ios_gate_uses_resettable_environment(
         self,
     ) -> None:
         catalog = json.loads(
@@ -939,9 +939,16 @@ class MobileSimulatorContractTests(unittest.TestCase):
             provisioner,
             MobileSocialIOSSimulatorProvisioner,
         )
-        self.assertFalse(provisioner.requires_actor_reset)
+        self.assertTrue(provisioner.requires_actor_reset)
+        fixture = contract.fixtures[0]
+        self.assertEqual(fixture.id, "chat-native-five-social-private")
+        self.assertTrue(fixture.authorization_required)
+        self.assertEqual(
+            fixture.authorization_ref,
+            "station.reset:chat-native-five-social-private",
+        )
 
-    def test_mobile_social_ios_fixture_resolves_existing_actors_read_only(
+    def test_mobile_social_ios_fixture_resets_actor_and_prekey_state(
         self,
     ) -> None:
         path = ENVIRONMENTS_DIR / "mobile-social-ios-simulator.yaml"
@@ -966,6 +973,10 @@ class MobileSimulatorContractTests(unittest.TestCase):
         with (
             patch(
                 "tooling.acceptance.provisioners.mobile_simulator."
+                "require_station_reset_authority",
+            ) as require_reset,
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
                 "verify_reset_target",
             ) as verify_reset,
             patch(
@@ -975,11 +986,7 @@ class MobileSimulatorContractTests(unittest.TestCase):
             patch(
                 "tooling.acceptance.provisioners.mobile_simulator."
                 "resolve_actor_identity",
-            ) as destructive_resolver,
-            patch(
-                "tooling.acceptance.provisioners.mobile_simulator."
-                "resolve_existing_actor_identity",
-                side_effect=lambda _endpoint, role: SimpleNamespace(
+                side_effect=lambda _endpoint, _deployment, role: SimpleNamespace(
                     role=role,
                     account_ref=f"station-account:{role}@p.t",
                     ptid=f"ptid:{role}",
@@ -987,10 +994,20 @@ class MobileSimulatorContractTests(unittest.TestCase):
                     federated_handle=f"@{role}@station.example",
                     home_station_peer_id="station-peer",
                 ),
+            ) as actor_resolver,
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "resolve_existing_actor_identity",
             ) as existing_resolver,
             patch(
                 "tooling.acceptance.provisioners.mobile_simulator."
+                "fixture_federation_id_from_station_ids",
+                return_value="fed-reset",
+            ),
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
                 "prepare_federation_contexts",
+                return_value="fed-reset",
             ) as prepare_federation,
         ):
             provisioner._prepare_actor_fixture(
@@ -999,23 +1016,37 @@ class MobileSimulatorContractTests(unittest.TestCase):
                 provisioner._load_overlay(),
             )
 
-        verify_reset.assert_not_called()
-        reset.assert_not_called()
-        destructive_resolver.assert_not_called()
-        prepare_federation.assert_not_called()
+        require_reset.assert_called_once_with(
+            "chat-native-five-social-private",
+        )
+        verify_reset.assert_called_once_with(
+            "https://station.example",
+            "station-four",
+        )
+        reset.assert_called_once_with(
+            "station-four",
+            ("alice", "bob", "eve"),
+            reset_authorized=True,
+        )
         self.assertEqual(
-            [entry.args for entry in existing_resolver.call_args_list],
+            [entry.args for entry in actor_resolver.call_args_list],
             [
-                ("https://station.example", "alice"),
-                ("https://station.example", "bob"),
-                ("https://station.example", "eve"),
+                ("https://station.example", "station-four", "alice"),
+                ("https://station.example", "station-four", "bob"),
+                ("https://station.example", "station-four", "eve"),
             ],
         )
+        existing_resolver.assert_not_called()
+        prepare_federation.assert_called_once()
         payload = evidence.writes[-1][1]
-        self.assertFalse(payload["reset"]["authorized"])
+        self.assertTrue(payload["reset"]["authorized"])
+        self.assertEqual(
+            payload["reset"]["authorizationRef"],
+            "station.reset:chat-native-five-social-private",
+        )
         station = payload["stations"]["station"]
-        self.assertFalse(station["targetVerified"])
-        self.assertTrue(station["existingActorsVerified"])
+        self.assertTrue(station["targetVerified"])
+        self.assertFalse(station["existingActorsVerified"])
 
     def test_social_simulator_accepts_explicit_station_profiles(self) -> None:
         path = ENVIRONMENTS_DIR / "mobile-social-simulator.yaml"

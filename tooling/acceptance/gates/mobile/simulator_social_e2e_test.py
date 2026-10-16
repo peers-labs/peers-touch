@@ -240,7 +240,7 @@ class SimulatorSocialGateTests(unittest.TestCase):
             .additional_fixture_roles_by_gate["mobile-social-ios-native"],
             ("eve",),
         )
-        self.assertFalse(
+        self.assertTrue(
             MobileSocialIOSSimulatorProvisioner.requires_actor_reset,
         )
         self.assertEqual(
