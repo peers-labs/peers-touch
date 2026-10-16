@@ -36,9 +36,11 @@ repository authority, infer the selected worktree, execute fallback, grant
 runtime capabilities, or upgrade observations into evidence.
 
 Project Skill projection is scoped to the explicitly selected worktree. Hook
-projection is independently optional and uses an absolute interpreter. No
-installer operation requires unrelated worktrees to be idle or writes a shared
-workspace descriptor.
+projection is independently optional and uses an absolute interpreter. A
+managed Hook command resolves its plugin from the same selected worktree; a
+multi-root descriptor is read-only context and never expands one install into
+sibling writes. No installer operation requires unrelated worktrees to be idle,
+writes a shared workspace descriptor, or borrows another worktree's Hook.
 
 ## Why this is non-negotiable
 
@@ -54,7 +56,8 @@ completion, source and evidence semantics split across editors.
   tooling/plugins/pt-ew-plugin/scripts/hook-entry.test.mjs` passes.
 - `python3 -m unittest tooling/scripts/agent-integration-audit-test.py` proves
   selected-root projection, advisory degradation, absolute interpreter use,
-  restricted-PATH replay, removal, and non-project configuration preservation.
+  restricted-PATH replay, cross-root rejection and repair, sibling
+  non-mutation, removal, and non-project configuration preservation.
 
 ## Crosswalks
 

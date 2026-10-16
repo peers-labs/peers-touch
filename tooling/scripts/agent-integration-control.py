@@ -323,6 +323,55 @@ def is_managed_cursor_hook(value: object) -> bool:
     )
 
 
+def managed_hook_commands(value: object) -> list[str]:
+    commands: list[str] = []
+    if isinstance(value, list):
+        for item in value:
+            commands.extend(managed_hook_commands(item))
+    elif isinstance(value, dict):
+        command = value.get("command")
+        if (
+            isinstance(command, str)
+            and PLUGIN_NAME in command
+            and "hook-entry.mjs" in command
+        ):
+            commands.append(command)
+        for item in value.values():
+            commands.extend(managed_hook_commands(item))
+    return commands
+
+
+def validate_managed_hook_locality(
+    root: Path,
+    value: dict[str, object],
+) -> None:
+    expected = (
+        root / "tooling" / "plugins" / PLUGIN_NAME / "scripts" / "hook-entry.mjs"
+    ).resolve(strict=True)
+    hooks = value.get("hooks")
+    if not isinstance(hooks, dict):
+        raise RuntimeError("HOST_HOOKS_INVALID")
+
+    for command in managed_hook_commands(hooks):
+        try:
+            invocation = shlex.split(command)
+            script_tokens = [
+                token
+                for token in invocation
+                if PLUGIN_NAME in token and token.endswith("hook-entry.mjs")
+            ]
+            if len(script_tokens) != 1:
+                raise ValueError
+            script = Path(script_tokens[0])
+            actual = script.resolve(strict=True)
+        except (OSError, ValueError) as error:
+            raise RuntimeError("HOST_HOOK_COMMAND_INVALID") from error
+        if not script.is_absolute():
+            raise RuntimeError("HOST_HOOK_COMMAND_INVALID")
+        if actual != expected:
+            raise RuntimeError("HOST_HOOK_CROSS_ROOT")
+
+
 def load_hooks(path: Path, host: str) -> dict[str, object]:
     if path.is_symlink():
         raise RuntimeError("HOST_PROJECTION_ESCAPE")
@@ -427,6 +476,7 @@ def install(
             workspace_file,
             install=True,
         )
+        validate_managed_hook_locality(root, hooks)
         write_json_atomic(target / "hooks.json", hooks)
         hook_result: dict[str, object] = {"status": "PASS"}
     except RuntimeError as error:
