@@ -1856,7 +1856,6 @@ impl MobileMessagingEngine {
             target_device_id: intent.target_device_id,
             role: intent.role,
             leave_intent: None,
-            admission_fulfillment: None,
         };
         let plan = StationConversationTransport::new(
             self.scope.station_origin.clone(),
