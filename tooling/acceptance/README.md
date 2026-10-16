@@ -161,6 +161,15 @@ preserves the pre-created actors, while the login result supplies their canonica
 PTIDs. The runner rejects a live Station whose `/app-meta/version` commit does
 not match the tested client commit.
 
+Local Desktop development runs default to
+`PT_ACCEPTANCE_DESKTOP_INPUT_MODE=semantic-nonintrusive`. Embedded WebDriver
+click, text, pointer, and key actions remain inside the Tauri WebView and do
+not acquire the operator's system pointer or keyboard focus. A Gate that needs
+native file panels, permission sheets, physical hover/drag, or native-focus
+proof must use `exclusive-native-input` together with
+`PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION=isolated-gui-session`; otherwise it
+fails closed as `NATIVE_INPUT_ISOLATION_REQUIRED`.
+
 The remaining multi-device, recovery, and group-MLS runners still require
 `CHAT_NATIVE_STATION_ATTESTATION`, canonical actor PTIDs, pre-created accounts,
 and `CHAT_NATIVE_DEMO_PASSWORD`. Their attestation JSON contains `commit`,

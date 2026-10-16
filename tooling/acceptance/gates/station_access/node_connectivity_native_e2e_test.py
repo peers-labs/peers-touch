@@ -53,7 +53,7 @@ class NodeConnectivityNativeGateTest(unittest.TestCase):
         )
         self.assertEqual(
             gate["requiredRuntimeCells"],
-            ["desktop-macos-native"],
+            ["desktop-windows-native"],
         )
         self.assertEqual(gate["tier"], "env-evidence")
         local_journey = (
@@ -144,6 +144,7 @@ class NodeConnectivityNativeGateTest(unittest.TestCase):
             "state": "FIXTURE_READY",
             "services": {
                 "station": station,
+                "station-origin": station,
                 "relay": relay,
                 "station-via-relay": via_relay,
             },
@@ -190,7 +191,7 @@ class NodeConnectivityNativeGateTest(unittest.TestCase):
             manifest=manifest,
             actor_manifest=actor_manifest,
             runtime_binding=SimpleNamespace(
-                cell_id="desktop-macos-native"
+                cell_id="desktop-windows-native"
             ),
         )
 

@@ -10,6 +10,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
+	nativeFederation "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 )
 
 func TestCloneTargetPreservesControlPlaneConfiguration(t *testing.T) {
@@ -44,6 +45,46 @@ func TestCloneTargetPreservesControlPlaneConfiguration(t *testing.T) {
 	cloned.Addresses[0] = "/ip4/127.0.0.1/tcp/1"
 	if cloned.Addresses[0] == original.Addresses[0] {
 		t.Fatal("cloned target shares its address slice")
+	}
+}
+
+func TestAdmissionDynamicRelayPeerGaterLifecycle(t *testing.T) {
+	relayPeerID := testPeerID(t)
+	target := Target{
+		RelayPeerID: relayPeerID,
+		Addresses:   []string{"/ip4/127.0.0.1/tcp/4502"},
+	}
+	gater := nativeFederation.NewGater(nativeFederation.GaterPolicy{
+		DirectOutbound: false,
+		DirectInbound:  false,
+		AllowedPeers:   map[peer.ID]struct{}{},
+	})
+	manager, err := NewReservationManager(Pool{Mode: PoolModeOff})
+	if err != nil {
+		t.Fatalf("create reservation manager: %v", err)
+	}
+	runtime := &Runtime{
+		manager: manager,
+		control: &StationControl{
+			targets: map[peer.ID]Target{relayPeerID: target},
+		},
+	}
+	runtime.ConfigurePeerAccess(gater)
+
+	if gater.InterceptPeerDial(relayPeerID) {
+		t.Fatal("unattached Relay bypassed the closed outbound policy")
+	}
+	if err := runtime.activatePreparedTarget(target); err != nil {
+		t.Fatalf("activate prepared Relay target: %v", err)
+	}
+	if !gater.InterceptPeerDial(relayPeerID) {
+		t.Fatal("active dynamic Relay was rejected by the Host gater")
+	}
+	if err := runtime.disableTarget(relayPeerID); err != nil {
+		t.Fatalf("disable dynamic Relay target: %v", err)
+	}
+	if gater.InterceptPeerDial(relayPeerID) {
+		t.Fatal("detached dynamic Relay retained Host admission")
 	}
 }
 
@@ -89,14 +130,21 @@ func TestReservationRenewalFailureRetainsUnexpiredRoute(t *testing.T) {
 	}
 	manager.now = func() time.Time { return now }
 	relayPeerID := testPeerID(t)
+	if err := manager.AddTarget(Target{
+		RelayPeerID: relayPeerID,
+		Addresses:   []string{"/ip4/127.0.0.1/tcp/1"},
+	}); err != nil {
+		t.Fatalf("add Relay target: %v", err)
+	}
+	worker := manager.workers[relayPeerID]
 	route := &CircuitRoute{
 		RelayPeerID:     relayPeerID,
 		RouteGeneration: 3,
 		ExpiresAt:       now.Add(time.Minute),
 	}
-	manager.record(relayPeerID, route, nil)
+	manager.record(worker, route, nil)
 	manager.record(
-		relayPeerID,
+		worker,
 		nil,
 		fmt.Errorf("transient renewal failure"),
 	)
@@ -109,9 +157,87 @@ func TestReservationRenewalFailureRetainsUnexpiredRoute(t *testing.T) {
 	}
 
 	now = now.Add(2 * time.Minute)
-	manager.record(relayPeerID, nil, fmt.Errorf("route expired"))
+	manager.record(worker, nil, fmt.Errorf("route expired"))
 	if routes := manager.LiveRoutes(now); len(routes) != 0 {
 		t.Fatalf("expired route survived renewal failure: %+v", routes)
+	}
+}
+
+func TestReservationManagerAddsAndRemovesTargetsAtRuntime(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+
+	stationHost := newCircuitTestHost(t)
+	defer stationHost.Close()
+	relayA := newCircuitTestRelay(t, stationHost.ID())
+	defer relayA.close()
+	relayB := newCircuitTestRelay(t, stationHost.ID())
+	defer relayB.close()
+
+	manager, err := NewReservationManager(Pool{
+		Mode:        PoolModeOff,
+		RenewBefore: 2 * time.Second,
+		RetryMin:    50 * time.Millisecond,
+		RetryMax:    200 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("create reservation manager: %v", err)
+	}
+	if err := manager.SetControl(
+		func(context.Context, Target) (uint64, error) {
+			return 1, nil
+		},
+		func(context.Context, Target, CircuitRoute) error {
+			return nil
+		},
+	); err != nil {
+		t.Fatalf("set reservation control: %v", err)
+	}
+	if err := manager.AttachHost(stationHost); err != nil {
+		t.Fatalf("attach Station Host: %v", err)
+	}
+	if err := manager.Start(ctx); err != nil {
+		t.Fatalf("start reservation manager: %v", err)
+	}
+	defer manager.Close()
+
+	targetA := Target{
+		RelayPeerID: relayA.host.ID(),
+		Addresses:   []string{circuitTestRelayAddress(t, relayA.host)},
+	}
+	targetB := Target{
+		RelayPeerID: relayB.host.ID(),
+		Addresses:   []string{circuitTestRelayAddress(t, relayB.host)},
+	}
+	if err := manager.AddTarget(targetA); err != nil {
+		t.Fatalf("add first Relay at runtime: %v", err)
+	}
+	if err := manager.AddTarget(targetB); err != nil {
+		t.Fatalf("add second Relay at runtime: %v", err)
+	}
+	waitForCircuitRoutes(t, ctx, manager, 2)
+
+	if err := manager.RemoveTarget(relayA.host.ID()); err != nil {
+		t.Fatalf("remove first Relay at runtime: %v", err)
+	}
+	remaining := waitForCircuitRoutes(t, ctx, manager, 1)
+	if remaining[0].RelayPeerID != relayB.host.ID() {
+		t.Fatalf("runtime removal mutated surviving route: %+v", remaining)
+	}
+	targets := manager.Targets()
+	snapshots := manager.Snapshots()
+	if len(targets) != 1 ||
+		targets[0].RelayPeerID != relayB.host.ID() ||
+		len(snapshots) != 1 ||
+		snapshots[0].Target.RelayPeerID != relayB.host.ID() {
+		t.Fatalf(
+			"runtime target projection is stale: targets=%+v snapshots=%+v",
+			targets,
+			snapshots,
+		)
+	}
+	if err := manager.RetryTarget(relayB.host.ID()); err != nil {
+		t.Fatalf("retry surviving Relay: %v", err)
 	}
 }
 

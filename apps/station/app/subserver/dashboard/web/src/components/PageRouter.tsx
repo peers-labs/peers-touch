@@ -20,6 +20,7 @@ import SystemPage from '../pages/SystemPage';
 import LogsPage from '../pages/LogsPage';
 import TransportPage from '../pages/TransportPage';
 import AccessGatesPage from '../pages/AccessGatesPage';
+import RelayAttachmentsPage from '../pages/RelayAttachmentsPage';
 
 interface Props {
   page: Page;
@@ -39,6 +40,7 @@ export default function PageRouter({ page }: Props) {
     case PAGES.SYSTEM:     return <SystemPage />;
     case PAGES.LOGS:       return <LogsPage />;
     case PAGES.TRANSPORT:  return <TransportPage />;
+    case PAGES.RELAY_ATTACHMENTS: return <RelayAttachmentsPage />;
     default:               return <OverviewPage />;
   }
 }

@@ -406,7 +406,9 @@ proof-of-possession 把 enrollment 与现有 Station identity 绑定；generatio
 
 ### Consequences
 
-invite 只存 hash 且明文只返回一次；注册、刷新、撤销和恢复需专门的并发与重放测试。
+invite 只存 hash 且明文只返回一次；active invite 不设产品过期时间，只能被原子消费或
+显式删除，consumed 行保留为重放真源。短期 credential、reservation、route 的 TTL
+保持不变。注册、删除/消费竞争、刷新、撤销和恢复需专门的并发与重放测试。
 
 ---
 

@@ -38,6 +38,9 @@ def select_native_file(
     process_id = client.process_id
     if process_id is None:
         raise GateError(f"{actor} Native file chooser has no owning process")
+    runtime_binding.native_adapter.require_exclusive_input(
+        "select file through native chooser"
+    )
     resolved_source = source_path.resolve()
     if not resolved_source.is_file():
         raise GateError(

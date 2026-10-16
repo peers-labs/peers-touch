@@ -13,7 +13,7 @@ import { Flexbox } from 'react-layout-kit';
 import {
   LayoutDashboard, Users, Key, Server,
   HardDrive, Shield, Monitor, FileText, LogOut,
-  Settings, UserCircle, Network, FolderOpen, Ticket,
+  Settings, UserCircle, Network, FolderOpen, Ticket, RadioTower,
 } from 'lucide-react';
 import { useHashRouter } from '../hooks/useHashRouter';
 import { useAuthStore } from '../store/auth';
@@ -36,6 +36,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { key: PAGES.OVERVIEW,    icon: <LayoutDashboard size={20} />, label: 'Overview' },
   { key: PAGES.TRANSPORT,   icon: <Network size={20} />,         label: 'Transport' },
+  { key: PAGES.RELAY_ATTACHMENTS, icon: <RadioTower size={20} />, label: 'Relays' },
   { key: PAGES.ACTORS,      icon: <Users size={20} />,           label: 'Actors' },
   { key: PAGES.SESSIONS,    icon: <Key size={20} />,             label: 'Sessions' },
   { key: PAGES.NODES,       icon: <Network size={20} />,         label: 'Nodes' },

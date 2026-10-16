@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 
@@ -178,11 +179,13 @@ func nodeAuthenticationWrapper(
 					)
 					return
 				}
-				identity, err := service.AuthenticateNodeCredential(
-					request.Context(),
-					token,
-					requiredScope,
-				)
+				var identity domain.NodeIdentity
+				var err error
+				if requiredScope == domain.ScopeNodeRotate {
+					identity, err = service.AuthenticateRotationLocator(request.Context(), token)
+				} else {
+					identity, err = service.AuthenticateNodeCredential(request.Context(), token, requiredScope)
+				}
 				if err != nil {
 					writeJSON(
 						w,
@@ -192,6 +195,43 @@ func nodeAuthenticationWrapper(
 					return
 				}
 				subject := nodeIdentitySubject(identity, requiredScope)
+				next.ServeHTTP(
+					w,
+					request.WithContext(coreauth.WithSubject(request.Context(), subject)),
+				)
+			})
+		},
+	)
+}
+
+func retireAuthenticationWrapper(
+	service *application.Service,
+) server.Wrapper {
+	return server.HTTPWrapperAdapter(
+		func(ctx context.Context, next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+				token, ok := bearerToken(request.Header.Get("Authorization"))
+				if !ok {
+					writeJSON(
+						w,
+						http.StatusUnauthorized,
+						errorBody("valid Relay enrollment credential required"),
+					)
+					return
+				}
+				identity, err := service.AuthenticateRetireCredential(
+					request.Context(),
+					token,
+				)
+				if err != nil {
+					writeJSON(
+						w,
+						http.StatusUnauthorized,
+						errorBody("valid Relay enrollment credential required"),
+					)
+					return
+				}
+				subject := nodeIdentitySubject(identity, domain.ScopeNodeRetire)
 				next.ServeHTTP(
 					w,
 					request.WithContext(coreauth.WithSubject(request.Context(), subject)),
@@ -216,6 +256,7 @@ func nodeIdentitySubject(
 			"enrollment_id":   strconv.FormatUint(identity.EnrollmentID, 10),
 			"generation":      strconv.FormatUint(identity.Generation, 10),
 			"jti":             identity.JTI,
+			"expires_at":      identity.ExpiresAt.Format(time.RFC3339Nano),
 		},
 	}
 }

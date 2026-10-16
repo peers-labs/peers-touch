@@ -16,7 +16,10 @@ from selenium.webdriver.common.by import By
 
 from tooling.acceptance.core import GateError
 from tooling.acceptance.core.evidence import new_report
-from tooling.acceptance.drivers.native.base import NativeControlSnapshot
+from tooling.acceptance.drivers.native.base import (
+    NativeControlSnapshot,
+    NativeInputMode,
+)
 from tooling.acceptance.drivers.native.macos import MacOSNativeDesktopAdapter
 from tooling.acceptance.drivers.native.runtime import LocalMacOSRuntimeBinding
 from tooling.acceptance.gates.chat.native_product_closure_runner import (
@@ -1016,8 +1019,13 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         self.assertNotIn("call_async_harness", yield_source)
         self.assertIn(
-            "window.__TAURI_INTERNALS__.invoke(",
-            self.runtime_binding,
+            'source.invoke_app_result(\n'
+            '                "acceptance_yield_activation"',
+            yield_source,
+        )
+        self.assertIn(
+            'target.invoke_app_result("acceptance_request_activation")',
+            yield_source,
         )
         self.assertNotIn("acceptance_yield_activation", self.source)
         self.assertLess(
@@ -1135,16 +1143,21 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         composer_source = self.source[composer_start:composer_end]
         self.assertIn(
-            "self.native_adapter.post_key(\n"
-            "            NativeKey.A,\n"
-            "            modifiers=(NativeModifier.PRIMARY,),",
+            "if self.input_mode is NativeInputMode.SEMANTIC_NON_INTRUSIVE:",
             composer_source,
         )
         self.assertIn(
-            "self.native_adapter.post_key("
-            "NativeKey.DELETE, private_source=True)",
+            "client.semantic_replace_text(composer, text)",
             composer_source,
         )
+        self.assertIn("self.native_adapter.post_key(", composer_source)
+        self.assertIn("NativeKey.A,", composer_source)
+        self.assertIn(
+            "modifiers=(NativeModifier.PRIMARY,)",
+            composer_source,
+        )
+        self.assertIn("NativeKey.DELETE,", composer_source)
+        self.assertIn("private_source=True", composer_source)
         self.assertIn(
             'lambda _: (composer.get_attribute("value") or "") == ""',
             composer_source,
@@ -1184,7 +1197,11 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             action_source,
         )
         self.assertIn(
-            "native_origin = self.native_content_origin(client)",
+            "if self.input_mode is NativeInputMode.SEMANTIC_NON_INTRUSIVE",
+            action_source,
+        )
+        self.assertIn(
+            "else self.native_content_origin(client)",
             action_source,
         )
         self.assertIn(
@@ -1214,7 +1231,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         self.assertNotIn("self.click(", action_source)
         self.assertLess(
-            action_source.index("native_origin = self.native_content_origin(client)"),
+            action_source.index("native_origin = ("),
             action_source.index("toolbar = self.hover_message(actor, message_id)"),
         )
 
@@ -1719,7 +1736,9 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             self.assertNotIn(forbidden, self.source)
 
     def test_macos_file_chooser_selection_binds_exact_staged_path(self) -> None:
-        adapter = MacOSNativeDesktopAdapter()
+        adapter = MacOSNativeDesktopAdapter(
+            NativeInputMode.EXCLUSIVE_NATIVE_INPUT
+        )
         owner = NativeControlSnapshot(
             kind="list",
             window_count=1,
@@ -2462,27 +2481,27 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "return document.activeElement === row && Boolean(toolbar);",
             row_focus,
         )
-        sequence_post = keyboard_path.index(
-            "self.native_adapter.post_key_sequence_to_process(\n"
-            "            process_id,\n"
-            "            (",
+        semantic_sequence_post = keyboard_path.index(
+            "client.semantic_key_sequence(",
             row_focus_wait,
         )
-        sequence_keys = keyboard_path.index(
-            "NativeKey.ENTER,\n"
-            "                NativeKey.TAB,\n"
-            "                NativeKey.ENTER,",
-            sequence_post,
+        native_sequence_post = keyboard_path.index(
+            "self.native_adapter.post_key_sequence_to_process(",
+            semantic_sequence_post,
         )
         picker_wait = keyboard_path.index(
             "WebDriverWait(client.driver, 15).until(",
-            sequence_keys,
+            native_sequence_post,
         )
         self.assertNotIn("self.click_element(actor, row)", keyboard_path)
         self.assertLess(row_focus, row_focus_wait)
-        self.assertLess(row_focus_wait, sequence_post)
-        self.assertLess(sequence_post, sequence_keys)
-        self.assertLess(sequence_keys, picker_wait)
+        self.assertLess(row_focus_wait, semantic_sequence_post)
+        self.assertLess(semantic_sequence_post, native_sequence_post)
+        self.assertLess(native_sequence_post, picker_wait)
+        self.assertIn("Keys.ENTER", keyboard_path)
+        self.assertIn("Keys.TAB", keyboard_path)
+        self.assertIn("NativeKey.ENTER", keyboard_path)
+        self.assertIn("NativeKey.TAB", keyboard_path)
         self.assertIn(
             "interval_seconds=NATIVE_KEY_SEQUENCE_INTERVAL_SECONDS",
             keyboard_path,
@@ -2510,12 +2529,13 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         reaction_source = self.source[reaction_start:reaction_end]
 
         self.assertIn(
-            "NativeKey.ENTER,\n"
-            "                NativeKey.TAB,\n"
-            "                NativeKey.ENTER,\n"
-            "                NativeKey.ENTER,",
+            "if self.input_mode is NativeInputMode.SEMANTIC_NON_INTRUSIVE:",
             selection_source,
         )
+        self.assertEqual(selection_source.count("Keys.ENTER"), 3)
+        self.assertEqual(selection_source.count("Keys.TAB"), 1)
+        self.assertEqual(selection_source.count("NativeKey.ENTER"), 3)
+        self.assertEqual(selection_source.count("NativeKey.TAB"), 1)
         self.assertIn("reaction_picker_localized", selection_source)
         self.assertIn("return str(selected_emoji)", selection_source)
         self.assertEqual(

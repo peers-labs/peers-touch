@@ -111,7 +111,7 @@ with `PROTOTYPE_URL`. See the Mobile prototype README for evidence and limits.
 | desktop | `call` | `packages/prototypes/desktop/features/call/` | Desktop Chat/通话能力原型 |
 | desktop | `social-chat` | `packages/prototypes/desktop/features/social-chat/` | Desktop Chat 能力原型 |
 | mobile | `mobile-chat` | `packages/prototypes/mobile/chat/` | Mobile Shell 产品原型：Station trust、OAuth、Chat、Moments、Contacts、Me 与恢复状态 |
-| dashboard | `station-dashboard` | `packages/prototypes/dashboard/station-dashboard/` | Station Dashboard 运维台体验基准原型 |
+| dashboard | `station-dashboard` | `packages/prototypes/dashboard/station-dashboard/` | Relay 邀请与 Station 挂载、迁移、撤销/卸载的双边生命周期 |
 
 ---
 

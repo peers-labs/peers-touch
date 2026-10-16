@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="light">
+    <title>Relay Console</title>
+    <link rel="stylesheet" href="/relay-console/style.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand-mark" aria-hidden="true">R</div>
+      <div class="brand-copy">
+        <strong>Relay Console</strong>
+        <span id="relay-identity">Connecting</span>
+      </div>
+      <div class="topbar-actions">
+        <button class="button quiet" id="change-token" type="button">Credential</button>
+        <button class="button quiet" id="refresh" type="button">Refresh</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="summary" aria-label="Relay status">
+        <div>
+          <span>Admitted nodes</span>
+          <strong id="stat-nodes">-</strong>
+        </div>
+        <div>
+          <span>Active routes</span>
+          <strong id="stat-routes">-</strong>
+        </div>
+        <div>
+          <span>Active permits</span>
+          <strong id="stat-permits">-</strong>
+        </div>
+        <div>
+          <span>Capacity</span>
+          <strong id="stat-capacity">-</strong>
+        </div>
+      </section>
+
+      <div id="page-error" class="notice error hidden" role="alert"></div>
+
+      <section class="section">
+        <div class="section-heading">
+          <div>
+            <h1>Invitations</h1>
+            <p>Permanent until used or deleted.</p>
+          </div>
+          <button class="button primary" id="open-create" type="button">New invitation</button>
+        </div>
+        <div class="table-shell">
+          <table>
+            <thead>
+              <tr>
+                <th>Label</th>
+                <th>Target Station</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th aria-label="Invitation actions"></th>
+              </tr>
+            </thead>
+            <tbody id="invite-rows"></tbody>
+          </table>
+          <div class="empty hidden" id="invite-empty">No invitations</div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-heading">
+          <div>
+            <h2>Admitted Stations</h2>
+            <p>Enrollments owned by this Relay.</p>
+          </div>
+        </div>
+        <div class="table-shell">
+          <table>
+            <thead>
+              <tr>
+                <th>Label</th>
+                <th>Station</th>
+                <th>Node</th>
+                <th>Generation</th>
+                <th aria-label="Enrollment actions"></th>
+              </tr>
+            </thead>
+            <tbody id="enrollment-rows"></tbody>
+          </table>
+          <div class="empty hidden" id="enrollment-empty">No admitted Stations</div>
+        </div>
+      </section>
+    </main>
+
+    <dialog id="credential-dialog">
+      <form method="dialog" class="dialog-body" id="credential-form">
+        <div>
+          <h2>Operator credential</h2>
+          <p>Kept in memory for this page only.</p>
+        </div>
+        <label>
+          JWT
+          <textarea id="operator-token" rows="5" autocomplete="off" spellcheck="false"></textarea>
+        </label>
+        <div class="dialog-actions">
+          <button class="button primary" value="default" type="submit">Connect</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="create-dialog">
+      <form method="dialog" class="dialog-body" id="create-form">
+        <div>
+          <h2>New invitation</h2>
+          <p>The secret is shown once.</p>
+        </div>
+        <label>
+          Station PeerID
+          <input id="station-peer-id" autocomplete="off">
+        </label>
+        <label>
+          Label
+          <input id="invite-label" autocomplete="off" maxlength="255">
+        </label>
+        <div class="field-row">
+          <label>
+            Max clients
+            <input id="max-clients" min="0" type="number" value="0">
+          </label>
+          <label>
+            Bandwidth limit
+            <input id="bandwidth-limit" min="0" type="number" value="0">
+          </label>
+        </div>
+        <div id="create-error" class="notice error hidden" role="alert"></div>
+        <div class="dialog-actions">
+          <button class="button quiet" value="cancel" type="button" id="cancel-create">Cancel</button>
+          <button class="button primary" value="default" type="submit">Create</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="invitation-dialog">
+      <div class="dialog-body">
+        <div>
+          <h2>Invitation package</h2>
+          <p>Transfer through a controlled channel.</p>
+        </div>
+        <textarea id="invitation-output" rows="12" readonly spellcheck="false"></textarea>
+        <div class="dialog-actions">
+          <button class="button quiet" id="close-invitation" type="button">Close</button>
+          <button class="button primary" id="copy-invitation" type="button">Copy</button>
+        </div>
+      </div>
+    </dialog>
+
+    <script src="/relay-console/app.js"></script>
+  </body>
+</html>

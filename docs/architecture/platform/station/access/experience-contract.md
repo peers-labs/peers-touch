@@ -78,12 +78,14 @@ analytics 或日志字段发送。
 
 ## 7. SAL-J08：Station 注册 Relay
 
-1. Relay operator 创建定向、短期、一次性 invite，明文只显示一次。
+1. Relay operator 创建定向、永久有效的一次性 invite；明文只显示一次，消费前可显式删除。
 2. Station 用 host key 对 Relay challenge、invite ID 和期望 Relay identity 签名。
 3. Relay 验证 proof-of-possession，原子消费 invite 并创建新 enrollment generation。
-4. Station 通过签名控制面轮换短期 node credential，并续订标准 reservation。
+4. Station 先持久化短期 node credential，再提交永久 attachment intent 并启动标准 reservation。
 5. operator 撤销 enrollment 后，Relay 移除 ACL admission、关闭 Node 连接并拒绝旧 generation。
-6. Station 可用新的 invite 显式恢复；过期缓存不得阻止重新 enrollment。
+6. Station 删除 attachment 时先停止本地 reconcile，再请求 Relay 自退役；离线时记录 cleanup pending。
+7. credential、reservation、signed route 继续按 TTL 自动轮换；其过期不删除产品级 attachment。
+8. Station 可用新的 invite 显式恢复；失效 credential 缓存不得阻止重新 enrollment。
 
 ## 8. 失败与恢复
 

@@ -12,6 +12,7 @@ from tooling.acceptance.drivers.native.base import (
     MouseAction,
     NativeControlSnapshot,
     NativeDesktopAdapter,
+    NativeInputMode,
     NativeKey,
     NativeModifier,
     NativeWindowBounds,
@@ -834,11 +835,22 @@ _MEDIA_PERMISSION_ALLOW_BUTTON_IDENTIFIER = "action-button-1"
 
 
 class MacOSNativeDesktopAdapter(NativeDesktopAdapter):
+    def __init__(
+        self,
+        input_mode: NativeInputMode = NativeInputMode.SEMANTIC_NON_INTRUSIVE,
+    ) -> None:
+        self._input_mode = input_mode
+
+    @property
+    def input_mode(self) -> NativeInputMode:
+        return self._input_mode
+
     @property
     def platform(self) -> str:
         return "macos"
 
     def activate_process(self, process_id: int) -> None:
+        self.require_exclusive_input("activate macOS process")
         process_id = self._validated_process_id(process_id)
         appkit_activation = subprocess.run(
             (sys.executable, "-c", _ACTIVATION_PROBE, str(process_id)),
@@ -889,6 +901,8 @@ class MacOSNativeDesktopAdapter(NativeDesktopAdapter):
         actions: tuple[MouseAction, ...],
         point: tuple[float, float],
     ) -> None:
+        self.require_exclusive_input("post macOS global mouse event")
+
         class CGPoint(ctypes.Structure):
             _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double)]
 
@@ -923,6 +937,7 @@ class MacOSNativeDesktopAdapter(NativeDesktopAdapter):
         text: str = "",
         private_source: bool = False,
     ) -> None:
+        self.require_exclusive_input("post macOS global keyboard event")
         core_graphics, core_foundation = self._event_frameworks()
         core_graphics.CGEventCreateKeyboardEvent.argtypes = [
             ctypes.c_void_p,
@@ -1029,6 +1044,7 @@ class MacOSNativeDesktopAdapter(NativeDesktopAdapter):
         process_id: int,
         path: str,
     ) -> NativeControlSnapshot | None:
+        self.require_exclusive_input("select path in macOS file chooser")
         process_id = self._validated_process_id(process_id)
         target = Path(path).expanduser().resolve()
         if not target.is_file():
@@ -1107,6 +1123,7 @@ class MacOSNativeDesktopAdapter(NativeDesktopAdapter):
         self,
         process_id: int,
     ) -> bool:
+        self.require_exclusive_input("accept macOS media capture permission")
         process_id = self._validated_process_id(process_id)
         script = f"""
         tell application "System Events"

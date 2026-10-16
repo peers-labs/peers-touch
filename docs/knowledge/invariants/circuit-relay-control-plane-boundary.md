@@ -37,6 +37,10 @@ connection material rather than restoring a prior permit.
 
 Reservations at different Relay PeerIDs MUST remain independent. Failure or
 revocation at one Relay MUST NOT mutate another Relay's live reservation.
+When direct outbound connectivity is closed, the exact ConnectionGater
+installed on the borrowed Station Host MUST admit a dynamic Relay PeerID before
+its reservation worker starts and withdraw that runtime-owned admission after
+the target stops. Static Bootstrap seed admission remains independent.
 
 ## Why this is non-negotiable
 
@@ -51,11 +55,38 @@ surviving replacement, replay or restart. Independent Relay state preserves
 failover: one failed target can be removed without discarding another target's
 healthy route.
 
+Station-local attachment persistence MUST scope every row, tombstone, query and
+credential path by logical Station, Host Node and Relay. A Relay-only key cannot
+isolate multiple Nodes sharing one Station database. Legacy ownership migration
+must verify Relay-signed identity claims; it must not assign an unknown row to
+the Node that happens to boot first.
+
+An expired enrollment credential may locate a fresh proof-based rotation, never
+authorize ordinary transport. Recovery must retain signature/issuer/audience/
+scope validation, current enrollment/generation/JTI and revocation fencing,
+and fresh Node proof with valid Station delegation. A disabled attachment must
+leave both reservation and control/dial target sets before remote cleanup.
+Cleanup cannot re-register a deleted Relay as a dial candidate.
+
+Recovery MUST preserve monotonic Node authorization epochs and atomically
+commit replacement JTI and delegation authority. Durable transitions and
+admission publication MUST remain ordered with registration and revocation.
+Self-retirement MUST conditionally revoke the caller's exact enrollment
+generation and JTI. Expired locators may confirm only an already-revoked
+predecessor; they MUST NOT revoke an active replacement or restore admission.
+PostgreSQL attachment migration MUST fence legacy writes through snapshot and
+table replacement. Unverified legacy ownership MUST block automatic bootstrap.
+Cleanup-pending legacy credentials MUST move to managed scoped storage before
+use. Remote retirement confirmation MUST commit before credential removal so
+cleanup remains replayable after a stop. Completed tombstone deletion MUST be
+idempotent, and cleanup MUST preserve operator-provided original files.
+
 ## How to verify
 
 - `cd apps/station && go test ./frame/core/plugin/native/relay ./frame/core/plugin/native/subserver/relay/... -count=1`
   passes, including source binding, generation replacement, restart replay,
-  persistence ordering and dual-Relay failure-isolation tests.
+  persistence ordering, dynamic Host-gater admission and dual-Relay
+  failure-isolation tests.
 - `python3 tooling/scripts/node-connectivity-journey.py --closure ncp-native-cut --gate NCP-G07`
   passes before claiming bounded Circuit admission proof.
 - `python3 tooling/scripts/node-connectivity-journey.py --closure ncp-native-cut --gate NCP-G08`

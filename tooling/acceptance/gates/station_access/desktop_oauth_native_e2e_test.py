@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 
 from tooling.acceptance.core import BlockedError, GateError
-from tooling.acceptance.drivers.native import MouseAction
+from tooling.acceptance.drivers.native import MouseAction, NativeInputMode
 from tooling.acceptance.gates.station_access.desktop_oauth_native_e2e import (
     ACCOUNT_IDENTITY_SUMMARY_SELECTOR,
     ACCOUNT_LOGIN_PROVIDER_SELECTOR,
@@ -127,10 +127,18 @@ class _FakeHoverSession:
         self.selector = selector
         return [_FakeHoverElement()]
 
+    def semantic_hover(self, element: object) -> None:
+        self.semantic_hover_element = element
+
 
 class _FakeHoverRuntimeBinding:
-    def __init__(self, adapter: _FakeNativeAdapter) -> None:
+    def __init__(
+        self,
+        adapter: _FakeNativeAdapter,
+        input_mode: NativeInputMode = NativeInputMode.EXCLUSIVE_NATIVE_INPUT,
+    ) -> None:
         self.native_adapter = adapter
+        self.input_mode = input_mode
         self.activation_requested = False
 
     def request_cooperative_activation(
@@ -251,6 +259,27 @@ class DesktopOAuthNativeGateTest(unittest.TestCase):
 
         self.assertEqual(tooltip, "tooltip")
         self.assertTrue(runtime_binding.activation_requested)
+
+    def test_hover_tooltip_uses_semantic_input_without_native_pointer(self) -> None:
+        gate = object.__new__(DesktopOAuthNativeGate)
+        adapter = _FakeNativeAdapter()
+        gate.runtime_binding = _FakeHoverRuntimeBinding(
+            adapter,
+            NativeInputMode.SEMANTIC_NON_INTRUSIVE,
+        )
+        session = _FakeHoverSession(focused=False)
+        trigger = object()
+
+        tooltip = gate._hover_tooltip(
+            session,
+            trigger,
+            "tooltip",
+            timeout=0.1,
+        )
+
+        self.assertEqual(tooltip, "tooltip")
+        self.assertIs(session.semantic_hover_element, trigger)
+        self.assertEqual(adapter.mouse_calls, [])
 
     def test_tooltip_visibility_uses_rendered_layout(self) -> None:
         session = _FakeHoverSession(rendered=False)

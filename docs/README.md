@@ -217,6 +217,10 @@
 - Node Connectivity：`architecture/platform/runtime/node-connectivity/README.md`
   （active；已评审的逻辑 Station/Node 身份、Frame 内置接入、libp2p Circuit v2、
   canonical HTTP/protobuf 与集群就绪目标；候选执行计划待批准，运行时未证明）
+- Relay Attachment 生命周期：
+  `architecture/platform/runtime/node-connectivity/relay-attachment/README.md`
+  （active；定义 Relay Operator 永久邀请/撤销与 Station Operator
+  接受/迁移/卸载的双边挂载闭环；不引入第三角色或自研 mount wire）
 - 本机多 worktree 开发控制面：`architecture/engineering/local-dev/README.md`
   （active；定义 `~/.peers-touch/dev/` 机器级注册表、独立 worktree 绑定、slot 与
   Station capability lease，当前仅有 observed snapshot，尚未接管运行时）

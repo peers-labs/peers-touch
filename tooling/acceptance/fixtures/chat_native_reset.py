@@ -86,6 +86,8 @@ CHAT_TABLES = (
     "key_exchange_one_time_pre_keys",
     "key_exchange_signed_pre_keys",
     "mls_key_packages",
+    "realtime_actor_event_sequences",
+    "realtime_events",
     "recovery_revisions",
     "social_friend_request_commands",
     "social_friend_request_effects",

@@ -338,6 +338,13 @@ class WindowsDesktopBroker:
 
         executable = _windows_path(payload.get("executable"), "executable")
         storage_root = _windows_path(payload.get("storageRoot"), "storage root")
+        storage_lifecycle = str(
+            payload.get("storageLifecycle") or "ephemeral"
+        ).strip()
+        if storage_lifecycle not in {"ephemeral", "persistent"}:
+            raise BrokerError(
+                "storage lifecycle must be ephemeral or persistent"
+            )
         log_path = _windows_path(payload.get("logPath"), "log path")
         webdriver_port = _port(payload.get("webdriverPort"), "WebDriver port")
         gateway_port = _port(payload.get("gatewayPort"), "Gateway port")
@@ -414,6 +421,7 @@ class WindowsDesktopBroker:
             "webdriverPort": webdriver_port,
             "gatewayPort": gateway_port,
             "storageRoot": storage_root,
+            "storageLifecycle": storage_lifecycle,
             "logPath": log_path,
             "statePath": str(state_path),
             "profile": str(payload.get("profile") or ""),
@@ -546,6 +554,11 @@ class WindowsDesktopBroker:
         actor_state = self._actor_state(lease, actor)
         preserve_state = payload.get("preserveState") is True
         process_id = int(actor_state.get("processId") or 0)
+        storage_lifecycle = str(
+            actor_state.get("storageLifecycle") or "ephemeral"
+        )
+        if storage_lifecycle not in {"ephemeral", "persistent"}:
+            raise BrokerError("actor storage lifecycle is invalid")
         self._stop_process(process_id)
         self.scheduler.stop(str(actor_state["taskName"]))
         self.scheduler.unregister(str(actor_state["taskName"]))
@@ -568,20 +581,29 @@ class WindowsDesktopBroker:
             log_content = log_path.read_bytes()
         except FileNotFoundError:
             pass
-        if not preserve_state:
-            shutil.rmtree(Path(str(actor_state["storageRoot"])), ignore_errors=True)
+        storage_root = Path(str(actor_state["storageRoot"]))
+        retain_storage = preserve_state or storage_lifecycle == "persistent"
+        if not retain_storage:
+            shutil.rmtree(storage_root, ignore_errors=True)
         actor_root = self.root / "actors" / str(lease["runId"]) / actor
-        self._remove_tree(actor_root / "control" if preserve_state else actor_root)
+        self._remove_tree(actor_root)
         actors.pop(actor, None)
         self._write_json(self.lease_path, lease)
+        storage_disposition = (
+            "retained" if retain_storage else "removed"
+        )
+        storage_disposition_complete = (
+            storage_root.exists()
+            if retain_storage
+            else not storage_root.exists()
+        )
         return {
             "actor": actor,
             "processId": process_id,
             "processStopped": not self._process_alive(process_id),
-            "storageReleased": (
-                preserve_state
-                or not Path(str(actor_state["storageRoot"])).exists()
-            ),
+            "storageLifecycle": storage_lifecycle,
+            "storageDisposition": storage_disposition,
+            "storageReleased": storage_disposition_complete,
             "taskReleased": not self.scheduler.exists(
                 str(actor_state["taskName"])
             ),

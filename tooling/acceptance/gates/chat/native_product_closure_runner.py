@@ -20,6 +20,7 @@ from typing import Any, Callable
 
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 
 from tooling.acceptance.core import (
@@ -36,6 +37,7 @@ from tooling.acceptance.drivers.native import (
     MouseAction,
     NativeControlSnapshot,
     NativeDesktopAdapter,
+    NativeInputMode,
     NativeDesktopRuntimeBinding,
     NativeKey,
     NativeModifier,
@@ -316,6 +318,7 @@ class NativeProductClosureGate(AcceptanceGate):
         self.native_adapter: NativeDesktopAdapter = (
             runtime_binding.native_adapter
         )
+        self.input_mode = runtime_binding.input_mode
         station = runtime_station_service(self.manifest, "alice")
         self.station_url = str(station.get("endpoint") or "").rstrip("/")
         if not self.station_url:
@@ -352,6 +355,7 @@ class NativeProductClosureGate(AcceptanceGate):
         self.fixture_root = Path(tempfile.mkdtemp(prefix="pt-chat-product-closure-"))
         self.report.station_url = self.station_url
         self.report.manifest = self.manifest
+        self.report.runtime["desktopInputMode"] = self.input_mode.value
 
     def step(self, name: str, action: Callable[[], Any]) -> Any:
         try:
@@ -975,6 +979,8 @@ class NativeProductClosureGate(AcceptanceGate):
         client = self.clients[actor]
         if client.process_id is None:
             raise GateError(f"{actor} Native window has no running process")
+        if self.input_mode is NativeInputMode.SEMANTIC_NON_INTRUSIVE:
+            return client
 
         window = self.native_window(client)
         point = (
@@ -1287,6 +1293,9 @@ class NativeProductClosureGate(AcceptanceGate):
             element,
             selector=selector,
         )
+        if self.input_mode is NativeInputMode.SEMANTIC_NON_INTRUSIVE:
+            client.semantic_click(element)
+            return element
         if focus_target:
             client.driver.execute_script(
                 "arguments[0].focus({ preventScroll: true });",
@@ -1473,6 +1482,15 @@ class NativeProductClosureGate(AcceptanceGate):
         client = self.focus_actor_window(actor)
         neutral = client.find_element("[data-chat-send]", 30)
         row = client.find_element(f'[data-message-ulid="{message_id}"]', 30)
+        if self.input_mode is NativeInputMode.SEMANTIC_NON_INTRUSIVE:
+            client.semantic_hover(row)
+            return WebDriverWait(client.driver, 15).until(
+                lambda driver: driver.find_element(
+                    By.CSS_SELECTOR,
+                    f'[data-message-action-overlay="toolbar"]'
+                    f'[data-message-action-message="{message_id}"]',
+                )
+            )
 
         def inspect_targets() -> dict[str, Any]:
             return client.execute_script(
@@ -1570,7 +1588,11 @@ class NativeProductClosureGate(AcceptanceGate):
         action: str,
     ) -> Any:
         client = self.focus_actor_window(actor)
-        native_origin = self.native_content_origin(client)
+        native_origin = (
+            None
+            if self.input_mode is NativeInputMode.SEMANTIC_NON_INTRUSIVE
+            else self.native_content_origin(client)
+        )
         toolbar = self.hover_message(actor, message_id)
         selector = MESSAGE_ACTION_SELECTORS.get(action)
         if selector is None:
@@ -1590,19 +1612,28 @@ class NativeProductClosureGate(AcceptanceGate):
         client = self.clients[actor]
         composer = client.find_element('[data-pt-text-input="chat-composer"]', 30)
         self.click_element(actor, composer)
-        self.native_adapter.post_key(
-            NativeKey.A,
-            modifiers=(NativeModifier.PRIMARY,),
-        )
-        self.native_adapter.post_key(NativeKey.DELETE, private_source=True)
-        WebDriverWait(client.driver, 5).until(
-            lambda _: (composer.get_attribute("value") or "") == ""
-        )
-        if text:
-            composer.send_keys(text)
+        if self.input_mode is NativeInputMode.SEMANTIC_NON_INTRUSIVE:
+            client.semantic_replace_text(composer, text)
             WebDriverWait(client.driver, 5).until(
                 lambda _: (composer.get_attribute("value") or "") == text
             )
+        else:
+            self.native_adapter.post_key(
+                NativeKey.A,
+                modifiers=(NativeModifier.PRIMARY,),
+            )
+            self.native_adapter.post_key(
+                NativeKey.DELETE,
+                private_source=True,
+            )
+            WebDriverWait(client.driver, 5).until(
+                lambda _: (composer.get_attribute("value") or "") == ""
+            )
+            if text:
+                composer.send_keys(text)
+                WebDriverWait(client.driver, 5).until(
+                    lambda _: (composer.get_attribute("value") or "") == text
+                )
         self.click(actor, "[data-chat-send]")
 
     def wait_message_text(self, actor: str, text: str) -> dict[str, Any]:
@@ -1756,15 +1787,21 @@ class NativeProductClosureGate(AcceptanceGate):
         client = self.clients[actor]
         search = client.find_element("[data-chat-session-search]", 30)
         self.click_element(actor, search)
-        self.native_adapter.post_key(
-            NativeKey.A,
-            modifiers=(NativeModifier.PRIMARY,),
-        )
-        self.native_adapter.post_key(NativeKey.DELETE, private_source=True)
-        WebDriverWait(client.driver, 5).until(
-            lambda _: (search.get_attribute("value") or "") == ""
-        )
-        search.send_keys("bob")
+        if self.input_mode is NativeInputMode.SEMANTIC_NON_INTRUSIVE:
+            client.semantic_replace_text(search, "bob")
+        else:
+            self.native_adapter.post_key(
+                NativeKey.A,
+                modifiers=(NativeModifier.PRIMARY,),
+            )
+            self.native_adapter.post_key(
+                NativeKey.DELETE,
+                private_source=True,
+            )
+            WebDriverWait(client.driver, 5).until(
+                lambda _: (search.get_attribute("value") or "") == ""
+            )
+            search.send_keys("bob")
         WebDriverWait(client.driver, 5).until(
             lambda _: (search.get_attribute("value") or "").lower() == "bob"
         )
@@ -2636,17 +2673,26 @@ class NativeProductClosureGate(AcceptanceGate):
             client.execute_script(keyboard_debug_script),
         )
         # #endregion
-        self.native_adapter.post_key_sequence_to_process(
-            process_id,
-            (
-                NativeKey.ENTER,
-                NativeKey.TAB,
-                NativeKey.ENTER,
-                NativeKey.ENTER,
-            ),
-            interval_seconds=NATIVE_KEY_SEQUENCE_INTERVAL_SECONDS,
-            private_source=True,
-        )
+        if self.input_mode is NativeInputMode.SEMANTIC_NON_INTRUSIVE:
+            client.semantic_key_sequence(
+                row,
+                Keys.ENTER,
+                Keys.TAB,
+                Keys.ENTER,
+                Keys.ENTER,
+            )
+        else:
+            self.native_adapter.post_key_sequence_to_process(
+                process_id,
+                (
+                    NativeKey.ENTER,
+                    NativeKey.TAB,
+                    NativeKey.ENTER,
+                    NativeKey.ENTER,
+                ),
+                interval_seconds=NATIVE_KEY_SEQUENCE_INTERVAL_SECONDS,
+                private_source=True,
+            )
         try:
             selected_emoji = WebDriverWait(client.driver, 15).until(
                 lambda driver: driver.execute_script(
@@ -4583,12 +4629,18 @@ class NativeProductClosureGate(AcceptanceGate):
             20,
         )
         self.click_element(actor, restore_input)
-        self.native_adapter.post_key(
-            NativeKey.A,
-            modifiers=(NativeModifier.PRIMARY,),
-        )
-        self.native_adapter.post_key(NativeKey.DELETE, private_source=True)
-        restore_input.send_keys(phrase)
+        if self.input_mode is NativeInputMode.SEMANTIC_NON_INTRUSIVE:
+            client.semantic_replace_text(restore_input, phrase)
+        else:
+            self.native_adapter.post_key(
+                NativeKey.A,
+                modifiers=(NativeModifier.PRIMARY,),
+            )
+            self.native_adapter.post_key(
+                NativeKey.DELETE,
+                private_source=True,
+            )
+            restore_input.send_keys(phrase)
         self.arm_recovery_feedback_probe(actor)
         try:
             self.click(actor, RECOVERY_SELECTORS["restore_submit"])
