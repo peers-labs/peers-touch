@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-10-15
-covered_docs_hash: 722e7a138d9cdc1441bcfbd3619dad0c15a93598faea32b99a495288620b66f3
+last_verified_at: 2026-10-16
+covered_docs_hash: e1e763911270a267554456e1b76e46e85b9a7b8e5f7d2535b7f2ef6ba133e3c9
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,16 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-10-16 Bot Module Governance Review
+
+The existing Bot product architecture is now registered as an active module
+with machine-readable ownership, required-document metadata, and accepted
+ADR-lite decisions. This closes fail-closed architecture discovery without
+changing review severity or introducing a new product rule. The current
+GitHub Review Skill already rejects unregistered active modules and consumes
+the shared architecture validator, so no `SKILL.md`, generic review fixture,
+or knowledge entry is required.
 
 ## 2026-10-15 Development Operation Authority Review
 
