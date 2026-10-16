@@ -89,7 +89,7 @@ func MintInternalProgramActor(
 		Discoverable:              false,
 		ManuallyApprovesFollowers: true,
 		DefaultVisibility:         "private",
-		MessagePermission:         "nobody",
+		ContactRequestPolicy:      "nobody",
 	}
 	if err = rds.Create(&meta).Error; err != nil {
 		return "", err
