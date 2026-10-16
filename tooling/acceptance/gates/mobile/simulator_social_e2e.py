@@ -1947,7 +1947,7 @@ return node && 'value' in node ? node.value : null;
         for candidate in value:
             if (
                 isinstance(candidate, Mapping)
-                and candidate.get("kind") == kind
+                and candidate.get("surfaceKind") == kind
                 and candidate.get("targetId") == target_id
                 and (
                     payload_sha256 is None

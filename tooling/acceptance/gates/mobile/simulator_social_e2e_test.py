@@ -357,7 +357,8 @@ class SimulatorSocialGateTests(unittest.TestCase):
     def test_ios_recovery_restores_exact_persisted_moment_draft(self) -> None:
         payload_sha256 = "a" * 64
         draft = {
-            "kind": "moment",
+            "kind": "moments",
+            "surfaceKind": "moment",
             "targetId": "compose",
             "payloadSha256": payload_sha256,
         }
