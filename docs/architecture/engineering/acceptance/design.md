@@ -240,8 +240,13 @@ macOS WKWebView | Linux WebKitGTK | Windows WebView2
   缺失时保持 `BLOCKED/UNPROVEN`。
 - Semantic Desktop 启动在 `Builder::build` 前修改生成的 main window config，
   将 `focus`、`focusable`、`visible` 设为 false。Tauri 在 `setup` 前创建配置窗口，
-  因此 setup 中的焦点限制不能防止首次创建抢占。Setup 在应用非激活策略与窗口
-  不可聚焦策略生效后显示窗口；普通产品启动与隔离 exclusive 模式保留产品配置。
+  因此 setup 中的焦点限制不能防止首次创建抢占。同一启动策略必须在 macOS
+  setup 使用 `ActivationPolicy::Prohibited` 拒绝应用激活；Tao 的 run-loop
+  启动激活独立于 window focus，Accessory 策略也不能阻止其默认主动激活。
+  Setup 在应用不可激活策略与窗口不可聚焦策略生效后显示已创建的窗口；
+  普通产品启动与隔离 exclusive 模式保留产品配置和应用激活行为。
+  Runtime-cell 从启动前开始检查 frontmost PID、
+  系统光标和键盘焦点，不能只检查 semantic action 期间的状态。
 - Embedded WebDriver 仅绑定 cell 内 `127.0.0.1`；远端访问必须经过 run-scoped SSH
   tunnel，禁止开放到局域网。
 

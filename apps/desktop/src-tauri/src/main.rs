@@ -720,7 +720,9 @@ fn main() {
                 )
                 .map_err(std::io::Error::other)?;
                 if !exclusive_native_input {
-                    app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+                    // Tao activates Accessory apps at run-loop startup; semantic clients must
+                    // reject application activation while keeping their configured WebView.
+                    app.set_activation_policy(tauri::ActivationPolicy::Prohibited);
                 }
             }
             app.state::<Arc<state::AppState>>()
