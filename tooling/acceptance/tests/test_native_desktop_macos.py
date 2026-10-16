@@ -227,11 +227,17 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
         session.stop.assert_called_once_with()
 
     def test_semantic_probe_uses_webdriver_without_native_input(self) -> None:
+        events: list[str] = []
         launcher = Mock(log_path=None)
         session = Mock(process_id=42, log_path=None)
-        session.save_screenshot.side_effect = (
-            lambda path: path.write_bytes(b"semantic-screenshot")
+        session.wait_for_acceptance_harness.side_effect = lambda: events.append(
+            "harness-ready"
         )
+        session.save_screenshot.side_effect = lambda path: (
+            events.append("screenshot"),
+            path.write_bytes(b"semantic-screenshot"),
+        )[-1]
+        session.stop.side_effect = lambda: events.append("session-stop")
         hover = object()
         click = object()
         input_element = object()
@@ -252,6 +258,9 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
             },
             None,
         )
+        session.semantic_hover.side_effect = lambda _element: events.append(
+            "semantic-action"
+        )
         adapter = Mock(spec=MacOSNativeDesktopAdapter)
         lifecycle = NativeDesktopMacOSProvisioner()
         operator_state = {
@@ -260,6 +269,13 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
             "pointerY": 240.0,
             "keyboardFocusSha256": "b" * 64,
         }
+        operator_states = iter((operator_state, operator_state))
+
+        def snapshot_operator_state(
+            _adapter: MacOSNativeDesktopAdapter,
+        ) -> dict[str, object]:
+            events.append("operator-snapshot")
+            return next(operator_states)
 
         with patch.dict(
             "os.environ",
@@ -292,7 +308,7 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
         ), patch.object(
             lifecycle,
             "_snapshot_operator_state",
-            side_effect=(operator_state, operator_state),
+            side_effect=snapshot_operator_state,
         ) as snapshot:
             probes, webdriver_port = lifecycle._probe_native_adapter()
 
@@ -310,6 +326,17 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
         self.assertFalse(probes.point_ownership_probe)
         self.assertFalse(probes.screenshot_probe)
         self.assertEqual(snapshot.call_count, 2)
+        self.assertEqual(
+            events,
+            [
+                "harness-ready",
+                "operator-snapshot",
+                "semantic-action",
+                "screenshot",
+                "operator-snapshot",
+                "session-stop",
+            ],
+        )
         launcher_type.assert_called_once_with(
             app_binary="/tmp/peers-touch-desktop",
             port=45123,

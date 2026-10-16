@@ -428,11 +428,6 @@ class NativeDesktopMacOSProvisioner:
         )
         session = TauriSession(launcher)
         adapter = MacOSNativeDesktopAdapter(input_mode)
-        operator_before = (
-            self._snapshot_operator_state(adapter)
-            if input_mode is NativeInputMode.SEMANTIC_NON_INTRUSIVE
-            else None
-        )
         screenshot_root = Path(
             tempfile.mkdtemp(prefix="pt-macos-cell-probe-")
         )
@@ -444,19 +439,16 @@ class NativeDesktopMacOSProvisioner:
             session.wait_for_ready()
             session.wait_for_acceptance_harness()
             if input_mode is NativeInputMode.SEMANTIC_NON_INTRUSIVE:
+                operator_before = self._snapshot_operator_state(adapter)
                 semantic_action_probe = self._probe_semantic_actions(session)
                 session.save_screenshot(screenshot)
                 semantic_screenshot_probe = (
                     screenshot.is_file() and screenshot.stat().st_size > 0
                 )
+                operator_after = self._snapshot_operator_state(adapter)
                 log_path = session.log_path
                 session.stop()
                 session_stopped = True
-                operator_after = self._snapshot_operator_state(adapter)
-                if operator_before is None:
-                    raise ProvisioningError(
-                        "macOS semantic probe has no operator baseline"
-                    )
                 non_interference = CellNonInterferenceIdentity(
                     frontmost_pid_before=int(
                         operator_before["frontmostPid"]
