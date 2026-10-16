@@ -21,9 +21,12 @@ use crate::model::actor::{ActorProfile, ListActorDevicesResponse};
 use crate::model::auth::{LoginRequest, LoginResponse};
 use crate::state::AppState;
 use serde_json::json;
+use std::time::Duration;
 use zeroize::Zeroizing;
 
 pub(crate) const DESKTOP_SESSION_CLASS: &str = "desktop";
+const RESTORE_TAKEOVER_MAX_ATTEMPTS: usize = 6;
+const RESTORE_TAKEOVER_RETRY_DELAY: Duration = Duration::from_millis(400);
 
 pub(crate) fn takeover_station_session_token(
     station_client: &StationClient,
@@ -61,11 +64,43 @@ pub(crate) fn takeover_station_session_token_for_device(
     Ok(access_token)
 }
 
+fn takeover_station_session_token_for_restore(
+    station_client: &StationClient,
+    token: &str,
+    device_type: &str,
+) -> Result<String, station_client::StationClientError> {
+    for attempt in 1..=RESTORE_TAKEOVER_MAX_ATTEMPTS {
+        match takeover_station_session_token_for_device(station_client, token, device_type) {
+            Ok(token) => return Ok(token),
+            Err(error)
+                if attempt < RESTORE_TAKEOVER_MAX_ATTEMPTS
+                    && session_takeover_failure_is_retryable(&error) =>
+            {
+                tracing::warn!(
+                    attempt,
+                    error_kind = ?error.kind,
+                    "session takeover route is not ready; retrying without clearing local session"
+                );
+                std::thread::sleep(RESTORE_TAKEOVER_RETRY_DELAY);
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    unreachable!("restore takeover retry loop always returns")
+}
+
 pub(crate) fn session_takeover_failed<T: serde::Serialize>(
     error: station_client::StationClientError,
     account_id: Option<&str>,
     provider: Option<&str>,
 ) -> AppResult<T> {
+    if !station_verification_rejects_session(&error) {
+        tracing::warn!(
+            error_kind = ?error.kind,
+            "session takeover unavailable; retaining local session"
+        );
+        return error.into_app_result("Session takeover failed");
+    }
     AppResult::fail(
         ErrorCode::Unauthorized,
         "session revoked",
@@ -1230,14 +1265,19 @@ pub(crate) fn auth_restore_session_for_device(
         Ok(session) => session,
         Err(error) => return map_domain_error(error),
     };
-    let token =
-        match takeover_station_session_token_for_device(station_client, &blob.token, device_type) {
-            Ok(token) => token,
-            Err(error) => {
+    let token = match takeover_station_session_token_for_restore(
+        station_client,
+        &blob.token,
+        device_type,
+    ) {
+        Ok(token) => token,
+        Err(error) => {
+            if station_verification_rejects_session(&error) {
                 session_vault::purge_raw_session_for_actor_ptid(&initial_session.actor_ptid);
-                return session_takeover_failed(error, Some(&account_id), None);
             }
-        };
+            return session_takeover_failed(error, Some(&account_id), None);
+        }
+    };
     let session = match validate_token(&token) {
         Ok(session) => session,
         Err(error) => {
@@ -1612,7 +1652,9 @@ fn probe_session_with_station(
         })
 }
 
-fn station_verification_rejects_session(error: &station_client::StationClientError) -> bool {
+pub(crate) fn station_verification_rejects_session(
+    error: &station_client::StationClientError,
+) -> bool {
     matches!(
         error.kind,
         station_client::StationClientErrorKind::SessionRevoked
@@ -1620,11 +1662,22 @@ fn station_verification_rejects_session(error: &station_client::StationClientErr
     )
 }
 
+fn session_takeover_failure_is_retryable(error: &station_client::StationClientError) -> bool {
+    matches!(
+        error.kind,
+        station_client::StationClientErrorKind::Network
+            | station_client::StationClientErrorKind::Overloaded
+            | station_client::StationClientErrorKind::StaleRoute
+            | station_client::StationClientErrorKind::NoRoute
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         canonical_actor_identity_fingerprint, canonical_actor_profile_version,
-        run_required_logout_cleanup, should_resume_access_binding,
+        run_required_logout_cleanup, session_takeover_failed,
+        session_takeover_failure_is_retryable, should_resume_access_binding,
         station_verification_rejects_session, DESKTOP_SESSION_CLASS,
     };
     use crate::application::station_binding::StationBindingPhase;
@@ -1634,6 +1687,7 @@ mod tests {
     use crate::model::actor::{
         ActorDevice, ActorDeviceRef, ActorProfile, ActorRef, ListActorDevicesResponse,
     };
+    use serde_json::json;
     use std::cell::Cell;
 
     #[test]
@@ -1811,6 +1865,57 @@ mod tests {
                 None,
             )
         ));
+    }
+
+    #[test]
+    fn takeover_retries_only_failures_known_not_to_have_been_submitted() {
+        for kind in [
+            StationClientErrorKind::Network,
+            StationClientErrorKind::Overloaded,
+            StationClientErrorKind::StaleRoute,
+            StationClientErrorKind::NoRoute,
+        ] {
+            assert!(session_takeover_failure_is_retryable(
+                &StationClientError::new(kind, "retryable", None)
+            ));
+        }
+        for kind in [
+            StationClientErrorKind::SessionRevoked,
+            StationClientErrorKind::HttpStatus(401),
+            StationClientErrorKind::AmbiguousOutcome,
+            StationClientErrorKind::InvalidResponse,
+        ] {
+            assert!(!session_takeover_failure_is_retryable(
+                &StationClientError::new(kind, "terminal or ambiguous", None)
+            ));
+        }
+    }
+
+    #[test]
+    fn takeover_failure_maps_only_explicit_rejection_to_unauthorized() {
+        let transient = session_takeover_failed::<AuthSessionPayload>(
+            StationClientError::new(StationClientErrorKind::NoRoute, "route is not ready", None),
+            Some("station:account"),
+            None,
+        );
+        assert_eq!(
+            transient.error.expect("transient error").code,
+            ErrorCode::NotFound
+        );
+
+        let rejected = session_takeover_failed::<AuthSessionPayload>(
+            StationClientError::new(StationClientErrorKind::HttpStatus(401), "rejected", None),
+            Some("station:account"),
+            None,
+        );
+        let rejected = rejected.error.expect("rejected error");
+        assert_eq!(rejected.code, ErrorCode::Unauthorized);
+        assert_eq!(
+            rejected
+                .details
+                .and_then(|details| details.get("code").cloned()),
+            Some(json!("session_revoked"))
+        );
     }
 
     #[test]
