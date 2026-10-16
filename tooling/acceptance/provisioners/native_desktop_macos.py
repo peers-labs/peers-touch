@@ -721,11 +721,26 @@ class NativeDesktopMacOSProvisioner:
             "pointerY": float(pointer["y"]),
             "keyboardFocusSha256": _sha256_text(
                 json.dumps(
-                    control.to_dict(),
+                    cls._keyboard_focus_identity(control),
                     sort_keys=True,
                     separators=(",", ":"),
                 )
             ),
+        }
+
+    @staticmethod
+    def _keyboard_focus_identity(
+        control: NativeControlSnapshot,
+    ) -> dict[str, object]:
+        return {
+            "actualFrontmostPid": control.actual_frontmost_pid,
+            "focusedWindow": control.focused_window,
+            "frontmost": control.frontmost,
+            "kind": control.kind,
+            "mainWindow": control.main_window,
+            "platformRole": control.platform_role,
+            "platformSubrole": control.platform_subrole,
+            "title": control.title,
         }
 
     @staticmethod

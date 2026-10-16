@@ -366,6 +366,63 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
         adapter.capture_screenshot.assert_not_called()
         session.stop.assert_called_once_with()
 
+    def test_keyboard_focus_identity_excludes_mutable_control_state(
+        self,
+    ) -> None:
+        baseline = NativeControlSnapshot(
+            kind="text-input",
+            title="Composer",
+            value="before",
+            window_count=1,
+            dialog_count=0,
+            frontmost=True,
+            main_window=True,
+            focused_window=True,
+            actual_frontmost_pid=41,
+            platform_role="AXTextArea",
+            platform_subrole="",
+        )
+        mutable_state_changed = NativeControlSnapshot(
+            kind="text-input",
+            title="Composer",
+            value="after",
+            window_count=2,
+            dialog_count=1,
+            frontmost=True,
+            main_window=True,
+            focused_window=True,
+            actual_frontmost_pid=41,
+            platform_role="AXTextArea",
+            platform_subrole="",
+        )
+        focus_changed = NativeControlSnapshot(
+            kind="button",
+            title="Send",
+            frontmost=True,
+            main_window=True,
+            focused_window=True,
+            actual_frontmost_pid=41,
+            platform_role="AXButton",
+            platform_subrole="",
+        )
+
+        self.assertEqual(
+            NativeDesktopMacOSProvisioner._keyboard_focus_identity(
+                baseline
+            ),
+            NativeDesktopMacOSProvisioner._keyboard_focus_identity(
+                mutable_state_changed
+            ),
+        )
+        self.assertNotEqual(
+            NativeDesktopMacOSProvisioner._keyboard_focus_identity(
+                baseline
+            ),
+            NativeDesktopMacOSProvisioner._keyboard_focus_identity(
+                focus_changed
+            ),
+        )
+
     def test_window_bounds_wait_uses_native_startup_budget(self) -> None:
         default = inspect.signature(
             NativeDesktopMacOSProvisioner._await_window_bounds
