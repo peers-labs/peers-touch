@@ -1292,6 +1292,9 @@
           "apps/desktop/src/components/chat/CreateGroupModal.test.ts",
           "apps/desktop/src/components/chat/ChatActorIdentityRow.tsx",
           "apps/desktop/src/components/chat/ChatContactsPanel.tsx",
+          "apps/desktop/src/components/chat/ChatContactsDetailPanel.tsx",
+          "apps/desktop/src/components/chat/ContactSafetyActions.tsx",
+          "apps/desktop/src/components/settings/PrivacySettings.tsx",
           "apps/desktop/src/components/chat/ChatSessionList.tsx",
           "apps/desktop/src/components/chat/ChatSearchDropdown.tsx",
           "apps/desktop/src/components/chat/contactSelection.ts",
@@ -1307,6 +1310,7 @@
           "docs/architecture/domains/social/core/prototype/README.md",
           "tooling/acceptance/gates/chat/native_group_mls_runner.py",
           "tooling/acceptance/gates/chat/native_group_mls_runner_test.py",
+          "tooling/acceptance/gates/chat/contextual_relationship_journey.py",
           "tooling/acceptance/features/chat-native-friendship-projection.yaml"
         ]
       },
@@ -1315,6 +1319,7 @@
         "desktop-check",
         "chat-native-visible-static",
         "chat-lifecycle-onboarding-e2e",
+        "chat-native-two-client-e2e",
         "chat-native-group-mls-e2e"
       ]
     },

@@ -21,6 +21,11 @@ from tooling.acceptance.gates.chat.native_two_client_runner import (
     is_current_profile_gate,
     journey_for_gate,
 )
+from tooling.acceptance.gates.chat.contextual_relationship_journey import (
+    EVIDENCE_NAMES as RELATIONSHIP_EVIDENCE_NAMES,
+    REQUIRED_ASSERTIONS as RELATIONSHIP_REQUIRED_ASSERTIONS,
+    REQUIRED_STEPS as RELATIONSHIP_REQUIRED_STEPS,
+)
 from tooling.acceptance.gates.chat.native_support import runtime_station_service
 
 
@@ -331,6 +336,8 @@ def write_validation(
         ]["commit"],
         "assertionCount": len(required_assertions),
     }
+    if gate_id == GATE_ID and RELATIONSHIP_REQUIRED_ASSERTIONS <= required_assertions:
+        output["spec"].append("chat-native-friendship-projection")
     session = ArtifactSession(
         repo_root=REPO_ROOT,
         gate_id=gate_id,
@@ -352,10 +359,26 @@ def main() -> int:
         report,
         source_ref=source_ref,
         store=store,
+        required_assertions=REQUIRED_ASSERTIONS | RELATIONSHIP_REQUIRED_ASSERTIONS,
+        required_steps=REQUIRED_STEPS | RELATIONSHIP_REQUIRED_STEPS,
     )
+    for name in RELATIONSHIP_EVIDENCE_NAMES:
+        for suffix in ("screenshot", "dom"):
+            key = f"{name}-{suffix}"
+            entry = report["evidence"].get(key)
+            require(isinstance(entry, dict), f"{key} evidence is required")
+            reference = ArtifactRef.from_dict(entry)
+            require(
+                reference.workspace_id == source_ref.workspace_id
+                and reference.gate_id == source_ref.gate_id
+                and reference.run_id == source_ref.run_id,
+                f"{key} evidence must belong to the current Gate run",
+            )
+            store.resolve(reference)
     validation_ref = write_validation(
         report,
         source_ref=source_ref,
+        required_assertions=REQUIRED_ASSERTIONS | RELATIONSHIP_REQUIRED_ASSERTIONS,
     )
     print("Chat Native Two-Client E2E")
     print("==========================")

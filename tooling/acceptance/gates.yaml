@@ -181,7 +181,7 @@
         "desktop-windows-native"
       ],
       "tier": "env-evidence",
-      "description": "Run two isolated embedded-WebDriver Tauri clients and prove bidirectional Direct plaintext, DELIVERED receipt visibility, unobscured newest-message geometry, and bundled demo-avatar rendering."
+      "description": "Run two isolated embedded-WebDriver Tauri clients and prove bidirectional Direct plaintext, DELIVERED receipt visibility, unobscured newest-message geometry, bundled demo-avatar rendering, and contextual block/unblock convergence with global Privacy Settings across a preserved native session restart."
     },
     "chat-presence-layout-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.lifecycle_presence_layout && python3 -m tooling.acceptance.gates.chat.lifecycle_presence_layout_e2e",

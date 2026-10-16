@@ -20,3 +20,10 @@ that person.
   Home Station identity without inventing an unblock state.
 - Native contextual block/unblock, receiver enforcement, restart readback,
   and Settings convergence remain required before this Task closes.
+- The existing `chat-native-two-client-e2e` now carries the S17 contextual
+  block, Privacy readback, preserved-session restart, Settings unblock, and
+  contextual unblock assertions with distinct Native screenshot/DOM evidence.
+  It reuses the enclosing Alice/Bob runtime and Fixture. This injection is
+  business-owned Chat code; no generic lifecycle or proof semantics changed.
+  These assertions remain UNPROVEN until the current-source Native run passes.
+  S16 receiver friend-request policy is a separate required closure.

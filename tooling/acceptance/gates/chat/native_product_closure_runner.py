@@ -1683,8 +1683,7 @@ class NativeProductClosureGate(AcceptanceGate):
             return
         self.click(
             actor,
-            '[data-pt-primary-nav="chat"] button, '
-            '[data-pt-primary-nav="chat"] [role="button"]',
+            '[data-pt-primary-nav="chat"]',
         )
         WebDriverWait(client.driver, 20).until(
             lambda driver: driver.current_url.endswith("#/chat")

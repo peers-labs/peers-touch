@@ -619,8 +619,7 @@ def enter_chat_page(client: TauriSession) -> None:
                 driver.execute_script(
                     """
                     const target = document.querySelector(
-                      '[data-pt-primary-nav="chat"] button, '
-                      + '[data-pt-primary-nav="chat"] [role="button"]'
+                      '[data-pt-primary-nav="chat"]'
                     );
                     if (!target) return false;
                     target.click();

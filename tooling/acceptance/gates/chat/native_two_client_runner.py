@@ -34,6 +34,10 @@ from tooling.acceptance.core.evidence_store import workspace_id
 from tooling.acceptance.drivers.native import NativeDesktopRuntimeBinding
 from tooling.acceptance.drivers.native.runtime import NativeLaunchOptions
 from tooling.acceptance.drivers.tauri import TauriSession
+from tooling.acceptance.gates.chat.contextual_relationship_journey import (
+    REQUIRED_ASSERTIONS as RELATIONSHIP_REQUIRED_ASSERTIONS,
+    prove_contextual_relationships,
+)
 from tooling.acceptance.gates.chat.native_support import (
     DEV_ACCOUNT_PASSWORD,
     NativeClientLifecycleLedger,
@@ -918,6 +922,8 @@ class NativeTwoClientGate(AcceptanceGate):
 
     def prove_additional_journey_assertions(self) -> None:
         """Variant hook for assertions that must run before evidence cleanup."""
+        if self.gate_id == GATE_ID:
+            prove_contextual_relationships(self, wait_until)
 
     def current_profile_worktree_topology(self) -> dict[str, Any]:
         topology: dict[str, Any] = {}
@@ -1844,6 +1850,8 @@ class NativeTwoClientGate(AcceptanceGate):
             if self.gate_id == SUBMITTED_COMMAND_RECOVERY_GATE_ID
             else REQUIRED_ASSERTIONS
         )
+        if self.gate_id == GATE_ID:
+            required_assertions = required_assertions | RELATIONSHIP_REQUIRED_ASSERTIONS
         missing = required_assertions - assertion_names
         if missing:
             raise GateError(f"required assertions are missing: {sorted(missing)}")

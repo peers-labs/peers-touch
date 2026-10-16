@@ -31,7 +31,7 @@
 | `chat-message-interactions` | `station-messaging-unit`, `messaging-platform-contract`, `desktop-check`, `chat-native-visible-static`, `chat-native-interactions-e2e`, `chat-lifecycle-interactions-group-e2e` | 6/6 | 0/6 | WIRED |
 | `chat-message-publishing` | `proto-build`, `station-api-ownership`, `station-messaging-unit`, `messaging-platform-contract`, `desktop-check`, `chat-message-publishing-native-e2e` | 6/6 | 0/6 | WIRED |
 | `chat-mixed-client-convergence` | `chat-lifecycle-mixed-client-same-station-e2e`, `chat-lifecycle-mixed-client-cross-station-e2e`, `chat-lifecycle-mixed-client-multi-device-e2e`, `chat-lifecycle-call-resolution-e2e`, `chat-lifecycle-mixed-client-group-mls-e2e` | 5/5 | 0/5 | WIRED |
-| `chat-native-friendship-projection` | `proto-build`, `desktop-check`, `chat-native-visible-static`, `chat-native-group-mls-e2e` | 4/4 | 0/4 | WIRED |
+| `chat-native-friendship-projection` | `proto-build`, `desktop-check`, `chat-native-visible-static`, `chat-native-two-client-e2e`, `chat-native-group-mls-e2e` | 5/5 | 0/5 | WIRED |
 | `chat-native-visible-clients` | `chat-native-visible-static`, `chat-lifecycle-onboarding-e2e`, `chat-lifecycle-direct-e2e`, `chat-native-current-profile-two-client-e2e`, `chat-native-two-client-e2e`, `chat-native-multi-device-e2e`, `chat-native-recovery-e2e`, `chat-native-group-mls-e2e` | 8/8 | 0/8 | WIRED |
 | `chat-presence-layout-stability` | `chat-native-visible-static`, `chat-presence-layout-e2e` | 2/2 | 0/2 | WIRED |
 | `chat-realtime-delivery` | `station-messaging-unit`, `messaging-platform-contract`, `desktop-check` | 3/3 | 0/3 | WIRED |

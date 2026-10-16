@@ -24,6 +24,9 @@
     "apps/desktop/src/components/chat/CreateGroupModal.tsx",
     "apps/desktop/src/components/chat/ChatActorIdentityRow.tsx",
     "apps/desktop/src/components/chat/ChatContactsPanel.tsx",
+    "apps/desktop/src/components/chat/ChatContactsDetailPanel.tsx",
+    "apps/desktop/src/components/chat/ContactSafetyActions.tsx",
+    "apps/desktop/src/components/settings/PrivacySettings.tsx",
     "apps/desktop/src/components/chat/ChatSessionList.tsx",
     "apps/desktop/src/components/chat/contactSelection.ts",
     "apps/desktop/src/components/profile/PublicProfileCard.tsx",
@@ -52,12 +55,17 @@
     {"type": "desktop-dom", "selector": "[data-chat-create-group-error]"},
     {"type": "desktop-dom", "selector": "[data-chat-contact-ptid]"},
     {"type": "desktop-dom", "selector": "[data-chat-contact-message]"},
+    {"type": "desktop-dom", "selector": "[data-chat-contact-safety]"},
+    {"type": "desktop-dom", "selector": "[data-chat-contact-blocked]"},
+    {"type": "desktop-dom", "selector": "[data-blocked-actor]"},
+    {"type": "desktop-dom", "selector": "[data-unblock-actor]"},
     {"type": "desktop-dom", "selector": "[data-social-chat-layout][data-chat-active-peer-ptid]"}
   ],
   "required_gates": [
     "proto-build",
     "desktop-check",
     "chat-native-visible-static",
+    "chat-native-two-client-e2e",
     "chat-native-group-mls-e2e"
   ],
   "acceptance": {
@@ -79,7 +87,12 @@
       "Create Group remains open with its selected PTIDs, typed inline error, and Retry action when preparation fails",
       "an accepted Group may render as establishing until the creator Device Inbox projects it, then becomes visible with the exact member set on all three clients",
       "a restarted member restores the same device identity, ready MLS state, Group projection, and decrypted message",
-      "Find People renders an existing mutual friend as Friends and disables duplicate friend-request submission"
+      "Find People renders an existing mutual friend as Friends and disables duplicate friend-request submission",
+      "contextual contact block/unblock uses the selected peer PTID, Home Station identity, observed policy revision, and active session epoch",
+      "a confirmed contextual block disables the contact Message action and appears for the same PTID in global Privacy Settings",
+      "the blocked peer remains visible in Privacy Settings after a native restart that preserves the actor and device session",
+      "unblocking in Privacy Settings converges to the contact action and re-enables Message",
+      "contextual unblock removes the same peer from Privacy Settings"
     ]
   },
   "negative": [
@@ -92,6 +105,8 @@
     "a failed Group preparation must not close the dialog or discard its selected PTIDs",
     "a temporary creator projection delay must not be reported as Group creation failure",
     "page or modal mount effects must not own friendship projection freshness",
-    "static or unit evidence must not be reported as Native DOM proof"
+    "static or unit evidence must not be reported as Native DOM proof",
+    "a cached block policy or delayed mutation must not cross an actor session change",
+    "Settings and contextual Social actions must not define independent block truth"
   ]
 }

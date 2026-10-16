@@ -15,3 +15,6 @@ Conversation path.
 
 - S11 is implemented/unproven.
 - S1-S10 have no alignment delta.
+- Native Chat navigation targets the primary button carrying
+  `data-pt-primary-nav="chat"`, matching the shared Desktop navigation owner.
+- Current-source Native interactions and receiver proof remain open.
