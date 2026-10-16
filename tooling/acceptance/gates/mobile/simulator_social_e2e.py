@@ -1398,6 +1398,10 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
                 "targetId": "compose",
             },
         )
+        session.call_action(
+            "navigation.apply",
+            {"kind": "primary", "routeId": "tab:moments"},
+        )
         self._click_ui(
             session,
             '[data-acceptance-id="social-composer-open"]',

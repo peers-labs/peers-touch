@@ -429,6 +429,13 @@ class SimulatorSocialGateTests(unittest.TestCase):
             },
         ), calls)
         self.assertEqual(
+            calls.count((
+                "navigation.apply",
+                {"kind": "primary", "routeId": "tab:moments"},
+            )),
+            2,
+        )
+        self.assertEqual(
             ui_selectors.count(
                 '[data-acceptance-id="social-composer-open"]'
             ),
