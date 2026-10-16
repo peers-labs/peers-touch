@@ -1341,7 +1341,18 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             draft_text,
             "Recovery draft",
         )
-        time.sleep(0.5)
+        persisted_draft = self._wait_for_value(
+            lambda: self._read_exact_draft(
+                session,
+                kind="moment",
+                target_id="compose",
+            ),
+            "Persisted Moment draft",
+        )
+        payload_sha256 = self._sha256(
+            persisted_draft.get("payloadSha256"),
+            "Persisted Moment draft payload digest",
+        )
         try:
             restart_value = session.call_action("lifecycle.restart")
         except DriverError as error:
@@ -1370,9 +1381,26 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
         )
         if restart != {"requested": True, "scope": "webview"}:
             raise GateError("MPS-09 lifecycle restart was not acknowledged")
-        self._wait_ui_text(
+        self._wait_for_value(
+            lambda: self._read_exact_draft(
+                session,
+                kind="moment",
+                target_id="compose",
+                payload_sha256=payload_sha256,
+            ),
+            "Restarted Moment draft",
+        )
+        session.call_action(
+            "reliability.draft.action",
+            {
+                "action": "restore",
+                "kind": "moment",
+                "targetId": "compose",
+            },
+        )
+        self._wait_ui_value(
             session,
-            '[data-acceptance-id="social-composer"]',
+            '[data-acceptance-id="social-composer-text"]',
             draft_text,
             "Restored Moment draft",
         )
@@ -1407,7 +1435,9 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
         return {
             "uiAction": "composer-draft-restart-account-switch",
             "receiverAssertion": f"new-scope:{eve.ptid}",
-            "supportingObservation": "old-scope-plaintext-absent",
+            "supportingObservation": (
+                f"draft-payload:{payload_sha256};old-scope-plaintext-absent"
+            ),
             "activeActorPtid": eve.ptid,
             "draftRestored": True,
         }
@@ -1879,6 +1909,53 @@ return node?.textContent || null;
             else None,
             label,
         )
+
+    @staticmethod
+    def _wait_ui_value(
+        session: Any,
+        selector: str,
+        expected: str,
+        label: str,
+    ) -> None:
+        SimulatorSocialGate._wait_for_value(
+            lambda: True
+            if session.execute_script(
+                """
+const node = document.querySelector(arguments[0]);
+return node && 'value' in node ? node.value : null;
+""",
+                selector,
+            ) == expected
+            else None,
+            label,
+        )
+
+    @staticmethod
+    def _read_exact_draft(
+        session: Any,
+        *,
+        kind: str,
+        target_id: str,
+        payload_sha256: str | None = None,
+    ) -> dict[str, Any] | None:
+        value = session.call_action(
+            "reliability.draft.read",
+            {"kind": kind, "targetId": target_id},
+        )
+        if not isinstance(value, list):
+            return None
+        for candidate in value:
+            if (
+                isinstance(candidate, Mapping)
+                and candidate.get("kind") == kind
+                and candidate.get("targetId") == target_id
+                and (
+                    payload_sha256 is None
+                    or candidate.get("payloadSha256") == payload_sha256
+                )
+            ):
+                return dict(candidate)
+        return None
 
     @staticmethod
     def _wait_post_visible(

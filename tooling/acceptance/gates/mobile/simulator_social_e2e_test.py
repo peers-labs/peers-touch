@@ -354,6 +354,79 @@ class SimulatorSocialGateTests(unittest.TestCase):
         self.assertEqual(report["metrics"]["clientLaunches"], 2)
         self.assertEqual(report["metrics"]["completedScenarios"], 6)
 
+    def test_ios_recovery_restores_exact_persisted_moment_draft(self) -> None:
+        payload_sha256 = "a" * 64
+        draft = {
+            "kind": "moment",
+            "targetId": "compose",
+            "payloadSha256": payload_sha256,
+        }
+        calls: list[tuple[str, object]] = []
+
+        class Session:
+            def call_action(
+                self,
+                action: str,
+                payload: object = None,
+            ) -> object:
+                calls.append((action, payload))
+                if action == "navigation.apply":
+                    return {}
+                if action == "reliability.draft.read":
+                    return [draft]
+                if action == "lifecycle.restart":
+                    return {"requested": True, "scope": "webview"}
+                if action == "reliability.draft.action":
+                    return {"drafts": [draft]}
+                if action == "session.logout":
+                    return {}
+                if action == "lifecycle.scope.read":
+                    return {"activeActorPtid": "ptid:eve"}
+                if action == "moments.private.snapshot":
+                    return {"reads": [], "publish": []}
+                raise AssertionError((action, payload))
+
+            def execute_script(
+                self,
+                script: str,
+                *_args: object,
+            ) -> object:
+                if "'value' in node" in script:
+                    return "MPS09 recovery draft journey"
+                return True
+
+        class Journey:
+            def authenticate(self, *_args: object, **_kwargs: object) -> None:
+                return None
+
+        result = SimulatorSocialGate(
+            "ios-social-parity"
+        )._run_ios_recovery_lifecycle(
+            session=Session(),
+            eve=self._actor("sim-ios", "eve"),
+            journey=Journey(),  # type: ignore[arg-type]
+            journey_id="journey",
+            state={"privatePostId": "private-post"},
+        )
+
+        self.assertEqual(
+            calls.count((
+                "reliability.draft.read",
+                {"kind": "moment", "targetId": "compose"},
+            )),
+            2,
+        )
+        self.assertIn((
+            "reliability.draft.action",
+            {
+                "action": "restore",
+                "kind": "moment",
+                "targetId": "compose",
+            },
+        ), calls)
+        self.assertTrue(result["draftRestored"])
+        self.assertIn(payload_sha256, result["supportingObservation"])
+
     def test_ios_explore_opens_sort_sheet_before_selecting_hot(self) -> None:
         source = inspect.getsource(
             SimulatorSocialGate._run_ios_home_explore
