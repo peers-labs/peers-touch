@@ -586,7 +586,17 @@ class NativeDesktopMacOSProvisioner:
             raise ValueError("semantic probe requires at least one attempt")
         last: tuple[bool, bool, CellNonInterferenceIdentity] | None = None
         for attempt in range(1, max_attempts + 1):
-            operator_before = self._snapshot_operator_state(adapter)
+            try:
+                operator_before = self._snapshot_operator_state(adapter)
+            except BlockedError as error:
+                if (
+                    error.resource != "runtime-cell-operator-focus"
+                    or attempt >= max_attempts
+                ):
+                    raise
+                if interval_seconds > 0:
+                    time.sleep(interval_seconds)
+                continue
             semantic_action_probe = self._probe_semantic_actions(session)
             session.save_screenshot(screenshot)
             semantic_screenshot_probe = (

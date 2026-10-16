@@ -429,6 +429,56 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
         self.assertEqual(actions.call_count, 2)
         self.assertEqual(session.save_screenshot.call_count, 2)
 
+    def test_semantic_probe_retries_unstable_baseline_before_actions(
+        self,
+    ) -> None:
+        lifecycle = NativeDesktopMacOSProvisioner()
+        session = Mock()
+        adapter = Mock(spec=MacOSNativeDesktopAdapter)
+        stable = {
+            "frontmostPid": 41,
+            "pointerX": 120.0,
+            "pointerY": 220.0,
+            "keyboardFocusSha256": "b" * 64,
+        }
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            lifecycle,
+            "_snapshot_operator_state",
+            side_effect=(
+                BlockedError(
+                    reason="operator changed frontmost application",
+                    resource="runtime-cell-operator-focus",
+                ),
+                stable,
+                stable,
+            ),
+        ) as snapshot, patch.object(
+            lifecycle,
+            "_probe_semantic_actions",
+            return_value=True,
+        ) as actions:
+            screenshot = Path(directory) / "semantic.png"
+            session.save_screenshot.side_effect = (
+                lambda path: path.write_bytes(b"semantic-screenshot")
+            )
+
+            action_ok, screenshot_ok, non_interference = (
+                lifecycle._probe_semantic_non_interference(
+                    session,
+                    adapter,
+                    screenshot,
+                    max_attempts=2,
+                    interval_seconds=0,
+                )
+            )
+
+        self.assertTrue(action_ok)
+        self.assertTrue(screenshot_ok)
+        self.assertTrue(non_interference.unchanged())
+        self.assertEqual(snapshot.call_count, 3)
+        actions.assert_called_once_with(session)
+        session.save_screenshot.assert_called_once_with(screenshot)
+
     def test_keyboard_focus_identity_excludes_mutable_control_state(
         self,
     ) -> None:
