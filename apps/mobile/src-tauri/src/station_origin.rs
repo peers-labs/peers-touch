@@ -1,43 +1,16 @@
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum StationOriginPolicy {
-    HttpsOnly,
-    Development,
-}
-
-impl StationOriginPolicy {
-    pub(crate) const fn current_build() -> Self {
-        if cfg!(debug_assertions) || cfg!(feature = "acceptance-harness") {
-            Self::Development
-        } else {
-            Self::HttpsOnly
-        }
-    }
-
-    const fn permits_http(self) -> bool {
-        matches!(self, Self::Development)
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum StationOriginError {
     Invalid,
     MissingHost,
-    Insecure,
     NonCanonical,
     InvalidPort,
 }
 
-pub(crate) fn normalize_station_origin(
-    value: &str,
-    policy: StationOriginPolicy,
-) -> Result<String, StationOriginError> {
+pub(crate) fn normalize_station_origin(value: &str) -> Result<String, StationOriginError> {
     let parsed = reqwest::Url::parse(value.trim()).map_err(|_| StationOriginError::Invalid)?;
     let host = parsed.host_str().ok_or(StationOriginError::MissingHost)?;
-    match parsed.scheme() {
-        "https" => {}
-        "http" if policy.permits_http() => {}
-        "http" => return Err(StationOriginError::Insecure),
-        _ => return Err(StationOriginError::Invalid),
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err(StationOriginError::Invalid);
     }
     if !parsed.username().is_empty()
         || parsed.password().is_some()
@@ -67,35 +40,21 @@ mod tests {
     #[test]
     fn canonicalizes_secure_origins() {
         assert_eq!(
-            normalize_station_origin("https://Station.Example", StationOriginPolicy::HttpsOnly,),
+            normalize_station_origin("https://Station.Example"),
             Ok("https://station.example:443".to_string()),
         );
     }
 
     #[test]
-    fn development_policy_admits_canonical_remote_http() {
+    fn user_selected_policy_admits_canonical_remote_http() {
         assert_eq!(
-            normalize_station_origin(
-                "http://Station.Example:18080",
-                StationOriginPolicy::Development,
-            ),
+            normalize_station_origin("http://Station.Example:18080"),
             Ok("http://station.example:18080".to_string()),
         );
     }
 
     #[test]
-    fn https_only_policy_rejects_remote_http() {
-        assert_eq!(
-            normalize_station_origin(
-                "http://station.example:18080",
-                StationOriginPolicy::HttpsOnly,
-            ),
-            Err(StationOriginError::Insecure),
-        );
-    }
-
-    #[test]
-    fn every_policy_rejects_non_origin_urls() {
+    fn user_selected_policy_rejects_non_origin_urls() {
         for value in [
             "ftp://station.example",
             "https://user@station.example",
@@ -104,28 +63,16 @@ mod tests {
             "https://station.example#fragment",
         ] {
             assert!(
-                normalize_station_origin(value, StationOriginPolicy::Development).is_err(),
-                "{value} must be rejected",
-            );
-            assert!(
-                normalize_station_origin(value, StationOriginPolicy::HttpsOnly).is_err(),
+                normalize_station_origin(value).is_err(),
                 "{value} must be rejected",
             );
         }
     }
 
-    #[cfg(feature = "acceptance-harness")]
     #[test]
-    fn acceptance_harness_keeps_explicit_http_station_profiles_available() {
+    fn explicit_http_station_profiles_are_available_in_every_build() {
         assert_eq!(
-            StationOriginPolicy::current_build(),
-            StationOriginPolicy::Development,
-        );
-        assert_eq!(
-            normalize_station_origin(
-                "http://192.0.2.10:18280",
-                StationOriginPolicy::current_build(),
-            ),
+            normalize_station_origin("http://192.0.2.10:18280"),
             Ok("http://192.0.2.10:18280".to_string()),
         );
     }

@@ -18,7 +18,8 @@ never establishes Federation membership.
 
 Conversation, device inbox, Social, Events, Agent and OSS retain their public
 capability owners. A Frame ingress invokes the same registered methods, paths,
-wrappers and protobuf handlers as direct HTTPS. No second Station command API.
+wrappers and protobuf handlers as the user-selected direct HTTP(S) origin. No
+second Station command API.
 
 ## 2. Current Source Impact
 
@@ -54,8 +55,8 @@ connection material, server ingress and Relay deployment together.
 Delete the custom Relay WSS listener, tunnel protobuf arms, mount framing,
 transport ping/reconnect loops, and obsolete custom-message transport consumers.
 Retain enrollment, grant, signed identity, operator policy and metrics only
-where the new control model actually consumes them. Preserve direct HTTPS
-ingress and canonical HTTP/protobuf/SSE.
+where the new control model actually consumes them. Preserve user-selected
+direct HTTP(S) ingress and canonical HTTP/protobuf/SSE.
 
 No runtime compatibility flag or parallel production data plane is permitted.
 Incompatible clients fail explicitly. Rollback reverts the self-contained cut

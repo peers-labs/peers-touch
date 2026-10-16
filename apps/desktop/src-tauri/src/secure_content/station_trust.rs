@@ -4,7 +4,6 @@ use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use prost::Message;
 use reqwest::Method;
 use sha2::{Digest, Sha256};
-use std::net::IpAddr;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::application::station_runtime::client::StationClient;
@@ -177,16 +176,18 @@ pub(crate) fn require_authenticated_station_transport(
 fn require_authenticated_station_origin(origin: &str) -> Result<(), String> {
     let url = reqwest::Url::parse(origin)
         .map_err(|_| "Secure Content Station URL is invalid".to_string())?;
-    let host = url
-        .host_str()
-        .ok_or_else(|| "Secure Content Station URL has no host".to_string())?;
-    let loopback = host.eq_ignore_ascii_case("localhost")
-        || host
-            .parse::<IpAddr>()
-            .map(|address| address.is_loopback())
-            .unwrap_or(false);
-    if url.scheme() != "https" && !(url.scheme() == "http" && loopback) {
-        return Err("Secure Content Station transport requires HTTPS or loopback HTTP".to_string());
+    if url.host_str().is_none() {
+        return Err("Secure Content Station URL has no host".to_string());
+    }
+    if !matches!(url.scheme(), "http" | "https")
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.path() != "/"
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return Err("Secure Content Station transport requires a canonical HTTP or HTTPS origin"
+            .to_string());
     }
     Ok(())
 }
@@ -447,11 +448,12 @@ mod tests {
     }
 
     #[test]
-    fn secure_content_transport_rejects_remote_plaintext_origin() {
+    fn secure_content_transport_accepts_user_selected_http_or_https() {
         assert!(require_authenticated_station_origin("https://station.test").is_ok());
         assert!(require_authenticated_station_origin("http://127.0.0.1:18080").is_ok());
         assert!(require_authenticated_station_origin("http://localhost:18080").is_ok());
-        assert!(require_authenticated_station_origin("http://station.test").is_err());
+        assert!(require_authenticated_station_origin("http://station.test").is_ok());
         assert!(require_authenticated_station_origin("ftp://station.test").is_err());
+        assert!(require_authenticated_station_origin("http://station.test/path").is_err());
     }
 }

@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use crate::station_origin::{normalize_station_origin, StationOriginPolicy};
+use crate::station_origin::normalize_station_origin;
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine as _;
 use ed25519_dalek::VerifyingKey;
@@ -308,7 +308,7 @@ pub(crate) fn validate_account_scope(
     {
         return Err("mobile messaging account scope is incomplete".to_string());
     }
-    normalize_station_origin(station_origin, StationOriginPolicy::current_build())
+    normalize_station_origin(station_origin)
         .map_err(|_| "mobile messaging Station origin is not canonical".to_string())?;
     Ok(())
 }
@@ -4742,18 +4742,11 @@ mod tests {
     }
 
     #[test]
-    fn station_origin_policy_rejects_insecure_release_origins() {
+    fn station_origin_policy_accepts_user_selected_http_or_https() {
         let remote = "http://192.0.2.10:18132";
-        assert!(normalize_station_origin(
-            "https://station.example",
-            StationOriginPolicy::HttpsOnly,
-        )
-        .is_ok());
-        assert!(normalize_station_origin(remote, StationOriginPolicy::Development).is_ok());
-        assert!(normalize_station_origin(remote, StationOriginPolicy::HttpsOnly).is_err());
-        assert!(
-            normalize_station_origin("ftp://localhost", StationOriginPolicy::Development).is_err()
-        );
+        assert!(normalize_station_origin("https://station.example").is_ok());
+        assert!(normalize_station_origin(remote).is_ok());
+        assert!(normalize_station_origin("ftp://localhost").is_err());
     }
 
     #[test]
@@ -4768,7 +4761,7 @@ mod tests {
             "invalid origin",
         ] {
             assert!(
-                normalize_station_origin(rejected, StationOriginPolicy::Development).is_err(),
+                normalize_station_origin(rejected).is_err(),
                 "accepted malformed origin: {rejected}"
             );
         }
@@ -4778,7 +4771,7 @@ mod tests {
             "https://station.example/?query=1",
             "https://station.example/#fragment",
         ] {
-            assert!(normalize_station_origin(rejected, StationOriginPolicy::HttpsOnly).is_err());
+            assert!(normalize_station_origin(rejected).is_err());
         }
     }
 
