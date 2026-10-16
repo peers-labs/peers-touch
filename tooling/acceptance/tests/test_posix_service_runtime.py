@@ -80,7 +80,7 @@ class PosixServiceRuntimeTest(unittest.TestCase):
             environment.write_text(
                 "\n".join(
                     (
-                        "PT_DEPLOY_HOST=10.37.118.48",
+                        "PT_DEPLOY_HOST=192.0.2.20",
                         "PT_DEPLOY_USER=operator",
                         "PT_DEPLOY_PATH=peers-touch/repo",
                         "PT_DEPLOY_RUNTIME_PATH=.peers-touch/runtime/relay-1",
@@ -92,7 +92,7 @@ class PosixServiceRuntimeTest(unittest.TestCase):
                         "PT_DEPLOY_DATA_VOLUME=pt-relay_peers_data",
                         "PT_DEPLOY_HTTP_PORT=18082",
                         "PT_DEPLOY_LIBP2P_PORT=4001",
-                        "PT_DEPLOY_PUBLIC_BASE_URL=https://10.37.118.48:18081",
+                        "PT_DEPLOY_PUBLIC_BASE_URL=https://192.0.2.20:18081",
                         "PT_DEPLOY_TLS_CA_PATH=/app/relay-secrets/relay-ca.crt",
                         "PT_DEPLOY_OPERATOR_KEY_PATH=/app/relay-secrets/relay-operator.key",
                     )
@@ -110,7 +110,7 @@ class PosixServiceRuntimeTest(unittest.TestCase):
                     expected_role="relay",
                 )
 
-        self.assertEqual(config.host, "10.37.118.48")
+        self.assertEqual(config.host, "192.0.2.20")
         self.assertEqual(config.http_port, 18082)
         self.assertEqual(config.public_port, 18081)
         self.assertEqual(config.libp2p_port, 4001)

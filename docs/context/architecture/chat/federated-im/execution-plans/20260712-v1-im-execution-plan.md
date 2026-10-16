@@ -272,7 +272,7 @@ P7 全量验收（同站/三 Station/离线重启/多设备/成员进出/authori
 - **环境拓扑**：
   - high-chat 保持 Profile `three` slot 2。
   - group-chat 使用独立 slot/profile，但 `PT_STATION_URL` 同为
-    `http://10.37.94.156:18080`，且不重复部署 Station。
+    `http://192.0.2.30:18080`，且不重复部署 Station。
   - Station 只从 high-chat 执行 `make station`。
 - **客户端矩阵**：两个 worktree 均启动 `make desktop` 与 `make desktop-web`
   （4 个独立 Rust gateway / storage scope）。

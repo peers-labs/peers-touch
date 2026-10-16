@@ -4,10 +4,10 @@ Five-node test topology, fully isolated at the Docker layer:
 
 | Env | Host | Profile | Port |
 |-----|------|---------|------|
-| `pt-relay`              | 10.37.118.48 | relay   | 18081 |
-| `pt-station-1`          | 10.37.246.80 | station | 18080 |
-| `pt-station-2`          | 10.37.195.98 | station | 18080 |
-| `pt-station-relay-only` | 10.37.195.98 | station | 18082 |
+| `pt-relay`              | 192.0.2.20 | relay   | 18081 |
+| `pt-station-1`          | 192.0.2.10 | station | 18080 |
+| `pt-station-2`          | 192.0.2.60 | station | 18080 |
+| `pt-station-relay-only` | 192.0.2.60 | station | 18082 |
 | `pt-station-local`      | localhost    | station | 18080 |
 
 Each environment is **its own compose project** (`COMPOSE_PROJECT_NAME=pt-<env>`),
@@ -127,7 +127,7 @@ GitHub Actions workflow [`deploy-station.yml`](../../.github/workflows/deploy-st
 - **Healthcheck endpoint**: Station uses `/sub-oss/healthz`; Relay uses its
   role-owned `/healthz` probe. Relay `/metrics` requires an operator credential.
 - **Canonical Relay host**: profile `one` binds the Relay Compose owner to
-  Linux host `10.37.118.48`. Station and Relay may run on different hosts;
+  Linux host `192.0.2.20`. Station and Relay may run on different hosts;
   Acceptance opens separate reviewed transports and never assumes
   co-location.
 - **Hierarchy-merge overlays** (no source-tree edits): `entrypoint.sh`

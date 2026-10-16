@@ -17,12 +17,12 @@
   "required_gates": ["station-build", "desktop-typecheck"],
   "profiles": {
     "station_a": {
-      "url": "http://10.37.94.156:18080",
+      "url": "http://192.0.2.30:18080",
       "profile": "three",
       "description": "Station A — sequencer for federation creation tests"
     },
     "station_c": {
-      "url": "http://10.37.246.80:18080",
+      "url": "http://192.0.2.10:18080",
       "profile": "remote-c",
       "description": "Station C — joining station for cross-station tests"
     }
@@ -98,7 +98,7 @@
       "actor": "User B on Station C",
       "steps": [
         "Click 'Join Federation'",
-        "Manually enter Federation endpoint: 10.37.94.156:18080",
+        "Manually enter Federation endpoint: 192.0.2.30:18080",
         "Manually enter Federation ID from T1",
         "Click 'Request to join'"
       ],
@@ -127,7 +127,7 @@
       "actor": "User B on Station C",
       "steps": [
         "In 'Find People', select 'All' scope",
-        "Type full federated handle: @userA@10.37.94.156:18080",
+        "Type full federated handle: @userA@192.0.2.30:18080",
         "Press Enter to search"
       ],
       "expected": [
