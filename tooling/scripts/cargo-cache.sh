@@ -8,6 +8,12 @@ MACHINE_BIN="$MACHINE_ROOT/bin/peers-rustc-wrapper"
 MACHINE_CONFIG="$MACHINE_ROOT/config.toml"
 CACHE_DIR="${SCCACHE_DIR:-$MACHINE_ROOT/data}"
 CACHE_SIZE="${SCCACHE_CACHE_SIZE:-${PT_CARGO_CACHE_SIZE:-10G}}"
+# Dedicated sccache server port. sccache is client/server: a client connects to
+# whatever server is already listening on its port and ignores SCCACHE_DIR if
+# that server was started with a different cache directory. Pinning a port
+# isolates the peers cache from any default-port sccache (e.g. another Rust
+# project) so SCCACHE_DIR / SCCACHE_CACHE_SIZE are always honored.
+CACHE_PORT="${SCCACHE_SERVER_PORT:-4227}"
 CONFIG_MARKER_BEGIN="# BEGIN peers-touch cargo cache"
 CONFIG_MARKER_END="# END peers-touch cargo cache"
 VERIFY_TEMP_ROOT=""
@@ -70,6 +76,7 @@ run_wrapper() {
   mkdir -p "$CACHE_DIR"
   export SCCACHE_DIR="$CACHE_DIR"
   export SCCACHE_CACHE_SIZE="$CACHE_SIZE"
+  export SCCACHE_SERVER_PORT="$CACHE_PORT"
   exec "$backend" "$@"
 }
 
@@ -166,6 +173,7 @@ show_status() {
   printf 'machine_root=%s\n' "$MACHINE_ROOT"
   printf 'cache_dir=%s\n' "$CACHE_DIR"
   printf 'cache_size=%s\n' "$CACHE_SIZE"
+  printf 'cache_port=%s\n' "$CACHE_PORT"
   printf 'repo_wrapper=%s\n' "$SCRIPT_PATH"
   printf 'machine_wrapper=%s\n' "$MACHINE_BIN"
   printf 'machine_config=%s\n' "$MACHINE_CONFIG"
@@ -173,7 +181,7 @@ show_status() {
 
   if backend="$(find_sccache)"; then
     printf 'backend=%s\n' "$backend"
-    SCCACHE_DIR="$CACHE_DIR" SCCACHE_CACHE_SIZE="$CACHE_SIZE" \
+    SCCACHE_DIR="$CACHE_DIR" SCCACHE_CACHE_SIZE="$CACHE_SIZE" SCCACHE_SERVER_PORT="$CACHE_PORT" \
       "$backend" --show-stats
   else
     printf 'backend=unavailable\n'
@@ -183,14 +191,14 @@ show_status() {
 
 ensure_server() {
   local backend="$1"
-  if SCCACHE_DIR="$CACHE_DIR" SCCACHE_CACHE_SIZE="$CACHE_SIZE" \
+  if SCCACHE_DIR="$CACHE_DIR" SCCACHE_CACHE_SIZE="$CACHE_SIZE" SCCACHE_SERVER_PORT="$CACHE_PORT" \
     "$backend" --show-stats >/dev/null 2>&1; then
     return 0
   fi
 
-  SCCACHE_DIR="$CACHE_DIR" SCCACHE_CACHE_SIZE="$CACHE_SIZE" \
+  SCCACHE_DIR="$CACHE_DIR" SCCACHE_CACHE_SIZE="$CACHE_SIZE" SCCACHE_SERVER_PORT="$CACHE_PORT" \
     "$backend" --start-server >/dev/null 2>&1 \
-    || SCCACHE_DIR="$CACHE_DIR" SCCACHE_CACHE_SIZE="$CACHE_SIZE" \
+    || SCCACHE_DIR="$CACHE_DIR" SCCACHE_CACHE_SIZE="$CACHE_SIZE" SCCACHE_SERVER_PORT="$CACHE_PORT" \
       "$backend" --show-stats >/dev/null
 }
 
@@ -286,6 +294,7 @@ verify_cache() {
 
   export SCCACHE_DIR="$CACHE_DIR"
   export SCCACHE_CACHE_SIZE="$CACHE_SIZE"
+  export SCCACHE_SERVER_PORT="$CACHE_PORT"
   export CARGO_INCREMENTAL=0
   ensure_server "$backend"
   "$backend" --zero-stats >/dev/null
