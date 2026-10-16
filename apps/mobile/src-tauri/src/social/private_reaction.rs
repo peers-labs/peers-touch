@@ -46,6 +46,8 @@ impl PrivateReactionOperation {
 pub struct PrivateSocialReactionInput {
     station_peer_id: String,
     actor_ptid: String,
+    device_id: String,
+    lifecycle_generation: u64,
     activation_generation: u64,
     post_id: String,
     kind: i32,
@@ -56,6 +58,8 @@ pub struct PrivateSocialReactionInput {
 pub struct PrivateSocialReactionRetryInput {
     station_peer_id: String,
     actor_ptid: String,
+    device_id: String,
+    lifecycle_generation: u64,
     activation_generation: u64,
     command_id: String,
 }
@@ -541,9 +545,12 @@ pub fn social_private_reaction_retry(
     social: State<'_, MobilePrivateSocialRuntime>,
     input: PrivateSocialReactionRetryInput,
 ) -> MobileResult<PrivateReactionMutationResult> {
-    let engine = social.active_engine_at_generation(
+    let engine = active_reaction_engine(
+        &social,
         &input.station_peer_id,
         &input.actor_ptid,
+        &input.device_id,
+        input.lifecycle_generation,
         input.activation_generation,
     )?;
     let _operation = engine
@@ -561,9 +568,12 @@ fn mutate(
     input: PrivateSocialReactionInput,
     operation: PrivateReactionOperation,
 ) -> MobileResult<PrivateReactionMutationResult> {
-    let engine = social.active_engine_at_generation(
+    let engine = active_reaction_engine(
+        social,
         &input.station_peer_id,
         &input.actor_ptid,
+        &input.device_id,
+        input.lifecycle_generation,
         input.activation_generation,
     )?;
     let _operation = engine
@@ -574,6 +584,41 @@ fn mutate(
     PrivateReactionOrchestrator::new(&engine)
         .and_then(|orchestrator| orchestrator.mutate(&input.post_id, input.kind, operation))
         .map_err(MobileError::social)
+}
+
+fn active_reaction_engine(
+    social: &MobilePrivateSocialRuntime,
+    station_peer_id: &str,
+    actor_ptid: &str,
+    device_id: &str,
+    lifecycle_generation: u64,
+    activation_generation: u64,
+) -> MobileResult<Arc<PrivateSocialEngine>> {
+    let engine =
+        social.active_engine_at_generation(station_peer_id, actor_ptid, activation_generation)?;
+    validate_reaction_scope(
+        &engine.session.scope.device_id,
+        engine.lifecycle_generation,
+        device_id,
+        lifecycle_generation,
+    )
+    .map_err(MobileError::social)?;
+    Ok(engine)
+}
+
+fn validate_reaction_scope(
+    active_device_id: &str,
+    active_lifecycle_generation: u64,
+    requested_device_id: &str,
+    requested_lifecycle_generation: u64,
+) -> Result<(), String> {
+    if active_device_id != requested_device_id
+        || requested_lifecycle_generation == 0
+        || active_lifecycle_generation != requested_lifecycle_generation
+    {
+        return Err("private Social reaction session scope is stale".to_string());
+    }
+    Ok(())
 }
 
 fn validate_mutation(post_id: &str, kind: i32) -> Result<(), String> {
@@ -676,6 +721,47 @@ fn now_unix_ms() -> i64 {
 mod tests {
     use super::*;
     use ed25519_dalek::{Signer, SigningKey, Verifier};
+
+    #[test]
+    fn private_reaction_inputs_accept_the_full_mobile_session_scope() {
+        let mutation: PrivateSocialReactionInput = serde_json::from_value(serde_json::json!({
+            "stationPeerId": "station-1",
+            "actorPtid": "ptid:alice",
+            "deviceId": "device-1",
+            "lifecycleGeneration": 7,
+            "activationGeneration": 3,
+            "postId": "post-1",
+            "kind": social::ReactionKind::ReactionLike as i32,
+        }))
+        .unwrap();
+        let retry: PrivateSocialReactionRetryInput = serde_json::from_value(serde_json::json!({
+            "stationPeerId": "station-1",
+            "actorPtid": "ptid:alice",
+            "deviceId": "device-1",
+            "lifecycleGeneration": 7,
+            "activationGeneration": 3,
+            "commandId": "reaction-1",
+        }))
+        .unwrap();
+
+        assert_eq!(mutation.device_id, "device-1");
+        assert_eq!(mutation.lifecycle_generation, 7);
+        assert_eq!(retry.device_id, "device-1");
+        assert_eq!(retry.lifecycle_generation, 7);
+    }
+
+    #[test]
+    fn private_reaction_scope_rejects_stale_device_or_lifecycle() {
+        assert!(validate_reaction_scope("device-1", 7, "device-1", 7).is_ok());
+        assert_eq!(
+            validate_reaction_scope("device-1", 7, "device-2", 7),
+            Err("private Social reaction session scope is stale".to_string()),
+        );
+        assert_eq!(
+            validate_reaction_scope("device-1", 7, "device-1", 8),
+            Err("private Social reaction session scope is stale".to_string()),
+        );
+    }
 
     #[test]
     fn private_reaction_signature_binds_operation_and_exact_request() {
