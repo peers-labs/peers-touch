@@ -1053,6 +1053,10 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             candidate_selector,
             "Circle member candidate",
         )
+        self._wait_write_admission(
+            sender_session,
+            "Circle member mutation",
+        )
         self._click_ui(
             sender_session,
             '[data-acceptance-id="social-circle-members-submit"]',
@@ -1068,6 +1072,10 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             '[data-acceptance-id="social-circle-name"]',
             renamed_circle,
             "Renamed Circle",
+        )
+        self._wait_write_admission(
+            sender_session,
+            "Circle rename mutation",
         )
         self._click_ui(
             sender_session,
@@ -1130,6 +1138,10 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             '[data-acceptance-id="social-composer-text"]',
             private_text,
             "Private Moment text",
+        )
+        self._wait_write_admission(
+            sender_session,
+            "Private Moment publish",
         )
         self._click_ui(
             sender_session,
@@ -1194,7 +1206,8 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             "MPS-09 private post state",
         )
         for index in range(11):
-            session.call_action(
+            self._call_mutation_with_write_admission(
+                session,
                 "moments.private.comment.submit",
                 {
                     "draftId": f"mps09-{journey_id}-comment-{index}",
@@ -1203,6 +1216,7 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
                     "text": f"MPS09 comment {index}",
                     "mentions": [],
                 },
+                f"Private comment {index}",
             )
         session.call_action(
             "navigation.apply",
@@ -1265,6 +1279,10 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
                     choice_selector,
                     f"Reaction picker kind {reaction_kind}",
                 )
+            self._wait_write_admission(
+                session,
+                f"Reaction kind {reaction_kind} mutation",
+            )
             self._click_ui(
                 session,
                 choice_selector,
@@ -1523,6 +1541,50 @@ return [detail, stack].filter(Boolean).join('\\n');
             f"command={json.dumps(last_command, sort_keys=True)} "
             f"read={json.dumps(last_read, sort_keys=True)}"
         )
+
+    @staticmethod
+    def _wait_write_admission(
+        session: Any,
+        label: str,
+    ) -> dict[str, Any]:
+        last_reason = "unavailable"
+
+        def read() -> dict[str, Any] | None:
+            nonlocal last_reason
+            snapshot = session.call_action("recovery.snapshot")
+            if not isinstance(snapshot, Mapping):
+                return None
+            admission = snapshot.get("writeAdmission")
+            if not isinstance(admission, Mapping):
+                return None
+            reason = admission.get("reason")
+            last_reason = (
+                reason if isinstance(reason, str) and reason else "closed"
+            )
+            return dict(admission) if admission.get("open") is True else None
+
+        try:
+            return dict(SimulatorSocialGate._wait_for_value(read, label))
+        except GateError as error:
+            raise GateError(f"{error}; last reason: {last_reason}") from error
+
+    @staticmethod
+    def _call_mutation_with_write_admission(
+        session: Any,
+        action: str,
+        input_value: Mapping[str, Any],
+        label: str,
+    ) -> Any:
+        deadline = time.monotonic() + 30.0
+        while time.monotonic() < deadline:
+            SimulatorSocialGate._wait_write_admission(session, label)
+            try:
+                return session.call_action(action, dict(input_value))
+            except DriverError as error:
+                if WRITE_ADMISSION_ERROR_KEY not in str(error):
+                    raise
+            time.sleep(0.25)
+        raise GateError(f"{label} remained write-revoked")
 
     @staticmethod
     def _wait_ui(
