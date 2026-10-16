@@ -3,6 +3,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const runtimeMocks = vi.hoisted(() => {
+  const dependencies = { current: null };
   const projectionRuntime = {
     ingress: {
       state: vi.fn(() => ({
@@ -28,8 +29,12 @@ const runtimeMocks = vi.hoisted(() => {
     teardown: vi.fn(async () => undefined),
   };
   return {
+    dependencies,
     projectionRuntime,
-    createSocialProjectionRuntime: vi.fn(() => projectionRuntime),
+    createSocialProjectionRuntime: vi.fn((_session, _getSocialStore, next) => {
+      dependencies.current = next;
+      return projectionRuntime;
+    }),
     invalidateCurrentMomentAuthor: vi.fn(async () => undefined),
     startRealtimeStream: vi.fn(
       async (_session, signal, handlers) => new Promise<void>((resolve) => {
@@ -76,6 +81,7 @@ vi.mock('../call/callState', () => ({
 import { wakeActiveMessagingSession } from '../../runtimes/messagingRuntime';
 import {
   blockSocialUser,
+  readSocialRuntimeProjection,
   reconcileSocialRuntime,
   requestSocialBlockedUsers,
   requestSocialCurrentUserProfile,
@@ -133,7 +139,7 @@ describe('social runtime supervisor', () => {
     );
 
     expect(runtimeMocks.projectionRuntime.bootstrap).toHaveBeenCalledOnce();
-    expect(wakeActiveMessagingSession).toHaveBeenCalledOnce();
+    expect(wakeActiveMessagingSession).not.toHaveBeenCalled();
     expect(runtimeMocks.startRealtimeStream).toHaveBeenCalledOnce();
 
     await requestSocialCurrentUserProfile(true);
@@ -252,7 +258,7 @@ describe('social runtime supervisor', () => {
     await controller.teardown();
   });
 
-  it('rolls back partial ownership when messaging wake fails during startup', async () => {
+  it('rolls back partial ownership when projection bootstrap fails', async () => {
     let timerId = 0;
     vi.stubGlobal('window', {
       setInterval: vi.fn(() => {
@@ -275,14 +281,14 @@ describe('social runtime supervisor', () => {
       sweepTypingPeers: vi.fn(),
       unblockUser: vi.fn(async () => undefined),
     };
-    vi.mocked(wakeActiveMessagingSession)
-      .mockRejectedValueOnce(new Error('messaging wake failed'))
+    runtimeMocks.projectionRuntime.bootstrap
+      .mockRejectedValueOnce(new Error('projection bootstrap failed'))
       .mockResolvedValue(undefined);
 
     await expect(startSocialRuntime(
       session,
       () => socialStore,
-    )).rejects.toThrow('messaging wake failed');
+    )).rejects.toThrow('projection bootstrap failed');
 
     expect(runtimeMocks.projectionRuntime.teardown).toHaveBeenCalledOnce();
     expect(runtimeMocks.projectionRuntime.drain).toHaveBeenCalledOnce();
@@ -296,13 +302,28 @@ describe('social runtime supervisor', () => {
     await controller.teardown();
   });
 
-  it('releases partial startup when its request scope closes during Messaging wake', async () => {
+  it('releases teardown while a cross-runtime Messaging wake remains in flight', async () => {
+    let timerId = 0;
+    vi.stubGlobal('window', {
+      setInterval: vi.fn(() => {
+        timerId += 1;
+        return timerId;
+      }),
+      clearInterval: vi.fn(),
+      setTimeout: vi.fn(() => {
+        timerId += 1;
+        return timerId;
+      }),
+      clearTimeout: vi.fn(),
+      dispatchEvent: vi.fn(),
+    });
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true })));
     const requests = createStationRequestScope();
     const messagingWake = Promise.withResolvers<void>();
     vi.mocked(wakeActiveMessagingSession)
       .mockImplementationOnce(() => messagingWake.promise);
 
-    const startup = startSocialRuntime(
+    const controller = await startSocialRuntime(
       session,
       () => ({
         sessionKey: 'station-primary|ptid:alice',
@@ -312,18 +333,23 @@ describe('social runtime supervisor', () => {
       }),
       requests,
     );
+    const projectedWake = runtimeMocks.dependencies.current
+      .wakeMessaging()
+      .catch((error) => error);
     await vi.waitFor(() => {
       expect(wakeActiveMessagingSession).toHaveBeenCalledOnce();
     });
+    runtimeMocks.projectionRuntime.teardown.mockImplementationOnce(async () => {
+      await projectedWake;
+    });
 
-    requests.close();
-
-    await expect(startup).rejects.toMatchObject({ name: 'AbortError' });
-    expect(runtimeMocks.projectionRuntime.teardown).toHaveBeenCalledOnce();
-    expect(runtimeMocks.projectionRuntime.drain).toHaveBeenCalledOnce();
+    await expect(controller.teardown()).resolves.toBeUndefined();
+    await expect(projectedWake).resolves.toMatchObject({ name: 'AbortError' });
     expect(callMocks.reset).toHaveBeenCalledOnce();
+    expect(readSocialRuntimeProjection().active).toBe(false);
 
     messagingWake.resolve();
     await messagingWake.promise;
+    expect(readSocialRuntimeProjection().active).toBe(false);
   });
 });

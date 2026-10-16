@@ -379,7 +379,6 @@ export async function startSocialRuntime(
   try {
     await mobileCallManager.activate(session);
     await projectionRuntime.bootstrap();
-    await runWithinRequestScope(wakeMessaging, requests.signal());
   } catch (error) {
     requests.close();
     try {
