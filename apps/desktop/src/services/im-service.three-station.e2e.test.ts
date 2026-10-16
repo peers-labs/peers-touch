@@ -79,19 +79,19 @@ liveDescribe('C6 MLS three-Station convergence', () => {
     ) as TopologyReport
     const alice = await createClient(
       'alice',
-      'http://10.37.246.80:18080',
+      'http://192.0.2.10:18080',
       gatewayOne,
       topology.nodes.one.station_peer_id,
     )
     const bob = await createClient(
       'bob',
-      'http://10.37.118.48:18080',
+      'http://192.0.2.20:18080',
       gatewayTwo,
       topology.nodes.two.station_peer_id,
     )
     const charlie = await createClient(
       'charlie',
-      'http://10.37.94.156:18080',
+      'http://192.0.2.30:18080',
       gatewayThree,
       topology.nodes.three.station_peer_id,
     )

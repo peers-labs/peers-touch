@@ -9,7 +9,7 @@ Verify:
 - Node Connectivity is present as the Relay architecture source and NCP-D11
   is present in the Plan decision set;
 - Relay service host implementation, deployment and proof are Linux/POSIX-only;
-- `one` at `10.37.118.48` owns the canonical Linux Relay runtime;
+- `one` at `192.0.2.20` owns the canonical Linux Relay runtime;
 - `sixwin` is authorized only as a Windows Desktop client runtime and cannot
   deploy or prove Station/Relay backend services;
 - Windows Relay compile checks, deploy profiles, adapters and evidence are

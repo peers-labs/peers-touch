@@ -1,17 +1,29 @@
 # ─── Dev Environment Setup ──────────────────────────────────────
 
-.PHONY: init-dev skill-help
+.PHONY: init-dev skill-help cargo-cache-setup cargo-cache-status cargo-cache-verify
+
+cargo-cache-setup:
+	@/bin/bash tooling/scripts/cargo-cache.sh setup
+
+cargo-cache-status:
+	@/bin/bash tooling/scripts/cargo-cache.sh status
+
+cargo-cache-verify:
+	@/bin/bash tooling/scripts/cargo-cache.sh verify
 
 init-dev:
 	@echo "=== Peers-Touch Dev Environment Setup ==="
 	@echo ""
-	@echo "[1/3] Installing dependencies..."
+	@echo "[1/4] Installing dependencies..."
 	pnpm install
 	@echo ""
-	@echo "[2/3] Setting up IDE config..."
+	@echo "[2/4] Setting up shared Cargo compiler cache..."
+	@/bin/bash tooling/scripts/cargo-cache.sh setup
+	@echo ""
+	@echo "[3/4] Setting up IDE config..."
 	/bin/bash tooling/scripts/ide-setup.sh $(IDE)
 	@echo ""
-	@echo "[3/3] Installing project Skills and optional advisory Hook..."
+	@echo "[4/4] Installing project Skills and optional advisory Hook..."
 	@detect_ide() { \
 	  if echo "$${TERM_PRODUCT:-}" | grep -qi trae; then echo trae; return; fi; \
 	  if [ -n "$${TRAE_BRAND_NAME:-}" ]; then echo trae; return; fi; \

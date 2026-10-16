@@ -1,0 +1,15 @@
+# Repository-wide Rust build configuration.
+# Applies to all Rust workspaces (desktop, mobile, packages/*) in every worktree.
+
+[build]
+# Shared cross-worktree compiler cache via sccache. The wrapper falls back
+# to plain rustc when sccache is absent. Run `make cargo-cache-setup` to
+# install the machine-local wrapper and wire it into ~/.cargo/config.toml.
+rustc-wrapper = "tooling/scripts/cargo-cache.sh"
+
+[profile.dev]
+# line-tables-only: drops type/variable DWARF while keeping file:line in
+# stack traces. Cuts target/debug size by ~40% vs the default debug=2.
+# Override per-developer in ~/.cargo/config.toml if full debug symbols
+# (debug = 2) are needed for Rust-level debugging.
+debug = 1

@@ -201,8 +201,8 @@ describe('Moment detail', () => {
           comment: {
             authorPtid: 'ptid:bob',
             author: {
-              displayName: 'bob@10.37.221.38:18080',
-              username: 'bob@10.37.221.38:18080',
+              displayName: 'bob@192.0.2.50:18080',
+              username: 'bob@192.0.2.50:18080',
             },
           },
         },

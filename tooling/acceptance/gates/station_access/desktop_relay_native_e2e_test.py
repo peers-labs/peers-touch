@@ -21,14 +21,14 @@ class DesktopRelayNativeGateTest(unittest.TestCase):
     def test_relay_transport_is_distinct_from_discovery_locator(self) -> None:
         self.assertTrue(
             is_relay_transport(
-                "http://10.36.3.187:18081",
-                "https://10.36.3.187:18443",
+                "http://198.51.100.60:18081",
+                "https://198.51.100.60:18443",
             )
         )
         self.assertFalse(
             is_relay_transport(
-                "http://10.36.3.187:18081",
-                "http://10.36.3.187:18081",
+                "http://198.51.100.60:18081",
+                "http://198.51.100.60:18081",
             )
         )
 

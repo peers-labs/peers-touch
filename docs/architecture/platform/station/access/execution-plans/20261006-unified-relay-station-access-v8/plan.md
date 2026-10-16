@@ -288,7 +288,7 @@ Desktop 与 Mobile 只在共同的 protocol、enrollment 和 tunnel 完成后并
 本 Plan Version 未挂载；开始实现需 Owner 显式批准并选择 execution worktree，批准前不得执行 Task、部署 profile、创建运行资源或生成完成证据。
 ## Execution Preconditions
 
-- Owner 已明确授权补全 `sixwin` profile，并在 `10.36.3.187` 上创建隔离的
+- Owner 已明确授权补全 `sixwin` profile，并在 `198.51.100.60` 上创建隔离的
   `sixwin-station` 与 `sixwin-relay` Windows-native deploy 定义；外部 `env`
   仓库改动必须只落在 `peers-touch/sixwin/**`，且不得提交密钥。
 - sixwin Station 与 Relay 使用独立 checkout、runtime、SQLite 数据库、端口、
