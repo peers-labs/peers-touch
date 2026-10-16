@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "capabilities": [
+    {
+      "id": "desktop-shell-tray-residency",
+      "domain": "desktop-shell",
+      "direction": "acceptance_validates_product",
+      "features": [
+        "desktop-shell-tray"
+      ],
+      "required_gates": [
+        "desktop-shell-tray-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/desktop/src-tauri/src/application/tray/mod.rs",
+        "apps/desktop/src-tauri/src/application/window_lifecycle.rs",
+        "apps/desktop/src-tauri/icons/tray-icon-macos.png"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Desktop Rust tray/window lifecycle",
+          "packaged macOS application binary",
+          "macOS Accessibility status-item and window state"
+        ],
+        "surfaces": [
+          "macOS menu-bar status item",
+          "Native Desktop main window"
+        ],
+        "proven_by": [
+          "desktop-shell-tray-e2e"
+        ],
+        "proven_scope": [
+          "DSTR-A01 through DSTR-A06 on desktop-macos-native"
+        ],
+        "unproven_scope": [
+          "Linux tray appearance and lifecycle",
+          "Windows tray appearance and lifecycle",
+          "macOS signing and notarization",
+          "Template rendering across every macOS theme and display arrangement"
+        ]
+      }
+    }
+  ]
+}

@@ -5,13 +5,14 @@ import { Button, Tooltip, toast } from '@lobehub/ui';
 import { Empty, Spin, theme, Typography } from 'antd';
 import {
   Inbox, Phone, Server, RefreshCw, Video, MoreHorizontal,
-  Lock,
+  Lock, ShieldAlert, Bot,
 } from 'lucide-react';
 import {
   CHAT_COMPOSER_CAPABILITIES_DESKTOP_MAIN,
 } from '@peers-touch/client-chat-core';
 import {
   socialThreadKey,
+  useSocialChatStore,
 } from '../../store/socialChat';
 import { useCryptoStore } from '../../store/cryptoStore';
 import {
@@ -191,6 +192,13 @@ export function ChatMessageArea({
   const reactionTimeoutsRef = useRef<Map<string, number>>(new Map());
 
   const activeUlid = activeTab === 'friend' ? activeSessionUlid : activeGroupUlid;
+  // Bot direct conversations are Station-resident plaintext: no E2EE lock,
+  // no calls, and a one-way composer. Classified from the peer actor's kind
+  // (AGENT) in the profile projection. This hook MUST stay above every early
+  // return — the empty/error panes render fewer children, not fewer hooks.
+  const isAutomatedConversation = useSocialChatStore((s) => (
+    activeTab === 'friend' && activeUlid ? s.isAutomatedConversation(activeUlid) : false
+  ));
   const directSecurityState = useCryptoStore((state) => (
     activeUlid ? state.conversationSecurity[activeUlid]?.aggregateLevel ?? 'idle' : 'idle'
   ));
@@ -901,7 +909,6 @@ export function ChatMessageArea({
   const conversationEncrypted = activeTab === 'friend'
     ? directSecurityState === 'ready'
     : groupSecurityState[activeUlid] === 'ready';
-
   return (
     <Flexbox
       data-chat-conversation-pane={activeUlid}
@@ -964,12 +971,28 @@ export function ChatMessageArea({
             <Flexbox>
               <Flexbox horizontal align="center" gap={6}>
                 <Text strong style={{ fontSize: 14 }}>{currentName}</Text>
-                {peerOnlineIndicator}
-                {encryptionEnabled && conversationEncrypted && (
-                  <Tooltip title={t('chat.social.encryption.enabled')}>
-                    <Lock size={13} style={{ color: token.colorTextTertiary, marginLeft: 2 }} />
+                {!isAutomatedConversation && peerOnlineIndicator}
+                {isAutomatedConversation ? (
+                  <Tooltip title={t('chat.automation.stationManagedTip', {
+                    defaultValue: 'Automated service · Station-resident, not end-to-end encrypted',
+                  })}>
+                    <ShieldAlert
+                      size={13}
+                      style={{ color: token.colorWarning, marginLeft: 2 }}
+                    />
                   </Tooltip>
+                ) : (
+                  encryptionEnabled && conversationEncrypted && (
+                    <Tooltip title={t('chat.social.encryption.enabled')}>
+                      <Lock size={13} style={{ color: token.colorTextTertiary, marginLeft: 2 }} />
+                    </Tooltip>
+                  )
                 )}
+                {/* Automated conversations are always Station-resident: the amber
+                    shield + managed subtitle already state that, so the
+                    authority-station chip (which reads as an "unavailable"
+                    error when the id is empty) is hidden. */}
+                {!isAutomatedConversation && (
                 <span
                   data-chat-station="authority"
                   data-chat-station-id={authorityStationId}
@@ -1005,17 +1028,21 @@ export function ChatMessageArea({
                       : t('chat.social.detail.authorityStationUnavailable')}
                   </span>
                 </span>
+                )}
               </Flexbox>
-              {headerSubtitle && (
+              {(headerSubtitle || isAutomatedConversation) && (
                 <Text type="secondary" style={{ fontSize: 12 }}>
-                  {headerSubtitle}
+                  {isAutomatedConversation
+                    ? t('chat.automation.stationManaged', { defaultValue: 'Automated service · Station resident' })
+                    : headerSubtitle}
                 </Text>
               )}
             </Flexbox>
           </Flexbox>
         </Flexbox>
         <Flexbox horizontal align="center" gap={4}>
-          {/* Friend calls use P2P; group calls use the configured SFU. */}
+          {/* Automated conversations are one-way publishing channels: no calls. */}
+          {!isAutomatedConversation && (
           <Tooltip
             title={
               callAvailable
@@ -1031,6 +1058,8 @@ export function ChatMessageArea({
               onClick={() => handleStartCall('audio')}
             />
           </Tooltip>
+          )}
+          {!isAutomatedConversation && (
           <Tooltip
             title={
               callAvailable
@@ -1046,6 +1075,7 @@ export function ChatMessageArea({
               onClick={() => handleStartCall('video')}
             />
           </Tooltip>
+          )}
           <Button
             data-chat-detail-toggle
             type="text"
@@ -1162,6 +1192,27 @@ export function ChatMessageArea({
         </Flexbox>
       )}
 
+      {isAutomatedConversation ? (
+        <Flexbox
+          horizontal
+          align="center"
+          justify="center"
+          gap={6}
+          data-bot-oneway-composer="true"
+          style={{
+            padding: '12px 16px',
+            borderTop: `1px solid ${token.colorBorderSecondary}`,
+            background: conversationSurfaceBackground,
+          }}
+        >
+          <Bot size={14} style={{ color: token.colorTextTertiary }} />
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            {t('chat.automation.oneWayComposer', {
+              defaultValue: 'One-way publishing channel — replies are not supported',
+            })}
+          </Text>
+        </Flexbox>
+      ) : (
       <ChatComposer
         activeConversationId={activeUlid}
         disabled={!activeUlid}
@@ -1179,6 +1230,7 @@ export function ChatMessageArea({
         sending={sending}
         capabilities={CHAT_COMPOSER_CAPABILITIES_DESKTOP_MAIN}
       />
+      )}
 
       {deleteTarget && (
         <ChatDeleteConfirmOverlay

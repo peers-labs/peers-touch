@@ -1,7 +1,7 @@
 use crate::inbox::{
     ClaimedItemConsumer, CommandResultLifecycle, CommandResultProcessor, CommandResultRepository,
     ConversationStateProcessor, DeliveryReceiptProcessor, DirectMessageProcessor,
-    PublicEventProcessor,
+    PublicEventProcessor, ServicePlaintextProcessor, SkippedPayloadProcessor,
 };
 use crate::proto::chat::{
     conversation_event, DeviceEventDelivery, DeviceInboxPayloadType, DurableDeviceInboxItem,
@@ -57,6 +57,8 @@ pub struct MessagingItemConsumer<
     conversation_state: ConversationStateProcessor<R>,
     command_result: CommandResultProcessor<R, M>,
     delivery_receipt: DeliveryReceiptProcessor<R>,
+    service_plaintext: ServicePlaintextProcessor<R>,
+    skipped: SkippedPayloadProcessor<R>,
 }
 
 impl<R, M> MessagingItemConsumer<R, M>
@@ -64,6 +66,7 @@ where
     R: MessagingRepository + CommandResultRepository,
     M: MlsItemConsumer + CommandResultLifecycle,
 {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         direct: DirectMessageProcessor<R>,
         mls: Arc<M>,
@@ -71,6 +74,8 @@ where
         conversation_state: ConversationStateProcessor<R>,
         command_result: CommandResultProcessor<R, M>,
         delivery_receipt: DeliveryReceiptProcessor<R>,
+        service_plaintext: ServicePlaintextProcessor<R>,
+        skipped: SkippedPayloadProcessor<R>,
     ) -> Self {
         Self {
             direct,
@@ -79,6 +84,8 @@ where
             conversation_state,
             command_result,
             delivery_receipt,
+            service_plaintext,
+            skipped,
         }
     }
 }
@@ -102,9 +109,14 @@ where
         }
         let delivery = DeviceEventDelivery::decode(item.opaque_payload.as_slice())
             .map_err(|_| "messaging consumer delivery payload is invalid".to_string())?;
-        match PreparedEndpointPayloadKind::try_from(delivery.payload_kind)
-            .map_err(|_| "messaging consumer endpoint payload kind is invalid".to_string())?
-        {
+        let payload_kind = match PreparedEndpointPayloadKind::try_from(delivery.payload_kind) {
+            Ok(kind) => kind,
+            // Forward compatibility: an endpoint payload kind this build does
+            // not understand is skip+acked through the observe-only processor
+            // instead of poisoning the device lane (G-BOT-10).
+            Err(_) => return self.skipped.consume(item, consumer_epoch),
+        };
+        match payload_kind {
             PreparedEndpointPayloadKind::DirectCiphertext => {
                 self.direct.consume(item, consumer_epoch)
             }
@@ -126,6 +138,9 @@ where
             }
             PreparedEndpointPayloadKind::ConversationState => {
                 self.conversation_state.consume(item, consumer_epoch)
+            }
+            PreparedEndpointPayloadKind::DirectServicePlaintext => {
+                self.service_plaintext.consume(item, consumer_epoch)
             }
             PreparedEndpointPayloadKind::Unspecified => {
                 Err("messaging consumer endpoint payload kind is unsupported".to_string())

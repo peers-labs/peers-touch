@@ -142,6 +142,59 @@ func TestProductionRealtimePublishTypingUsesEphemeralActorFanout(t *testing.T) {
 	}
 }
 
+func TestProductionRealtimePublishServiceNotificationFansOutToAllOwnerDevices(t *testing.T) {
+	ctx := context.Background()
+	bus := events.NewEventBus()
+	defer bus.Close()
+
+	desktop, cancelDesktop, err := bus.Subscribe(ctx, "ptid:owner", "owner-desktop", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancelDesktop()
+	phone, cancelPhone, err := bus.Subscribe(ctx, "ptid:owner", "owner-phone", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancelPhone()
+
+	adapter := newProductionRealtimeAdapter(func() events.EventBus {
+		return bus
+	})
+	wake := ports.ServiceNotificationWake{
+		RecipientActor:   "ptid:owner",
+		NotificationID:   "ntf-publication:req-1",
+		NotificationType: 410,
+		Category:         4,
+		GroupKey:         "task-42",
+		CreatedAtUnixMs:  1760000000000,
+	}
+	if err := adapter.PublishServiceNotification(ctx, wake); err != nil {
+		t.Fatal(err)
+	}
+
+	// Actor-level publish reaches every live owner device (badge + banner).
+	for _, subscription := range []*events.Subscription{desktop, phone} {
+		event := receiveProductionRealtimeEvent(t, subscription.Events)
+		serviceNotification := event.GetServiceNotification()
+		if serviceNotification == nil {
+			t.Fatalf("event kind = %T, want ServiceNotificationDelivered", event.GetKind())
+		}
+		if serviceNotification.GetNotificationId() != wake.NotificationID ||
+			serviceNotification.GetRecipientActorPtid() != string(wake.RecipientActor) ||
+			serviceNotification.GetNotificationType() != 410 ||
+			serviceNotification.GetCategory() != 4 ||
+			serviceNotification.GetGroupKey() != "task-42" ||
+			serviceNotification.GetCreatedTsUnixMs() != wake.CreatedAtUnixMs {
+			t.Fatalf("service notification = %+v", serviceNotification)
+		}
+	}
+
+	if stats := bus.Stats(); stats.BufferedEvents != 1 {
+		t.Fatalf("buffered events = %d, want one durable actor wake", stats.BufferedEvents)
+	}
+}
+
 func TestProductionRealtimeFailsClosedWithoutEventBus(t *testing.T) {
 	adapter := newProductionRealtimeAdapter(func() events.EventBus {
 		return nil
@@ -173,6 +226,17 @@ func TestProductionRealtimeFailsClosedWithoutEventBus(t *testing.T) {
 					Generation:     1,
 					ExpiresAt:      time.Now().UTC().Add(time.Second),
 					IsTyping:       true,
+				})
+			},
+		},
+		{
+			name: "service notification",
+			run: func() error {
+				return adapter.PublishServiceNotification(ctx, ports.ServiceNotificationWake{
+					RecipientActor:   "ptid:bob",
+					NotificationID:   "ntf-publication:req-1",
+					NotificationType: 410,
+					Category:         4,
 				})
 			},
 		},

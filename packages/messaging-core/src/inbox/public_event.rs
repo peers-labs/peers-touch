@@ -8,9 +8,10 @@ use crate::mls::inbound::authority_snapshot_projection;
 use crate::proto::chat::{
     conversation_event, ConversationEvent, ConversationMemberAuthorityAction,
     ConversationMemberAuthorityCommittedFact, DeviceConsumptionReceipt, DeviceInboxPayloadType,
-    DurableDeviceInboxItem, MemberRole, MessageEditedFact, MessageForwardedFact,
-    MessageHiddenForActorFact, MessageModeratedFact, MessagePinCommittedFact, MessageRetractedFact,
-    MessagingContentKind, PreparedEndpointPayloadKind, PublicEventMarker, ReactionCommittedFact,
+    DurableDeviceInboxItem, MemberRole, MessageDeliverySecurity, MessageEditedFact,
+    MessageForwardedFact, MessageHiddenForActorFact, MessageModeratedFact, MessagePinCommittedFact,
+    MessageRetractedFact, MessagingContentKind, PreparedEndpointPayloadKind, PublicEventMarker,
+    ReactionCommittedFact,
 };
 use crate::store::MessagingRepository;
 
@@ -319,6 +320,9 @@ impl<R: MessagingRepository> PublicEventProcessor<R> {
                 thread_root_message_id: String::new(),
                 attachments: fact.destination_attachments.clone(),
                 client_timestamp: fact.client_timestamp.clone(),
+                // Forwarding only exists for human encrypted traffic; service
+                // plaintext is inbound-only and can never be forwarded.
+                delivery_security: MessageDeliverySecurity::E2ee as i32,
             },
             delivery,
             consumer_epoch,

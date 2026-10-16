@@ -147,11 +147,19 @@ class EnvironmentContractTests(unittest.TestCase):
         self.assertEqual(contract.id, "home-station")
         self.assertTrue(contract.profile.required)
         self.assertTrue(contract.profile.identity_match)
-        self.assertIn("station", contract.services)
-        self.assertTrue(contract.services["station"].required)
-        self.assertTrue(
-            all(service.kind == "station" for service in contract.services.values())
+        self.assertEqual(
+            set(contract.services),
+            {"station", "relay", "station-via-relay"},
         )
+        self.assertTrue(contract.services["station"].required)
+        self.assertEqual(contract.services["station"].kind, "station")
+        self.assertEqual(contract.services["relay"].kind, "relay")
+        self.assertFalse(contract.services["relay"].required)
+        self.assertEqual(
+            contract.services["station-via-relay"].kind,
+            "station",
+        )
+        self.assertFalse(contract.services["station-via-relay"].required)
         self.assertEqual(len(contract.credentials), 1)
         self.assertEqual(contract.credentials[0].id, "evidence-leak-canary")
         self.assertTrue(contract.credentials[0].generated_if_missing)
@@ -325,20 +333,23 @@ class EnvironmentContractTests(unittest.TestCase):
             native_tauri_current_profile,
         )
 
-        login_response = mock.MagicMock()
-        login_response.__enter__.return_value.read.return_value = json.dumps(
-            {
-                "data": {
-                    "actor_ref": {"ptid": "ptid:alice"},
-                    "tokens": {"access_token": "session-token"},
-                }
-            }
-        ).encode("utf-8")
         logout_response = mock.MagicMock()
-        with mock.patch.object(
-            native_tauri_current_profile.urllib.request,
-            "urlopen",
-            side_effect=[login_response, logout_response],
+        with mock.patch(
+            "tooling.acceptance.provisioners.preset_actor.shutil.which",
+            return_value="/usr/bin/go",
+        ), mock.patch(
+            "tooling.acceptance.provisioners.preset_actor.subprocess.run",
+            return_value=mock.MagicMock(
+                returncode=0,
+                stdout=json.dumps(
+                    {"token": "session-token", "ptid": "ptid:alice"}
+                ),
+                stderr="",
+            ),
+        ), mock.patch(
+            "tooling.acceptance.provisioners.preset_actor."
+            "urllib.request.urlopen",
+            return_value=logout_response,
         ) as urlopen:
             actor = (
                 native_tauri_current_profile.NativeTauriCurrentProfileProvisioner
@@ -351,8 +362,8 @@ class EnvironmentContractTests(unittest.TestCase):
 
         self.assertEqual(actor.ptid, "ptid:alice")
         self.assertEqual(actor.device_policy, "persistent-acceptance")
-        self.assertEqual(urlopen.call_count, 2)
-        logout_request = urlopen.call_args_list[1].args[0]
+        self.assertEqual(urlopen.call_count, 1)
+        logout_request = urlopen.call_args.args[0]
         self.assertEqual(
             logout_request.headers["Authorization"],
             "Bearer session-token",

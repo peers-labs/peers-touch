@@ -18,6 +18,10 @@ message MessageCommittedFact {
   string thread_root_message_id = 5;
   repeated EncryptedObjectDescriptor attachments = 6;
   google.protobuf.Timestamp client_timestamp = 7;
+  // Message-level delivery security marker; keeps history classifiable even
+  // if member actor_kind projection is missing. SERVICE_PLAINTEXT for bot
+  // direct_service_plaintext messages (no E2EE lock).
+  MessageDeliverySecurity delivery_security = 8;
 }
 
 message MessageEditedFact {

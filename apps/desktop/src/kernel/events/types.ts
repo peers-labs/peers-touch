@@ -197,6 +197,34 @@ export interface RealtimeEnvelopeDeliveredPayload {
   queuedTsUnixMs: number;
 }
 
+/**
+ * Minimal wake signal emitted after the Station durably writes a service
+ * notification row in the same transaction as the published message.
+ * Inbox/unread derive from the envelope arm; this payload only decides whether
+ * to raise an OS banner.
+ */
+export interface RealtimeServiceNotificationPayload {
+  eventId: string;
+  notificationId: string;
+  recipientActorPtid: string;
+  notificationType: number;
+  category: number;
+  groupKey: string;
+  createdTsUnixMs: number;
+}
+
+/**
+ * Post-commit wake that an actor's authoritative profile changed (display
+ * name, avatar/icon). Carries identifiers only: consumers invalidate the
+ * cached profile for actorPtid and refetch. For a bot avatar change the event
+ * arrives on the owner's stream while actorPtid is the bot actor.
+ */
+export interface RealtimeActorProfileChangedPayload {
+  eventId: string;
+  actorPtid: string;
+  changedTsUnixMs: number;
+}
+
 export interface RealtimeConversationSettingsChangedPayload {
   eventId: string;
   conversationKind: 'friend' | 'group';
@@ -339,8 +367,10 @@ export interface EventPayloadMap {
   [EVENT.REALTIME_GROUP_MEMBERSHIP_CHANGE]: RealtimeGroupMembershipChangePayload;
   [EVENT.REALTIME_GROUP_FEDERATION_EVENT]: RealtimeGroupFederationEventPayload;
   [EVENT.REALTIME_ENVELOPE_DELIVERED]: RealtimeEnvelopeDeliveredPayload;
+  [EVENT.REALTIME_SERVICE_NOTIFICATION]: RealtimeServiceNotificationPayload;
   [EVENT.REALTIME_CONVERSATION_SETTINGS_CHANGED]: RealtimeConversationSettingsChangedPayload;
   [EVENT.REALTIME_SOCIAL_GRAPH_EVENT]: RealtimeSocialGraphEventPayload;
+  [EVENT.REALTIME_ACTOR_PROFILE_CHANGED]: RealtimeActorProfileChangedPayload;
   [EVENT.MOMENT_CREATED]: MomentCreatedPayload;
   [EVENT.MOMENT_DELETED]: MomentDeletedPayload;
   [EVENT.MOMENT_REVOKED]: MomentRevokedPayload;

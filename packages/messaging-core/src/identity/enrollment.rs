@@ -322,20 +322,16 @@ pub fn generate_device_identity_for_device_from_parts(
                 .encode_to_vec()
             },
         ),
-        None => DeviceSigningKey::generate_cross_signed(
-            &actor_identity,
-            device_id,
-            |device_key| {
-                build_device_certificate(
-                    ptid,
-                    device_id,
-                    actor_profile_version,
-                    &actor_identity,
-                    device_key.as_bytes(),
-                )
-                .encode_to_vec()
-            },
-        ),
+        None => DeviceSigningKey::generate_cross_signed(&actor_identity, device_id, |device_key| {
+            build_device_certificate(
+                ptid,
+                device_id,
+                actor_profile_version,
+                &actor_identity,
+                device_key.as_bytes(),
+            )
+            .encode_to_vec()
+        }),
     };
     let certificate = build_device_certificate(
         ptid,
@@ -436,6 +432,7 @@ pub fn is_stale_endpoint_error(error: &str) -> bool {
     error.contains("endpoint is not active")
         || error.contains("station returned 403")
         || error.contains("Station returned HTTP 403")
+        || error.contains("ACTOR_IDENTITY_DEVICE_NOT_FOUND")
         || error.contains("sender_unauthorized")
 }
 
@@ -463,6 +460,13 @@ fn build_device_certificate(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn actor_identity_device_absence_is_a_stale_endpoint() {
+        assert!(is_stale_endpoint_error(
+            "station returned 404 [code=ACTOR_IDENTITY_DEVICE_NOT_FOUND]"
+        ));
+    }
 
     #[test]
     fn fresh_enrollment_round_trips() {

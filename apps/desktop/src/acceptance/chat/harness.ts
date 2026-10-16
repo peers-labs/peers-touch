@@ -396,6 +396,11 @@ export function installAcceptanceHarness(): void {
       conversationId: string;
     }) => nativeAcceptanceBridge.engineMessages(input),
 
+    engineServiceMessages: (input: {
+      actorPtid: string;
+      conversationId: string;
+    }) => nativeAcceptanceBridge.engineServiceMessages(input),
+
     engineConversations: (input: { actorPtid: string }) =>
       nativeAcceptanceBridge.engineConversations(input),
 

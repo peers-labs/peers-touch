@@ -2656,6 +2656,13 @@ func mapProductionConversationError(ctx context.Context, err error) error {
 			code,
 			err,
 		)
+	case conversationdomain.ErrorCodeRateLimited:
+		return productionConversationHandlerError(
+			http.StatusTooManyRequests,
+			"Conversation operation is rate limited",
+			code,
+			err,
+		)
 	case conversationdomain.ErrorCodeNotFound:
 		return productionConversationHandlerError(
 			http.StatusNotFound,

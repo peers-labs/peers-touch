@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "id": "desktop-shell",
+  "description": "Desktop Shell is the managed product domain for native process, window, menu, tray, focus, packaging, and cleanup behavior. Its initial formal proof is the macOS tray residency journey.",
+  "capabilities": [
+    "acceptance-framework-self-consistency",
+    "desktop-shell-tray-residency"
+  ],
+  "validation_gate_id": "desktop-shell-domain-validation"
+}

@@ -338,6 +338,21 @@ function handleFrame(raw: RawRealtimeEnvelope | undefined | null): void {
       });
       return;
     }
+    case 'serviceNotification': {
+      const b = kind.value;
+      // Minimal wake signal: inbox/unread are driven by the envelope arm.
+      // This only publishes the gating input for the OS banner decision.
+      eventBus.publish(EVENT.REALTIME_SERVICE_NOTIFICATION, {
+        eventId,
+        notificationId: b.notificationId,
+        recipientActorPtid: b.recipientActorPtid,
+        notificationType: b.notificationType,
+        category: b.category,
+        groupKey: b.groupKey,
+        createdTsUnixMs: Number(b.createdTsUnixMs),
+      });
+      return;
+    }
     case 'conversationSettingsChanged': {
       const c = kind.value;
       const conversationKind = conversationSettingsKindFromEnum(c.kind);
@@ -382,6 +397,21 @@ function handleFrame(raw: RawRealtimeEnvelope | undefined | null): void {
           });
         }
       }
+      return;
+    }
+    case 'actorProfileChanged': {
+      const p = kind.value;
+      if (!p.actorPtid) {
+        log.warn('eventStream', 'actorProfileChanged missing actorPtid, dropping', { eventId });
+        return;
+      }
+      // Identifiers-only wake: subscribers invalidate the cached profile and
+      // refetch the authoritative projection for this actor.
+      eventBus.publish(EVENT.REALTIME_ACTOR_PROFILE_CHANGED, {
+        eventId,
+        actorPtid: p.actorPtid,
+        changedTsUnixMs: Number(p.changedTsUnixMs),
+      });
       return;
     }
     case 'moment':

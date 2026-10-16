@@ -287,6 +287,7 @@ func updateProfileInternal(
 
 	var result ProfileUpdateResult
 	changed := false
+	var changedActorPtid string
 	err := rds.WithContext(c).Transaction(func(tx *gorm.DB) error {
 		var actor db.Actor
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&actor, actorID).Error; err != nil {
@@ -416,6 +417,7 @@ func updateProfileInternal(
 			Profile: profile,
 		}
 		changed = true
+		changedActorPtid = actor.PTID
 		return nil
 	})
 	if err != nil {
@@ -426,6 +428,9 @@ func updateProfileInternal(
 	// commits, and never for stale or equal-value requests.
 	if changed {
 		publishVisibilityAsync(actorID)
+		// Wake the actor's own authenticated devices so cached profiles refresh
+		// immediately instead of waiting for the periodic reconcile.
+		notifyProfileChanged(changedActorPtid, time.Now().UTC().UnixMilli())
 	}
 	return &result, nil
 }
@@ -474,6 +479,7 @@ func WebProfileToActorProfileProto(p *ProfileResponse) *modelpb.ActorProfile {
 		Discoverability: modelpb.ActorVisibility(
 			canonicalDiscoverability(p.Discoverability),
 		),
+		Kind: p.Ref.GetKind(),
 	}
 }
 

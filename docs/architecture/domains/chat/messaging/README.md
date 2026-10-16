@@ -77,10 +77,12 @@ device-addressed Direct sessions 与 RFC 9420 MLS。
 | [design.md](./design.md) | 整体架构、owner、数据流与 failure semantics |
 | [decisions.md](./decisions.md) | 关键设计决策 |
 | [data-model.md](./data-model.md) | Proto、状态机和持久化模型 |
+| [message-publishing.md](./message-publishing.md) | 通用 HTTP 发布、稳定授权、统一内容与事件聚合 |
 | [module-layout.md](./module-layout.md) | 目标模块布局与依赖方向 |
 | [integration.md](./integration.md) | 影响面、原子切换与删除矩阵 |
 | [../api-ownership/README.md](../../../engineering/api-governance/README.md) | Accepted canonical API owner, route/store hard cut, Conversation DDD, and cross-domain Federation boundary |
 | [../chat-lifecycle/README.md](../lifecycle/README.md) | 当前 Chat 全生命周期产品合同与执行入口 |
+| [execution-plans/20261015-message-publishing-acceptance-v5/plan.md](./execution-plans/20261015-message-publishing-acceptance-v5/plan.md) | 通用 Message Publishing 正式验收计划；v5 保持直接管理 HTTP，并为 Native 接入已有 HTTPS Relay |
 | [execution-plans/20260808-messaging-platform.md](./execution-plans/20260808-messaging-platform.md) | 已终止的历史实现与证据计划 |
 | [execution-plans/20260808-review-prompt.md](./execution-plans/20260808-review-prompt.md) | 独立产品/架构/计划评审提示 |
 
@@ -92,8 +94,12 @@ device-addressed Direct sessions 与 RFC 9420 MLS。
   the Conversation owner, and Conversation DDD plus resource-owned APIs are
   accepted. `MP-D31` defines canonical submitted-command reconciliation and
   `MP-D32` defines Authority-mediated cross-Station ephemeral typing.
-- Plan：当前 worktree 只使用
-  [`../lifecycle/execution-plans/20260916-chat-lifecycle-product-closure/plan.md`](../lifecycle/execution-plans/20260916-chat-lifecycle-product-closure/plan.md)。
+- Plan：Chat Lifecycle 既有闭环仍以
+  [`../lifecycle/execution-plans/20260916-chat-lifecycle-product-closure/plan.md`](../lifecycle/execution-plans/20260916-chat-lifecycle-product-closure/plan.md)
+  为历史完成记录；Message Publishing 的新增正式验收使用
+  [`20261015-message-publishing-acceptance-v5/plan.md`](./execution-plans/20261015-message-publishing-acceptance-v5/plan.md)
+  冻结计划；v5 在 v4 缺陷修复边界上新增 Native HTTPS Relay 接入与
+  canonical Plan Version 审计兼容。
   `20260808-messaging-platform.md` 已终止，只保留历史实现和证据。
 - Execution：当前 Chat 产品完成度从 Chat Lifecycle 的 current-source Gate
   重新计算，不继承 MP-W* 或 NDR-W* 的完成百分比。CA-HC 由

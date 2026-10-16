@@ -1,0 +1,28 @@
+{
+  "id": "desktop-shell-native",
+  "profile": {
+    "required": false,
+    "identity_match": false
+  },
+  "services": {},
+  "clients": [
+    {
+      "id": "desktop-shell",
+      "actor": "desktop-user",
+      "runtime": "native-tauri-packaged",
+      "required_service_roles": [],
+      "service_bindings": {}
+    }
+  ],
+  "fixtures": [],
+  "credentials": [],
+  "cleanup": {
+    "resources": [
+      "processes",
+      "status-item",
+      "ports",
+      "storage",
+      "sessions"
+    ]
+  }
+}

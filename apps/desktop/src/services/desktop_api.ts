@@ -2370,6 +2370,11 @@ export interface AccountProfile {
   home_station_peer_id: string;
   home_station_domain: string;
   discoverability: 'hidden' | 'by_handle' | 'indexed';
+  /**
+   * Intrinsic ActorKind (1 = person, 7 = agent/bot). Drives one-way,
+   * non-E2EE conversation UX for bot peers.
+   */
+  kind: number;
   peers_touch: {
     network_id: string;
   };
@@ -7825,6 +7830,36 @@ export const api = {
 
   // ── Notification ──
 
+  botList: () =>
+    invokeRustDataFromStatus<void, { bots: RegistryBot[] }>('bot_list'),
+
+  botCreate: (name: string, avatar?: string) =>
+    invokeRustDataFromStatus<{ name: string; avatar?: string }, BotCreateResponse>(
+      'bot_create', { name, avatar },
+    ),
+
+  botRotateSecret: (botPtid: string) =>
+    invokeRustDataFromStatus<{ bot_ptid: string }, { secret: string }>(
+      'bot_rotate_secret', { bot_ptid: botPtid },
+    ),
+
+  botSetState: (botPtid: string, targetState: number) =>
+    invokeRustDataFromStatus<
+      { bot_ptid: string; target_state: number },
+      { bot: RegistryBot }
+    >('bot_set_state', { bot_ptid: botPtid, target_state: targetState }),
+
+  botSetProfile: (botPtid: string, avatar?: string) =>
+    invokeRustDataFromStatus<
+      { bot_ptid: string; avatar?: string },
+      { bot: RegistryBot }
+    >('bot_set_profile', { bot_ptid: botPtid, avatar }),
+
+  botUploadAvatar: (filePath: string) =>
+    invokeRustDataFromStatus<{ file_path: string }, { url: string }>(
+      'bot_upload_avatar', { file_path: filePath },
+    ),
+
   notificationList: (category?: number, status?: number, cursor?: string, limit?: number) =>
     invokeRustDataFromStatus<NotificationListInput, NotificationListResponse>(
       'notification_list', { category, status, cursor, limit },
@@ -7909,6 +7944,18 @@ export const api = {
       'desktop_native_event_emit',
       input,
     ),
+
+  nativeNotificationShow: (input: NativeNotificationShowInput) =>
+    invokeRustDataFromStatus<NativeNotificationShowInput, NativeNotificationShowResult>(
+      'native_notification_show',
+      input,
+    ),
+
+  nativeDockSetBadge: (unreadConversationCount: number) =>
+    invokeRustDataFromStatus<
+      { unreadConversationCount: number },
+      NativeDockBadgeResult
+    >('native_dock_set_badge', { unreadConversationCount }),
 
   // ── Station registry (verified Station identity and route picker) ──
 
@@ -8068,6 +8115,26 @@ export interface FriendRequestData {
   respondedAt?: string;
 }
 
+export type RegistryBotState = 0 | 1 | 2 | 3 | 4;
+
+export interface RegistryBot {
+  botPtid: string;
+  ownerPtid: string;
+  name: string;
+  state: RegistryBotState;
+  publishingId: string;
+  ingressUrl: string;
+  secretHint: string;
+  rateLimitPerMinute: number;
+  createdAtMs: bigint | number;
+}
+
+export interface BotCreateResponse {
+  bot: RegistryBot;
+  ingressUrl: string;
+  secret: string;
+}
+
 export interface NotificationData {
   id: string;
   recipientPtid: string;
@@ -8138,6 +8205,26 @@ export type NotificationPreferencesUpdateOutcome =
 export interface NotificationPreferencesUpdateResult {
   outcome: NotificationPreferencesUpdateOutcome;
   snapshot: NotificationPreferencesSnapshotData;
+}
+
+export interface NativeNotificationShowInput {
+  notificationId: string;
+  title: string;
+  body: string;
+  sessionUlid?: string;
+  target?: string;
+  groupKey?: string;
+  playSound?: boolean;
+}
+
+export interface NativeNotificationShowResult {
+  scheduled: boolean;
+  notificationId: string;
+}
+
+export interface NativeDockBadgeResult {
+  applied: boolean;
+  unreadConversationCount: number;
 }
 
 function notificationSnapshotMatchesUpdates(

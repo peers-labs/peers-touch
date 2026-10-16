@@ -127,6 +127,50 @@ func (a *ProductionRealtimeAdapter) NotifyCommitted(
 	return errors.Join(publishErrors...)
 }
 
+// PublishServiceNotification emits the actor-level service-notification wake
+// after the delivery transaction committed. Unlike the device-targeted
+// envelope wake it fans out to every live recipient device and
+// enters the actor replay ring, so a reconnecting tray/badge client observes
+// it. It is a hint: the durable notification row and device inbox are truth.
+func (a *ProductionRealtimeAdapter) PublishServiceNotification(
+	ctx context.Context,
+	wake ports.ServiceNotificationWake,
+) error {
+	if ctx == nil {
+		return fmt.Errorf("conversation production realtime: publish service notification: context is required")
+	}
+	recipient := strings.TrimSpace(string(wake.RecipientActor))
+	if recipient == "" || strings.TrimSpace(wake.NotificationID) == "" {
+		return fmt.Errorf(
+			"conversation production realtime: publish service notification: recipient and notification id are required",
+		)
+	}
+
+	bus, err := a.bus()
+	if err != nil {
+		return err
+	}
+	_, err = bus.Publish(recipient, &realtime.StreamEvent{
+		Kind: &realtime.StreamEvent_ServiceNotification{
+			ServiceNotification: &realtime.ServiceNotificationDelivered{
+				NotificationId:     wake.NotificationID,
+				RecipientActorPtid: recipient,
+				NotificationType:   wake.NotificationType,
+				Category:           wake.Category,
+				GroupKey:           wake.GroupKey,
+				CreatedTsUnixMs:    wake.CreatedAtUnixMs,
+			},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf(
+			"conversation production realtime: publish service notification recipient=%s notification=%s: %w",
+			recipient, wake.NotificationID, err,
+		)
+	}
+	return nil
+}
+
 // PublishTyping emits a droppable process-local typing projection.
 func (a *ProductionRealtimeAdapter) PublishTyping(
 	ctx context.Context,

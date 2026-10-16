@@ -15,6 +15,7 @@ import {
 } from '../../services/im-service-contract';
 import { imServiceV1 } from '../../services/im-service';
 import { useSessionStore } from '../../store/session';
+import type { DesktopServiceMessage } from '../../store/socialProjection';
 import { requireCanonicalAcceptancePtid } from './identity';
 
 export type { MessagingAcceptanceInteractionSnapshot } from '../../services/desktop_api';
@@ -97,6 +98,7 @@ interface NativeAcceptanceBridgeDependencies {
     activated: boolean;
   }>;
   readMessages(conversationId: string): Promise<MessagingProjection[]>;
+  readServiceMessages(conversationId: string): Promise<DesktopServiceMessage[]>;
   readConversations(): Promise<MessagingConversationProjection[]>;
   readMemberSettings(conversationId: string): Promise<MemberSettingsResult>;
   openAttachment(attachmentId: string): Promise<string>;
@@ -129,6 +131,9 @@ export interface NativeAcceptanceBridge {
   engineMessages(
     input: NativeAcceptanceConversationInput,
   ): Promise<{ messages: MessagingProjection[] }>;
+  engineServiceMessages(
+    input: NativeAcceptanceConversationInput,
+  ): Promise<{ messages: DesktopServiceMessage[] }>;
   engineConversations(
     input: NativeAcceptanceActorInput,
   ): Promise<{ conversations: MessagingConversationProjection[] }>;
@@ -289,6 +294,20 @@ export function createNativeAcceptanceBridge(
       };
     },
 
+    async engineServiceMessages(input) {
+      requireMatchingActor(
+        input.actorPtid,
+        dependencies.activeActorPtid(),
+      );
+      const conversationId = requireEvidenceIdentity(
+        input.conversationId,
+        'acceptance.chat.conversationIdRequired',
+      );
+      return {
+        messages: await dependencies.readServiceMessages(conversationId),
+      };
+    },
+
     async engineConversations(input) {
       requireMatchingActor(
         input.actorPtid,
@@ -358,6 +377,8 @@ export const nativeAcceptanceBridge = createNativeAcceptanceBridge({
     api.messagingAcceptanceResumeLifecycle(actorPtid),
   readMessages: (conversationId) =>
     imServiceV1.messaging.listMessages(conversationId).then(page => page.messages),
+  readServiceMessages: (conversationId) =>
+    imServiceV1.messaging.listServiceMessages(conversationId),
   readConversations: () =>
     imServiceV1.messaging.listConversations(),
   readMemberSettings: (conversationId) =>

@@ -14,6 +14,10 @@ enum ActorKind {
   ACTOR_KIND_SERVICE = 4;
   ACTOR_KIND_APPLICATION = 5;
   ACTOR_KIND_NODE = 6;
+  // IM bot: a conversable non-human actor backed by a message-publishing grant.
+  // Distinct from APPLICATION/SERVICE: an AGENT owns an ordinary conversation
+  // graph edge with its owner but is never E2EE (service-plaintext delivery).
+  ACTOR_KIND_AGENT = 7;
 }
 
 // ActorOrigin tells the consumer whether this actor row was authored on the
@@ -257,6 +261,10 @@ message ActorProfile {
   string home_station_peer_id = 31 [json_name = "home_station_peer_id"];
   string home_station_domain = 32 [json_name = "home_station_domain"];
   ActorVisibility discoverability = 33;
+  // Intrinsic actor type (person, agent/bot, ...). Clients use it to adapt UX
+  // for non-human peers, e.g. rendering a bot direct conversation as one-way,
+  // non-E2EE. Mirrors ActorRef.kind as a first-class profile attribute.
+  ActorKind kind = 34;
 }
 
 message UpdateProfileRequest {

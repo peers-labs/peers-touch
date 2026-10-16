@@ -1,17 +1,12 @@
+mod fixtures;
+
 use messaging_core::codec::private_content::encode_message_private_content;
 use messaging_core::codec::verification::delivery_commitment;
-use messaging_core::contracts::{
-    ActorReadReceiveCommit, ConversationProjection, ConversationStateReceiveCommit, CryptoEndpoint,
-    DeliveryReceiptReceiveCommit, DirectEditCommit, DirectMessageContent, DirectReceiveCommit,
-    InteractionReceiveCommit, PublicEventReceiveCommit, ReceiveCommitResult,
-};
-use messaging_core::crypto::double_ratchet::{
-    encrypt, init_initiator, init_responder, DrSkippedMessageKey,
-};
+use messaging_core::contracts::CryptoEndpoint;
+use messaging_core::crypto::double_ratchet::{encrypt, init_initiator, init_responder};
 use messaging_core::crypto::identity::X25519KeyPair;
 use messaging_core::crypto::session::{DirectSession, DirectSessionKey};
 use messaging_core::inbox::{ClaimedItemConsumer, DirectMessageProcessor};
-use messaging_core::outbox::CommandOutboxEntry;
 use messaging_core::proto::actor_device_from_chat_endpoint;
 use messaging_core::proto::chat::{
     conversation_event, ConversationEvent, CryptoEndpoint as ProtoCryptoEndpoint,
@@ -19,183 +14,10 @@ use messaging_core::proto::chat::{
     DurableDeviceInboxItem, MessageCommittedFact, MessageForwardedFact, MessagingContentKind,
     PreparedEndpointPayloadKind,
 };
-use messaging_core::store::MessagingRepository;
 use prost::Message;
 use sha2::{Digest, Sha256};
-use std::sync::Mutex;
 
-struct TestRepo {
-    session: Mutex<Option<DirectSession>>,
-    skipped: Mutex<Vec<DrSkippedMessageKey>>,
-    claimed: Mutex<Vec<String>>,
-    committed_message: Mutex<Option<DirectMessageContent>>,
-}
-
-impl TestRepo {
-    fn new(session: DirectSession) -> Self {
-        Self {
-            session: Mutex::new(Some(session)),
-            skipped: Mutex::new(Vec::new()),
-            claimed: Mutex::new(Vec::new()),
-            committed_message: Mutex::new(None),
-        }
-    }
-}
-
-impl MessagingRepository for TestRepo {
-    fn persist_claimed_item(
-        &self,
-        item_id: &str,
-        _event_id: &str,
-        _conversation_id: &str,
-        _lane_sequence: i64,
-        _consumer_epoch: u64,
-        _payload_sha256: &[u8],
-        _opaque_payload: &[u8],
-        _now_unix_ms: i64,
-    ) -> Result<(), String> {
-        self.claimed.lock().unwrap().push(item_id.to_string());
-        Ok(())
-    }
-
-    fn consumption_marker_matches(
-        &self,
-        _item_id: &str,
-        _payload_sha256: &[u8],
-    ) -> Result<bool, String> {
-        Ok(false)
-    }
-
-    fn lane_checkpoint(&self) -> Result<(i64, u64), String> {
-        Ok((0, 0))
-    }
-
-    fn commit_conversation_state(
-        &self,
-        _commit: &ConversationStateReceiveCommit,
-    ) -> Result<ReceiveCommitResult, String> {
-        Ok(ReceiveCommitResult::Committed)
-    }
-
-    fn conversation_projections(&self) -> Result<Vec<ConversationProjection>, String> {
-        Ok(Vec::new())
-    }
-
-    fn commit_public_event(
-        &self,
-        _commit: &PublicEventReceiveCommit,
-    ) -> Result<ReceiveCommitResult, String> {
-        Ok(ReceiveCommitResult::Committed)
-    }
-
-    fn commit_interaction_event(
-        &self,
-        _commit: &InteractionReceiveCommit,
-    ) -> Result<ReceiveCommitResult, String> {
-        Ok(ReceiveCommitResult::Committed)
-    }
-
-    fn commit_delivery_receipt(
-        &self,
-        _commit: &DeliveryReceiptReceiveCommit,
-    ) -> Result<(), String> {
-        Ok(())
-    }
-
-    fn commit_actor_read_cursor(&self, _commit: &ActorReadReceiveCommit) -> Result<(), String> {
-        Ok(())
-    }
-
-    fn next_command(&self, _now_unix_ms: i64) -> Result<Option<CommandOutboxEntry>, String> {
-        Ok(None)
-    }
-
-    fn mark_command_submitted(
-        &self,
-        _command_id: &str,
-        _command_bytes: &[u8],
-        _attempt_count: u32,
-    ) -> Result<(), String> {
-        Ok(())
-    }
-
-    fn mark_command_retry(
-        &self,
-        _command_id: &str,
-        _command_bytes: &[u8],
-        _attempt_count: u32,
-        _next_attempt_at_unix_ms: i64,
-        _error_code: &str,
-    ) -> Result<(), String> {
-        Ok(())
-    }
-
-    fn mark_command_failed(
-        &self,
-        _command_id: &str,
-        _command_bytes: &[u8],
-        _attempt_count: u32,
-        _error_code: &str,
-    ) -> Result<(), String> {
-        Ok(())
-    }
-
-    fn mark_command_superseded(
-        &self,
-        _command_id: &str,
-        _command_bytes: &[u8],
-        _attempt_count: u32,
-    ) -> Result<(), String> {
-        Ok(())
-    }
-
-    fn authority_head(&self, _conversation_id: &str) -> Result<(i64, Vec<u8>), String> {
-        Ok((0, Vec::new()))
-    }
-
-    fn load_direct_session(&self, _session_id: &str) -> Result<Option<DirectSession>, String> {
-        Ok(self.session.lock().unwrap().clone())
-    }
-
-    fn load_direct_skipped_keys(
-        &self,
-        _session_id: &str,
-    ) -> Result<Vec<DrSkippedMessageKey>, String> {
-        Ok(self.skipped.lock().unwrap().clone())
-    }
-
-    fn commit_direct_receive(
-        &self,
-        commit: &DirectReceiveCommit,
-    ) -> Result<ReceiveCommitResult, String> {
-        *self.committed_message.lock().unwrap() = Some(commit.projection.clone());
-        *self.session.lock().unwrap() = Some(commit.session.clone());
-        Ok(ReceiveCommitResult::Committed)
-    }
-
-    fn commit_direct_edit(
-        &self,
-        _commit: &DirectEditCommit,
-    ) -> Result<ReceiveCommitResult, String> {
-        Ok(ReceiveCommitResult::Committed)
-    }
-
-    fn load_signed_prekey(&self, _id: i32) -> Result<[u8; 32], String> {
-        Err("not implemented in test".to_string())
-    }
-
-    fn load_one_time_prekey(&self, _id: i32) -> Result<[u8; 32], String> {
-        Err("not implemented in test".to_string())
-    }
-
-    fn validate_integrity(&self) -> Result<(), String> {
-        Ok(())
-    }
-
-    fn prepare_for_atomic_replace(&self) -> Result<(), String> {
-        Ok(())
-    }
-}
+use fixtures::TestRepo;
 
 fn test_clock() -> i64 {
     1000

@@ -23,6 +23,7 @@ import {
   ConversationStatus,
   MemberStatus,
 } from '../gen/proto/domain/chat/conversation_pb';
+import { ActorKind } from '../gen/proto/domain/actor/actor_pb';
 import { imServiceV1 } from '../services/im-service';
 import { shouldApplyPresenceRevision } from '../services/chatPresence';
 import type {
@@ -57,6 +58,7 @@ import {
   visibleConversationUnread,
   type ConversationLocalState,
   type DesktopIMConversationProjection,
+  type DesktopServiceMessage,
   type DesktopIMMessageProjection,
   type DesktopIMSenderProfileProjection,
   type FriendChatSession,
@@ -148,6 +150,21 @@ export function requireQueuedMessagingSendOutcome(
     commandId: outcome.commandId,
     state: outcome.state,
   };
+}
+
+// Loads common service content for a conversation, keyed by message_id.
+// Best-effort: typed content enriches the ordinary fallback projection, so a read
+// failure must never block the message timeline.
+async function fetchServiceMessageMap(
+  conversationId: string,
+): Promise<Map<string, DesktopServiceMessage>> {
+  try {
+    const events = await imServiceV1.messaging.listServiceMessages(conversationId)
+    return new Map(events.map(event => [event.messageId, event]))
+  } catch (error) {
+    log.warn('socialChat', 'load service messages failed', error)
+    return new Map()
+  }
 }
 
 function projectMessagingProjection(
@@ -551,6 +568,13 @@ interface SocialChatState {
    * known to have invalidated the cached row).
    */
   loadPeerProfile: (peerPtid: string, force?: boolean) => Promise<void>;
+  /**
+   * Handle an `actor_profile_changed` realtime wake: refetch the authoritative
+   * profile for the changed actor. Routes the authenticated self actor to the
+   * current-user loader and every other actor (including owned bots) to the
+   * peer loader with cache bypass.
+   */
+  refreshChangedActorProfile: (actorPtid: string) => Promise<void>;
 
   loadFriendRequests: (status?: number, limit?: number, offset?: number) => Promise<void>;
   sendFriendRequest: (
@@ -598,6 +622,7 @@ interface SocialChatState {
   getUnifiedConversations: () => UnifiedConversation[];
   getIMConversations: () => DesktopIMConversationProjection[];
   getIMMessages: (kind: 'friend' | 'group', conversationUlid: string) => DesktopIMMessageProjection[];
+  isAutomatedConversation: (conversationUlid: string) => boolean;
   getIMThreadMessages: (kind: 'friend' | 'group', conversationUlid: string, rootUlid: string) => DesktopIMMessageProjection[];
   getIMSenderProfile: (
     kind: 'friend' | 'group',
@@ -1317,9 +1342,13 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     try {
       const page = await imServiceV1.messaging.listMessages(ulid);
       const projections = page.messages;
-      const pageMessages = projections.map(projection =>
-        projectMessagingProjection(activeTab, ulid, projection),
-      );
+      const serviceMessages = await fetchServiceMessageMap(ulid);
+      const pageMessages = projections.map(projection => {
+        const message = projectMessagingProjection(activeTab, ulid, projection);
+        const serviceMessage = serviceMessages.get(message.ulid);
+        if (serviceMessage) message.serviceMessage = serviceMessage;
+        return message;
+      });
       const projectionReactions = Object.fromEntries(
         projections.map(projection => [
           projection.messageId,
@@ -1410,9 +1439,13 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         beforeSequence,
       });
       const projections = page.messages;
-      const olderMessages = projections.map(projection =>
-        projectMessagingProjection(activeKind, ulid, projection),
-      );
+      const serviceMessages = await fetchServiceMessageMap(ulid);
+      const olderMessages = projections.map(projection => {
+        const message = projectMessagingProjection(activeKind, ulid, projection);
+        const serviceMessage = serviceMessages.get(message.ulid);
+        if (serviceMessage) message.serviceMessage = serviceMessage;
+        return message;
+      });
       set((state) => {
         const mergedMessages = olderMessages.reduce(
           (messages, message) => mergeConversationMessages(messages, message),
@@ -1883,6 +1916,17 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     }
   },
 
+  refreshChangedActorProfile: async (actorPtid) => {
+    const did = (actorPtid || '').trim();
+    if (!did) return;
+    const selfPtid = currentAuthenticatedActorPtid();
+    if (selfPtid && did === selfPtid) {
+      await get().loadCurrentUserProfile();
+      return;
+    }
+    await get().loadPeerProfile(did, true);
+  },
+
   loadFriendRequests: async (status, limit, offset) => {
     if (!hasAuthenticatedActor()) return;
     set({
@@ -2324,6 +2368,19 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       conversationUlid,
       state.messages[conversationUlid] || [],
     );
+  },
+
+  isAutomatedConversation: (conversationUlid) => {
+    const state = get();
+    const selfPtid = currentAuthenticatedActorPtid();
+    // Automated Directs use hidden SERVICE or AGENT actors. Actor kind is read
+    // from the peer's authoritative profile, not duplicated per membership.
+    const peerPtid = (state.conversationMembers[conversationUlid] || [])
+      .find((member) => member.ptid && member.ptid !== selfPtid)
+      ?.ptid;
+    if (!peerPtid) return false;
+    const kind = state.peerProfiles[peerPtid]?.kind;
+    return kind === ActorKind.AGENT || kind === ActorKind.SERVICE;
   },
 
   getIMThreadMessages: (kind, conversationUlid, rootUlid) => {

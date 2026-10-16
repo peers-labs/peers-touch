@@ -45,6 +45,8 @@ message StreamEvent {
     EnvelopeDelivered         envelope_delivered               = 23;
     LedgerEventDelivered      ledger_event_delivered           = 24;
     SocialGraphEvent          social_graph_event               = 25;
+    ServiceNotificationDelivered service_notification          = 26;
+    ActorProfileChanged       actor_profile_changed            = 27;
   }
 }
 
@@ -384,6 +386,22 @@ message LedgerEventDelivered {
   int64  created_at_unix_ms = 15;
 }
 
+// ServiceNotificationDelivered wakes an online recipient after message
+// publishing produced a durable notification row. Payload is minimal: clients
+// fetch authoritative notification/conversation detail through the existing
+// notification list/projection API. This arm drives OS banner/notification
+// center only; the unread badge still derives from conversation unread.
+//
+// notification_type/category carry notification contract numeric values.
+message ServiceNotificationDelivered {
+  string notification_id = 1;
+  string recipient_actor_ptid = 2;
+  int32 notification_type = 3;
+  int32 category = 4;
+  string group_key = 5;
+  int64 created_ts_unix_ms = 6;
+}
+
 // SocialGraphEvent signals a change in the social relationship graph:
 // friend requests sent/accepted/rejected, new conversations created by
 // the social layer, unfriend actions, or relationship deny changes. Clients use this to refresh
@@ -407,4 +425,22 @@ message SocialGraphEvent {
   string request_id = 4;
   string conversation_id = 5;
   string actor_display_name = 6;
+}
+
+// ActorProfileChanged notifies an actor's own authenticated devices that the
+// authoritative actor profile changed (display name, avatar/icon, or any
+// future profile field). It is emitted after the profile mutation committed.
+//
+// Like MomentEvent and ServiceNotificationDelivered it carries identifiers only:
+// clients invalidate any cached profile for actor_ptid and refetch the
+// authoritative projection through the profile API, so Station remains the
+// source of truth and caches converge without waiting for the periodic
+// reconcile. Ordering uses the enclosing StreamEvent.event_id (monotonic per
+// actor); no separate revision is carried here. v1 fans out to the changed
+// actor's own stream only; social-fanout (contacts seeing a peer's new
+// avatar) is a future extension.
+message ActorProfileChanged {
+  // Actor whose profile changed (a human actor or an owned bot actor).
+  string actor_ptid = 1;
+  int64  changed_ts_unix_ms = 2;
 }

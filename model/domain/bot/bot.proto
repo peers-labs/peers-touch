@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package peers_touch.model.bot.v1;
+
+import "domain/chat/publishing.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/bot/model;model";
+
+// Bot is an optional product form over the generic message-publishing grant.
+enum BotState {
+  BOT_STATE_UNSPECIFIED = 0;
+  BOT_STATE_DRAFT = 1;
+  BOT_STATE_ACTIVE = 2;
+  BOT_STATE_DISABLED = 3;
+  BOT_STATE_REVOKED = 4;
+}
+
+message Bot {
+  string bot_ptid = 1;
+  string owner_ptid = 2;
+  string name = 3;
+  BotState state = 4;
+  peers_touch.model.chat.v1.MessagePublishingGrant publishing_grant = 5;
+}
+
+message CreateBotRequest {
+  string name = 1;
+  optional string avatar = 2;
+}
+
+message CreateBotResponse {
+  Bot bot = 1;
+  string ingress_url = 2;
+  string secret = 3;
+}
+
+message RotateBotSecretRequest {
+  string bot_ptid = 1;
+}
+
+message RotateBotSecretResponse {
+  string secret = 1;
+}
+
+message SetBotStateRequest {
+  string bot_ptid = 1;
+  BotState target_state = 2;
+}
+
+message SetBotStateResponse {
+  Bot bot = 1;
+}
+
+message ListMyBotsRequest {}
+
+message ListMyBotsResponse {
+  repeated Bot bots = 1;
+}
+
+message SetBotProfileRequest {
+  string bot_ptid = 1;
+  optional string avatar = 2;
+}
+
+message SetBotProfileResponse {
+  Bot bot = 1;
+}

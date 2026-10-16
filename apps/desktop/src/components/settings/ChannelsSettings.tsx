@@ -17,6 +17,7 @@ import { LarkSimulateLoginModal } from './LarkSimulateLoginModal';
 import { SettingsContainer, SettingsPanelHeader } from './SettingsLayout';
 import { useOAuth2Store } from '../../store/oauth2';
 import { EVENT, eventBus } from '../../kernel/events';
+import { resolveI18nValue } from '../../i18n';
 
 const { Text } = Typography;
 
@@ -50,6 +51,20 @@ const SlackIcon = ({ size = 20 }: { size?: number }) => (
 );
 
 type TFunc = (key: string, opts?: Record<string, unknown>) => string;
+
+// Older/local-stub channels may carry no parseable created date; render a
+// neutral dash instead of the raw "Invalid Date" Date.toString fallback.
+function formatChannelDate(value: string | number | undefined | null, withTime: boolean): string {
+  if (value === undefined || value === null || value === '') return '—';
+  // The local channels stub emits epoch millis as a string; Date() rejects
+  // bare numeric strings even though it accepts the same value as a number.
+  const numeric = typeof value === 'string' && /^\d+$/.test(value)
+    ? Number(value)
+    : value;
+  const date = new Date(numeric);
+  if (Number.isNaN(date.getTime())) return '—';
+  return withTime ? date.toLocaleString() : date.toLocaleDateString();
+}
 
 interface ChannelTypeInfo {
   value: string;
@@ -458,7 +473,7 @@ export function ChannelsSettings() {
                               </div>
                               <Flexbox>
                                 <Flexbox horizontal align="center" gap={8}>
-                                  <Text strong>{ch.name}</Text>
+                                  <Text strong>{resolveI18nValue(ch.name)}</Text>
                                   {!ch.enabled && <Tag color="default">{t('channels.card.disabled')}</Tag>}
                                   {isBot && botConnected && (
                                     <Tag color="success" style={{ margin: 0 }}>
@@ -472,7 +487,7 @@ export function ChannelsSettings() {
                                   )}
                                 </Flexbox>
                                 <Text type="secondary" style={{ fontSize: 12 }}>
-                                  {ch.id} · {new Date(ch.createdAt).toLocaleDateString()}
+                                  {ch.id} · {formatChannelDate(ch.createdAt, false)}
                                   {isBot && cfg.botToken && ` · ${t('channels.card.tokenPrefix', { token: cfg.botToken.slice(0, 8) })}`}
                                   {isBot && cfg.appId && ` · ${t('channels.card.appPrefix', { appId: cfg.appId })}`}
                                   {ch.botStatus?.error && (
@@ -734,7 +749,7 @@ export function ChannelsSettings() {
         title={detailChannel ? (
           <Flexbox horizontal align="center" gap={8}>
             {getTypeInfo(detailChannel.type).icon}
-            <span>{detailChannel.name}</span>
+            <span>{resolveI18nValue(detailChannel.name)}</span>
           </Flexbox>
         ) : t('channels.detail.title')}
         open={!!detailChannel}
@@ -918,8 +933,8 @@ function ChannelDetailPanel({
                         onRefresh();
                       }} />
                   </Descriptions.Item>
-                  <Descriptions.Item label={t('channels.detail.info.created')}>{new Date(ch.createdAt).toLocaleString()}</Descriptions.Item>
-                  <Descriptions.Item label={t('channels.detail.info.updated')}>{new Date(ch.updatedAt).toLocaleString()}</Descriptions.Item>
+                  <Descriptions.Item label={t('channels.detail.info.created')}>{formatChannelDate(ch.createdAt, true)}</Descriptions.Item>
+                  <Descriptions.Item label={t('channels.detail.info.updated')}>{formatChannelDate(ch.updatedAt, true)}</Descriptions.Item>
                 </Descriptions>
                 <Card size="small" title={t('channels.detail.info.configuration')}>
                   {Object.entries(cfg).map(([key, val]) => {

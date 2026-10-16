@@ -3,11 +3,12 @@
 
 ARG BUILDER_IMAGE=golang:1.24.6
 ARG BASE_IMAGE=ubuntu:22.04
+ARG GO_VERSION=1.24.6
 
 # ─── Stage 1: Builder ─────────────────────────────────────────────────────────
 FROM ${BUILDER_IMAGE} AS builder
 
-ARG GO_VERSION=1.24.6
+ARG GO_VERSION
 
 RUN if ! command -v go >/dev/null 2>&1; then \
       sed -i \

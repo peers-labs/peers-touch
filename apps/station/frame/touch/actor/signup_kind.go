@@ -38,6 +38,11 @@ func fromProtoActorKind(k model.ActorKind) signupProfile {
 	case model.ActorKind_ACTOR_KIND_NODE:
 		// PTID layer has no dedicated node type; mint a person identity, mark db kind as node.
 		return signupProfile{identity.TypePerson, "n", "Service"}
+	case model.ActorKind_ACTOR_KIND_AGENT:
+		// Defensive propagation only: bots are HIDDEN and minted through the
+		// internal bot registry, never via public signup. Keep it from silently
+		// falling through to the Person default.
+		return signupProfile{identity.TypeAgent, "b", "Service"}
 	default:
 		return signupProfile{identity.TypePerson, "p", "Person"}
 	}

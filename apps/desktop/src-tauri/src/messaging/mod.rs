@@ -19,6 +19,8 @@ mod public_event;
 mod receipt;
 mod recovery;
 mod send;
+mod service_plaintext;
+mod skipped;
 mod store;
 mod transport;
 mod verification;
@@ -124,6 +126,8 @@ pub use recovery::{
     RecoveryTrustRecord,
 };
 pub use send::{DirectSessionBootstrap, EditTextIntent, SendPreparer, SendTextIntent};
+pub use service_plaintext::ServicePlaintextProcessor;
+pub use skipped::SkippedPayloadProcessor;
 pub use store::{
     ActorReadReceiveCommit, AttachmentDownloadProjection, CommandOutboxEntry,
     CommandReconciliation, CommandReconciliationDisposition, CommandResultDisposition,
@@ -136,8 +140,8 @@ pub use store::{
     MlsReceiveCommit, MlsRetirementReceiveCommit, MlsSendCommit, MlsSenderTransitionReceiveCommit,
     MlsTransitionReceiveCommit, PendingAttachmentUpload, PendingMembershipIntent,
     PendingMessageDraft, PendingMlsTransitionState, PendingSenderProjection,
-    PublicEventReceiveCommit, ReceiveCommitResult, SubmittedCommand, SupersededInteractionIntent,
-    ThreadCountProjection, COMMAND_RECONCILIATION_BATCH_LIMIT,
+    PublicEventReceiveCommit, ReceiveCommitResult, ServiceMessageRow, SubmittedCommand,
+    SupersededInteractionIntent, ThreadCountProjection, COMMAND_RECONCILIATION_BATCH_LIMIT,
 };
 pub use transport::{
     StationCommandTransport, StationDeliveryReceiptTransport, StationDeviceTransport,

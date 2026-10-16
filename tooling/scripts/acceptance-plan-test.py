@@ -24,7 +24,6 @@ from tooling.acceptance.core import (
     RUN_WORKSPACE_ENV,
     EvidenceStore,
 )
-
 SPEC = importlib.util.spec_from_file_location("acceptance_plan", SCRIPT)
 if SPEC is None or SPEC.loader is None:
     raise RuntimeError(f"failed to load {SCRIPT}")
@@ -435,6 +434,99 @@ class BehaviorRuleTests(unittest.TestCase):
                 )
             )
         )
+        self.assertEqual(
+            expected,
+            self.selected_ids(
+                "tooling/acceptance/provisioners/__init__.py"
+            ),
+        )
+
+    def test_gate_catalog_path_does_not_select_oauth_product_gates(self) -> None:
+        oauth_gates = {
+            "oauth-login-broker-handoff-contract",
+            "oauth-login-broker-provider-identity",
+            "oauth-login-broker-architecture",
+            "oauth-login-broker-contract",
+        }
+        selected = self.selected_ids("tooling/acceptance/gates.yaml")
+        self.assertTrue(oauth_gates.isdisjoint(selected))
+
+    def test_message_publishing_change_range_selects_only_bounded_closure(
+        self,
+    ) -> None:
+        paths = [
+            "model/domain/chat/publishing.proto",
+            "apps/station/app/subserver/conversation/application/publishing/service_test.go",
+            "apps/station/app/subserver/conversation/production_publishing_test.go",
+            "apps/station/app/subserver/bot/application/registry/service_test.go",
+            "packages/messaging-core/tests/service_plaintext_processor_test.rs",
+            "apps/desktop/src/components/chat/message/serviceEventAggregation.test.ts",
+            "apps/desktop/src/store/socialChat.conversationProjection.test.ts",
+            "apps/desktop/src/acceptance/message_publishing/harness.ts",
+            "tooling/acceptance/features/chat-message-publishing.yaml",
+            "tooling/acceptance/gates/chat/message_publishing_contract_test.py",
+            "tooling/acceptance/gates/chat/message_publishing_native_e2e.py",
+            "tooling/acceptance/provisioners/home_station.py",
+            "tooling/acceptance/tests/test_provisioner_runtime.py",
+            "tooling/scripts/acceptance-plan-test.py",
+            "tooling/acceptance/capabilities/chat.yaml",
+            "tooling/acceptance/domains/chat.yaml",
+            "tooling/acceptance/registry.yaml",
+        ]
+        projection = MODULE.plan(ROOT / "tooling" / "acceptance", paths)
+        self.assertEqual(
+            {gate["id"] for gate in projection["selected_gates"]},
+            {
+                "acceptance-plan-self",
+                "acceptance-infra-validation",
+                "acceptance-runtime-provisioning-self",
+                "acceptance-workflow-contract",
+                "proto-build",
+                "station-api-ownership",
+                "station-messaging-unit",
+                "messaging-platform-contract",
+                "desktop-check",
+                "chat-message-publishing-native-e2e",
+            },
+        )
+
+    def test_message_publishing_narrowing_preserves_existing_chat_owners(
+        self,
+    ) -> None:
+        cases = {
+            "apps/station/app/subserver/conversation/application/command/service.go": {
+                "chat-lifecycle-tree-zero-reference-e2e",
+                "chat-lifecycle-direct-e2e",
+                "chat-native-interactions-e2e",
+            },
+            "apps/desktop/src/components/chat/message/ChatMessageRow.tsx": {
+                "chat-lifecycle-tree-zero-reference-e2e",
+                "chat-native-interactions-e2e",
+                "chat-native-two-client-e2e",
+            },
+            "packages/messaging-core/src/inbox/direct.rs": {
+                "chat-lifecycle-tree-zero-reference-e2e",
+            },
+            "tooling/acceptance/gates/chat/native_two_client_runner.py": {
+                "chat-lifecycle-tree-zero-reference-e2e",
+                "chat-native-two-client-e2e",
+            },
+            "model/domain/chat/storage.proto": {
+                "chat-storage-delete-reclaim-e2e",
+                "chat-storage-dead-contract-zero-e2e",
+            },
+            "tooling/acceptance/features/chat-mixed-client-convergence.yaml": {
+                "chat-lifecycle-mixed-client-same-station-e2e",
+                "chat-lifecycle-mixed-client-cross-station-e2e",
+            },
+            "tooling/acceptance/gates/agent/native_agent_runner_test.py": {
+                "agent-minimum-usable-chat-native-e2e",
+                "agent-core-lifecycle-native-e2e",
+            },
+        }
+        for path, expected in cases.items():
+            with self.subTest(path=path):
+                self.assertTrue(expected.issubset(self.selected_ids(path)))
 
     def test_rejects_duplicate_behavior_rule_authority_keys(self) -> None:
         cases = (
@@ -517,10 +609,18 @@ class BehaviorRuleTests(unittest.TestCase):
         selected = self.selected_ids(
             "apps/desktop/src-tauri/src/interface/http_gateway/handler.rs"
         )
-        self.assertEqual(
-            selected,
-            {"chat-lifecycle-tree-zero-reference-e2e"},
-        )
+        self.assertEqual(selected, set())
+
+    def test_desktop_shell_tray_selects_only_its_native_gate(self) -> None:
+        for path in (
+            "apps/desktop/src-tauri/src/application/tray/mod.rs",
+            "apps/desktop/src-tauri/icons/tray-icon-macos.png",
+        ):
+            with self.subTest(path=path):
+                self.assertEqual(
+                    self.selected_ids(path),
+                    {"desktop-shell-tray-e2e"},
+                )
 
     def test_mobile_social_gateway_selects_chat_and_contacts_gates(self) -> None:
         selected = self.selected_ids(
@@ -529,7 +629,6 @@ class BehaviorRuleTests(unittest.TestCase):
         self.assertEqual(
             selected,
             {
-                "chat-lifecycle-tree-zero-reference-e2e",
                 # Master-era native mobile gates (#141 carryover) govern the
                 # shared social gateway alongside the simulator journeys.
                 "mobile-social-android-native",
@@ -543,7 +642,6 @@ class BehaviorRuleTests(unittest.TestCase):
 
     def test_mobile_shared_projection_owners_select_all_social_gates(self) -> None:
         expected = {
-            "chat-lifecycle-tree-zero-reference-e2e",
             "mobile-simulator-social-convergence-e2e",
             "mobile-simulator-chat-contacts-e2e",
             "mobile-simulator-moments-e2e",
@@ -570,7 +668,6 @@ class BehaviorRuleTests(unittest.TestCase):
     ) -> None:
         self.assertEqual(
             {
-                "chat-lifecycle-tree-zero-reference-e2e",
                 "mobile-simulator-social-convergence-e2e",
                 "mobile-simulator-moments-e2e",
             },
@@ -580,7 +677,6 @@ class BehaviorRuleTests(unittest.TestCase):
         )
         self.assertEqual(
             {
-                "chat-lifecycle-tree-zero-reference-e2e",
                 "mobile-simulator-social-convergence-e2e",
                 "mobile-simulator-settings-e2e",
             },
@@ -670,14 +766,25 @@ class BehaviorRuleTests(unittest.TestCase):
                 )
 
     def test_shared_agent_native_runner_selects_implemented_journeys(self) -> None:
-        for path in (
-            "tooling/acceptance/gates/agent/native_agent_runner.py",
-            "tooling/acceptance/provisioners/home_station.py",
-        ):
-            with self.subTest(path=path):
-                selected = self.selected_ids(path)
-                self.assertIn("agent-stream-resilience-e2e", selected)
-                self.assertIn("agent-attachment-e2e", selected)
+        selected = self.selected_ids(
+            "tooling/acceptance/gates/agent/native_agent_runner.py"
+        )
+        self.assertIn("agent-stream-resilience-e2e", selected)
+        self.assertIn("agent-attachment-e2e", selected)
+
+    def test_shared_home_station_change_selects_only_infra_contracts(self) -> None:
+        selected = self.selected_ids(
+            "tooling/acceptance/provisioners/home_station.py"
+        )
+        self.assertEqual(
+            selected,
+            {
+                "acceptance-plan-self",
+                "acceptance-infra-validation",
+                "acceptance-runtime-provisioning-self",
+                "acceptance-workflow-contract",
+            },
+        )
 
 
 class GateLaunchContractTests(unittest.TestCase):

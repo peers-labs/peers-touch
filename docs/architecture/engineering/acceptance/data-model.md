@@ -1455,13 +1455,19 @@ Manifest：
     "binarySha256": "<sha256>"
   },
   "nativeAdapter": {
+    "inputMode": "exclusive-native-input",
     "inputBackend": "x11-xtest",
     "windowBackend": "x11-ewmh",
     "screenshotBackend": "webkitgtk-and-desktop",
     "inputProbe": true,
     "focusProbe": true,
     "pointOwnershipProbe": true,
-    "screenshotProbe": true
+    "screenshotProbe": true,
+    "semanticBackend": "",
+    "semanticActionProbe": false,
+    "semanticScreenshotProbe": false,
+    "nonInterferenceProbe": false,
+    "nonInterference": null
   },
   "lease": {
     "ownerRunId": "<run-id>",
@@ -1486,9 +1492,20 @@ Identity and proof rules:
 - Gate result 必须记录 `cellId`。Reader/validator 只接受与 requested cell 完全一致
   的 evidence。
 - Cell manifest 不能由业务 Gate 创建或修改。
-- `inputProbe`、`focusProbe`、`pointOwnershipProbe` 与 `screenshotProbe`
-  必须全部来自实际 platform adapter 操作并为 `true`；仅声明 backend 或查询
-  XTest extension 不构成 input proof。
+- `exclusive-native-input` 要求 `inputProbe`、`focusProbe`、
+  `pointOwnershipProbe` 与 `screenshotProbe` 全部来自实际 platform adapter
+  操作并为 `true`；仅声明 backend 或查询 XTest extension 不构成 input proof。
+- `semantic-nonintrusive` 要求 `semanticBackend: tauri-embedded-webdriver`、
+  `semanticActionProbe`、`semanticScreenshotProbe` 与
+  `nonInterferenceProbe` 为 `true`，并记录前后完全一致的 frontmost PID、pointer
+  coordinates 和 hashed keyboard-focus signature。
+- semantic manifest 的 `inputProbe`、`focusProbe`、`pointOwnershipProbe` 与
+  `screenshotProbe` 必须保持 `false`；这些字段只表示 physical native adapter
+  proof，semantic result 不得借用它们。
+- `nonInterference` 只持久化
+  `frontmostPidBefore/frontmostPidAfter`、`pointerBefore/pointerAfter` 和
+  `keyboardFocusBeforeSha256/keyboardFocusAfterSha256`；不得持久化 operator
+  focused-control title、value 或其它私有 UI 内容。
 
 ### 16.1 Native Adapter Diagnostic
 

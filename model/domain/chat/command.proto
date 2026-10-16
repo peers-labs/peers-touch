@@ -3,6 +3,7 @@ syntax = "proto3";
 package peers_touch.model.chat.v1;
 
 import "domain/chat/attachment.proto";
+import "domain/chat/content.proto";
 import "domain/chat/conversation.proto";
 import "domain/chat/endpoint.proto";
 import "google/protobuf/timestamp.proto";
@@ -28,6 +29,30 @@ enum PreparedEndpointPayloadKind {
   PREPARED_ENDPOINT_PAYLOAD_KIND_PUBLIC_EVENT = 5;
   PREPARED_ENDPOINT_PAYLOAD_KIND_CONVERSATION_STATE = 6;
   PREPARED_ENDPOINT_PAYLOAD_KIND_MLS_RETIREMENT = 7;
+  // Non-E2EE, Station-resident service plaintext. Only a system sender may
+  // produce it (aggregate-enforced); human device commands using this kind
+  // are rejected. Serialized body is DirectServicePlaintextPayload.
+  PREPARED_ENDPOINT_PAYLOAD_KIND_DIRECT_SERVICE_PLAINTEXT = 8;
+}
+
+// Delivery security marker recorded alongside a committed message so history
+// stays classifiable even if a member projection/actor_kind is later missing.
+enum MessageDeliverySecurity {
+  MESSAGE_DELIVERY_SECURITY_UNSPECIFIED = 0;
+  MESSAGE_DELIVERY_SECURITY_E2EE = 1;
+  MESSAGE_DELIVERY_SECURITY_SERVICE_PLAINTEXT = 2;
+}
+
+// Body for PREPARED_ENDPOINT_PAYLOAD_KIND_DIRECT_SERVICE_PLAINTEXT. Unlike
+// ciphertext kinds this is Station-readable. Clients MUST show its explicit
+// non-E2EE marker. Retired Bot payloads are not accepted by the new decoder.
+message DirectServicePlaintextPayload {
+  reserved 1, 2;
+  reserved "fallback_text", "bot_event";
+  MessageContent message_content = 10;
+  MessageSourceContext source_context = 11;
+  // Bound by publishing authorization, never taken from untrusted labels.
+  string source_namespace = 12;
 }
 
 // A command payload prepared for exactly one endpoint. The authority validates

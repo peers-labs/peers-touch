@@ -157,6 +157,7 @@ test('current repository satisfies the module registry', () => {
     'agent',
     'api-ownership',
     'architecture-module-governance',
+    'bot',
     'chat-storage-governance',
     'cross-station-social',
     'development-workflow',

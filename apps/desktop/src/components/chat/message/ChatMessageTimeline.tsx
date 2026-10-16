@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { theme, Typography } from 'antd';
@@ -16,6 +16,10 @@ import {
   type MessageActionTarget,
 } from './ChatMessageActionOverlay';
 import { ChatMessageRow, ChatMessageRowInteractionStyle } from './ChatMessageRow';
+import {
+  aggregateServiceEvents,
+  serviceAggregationKey,
+} from './serviceEventAggregation';
 import { blocksMessageActionOverlay } from './messageReactionState';
 import {
   chatMessageTimelineContainerStyle,
@@ -134,8 +138,44 @@ export function ChatMessageTimeline({
   resolveThreadStats,
   scrollContainerRef,
 }: ChatMessageTimelineProps) {
+  const [expandedServiceGroups, setExpandedServiceGroups] = useState<Set<string>>(new Set());
+  useEffect(() => setExpandedServiceGroups(new Set()), [activeConversationId]);
+  useEffect(() => {
+    if (!highlightedMessageUlid) return;
+    const highlighted = messages.find(message => message.ulid === highlightedMessageUlid);
+    if (!highlighted) return;
+    const key = serviceAggregationKey(highlighted);
+    if (!key) return;
+    setExpandedServiceGroups(current => current.has(key)
+      ? current
+      : new Set([...current, key]));
+  }, [highlightedMessageUlid, messages]);
+  const foldedRows = useMemo(
+    () => aggregateServiceEvents(messages, expandedServiceGroups),
+    [expandedServiceGroups, messages],
+  );
+  const surfaceMessages = useMemo(
+    () => foldedRows.map((row) => row.message),
+    [foldedRows],
+  );
+  const serviceAggregationByUlid = useMemo(() => {
+    const aggregations = new Map<string, NonNullable<(typeof foldedRows)[number]['aggregation']>>();
+    for (const { message, aggregation } of foldedRows) {
+      if (aggregation) aggregations.set(message.ulid, aggregation);
+    }
+    return aggregations;
+  }, [foldedRows]);
+  const toggleServiceAggregation = useCallback((key: string) => {
+    setExpandedServiceGroups(current => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
   const surfaceItems = buildChatMessageSurfaceItems({
-    messages,
+    messages: surfaceMessages,
     resolveTimestampMs: messageTimestampMs,
   });
 
@@ -292,6 +332,8 @@ export function ChatMessageTimeline({
               <ChatMessageRow
                 activeConversationId={activeConversationId}
                 activeKind={activeKind}
+                serviceAggregation={serviceAggregationByUlid.get(message.ulid)}
+                onToggleServiceAggregation={toggleServiceAggregation}
                 currentUserPtid={currentUserPtid}
                 getSenderProfile={getSenderProfile}
                 highlighted={highlightedMessageUlid === message.ulid}

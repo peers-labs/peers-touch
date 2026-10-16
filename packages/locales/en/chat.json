@@ -910,5 +910,13 @@
   "chat.groupCall.voiceCall": "Voice Call",
   "chat.groupCall.you": "You",
   "chat.groupCall.fullscreen": "Full screen",
-  "chat.groupCall.compact": "Compact view"
+  "chat.groupCall.compact": "Compact view",
+  "chat.automation.stationManagedTip": "Automated service · Station-resident, not end-to-end encrypted",
+  "chat.automation.stationManaged": "Automated service · Station resident",
+  "chat.automation.oneWayComposer": "One-way publishing channel — replies are not supported",
+  "chat.service.knownUpdates": "{{count}} known",
+  "chat.service.conflictingState": "Conflicting reports in known history",
+  "chat.service.knownHistoryOnly": "Latest state from known history",
+  "chat.service.notificationFallbackTitle": "Automated update",
+  "chat.service.notificationFallbackBody": "Open Peers Touch for details"
 }

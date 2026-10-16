@@ -1,0 +1,79 @@
+{
+  "id": "chat-message-publishing",
+  "status": "active",
+  "product_area": "chat",
+  "owners": [
+    "model/domain/chat/publishing.proto",
+    "apps/station/app/subserver/conversation/application/publishing/**",
+    "apps/station/app/subserver/conversation/production_publishing*.go",
+    "apps/station/app/subserver/bot/application/registry/**",
+    "apps/station/app/subserver/bot/infrastructure/publishing_manager.go",
+    "packages/messaging-core/src/inbox/service_plaintext.rs",
+    "apps/desktop/src-tauri/src/messaging/service_plaintext.rs",
+    "apps/desktop/src/components/chat/message/serviceEventAggregation.ts",
+    "apps/desktop/src/acceptance/message_publishing/**",
+    "tooling/acceptance/gates/chat/message_publishing_*.py"
+  ],
+  "truth_sources": [
+    "Conversation publication receipts keyed by stable publishing identity and command ID",
+    "Conversation message and event authority sequence",
+    "per-device Device Inbox service-plaintext delivery",
+    "Conversation transaction notification rows",
+    "Desktop Device Messaging Engine and social chat projection"
+  ],
+  "visible_surfaces": [
+    {
+      "type": "api",
+      "route": "/message-publishing/grants/create"
+    },
+    {
+      "type": "api",
+      "route": "/message-publishing/grants/list"
+    },
+    {
+      "type": "api",
+      "route": "/message-publishing/grants/rotate-secret"
+    },
+    {
+      "type": "api",
+      "route": "/message-publishing/grants/revoke"
+    },
+    {
+      "type": "api",
+      "route": "/message-ingress/:publishing_id"
+    },
+    {
+      "type": "native-desktop",
+      "surface": "Alice service-plaintext message row, trust marker, unread projection, notification, and semantic activity card"
+    }
+  ],
+  "required_gates": [
+    "proto-build",
+    "station-api-ownership",
+    "station-messaging-unit",
+    "messaging-platform-contract",
+    "desktop-check",
+    "chat-message-publishing-native-e2e"
+  ],
+  "acceptance": {
+    "service": [
+      "owner grant create, list, rotate, revoke, and every publish or replay authorize against the live generic grant",
+      "program and Bot publishers use one message-ingress contract and one Conversation-owned transaction",
+      "accepted and replayed commands preserve committed identity while message, receipt, delivery, and applicable notification row remain exactly once",
+      "normalized text, event, card, and authorized attachment content commit while malformed or unauthorized content leaves no effects",
+      "service plaintext remains confined to the provisioned local service Direct and cannot enter human E2EE Direct or MLS Group delivery"
+    ],
+    "visible": [
+      "one exact-source macOS Native Desktop owner client renders the committed message identity, sender, content, and service trust marker",
+      "unread and notification projections are exactly once across retry, replay, restart, partial history, aggregation, and locate expansion"
+    ]
+  },
+  "negative": [
+    "Bot must not own a webhook schema, credential store, receipt, delivery path, notification path, or aggregation state",
+    "legacy Bot event or webhook ingress routes must not be selected or restored",
+    "owner-only v1 must not expose public multi-target grant management",
+    "cross-Station service plaintext, Linux, Windows, Browser, and Mobile proof remain outside this Gate",
+    "human Double Ratchet and MLS payloads must not enter the service-plaintext decoder",
+    "HTTP success, Station readback, source tests, or screenshots must not replace the Native receiver assertion"
+  ]
+}

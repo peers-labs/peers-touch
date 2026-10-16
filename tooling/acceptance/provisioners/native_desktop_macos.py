@@ -17,9 +17,12 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from selenium.webdriver.common.keys import Keys
+
 from tooling.acceptance.core import (
     CellAdapterIdentity,
     CellDisplayIdentity,
+    CellNonInterferenceIdentity,
     CellPlatformIdentity,
     CellSourceIdentity,
     CellTransportIdentity,
@@ -53,6 +56,8 @@ from tooling.acceptance.drivers.tauri import (
 
 NATIVE_WINDOW_READY_TIMEOUT_SECONDS = 30.0
 NATIVE_FOCUS_READY_TIMEOUT_SECONDS = 30.0
+OPERATOR_FOCUS_STABILITY_TIMEOUT_SECONDS = 1.0
+OPERATOR_FOCUS_STABILITY_INTERVAL_SECONDS = 0.05
 
 
 _WINDOW_BOUNDS_PROBE = r"""
@@ -123,6 +128,16 @@ if event is None:
     raise SystemExit("cannot create pointer-location event")
 point = Quartz.CGEventGetLocation(event)
 print(json.dumps({"x": float(point.x), "y": float(point.y)}, sort_keys=True))
+"""
+
+_FRONTMOST_PID_PROBE = r"""
+import json
+
+import AppKit
+
+application = AppKit.NSWorkspace.sharedWorkspace().frontmostApplication()
+process_id = int(application.processIdentifier()) if application else -1
+print(json.dumps({"processId": process_id}, sort_keys=True))
 """
 
 
@@ -415,22 +430,81 @@ class NativeDesktopMacOSProvisioner:
             },
         )
         session = TauriSession(launcher)
+        adapter = MacOSNativeDesktopAdapter(input_mode)
         screenshot_root = Path(
             tempfile.mkdtemp(prefix="pt-macos-cell-probe-")
         )
         screenshot = screenshot_root / "desktop.png"
         log_path: Path | None = None
+        session_stopped = False
         try:
             session.start()
             session.wait_for_ready()
             session.wait_for_acceptance_harness()
+            if input_mode is NativeInputMode.SEMANTIC_NON_INTRUSIVE:
+                (
+                    semantic_action_probe,
+                    semantic_screenshot_probe,
+                    non_interference,
+                ) = self._probe_semantic_non_interference(
+                    session,
+                    adapter,
+                    screenshot,
+                )
+                log_path = session.log_path
+                session.stop()
+                session_stopped = True
+                non_interference_probe = non_interference.unchanged()
+                probes = CellAdapterIdentity(
+                    input_backend=self.contract.native_adapter.input,
+                    window_backend=self.contract.native_adapter.window,
+                    screenshot_backend=self.contract.native_adapter.screenshot,
+                    input_probe=False,
+                    focus_probe=False,
+                    point_ownership_probe=False,
+                    screenshot_probe=False,
+                    input_mode=input_mode.value,
+                    semantic_backend="tauri-embedded-webdriver",
+                    semantic_action_probe=semantic_action_probe,
+                    semantic_screenshot_probe=semantic_screenshot_probe,
+                    non_interference_probe=non_interference_probe,
+                    non_interference=non_interference,
+                )
+                if not (
+                    probes.semantic_action_probe
+                    and probes.semantic_screenshot_probe
+                    and probes.non_interference_probe
+                ):
+                    raise BlockedError(
+                        reason=(
+                            "macOS semantic adapter probes are incomplete: "
+                            f"actions={probes.semantic_action_probe} "
+                            f"screenshot={probes.semantic_screenshot_probe} "
+                            f"frontmostPidBefore="
+                            f"{non_interference.frontmost_pid_before} "
+                            f"frontmostPidAfter="
+                            f"{non_interference.frontmost_pid_after} "
+                            f"pointerBefore=("
+                            f"{non_interference.pointer_x_before},"
+                            f"{non_interference.pointer_y_before}) "
+                            f"pointerAfter=("
+                            f"{non_interference.pointer_x_after},"
+                            f"{non_interference.pointer_y_after}) "
+                            f"keyboardFocusUnchanged="
+                            f"{non_interference.keyboard_focus_before_sha256 == non_interference.keyboard_focus_after_sha256}"
+                        ),
+                        resource="runtime-cell-semantic-adapter",
+                    )
+                return probes, webdriver_port
+
             session.driver.set_window_rect(x=100, y=100)
             process_id = session.process_id
             if process_id is None:
                 raise ProvisioningError(
                     "macOS runtime-cell probe process identity is unavailable"
                 )
-            adapter = MacOSNativeDesktopAdapter(input_mode)
+            session.invoke_app_result("acceptance_request_activation")
+            adapter.position_main_window(process_id, (100.0, 100.0))
             bounds = self._await_window_bounds(process_id)
             point, pointer, stack, input_probe, attempted_points = (
                 self._probe_owned_point(
@@ -446,9 +520,9 @@ class NativeDesktopMacOSProvisioner:
                 and stack.point_owned_by(process_id)
                 else None
             )
-            control = self._await_focused_process(
+            focus_probe = self._await_webview_focus(
+                session,
                 adapter,
-                process_id,
                 activation_point=activation_point,
             )
             point, pointer, stack, input_probe, attempted_points = (
@@ -464,18 +538,14 @@ class NativeDesktopMacOSProvisioner:
                 window_backend=self.contract.native_adapter.window,
                 screenshot_backend=self.contract.native_adapter.screenshot,
                 input_probe=input_probe,
-                focus_probe=(
-                    not control.error
-                    and control.frontmost
-                    and control.actual_frontmost_pid == process_id
-                    and control.window_count > 0
-                ),
+                focus_probe=focus_probe,
                 point_ownership_probe=(
                     not stack.error and stack.point_owned_by(process_id)
                 ),
                 screenshot_probe=(
                     screenshot.is_file() and screenshot.stat().st_size > 0
                 ),
+                input_mode=input_mode.value,
             )
             if not (
                 probes.input_probe
@@ -486,7 +556,6 @@ class NativeDesktopMacOSProvisioner:
                 raise BlockedError(
                     reason=(
                         "macOS Native adapter probes are incomplete: "
-                        f"control={control.to_dict()} "
                         f"pointer={pointer} expectedPoint={point} "
                         f"windowStack={stack.to_dict()} "
                         f"attemptedPoints={attempted_points} "
@@ -497,12 +566,310 @@ class NativeDesktopMacOSProvisioner:
             log_path = session.log_path
             return probes, webdriver_port
         finally:
-            session.stop()
+            if not session_stopped:
+                session.stop()
             shutil.rmtree(screenshot_root, ignore_errors=True)
             if log_path is None:
                 log_path = launcher.log_path
             if log_path is not None:
                 log_path.unlink(missing_ok=True)
+
+    def _probe_semantic_non_interference(
+        self,
+        session: TauriSession,
+        adapter: MacOSNativeDesktopAdapter,
+        screenshot: Path,
+        *,
+        max_attempts: int = 5,
+        interval_seconds: float = 0.1,
+    ) -> tuple[bool, bool, CellNonInterferenceIdentity]:
+        if max_attempts < 1:
+            raise ValueError("semantic probe requires at least one attempt")
+        last: tuple[bool, bool, CellNonInterferenceIdentity] | None = None
+        for attempt in range(1, max_attempts + 1):
+            try:
+                operator_before = self._snapshot_operator_state(adapter)
+            except BlockedError as error:
+                if (
+                    error.resource != "runtime-cell-operator-focus"
+                    or attempt >= max_attempts
+                ):
+                    raise
+                if interval_seconds > 0:
+                    time.sleep(interval_seconds)
+                continue
+            semantic_action_probe = self._probe_semantic_actions(session)
+            session.save_screenshot(screenshot)
+            semantic_screenshot_probe = (
+                screenshot.is_file() and screenshot.stat().st_size > 0
+            )
+            operator_after = self._snapshot_operator_state(adapter)
+            non_interference = CellNonInterferenceIdentity(
+                frontmost_pid_before=int(operator_before["frontmostPid"]),
+                frontmost_pid_after=int(operator_after["frontmostPid"]),
+                pointer_x_before=float(operator_before["pointerX"]),
+                pointer_y_before=float(operator_before["pointerY"]),
+                pointer_x_after=float(operator_after["pointerX"]),
+                pointer_y_after=float(operator_after["pointerY"]),
+                keyboard_focus_before_sha256=str(
+                    operator_before["keyboardFocusSha256"]
+                ),
+                keyboard_focus_after_sha256=str(
+                    operator_after["keyboardFocusSha256"]
+                ),
+            )
+            last = (
+                semantic_action_probe,
+                semantic_screenshot_probe,
+                non_interference,
+            )
+            if (
+                semantic_action_probe
+                and semantic_screenshot_probe
+                and non_interference.unchanged()
+            ):
+                return last
+            if not semantic_action_probe or not semantic_screenshot_probe:
+                return last
+            if attempt < max_attempts and interval_seconds > 0:
+                time.sleep(interval_seconds)
+        if last is None:
+            raise AssertionError("semantic probe attempts produced no result")
+        return last
+
+    @staticmethod
+    def _probe_semantic_actions(session: TauriSession) -> bool:
+        session.execute_script(
+            """
+            document.querySelector('[data-pt-runtime-cell-probe]')?.remove();
+            const root = document.createElement('div');
+            root.dataset.ptRuntimeCellProbe = 'true';
+            root.style.cssText = [
+              'position:fixed',
+              'left:8px',
+              'bottom:8px',
+              'z-index:2147483647',
+              'display:flex',
+              'gap:4px',
+              'padding:4px',
+              'background:#fff',
+            ].join(';');
+            const hover = document.createElement('button');
+            hover.dataset.ptSemanticProbe = 'hover';
+            hover.textContent = 'Hover';
+            hover.addEventListener('mouseover', () => {
+              root.dataset.hovered = '1';
+            });
+            const click = document.createElement('button');
+            click.dataset.ptSemanticProbe = 'click';
+            click.textContent = 'Click';
+            click.addEventListener('click', () => {
+              root.dataset.clicked = '1';
+            });
+            const input = document.createElement('input');
+            input.dataset.ptSemanticProbe = 'input';
+            const key = document.createElement('button');
+            key.dataset.ptSemanticProbe = 'key';
+            key.textContent = 'Key';
+            key.addEventListener('click', () => {
+              root.dataset.keyCount = String(
+                Number(root.dataset.keyCount || '0') + 1,
+              );
+            });
+            root.append(hover, click, input, key);
+            document.body.append(root);
+            """
+        )
+        try:
+            hover = session.find_element(
+                '[data-pt-semantic-probe="hover"]'
+            )
+            click = session.find_element(
+                '[data-pt-semantic-probe="click"]'
+            )
+            input_element = session.find_element(
+                '[data-pt-semantic-probe="input"]'
+            )
+            key = session.find_element(
+                '[data-pt-semantic-probe="key"]'
+            )
+            session.semantic_hover(hover)
+            session.semantic_click(click)
+            session.semantic_replace_text(
+                input_element,
+                "semantic-probe",
+            )
+            session.semantic_key_sequence(key, Keys.ENTER)
+            result = session.execute_script(
+                """
+                const root = document.querySelector(
+                  '[data-pt-runtime-cell-probe]',
+                );
+                const input = root?.querySelector(
+                  '[data-pt-semantic-probe="input"]',
+                );
+                return {
+                  hovered: root?.dataset.hovered === '1',
+                  clicked: root?.dataset.clicked === '1',
+                  text: input?.value || '',
+                  keyCount: Number(root?.dataset.keyCount || '0'),
+                };
+                """
+            )
+            return (
+                isinstance(result, dict)
+                and result.get("hovered") is True
+                and result.get("clicked") is True
+                and result.get("text") == "semantic-probe"
+                and result.get("keyCount") == 1
+            )
+        finally:
+            session.execute_script(
+                """
+                document.querySelector(
+                  '[data-pt-runtime-cell-probe]',
+                )?.remove();
+                """
+            )
+
+    @classmethod
+    def _snapshot_operator_state(
+        cls,
+        adapter: MacOSNativeDesktopAdapter,
+    ) -> dict[str, Any]:
+        frontmost = cls._json_probe(
+            _FRONTMOST_PID_PROBE,
+            "frontmost application",
+        )
+        process_id = int(frontmost.get("processId") or -1)
+        if process_id <= 0:
+            raise BlockedError(
+                reason="macOS operator frontmost process is unavailable",
+                resource="runtime-cell-operator-focus",
+            )
+        focus_identity = cls._stable_operator_focus_identity(
+            adapter,
+            process_id,
+        )
+        pointer = cls._json_probe(
+            _POINTER_LOCATION_PROBE,
+            "pointer location",
+        )
+        return {
+            "frontmostPid": process_id,
+            "pointerX": float(pointer["x"]),
+            "pointerY": float(pointer["y"]),
+            "keyboardFocusSha256": _sha256_text(
+                json.dumps(
+                    focus_identity,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+            ),
+        }
+
+    @staticmethod
+    def _keyboard_focus_identity(
+        control: NativeControlSnapshot,
+    ) -> dict[str, object]:
+        return {
+            "actualFrontmostPid": control.actual_frontmost_pid,
+            "focusedWindow": control.focused_window,
+            "frontmost": control.frontmost,
+            "kind": control.kind,
+            "mainWindow": control.main_window,
+            "platformRole": control.platform_role,
+            "platformSubrole": control.platform_subrole,
+            "title": control.title,
+        }
+
+    @classmethod
+    def _stable_operator_focus_identity(
+        cls,
+        adapter: MacOSNativeDesktopAdapter,
+        process_id: int,
+        *,
+        timeout_seconds: float = OPERATOR_FOCUS_STABILITY_TIMEOUT_SECONDS,
+        interval_seconds: float = OPERATOR_FOCUS_STABILITY_INTERVAL_SECONDS,
+    ) -> dict[str, object]:
+        deadline = time.monotonic() + max(0.0, timeout_seconds)
+        previous: dict[str, object] | None = None
+        last_control = NativeControlSnapshot()
+        while True:
+            control = adapter.focused_control(process_id)
+            last_control = control
+            if (
+                not control.error
+                and control.actual_frontmost_pid != process_id
+            ):
+                raise BlockedError(
+                    reason=(
+                        "macOS operator frontmost process changed during "
+                        f"focus sampling: expected={process_id} "
+                        f"actual={control.actual_frontmost_pid}"
+                    ),
+                    resource="runtime-cell-operator-focus",
+                )
+            valid = (
+                not control.error
+                and control.actual_frontmost_pid == process_id
+            )
+            identity = (
+                cls._keyboard_focus_identity(control) if valid else None
+            )
+            if identity is not None and identity == previous:
+                return identity
+            previous = identity
+            if time.monotonic() >= deadline:
+                raise BlockedError(
+                    reason=(
+                        "macOS operator keyboard focus did not stabilize: "
+                        f"processId={process_id} "
+                        f"kind={last_control.kind!r} "
+                        f"role={last_control.platform_role!r} "
+                        f"subrole={last_control.platform_subrole!r} "
+                        f"actualFrontmostPid="
+                        f"{last_control.actual_frontmost_pid} "
+                        f"error={last_control.error!r}"
+                    ),
+                    resource="runtime-cell-operator-focus",
+                )
+            if interval_seconds > 0:
+                time.sleep(interval_seconds)
+
+    @staticmethod
+    def _await_webview_focus(
+        session: TauriSession,
+        adapter: MacOSNativeDesktopAdapter,
+        *,
+        activation_point: tuple[float, float] | None,
+        timeout_seconds: float = 15.0,
+        interval_seconds: float = 0.1,
+    ) -> bool:
+        if activation_point is None:
+            return False
+        deadline = time.monotonic() + max(0.0, timeout_seconds)
+        while True:
+            adapter.post_mouse(
+                (MouseAction.LEFT_DOWN, MouseAction.LEFT_UP),
+                activation_point,
+            )
+            if bool(
+                session.driver.execute_script(
+                    "return document.hasFocus()"
+                )
+            ):
+                return True
+            if time.monotonic() >= deadline:
+                raise BlockedError(
+                    reason=(
+                        "macOS Native WebView did not receive focus at its "
+                        f"process-owned point within {timeout_seconds:.1f}s"
+                    ),
+                    resource="runtime-cell-native-focus",
+                )
+            if interval_seconds > 0:
+                time.sleep(interval_seconds)
 
     @classmethod
     def _probe_owned_point(
@@ -568,9 +935,7 @@ class NativeDesktopMacOSProvisioner:
         while True:
             if (
                 not last_control.error
-                and last_control.frontmost
                 and last_control.actual_frontmost_pid == process_id
-                and last_control.window_count > 0
             ):
                 return last_control
             if activation_point is not None:
@@ -583,9 +948,7 @@ class NativeDesktopMacOSProvisioner:
                 last_control = adapter.focused_control(process_id)
                 if (
                     not last_control.error
-                    and last_control.frontmost
                     and last_control.actual_frontmost_pid == process_id
-                    and last_control.window_count > 0
                 ):
                     return last_control
             try:

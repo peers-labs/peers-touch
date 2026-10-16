@@ -2,7 +2,9 @@ use super::{
     CommandResultTransport, CommandSubmitFailure, CommandTransport, QueueAcknowledger,
     QueueTransport, COMMAND_RECONCILIATION_BATCH_LIMIT,
 };
-use crate::application::station_runtime::client::{StationClient, StationClientErrorKind};
+use crate::application::station_runtime::client::{
+    StationClient, StationClientError, StationClientErrorKind,
+};
 use crate::model::chat::{
     chat_command, submit_conversation_authority_command_request,
     transfer_conversation_ownership_request, update_conversation_member_request,
@@ -123,11 +125,14 @@ impl StationDeliveryReceiptTransport {
         })
     }
 
-    pub fn submit(&self, receipt: &DeviceConsumptionReceipt) -> Result<(), String> {
-        let consumer = receipt
-            .consumer
-            .as_ref()
-            .ok_or_else(|| "messaging delivery receipt consumer is missing".to_string())?;
+    pub fn submit(&self, receipt: &DeviceConsumptionReceipt) -> Result<(), StationClientError> {
+        let consumer = receipt.consumer.as_ref().ok_or_else(|| {
+            StationClientError::new(
+                StationClientErrorKind::InvalidResponse,
+                "messaging delivery receipt consumer is missing",
+                None,
+            )
+        })?;
         if receipt.conversation_id.trim().is_empty()
             || receipt.event_id.trim().is_empty()
             || receipt.receipt_id.trim().is_empty()
@@ -138,7 +143,11 @@ impl StationDeliveryReceiptTransport {
             || consumer.ptid.trim().is_empty()
             || consumer.device_id != self.device_id
         {
-            return Err("messaging delivery receipt endpoint mismatch".to_string());
+            return Err(StationClientError::new(
+                StationClientErrorKind::InvalidResponse,
+                "messaging delivery receipt endpoint mismatch",
+                None,
+            ));
         }
         self.station_client.request_proto_for_device::<
             SubmitConversationDeliveryReceiptRequest,
@@ -154,7 +163,6 @@ impl StationDeliveryReceiptTransport {
             &self.device_id,
         )
         .map(|_| ())
-        .map_err(|error| error.to_string())
     }
 }
 
