@@ -1,8 +1,12 @@
 ---
 kind: invariant
 title: Machine ledgers coordinate without owning workspaces
-status: superseded-by:DWF-D42
-owns: []
+status: active
+owns:
+  - tooling/scripts/local-dev/dev-work-ledger.mjs
+  - tooling/scripts/local-dev/dev-work-schema.mjs
+  - tooling/scripts/plan/plan-mount.mjs
+  - tooling/scripts/plan/stable-plan-state-migration.mjs
 referenced-by:
   - docs/knowledge/invariants/dev-resource-declaration-before-write.md
   - docs/knowledge/invariants/stable-plan-amendments.md
@@ -12,10 +16,6 @@ detected: 2026-10-07
 ---
 
 # Machine ledgers coordinate without owning workspaces
-
-> Superseded by DWF-D42. Retained as historical context only. Optional task
-> progress is worktree-local; machine runtime registration and OS-held leases
-> remain independent owners.
 
 ## What must hold
 

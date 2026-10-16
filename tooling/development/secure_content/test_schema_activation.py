@@ -33,7 +33,7 @@ from tooling.development.secure_content.schema_activation import (
     SECURE_CONTENT_OWNER,
     ArtifactConflict,
     BoundaryUnavailable,
-    CurrentSourceCheckpointRunner,
+    DevelopmentSessionSourceCheckpointRunner,
     LeaseWrappedSSHMaintenanceBoundary,
     ResetIncomplete,
     SchemaActivationOwner,
@@ -685,25 +685,46 @@ class SchemaActivationOwnerTest(unittest.TestCase):
             self.source_runner.requests[0]["declaration_digest"],
         )
 
-    def test_source_checkpoint_reads_current_git_source(self) -> None:
+    def test_source_checkpoint_reads_the_canonical_development_session(self) -> None:
         commands: list[list[str]] = []
-        workspace_id = hashlib.sha256(
-            str(self.repo_root.resolve()).encode("utf-8")
-        ).hexdigest()[:16]
 
         def command_runner(
             command: list[str],
             **_: Any,
         ) -> subprocess.CompletedProcess[str]:
             commands.append(command)
-            stdout = (
-                f"# branch.oid {COMMIT}\n# branch.head feat/federation\n"
-                if command[1] == "status"
-                else f"{'8' * 40}\n"
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=json.dumps(
+                    {
+                        "status": "PASS",
+                        "session": {
+                            "eventDigest": "9" * 64,
+                            "state": {
+                                "state": "CHECKPOINTED",
+                                "sessionId": "w12d-source-checkpoint",
+                                "workItemId": "secure-content-w12d",
+                                "planId": PLAN_ID,
+                                "taskId": "W12D",
+                                "workspaceId": WORKSPACE_ID,
+                                "branch": "feat/federation",
+                                "source": {
+                                    "commit": COMMIT,
+                                    "tree": "8" * 40,
+                                    "branch": "feat/federation",
+                                    "clean": True,
+                                    "purpose": "development-runtime",
+                                    "createdAt": timestamp(),
+                                },
+                            },
+                        },
+                    }
+                ),
+                stderr="",
             )
-            return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
 
-        receipt = CurrentSourceCheckpointRunner(
+        receipt = DevelopmentSessionSourceCheckpointRunner(
             repo_root=self.repo_root,
             command_runner=command_runner,
         )(
@@ -712,7 +733,7 @@ class SchemaActivationOwnerTest(unittest.TestCase):
                 "plan_id": PLAN_ID,
                 "task_id": "W12D",
                 "work_item_id": "secure-content-w12d",
-                "workspace_id": workspace_id,
+                "workspace_id": WORKSPACE_ID,
                 "branch": "feat/federation",
                 "source_commit": COMMIT,
                 "declaration_digest": "c" * 64,
@@ -722,18 +743,15 @@ class SchemaActivationOwnerTest(unittest.TestCase):
 
         self.assertEqual(
             [
-                "git",
-                "status",
-                "--porcelain=v2",
-                "--branch",
-                "--untracked-files=normal",
+                "make",
+                "dev-session-status",
+                "WORK_ITEM=secure-content-w12d",
             ],
             commands[0],
         )
-        self.assertEqual(["git", "rev-parse", "HEAD^{tree}"], commands[1])
         self.assertEqual(COMMIT, receipt["source_commit"])
         self.assertEqual("8" * 40, receipt["source_tree"])
-        self.assertRegex(receipt["session_event_digest"], r"^[0-9a-f]{64}$")
+        self.assertEqual("9" * 64, receipt["session_event_digest"])
         self.assertNotIn("source_generation", receipt)
         self.assertNotIn("schema_version", receipt)
 

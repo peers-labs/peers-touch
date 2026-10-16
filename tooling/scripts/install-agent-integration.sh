@@ -31,9 +31,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 case "$action" in
-  install|remove-hook) ;;
+  install|hard-cut|gc) ;;
   *)
-    echo "action must be install or remove-hook" >&2
+    echo "action must be install, hard-cut, or gc" >&2
     exit 2
     ;;
 esac
@@ -58,10 +58,11 @@ if [[ -n "$workspace" ]]; then
 fi
 python3 "$root/tooling/scripts/agent-integration-control.py" "${args[@]}"
 
+audit_args=(--root "$root" --host "$host")
 if [[ "$action" == "install" ]]; then
-  audit_args=(--root "$root" --host "$host")
-  if [[ -n "$workspace" ]]; then
-    audit_args+=(--workspace "$workspace")
-  fi
-  python3 "$root/tooling/scripts/agent-integration-audit.py" "${audit_args[@]}"
+  audit_args+=(--projection-only)
 fi
+if [[ -n "$workspace" ]]; then
+  audit_args+=(--workspace "$workspace")
+fi
+python3 "$root/tooling/scripts/agent-integration-audit.py" "${audit_args[@]}"

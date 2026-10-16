@@ -5,7 +5,6 @@ import {
   existsSync,
   fsyncSync,
   linkSync,
-  lstatSync,
   mkdirSync,
   openSync,
   readdirSync,
@@ -19,6 +18,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  developmentWorkLedgerPath,
   machineLeasePath,
   machineLeaseRoot,
   machineRegistryLockPath,
@@ -27,10 +27,21 @@ import {
   workspaceIdForRoot,
   workspaceStatePath,
 } from '../lib/machine-dev-paths.mjs';
+import { readActiveWorkRecord } from './active-work-store.mjs';
+import {
+  ResourcePlanError,
+  validatePreparedResourceClaim,
+} from './dev-resource-plan.mjs';
+import { processStartIdentity, readLedger } from './dev-work-ledger.mjs';
+import { LIVE_STATES } from './dev-work-schema.mjs';
 import {
   WorkspaceLifecycleLockError,
   withWorkspaceLifecycleLockSync,
 } from './workspace-lifecycle-lock.mjs';
+import {
+  validateWorkflowOwnerReference,
+} from './workflow-owner-reference.mjs';
+import { readLivePlanMountId } from '../plan/plan-mount.mjs';
 
 export const MACHINE_REGISTRY_KIND = 'peers-touch-machine-dev-registry';
 export const MACHINE_REGISTRY_AUTHORITY = 'machine-control-plane';
@@ -50,7 +61,6 @@ const IDENTIFIER = /^[a-z0-9][a-z0-9._-]{0,127}$/i;
 const HEAD_PATTERN = /^[0-9a-f]{40,64}$/;
 const REGISTRY_LOCK_TIMEOUT_MS = 5_000;
 const REGISTRY_LOCK_HELD = Symbol('registryLockHeld');
-const PROFILE_VALUES = Symbol('profileValues');
 const REGISTRATION_KEYS = new Set([
   'workspaceId',
   'canonicalRoot',
@@ -65,6 +75,7 @@ const REGISTRATION_KEYS = new Set([
   'updatedAt',
   'updatedBy',
 ]);
+const REGISTRATION_OPTIONAL_KEYS = new Set(['createdBy']);
 const AUTHORITATIVE_REGISTRY_KEYS = new Set([
   'schemaVersion',
   'kind',
@@ -135,7 +146,7 @@ function requiredIdentifier(value, field) {
 
 export function resetPolicyForProfile(profile) {
   const profileId = requiredIdentifier(profile, 'profile');
-  return profileId.toLowerCase().endsWith('stable')
+  return profileId.toLowerCase().includes('stable')
     ? 'stable-protected'
     : 'agent-resettable';
 }
@@ -157,32 +168,6 @@ function requiredBudget(value) {
     );
   }
   return seconds;
-}
-
-function processStartIdentity(pid = process.pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return null;
-  try {
-    const command =
-      process.platform === 'win32'
-        ? [
-            'powershell.exe',
-            [
-              '-NoLogo',
-              '-NoProfile',
-              '-NonInteractive',
-              '-Command',
-              `(Get-Process -Id ${pid} -ErrorAction Stop).StartTime.ToUniversalTime().ToString("o")`,
-            ],
-          ]
-        : ['ps', ['-o', 'lstart=', '-p', String(pid)]];
-    const value = execFileSync(command[0], command[1], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    }).trim();
-    return value || null;
-  } catch {
-    return null;
-  }
 }
 
 export function parseCapabilities(value) {
@@ -280,7 +265,7 @@ function registrationIdentity(workspace) {
   };
 }
 
-function parseEnvFile(file, { literalOnly = false } = {}) {
+function parseEnvFile(file) {
   const values = {};
   const lines = readFileSync(file, 'utf8').split(/\r?\n/);
   for (const [index, rawLine] of lines.entries()) {
@@ -301,117 +286,16 @@ function parseEnvFile(file, { literalOnly = false } = {}) {
         line: index + 1,
       });
     }
-    if (Object.hasOwn(values, key)) {
-      fail('PROFILE_UNAVAILABLE', 'profile contains a duplicate variable', {
-        file,
-        line: index + 1,
-        key,
-      });
-    }
-    const quote = value[0];
-    const quoted = quote === "'" || quote === '"';
-    if (quoted) {
-      if (value.length < 2 || value.at(-1) !== quote) {
-        fail('PROFILE_UNAVAILABLE', 'profile contains an unterminated value', {
-          file,
-          line: index + 1,
-        });
-      }
-      value = value.slice(1, -1);
-    } else if (value.endsWith("'") || value.endsWith('"')) {
-      fail('PROFILE_UNAVAILABLE', 'profile contains an unmatched quote', {
-        file,
-        line: index + 1,
-      });
-    }
     if (
-      literalOnly
-      && (
-        /[\u0000-\u001f\u007f]/.test(value)
-        || /[$`\\;&|<>(){}\[\]*?!~#'"]/.test(value)
-        || (!quoted && /\s/.test(value))
-      )
+      value.length >= 2 &&
+      ((value.startsWith("'") && value.endsWith("'")) ||
+        (value.startsWith('"') && value.endsWith('"')))
     ) {
-      fail(
-        'PROFILE_UNAVAILABLE',
-        'local profile values must be shell-safe literals',
-        { file, line: index + 1, key },
-      );
+      value = value.slice(1, -1);
     }
     values[key] = value;
   }
   return values;
-}
-
-function validateLocalProfileFile(workspaceRoot, file) {
-  const expectedRoot = path.resolve(
-    workspaceRoot,
-    '.local',
-    'dev',
-    'profiles',
-  );
-  try {
-    const rootMetadata = lstatSync(expectedRoot);
-    if (!rootMetadata.isDirectory() || rootMetadata.isSymbolicLink()) {
-      fail(
-        'PROFILE_UNAVAILABLE',
-        'local profile root must be a real directory',
-        { profileRoot: expectedRoot },
-      );
-    }
-    const canonicalRoot = realpathSync.native(expectedRoot);
-    if (canonicalRoot !== expectedRoot) {
-      fail(
-        'PROFILE_UNAVAILABLE',
-        'local profile root must remain inside the worktree',
-        { profileRoot: expectedRoot, canonicalRoot },
-      );
-    }
-
-    const metadata = lstatSync(file);
-    if (!metadata.isFile() || metadata.isSymbolicLink()) {
-      fail(
-        'PROFILE_UNAVAILABLE',
-        'local profile must be a non-symlink regular file',
-        { file },
-      );
-    }
-    const canonicalFile = realpathSync.native(file);
-    if (
-      canonicalFile !== path.resolve(file)
-      || path.dirname(canonicalFile) !== canonicalRoot
-    ) {
-      fail(
-        'PROFILE_UNAVAILABLE',
-        'local profile must be directly contained by the worktree profile root',
-        { file, canonicalFile, profileRoot: canonicalRoot },
-      );
-    }
-    if (
-      typeof process.getuid === 'function'
-      && metadata.uid !== process.getuid()
-    ) {
-      fail(
-        'PROFILE_UNAVAILABLE',
-        'local profile must be owned by the current user',
-        { file, ownerUid: metadata.uid },
-      );
-    }
-    if ((metadata.mode & 0o077) !== 0) {
-      fail(
-        'PROFILE_UNAVAILABLE',
-        'local profile must not be accessible by group or other users',
-        { file, mode: (metadata.mode & 0o777).toString(8) },
-      );
-    }
-    return canonicalFile;
-  } catch (error) {
-    if (error instanceof MachineDevError) throw error;
-    fail('PROFILE_UNAVAILABLE', 'local profile cannot be validated', {
-      file,
-      cause: String(error),
-    });
-  }
 }
 
 function resolveEnvRepository(workspaceRoot, requestedEnvRepo) {
@@ -523,6 +407,12 @@ function resolveDeployDefinition(envRepo, deployEnvironment) {
   return { file, values: parseEnvFile(file) };
 }
 
+function environmentAuthorizationHelperPath() {
+  return fileURLToPath(
+    new URL('./environment-creation-authorization.py', import.meta.url),
+  );
+}
+
 export function resolveProfileDefinition(options) {
   const workspaceRoot = captureWorkspace(options.workspaceRoot ?? repoRoot)
     .canonicalRoot;
@@ -553,13 +443,32 @@ export function resolveProfileDefinition(options) {
         ],
       });
     }
-    profileFile = validateLocalProfileFile(workspaceRoot, profileFile);
-    sourceState = 'local';
+    try {
+      execFileSync(
+        options.python ?? 'python3',
+        [
+          environmentAuthorizationHelperPath(),
+          'verify',
+          '--workspace-root',
+          workspaceRoot,
+          '--profile',
+          profile,
+          '--profile-file',
+          profileFile,
+        ],
+        { stdio: ['ignore', 'pipe', 'pipe'] },
+      );
+    } catch (error) {
+      fail(
+        'ENVIRONMENT_CREATION_AUTHORIZATION_INVALID',
+        'machine-local profile lacks a valid consumed authorization receipt',
+        { profile, cause: error?.stderr?.toString().trim() || String(error) },
+      );
+    }
+    sourceState = 'authorized-local';
   }
 
-  const values = parseEnvFile(profileFile, {
-    literalOnly: sourceState === 'local',
-  });
+  const values = parseEnvFile(profileFile);
   if (values.PT_DEV_PROFILE !== profile) {
     fail('PROFILE_UNAVAILABLE', 'profile identity does not match its directory', {
       selected: profile,
@@ -601,19 +510,7 @@ export function resolveProfileDefinition(options) {
     stationDeployEnvironment: deployEnvironment,
     stationDeployFile: deploy?.file ?? null,
     stationDeployHost: deploy?.values.PT_DEPLOY_HOST?.trim() || null,
-    [PROFILE_VALUES]: values,
   };
-}
-
-export function profileEnvironment(definition) {
-  const values = definition?.[PROFILE_VALUES];
-  if (!isObject(values)) {
-    fail(
-      'PROFILE_UNAVAILABLE',
-      'resolved profile environment is unavailable',
-    );
-  }
-  return { ...values };
 }
 
 function validateProfileCapabilities(definition, capabilities) {
@@ -688,6 +585,14 @@ function normalizeRegistration(value) {
     registeredAt: value.registeredAt,
     updatedAt: value.updatedAt,
     updatedBy: value.updatedBy,
+    ...(Object.hasOwn(value, 'createdBy')
+      ? {
+          createdBy: validateWorkflowOwnerReference(
+            value.createdBy,
+            { nullable: true },
+          ),
+        }
+      : {}),
   };
   if (
     !/^[0-9a-f]{16}$/.test(normalized.workspaceId) ||
@@ -731,8 +636,10 @@ function normalizeRegistrationCollection(registry, keys, normalize) {
   registry.registrations = registry.registrations.map((entry) => {
     if (
       !isObject(entry) ||
-      Object.keys(entry).length !== keys.size ||
-      Object.keys(entry).some((key) => !keys.has(key))
+      [...keys].some((key) => !Object.hasOwn(entry, key)) ||
+      Object.keys(entry).some(
+        (key) => !keys.has(key) && !REGISTRATION_OPTIONAL_KEYS.has(key),
+      )
     ) {
       fail('MACHINE_REGISTRY_INVALID', 'registration fields are invalid');
     }
@@ -1122,7 +1029,6 @@ function firstAvailableSlot(registry) {
 function defaultProfileCapabilities(definition) {
   return definition.stationMode === 'remote'
     && definition.stationDeployEnvironment
-    && definition.resetPolicy !== 'stable-protected'
     ? ['station.connect', 'station.deploy']
     : ['station.connect'];
 }
@@ -1186,7 +1092,53 @@ function assertWorkspaceHasNoLease(options, workspaceId) {
   }
 }
 
-function assertWorkspaceHasNoRuntimeLease(options, workspace) {
+function assertWorkspaceHasNoLifecycleState(options, workspace, now) {
+  const ledger = (options.readLedger ?? readLedger)(
+    options.workLedgerPath ?? developmentWorkLedgerPath(options.home),
+    now,
+  );
+  const liveDeclarations = Object.values(ledger.declarations).filter(
+    (declaration) =>
+      declaration.workspaceId === workspace.workspaceId &&
+      LIVE_STATES.has(declaration.state) &&
+      Date.parse(declaration.expiresAt) > now.getTime(),
+  );
+  if (liveDeclarations.length > 0) {
+    fail(
+      'WORKSPACE_LIFECYCLE_CONFLICT',
+      'workspace cannot be unregistered while declarations are live',
+      {
+        declarations: liveDeclarations.map((declaration) => ({
+          declarationId: declaration.declarationId,
+          state: declaration.state,
+        })),
+      },
+    );
+  }
+  const activeWork = (options.readActiveWorkRecord ?? readActiveWorkRecord)({
+    home: options.home,
+    workspaceId: workspace.workspaceId,
+  });
+  if (activeWork !== null) {
+    fail(
+      'WORKSPACE_LIFECYCLE_CONFLICT',
+      'workspace cannot be unregistered while active-work exists',
+      {
+        workItemId: activeWork.workItemId,
+        revision: activeWork.revision,
+      },
+    );
+  }
+  const liveMountId = (
+    options.readLivePlanMountId ?? readLivePlanMountId
+  )(workspace.workspaceId, { home: options.home });
+  if (liveMountId !== null) {
+    fail(
+      'WORKSPACE_LIFECYCLE_CONFLICT',
+      'workspace cannot be unregistered while a Plan mount is live',
+      { mountId: liveMountId },
+    );
+  }
   assertWorkspaceHasNoLease(options, workspace.workspaceId);
 }
 
@@ -1225,6 +1177,14 @@ export function registerWorkspace(options) {
       registeredAt: timestamp,
       updatedAt: timestamp,
       updatedBy: owner,
+      ...(options.createdBy === null ||
+      options.createdBy === undefined
+        ? {}
+        : {
+            createdBy: validateWorkflowOwnerReference(
+              options.createdBy,
+            ),
+          }),
     };
     registry.registrations.push(registration);
     registry.registrations.sort((left, right) =>
@@ -1294,6 +1254,15 @@ export function selectWorkspaceProfile(options) {
       registeredAt: current?.registeredAt ?? timestamp,
       updatedAt: timestamp,
       updatedBy: selectedBy,
+      ...(current?.createdBy
+        ? { createdBy: current.createdBy }
+        : options.createdBy
+          ? {
+              createdBy: validateWorkflowOwnerReference(
+                options.createdBy,
+              ),
+            }
+          : {}),
     };
     if (currentIndex === -1) {
       registry.registrations.push(registration);
@@ -1352,6 +1321,15 @@ export function updateWorkspace(options) {
       owner,
       updatedAt: now.toISOString(),
       updatedBy: owner,
+      ...(current.createdBy
+        ? { createdBy: current.createdBy }
+        : options.createdBy
+          ? {
+              createdBy: validateWorkflowOwnerReference(
+                options.createdBy,
+              ),
+            }
+          : {}),
     };
     registry.registrations[
       registry.registrations.findIndex(
@@ -1378,7 +1356,7 @@ export function unregisterWorkspace(options) {
         actual: owner,
       });
     }
-    assertWorkspaceHasNoRuntimeLease(options, workspace);
+    assertWorkspaceHasNoLifecycleState(options, workspace, now);
     registry.registrations = registry.registrations.filter(
       (entry) => entry.workspaceId !== workspace.workspaceId,
     );
@@ -1406,7 +1384,7 @@ export function unregisterWorkspaceByIdentity(options) {
           },
         );
       }
-      assertWorkspaceHasNoRuntimeLease(options, workspace);
+      assertWorkspaceHasNoLifecycleState(options, workspace, now);
       registry.registrations = registry.registrations.filter(
         (entry) => entry.workspaceId !== workspace.workspaceId,
       );
@@ -1510,6 +1488,90 @@ export function checkWorkspace(options = {}) {
   };
 }
 
+function validateRuntimeIntent(
+  options,
+  binding,
+  source,
+  resourceKind,
+  resourceId,
+) {
+  if (options.ownerAction !== undefined) {
+    const ownerAction = requiredText(options.ownerAction, 'ownerAction', 64);
+    if (ownerAction !== 'make.station' || resourceKind !== 'station.deploy') {
+      fail(
+        'OWNER_ACTION_INVALID',
+        'direct owner action is not valid for this runtime resource',
+        { ownerAction, resourceKind, resourceId },
+      );
+    }
+    return {
+      declaration: {
+        declarationId: `owner-action:${ownerAction}`,
+      },
+      resourcePlanAdmission: {
+        authority: 'owner-action',
+      },
+    };
+  }
+  const now = options.now ?? new Date();
+  const file =
+    options.workLedgerPath ??
+    developmentWorkLedgerPath(options.home);
+  const ledger = readLedger(file, now);
+  const declaration = Object.values(ledger.declarations).find((candidate) => {
+    if (
+      candidate.workspaceId !== binding.workspaceId ||
+      candidate.branch !== source.branch ||
+      candidate.sourceHead !== source.head ||
+      !LIVE_STATES.has(candidate.state) ||
+      Date.parse(candidate.expiresAt) <= now.getTime()
+    ) {
+      return false;
+    }
+    const hasProfile = candidate.runtimeClaims.some(
+      (claim) =>
+        claim.kind === 'profile' &&
+        claim.resourceId === binding.profile,
+    );
+    const hasResource = candidate.runtimeClaims.some(
+      (claim) =>
+        claim.kind === resourceKind &&
+        claim.resourceId === resourceId &&
+        claim.mode === 'exclusive',
+    );
+    return hasProfile && hasResource;
+  });
+  if (!declaration) {
+    fail(
+      'RUNTIME_INTENT_MISSING',
+      'no active Development declaration owns this runtime resource',
+      {
+        workspaceId: binding.workspaceId,
+        profile: binding.profile,
+        resourceKind,
+        resourceId,
+      },
+    );
+  }
+  let resourcePlanAdmission;
+  try {
+    resourcePlanAdmission = validatePreparedResourceClaim({
+      ...options,
+      workspaceRoot: binding.canonicalRoot,
+      workItemId: declaration.workItemId,
+      declaration,
+      resourceKind,
+      resourceId,
+    });
+  } catch (error) {
+    if (error instanceof ResourcePlanError) {
+      fail(error.code, error.message, error.detail);
+    }
+    throw error;
+  }
+  return { declaration, resourcePlanAdmission };
+}
+
 export function prepareLease(options) {
   const resourceKind = requiredText(
     options.resourceKind,
@@ -1532,28 +1594,6 @@ export function prepareLease(options) {
     capabilities: requiredCapabilities,
     budgetSeconds,
   });
-  if (
-    options.expectedBranch !== undefined &&
-    requiredText(options.expectedBranch, 'expectedBranch') !==
-      resolved.source.branch
-  ) {
-    fail('RUNTIME_IDENTITY_MISMATCH', 'workspace branch changed before runtime admission', {
-      expected: options.expectedBranch,
-      actual: resolved.source.branch,
-    });
-  }
-  if (options.expectedHead !== undefined) {
-    const expectedHead = requiredText(options.expectedHead, 'expectedHead', 64);
-    if (!HEAD_PATTERN.test(expectedHead)) {
-      fail('INVALID_ARGUMENT', 'expectedHead is invalid');
-    }
-    if (expectedHead !== resolved.source.head) {
-      fail('RUNTIME_IDENTITY_MISMATCH', 'workspace HEAD changed before runtime admission', {
-        expected: expectedHead,
-        actual: resolved.source.head,
-      });
-    }
-  }
   if (
     resourceKind === 'local.slot' &&
     String(resolved.binding.slot) !== resourceId
@@ -1582,12 +1622,18 @@ export function prepareLease(options) {
       { resourceId },
     );
   }
+  const runtimeIntent = validateRuntimeIntent(
+    options,
+    resolved.binding,
+    resolved.source,
+    resourceKind,
+    resourceId,
+  );
   return {
     resourceKind,
     resourceId,
     budgetSeconds,
     workspaceId: resolved.binding.workspaceId,
-    source: resolved.source,
     leaseFile:
       options.leaseFile ??
       machineLeasePath(
@@ -1595,6 +1641,8 @@ export function prepareLease(options) {
         resourceId,
         options.home,
       ),
+    declarationId: runtimeIntent.declaration.declarationId,
+    resourcePlanAdmission: runtimeIntent.resourcePlanAdmission,
   };
 }
 
@@ -1713,12 +1761,9 @@ export function verifyHeldLease(options) {
     validateLeaseRequest({
       ...options,
       budgetSeconds: options.budgetSeconds ?? 1,
-      expectedBranch:
-        options.expectedBranch ??
-        process.env.PT_MACHINE_LEASE_SOURCE_BRANCH,
-      expectedHead:
-        options.expectedHead ??
-        process.env.PT_MACHINE_LEASE_SOURCE_HEAD,
+      ownerAction:
+        options.ownerAction
+        ?? process.env.PT_MACHINE_LEASE_OWNER_ACTION,
       resetScope:
         options.resetScope ??
         process.env.PT_MACHINE_LEASE_RESET_SCOPE,
@@ -1836,12 +1881,9 @@ export function buildLeaseCommand(options) {
       options.resetScope,
     );
   }
-  validationCommand.push(
-    '--expected-branch',
-    request.source.branch,
-    '--expected-head',
-    request.source.head,
-  );
+  if (options.ownerAction) {
+    validationCommand.push('--owner-action', options.ownerAction);
+  }
   const arguments_ = [
     leaseHelperPath(),
     'run',
@@ -1855,10 +1897,6 @@ export function buildLeaseCommand(options) {
     request.workspaceId,
     '--budget-seconds',
     String(request.budgetSeconds),
-    '--expected-branch',
-    request.source.branch,
-    '--expected-head',
-    request.source.head,
     '--validation-command-json',
     JSON.stringify(validationCommand),
   ];
@@ -1867,6 +1905,9 @@ export function buildLeaseCommand(options) {
       '--reset-scope',
       options.resetScope,
     );
+  }
+  if (options.ownerAction) {
+    arguments_.push('--owner-action', options.ownerAction);
   }
   arguments_.push('--', ...options.command);
   return {

@@ -1,6 +1,6 @@
 ---
 name: "pt-architecture-execution-methodology"
-description: "Transforms accepted product and architecture contracts into a vertical, dependency-backed execution model. Planning only: it neither persists the frozen Plan Version nor executes work."
+description: "Transforms accepted product and architecture contracts into a vertical, dependency-backed execution model. Planning only: it neither persists the stable Plan nor executes work."
 stage: "PLAN"
 requires: ["accepted product contract when applicable", "accepted architecture"]
 produces: ["accepted vertical execution model", "dependency DAG", "risk-based verification model"]
@@ -17,7 +17,7 @@ increments?
 ```
 
 It does not write repository artifacts. `pt-plan-and-document` persists the
-accepted model as a frozen Plan Version.
+accepted model as a stable Plan.
 
 ## Boundary
 
@@ -35,9 +35,9 @@ It does not:
 - invent or revise product behavior;
 - redesign architecture, ownership, topology, or protocols;
 - choose runtime scheduling or subagent lanes;
-- persist `plan.md`, Task Slice files, or optional task progress;
+- persist `plan.md`, Task Slice files, or workspace active-work;
 - execute implementation or verification;
-- update task progress or evidence state.
+- update Task lifecycle or Development Session state.
 
 ## Preconditions
 
@@ -220,8 +220,8 @@ Return a structured model containing:
 - authorization requirements;
 - completion/release criteria.
 
-The model is not yet a repository Plan Version and has no Task lifecycle,
-current selection or task-progress state.
+The model is not yet a repository Plan and has no Task lifecycle,
+current selection, Development Session, or workspace active-work state.
 
 ## Handoff To Persistence
 
@@ -231,9 +231,10 @@ Pass the accepted model to `pt-plan-and-document`, which:
 - creates the single machine-readable `Acceptance Execution` contract;
 - records authorization without execution worktree identity;
 - runs `planctl validate`;
-- freezes the Plan Version digest;
-- returns the explicit Plan path and digest for direct inspection; Dev Workflow
-  may later save that reference in an explicitly selected optional task record.
+- records the stable Plan identity and internal content digest;
+- optionally creates a PlanMount only after the owner explicitly selects an
+  execution worktree; runtime active-work is derived later by Dev Workflow
+  after ExecutionRun, current Task, declaration, and Session exist.
 
 The persistence Skill may reject an invalid model but may not redesign it.
 
@@ -260,10 +261,16 @@ checks closure verticality, dependency fidelity, cutovers, evidence, claim
 boundaries, and Task sizing. Source-backed findings are corrected and reviewed
 again inside the Run.
 
-Human owner input is required only for a product/architecture/security/privacy/
-compatibility/rollout choice that accepted sources cannot resolve, or for a
-DWF-D20 destructive, irreversible, permission, or external-resource boundary.
-Routine plan review is not a user handoff.
+Human owner input is required to approve every generated Plan North Star.
+Afterward, it is required only when an unresolved choice would change, weaken,
+or abandon that accepted North Star, or for a DWF-D20 destructive, irreversible,
+permission, or external-resource boundary. Other source-backed choices are
+resolved by the Agent and recorded. Routine plan review is not a user handoff.
+
+For a new Plan, this methodology proposes source-backed North Star criteria and
+their Task/closure/Gate coverage; it does not accept them on the user's behalf.
+`pt-plan-and-document` persists `northStarApproval=null` and requires explicit
+user approval before mount or execution.
 
 ## Escalation
 
@@ -286,7 +293,7 @@ Name the source gap and stop the affected closure.
 
 Never:
 
-- persist the Plan Version directly;
+- persist the Plan directly;
 - create `current_task_id`, `current_task_path`, or `dev_state`;
 - execute code or tests;
 - turn every technical layer into a separate phase;

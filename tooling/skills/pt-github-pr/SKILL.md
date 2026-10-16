@@ -22,13 +22,17 @@ automatic labeling, and issue linking using the `gh` CLI.
 
 ## PR Modes
 
-- **Explicit Plan PR**: the caller supplies the exact frozen Plan Version.
-  Validate it directly and include its completion obligations and evidence.
-- **Standalone PR**: no Plan is supplied. Derive scope from the Git range and
-  record absent formal Acceptance as `NOT RUN/UNPROVEN`.
+- **Tracked PR**: the worktree has a live PlanMount. The mounted Plan must be
+  complete, the successful Development Session must be supplied to the
+  submit-time pipeline, and push/PR must be authorized.
+- **Standalone PR**: the worktree has no live PlanMount. It does not require a
+  Plan or Development Session. The submit-time pipeline derives scope from the
+  Git range and records formal Acceptance as `NOT RUN/UNPROVEN`.
 
-Plan absence never forces a draft PR and never creates placeholder workflow
-state. Push and PR creation remain separately authorized operations.
+`PLAN_MOUNT_REQUIRED` selects standalone mode. Any malformed, stale, conflicting,
+or identity-mismatched mount remains a blocking error. Plan absence alone never forces a draft PR.
+Explicit user no-Plan intent also selects standalone mode and forbids creating
+a placeholder Plan or Development Session for delivery.
 
 ## PR Creation Workflow
 
@@ -42,8 +46,8 @@ python3 tooling/scripts/execution-plan.py \
   --allow-untracked
 ```
 
-When a Plan is supplied, validate that explicit path separately. Otherwise
-continue from the current Git range without creating workflow state.
+For tracked mode, an incomplete Plan blocks a normal ready-for-review PR. For
+standalone mode, continue without creating a placeholder Plan or Session.
 
 ```bash
 # Verify gh auth
@@ -65,14 +69,21 @@ base branch.
 ```bash
 git fetch origin
 
+# Tracked PR
+make review-submit \
+  REVIEW_BASE=origin/master \
+  SESSION=<development-session.json>
+
+# Standalone PR
 make review-submit REVIEW_BASE=origin/master
 ```
 
 This pipeline generates quality evidence, runs strict review framework checks,
 validates acceptance structure, plans acceptance gates, runs selected `ci-*`
-acceptance gates for the selected range or explicit Plan, invokes
-`pt-acceptance-gap-detector`, and renders the available evidence. It does not
-require a Development Session or create workflow state.
+acceptance gates for tracked work, invokes `pt-acceptance-gap-detector` for
+tracked work, and renders the available evidence. Standalone work keeps formal
+Acceptance explicitly `NOT RUN/UNPROVEN`; that status is not itself a pipeline
+failure.
 
 If the pipeline fails:
 

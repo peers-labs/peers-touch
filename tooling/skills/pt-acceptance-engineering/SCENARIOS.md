@@ -48,8 +48,7 @@ Use God View to complete native Chat delivery Acceptance.
    - Approved disposable Station.
    - Committed disposable dev-account fixture from
      `apps/station/app/conf/actor.yml`; no credential environment variable.
-   - Non-stable reset uses the reviewed Profile capability, exact scope, and
-     lease; stable reset is forbidden by the canonical Runtime.
+   - Reset requires explicit authorization.
    - Evidence: runner/validator JSON, screenshots, DOM, redacted logs, message
      ID, runtime metadata, bounded timing.
 

@@ -1,10 +1,6 @@
 #!/usr/bin/env node
 
-import {
-  lstatSync,
-  readFileSync,
-  realpathSync,
-} from 'node:fs';
+import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -22,7 +18,7 @@ function parseArguments(argv) {
 }
 
 export function workspaceContext(workspaceFile) {
-  if (!workspaceFile) return { workspaceRoots: [] };
+  if (!workspaceFile) return { workspaceRoots: [], bootstrapRoot: null };
   let descriptor;
   let parsed;
   try {
@@ -62,6 +58,7 @@ export function workspaceContext(workspaceFile) {
   }
   return {
     workspaceRoots: [...new Set(workspaceRoots)],
+    bootstrapRoot: workspaceRoots[0],
   };
 }
 
@@ -146,8 +143,7 @@ export async function runHook({
   });
   const result = await kernel.evaluateWorkflowEvent(normalized);
   await reportHookObservation(normalized, result.executionRoot, { report });
-  const response = adapters.renderHostResponse(options.host, result, normalized);
-  return response;
+  return adapters.renderHostResponse(options.host, result, normalized);
 }
 
 async function main() {

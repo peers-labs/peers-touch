@@ -1,8 +1,14 @@
 ---
 kind: invariant
 title: Functional readiness precedes broad Acceptance
-status: superseded-by:docs/knowledge/invariants/acceptance-scope-is-runner-owned.md
-owns: []
+status: active
+owns:
+  - tooling/scripts/acceptance-run.py
+  - tooling/scripts/acceptance-gap-detect.py
+  - tooling/scripts/plan/acceptance-admission.mjs
+  - tooling/scripts/review/
+  - tooling/make/acceptance.mk
+  - tooling/make/review.mk
 referenced-by:
   - docs/architecture/engineering/development-workflow/decisions.md
 related:
@@ -12,11 +18,6 @@ detected: 2026-09-20
 ---
 
 # Functional readiness precedes broad Acceptance
-
-> Superseded by
-> `docs/knowledge/invariants/acceptance-scope-is-runner-owned.md`. Retained as
-> historical context; Development Session-backed admission is no longer an
-> Acceptance precondition.
 
 ## What must hold
 

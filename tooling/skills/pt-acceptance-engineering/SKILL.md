@@ -253,8 +253,8 @@ Never:
   the Task declares a reusable Suite Runtime.
 - Use Harness actions or internal Store assertions to satisfy a required real
   UI action or receiver-visible assertion.
-- Attempt stable fixture reset, or any reset without Profile capability, exact
-  scope, target verification, and lease.
+- Run destructive fixture reset without explicit authorization and target
+  verification.
 - Hide missing environment, credentials, runtime cells, or evidence.
 - Add permanent compatibility paths during framework upgrades.
 - Modify Acceptance Core, generic lifecycle, validator, runner, Evidence Store,

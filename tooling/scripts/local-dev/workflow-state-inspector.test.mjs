@@ -11,11 +11,17 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { createTaskProgress } from './task-progress-store.mjs';
+import { workspaceIdForRoot } from '../lib/machine-dev-paths.mjs';
 import {
-  inspectStandaloneWorkflowContext,
+  inspectStopContext,
+  inspectWorkflowContext,
+  resolveExecutionRoot,
   resolveProjectRoot,
 } from './workflow-state-inspector.mjs';
+import {
+  hashWorkflowRootChatIdentity,
+  WORKFLOW_OWNER_REFERENCE_KIND,
+} from './workflow-owner-reference.mjs';
 
 function projectRoot(parent) {
   const root = path.join(parent, 'workspace');
@@ -23,10 +29,7 @@ function projectRoot(parent) {
   mkdirSync(path.join(root, 'tooling/scripts/local-dev'), { recursive: true });
   writeFileSync(path.join(root, 'tooling/skills/pt-ew/SKILL.md'), '# test\n');
   writeFileSync(path.join(root, 'tooling/scripts/local-dev/dev-work.mjs'), '');
-  execFileSync('git', ['init', '-b', 'feat/standalone-state'], {
-    cwd: root,
-    stdio: 'ignore',
-  });
+  execFileSync('git', ['init'], { cwd: root, stdio: 'ignore' });
   execFileSync('git', ['config', 'user.email', 'test@example.invalid'], {
     cwd: root,
   });
@@ -39,10 +42,16 @@ function projectRoot(parent) {
   return realpathSync(root);
 }
 
-async function withProject(prefix, operation) {
-  const temporary = mkdtempSync(path.join(tmpdir(), prefix));
+test('resolves only canonical Peers-Touch roots', () => {
+  const temporary = mkdtempSync(path.join(tmpdir(), 'pt-state-root-'));
   try {
-    return await operation(projectRoot(temporary));
+    const root = projectRoot(temporary);
+    assert.equal(resolveProjectRoot(path.join(root, 'tooling')), root);
+    assert.equal(
+      resolveExecutionRoot({ executionRootHints: ['/missing', root] }),
+      root,
+    );
+    assert.equal(resolveProjectRoot(temporary), null);
   } finally {
     rmSync(temporary, {
       recursive: true,
@@ -51,44 +60,192 @@ async function withProject(prefix, operation) {
       retryDelay: 50,
     });
   }
-}
-
-test('resolves only canonical Peers-Touch roots', async () => {
-  await withProject('pt-state-root-', (root) => {
-    assert.equal(resolveProjectRoot(path.join(root, 'tooling')), root);
-    assert.equal(resolveProjectRoot(path.dirname(root)), null);
-  });
 });
 
-test('FLOW-A01 ordinary work is READY without Plan, declaration, or Session', async () => {
-  await withProject('pt-state-ordinary-', (root) => {
-    const result = inspectStandaloneWorkflowContext({ workspaceRoot: root });
-    assert.equal(result.status, 'READY');
-    assert.equal(result.mode, 'standalone');
+test('treats an unbound root as idle at Stop without inventing a Plan', async () => {
+  const temporary = mkdtempSync(path.join(tmpdir(), 'pt-state-idle-'));
+  const previousMachineRoot = process.env.PT_MACHINE_DEV_ROOT;
+  try {
+    const root = projectRoot(temporary);
+    process.env.PT_MACHINE_DEV_ROOT = path.join(temporary, 'machine');
+    const result = await inspectStopContext(
+      {
+        executionRoot: root,
+        workspaceId: workspaceIdForRoot(root),
+      },
+      async () => ({
+        status: 'HARD_BLOCK',
+        code: 'WORK_DECLARATION_REQUIRED',
+        message: 'missing',
+      }),
+    );
+    assert.equal(result.status, 'IDLE');
     assert.equal(result.tracked, false);
-    assert.equal(result.task, null);
-    assert.equal(result.canonicalRoot, root);
-  });
+  } finally {
+    if (previousMachineRoot === undefined) {
+      delete process.env.PT_MACHINE_DEV_ROOT;
+    } else {
+      process.env.PT_MACHINE_DEV_ROOT = previousMachineRoot;
+    }
+    rmSync(temporary, {
+      recursive: true,
+      force: true,
+      maxRetries: 3,
+      retryDelay: 50,
+    });
+  }
 });
 
-test('FLOW-A09 an explicit task is projected from task-local state', async () => {
-  await withProject('pt-state-task-', async (root) => {
-    const task = createTaskProgress({
-      workspaceRoot: root,
-      taskId: 'FLOW-TASK-1',
-      goal: 'Project one explicit task.',
-      contribution: 'Keep workflow status task-local.',
-    });
-    const result = inspectStandaloneWorkflowContext({
-      workspaceRoot: root,
-      taskId: task.taskId,
-    });
+test('joins Plan, declaration, Session, and active-work owners by task ID', async () => {
+  const temporary = mkdtempSync(path.join(tmpdir(), 'pt-state-ready-'));
+  try {
+    const root = projectRoot(temporary);
+    const workspaceId = workspaceIdForRoot(root);
+    const branch = execFileSync('git', ['branch', '--show-current'], {
+      cwd: root,
+      encoding: 'utf8',
+    }).trim();
+    const head = execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: root,
+      encoding: 'utf8',
+    }).trim();
+    const workflowOwner = {
+      kind: WORKFLOW_OWNER_REFERENCE_KIND,
+      host: 'trae',
+      rootChatId: 'main-chat-session',
+      rootChatHash: hashWorkflowRootChatIdentity(
+        'trae',
+        'main-chat-session',
+      ),
+      rootBindingDigest: 'b'.repeat(64),
+    };
+    const declaration = {
+      workItemId: 'WORK-1',
+      sessionId: 'SESSION-1',
+      planId: 'PLAN-1',
+      planPath: 'docs/plan.md',
+      planDigest: 'a'.repeat(64),
+      mountId: 'mount-1',
+      runId: 'run-1',
+      taskId: 'TASK-1',
+      workspaceId,
+      branch,
+      sourceHead: head,
+      sourceClaims: [],
+      state: 'ACTIVE',
+      heartbeatAt: '2026-09-23T00:01:00.000Z',
+      expiresAt: '2026-09-24T00:00:00.000Z',
+      workflowOwner,
+    };
+    const session = {
+      state: {
+        sessionId: declaration.sessionId,
+        workItemId: declaration.workItemId,
+        planId: declaration.planId,
+        taskId: declaration.taskId,
+        workspaceId,
+        branch,
+        state: 'IMPLEMENTING',
+        workflowOwner,
+      },
+    };
+    const activeWork = {
+      workspaceId,
+      workItemId: declaration.workItemId,
+      sessionId: declaration.sessionId,
+      planId: declaration.planId,
+      planPath: declaration.planPath,
+      mountId: declaration.mountId,
+      runId: declaration.runId,
+      snapshotDigest: 'b'.repeat(64),
+      currentTaskId: declaration.taskId,
+      devState: session.state.state,
+      branch,
+      expectedHead: head,
+      workflowOwner,
+    };
+    let sessionOptions = null;
+    const result = await inspectWorkflowContext(
+      {
+        executionRoot: root,
+        workspaceId,
+        host: 'trae',
+        rootBindingDigest: workflowOwner.rootBindingDigest,
+      },
+      {
+        now: new Date('2026-09-23T12:00:00.000Z'),
+        ledgerPath: '/machine/work.json',
+        readLedger(file) {
+          assert.equal(file, '/machine/work.json');
+          return { declarations: { declaration } };
+        },
+        async resolvePlanExecution(options) {
+          assert.equal(options.repoRoot, root);
+          return {
+            mount: {
+              planId: declaration.planId,
+              planPath: declaration.planPath,
+              planDigest: declaration.planDigest,
+              mountId: declaration.mountId,
+            },
+            snapshot: {
+              recordDigest: activeWork.snapshotDigest,
+              planDigest: declaration.planDigest,
+              plan: {
+                tasks: [{ id: declaration.taskId }],
+              },
+            },
+            run: {
+              runId: declaration.runId,
+              currentTaskId: declaration.taskId,
+              taskStates: {
+                [declaration.taskId]: {
+                  state: 'in_progress',
+                  blocker: null,
+                },
+              },
+            },
+            planPackage: { path: path.join(root, 'docs/plan.md') },
+          };
+        },
+        readActiveWorkRecord(options) {
+          assert.equal(options.repoRoot, root);
+          return activeWork;
+        },
+        loadSessionStore(options) {
+          sessionOptions = options;
+          return session;
+        },
+      },
+    );
+
     assert.equal(result.status, 'READY');
-    assert.equal(result.tracked, true);
-    assert.equal(result.task.taskId, task.taskId);
-    assert.equal(result.task.revision, 1);
-    assert.equal(result.task.projectionState, 'current');
-    assert.equal(Object.hasOwn(result, 'activeWork'), false);
-    assert.equal(Object.hasOwn(result, 'session'), false);
-  });
+    assert.equal(result.currentTask.id, 'TASK-1');
+    assert.equal(result.activeWork, activeWork);
+    assert.equal(sessionOptions.expected.taskId, 'TASK-1');
+    assert.equal(sessionOptions.expected.sessionId, 'SESSION-1');
+
+    const mismatched = await inspectWorkflowContext(
+      {
+        executionRoot: root,
+        workspaceId,
+        host: 'trae',
+        rootBindingDigest: 'c'.repeat(64),
+      },
+      {
+        now: new Date('2026-09-23T12:00:00.000Z'),
+        ledgerPath: '/machine/work.json',
+        readLedger: () => ({ declarations: { declaration } }),
+      },
+    );
+    assert.equal(mismatched.status, 'HARD_BLOCK');
+    assert.equal(mismatched.code, 'WORKFLOW_OWNER_MISMATCH');
+  } finally {
+    rmSync(temporary, {
+      recursive: true,
+      force: true,
+      maxRetries: 3,
+      retryDelay: 50,
+    });
+  }
 });

@@ -30,7 +30,7 @@ quality-evidence:
 	python3 tooling/scripts/quality-evidence.py --range "$(REVIEW_RANGE)"
 
 review-submit:
-	tooling/scripts/review/submit-pipeline.sh --base "$(REVIEW_BASE)"
+	tooling/scripts/review/submit-pipeline.sh --base "$(REVIEW_BASE)" $(if $(SESSION),--session "$(SESSION)",)
 
 acceptance-evidence-export:
 	python3 tooling/scripts/acceptance-evidence.py export

@@ -24,10 +24,6 @@ if TYPE_CHECKING:
 _SAFE_RELATIVE_PATH = re.compile(r"^[A-Za-z0-9._/-]+$")
 
 
-def _deployment_transport_ref(environment_name: str, branch: str) -> str:
-    return f"refs/peers-touch/deploy/{environment_name}/{branch}"
-
-
 def load_env_file(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
     try:
@@ -347,7 +343,7 @@ def _remote_checkout_script() -> str:
             "    handle.flush()",
             "    os.fsync(handle.fileno())",
             "",
-            "environment_name, deploy_path, fetch_kind, fetch_value, fetch_ref, branch, expected_commit, expected_digest, owner, lease_mode = sys.argv[1:]",
+            "environment_name, deploy_path, fetch_kind, fetch_value, branch, expected_commit, expected_digest, owner, lease_mode = sys.argv[1:]",
             "repo = pathlib.Path.home() / deploy_path",
             "lock_root = pathlib.Path.home() / '.cache/peers-touch/source-leases'",
             "lock_root.mkdir(parents=True, exist_ok=True)",
@@ -411,7 +407,7 @@ def _remote_checkout_script() -> str:
             "    raise SystemExit(75)",
             "",
             "fetch_url = str(pathlib.Path.home() / fetch_value) if fetch_kind == 'home' else fetch_value",
-            "run(['git', '-C', str(repo), 'fetch', fetch_url, f'+{fetch_ref}:refs/remotes/deploy/{branch}'])",
+            "run(['git', '-C', str(repo), 'fetch', fetch_url, f'+refs/heads/{branch}:refs/remotes/deploy/{branch}'])",
             "remote_commit = run(['git', '-C', str(repo), 'rev-parse', f'refs/remotes/deploy/{branch}^{{commit}}'])",
             "if remote_commit != expected_commit:",
             "    print(f'BLOCKED:commit-mismatch:{remote_commit}', flush=True)",
@@ -493,7 +489,6 @@ class RemoteSourceSynchronizer:
             (
                 fetch_kind,
                 fetch_value,
-                fetch_ref,
                 tunnel,
                 local_server_started,
             ) = self._publish_source()
@@ -508,7 +503,6 @@ class RemoteSourceSynchronizer:
                     request.deploy_path,
                     fetch_kind,
                     fetch_value,
-                    fetch_ref,
                     request.branch,
                     commit,
                     source_digest,
@@ -581,14 +575,10 @@ class RemoteSourceSynchronizer:
 
     def _publish_source(
         self,
-    ) -> tuple[str, str, str, SshTunnel | None, bool]:
+    ) -> tuple[str, str, SshTunnel | None, bool]:
         from tooling.acceptance.transports.ssh import SshTarget, SshTransport
 
         request = self.request
-        transport_ref = _deployment_transport_ref(
-            request.environment_name,
-            request.branch,
-        )
         if request.source_mode == "direct":
             bare_path = (
                 ".cache/peers-touch/source-repositories/"
@@ -624,15 +614,8 @@ class RemoteSourceSynchronizer:
                     f"{bare_path}"
                 ),
                 self.transport.git_ssh_command(),
-                transport_ref,
             )
-            return (
-                "home",
-                bare_path,
-                transport_ref,
-                None,
-                False,
-            )
+            return "home", bare_path, None, False
 
         if request.source_mode == "central":
             if not (
@@ -658,23 +641,15 @@ class RemoteSourceSynchronizer:
             self._push(
                 f"{request.central_user}@{request.central_host}:{bare_path}",
                 central.git_ssh_command(),
-                transport_ref,
             )
             if request.host == request.central_host:
-                return (
-                    "home",
-                    bare_path,
-                    transport_ref,
-                    None,
-                    False,
-                )
+                return "home", bare_path, None, False
             return (
                 "url",
                 (
                     f"git://{request.central_host}:"
                     f"{request.central_daemon_port}/{Path(bare_path).name}"
                 ),
-                transport_ref,
                 None,
                 False,
             )
@@ -684,13 +659,7 @@ class RemoteSourceSynchronizer:
                 raise ProvisioningError(
                     "github source-sync requires PT_DEPLOY_REPO_URL or origin"
                 )
-            return (
-                "url",
-                request.repository_url,
-                f"refs/heads/{request.branch}",
-                None,
-                False,
-            )
+            return "url", request.repository_url, None, False
 
         git_serve_script = (
             request.source_root / "tooling" / "scripts" / "deploy" / "git-serve.sh"
@@ -739,24 +708,11 @@ class RemoteSourceSynchronizer:
                     environment=git_server_environment,
                 )
             raise
-        return (
-            "url",
-            fetch_url,
-            f"refs/heads/{request.branch}",
-            tunnel,
-            local_server_started,
-        )
+        return "url", fetch_url, tunnel, local_server_started
 
-    def _push(
-        self,
-        destination: str,
-        git_ssh_command: str,
-        destination_ref: str,
-    ) -> None:
+    def _push(self, destination: str, git_ssh_command: str) -> None:
         environment = os.environ.copy()
         environment["GIT_SSH_COMMAND"] = git_ssh_command
-        # This mutable ref exists only in the deployment transport repository.
-        # It is not a collaboration branch publication or delivery push.
         _run_local(
             [
                 "git",
@@ -765,7 +721,7 @@ class RemoteSourceSynchronizer:
                 "push",
                 "--force",
                 destination,
-                f"HEAD:{destination_ref}",
+                f"HEAD:refs/heads/{self.request.branch}",
             ],
             cwd=self.request.source_root,
             environment=environment,

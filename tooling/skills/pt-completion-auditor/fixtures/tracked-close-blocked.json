@@ -1,0 +1,39 @@
+{
+  "selector": {
+    "workspaceId": "fedcba9876543210",
+    "workItemId": "DWF-TRACKED-CLOSE",
+    "mountId": "mount-dwf-tracked"
+  },
+  "mode": "tracked",
+  "claimClass": "close-ready",
+  "declaration": {
+    "state": "ACTIVE"
+  },
+  "activeWork": {
+    "workItemId": "DWF-TRACKED-CLOSE"
+  },
+  "session": {
+    "state": "DELIVERY_READY"
+  },
+  "closeReceipt": {
+    "receiptId": "close-fedcba9876543210",
+    "state": "BLOCKED",
+    "recordDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "resources": {
+      "runtimeLeases": "RELEASED",
+      "session": "ARCHIVED",
+      "activeWork": "PENDING",
+      "declaration": "PENDING",
+      "planMount": "PENDING",
+      "environmentRegistration": "PENDING"
+    }
+  },
+  "mount": {
+    "mountId": "mount-dwf-tracked",
+    "state": "mounted"
+  },
+  "run": {
+    "runId": "run-dwf-tracked",
+    "state": "completed"
+  }
+}

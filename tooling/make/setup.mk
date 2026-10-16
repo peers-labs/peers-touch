@@ -11,7 +11,7 @@ init-dev:
 	@echo "[2/3] Setting up IDE config..."
 	/bin/bash tooling/scripts/ide-setup.sh $(IDE)
 	@echo ""
-	@echo "[3/3] Installing project Skills and optional advisory Hook..."
+	@echo "[3/3] Installing conversation-bound agent integration..."
 	@detect_ide() { \
 	  if echo "$${TERM_PRODUCT:-}" | grep -qi trae; then echo trae; return; fi; \
 	  if [ -n "$${TRAE_BRAND_NAME:-}" ]; then echo trae; return; fi; \
@@ -30,18 +30,19 @@ init-dev:
 
 skill-help:
 	@echo ""
-	@echo "Project Skills and the optional advisory Hook are installed with 'make skills IDE=<host>'."
-	@echo "Remove only the project Hook with 'make skills-remove-hook IDE=<host>'."
+	@echo "Skills and host hooks are installed with 'make skills IDE=<host>'."
+	@echo "Legacy stores are removed with 'make skills-hard-cut IDE=<host>'."
+	@echo "Retired projections are removed with 'make skills-gc IDE=<host>'."
 	@echo "User overlays: make skill-overlay-install SOURCE=<directory>."
 	@echo "See AGENTS.md §13 for details."
 	@echo ""
 
-# ─── Skills And Advisory Hooks ───────────────────────────────────
-.PHONY: skills skills-remove-hook
+# ─── Skills And Workflow Hooks ───────────────────────────────────
+.PHONY: skills skills-hard-cut skills-gc
 
 skills:
 	@echo ""
-	@echo "Install project Skills and optional advisory Hook"
+	@echo "Install conversation-bound agent integration"
 	@echo "========================================"
 	@echo ""
 	@IDE_NAME="$(IDE)"; \
@@ -59,25 +60,38 @@ skills:
 		--root "$(CURDIR)" \
 		$(if $(WORKSPACE),--workspace "$(WORKSPACE)",)
 
-skills-remove-hook:
-	@if [ -z "$(IDE)" ]; then echo "IDE is required: make skills-remove-hook IDE=trae|cursor|codex"; exit 1; fi
+skills-hard-cut:
+	@if [ -z "$(IDE)" ]; then echo "IDE is required: make skills-hard-cut IDE=trae|cursor|codex"; exit 1; fi
 	@case "$(IDE)" in trae|cursor|codex) ;; *) echo "Invalid IDE: $(IDE)"; exit 1 ;; esac
 	@/bin/bash tooling/scripts/install-agent-integration.sh \
-		--action remove-hook \
+		--action hard-cut \
 		--host "$(IDE)" \
 		--root "$(CURDIR)" \
 		$(if $(WORKSPACE),--workspace "$(WORKSPACE)",)
 
-.PHONY: agent-integration-audit
+skills-gc:
+	@if [ -z "$(IDE)" ]; then echo "IDE is required: make skills-gc IDE=trae|cursor|codex"; exit 1; fi
+	@case "$(IDE)" in trae|cursor|codex) ;; *) echo "Invalid IDE: $(IDE)"; exit 1 ;; esac
+	@/bin/bash tooling/scripts/install-agent-integration.sh \
+		--action gc \
+		--host "$(IDE)" \
+		--root "$(CURDIR)" \
+		$(if $(WORKSPACE),--workspace "$(WORKSPACE)",)
+
+.PHONY: agent-integration-audit agent-integration-audit-all
 .PHONY: skill-overlay-install skill-overlay-list skill-overlay-enable
 .PHONY: skill-overlay-disable skill-overlay-uninstall skill-overlay-resolve
 
 agent-integration-audit:
-	@if [ -z "$(IDE)" ]; then echo "IDE is required: make agent-integration-audit IDE=trae|cursor|codex"; exit 1; fi
 	@python3 tooling/scripts/agent-integration-audit.py \
 		--root "$(or $(ROOT),$(CURDIR))" \
-		--host "$(IDE)" \
-		$(if $(WORKSPACE),--workspace "$(WORKSPACE)",)
+		$(if $(IDE),--host "$(IDE)",)
+
+agent-integration-audit-all:
+	@python3 tooling/scripts/agent-integration-audit.py \
+		--root "$(CURDIR)" \
+		--all-worktrees \
+		$(if $(IDE),--host "$(IDE)",)
 
 skill-overlay-install:
 	@if [ -z "$(SOURCE)" ]; then echo "Usage: make skill-overlay-install SOURCE=<local-skill-directory> [REPLACE=1]"; exit 1; fi

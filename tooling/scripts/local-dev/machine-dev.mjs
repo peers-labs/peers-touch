@@ -9,7 +9,6 @@ import {
   buildLeaseCommand,
   canonicalize,
   checkWorkspace,
-  profileEnvironment,
   registerWorkspace,
   selectWorkspaceProfile,
   statusAll,
@@ -19,6 +18,10 @@ import {
   validateLeaseRequest,
   verifyHeldLease,
 } from './machine-dev-registry.mjs';
+import {
+  resolveWorkflowOwnerCommandContext,
+} from './workflow-owner-context.mjs';
+import { readWorktreeCreation } from './worktree-create.mjs';
 
 const OPTION_NAMES = new Map([
   ['workspace-root', 'workspaceRoot'],
@@ -33,9 +36,8 @@ const OPTION_NAMES = new Map([
   ['budget-seconds', 'budgetSeconds'],
   ['resource-kind', 'resourceKind'],
   ['resource-id', 'resourceId'],
+  ['owner-action', 'ownerAction'],
   ['reset-scope', 'resetScope'],
-  ['expected-branch', 'expectedBranch'],
-  ['expected-head', 'expectedHead'],
   ['format', 'format'],
 ]);
 
@@ -86,7 +88,6 @@ function shellQuote(value) {
 
 function outputShell(resolved) {
   const values = {
-    ...profileEnvironment(resolved.profile),
     PT_MACHINE_DEV_AUTHORITY: resolved.authority,
     PT_MACHINE_WORKSPACE_ID: resolved.binding.workspaceId,
     PT_MACHINE_WORKSPACE_ROOT: resolved.binding.canonicalRoot,
@@ -174,9 +175,30 @@ const SIGNAL_EXIT_CODES = {
   SIGTERM: 143,
 };
 
-export async function runCli(argv) {
+export async function runCli(argv, io = {}) {
   const { action, options } = parseArguments(argv);
+  const write = io.output ?? output;
+  const dependencies = io.dependencies ?? {};
   options.envRepo ??= process.env.PT_ENV_REPO;
+  const resolveOwnerCommand =
+    dependencies.resolveWorkflowOwnerCommandContext ??
+    resolveWorkflowOwnerCommandContext;
+  resolveOwnerCommand('machine-dev', action, {
+    home: options.home,
+    workspaceRoot: options.workspaceRoot ?? process.cwd(),
+    resolveCurrentWorkflowOwnerContext:
+      dependencies.resolveCurrentWorkflowOwnerContext,
+  });
+  if (['register', 'select', 'update'].includes(action)) {
+    const workspaceRoot = options.workspaceRoot ?? process.cwd();
+    const creation = (
+      dependencies.readWorktreeCreation ?? readWorktreeCreation
+    )({
+      home: options.home,
+      workspaceRoot,
+    });
+    options.createdBy = creation?.createdBy;
+  }
   switch (action) {
     case 'register':
       for (const key of [
@@ -188,27 +210,27 @@ export async function runCli(argv) {
       ]) {
         requireOption(options, key);
       }
-      output(registerWorkspace(options));
+      write(registerWorkspace(options));
       return 0;
     case 'select':
       for (const key of ['profile', 'owner']) {
         requireOption(options, key);
       }
-      output(selectWorkspaceProfile(options));
+      write(selectWorkspaceProfile(options));
       return 0;
     case 'update':
-      output(updateWorkspace(options));
+      write(updateWorkspace(options));
       return 0;
     case 'unregister':
       requireOption(options, 'owner');
-      output(
+      write(
         options.workspaceId === undefined
           ? unregisterWorkspace(options)
           : unregisterWorkspaceByIdentity(options),
       );
       return 0;
     case 'check':
-      output(checkWorkspace(options));
+      write(checkWorkspace(options));
       return 0;
     case 'resolve': {
       const resolved = checkWorkspace(options);
@@ -220,18 +242,18 @@ export async function runCli(argv) {
           'format must be json or shell',
         );
       } else {
-        output(resolved);
+        write(resolved);
       }
       return 0;
     }
     case 'status-all':
-      output(statusAll(options));
+      write(statusAll(options));
       return 0;
     case 'validate-lease':
-      output(validateLeaseRequest(options));
+      write(validateLeaseRequest(options));
       return 0;
     case 'verify-held':
-      output(verifyHeldLease(options));
+      write(verifyHeldLease(options));
       return 0;
     case 'lease':
       return runLease(options);

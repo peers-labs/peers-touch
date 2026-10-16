@@ -122,7 +122,10 @@ from .suite_runtime import (
 )
 from .provisioner import EnvironmentProvisioner
 from .execution_plan import (
+    PLAN_BINDING_MISMATCH,
+    PLAN_BINDING_REQUIRED,
     PLAN_COMPLETE,
+    PLAN_COMPLETION_REQUIRED,
     PLAN_DRIFT,
     PLAN_INPUT_REQUIRED,
     PLAN_INVALID,
@@ -130,6 +133,7 @@ from .execution_plan import (
     FormalExecutionPlan,
     changed_paths_for_plan,
     closure_status_is_complete,
+    discover_active_plan,
     load_formal_plan,
 )
 
@@ -230,7 +234,10 @@ __all__ = [
     "SuiteRuntimeLedger",
     "validate_suite_runtime_report",
     "EnvironmentProvisioner",
+    "PLAN_BINDING_MISMATCH",
+    "PLAN_BINDING_REQUIRED",
     "PLAN_COMPLETE",
+    "PLAN_COMPLETION_REQUIRED",
     "PLAN_DRIFT",
     "PLAN_INPUT_REQUIRED",
     "PLAN_INVALID",
@@ -238,6 +245,7 @@ __all__ = [
     "FormalExecutionPlan",
     "changed_paths_for_plan",
     "closure_status_is_complete",
+    "discover_active_plan",
     "load_formal_plan",
     "ARTIFACT_ROOT_ENV",
     "REDACTION_VALUES_ENV",
