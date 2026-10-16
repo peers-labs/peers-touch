@@ -4,7 +4,7 @@ import ast
 import shutil
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from tooling.acceptance.core import (
     SuiteRuntimeAction,
@@ -230,13 +230,77 @@ class MessagePublishingNativeGateTests(unittest.TestCase):
         self.assertNotIn('"hydrateActiveActor"', self.source)
         self.assertIn('"resumeMessagingLifecycle"', self.source)
         self.assertIn('resumed.get("activated") is not True', self.source)
-        self.assertEqual(
-            self.source.count('and value.get("actorPtid") == self.owner_ptid'),
-            2,
+        self.assertIn(
+            'and value.get("actorPtid") == self.owner_ptid',
+            launch_source,
         )
-        self.assertEqual(
-            self.source.count('and value.get("active") is True'),
-            2,
+        self.assertIn('and value.get("active") is True', launch_source)
+
+    def test_restart_waits_for_persisted_identity_before_device(self) -> None:
+        relaunch_method = next(
+            node
+            for node in ast.walk(self.tree)
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_relaunch_client"
+        )
+        relaunch_source = ast.get_source_segment(
+            self.source,
+            relaunch_method,
+        ) or ""
+
+        self.assertLess(
+            relaunch_source.index("_wait_for_restored_identity"),
+            relaunch_source.index("mark_authenticated"),
+        )
+        self.assertLess(
+            relaunch_source.index("_wait_for_restored_identity"),
+            relaunch_source.index("getRealtimeDevice"),
+        )
+
+        gate = object.__new__(MessagePublishingNativeGate)
+        gate.owner_ptid = "ptid:person:alice"
+        states = (
+            {
+                "phase": "resolvingSession",
+                "reason": "cold_launch",
+                "authenticated": False,
+                "actorPtid": "",
+            },
+            {
+                "phase": "authenticated",
+                "reason": "",
+                "authenticated": True,
+                "actorPtid": "ptid:person:alice",
+            },
+        )
+        with patch(
+            "tooling.acceptance.gates.chat."
+            "message_publishing_native_e2e.call_async_harness",
+            side_effect=states,
+        ) as harness:
+            restored = gate._wait_for_restored_identity(MagicMock())
+
+        self.assertEqual(restored, states[-1])
+        self.assertEqual(harness.call_count, 2)
+
+    def test_cleanup_exports_final_logs_after_clients_stop(self) -> None:
+        cleanup_method = next(
+            node
+            for node in ast.walk(self.tree)
+            if isinstance(node, ast.FunctionDef) and node.name == "_cleanup"
+        )
+        cleanup_source = ast.get_source_segment(
+            self.source,
+            cleanup_method,
+        ) or ""
+
+        self.assertLess(
+            cleanup_source.index("self.lifecycles.release_all()"),
+            cleanup_source.index("self.save_app_log("),
+        )
+        self.assertLess(
+            cleanup_source.index("self.save_app_log("),
+            cleanup_source.index("self.runtime_binding.finalize_cleanup("),
         )
         self.assertIn(
             "if self.client is not None and self.client.is_alive():",

@@ -328,6 +328,8 @@ class MessagePublishingNativeGate(AcceptanceGate):
         try:
             client.start()
             self.lifecycles.mark_live(client)
+            identity = self._wait_for_restored_identity(client)
+            attempt["identityState"] = identity
             self.lifecycles.mark_authenticated(client)
 
             def ready_device() -> dict[str, Any] | None:
@@ -359,6 +361,36 @@ class MessagePublishingNativeGate(AcceptanceGate):
             attempt["state"] = "failed"
             self.lifecycles.release(client)
             raise
+
+    def _wait_for_restored_identity(
+        self,
+        client: TauriSession,
+    ) -> dict[str, Any]:
+        def restored_identity() -> dict[str, Any] | None:
+            value = call_async_harness(
+                client,
+                "identityState",
+                {},
+                namespace="chat",
+                script_timeout=10,
+            )
+            if (
+                isinstance(value, dict)
+                and value.get("authenticated") is True
+                and value.get("actorPtid") == self.owner_ptid
+                and value.get("phase") == "authenticated"
+            ):
+                return value
+            raise GateError(
+                "Alice Native persisted identity is not restored: "
+                f"{json.dumps(value, sort_keys=True)}"
+            )
+
+        return wait_until(
+            restored_identity,
+            "restarted Alice Native persisted identity",
+            timeout=45,
+        )
 
     def _session_token(self) -> str:
         if self.client is None:
@@ -1575,6 +1607,16 @@ class MessagePublishingNativeGate(AcceptanceGate):
                 )
         lifecycle_errors = self.lifecycles.release_all()
         errors.extend(lifecycle_errors)
+        for index, client in enumerate(self.clients, start=1):
+            try:
+                self.save_app_log(client, f"alice-{index}")
+            except Exception as error:
+                errors.append(
+                    {
+                        "resource": f"client-log:alice-{index}",
+                        "error": str(error),
+                    }
+                )
         try:
             runtime_cleanup = self.runtime_binding.finalize_cleanup(
                 self.clients,
