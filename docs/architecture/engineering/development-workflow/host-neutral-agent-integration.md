@@ -1,7 +1,7 @@
 # IDE 与 Agent 提示接入
 
 > **Status**: active
-> **Created**: 2026-09-19 | **Updated**: 2026-10-14
+> **Created**: 2026-09-19 | **Updated**: 2026-10-16
 > **Owner**: Platform Team
 
 ## 1. 接入目标
@@ -15,6 +15,11 @@ TRAE、Cursor、Codex 使用仓库内同一组规范和 Skill，宿主 adapter �
 从结构化任务根、工具工作目录和文件目标核对 canonical worktree；多根冲突时跳过可能归属错误的自动提示，保留简短诊断。
 
 安装源目录、Hook 文件所在位置、活动编辑器和 folder 顺序不构成任务工作区。明确任务工作区仍是 Agent 的执行范围；Hook 不提供任意 shell 的强制跨目录写保护。
+
+每个项目 Hook 只响应解析结果等于自身安装 root 的事件。多根 workspace 中，宿主级
+`repo_working_dir` 不能单独选择 worktree；必须有明确 task root 或工具工作目录。
+解析到兄弟 root 时该 Hook 返回 `NOOP`，无法唯一解析时不注入上下文，也不写
+worktree observation。
 
 会话字段可用于脱敏诊断。缺少字段不伪造身份，不创建 OWNER，不领取 grant，也不要求另开会话才能使用 Skill。
 
@@ -31,6 +36,12 @@ TRAE、Cursor、Codex 使用仓库内同一组规范和 Skill，宿主 adapter �
 复用现有 `make skills IDE=<host>` 入口。只更新明确选定 worktree 的 Skill 与项目配置，不写全局 Hook，不自动修改共享 workspace descriptor 或其他窗口。
 
 安装流程核对源与目标真实路径、符号链接边界和配置合并范围；保留非项目条目。Skill 投影和 Hook 状态分开，不用机器开发总账、OWNER 或 Action Receipt 授权安装。
+
+多根 workspace descriptor 只用于验证选定 root 的成员身份并向 Hook 提供只读上下文，
+不能把一次安装扩大成跨根 rollout。每次安装只写 `--root` 指定 worktree 的项目配置；
+每条托管 Hook 命令中的 `hook-entry.mjs` 必须解析到同一 worktree。迁移多个 worktree
+必须逐根执行和审计；没有本地插件源的 root 只能移除托管条目，不能借用其他
+worktree 的 Hook。审计必须独立检查命令归属，不能只复用安装器生成的 expected 配置。
 
 发现本机解释器后，写入正确引号包裹的绝对命令；自检使用落盘命令原文及受限 PATH。不能重拼 argv 或继承完整终端 PATH 来代替。
 

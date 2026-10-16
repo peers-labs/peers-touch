@@ -1,7 +1,7 @@
 # Peers-Touch 规范研发流程
 
 > **Status**: active
-> **Created**: 2026-09-13 | **Updated**: 2026-10-13
+> **Created**: 2026-09-13 | **Updated**: 2026-10-16
 > **Owner**: Platform Team
 
 这份文档规定一个研发需求从提出到交付应该怎么做。开发者决定目标、范围和需要确认的事项，Agent 负责调研、实现、验证和整理交付材料。
@@ -160,6 +160,21 @@ Agent 先自己验证，不把首次试用交给开发者。修 Bug 要重新执
 验证使用本次修改的源码和实际运行产物。源码变化使已有结果失效时，重跑受影响的场景，不能借另一分支、旧构建或旧截图证明当前结果。
 
 真实功能先跑通，再执行规定的正式验收。场景按改动涉及的行为、失败情况和风险选择；小改动也要证明正确，但不扩展成与本次需求无关的全平台测试。正式验收未执行时，不能把开发自测当作正式验收通过。
+
+每次验证只选择以下一种执行模式，不能从较窄模式自动升级到较宽模式：
+
+- `DEVELOPMENT_ITERATION`：只运行受影响的源码检查和一个聚焦的 exact-source
+  功能 Journey。它产生 `FUNCTIONAL_CHECK`，不运行 formal Acceptance、
+  `--require-proven`、completion 或 full/release。
+- `CLOSURE`：功能 Journey 通过后，只运行当前正式 closure 或明确选中的 Gate 集一次。
+  Registry 影响投影和未验证项不能自动扩展这次范围。
+- `COMPLETION`：仅在进入交付、完成义务已经明确时运行 completion Gates。
+- `FULL_RELEASE`：仅在用户当前请求明确要求 release 或 full Acceptance 时运行。
+
+分 tier 的 Acceptance 目标只是对一个已选正式范围的过滤执行，不是运行完整 closure
+前的固定前置序列。同一 closure 已通过 tier 目标执行后，不得再用无过滤
+`acceptance-run` 重跑同一批 Gate。没有运行的 Gate 保持 `UNPROVEN`；Gap、报告或
+环境可用性都不能触发自动补跑。
 
 ### Route Acceptance work by ownership
 

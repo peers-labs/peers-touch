@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import re
 import unittest
 from pathlib import Path
 
@@ -80,6 +81,14 @@ class AcceptanceInfraBoundaryTests(unittest.TestCase):
             "D-21: Multi-Scenario Proof Uses One Suite Runtime",
             decisions,
         )
+        self.assertIn(
+            "D-20: Formal Execution Plan Owns Acceptance Scheduling",
+            decisions,
+        )
+        self.assertIn(
+            "full execution requires explicit",
+            decisions,
+        )
         self.assertIn("**Status**: accepted", decisions)
         self.assertIn(
             "Acceptance Infra 与业务注入责任防火墙",
@@ -129,6 +138,50 @@ class AcceptanceInfraBoundaryTests(unittest.TestCase):
             "Does NOT determine ownership",
             procedures,
         )
+
+    def test_acceptance_execution_modes_do_not_auto_escalate(self) -> None:
+        agents = read("AGENTS.md")
+        workflow = read("docs/global/workflow.md")
+        development = read("tooling/skills/pt-dev-workflow/SKILL.md")
+        procedures = read(
+            "tooling/skills/pt-acceptance-engineering/PROCEDURES.md"
+        )
+
+        for source in (agents, workflow, development):
+            for mode in (
+                "DEVELOPMENT_ITERATION",
+                "CLOSURE",
+                "COMPLETION",
+                "FULL_RELEASE",
+            ):
+                self.assertIn(mode, source)
+
+        self.assertIn("Unrun Gates remain `UNPROVEN`", agents)
+        self.assertIn("Unrun Gates remain `UNPROVEN`", development)
+        self.assertIn("Unrun Gates remain `UNPROVEN`", procedures)
+        self.assertIn("do not trigger automatic backfill", development)
+        self.assertIn(
+            "`--require-proven` only for the exact formal scope",
+            procedures,
+        )
+        self.assertIn(
+            "explicit current user request",
+            procedures,
+        )
+
+        tier_target = re.compile(
+            r"(?m)^make acceptance-run-"
+            r"(?:ci|local-evidence|env-evidence)\s*$"
+        )
+        unfiltered_target = re.compile(r"(?m)^make acceptance-run\s*$")
+        for block in re.findall(r"```bash\n(.*?)```", procedures, re.DOTALL):
+            self.assertFalse(
+                tier_target.search(block) and unfiltered_target.search(block),
+                msg=(
+                    "tier-filtered Acceptance and unfiltered acceptance-run "
+                    "must not be documented as one command sequence"
+                ),
+            )
 
     def test_ownership_classification_table(self) -> None:
         """Verify that known paths classify correctly per the rule."""

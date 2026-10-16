@@ -35,10 +35,17 @@ Host adapters normalize payloads and render context. They do not create
 repository authority, infer the selected worktree, execute fallback, grant
 runtime capabilities, or upgrade observations into evidence.
 
+In a multi-root workspace, ambient repository cwd and descriptor order cannot
+select a worktree. One installed Hook may emit context only when an explicit
+task or tool root resolves to that Hook's own installation root. A sibling
+root produces `NOOP`; an ambiguous event produces no context or observation.
+
 Project Skill projection is scoped to the explicitly selected worktree. Hook
-projection is independently optional and uses an absolute interpreter. No
-installer operation requires unrelated worktrees to be idle or writes a shared
-workspace descriptor.
+projection is independently optional and uses an absolute interpreter. A
+managed Hook command resolves its plugin from the same selected worktree; a
+multi-root descriptor is read-only context and never expands one install into
+sibling writes. No installer operation requires unrelated worktrees to be idle,
+writes a shared workspace descriptor, or borrows another worktree's Hook.
 
 ## Why this is non-negotiable
 
@@ -54,7 +61,8 @@ completion, source and evidence semantics split across editors.
   tooling/plugins/pt-ew-plugin/scripts/hook-entry.test.mjs` passes.
 - `python3 -m unittest tooling/scripts/agent-integration-audit-test.py` proves
   selected-root projection, advisory degradation, absolute interpreter use,
-  restricted-PATH replay, removal, and non-project configuration preservation.
+  restricted-PATH replay, cross-root rejection and repair, sibling
+  non-mutation, removal, and non-project configuration preservation.
 
 ## Crosswalks
 

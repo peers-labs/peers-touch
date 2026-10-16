@@ -23,8 +23,7 @@ function selectExecutionRoot(event) {
   );
   if (workspaceRoots.length === 1) return workspaceRoots[0];
   for (const candidate of [
-    event.repositoryWorkingDirectory,
-    event.toolWorkingDirectory,
+    event.explicitToolWorkingDirectory,
     ...(event.executionRootHints ?? []),
   ]) {
     const root = resolveHint(candidate);
@@ -98,6 +97,16 @@ export async function evaluateWorkflowEvent(event, options = {}) {
       action: 'ALLOW',
       code: 'WORKSPACE_CONTEXT_UNRESOLVED',
       reason: 'No unambiguous project root was available for optional context.',
+      executionRoot: null,
+      additionalContext: null,
+    };
+  }
+  const installationRoot = resolveHint(event.installationRoot);
+  if (installationRoot && executionRoot !== installationRoot) {
+    return {
+      action: 'NOOP',
+      code: 'HOOK_INSTALLATION_ROOT_MISMATCH',
+      reason: 'A project Hook cannot inject context for a sibling worktree.',
       executionRoot: null,
       additionalContext: null,
     };

@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-16
-covered_docs_hash: 4aa8b8a855f6168f8dc4273a70baabfd1d69cbd7f01388a0547f9553f7b6196c
+covered_docs_hash: b4d5981623d5b6ba15e72d6c0eeeb0aaa0c790c8f43f40aa69639d8f6ebc18ea
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,18 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-10-16 Acceptance Scheduling Review
+
+Development verification now uses one mutually exclusive mode per pass:
+development iteration, current closure, completion, or explicit full/release.
+Review rejects automatic escalation, `UNPROVEN` backfill, and any tier-filtered
+sequence followed by an unfiltered aggregate that reruns the same Gates.
+
+The existing D-20 review boundary already owns this judgment, so
+`pt-github-review/SKILL.md` does not need another rule. The Acceptance Infra
+boundary test now pins the four modes and rejects the duplicate command shape;
+no business Gate fixture or knowledge entry is required.
 
 ## 2026-10-16 Bot Module Governance Review
 
