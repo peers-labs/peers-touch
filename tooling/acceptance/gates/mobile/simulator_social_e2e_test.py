@@ -525,6 +525,48 @@ class SimulatorSocialGateTests(unittest.TestCase):
         self.assertEqual(session.clicks, 2)
         self.assertEqual(session.admission_reads, 1)
 
+    def test_private_mutation_retries_only_after_write_admission(self) -> None:
+        class Session:
+            def __init__(self) -> None:
+                self.mutation_calls = 0
+                self.admission_reads = 0
+
+            def call_action(
+                self,
+                action: str,
+                _input: object | None = None,
+            ) -> object:
+                if action == "recovery.snapshot":
+                    self.admission_reads += 1
+                    return {
+                        "writeAdmission": {
+                            "open": True,
+                            "reason": None,
+                        },
+                    }
+                if action != "moments.private.comment.submit":
+                    raise AssertionError(action)
+                self.mutation_calls += 1
+                if self.mutation_calls == 1:
+                    raise DriverError(
+                        "mutation failed with "
+                        "mobile.recovery.writeRevocation.body"
+                    )
+                return {"state": "COMMENT_COMMITTED"}
+
+        session = Session()
+
+        result = SimulatorSocialGate._call_mutation_with_write_admission(
+            session,
+            "moments.private.comment.submit",
+            {"draftId": "comment-1"},
+            "Private comment",
+        )
+
+        self.assertEqual(result, {"state": "COMMENT_COMMITTED"})
+        self.assertEqual(session.mutation_calls, 2)
+        self.assertEqual(session.admission_reads, 2)
+
     def test_failed_ios_scenario_ends_before_suite_cleanup(self) -> None:
         gate = SimulatorSocialGate("ios-social-parity")
         with (
