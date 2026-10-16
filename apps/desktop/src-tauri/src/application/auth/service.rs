@@ -25,7 +25,7 @@ use std::time::Duration;
 use zeroize::Zeroizing;
 
 pub(crate) const DESKTOP_SESSION_CLASS: &str = "desktop";
-const RESTORE_TAKEOVER_MAX_ATTEMPTS: usize = 6;
+const RESTORE_TAKEOVER_MAX_ATTEMPTS: usize = 30;
 const RESTORE_TAKEOVER_RETRY_DELAY: Duration = Duration::from_millis(400);
 
 pub(crate) fn takeover_station_session_token(
@@ -1678,7 +1678,8 @@ mod tests {
         canonical_actor_identity_fingerprint, canonical_actor_profile_version,
         run_required_logout_cleanup, session_takeover_failed,
         session_takeover_failure_is_retryable, should_resume_access_binding,
-        station_verification_rejects_session, DESKTOP_SESSION_CLASS,
+        station_verification_rejects_session, DESKTOP_SESSION_CLASS, RESTORE_TAKEOVER_MAX_ATTEMPTS,
+        RESTORE_TAKEOVER_RETRY_DELAY,
     };
     use crate::application::station_binding::StationBindingPhase;
     use crate::application::station_runtime::client::{StationClientError, StationClientErrorKind};
@@ -1689,6 +1690,7 @@ mod tests {
     };
     use serde_json::json;
     use std::cell::Cell;
+    use std::time::Duration;
 
     #[test]
     fn desktop_uses_the_canonical_session_class() {
@@ -1889,6 +1891,15 @@ mod tests {
                 &StationClientError::new(kind, "terminal or ambiguous", None)
             ));
         }
+    }
+
+    #[test]
+    fn restore_takeover_retry_window_matches_interactive_route_readiness() {
+        let retry_window =
+            RESTORE_TAKEOVER_RETRY_DELAY * (RESTORE_TAKEOVER_MAX_ATTEMPTS as u32 - 1);
+
+        assert!(retry_window >= Duration::from_secs(10));
+        assert!(retry_window < Duration::from_secs(15));
     }
 
     #[test]
