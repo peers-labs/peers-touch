@@ -16,7 +16,7 @@ peers:
       # DHT + registry's DHT) seeds from this list, and every libp2p
       # ConnectionGater treats these peer IDs as the gater allow-list.
       bootstrap-nodes: []
-      #  - /ip4/10.37.118.48/tcp/4001/p2p/12D3KooW.....
+      #  - /ip4/192.0.2.20/tcp/4001/p2p/12D3KooW.....
 
       # Public multiaddrs this node announces to the libp2p network.
       # Override libp2p's default "advertise everything I see locally"
@@ -24,8 +24,8 @@ peers:
       # bridge IP (172.x) is not externally dialable. Empty list ⇒
       # libp2p's own discovery is used (correct on bare metal).
       public-addrs: []
-      #  - /ip4/10.37.118.48/tcp/4001
-      #  - /ip4/10.37.118.48/tcp/4002
+      #  - /ip4/192.0.2.20/tcp/4001
+      #  - /ip4/192.0.2.20/tcp/4002
 
       # ConnectionGater outbound rule.
       # true  ⇒ permissive: this node can dial any libp2p peer.

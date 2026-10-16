@@ -24,7 +24,7 @@ def _config() -> PosixServiceRuntimeConfig:
     return PosixServiceRuntimeConfig(
         environment_name="relay-1",
         role="relay",
-        host="10.37.118.48",
+        host="192.0.2.20",
         user="operator",
         ssh_port=22,
         known_hosts_file="",
@@ -33,7 +33,7 @@ def _config() -> PosixServiceRuntimeConfig:
         http_port=18082,
         public_port=18081,
         libp2p_port=4001,
-        public_base_url="https://10.37.118.48:18081",
+        public_base_url="https://192.0.2.20:18081",
         compose_project="pt-relay",
         compose_service="relay",
         data_volume="pt-relay_peers_data",
@@ -67,7 +67,7 @@ class PosixRelayRuntimeTest(unittest.TestCase):
             home = Path(directory)
             cfg = {
                 "environmentName": "relay-1",
-                "host": "10.37.118.48",
+                "host": "192.0.2.20",
                 "runtimePath": ".peers-touch/runtime/relay-1",
             }
 
@@ -141,7 +141,7 @@ class PosixRelayRuntimeTest(unittest.TestCase):
                     "-out",
                     str(request),
                     "-subj",
-                    "/CN=10.37.118.48",
+                    "/CN=192.0.2.20",
                 ],
                 capture_output=True,
                 check=True,
@@ -273,7 +273,7 @@ class PosixRelayRuntimeTest(unittest.TestCase):
         ):
             result = probe_public_health(
                 _config(),
-                expected_base_url="https://10.37.118.48:18081",
+                expected_base_url="https://192.0.2.20:18081",
                 trust_anchor_resolver=resolver,
                 runner=runner,
             )
@@ -286,7 +286,7 @@ class PosixRelayRuntimeTest(unittest.TestCase):
         self.assertNotIn("-k", argv)
         self.assertEqual(
             argv[-1],
-            "https://10.37.118.48:18081/healthz",
+            "https://192.0.2.20:18081/healthz",
         )
         self.assertEqual(
             Path(argv[argv.index("--cacert") + 1]).name,

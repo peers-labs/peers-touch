@@ -1807,10 +1807,10 @@ The integrated correction is committed at
 `a8fe6560adfe173dd447a857a7e525d38f04a71f` and pushed to
 `origin/refactor/chat-acceptance-cutover`. A remote deployment attempt was
 stopped before restart because a local cache had repurposed canonical profile
-`three` for disposable endpoint `http://10.37.94.156:18132`, while the runtime
+`three` for disposable endpoint `http://192.0.2.30:18132`, while the runtime
 loader correctly selected the sibling environment repository's `three`
-definition at `http://10.37.94.156:18080`. Exact source synchronization
-completed on deployment node `10.37.94.156` and the build was interrupted; no
+definition at `http://192.0.2.30:18080`. Exact source synchronization
+completed on deployment node `192.0.2.30` and the build was interrupted; no
 Gate ran and no runtime proof advanced.
 
 MP-W13-F is blocked on an Acceptance/development-environment infrastructure
@@ -1819,7 +1819,7 @@ profile and makes preflight plus runtime resolve the same worktree selection
 through that source. MP-W13-F remains `PARTIAL/UNPROVEN`.
 
 The correction now defines canonical profile `chat-native-disposable` for
-deployment node `10.37.94.156` and disposable Station `18132`, removes the
+deployment node `192.0.2.30` and disposable Station `18132`, removes the
 shared selector from runtime resolution, and makes `make config` consume the
 same resolver as deployment. Three isolated profile-resolution regression
 tests, shell syntax validation, Skill validation, and `git diff --check` pass.
@@ -1829,8 +1829,8 @@ MP-W13-F is unblocked for exact-source deployment but remains
 Focused Linux aggregate
 `20260831T060844651620Z-05ad6436b8ef2710f1319c3c90b4c63d` then ran against
 clean source `d20a8f91a771fe36a9595ac5e9b9ecbd7b31c4c5`, disposable Station
-`http://10.37.94.156:18132` on deployment node `10.37.94.156`, and runtime
-cell `desktop-linux-native` on Linux host `10.37.246.80`. It completed
+`http://192.0.2.30:18132` on deployment node `192.0.2.30`, and runtime
+cell `desktop-linux-native` on Linux host `192.0.2.10`. It completed
 5 PASS / 2 FAIL. Interactions, typing, Group MLS, two-client, and recovery
 passed. Product Closure failed when its first HTTP Gateway readback attempted
 to consume a Tauri-window-authenticated session. Multi-Device passed all five
@@ -1864,8 +1864,8 @@ Retained aggregate
 18 PASS / 0 FAIL at the same exact source. It reports aggregate
 `completionStatus=DONE`, `proofStatus=PROVEN`, zero missing traceability, and
 successful cleanup for every provisioned Gate. Station evidence belongs to
-deployment node `10.37.94.156` and endpoint `18132`; Linux Native runtime-cell
-evidence belongs to host `10.37.246.80`.
+deployment node `192.0.2.30` and endpoint `18132`; Linux Native runtime-cell
+evidence belongs to host `192.0.2.10`.
 
 Chat required-proven validation artifact
 `chat-domain-validation/20260831T091909749786Z-2b1ccc9dd33b1a95af3c393e655d2fae`
@@ -1884,8 +1884,8 @@ Final exact-source aggregate
 `162d36a32d8bd5cb62d04f9f3c7caf83e3833b51` completed 19 PASS / 0 FAIL
 with `DONE/PROVEN`, zero missing traceability, and successful cleanup for every
 provisioned Gate. Station evidence belongs to deployment node
-`10.37.94.156` and endpoint `18132`; Linux Native runtime-cell evidence
-belongs to host `10.37.246.80`. Fresh W11 owner scans and Chat
+`192.0.2.30` and endpoint `18132`; Linux Native runtime-cell evidence
+belongs to host `192.0.2.10`. Fresh W11 owner scans and Chat
 required-proven validation passed, and Gap Detector reports no gap for the
 Linux-only NDR-W7 / MP-W13-F claim.
 
@@ -1916,8 +1916,8 @@ Exact-source aggregate
 `9848935196a23250142708355d604a11f437fc54` completed 19 PASS / 0 FAIL
 with `DONE/PROVEN`, zero missing result traceability, and successful cleanup
 for every provisioned Gate. Station evidence belongs to deployment node
-`10.37.94.156` and endpoint `18132`; Linux Native runtime-cell evidence
-belongs to host `10.37.246.80`.
+`192.0.2.30` and endpoint `18132`; Linux Native runtime-cell evidence
+belongs to host `192.0.2.10`.
 
 Fresh W11 forbidden-owner scan
 `20260831T172746381758Z-cbbe7f358aca6234b74d8073af1017d7`,
@@ -1987,8 +1987,8 @@ one existing environment test skipped, and Desktop check/build, Station
 messaging packages, Chat/Infra validation, closure generation, Gap Detector,
 and skill-check pass. MP-W12, MP-W13-F, and MP-W11 remain
 `PARTIAL/UNPROVEN` until these changes are committed, deployed to Station node
-`10.37.94.156:18132`, and the complete Linux closure plan runs on runtime node
-`10.37.246.80`.
+`192.0.2.30:18132`, and the complete Linux closure plan runs on runtime node
+`192.0.2.10`.
 
 ### 2026-09-01 MP-W12 / MP-W11 Exact-Source Revalidation Findings
 
