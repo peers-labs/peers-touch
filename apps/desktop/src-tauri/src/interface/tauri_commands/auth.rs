@@ -477,10 +477,10 @@ mod tests {
     use crate::application::auth::service::{
         is_idempotent_station_revoke_error, run_logout_transition,
     };
+    use crate::application::station_runtime::client::{StationClientError, StationClientErrorKind};
     use crate::contracts::AuthSessionPayload;
     use crate::domain::identity::{ActiveSession, ActorRef};
     use crate::error::{AppResult, ErrorCode};
-    use crate::infrastructure::station_client::{StationClientError, StationClientErrorKind};
     use std::cell::RefCell;
 
     #[test]

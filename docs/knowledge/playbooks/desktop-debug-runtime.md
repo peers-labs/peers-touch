@@ -43,6 +43,16 @@ Do not use hard packaged `.app` debugging by default. Packaging is only the righ
    - Local development defaults to `semantic-nonintrusive`; it must not
      activate the Desktop process, move the system pointer, redirect keyboard
      focus, or force the window above the operator's current application.
+   - On macOS, Tao requests application activation during its launch callback
+     even when `activate_ignoring_other_apps(false)` is set; Wry also requests
+     activation when creating a WebView. Set the built App's activation policy
+     to Prohibited before `run` and retain it throughout the semantic runtime.
+     Tauri invokes `setup` after Tao's launch callback. Keep configured windows
+     hidden through that callback, then use AppKit `orderBack` at `Ready` for
+     the non-focusable window. Switching to Accessory permits delayed startup
+     activation; Tao's `show()` calls `makeKeyAndOrderFront`. Neither belongs
+     in this semantic path. Verify the visible native window, product rendering,
+     screenshots, and unchanged host input state across launch and actions.
    - Native file panels, permission sheets, physical hover/drag and focus
      claims require `exclusive-native-input` in an `isolated-gui-session`.
      A shared user session must fail closed before global input.

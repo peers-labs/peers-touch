@@ -118,17 +118,19 @@ pub fn notification_push_devices(
         Ok(token) => token,
         Err(error) => return error,
     };
-    let response =
-        match station_client::request_proto::<(), model::notification::ListPushDevicesResponse>(
+    let response = match state
+        .station
+        .client()
+        .request_proto::<(), model::notification::ListPushDevicesResponse>(
             Method::GET,
             "/notification/push/devices",
             &token,
             None,
             None::<&()>,
         ) {
-            Ok(response) => response,
-            Err(error) => return error.into_app_result("Failed to list push devices"),
-        };
+        Ok(response) => response,
+        Err(error) => return error.into_app_result("Failed to list push devices"),
+    };
     to_stub(
         "notification_push_devices",
         json!({

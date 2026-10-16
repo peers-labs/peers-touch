@@ -1093,11 +1093,15 @@ pub fn social_get_relationship_status(
         );
     }
     let query = vec![("target_actor_ptid", input.target_actor_ptid)];
-    let response: model::social::GetSocialRelationshipStatusResponse =
-        match get_proto("/api/v1/social/relationships/status", &token, Some(&query)) {
-            Ok(response) => response,
-            Err(error) => return station_error_proto(error, "get Social relationship status failed"),
-        };
+    let response: model::social::GetSocialRelationshipStatusResponse = match get_proto(
+        state.station.client(),
+        "/api/v1/social/relationships/status",
+        &token,
+        Some(&query),
+    ) {
+        Ok(response) => response,
+        Err(error) => return station_error_proto(error, "get Social relationship status failed"),
+    };
     AppResult::success(response.encode_to_vec())
 }
 
