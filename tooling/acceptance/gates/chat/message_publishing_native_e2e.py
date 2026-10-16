@@ -1446,15 +1446,23 @@ class MessagePublishingNativeGate(AcceptanceGate):
             fixture["conversationId"]
             for fixture in self.retained_fixtures
         }
-        service_message_count = 0
-        ordinary_message_count = 0
-        for conversation in projected:
-            conversation_id = str(
+        projected_conversation_ids = {
+            str(
                 _mapping(conversation, "conversation projection").get(
                     "conversationId"
                 )
                 or ""
             )
+            for conversation in projected
+        }
+        conversation_ids = sorted(
+            projected_conversation_ids | service_conversation_ids
+        )
+        service_message_count = 0
+        ordinary_message_count = 0
+        for conversation_id in conversation_ids:
+            if not conversation_id:
+                raise GateError("Human messaging conversation identity is empty")
             messages = _mapping(
                 self.harness(
                     "engineMessages",

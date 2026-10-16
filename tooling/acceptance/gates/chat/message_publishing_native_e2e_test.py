@@ -360,6 +360,80 @@ class MessagePublishingNativeGateTests(unittest.TestCase):
         self.assertNotIn('"createDirectConversation"', method_source)
         self.assertNotIn('"sendInteractionMessage"', method_source)
 
+    def test_human_regression_queries_retained_service_directs_explicitly(
+        self,
+    ) -> None:
+        gate = object.__new__(MessagePublishingNativeGate)
+        gate.owner_ptid = "ptid:person:alice"
+        gate.retained_fixtures = [
+            {
+                "namespace": "publisher.acceptance",
+                "messageId": "service-message-1",
+                "conversationId": "service-direct-1",
+            }
+        ]
+
+        def harness(
+            method: str,
+            payload: dict[str, object] | None = None,
+            **_kwargs: object,
+        ) -> dict[str, object]:
+            if method == "getRealtimeDevice":
+                return {
+                    "actorPtid": gate.owner_ptid,
+                    "deviceId": "device-1",
+                    "active": True,
+                }
+            if method == "engineConversations":
+                return {
+                    "conversations": [
+                        {"conversationId": "human-direct-1"}
+                    ]
+                }
+            if method == "engineMessages":
+                conversation_id = str(
+                    (payload or {}).get("conversationId") or ""
+                )
+                if conversation_id == "service-direct-1":
+                    return {
+                        "messages": [
+                            {
+                                "id": "service-message-1",
+                                "serviceMessage": {"messageId": "service-message-1"},
+                            }
+                        ]
+                    }
+                return {
+                    "messages": [
+                        {
+                            "id": "human-message-1",
+                            "serviceMessage": None,
+                        }
+                    ]
+                }
+            if method == "identityState":
+                return {
+                    "authenticated": True,
+                    "actorPtid": gate.owner_ptid,
+                }
+            raise AssertionError(f"unexpected harness method: {method}")
+
+        gate.harness = MagicMock(side_effect=harness)
+
+        result = gate.scenario_human_chat_regression()
+
+        self.assertEqual(result["serviceMessageCount"], 1)
+        self.assertEqual(result["ordinaryMessageCount"], 1)
+        queried_conversations = {
+            call.args[1]["conversationId"]
+            for call in gate.harness.call_args_list
+            if call.args and call.args[0] == "engineMessages"
+        }
+        self.assertEqual(
+            queried_conversations,
+            {"human-direct-1", "service-direct-1"},
+        )
+
     def test_harness_exposes_receiver_and_cleanup_oracles_only(self) -> None:
         for method in (
             "receiverSnapshot",
