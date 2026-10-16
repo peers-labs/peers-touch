@@ -1171,9 +1171,14 @@ class SimulatorSocialGate(SimulatorCallbackRoutingGate):
             ),
             "Receiver private Moment readback",
         )
-        if receiver_read.get("state") != "CONTENT_READY":
+        receiver_state = receiver_read.get("state")
+        if receiver_state != "CONTENT_READY":
+            error_code = receiver_read.get("errorCode")
+            retry_after = receiver_read.get("retryAfterSeconds")
             raise GateError(
-                "Receiver private Moment did not reach CONTENT_READY"
+                "Receiver private Moment did not reach CONTENT_READY "
+                f"(state={receiver_state!r}, errorCode={error_code!r}, "
+                f"retryAfterSeconds={retry_after!r})"
             )
         receiver_session.call_action(
             "navigation.apply",
