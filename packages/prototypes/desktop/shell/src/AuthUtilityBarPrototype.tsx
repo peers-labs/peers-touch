@@ -423,7 +423,7 @@ export function AuthUtilityBarPrototype() {
           {stationTrigger}
           <Drawer
             closable
-            height={380}
+            size={380}
             onClose={() => {
               setStationOpen(false);
               window.setTimeout(() => stationTriggerRef.current?.focus(), 340);
@@ -432,7 +432,7 @@ export function AuthUtilityBarPrototype() {
             placement="bottom"
             styles={{
               body: { padding: 16 },
-              content: { borderRadius: '16px 16px 0 0' },
+              section: { borderRadius: '16px 16px 0 0' },
             }}
             title="Station access"
           >

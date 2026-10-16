@@ -13,7 +13,7 @@
 - `NOT_STARTED`: no alignment delta for this ledger item is present in the current worktree.
 - Every row remains `OPEN` until its owning Task closes production behavior, prototype truthfulness, focused checks, and required receiver-side proof.
 
-Current source-side count: `84 IMPLEMENTED/UNPROVEN`, `9 PARTIAL`, `18 NOT_STARTED`, `0/111 formally closed`.
+Current source-side count: `93 IMPLEMENTED/UNPROVEN`, `9 PARTIAL`, `9 NOT_STARTED`, `0/111 formally closed`.
 
 ## Shell, identity, and login
 
@@ -127,17 +127,17 @@ Current source-side count: `84 IMPLEMENTED/UNPROVEN`, `9 PARTIAL`, `18 NOT_START
 
 | ID | Required outcome | Source state | Current evidence | Task |
 |---|---|---|---|---|
-| AD1 | Show measured storage only and bind retention/cache cleanup | NOT_STARTED | `ChatStorageSettings.tsx`; prototype invents buckets | DUI-15 |
-| AD2 | Bind real OSS file lifecycle | NOT_STARTED | `MyFilesSettings.tsx`; prototype shows a static count | DUI-15 |
-| AD3 | Replace fictional whole-data export with real recovery/export journeys | NOT_STARTED | only memory export and encrypted chat recovery are canonical | DUI-15 |
-| AD4 | Bind and place real onboarding reset consistently | NOT_STARTED | production reset exists; prototype button is no-op | DUI-15 |
-| AD5 | Use real outbound channels and remove Email/Matrix/core-messaging rows | NOT_STARTED | `ChannelsSettings.tsx`; prototype mixes fictional channels | DUI-15 |
-| AD6 | Bind applet settings to real install/enable/disable state | NOT_STARTED | runtime exists; settings prototype uses six mock cards | DUI-15 |
-| AD7 | Delete fabricated user statistics section | PARTIAL | production legacy API is absent; prototype still renders hardcoded heatmap/ranks | DUI-15 |
-| AD8 | Bind live logs/filter/follow/export | NOT_STARTED | production logs API exists; prototype uses fixed rows | DUI-15 |
-| AD9 | Bind real cron builder/run/history and remove fake backup target | NOT_STARTED | production scheduler exists; prototype rows are static | DUI-15 |
-| AD10 | Bind real command palette entry | NOT_STARTED | production palette exists; prototype button is isolated | DUI-15 |
-| AD11 | Render actual version/build/platform/runtime metadata | IMPLEMENTED/UNPROVEN | `AboutSettings.tsx`; help catalog is still empty/unproven | DUI-15 |
+| AD1 | Show measured storage only and bind retention/cache cleanup | IMPLEMENTED/UNPROVEN | production `ChatStorageSettings`; prototype consumes injected measurement/retention/cleanup result and preserves unknown bytes; Native physical proof remains open | DUI-15 |
+| AD2 | Bind real OSS file lifecycle | IMPLEMENTED/UNPROVEN | production `MyFilesSettings`; prototype covers expiration keep/clear/set, trash/delete/restore and query; current-source OSS proof remains open | DUI-15 |
+| AD3 | Replace fictional whole-data export with real recovery/export journeys | IMPLEMENTED/UNPROVEN | only memory export and encrypted messaging recovery remain; browser recovery is visibly unavailable without its encrypted runtime; Native recovery proof remains open | DUI-15 |
+| AD4 | Bind and place real onboarding reset consistently | IMPLEMENTED/UNPROVEN | production owner retains session reset; prototype confirmation invokes Shell auth/onboarding callback; Native lifecycle proof remains open | DUI-15 |
+| AD5 | Use real outbound channels and remove Email/Matrix/core-messaging rows | IMPLEMENTED/UNPROVEN | Lark-only prototype commands use actual appId/appSecret fields, preserve error drafts, and remove fictional integrations; live channel proof remains open | DUI-15 |
+| AD6 | Bind applet settings to real install/enable/disable state | PARTIAL | prototype consumes injected installed list/settingsPanel and deletes six fictional applets; shared launcher catalog and lifecycle closure remain DUI-12 dependencies | DUI-15 |
+| AD7 | Delete fabricated user statistics section | IMPLEMENTED/UNPROVEN | Statistics navigation/component/heatmap/ranking constants are absent from prototype; production legacy API is absent; owning Task closure remains open | DUI-15 |
+| AD8 | Bind live logs/filter/follow/export | IMPLEMENTED/UNPROVEN | prototype consumes injected tail, six levels, bounded rows, selected-only polling, pause/follow and visible export; live Native log proof remains open | DUI-15 |
+| AD9 | Bind real cron builder/run/history and remove fake backup target | IMPLEMENTED/UNPROVEN | prototype uses real schedule/execution/delivery fields, requires projected destination, and separates run request from success; Native scheduler proof remains open | DUI-15 |
+| AD10 | Bind real command palette entry | IMPLEMENTED/UNPROVEN | Settings invokes the Shell's single global palette; current-source Native entry proof remains open | DUI-15 |
+| AD11 | Render actual version/build/platform/runtime metadata | IMPLEMENTED/UNPROVEN | production About owner and browser package/platform metadata exist; invented build/catalog removed; current-source Native metadata proof remains open | DUI-15 |
 
 ## Network and federation
 

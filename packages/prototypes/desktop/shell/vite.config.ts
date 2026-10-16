@@ -1,9 +1,16 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath, URL } from 'node:url';
+import { execFileSync } from 'node:child_process';
+
+const sourceCommit = execFileSync('git', ['rev-parse', 'HEAD'], {
+  cwd: fileURLToPath(new URL('../../../..', import.meta.url)),
+  encoding: 'utf8',
+}).trim();
 
 export default defineConfig({
   plugins: [react()],
+  define: { __PT_PROTOTYPE_SOURCE_COMMIT__: JSON.stringify(sourceCommit) },
   resolve: {
     alias: [
       { find: /^react$/, replacement: fileURLToPath(new URL('./node_modules/react/index.js', import.meta.url)) },

@@ -1,0 +1,27 @@
+.advanced-settings-pane {
+  container-type: inline-size;
+  min-width: 0;
+}
+
+.advanced-settings-pane [data-settings-row] > div:first-child {
+  overflow-wrap: anywhere;
+}
+
+.advanced-settings-pane [data-settings-row] > div:last-child {
+  max-width: 60%;
+}
+
+@container (max-width: 600px) {
+  .advanced-settings-pane [data-settings-row] {
+    flex-wrap: wrap;
+  }
+
+  .advanced-settings-pane [data-settings-row] > div:last-child {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .advanced-settings-pane section > header {
+    flex-wrap: wrap;
+  }
+}

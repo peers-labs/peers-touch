@@ -6,7 +6,7 @@
  *   2. Left Sidebar (180px): Section items within selected group
  *   3. Right: Content area (max-width 720px, padding 24px)
  *
- * Groups: General, AI, Channels, Applets, Data, Help
+ * Groups: General, Network, AI, Advanced
  *
  * Standalone web prototype: mock-data only, no real store / kernel / tauri.
  */
@@ -17,7 +17,6 @@ import {
   Send,
   Puzzle,
   Database,
-  HelpCircle,
   User,
   Globe,
   Sliders,
@@ -37,7 +36,6 @@ import {
   Loader2,
   Pencil,
   Network,
-  ExternalLink,
   Shield,
   LogOut,
   Lock,
@@ -47,13 +45,7 @@ import {
   FileArchive,
   ShieldCheck,
   ShieldAlert,
-  MapPin,
   Clock,
-  Calendar,
-  BarChart3,
-  MessageSquare,
-  Cpu,
-  Flame,
   AlertTriangle,
   Info,
   ChevronDown,
@@ -63,14 +55,14 @@ import {
   FolderOpen,
   Bell,
   Image as ImageIcon,
-  Upload,
   Wifi,
   Wrench,
-  History,
   MonitorSmartphone,
   type LucideIcon,
 } from 'lucide-react';
 import { T } from './theme';
+import { createAdvancedSettingsSections } from './AdvancedSettings';
+import type { AdvancedSection, AdvancedSettingsAdapter } from './advancedSettingsAdapter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // DESIGN SYSTEM (canonical atoms — ui-identity components.md §3 scale)
@@ -101,16 +93,19 @@ function Select({
   onChange,
   width,
   ariaLabel,
+  disabled,
 }: {
   value: string;
   options: { id: string; label: string }[];
   onChange: (v: string) => void;
   width?: number | string;
   ariaLabel?: string;
+  disabled?: boolean;
 }) {
   return (
     <select
       aria-label={ariaLabel}
+      disabled={disabled}
       value={value}
       onChange={(e) => onChange(e.target.value)}
       style={{
@@ -200,19 +195,21 @@ function PendingBadge({ label = 'Pending backend', title }: { label?: string; ti
   );
 }
 
-function GhostBtn({ icon: Icon, label, onClick, danger }: {
-  icon?: LucideIcon; label: string; onClick: () => void; danger?: boolean;
+function GhostBtn({ icon: Icon, label, ariaLabel, onClick, danger, disabled }: {
+  icon?: LucideIcon; label: string; ariaLabel?: string; onClick: () => void; danger?: boolean; disabled?: boolean;
 }) {
   return (
     <button
       type="button"
+      aria-label={ariaLabel ?? label}
       onClick={onClick}
+      disabled={disabled}
       style={{
         display: 'inline-flex', alignItems: 'center', gap: 6,
         height: 32, padding: '0 12px', borderRadius: 8,
         border: `1px solid ${T.borderSoft}`,
         backgroundColor: T.bg, color: danger ? T.danger : T.textSecondary,
-        fontSize: 13, fontWeight: 500, cursor: 'pointer',
+        fontSize: 13, fontWeight: 500, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1,
       }}
     >
       {Icon ? <Icon size={14} /> : null}
@@ -221,18 +218,19 @@ function GhostBtn({ icon: Icon, label, onClick, danger }: {
   );
 }
 
-function PrimaryBtn({ icon: Icon, label, onClick }: {
-  icon?: LucideIcon; label: string; onClick: () => void;
+function PrimaryBtn({ icon: Icon, label, onClick, disabled }: {
+  icon?: LucideIcon; label: string; onClick: () => void; disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       style={{
         display: 'inline-flex', alignItems: 'center', gap: 6,
         height: 32, padding: '0 14px', borderRadius: 8,
         border: 'none', backgroundColor: T.primary, color: T.white,
-        fontSize: 13, fontWeight: 600, cursor: 'pointer',
+        fontSize: 13, fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1,
       }}
     >
       {Icon ? <Icon size={14} /> : null}
@@ -345,7 +343,7 @@ function SettingsRow({ label, desc, children }: {
   label: string; desc?: string; children?: React.ReactNode;
 }) {
   return (
-    <div style={{
+    <div data-settings-row style={{
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       gap: 16, padding: '9px 0',
     }}>
@@ -1753,386 +1751,13 @@ function MCPSection() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// SECTION: CHANNELS (Channels group)
+// ADVANCED SETTINGS (caller-injected projection and canonical atoms)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function ChannelsSection() {
-  const channels = [
-    { id: 'ch-1', name: 'Direct Messages', type: 'dm', icon: MessageSquare, connected: true },
-    { id: 'ch-2', name: 'Group Chats', type: 'group', icon: Users, connected: true },
-    { id: 'ch-3', name: 'Federation Relay', type: 'relay', icon: Network, connected: true },
-    { id: 'ch-4', name: 'Email Bridge', type: 'bridge', icon: Send, connected: false },
-    { id: 'ch-5', name: 'Matrix Bridge', type: 'bridge', icon: Globe, connected: false },
-  ];
-
-  const TYPE_COLORS: Record<string, string> = { dm: '#1677ff', group: '#722ed1', relay: '#13a8a8', bridge: '#d48806' };
-
-  return (
-    <SettingsContainer>
-      <SettingsSection icon={Send} title="Communication Channels" subtitle="Connected messaging channels and bridge integrations.">
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
-          {channels.map((ch, i) => {
-            const Icon = ch.icon;
-            return (
-              <div key={ch.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 0', borderTop: i === 0 ? 'none' : `1px solid ${T.borderSoft}` }}>
-                <div style={{ width: 36, height: 36, borderRadius: 9, backgroundColor: T.fillQuaternary, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <Icon size={18} color={T.textSecondary} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{ch.name}</div>
-                </div>
-                <Tag text={ch.type} color={TYPE_COLORS[ch.type] || T.textSecondary} />
-                <span style={{ width: 8, height: 8, borderRadius: '50%', background: ch.connected ? '#10b981' : T.textQuaternary }} />
-                <span style={{ fontSize: 12, color: ch.connected ? '#10b981' : T.textTertiary }}>{ch.connected ? 'Connected' : 'Offline'}</span>
-              </div>
-            );
-          })}
-        </div>
-      </SettingsSection>
-    </SettingsContainer>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// SECTION: APPLETS (Applets group)
-// ═══════════════════════════════════════════════════════════════════════════════
-
-function AppletsSection() {
-  const [applets, setApplets] = useState([
-    { id: 'ap-1', name: 'Note', version: 'v1.2.0', status: 'active', desc: 'Rich-text note-taking with markdown support.', enabled: true },
-    { id: 'ap-2', name: 'Calendar', version: 'v1.0.3', status: 'active', desc: 'Schedule management and event reminders.', enabled: true },
-    { id: 'ap-3', name: 'Todo', version: 'v0.9.1', status: 'beta', desc: 'Task management with Kanban board view.', enabled: true },
-    { id: 'ap-4', name: 'Whiteboard', version: 'v0.8.0', status: 'beta', desc: 'Collaborative drawing and diagramming tool.', enabled: false },
-    { id: 'ap-5', name: 'Code Snippet', version: 'v1.1.0', status: 'active', desc: 'Syntax-highlighted code snippet manager.', enabled: true },
-    { id: 'ap-6', name: 'RSS Reader', version: 'v0.5.0', status: 'experimental', desc: 'Feed aggregation and reading experience.', enabled: false },
-  ]);
-
-  const STATUS_COLORS: Record<string, string> = { active: '#10b981', beta: '#d48806', experimental: '#722ed1' };
-
-  return (
-    <SettingsContainer>
-      <SettingsSection icon={Puzzle} title="Installed Applets" subtitle="Manage applet modules loaded into the workspace.">
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          {applets.map((ap) => (
-            <div key={ap.id} style={{
-              padding: 16, borderRadius: 10, backgroundColor: T.fillQuaternary,
-              border: `1px solid ${T.border}`, opacity: ap.enabled ? 1 : 0.6,
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                <Puzzle size={18} color={T.primary} />
-                <span style={{ fontSize: 14, fontWeight: 600, color: T.text, flex: 1 }}>{ap.name}</span>
-                <Toggle on={ap.enabled} onToggle={() => setApplets((prev) => prev.map((a) => a.id === ap.id ? { ...a, enabled: !a.enabled } : a))} />
-              </div>
-              <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
-                <Tag text={ap.version} color={T.textSecondary} />
-                <Tag text={ap.status} color={STATUS_COLORS[ap.status] || T.textTertiary} />
-              </div>
-              <div style={{ fontSize: 12, color: T.textTertiary }}>{ap.desc}</div>
-            </div>
-          ))}
-        </div>
-      </SettingsSection>
-    </SettingsContainer>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// SECTION: STATISTICS (Data group)
-// ═══════════════════════════════════════════════════════════════════════════════
-
-function StatisticsSection() {
-  const summaryCards = [
-    { label: 'Sessions', value: '1,842', icon: MessageSquare, color: '#1677ff' },
-    { label: 'Messages', value: '24,391', icon: Send, color: '#722ed1' },
-    { label: 'Words', value: '1.2M', icon: ScrollText, color: '#13a8a8' },
-    { label: 'Agents', value: '7', icon: Cpu, color: '#d48806' },
-  ];
-
-  // Simplified activity heatmap (7 columns x 4 rows)
-  // Fixed demo series (never random — a settings screen must not change on render).
-  const heatmapData = [0.2,0.5,0.8,0.6,0.3,0.1,0.4,0.7,0.9,0.5,0.2,0.3,0.6,0.8,0.4,0.2,0.5,0.7,0.6,0.3,0.1,0.4,0.6,0.8,0.5,0.3,0.2,0.4];
-
-  const rankModels = [
-    { name: 'gpt-5.4', count: 8420 },
-    { name: 'claude-sonnet-4', count: 5210 },
-    { name: 'qwen-max', count: 2130 },
-    { name: 'deepseek-v3', count: 890 },
-  ];
-
-  const rankAgents = [
-    { name: 'Research Assistant', count: 3240 },
-    { name: 'Writing Partner', count: 2810 },
-    { name: 'Code Reviewer', count: 1950 },
-  ];
-
-  const rankTopics = [
-    { name: 'Architecture Design', count: 420 },
-    { name: 'Bug Fixing', count: 380 },
-    { name: 'Documentation', count: 290 },
-    { name: 'Code Generation', count: 250 },
-  ];
-
-  return (
-    <SettingsContainer>
-      {/* Summary Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
-        {summaryCards.map((c) => {
-          const Icon = c.icon;
-          return (
-            <div key={c.label} style={{
-              padding: 16, borderRadius: 12, backgroundColor: T.white,
-              border: `1px solid ${T.border}`, textAlign: 'center',
-            }}>
-              <Icon size={20} color={c.color} style={{ marginBottom: 8 }} />
-              <div style={{ fontSize: 20, fontWeight: 700, color: T.text }}>{c.value}</div>
-              <div style={{ fontSize: 12, color: T.textTertiary, marginTop: 4 }}>{c.label}</div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Activity Heatmap */}
-      <SettingsSection icon={Flame} title="Activity Heatmap" subtitle="Message activity over the past 4 weeks.">
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
-          {heatmapData.map((v, i) => (
-            <div key={i} style={{
-              width: '100%', paddingTop: '100%', borderRadius: 4, position: 'relative',
-              backgroundColor: v > 0.7 ? T.primary : v > 0.4 ? T.primaryWash : v > 0.15 ? T.fillTertiary : T.fillQuaternary,
-            }} />
-          ))}
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 4, marginTop: 8, alignItems: 'center' }}>
-          <span style={{ fontSize: 11, color: T.textTertiary }}>Less</span>
-          {[T.fillQuaternary, T.fillTertiary, T.primaryWash, T.primary].map((c, i) => (
-            <div key={i} style={{ width: 12, height: 12, borderRadius: 3, backgroundColor: c }} />
-          ))}
-          <span style={{ fontSize: 11, color: T.textTertiary }}>More</span>
-        </div>
-      </SettingsSection>
-
-      {/* Rank Lists */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
-        {[
-          { title: 'Model Usage', data: rankModels },
-          { title: 'Agent Usage', data: rankAgents },
-          { title: 'Topic Frequency', data: rankTopics },
-        ].map((section) => (
-          <div key={section.title} style={{ backgroundColor: T.white, borderRadius: 12, padding: 16, border: `1px solid ${T.border}` }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 12 }}>{section.title}</div>
-            {section.data.map((item, i) => {
-              const maxCount = section.data[0].count;
-              return (
-                <div key={item.name} style={{ marginBottom: 10 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <span style={{ fontSize: 12, color: T.text }}>{i + 1}. {item.name}</span>
-                    <span style={{ fontSize: 11, color: T.textTertiary }}>{item.count}</span>
-                  </div>
-                  <div style={{ height: 4, borderRadius: 2, backgroundColor: T.fillTertiary }}>
-                    <div style={{ height: '100%', borderRadius: 2, backgroundColor: T.primary, width: `${(item.count / maxCount) * 100}%`, opacity: 1 - i * 0.2 }} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ))}
-      </div>
-    </SettingsContainer>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// SECTION: LOGS (Data group)
-// ═══════════════════════════════════════════════════════════════════════════════
-
-type LogLevel = 'info' | 'warn' | 'error';
-
-function LogsSection() {
-  const [levelFilter, setLevelFilter] = useState<LogLevel | 'all'>('all');
-
-  const logs: { time: string; level: LogLevel; source: string; message: string }[] = [
-    { time: '2026-07-21 14:32:01', level: 'info', source: 'federation', message: 'Routing table refreshed. 24 peers active.' },
-    { time: '2026-07-21 14:31:58', level: 'info', source: 'mcp', message: 'Server integrated_browser connected (6 tools).' },
-    { time: '2026-07-21 14:30:12', level: 'warn', source: 'provider', message: 'Anthropic API rate limit approaching (80% quota).' },
-    { time: '2026-07-21 14:28:44', level: 'error', source: 'federation', message: 'Station Delta unreachable after 3 retries.' },
-    { time: '2026-07-21 14:25:00', level: 'info', source: 'memory', message: 'Memory index rebuilt. 12,480 embeddings indexed.' },
-    { time: '2026-07-21 14:22:33', level: 'warn', source: 'applet', message: 'Whiteboard applet failed health check. Retrying.' },
-    { time: '2026-07-21 14:20:01', level: 'info', source: 'kernel', message: 'Boot sequence complete. 5 runtimes initialized.' },
-    { time: '2026-07-21 14:18:55', level: 'error', source: 'provider', message: 'Ollama connection refused at 127.0.0.1:11434.' },
-    { time: '2026-07-21 14:15:20', level: 'info', source: 'skill', message: 'Skill meeting-digest loaded from GitHub cache.' },
-  ];
-
-  const LEVEL_COLORS: Record<LogLevel, string> = { info: '#1677ff', warn: '#d48806', error: '#cf1322' };
-  const filtered = levelFilter === 'all' ? logs : logs.filter((l) => l.level === levelFilter);
-
-  return (
-    <SettingsContainer>
-      <SettingsSection icon={ScrollText} title="System Logs" subtitle="Recent system events and diagnostic messages.">
-        {/* Level filter */}
-        <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
-          {(['all', 'info', 'warn', 'error'] as const).map((l) => (
-            <div key={l} onClick={() => setLevelFilter(l)} style={{
-              padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: levelFilter === l ? 600 : 500,
-              cursor: 'pointer', color: levelFilter === l ? T.primary : T.textSecondary,
-              backgroundColor: levelFilter === l ? T.primaryWash : 'transparent',
-              border: `1px solid ${levelFilter === l ? T.primary : 'transparent'}`,
-            }}>
-              {l === 'all' ? 'All' : l.toUpperCase()}
-            </div>
-          ))}
-        </div>
-
-        {/* Log table */}
-        <div style={{ borderRadius: 8, overflow: 'hidden', border: `1px solid ${T.border}` }}>
-          {/* Header */}
-          <div style={{ display: 'grid', gridTemplateColumns: '150px 60px 100px 1fr', padding: '8px 12px', backgroundColor: T.fillQuaternary, fontSize: 11, fontWeight: 600, color: T.textTertiary, textTransform: 'uppercase' }}>
-            <span>Timestamp</span>
-            <span>Level</span>
-            <span>Source</span>
-            <span>Message</span>
-          </div>
-          {filtered.map((log, i) => (
-            <div key={i} style={{ display: 'grid', gridTemplateColumns: '150px 60px 100px 1fr', padding: '8px 12px', fontSize: 12, borderTop: `1px solid ${T.borderSoft}`, alignItems: 'center' }}>
-              <span style={{ color: T.textTertiary, fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 11 }}>{log.time}</span>
-              <span><Tag text={log.level} color={LEVEL_COLORS[log.level]} /></span>
-              <span style={{ color: T.textSecondary }}>{log.source}</span>
-              <span style={{ color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{log.message}</span>
-            </div>
-          ))}
-        </div>
-      </SettingsSection>
-    </SettingsContainer>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// SECTION: HELP (Help group)
-// ═══════════════════════════════════════════════════════════════════════════════
-
-// ── Advanced · Data & Storage ──────────────────────────────────────────────
-function DataStorageSection() {
-  const [cacheCleared, setCacheCleared] = useState(false);
-  const [confirmReset, setConfirmReset] = useState(false);
-  const buckets = [
-    { label: 'Messages & media', value: '384 MB', pct: 62 },
-    { label: 'AI memory index', value: '128 MB', pct: 21 },
-    { label: 'Applets & skills', value: '64 MB', pct: 11 },
-    { label: 'Cache', value: '40 MB', pct: 6 },
-  ];
-  return (
-    <SettingsContainer>
-      <SettingsSection icon={HardDrive} title="Local storage" subtitle="Everything lives on this device and your station.">
-        {buckets.map((b) => (
-          <div key={b.label} style={{ margin: '10px 0' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 6 }}>
-              <span style={{ color: T.text }}>{b.label}</span>
-              <span style={{ color: T.textTertiary }}>{b.value}</span>
-            </div>
-            <div style={{ height: 6, borderRadius: 3, background: '#f0f0f0', overflow: 'hidden' }}>
-              <div style={{ width: `${b.pct}%`, height: '100%', background: T.primary, borderRadius: 3 }} />
-            </div>
-          </div>
-        ))}
-      </SettingsSection>
-
-      <SettingsSection icon={Database} title="Backup & files" subtitle="Take your data with you.">
-        <SettingsRow label="My files" desc="2 files · 4.2 MB">
-          <GhostBtn label="Manage files" onClick={() => {}} />
-        </SettingsRow>
-        <SettingsRow label="Export local data" desc="Download a copy of your messages and settings.">
-          <GhostBtn label="Export" onClick={() => {}} />
-        </SettingsRow>
-        <SettingsRow label="Clear cache" desc={cacheCleared ? 'Cache cleared.' : 'Frees space without deleting your messages.'}>
-          <GhostBtn label={cacheCleared ? 'Cleared' : 'Clear'} onClick={() => setCacheCleared(true)} />
-        </SettingsRow>
-      </SettingsSection>
-
-      <DangerZone title="Reset" desc="Start the first-run setup again on the next launch. Your station data on disk is not deleted.">
-        {confirmReset ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 12, color: T.danger, flex: 1, minWidth: 200 }}>Re-show onboarding and reset local preferences?</span>
-            <button type="button"
-              onClick={() => { setConfirmReset(false); }}
-              style={{ height: 28, padding: '0 12px', borderRadius: 8, border: `1px solid ${T.borderSoft}`, background: T.bg, color: T.textSecondary, fontSize: 12, cursor: 'pointer' }}>Cancel</button>
-            <button type="button"
-              onClick={() => setConfirmReset(false)}
-              style={{ height: 28, padding: '0 12px', borderRadius: 8, border: 'none', background: T.danger, color: T.white, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Reset onboarding</button>
-          </div>
-        ) : (
-          <button type="button" onClick={() => setConfirmReset(true)}
-            style={{ height: 32, padding: '0 14px', borderRadius: 8, border: 'none', background: T.danger, color: T.white, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-            Reset onboarding
-          </button>
-        )}
-      </DangerZone>
-    </SettingsContainer>
-  );
-}
-
-// ── Advanced · About ────────────────────────────────────────────────────────
-function AboutSection() {
-  const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
-  const featureGroups = [
-    { id: 'messaging', label: 'Messaging', items: ['End-to-end encrypted DMs', 'Group chats across networks', 'Rich media attachments', 'Reactions and threads'] },
-    { id: 'ai', label: 'AI features', items: ['Multi-provider models', 'Custom skill packages', 'MCP server integration', 'Long-term memory'] },
-    { id: 'network', label: 'Your network', items: ['Your own station', 'Cross-station messaging', 'Decentralized identity', 'Relay routing'] },
-    { id: 'applets', label: 'Applets', items: ['Notes', 'Calendar', 'Task boards', 'Extensible plugins'] },
-  ];
-  return (
-    <SettingsContainer>
-      <SettingsSection icon={Info} title="About Peers Touch" subtitle="Your social world, held in your own center.">
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
-          <SettingsRow label="Version" desc="v0.9.2-beta" />
-          <SettingsRow label="Build" desc="20261012.1012" />
-          <SettingsRow label="Platform" desc="macOS arm64 · Tauri 2.x" />
-          <SettingsRow label="Runtime" desc="WebKit + Rust" />
-        </div>
-      </SettingsSection>
-
-      <SettingsSection icon={HelpCircle} title="What's inside" subtitle="A quick tour of the capabilities in this build.">
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
-          {featureGroups.map((fg) => {
-            const expanded = expandedGroup === fg.id;
-            return (
-              <div key={fg.id}>
-                <button type="button" aria-expanded={expanded} onClick={() => setExpandedGroup(expanded ? null : fg.id)}
-                  style={{
-                    width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '10px 4px',
-                    borderRadius: 8, cursor: 'pointer', border: 'none', background: 'transparent', textAlign: 'left',
-                  }}>
-                  {expanded ? <ChevronDown size={15} color={T.textSecondary} /> : <ChevronRight size={15} color={T.textSecondary} />}
-                  <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{fg.label}</span>
-                  <span style={{ fontSize: 12, color: T.textTertiary, marginLeft: 'auto' }}>{fg.items.length}</span>
-                </button>
-                {expanded ? (
-                  <div style={{ paddingLeft: 30, paddingBottom: 8 }}>
-                    {fg.items.map((item) => (
-                      <div key={item} style={{ fontSize: 13, color: T.textSecondary, padding: '4px 0' }}>{item}</div>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-      </SettingsSection>
-    </SettingsContainer>
-  );
-}
-
-function CronJobsSection() {
-  return (
-    <SettingsContainer>
-      <SettingsSection icon={Clock} title="Cron Jobs">
-        <SettingsRow label="Daily workspace summary" desc="Every day at 09:00">
-          <span style={{ color: T.success, fontSize: 12 }}>Active</span>
-        </SettingsRow>
-        <SettingsRow label="Weekly backup" desc="Every Sunday at 02:00">
-          <span style={{ color: T.textTertiary, fontSize: 12 }}>Paused</span>
-        </SettingsRow>
-      </SettingsSection>
-    </SettingsContainer>
-  );
-}
+const AdvancedSettingsSection = createAdvancedSettingsSections({
+  Container: SettingsContainer, Section: SettingsSection, Row: SettingsRow,
+  Field, Select, Toggle, GhostBtn, PrimaryBtn, DangerZone, inputStyle,
+});
 
 function CommandPaletteSection({ onOpen }: { onOpen: () => void }) {
   return (
@@ -2157,7 +1782,7 @@ type SectionId =
   | 'account' | 'notifications' | 'privacy' | 'language'
   | 'station' | 'discovery' | 'federation'
   | 'providers' | 'models' | 'memory' | 'skills' | 'mcp'
-  | 'storage' | 'channels' | 'applets' | 'statistics' | 'cron' | 'command-menu' | 'logs' | 'about';
+  | AdvancedSection | 'command-menu';
 
 interface SectionDef { id: SectionId; label: string; icon: LucideIcon; }
 interface GroupDef { id: GroupId; label: string; icon: LucideIcon; sections: SectionDef[]; }
@@ -2194,9 +1819,10 @@ const GROUPS: GroupDef[] = [
     id: 'advanced', label: 'Advanced', icon: Wrench,
     sections: [
       { id: 'storage', label: 'Data & Storage', icon: Database },
+      { id: 'files', label: 'My Files', icon: FolderOpen },
+      { id: 'recovery', label: 'Recovery & Export', icon: ShieldCheck },
       { id: 'channels', label: 'Channels', icon: Send },
       { id: 'applets', label: 'Applets', icon: Puzzle },
-      { id: 'statistics', label: 'Statistics', icon: BarChart3 },
       { id: 'logs', label: 'Diagnostics & Logs', icon: ScrollText },
       { id: 'cron', label: 'Scheduled Tasks', icon: Clock },
       { id: 'command-menu', label: 'Command Palette', icon: Command },
@@ -2206,7 +1832,8 @@ const GROUPS: GroupDef[] = [
 ];
 
 function renderSection(sectionId: SectionId, onOpenCommandPalette: () => void,
-  federations: JoinedFederation[], setFederations: Dispatch<SetStateAction<JoinedFederation[]>>) {
+  federations: JoinedFederation[], setFederations: Dispatch<SetStateAction<JoinedFederation[]>>,
+  advancedAdapter: AdvancedSettingsAdapter, onNavigateAdvanced: (section: AdvancedSection) => void) {
   switch (sectionId) {
     case 'account': return <AccountSection federations={federations} />;
     case 'notifications': return <NotificationsSettingsSection />;
@@ -2220,19 +1847,15 @@ function renderSection(sectionId: SectionId, onOpenCommandPalette: () => void,
     case 'memory': return <MemorySection />;
     case 'skills': return <SkillsSection />;
     case 'mcp': return <MCPSection />;
-    case 'storage': return <DataStorageSection />;
-    case 'channels': return <ChannelsSection />;
-    case 'applets': return <AppletsSection />;
-    case 'statistics': return <StatisticsSection />;
-    case 'logs': return <LogsSection />;
-    case 'cron': return <CronJobsSection />;
     case 'command-menu': return <CommandPaletteSection onOpen={onOpenCommandPalette} />;
-    case 'about': return <AboutSection />;
+    case 'storage': case 'files': case 'recovery': case 'channels':
+    case 'applets': case 'logs': case 'cron': case 'about':
+      return <AdvancedSettingsSection section={sectionId} adapter={advancedAdapter} onNavigate={onNavigateAdvanced} />;
     default: return null;
   }
 }
 
-export function SettingsPage({ onOpenCommandPalette }: { onOpenCommandPalette: () => void }) {
+export function SettingsPage({ onOpenCommandPalette, advancedAdapter }: { onOpenCommandPalette: () => void; advancedAdapter: AdvancedSettingsAdapter }) {
   const [activeGroup, setActiveGroup] = useState<GroupId>('general');
   const [activeSection, setActiveSection] = useState<SectionId>('account');
   const [federations, setFederations] = useState<JoinedFederation[]>(MOCK_FEDERATIONS);
@@ -2325,7 +1948,7 @@ export function SettingsPage({ onOpenCommandPalette }: { onOpenCommandPalette: (
         ) : null}
 
         <div style={{ flex: 1, minWidth: 0, overflowY: 'auto' }}>
-          {renderSection(current.id, onOpenCommandPalette, federations, setFederations)}
+          {renderSection(current.id, onOpenCommandPalette, federations, setFederations, advancedAdapter, setActiveSection)}
         </div>
       </div>
     </div>

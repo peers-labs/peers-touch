@@ -56,6 +56,8 @@ import {
   type OAuthProviderProjection,
 } from './OAuthLoginPrototype';
 import { WelcomeLoginPrototype } from './WelcomeLoginPrototype';
+import { createAdvancedSettingsAdapter, type AdvancedSettingsAdapter } from './advancedSettingsAdapter';
+import { advancedSettingsScenario } from './advancedSettingsScenarios';
 
 /** An installed applet (mirrors RuntimeAppletInfo.manifest + status). */
 interface AppletInfo {
@@ -641,6 +643,7 @@ export interface DesktopShellProps {
   pages?: Record<string, () => React.ReactNode>;
   initialPage?: string;
   initialNotifications?: readonly NotifItem[];
+  advancedSettingsAdapter?: AdvancedSettingsAdapter;
 }
 
 type AgentSurfaceId = 'agent' | 'agent-atelier' | 'agent-orchestration';
@@ -683,6 +686,7 @@ export function DesktopShell({
   pages,
   initialPage,
   initialNotifications,
+  advancedSettingsAdapter,
 }: DesktopShellProps = {}) {
   // page mirrors the real router: kernel ids (search/chat/agent/settings),
   // `applets` for the applets center, or `applet:<id>` for an applet surface.
@@ -720,6 +724,15 @@ export function DesktopShell({
     () => initialNotifications?.map((item) => ({ ...item })) ?? [],
   );
   const [authPrototypeComplete, setAuthPrototypeComplete] = useState(false);
+  const [onboardingReset, setOnboardingReset] = useState(false);
+  const settingsAdapter = useMemo(() => {
+    if (advancedSettingsAdapter) return advancedSettingsAdapter;
+    const scenario = advancedSettingsScenario();
+    return createAdvancedSettingsAdapter(scenario.projection, {
+      ...scenario,
+      onResetOnboarding: () => { setOnboardingReset(true); setPaletteOpen(false); },
+    });
+  }, [advancedSettingsAdapter]);
   const unreadCount = notifications.filter((n) => !n.read).length;
   const [visitedAgentSurfaces, setVisitedAgentSurfaces] = useState<Set<AgentSurfaceId>>(() => {
     const initialSurface = getAgentSurfaceId(defaultPage);
@@ -765,10 +778,10 @@ export function DesktopShell({
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  if (showAuthPrototype && !authPrototypeComplete) {
+  if ((showAuthPrototype && !authPrototypeComplete) || onboardingReset) {
     return (
       <OAuthLoginPrototype
-        onComplete={() => setAuthPrototypeComplete(true)}
+        onComplete={() => { setAuthPrototypeComplete(true); setOnboardingReset(false); }}
         providers={authProviders}
       />
     );
@@ -814,7 +827,7 @@ export function DesktopShell({
   } else if (page === 'agent-orchestration') {
     body = <AgentCanvasPage embedded onBack={() => navigate('agent')} />;
   } else if (page === 'settings') {
-    body = <SettingsPage onOpenCommandPalette={() => setPaletteOpen(true)} />;
+    body = <SettingsPage onOpenCommandPalette={() => setPaletteOpen(true)} advancedAdapter={settingsAdapter} />;
   } else {
     body = <PagePlaceholder page={page} />;
   }

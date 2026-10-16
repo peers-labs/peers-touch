@@ -13,5 +13,10 @@ every fabricated metric or integration.
 
 ## Current Snapshot
 
-- AD11 is implemented/unproven; AD7 is partial.
-- AD1-AD6 and AD8-AD10 have no alignment delta.
+- AD1-AD5 and AD7-AD11 have production owners and a truthful browser projection.
+  The focused browser Journey covers operational controls and failure recovery;
+  exact-source Native/Station proof remains open.
+- AD6 is partial: Settings consumes an injected install/settingsPanel list, while
+  the common launcher catalog and applet lifecycle remain DUI-12 dependencies.
+- Browser fixture evidence never closes physical storage, OSS, encrypted recovery,
+  live channels, scheduler execution, or Native onboarding/metadata obligations.

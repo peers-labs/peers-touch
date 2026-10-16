@@ -1347,10 +1347,158 @@ def assert_focus_normalization(base_url: str, page):
           json.dumps(boundary, ensure_ascii=False))
 
 
+def assert_advanced_settings(base_url: str, page, shot_dir: Path | None = None):
+    """DUI-15: browser fixture evidence, never Native/Station proof."""
+    from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
+
+    def visit(fixture="empty"):
+        parts = urlsplit(base_url)
+        params = dict(parse_qsl(parts.query))
+        params["settings-fixture"] = fixture
+        page.goto(urlunsplit(parts._replace(query=urlencode(params))), wait_until="networkidle")
+        page.get_by_role("button", name="设置", exact=True).click()
+        page.get_by_role("tab", name="Advanced", exact=True).click()
+
+    def section(name):
+        page.get_by_role("navigation", name="Settings sections").get_by_role("button", name=name, exact=True).click()
+
+    def geometry(label):
+        page.wait_for_timeout(180)
+        observed = page.locator("[data-advanced-settings-section]").evaluate("""root => ({
+            overflow: [...root.querySelectorAll('section, [data-settings-row]')].filter(
+                el => el.scrollWidth > el.clientWidth + 1).map(el => el.textContent.slice(0, 60)),
+            buttons: [...root.querySelectorAll('button')].map(el => ({
+                height: el.getBoundingClientRect().height,
+                radius: parseFloat(getComputedStyle(el).borderRadius),
+                overflow: el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1
+            })),
+            count: document.querySelectorAll('[data-advanced-settings-section]').length
+        })""")
+        check(f"{label} no horizontal overflow", not observed["overflow"], str(observed["overflow"]))
+        check(f"{label} canonical button sizes", all(
+            abs(button["height"] - 32) < 1 or abs(button["height"] - 22) < 1
+            for button in observed["buttons"]), str(observed["buttons"]))
+        check(f"{label} button text fits controls", not any(button["overflow"] for button in observed["buttons"]))
+        check(f"{label} selected section only", observed["count"] == 1)
+
+    page.set_viewport_size({"width": 1440, "height": 1000})
+    visit()
+    check("[advanced] missing measurement is not zero", page.locator("[data-storage-unmeasured]").inner_text() == "Not measured"
+          and page.locator("[data-measured-storage]").count() == 0)
+    check("[advanced] statistics removed", page.get_by_role("button", name="Statistics", exact=True).count() == 0)
+    for name, empty in [("Channels", "No outbound channels."), ("Applets", "No installed applets."),
+                        ("My Files", "No files."), ("Scheduled Tasks", "No scheduled tasks.")]:
+        section(name)
+        check(f"[advanced] {name} empty projection", page.get_by_text(empty, exact=True).count() == 1)
+    section("Recovery & Export")
+    check("[advanced] encrypted recovery cannot be faked", page.get_by_role("button", name="Create recovery revision").is_disabled())
+    if shot_dir:
+        page.screenshot(path=str(shot_dir / "advanced-empty-recovery.png"))
+
+    visit("failure")
+    section("Channels")
+    page.get_by_role("button", name="Add Lark channel").click()
+    page.get_by_role("textbox", name="Channel name", exact=True).fill("Operations · 团队 channel")
+    page.get_by_role("textbox", name="Lark App ID", exact=True).fill("fixture-app-id")
+    page.get_by_label("Lark App secret", exact=True).fill("fixture-only-secret")
+    page.get_by_role("button", name="Save channel", exact=True).click()
+    page.get_by_role("alert").filter(has_text="Unable to complete").wait_for()
+    check("[advanced] channel failure preserves draft", page.get_by_role("textbox", name="Channel name", exact=True).input_value() == "Operations · 团队 channel")
+    if shot_dir:
+        page.screenshot(path=str(shot_dir / "advanced-channel-error.png"))
+    page.get_by_role("button", name="Save channel", exact=True).click()
+    page.get_by_role("switch", name="Operations · 团队 channel enabled").wait_for()
+    page.get_by_role("switch", name="Operations · 团队 channel enabled").click()
+    page.wait_for_function("""() => document.querySelector('button[role="switch"]').getAttribute('aria-checked') === 'true'""")
+    check("[advanced] channel enable uses command result", page.get_by_role("switch", name="Operations · 团队 channel enabled").get_attribute("aria-checked") == "true")
+    check("[advanced] no fictional integration", not any(
+        value in page.locator("[data-advanced-settings-section]").inner_text()
+        for value in ("Email Bridge", "Matrix Bridge", "Direct Messages", "Federation Relay")))
+
+    section("Scheduled Tasks")
+    page.get_by_role("button", name="New scheduled task").click()
+    page.get_by_role("textbox", name="Task name", exact=True).fill("Review queue")
+    page.get_by_role("textbox", name="Cron expression", exact=True).fill("0 9 * * 1-5")
+    page.get_by_role("textbox", name="Shell command", exact=True).fill("printf review")
+    page.get_by_role("combobox", name="Delivery mode", exact=True).select_option("channel")
+    page.get_by_role("combobox", name="Delivery channel", exact=True).select_option(label="Operations · 团队 channel")
+    page.get_by_role("button", name="Save scheduled task", exact=True).click()
+    page.get_by_role("alert").filter(has_text="Choose a channel destination").wait_for()
+    check("[advanced] cron destination cannot be invented", page.get_by_role("textbox", name="Task name", exact=True).input_value() == "Review queue")
+    page.get_by_role("combobox", name="Delivery mode", exact=True).select_option("none")
+    page.get_by_role("button", name="Save scheduled task", exact=True).click()
+    page.get_by_role("button", name="Run Review queue", exact=True).wait_for()
+    page.get_by_role("button", name="Run Review queue", exact=True).click()
+    page.get_by_role("status").filter(has_text="Execution requested").wait_for()
+    page.get_by_role("button", name="History Review queue", exact=True).click()
+    page.get_by_text("running", exact=True).wait_for()
+    check("[advanced] cron run request is not fabricated success", page.get_by_text("ok", exact=True).count() == 0)
+    page.get_by_role("switch", name="Review queue enabled", exact=True).click()
+    page.get_by_role("status").filter(has_text="Task paused").wait_for()
+    check("[advanced] cron pause", page.get_by_role("switch", name="Review queue enabled", exact=True).get_attribute("aria-checked") == "false")
+    for width in (1440, 1024, 760):
+        page.set_viewport_size({"width": width, "height": 1000})
+        geometry(f"[advanced-cron-{width}]")
+        if shot_dir:
+            page.screenshot(path=str(shot_dir / f"advanced-cron-{width}.png"))
+
+    section("My Files")
+    filename = "Meeting notes with a long multilingual title · 工作记录.txt"
+    page.get_by_role("button", name=f"Edit {filename}", exact=True).click()
+    page.get_by_role("combobox", name="Expiration change", exact=True).select_option("clear")
+    page.get_by_role("button", name="Save file", exact=True).click()
+    page.get_by_role("status").filter(has_text="File updated").wait_for()
+    check("[advanced] file expiration clear intent", "No expiration" in page.locator("[data-advanced-settings-section]").inner_text())
+    page.get_by_role("button", name=f"Delete {filename}", exact=True).click()
+    page.get_by_role("button", name="Confirm file deletion", exact=True).click()
+    page.get_by_role("status").filter(has_text="Moved to trash").wait_for()
+    page.get_by_role("switch", name="Show trash", exact=True).click()
+    page.get_by_role("button", name=f"Restore {filename}", exact=True).click()
+    page.get_by_role("status").filter(has_text="File restored").wait_for()
+    page.get_by_role("switch", name="Show trash", exact=True).click()
+    check("[advanced] file restore round trip", page.get_by_role("button", name=f"Edit {filename}", exact=True).count() == 1)
+    geometry("[advanced-files-narrow]")
+    if shot_dir:
+        page.screenshot(path=str(shot_dir / "advanced-files-narrow.png"))
+
+    section("Diagnostics & Logs")
+    page.get_by_role("button", name="Pause logs", exact=True).click()
+    page.get_by_role("combobox", name="Log level", exact=True).select_option("error")
+    with page.expect_download() as download:
+        page.get_by_role("button", name="Export visible logs", exact=True).click()
+    contents = Path(download.value.path()).read_text()
+    check("[advanced] log export contains visible rows only", "Connection unavailable" in contents and "Measurement completed" not in contents)
+    page.get_by_role("textbox", name="Filter logs", exact=True).fill("no-matching-log")
+    check("[advanced] logs empty filter recovery", page.get_by_text("No matching logs.", exact=True).count() == 1)
+    page.get_by_role("textbox", name="Filter logs", exact=True).fill("")
+    page.get_by_role("combobox", name="Log level", exact=True).select_option("all")
+    check("[advanced] full log level vocabulary", page.get_by_role("combobox", name="Log level", exact=True).locator("option").count() == 7)
+    geometry("[advanced-logs-narrow]")
+
+    section("About")
+    check("[advanced] browser runtime is truthful", page.get_by_text("browser", exact=True).count() == 1)
+    check("[advanced] no fabricated build catalog", "v0.9.2-beta" not in page.locator("[data-advanced-settings-section]").inner_text())
+    section("Data & Storage")
+    page.get_by_role("button", name="Clear cache", exact=True).click()
+    page.get_by_role("button", name="Confirm cache cleanup", exact=True).click()
+    page.get_by_role("status").filter(has_text="released").wait_for()
+    check("[advanced] cleanup consumes injected remeasurement", page.locator("[data-measured-storage]").inner_text() == "7 KB")
+    page.get_by_role("button", name="Reset onboarding", exact=True).click()
+    page.get_by_role("button", name="Confirm onboarding reset", exact=True).click()
+    page.get_by_role("button", name="设置", exact=True).wait_for(state="hidden")
+    check("[advanced] onboarding reset reopens auth", page.get_by_role("button", name="设置", exact=True).count() == 0)
+
+    visit("error")
+    page.get_by_role("button", name="Retry section", exact=True).click()
+    page.locator("[data-storage-unmeasured]").wait_for()
+    check("[advanced] section error recovers without inventing data", page.locator("[data-measured-storage]").count() == 0)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--base-url", default="http://localhost:3107")
     ap.add_argument("--evidence", default=None)
+    ap.add_argument("--surface", choices=("all", "advanced"), default="all")
     args = ap.parse_args()
     shot_dir = Path(args.evidence) if args.evidence else None
     if shot_dir:
@@ -1362,6 +1510,17 @@ def main():
         errors: list[str] = []
         page.on("pageerror", lambda e: errors.append(str(e)))
         page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+
+        if args.surface == "advanced":
+            assert_advanced_settings(args.base_url, page, shot_dir)
+            check("zero console/page errors across run", len(errors) == 0, json.dumps(errors[:5]))
+            browser.close()
+            print(f"PASS {len(passed)}  FAIL {len(failures)}")
+            for failure in failures:
+                print("  FAIL", failure)
+            if failures:
+                sys.exit(1)
+            return
 
         for w in CHAT_WIDTHS:
             assert_composer(args, page, w, shot_dir)

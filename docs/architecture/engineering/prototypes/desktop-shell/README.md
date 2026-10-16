@@ -2,7 +2,7 @@
 
 > **Status**: draft
 > **Version**: v0.1
-> **Created**: 2026-06-22 | **Updated**: 2026-10-15
+> **Created**: 2026-06-22 | **Updated**: 2026-10-16
 > **落地目标**: Desktop 容器外壳（`apps/desktop`）；**原型本身只是 React web 展示**，不碰真实 store / kernel / tauri
 > **总账状态**: drafting（见 [原型总账](../README.md)）
 > **Owner**: Peers-Touch Agent Team
@@ -19,9 +19,7 @@
 ## 怎么跑
 
 ```bash
-cd packages/prototypes/desktop
-pnpm install        # 首次，monorepo 根装也可
-pnpm dev            # Vite，浏览器打开 localhost:3105
+make run-prototype
 ```
 
 技术栈：React + Vite + `lucide-react` + 内联样式 DOM，纯前端、mock 驱动，浏览器直接看，不需要任何运行时容器。原型通过 workspace 依赖 `@peers-touch/prototype-desktop-atelier`，把 atelier 原型整体作为一个 applet 嵌入内容区（基础件跨原型复用，不重复造）。
@@ -139,6 +137,79 @@ L3 dynamic：
 L4：name/role/value、icon accessible name、keyboard focus、无横向 overflow 已检查。
 真实 screen reader、Native window、broker/Station 网络、field performance 仍由正式
 Acceptance 证明；prototype mock 不构成 runtime 证据。
+
+## Advanced Settings（DUI-15）
+
+产品目标是让设置成为实际能力的操作入口。当前无 Settings module UI ID，
+复用 shared UI Identity、固定 section rail 和现有 Settings atoms。主要对象是
+当前选中的设置面板；命令结果和错误留在该面板，不创建第二套设置导航。
+
+- `Settings.tsx` 负责导航和规范化控件；`AdvancedSettings.tsx` 只渲染当前面板。
+  控件通过组合传入，两个模块之间没有循环 import。
+- `advancedSettingsAdapter.ts` 负责浏览器原型的 snapshot、命令结果和订阅；
+  Shell 可以注入替代 adapter。面板不导入 Desktop API、kernel、store 或 Tauri。
+- 默认 snapshot 没有存储测量、文件、渠道或安装清单。未测量显示
+  `Not measured`；零字节只能来自已注入的测量。cache cleanup 必须消费调用方
+  提供的完整重测结果，不能由面板估算物理释放量。
+- Storage 对齐 `ChatStorageSettings` 的测量、retention 和 cache cleanup；
+  My Files 对齐 `MyFilesSettings` 的查询、trash/delete/restore 和到期时间
+  keep / `clear_expires_at` / `expires_at` 三态 PATCH。
+- Recovery 只表达 encrypted messaging recovery 和 memory export；
+  浏览器缺少加密运行时，create/restore 明确禁用，不生成虚假密钥或恢复成功。
+  删除了“导出全部消息与设置”的虚构承诺。
+- Channels 只管理已交付的 Lark integration，配置字段是 `appId` / `appSecret`。
+  凭据只作为 transient command input，不进入 snapshot 或 localStorage。
+  删除了 Email、Matrix 和 core messaging 的渠道行。
+- Applet settings 消费调用方安装清单与 `settingsPanel`，只挂载选中的 panel；
+  不创建自己的六个 applet 或 enable switch。与统一 launcher catalog 的对齐
+  仍归 DUI-12。
+- Logs 消费注入的 tail projection，支持六类 level、筛选、pause/follow 和只导出
+  可见行。尾部订阅与当前 section 同寿命，离开后清理；最多渲染 200 行。
+- Cron 使用 cron/interval/once、shell/agent 和 outbound delivery 的字段。
+  渠道与目的地必须来自 projection；没有目的地时拒绝保存并保留草稿。
+  Run Now 只显示 execution requested / running，不伪造任务执行成功。
+- Command Palette 继续打开 Shell 的唯一全局 palette；reset confirmation 通过
+  adapter 回到登录/引导。About 显示当前 web package、浏览器平台和 build mode，
+  未提供 source commit 时显示 unknown；不展示虚构的 Native runtime/build。
+- Statistics 的导航、组件、热图、排行与常量已删除。
+
+Craft contract：继承 Quiet Protocol Minimalism；content rail 是选中的 section，
+action rail 是面板 header 与每个对象的操作区，recovery layer 是局部状态消息，
+floating layer 继续归 Shell。signature 是能力状态与操作结果保持在同一对象附近。
+保留单一 primary action、失败保留输入、可见 disabled reason；拒绝虚构计量、
+静态日志、装饰热图和全部面板同时挂载。窄容器按内容宽度重排操作区。
+
+Review scenarios（通过 Prototype Portal 的 Desktop Live Preview）：
+
+```text
+?settings-fixture=empty
+?settings-fixture=sample
+?settings-fixture=failure
+?settings-fixture=error
+?settings-fixture=loading
+```
+
+`sample` 和 `failure` 是显式 QA fixture，数值和日志不表示本机或 Station 状态。
+默认路径不加载这些数据。
+
+验证入口：
+
+```bash
+python3 packages/prototypes/desktop/features/social-chat/qa/geometry_checks.py \
+  --base-url http://localhost:3290 --surface advanced \
+  --evidence /tmp/pt-dui15-evidence
+```
+
+L2 light evidence：`evidence-l2/20261016-advanced-cron-wide.png`（1440×1000）、
+`20261016-advanced-cron-narrow.png`（760×1000）、
+`20261016-advanced-files-narrow.png`、
+`20261016-advanced-channel-error.png`、
+`20261016-advanced-empty-recovery.png`。L3 覆盖 channel create/enable/error retry、
+file expiration clear/delete/restore、cron create/pause/run/history、
+log visible export/filter recovery、onboarding reset 和 section retry。
+L4 覆盖 selected-only tree、bounded logs、name-role-value 和按钮尺寸。
+Native storage/recovery/OSS/cron execution、真实读屏器、field performance、
+完整 localization 和 DUI-12 catalog 仍为 UNPROVEN。
 
 ## Atelier 是容器里的一个 applet
 
