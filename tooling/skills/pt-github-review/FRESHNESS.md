@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-10-19
-covered_docs_hash: b13f184b83f4d3f38ddcbeb0ef59889a97d08339567e390e7d92ddcac8e8d417
+last_verified_at: 2026-10-20
+covered_docs_hash: 565b2003088eff1e2c035e5bd8b41c3a100f2c366f4e492cdc2f5b96bb8da200
 
 covered_docs:
   - AGENTS.md
@@ -32,22 +32,19 @@ covered_docs:
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
 
-## 2026-10-19 Experience Reasoning Review
+## 2026-10-20 Experience Design Control Plane Integration Review
 
-Experience Reasoning now inserts a findings-only, source-fenced review contract
-between accepted Product / Client semantics and high-fidelity Prototype work.
-Quality owns blind packages, answer keys, exposure, scoring and promotion;
-the Kernel owns schema, Journey graph, recovery and deterministic primary
-selection. A clean Kernel result still requires independent review and complete
-evidence.
+The canonical Experience Design Control Plane now includes Product-to-Wireflow
+contracts, UI Grammar, deterministic evaluation, exact evidence matching,
+independent review receipts and the subordinate source-fenced Reasoning Kernel.
+Quality owns blind packages, exposure, scoring and retirement; the Kernel owns
+Journey, trust, recovery and deterministic primary selection inside the
+control-plane boundary.
 
 `pt-product-design-methodology`, `pt-prototype-design` and `pt-quality-check`
-now consume this boundary directly. GitHub Review already treats missing,
-stale and unproven quality evidence as a hold and remains the sole merge
-judgment owner, so its `SKILL.md` needs no duplicate Experience schema or
-ranking policy. Focused Kernel fixtures/tests and architecture-module
-governance provide source checks; no generic review fixture or knowledge entry
-is required.
+consume the canonical CLI. GitHub Review continues to own final merge judgment
+and already treats missing, stale or unproven evidence as a hold, so its
+`SKILL.md` does not copy the Experience schema or ranking policy.
 
 ## 2026-10-16 Acceptance Scheduling Review
 

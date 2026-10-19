@@ -12,6 +12,23 @@ When a screenshot, prototype, review finding, or user complaint exposes a UX iss
 
 This methodology defines how to diagnose UX issues beyond surface styling, decide whether a case deserves reusable rules, preserve platform-native behavior without product drift, and give AI agents precise implementation and verification language.
 
+Its ownership is **retrospective diagnosis and contract promotion**: it starts
+from an observed case or defect. Prospective design of a new or changed Journey
+is owned by
+[interaction-design-methodology.md](./interaction-design-methodology.md),
+which defines content semantics, information architecture, path cost, state
+recovery, action representation, Wireflow and UI Grammar binding before high
+fidelity. Neither methodology duplicates the other's rules:
+
+```text
+new/changed Journey
+  -> interaction-design-methodology
+  -> prototype and evidence
+  -> observed defect or reusable learning
+  -> ux-design-methodology
+  -> contract / invariant / playbook promotion
+```
+
 ## 2. Design Philosophy
 
 ### 2.1 Continuity Over Assembly

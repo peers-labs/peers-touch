@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { runCli } from './experience-review.mjs';
+import { runCli } from './experience-design.mjs';
 import { completeReviewFixture } from './fixtures/positive/complete-review.mjs';
 
 function sha256(bytes) {
@@ -101,11 +101,11 @@ test('CLI validates and source-fences an explicit review package', (context) => 
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const { inputs, resultPath } = sourceBoundFixture(root);
 
-  const validated = runCli(['validate', resultPath]);
+  const validated = runCli(['review-validate', resultPath]);
   assert.equal(validated.ok, true);
 
   const verified = runCli([
-    'verify',
+    'review-verify',
     resultPath,
     '--repo-root',
     root,
@@ -135,7 +135,7 @@ test('CLI rejects source drift after report freeze', (context) => {
   assert.throws(
     () =>
       runCli([
-        'verify',
+        'review-verify',
         resultPath,
         '--repo-root',
         root,

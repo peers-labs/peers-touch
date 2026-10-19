@@ -94,7 +94,8 @@ Read before designing:
 - For client UI: `docs/client/common/ux-design-methodology.md`, shared UI
   Identity, `docs/client/common/ui-identity/craft-quality.md`, and the closest
   module/platform contracts.
-- For material UI review:
+- For material UI interaction:
+  `docs/client/common/interaction-design-methodology.md` and
   `docs/architecture/engineering/experience-design/README.md`.
 
 External products provide evidence, not authority. Record exact observed
@@ -175,6 +176,34 @@ The authoritative craft dimensions and evidence levels are defined in
 `docs/client/common/ui-identity/craft-quality.md`. External award programs and
 benchmark brands provide evidence vocabulary only; they never establish
 readiness.
+
+### Step 2B. Define The Experience Design Contract
+
+For material UI, emit the Product-owned portion of the canonical Experience
+Case before Prototype work:
+
+- content semantics and scoped concept budgets;
+- surface subject and region ownership;
+- Journey-owned path-cost vectors;
+- visible state, recovery, preservation, focus, return, and authority
+  requirements;
+- action intent, risk, mutation, representation role, and platform adaptation;
+- accepted trace and required L1-L4 evidence cells for the claimed scope.
+
+Use the closed model in
+`docs/architecture/engineering/experience-design/data-model.md` and the method
+in `docs/client/common/interaction-design-methodology.md`. Do not copy their
+field or rule tables into this Skill. Product Design owns the accepted
+contract; Prototype Design later supplies the candidate Wireflow and evidence.
+
+Run the canonical source check before handoff:
+
+```bash
+node tooling/scripts/experience-design/experience-design.mjs validate-sources
+```
+
+Missing, conflicting, or unsigned Product intent remains
+`PRODUCT_DESIGN_INCOMPLETE`; do not let Prototype Design infer or repair it.
 
 ### Step 3. Freeze The Product Capability Profile
 
@@ -260,6 +289,8 @@ information hierarchy, or state transitions that text cannot settle.
 The prototype must:
 
 - Trace surfaces and states to product capability/journey IDs.
+- Assemble the accepted contract and candidate Wireflow into one closed
+  Experience Case, then run the canonical evaluator before high fidelity.
 - Cover critical success, waiting, error, recovery, and degraded states.
 - Use Peers-Touch UI Identity and the production component system.
 - Implement the accepted craft contract, including positive and negative
@@ -329,8 +360,10 @@ Return `PRODUCT_READY_FOR_ARCHITECTURE` only when:
 - Material UI has a confirmed or explicitly review-blocked prototype.
 - Material UI has an evidence-backed craft contract with no award guarantee,
   numeric self-score, or unresolved blocking accessibility/recovery defect.
-- Material UI exposes contract-backed Journey, trust and recovery semantics
-  required by the Experience Reasoning Kernel.
+- Material UI has a closed Experience Design contract covering semantics,
+  information architecture, path, state/recovery, action, trace, and required
+  evidence; its Product-owned source is independently reviewed and exposes the
+  Journey, trust and recovery semantics required by the Reasoning Kernel.
 - Every required capability has a repository-backed feasibility closure and
   executable proof.
 - Every required capability maps to receiver-perspective acceptance.

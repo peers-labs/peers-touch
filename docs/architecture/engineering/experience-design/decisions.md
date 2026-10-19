@@ -1,9 +1,9 @@
-# Experience Reasoning Kernel - Decisions
+# Experience Design Control Plane - Decisions
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-10-19 | **Updated**: 2026-10-19
-> **Owner**: Experience Design
+> **Version**: v1.1
+> **Created**: 2026-10-18 | **Updated**: 2026-10-20
+> **Owner**: Developer Experience / Product Design
 
 ---
 
@@ -11,19 +11,294 @@
 
 | ID | Decision | Status |
 |---|---|---|
-| EDX-D01 | Four-layer ownership with Product / Client semantic authority | accepted |
-| EDX-D02 | Source-fenced facts, contracts, inferences and unproven points | accepted |
-| EDX-D03 | Source-backed JourneyStateGraph | accepted |
-| EDX-D04 | Deterministic primary Finding tuple | accepted |
-| EDX-D05 | Contract-projected trust boundary review | accepted |
-| EDX-D06 | Explicit local recovery contract | accepted |
-| EDX-D07 | Findings-only result and independent prototype admission | accepted |
-| EDX-D08 | Quality-owned holdout lifecycle and irreversible exposure | accepted |
-| EDX-D09 | Minimal validator instead of the legacy control plane | accepted |
+| EDX-D01 | Canonical contract stack outside Skills | accepted |
+| EDX-D02 | Wireflow before high fidelity | accepted |
+| EDX-D03 | Concept-level semantic redundancy | accepted |
+| EDX-D04 | Journey-owned path cost vectors | accepted |
+| EDX-D05 | Machine-readable UI Grammar binding | accepted |
+| EDX-D06 | Findings-only evaluator and independent acceptance | accepted |
+| EDX-D07 | Three-class calibration | accepted |
+| EDX-D08 | Fail-closed trace and evidence | accepted |
+| EDX-RK-D01 | Product / Client semantic authority | accepted |
+| EDX-RK-D02 | Source-fenced reasoning records | accepted |
+| EDX-RK-D03 | Source-backed JourneyStateGraph | accepted |
+| EDX-RK-D04 | Deterministic primary Finding tuple | accepted |
+| EDX-RK-D05 | Contract-projected trust review | accepted |
+| EDX-RK-D06 | Explicit local recovery contract | accepted |
+| EDX-RK-D07 | Independent prototype admission | accepted |
+| EDX-RK-D08 | Quality-owned fresh holdout lifecycle | accepted |
 
 ---
 
-## EDX-D01: Four-Layer Ownership With Product / Client Semantic Authority
+## EDX-D01: Canonical Contract Stack Outside Skills
+
+**Status**: accepted
+**Date**: 2026-10-18
+
+### Context
+
+Product and Prototype Skills contain useful rules, but a Skill is an execution
+adapter. Duplicating design truth across Skills causes drift and makes other
+hosts unable to consume the same contracts.
+
+### Decision
+
+The architecture and client methodology own the contract stack. Skills only
+bind their workflow to those sources and the machine evaluator.
+
+### Rationale
+
+One source keeps product, prototype, review and quality consumers aligned while
+allowing host-specific execution instructions to remain thin.
+
+### Alternatives Considered
+
+- Put all rules in `pt-prototype-design`: rejected because Product and Review
+  would depend on one execution adapter.
+- Create a new broad design Skill: rejected because existing Product and
+  Prototype owners already cover the lifecycle.
+
+### Consequences
+
+Positive: one durable source and no parallel methodology Skill. Negative:
+changes require coordinated docs, bindings, tests and Skill references.
+
+## EDX-D02: Wireflow Before High Fidelity
+
+**Status**: accepted
+**Date**: 2026-10-18
+
+### Context
+
+Visual prototypes currently expose path and state defects after component work
+has already biased the solution.
+
+### Decision
+
+Material UI requires a traced Wireflow before high-fidelity implementation.
+The Wireflow contains surfaces, concepts, actions, states and transitions.
+
+### Rationale
+
+Wireflow is cheap to change and exposes semantic or path errors without visual
+polish hiding them.
+
+### Alternatives Considered
+
+- Start directly in high fidelity: rejected because late semantic changes are
+  expensive and tend to become local patches.
+- Use prose only: rejected because transitions and reachable states remain
+  ambiguous.
+
+### Consequences
+
+Positive: earlier correction and stronger traceability. Negative: one explicit
+artifact is added for material UI work; trivial local UI fixes remain exempt.
+
+## EDX-D03: Concept-Level Semantic Redundancy
+
+**Status**: accepted
+**Date**: 2026-10-18
+
+### Context
+
+Exact duplicate-string checks miss paraphrased repetition, while lexical
+similarity rules overreject product names, accessibility labels and separated
+contexts.
+
+### Decision
+
+Copy nodes bind to concept IDs and per-scope occurrence budgets. Exceptions
+must name a safety, accessibility or context-separation reason.
+
+### Rationale
+
+The defect is duplicate meaning, not duplicate tokens. Explicit concept
+binding makes the judgment reviewable and supports boundary fixtures.
+
+### Alternatives Considered
+
+- Pure string similarity: rejected as both under- and over-inclusive.
+- Human review only: rejected because known recurrence can be detected before
+  rendering.
+
+### Consequences
+
+Positive: detects repeated meaning such as redundant Station-selection labels.
+Negative: authors must annotate material copy concepts; the tool still cannot
+judge prose quality by itself.
+
+## EDX-D04: Journey-Owned Path Cost Vectors
+
+**Status**: accepted
+**Date**: 2026-10-18
+
+### Context
+
+A universal click budget ignores risk, reversibility and necessary permission
+moments. A single weighted score can also hide one unacceptable dimension.
+
+### Decision
+
+Each Journey defines component-wise budgets for commitments, context switches,
+decision load, interruptions and recovery debt. The evaluator derives the
+candidate vector from accepted action contracts, surface contexts, transitions
+and preservation requirements; a candidate cannot submit an authoritative
+aggregate.
+
+### Rationale
+
+The vector preserves why a path is costly and lets a destructive path differ
+legitimately from a frequent low-risk path.
+
+### Alternatives Considered
+
+- Maximum three clicks: rejected as context-free.
+- Weighted aggregate score: rejected because a low dimension can cancel a
+  severe failure.
+
+### Consequences
+
+Positive: explicit tradeoffs and no universal interaction folklore. Negative:
+the Product owner must set budgets from Journey evidence.
+
+## EDX-D05: Machine-Readable UI Grammar Binding
+
+**Status**: accepted
+**Date**: 2026-10-18
+
+### Context
+
+Human-readable UI Identity defines roles but tools cannot verify that a
+semantic action or state is bound to an allowed component family on each
+platform.
+
+### Decision
+
+Add one closed JSON binding from semantic roles to UI Identity roles,
+representation-specific requirements and Desktop/Mobile adapter families.
+
+### Rationale
+
+The binding prevents ad hoc action representation without freezing transient
+component imports or pixel values.
+
+### Alternatives Considered
+
+- Parse Markdown heuristically: rejected as unstable.
+- Hardcode rules in evaluator source: rejected because UI Identity would lose
+  ownership.
+
+### Consequences
+
+Positive: machine-consumable grammar with UI Identity as owner. Negative:
+binding and human docs must evolve together.
+
+## EDX-D06: Findings-Only Evaluator And Independent Acceptance
+
+**Status**: accepted
+**Date**: 2026-10-18
+
+### Context
+
+An evaluator that authors, mutates and approves the same contract can
+manufacture its own success.
+
+### Decision
+
+The evaluator is read-only and returns findings plus evidence readiness. It
+never returns `passed`. Acceptance requires a reviewer distinct from the
+contract, candidate, evidence and expectation authors. The review receipt binds
+the case, contract, candidate and result digests; the evaluator cannot create
+the receipt.
+
+### Rationale
+
+This preserves reviewer independence while keeping deterministic checks cheap
+and repeatable.
+
+### Alternatives Considered
+
+- Auto-fix contracts: rejected because it changes product intent.
+- Auto-pass on zero findings: rejected because visual and semantic judgment
+  still require an independent owner.
+
+### Consequences
+
+Positive: no self-certification. Negative: a separate review pass remains
+mandatory even when deterministic findings are empty.
+
+## EDX-D07: Three-Class Calibration
+
+**Status**: accepted
+**Date**: 2026-10-18
+
+### Context
+
+Rules derived only from defects overfit those defects and suppress valid
+alternatives.
+
+### Decision
+
+Every enforceable rule must have positive, negative and boundary fixtures.
+Fixture validation checks coverage and expected findings; it does not claim
+model conformance. Blind holdouts are excluded from calibration discovery.
+Their first evaluation is digest-bound, independently reviewed, and can only
+seed a new calibration fixture through a receipt reference; the holdout itself
+never gains an expectation.
+
+### Rationale
+
+Three classes define the acceptance area, rejection area and deliberate
+judgment boundary.
+
+### Alternatives Considered
+
+- Negative regressions only: rejected as overfitting.
+- Large screenshot corpus without expected rules: rejected as unreviewable.
+
+### Consequences
+
+Positive: safer generalization. Negative: each new rule carries fixture
+maintenance cost.
+
+## EDX-D08: Fail-Closed Trace And Evidence
+
+**Status**: accepted
+**Date**: 2026-10-18
+
+### Context
+
+Missing evidence is often interpreted as acceptable, and prototypes can drift
+from accepted Journey contracts without a deterministic signal.
+
+### Decision
+
+Missing required layers, unknown grammar roles, conflicting transitions,
+contract/candidate drift and absent exact evidence cells are blocking or
+`UNPROVEN`; none default to pass. Evidence matching includes source/artifact
+digests, platform, runtime profile, input mode, locale/content condition,
+state/assertion IDs and metric environment where applicable.
+
+### Rationale
+
+Explicit non-claims are safer than polished but untraceable output.
+
+### Alternatives Considered
+
+- Warn and continue: rejected for material contracts because later artifacts
+  would build on ambiguity.
+- Require L4 for every draft: rejected because early Wireflow work has no
+  runtime claim.
+
+### Consequences
+
+Positive: honest evidence boundary and early drift detection. Negative: authors
+must declare claim scope so the required evidence level is known.
+
+---
+
+## EDX-RK-D01: Four-Layer Ownership With Product / Client Semantic Authority
 
 **Status**: accepted
 **Date**: 2026-10-19
@@ -57,7 +332,7 @@ Positive: ownership is explicit and domain-neutral. Negative: a missing
 Product / Client contract remains a visible `UNPROVEN` gap instead of being
 filled automatically.
 
-## EDX-D02: Source-Fenced Facts, Contracts, Inferences And Unproven Points
+## EDX-RK-D02: Source-Fenced Facts, Contracts, Inferences And Unproven Points
 
 **Status**: accepted
 **Date**: 2026-10-19
@@ -90,7 +365,7 @@ source from silently changing its meaning.
 Positive: findings are reproducible. Negative: reviewers must structure the
 reasoning before freezing a report.
 
-## EDX-D03: Source-Backed JourneyStateGraph
+## EDX-RK-D03: Source-Backed JourneyStateGraph
 
 **Status**: accepted
 **Date**: 2026-10-19
@@ -123,7 +398,7 @@ distort priority.
 Positive: earliest failure is mechanically locatable. Negative: the reviewer
 must model the bounded graph and cite its edges.
 
-## EDX-D04: Deterministic Primary Finding Tuple
+## EDX-RK-D04: Deterministic Primary Finding Tuple
 
 **Status**: accepted
 **Date**: 2026-10-19
@@ -156,7 +431,7 @@ implementation risk and polish.
 Positive: primary choice is stable and auditable. Negative: semantic
 classification remains a reviewer judgment and must be independently checked.
 
-## EDX-D05: Contract-Projected Trust Boundary Review
+## EDX-RK-D05: Contract-Projected Trust Boundary Review
 
 **Status**: accepted
 **Date**: 2026-10-19
@@ -188,7 +463,7 @@ authority over the actual trust and runtime protocol.
 Positive: trust reasoning is consistent without domain duplication. Negative:
 incomplete upstream trust contracts fail as unproven.
 
-## EDX-D06: Explicit Local Recovery Contract
+## EDX-RK-D06: Explicit Local Recovery Contract
 
 **Status**: accepted
 **Date**: 2026-10-19
@@ -202,6 +477,8 @@ first detecting that no visible recovery action existed.
 
 Every recoverable blocker declares reason, visible entry, locality, preserved
 state, return state and semantic return target. Implicit recovery is invalid.
+Exit, retry and requested-outcome recovery are distinct: an exit cannot
+reference a `RecoveryPath`, while retry and recovery must.
 
 ### Rationale
 
@@ -220,7 +497,7 @@ implementation knowledge or an unnamed nearby surface.
 Positive: missing recovery becomes directly reviewable. Negative: adjacent
 recovery must include explicit navigation and return semantics.
 
-## EDX-D07: Findings-Only Result And Independent Prototype Admission
+## EDX-RK-D07: Findings-Only Result And Independent Prototype Admission
 
 **Status**: accepted
 **Date**: 2026-10-19
@@ -252,7 +529,7 @@ Deterministic checks and independent design judgment remain separate.
 Positive: no self-certification. Negative: even a clean deterministic result
 needs one independent review.
 
-## EDX-D08: Quality-Owned Holdout Lifecycle And Irreversible Exposure
+## EDX-RK-D08: Quality-Owned Holdout Lifecycle And Irreversible Exposure
 
 **Status**: accepted
 **Date**: 2026-10-19
@@ -285,40 +562,3 @@ The policy prevents answer leakage, run reuse and retroactive relabeling.
 
 Positive: promotion evidence is honest and revocable. Negative: holdout cases
 are consumable resources and require ongoing replenishment.
-
-## EDX-D09: Minimal Validator Instead Of The Legacy Control Plane
-
-**Status**: accepted
-**Date**: 2026-10-19
-
-### Context
-
-An earlier worktree contains a broad control plane with Lark-specific fixtures,
-Ed25519 review attestations, historical evaluator replay, full grammar binding
-and a large evaluator implementation. Those mechanisms do not address the
-minimal reasoning gap proven by the blind run.
-
-### Decision
-
-The first implementation contains only closed schema validation, reference
-validation, Journey graph checks, tuple recomputation, result validation and
-focused fixtures. It reuses the four-layer boundary, Wireflow, findings-only
-discipline, three-class calibration and L1-L4 evidence vocabulary.
-
-### Rationale
-
-This is the smallest architecture that directly falsifies the observed
-reasoning failures without creating a parallel product or security platform.
-
-### Alternatives Considered
-
-- Port the prior implementation: rejected for excessive scope, unrelated
-  complexity and domain-specific baggage.
-- Keep the design prose-only: rejected because ranking and reference closure
-  need deterministic verification.
-
-### Consequences
-
-Positive: lower maintenance cost and clearer ownership. Negative: semantic
-candidate generation remains Agent/reviewer work rather than automatic code
-analysis.

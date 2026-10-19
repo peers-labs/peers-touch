@@ -7,7 +7,7 @@ import {
   assertSourceHead,
   assertString,
   fail,
-} from './schema.mjs';
+} from './review-result-schema.mjs';
 import {
   sha256Bytes,
   validateReviewResult,

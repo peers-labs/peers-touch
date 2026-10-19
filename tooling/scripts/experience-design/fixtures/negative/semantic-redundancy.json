@@ -1,0 +1,409 @@
+{
+  "kind": "peers-touch-experience-case",
+  "schemaVersion": 1,
+  "id": "fixture.negative.semantic-redundancy",
+  "title": "Mobile Station entry repeats one semantic concept",
+  "calibration": "negative",
+  "claim": "wireflow",
+  "authorship": {
+    "contractAuthor": {
+      "issuer": "fixture-authority",
+      "keyId": "fixture-ed25519",
+      "subject": "contract-author"
+    },
+    "candidateAuthor": {
+      "issuer": "fixture-authority",
+      "keyId": "fixture-ed25519",
+      "subject": "candidate-author"
+    },
+    "evidenceAuthors": [
+      {
+        "issuer": "fixture-authority",
+        "keyId": "fixture-ed25519",
+        "subject": "evidence-author"
+      }
+    ],
+    "expectationAuthor": {
+      "issuer": "fixture-authority",
+      "keyId": "fixture-ed25519",
+      "subject": "expectation-author"
+    }
+  },
+  "sourceAttestations": {
+    "contract": {
+      "digest": "sha256:e17234cc795fa106ee0c960e3c26e049ae47c9c1f02ba20477502d1eff059555",
+      "principal": {
+        "issuer": "fixture-authority",
+        "keyId": "fixture-ed25519",
+        "subject": "contract-author"
+      },
+      "algorithm": "ed25519",
+      "signature": "6NLGc0UqfG8RK1FAkxjnDDUsLb1eBzfmB9hbGuhAzeE3bs5egXttj+xm/I5B1T5Q2Ykm3m1PF6PrzS7kiJwSAg=="
+    },
+    "candidate": {
+      "digest": "sha256:aac3f2d72c3bc39b26b1e72049942164584a2f70adf5ed8832219b389e163add",
+      "principal": {
+        "issuer": "fixture-authority",
+        "keyId": "fixture-ed25519",
+        "subject": "candidate-author"
+      },
+      "algorithm": "ed25519",
+      "signature": "AvnpjgHUX53f3EaOlhjmPTLilD2IqI0iot216Kg5dsZb/MxosNERXQkZS9P+oEYlRewA1t55nS+B/ZRITlW8Ag=="
+    },
+    "evidence": [
+      {
+        "digest": "sha256:54d23a7a798a233991209a84c9991f9e4487ae94cfb4f9859f15f43b152adc8f",
+        "principal": {
+          "issuer": "fixture-authority",
+          "keyId": "fixture-ed25519",
+          "subject": "evidence-author"
+        },
+        "algorithm": "ed25519",
+        "signature": "GgUE7D7P90S1WflHsY0f5itrEIajOjHuJDRMya21kstkAOm/3oAl02c5f7746r3HFJsf6W99KTWDdzwFhfvqDw=="
+      }
+    ],
+    "expectation": {
+      "digest": "sha256:8b0226e634ee02c995b5f97ef83ec1a8ee965e0707e69472d8d7fd3adf8ccc21",
+      "principal": {
+        "issuer": "fixture-authority",
+        "keyId": "fixture-ed25519",
+        "subject": "expectation-author"
+      },
+      "algorithm": "ed25519",
+      "signature": "D/nY6cx8pJnScs4DJq2YpfqXjkYENFh43f5vkTCMZtG0ra3SmF25C6Yi4v/jfKgkNpAED9IHbI3Zyf3KQc3nAA=="
+    }
+  },
+  "contract": {
+    "productIntent": {
+      "capabilityIds": [
+        "capability.connect"
+      ],
+      "journeyIds": [
+        "journey.connect"
+      ],
+      "visibleStateIds": [
+        "product-state.entry",
+        "product-state.success"
+      ],
+      "acceptanceIds": [
+        "acceptance.connect"
+      ],
+      "actor": "A signed-in Peers user",
+      "startingContext": "Connection setup entry",
+      "promisedOutcome": "Connect one account",
+      "firstUsefulResult": "The connected account is visible",
+      "recurringValue": "The connection can be reused",
+      "trustConstraints": [
+        "The server remains authoritative"
+      ],
+      "privacyConstraints": [
+        "No secret is rendered"
+      ],
+      "authorityConstraints": [
+        "Success follows current-source readback"
+      ],
+      "nonGoals": [
+        "Production runtime proof"
+      ]
+    },
+    "semantics": {
+      "concepts": [
+        {
+          "id": "concept.connect",
+          "meaning": "Connect the selected account",
+          "scope": "scope.connect",
+          "maxOccurrences": 1,
+          "allowedRoles": [
+            "title",
+            "accessible-name"
+          ],
+          "exceptionReasons": [
+            "accessibility"
+          ]
+        }
+      ]
+    },
+    "informationArchitecture": {
+      "surfaces": [
+        {
+          "id": "surface.connect",
+          "contextId": "context.setup",
+          "mainSubjectId": "subject.connection",
+          "allowedRegionRoles": [
+            "content",
+            "action",
+            "navigation"
+          ]
+        }
+      ]
+    },
+    "actions": [
+      {
+        "id": "action.connect",
+        "intent": "Connect the account",
+        "risk": "routine",
+        "frequency": "periodic",
+        "mutation": "local",
+        "optionCardinality": "none",
+        "canonicalIconMeaning": false,
+        "repeatedTool": false,
+        "reversible": true,
+        "decisionCost": 1,
+        "interruption": "none",
+        "confirmationPolicy": "none",
+        "grammarRole": "primary_commitment",
+        "allowedPlatformAdapters": {
+          "desktop": [
+            "form-submit"
+          ],
+          "mobile": [
+            "form-submit"
+          ],
+          "browser": [
+            "form-submit"
+          ],
+          "dashboard": [
+            "form-submit"
+          ]
+        },
+        "equivalentSurfaceIds": [
+          "surface.connect"
+        ]
+      }
+    ],
+    "platformDifferences": [],
+    "pathBudgets": [
+      {
+        "journeyId": "journey.connect",
+        "frequency": "periodic",
+        "risk": "low",
+        "max": {
+          "commitments": 0,
+          "contextSwitches": 0,
+          "decisionLoad": 1,
+          "interruptions": 0,
+          "recoveryDebt": 0
+        }
+      }
+    ],
+    "stateRequirements": [
+      {
+        "journeyId": "journey.connect",
+        "productStateIds": [
+          "product-state.entry",
+          "product-state.success"
+        ],
+        "requiredKinds": [
+          "entry",
+          "success"
+        ],
+        "preserveOnFailure": [],
+        "authoritativeReadbackOnUnknown": false,
+        "recoveryRequirements": []
+      }
+    ],
+    "acceptedTrace": [
+      {
+        "capabilityId": "capability.connect",
+        "journeyId": "journey.connect",
+        "productStateIds": [
+          "product-state.entry",
+          "product-state.success"
+        ],
+        "acceptanceIds": [
+          "acceptance.connect"
+        ],
+        "orderedStateKinds": [
+          "entry",
+          "success"
+        ],
+        "requiredActionIds": [
+          "action.connect"
+        ]
+      }
+    ],
+    "requiredEvidence": [
+      {
+        "id": "evidence-requirement.contract",
+        "claimId": "acceptance.connect",
+        "level": "L1_CONTRACT",
+        "platform": "desktop",
+        "runtimeProfile": "source-only",
+        "inputMode": "source",
+        "locale": "en-US",
+        "viewport": {
+          "widthCssPx": 1280,
+          "heightCssPx": 800,
+          "devicePixelRatio": 1
+        },
+        "resolvedTheme": "light",
+        "contentMode": "default",
+        "stateIds": [
+          "state.entry",
+          "state.success"
+        ],
+        "assertionIds": [
+          "assertion.trace"
+        ]
+      }
+    ],
+    "performanceBudgets": []
+  },
+  "candidate": {
+    "platform": "desktop",
+    "copyNodes": [
+      {
+        "id": "copy.connect-title",
+        "surfaceId": "surface.connect",
+        "scope": "scope.connect",
+        "conceptId": "concept.connect",
+        "role": "title",
+        "text": "Connect account"
+      },
+      {
+        "id": "copy.connect-subtitle",
+        "surfaceId": "surface.connect",
+        "scope": "scope.connect",
+        "conceptId": "concept.connect",
+        "role": "title",
+        "text": "Choose the account to connect"
+      }
+    ],
+    "surfaces": [
+      {
+        "id": "surface.connect",
+        "contextId": "context.setup",
+        "mainSubjectIds": [
+          "subject.connection"
+        ],
+        "regions": [
+          {
+            "id": "region.content",
+            "role": "content",
+            "supportsSubjectId": "subject.connection"
+          },
+          {
+            "id": "region.action",
+            "role": "action",
+            "supportsSubjectId": "subject.connection"
+          }
+        ]
+      }
+    ],
+    "actions": [
+      {
+        "id": "candidate-action.connect",
+        "contractActionId": "action.connect",
+        "surfaceId": "surface.connect",
+        "grammarRole": "primary_commitment",
+        "representation": "text-primary-button",
+        "platformAdapter": "form-submit",
+        "primary": true,
+        "accessibleLabel": "Connect account",
+        "confirmation": "none"
+      }
+    ],
+    "authorityAssertions": [],
+    "states": [
+      {
+        "id": "state.entry",
+        "journeyId": "journey.connect",
+        "surfaceId": "surface.connect",
+        "kind": "entry",
+        "visibleMeaning": "The account can be connected"
+      },
+      {
+        "id": "state.success",
+        "journeyId": "journey.connect",
+        "surfaceId": "surface.connect",
+        "kind": "success",
+        "visibleMeaning": "The account is connected"
+      }
+    ],
+    "transitions": [
+      {
+        "id": "transition.connect",
+        "journeyId": "journey.connect",
+        "fromStateId": "state.entry",
+        "toStateId": "state.success",
+        "candidateActionId": "candidate-action.connect",
+        "preserves": [],
+        "authoritativeReadback": false
+      }
+    ],
+    "recoveryBranches": [],
+    "journeys": [
+      {
+        "journeyId": "journey.connect",
+        "startStateId": "state.entry",
+        "successStateId": "state.success",
+        "steps": [
+          {
+            "id": "step.connect",
+            "transitionId": "transition.connect"
+          }
+        ]
+      }
+    ],
+    "traces": [
+      {
+        "capabilityId": "capability.connect",
+        "journeyId": "journey.connect",
+        "surfaceIds": [
+          "surface.connect"
+        ],
+        "stateIds": [
+          "state.entry",
+          "state.success"
+        ],
+        "actionIds": [
+          "candidate-action.connect"
+        ],
+        "wireflowNodeIds": [
+          "wireflow.entry",
+          "wireflow.success"
+        ],
+        "evidenceIds": [
+          "evidence.contract"
+        ]
+      }
+    ],
+    "evidence": [
+      {
+        "id": "evidence.contract",
+        "requirementId": "evidence-requirement.contract",
+        "level": "L1_CONTRACT",
+        "status": "observed",
+        "sourceDigest": "sha256:aac3f2d72c3bc39b26b1e72049942164584a2f70adf5ed8832219b389e163add",
+        "platform": "desktop",
+        "runtimeProfile": "source-only",
+        "inputMode": "source",
+        "locale": "en-US",
+        "viewport": {
+          "widthCssPx": 1280,
+          "heightCssPx": 800,
+          "devicePixelRatio": 1
+        },
+        "requestedTheme": "system",
+        "resolvedTheme": "light",
+        "contentMode": "default",
+        "stateIds": [
+          "state.entry",
+          "state.success"
+        ],
+        "assertionIds": [
+          "assertion.trace"
+        ]
+      }
+    ]
+  },
+  "expected": {
+    "disposition": "changes-required",
+    "expectedRuleIds": [
+      "ED-SEM-001"
+    ],
+    "expectedFindingIds": [
+      "ED-SEM-001:concept.connect:scope.connect"
+    ]
+  }
+}

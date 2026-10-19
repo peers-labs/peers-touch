@@ -56,14 +56,16 @@ recurring workflow surfaces:
 2. [tokens.md](./tokens.md) — shared token decisions for color, radius, spacing, type, border, shadow, and motion.
 3. [layout.md](./layout.md) — shell, content rail, page density, and responsive layout rules.
 4. [components.md](./components.md) — shared component anatomy and style constraints.
-5. [interaction.md](./interaction.md) — state, feedback, loading, failure, and optimistic interaction rules.
-6. [accessibility.md](./accessibility.md) — focus, keyboard, contrast, hover, and reduced-motion requirements.
-7. [craft-quality.md](./craft-quality.md) — evidence-backed craft calibration,
+5. [grammar-bindings.json](./grammar-bindings.json) — machine-readable semantic
+   role, representation and Desktop/Mobile adapter binding.
+6. [interaction.md](./interaction.md) — state, feedback, loading, failure, and optimistic interaction rules.
+7. [accessibility.md](./accessibility.md) — focus, keyboard, contrast, hover, and reduced-motion requirements.
+8. [craft-quality.md](./craft-quality.md) — evidence-backed craft calibration,
    accessibility/performance baseline, and findings-first review gate.
-8. [frontend-component-tree.md](./frontend-component-tree.md) — Frontend component tree, alive policy, render boundary, and jank-prevention standard.
-9. [frontend-component-tree-registry.md](./frontend-component-tree-registry.md) — Alive / non-alive / lazy / LRU registry for primary modules, settings, applets, and large content surfaces.
-10. [review-checklist.md](./review-checklist.md) — UI review checklist for humans and AI agents.
-11. [new-identity.md](./new-identity.md) — Structured Expressive Minimalism 的方向来源与迁移背景；规范性工艺要求已收敛到 `craft-quality.md`。
+9. [frontend-component-tree.md](./frontend-component-tree.md) — Frontend component tree, alive policy, render boundary, and jank-prevention standard.
+10. [frontend-component-tree-registry.md](./frontend-component-tree-registry.md) — Alive / non-alive / lazy / LRU registry for primary modules, settings, applets, and large content surfaces.
+11. [review-checklist.md](./review-checklist.md) — UI review checklist for humans and AI agents.
+12. [new-identity.md](./new-identity.md) — Structured Expressive Minimalism 的方向来源与迁移背景；规范性工艺要求已收敛到 `craft-quality.md`。
 
 ## 5. Module Contracts
 

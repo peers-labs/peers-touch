@@ -20,9 +20,9 @@ end-user business truth.
 | Architecture governance | [architecture-governance/](./architecture-governance/README.md) |
 | API governance | [api-governance/](./api-governance/README.md) |
 | Development workflow | [development-workflow/](./development-workflow/README.md) |
+| Experience Design | [experience-design/](./experience-design/README.md) |
 | Local development | [local-dev/](./local-dev/README.md) |
 | Acceptance | [acceptance/](./acceptance/README.md) |
 | Quality | [quality/](./quality/README.md) |
-| Experience Reasoning | [experience-design/](./experience-design/README.md) |
 | Developer toolchain | [toolchain/](./toolchain/README.md) |
 | Prototype registry | [prototypes/](./prototypes/README.md) |

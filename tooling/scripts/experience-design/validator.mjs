@@ -7,6 +7,7 @@ import {
   CONFIDENCES,
   CONTRACT_AUTHORITIES,
   EVIDENCE_LEVELS,
+  EXIT_AND_RETRY_KINDS,
   ExperienceReviewError,
   IMPACT_CLASSES,
   INELIGIBLE_REASONS,
@@ -36,7 +37,7 @@ import {
   indexById,
   requireReference,
   requireReferences,
-} from './schema.mjs';
+} from './review-result-schema.mjs';
 import {
   findingFromLedgerEntry,
   orderJourneyStates,
@@ -725,14 +726,16 @@ function validateExitAndRetryPaths(
 ) {
   assertArray(values, 'exitAndRetryPaths');
   assertUniqueIds(values, 'exitAndRetryPaths');
+  const referencedRecoveryIds = new Set();
   values.forEach((entry, index) => {
     const context = `exitAndRetryPaths[${index}]`;
     assertObjectShape(
       entry,
-      ['id', 'sourceStateId', 'actionFactId', 'destinationStateId'],
+      ['id', 'kind', 'sourceStateId', 'actionFactId', 'destinationStateId'],
       ['recoveryPathId'],
       context,
     );
+    assertEnum(entry.kind, EXIT_AND_RETRY_KINDS, `${context}.kind`);
     requireReference(stateById, entry.sourceStateId, `${context}.sourceStateId`);
     requireReference(
       stateById,
@@ -753,14 +756,35 @@ function validateExitAndRetryPaths(
         `${context}.actionFactId must expose an action in sourceStateId`,
       );
     }
+    if (entry.kind === 'exit' && entry.recoveryPathId !== undefined) {
+      fail(
+        'EDX_RECOVERY_INVALID',
+        `${context} exit cannot reference a RecoveryPath`,
+      );
+    }
+    if (entry.kind !== 'exit' && entry.recoveryPathId === undefined) {
+      fail(
+        'EDX_RECOVERY_INVALID',
+        `${context} ${entry.kind} requires a RecoveryPath`,
+      );
+    }
     if (entry.recoveryPathId !== undefined) {
       requireReference(
         recoveryById,
         entry.recoveryPathId,
         `${context}.recoveryPathId`,
       );
+      referencedRecoveryIds.add(entry.recoveryPathId);
     }
   });
+  for (const recoveryId of recoveryById.keys()) {
+    if (!referencedRecoveryIds.has(recoveryId)) {
+      fail(
+        'EDX_RECOVERY_INVALID',
+        `recoveryPaths contains unreferenced path ${recoveryId}`,
+      );
+    }
+  }
 }
 
 function validateUnproven(values, contractById) {

@@ -125,6 +125,83 @@
       "externalCapabilityRegistries": []
     },
     {
+      "id": "experience-design",
+      "root": "docs/architecture/engineering/experience-design",
+      "status": "active",
+      "owner": "Developer Experience / Product Design",
+      "characteristics": {
+        "protocol": true,
+        "stateMachine": true,
+        "persistence": false,
+        "ownership": true,
+        "moduleLayout": true,
+        "crossRuntime": true,
+        "integration": true
+      },
+      "requiredDocuments": [
+        "README.md",
+        "design.md",
+        "decisions.md",
+        "data-model.md",
+        "module-layout.md",
+        "integration.md"
+      ],
+      "decisionIds": [
+        "EDX-D01",
+        "EDX-D02",
+        "EDX-D03",
+        "EDX-D04",
+        "EDX-D05",
+        "EDX-D06",
+        "EDX-D07",
+        "EDX-D08",
+        "EDX-RK-D01",
+        "EDX-RK-D02",
+        "EDX-RK-D03",
+        "EDX-RK-D04",
+        "EDX-RK-D05",
+        "EDX-RK-D06",
+        "EDX-RK-D07",
+        "EDX-RK-D08"
+      ],
+      "governedPaths": [
+        "docs/architecture/engineering/experience-design",
+        "docs/client/common/interaction-design-methodology.md",
+        "docs/client/common/ui-identity/grammar-bindings.json",
+        "tooling/scripts/experience-design",
+        "tooling/skills/pt-product-design-methodology",
+        "tooling/skills/pt-prototype-design",
+        "tooling/skills/pt-quality-check"
+      ],
+      "capabilities": [
+        {
+          "id": "experience.design.evaluate",
+          "owner": "experience.design",
+          "contractRoots": [
+            "docs/architecture/engineering/experience-design",
+            "docs/client/common/interaction-design-methodology.md",
+            "docs/client/common/ui-identity/grammar-bindings.json",
+            "tooling/scripts/experience-design"
+          ],
+          "consumers": [
+            "tooling/skills/pt-product-design-methodology/SKILL.md",
+            "tooling/skills/pt-prototype-design/SKILL.md",
+            "tooling/skills/pt-quality-check/SKILL.md"
+          ],
+          "allowedDependencies": [
+            "node.crypto",
+            "node.fs",
+            "node.path",
+            "node.url"
+          ],
+          "evidenceGates": [
+            "experience-design-control-plane"
+          ]
+        }
+      ],
+      "externalCapabilityRegistries": []
+    },
+    {
       "id": "development-workflow",
       "root": "docs/architecture/engineering/development-workflow",
       "status": "active",
@@ -202,46 +279,6 @@
         "tooling/skills/pt-dev-workflow",
         "tooling/skills/pt-execution-plan-guardian",
         "tooling/skills/pt-goal-orchestrator"
-      ],
-      "capabilities": [],
-      "externalCapabilityRegistries": []
-    },
-    {
-      "id": "experience-reasoning-kernel",
-      "root": "docs/architecture/engineering/experience-design",
-      "status": "active",
-      "owner": "Experience Design",
-      "characteristics": {
-        "protocol": true,
-        "stateMachine": true,
-        "persistence": true,
-        "ownership": true,
-        "moduleLayout": true,
-        "crossRuntime": false,
-        "integration": true
-      },
-      "requiredDocuments": [
-        "README.md",
-        "design.md",
-        "decisions.md",
-        "data-model.md",
-        "module-layout.md",
-        "integration.md"
-      ],
-      "decisionIds": [
-        "EDX-D01",
-        "EDX-D02",
-        "EDX-D03",
-        "EDX-D04",
-        "EDX-D05",
-        "EDX-D06",
-        "EDX-D07",
-        "EDX-D08",
-        "EDX-D09"
-      ],
-      "governedPaths": [
-        "docs/architecture/engineering/experience-design",
-        "tooling/scripts/experience-design"
       ],
       "capabilities": [],
       "externalCapabilityRegistries": []

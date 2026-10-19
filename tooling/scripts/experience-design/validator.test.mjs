@@ -44,6 +44,26 @@ test('rejects implicit recovery and stale ranking tuples', () => {
   );
 });
 
+test('distinguishes exit from requested-outcome recovery', () => {
+  const exit = completeReviewFixture();
+  exit.exitAndRetryPaths[0].kind = 'exit';
+  assert.throws(
+    () => validateReviewResult(exit),
+    (error) =>
+      error.code === 'EDX_RECOVERY_INVALID'
+      && /exit cannot reference/.test(error.message),
+  );
+
+  const unboundRecovery = completeReviewFixture();
+  unboundRecovery.exitAndRetryPaths = [];
+  assert.throws(
+    () => validateReviewResult(unboundRecovery),
+    (error) =>
+      error.code === 'EDX_RECOVERY_INVALID'
+      && /unreferenced path/.test(error.message),
+  );
+});
+
 test('rejects unresolved candidate references', () => {
   const result = completeReviewFixture();
   result.candidateLedger[0].candidate.factIds = ['fact.unknown'];

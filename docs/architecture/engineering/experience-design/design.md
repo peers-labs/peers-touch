@@ -1,294 +1,313 @@
-# Experience Reasoning Kernel - Architecture
+# Experience Design Control Plane - Architecture
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-10-19 | **Updated**: 2026-10-19
-> **Owner**: Experience Design
+> **Version**: v1.1
+> **Created**: 2026-10-18 | **Updated**: 2026-10-20
+> **Owner**: Developer Experience / Product Design
 
 ---
 
 ## 1. Core Principles
 
-1. **Product truth stays upstream.** Product and Client contracts own Journey,
-   trust, recovery and platform semantics. The Kernel only reviews their visible
-   expression.
-2. **Visible failure before source risk.** A primary UI/UX Finding requires an
-   in-scope, reachable state with a visible action and response.
-3. **Contract before rubric.** An accepted contract outranks a general rubric.
-   A conflict invalidates the case; the rubric never weakens product truth.
-4. **Deterministic priority, independent judgment.** Candidate priority is
-   mechanically recomputable, but semantic correctness still requires an
-   independent reviewer.
-5. **Missing proof remains unproven.** A clean schema or empty Finding list
-   cannot manufacture visual, dynamic, accessibility or runtime evidence.
-6. **Holdouts burn on exposure.** Any case admitted to a run is permanently
-   ineligible for future fresh promotion proof.
+1. **Semantics before pixels.** Content meaning, information hierarchy and task
+   flow are frozen before component composition or visual styling.
+2. **One owner per layer.** Product contracts own user outcomes; UI Identity
+   owns grammar; platform contracts own adaptation; tooling validates but does
+   not redefine any of them.
+3. **Trace or fail closed.** A material UI decision without a product,
+   Wireflow, grammar and evidence trace remains `UNPROVEN`.
+4. **Calibrate both sides.** A rule is enforceable only when positive,
+   negative and boundary fixtures show what it accepts, rejects and deliberately
+   leaves to judgment.
+5. **Findings, not self-approval.** Deterministic evaluation emits findings and
+   evidence readiness. An independent review owner decides acceptance.
 
 ## 2. Evidence Ledger
 
 | Claim | Class | Evidence | Confidence | Missing proof |
 |---|---|---|---|---|
-| The first blind run scored `70/100` with no hard failure | `verified_fact` | `docs/architecture/engineering/quality/blind-validation/`; frozen machine-local score artifact | high | none |
-| The run missed the primary missing-recovery failure in the federated search case | `verified_fact` | frozen score and report set | high | none |
-| The run missed identity, scope effect and next-gate meaning in Station switching | `verified_fact` | frozen score and report set | high | none |
-| Source discipline and positive-control behavior were sound | `verified_fact` | frozen score and reports | high | none |
-| Deterministic primary selection should prevent secondary implementation risks from displacing earlier contract failures | `inference` | failure pattern across the two missed cases | medium | fresh holdout |
-| A contract-projected trust and recovery model is the minimal corrective architecture | `accepted_decision` | EDX-D01 through EDX-D09 | n/a | minimal tooling and fresh holdout |
+| Current prospective design guidance does not define concept budgets, Journey-owned path vectors or a mandatory Wireflow gate | `verified_fact` | `docs/client/common/ux-design-methodology.md`; `tooling/skills/pt-product-design-methodology/SKILL.md`; `tooling/skills/pt-prototype-design/SKILL.md` | high | none |
+| Mobile Station entry repeats one selection concept through `Connect Your Station`, `Choose Station`, `Station` and `Required` | `verified_fact` | `packages/prototypes/mobile/chat/src/pages/LaunchScreen.tsx`; `packages/prototypes/mobile/chat/src/components/StationSelector.tsx` | high | rendered severity remains a review judgment |
+| Lark accepted product flow says Add enters scanning directly, while the prototype inserts a Dialog, mode tabs and a managed-app form | `verified_fact` | `docs/architecture/agent/lark/experience-contract.md`; `docs/architecture/agent/lark/prototype/README.md` | high | production behavior is outside this control-plane claim |
+| Visual/token conformance alone can leave semantic and path defects undetected | `inference` | the two verified regressions plus the absence of prospective semantic/path contracts | medium | blind cases must test generalization |
+| A structured contract stack and deterministic evaluator should become the shared control plane | `proposal` | this document set | n/a | independent architecture review and implementation proof |
 
-The old six cases are calibration and training inputs only. They cannot prove
-generalization of this architecture.
+The known regressions are calibration inputs. They are not blind evidence that
+the proposed rules generalize.
 
-## 3. Four-Layer Architecture
-
-```mermaid
-flowchart TD
-    PC["Layer 1: Product / Client Experience Contracts"]
-    RK["Layer 2: Experience Reasoning Kernel"]
-    WF["Layer 3: Wireflow / Prototype Compiler"]
-    QV["Layer 4: Quality Evidence + Blind Validation"]
-    IR["Independent Review"]
-
-    PC -->|"Journey, trust, recovery, platform truth"| RK
-    RK -->|"Findings-only ReviewResult"| IR
-    IR -->|"accepted + current binding + no review/high-fidelity unproven"| WF
-    WF -->|"L1-L4 evidence"| QV
-    QV -->|"fresh holdout result / promotion or revocation"| IR
-```
-
-### 3.1 Layer 1: Product And Client Contracts
-
-Product and Client sources define:
-
-- bounded Journey and promised outcome;
-- explicit visible states and legal transitions;
-- trust-sensitive identity and scope meaning;
-- required next Gate and failure meaning;
-- recovery obligations and preserved user state;
-- platform-specific interaction refinements.
-
-The Kernel cannot add a runtime fence, infer a trust claim from reachability, or
-invent a recovery promise that the accepted source does not define. Missing
-upstream semantics are recorded as `UNPROVEN` or a contract gap.
-
-### 3.2 Layer 2: Experience Reasoning Kernel
-
-The Kernel owns:
-
-- the review procedure;
-- closed result schema and reference integrity;
-- Journey state ordering;
-- trust and recovery projection checks;
-- candidate eligibility;
-- deterministic primary/secondary ranking;
-- exact source and report bindings.
-
-The Kernel emits findings. It does not approve the product, prototype, code or
-release.
-
-### 3.3 Layer 3: Wireflow And Prototype Compiler
-
-The compiler consumes an accepted ReviewResult and preserves stable Journey,
-state, action and evidence references through Wireflow and high fidelity.
-
-High-fidelity work is admitted only when:
-
-- the evaluation binding matches current inputs;
-- `verdict=NO_BLOCKING_FINDING`;
-- independent review is `accepted`;
-- no `unproven` entry is required for review or high fidelity.
-
-Any `FINDINGS`, stale binding, contract/rubric conflict or unproven cell
-required for review/high fidelity fails closed.
-
-### 3.4 Layer 4: Quality And Blind Validation
-
-Quality owns:
-
-- sealed holdout packages and answer keys;
-- run lifecycle and report freezing;
-- scoring and hard-failure policy;
-- immutable exposure/training ledgers;
-- promotion and later revocation.
-
-The Kernel may read a sealed run envelope and case sources. It must not read
-the answer key, score, promotion decision or Promotion Ledger.
-Sealing atomically creates the immutable run envelope and burns every case in
-Exposure Ledger; a partial write is invalid.
-
-## 4. Review Pipeline
+## 3. System Architecture
 
 ```text
-sealed case + current source fence
-  -> facts / contracts / inferences / unproven
-  -> JourneyStateGraph
-  -> TrustBoundaryCheck + RecoveryPath
-  -> finding candidates
-  -> eligibility filter
-  -> deterministic ranking tuple
-  -> frozen ReviewResult
-  -> independent review / Quality scoring
+Product contract
+  capability / journey / visible state / acceptance
+                    |
+                    v
+Experience Contract Stack
+  Product Intent
+  Content Semantics
+  Information Architecture
+  Task + Path Cost
+  State + Recovery
+  Action Representation
+                    |
+                    v
+Prototype Compiler
+  Wireflow -> UI Grammar Binding -> High-fidelity prototype
+                    |
+                    v
+Evidence Harness
+  L1 contract -> L2 render -> L3 dynamic -> L4 runtime quality
+                    |
+                    v
+Finding Router
+  product | content | IA | path | state | action | grammar |
+  prototype | platform | implementation | evidence owner
+
+Machine evaluator -----------------------------------------------+
+  validates closed schemas, trace, budgets, drift and evidence   |
+  Reasoning Kernel source-fences Journey/trust/recovery findings |
+  emits findings only; cannot mutate contracts or approve them   +
 ```
 
-### 4.1 Source Fence
+## 4. Contract Stack
 
-Every run binds:
+### 4.1 Product Intent
 
-- package and run envelope;
-- case and source revision;
-- manifest and rubric;
-- every supplied source blob.
+The product owner supplies stable capability and Journey IDs, target actor,
+starting context, promised outcome, non-goals and trust constraints. The
+control plane rejects a case that invents product intent locally.
 
-Digest drift invalidates the run. Stored prose that claims a matching source is
-not evidence.
+### 4.2 Content Semantics
 
-### 4.2 Evidence Separation
+Content is modeled as concepts, not strings alone. Each copy node declares:
 
-The reviewer records:
+- concept ID and semantic role;
+- scope and hierarchy level;
+- whether the concept is introduced, clarified or acted upon;
+- a per-scope occurrence budget where repetition can create noise;
+- an explicit exception when repetition is required for safety, accessibility
+  or separated navigation context.
 
-- `facts`: directly observable source or rendered behavior;
-- `contracts`: accepted Product / Client clauses, then rubric clauses;
-- `inferences`: consequences derived from facts and contracts;
-- `unproven`: material points that supplied evidence cannot establish.
+Lexical similarity is an investigation signal only. A finding requires
+concept-level evidence. This catches semantic duplication such as repeating
+the same Station-selection idea through title, subtitle, field label and badge,
+while allowing the product name in genuinely separate accessibility or shell
+contexts.
 
-Every Finding references these records by ID. Unsupported inference cannot be
-primary.
+### 4.3 Information Architecture
 
-### 4.3 Journey State Graph
+Each surface declares exactly one main subject, its parent scope, content rail,
+action rail, trust rail, floating layer and recovery layer. Secondary regions
+must support the main subject or link to another surface; decorative or
+ownerless regions are rejected.
 
-The graph contains:
+### 4.4 Task And Path Cost
 
-- one starting state;
-- case-explicit states;
-- additional source-reachable derived states;
-- source-backed visible actions and response edges.
-
-State order uses shortest reachable action distance from entry. Cycles do not
-increase priority. Equal-distance states sort by case explicit order when
-present, then source path, line and state ID.
-
-### 4.4 Trust Boundary Projection
-
-`TrustBoundaryCheck` projects only an accepted contract transition. It checks
-whether the UI exposes the contract-defined:
-
-- identity evidence and diagnostic evidence as different meanings;
-- scope effect;
-- next Gate;
-- failure meaning;
-- visible consequences;
-- treatment of previous-scope projections.
-
-When the accepted contract does not define one of these semantics, the result
-is `UNPROVEN`; the Kernel does not define runtime behavior.
-
-### 4.5 Recovery Path
-
-A recoverable blocker must record:
-
-- why recovery is needed;
-- a visible entry action;
-- distance: same surface, named adjacent surface, or implicit;
-- user state preserved;
-- return state and semantic return target.
-
-Implicit recovery is invalid. Named-adjacent recovery must have an explicit
-visible pointer and a valid return path. A return target may be keyboard focus,
-touch action/surface anchor or navigation target. `null` requires a
-contract-backed not-applicable reason.
-
-### 4.6 Primary Finding Selection
-
-Candidates are ineligible for primary selection when they are:
-
-- outside the bounded Journey;
-- unreachable from entry;
-- missing a visible action and response;
-- supported only by an unaccepted inference.
-
-Eligible candidates sort by a non-weighted tuple:
+Journeys use a cost vector rather than a universal click count:
 
 ```text
-contractStrength
--> impactRank
--> stateOrdinal
--> explicitCoverageRank
--> severityRank
--> confidenceRank
--> candidateId
+commitments       irreversible or externally visible decisions
+contextSwitches   route, modal, application or mental-model changes
+decisionLoad      choices that require understanding before continuing
+interruptions     permission, auth or setup breaks in the primary task
+recoveryDebt      user work at risk if the next operation fails
 ```
 
-The tuple is fully defined in [data-model.md](./data-model.md). Secondary
-findings retain their tuple and `deprioritizedBecause`; they are not silently
-dropped.
+Each Journey owns its own budget based on frequency, risk and reversibility.
+The evaluator compares vectors component-wise and never converts them to an
+averaged score. A high-risk destructive flow may legitimately exceed a
+frequent low-risk flow.
 
-## 5. Components
+### 4.5 State And Recovery
 
-| Component | Responsibility | Must not do |
-|---|---|---|
-| Source Fence | Verify exact package, source and blob binding | fetch ambient source or rewrite inputs |
-| Evidence Ledger Validator | Check closed fact/contract/inference references | decide whether prose is semantically true |
-| Journey Graph Validator | Check states, edges, reachability and stable order | invent missing states or runtime behavior |
-| Trust Projection Validator | Check the accepted trust transition is visibly represented | own Station or Federation semantics |
-| Recovery Validator | Check locality, preservation and return contract | fabricate a recovery path |
-| Candidate Ranker | Recompute eligibility and total order | assign semantic impact from source code |
-| ReviewResult Validator | Enforce verdict, finding and unproven invariants | approve a result |
-| Quality Holdout Validator | Check lifecycle, hashes and ledger references | read keys during a Kernel review |
+Every material Journey defines reachable visible states and transitions.
+Recoverable failure must name:
 
-All minimal tooling is process-local, deterministic and side-effect free for
-validation. Quality-owned ledger mutation remains outside the Kernel.
+- preserved input and durable state;
+- retry, cancel or alternate action;
+- focus/return destination;
+- authority readback when outcome is uncertain.
 
-## 6. Allowed And Forbidden Relationships
+The evaluator rejects terminal-looking success without authoritative evidence
+and recoverable failure without a recovery transition.
+
+### 4.6 Action Representation
+
+Every action binds intent, risk and frequency to one representation:
+
+- one primary commitment per surface;
+- icon-only only for canonical, repeated, low-risk actions with tooltip and
+  accessible label;
+- destructive actions are never icon-only;
+- the same action keeps one representation across equivalent surfaces;
+- option sets use menus, tabs or segmented controls; binary state uses a
+  switch/checkbox; numeric input uses the appropriate bounded control.
+
+These are semantic roles. Visual geometry remains owned by UI Identity.
+
+## 5. UI Grammar Binding
+
+`docs/client/common/ui-identity/grammar-bindings.json` is the machine-readable
+bridge from semantic roles to shared component roles and platform adapters.
+It records:
+
+- action, surface, state and navigation roles;
+- allowed component roles;
+- required labels, confirmation or recovery properties;
+- Desktop and Mobile adapter families;
+- source document for the human-readable rule.
+
+The binding does not freeze CSS values, component imports or page-specific
+markup. Unknown roles fail closed; module contracts may narrow a binding but
+cannot redefine global meaning.
+
+## 6. Prototype Compiler
+
+The compiler is a process boundary, not a code generator:
+
+```text
+accepted Experience Contract
+  -> Wireflow: nodes, transitions, copy concepts, actions and states
+  -> trace validation
+  -> UI Grammar binding
+  -> high-fidelity prototype
+```
+
+High-fidelity work cannot compensate for a missing or failing Wireflow. The
+prototype must preserve stable IDs from Product through Evidence. Any
+intentional deviation is a contract amendment, not an implementation detail.
+
+### 6.1 Reasoning Kernel Admission
+
+The subordinate [Reasoning Kernel](./reasoning-kernel.md) source-fences the
+accepted contract, candidate Journey graph and supplied evidence before high
+fidelity. It separates facts, accepted contracts, inferences and unproven
+cells; validates trust and recovery projections; and deterministically ranks
+eligible findings.
+
+The Kernel does not replace the Contract Stack or Prototype Compiler. Its
+`ReviewResult` is one evaluator projection and must bind the same stable
+Product, Wireflow and evidence IDs used by the canonical Experience Case.
+
+## 7. Evidence Harness
+
+### 7.1 Evidence Levels
+
+- `L1_CONTRACT`: source paths, IDs, grammar bindings and reachable state map.
+- `L2_VISUAL`: inspected renders for required viewport, theme, content and
+  state cells.
+- `L3_DYNAMIC`: real transitions, recovery, input preservation, focus, touch
+  and reduced-motion paths.
+- `L4_RUNTIME`: semantics, assistive technology, contrast, target size,
+  performance and exact runtime cells.
+
+The harness validates metadata, source binding and coverage. It cannot infer
+visual quality from artifact existence. Missing cells remain `UNPROVEN`.
+
+### 7.2 Independent Review Boundary
+
+The evaluator returns:
+
+```text
+changes-required | ready-for-independent-review | unproven
+```
+
+It never returns `passed`, updates a contract, changes a fixture expectation or
+marks an evidence cell accepted. A reviewer must be different from the
+contract, candidate, evidence and expectation authors for an acceptance
+decision. Review receipts bind all input digests and are validated separately;
+the evaluator never creates them. Author and reviewer digests use issuer-scoped
+principals and Ed25519 attestations against an explicit trusted public-key
+registry. Without that attestation the result can expose findings but cannot
+establish an accepted review.
+
+## 8. Components
+
+All components are pure, process-local functions invoked by the CLI. They have
+no background lifecycle, concurrency, network, persistence or mutation owner.
+
+| Component | Inputs | Outputs | Dependencies | Source access | Forbidden behavior |
+|---|---|---|---|---|---|
+| Contract validator | case JSON | typed case or schema error | schema module | read explicit case only | infer product meaning, repair input |
+| Semantic validator | concepts, copy nodes | `ED-SEM-001` findings | validated case | none | judge prose taste or edit copy |
+| IA validator | surface contracts/candidates | `ED-IA-001` findings | validated case, grammar | read grammar | infer pixel layout |
+| Path validator | accepted action contracts, states, steps | derived vector and `ED-PATH-001` | validated case | none | trust candidate aggregate cost, use universal threshold |
+| State validator | taxonomy, state graph, requirements | `ED-STATE-001` findings | validated case | read grammar state roles | invent backend truth or transitions |
+| Action validator | action contracts/candidates | `ED-ACTION-001` findings | validated case, grammar | read grammar | style components or redefine grammar |
+| Grammar validator | grammar JSON, candidate roles | `ED-GRAMMAR-001` findings | schema module | read canonical grammar only | accept unknown roles |
+| Trace/drift detector | accepted trace, candidate trace | `ED-TRACE-001`/`ED-DRIFT-001` | validated case | none | amend either trace |
+| Evidence matcher | requirement cells, evidence records | exact matches and `ED-EVIDENCE-001` | digest helper | verify explicit artifact paths | inspect visuals automatically or relabel evidence |
+| Calibration runner | fixture directories | coverage and expectation mismatch | evaluator | read fixtures and grammar | author expected findings, consume holdout |
+| Review receipt validator | case/result/receipt digests | valid receipt or independence error | digest helper | read explicit receipt | create receipt or approve findings |
+| Reasoning Kernel | accepted contract, Journey graph, source fence | source-bound ReviewResult and ranked findings | review-result schema | read explicit package and source blobs | define Product truth or admit high fidelity |
+| Finding router | rule catalog findings | owner-grouped projection | rule catalog | none | patch downstream symptoms |
+
+The CLI owns process exit and serialization only. Validators do not execute
+commands, import Skills, read Git history or write artifacts.
+
+## 9. Allowed And Forbidden Relationships
 
 Allowed:
 
-- Product / Client contracts supply semantic truth.
-- The Kernel references accepted contract clauses and supplied source facts.
-- Prototype Compiler consumes an independently accepted current result.
-- Quality scores only frozen complete reports from a sealed holdout.
-- Reviewers add source-backed findings without mutating frozen Kernel output.
+- Product Design writes product and experience contracts.
+- Prototype Design consumes accepted contracts and produces Wireflow/evidence.
+- UI Identity supplies grammar bindings.
+- Review and Quality consume findings and evidence readiness.
 
 Forbidden:
 
-- Rubric overrides an accepted Product / Client contract.
-- The Kernel defines a Station, Federation or Identity runtime state machine.
-- Source-only race, code smell or architecture risk becomes the primary UI/UX
-  Finding without visible action and response evidence.
-- Prototype polish compensates for a blocking finding or missing recovery.
-- Quality exposes an answer key before `scoring`.
-- An exposed, aborted, invalidated or retired case returns as fresh holdout.
-- Zero deterministic findings is relabeled as product approval.
+- Evaluator edits or approves its own input.
+- Prototype defines a new product Journey or business authority.
+- Skill duplicates the canonical contract stack or UI Grammar.
+- Screenshot-only evidence proves dynamic, accessibility or runtime claims.
+- A negative fixture alone creates a universal rule.
+- High-fidelity implementation starts while a required contract conflicts.
+- Candidate-authored aggregate cost or verdict is treated as authority.
+- Calibration expectations are derived from the same evaluator output.
+- Holdout/blind cases are read by the calibration runner.
 
-## 7. Evidence Levels
+## 10. Rule Catalog And Failure Semantics
 
-- `L1_CONTRACT`: exact sources, IDs, graph and result binding.
-- `L2_VISUAL`: inspected render cells for required states and viewports.
-- `L3_DYNAMIC`: real action, transition, retry, cancellation and return paths.
-- `L4_RUNTIME`: exact runtime, accessibility, performance and receiver-visible
-  behavior required by the claim.
+`rules.json` is the canonical machine source for rule ID, severity,
+disposition, exit behavior and default owner. The table below is a
+human-readable projection and is validated against that file.
 
-The Kernel records evidence references and unproven cells. Artifact existence
-alone does not prove visual or interaction quality.
+| Condition | Rule/code | Severity | Disposition | CLI exit |
+|---|---|---|---|---|
+| Missing/invalid layer or unresolved reference | `ED-CONTRACT-001` | blocking | `changes-required` | 1 |
+| Concept budget exceeded without legal exception | `ED-SEM-001` | blocking | `changes-required` | 1 |
+| Main subject/region ownership invalid | `ED-IA-001` | blocking | `changes-required` | 1 |
+| Derived path vector exceeds Journey budget | `ED-PATH-001` | blocking | `changes-required` | 1 |
+| Required state, recovery or readback missing | `ED-STATE-001` | blocking | `changes-required` | 1 |
+| Action representation illegal or inconsistent | `ED-ACTION-001` | blocking | `changes-required` | 1 |
+| Unknown grammar role/adapter | `ED-GRAMMAR-001` | blocking | `changes-required` | 1 |
+| Required trace link incomplete | `ED-TRACE-001` | blocking | `changes-required` | 1 |
+| Required evidence cell has no exact current match | `ED-EVIDENCE-001` | unproven | `unproven` | 2 |
+| Candidate differs from accepted Journey trace | `ED-DRIFT-001` | blocking | `changes-required` | 1 |
+| Calibration class/expectation missing | `CALIBRATION_INCOMPLETE` | blocking | command failure | 1 |
+| Receipt author overlaps an input author or digest is stale | `INDEPENDENT_REVIEW_REQUIRED` | blocking | review invalid | 1 |
 
-## 8. Quality Outcomes
+Disposition precedence is deterministic:
 
-Architecture promotion requires a fresh holdout that:
+1. any blocking finding -> `changes-required`;
+2. otherwise any unmatched evidence requirement -> `unproven`;
+3. otherwise -> `ready-for-independent-review`.
 
-- scores at least `80`;
-- has no hard failure;
-- covers every required hidden challenge class;
-- produces no blocking false positive on positive controls;
-- has a mechanically recomputable primary tuple for every Finding case;
-- contains no case present in exposure, training or terminal-run ledgers.
+Warnings may add context but never change precedence. Schema/fixture/review
+receipt command errors are not findings and always exit non-zero.
 
-Required hidden challenge classes are:
+Validation is deterministic and side-effect free. Invalid input produces a
+non-zero exit and structured error; it never rewrites the input.
 
-- `primary-visible-blocker`;
-- `trust-boundary-propagation`;
-- `recovery-locality`;
-- `positive-control-non-finding`;
-- `evidence-boundary`;
-- `platform-semantic-parity`.
+## 11. Quality Gates
 
-Positive, negative and boundary calibration remains separate from fresh
-holdout promotion. Passing source checks proves the mechanism, not UI/UX
-judgment quality.
+| Gate | Claim |
+|---|---|
+| `EDX-G01` | Architecture docs, module registry and grammar source validate |
+| `EDX-G02` | Schema, semantic, IA, path, state, action, trace and drift tests pass |
+| `EDX-G03` | Every enforceable rule has positive, negative and boundary calibration |
+| `EDX-G04` | Product/Prototype/Quality skills reference the canonical control plane |
+| `EDX-G05` | Known semantic-redundancy and Lark contract-drift regressions are detected |
+
+These gates prove the control plane's source behavior. They do not prove a
+future design is usable or a production UI is ready.

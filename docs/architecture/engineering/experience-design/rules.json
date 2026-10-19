@@ -1,0 +1,93 @@
+{
+  "kind": "peers-touch-experience-rule-catalog",
+  "schemaVersion": 1,
+  "rules": [
+    {
+      "id": "ED-CONTRACT-001",
+      "severity": "blocking",
+      "disposition": "changes-required",
+      "exitCode": 1,
+      "owner": "product",
+      "condition": "A required contract layer, stable reference, path chain, authorship attestation, or closed schema field is missing or invalid."
+    },
+    {
+      "id": "ED-SEM-001",
+      "severity": "blocking",
+      "disposition": "changes-required",
+      "exitCode": 1,
+      "owner": "content",
+      "condition": "A concept exceeds its scope occurrence budget without an allowed exception."
+    },
+    {
+      "id": "ED-IA-001",
+      "severity": "blocking",
+      "disposition": "changes-required",
+      "exitCode": 1,
+      "owner": "information-architecture",
+      "condition": "A surface has no single accepted main subject or contains an ownerless non-navigation region."
+    },
+    {
+      "id": "ED-PATH-001",
+      "severity": "blocking",
+      "disposition": "changes-required",
+      "exitCode": 1,
+      "owner": "journey",
+      "condition": "A derived path-cost dimension exceeds the accepted Journey budget."
+    },
+    {
+      "id": "ED-STATE-001",
+      "severity": "blocking",
+      "disposition": "changes-required",
+      "exitCode": 1,
+      "owner": "state",
+      "condition": "A required visible state, recovery edge, preservation guarantee, or authoritative readback is missing."
+    },
+    {
+      "id": "ED-ACTION-001",
+      "severity": "blocking",
+      "disposition": "changes-required",
+      "exitCode": 1,
+      "owner": "product",
+      "condition": "An action representation, adapter, confirmation policy, mutation, risk, option shape, or equivalent-surface form violates its contract."
+    },
+    {
+      "id": "ED-GRAMMAR-001",
+      "severity": "blocking",
+      "disposition": "changes-required",
+      "exitCode": 1,
+      "owner": "ui-identity",
+      "condition": "A semantic role, representation, state, region, or platform adapter is absent from the canonical UI Grammar."
+    },
+    {
+      "id": "ED-TRACE-001",
+      "severity": "blocking",
+      "disposition": "changes-required",
+      "exitCode": 1,
+      "owner": "prototype",
+      "condition": "A required Product-to-Wireflow-to-grammar-to-evidence trace is incomplete."
+    },
+    {
+      "id": "ED-EVIDENCE-001",
+      "severity": "unproven",
+      "disposition": "unproven",
+      "exitCode": 2,
+      "owner": "evidence",
+      "condition": "A required evidence cell has no exact current-source and artifact-digest-bound match."
+    },
+    {
+      "id": "ED-DRIFT-001",
+      "severity": "blocking",
+      "disposition": "changes-required",
+      "exitCode": 1,
+      "owner": "product",
+      "condition": "The candidate reachable Journey inserts, removes, reorders, or changes a required state or action from the accepted trace."
+    }
+  ],
+  "precedence": [
+    "blocking",
+    "unproven",
+    "warning"
+  ],
+  "readyDisposition": "ready-for-independent-review",
+  "readyExitCode": 0
+}

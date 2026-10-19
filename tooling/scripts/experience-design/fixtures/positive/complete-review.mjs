@@ -301,6 +301,7 @@ export function completeReviewFixture() {
     exitAndRetryPaths: [
       {
         id: 'path.recover',
+        kind: 'recovery',
         sourceStateId: 'state.blocked',
         actionFactId: 'fact.recover',
         destinationStateId: 'state.recovered',

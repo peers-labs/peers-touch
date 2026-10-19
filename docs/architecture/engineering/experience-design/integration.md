@@ -1,177 +1,164 @@
-# Experience Reasoning Kernel - Integration
+# Experience Design Control Plane - Integration
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-10-19 | **Updated**: 2026-10-19
-> **Owner**: Experience Design
+> **Version**: v1.1
+> **Created**: 2026-10-18 | **Updated**: 2026-10-20
+> **Owner**: Developer Experience / Product Design
 
 ---
 
 ## 1. Existing Source Mapping
 
-| Source | Retained responsibility | Kernel integration |
+The table below is the active integration. Architecture, client methodology,
+UI Grammar, Rule Catalog, evaluator, calibration, review validation and the
+three Skill consumers are one source cut.
+
+| Existing source | Retained responsibility | Target integration |
 |---|---|---|
-| `docs/client/common/ux-design-methodology.md` | UX dimensions and case-to-contract discipline | Supplies review lenses; does not become a rule table |
-| Product architecture documents | Journey, outcome, trust and recovery truth | Highest-strength contract references |
-| Client platform contracts | Desktop/Mobile semantics and adaptation | Platform contract references |
-| UI Identity documents | Visual, interaction and accessibility contracts | Contract references and later craft review |
-| `pt-product-design-methodology` | Product thesis, Journey, states and acceptance | Produces accepted upstream semantics |
-| `pt-prototype-design` | Wireflow, runnable prototype and evidence | Consumes independently accepted ReviewResult |
-| `pt-quality-check` | Quality evidence aggregation | Reports binding, findings, review and unproven state |
-| `pt-github-review` | Final review judgment | Consumes Kernel output; keeps merge authority |
-| `quality/blind-validation/` | Isolated cases, rubric and answer key | Quality-owned calibration and fresh holdout input |
+| `pt-product-design-methodology` | Product thesis, Journey, visible state, acceptance | Produces the Experience Contract layers and path budgets |
+| `ux-design-methodology.md` | Case-to-contract diagnosis | Delegates prospective interaction design to the new methodology |
+| `ui-identity/*` | Visual, spatial, interaction and accessibility truth | Owns machine-readable grammar bindings |
+| `pt-prototype-design` | Runnable prototype and L1-L4 evidence | Requires traced Wireflow and evaluator run before high fidelity |
+| `pt-quality-check` | Evidence aggregation | Reports experience findings and missing review/evidence cells |
+| `pt-github-review` | Final review judgment | Consumes findings; no new merge authority is introduced |
 
-The Kernel adds a shared review procedure between accepted product truth and
-Prototype compilation. It does not replace any existing owner.
+No existing Skill or contract is replaced. The integration removes implicit
+ownership gaps between Product and Prototype.
 
-## 2. Product And Client Integration
+## 2. Product Design Integration
 
-For each material UI/UX review, upstream sources must identify:
+For material UI, Product Design additionally emits:
 
-- the bounded Journey and promised outcome;
-- explicit visible states and success/failure meanings;
-- trust-sensitive transitions;
-- scope consequences and the next required Gate;
-- recoverable blockers and state that must survive;
-- platform adaptations that preserve shared intent.
+1. content concept inventory and per-scope occurrence budgets;
+2. surface main-subject and region contract;
+3. Journey path cost budget;
+4. state/recovery/readback requirements;
+5. semantic action roles;
+6. required evidence levels.
 
-Missing semantics remain `UNPROVEN`. The Kernel cannot repair a Product or
-Client contract while reviewing its consumer.
+These fields are product semantics, not implementation sequencing. Product
+review must resolve conflicts before architecture or prototype work proceeds.
 
-When rubric and accepted contract conflict:
+## 3. Prototype Integration
 
-1. freeze the report as invalid;
-2. cite both sources;
-3. route the conflict to the source owners;
-4. do not rank a Finding from the conflicting clause.
-
-## 3. Review Integration
-
-The review owner:
-
-1. verifies the source fence;
-2. authors facts, contract references and inferences;
-3. builds the bounded JourneyStateGraph;
-4. records trust and recovery projections where relevant;
-5. creates an exhaustive candidate ledger;
-6. runs deterministic validation and ranking;
-7. freezes the ReviewResult;
-8. performs an independent findings-first review.
-
-Deterministic tooling checks shape, references, graph reachability, ordering,
-tuple recomputation and hashes. The independent reviewer checks whether the
-semantic facts, contracts, inferences and impact classes are truthful.
-
-## 4. Prototype Compiler Integration
-
-Prototype Compiler admission is fail closed:
+Prototype Design follows:
 
 ```text
-current exact binding
-AND verdict = NO_BLOCKING_FINDING
-AND independent review = accepted
-AND no review/high-fidelity unproven remains
-  -> high-fidelity admission
+accepted Experience Contract
+  -> author Wireflow candidate
+  -> run deterministic evaluator
+  -> remediate blocking findings
+  -> independent Wireflow review
+  -> bind UI Grammar
+  -> implement high fidelity
+  -> collect L1-L4 evidence
+  -> rerun evaluator and independent craft review
 ```
 
-Any other result returns to the owning source:
+The prototype README records the case path, findings artifact and exact
+`UNPROVEN` cells. A screenshot path without inspection metadata is not evidence.
 
-| Condition | Owner |
+## 4. UI Identity Integration
+
+The JSON grammar binding is reviewed with the human-readable UI Identity
+documents. Its roles are stable semantic names, not library component names.
+
+Module UI contracts may:
+
+- narrow allowed roles;
+- select one allowed platform adapter;
+- require additional confirmation or evidence.
+
+They may not:
+
+- change the meaning of `primary`, `destructive`, `recovery` or trust roles;
+- introduce an unregistered action representation;
+- silently relax accessibility or evidence requirements.
+
+## 5. Review And Quality Integration
+
+Quality evidence for material UI records:
+
+- case path and source digests;
+- evaluator disposition and findings;
+- source-fenced `ReviewResult`, primary Finding tuple and scoped unproven cells;
+- calibration suite status;
+- independent review status;
+- L1-L4 cells run and not run;
+- contract drift status;
+- product/runtime non-claims.
+
+Zero deterministic findings means only `ready-for-independent-review`.
+`pt-github-review` remains the final code-review owner.
+
+The Reasoning Kernel is invoked by the same canonical CLI and consumes the
+same accepted Experience Case. It must not maintain a second Product contract,
+UI Grammar, Rule Catalog or Skill-level admission procedure. Quality owns fresh
+holdout sealing, exposure, scoring and retirement; the evaluator owns only
+deterministic validation and findings.
+
+## 6. Finding Routing
+
+| Rule | Default owner |
 |---|---|
-| Broken or missing product promise | Product domain |
-| Missing trust/scope/next-Gate meaning | Product or Client contract owner |
-| Missing visible recovery | Product interaction/state owner |
-| Platform semantic drift | Desktop or Mobile Client owner |
-| Stale or invalid source binding | Review runner |
-| Missing L1-L4 evidence | Prototype/runtime evidence owner |
-| Incorrect ranking tuple | Kernel implementation |
+| `ED-CONTRACT-001` | Product or architecture source owner |
+| `ED-SEM-001` | Content/Product |
+| `ED-IA-001` | Product information architecture |
+| `ED-PATH-001` | Product Journey |
+| `ED-STATE-001` | Product state owner; runtime owner if authority is missing |
+| `ED-ACTION-001` | Product interaction contract |
+| `ED-GRAMMAR-001` | UI Identity |
+| `ED-TRACE-001` | Prototype compiler |
+| `ED-EVIDENCE-001` | Evidence/runtime owner |
+| `ED-DRIFT-001` | The owner of the accepted contract, never the downstream symptom |
 
-Wireflow and high-fidelity artifacts preserve the accepted Journey, state,
-action and evidence IDs. A visual redesign cannot silently amend them.
+## 7. Known Regression Integration
 
-## 5. Evidence Integration
+The initial calibration set includes:
 
-Evidence is layered:
+- semantic repetition in Mobile Station entry: repeated product/Station
+  concepts across brand, title, subtitle, field and status;
+- Lark connection drift: accepted direct-scan Journey versus prototype
+  Dialog/Tab/form steps;
+- positive and boundary controls that preserve legitimate brand,
+  accessibility and safety repetition.
 
-- L1 proves current contracts, source binding, graph and trace.
-- L2 proves inspected visual states.
-- L3 proves real transitions, retry, cancellation and return.
-- L4 proves runtime, accessibility, performance or receiver-visible claims.
+These are calibration fixtures, not the future blind acceptance set.
 
-The Kernel validates evidence references and records missing cells. Prototype
-and runtime owners produce the artifacts. Quality decides whether the selected
-proof obligation is satisfied.
+## 8. Cutover
 
-Screenshot existence alone does not prove L2. A source test alone does not
-prove L3 or L4.
+Atomic cutover requires:
 
-## 6. Calibration Integration
+1. architecture and client methodology accepted;
+2. grammar binding and evaluator landed together;
+3. calibrated fixtures passing;
+4. Product, Prototype and Quality Skills pointing to the canonical source;
+5. known regressions detected;
+6. no second active rule table in Skills or evaluator code.
 
-Focused Kernel fixtures use three classes:
+Only after all six conditions hold may the architecture registry add the
+evaluator source path, Skill consumers and `experience.design.evaluate`
+capability. The current registry contains that capability because the canonical
+CLI, calibration fixtures, signed review validation and all three consumers
+land together. `experience-design.mjs check` is the source-only cutover check.
 
-- `positive`: a complete result with no blocking false positive;
-- `negative`: one intentional schema, graph, recovery or ranking violation;
-- `boundary`: a legal edge case such as named-adjacent recovery, a derived
-  state at equal distance, or platform-specific return target.
+Rollback is a VCS revert of the atomic source change. No compatibility mode or
+dual evaluator is retained.
 
-These fixtures prove validator behavior only. They are visible training inputs
-and cannot become fresh promotion cases.
+Tomorrow's real Peers/user examples remain outside calibration. Their first
+blind result must be content-addressed and frozen before an independent review
+or any promoted calibration case is created.
 
-The existing EDX-B01 through EDX-B06 package is retained as a frozen baseline
-and training set. Its reports may verify that known reasoning failures are now
-representable, but its score cannot promote the revised Kernel.
+## 9. External Calibration Sources
 
-## 7. Quality Holdout Integration
+External evidence informs the design but does not own Peers contracts:
 
-Fresh promotion uses a new sealed package whose hidden challenge classes cover:
+- Figma MCP and Code Connect: structured design context and component binding;
+- Vercel v0 Design System Skills: reusable design-system instruction;
+- Anthropic evaluator-optimizer: explicit evaluator/producer separation;
+- Nielsen Norman Group wireflows: task flow before visual detail;
+- Storybook, Playwright and WCAG 2.2: state, interaction and accessibility
+  evidence.
 
-- primary visible blocker;
-- trust-boundary propagation;
-- recovery locality;
-- positive-control non-finding;
-- evidence boundary;
-- cross-platform semantic parity.
-
-Quality:
-
-- atomically seals the run envelope and writes every case digest to Exposure
-  Ledger;
-- reveals cases to the runner without the answer key;
-- freezes a complete report hash before scoring;
-- opens the key only in `scoring`;
-- atomically retires the run with score and promotion decision;
-- appends revocation if later integrity evidence invalidates a promotion.
-
-Kernel code and Skills cannot read or mutate these Quality decisions.
-
-## 8. Skill Integration
-
-Skills remain thin consumers:
-
-- Product Skill cites this module when preparing reviewable Journey, trust and
-  recovery semantics.
-- Prototype Skill requires a valid admission decision before high fidelity.
-- Quality Skill validates source binding, frozen reports, exposure and
-  promotion policy.
-
-Skills must not copy the ranking table, redefine holdout states or maintain a
-second schema. They invoke the canonical minimal CLI after it is implemented.
-
-## 9. Architecture Registry Integration
-
-The architecture module registry governs this document root and
-`tooling/scripts/experience-design`. Product, Prototype and Quality Skills are
-thin consumers, not additional capability owners.
-
-The module does not publish an Acceptance capability until a formal Feature ->
-Capability -> Registry -> Gate trace exists. Focused Node tests are source
-checks, not a fabricated formal Gate or fresh-holdout promotion.
-
-## 10. Non-Claims
-
-- Active architecture does not prove the minimal CLI exists.
-- Passing schema and ranking tests does not prove Agent judgment quality.
-- Replaying the old six cases does not prove generalization.
-- Prototype evidence does not prove production behavior.
-- Fresh holdout promotion does not guarantee that every future UI/UX defect
-  will be found.
+References are evidence inputs only. The repository contracts and Peers
+product intent remain authoritative.

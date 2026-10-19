@@ -56,21 +56,21 @@ If no target is available, ask for one. Do not produce a generic checklist.
    ```
 
 4A. When the change contains material UI, a prototype confirmation, or the
-Experience Reasoning Kernel itself, read
+Experience Design Control Plane itself, read
 `docs/architecture/engineering/experience-design/README.md` and verify the
 task-owned ReviewResult:
 
    ```bash
-   node tooling/scripts/experience-design/experience-review.mjs \
-     verify <review-result.json> \
+   node tooling/scripts/experience-design/experience-design.mjs \
+     review-verify <review-result.json> \
      --repo-root <repo-root> \
      --package-root <package-root> \
      --run-envelope <package-relative-run-envelope> \
      --case <package-relative-case> \
      --manifest <package-relative-manifest> \
      --rubric <package-relative-rubric>
-   node tooling/scripts/experience-design/experience-review.mjs \
-     admission <review-result.json> <independent-review.json>
+   node tooling/scripts/experience-design/experience-design.mjs \
+     review-admission <review-result.json> <independent-review.json>
    ```
 
 Record current binding, verdict, primary candidate/tuple, independent review,
@@ -114,6 +114,23 @@ ineligible for fresh promotion.
    their proven/unproven scope into the report.
 10. Invoke `pt-acceptance-gap-detector` for the exact readiness claim. A
    detector gap makes `Ready for pt-github-review: no`.
+11. When the range changes material UI or its Product/Prototype contracts,
+    consume the Experience Design Control Plane artifacts named by the change:
+    case, evaluator result, independent review receipt, and exact evidence
+    cells. Run:
+
+    ```bash
+    node tooling/scripts/experience-design/experience-design.mjs check
+    node tooling/scripts/experience-design/experience-design.mjs evaluate \
+      <case.json>
+    node tooling/scripts/experience-design/experience-design.mjs \
+      validate-review <case.json> <result.json> <receipt.json>
+    ```
+
+    Report canonical finding IDs and owners, review decision, matched/unproven
+    L1-L4 cells, drift status, and claim boundary. The canonical method is
+    `docs/client/common/interaction-design-methodology.md`; do not duplicate
+    its Rule Catalog or UI Grammar in this Skill.
 
 For Acceptance Infra changes, classify capability evidence by direction:
 
@@ -125,6 +142,12 @@ For Acceptance Infra changes, classify capability evidence by direction:
 ## Evidence Rules
 
 - A gate that did not run is `unproven`, never `passed`.
+- Zero Experience Design findings is only
+  `ready-for-independent-review`; an absent, stale, overlapping, or unsigned
+  receipt is not acceptance.
+- Screenshot or artifact existence never proves visual, dynamic,
+  accessibility, performance, or runtime cells without an exact current-source
+  evidence match.
 - A dry run is planning evidence, not product evidence.
 - `knowledge-match.sh` only proves knowledge entries were selected; semantic
   knowledge delta belongs to review.
@@ -161,6 +184,8 @@ Use this shape:
 - Experience Review binding / verdict / admission / unproven:
 - Product proven scope:
 - Product unproven scope:
+- Experience case/result/review status and finding owners:
+- Experience L1/L2/L3/L4 matched and unproven cells:
 - Human/owner hard-boundary evidence needed:
 
 ## Evidence Gaps

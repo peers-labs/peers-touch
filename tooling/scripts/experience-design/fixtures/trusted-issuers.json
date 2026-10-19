@@ -1,0 +1,18 @@
+{
+  "kind": "peers-touch-experience-review-issuers",
+  "schemaVersion": 1,
+  "issuers": [
+    {
+      "issuer": "fixture-authority",
+      "keyId": "fixture-ed25519",
+      "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAiPRxKSx2JbiudEygOjHenhk+UkeH1H3lTvMX/z6DMuk=\n-----END PUBLIC KEY-----\n",
+      "allowedSubjects": [
+        "contract-author",
+        "candidate-author",
+        "evidence-author",
+        "expectation-author",
+        "review-author"
+      ]
+    }
+  ]
+}

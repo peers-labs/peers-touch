@@ -1,587 +1,853 @@
-# Experience Reasoning Kernel - Data Model
+# Experience Design Control Plane - Data Model
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-10-19 | **Updated**: 2026-10-19
-> **Owner**: Experience Design
+> **Version**: v1.1
+> **Created**: 2026-10-18 | **Updated**: 2026-10-20
+> **Owner**: Developer Experience / Product Design
 
 ---
+
+This document owns the canonical Experience Case, contract, candidate and
+evidence model. The source-fenced evaluator projection is defined separately
+in [review-result.md](./review-result.md) and must reference the stable IDs
+defined here rather than creating another Product or Wireflow contract.
 
 ## 1. Shared Types
 
 ```ts
 type StableId = string;
-type Digest = string;
-type Verdict = "FINDINGS" | "NO_BLOCKING_FINDING";
-type Severity = "blocking" | "major" | "minor";
-type Confidence = "high" | "medium" | "low";
+type Digest = `sha256:${string}`;
+type Platform = "desktop" | "mobile" | "browser" | "dashboard";
+type Claim = "wireflow" | "prototype" | "production";
+type Calibration = "positive" | "negative" | "boundary" | "blind";
+
+type PrincipalRef = {
+  issuer: StableId;
+  keyId: StableId;
+  subject: StableId;
+};
+
+type SignedDigest = {
+  digest: Digest;
+  principal: PrincipalRef;
+  algorithm: "ed25519";
+  signature: string;
+};
+
+type CopyRole =
+  | "brand"
+  | "title"
+  | "subtitle"
+  | "section-heading"
+  | "field-label"
+  | "helper"
+  | "status"
+  | "action"
+  | "error"
+  | "accessible-name";
+
+type RegionRole =
+  | "content"
+  | "action"
+  | "trust"
+  | "floating"
+  | "recovery"
+  | "navigation";
+
+type StateKind =
+  | "entry"
+  | "empty"
+  | "loading"
+  | "waiting"
+  | "pending"
+  | "partial-success"
+  | "success"
+  | "failure"
+  | "unknown-outcome"
+  | "recovery"
+  | "cancelled"
+  | "offline"
+  | "degraded"
+  | "restored"
+  | "long-content"
+  | "narrow";
+```
+
+`entry` is the canonical default state. There are no aliases in case JSON.
+Platform adaptation may present the same state differently but must retain the
+same `StateKind`.
+
+## 2. Experience Case
+
+```ts
+type ExperienceCase = {
+  kind: "peers-touch-experience-case";
+  schemaVersion: 1;
+  id: StableId;
+  title: string;
+  calibration: Calibration;
+  claim: Claim;
+  authorship: {
+    contractAuthor: PrincipalRef;
+    candidateAuthor: PrincipalRef;
+    evidenceAuthors: PrincipalRef[];
+    expectationAuthor?: PrincipalRef;
+  };
+  sourceAttestations: {
+    contract: SignedDigest;
+    candidate: SignedDigest;
+    evidence: SignedDigest[];
+    expectation?: SignedDigest;
+  };
+  contract: ExperienceContract;
+  candidate: ExperienceCandidate;
+  expected?: ExpectedCalibration;
+  promotedFromBlind?: {
+    holdoutId: StableId;
+    caseDigest: Digest;
+    firstResultDigest: Digest;
+    reviewReceiptDigest: Digest;
+  };
+};
+```
+
+Rules:
+
+- `expected` is required for positive/negative/boundary fixtures.
+- `expected`, `expectationAuthor` and `promotedFromBlind` are
+  forbidden for blind holdouts.
+- A promoted calibration fixture is a new immutable case with a new ID and
+  requires a valid independent blind-review receipt digest.
+- `expectationAuthor` differs from contract, candidate and evidence authors.
+- Digests are recomputed by the loader and every signature is verified against
+  the explicit trusted issuer registry; caller-provided mismatches fail.
+- Principal equality is the tuple `(issuer, keyId, subject)`, never a display
+  string.
+- Contract and candidate attestation principals equal their declared authors.
+  Evidence attestation principals form the exact unique set of declared
+  evidence authors and all sign the same evidence digest.
+- Material cases contain at least one evidence author and one evidence
+  attestation. Every `inspectedBy` principal is a member of that signed
+  evidence-author set; the later review principal differs from every inspector.
+- A case with `expected` requires an expectation author and matching signed
+  expectation attestation. A case without `expected` forbids both.
+- The candidate digest excludes `candidate.evidence`; the separate evidence
+  attestation covers the canonical evidence array. This avoids a circular
+  source digest.
+
+Trusted issuer keys are explicit input:
+
+```ts
+type TrustedIssuerRegistry = {
+  kind: "peers-touch-experience-review-issuers";
+  schemaVersion: 1;
+  issuers: Array<{
+    issuer: StableId;
+    keyId: StableId;
+    publicKeyPem: string;
+    allowedSubjects: StableId[];
+  }>;
+};
+```
+
+The repository implementation ships no private key. A host or human review
+authority signs outside the evaluator. An unsigned result can still expose
+findings but cannot produce an accepted review receipt.
+
+## 3. Experience Contract
+
+```ts
+type ExperienceContract = {
+  productIntent: ProductIntent;
+  semantics: {
+    concepts: ConceptContract[];
+  };
+  informationArchitecture: {
+    surfaces: SurfaceContract[];
+  };
+  actions: ActionContract[];
+  platformDifferences: PlatformDifference[];
+  pathBudgets: PathBudget[];
+  stateRequirements: StateRequirement[];
+  acceptedTrace: AcceptedTrace[];
+  requiredEvidence: EvidenceRequirement[];
+  performanceBudgets: PerformanceBudget[];
+};
+
+type ProductIntent = {
+  capabilityIds: StableId[];
+  journeyIds: StableId[];
+  visibleStateIds: StableId[];
+  acceptanceIds: StableId[];
+  actor: string;
+  startingContext: string;
+  promisedOutcome: string;
+  firstUsefulResult: string;
+  recurringValue: string;
+  trustConstraints: string[];
+  privacyConstraints: string[];
+  authorityConstraints: string[];
+  nonGoals: string[];
+};
+```
+
+All stable IDs are unique in their collection. Every reference must resolve in
+the same case or in the canonical UI Grammar.
+
+Material cases are total, not sparse:
+
+- capability, Journey, visible-state and acceptance ID arrays are non-empty;
+- contract concepts, surfaces, actions, path budgets, state requirements,
+  accepted traces and required evidence are non-empty;
+- each Journey ID has exactly one path budget, one state requirement and one
+  accepted trace;
+- each visible-state ID appears in one state requirement and one accepted
+  trace;
+- each acceptance ID appears in one accepted trace and at least one evidence
+  requirement;
+- each contract surface and action is referenced by a trace or is rejected as
+  an orphan;
+- candidate copy, surfaces, actions, states, transitions, journeys and traces
+  are non-empty, resolve to contract entities, and contain no orphan;
+- candidate authority assertions and recovery branches exactly cover the
+  contract conditions that require them and contain no orphan;
+- every accepted Journey has exactly one candidate Journey and complete trace;
+- Wireflow claims require L1 cells; Prototype claims require L1-L3 cells;
+  Production claims require L1-L4 cells.
+- Prototype and Production claims require at least one performance budget and
+  a metric-bearing evidence requirement for each budget. Missing observations
+  remain `ED-EVIDENCE-001`; a nominal L4 record without the budget metric is
+  insufficient.
+
+Any omission, duplicate owner or orphan is `ED-CONTRACT-001`, never an empty
+success.
+
+## 4. Semantic Concepts
+
+```ts
+type ConceptContract = {
+  id: StableId;
+  meaning: string;
+  scope: StableId;
+  maxOccurrences: number;
+  allowedRoles: CopyRole[];
+  exceptionReasons: Array<
+    "accessibility" | "safety" | "separate-navigation-context"
+  >;
+};
+
+type CopyNode = {
+  id: StableId;
+  surfaceId: StableId;
+  scope: StableId;
+  conceptId: StableId;
+  role: CopyRole;
+  text: string;
+  exceptionReason?:
+    | "accessibility"
+    | "safety"
+    | "separate-navigation-context";
+};
+```
+
+Occurrence is counted by `(conceptId, scope)`. An exception is legal only when
+the concept allows that exact reason. String similarity is not a verdict.
+
+## 5. Information Architecture
+
+```ts
+type SurfaceContract = {
+  id: StableId;
+  contextId: StableId;
+  mainSubjectId: StableId;
+  allowedRegionRoles: RegionRole[];
+};
+
+type SurfaceCandidate = {
+  id: StableId;
+  contextId: StableId;
+  mainSubjectIds: StableId[];
+  regions: Array<{
+    id: StableId;
+    role: RegionRole;
+    supportsSubjectId?: StableId;
+  }>;
+};
+```
+
+`mainSubjectIds` contains exactly one item and matches the accepted surface.
+Every non-navigation region resolves to the main subject.
+
+## 6. Actions
+
+```ts
+type ActionContract = {
+  id: StableId;
+  intent: string;
+  risk: "routine" | "sensitive" | "destructive";
+  frequency: "frequent" | "periodic" | "rare";
+  mutation: "none" | "local" | "external-reversible" | "external-irreversible";
+  optionCardinality: "none" | "binary" | "multiple" | "numeric";
+  canonicalIconMeaning: boolean;
+  repeatedTool: boolean;
+  reversible: boolean;
+  decisionCost: 0 | 1 | 2;
+  interruption: "none" | "permission" | "authentication" | "setup";
+  confirmationPolicy:
+    | "none"
+    | "required"
+    | "required-when-irreversible"
+    | "server-authoritative";
+  authoritativeOwner?: StableId;
+  readbackContract?: string;
+  expectedAuthorityResultId?: StableId;
+  grammarRole: StableId;
+  allowedPlatformAdapters: {
+    desktop: StableId[];
+    mobile: StableId[];
+    browser: StableId[];
+    dashboard: StableId[];
+  };
+  equivalentSurfaceIds: StableId[];
+};
+
+type ActionCandidate = {
+  id: StableId;
+  contractActionId: StableId;
+  surfaceId: StableId;
+  grammarRole: StableId;
+  representation: StableId;
+  platformAdapter: StableId;
+  primary: boolean;
+  accessibleLabel?: string;
+  tooltip?: string;
+  confirmation: "none" | "user-confirmed" | "server-authorized";
+};
+
+type PlatformDifference = {
+  actionContractId: StableId;
+  left: {
+    platform: Platform;
+    surfaceId: StableId;
+    representation: StableId;
+    adapter: StableId;
+  };
+  right: {
+    platform: Platform;
+    surfaceId: StableId;
+    representation: StableId;
+    adapter: StableId;
+  };
+  rationale: string;
+};
+
+type AuthorityAssertion = {
+  id: StableId;
+  actionCandidateId: StableId;
+  transitionId: StableId;
+  authoritativeOwner: StableId;
+  readbackContract: string;
+  expectedAuthorityResultId: StableId;
+  evidenceRequirementId: StableId;
+  minimumEvidenceLevel: "L3_DYNAMIC" | "L4_RUNTIME";
+};
+```
+
+Icon-only is legal only when the grammar representation allows it and the
+contract says both `canonicalIconMeaning` and `repeatedTool`. Mutating tabs are
+illegal because `mode_selector` representations require `mutation=none`.
+`platformAdapter` must belong to the case platform's adapter list.
+Confirmation is checked against both the grammar policy and the accepted
+`confirmationPolicy`; `contract-owned` in grammar never means unspecified.
+The complete tuple is validated:
+
+- `risk=destructive` requires `grammarRole=destructive_command`;
+- `external-irreversible` requires destructive risk and an explicit user
+  confirmation;
+- `server-authoritative` requires all three authority fields on the contract,
+  `confirmation=server-authorized`, one candidate `AuthorityAssertion` bound to
+  the exact action and transition, and an exact observed evidence record at or
+  above its required runtime level;
+- role, representation and adapter must be allowed by both UI Grammar and the
+  contract's platform adapter allowlist;
+- equivalent surfaces use the same representation/adapter unless an accepted
+  `PlatformDifference` names both surfaces, platforms, representations,
+  adapters and rationale.
+
+## 7. States And Transitions
+
+```ts
+type StateRequirement = {
+  journeyId: StableId;
+  productStateIds: StableId[];
+  requiredKinds: StateKind[];
+  preserveOnFailure: StableId[];
+  authoritativeReadbackOnUnknown: boolean;
+  recoveryRequirements: RecoveryRequirement[];
+};
+
+type RecoveryRequirement = {
+  sourceKind: "failure" | "unknown-outcome";
+  allowedRecoveryActionContractIds: StableId[];
+  requiredFocusTargetId: StableId;
+  allowedReturnKinds: StateKind[];
+  requiresAuthorityReconciliation: boolean;
+};
+
+type StateNode = {
+  id: StableId;
+  journeyId: StableId;
+  surfaceId: StableId;
+  kind: StateKind;
+  visibleMeaning: string;
+};
+
+type Transition = {
+  id: StableId;
+  journeyId: StableId;
+  fromStateId: StableId;
+  toStateId: StableId;
+  candidateActionId: StableId;
+  preserves: StableId[];
+  authoritativeReadback: boolean;
+};
+
+type RecoveryBranch = {
+  sourceStateId: StableId;
+  recoveryTransitionId: StableId;
+  recoveryActionCandidateId: StableId;
+  preserves: StableId[];
+  focusTargetId: StableId;
+  returnStateId: StableId;
+  authorityAssertionId?: StableId;
+};
+```
+
+Required kinds are reachable from an `entry` state. `failure` and
+`unknown-outcome` require outgoing recovery. An unknown outcome requires an
+authoritative readback edge when its requirement says so. Every reachable
+`failure` or `unknown-outcome` state maps to exactly one `RecoveryBranch`.
+The branch must preserve all required IDs, use an allowed recovery action,
+restore the exact focus target, return to an allowed state kind and resolve the
+required authority assertion. Retry, cancel and alternate actions are modeled
+as ordinary action contracts referenced by the recovery requirement.
+
+## 8. Journey And Derived Path Cost
+
+```ts
+type PathCost = {
+  commitments: number;
+  contextSwitches: number;
+  decisionLoad: number;
+  interruptions: number;
+  recoveryDebt: number;
+};
+
+type PathBudget = {
+  journeyId: StableId;
+  frequency: "frequent" | "periodic" | "rare";
+  risk: "low" | "medium" | "high";
+  max: PathCost;
+};
+
+type JourneyStep = {
+  id: StableId;
+  transitionId: StableId;
+};
+
+type JourneyCandidate = {
+  journeyId: StableId;
+  startStateId: StableId;
+  successStateId: StableId;
+  steps: JourneyStep[];
+};
+```
+
+The step list is one contiguous ordered path:
+
+- the first transition starts at `startStateId`;
+- each transition's `toStateId` equals the next transition's `fromStateId`;
+- the final transition ends at `successStateId`;
+- a transition appears at most once;
+- cycles are forbidden in the selected success path;
+- every mutating candidate action reachable before success appears in the
+  selected path or the case is `ED-CONTRACT-001`;
+- each transition's `candidateActionId` resolves to one `ActionCandidate`,
+  which resolves to one `ActionContract`.
+
+The evaluator derives cost from that chain; the candidate cannot supply an
+aggregate:
+
+- `commitments`: count actions whose mutation is
+  `external-irreversible`, plus unconfirmed `external-reversible` actions.
+- `contextSwitches`: count adjacent state surfaces whose accepted
+  `contextId` differs.
+- `decisionLoad`: sum the referenced action contract's `decisionCost`.
+- `interruptions`: count actions whose `interruption` is not `none`.
+- `recoveryDebt`: for each mutating transition, inspect every reachable
+  failure/recovery branch before success and count each branch that omits any
+  required preserved ID. One preserving branch never masks another losing
+  branch.
+
+Each derived field is compared independently with the Journey budget.
+
+## 9. Trace
+
+```ts
+type AcceptedTrace = {
+  capabilityId: StableId;
+  journeyId: StableId;
+  productStateIds: StableId[];
+  acceptanceIds: StableId[];
+  orderedStateKinds: StateKind[];
+  requiredActionIds: StableId[];
+};
+
+type TraceLink = {
+  capabilityId: StableId;
+  journeyId: StableId;
+  surfaceIds: StableId[];
+  stateIds: StableId[];
+  actionIds: StableId[];
+  wireflowNodeIds: StableId[];
+  evidenceIds: StableId[];
+};
+```
+
+Drift detection compares the candidate's reachable ordered state kinds and
+required action IDs with `AcceptedTrace`. A missing or inserted commitment,
+decision surface or mode choice is `ED-DRIFT-001`.
+Capability, Journey, product state and acceptance IDs must all resolve from
+`ProductIntent`; evidence `claimId` resolves to one acceptance ID.
+
+## 10. Evidence Requirements And Records
+
+```ts
 type EvidenceLevel =
   | "L1_CONTRACT"
   | "L2_VISUAL"
   | "L3_DYNAMIC"
   | "L4_RUNTIME";
-type AdmissionStage = "review" | "high-fidelity" | "production";
-```
 
-Stable IDs are case-local unless a contract explicitly declares a repository
-identity. All ID arrays are unique. Every reference must resolve inside the
-same frozen result or its EvaluationBinding.
-
-Envelope, case, manifest and rubric digests use
-`sha256:<64 lowercase hex>`. Source blob digests are bare lowercase hex values
-whose width is determined by `sourceBlobAlgorithm`.
-
-## 2. Evaluation Binding
-
-```ts
-type SourceBlobRef = {
-  path: string;
-  digest: Digest;
-};
-
-type EvaluationBinding = {
-  packageId: StableId;
-  runEnvelopeDigest: Digest;
-  caseDigest: Digest;
-  sourceHead: string;
-  manifestDigest: Digest;
-  rubricDigest: Digest;
-  sourceBlobAlgorithm: "git-sha1" | "sha256";
-  sourceBlobs: SourceBlobRef[];
-};
-```
-
-Rules:
-
-- `sourceBlobs` is sorted by path and paths are unique.
-- Every cited source path exists in `sourceBlobs`.
-- The run envelope binds the exact package, case and source inputs.
-- A validator reads source blobs from the explicit repository root and package
-  files from a separate explicit package root. It recomputes every digest and
-  resolves the repository's actual Git HEAD; it does not trust a
-  caller-supplied HEAD or another worktree.
-- Any mismatch invalidates the result; stale reports cannot be reclassified.
-
-## 3. Facts, Contracts And Inferences
-
-```ts
-type SourceLocation = {
-  path: string;
-  lineStart: number;
-  lineEnd: number;
-  symbol?: string;
-};
-
-type Fact = {
+type PerformanceBudget = {
   id: StableId;
-  stateId: StableId;
-  source: SourceLocation;
-  statement: string;
-  visibleAction?: string;
-  visibleResponse?: string;
+  claimId: StableId;
+  platform: Platform;
+  runtimeProfile: string;
+  metric: {
+    name: string;
+    comparator: "<=" | ">=";
+    threshold: number;
+    unit: string;
+    environment: string;
+    workload: string;
+    measurementMethod: string;
+    samplePolicy: string;
+    percentile: "p50" | "p75" | "p95" | "p99" | "single";
+  };
+  evidenceRequirementId: StableId;
 };
 
-type ContractAuthority =
-  | "accepted-product"
-  | "accepted-client"
-  | "rubric";
-
-type ContractRef = {
+type EvidenceRequirement = {
   id: StableId;
-  authority: ContractAuthority;
-  caseCoverage: "explicit" | "supporting";
-  source: SourceLocation;
-  clause: string;
-  statement: string;
+  claimId: StableId;
+  level: EvidenceLevel;
+  platform: Platform;
+  runtimeProfile: string;
+  inputMode:
+    | "source"
+    | "pointer"
+    | "keyboard"
+    | "touch"
+    | "assistive-technology"
+    | "reduced-motion";
+  locale: string;
+  viewport: {
+    widthCssPx: number;
+    heightCssPx: number;
+    devicePixelRatio: number;
+  };
+  resolvedTheme: "light" | "dark";
+  contentMode:
+    | "default"
+    | "empty"
+    | "long"
+    | "localization-expansion"
+    | "failure"
+    | "recovery";
+  stateIds: StableId[];
+  assertionIds: StableId[];
+  metric?: {
+    name: string;
+    comparator: "<=" | ">=";
+    threshold: number;
+    unit: string;
+    environment: string;
+    workload: string;
+    measurementMethod: string;
+    samplePolicy: string;
+    percentile: "p50" | "p75" | "p95" | "p99" | "single";
+  };
 };
 
-type Inference = {
+type EvidenceRecord = {
   id: StableId;
-  factIds: StableId[];
-  contractIds: StableId[];
-  statement: string;
-};
-
-type UnprovenPoint = {
-  id: StableId;
-  contractIds: StableId[];
-  requirement: string;
-  reason: string;
-  requiredEvidenceLevel: EvidenceLevel;
-  requiredFor: AdmissionStage[];
+  requirementId: StableId;
+  level: EvidenceLevel;
+  status: "observed" | "unproven";
+  sourceDigest: Digest;
+  artifact?: string;
+  artifactDigest?: Digest;
+  inspectedBy?: PrincipalRef;
+  observedAt?: string;
+  platform: Platform;
+  runtimeProfile: string;
+  inputMode: EvidenceRequirement["inputMode"];
+  locale: string;
+  viewport: EvidenceRequirement["viewport"];
+  requestedTheme: "light" | "dark" | "system";
+  resolvedTheme: EvidenceRequirement["resolvedTheme"];
+  contentMode: EvidenceRequirement["contentMode"];
+  stateIds: StableId[];
+  assertionIds: StableId[];
+  metricObservation?: {
+    name: string;
+    value: number;
+    unit: string;
+    environment: string;
+    workload: string;
+    measurementMethod: string;
+    samplePolicy: string;
+    percentile: "p50" | "p75" | "p95" | "p99" | "single";
+  };
 };
 ```
 
-Rules:
+Exact matching requires equality for requirement ID, level, platform, runtime,
+input mode, locale, all viewport dimensions/DPR, resolved theme, content mode,
+state IDs and assertion IDs. `sourceDigest` must equal the current candidate
+digest. A satisfying record has `status=observed`; observed L2-L4 records
+require artifact path, artifact digest, inspector and canonical timestamp.
+When the requirement contains `metric`, `metricObservation` is mandatory.
+Metrics must exactly match name, unit, environment, workload, method, sample
+policy and percentile, then satisfy the requirement comparator.
 
-- Facts cite concrete source or inspected behavior.
-- Accepted Product / Client contracts outrank rubric clauses.
-- A rubric that contradicts an accepted contract makes the case invalid.
-- Inferences reference at least one fact and one contract.
-- An unsupported inference may be recorded for review, but cannot support an
-  eligible Finding candidate.
-
-## 4. Journey State Graph
+## 11. Complete Candidate Aggregate
 
 ```ts
-type StateOrigin = "starting" | "explicit" | "derived";
-
-type JourneyState = {
-  id: StableId;
-  origin: StateOrigin;
-  inScope: boolean;
-  explicitOrder?: number;
-  source: SourceLocation;
-  visibleMeaning: string;
-};
-
-type JourneyEdge = {
-  id: StableId;
-  fromStateId: StableId;
-  toStateId: StableId;
-  actionFactId: StableId;
-  responseFactId: StableId;
-  sourceRefs: SourceLocation[];
-};
-
-type JourneyStateGraph = {
-  entryStateId: StableId;
-  states: JourneyState[];
-  edges: JourneyEdge[];
-};
-
-type OrderedState = {
-  stateId: StableId;
-  distance: number;
-  ordinal: number;
+type ExperienceCandidate = {
+  platform: Platform;
+  copyNodes: CopyNode[];
+  surfaces: SurfaceCandidate[];
+  actions: ActionCandidate[];
+  authorityAssertions: AuthorityAssertion[];
+  states: StateNode[];
+  transitions: Transition[];
+  recoveryBranches: RecoveryBranch[];
+  journeys: JourneyCandidate[];
+  traces: TraceLink[];
+  evidence: EvidenceRecord[];
 };
 ```
 
-Graph rules:
+This is the only candidate shape. Validators do not accept partial aggregates.
 
-- Exactly one state has `origin=starting`; it equals `entryStateId`.
-- Every edge endpoint and fact reference resolves.
-- An edge represents a source-backed visible action and response.
-- Reachability is computed from `entryStateId`.
-- Unreachable and out-of-scope states cannot support a primary Finding.
-
-Ordering:
-
-1. Run breadth-first search from entry over visible action/response edges.
-2. Order by shortest action distance.
-3. At equal distance, use `explicitOrder` when both states have it.
-4. Remaining ties use source path, line, then state ID in ASCII order.
-5. Assign contiguous ordinals beginning at `0`.
-
-Cycles do not add distance or duplicate a state.
-
-## 5. Trust Boundary Check
+## 12. Findings And Rule Catalog
 
 ```ts
-type TrustBoundaryCheck = {
-  id: StableId;
-  contractTransitionRefs: StableId[];
-  beforeScope: string;
-  candidateTarget: string;
-  diagnosticEvidenceKinds: string[];
-  requiredIdentityEvidenceKinds: string[];
-  scopeEffectMeaning: string;
-  nextGateMeaning: string;
-  failureMeaning: string;
-  visibleConsequences: string[];
-  previousScopeExposure: string;
-};
-```
-
-The fields are projections of accepted Product / Client contracts. They do not
-define a runtime protocol.
-
-Rules:
-
-- Every `contractTransitionRef` resolves to an accepted Product / Client
-  contract, not only a rubric.
-- Diagnostic evidence cannot satisfy required identity evidence unless the
-  accepted contract explicitly says they are equivalent.
-- Scope effect, next Gate and failure meaning must have visible facts or remain
-  unproven.
-- If the accepted contract omits a required transition semantic, the Kernel
-  records a contract gap. It does not invent generation, quiesce, rollback or
-  commit behavior.
-
-## 6. Recovery Path
-
-```ts
-type RecoveryDistance =
-  | "same-surface"
-  | "named-adjacent"
-  | "implicit";
-
-type ReturnTarget =
-  | {
-      kind: "keyboard-focus";
-      targetId: StableId;
-    }
-  | {
-      kind: "touch-anchor";
-      targetId: StableId;
-    }
-  | {
-      kind: "navigation";
-      targetId: StableId;
-    };
-
-type RecoveryPath = {
-  id: StableId;
-  contractIds: StableId[];
-  sourceStateId: StableId;
-  reason: string;
-  entryActionVisible: boolean;
-  distance: RecoveryDistance;
-  preservedState: StableId[];
-  returnStateId: StableId;
-  returnTarget: ReturnTarget | null;
-  notApplicableReason?: string;
-  namedAdjacentPointerFactId?: StableId;
-};
-```
-
-Rules:
-
-- `implicit` is never an acceptable recovery path.
-- `contractIds` includes at least one accepted Product / Client recovery
-  contract.
-- `entryActionVisible` must be true.
-- `same-surface` requires a visible action fact in the source state.
-- `named-adjacent` requires `namedAdjacentPointerFactId` and an explicit return
-  state/target.
-- `returnStateId` is reachable and in scope.
-- `returnTarget=null` requires a contract-backed `notApplicableReason`.
-- Preserved state is checked against the owning contract; the Kernel does not
-  define what business state must survive.
-
-## 7. Finding Candidates
-
-```ts
-type ImpactClass =
-  | "unsafe-trust-or-data-loss"
-  | "outcome-blocked"
-  | "recovery-absent"
-  | "visible-contradiction"
-  | "material-ambiguity"
-  | "accessibility-or-platform-parity"
-  | "implementation-risk"
-  | "polish";
-
-type FindingCandidate = {
-  id: StableId;
-  stateId: StableId;
-  factIds: StableId[];
-  contractIds: StableId[];
-  inferenceIds: StableId[];
-  severity: Severity;
-  impact: ImpactClass;
-  confidence: Confidence;
-  brokenPromise: string;
-  causalMechanism: string;
-  userImpact: string;
-  ownerLayer: string;
-  correctionDirection: string;
-};
-
-type IneligibleReason =
-  | "out-of-scope"
-  | "unreachable"
-  | "visible-action-missing"
-  | "visible-response-missing"
-  | "accepted-support-missing"
-  | "reference-invalid";
-
-type CandidateLedgerEntry = {
-  candidate: FindingCandidate;
-  eligible: boolean;
-  ineligibleReasons: IneligibleReason[];
-  priorityTuple: PrimaryRankingTuple | null;
-};
-```
-
-Eligibility requires:
-
-- the candidate state is in scope and reachable;
-- referenced facts include a visible action and visible response;
-- all references close;
-- at least one accepted Product / Client or rubric contract supports the
-  candidate;
-- every inference is supported by its referenced facts and contracts.
-
-The validator can prove reference and ranking consistency. It cannot prove that
-the authored semantic classification is true.
-
-## 8. Primary Ranking Tuple
-
-```ts
-type PrimaryRankingTuple = [
-  contractStrength: 0 | 1,
-  impactRank: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7,
-  stateOrdinal: number,
-  explicitCoverageRank: 0 | 1,
-  severityRank: 0 | 1 | 2,
-  confidenceRank: 0 | 1 | 2,
-  candidateId: StableId,
-];
-```
-
-Derived values:
-
-```text
-contractStrength
-  0 accepted-product or accepted-client
-  1 rubric only
-
-impactRank
-  0 unsafe-trust-or-data-loss
-  1 outcome-blocked
-  2 recovery-absent
-  3 visible-contradiction
-  4 material-ambiguity
-  5 accessibility-or-platform-parity
-  6 implementation-risk
-  7 polish
-
-explicitCoverageRank
-  0 candidate references at least one contract with caseCoverage=explicit
-  1 candidate references supporting contracts only
-
-severityRank
-  0 blocking
-  1 major
-  2 minor
-
-confidenceRank
-  0 high
-  1 medium
-  2 low
-```
-
-Comparison is lexicographic and ascending. `candidateId` uses ASCII lexical
-order. No field is weighted or averaged.
-
-Primary selection:
-
-1. Recompute every eligible tuple.
-2. Partition material candidates (`blocking`, `major`) from `minor`.
-3. The first material candidate is primary.
-4. Remaining material candidates are secondary in tuple order.
-5. Minor candidates become minor observations and do not change the verdict.
-
-## 9. Findings And Review Result
-
-```ts
-type Finding = {
-  candidateId: StableId;
-  factIds: StableId[];
-  contractIds: StableId[];
-  inferenceIds: StableId[];
-  severity: Severity;
-  earliestStateId: StableId;
-  brokenPromise: string;
-  causalMechanism: string;
-  userImpact: string;
-  ownerLayer: string;
-  correctionDirection: string;
-  confidence: Confidence;
-  priorityBasis: PrimaryRankingTuple;
-};
-
-type SecondaryFinding = Finding & {
-  deprioritizedBecause: string;
-};
-
-type ExitAndRetryPath = {
-  id: StableId;
-  sourceStateId: StableId;
-  actionFactId: StableId;
-  destinationStateId: StableId;
-  recoveryPathId?: StableId;
-};
-
-type ReviewResult = {
-  kind: "peers-touch-experience-review-result";
-  schemaVersion: 1;
-  authorId: StableId;
-  verdict: Verdict;
-  evaluationBinding: EvaluationBinding;
-  contracts: ContractRef[];
-  facts: Fact[];
-  inferences: Inference[];
-  journeyStateGraph: JourneyStateGraph;
-  trustBoundaryChecks: TrustBoundaryCheck[];
-  recoveryPaths: RecoveryPath[];
-  candidateLedger: CandidateLedgerEntry[];
-  primaryFinding: Finding | null;
-  secondaryFindings: SecondaryFinding[];
-  minorObservations: Finding[];
-  statesChecked: StableId[];
-  exitAndRetryPaths: ExitAndRetryPath[];
-  unproven: UnprovenPoint[];
-};
-```
-
-Result invariants:
-
-- Every nested reference resolves.
-- Candidate ledger entries are unique and exhaustive.
-- Every eligible tuple equals the recomputed tuple.
-- Findings are projections of eligible candidates, not rewritten copies.
-- `FINDINGS` requires a `blocking` or `major` primary equal to the first
-  material tuple.
-- `NO_BLOCKING_FINDING` requires `primaryFinding=null` and no eligible material
-  candidate.
-- Secondary findings preserve tuple order and explain why they are not primary.
-- Minor observations contain only `minor` severity and never change verdict.
-- Every unproven point references the contract that requires its evidence.
-- An unproven point blocks each stage named by `requiredFor` even when the
-  verdict is `NO_BLOCKING_FINDING`.
-
-## 10. Independent Review
-
-```ts
-type IndependentReviewDecision = {
-  resultDigest: Digest;
-  reviewerId: StableId;
-  decision: "accepted" | "changes-required" | "unproven";
-  findingCandidateIds: StableId[];
-  reviewNotes: string[];
-};
-```
-
-The minimal architecture requires digest binding and reviewer separation at the
-workflow boundary. It does not introduce cryptographic reviewer signatures.
-`reviewerId` must differ from `ReviewResult.authorId`, and every
-`findingCandidateId` must resolve to the frozen result.
-
-Prototype admission requires:
-
-- current EvaluationBinding;
-- `NO_BLOCKING_FINDING`;
-- `decision=accepted`;
-- no unproven point whose `requiredFor` contains `review` or `high-fidelity`.
-
-## 11. Holdout Lifecycle
-
-```ts
-type HoldoutRunState =
-  | "sealed"
-  | "running"
-  | "frozen"
-  | "scoring"
-  | "scored"
-  | "retired"
-  | "aborted"
-  | "invalidated";
-```
-
-Legal transitions:
-
-```text
-sealed -> running -> frozen -> scoring -> scored -> retired
-              \-> aborted
-
-sealed | running | frozen | scoring | scored -> invalidated
-```
-
-`retired`, `aborted` and `invalidated` are terminal. A post-hoc defect does not
-rewrite a retired run; it appends a promotion revocation.
-
-Transition rules:
-
-- `sealed`: one Quality-owned compare-and-swap atomically creates the frozen
-  manifest/rubric/source envelope and appends every case digest to Exposure
-  Ledger. Partial sealing is invalid.
-- `running`: the runner may read rubric and one case at a time, never the key.
-- `frozen`: every required report exists and the complete report manifest hash
-  verifies.
-- `scoring`: only now may the reviewer read the answer key.
-- `scored`: score artifact and hard-failure result are immutable.
-- `retired`: one Quality-owned compare-and-swap records score digest,
-  promotion decision and terminal state atomically.
-- `aborted`: the run did not finish, but every exposed case remains burned.
-- `invalidated`: integrity drift or leakage occurred; no promotion is created.
-
-## 12. Exposure And Promotion Ledgers
-
-```ts
-type ExposureLedgerEntry = {
-  caseDigest: Digest;
-  firstRunId: StableId;
-  exposedAtState: "sealed";
+type LoadedRuleCatalog = Record<StableId, {
+  severity: "blocking" | "unproven" | "warning";
   disposition:
-    | "exposed"
-    | "training"
-    | "retired"
-    | "aborted"
-    | "invalidated";
-};
+    | "changes-required"
+    | "unproven"
+    | "ready-for-independent-review";
+  exitCode: number;
+  owner: string;
+}>;
 
-type PromotionDecision = {
-  runId: StableId;
-  scoreArtifactDigest: Digest;
-  promoted: boolean;
-  reason: string;
-};
+type RuleId = keyof LoadedRuleCatalog;
 
-type PromotionRevocation = {
-  promotionRunId: StableId;
-  discoveredAt: string;
-  reason: string;
-  evidenceDigest: Digest;
+type ExperienceFinding = {
+  id: StableId;
+  ruleId: RuleId;
+  severity: "blocking" | "unproven" | "warning";
+  owner:
+    | "product"
+    | "content"
+    | "information-architecture"
+    | "journey"
+    | "state"
+    | "ui-identity"
+    | "prototype"
+    | "platform"
+    | "implementation"
+    | "evidence";
+  location: string;
+  observed: string;
+  consequence: string;
+  correction: string;
 };
 ```
 
-Exposure Ledger is append-only. A case present anywhere in exposure, training,
-retired, aborted or invalidated history is ineligible for fresh promotion proof.
+`rules.json` is the only source for valid IDs, severity, disposition, exit
+behavior and default owner. The schema validates each finding against the
+loaded catalog; fixtures and evaluator code cannot override those fields.
 
-Promotion Ledger is append-only. A revocation removes the promotion's authority
-for current admission and requires a completely new holdout; it does not mutate
-the historical score.
-
-## 13. Promotion Contract
+## 13. Evaluation Result
 
 ```ts
-type ChallengeClass =
-  | "primary-visible-blocker"
-  | "trust-boundary-propagation"
-  | "recovery-locality"
-  | "positive-control-non-finding"
-  | "evidence-boundary"
-  | "platform-semantic-parity";
+type EvaluationResult = {
+  kind: "peers-touch-experience-findings";
+  schemaVersion: 1;
+  caseId: StableId;
+  evaluatedAt: string;
+  evaluatorVersionDigest: Digest;
+  caseDigest: Digest;
+  contractDigest: Digest;
+  candidateDigest: Digest;
+  disposition:
+    | "changes-required"
+    | "ready-for-independent-review"
+    | "unproven";
+  derivedPathCosts: Record<StableId, PathCost>;
+  findings: ExperienceFinding[];
+  unprovenEvidenceRequirementIds: StableId[];
+};
 ```
 
-A run may promote only when:
+Disposition precedence:
 
-- score is at least `80`;
-- hard-failure count is zero;
-- every required hidden challenge class is satisfied;
-- positive controls contain no blocking false positive;
-- every primary tuple is recomputable;
-- all report and score hashes verify;
-- no case digest is reused from prior exposure or training.
+1. any blocking finding -> `changes-required`;
+2. otherwise any unproven evidence -> `unproven`;
+3. otherwise -> `ready-for-independent-review`.
 
-The current B01-B06 package is permanently excluded.
+`passed` is not legal.
 
-## 14. Stable Validation Errors
+## 14. Review Receipt
 
-The minimal validator uses stable error codes:
+```ts
+type ReviewReceipt = {
+  kind: "peers-touch-experience-review";
+  schemaVersion: 1;
+  caseId: StableId;
+  caseDigest: Digest;
+  contractDigest: Digest;
+  candidateDigest: Digest;
+  resultDigest: Digest;
+  reviewer: PrincipalRef;
+  reviewedAt: string;
+  decision: "accepted" | "changes-required" | "unproven";
+  findingIds: StableId[];
+  reviewerFindings: IndependentReviewFinding[];
+  attestation: SignedDigest;
+};
 
-- `EDX_BINDING_INVALID`
-- `EDX_REFERENCE_INVALID`
-- `EDX_GRAPH_INVALID`
-- `EDX_TRUST_PROJECTION_INVALID`
-- `EDX_RECOVERY_INVALID`
-- `EDX_RANK_INVALID`
-- `EDX_RESULT_INVALID`
-- `EDX_HOLDOUT_STATE_INVALID`
-- `EDX_EXPOSURE_REUSE`
-- `EDX_PROMOTION_INVALID`
+type IndependentReviewFinding = {
+  id: StableId;
+  category:
+    | "product"
+    | "content"
+    | "information-architecture"
+    | "journey"
+    | "state"
+    | "ui-identity"
+    | "accessibility"
+    | "performance"
+    | "evidence";
+  severity: "blocking" | "warning";
+  location: string;
+  evidence: string;
+  observed: string;
+  consequence: string;
+  correction: string;
+};
+```
 
-Validation errors identify the failing path and invariant. They never repair or
-rewrite the supplied result.
+The receipt is valid only when:
+
+- all digests match current immutable inputs/result;
+- `reviewer` differs from contract, candidate, evidence and expectation
+  authors and every evidence inspector;
+- timestamp is canonical.
+- `attestation.principal` equals `reviewer`, its digest covers the canonical
+  receipt payload excluding `attestation`, and its Ed25519 signature validates
+  through the trusted issuer registry.
+- `findingIds` is the exact set of evaluator result finding IDs; no current
+  finding may be omitted and no stale finding may be added.
+
+Decision is exhaustive:
+
+| Evaluator disposition | Independent blocking finding | Legal decision |
+|---|---|---|
+| `ready-for-independent-review` | no | `accepted` |
+| `ready-for-independent-review` | yes | `changes-required` |
+| `changes-required` | any | `changes-required` |
+| `unproven` | no | `unproven` |
+| `unproven` | yes | `changes-required` |
+
+`accepted` therefore requires a ready evaluator result, complete finding
+binding and zero blocking reviewer findings. Warnings may remain but are
+preserved in the signed receipt.
+
+The evaluator never creates this receipt.
+
+## 15. Calibration And Blind Holdouts
+
+```ts
+type ExpectedCalibration = {
+  disposition: EvaluationResult["disposition"];
+  expectedRuleIds: RuleId[];
+  expectedFindingIds: StableId[];
+};
+
+type HoldoutLedgerRecord = {
+  kind: "peers-touch-experience-holdout-record";
+  schemaVersion: 1;
+  holdoutId: StableId;
+  caseDigest: Digest;
+  firstResultDigest: Digest;
+  reviewReceiptDigest: Digest;
+  promotedCaseId?: StableId;
+  promotedCaseDigest?: Digest;
+};
+```
+
+Calibration suite rules:
+
+- each enforceable rule has a positive, negative and boundary fixture;
+- expectation author is independent of all input authors;
+- `expectedRuleIds` and `expectedFindingIds` are exact unique sets emitted by
+  evaluation; any missing or additional rule or finding fails the fixture.
+- fixture expectations are compared with evaluator output, never generated by
+  the runner;
+- `fixtures/holdout/` is excluded from calibration discovery;
+- first blind evaluation produces a result only;
+- independent review creates a `ReviewReceipt`;
+- promotion creates a new calibration case that references the immutable blind
+  receipt digest; the original holdout remains unchanged.
+- holdout cases, first results, receipts and ledger records use their content
+  digest as filename; loaders verify path/digest equality.
+- one holdout ID resolves to exactly one case digest across the complete
+  ledger. A changed or reused ID is rejected.
+- promotion resolves the original case, first result and signed receipt before
+  accepting the new calibration case.
+
+## 16. Lifecycle
+
+```text
+draft contract
+  -> schema-valid
+  -> independent contract review
+  -> accepted contract
+  -> Wireflow candidate
+  -> deterministic findings
+  -> candidate remediation
+  -> independent Wireflow review receipt
+  -> high fidelity
+  -> exact evidence-cell matching
+  -> independent prototype review receipt
+  -> production verification
+```
+
+The tool stores no mutable lifecycle state. Git sources and explicit
+digest-bound artifacts remain authoritative.

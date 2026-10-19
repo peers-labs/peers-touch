@@ -65,7 +65,42 @@ description: 创建、修改和审查 Peers-Touch UI/交互原型。用户要求
 - **边界先于样式**：先声明 page canvas、content rail、action rail、floating layer、recovery layer，再决定搜索框、菜单、弹窗、tile 的视觉。
 - **模块合同优先**：若存在模块 UI ID 或平台 UX contract，原型必须实现其信息层级和禁用模式；若没有，必须在 README 的“已知差异 / 待补”里写明。
 
-### 3.2 Experience Reasoning Gate
+### 3.2 Experience Design Wireflow Gate
+
+Material UI 在高保真实现前必须消费 Product Design 已接受的 Experience
+Contract，并按
+`docs/client/common/interaction-design-methodology.md` 产出结构化 Wireflow。
+唯一机器合同位于
+`docs/architecture/engineering/experience-design/data-model.md`；本 Skill
+不得复制 Rule Catalog 或 UI Grammar。
+
+执行顺序：
+
+1. 将 accepted contract、Wireflow candidate、L1 evidence 和外部作者签名组装为
+   一个 closed Experience Case。
+2. 运行 schema/source 校验：
+
+   ```bash
+   node tooling/scripts/experience-design/experience-design.mjs validate <case.json>
+   ```
+
+3. 运行 findings-only evaluator：
+
+   ```bash
+   node tooling/scripts/experience-design/experience-design.mjs evaluate \
+     <case.json> --expect-disposition ready-for-independent-review
+   ```
+
+4. 由与 contract、candidate、evidence、expectation 作者均不同的 reviewer
+   生成签名 receipt，并通过 canonical CLI 校验。
+5. 只有 blocking findings 为零、L1 cells 精确匹配且 review decision 为
+   `accepted`，才进入 high fidelity。
+
+`changes-required` 必须回到 finding owner；`unproven` 必须保留准确 cell，
+不得靠截图路径、视觉完成度或局部 CSS 绕过。Evaluator 不生成 receipt，
+不改合同，也不返回 `passed`。
+
+### 3.3 Experience Reasoning Gate
 
 Material UI 在进入高保真前必须经过 Experience Reasoning Kernel：
 
@@ -76,10 +111,10 @@ Material UI 在进入高保真前必须经过 Experience Reasoning Kernel：
 3. 运行闭合 schema、引用、图、恢复和排序校验：
 
    ```bash
-   node tooling/scripts/experience-design/experience-review.mjs \
-     validate <review-result.json>
-   node tooling/scripts/experience-design/experience-review.mjs \
-     verify <review-result.json> \
+   node tooling/scripts/experience-design/experience-design.mjs \
+     review-validate <review-result.json>
+   node tooling/scripts/experience-design/experience-design.mjs \
+     review-verify <review-result.json> \
      --repo-root <repo-root> \
      --package-root <package-root> \
      --run-envelope <package-relative-run-envelope> \
@@ -91,8 +126,8 @@ Material UI 在进入高保真前必须经过 Experience Reasoning Kernel：
 4. 由不同的 review author 做 findings-first 复审，再运行：
 
    ```bash
-   node tooling/scripts/experience-design/experience-review.mjs \
-     admission <review-result.json> <independent-review.json>
+   node tooling/scripts/experience-design/experience-design.mjs \
+     review-admission <review-result.json> <independent-review.json>
    ```
 
 只有 `admitted=true` 才能进入高保真。`FINDINGS`、stale binding、
@@ -102,7 +137,7 @@ contract/rubric conflict、非独立评审或 review/high-fidelity `UNPROVEN`
 
 真源：`docs/architecture/engineering/experience-design/README.md`。
 
-### 3.3 Craft Quality Gate
+### 3.4 Craft Quality Gate
 
 每个 material UI 原型在写界面前必须记录：
 
@@ -124,7 +159,7 @@ contract/rubric conflict、非独立评审或 review/high-fidelity `UNPROVEN`
 - 完整门槛以
   `docs/client/common/ui-identity/craft-quality.md` 为准。
 
-### 3.4 Visual And Dynamic Evidence Gate
+### 3.5 Visual And Dynamic Evidence Gate
 
 借鉴 LobeHub `ux-audit` 的 L1/L2/L3 分层：原型确认前，凡涉及按钮主次、边距、密度、视觉层级、暗色/亮色、响应式、空/加载/错误态的结论，**不能只从代码或口头判断**，必须有渲染截图证据。
 
@@ -157,7 +192,7 @@ L2 可直接判定的问题：
 - 长文案、长标题、数字、列表是否截断或溢出。
 - Signature feature 是否强化产品论点，是否退化为无关装饰。
 
-### 3.5 布局稳定性（Layout Stability）
+### 3.6 布局稳定性（Layout Stability）
 
 原型交互过程中**禁止出现非预期的布局跳动**——用户切换 Tab、展开/折叠面板、加载内容时，周围元素不得位移或抖动。
 
@@ -285,8 +320,11 @@ drafting → pending-review → confirmed → landed
 
 规则：
 1. 新原型登记进总账，初始 `drafting`
-2. 原型「能跑能点」、可对回设计编号，并完成 L1 Contract、L2 Visual 和 material L3 Dynamic 证据后 → `pending-review`，提请 Owner 确认
-3. Owner 确认且无 L2 阻断项后 → `confirmed`——**只有 confirmed 的原型才允许进入落地实现**
+2. 原型「能跑能点」、可对回设计编号，Experience Case / evaluator /
+   independent review receipt 有效，并完成 L1 Contract、L2 Visual 和 material
+   L3 Dynamic 证据后 → `pending-review`，提请 Owner 确认
+3. Owner 确认、无 deterministic/L2 阻断项且缺失 evidence 明确为
+   `UNPROVEN` 后 → `confirmed`——**只有 confirmed 的原型才允许进入落地实现**
 4. 功能落地后 → `landed`；设计大改导致原型失效 → `superseded`（新建原型重走门）
 
 **未登记或未 confirmed 的原型，不得作为落地依据。**
@@ -340,6 +378,8 @@ Prototype Portal 支持 worktree / branch 切换：
 - [ ] 颜色、字体、边框、圆角、阴影、间距能对回 UI Identity token roles，未用任意 raw CSS 私定风格
 - [ ] 已声明页面的 content rail、action rail、floating layer、recovery layer，未用装饰性边框/阴影弥补边界不清
 - [ ] 已完成 L1 Contract 检查：Journey、组件选型、状态分支、token/module ownership、i18n、empty/loading/error/retry 覆盖有源码证据
+- [ ] Material UI 已有 closed Experience Case、evaluated Wireflow、有效的
+      independent review receipt；所有 finding 已路由到 canonical owner
 - [ ] 已完成 L2 Visual 截图检查：至少覆盖 default、关键状态、desktop 宽度、窄宽度或 mobile 宽度；如支持 dark/light，覆盖两种主题
 - [ ] 每张 L2 截图已实际打开确认，Evidence 记录包含截图路径 / 状态 / 视口 / 主题 / 判定项
 - [ ] 按钮主次、按钮类型、边距、密度、视觉层级、截断、空/加载/错误态等视觉结论均来自 L2 截图，而不是只从代码推断

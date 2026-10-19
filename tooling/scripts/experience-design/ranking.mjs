@@ -4,7 +4,7 @@ import {
   IMPACT_CLASSES,
   SEVERITIES,
   fail,
-} from './schema.mjs';
+} from './review-result-schema.mjs';
 
 const IMPACT_RANK = new Map(
   IMPACT_CLASSES.map((value, index) => [value, index]),
