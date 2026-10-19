@@ -13,7 +13,6 @@ import {
 } from './evaluator.mjs';
 import { loadExperienceCase } from './schema.mjs';
 import { controlPlaneVersionDigest } from './source-version.mjs';
-import { validateHoldoutLedger } from './holdout.mjs';
 
 const CLASSES = ['positive', 'negative', 'boundary'];
 
@@ -216,6 +215,7 @@ export function runCalibration({
   fixturesRoot,
   ruleCatalog,
   grammar,
+  trustedIssuers,
   repoRoot,
 }) {
   const manifestPath = path.join(fixturesRoot, 'calibration-manifest.json');
@@ -235,18 +235,9 @@ export function runCalibration({
       },
     );
   }
-  const holdouts = validateHoldoutLedger({
-    fixturesRoot,
-    ruleCatalog,
-    grammar,
-    repoRoot,
-  });
 
   const results = [];
   const resultsByPath = new Map();
-  const materialCaseIds = new Set(
-    holdouts.records.map((record) => record.holdoutId),
-  );
   const evaluatorVersionDigest = controlPlaneVersionDigest();
   for (const fixtureCase of manifest.cases) {
     const sourcePath = path.join(fixturesRoot, fixtureCase.path);
@@ -256,6 +247,7 @@ export function runCalibration({
         loadExperienceCase(sourcePath, {
           ruleCatalog,
           grammar,
+          trustedIssuers,
         });
       } catch (error) {
         if (error instanceof ExperienceDesignError) observedError = error;
@@ -288,15 +280,8 @@ export function runCalibration({
     const loaded = loadExperienceCase(sourcePath, {
       ruleCatalog,
       grammar,
+      trustedIssuers,
     });
-    if (materialCaseIds.has(loaded.case.id)) {
-      fail(
-        'CALIBRATION_INCOMPLETE',
-        'calibration case ID is duplicated or reuses a sealed holdout ID',
-        { path: fixtureCase.path, caseId: loaded.case.id },
-      );
-    }
-    materialCaseIds.add(loaded.case.id);
     if (loaded.case.calibration !== fixtureCase.class) {
       fail(
         'CALIBRATION_INCOMPLETE',

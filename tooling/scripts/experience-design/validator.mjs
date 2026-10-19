@@ -404,7 +404,6 @@ function validateRecoveryPaths(
   reachableStateIds,
   factById,
   contractById,
-  graph,
 ) {
   assertArray(values, 'recoveryPaths');
   assertUniqueIds(values, 'recoveryPaths');
@@ -451,11 +450,10 @@ function validateRecoveryPaths(
     if (
       !reachableStateIds.has(sourceState.id)
       || !reachableStateIds.has(returnState.id)
-      || !canReach(graph, sourceState.id, returnState.id)
     ) {
       fail(
         'EDX_RECOVERY_INVALID',
-        `${context} source and return states require a reachable recovery route`,
+        `${context} source and return states must be reachable`,
       );
     }
     assertString(recovery.reason, `${context}.reason`);
@@ -725,7 +723,6 @@ function validateExitAndRetryPaths(
   stateById,
   factById,
   recoveryById,
-  graph,
 ) {
   assertArray(values, 'exitAndRetryPaths');
   assertUniqueIds(values, 'exitAndRetryPaths');
@@ -759,13 +756,6 @@ function validateExitAndRetryPaths(
         `${context}.actionFactId must expose an action in sourceStateId`,
       );
     }
-    const edge = graph.edges.find((candidate) =>
-      candidate.fromStateId === entry.sourceStateId
-      && candidate.toStateId === entry.destinationStateId
-      && candidate.actionFactId === entry.actionFactId);
-    if (edge === undefined) {
-      fail('EDX_RECOVERY_INVALID', `${context} does not realize a visible graph edge`);
-    }
     if (entry.kind === 'exit' && entry.recoveryPathId !== undefined) {
       fail(
         'EDX_RECOVERY_INVALID',
@@ -779,17 +769,11 @@ function validateExitAndRetryPaths(
       );
     }
     if (entry.recoveryPathId !== undefined) {
-      const recovery = requireReference(
+      requireReference(
         recoveryById,
         entry.recoveryPathId,
         `${context}.recoveryPathId`,
       );
-      if (entry.sourceStateId !== recovery.sourceStateId
-        || !canReach(graph, entry.destinationStateId, recovery.returnStateId)
-        || (recovery.distance === 'named-adjacent'
-          && entry.actionFactId !== recovery.namedAdjacentPointerFactId)) {
-        fail('EDX_RECOVERY_INVALID', `${context} does not realize the referenced recovery route`);
-      }
       referencedRecoveryIds.add(entry.recoveryPathId);
     }
   });
@@ -801,21 +785,6 @@ function validateExitAndRetryPaths(
       );
     }
   }
-}
-
-function canReach(graph, source, target) {
-  const visited = new Set([source]);
-  const queue = [source];
-  for (let index = 0; index < queue.length; index += 1) {
-    const current = queue[index];
-    if (current === target) return true;
-    for (const edge of graph.edges) {
-      if (edge.fromStateId !== current || visited.has(edge.toStateId)) continue;
-      visited.add(edge.toStateId);
-      queue.push(edge.toStateId);
-    }
-  }
-  return false;
 }
 
 function validateUnproven(values, contractById) {
@@ -915,7 +884,6 @@ export function validateReviewResult(value) {
     reachableStateIds,
     factById,
     contractById,
-    value.journeyStateGraph,
   );
   validateCandidateLedger(
     value.candidateLedger,
@@ -1013,7 +981,6 @@ export function validateReviewResult(value) {
     stateById,
     factById,
     recoveryById,
-    value.journeyStateGraph,
   );
   validateUnproven(value.unproven, contractById);
 
@@ -1105,6 +1072,20 @@ export function validateIndependentReviewDecision(result, decision) {
     );
   }
   return { ok: true, decision: decision.decision };
+}
+
+export function evaluatePrototypeAdmission(result, decision) {
+  validateIndependentReviewDecision(result, decision);
+  const blockedByUnproven = result.unproven.some((entry) =>
+    entry.requiredFor.some((stage) =>
+      ['review', 'high-fidelity'].includes(stage)));
+  return {
+    admitted:
+      result.verdict === 'NO_BLOCKING_FINDING'
+      && decision.decision === 'accepted'
+      && !blockedByUnproven,
+    resultDigest: digestReviewResult(result),
+  };
 }
 
 export function parseReviewResult(text, label = 'ReviewResult') {

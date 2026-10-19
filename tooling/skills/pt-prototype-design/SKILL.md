@@ -34,7 +34,7 @@ description: 创建、修改和审查 Peers-Touch UI/交互原型。用户要求
 |------|------|
 | 框架 | React + Vite |
 | UI 组件 | `@lobehub/ui`(LobeUI) 优先 → antd 兜底 + `react-layout-kit` + `lucide-react` + CSS |
-| 运行 | 统一使用 `make run-prototype`；在 Prototype Portal 内切换 desktop / mobile / dashboard / control；`pnpm dev` / Vite 只作为 Makefile 内部实现细节 |
+| 运行 | 统一使用 `make run-prototype`；在 Prototype Portal 内切换 desktop / mobile / dashboard；`pnpm dev` / Vite 只作为 Makefile 内部实现细节 |
 | 运行时 | **不碰** Lynx / applet 容器 / SDK。web 原型可自由用 DOM、`iframe`、`localStorage` 等浏览器能力 |
 | 基础件 | **禁止重复造**——复用项目已有桌面组件体系（LobeUI / antd），不得每个需求另搭基础库 |
 
@@ -76,8 +76,8 @@ Contract，并按
 
 执行顺序：
 
-1. 将 accepted contract、Wireflow candidate、L1 evidence 和稳定作者 ID 组装为
-   一个 closed Experience Case；作者 ID 由当前 Agent 工作流提供，不需要密钥。
+1. 将 accepted contract、Wireflow candidate、L1 evidence 和外部作者签名组装为
+   一个 closed Experience Case。
 2. 运行 schema/source 校验：
 
    ```bash
@@ -92,7 +92,7 @@ Contract，并按
    ```
 
 4. 由与 contract、candidate、evidence、expectation 作者均不同的 reviewer
-   使用稳定 reviewer ID 生成摘要绑定 receipt，并通过 canonical CLI 校验。
+   生成签名 receipt，并通过 canonical CLI 校验。
 5. 只有 blocking findings 为零、L1 cells 精确匹配且 review decision 为
    `accepted`，才进入 high fidelity。
 
@@ -127,23 +127,13 @@ Material UI 在进入高保真前必须经过 Experience Reasoning Kernel：
 
    ```bash
    node tooling/scripts/experience-design/experience-design.mjs \
-     review-admission <review-result.json> <independent-review.json> \
-     --repo-root <repo-root> \
-     --package-root <package-root> \
-     --run-envelope <package-relative-run-envelope> \
-     --case <package-relative-case> \
-     --manifest <package-relative-manifest> \
-     --rubric <package-relative-rubric>
+     review-admission <review-result.json> <independent-review.json>
    ```
 
 只有 `admitted=true` 才能进入高保真。`FINDINGS`、stale binding、
 contract/rubric conflict、非独立评审或 review/high-fidelity `UNPROVEN`
 全部 fail closed。Kernel 只验证结果闭合与排序，不代替 Product、UI Identity
 或独立评审判断语义真伪。
-
-最终准入重新读取当前源码与包输入，不能沿用之前的 `review-verify` 成功。
-包格式与 Markdown / canonical JSON 投影绑定遵循
-`docs/architecture/engineering/experience-design/review-result.md`。
 
 真源：`docs/architecture/engineering/experience-design/README.md`。
 
@@ -169,34 +159,7 @@ contract/rubric conflict、非独立评审或 review/high-fidelity `UNPROVEN`
 - 完整门槛以
   `docs/client/common/ui-identity/craft-quality.md` 为准。
 
-### 3.5 Comparative Target Intervention
-
-当原型用于关闭 CER material delta 时，先读取
-`docs/architecture/engineering/experience-design/comparative-experience-review.md`
-并验证完整 current artifact chain。只有 disposition review 接受的 adopt/adapt
-proposal 才能进入原型：
-
-```bash
-node tooling/scripts/experience-design/experience-design.mjs \
-  compare-project-target <paired-case.json> <comparison-evaluation.json> \
-  <blinded-deltas.json> <blind-review.json> <identity-map.json> \
-  <causal-deltas.json> <disposition-review.json> \
-  --package-root <package-root>
-```
-
-Prototype 负责：
-
-- 按 Target Contract proposal 更新 Peers Wireflow / high-fidelity candidate；
-- 保留原 Oracle、Journey、delta 和 target IDs；
-- 用 controlled before/after 证明目标机制是否关闭 Oracle gap；
-- 将 `mechanism-supported` 只有在 exact intervention evidence 成立时提升为
-  `intervention-confirmed`。
-
-Prototype 不重新采集 reference leg、不修改 Oracle、不决定 Product
-disposition，也不复制 benchmark identity。Target projection 仍是 proposal，
-不能绕过 Product contract acceptance 和现有 Experience Case admission。
-
-### 3.6 Visual And Dynamic Evidence Gate
+### 3.5 Visual And Dynamic Evidence Gate
 
 借鉴 LobeHub `ux-audit` 的 L1/L2/L3 分层：原型确认前，凡涉及按钮主次、边距、密度、视觉层级、暗色/亮色、响应式、空/加载/错误态的结论，**不能只从代码或口头判断**，必须有渲染截图证据。
 
@@ -229,7 +192,7 @@ L2 可直接判定的问题：
 - 长文案、长标题、数字、列表是否截断或溢出。
 - Signature feature 是否强化产品论点，是否退化为无关装饰。
 
-### 3.7 布局稳定性（Layout Stability）
+### 3.6 布局稳定性（Layout Stability）
 
 原型交互过程中**禁止出现非预期的布局跳动**——用户切换 Tab、展开/折叠面板、加载内容时，周围元素不得位移或抖动。
 
@@ -277,9 +240,7 @@ packages/prototypes/
 │   └── features/<feature-id>/
 ├── mobile/
 │   └── <prototype-id>/
-├── dashboard/
-│   └── <prototype-id>/
-└── control/
+└── dashboard/
     └── <prototype-id>/
 ```
 
@@ -291,13 +252,9 @@ packages/prototypes/
 desktop            # Desktop App / desktop-web / applet 容器内体验
 mobile             # Mobile 端体验
 dashboard          # Station Dashboard / 管理台 / 运维台
-control            # 独立云控、客户端配置发布与升级控制面
 ```
 
-注意：`control` 只承载独立部署、被多端消费的云控产品；Station/Relay 运维仍归
-`dashboard`。`atelier` 这类 applet、`call` / `social-chat` 这类局部能力原型，
-不是一级站点，必须挂在所属站点（例如 `desktop/applets/atelier`、
-`desktop/features/call`）下。
+注意：`atelier` 这类 applet、`call` / `social-chat` 这类局部能力原型，不是一级站点，必须挂在所属站点（例如 `desktop/applets/atelier`、`desktop/features/call`）下。
 
 ### 4.2 入口文档
 
@@ -383,7 +340,7 @@ Prototype Portal 支持 worktree / branch 切换：
 - 当前 worktree 由 `make run-prototype` 自动注入分支名和 worktree 路径。
 - 其他 worktree 必须自己启动原型服务，再通过 `VITE_PROTOTYPE_WORKTREES` JSON registry 注入 Portal。
 - 跨 worktree 只能用 iframe 预览对应 URL，禁止直接 import 其他 worktree 的源码。
-- registry 的站点 key 只能是 `desktop` / `mobile` / `dashboard` / `control`。
+- registry 的站点 key 只能是 `desktop` / `mobile` / `dashboard`。
 
 ---
 
@@ -437,7 +394,7 @@ Prototype Portal 支持 worktree / branch 切换：
 - [ ] 使用 LobeUI / antd / lucide-react，未引入额外基础组件库
 - [ ] 未碰 Lynx / applet SDK / 非 web 运行时
 - [ ] mock 数据驱动，未依赖后端接口
-- [ ] 原型登记在正确一级站点下（`desktop` / `mobile` / `dashboard` / `control`），没有把 applet 或局部能力登记成一级模块
+- [ ] 原型登记在正确一级站点下（`desktop` / `mobile` / `dashboard`），没有把 applet 或局部能力登记成一级模块
 - [ ] 跨 worktree / branch 预览使用 registry + iframe，没有直接引用其他 worktree 源码
 - [ ] Tab / Segment 切换无布局跳动：所有 tab-content 面板有统一 `min-height` 或使用叠层方案，切换前后容器高度像素一致
 - [ ] 列表 / 空态 / 媒体加载无重排：骨架屏和占位区域已预留正确尺寸

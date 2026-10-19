@@ -1,8 +1,8 @@
 # Experience Design Control Plane - Module Layout
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-10-18 | **Updated**: 2026-10-22
+> **Version**: v1.1
+> **Created**: 2026-10-18 | **Updated**: 2026-10-20
 > **Owner**: Developer Experience / Product Design
 
 ---
@@ -20,7 +20,6 @@ docs/
 │   ├── review-result.md
 │   ├── review-kernel-integration.md
 │   ├── review-kernel-layout.md
-│   ├── comparative-experience-review.md
 │   ├── module-layout.md
 │   ├── integration.md
 │   ├── rules.json
@@ -44,36 +43,24 @@ tooling/
 │   ├── source-fence.mjs
 │   ├── review-receipt.mjs
 │   ├── holdout.mjs
-│   ├── comparative-schema.mjs
-│   ├── comparative-evaluator.mjs
-│   ├── comparative-review.mjs
-│   ├── comparative-calibration.mjs
-│   ├── comparative-test-fixture.mjs
 │   ├── calibration.mjs
-│   ├── admission.mjs
 │   ├── evaluator.test.mjs
 │   ├── evidence.test.mjs
 │   ├── schema.test.mjs
 │   ├── review-receipt.test.mjs
 │   ├── holdout.test.mjs
-│   ├── comparative-schema.test.mjs
-│   ├── comparative-evaluator.test.mjs
-│   ├── comparative-review.test.mjs
-│   ├── comparative-calibration.test.mjs
-│   ├── comparative-cli.test.mjs
 │   ├── source-version.test.mjs
 │   ├── integration.test.mjs
 │   ├── test-fixture.mjs
 │   └── fixtures/
 │       ├── calibration-manifest.json
+│       ├── trusted-issuers.json
 │       ├── positive/
 │       ├── negative/
 │       ├── boundary/
 │       ├── holdout/
 │       ├── holdout-results/
-│       ├── evaluator-snapshots/
 │       ├── reviews/
-│       ├── comparative/
 │       └── holdout-ledger/
 └── skills/
     ├── pt-product-design-methodology/SKILL.md
@@ -92,7 +79,6 @@ tooling/
 | `experience-design/reasoning-kernel.md` | Source-fenced Journey, trust, recovery and Finding reasoning |
 | `experience-design/review-result.md` | ReviewResult and promotion data model |
 | `experience-design/review-kernel-*.md` | Reasoning component integration and layout refinements |
-| `experience-design/comparative-experience-review.md` | Paired Oracle、blind delta、identity reveal、disposition 与 Target Contract 真源 |
 | `experience-design/module-layout.md` | Canonical source layout |
 | `experience-design/integration.md` | Consumer boundaries and cutover |
 | `experience-design/rules.json` | Canonical rule severity, disposition, exit and owner |
@@ -103,19 +89,13 @@ tooling/
 | `validator.mjs` | ReviewResult graph, recovery, finding and admission validation |
 | `ranking.mjs` | Deterministic eligible Finding ordering |
 | `source-fence.mjs` | Exact report package and repository source binding |
-| `canonical.mjs` | Canonical JSON and digest primitives |
+| `canonical.mjs` | Canonical JSON, digest and Ed25519 verification primitives |
 | `source-version.mjs` | Exact control-plane source identity for result binding |
 | `evaluator.mjs` | Pure deterministic rule evaluation |
 | `evidence.mjs` | Exact evidence-cell, artifact and metric matching |
 | `experience-design.mjs` | CLI parsing and stable output |
 | `review-receipt.mjs` | Digest and reviewer-independence validation |
 | `holdout.mjs` | Content-addressed blind chain and promotion validation |
-| `comparative-schema.mjs` | Closed CER artifact schema, package containment and digest binding |
-| `comparative-evaluator.mjs` | Oracle assertion differential, observed path cost and earliest-divergence evaluation |
-| `comparative-review.mjs` | Blind review, identity reveal, disposition and Target Contract projection validation |
-| `comparative-calibration.mjs` | CER positive/negative/boundary exact calibration |
-| `comparative-test-fixture.mjs` | Test-only valid package and staged review fixture builder |
-| `admission.mjs` | Final independent decision and current SourceFence admission |
 | `calibration.mjs` | Three-class coverage and exact expectation runner |
 | `fixtures/` | Calibrated cases and content-addressed blind holdout records |
 | `*.test.mjs` | Rule, fixture and Skill integration proof |
@@ -134,9 +114,9 @@ product contracts
 ```
 
 Skills may invoke the CLI and cite methodology. They must not import private
-evaluator helpers or duplicate `rules.json`. Stable author/reviewer IDs are
-supplied by the active workflow and validated for non-overlap; Experience
-Design owns no key, issuer registry or host-specific identity adapter.
+evaluator helpers or duplicate `rules.json`. Trusted issuer public keys are an
+explicit CLI input owned by the review host; the repository stores no private
+review key.
 
 ## 4. Ownership
 

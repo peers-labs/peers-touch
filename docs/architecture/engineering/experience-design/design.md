@@ -1,8 +1,8 @@
 # Experience Design Control Plane - Architecture
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-10-18 | **Updated**: 2026-10-22
+> **Version**: v1.1
+> **Created**: 2026-10-18 | **Updated**: 2026-10-20
 > **Owner**: Developer Experience / Product Design
 
 ---
@@ -21,9 +21,6 @@
    leaves to judgment.
 5. **Findings, not self-approval.** Deterministic evaluation emits findings and
    evidence readiness. An independent review owner decides acceptance.
-6. **Paired outcomes before parity.** Comparative review uses one frozen
-   Outcome Oracle and two identity-neutral Journey observations before product
-   identity, owner or disposition is revealed.
 
 ## 2. Evidence Ledger
 
@@ -192,32 +189,6 @@ The Kernel does not replace the Contract Stack or Prototype Compiler. Its
 `ReviewResult` is one evaluator projection and must bind the same stable
 Product, Wireflow and evidence IDs used by the canonical Experience Case.
 
-### 6.2 Comparative Experience Review
-
-[Comparative Experience Review](./comparative-experience-review.md) is a
-subsystem of this control plane, not a second design workflow:
-
-```text
-frozen Outcome Oracle + Comparison Context
-  -> JourneyObservation A + JourneyObservation B
-  -> independently reviewed leg evaluations
-  -> deterministic paired differential
-  -> blind semantic delta review
-  -> sealed identity reveal
-  -> Peers owner + adopt/adapt/reject/defer review
-  -> proposal-only Target Contract projection
-```
-
-The shared observation shape contains visible facts, states, actions, recovery
-and evidence only. It does not contain Peers UI Grammar or product identity.
-The Peers EDX binding is sealed outside both blind legs and becomes readable
-only after blind review.
-
-CER distinguishes observed difference, evidence-supported mechanism and
-intervention-confirmed causality. Only the last may be called a proven causal
-mechanism. Missing comparability, evidence, independent review or current
-digest binding remains `UNPROVEN`.
-
 ## 7. Evidence Harness
 
 ### 7.1 Evidence Levels
@@ -245,11 +216,10 @@ It never returns `passed`, updates a contract, changes a fixture expectation or
 marks an evidence cell accepted. A reviewer must be different from the
 contract, candidate, evidence and expectation authors for an acceptance
 decision. Review receipts bind all input digests and are validated separately;
-the evaluator never creates them. Stable author and reviewer IDs come from the
-active workflow and are checked for non-overlap. Canonical digests bind the
-case, contract, candidate, evaluator result and complete receipt. This boundary
-provides deterministic attribution and stale-input detection without requiring
-users or Agents to provision cryptographic keys.
+the evaluator never creates them. Author and reviewer digests use issuer-scoped
+principals and Ed25519 attestations against an explicit trusted public-key
+registry. Without that attestation the result can expose findings but cannot
+establish an accepted review.
 
 ## 8. Components
 
@@ -270,11 +240,6 @@ no background lifecycle, concurrency, network, persistence or mutation owner.
 | Calibration runner | fixture directories | coverage and expectation mismatch | evaluator | read fixtures and grammar | author expected findings, consume holdout |
 | Review receipt validator | case/result/receipt digests | valid receipt or independence error | digest helper | read explicit receipt | create receipt or approve findings |
 | Reasoning Kernel | accepted contract, Journey graph, source fence | source-bound ReviewResult and ranked findings | review-result schema | read explicit package and source blobs | define Product truth or admit high fidelity |
-| Comparative schema validator | Oracle, Context, observations, leg results and pair | closed addressed package or stable error | canonical digest helper | read explicit package root only | infer missing product meaning or repair input |
-| Comparative evaluator | independently reviewed pair | assertion differentials, path costs and earliest divergence | comparative schema | read blind legs only | read IdentityMap or assign Peers owner |
-| Blind delta validator | paired evaluation and blind report/review | current accepted blind result or finding | comparative evaluator | read blind artifacts only | reveal brand, owner or disposition |
-| Disposition validator | blind result, IdentityMap, current Peers EDX binding | reviewed CausalDelta | EDX evaluator/review validation | read identity only after blind acceptance | mutate Product contract |
-| Target projector | accepted adopt/adapt decisions | digest-bound Target Contract proposals | disposition validator | none | approve or apply proposals |
 | Finding router | rule catalog findings | owner-grouped projection | rule catalog | none | patch downstream symptoms |
 
 The CLI owns process exit and serialization only. Validators do not execute
@@ -288,8 +253,6 @@ Allowed:
 - Prototype Design consumes accepted contracts and produces Wireflow/evidence.
 - UI Identity supplies grammar bindings.
 - Review and Quality consume findings and evidence readiness.
-- CER consumes accepted Product Journey semantics and externally produced
-  evidence, then returns reviewed proposal deltas to Product ownership.
 
 Forbidden:
 
@@ -302,13 +265,6 @@ Forbidden:
 - Candidate-authored aggregate cost or verdict is treated as authority.
 - Calibration expectations are derived from the same evaluator output.
 - Holdout/blind cases are read by the calibration runner.
-- A reference leg consumes Peers UI Grammar or is treated as a Peers Product
-  contract candidate.
-- IdentityMap, Peers EDX binding, owner or disposition appears in a blind leg
-  or pre-reveal delta.
-- A supported mechanism is relabeled intervention-confirmed without exact
-  intervention evidence.
-- Target projection mutates an active Product / Client contract.
 
 ## 10. Rule Catalog And Failure Semantics
 
@@ -352,7 +308,6 @@ non-zero exit and structured error; it never rewrites the input.
 | `EDX-G03` | Every enforceable rule has positive, negative and boundary calibration |
 | `EDX-G04` | Product/Prototype/Quality skills reference the canonical control plane |
 | `EDX-G05` | Known semantic-redundancy and Lark contract-drift regressions are detected |
-| `EDX-G06` | CER positive/negative/boundary calibration plus source tests prove paired binding, blind/reveal separation, causal levels and proposal-only target projection |
 
 These gates prove the control plane's source behavior. They do not prove a
 future design is usable or a production UI is ready.

@@ -5,25 +5,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { runCalibration } from './calibration.mjs';
-import { evaluatePrototypeAdmission } from './admission.mjs';
-import { runComparativeCalibration } from './comparative-calibration.mjs';
-import {
-  assertCurrentComparisonEvaluation,
-  evaluatePairedExperienceCase,
-} from './comparative-evaluator.mjs';
-import {
-  projectTargetContracts,
-  validateBlindReview,
-  validateBlindedDeltaReport,
-  validateCausalDeltaReport,
-  validateCurrentPeersBinding,
-  validateDispositionReview,
-  validateIdentityMap,
-} from './comparative-review.mjs';
-import {
-  loadPairedExperienceCase,
-  readContainedJson,
-} from './comparative-schema.mjs';
 import {
   ExperienceDesignError,
   canonicalDigest,
@@ -40,11 +21,13 @@ import {
   loadExperienceCase,
   loadGrammar,
   loadRuleCatalog,
+  loadTrustedIssuers,
   validateSources,
 } from './schema.mjs';
 import { validateSourceFence } from './source-fence.mjs';
 import { controlPlaneVersionDigest } from './source-version.mjs';
 import {
+  evaluatePrototypeAdmission,
   parseReviewResult,
   validateReviewResult,
 } from './validator.mjs';
@@ -59,6 +42,10 @@ const DEFAULT_GRAMMAR_PATH = path.join(
   REPO_ROOT,
   'docs/client/common/ui-identity/grammar-bindings.json',
 );
+const DEFAULT_ISSUERS_PATH = path.join(
+  SCRIPT_DIR,
+  'fixtures/trusted-issuers.json',
+);
 const DEFAULT_FIXTURES_ROOT = path.join(SCRIPT_DIR, 'fixtures');
 
 function parseOptions(args) {
@@ -71,11 +58,11 @@ function parseOptions(args) {
       continue;
     }
     const key = value.slice(2);
-    if (Object.hasOwn(options, key)) fail('ED_CLI_USAGE', `duplicate option --${key}`);
     if (
       ![
         'rules',
         'grammar',
+        'trusted-issuers',
         'expect-disposition',
         'repo-root',
         'package-root',
@@ -94,6 +81,7 @@ function parseOptions(args) {
     options[key] = [
       'rules',
       'grammar',
+      'trusted-issuers',
       'repo-root',
       'package-root',
     ].includes(key)
@@ -107,10 +95,12 @@ function parseOptions(args) {
 function loadInputs(options) {
   const rulesPath = options.rules ?? DEFAULT_RULES_PATH;
   const grammarPath = options.grammar ?? DEFAULT_GRAMMAR_PATH;
+  const issuersPath = options['trusted-issuers'] ?? DEFAULT_ISSUERS_PATH;
   return {
-    paths: { rulesPath, grammarPath },
+    paths: { rulesPath, grammarPath, issuersPath },
     ruleCatalog: loadRuleCatalog(rulesPath),
     grammar: loadGrammar(grammarPath),
+    trustedIssuers: loadTrustedIssuers(issuersPath),
     evaluatorVersionDigest: controlPlaneVersionDigest(),
   };
 }
@@ -204,157 +194,9 @@ function requireReviewVerifyOptions(options) {
   if (missing.length > 0) {
     throw new ExperienceReviewError(
       'EDX_BINDING_INVALID',
-      `source-bound review requires ${missing.join(', ')}`,
+      `review-verify requires ${missing.join(', ')}`,
     );
   }
-}
-
-function requirePackageRoot(options, command) {
-  if (options['package-root'] === undefined) {
-    fail('ED_CLI_USAGE', `${command} requires --package-root`);
-  }
-  return options['package-root'];
-}
-
-function readComparativeJson(packageRoot, sourcePath, context) {
-  return readContainedJson(
-    packageRoot,
-    sourcePath,
-    context,
-    'EDX_COMPARE_PAIR_STALE',
-  ).value;
-}
-
-function validateComparativeBlindChain(
-  pairPath,
-  evaluationPath,
-  reportPath,
-  reviewPath,
-  options,
-) {
-  const packageRoot = requirePackageRoot(options, 'comparative review');
-  const loaded = loadPairedExperienceCase(pairPath, packageRoot);
-  const suppliedEvaluation = readComparativeJson(
-    packageRoot,
-    evaluationPath,
-    'ComparisonEvaluation',
-  );
-  const evaluation = assertCurrentComparisonEvaluation(
-    loaded,
-    suppliedEvaluation,
-    { evaluatorVersionDigest: controlPlaneVersionDigest() },
-  );
-  const blindedReport = readComparativeJson(
-    packageRoot,
-    reportPath,
-    'BlindedDeltaReport',
-  );
-  const blindReview = readComparativeJson(
-    packageRoot,
-    reviewPath,
-    'BlindReview',
-  );
-  validateBlindedDeltaReport(blindedReport, evaluation);
-  validateBlindReview(blindReview, evaluation, blindedReport);
-  return {
-    packageRoot,
-    loaded,
-    evaluation,
-    blindedReport,
-    blindReview,
-  };
-}
-
-function validateComparativeDispositionChain(
-  [
-    pairPath,
-    evaluationPath,
-    reportPath,
-    blindReviewPath,
-    identityPath,
-    causalPath,
-    dispositionReviewPath,
-  ],
-  options,
-) {
-  const chain = validateComparativeBlindChain(
-    pairPath,
-    evaluationPath,
-    reportPath,
-    blindReviewPath,
-    options,
-  );
-  const identityMap = readComparativeJson(
-    chain.packageRoot,
-    identityPath,
-    'IdentityMap',
-  );
-  const priorAuthorIds = [
-    ...chain.evaluation.authorIds,
-    chain.blindedReport.authorId,
-    chain.blindReview.reviewerId,
-  ];
-  validateIdentityMap(identityMap, {
-    pairDigest: chain.loaded.digests.pair,
-    evaluationDigest: canonicalDigest(chain.evaluation),
-    reportDigest: canonicalDigest(chain.blindedReport),
-    blindReviewDigest: canonicalDigest(chain.blindReview),
-    blindReview: chain.blindReview,
-    forbiddenAuthorIds: priorAuthorIds,
-  });
-  const sources = loadInputs(options);
-  const peersBinding = validateCurrentPeersBinding(identityMap, {
-    packageRoot: chain.packageRoot,
-    ruleCatalog: sources.ruleCatalog,
-    grammar: sources.grammar,
-    evaluatorVersionDigest: sources.evaluatorVersionDigest,
-    repoRoot: options['repo-root'] ?? REPO_ROOT,
-  });
-  const causalReport = readComparativeJson(
-    chain.packageRoot,
-    causalPath,
-    'CausalDeltaReport',
-  );
-  validateCausalDeltaReport(causalReport, {
-    blindedReport: chain.blindedReport,
-    blindReview: chain.blindReview,
-    identityMap,
-    peersBinding,
-    forbiddenAuthorIds: priorAuthorIds,
-  });
-  const dispositionReview = readComparativeJson(
-    chain.packageRoot,
-    dispositionReviewPath,
-    'DispositionReview',
-  );
-  const forbiddenAuthorIds = [
-    ...priorAuthorIds,
-    identityMap.revealedById,
-  ];
-  validateDispositionReview(dispositionReview, {
-    causalReport,
-    forbiddenAuthorIds,
-  });
-  return {
-    ...chain,
-    identityMap,
-    peersBinding,
-    causalReport,
-    dispositionReview,
-    forbiddenAuthorIds,
-  };
-}
-
-function reviewSourceInputs(options) {
-  requireReviewVerifyOptions(options);
-  return {
-    repoRoot: options['repo-root'],
-    packageRoot: options['package-root'],
-    runEnvelopePath: options['run-envelope'],
-    casePath: options.case,
-    manifestPath: options.manifest,
-    rubricPath: options.rubric,
-  };
 }
 
 function validateReviewResultFile(resultPath) {
@@ -366,17 +208,24 @@ function verifyReviewResultFile(resultPath, options) {
   const result = readReviewJson(resultPath, 'ReviewResult');
   return {
     ...validateReviewResult(result),
-    sourceFence: validateSourceFence(result, reviewSourceInputs(options)),
+    sourceFence: validateSourceFence(result, {
+      repoRoot: options['repo-root'],
+      packageRoot: options['package-root'],
+      runEnvelopePath: options['run-envelope'],
+      casePath: options.case,
+      manifestPath: options.manifest,
+      rubricPath: options.rubric,
+    }),
   };
 }
 
-function evaluateReviewAdmission(resultPath, decisionPath, options) {
+function evaluateReviewAdmission(resultPath, decisionPath) {
   const result = readReviewJson(resultPath, 'ReviewResult');
   const decision = readReviewJson(
     decisionPath,
     'IndependentReviewDecision',
   );
-  return evaluatePrototypeAdmission(result, decision, reviewSourceInputs(options));
+  return evaluatePrototypeAdmission(result, decision);
 }
 
 function validateReview(casePath, resultPath, receiptPath, options) {
@@ -403,6 +252,7 @@ function validateReview(casePath, resultPath, receiptPath, options) {
     ...validateReviewReceipt(receipt, {
       loadedCase,
       result: suppliedResult,
+      trustedIssuers: sources.trustedIssuers,
     }),
   };
 }
@@ -416,13 +266,7 @@ function usage() {
     '  experience-design.mjs validate-review <case.json> <result.json> <receipt.json> [source options]',
     '  experience-design.mjs review-validate <review-result.json>',
     '  experience-design.mjs review-verify <review-result.json> --repo-root <path> --package-root <path> --run-envelope <path> --case <path> --manifest <path> --rubric <path>',
-    '  experience-design.mjs review-admission <review-result.json> <independent-review.json> --repo-root <path> --package-root <path> --run-envelope <path> --case <path> --manifest <path> --rubric <path>',
-    '  experience-design.mjs compare-validate <paired-case.json> --package-root <path>',
-    '  experience-design.mjs compare-evaluate <paired-case.json> --package-root <path>',
-    '  experience-design.mjs compare-review-blind <paired-case.json> <comparison-evaluation.json> <blinded-deltas.json> <blind-review.json> --package-root <path>',
-    '  experience-design.mjs compare-review-disposition <paired-case.json> <comparison-evaluation.json> <blinded-deltas.json> <blind-review.json> <identity-map.json> <causal-deltas.json> <disposition-review.json> --package-root <path> [source options]',
-    '  experience-design.mjs compare-project-target <paired-case.json> <comparison-evaluation.json> <blinded-deltas.json> <blind-review.json> <identity-map.json> <causal-deltas.json> <disposition-review.json> --package-root <path> [source options]',
-    '  experience-design.mjs compare-calibrate [--package-root <path>]',
+    '  experience-design.mjs review-admission <review-result.json> <independent-review.json>',
     '  experience-design.mjs calibrate [source options]',
     '  experience-design.mjs validate-holdouts [source options]',
     '  experience-design.mjs check [source options]',
@@ -430,6 +274,7 @@ function usage() {
     'source options:',
     '  --rules <path>',
     '  --grammar <path>',
+    '  --trusted-issuers <path>',
     '  --repo-root <path>',
     '  --package-root <path>',
   ].join('\n');
@@ -438,29 +283,6 @@ function usage() {
 export function runCli(argv) {
   const [command, ...rest] = argv;
   const { positional, options } = parseOptions(rest);
-  const allowedOptions = {
-    'review-validate': [],
-    'review-verify': ['repo-root', 'package-root', 'run-envelope', 'case', 'manifest', 'rubric'],
-    'review-admission': ['repo-root', 'package-root', 'run-envelope', 'case', 'manifest', 'rubric'],
-    'compare-validate': ['package-root'],
-    'compare-evaluate': ['package-root'],
-    'compare-review-blind': ['package-root'],
-    'compare-review-disposition': ['rules', 'grammar', 'repo-root', 'package-root'],
-    'compare-project-target': ['rules', 'grammar', 'repo-root', 'package-root'],
-    'compare-calibrate': ['package-root'],
-    validate: ['rules', 'grammar'],
-    'validate-sources': ['rules', 'grammar'],
-    evaluate: ['rules', 'grammar', 'repo-root', 'expect-disposition'],
-    'validate-review': ['rules', 'grammar', 'repo-root'],
-    calibrate: ['rules', 'grammar', 'repo-root', 'package-root'],
-    'validate-holdouts': ['rules', 'grammar', 'repo-root', 'package-root'],
-    check: ['rules', 'grammar', 'repo-root', 'package-root'],
-  };
-  for (const key of Object.keys(options)) {
-    if (!allowedOptions[command]?.includes(key)) {
-      fail('ED_CLI_USAGE', `${command} does not consume --${key}`);
-    }
-  }
   if (command === 'review-validate') {
     if (positional.length !== 1) {
       throw new ExperienceReviewError(
@@ -486,96 +308,7 @@ export function runCli(argv) {
         'review-admission requires ReviewResult and IndependentReviewDecision paths',
       );
     }
-    return evaluateReviewAdmission(positional[0], positional[1], options);
-  }
-  if (command === 'compare-validate') {
-    if (positional.length !== 1) {
-      fail('ED_CLI_USAGE', 'compare-validate requires one paired case path');
-    }
-    const packageRoot = requirePackageRoot(options, command);
-    const loaded = loadPairedExperienceCase(positional[0], packageRoot);
-    return {
-      ok: true,
-      kind: 'peers-touch-paired-experience-validation',
-      schemaVersion: 1,
-      caseId: loaded.pair.id,
-      digests: loaded.digests,
-      legIds: loaded.legs
-        .map((leg) => leg.descriptor.id)
-        .sort(),
-    };
-  }
-  if (command === 'compare-evaluate') {
-    if (positional.length !== 1) {
-      fail('ED_CLI_USAGE', 'compare-evaluate requires one paired case path');
-    }
-    const packageRoot = requirePackageRoot(options, command);
-    const loaded = loadPairedExperienceCase(positional[0], packageRoot);
-    return evaluatePairedExperienceCase(loaded, {
-      evaluatorVersionDigest: controlPlaneVersionDigest(),
-    });
-  }
-  if (command === 'compare-review-blind') {
-    if (positional.length !== 4) {
-      fail(
-        'ED_CLI_USAGE',
-        'compare-review-blind requires pair, evaluation, blinded report, and blind review',
-      );
-    }
-    const chain = validateComparativeBlindChain(
-      ...positional,
-      options,
-    );
-    return {
-      ok: true,
-      kind: 'peers-touch-comparison-blind-review-validation',
-      schemaVersion: 1,
-      evaluationDigest: canonicalDigest(chain.evaluation),
-      reportDigest: canonicalDigest(chain.blindedReport),
-      reviewDigest: canonicalDigest(chain.blindReview),
-      decision: chain.blindReview.decision,
-    };
-  }
-  if (command === 'compare-review-disposition') {
-    if (positional.length !== 7) {
-      fail(
-        'ED_CLI_USAGE',
-        'compare-review-disposition requires the complete seven-artifact chain',
-      );
-    }
-    const chain = validateComparativeDispositionChain(positional, options);
-    return {
-      ok: true,
-      kind: 'peers-touch-comparison-disposition-review-validation',
-      schemaVersion: 1,
-      peersBindingDigest: chain.peersBinding.bindingDigest,
-      causalDeltaDigest: canonicalDigest(chain.causalReport),
-      reviewDigest: canonicalDigest(chain.dispositionReview),
-      decision: chain.dispositionReview.decision,
-    };
-  }
-  if (command === 'compare-project-target') {
-    if (positional.length !== 7) {
-      fail(
-        'ED_CLI_USAGE',
-        'compare-project-target requires the complete seven-artifact chain',
-      );
-    }
-    const chain = validateComparativeDispositionChain(positional, options);
-    return projectTargetContracts(
-      chain.causalReport,
-      chain.dispositionReview,
-      { forbiddenAuthorIds: chain.forbiddenAuthorIds },
-    );
-  }
-  if (command === 'compare-calibrate') {
-    if (positional.length !== 0) {
-      fail('ED_CLI_USAGE', 'compare-calibrate does not accept positional input');
-    }
-    return runComparativeCalibration({
-      fixturesRoot: options['package-root'] ?? DEFAULT_FIXTURES_ROOT,
-      evaluatorVersionDigest: controlPlaneVersionDigest(),
-    });
+    return evaluateReviewAdmission(positional[0], positional[1]);
   }
   if (command === 'validate') {
     if (positional.length !== 1) {
@@ -590,6 +323,8 @@ export function runCli(argv) {
     return validateSources({
       ruleCatalogPath: options.rules ?? DEFAULT_RULES_PATH,
       grammarPath: options.grammar ?? DEFAULT_GRAMMAR_PATH,
+      trustedIssuersPath:
+        options['trusted-issuers'] ?? DEFAULT_ISSUERS_PATH,
     });
   }
   if (command === 'evaluate') {
@@ -621,18 +356,20 @@ export function runCli(argv) {
   if (command === 'calibrate') {
     const sources = loadInputs(options);
     return runCalibration({
-      fixturesRoot: options['package-root'] ?? DEFAULT_FIXTURES_ROOT,
+      fixturesRoot: DEFAULT_FIXTURES_ROOT,
       ruleCatalog: sources.ruleCatalog,
       grammar: sources.grammar,
+      trustedIssuers: sources.trustedIssuers,
       repoRoot: options['repo-root'] ?? REPO_ROOT,
     });
   }
   if (command === 'validate-holdouts') {
     const sources = loadInputs(options);
     return validateHoldoutLedger({
-      fixturesRoot: options['package-root'] ?? DEFAULT_FIXTURES_ROOT,
+      fixturesRoot: DEFAULT_FIXTURES_ROOT,
       ruleCatalog: sources.ruleCatalog,
       grammar: sources.grammar,
+      trustedIssuers: sources.trustedIssuers,
       repoRoot: options['repo-root'] ?? REPO_ROOT,
     });
   }
@@ -641,22 +378,21 @@ export function runCli(argv) {
     const sourceValidation = validateSources({
       ruleCatalogPath: sources.paths.rulesPath,
       grammarPath: sources.paths.grammarPath,
+      trustedIssuersPath: sources.paths.issuersPath,
     });
     const calibration = runCalibration({
-      fixturesRoot: options['package-root'] ?? DEFAULT_FIXTURES_ROOT,
+      fixturesRoot: DEFAULT_FIXTURES_ROOT,
       ruleCatalog: sources.ruleCatalog,
       grammar: sources.grammar,
+      trustedIssuers: sources.trustedIssuers,
       repoRoot: options['repo-root'] ?? REPO_ROOT,
     });
     const holdouts = validateHoldoutLedger({
-      fixturesRoot: options['package-root'] ?? DEFAULT_FIXTURES_ROOT,
+      fixturesRoot: DEFAULT_FIXTURES_ROOT,
       ruleCatalog: sources.ruleCatalog,
       grammar: sources.grammar,
+      trustedIssuers: sources.trustedIssuers,
       repoRoot: options['repo-root'] ?? REPO_ROOT,
-    });
-    const comparativeCalibration = runComparativeCalibration({
-      fixturesRoot: options['package-root'] ?? DEFAULT_FIXTURES_ROOT,
-      evaluatorVersionDigest: sources.evaluatorVersionDigest,
     });
     return {
       ok: true,
@@ -664,7 +400,6 @@ export function runCli(argv) {
       schemaVersion: 1,
       sourceValidation,
       calibration,
-      comparativeCalibration,
       holdouts,
     };
   }

@@ -1,16 +1,8 @@
 # Experience Design Control Plane - Decisions
 
-Current executable refinements remain within EDX-20261018:
-package linkage and fresh admission are governed by ReviewResult section 2/10;
-state ordering is a total order by distance, explicit origin/order and source;
-recovery declarations realize graph edges and returns from the blocked source.
-Historical blind integrity uses frozen snapshot bindings, while current
-evaluation has separate evidence authority. These tighten existing promises
-without replacing Product/Client semantics or independent judgment.
-
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-10-18 | **Updated**: 2026-10-22
+> **Version**: v1.1
+> **Created**: 2026-10-18 | **Updated**: 2026-10-20
 > **Owner**: Developer Experience / Product Design
 
 ---
@@ -35,13 +27,6 @@ without replacing Product/Client semantics or independent judgment.
 | EDX-RK-D06 | Explicit local recovery contract | accepted |
 | EDX-RK-D07 | Independent prototype admission | accepted |
 | EDX-RK-D08 | Quality-owned fresh holdout lifecycle | accepted |
-| CER-D01 | Identity-neutral paired observation | accepted |
-| CER-D02 | Frozen Outcome Oracle with rerun-on-amendment | accepted |
-| CER-D03 | Blind delta before identity reveal | accepted |
-| CER-D04 | Three-level causal claim | accepted |
-| CER-D05 | Non-weighted material-delta priority | accepted |
-| CER-D06 | Reviewed proposal-only Target Contract projection | accepted |
-| CER-D07 | Blind A/B required for framework value | accepted |
 
 ---
 
@@ -225,9 +210,7 @@ The evaluator is read-only and returns findings plus evidence readiness. It
 never returns `passed`. Acceptance requires a reviewer distinct from the
 contract, candidate, evidence and expectation authors. The review receipt binds
 the case, contract, candidate and result digests; the evaluator cannot create
-the receipt. Authors, evidence inspectors and reviewers use stable workflow
-principal IDs. Independence is enforced by ID non-overlap and exact digest
-binding, not by a repository-owned certificate authority or user-managed keys.
+the receipt.
 
 ### Rationale
 
@@ -239,18 +222,11 @@ and repeatable.
 - Auto-fix contracts: rejected because it changes product intent.
 - Auto-pass on zero findings: rejected because visual and semantic judgment
   still require an independent owner.
-- Ed25519 author/reviewer signatures: rejected because the control plane has no
-  production identity issuer or host signing path, cryptographic proof is not a
-  product requirement, and user-managed keys would make ordinary Agent
-  injection unusable without strengthening semantic review.
 
 ### Consequences
 
 Positive: no self-certification. Negative: a separate review pass remains
-mandatory even when deterministic findings are empty. Principal IDs prove
-workflow separation only; external identity assurance, if ever required by a
-deployment boundary, must be supplied by that boundary rather than duplicated
-inside Experience Design.
+mandatory even when deterministic findings are empty.
 
 ## EDX-D07: Three-Class Calibration
 
@@ -586,239 +562,3 @@ The policy prevents answer leakage, run reuse and retroactive relabeling.
 
 Positive: promotion evidence is honest and revocable. Negative: holdout cases
 are consumable resources and require ongoing replenishment.
-
----
-
-## CER-D01: Identity-Neutral Paired Observation
-
-**Status**: accepted
-**Date**: 2026-10-22
-
-### Context
-
-Putting a reference product directly into Peers ExperienceContract or UI
-Grammar would judge it by Peers-specific identity and component rules before
-the user outcome is compared.
-
-### Decision
-
-Both legs first project to the same closed `JourneyObservation` shape. The
-projection contains only visible facts, states, actions, recovery and evidence.
-Only the revealed Peers leg additionally binds its current EDX case and result.
-
-### Rationale
-
-The shared comparison substrate must be product-identity neutral while Peers
-ownership and drift classification remain available after reveal.
-
-### Alternatives Considered
-
-- Evaluate both products as Peers Experience Cases: rejected as structurally
-  biased.
-- Compare screenshots directly: rejected because dynamic outcome, recovery and
-  authority are not visible in one image.
-
-### Consequences
-
-Positive: the reference is evidence rather than authority. Negative:
-normalization and an independent leg review add authoring cost.
-
-## CER-D02: Frozen Outcome Oracle With Rerun-On-Amendment
-
-**Status**: accepted
-**Date**: 2026-10-22
-
-### Context
-
-Benchmark discovery can reveal a valuable outcome, but changing the evaluation
-standard after seeing the paired result creates circular proof.
-
-### Decision
-
-Discovery may propose an Oracle amendment. Once paired evaluation begins, the
-Oracle and Comparison Context are digest-bound. Any accepted amendment creates
-a new run and requires both legs to be recaptured or reevaluated.
-
-### Rationale
-
-Product learning remains possible without allowing post-hoc score adjustment.
-
-### Alternatives Considered
-
-- Immutable Oracle before all benchmark discovery: rejected because it blocks
-  legitimate product learning.
-- Edit the active Oracle in place: rejected because historical results become
-  uninterpretable.
-
-### Consequences
-
-Positive: comparison criteria are auditable. Negative: an amended outcome
-invalidates otherwise usable leg results.
-
-## CER-D03: Blind Delta Before Identity Reveal
-
-**Status**: accepted
-**Date**: 2026-10-22
-
-### Context
-
-A reviewer who knows which leg is Peers can unconsciously classify every
-difference as a Peers defect or a benchmark advantage.
-
-### Decision
-
-Leg A and B have identical blind schemas. `BlindedDelta` and its independent
-review freeze before a sealed IdentityMap can be read. Owner, delta kind and
-adopt/adapt/reject/defer are generated only after reveal by a different
-reviewer.
-
-### Rationale
-
-Evidence judgment and Peers product judgment are distinct decisions with
-different bias surfaces.
-
-### Alternatives Considered
-
-- One reviewer sees identities throughout: rejected because evidence and brand
-  prior cannot be separated.
-- Hide identity only in the final report: rejected because ranking and causal
-  wording would already be contaminated.
-
-### Consequences
-
-Positive: materiality is identity-neutral. Negative: two review boundaries and
-one sealed identity artifact are required.
-
-## CER-D04: Three-Level Causal Claim
-
-**Status**: accepted
-**Date**: 2026-10-22
-
-### Context
-
-An observed result difference does not prove why it occurred. Existing
-`causalMechanism` is an authored Finding field, not intervention evidence.
-
-### Decision
-
-CER distinguishes:
-
-- `differential-observed`;
-- `mechanism-supported`;
-- `intervention-confirmed`.
-
-Only the last may be described as a proven causal mechanism.
-
-### Rationale
-
-The language of the result must not be stronger than its evidence.
-
-### Alternatives Considered
-
-- Call every coherent explanation a root cause: rejected as overclaim.
-- Forbid causal hypotheses without an experiment: rejected because a supported
-  mechanism is still useful when labeled honestly.
-
-### Consequences
-
-Positive: findings retain uncertainty and a falsifier. Negative: important
-recommendations may remain supported rather than proven until a prototype or
-runtime intervention exists.
-
-## CER-D05: Non-Weighted Material-Delta Priority
-
-**Status**: accepted
-**Date**: 2026-10-22
-
-### Context
-
-An averaged score can let visual polish cancel a safety, trust, blocked-outcome
-or missing-recovery failure.
-
-### Decision
-
-Material deltas sort lexicographically by Oracle criticality, outcome block,
-trust/recovery impact, earliest divergent state, Journey frequency, user work
-at risk, causal status, confidence and stable ID.
-
-### Rationale
-
-The tuple preserves the reason a gap matters and remains mechanically
-recomputable.
-
-### Alternatives Considered
-
-- Weighted quality score: rejected because severe dimensions can be averaged
-  away.
-- Reviewer-selected primary without a tuple: rejected because priority drift
-  cannot be diagnosed.
-
-### Consequences
-
-Positive: material product failures stay visible. Negative: CER cannot provide
-a simple product leaderboard number.
-
-## CER-D06: Reviewed Proposal-Only Target Contract Projection
-
-**Status**: accepted
-**Date**: 2026-10-22
-
-### Context
-
-Benchmark findings should become executable product proposals, but an
-engineering evaluator must not modify Product authority.
-
-### Decision
-
-Only independently accepted `adopt` or `adapt` decisions can be projected to a
-digest-bound `TargetContractDelta`. The projection remains a proposal until the
-owning Product / Client contract accepts it.
-
-### Rationale
-
-The framework closes the path from evidence to executable acceptance without
-letting the benchmark or evaluator become product truth.
-
-### Alternatives Considered
-
-- Emit prose recommendations only: rejected because implementation can drift
-  again.
-- Auto-amend active contracts: rejected as an ownership violation.
-
-### Consequences
-
-Positive: accepted findings have Journey, state, acceptance and evidence
-targets. Negative: a separate Product acceptance boundary remains mandatory.
-
-## CER-D07: Blind A/B Required For Framework Value
-
-**Status**: accepted
-**Date**: 2026-10-22
-
-### Context
-
-Source tests can prove deterministic mechanics but cannot prove CER finds
-better product gaps than the current benchmark workflow.
-
-### Decision
-
-Framework incremental value remains `UNPROVEN` until a Quality-owned sealed
-A/B compares the current workflow with CER on fresh hidden cases, with
-pre-frozen answer keys, exposure burn, hard failures and promotion criteria.
-
-### Rationale
-
-The framework's central value claim must be falsifiable and independent of its
-authors.
-
-### Alternatives Considered
-
-- Treat calibration success as value proof: rejected because visible fixtures
-  are training inputs.
-- Self-score one known comparison: rejected because it cannot establish
-  generalization.
-
-### Consequences
-
-Positive: value claims remain honest. Negative: implementation completion and
-framework promotion are separate milestones.

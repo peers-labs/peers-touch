@@ -1,8 +1,8 @@
 # Experience Design Control Plane - Data Model
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-10-18 | **Updated**: 2026-10-22
+> **Version**: v1.1
+> **Created**: 2026-10-18 | **Updated**: 2026-10-20
 > **Owner**: Developer Experience / Product Design
 
 ---
@@ -20,6 +20,19 @@ type Digest = `sha256:${string}`;
 type Platform = "desktop" | "mobile" | "browser" | "dashboard";
 type Claim = "wireflow" | "prototype" | "production";
 type Calibration = "positive" | "negative" | "boundary" | "blind";
+
+type PrincipalRef = {
+  issuer: StableId;
+  keyId: StableId;
+  subject: StableId;
+};
+
+type SignedDigest = {
+  digest: Digest;
+  principal: PrincipalRef;
+  algorithm: "ed25519";
+  signature: string;
+};
 
 type CopyRole =
   | "brand"
@@ -75,10 +88,16 @@ type ExperienceCase = {
   calibration: Calibration;
   claim: Claim;
   authorship: {
-    contractAuthorId: StableId;
-    candidateAuthorId: StableId;
-    evidenceAuthorIds: StableId[];
-    expectationAuthorId?: StableId;
+    contractAuthor: PrincipalRef;
+    candidateAuthor: PrincipalRef;
+    evidenceAuthors: PrincipalRef[];
+    expectationAuthor?: PrincipalRef;
+  };
+  sourceAttestations: {
+    contract: SignedDigest;
+    candidate: SignedDigest;
+    evidence: SignedDigest[];
+    expectation?: SignedDigest;
   };
   contract: ExperienceContract;
   candidate: ExperienceCandidate;
@@ -95,27 +114,45 @@ type ExperienceCase = {
 Rules:
 
 - `expected` is required for positive/negative/boundary fixtures.
-- `expected`, `expectationAuthorId` and `promotedFromBlind` are
+- `expected`, `expectationAuthor` and `promotedFromBlind` are
   forbidden for blind holdouts.
 - A promoted calibration fixture is a new immutable case with a new ID and
   requires a valid independent blind-review receipt digest.
-- `expectationAuthorId` differs from contract, candidate and evidence author
-  IDs.
-- Author IDs are stable workflow principals supplied by the active Agent host.
-  They are attribution and separation identifiers, not cryptographic identity
-  proofs.
-- Material cases contain at least one evidence author ID. Every
-  `inspectedById` is a member of that evidence-author set; the later reviewer
-  ID differs from every author and inspector.
-- A case with `expected` requires an expectation author ID. A case without
-  `expected` forbids it.
-- The loader recomputes contract, candidate, evidence, expectation and complete
-  case digests. The candidate digest excludes `candidate.evidence`; the
-  evidence array has its own digest, avoiding a circular source digest.
-- Content-addressed storage and exact digest binding establish immutability.
-  Independent workflow execution establishes author/reviewer separation. No
-  user-managed key, signature, issuer registry or unsigned compatibility mode
-  exists.
+- `expectationAuthor` differs from contract, candidate and evidence authors.
+- Digests are recomputed by the loader and every signature is verified against
+  the explicit trusted issuer registry; caller-provided mismatches fail.
+- Principal equality is the tuple `(issuer, keyId, subject)`, never a display
+  string.
+- Contract and candidate attestation principals equal their declared authors.
+  Evidence attestation principals form the exact unique set of declared
+  evidence authors and all sign the same evidence digest.
+- Material cases contain at least one evidence author and one evidence
+  attestation. Every `inspectedBy` principal is a member of that signed
+  evidence-author set; the later review principal differs from every inspector.
+- A case with `expected` requires an expectation author and matching signed
+  expectation attestation. A case without `expected` forbids both.
+- The candidate digest excludes `candidate.evidence`; the separate evidence
+  attestation covers the canonical evidence array. This avoids a circular
+  source digest.
+
+Trusted issuer keys are explicit input:
+
+```ts
+type TrustedIssuerRegistry = {
+  kind: "peers-touch-experience-review-issuers";
+  schemaVersion: 1;
+  issuers: Array<{
+    issuer: StableId;
+    keyId: StableId;
+    publicKeyPem: string;
+    allowedSubjects: StableId[];
+  }>;
+};
+```
+
+The repository implementation ships no private key. A host or human review
+authority signs outside the evaluator. An unsigned result can still expose
+findings but cannot produce an accepted review receipt.
 
 ## 3. Experience Contract
 
@@ -184,9 +221,6 @@ Material cases are total, not sparse:
 
 Any omission, duplicate owner or orphan is `ED-CONTRACT-001`, never an empty
 success.
-
-Candidate states and transitions must belong to their Journey and be reachable
-from its start, even when every ID appears in a TraceLink.
 
 ## 4. Semantic Concepts
 
@@ -483,13 +517,6 @@ type TraceLink = {
 Drift detection compares the candidate's reachable ordered state kinds and
 required action IDs with `AcceptedTrace`. A missing or inserted commitment,
 decision surface or mode choice is `ED-DRIFT-001`.
-`orderedStateKinds` contains at least entry and result phases. It is a
-sequence: distinct states may repeat the same kind.
-The selected path remains the exact sequence used for cost derivation.
-Reachable alternatives before success are additionally checked for non-recovery
-decisions: positive decision cost, option choice, mode selection or interruption
-requires accepted action intent. Zero-decision navigation and explicit recovery
-remain legal supporting branches; a candidate trace alone cannot accept them.
 Capability, Journey, product state and acceptance IDs must all resolve from
 `ProductIntent`; evidence `claimId` resolves to one acceptance ID.
 
@@ -571,7 +598,7 @@ type EvidenceRecord = {
   sourceDigest: Digest;
   artifact?: string;
   artifactDigest?: Digest;
-  inspectedById?: StableId;
+  inspectedBy?: PrincipalRef;
   observedAt?: string;
   platform: Platform;
   runtimeProfile: string;
@@ -707,11 +734,12 @@ type ReviewReceipt = {
   contractDigest: Digest;
   candidateDigest: Digest;
   resultDigest: Digest;
-  reviewerId: StableId;
+  reviewer: PrincipalRef;
   reviewedAt: string;
   decision: "accepted" | "changes-required" | "unproven";
   findingIds: StableId[];
   reviewerFindings: IndependentReviewFinding[];
+  attestation: SignedDigest;
 };
 
 type IndependentReviewFinding = {
@@ -738,14 +766,14 @@ type IndependentReviewFinding = {
 The receipt is valid only when:
 
 - all digests match current immutable inputs/result;
-- `reviewerId` differs from contract, candidate, evidence and expectation
-  author IDs and every evidence inspector ID;
+- `reviewer` differs from contract, candidate, evidence and expectation
+  authors and every evidence inspector;
 - timestamp is canonical.
+- `attestation.principal` equals `reviewer`, its digest covers the canonical
+  receipt payload excluding `attestation`, and its Ed25519 signature validates
+  through the trusted issuer registry.
 - `findingIds` is the exact set of evaluator result finding IDs; no current
   finding may be omitted and no stale finding may be added.
-- the complete receipt remains content-addressable through its canonical
-  digest; any changed reviewer, decision, finding or input binding produces a
-  different receipt digest.
 
 Decision is exhaustive:
 
@@ -759,7 +787,7 @@ Decision is exhaustive:
 
 `accepted` therefore requires a ready evaluator result, complete finding
 binding and zero blocking reviewer findings. Warnings may remain but are
-preserved in the digest-bound receipt.
+preserved in the signed receipt.
 
 The evaluator never creates this receipt.
 
@@ -779,7 +807,6 @@ type HoldoutLedgerRecord = {
   caseDigest: Digest;
   firstResultDigest: Digest;
   reviewReceiptDigest: Digest;
-  evaluatorSnapshotDigest: Digest;
   promotedCaseId?: StableId;
   promotedCaseDigest?: Digest;
 };
@@ -800,33 +827,10 @@ Calibration suite rules:
   receipt digest; the original holdout remains unchanged.
 - holdout cases, first results, receipts and ledger records use their content
   digest as filename; loaders verify path/digest equality.
-- one holdout ID resolves to exactly one sealed case/result/review chain across
-  the complete ledger. A changed, duplicated or reused ID is rejected.
-- promotion resolves the original case, first result and digest-bound receipt
-  before accepting the new calibration case.
-- every promoted calibration case resolves a reciprocal ledger promotion
-  identity and digest, including when calibration is invoked separately.
-- ledger records bind a content-addressed `evaluator-snapshots/` object with
-  kind `peers-touch-experience-evaluator-snapshot`, schemaVersion `1`,
-  sourceDigest, frozen rules and frozen grammar. Original result version is
-  the canonical digest of source/rules/grammar digests. Historical integrity
-  validates content addresses, case/contract/candidate bindings, frozen rule
-  consistency and independent receipt; it does not rerun new code as old code.
-- current reevaluation is separately returned as `currentResultDigest`. It
-  never rewrites the immutable first result and does not inherit its review
-  approval or claim historical deterministic replay.
-- historical Case integrity does not apply new graph validation retroactively.
-  If current validation/evaluation rejects an old addressed case, the chain
-  remains historically valid and currentEvaluationStatus is `unproven`, with
-  a null currentResultDigest and the current error. Frozen findings still
-  determine their own legal disposition; no blocking result may be relabeled
-  ready. Calibration IDs are unique and cannot reuse any sealed holdout ID.
-- `calibrate`, `validate-holdouts` and `check` consume `--package-root` as the
-  explicit external fixture/ledger root; omitted means repository calibration
-  fixtures. Unsupported command options fail rather than being ignored.
-- holdout promotion discovery ignores calibration files that cannot yet be
-  parsed. The calibration manifest remains the owner that executes
-  `validation-error` fixtures and compares their exact expected error code.
+- one holdout ID resolves to exactly one case digest across the complete
+  ledger. A changed or reused ID is rejected.
+- promotion resolves the original case, first result and signed receipt before
+  accepting the new calibration case.
 
 ## 16. Lifecycle
 
@@ -847,32 +851,3 @@ draft contract
 
 The tool stores no mutable lifecycle state. Git sources and explicit
 digest-bound artifacts remain authoritative.
-
-## 17. Comparative Experience Review Supplement
-
-The canonical comparative types and lifecycle are defined in
-[comparative-experience-review.md](./comparative-experience-review.md). They
-supplement rather than replace the single-candidate model in this document.
-
-Boundary:
-
-- `ExperienceCase` remains the canonical Peers contract/candidate/evidence
-  aggregate.
-- `JourneyObservation` is the identity-neutral comparison projection and does
-  not contain Peers UI Grammar or product identity.
-- `PairedExperienceCase` binds one frozen Outcome Oracle, one Comparison
-  Context and two independently reviewed blind legs.
-- `ComparisonEvaluation` contains only deterministic assertion differential,
-  observed path cost, earliest divergence and `UNPROVEN` cells.
-- `BlindedDeltaReport` adds authored mechanism, consequence, falsifier and
-  causal level before identity reveal.
-- `IdentityMap` and the current Peers EDX binding are sealed until the blind
-  review is accepted.
-- `CausalDeltaReport` adds Peers direction, owner, delta kind and Product
-  disposition after reveal.
-- `TargetContractDelta` is a reviewed proposal. It does not mutate
-  `ExperienceContract`.
-
-Every comparative artifact uses canonical SHA-256 binding. A changed Oracle,
-Context, observation, leg evaluation/review, pair evaluation, blind review,
-identity map or disposition review invalidates all dependent artifacts.

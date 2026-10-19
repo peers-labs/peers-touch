@@ -7,6 +7,9 @@ import {
   equalStringSets,
   fail,
   isPlainObject,
+  principalKey,
+  samePrincipal,
+  verifySignedDigest,
 } from './canonical.mjs';
 
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
@@ -221,7 +224,7 @@ function assertUnique(values, key, context) {
 function assertStringArray(
   value,
   context,
-  { min = 0, ids = false, allowed = null, unique = true } = {},
+  { min = 0, ids = false, allowed = null } = {},
 ) {
   const result = assertArray(value, context, { min });
   result.forEach((item, index) => {
@@ -229,7 +232,7 @@ function assertStringArray(
     else assertString(item, `${context}[${index}]`);
     if (allowed !== null) assertEnum(item, allowed, `${context}[${index}]`);
   });
-  if (unique) assertUnique(result, (item) => item, context);
+  assertUnique(result, (item) => item, context);
   return result;
 }
 
@@ -273,6 +276,26 @@ function readJson(sourcePath, context) {
       reason: error.message,
     });
   }
+}
+
+function validatePrincipal(value, context) {
+  assertClosedObject(value, ['issuer', 'keyId', 'subject'], [], context);
+  assertId(value.issuer, `${context}.issuer`);
+  assertId(value.keyId, `${context}.keyId`);
+  assertId(value.subject, `${context}.subject`);
+}
+
+function validateSignedDigest(value, context) {
+  assertClosedObject(
+    value,
+    ['digest', 'principal', 'algorithm', 'signature'],
+    [],
+    context,
+  );
+  assertDigest(value.digest, `${context}.digest`);
+  validatePrincipal(value.principal, `${context}.principal`);
+  assertEnum(value.algorithm, new Set(['ed25519']), `${context}.algorithm`);
+  assertString(value.signature, `${context}.signature`);
 }
 
 function validateMetric(value, context, { observation = false } = {}) {
@@ -327,7 +350,7 @@ function validateViewport(value, context) {
   });
 }
 
-export function validateRuleCatalogValue(value) {
+function validateRuleCatalogValue(value) {
   assertClosedObject(
     value,
     [
@@ -395,7 +418,7 @@ export function loadRuleCatalog(sourcePath) {
   return validateRuleCatalogValue(readJson(sourcePath, 'rule catalog'));
 }
 
-export function validateGrammarValue(value) {
+function validateGrammarValue(value) {
   assertClosedObject(
     value,
     [
@@ -530,6 +553,61 @@ export function validateGrammarValue(value) {
 
 export function loadGrammar(sourcePath) {
   return validateGrammarValue(readJson(sourcePath, 'UI grammar'));
+}
+
+function validateIssuerRegistryValue(value) {
+  assertClosedObject(
+    value,
+    ['kind', 'schemaVersion', 'issuers'],
+    [],
+    'trustedIssuers',
+  );
+  if (
+    value.kind !== 'peers-touch-experience-review-issuers'
+    || value.schemaVersion !== 1
+  ) {
+    fail('ED-CONTRACT-001', 'trusted issuer registry identity is unsupported');
+  }
+  assertArray(value.issuers, 'trustedIssuers.issuers', { min: 1 });
+  const keys = new Map();
+  value.issuers.forEach((issuer, index) => {
+    const context = `trustedIssuers.issuers[${index}]`;
+    assertClosedObject(
+      issuer,
+      ['issuer', 'keyId', 'publicKeyPem', 'allowedSubjects'],
+      [],
+      context,
+    );
+    assertId(issuer.issuer, `${context}.issuer`);
+    assertId(issuer.keyId, `${context}.keyId`);
+    if (
+      typeof issuer.publicKeyPem !== 'string'
+      || !issuer.publicKeyPem.startsWith('-----BEGIN PUBLIC KEY-----\n')
+      || !issuer.publicKeyPem.endsWith('-----END PUBLIC KEY-----\n')
+    ) {
+      fail('ED-CONTRACT-001', `${context}.publicKeyPem must be a public PEM`);
+    }
+    assertStringArray(issuer.allowedSubjects, `${context}.allowedSubjects`, {
+      min: 1,
+      ids: true,
+    });
+    const key = `${issuer.issuer}\u0000${issuer.keyId}`;
+    if (keys.has(key)) {
+      fail('ED-CONTRACT-001', 'trusted issuer registry contains duplicate key', {
+        issuer: issuer.issuer,
+        keyId: issuer.keyId,
+      });
+    }
+    keys.set(key, {
+      publicKeyPem: issuer.publicKeyPem,
+      allowedSubjects: new Set(issuer.allowedSubjects),
+    });
+  });
+  return { value, keys, digest: canonicalDigest(value) };
+}
+
+export function loadTrustedIssuers(sourcePath) {
+  return validateIssuerRegistryValue(readJson(sourcePath, 'trusted issuers'));
 }
 
 function validateProductIntent(value, context) {
@@ -1018,7 +1096,7 @@ function validateContract(value, context) {
     assertStringArray(
       trace.orderedStateKinds,
       `${itemContext}.orderedStateKinds`,
-      { min: 2, allowed: STATE_KINDS, unique: false },
+      { min: 2, allowed: STATE_KINDS },
     );
     assertReferenceArray(
       trace.requiredActionIds,
@@ -1542,29 +1620,6 @@ function validateCandidate(value, context, contractRefs) {
     [...contractRefs.journeyIds],
     `${context}.journeys contract coverage`,
   );
-  for (const journey of value.journeys) {
-    const states = value.states.filter((state) => state.journeyId === journey.journeyId);
-    const transitions = value.transitions.filter((transition) => transition.journeyId === journey.journeyId);
-    const owned = new Set(states.map((state) => state.id));
-    if (!owned.has(journey.startStateId) || !owned.has(journey.successStateId)) {
-      fail('ED-CONTRACT-001', `${context} Journey endpoints belong to another Journey`);
-    }
-    const reachable = new Set([journey.startStateId]);
-    const queue = [journey.startStateId];
-    for (let index = 0; index < queue.length; index += 1) {
-      for (const transition of transitions) {
-        if (!owned.has(transition.fromStateId) || !owned.has(transition.toStateId)) {
-          fail('ED-CONTRACT-001', `${context} transition crosses Journey ownership`);
-        }
-        if (transition.fromStateId !== queue[index] || reachable.has(transition.toStateId)) continue;
-        reachable.add(transition.toStateId);
-        queue.push(transition.toStateId);
-      }
-    }
-    if (states.some((state) => !reachable.has(state.id))) {
-      fail('ED-CONTRACT-001', `${context} contains a disconnected Journey state or transition`);
-    }
-  }
 
   assertArray(value.traces, `${context}.traces`, { min: 1 });
   assertUnique(value.traces, (item) => item?.journeyId, `${context}.traces`);
@@ -1662,7 +1717,7 @@ function validateCandidate(value, context, contractRefs) {
       [
         'artifact',
         'artifactDigest',
-        'inspectedById',
+        'inspectedBy',
         'observedAt',
         'metricObservation',
       ],
@@ -1715,8 +1770,8 @@ function validateCandidate(value, context, contractRefs) {
     if (evidence.artifactDigest !== undefined) {
       assertDigest(evidence.artifactDigest, `${itemContext}.artifactDigest`);
     }
-    if (evidence.inspectedById !== undefined) {
-      assertId(evidence.inspectedById, `${itemContext}.inspectedById`);
+    if (evidence.inspectedBy !== undefined) {
+      validatePrincipal(evidence.inspectedBy, `${itemContext}.inspectedBy`);
     }
     if (evidence.observedAt !== undefined) {
       const timestampPattern =
@@ -1739,7 +1794,7 @@ function validateCandidate(value, context, contractRefs) {
       for (const key of [
         'artifact',
         'artifactDigest',
-        'inspectedById',
+        'inspectedBy',
         'observedAt',
       ]) {
         if (!Object.hasOwn(evidence, key)) {
@@ -1811,18 +1866,40 @@ function validatePromotedFromBlind(value, context) {
 function validateAuthorship(value, context) {
   assertClosedObject(
     value,
-    ['contractAuthorId', 'candidateAuthorId', 'evidenceAuthorIds'],
-    ['expectationAuthorId'],
+    ['contractAuthor', 'candidateAuthor', 'evidenceAuthors'],
+    ['expectationAuthor'],
     context,
   );
-  assertId(value.contractAuthorId, `${context}.contractAuthorId`);
-  assertId(value.candidateAuthorId, `${context}.candidateAuthorId`);
-  assertStringArray(value.evidenceAuthorIds, `${context}.evidenceAuthorIds`, {
-    min: 1,
-    ids: true,
-  });
-  if (value.expectationAuthorId !== undefined) {
-    assertId(value.expectationAuthorId, `${context}.expectationAuthorId`);
+  validatePrincipal(value.contractAuthor, `${context}.contractAuthor`);
+  validatePrincipal(value.candidateAuthor, `${context}.candidateAuthor`);
+  assertArray(value.evidenceAuthors, `${context}.evidenceAuthors`, { min: 1 });
+  value.evidenceAuthors.forEach((author, index) =>
+    validatePrincipal(author, `${context}.evidenceAuthors[${index}]`));
+  assertUnique(
+    value.evidenceAuthors,
+    principalKey,
+    `${context}.evidenceAuthors`,
+  );
+  if (value.expectationAuthor !== undefined) {
+    validatePrincipal(value.expectationAuthor, `${context}.expectationAuthor`);
+  }
+}
+
+function validateSourceAttestations(value, context) {
+  assertClosedObject(
+    value,
+    ['contract', 'candidate', 'evidence'],
+    ['expectation'],
+    context,
+  );
+  validateSignedDigest(value.contract, `${context}.contract`);
+  validateSignedDigest(value.candidate, `${context}.candidate`);
+  assertArray(value.evidence, `${context}.evidence`, { min: 1 });
+  value.evidence.forEach((attestation, index) =>
+    validateSignedDigest(attestation, `${context}.evidence[${index}]`));
+  assertUnique(value.evidence, (item) => principalKey(item.principal), `${context}.evidence`);
+  if (value.expectation !== undefined) {
+    validateSignedDigest(value.expectation, `${context}.expectation`);
   }
 }
 
@@ -1836,12 +1913,12 @@ function requiredLevelsForClaim(claim) {
 
 export function validateExperienceCaseValue(
   value,
-  { ruleCatalog, grammar },
+  { ruleCatalog, grammar, trustedIssuers },
 ) {
-  if (!ruleCatalog || !grammar) {
+  if (!ruleCatalog || !grammar || !trustedIssuers) {
     fail(
       'ED-CONTRACT-001',
-      'case validation requires rule catalog and grammar',
+      'case validation requires rule catalog, grammar, and trusted issuers',
     );
   }
   assertClosedObject(
@@ -1854,6 +1931,7 @@ export function validateExperienceCaseValue(
       'calibration',
       'claim',
       'authorship',
+      'sourceAttestations',
       'contract',
       'candidate',
     ],
@@ -1868,6 +1946,7 @@ export function validateExperienceCaseValue(
   assertEnum(value.calibration, CALIBRATIONS, 'case.calibration');
   assertEnum(value.claim, CLAIMS, 'case.claim');
   validateAuthorship(value.authorship, 'case.authorship');
+  validateSourceAttestations(value.sourceAttestations, 'case.sourceAttestations');
   const contractRefs = validateContract(value.contract, 'case.contract');
   const candidateRefs = validateCandidate(
     value.candidate,
@@ -1876,14 +1955,19 @@ export function validateExperienceCaseValue(
   );
 
   const hasExpected = Object.hasOwn(value, 'expected');
-  const hasExpectationAuthorId = Object.hasOwn(
+  const hasExpectationAuthor = Object.hasOwn(
     value.authorship,
-    'expectationAuthorId',
+    'expectationAuthor',
+  );
+  const hasExpectationAttestation = Object.hasOwn(
+    value.sourceAttestations,
+    'expectation',
   );
   if (value.calibration === 'blind') {
     if (
       hasExpected
-      || hasExpectationAuthorId
+      || hasExpectationAuthor
+      || hasExpectationAttestation
       || Object.hasOwn(value, 'promotedFromBlind')
     ) {
       fail(
@@ -1893,11 +1977,12 @@ export function validateExperienceCaseValue(
     }
   } else if (
     !hasExpected
-    || !hasExpectationAuthorId
+    || !hasExpectationAuthor
+    || !hasExpectationAttestation
   ) {
     fail(
       'ED-CONTRACT-001',
-      'calibration cases require expected result and expectation author',
+      'calibration cases require expected result and expectation attestation',
     );
   }
   if (hasExpected) {
@@ -1911,17 +1996,54 @@ export function validateExperienceCaseValue(
   }
 
   const authors = [
-    value.authorship.contractAuthorId,
-    value.authorship.candidateAuthorId,
-    ...value.authorship.evidenceAuthorIds,
+    value.authorship.contractAuthor,
+    value.authorship.candidateAuthor,
+    ...value.authorship.evidenceAuthors,
   ];
-  if (hasExpectationAuthorId) {
-    if (authors.includes(value.authorship.expectationAuthorId)) {
+  if (hasExpectationAuthor) {
+    const expectationKey = principalKey(value.authorship.expectationAuthor);
+    if (authors.some((author) => principalKey(author) === expectationKey)) {
       fail(
         'ED-CONTRACT-001',
         'expectation author must be independent of input authors',
       );
     }
+  }
+  if (
+    !samePrincipal(
+      value.sourceAttestations.contract.principal,
+      value.authorship.contractAuthor,
+    )
+    || !samePrincipal(
+      value.sourceAttestations.candidate.principal,
+      value.authorship.candidateAuthor,
+    )
+  ) {
+    fail(
+      'ED-CONTRACT-001',
+      'contract and candidate attestations must match declared authors',
+    );
+  }
+  const evidenceAuthorKeys = value.authorship.evidenceAuthors.map(principalKey);
+  const evidenceAttestationKeys = value.sourceAttestations.evidence.map(
+    (item) => principalKey(item.principal),
+  );
+  assertExactCoverage(
+    evidenceAttestationKeys,
+    evidenceAuthorKeys,
+    'case.sourceAttestations.evidence authors',
+  );
+  if (
+    hasExpectationAuthor
+    && !samePrincipal(
+      value.sourceAttestations.expectation.principal,
+      value.authorship.expectationAuthor,
+    )
+  ) {
+    fail(
+      'ED-CONTRACT-001',
+      'expectation attestation must match declared expectation author',
+    );
   }
 
   const candidateSource = {
@@ -1935,16 +2057,39 @@ export function validateExperienceCaseValue(
     evidence: canonicalDigest(value.candidate.evidence),
     ...(hasExpected ? { expectation: canonicalDigest(value.expected) } : {}),
   };
+  const attestationGroups = [
+    ['contract', [value.sourceAttestations.contract]],
+    ['candidate', [value.sourceAttestations.candidate]],
+    ['evidence', value.sourceAttestations.evidence],
+    ...(hasExpected
+      ? [['expectation', [value.sourceAttestations.expectation]]]
+      : []),
+  ];
+  for (const [name, attestations] of attestationGroups) {
+    for (const [index, attestation] of attestations.entries()) {
+      if (attestation.digest !== digests[name]) {
+        fail('ED-CONTRACT-001', `${name} attestation digest is stale`, {
+          expected: digests[name],
+          actual: attestation.digest,
+        });
+      }
+      verifySignedDigest(
+        attestation,
+        trustedIssuers,
+        `case.sourceAttestations.${name}[${index}]`,
+      );
+    }
+  }
 
-  const evidenceAuthorSet = new Set(value.authorship.evidenceAuthorIds);
+  const evidenceAuthorSet = new Set(evidenceAuthorKeys);
   value.candidate.evidence.forEach((record, index) => {
     if (
-      record.inspectedById !== undefined
-      && !evidenceAuthorSet.has(record.inspectedById)
+      record.inspectedBy !== undefined
+      && !evidenceAuthorSet.has(principalKey(record.inspectedBy))
     ) {
       fail(
         'ED-CONTRACT-001',
-        `case.candidate.evidence[${index}].inspectedById is not an evidence author`,
+        `case.candidate.evidence[${index}].inspectedBy is not an evidence author`,
       );
     }
   });
@@ -2005,20 +2150,23 @@ export function validateExperienceCaseValue(
 
 export function loadExperienceCase(
   sourcePath,
-  { ruleCatalog, grammar },
+  { ruleCatalog, grammar, trustedIssuers },
 ) {
   return validateExperienceCaseValue(readJson(sourcePath, 'experience case'), {
     ruleCatalog,
     grammar,
+    trustedIssuers,
   });
 }
 
 export function validateSources({
   ruleCatalogPath,
   grammarPath,
+  trustedIssuersPath,
 }) {
   const ruleCatalog = loadRuleCatalog(ruleCatalogPath);
   const grammar = loadGrammar(grammarPath);
+  const trustedIssuers = loadTrustedIssuers(trustedIssuersPath);
   return {
     ok: true,
     kind: 'peers-touch-experience-source-validation',
@@ -2026,6 +2174,7 @@ export function validateSources({
     digests: {
       rules: ruleCatalog.digest,
       grammar: grammar.digest,
+      trustedIssuers: trustedIssuers.digest,
     },
   };
 }

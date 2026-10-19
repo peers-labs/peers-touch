@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -10,6 +12,7 @@ import {
 import {
   loadGrammar,
   loadRuleCatalog,
+  loadTrustedIssuers,
   validateExperienceCaseValue,
 } from './schema.mjs';
 import { controlPlaneVersionDigest } from './source-version.mjs';
@@ -31,10 +34,18 @@ const grammar = loadGrammar(
 );
 const evaluatorVersionDigest = controlPlaneVersionDigest();
 
-function evaluateBundle(_t, bundle) {
+function evaluateBundle(t, bundle) {
+  const temporaryRoot = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'experience-evaluator-'),
+  );
+  t.after(() => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
+  const issuerPath = path.join(temporaryRoot, 'issuers.json');
+  fs.writeFileSync(issuerPath, `${JSON.stringify(bundle.issuers)}\n`);
+  const trustedIssuers = loadTrustedIssuers(issuerPath);
   const loaded = validateExperienceCaseValue(bundle.experienceCase, {
     ruleCatalog,
     grammar,
+    trustedIssuers,
   });
   return evaluateExperienceCase(loaded, {
     ruleCatalog,
@@ -190,17 +201,16 @@ test('unknown action roles fail through UI Grammar ownership', (t) => {
   assert.deepEqual(ruleIds(evaluateBundle(t, bundle)), ['ED-GRAMMAR-001']);
 });
 
-test('a disconnected success chain is rejected at the case boundary', () => {
+test('a broken success chain emits trace evidence', (t) => {
   const bundle = createFixtureBundle({
     calibration: 'negative',
     mutate: ({ candidate }) => {
       candidate.transitions[0].fromStateId = 'state.success';
     },
   });
-  assert.throws(() => validateExperienceCaseValue(bundle.experienceCase, {
-    ruleCatalog,
-    grammar,
-  }), (error) => error.code === 'ED-CONTRACT-001');
+  const result = evaluateBundle(t, bundle);
+
+  assert.ok(ruleIds(result).includes('ED-TRACE-001'));
 });
 
 test('reachable mutating branches cannot hide outside the costed success path', (t) => {
@@ -344,7 +354,7 @@ test('inserted state and action are contract drift', (t) => {
   assert.deepEqual(ruleIds(evaluateBundle(t, bundle)), ['ED-DRIFT-001']);
 });
 
-test('evaluation output is deterministic for the same inputs', (t) => {
+test('evaluation output is deterministic for the same signed inputs', (t) => {
   const bundle = createFixtureBundle();
   const first = evaluateBundle(t, bundle);
   const second = evaluateBundle(t, bundle);

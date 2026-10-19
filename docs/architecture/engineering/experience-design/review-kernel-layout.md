@@ -39,7 +39,6 @@ tooling/
 │   ├── ranking.mjs
 │   ├── validator.mjs
 │   ├── source-fence.mjs
-│   ├── admission.mjs
 │   ├── review-result-cli.test.mjs
 │   ├── review-result-schema.test.mjs
 │   ├── ranking.test.mjs
@@ -72,7 +71,6 @@ The files above are subordinate components invoked through the canonical
 | `ranking.mjs` | State ordering, candidate eligibility and tuple comparison |
 | `validator.mjs` | Pure graph, trust, recovery and ReviewResult validation |
 | `source-fence.mjs` | Current Git/source blob and source range verification |
-| `admission.mjs` | Independent decision plus current package/source verification |
 | `fixtures/positive/` | Valid complete review results |
 | `fixtures/negative/` | One intentional contract violation per fixture |
 | `fixtures/boundary/` | Legal edge cases that must not become false positives |
@@ -100,9 +98,7 @@ Quality blind package
 ```
 
 `ranking.mjs` may depend on ReviewResult schema constants. `validator.mjs` may
-depend on that schema and ranking. `source-fence.mjs` consumes validator/schema;
-`admission.mjs` consumes SourceFence and independent-decision validation.
-Validator never imports SourceFence or admission. No library imports the CLI.
+depend on that schema and ranking. No library module imports the CLI.
 
 ## 4. Ownership
 
