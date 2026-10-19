@@ -207,6 +207,46 @@
       "externalCapabilityRegistries": []
     },
     {
+      "id": "experience-reasoning-kernel",
+      "root": "docs/architecture/engineering/experience-design",
+      "status": "active",
+      "owner": "Experience Design",
+      "characteristics": {
+        "protocol": true,
+        "stateMachine": true,
+        "persistence": true,
+        "ownership": true,
+        "moduleLayout": true,
+        "crossRuntime": false,
+        "integration": true
+      },
+      "requiredDocuments": [
+        "README.md",
+        "design.md",
+        "decisions.md",
+        "data-model.md",
+        "module-layout.md",
+        "integration.md"
+      ],
+      "decisionIds": [
+        "EDX-D01",
+        "EDX-D02",
+        "EDX-D03",
+        "EDX-D04",
+        "EDX-D05",
+        "EDX-D06",
+        "EDX-D07",
+        "EDX-D08",
+        "EDX-D09"
+      ],
+      "governedPaths": [
+        "docs/architecture/engineering/experience-design",
+        "tooling/scripts/experience-design"
+      ],
+      "capabilities": [],
+      "externalCapabilityRegistries": []
+    },
+    {
       "id": "agent",
       "root": "docs/architecture/domains/agent",
       "status": "active",

@@ -1,0 +1,137 @@
+{
+  "kind": "peers-touch-experience-holdout-score",
+  "schemaVersion": 1,
+  "packageId": "EDX-HOLDOUT-20261019-V2",
+  "runId": "EDX-RUN-20261019-V2-01",
+  "state": "scored",
+  "scoredAt": "2026-10-19T11:55:21Z",
+  "sourceHead": "1e62a2f53407db4481e8013976e8bf3acccf6499",
+  "sealDigest": "sha256:5ff0a02a8009e7cbb8deb92965d7172f97585c357a58c43864d3d743f0c63ee3",
+  "reportManifest": {
+    "path": "reports/manifest.json",
+    "digest": "sha256:fff4346db508f61fa5cf7ccba086efaea7f062fe5b3b4279907e6ee38fa519c2"
+  },
+  "answerKeyDigest": "sha256:419e8c1d9369cd7e118aa4666f13896891d79b15903d985ee219ab8a2bb1a931",
+  "maximumScore": 100,
+  "promotionThreshold": 80,
+  "totalScore": 93,
+  "hardFailureCount": 1,
+  "challengeCoverageSatisfied": false,
+  "positiveControlsHaveNoBlockingFalsePositive": true,
+  "allPrimaryTuplesRecomputable": true,
+  "integrity": {
+    "packageDigestsVerified": true,
+    "reportManifestVerified": true,
+    "allReportsCanonicalValidationPassed": true,
+    "allReportsExactSourceVerificationPassed": true,
+    "answerKeyReadAfterFreeze": true,
+    "priorExposureReuseDetected": false
+  },
+  "cases": [
+    {
+      "caseId": "EDX-H01",
+      "hiddenChallenge": "primary-visible-blocker",
+      "maximumScore": 20,
+      "score": 20,
+      "expectedVerdict": "FINDINGS",
+      "actualVerdict": "FINDINGS",
+      "challengeSatisfied": true,
+      "primaryTupleRecomputable": true,
+      "assessment": [
+        "Primary identifies connected with zero current manifests, disabled binding, absent explanation, and absent local recovery.",
+        "Primary uses accepted Product and Client contracts, outcome-blocked impact, high confidence, and a canonical tuple.",
+        "Additional collapsed-inventory Finding does not displace the earliest blocked state."
+      ]
+    },
+    {
+      "caseId": "EDX-H02",
+      "hiddenChallenge": "trust-boundary-propagation",
+      "maximumScore": 20,
+      "score": 18,
+      "expectedVerdict": "FINDINGS",
+      "actualVerdict": "FINDINGS",
+      "challengeSatisfied": true,
+      "primaryTupleRecomputable": true,
+      "assessment": [
+        "Primary identifies missing friendly prior and candidate Station identity while preserving the fail-closed identity verification behavior.",
+        "TrustBoundaryCheck projects scope effect, next Gate, failure meaning, and prior-scope exposure from accepted Mobile contracts.",
+        "Impact is overstated as unsafe-trust-or-data-loss rather than the answer key's material-ambiguity classification, so two points are deducted."
+      ]
+    },
+    {
+      "caseId": "EDX-H03",
+      "hiddenChallenge": "recovery-locality",
+      "maximumScore": 15,
+      "score": 13,
+      "expectedVerdict": "FINDINGS",
+      "actualVerdict": "FINDINGS",
+      "challengeSatisfied": false,
+      "primaryTupleRecomputable": true,
+      "assessment": [
+        "Primary correctly identifies the pre-surface load failure, available repeatable store load, missing local Retry action, and recovery-absent impact.",
+        "The report correctly describes Close as leaving the Applet, but also encodes that Close path as R-H03-EXIT in recoveryPaths.",
+        "Encoding exit as RecoveryPath contradicts the recovery-locality contract and fails the hidden challenge even though the primary tuple is valid."
+      ]
+    },
+    {
+      "caseId": "EDX-H04",
+      "hiddenChallenge": "positive-control-non-finding",
+      "maximumScore": 15,
+      "score": 15,
+      "expectedVerdict": "NO_BLOCKING_FINDING",
+      "actualVerdict": "NO_BLOCKING_FINDING",
+      "challengeSatisfied": true,
+      "primaryTupleRecomputable": true,
+      "assessment": [
+        "No material or blocking false positive is authored.",
+        "Package provenance, risk, revocation, defensive install policy, high-risk confirmation, cancel, success, failure, and catalog recovery are covered.",
+        "Target-authority readback and stale-snapshot integrity remain explicitly unproven rather than being promoted to UI Findings or runtime proof."
+      ]
+    },
+    {
+      "caseId": "EDX-H05",
+      "hiddenChallenge": "evidence-boundary",
+      "maximumScore": 20,
+      "score": 18,
+      "expectedVerdict": "FINDINGS",
+      "actualVerdict": "FINDINGS",
+      "challengeSatisfied": true,
+      "primaryTupleRecomputable": true,
+      "assessment": [
+        "Primary connects the 2.5-second host fallback to premature visible readiness, premature product-rendered evidence, and preemption of the eight-second timeout.",
+        "The correction keeps Host attachment separate from lifecycle.reportReady and preserves missing runtime proof as unproven.",
+        "Severity is major rather than blocking and the Journey graph still includes the normally preempted timeout as reachable, so two points are deducted."
+      ]
+    },
+    {
+      "caseId": "EDX-H06",
+      "hiddenChallenge": "platform-semantic-parity",
+      "maximumScore": 10,
+      "score": 9,
+      "expectedVerdict": "NO_BLOCKING_FINDING",
+      "actualVerdict": "NO_BLOCKING_FINDING",
+      "challengeSatisfied": true,
+      "primaryTupleRecomputable": true,
+      "assessment": [
+        "No component-shape parity demand or blocking false positive is authored.",
+        "Desktop detail/modal and Mobile action/confirmation sheets preserve destructive grouping, scope copy, pending protection, terminal truth, and released-byte feedback.",
+        "Runtime durability, cross-device scope, later-message delivery, Mobile failure copy, and geometry are retained as unproven; one point is deducted because the Journey graph also projects the contract-required later-message state as a visible response."
+      ]
+    }
+  ],
+  "hardFailures": [
+    {
+      "id": "HF-H03-EXIT-AS-RECOVERY",
+      "caseId": "EDX-H03",
+      "rule": "failure to satisfy a hidden challenge class",
+      "challenge": "recovery-locality",
+      "reportEvidence": [
+        "reports/EDX-H03.json#R-H03-EXIT",
+        "reports/EDX-H03.json#X-H03-EXIT"
+      ],
+      "reason": "Close is a valid exit from the failed Applet, but it does not recover the requested Applet outcome and must not be represented as a RecoveryPath."
+    }
+  ],
+  "promotionEligible": false,
+  "promotionReason": "Score exceeds 80, but promotion requires zero hard failures and every hidden challenge class satisfied. H03 violates recovery locality by encoding exit as recovery."
+}

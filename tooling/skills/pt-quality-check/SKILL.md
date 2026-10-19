@@ -55,6 +55,34 @@ If no target is available, ask for one. Do not produce a generic checklist.
    make quality-evidence REVIEW_RANGE=<base>...<head>
    ```
 
+4A. When the change contains material UI, a prototype confirmation, or the
+Experience Reasoning Kernel itself, read
+`docs/architecture/engineering/experience-design/README.md` and verify the
+task-owned ReviewResult:
+
+   ```bash
+   node tooling/scripts/experience-design/experience-review.mjs \
+     verify <review-result.json> \
+     --repo-root <repo-root> \
+     --package-root <package-root> \
+     --run-envelope <package-relative-run-envelope> \
+     --case <package-relative-case> \
+     --manifest <package-relative-manifest> \
+     --rubric <package-relative-rubric>
+   node tooling/scripts/experience-design/experience-review.mjs \
+     admission <review-result.json> <independent-review.json>
+   ```
+
+Record current binding, verdict, primary candidate/tuple, independent review,
+admission result and scoped `UNPROVEN` entries. `NO_BLOCKING_FINDING` is not an
+approval by itself.
+
+For a Quality-owned blind run, verify the sealed package and Exposure Ledger
+before execution, the complete report hash before `scoring`, and the score plus
+promotion decision before `retired`. Never expose the answer key before
+`scoring`. EDX-B01 through EDX-B06 are training inputs and are permanently
+ineligible for fresh promotion.
+
 5. Read the external Evidence Store artifacts through the canonical operator
    interface:
 
@@ -108,6 +136,10 @@ For Acceptance Infra changes, classify capability evidence by direction:
 - Environment-dependent gates (registered remote runtime, Desktop gateway,
   browser, simulator) are evidence requests unless the environment is actually
   available.
+- Missing, stale, non-independent, or non-admitted Experience Review evidence
+  makes material UI scope unproven.
+- A visible calibration fixture or previously exposed blind case cannot prove
+  fresh Experience Reasoning promotion.
 - Business `FAILED/BLOCKED/UNPROVEN` is not an Acceptance Infra failure.
 
 ## Output
@@ -126,6 +158,7 @@ Use this shape:
 - Gates not run:
 - Matched knowledge:
 - Deterministic checks:
+- Experience Review binding / verdict / admission / unproven:
 - Product proven scope:
 - Product unproven scope:
 - Human/owner hard-boundary evidence needed:

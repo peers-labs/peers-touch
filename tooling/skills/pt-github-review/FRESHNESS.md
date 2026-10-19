@@ -2,13 +2,14 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-10-16
-covered_docs_hash: b4d5981623d5b6ba15e72d6c0eeeb0aaa0c790c8f43f40aa69639d8f6ebc18ea
+last_verified_at: 2026-10-19
+covered_docs_hash: b13f184b83f4d3f38ddcbeb0ef59889a97d08339567e390e7d92ddcac8e8d417
 
 covered_docs:
   - AGENTS.md
   - docs/README.md
   - docs/global/code-review-framework.md
+  - docs/architecture/engineering/experience-design
   - docs/architecture/engineering/quality
   - docs/architecture/engineering/acceptance
   - docs/architecture/engineering/development-workflow
@@ -30,6 +31,23 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-10-19 Experience Reasoning Review
+
+Experience Reasoning now inserts a findings-only, source-fenced review contract
+between accepted Product / Client semantics and high-fidelity Prototype work.
+Quality owns blind packages, answer keys, exposure, scoring and promotion;
+the Kernel owns schema, Journey graph, recovery and deterministic primary
+selection. A clean Kernel result still requires independent review and complete
+evidence.
+
+`pt-product-design-methodology`, `pt-prototype-design` and `pt-quality-check`
+now consume this boundary directly. GitHub Review already treats missing,
+stale and unproven quality evidence as a hold and remains the sole merge
+judgment owner, so its `SKILL.md` needs no duplicate Experience schema or
+ranking policy. Focused Kernel fixtures/tests and architecture-module
+governance provide source checks; no generic review fixture or knowledge entry
+is required.
 
 ## 2026-10-16 Acceptance Scheduling Review
 

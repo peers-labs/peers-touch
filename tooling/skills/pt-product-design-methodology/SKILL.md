@@ -94,6 +94,8 @@ Read before designing:
 - For client UI: `docs/client/common/ux-design-methodology.md`, shared UI
   Identity, `docs/client/common/ui-identity/craft-quality.md`, and the closest
   module/platform contracts.
+- For material UI review:
+  `docs/architecture/engineering/experience-design/README.md`.
 
 External products provide evidence, not authority. Record exact observed
 behavior and preserve Peers-Touch ownership, privacy, federation, and
@@ -234,6 +236,22 @@ Shared business outcomes must remain coherent while device capabilities may
 differ. Do not require Mobile to imitate Desktop-only filesystem, shell,
 window, or stdio behavior. Unsupported paths fail before the user commits work.
 
+### Step 6A. Prepare Experience Review Semantics
+
+For material UI, make the accepted Product / Client contract consumable by the
+Experience Reasoning Kernel without copying its schema or ranking rules:
+
+- mark clauses that explicitly define the bounded Journey outcome;
+- name visible actions, responses and reachable states;
+- for trust transitions, separate diagnostic evidence from identity evidence
+  and define scope effect, next Gate and failure meaning;
+- for recoverable blockers, define the visible entry, allowed locality,
+  preserved state, return state and platform-appropriate return target;
+- identify evidence required for review, high fidelity and production.
+
+The Kernel reviews these semantics; it does not invent or amend them. Missing
+trust or recovery truth remains a Product contract gap, not a rubric default.
+
 ### Step 7. Require An Executable Prototype When UI Is Material
 
 Invoke `pt-prototype-design` when journeys depend on layout, interaction,
@@ -311,6 +329,8 @@ Return `PRODUCT_READY_FOR_ARCHITECTURE` only when:
 - Material UI has a confirmed or explicitly review-blocked prototype.
 - Material UI has an evidence-backed craft contract with no award guarantee,
   numeric self-score, or unresolved blocking accessibility/recovery defect.
+- Material UI exposes contract-backed Journey, trust and recovery semantics
+  required by the Experience Reasoning Kernel.
 - Every required capability has a repository-backed feasibility closure and
   executable proof.
 - Every required capability maps to receiver-perspective acceptance.
@@ -346,6 +366,8 @@ The handoff package is:
 - Required, optional, degraded, unsupported, and deferred scope.
 - Benchmark disposition ledger.
 - Visible state and recovery contracts.
+- Explicit Experience Review clauses and their review/high-fidelity evidence
+  requirements.
 - Confirmed prototype paths/status where applicable.
 - Product acceptance matrix and required runtime/platform cells.
 - Explicitly accepted product risks and non-goals.

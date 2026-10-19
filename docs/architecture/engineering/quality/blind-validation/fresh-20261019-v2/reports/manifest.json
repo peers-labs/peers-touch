@@ -1,0 +1,60 @@
+{
+  "kind": "peers-touch-experience-report-manifest",
+  "schemaVersion": 1,
+  "packageId": "EDX-HOLDOUT-20261019-V2",
+  "runId": "EDX-RUN-20261019-V2-01",
+  "state": "frozen",
+  "frozenAt": "2026-10-19T11:54:10Z",
+  "sourceHead": "1e62a2f53407db4481e8013976e8bf3acccf6499",
+  "reportCount": 6,
+  "reports": [
+    {
+      "caseId": "EDX-H01",
+      "path": "reports/EDX-H01.json",
+      "digest": "sha256:825c95662a42eb94f490dde72e7d61672b21a3a28edefb50463e5623b453f780",
+      "reviewResultDigest": "sha256:19f06bbbba072c10a24ea34f069f1eaa070a8f9de160836d7bb0bbad2a2a47e8",
+      "verdict": "FINDINGS",
+      "primaryCandidateId": "FC-H01-NO-MANIFEST-REASON"
+    },
+    {
+      "caseId": "EDX-H02",
+      "path": "reports/EDX-H02.json",
+      "digest": "sha256:c46819c23cfd7ddea6f9cb77a89b4e02d8e6147b2711684a548451429d2b5a30",
+      "reviewResultDigest": "sha256:a02cdbddf064e0ef848df1e4db2d75578f9dcc4990ca15e55cb21d8ed3816b5f",
+      "verdict": "FINDINGS",
+      "primaryCandidateId": "FC-H02-FRIENDLY-IDENTITY-ABSENT"
+    },
+    {
+      "caseId": "EDX-H03",
+      "path": "reports/EDX-H03.json",
+      "digest": "sha256:35e929b5bd8bb0cd192aa59e17894101ac655d378355fea08242da17cb4099fe",
+      "reviewResultDigest": "sha256:0fd61b7cb8c0d3e0f39b1a7750e01c68a767aac29e092525444a452f89fdd87a",
+      "verdict": "FINDINGS",
+      "primaryCandidateId": "FC-H03-RECOVERABLE-LOAD-NO-RETRY"
+    },
+    {
+      "caseId": "EDX-H04",
+      "path": "reports/EDX-H04.json",
+      "digest": "sha256:46452552d71dc3437e407415450e747fb04d22b5c838a4666031e439120e8183",
+      "reviewResultDigest": "sha256:c58f06e96fe8fdec04293f621e1d7c2d8f26f992d63257b380a9a45828dfdd16",
+      "verdict": "NO_BLOCKING_FINDING",
+      "primaryCandidateId": null
+    },
+    {
+      "caseId": "EDX-H05",
+      "path": "reports/EDX-H05.json",
+      "digest": "sha256:3219cd58c23e1f59510cbfe28020fe3f06622abfcce5c2dad0ee9df4b90bf236",
+      "reviewResultDigest": "sha256:8c33dad305bbf87ce1ab805b713744bf3ef6231cda2451846e60d1e34afb0d91",
+      "verdict": "FINDINGS",
+      "primaryCandidateId": "FC-H05-HOST-CONTENT-FALSE-READY"
+    },
+    {
+      "caseId": "EDX-H06",
+      "path": "reports/EDX-H06.json",
+      "digest": "sha256:4470e9b45980d9b5b865adcf4345ff51259cc80356f58c48f3783963b2cc4969",
+      "reviewResultDigest": "sha256:2f307f342912db6c4d9f3c7a8c5bc8b5c610df79c8889b95fcc195685ce67028",
+      "verdict": "NO_BLOCKING_FINDING",
+      "primaryCandidateId": null
+    }
+  ]
+}

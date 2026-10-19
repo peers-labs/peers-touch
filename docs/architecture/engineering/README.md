@@ -1,8 +1,8 @@
 # Engineering Control Planes
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-10-05 | **Updated**: 2026-10-05
+> **Version**: v1.1
+> **Created**: 2026-10-05 | **Updated**: 2026-10-19
 > **Owner**: Architecture Team
 
 ---
@@ -23,5 +23,6 @@ end-user business truth.
 | Local development | [local-dev/](./local-dev/README.md) |
 | Acceptance | [acceptance/](./acceptance/README.md) |
 | Quality | [quality/](./quality/README.md) |
+| Experience Reasoning | [experience-design/](./experience-design/README.md) |
 | Developer toolchain | [toolchain/](./toolchain/README.md) |
 | Prototype registry | [prototypes/](./prototypes/README.md) |

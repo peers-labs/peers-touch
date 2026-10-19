@@ -161,6 +161,7 @@ test('current repository satisfies the module registry', () => {
     'chat-storage-governance',
     'cross-station-social',
     'development-workflow',
+    'experience-reasoning-kernel',
     'local-dev-control-plane',
     'mobile-social-parity',
     'node-connectivity',

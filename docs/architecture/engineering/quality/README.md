@@ -268,6 +268,7 @@ This directory is the source of truth for the quality framework:
 | [agent-operation.md](./agent-operation.md) | concrete operating procedure for agents executing the framework |
 | [proof-model.md](./proof-model.md) | what is machine-proven, what is review-proven, and what is not claimed |
 | [maintenance.md](./maintenance.md) | how to evolve routes, gates, skills, fixtures, and knowledge safely |
+| [blind-validation/](./blind-validation/README.md) | isolated UI/UX Agent calibration cases, runner rubric, and reviewer-only answer key |
 
 Agents should read `agent-operation.md` when asked to submit an MR/PR or perform
 review. Framework maintainers should read `maintenance.md` before changing the

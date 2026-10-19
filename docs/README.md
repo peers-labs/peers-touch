@@ -244,6 +244,9 @@
 - 架构模块治理：`architecture/engineering/architecture-governance/README.md`
   （active；定义架构模块内容完整性、正向能力登记、编辑前上下文回执，以及
   Plan、Review、CI 共享的 fail-closed 校验）
+- 体验推理内核：`architecture/engineering/experience-design/README.md`
+  （active；定义基于 Product / Client 合同的 Journey 状态图、信任与恢复检查、
+  首要 Finding 确定性排序，以及 Quality-owned fresh holdout 晋级边界）
 - 联邦 IM 历史架构：`context/architecture/chat/federated-im/README.md`（superseded；保留
   consolidation 前的决策与实现证据，当前 Chat 架构以 Messaging Platform 和
   API Ownership 为准）

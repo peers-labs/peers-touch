@@ -65,7 +65,44 @@ description: 创建、修改和审查 Peers-Touch UI/交互原型。用户要求
 - **边界先于样式**：先声明 page canvas、content rail、action rail、floating layer、recovery layer，再决定搜索框、菜单、弹窗、tile 的视觉。
 - **模块合同优先**：若存在模块 UI ID 或平台 UX contract，原型必须实现其信息层级和禁用模式；若没有，必须在 README 的“已知差异 / 待补”里写明。
 
-### 3.2 Craft Quality Gate
+### 3.2 Experience Reasoning Gate
+
+Material UI 在进入高保真前必须经过 Experience Reasoning Kernel：
+
+1. 从已接受的 Product / Client 合同生成有界 Wireflow、事实、合同引用、推断、
+   JourneyStateGraph、候选账本和 `ReviewResult`。
+2. 将 case、manifest、rubric、run envelope、result 和独立评审决定放在任务拥有的
+   machine-local workspace / Evidence Store，不写入仓库源码目录。
+3. 运行闭合 schema、引用、图、恢复和排序校验：
+
+   ```bash
+   node tooling/scripts/experience-design/experience-review.mjs \
+     validate <review-result.json>
+   node tooling/scripts/experience-design/experience-review.mjs \
+     verify <review-result.json> \
+     --repo-root <repo-root> \
+     --package-root <package-root> \
+     --run-envelope <package-relative-run-envelope> \
+     --case <package-relative-case> \
+     --manifest <package-relative-manifest> \
+     --rubric <package-relative-rubric>
+   ```
+
+4. 由不同的 review author 做 findings-first 复审，再运行：
+
+   ```bash
+   node tooling/scripts/experience-design/experience-review.mjs \
+     admission <review-result.json> <independent-review.json>
+   ```
+
+只有 `admitted=true` 才能进入高保真。`FINDINGS`、stale binding、
+contract/rubric conflict、非独立评审或 review/high-fidelity `UNPROVEN`
+全部 fail closed。Kernel 只验证结果闭合与排序，不代替 Product、UI Identity
+或独立评审判断语义真伪。
+
+真源：`docs/architecture/engineering/experience-design/README.md`。
+
+### 3.3 Craft Quality Gate
 
 每个 material UI 原型在写界面前必须记录：
 
@@ -87,7 +124,7 @@ description: 创建、修改和审查 Peers-Touch UI/交互原型。用户要求
 - 完整门槛以
   `docs/client/common/ui-identity/craft-quality.md` 为准。
 
-### 3.3 Visual And Dynamic Evidence Gate
+### 3.4 Visual And Dynamic Evidence Gate
 
 借鉴 LobeHub `ux-audit` 的 L1/L2/L3 分层：原型确认前，凡涉及按钮主次、边距、密度、视觉层级、暗色/亮色、响应式、空/加载/错误态的结论，**不能只从代码或口头判断**，必须有渲染截图证据。
 
@@ -120,7 +157,7 @@ L2 可直接判定的问题：
 - 长文案、长标题、数字、列表是否截断或溢出。
 - Signature feature 是否强化产品论点，是否退化为无关装饰。
 
-### 3.4 布局稳定性（Layout Stability）
+### 3.5 布局稳定性（Layout Stability）
 
 原型交互过程中**禁止出现非预期的布局跳动**——用户切换 Tab、展开/折叠面板、加载内容时，周围元素不得位移或抖动。
 
@@ -310,6 +347,9 @@ Prototype Portal 支持 worktree / branch 切换：
 - [ ] 已完成 material L3 Dynamic：success、failure/recovery、draft preservation、keyboard、Mobile touch、reduced motion
 - [ ] 已记录 L4 Runtime Quality：semantics/AT、contrast、target size、long list、performance；缺失项为 `UNPROVEN`
 - [ ] 已记录 positive/negative calibration；未使用 award guarantee 或 numeric self-score
+- [ ] Material UI 的 Experience Review 已通过 current-source verify，独立评审已
+      accepted，且 admission 返回 `admitted=true`
+- [ ] `ReviewResult`、独立评审和未证明项保存在任务拥有的外部证据位置，未写入源码目录
 - [ ] 动效均能解释 continuity / causality / spatial ownership
 - [ ] 使用 LobeUI / antd / lucide-react，未引入额外基础组件库
 - [ ] 未碰 Lynx / applet SDK / 非 web 运行时
@@ -331,4 +371,5 @@ Prototype Portal 支持 worktree / branch 切换：
 - UI Identity layout：`docs/client/common/ui-identity/layout.md`
 - UI Identity components：`docs/client/common/ui-identity/components.md`
 - UI Craft Quality：`docs/client/common/ui-identity/craft-quality.md`
+- Experience Reasoning Kernel：`docs/architecture/engineering/experience-design/README.md`
 - Desktop Applet Launcher 合同：`docs/client/desktop/applet-launcher-ux-contract.md`

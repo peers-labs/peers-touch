@@ -1,0 +1,26 @@
+{
+  "kind": "peers-touch-experience-holdout-retirement",
+  "schemaVersion": 1,
+  "packageId": "EDX-HOLDOUT-20261019-V2",
+  "runId": "EDX-RUN-20261019-V2-01",
+  "terminalState": "retired",
+  "retiredAt": "2026-10-19T11:56:28Z",
+  "sourceHead": "1e62a2f53407db4481e8013976e8bf3acccf6499",
+  "reportManifestDigest": "sha256:fff4346db508f61fa5cf7ccba086efaea7f062fe5b3b4279907e6ee38fa519c2",
+  "scoreArtifact": {
+    "path": "score.json",
+    "digest": "sha256:3141ba14b461407de0453553df374cb283a87bcc89cab0ebc7b52372bca88889",
+    "score": 93,
+    "maximumScore": 100,
+    "hardFailureCount": 1
+  },
+  "promotionDecision": {
+    "runId": "EDX-RUN-20261019-V2-01",
+    "scoreArtifactDigest": "sha256:3141ba14b461407de0453553df374cb283a87bcc89cab0ebc7b52372bca88889",
+    "promoted": false,
+    "reason": "H03 failed recovery-locality by representing Close as recovery of the requested Applet outcome. Layer 2 is not admitted into Layer 3 despite the score exceeding the numeric threshold."
+  },
+  "layer3Admission": "blocked",
+  "caseDisposition": "retired",
+  "nextFreshRunRequired": true
+}
