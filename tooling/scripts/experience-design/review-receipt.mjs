@@ -3,11 +3,9 @@ import {
   equalStringSets,
   fail,
   isPlainObject,
-  principalKey,
-  samePrincipal,
-  verifySignedDigest,
 } from './canonical.mjs';
 
+const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 const REVIEW_CATEGORIES = new Set([
   'product',
   'content',
@@ -52,6 +50,16 @@ function assertString(value, context) {
   }
 }
 
+function assertId(value, context) {
+  assertString(value, context);
+  if (!ID_PATTERN.test(value)) {
+    fail(
+      'INDEPENDENT_REVIEW_REQUIRED',
+      `${context} must be a stable ID`,
+    );
+  }
+}
+
 function assertReviewDigest(value, context) {
   if (typeof value !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(value)) {
     fail(
@@ -88,31 +96,6 @@ function assertStringArray(value, context) {
     }
     seen.add(item);
   });
-}
-
-function validatePrincipal(principal, context) {
-  assertClosed(principal, ['issuer', 'keyId', 'subject'], [], context);
-  for (const key of ['issuer', 'keyId', 'subject']) {
-    assertString(principal[key], `${context}.${key}`);
-  }
-}
-
-function validateAttestation(attestation, context) {
-  assertClosed(
-    attestation,
-    ['digest', 'principal', 'algorithm', 'signature'],
-    [],
-    context,
-  );
-  assertReviewDigest(attestation.digest, `${context}.digest`);
-  validatePrincipal(attestation.principal, `${context}.principal`);
-  if (attestation.algorithm !== 'ed25519') {
-    fail(
-      'INDEPENDENT_REVIEW_REQUIRED',
-      `${context}.algorithm must be ed25519`,
-    );
-  }
-  assertString(attestation.signature, `${context}.signature`);
 }
 
 function validateReviewerFinding(finding, context) {
@@ -165,31 +148,25 @@ function legalDecision(result, reviewerFindings) {
   return 'unproven';
 }
 
-function inputAuthorKeys(experienceCase) {
+function inputAuthorIds(experienceCase) {
   return new Set(
     [
-      experienceCase.authorship.contractAuthor,
-      experienceCase.authorship.candidateAuthor,
-      ...experienceCase.authorship.evidenceAuthors,
-      ...(experienceCase.authorship.expectationAuthor === undefined
+      experienceCase.authorship.contractAuthorId,
+      experienceCase.authorship.candidateAuthorId,
+      ...experienceCase.authorship.evidenceAuthorIds,
+      ...(experienceCase.authorship.expectationAuthorId === undefined
         ? []
-        : [experienceCase.authorship.expectationAuthor]),
+        : [experienceCase.authorship.expectationAuthorId]),
       ...experienceCase.candidate.evidence
-        .filter((record) => record.inspectedBy !== undefined)
-        .map((record) => record.inspectedBy),
-    ].map(principalKey),
+        .filter((record) => record.inspectedById !== undefined)
+        .map((record) => record.inspectedById),
+    ],
   );
-}
-
-export function reviewReceiptPayload(receipt) {
-  const payload = structuredClone(receipt);
-  delete payload.attestation;
-  return payload;
 }
 
 export function validateReviewReceipt(
   receipt,
-  { loadedCase, result, trustedIssuers },
+  { loadedCase, result },
 ) {
   assertClosed(
     receipt,
@@ -201,12 +178,11 @@ export function validateReviewReceipt(
       'contractDigest',
       'candidateDigest',
       'resultDigest',
-      'reviewer',
+      'reviewerId',
       'reviewedAt',
       'decision',
       'findingIds',
       'reviewerFindings',
-      'attestation',
     ],
     [],
     'reviewReceipt',
@@ -229,7 +205,7 @@ export function validateReviewReceipt(
   ]) {
     assertReviewDigest(receipt[key], `reviewReceipt.${key}`);
   }
-  validatePrincipal(receipt.reviewer, 'reviewReceipt.reviewer');
+  assertId(receipt.reviewerId, 'reviewReceipt.reviewerId');
   assertReviewTimestamp(receipt.reviewedAt, 'reviewReceipt.reviewedAt');
   if (!REVIEW_DECISIONS.has(receipt.decision)) {
     fail(
@@ -258,8 +234,6 @@ export function validateReviewReceipt(
       'reviewReceipt.reviewerFindings contains duplicate IDs',
     );
   }
-  validateAttestation(receipt.attestation, 'reviewReceipt.attestation');
-
   const expectedResultDigest = canonicalDigest(result);
   const stale = [];
   if (receipt.caseId !== loadedCase.case.id) stale.push('caseId');
@@ -279,7 +253,7 @@ export function validateReviewReceipt(
     );
   }
   if (
-    inputAuthorKeys(loadedCase.case).has(principalKey(receipt.reviewer))
+    inputAuthorIds(loadedCase.case).has(receipt.reviewerId)
   ) {
     fail(
       'INDEPENDENT_REVIEW_REQUIRED',
@@ -305,25 +279,6 @@ export function validateReviewReceipt(
       { expected: expectedDecision, actual: receipt.decision },
     );
   }
-  if (!samePrincipal(receipt.attestation.principal, receipt.reviewer)) {
-    fail(
-      'INDEPENDENT_REVIEW_REQUIRED',
-      'review attestation principal must equal reviewer',
-    );
-  }
-  const payloadDigest = canonicalDigest(reviewReceiptPayload(receipt));
-  if (receipt.attestation.digest !== payloadDigest) {
-    fail(
-      'INDEPENDENT_REVIEW_REQUIRED',
-      'review attestation digest is stale',
-      { expected: payloadDigest, actual: receipt.attestation.digest },
-    );
-  }
-  verifySignedDigest(
-    receipt.attestation,
-    trustedIssuers,
-    'reviewReceipt.attestation',
-  );
   return {
     valid: true,
     decision: receipt.decision,

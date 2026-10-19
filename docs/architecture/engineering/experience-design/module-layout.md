@@ -1,7 +1,7 @@
 # Experience Design Control Plane - Module Layout
 
 > **Status**: active
-> **Version**: v1.1
+> **Version**: v1.2
 > **Created**: 2026-10-18 | **Updated**: 2026-10-20
 > **Owner**: Developer Experience / Product Design
 
@@ -54,7 +54,6 @@ tooling/
 │   ├── test-fixture.mjs
 │   └── fixtures/
 │       ├── calibration-manifest.json
-│       ├── trusted-issuers.json
 │       ├── positive/
 │       ├── negative/
 │       ├── boundary/
@@ -89,7 +88,7 @@ tooling/
 | `validator.mjs` | ReviewResult graph, recovery, finding and admission validation |
 | `ranking.mjs` | Deterministic eligible Finding ordering |
 | `source-fence.mjs` | Exact report package and repository source binding |
-| `canonical.mjs` | Canonical JSON, digest and Ed25519 verification primitives |
+| `canonical.mjs` | Canonical JSON and digest primitives |
 | `source-version.mjs` | Exact control-plane source identity for result binding |
 | `evaluator.mjs` | Pure deterministic rule evaluation |
 | `evidence.mjs` | Exact evidence-cell, artifact and metric matching |
@@ -114,9 +113,9 @@ product contracts
 ```
 
 Skills may invoke the CLI and cite methodology. They must not import private
-evaluator helpers or duplicate `rules.json`. Trusted issuer public keys are an
-explicit CLI input owned by the review host; the repository stores no private
-review key.
+evaluator helpers or duplicate `rules.json`. Stable author/reviewer IDs are
+supplied by the active workflow and validated for non-overlap; Experience
+Design owns no key, issuer registry or host-specific identity adapter.
 
 ## 4. Ownership
 

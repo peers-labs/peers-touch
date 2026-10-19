@@ -1,6 +1,4 @@
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -12,7 +10,6 @@ import {
 import {
   loadGrammar,
   loadRuleCatalog,
-  loadTrustedIssuers,
   validateExperienceCaseValue,
 } from './schema.mjs';
 import { controlPlaneVersionDigest } from './source-version.mjs';
@@ -34,18 +31,10 @@ const grammar = loadGrammar(
 );
 const evaluatorVersionDigest = controlPlaneVersionDigest();
 
-function evaluateBundle(t, bundle) {
-  const temporaryRoot = fs.mkdtempSync(
-    path.join(os.tmpdir(), 'experience-evaluator-'),
-  );
-  t.after(() => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
-  const issuerPath = path.join(temporaryRoot, 'issuers.json');
-  fs.writeFileSync(issuerPath, `${JSON.stringify(bundle.issuers)}\n`);
-  const trustedIssuers = loadTrustedIssuers(issuerPath);
+function evaluateBundle(_t, bundle) {
   const loaded = validateExperienceCaseValue(bundle.experienceCase, {
     ruleCatalog,
     grammar,
-    trustedIssuers,
   });
   return evaluateExperienceCase(loaded, {
     ruleCatalog,
@@ -354,7 +343,7 @@ test('inserted state and action are contract drift', (t) => {
   assert.deepEqual(ruleIds(evaluateBundle(t, bundle)), ['ED-DRIFT-001']);
 });
 
-test('evaluation output is deterministic for the same signed inputs', (t) => {
+test('evaluation output is deterministic for the same inputs', (t) => {
   const bundle = createFixtureBundle();
   const first = evaluateBundle(t, bundle);
   const second = evaluateBundle(t, bundle);

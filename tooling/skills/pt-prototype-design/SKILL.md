@@ -76,8 +76,8 @@ Contract，并按
 
 执行顺序：
 
-1. 将 accepted contract、Wireflow candidate、L1 evidence 和外部作者签名组装为
-   一个 closed Experience Case。
+1. 将 accepted contract、Wireflow candidate、L1 evidence 和稳定作者 ID 组装为
+   一个 closed Experience Case；作者 ID 由当前 Agent 工作流提供，不需要密钥。
 2. 运行 schema/source 校验：
 
    ```bash
@@ -92,7 +92,7 @@ Contract，并按
    ```
 
 4. 由与 contract、candidate、evidence、expectation 作者均不同的 reviewer
-   生成签名 receipt，并通过 canonical CLI 校验。
+   使用稳定 reviewer ID 生成摘要绑定 receipt，并通过 canonical CLI 校验。
 5. 只有 blocking findings 为零、L1 cells 精确匹配且 review decision 为
    `accepted`，才进入 high fidelity。
 

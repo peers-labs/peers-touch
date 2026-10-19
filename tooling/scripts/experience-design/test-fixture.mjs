@@ -1,31 +1,4 @@
-import { generateKeyPairSync, sign } from 'node:crypto';
-
 import { canonicalDigest } from './canonical.mjs';
-
-function principal(subject) {
-  return {
-    issuer: 'fixture-authority',
-    keyId: 'fixture-ed25519',
-    subject,
-  };
-}
-
-function signDigest(digest, signer, subject) {
-  return {
-    digest,
-    principal: principal(subject),
-    algorithm: 'ed25519',
-    signature: sign(
-      null,
-      Buffer.from(digest, 'utf8'),
-      signer.privateKey,
-    ).toString('base64'),
-  };
-}
-
-export function createFixtureSigner() {
-  return generateKeyPairSync('ed25519');
-}
 
 function makeContract() {
   return {
@@ -262,7 +235,6 @@ export function createFixtureBundle({
   },
   mutate = undefined,
   mutateEvidence = undefined,
-  signer = createFixtureSigner(),
 } = {}) {
   const contract = makeContract();
   const candidate = makeCandidate();
@@ -300,56 +272,13 @@ export function createFixtureBundle({
     mutateEvidence({ contract, candidate, expected: expectation });
   }
 
-  const evidenceDigest = canonicalDigest(candidate.evidence);
-  const subjects = [
-    'contract-author',
-    'candidate-author',
-    'evidence-author',
-    'expectation-author',
-    'review-author',
-  ];
-  const issuers = {
-    kind: 'peers-touch-experience-review-issuers',
-    schemaVersion: 1,
-    issuers: [
-      {
-        issuer: 'fixture-authority',
-        keyId: 'fixture-ed25519',
-        publicKeyPem: signer.publicKey.export({
-          type: 'spki',
-          format: 'pem',
-        }),
-        allowedSubjects: subjects,
-      },
-    ],
-  };
   const authorship = {
-    contractAuthor: principal('contract-author'),
-    candidateAuthor: principal('candidate-author'),
-    evidenceAuthors: [principal('evidence-author')],
+    contractAuthorId: 'contract-author',
+    candidateAuthorId: 'candidate-author',
+    evidenceAuthorIds: ['evidence-author'],
     ...(calibration === 'blind'
       ? {}
-      : { expectationAuthor: principal('expectation-author') }),
-  };
-  const sourceAttestations = {
-    contract: signDigest(
-      canonicalDigest(contract),
-      signer,
-      'contract-author',
-    ),
-    candidate: signDigest(candidateDigest, signer, 'candidate-author'),
-    evidence: [
-      signDigest(evidenceDigest, signer, 'evidence-author'),
-    ],
-    ...(calibration === 'blind'
-      ? {}
-      : {
-        expectation: signDigest(
-          canonicalDigest(expectation),
-          signer,
-          'expectation-author',
-        ),
-      }),
+      : { expectationAuthorId: 'expectation-author' }),
   };
   const experienceCase = {
     kind: 'peers-touch-experience-case',
@@ -359,14 +288,9 @@ export function createFixtureBundle({
     calibration,
     claim: 'wireflow',
     authorship,
-    sourceAttestations,
     contract,
     candidate,
     ...(calibration === 'blind' ? {} : { expected: expectation }),
   };
-  return {
-    experienceCase,
-    issuers,
-    signer,
-  };
+  return { experienceCase };
 }

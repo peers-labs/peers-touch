@@ -1,7 +1,7 @@
 # Experience Design Control Plane - Decisions
 
 > **Status**: active
-> **Version**: v1.1
+> **Version**: v1.2
 > **Created**: 2026-10-18 | **Updated**: 2026-10-20
 > **Owner**: Developer Experience / Product Design
 
@@ -210,7 +210,9 @@ The evaluator is read-only and returns findings plus evidence readiness. It
 never returns `passed`. Acceptance requires a reviewer distinct from the
 contract, candidate, evidence and expectation authors. The review receipt binds
 the case, contract, candidate and result digests; the evaluator cannot create
-the receipt.
+the receipt. Authors, evidence inspectors and reviewers use stable workflow
+principal IDs. Independence is enforced by ID non-overlap and exact digest
+binding, not by a repository-owned certificate authority or user-managed keys.
 
 ### Rationale
 
@@ -222,11 +224,18 @@ and repeatable.
 - Auto-fix contracts: rejected because it changes product intent.
 - Auto-pass on zero findings: rejected because visual and semantic judgment
   still require an independent owner.
+- Ed25519 author/reviewer signatures: rejected because the control plane has no
+  production identity issuer or host signing path, cryptographic proof is not a
+  product requirement, and user-managed keys would make ordinary Agent
+  injection unusable without strengthening semantic review.
 
 ### Consequences
 
 Positive: no self-certification. Negative: a separate review pass remains
-mandatory even when deterministic findings are empty.
+mandatory even when deterministic findings are empty. Principal IDs prove
+workflow separation only; external identity assurance, if ever required by a
+deployment boundary, must be supplied by that boundary rather than duplicated
+inside Experience Design.
 
 ## EDX-D07: Three-Class Calibration
 

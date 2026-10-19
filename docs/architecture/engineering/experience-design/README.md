@@ -1,7 +1,7 @@
 # Experience Design Control Plane
 
 > **Status**: active
-> **Version**: v1.1
+> **Version**: v1.2
 > **Created**: 2026-10-18 | **Updated**: 2026-10-20
 > **Owner**: Developer Experience / Product Design
 > **Module**: `tooling/scripts/experience-design/`
@@ -82,6 +82,10 @@ node tooling/scripts/experience-design/experience-design.mjs check
 schema、确定性 finding、精确 evidence、独立 review receipt、三类 calibration
 和 holdout 完整性；它不证明未见设计可用，也不替代明日真实案例的首次 blind
 评审。
+
+普通 Agent 工作流使用稳定作者/评审者 ID、精确摘要绑定和 reviewer
+non-overlap，不要求用户或 Agent 管理签名密钥。内容寻址负责不可变性，独立
+工作流负责语义评审与职责分离。
 
 体验推理内核是控制面的下属组件，不是第二个模块或第二条工作流。它的第二轮
 fresh holdout 得分为 `93/100`，但因把 Exit 错误编码为 RecoveryPath 出现一个

@@ -8,7 +8,7 @@
       "disposition": "changes-required",
       "exitCode": 1,
       "owner": "product",
-      "condition": "A required contract layer, stable reference, path chain, authorship attestation, or closed schema field is missing or invalid."
+      "condition": "A required contract layer, stable reference, path chain, authorship identity, or closed schema field is missing or invalid."
     },
     {
       "id": "ED-SEM-001",

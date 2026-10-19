@@ -21,7 +21,6 @@ import {
   loadExperienceCase,
   loadGrammar,
   loadRuleCatalog,
-  loadTrustedIssuers,
   validateSources,
 } from './schema.mjs';
 import { validateSourceFence } from './source-fence.mjs';
@@ -42,10 +41,6 @@ const DEFAULT_GRAMMAR_PATH = path.join(
   REPO_ROOT,
   'docs/client/common/ui-identity/grammar-bindings.json',
 );
-const DEFAULT_ISSUERS_PATH = path.join(
-  SCRIPT_DIR,
-  'fixtures/trusted-issuers.json',
-);
 const DEFAULT_FIXTURES_ROOT = path.join(SCRIPT_DIR, 'fixtures');
 
 function parseOptions(args) {
@@ -62,7 +57,6 @@ function parseOptions(args) {
       ![
         'rules',
         'grammar',
-        'trusted-issuers',
         'expect-disposition',
         'repo-root',
         'package-root',
@@ -81,7 +75,6 @@ function parseOptions(args) {
     options[key] = [
       'rules',
       'grammar',
-      'trusted-issuers',
       'repo-root',
       'package-root',
     ].includes(key)
@@ -95,12 +88,10 @@ function parseOptions(args) {
 function loadInputs(options) {
   const rulesPath = options.rules ?? DEFAULT_RULES_PATH;
   const grammarPath = options.grammar ?? DEFAULT_GRAMMAR_PATH;
-  const issuersPath = options['trusted-issuers'] ?? DEFAULT_ISSUERS_PATH;
   return {
-    paths: { rulesPath, grammarPath, issuersPath },
+    paths: { rulesPath, grammarPath },
     ruleCatalog: loadRuleCatalog(rulesPath),
     grammar: loadGrammar(grammarPath),
-    trustedIssuers: loadTrustedIssuers(issuersPath),
     evaluatorVersionDigest: controlPlaneVersionDigest(),
   };
 }
@@ -252,7 +243,6 @@ function validateReview(casePath, resultPath, receiptPath, options) {
     ...validateReviewReceipt(receipt, {
       loadedCase,
       result: suppliedResult,
-      trustedIssuers: sources.trustedIssuers,
     }),
   };
 }
@@ -274,7 +264,6 @@ function usage() {
     'source options:',
     '  --rules <path>',
     '  --grammar <path>',
-    '  --trusted-issuers <path>',
     '  --repo-root <path>',
     '  --package-root <path>',
   ].join('\n');
@@ -323,8 +312,6 @@ export function runCli(argv) {
     return validateSources({
       ruleCatalogPath: options.rules ?? DEFAULT_RULES_PATH,
       grammarPath: options.grammar ?? DEFAULT_GRAMMAR_PATH,
-      trustedIssuersPath:
-        options['trusted-issuers'] ?? DEFAULT_ISSUERS_PATH,
     });
   }
   if (command === 'evaluate') {
@@ -359,7 +346,6 @@ export function runCli(argv) {
       fixturesRoot: DEFAULT_FIXTURES_ROOT,
       ruleCatalog: sources.ruleCatalog,
       grammar: sources.grammar,
-      trustedIssuers: sources.trustedIssuers,
       repoRoot: options['repo-root'] ?? REPO_ROOT,
     });
   }
@@ -369,7 +355,6 @@ export function runCli(argv) {
       fixturesRoot: DEFAULT_FIXTURES_ROOT,
       ruleCatalog: sources.ruleCatalog,
       grammar: sources.grammar,
-      trustedIssuers: sources.trustedIssuers,
       repoRoot: options['repo-root'] ?? REPO_ROOT,
     });
   }
@@ -378,20 +363,17 @@ export function runCli(argv) {
     const sourceValidation = validateSources({
       ruleCatalogPath: sources.paths.rulesPath,
       grammarPath: sources.paths.grammarPath,
-      trustedIssuersPath: sources.paths.issuersPath,
     });
     const calibration = runCalibration({
       fixturesRoot: DEFAULT_FIXTURES_ROOT,
       ruleCatalog: sources.ruleCatalog,
       grammar: sources.grammar,
-      trustedIssuers: sources.trustedIssuers,
       repoRoot: options['repo-root'] ?? REPO_ROOT,
     });
     const holdouts = validateHoldoutLedger({
       fixturesRoot: DEFAULT_FIXTURES_ROOT,
       ruleCatalog: sources.ruleCatalog,
       grammar: sources.grammar,
-      trustedIssuers: sources.trustedIssuers,
       repoRoot: options['repo-root'] ?? REPO_ROOT,
     });
     return {

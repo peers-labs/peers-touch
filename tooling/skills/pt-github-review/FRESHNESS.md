@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-20
-covered_docs_hash: 565b2003088eff1e2c035e5bd8b41c3a100f2c366f4e492cdc2f5b96bb8da200
+covered_docs_hash: a56baecd078fc715ed8956aecf6fb57ae55b7fd3ab24686d7befa80ebe589092
 
 covered_docs:
   - AGENTS.md
@@ -31,6 +31,21 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-10-20 Experience Identity Contract Review
+
+Experience Cases and independent review receipts now use stable workflow
+principal IDs, exact canonical digest binding and reviewer non-overlap. The
+control plane no longer owns Ed25519 signatures, a trusted issuer registry or a
+user-managed key path. Content-addressed holdouts retain immutable
+case/result/review chains.
+
+This makes ordinary Agent injection executable without weakening current-input
+or independent-review checks. `pt-product-design-methodology`,
+`pt-prototype-design` and `pt-quality-check` were updated to consume the new
+identity contract. GitHub Review already rejects stale, overlapping and
+unproven evidence, so its `SKILL.md` and generic fixtures require no semantic
+change. Closed-schema tests explicitly reject the removed attestation shape.
 
 ## 2026-10-20 Experience Design Control Plane Integration Review
 

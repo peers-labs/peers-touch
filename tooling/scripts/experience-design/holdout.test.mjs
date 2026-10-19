@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { sign } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -12,18 +11,13 @@ import {
 } from './canonical.mjs';
 import { evaluateExperienceCase } from './evaluator.mjs';
 import { validateHoldoutLedger } from './holdout.mjs';
-import { reviewReceiptPayload } from './review-receipt.mjs';
 import {
   loadGrammar,
   loadRuleCatalog,
-  loadTrustedIssuers,
   validateExperienceCaseValue,
 } from './schema.mjs';
 import { controlPlaneVersionDigest } from './source-version.mjs';
-import {
-  createFixtureBundle,
-  createFixtureSigner,
-} from './test-fixture.mjs';
+import { createFixtureBundle } from './test-fixture.mjs';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, '../../..');
@@ -55,13 +49,15 @@ function writeAddressed(directory, value) {
   return digest;
 }
 
-function signReview(bundle, loadedCase, result) {
-  const reviewer = {
-    issuer: 'fixture-authority',
-    keyId: 'fixture-ed25519',
-    subject: 'review-author',
-  };
-  const receipt = {
+function reviewReceipt(
+  loadedCase,
+  result,
+  {
+    reviewerId = 'review-author',
+    reviewedAt = '2026-10-18T18:00:00.000Z',
+  } = {},
+) {
+  return {
     kind: 'peers-touch-experience-review',
     schemaVersion: 1,
     caseId: loadedCase.case.id,
@@ -69,34 +65,17 @@ function signReview(bundle, loadedCase, result) {
     contractDigest: loadedCase.digests.contract,
     candidateDigest: loadedCase.digests.candidate,
     resultDigest: canonicalDigest(result),
-    reviewer,
-    reviewedAt: '2026-10-18T18:00:00.000Z',
+    reviewerId,
+    reviewedAt,
     decision: 'accepted',
     findingIds: result.findings.map((finding) => finding.id),
     reviewerFindings: [],
-    attestation: {
-      digest: `sha256:${'0'.repeat(64)}`,
-      principal: reviewer,
-      algorithm: 'ed25519',
-      signature: 'pending',
-    },
   };
-  receipt.attestation.digest = canonicalDigest(reviewReceiptPayload(receipt));
-  receipt.attestation.signature = sign(
-    null,
-    Buffer.from(receipt.attestation.digest, 'utf8'),
-    bundle.signer.privateKey,
-  ).toString('base64');
-  return receipt;
 }
 
-function prepareRoot(t, signer = createFixtureSigner()) {
+function prepareRoot(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'experience-holdout-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const seed = createFixtureBundle({ signer });
-  const issuerPath = path.join(root, 'trusted-issuers.json');
-  fs.writeFileSync(issuerPath, `${JSON.stringify(seed.issuers, null, 2)}\n`);
-  const trustedIssuers = loadTrustedIssuers(issuerPath);
   for (const directory of [
     'holdout',
     'holdout-results',
@@ -108,14 +87,13 @@ function prepareRoot(t, signer = createFixtureSigner()) {
   ]) {
     fs.mkdirSync(path.join(root, directory), { recursive: true });
   }
-  return { root, signer, trustedIssuers };
+  return { root };
 }
 
-function writeChain(environment, bundle) {
+function writeChain(environment, bundle, reviewOptions = {}) {
   const loadedCase = validateExperienceCaseValue(bundle.experienceCase, {
     ruleCatalog,
     grammar,
-    trustedIssuers: environment.trustedIssuers,
   });
   const result = evaluateExperienceCase(loadedCase, {
     ruleCatalog,
@@ -123,7 +101,7 @@ function writeChain(environment, bundle) {
     evaluatorVersionDigest,
     repoRoot: REPO_ROOT,
   });
-  const receipt = signReview(bundle, loadedCase, result);
+  const receipt = reviewReceipt(loadedCase, result, reviewOptions);
   const caseDigest = writeAddressed(
     path.join(environment.root, 'holdout'),
     bundle.experienceCase,
@@ -156,7 +134,6 @@ function validate(environment) {
     fixturesRoot: environment.root,
     ruleCatalog,
     grammar,
-    trustedIssuers: environment.trustedIssuers,
     repoRoot: REPO_ROOT,
   });
 }
@@ -164,7 +141,6 @@ function validate(environment) {
 test('validates one immutable content-addressed blind chain', (t) => {
   const environment = prepareRoot(t);
   const bundle = createFixtureBundle({
-    signer: environment.signer,
     calibration: 'blind',
     caseId: 'holdout.first-real-example',
   });
@@ -179,7 +155,6 @@ test('validates one immutable content-addressed blind chain', (t) => {
 test('rejects a ledger whose filename is not its content digest', (t) => {
   const environment = prepareRoot(t);
   const bundle = createFixtureBundle({
-    signer: environment.signer,
     calibration: 'blind',
     caseId: 'holdout.bad-address',
   });
@@ -204,13 +179,11 @@ test('rejects a ledger whose filename is not its content digest', (t) => {
 test('rejects reuse of one holdout ID for changed content', (t) => {
   const environment = prepareRoot(t);
   const first = createFixtureBundle({
-    signer: environment.signer,
     calibration: 'blind',
     caseId: 'holdout.reused',
     title: 'First immutable case',
   });
   const second = createFixtureBundle({
-    signer: environment.signer,
     calibration: 'blind',
     caseId: 'holdout.reused',
     title: 'Changed case content',
@@ -221,7 +194,27 @@ test('rejects reuse of one holdout ID for changed content', (t) => {
   assert.throws(() => validate(environment), (error) => {
     assert.ok(error instanceof ExperienceDesignError);
     assert.equal(error.code, 'HOLDOUT_INTEGRITY_INVALID');
-    assert.match(error.message, /multiple case digests/);
+    assert.match(error.message, /multiple sealed chains/);
+    return true;
+  });
+});
+
+test('rejects one holdout ID bound to multiple review receipts', (t) => {
+  const environment = prepareRoot(t);
+  const bundle = createFixtureBundle({
+    calibration: 'blind',
+    caseId: 'holdout.multiple-reviews',
+  });
+  writeChain(environment, bundle);
+  writeChain(environment, bundle, {
+    reviewerId: 'second-review-author',
+    reviewedAt: '2026-10-18T19:00:00.000Z',
+  });
+
+  assert.throws(() => validate(environment), (error) => {
+    assert.ok(error instanceof ExperienceDesignError);
+    assert.equal(error.code, 'HOLDOUT_INTEGRITY_INVALID');
+    assert.match(error.message, /multiple sealed chains/);
     return true;
   });
 });

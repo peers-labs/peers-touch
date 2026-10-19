@@ -51,11 +51,7 @@ function observedRecord(root, overrides = {}) {
     sourceDigest: candidateDigest,
     artifact,
     artifactDigest,
-    inspectedBy: {
-      issuer: 'fixture-authority',
-      keyId: 'fixture-ed25519',
-      subject: 'evidence-author',
-    },
+    inspectedById: 'evidence-author',
     observedAt: '2026-10-18T18:00:00.000Z',
     platform: 'desktop',
     runtimeProfile: 'profile-two',

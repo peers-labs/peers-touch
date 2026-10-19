@@ -159,14 +159,13 @@ export function validateHoldoutLedger({
   fixturesRoot,
   ruleCatalog,
   grammar,
-  trustedIssuers,
   repoRoot,
 }) {
   const ledgerDirectory = path.join(fixturesRoot, 'holdout-ledger');
   const caseDirectory = path.join(fixturesRoot, 'holdout');
   const resultDirectory = path.join(fixturesRoot, 'holdout-results');
   const reviewDirectory = path.join(fixturesRoot, 'reviews');
-  const holdoutCases = new Map();
+  const holdoutIds = new Set();
   const records = [];
   const evaluatorVersionDigest = controlPlaneVersionDigest();
 
@@ -184,22 +183,16 @@ export function validateHoldoutLedger({
         },
       );
     }
-    const previousCaseDigest = holdoutCases.get(record.holdoutId);
-    if (
-      previousCaseDigest !== undefined
-      && previousCaseDigest !== record.caseDigest
-    ) {
+    if (holdoutIds.has(record.holdoutId)) {
       fail(
         'HOLDOUT_INTEGRITY_INVALID',
-        'holdout ID resolves to multiple case digests',
+        'holdout ID resolves to multiple sealed chains',
         {
           holdoutId: record.holdoutId,
-          first: previousCaseDigest,
-          second: record.caseDigest,
         },
       );
     }
-    holdoutCases.set(record.holdoutId, record.caseDigest);
+    holdoutIds.add(record.holdoutId);
 
     const caseArtifact = readAddressed(
       caseDirectory,
@@ -209,7 +202,6 @@ export function validateHoldoutLedger({
     const loadedCase = validateExperienceCaseValue(caseArtifact.value, {
       ruleCatalog,
       grammar,
-      trustedIssuers,
     });
     if (
       loadedCase.case.calibration !== 'blind'
@@ -248,7 +240,6 @@ export function validateHoldoutLedger({
     validateReviewReceipt(reviewArtifact.value, {
       loadedCase,
       result: resultArtifact.value,
-      trustedIssuers,
     });
 
     if (record.promotedCaseId !== undefined) {
@@ -256,7 +247,6 @@ export function validateHoldoutLedger({
       const loadedPromoted = validateExperienceCaseValue(promoted, {
         ruleCatalog,
         grammar,
-        trustedIssuers,
       });
       const provenance = loadedPromoted.case.promotedFromBlind;
       if (

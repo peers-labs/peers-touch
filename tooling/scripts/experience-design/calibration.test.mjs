@@ -10,7 +10,6 @@ import { ExperienceDesignError } from './canonical.mjs';
 import {
   loadGrammar,
   loadRuleCatalog,
-  loadTrustedIssuers,
 } from './schema.mjs';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -43,14 +42,11 @@ function calibrate(fixturesRoot) {
     fixturesRoot,
     ruleCatalog,
     grammar,
-    trustedIssuers: loadTrustedIssuers(
-      path.join(fixturesRoot, 'trusted-issuers.json'),
-    ),
     repoRoot: REPO_ROOT,
   });
 }
 
-test('calibration covers every rule with exact signed fixtures', () => {
+test('calibration covers every rule with exact identity-bound fixtures', () => {
   const result = calibrate(FIXTURES_ROOT);
 
   assert.equal(result.ok, true);
