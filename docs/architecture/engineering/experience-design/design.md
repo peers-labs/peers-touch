@@ -1,7 +1,7 @@
 # Experience Design Control Plane - Architecture
 
 > **Status**: active
-> **Version**: v1.1
+> **Version**: v1.2
 > **Created**: 2026-10-18 | **Updated**: 2026-10-20
 > **Owner**: Developer Experience / Product Design
 
@@ -216,10 +216,11 @@ It never returns `passed`, updates a contract, changes a fixture expectation or
 marks an evidence cell accepted. A reviewer must be different from the
 contract, candidate, evidence and expectation authors for an acceptance
 decision. Review receipts bind all input digests and are validated separately;
-the evaluator never creates them. Author and reviewer digests use issuer-scoped
-principals and Ed25519 attestations against an explicit trusted public-key
-registry. Without that attestation the result can expose findings but cannot
-establish an accepted review.
+the evaluator never creates them. Stable author and reviewer IDs come from the
+active workflow and are checked for non-overlap. Canonical digests bind the
+case, contract, candidate, evaluator result and complete receipt. This boundary
+provides deterministic attribution and stale-input detection without requiring
+users or Agents to provision cryptographic keys.
 
 ## 8. Components
 

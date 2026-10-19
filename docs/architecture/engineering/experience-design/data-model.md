@@ -1,7 +1,7 @@
 # Experience Design Control Plane - Data Model
 
 > **Status**: active
-> **Version**: v1.1
+> **Version**: v1.2
 > **Created**: 2026-10-18 | **Updated**: 2026-10-20
 > **Owner**: Developer Experience / Product Design
 
@@ -20,19 +20,6 @@ type Digest = `sha256:${string}`;
 type Platform = "desktop" | "mobile" | "browser" | "dashboard";
 type Claim = "wireflow" | "prototype" | "production";
 type Calibration = "positive" | "negative" | "boundary" | "blind";
-
-type PrincipalRef = {
-  issuer: StableId;
-  keyId: StableId;
-  subject: StableId;
-};
-
-type SignedDigest = {
-  digest: Digest;
-  principal: PrincipalRef;
-  algorithm: "ed25519";
-  signature: string;
-};
 
 type CopyRole =
   | "brand"
@@ -88,16 +75,10 @@ type ExperienceCase = {
   calibration: Calibration;
   claim: Claim;
   authorship: {
-    contractAuthor: PrincipalRef;
-    candidateAuthor: PrincipalRef;
-    evidenceAuthors: PrincipalRef[];
-    expectationAuthor?: PrincipalRef;
-  };
-  sourceAttestations: {
-    contract: SignedDigest;
-    candidate: SignedDigest;
-    evidence: SignedDigest[];
-    expectation?: SignedDigest;
+    contractAuthorId: StableId;
+    candidateAuthorId: StableId;
+    evidenceAuthorIds: StableId[];
+    expectationAuthorId?: StableId;
   };
   contract: ExperienceContract;
   candidate: ExperienceCandidate;
@@ -114,45 +95,27 @@ type ExperienceCase = {
 Rules:
 
 - `expected` is required for positive/negative/boundary fixtures.
-- `expected`, `expectationAuthor` and `promotedFromBlind` are
+- `expected`, `expectationAuthorId` and `promotedFromBlind` are
   forbidden for blind holdouts.
 - A promoted calibration fixture is a new immutable case with a new ID and
   requires a valid independent blind-review receipt digest.
-- `expectationAuthor` differs from contract, candidate and evidence authors.
-- Digests are recomputed by the loader and every signature is verified against
-  the explicit trusted issuer registry; caller-provided mismatches fail.
-- Principal equality is the tuple `(issuer, keyId, subject)`, never a display
-  string.
-- Contract and candidate attestation principals equal their declared authors.
-  Evidence attestation principals form the exact unique set of declared
-  evidence authors and all sign the same evidence digest.
-- Material cases contain at least one evidence author and one evidence
-  attestation. Every `inspectedBy` principal is a member of that signed
-  evidence-author set; the later review principal differs from every inspector.
-- A case with `expected` requires an expectation author and matching signed
-  expectation attestation. A case without `expected` forbids both.
-- The candidate digest excludes `candidate.evidence`; the separate evidence
-  attestation covers the canonical evidence array. This avoids a circular
-  source digest.
-
-Trusted issuer keys are explicit input:
-
-```ts
-type TrustedIssuerRegistry = {
-  kind: "peers-touch-experience-review-issuers";
-  schemaVersion: 1;
-  issuers: Array<{
-    issuer: StableId;
-    keyId: StableId;
-    publicKeyPem: string;
-    allowedSubjects: StableId[];
-  }>;
-};
-```
-
-The repository implementation ships no private key. A host or human review
-authority signs outside the evaluator. An unsigned result can still expose
-findings but cannot produce an accepted review receipt.
+- `expectationAuthorId` differs from contract, candidate and evidence author
+  IDs.
+- Author IDs are stable workflow principals supplied by the active Agent host.
+  They are attribution and separation identifiers, not cryptographic identity
+  proofs.
+- Material cases contain at least one evidence author ID. Every
+  `inspectedById` is a member of that evidence-author set; the later reviewer
+  ID differs from every author and inspector.
+- A case with `expected` requires an expectation author ID. A case without
+  `expected` forbids it.
+- The loader recomputes contract, candidate, evidence, expectation and complete
+  case digests. The candidate digest excludes `candidate.evidence`; the
+  evidence array has its own digest, avoiding a circular source digest.
+- Content-addressed storage and exact digest binding establish immutability.
+  Independent workflow execution establishes author/reviewer separation. No
+  user-managed key, signature, issuer registry or unsigned compatibility mode
+  exists.
 
 ## 3. Experience Contract
 
@@ -598,7 +561,7 @@ type EvidenceRecord = {
   sourceDigest: Digest;
   artifact?: string;
   artifactDigest?: Digest;
-  inspectedBy?: PrincipalRef;
+  inspectedById?: StableId;
   observedAt?: string;
   platform: Platform;
   runtimeProfile: string;
@@ -734,12 +697,11 @@ type ReviewReceipt = {
   contractDigest: Digest;
   candidateDigest: Digest;
   resultDigest: Digest;
-  reviewer: PrincipalRef;
+  reviewerId: StableId;
   reviewedAt: string;
   decision: "accepted" | "changes-required" | "unproven";
   findingIds: StableId[];
   reviewerFindings: IndependentReviewFinding[];
-  attestation: SignedDigest;
 };
 
 type IndependentReviewFinding = {
@@ -766,14 +728,14 @@ type IndependentReviewFinding = {
 The receipt is valid only when:
 
 - all digests match current immutable inputs/result;
-- `reviewer` differs from contract, candidate, evidence and expectation
-  authors and every evidence inspector;
+- `reviewerId` differs from contract, candidate, evidence and expectation
+  author IDs and every evidence inspector ID;
 - timestamp is canonical.
-- `attestation.principal` equals `reviewer`, its digest covers the canonical
-  receipt payload excluding `attestation`, and its Ed25519 signature validates
-  through the trusted issuer registry.
 - `findingIds` is the exact set of evaluator result finding IDs; no current
   finding may be omitted and no stale finding may be added.
+- the complete receipt remains content-addressable through its canonical
+  digest; any changed reviewer, decision, finding or input binding produces a
+  different receipt digest.
 
 Decision is exhaustive:
 
@@ -787,7 +749,7 @@ Decision is exhaustive:
 
 `accepted` therefore requires a ready evaluator result, complete finding
 binding and zero blocking reviewer findings. Warnings may remain but are
-preserved in the signed receipt.
+preserved in the digest-bound receipt.
 
 The evaluator never creates this receipt.
 
@@ -827,10 +789,10 @@ Calibration suite rules:
   receipt digest; the original holdout remains unchanged.
 - holdout cases, first results, receipts and ledger records use their content
   digest as filename; loaders verify path/digest equality.
-- one holdout ID resolves to exactly one case digest across the complete
-  ledger. A changed or reused ID is rejected.
-- promotion resolves the original case, first result and signed receipt before
-  accepting the new calibration case.
+- one holdout ID resolves to exactly one sealed case/result/review chain across
+  the complete ledger. A changed, duplicated or reused ID is rejected.
+- promotion resolves the original case, first result and digest-bound receipt
+  before accepting the new calibration case.
 
 ## 16. Lifecycle
 

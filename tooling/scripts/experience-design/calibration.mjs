@@ -215,7 +215,6 @@ export function runCalibration({
   fixturesRoot,
   ruleCatalog,
   grammar,
-  trustedIssuers,
   repoRoot,
 }) {
   const manifestPath = path.join(fixturesRoot, 'calibration-manifest.json');
@@ -247,7 +246,6 @@ export function runCalibration({
         loadExperienceCase(sourcePath, {
           ruleCatalog,
           grammar,
-          trustedIssuers,
         });
       } catch (error) {
         if (error instanceof ExperienceDesignError) observedError = error;
@@ -280,7 +278,6 @@ export function runCalibration({
     const loaded = loadExperienceCase(sourcePath, {
       ruleCatalog,
       grammar,
-      trustedIssuers,
     });
     if (loaded.case.calibration !== fixtureCase.class) {
       fail(

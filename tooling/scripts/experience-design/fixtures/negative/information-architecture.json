@@ -6,72 +6,12 @@
   "calibration": "negative",
   "claim": "wireflow",
   "authorship": {
-    "contractAuthor": {
-      "issuer": "fixture-authority",
-      "keyId": "fixture-ed25519",
-      "subject": "contract-author"
-    },
-    "candidateAuthor": {
-      "issuer": "fixture-authority",
-      "keyId": "fixture-ed25519",
-      "subject": "candidate-author"
-    },
-    "evidenceAuthors": [
-      {
-        "issuer": "fixture-authority",
-        "keyId": "fixture-ed25519",
-        "subject": "evidence-author"
-      }
+    "contractAuthorId": "contract-author",
+    "candidateAuthorId": "candidate-author",
+    "evidenceAuthorIds": [
+      "evidence-author"
     ],
-    "expectationAuthor": {
-      "issuer": "fixture-authority",
-      "keyId": "fixture-ed25519",
-      "subject": "expectation-author"
-    }
-  },
-  "sourceAttestations": {
-    "contract": {
-      "digest": "sha256:e17234cc795fa106ee0c960e3c26e049ae47c9c1f02ba20477502d1eff059555",
-      "principal": {
-        "issuer": "fixture-authority",
-        "keyId": "fixture-ed25519",
-        "subject": "contract-author"
-      },
-      "algorithm": "ed25519",
-      "signature": "6NLGc0UqfG8RK1FAkxjnDDUsLb1eBzfmB9hbGuhAzeE3bs5egXttj+xm/I5B1T5Q2Ykm3m1PF6PrzS7kiJwSAg=="
-    },
-    "candidate": {
-      "digest": "sha256:cc7f401e5de130d4c59d012c2d30fa6d99afb2777fa68ce2b02a0af19283ef43",
-      "principal": {
-        "issuer": "fixture-authority",
-        "keyId": "fixture-ed25519",
-        "subject": "candidate-author"
-      },
-      "algorithm": "ed25519",
-      "signature": "J+zQrDny02u48Skz+6JRUFu0PnjUuBhkiGR2/CLJG2MjX9TIBphYJiYAHc8C+GWfIQZmpMO3JMJ57eiJ0GMGAQ=="
-    },
-    "evidence": [
-      {
-        "digest": "sha256:462c295406c5f6e9b407b38fd5ada3eace3d814297b396aa47719295b29eb0a2",
-        "principal": {
-          "issuer": "fixture-authority",
-          "keyId": "fixture-ed25519",
-          "subject": "evidence-author"
-        },
-        "algorithm": "ed25519",
-        "signature": "xKfm4Q1uut7kYuQ7l9FoJOwQA9O6j0TvB9KAp1tCnE7FeJ0YQM2IXQHuSkbaHEMIlKPJD+WNbn9j5vpu8b/5CQ=="
-      }
-    ],
-    "expectation": {
-      "digest": "sha256:29c5fa547b98bc7a04af00de9fc62bfddcaea181f5211f7fef0d1fe0b8af0829",
-      "principal": {
-        "issuer": "fixture-authority",
-        "keyId": "fixture-ed25519",
-        "subject": "expectation-author"
-      },
-      "algorithm": "ed25519",
-      "signature": "6RkHHnxZ/GsDnwxactW1YtQqWKmFGz3Jq6krmF0Wwm15jCAJPsuXyR+Putye9R22VyJNbYyJp5ZPAz7kTtkQBA=="
-    }
+    "expectationAuthorId": "expectation-author"
   },
   "contract": {
     "productIntent": {

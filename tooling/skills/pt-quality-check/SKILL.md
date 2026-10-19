@@ -143,8 +143,8 @@ For Acceptance Infra changes, classify capability evidence by direction:
 
 - A gate that did not run is `unproven`, never `passed`.
 - Zero Experience Design findings is only
-  `ready-for-independent-review`; an absent, stale, overlapping, or unsigned
-  receipt is not acceptance.
+  `ready-for-independent-review`; an absent, stale, author-overlapping, or
+  digest-mismatched receipt is not acceptance.
 - Screenshot or artifact existence never proves visual, dynamic,
   accessibility, performance, or runtime cells without an exact current-source
   evidence match.

@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { sign } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -12,14 +11,10 @@ import {
 } from './canonical.mjs';
 import { evaluateExperienceCase } from './evaluator.mjs';
 import { runCli } from './experience-design.mjs';
-import {
-  reviewReceiptPayload,
-  validateReviewReceipt,
-} from './review-receipt.mjs';
+import { validateReviewReceipt } from './review-receipt.mjs';
 import {
   loadGrammar,
   loadRuleCatalog,
-  loadTrustedIssuers,
   validateExperienceCaseValue,
 } from './schema.mjs';
 import { controlPlaneVersionDigest } from './source-version.mjs';
@@ -44,13 +39,9 @@ const evaluatorVersionDigest = controlPlaneVersionDigest();
 function prepare(t, bundle = createFixtureBundle()) {
   const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'review-receipt-'));
   t.after(() => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
-  const issuerPath = path.join(temporaryRoot, 'issuers.json');
-  fs.writeFileSync(issuerPath, `${JSON.stringify(bundle.issuers)}\n`);
-  const trustedIssuers = loadTrustedIssuers(issuerPath);
   const loadedCase = validateExperienceCaseValue(bundle.experienceCase, {
     ruleCatalog,
     grammar,
-    trustedIssuers,
   });
   const result = evaluateExperienceCase(loadedCase, {
     ruleCatalog,
@@ -59,33 +50,22 @@ function prepare(t, bundle = createFixtureBundle()) {
     repoRoot: REPO_ROOT,
   });
   return {
-    bundle,
-    issuerPath,
     loadedCase,
     result,
     temporaryRoot,
-    trustedIssuers,
   };
 }
 
-function reviewerPrincipal() {
-  return {
-    issuer: 'fixture-authority',
-    keyId: 'fixture-ed25519',
-    subject: 'review-author',
-  };
-}
-
-function signedReceipt(
+function reviewReceipt(
   prepared,
   {
     decision = 'accepted',
     findingIds = prepared.result.findings.map((finding) => finding.id),
     reviewerFindings = [],
-    reviewer = reviewerPrincipal(),
+    reviewerId = 'review-author',
   } = {},
 ) {
-  const receipt = {
+  return {
     kind: 'peers-touch-experience-review',
     schemaVersion: 1,
     caseId: prepared.loadedCase.case.id,
@@ -93,25 +73,12 @@ function signedReceipt(
     contractDigest: prepared.loadedCase.digests.contract,
     candidateDigest: prepared.loadedCase.digests.candidate,
     resultDigest: canonicalDigest(prepared.result),
-    reviewer,
+    reviewerId,
     reviewedAt: '2026-10-18T18:00:00.000Z',
     decision,
     findingIds,
     reviewerFindings,
-    attestation: {
-      digest: 'sha256:'.padEnd(71, '0'),
-      principal: reviewer,
-      algorithm: 'ed25519',
-      signature: 'pending',
-    },
   };
-  receipt.attestation.digest = canonicalDigest(reviewReceiptPayload(receipt));
-  receipt.attestation.signature = sign(
-    null,
-    Buffer.from(receipt.attestation.digest, 'utf8'),
-    prepared.bundle.signer.privateKey,
-  ).toString('base64');
-  return receipt;
 }
 
 function expectReviewError(action, pattern) {
@@ -123,9 +90,9 @@ function expectReviewError(action, pattern) {
   });
 }
 
-test('valid signed independent review accepts a ready result', (t) => {
+test('valid digest-bound independent review accepts a ready result', (t) => {
   const prepared = prepare(t);
-  const receipt = signedReceipt(prepared);
+  const receipt = reviewReceipt(prepared);
 
   const validation = validateReviewReceipt(receipt, prepared);
 
@@ -135,7 +102,7 @@ test('valid signed independent review accepts a ready result', (t) => {
 
 test('CLI validates the exact current case, result, and receipt chain', (t) => {
   const prepared = prepare(t);
-  const receipt = signedReceipt(prepared);
+  const receipt = reviewReceipt(prepared);
   const casePath = path.join(prepared.temporaryRoot, 'case.json');
   const resultPath = path.join(prepared.temporaryRoot, 'result.json');
   const receiptPath = path.join(prepared.temporaryRoot, 'receipt.json');
@@ -154,24 +121,42 @@ test('CLI validates the exact current case, result, and receipt chain', (t) => {
     casePath,
     resultPath,
     receiptPath,
-    '--trusted-issuers',
-    prepared.issuerPath,
   ]);
 
   assert.equal(validation.valid, true);
   assert.equal(validation.decision, 'accepted');
+
+  assert.throws(
+    () => runCli([
+      'validate',
+      casePath,
+      '--trusted-issuers',
+      path.join(prepared.temporaryRoot, 'legacy-issuers.json'),
+    ]),
+    (error) => {
+      assert.ok(error instanceof ExperienceDesignError);
+      assert.equal(error.code, 'ED_CLI_USAGE');
+      assert.match(error.message, /unknown option/);
+      return true;
+    },
+  );
 });
 
 test('reviewer cannot overlap any case author', (t) => {
   const prepared = prepare(t);
-  const receipt = signedReceipt(prepared, {
-    reviewer: prepared.loadedCase.case.authorship.contractAuthor,
-  });
-
-  expectReviewError(
-    () => validateReviewReceipt(receipt, prepared),
-    /independent/,
-  );
+  const authorship = prepared.loadedCase.case.authorship;
+  for (const reviewerId of [
+    authorship.contractAuthorId,
+    authorship.candidateAuthorId,
+    ...authorship.evidenceAuthorIds,
+    authorship.expectationAuthorId,
+  ]) {
+    const receipt = reviewReceipt(prepared, { reviewerId });
+    expectReviewError(
+      () => validateReviewReceipt(receipt, prepared),
+      /independent/,
+    );
+  }
 });
 
 test('receipt cannot omit an evaluator finding', (t) => {
@@ -191,7 +176,7 @@ test('receipt cannot omit an evaluator finding', (t) => {
       },
     }),
   );
-  const receipt = signedReceipt(prepared, {
+  const receipt = reviewReceipt(prepared, {
     decision: 'changes-required',
     findingIds: [],
   });
@@ -202,15 +187,24 @@ test('receipt cannot omit an evaluator finding', (t) => {
   );
 });
 
-test('receipt is stale when the result digest changes', (t) => {
+test('receipt rejects every stale immutable-input binding', (t) => {
   const prepared = prepare(t);
-  const receipt = signedReceipt(prepared);
-  receipt.resultDigest = 'sha256:'.padEnd(71, '1');
+  const staleBindings = [
+    ['caseId', 'case.stale'],
+    ['caseDigest', `sha256:${'1'.repeat(64)}`],
+    ['contractDigest', `sha256:${'2'.repeat(64)}`],
+    ['candidateDigest', `sha256:${'3'.repeat(64)}`],
+    ['resultDigest', `sha256:${'4'.repeat(64)}`],
+  ];
 
-  expectReviewError(
-    () => validateReviewReceipt(receipt, prepared),
-    /stale/,
-  );
+  for (const [key, value] of staleBindings) {
+    const receipt = reviewReceipt(prepared);
+    receipt[key] = value;
+    expectReviewError(
+      () => validateReviewReceipt(receipt, prepared),
+      /stale/,
+    );
+  }
 });
 
 test('blocking independent finding forces changes-required', (t) => {
@@ -227,7 +221,7 @@ test('blocking independent finding forces changes-required', (t) => {
       correction: 'Clarify the account identity before the commitment.',
     },
   ];
-  const receipt = signedReceipt(prepared, {
+  const receipt = reviewReceipt(prepared, {
     decision: 'changes-required',
     reviewerFindings,
   });
@@ -245,10 +239,27 @@ test('accepted is illegal when evaluator remains unproven', (t) => {
       },
     }),
   );
-  const receipt = signedReceipt(prepared, { decision: 'accepted' });
+  const receipt = reviewReceipt(prepared, { decision: 'accepted' });
 
   expectReviewError(
     () => validateReviewReceipt(receipt, prepared),
     /incompatible/,
+  );
+});
+
+test('legacy cryptographic attestation fields fail closed', (t) => {
+  const prepared = prepare(t);
+  const receipt = {
+    ...reviewReceipt(prepared),
+    attestation: {
+      digest: `sha256:${'0'.repeat(64)}`,
+      algorithm: 'ed25519',
+      signature: 'legacy',
+    },
+  };
+
+  expectReviewError(
+    () => validateReviewReceipt(receipt, prepared),
+    /unknown or missing fields/,
   );
 });

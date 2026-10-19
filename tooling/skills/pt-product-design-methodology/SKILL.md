@@ -202,7 +202,7 @@ Run the canonical source check before handoff:
 node tooling/scripts/experience-design/experience-design.mjs validate-sources
 ```
 
-Missing, conflicting, or unsigned Product intent remains
+Missing, conflicting, or unattributed Product intent remains
 `PRODUCT_DESIGN_INCOMPLETE`; do not let Prototype Design infer or repair it.
 
 ### Step 3. Freeze The Product Capability Profile

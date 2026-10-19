@@ -1,7 +1,7 @@
 # Experience Design Control Plane - Integration
 
 > **Status**: active
-> **Version**: v1.1
+> **Version**: v1.2
 > **Created**: 2026-10-18 | **Updated**: 2026-10-20
 > **Owner**: Developer Experience / Product Design
 
@@ -139,7 +139,7 @@ Atomic cutover requires:
 Only after all six conditions hold may the architecture registry add the
 evaluator source path, Skill consumers and `experience.design.evaluate`
 capability. The current registry contains that capability because the canonical
-CLI, calibration fixtures, signed review validation and all three consumers
+CLI, calibration fixtures, digest-bound review validation and all three consumers
 land together. `experience-design.mjs check` is the source-only cutover check.
 
 Rollback is a VCS revert of the atomic source change. No compatibility mode or

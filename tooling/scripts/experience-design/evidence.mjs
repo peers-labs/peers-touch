@@ -43,7 +43,7 @@ function artifactMatches(record, repoRoot) {
   if (
     record.artifact === undefined
     || record.artifactDigest === undefined
-    || record.inspectedBy === undefined
+    || record.inspectedById === undefined
     || record.observedAt === undefined
   ) {
     return false;
