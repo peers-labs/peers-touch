@@ -24,5 +24,6 @@ end-user business truth.
 | Local development | [local-dev/](./local-dev/README.md) |
 | Acceptance | [acceptance/](./acceptance/README.md) |
 | Quality | [quality/](./quality/README.md) |
+| Experience Reasoning | [experience-design/](./experience-design/README.md) |
 | Developer toolchain | [toolchain/](./toolchain/README.md) |
 | Prototype registry | [prototypes/](./prototypes/README.md) |
