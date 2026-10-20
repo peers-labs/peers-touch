@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-20
-covered_docs_hash: a56baecd078fc715ed8956aecf6fb57ae55b7fd3ab24686d7befa80ebe589092
+covered_docs_hash: 2ba1509439e9bd1ecf6b8765c49c6efeaedc81f2bc46e656d55ad8227f0bc632
 
 covered_docs:
   - AGENTS.md
@@ -31,6 +31,13 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+Current Experience admission validates package references and current source at
+the final boundary. Graph recovery requires an executable route and state
+ordering is total. Immutable historical holdout integrity is separate from
+current reevaluation and reciprocal promotion binding. Prototype/Quality
+consumers and negative regression fixtures cover these refinements; GitHub
+Review keeps its existing stale-proof and independent-judgment requirements.
 
 ## 2026-10-20 Experience Identity Contract Review
 

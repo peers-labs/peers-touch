@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { evaluatePrototypeAdmission } from './admission.mjs';
 
 import { minorOnlyBoundaryFixture } from './fixtures/boundary/minor-only.mjs';
 import { implicitRecoveryFixture } from './fixtures/negative/implicit-recovery.mjs';
 import { completeReviewFixture } from './fixtures/positive/complete-review.mjs';
 import {
   digestReviewResult,
-  evaluatePrototypeAdmission,
   validateIndependentReviewDecision,
   validateReviewResult,
 } from './validator.mjs';
@@ -134,7 +134,8 @@ test('prototype admission requires accepted review and no scoped unproven point'
     findingCandidateIds: ['candidate.minor'],
     reviewNotes: [],
   };
-  assert.equal(evaluatePrototypeAdmission(result, decision).admitted, true);
+  assert.throws(() => evaluatePrototypeAdmission(result, decision),
+    (error) => error.code === 'EDX_BINDING_INVALID');
 
   const unproven = structuredClone(result);
   unproven.unproven = [
@@ -152,10 +153,8 @@ test('prototype admission requires accepted review and no scoped unproven point'
     resultDigest: digestReviewResult(unproven),
     decision: 'unproven',
   };
-  assert.equal(
-    evaluatePrototypeAdmission(unproven, blockedDecision).admitted,
-    false,
-  );
+  assert.deepEqual(validateIndependentReviewDecision(unproven, blockedDecision),
+    { ok: true, decision: 'unproven' });
   assert.throws(
     () =>
       validateIndependentReviewDecision(unproven, {

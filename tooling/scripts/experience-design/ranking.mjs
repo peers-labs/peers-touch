@@ -26,11 +26,10 @@ function compareStateOrder(left, right) {
   if (left.distance !== right.distance) {
     return left.distance - right.distance;
   }
-  if (
-    Number.isSafeInteger(left.state.explicitOrder)
-    && Number.isSafeInteger(right.state.explicitOrder)
-    && left.state.explicitOrder !== right.state.explicitOrder
-  ) {
+  const leftExplicit = Number.isSafeInteger(left.state.explicitOrder);
+  const rightExplicit = Number.isSafeInteger(right.state.explicitOrder);
+  if (leftExplicit !== rightExplicit) return leftExplicit ? -1 : 1;
+  if (leftExplicit && left.state.explicitOrder !== right.state.explicitOrder) {
     return left.state.explicitOrder - right.state.explicitOrder;
   }
   const pathOrder = compareAscii(left.state.source.path, right.state.source.path);

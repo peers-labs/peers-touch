@@ -249,14 +249,15 @@ function evaluateInformationArchitecture(
   }
 }
 
-function legalConfirmation(contract, candidate) {
-  if (contract.confirmationPolicy === 'none') {
+function legalConfirmation(contract, candidate, policy = contract.confirmationPolicy) {
+  if (policy === 'contract-owned') return true;
+  if (policy === 'none') {
     return candidate.confirmation === 'none';
   }
-  if (contract.confirmationPolicy === 'required') {
+  if (policy === 'required') {
     return candidate.confirmation === 'user-confirmed';
   }
-  if (contract.confirmationPolicy === 'required-when-irreversible') {
+  if (policy === 'required-when-irreversible') {
     return contract.mutation === 'external-irreversible'
       ? candidate.confirmation === 'user-confirmed'
       : candidate.confirmation !== 'server-authorized';
@@ -264,7 +265,7 @@ function legalConfirmation(contract, candidate) {
   return candidate.confirmation === 'server-authorized';
 }
 
-function allowedDifference(contract, left, right, differences) {
+function allowedDifference(contract, left, right, differences, platform) {
   return differences.some((difference) => {
     if (difference.actionContractId !== contract.id) return false;
     const orientations = [
@@ -273,7 +274,9 @@ function allowedDifference(contract, left, right, differences) {
     ];
     return orientations.some(
       ([acceptedLeft, acceptedRight]) =>
-        acceptedLeft.surfaceId === left.surfaceId
+        acceptedLeft.platform === platform
+        && acceptedRight.platform === platform
+        && acceptedLeft.surfaceId === left.surfaceId
         && acceptedLeft.representation === left.representation
         && acceptedLeft.adapter === left.platformAdapter
         && acceptedRight.surfaceId === right.surfaceId
@@ -348,6 +351,9 @@ function evaluateActions(
       violations.push(
         `confirmation ${candidate.confirmation} violates ${contract.confirmationPolicy}`,
       );
+    }
+    if (!legalConfirmation(contract, candidate, role.confirmation)) {
+      violations.push(`confirmation ${candidate.confirmation} violates grammar ${role.confirmation}`);
     }
     if (
       candidate.grammarRole === 'primary_commitment'
@@ -518,6 +524,7 @@ function evaluateActions(
             left,
             right,
             experienceCase.contract.platformDifferences,
+            experienceCase.candidate.platform,
           )
         ) {
           findings.add(
@@ -827,6 +834,7 @@ function evaluatePathAndTrace(experienceCase, indexes, findings) {
       ),
     );
     const beforeSuccess = reachableBeforeSuccess(indexes, journey);
+    const accepted = indexes.acceptedTraces.get(journey.journeyId);
     for (const transition of experienceCase.candidate.transitions.filter(
       (candidateTransition) =>
         candidateTransition.journeyId === journey.journeyId
@@ -838,7 +846,23 @@ function evaluatePathAndTrace(experienceCase, indexes, findings) {
       const contractAction = indexes.contractActions.get(
         action.contractActionId,
       );
-      if (contractAction.mutation === 'none') continue;
+      if (contractAction.mutation === 'none') {
+        const decision = contractAction.decisionCost > 0
+          || contractAction.optionCardinality !== 'none'
+          || contractAction.grammarRole === 'mode_selector'
+          || contractAction.interruption !== 'none';
+        if (decision && !accepted.requiredActionIds.includes(contractAction.id)) {
+          findings.add(
+            'ED-DRIFT-001',
+            `${journey.journeyId}:${transition.id}:off-path-decision`,
+            `candidate.transitions.${transition.id}`,
+            `Reachable decision ${contractAction.id} is absent from the accepted trace.`,
+            'An alternate decision surface can add unreviewed modes or interruptions.',
+            'Remove the decision branch or accept its intent in the Product trace.',
+          );
+        }
+        continue;
+      }
       findings.add(
         'ED-CONTRACT-001',
         `${journey.journeyId}:${transition.id}:off-path-mutation`,
@@ -864,7 +888,6 @@ function evaluatePathAndTrace(experienceCase, indexes, findings) {
       }
     }
 
-    const accepted = indexes.acceptedTraces.get(journey.journeyId);
     const trace = indexes.traces.get(journey.journeyId);
     const stateKinds = ordered.stateIds.map(
       (stateId) => indexes.states.get(stateId).kind,

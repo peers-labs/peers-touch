@@ -190,16 +190,17 @@ test('unknown action roles fail through UI Grammar ownership', (t) => {
   assert.deepEqual(ruleIds(evaluateBundle(t, bundle)), ['ED-GRAMMAR-001']);
 });
 
-test('a broken success chain emits trace evidence', (t) => {
+test('a disconnected success chain is rejected at the case boundary', () => {
   const bundle = createFixtureBundle({
     calibration: 'negative',
     mutate: ({ candidate }) => {
       candidate.transitions[0].fromStateId = 'state.success';
     },
   });
-  const result = evaluateBundle(t, bundle);
-
-  assert.ok(ruleIds(result).includes('ED-TRACE-001'));
+  assert.throws(() => validateExperienceCaseValue(bundle.experienceCase, {
+    ruleCatalog,
+    grammar,
+  }), (error) => error.code === 'ED-CONTRACT-001');
 });
 
 test('reachable mutating branches cannot hide outside the costed success path', (t) => {

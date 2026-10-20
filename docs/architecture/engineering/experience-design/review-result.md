@@ -67,6 +67,47 @@ Rules:
   caller-supplied HEAD or another worktree.
 - Any mismatch invalidates the result; stale reports cannot be reclassified.
 
+Supported package files are closed JSON contracts:
+
+```ts
+type ReviewEnvelope = {
+  kind: "peers-touch-experience-review-envelope";
+  schemaVersion: 1;
+  packageId: StableId;
+  sourceHead: string;
+  manifest: { path: string; digest: Digest };
+  rubric: { path: string; digest: Digest };
+  cases: Array<{ id: StableId; path: string; digest: Digest }>;
+};
+
+type ReviewManifest = {
+  kind: "peers-touch-experience-review-manifest";
+  schemaVersion: 1;
+  packageId: StableId;
+  sourceHead: string;
+  sourceBlobAlgorithm: "git-sha1" | "sha256";
+  cases: Array<{
+    id: StableId;
+    path: string;
+    format: "source-backed-markdown" | "experience-case-json";
+    digest: Digest;
+    sourceBlobs: SourceBlobRef[];
+    canonicalDigests?: { case: Digest; contract: Digest; candidate: Digest };
+  }>;
+};
+```
+
+Paths are package-relative and resolve inside that package. Case IDs and paths
+are unique; envelope and manifest inventories agree. Package/source identities,
+manifest/rubric references and the selected case's digest/source inventory must
+equal EvaluationBinding. Case digests here hash exact file bytes. JSON cases
+are also loaded through the canonical Case validator and require matching case
+identity plus canonical case/contract/candidate digests. Markdown cases remain
+source-backed semantic review inputs and forbid canonicalDigests. Derived
+states retain source references; graph identity is not imposed on independent
+semantic review. Historical Quality seals remain historical artifacts rather
+than current admission packages.
+
 ## 3. Facts, Contracts And Inferences
 
 ```ts
@@ -174,7 +215,8 @@ Ordering:
 
 1. Run breadth-first search from entry over visible action/response edges.
 2. Order by shortest action distance.
-3. At equal distance, use `explicitOrder` when both states have it.
+3. At equal distance, explicit states precede derived states, and explicit
+   states use `explicitOrder`.
 4. Remaining ties use source path, line, then state ID in ASCII order.
 5. Assign contiguous ordinals beginning at `0`.
 
@@ -260,6 +302,7 @@ Rules:
 - `named-adjacent` requires `namedAdjacentPointerFactId` and an explicit return
   state/target.
 - `returnStateId` is reachable and in scope.
+- The return is reachable from the blocked source, not only from graph entry.
 - `returnTarget=null` requires a contract-backed `notApplicableReason`.
 - Preserved state is checked against the owning contract; the Kernel does not
   define what business state must survive.
@@ -449,6 +492,11 @@ Result invariants:
   outcome rather than recovering it.
 - `kind=retry|recovery` requires a referenced `RecoveryPath`, and every
   `RecoveryPath` is referenced by at least one such path.
+- Every exit/retry/recovery realizes a graph edge with the same source,
+  visible action fact and immediate destination. Retry/recovery starts at the
+  referenced recovery source; its destination may be an intermediate surface
+  but must reach the eventual return. Named-adjacent entry uses the declared
+  pointer fact. Preserved state and return targets retain business/input IDs.
 - An unproven point blocks each stage named by `requiredFor` even when the
   verdict is `NO_BLOCKING_FINDING`.
 
@@ -475,6 +523,10 @@ Prototype admission requires:
 - `NO_BLOCKING_FINDING`;
 - `decision=accepted`;
 - no unproven point whose `requiredFor` contains `review` or `high-fidelity`.
+
+The public admission API and CLI require explicit repository/package/input
+paths and recompute SourceFence at admission. A prior `review-verify` summary
+does not authorize a later admission after input drift.
 
 ## 11. Holdout Lifecycle
 

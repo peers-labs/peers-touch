@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const SOURCE_FILES = [
+  'admission.mjs',
   'calibration.mjs',
   'canonical.mjs',
   'evaluator.mjs',

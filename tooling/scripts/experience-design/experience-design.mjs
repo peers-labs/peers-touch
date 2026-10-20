@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { runCalibration } from './calibration.mjs';
+import { evaluatePrototypeAdmission } from './admission.mjs';
 import {
   ExperienceDesignError,
   canonicalDigest,
@@ -26,7 +27,6 @@ import {
 import { validateSourceFence } from './source-fence.mjs';
 import { controlPlaneVersionDigest } from './source-version.mjs';
 import {
-  evaluatePrototypeAdmission,
   parseReviewResult,
   validateReviewResult,
 } from './validator.mjs';
@@ -53,6 +53,7 @@ function parseOptions(args) {
       continue;
     }
     const key = value.slice(2);
+    if (Object.hasOwn(options, key)) fail('ED_CLI_USAGE', `duplicate option --${key}`);
     if (
       ![
         'rules',
@@ -185,9 +186,21 @@ function requireReviewVerifyOptions(options) {
   if (missing.length > 0) {
     throw new ExperienceReviewError(
       'EDX_BINDING_INVALID',
-      `review-verify requires ${missing.join(', ')}`,
+      `source-bound review requires ${missing.join(', ')}`,
     );
   }
+}
+
+function reviewSourceInputs(options) {
+  requireReviewVerifyOptions(options);
+  return {
+    repoRoot: options['repo-root'],
+    packageRoot: options['package-root'],
+    runEnvelopePath: options['run-envelope'],
+    casePath: options.case,
+    manifestPath: options.manifest,
+    rubricPath: options.rubric,
+  };
 }
 
 function validateReviewResultFile(resultPath) {
@@ -199,24 +212,17 @@ function verifyReviewResultFile(resultPath, options) {
   const result = readReviewJson(resultPath, 'ReviewResult');
   return {
     ...validateReviewResult(result),
-    sourceFence: validateSourceFence(result, {
-      repoRoot: options['repo-root'],
-      packageRoot: options['package-root'],
-      runEnvelopePath: options['run-envelope'],
-      casePath: options.case,
-      manifestPath: options.manifest,
-      rubricPath: options.rubric,
-    }),
+    sourceFence: validateSourceFence(result, reviewSourceInputs(options)),
   };
 }
 
-function evaluateReviewAdmission(resultPath, decisionPath) {
+function evaluateReviewAdmission(resultPath, decisionPath, options) {
   const result = readReviewJson(resultPath, 'ReviewResult');
   const decision = readReviewJson(
     decisionPath,
     'IndependentReviewDecision',
   );
-  return evaluatePrototypeAdmission(result, decision);
+  return evaluatePrototypeAdmission(result, decision, reviewSourceInputs(options));
 }
 
 function validateReview(casePath, resultPath, receiptPath, options) {
@@ -256,7 +262,7 @@ function usage() {
     '  experience-design.mjs validate-review <case.json> <result.json> <receipt.json> [source options]',
     '  experience-design.mjs review-validate <review-result.json>',
     '  experience-design.mjs review-verify <review-result.json> --repo-root <path> --package-root <path> --run-envelope <path> --case <path> --manifest <path> --rubric <path>',
-    '  experience-design.mjs review-admission <review-result.json> <independent-review.json>',
+    '  experience-design.mjs review-admission <review-result.json> <independent-review.json> --repo-root <path> --package-root <path> --run-envelope <path> --case <path> --manifest <path> --rubric <path>',
     '  experience-design.mjs calibrate [source options]',
     '  experience-design.mjs validate-holdouts [source options]',
     '  experience-design.mjs check [source options]',
@@ -272,6 +278,23 @@ function usage() {
 export function runCli(argv) {
   const [command, ...rest] = argv;
   const { positional, options } = parseOptions(rest);
+  const allowedOptions = {
+    'review-validate': [],
+    'review-verify': ['repo-root', 'package-root', 'run-envelope', 'case', 'manifest', 'rubric'],
+    'review-admission': ['repo-root', 'package-root', 'run-envelope', 'case', 'manifest', 'rubric'],
+    validate: ['rules', 'grammar'],
+    'validate-sources': ['rules', 'grammar'],
+    evaluate: ['rules', 'grammar', 'repo-root', 'expect-disposition'],
+    'validate-review': ['rules', 'grammar', 'repo-root'],
+    calibrate: ['rules', 'grammar', 'repo-root', 'package-root'],
+    'validate-holdouts': ['rules', 'grammar', 'repo-root', 'package-root'],
+    check: ['rules', 'grammar', 'repo-root', 'package-root'],
+  };
+  for (const key of Object.keys(options)) {
+    if (!allowedOptions[command]?.includes(key)) {
+      fail('ED_CLI_USAGE', `${command} does not consume --${key}`);
+    }
+  }
   if (command === 'review-validate') {
     if (positional.length !== 1) {
       throw new ExperienceReviewError(
@@ -297,7 +320,7 @@ export function runCli(argv) {
         'review-admission requires ReviewResult and IndependentReviewDecision paths',
       );
     }
-    return evaluateReviewAdmission(positional[0], positional[1]);
+    return evaluateReviewAdmission(positional[0], positional[1], options);
   }
   if (command === 'validate') {
     if (positional.length !== 1) {
@@ -343,7 +366,7 @@ export function runCli(argv) {
   if (command === 'calibrate') {
     const sources = loadInputs(options);
     return runCalibration({
-      fixturesRoot: DEFAULT_FIXTURES_ROOT,
+      fixturesRoot: options['package-root'] ?? DEFAULT_FIXTURES_ROOT,
       ruleCatalog: sources.ruleCatalog,
       grammar: sources.grammar,
       repoRoot: options['repo-root'] ?? REPO_ROOT,
@@ -352,7 +375,7 @@ export function runCli(argv) {
   if (command === 'validate-holdouts') {
     const sources = loadInputs(options);
     return validateHoldoutLedger({
-      fixturesRoot: DEFAULT_FIXTURES_ROOT,
+      fixturesRoot: options['package-root'] ?? DEFAULT_FIXTURES_ROOT,
       ruleCatalog: sources.ruleCatalog,
       grammar: sources.grammar,
       repoRoot: options['repo-root'] ?? REPO_ROOT,
@@ -365,13 +388,13 @@ export function runCli(argv) {
       grammarPath: sources.paths.grammarPath,
     });
     const calibration = runCalibration({
-      fixturesRoot: DEFAULT_FIXTURES_ROOT,
+      fixturesRoot: options['package-root'] ?? DEFAULT_FIXTURES_ROOT,
       ruleCatalog: sources.ruleCatalog,
       grammar: sources.grammar,
       repoRoot: options['repo-root'] ?? REPO_ROOT,
     });
     const holdouts = validateHoldoutLedger({
-      fixturesRoot: DEFAULT_FIXTURES_ROOT,
+      fixturesRoot: options['package-root'] ?? DEFAULT_FIXTURES_ROOT,
       ruleCatalog: sources.ruleCatalog,
       grammar: sources.grammar,
       repoRoot: options['repo-root'] ?? REPO_ROOT,

@@ -1,5 +1,13 @@
 # Experience Design Control Plane - Decisions
 
+Current executable refinements remain within EDX-20261018:
+package linkage and fresh admission are governed by ReviewResult section 2/10;
+state ordering is a total order by distance, explicit origin/order and source;
+recovery declarations realize graph edges and returns from the blocked source.
+Historical blind integrity uses frozen snapshot bindings, while current
+evaluation has separate evidence authority. These tighten existing promises
+without replacing Product/Client semantics or independent judgment.
+
 > **Status**: active
 > **Version**: v1.2
 > **Created**: 2026-10-18 | **Updated**: 2026-10-20

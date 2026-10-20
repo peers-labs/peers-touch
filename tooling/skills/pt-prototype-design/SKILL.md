@@ -127,13 +127,23 @@ Material UI 在进入高保真前必须经过 Experience Reasoning Kernel：
 
    ```bash
    node tooling/scripts/experience-design/experience-design.mjs \
-     review-admission <review-result.json> <independent-review.json>
+     review-admission <review-result.json> <independent-review.json> \
+     --repo-root <repo-root> \
+     --package-root <package-root> \
+     --run-envelope <package-relative-run-envelope> \
+     --case <package-relative-case> \
+     --manifest <package-relative-manifest> \
+     --rubric <package-relative-rubric>
    ```
 
 只有 `admitted=true` 才能进入高保真。`FINDINGS`、stale binding、
 contract/rubric conflict、非独立评审或 review/high-fidelity `UNPROVEN`
 全部 fail closed。Kernel 只验证结果闭合与排序，不代替 Product、UI Identity
 或独立评审判断语义真伪。
+
+最终准入重新读取当前源码与包输入，不能沿用之前的 `review-verify` 成功。
+包格式与 Markdown / canonical JSON 投影绑定遵循
+`docs/architecture/engineering/experience-design/review-result.md`。
 
 真源：`docs/architecture/engineering/experience-design/README.md`。
 
