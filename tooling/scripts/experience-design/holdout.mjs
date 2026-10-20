@@ -139,10 +139,23 @@ function listJsonFiles(directory) {
   }
 }
 
+function readCalibrationCandidate(sourcePath) {
+  try {
+    return readJson(sourcePath, 'calibration case');
+  } catch (error) {
+    if (error instanceof ExperienceDesignError) return null;
+    throw error;
+  }
+}
+
 function calibrationCases(fixturesRoot) {
   return ['positive', 'negative', 'boundary']
     .flatMap((classification) => listJsonFiles(path.join(fixturesRoot, classification)))
-    .map((sourcePath) => ({ value: readJson(sourcePath, 'calibration case'), sourcePath }));
+    .map((sourcePath) => ({
+      value: readCalibrationCandidate(sourcePath),
+      sourcePath,
+    }))
+    .filter(({ value }) => value !== null);
 }
 
 function findPromotedCase(fixturesRoot, record) {
@@ -150,7 +163,8 @@ function findPromotedCase(fixturesRoot, record) {
     .flatMap((classification) =>
       listJsonFiles(path.join(fixturesRoot, classification)));
   for (const candidatePath of candidates) {
-    const candidate = readJson(candidatePath, 'promoted calibration case');
+    const candidate = readCalibrationCandidate(candidatePath);
+    if (candidate === null) continue;
     if (
       candidate.id === record.promotedCaseId
       && canonicalDigest(candidate) === record.promotedCaseDigest

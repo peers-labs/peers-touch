@@ -299,6 +299,26 @@ test('frozen findings retain their disposition and promotion IDs are globally un
     assert.equal(calibrate(environment).results.filter((entry) =>
       entry.path.includes('missing-id-')).length, 2);
   });
+  await t.test('lets malformed JSON reach its declared validation error', (context) => {
+    const environment = prepareRoot(context, { calibration: true });
+    const manifestPath = path.join(environment.root, 'calibration-manifest.json');
+    const manifest = readJson(manifestPath);
+    const fixturePath = 'negative/malformed-json.json';
+    fs.writeFileSync(path.join(environment.root, fixturePath), '{"kind":');
+    manifest.cases.push({
+      path: fixturePath,
+      class: 'negative',
+      mode: 'validation-error',
+      expectedErrorCode: 'ED-CONTRACT-001',
+    });
+    writeJson(manifestPath, manifest);
+
+    const result = calibrate(environment);
+    assert.equal(
+      result.results.find((entry) => entry.path === fixturePath).errorCode,
+      'ED-CONTRACT-001',
+    );
+  });
   await t.test('promoted historical integrity survives current expectation-rule removal', (context) => {
     const environment = prepareRoot(context, { calibration: true });
     const mutate = ({ candidate }) => {
