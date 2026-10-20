@@ -185,6 +185,9 @@ Material cases are total, not sparse:
 Any omission, duplicate owner or orphan is `ED-CONTRACT-001`, never an empty
 success.
 
+Candidate states and transitions must belong to their Journey and be reachable
+from its start, even when every ID appears in a TraceLink.
+
 ## 4. Semantic Concepts
 
 ```ts
@@ -480,6 +483,13 @@ type TraceLink = {
 Drift detection compares the candidate's reachable ordered state kinds and
 required action IDs with `AcceptedTrace`. A missing or inserted commitment,
 decision surface or mode choice is `ED-DRIFT-001`.
+`orderedStateKinds` contains at least entry and result phases. It is a
+sequence: distinct states may repeat the same kind.
+The selected path remains the exact sequence used for cost derivation.
+Reachable alternatives before success are additionally checked for non-recovery
+decisions: positive decision cost, option choice, mode selection or interruption
+requires accepted action intent. Zero-decision navigation and explicit recovery
+remain legal supporting branches; a candidate trace alone cannot accept them.
 Capability, Journey, product state and acceptance IDs must all resolve from
 `ProductIntent`; evidence `claimId` resolves to one acceptance ID.
 
@@ -769,6 +779,7 @@ type HoldoutLedgerRecord = {
   caseDigest: Digest;
   firstResultDigest: Digest;
   reviewReceiptDigest: Digest;
+  evaluatorSnapshotDigest: Digest;
   promotedCaseId?: StableId;
   promotedCaseDigest?: Digest;
 };
@@ -793,6 +804,26 @@ Calibration suite rules:
   the complete ledger. A changed, duplicated or reused ID is rejected.
 - promotion resolves the original case, first result and digest-bound receipt
   before accepting the new calibration case.
+- every promoted calibration case resolves a reciprocal ledger promotion
+  identity and digest, including when calibration is invoked separately.
+- ledger records bind a content-addressed `evaluator-snapshots/` object with
+  kind `peers-touch-experience-evaluator-snapshot`, schemaVersion `1`,
+  sourceDigest, frozen rules and frozen grammar. Original result version is
+  the canonical digest of source/rules/grammar digests. Historical integrity
+  validates content addresses, case/contract/candidate bindings, frozen rule
+  consistency and independent receipt; it does not rerun new code as old code.
+- current reevaluation is separately returned as `currentResultDigest`. It
+  never rewrites the immutable first result and does not inherit its review
+  approval or claim historical deterministic replay.
+- historical Case integrity does not apply new graph validation retroactively.
+  If current validation/evaluation rejects an old addressed case, the chain
+  remains historically valid and currentEvaluationStatus is `unproven`, with
+  a null currentResultDigest and the current error. Frozen findings still
+  determine their own legal disposition; no blocking result may be relabeled
+  ready. Calibration IDs are unique and cannot reuse any sealed holdout ID.
+- `calibrate`, `validate-holdouts` and `check` consume `--package-root` as the
+  explicit external fixture/ledger root; omitted means repository calibration
+  fixtures. Unsupported command options fail rather than being ignored.
 
 ## 16. Lifecycle
 

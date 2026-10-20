@@ -70,12 +70,22 @@ task-owned ReviewResult:
      --manifest <package-relative-manifest> \
      --rubric <package-relative-rubric>
    node tooling/scripts/experience-design/experience-design.mjs \
-     review-admission <review-result.json> <independent-review.json>
+     review-admission <review-result.json> <independent-review.json> \
+     --repo-root <repo-root> \
+     --package-root <package-root> \
+     --run-envelope <package-relative-run-envelope> \
+     --case <package-relative-case> \
+     --manifest <package-relative-manifest> \
+     --rubric <package-relative-rubric>
    ```
 
 Record current binding, verdict, primary candidate/tuple, independent review,
 admission result and scoped `UNPROVEN` entries. `NO_BLOCKING_FINDING` is not an
 approval by itself.
+
+Admission revalidates current package links and source bytes. Canonical
+calibration/holdout commands consume `--package-root` for external fixtures;
+historical blind integrity and current reevaluation are distinct results.
 
 For a Quality-owned blind run, verify the sealed package and Exposure Ledger
 before execution, the complete report hash before `scoring`, and the score plus

@@ -121,6 +121,16 @@ function writeChain(environment, bundle, reviewOptions = {}) {
     caseDigest,
     firstResultDigest,
     reviewReceiptDigest,
+    evaluatorSnapshotDigest: writeAddressed(
+      path.join(environment.root, 'evaluator-snapshots'),
+      {
+        kind: 'peers-touch-experience-evaluator-snapshot',
+        schemaVersion: 1,
+        sourceDigest: evaluatorVersionDigest,
+        rules: ruleCatalog.value,
+        grammar: grammar.value,
+      },
+    ),
   };
   const ledgerDigest = writeAddressed(
     path.join(environment.root, 'holdout-ledger'),

@@ -89,6 +89,12 @@ Quality evidence for material UI records:
 - product/runtime non-claims.
 
 Zero deterministic findings means only `ready-for-independent-review`.
+
+Final `review-admission` requires the same explicit repository, package,
+envelope, case, manifest and rubric arguments as `review-verify`; it recomputes
+their current links and source bytes. A prior validation cannot be reused as
+freshness authority. Calibration promotion also validates the reciprocal blind
+chain when invoked separately from `check`.
 `pt-github-review` remains the final code-review owner.
 
 The Reasoning Kernel is invoked by the same canonical CLI and consumes the

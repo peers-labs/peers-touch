@@ -221,7 +221,7 @@ function assertUnique(values, key, context) {
 function assertStringArray(
   value,
   context,
-  { min = 0, ids = false, allowed = null } = {},
+  { min = 0, ids = false, allowed = null, unique = true } = {},
 ) {
   const result = assertArray(value, context, { min });
   result.forEach((item, index) => {
@@ -229,7 +229,7 @@ function assertStringArray(
     else assertString(item, `${context}[${index}]`);
     if (allowed !== null) assertEnum(item, allowed, `${context}[${index}]`);
   });
-  assertUnique(result, (item) => item, context);
+  if (unique) assertUnique(result, (item) => item, context);
   return result;
 }
 
@@ -327,7 +327,7 @@ function validateViewport(value, context) {
   });
 }
 
-function validateRuleCatalogValue(value) {
+export function validateRuleCatalogValue(value) {
   assertClosedObject(
     value,
     [
@@ -395,7 +395,7 @@ export function loadRuleCatalog(sourcePath) {
   return validateRuleCatalogValue(readJson(sourcePath, 'rule catalog'));
 }
 
-function validateGrammarValue(value) {
+export function validateGrammarValue(value) {
   assertClosedObject(
     value,
     [
@@ -1018,7 +1018,7 @@ function validateContract(value, context) {
     assertStringArray(
       trace.orderedStateKinds,
       `${itemContext}.orderedStateKinds`,
-      { min: 2, allowed: STATE_KINDS },
+      { min: 2, allowed: STATE_KINDS, unique: false },
     );
     assertReferenceArray(
       trace.requiredActionIds,
@@ -1542,6 +1542,29 @@ function validateCandidate(value, context, contractRefs) {
     [...contractRefs.journeyIds],
     `${context}.journeys contract coverage`,
   );
+  for (const journey of value.journeys) {
+    const states = value.states.filter((state) => state.journeyId === journey.journeyId);
+    const transitions = value.transitions.filter((transition) => transition.journeyId === journey.journeyId);
+    const owned = new Set(states.map((state) => state.id));
+    if (!owned.has(journey.startStateId) || !owned.has(journey.successStateId)) {
+      fail('ED-CONTRACT-001', `${context} Journey endpoints belong to another Journey`);
+    }
+    const reachable = new Set([journey.startStateId]);
+    const queue = [journey.startStateId];
+    for (let index = 0; index < queue.length; index += 1) {
+      for (const transition of transitions) {
+        if (!owned.has(transition.fromStateId) || !owned.has(transition.toStateId)) {
+          fail('ED-CONTRACT-001', `${context} transition crosses Journey ownership`);
+        }
+        if (transition.fromStateId !== queue[index] || reachable.has(transition.toStateId)) continue;
+        reachable.add(transition.toStateId);
+        queue.push(transition.toStateId);
+      }
+    }
+    if (states.some((state) => !reachable.has(state.id))) {
+      fail('ED-CONTRACT-001', `${context} contains a disconnected Journey state or transition`);
+    }
+  }
 
   assertArray(value.traces, `${context}.traces`, { min: 1 });
   assertUnique(value.traces, (item) => item?.journeyId, `${context}.traces`);

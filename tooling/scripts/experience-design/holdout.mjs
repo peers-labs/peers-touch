@@ -2,13 +2,18 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import {
+  ExperienceDesignError,
   canonicalDigest,
   fail,
   isPlainObject,
 } from './canonical.mjs';
 import { evaluateExperienceCase } from './evaluator.mjs';
 import { validateReviewReceipt } from './review-receipt.mjs';
-import { validateExperienceCaseValue } from './schema.mjs';
+import {
+  validateExperienceCaseValue,
+  validateRuleCatalogValue,
+  validateGrammarValue,
+} from './schema.mjs';
 import { controlPlaneVersionDigest } from './source-version.mjs';
 
 function digestBasename(digest) {
@@ -84,6 +89,7 @@ function validateLedgerRecord(record, context) {
       'caseDigest',
       'firstResultDigest',
       'reviewReceiptDigest',
+      'evaluatorSnapshotDigest',
     ],
     ['promotedCaseId', 'promotedCaseDigest'],
     context,
@@ -102,6 +108,7 @@ function validateLedgerRecord(record, context) {
     'caseDigest',
     'firstResultDigest',
     'reviewReceiptDigest',
+    'evaluatorSnapshotDigest',
   ]) {
     assertDigest(record[key], `${context}.${key}`);
   }
@@ -132,6 +139,12 @@ function listJsonFiles(directory) {
   }
 }
 
+function calibrationCases(fixturesRoot) {
+  return ['positive', 'negative', 'boundary']
+    .flatMap((classification) => listJsonFiles(path.join(fixturesRoot, classification)))
+    .map((sourcePath) => ({ value: readJson(sourcePath, 'calibration case'), sourcePath }));
+}
+
 function findPromotedCase(fixturesRoot, record) {
   const candidates = ['positive', 'negative', 'boundary']
     .flatMap((classification) =>
@@ -153,6 +166,143 @@ function findPromotedCase(fixturesRoot, record) {
       promotedCaseDigest: record.promotedCaseDigest,
     },
   );
+}
+
+function historicalInputs(fixturesRoot, record) {
+  const snapshot = readAddressed(
+    path.join(fixturesRoot, 'evaluator-snapshots'),
+    record.evaluatorSnapshotDigest,
+    'evaluator snapshot',
+  ).value;
+  assertClosed(snapshot, ['kind', 'schemaVersion', 'sourceDigest', 'rules', 'grammar'], [], 'evaluator snapshot');
+  if (snapshot.kind !== 'peers-touch-experience-evaluator-snapshot' || snapshot.schemaVersion !== 1) {
+    fail('HOLDOUT_INTEGRITY_INVALID', 'evaluator snapshot identity is unsupported');
+  }
+  assertDigest(snapshot.sourceDigest, 'evaluator snapshot sourceDigest');
+  return {
+    sourceDigest: snapshot.sourceDigest,
+    ruleCatalog: validateRuleCatalogValue(snapshot.rules),
+    grammar: validateGrammarValue(snapshot.grammar),
+  };
+}
+
+function validateHistoricalResult(result, loadedCase, snapshot) {
+  assertClosed(result, [
+    'kind', 'schemaVersion', 'caseId', 'evaluatedAt', 'evaluatorVersionDigest',
+    'caseDigest', 'contractDigest', 'candidateDigest', 'disposition',
+    'derivedPathCosts', 'findings', 'unprovenEvidenceRequirementIds',
+  ], [], 'historical evaluation result');
+  if (result.kind !== 'peers-touch-experience-findings' || result.schemaVersion !== 1
+    || result.caseId !== loadedCase.case.id
+    || ['case', 'contract', 'candidate'].some((field) => result[`${field}Digest`] !== loadedCase.digests[field])
+    || result.evaluatorVersionDigest !== canonicalDigest({
+      source: snapshot.sourceDigest, rules: snapshot.ruleCatalog.digest, grammar: snapshot.grammar.digest,
+    })) {
+    fail('HOLDOUT_INTEGRITY_INVALID', 'historical result does not bind its case and evaluator snapshot');
+  }
+  if (!['changes-required', 'ready-for-independent-review', 'unproven'].includes(result.disposition)
+    || !Array.isArray(result.findings) || !Array.isArray(result.unprovenEvidenceRequirementIds)) {
+    fail('HOLDOUT_INTEGRITY_INVALID', 'historical result has invalid findings or disposition');
+  }
+  if (typeof result.evaluatedAt !== 'string'
+    || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(result.evaluatedAt)
+    || !Number.isFinite(Date.parse(result.evaluatedAt))
+    || new Date(result.evaluatedAt).toISOString() !== result.evaluatedAt) {
+    fail('HOLDOUT_INTEGRITY_INVALID', 'historical result timestamp is invalid');
+  }
+  const journeyIds = loadedCase.case.candidate.journeys?.map((journey) => journey.journeyId);
+  if (!Array.isArray(journeyIds) || !isPlainObject(result.derivedPathCosts)
+    || JSON.stringify(Object.keys(result.derivedPathCosts).sort()) !== JSON.stringify([...journeyIds].sort())) {
+    fail('HOLDOUT_INTEGRITY_INVALID', 'historical path costs do not bind Journey IDs');
+  }
+  for (const cost of Object.values(result.derivedPathCosts)) {
+    assertClosed(cost, ['commitments', 'contextSwitches', 'decisionLoad', 'interruptions', 'recoveryDebt'], [], 'historical path cost');
+    if (Object.values(cost).some((value) => !Number.isSafeInteger(value) || value < 0)) {
+      fail('HOLDOUT_INTEGRITY_INVALID', 'historical path cost requires nonnegative integers');
+    }
+  }
+  const requirements = new Set(loadedCase.case.contract.requiredEvidence?.map((requirement) => requirement.id));
+  const unprovenIds = result.unprovenEvidenceRequirementIds;
+  if (new Set(unprovenIds).size !== unprovenIds.length || unprovenIds.some((id) => !requirements.has(id))) {
+    fail('HOLDOUT_INTEGRITY_INVALID', 'historical unproven references are unknown or duplicated');
+  }
+  const findingIds = new Set();
+  for (const finding of result.findings) {
+    assertClosed(finding, ['id', 'ruleId', 'severity', 'owner', 'location', 'observed', 'consequence', 'correction'], [], 'historical finding');
+    assertId(finding.id, 'historical finding ID');
+    for (const field of ['location', 'observed', 'consequence', 'correction']) {
+      if (typeof finding[field] !== 'string' || finding[field].trim() === '') {
+        fail('HOLDOUT_INTEGRITY_INVALID', `historical finding ${field} is invalid`);
+      }
+    }
+    const rule = snapshot.ruleCatalog.rules.get(finding.ruleId);
+    if (rule === undefined || findingIds.has(finding.id)
+      || finding.severity !== rule.severity || finding.owner !== rule.owner) {
+      fail('HOLDOUT_INTEGRITY_INVALID', 'historical finding does not match its frozen rule catalog');
+    }
+    findingIds.add(finding.id);
+  }
+  const matchingSeverity = snapshot.ruleCatalog.value.precedence.find(
+    (severity) => result.findings.some((finding) => finding.severity === severity),
+  );
+  const matchingDispositions = matchingSeverity === undefined
+    ? new Set([snapshot.ruleCatalog.value.readyDisposition])
+    : new Set(result.findings
+      .filter((finding) => finding.severity === matchingSeverity)
+      .map((finding) => snapshot.ruleCatalog.rules.get(finding.ruleId).disposition));
+  if (matchingDispositions.size !== 1) {
+    fail('HOLDOUT_INTEGRITY_INVALID', 'historical precedence maps to conflicting dispositions');
+  }
+  const [expectedDisposition] = matchingDispositions;
+  if (result.disposition !== expectedDisposition) {
+    fail('HOLDOUT_INTEGRITY_INVALID', 'historical disposition contradicts its frozen findings');
+  }
+  const evidenceIds = result.findings.filter((finding) => finding.ruleId === 'ED-EVIDENCE-001')
+    .map((finding) => finding.location.replace(/^contract\.requiredEvidence\./, '')).sort();
+  if (JSON.stringify(evidenceIds) !== JSON.stringify([...unprovenIds].sort())
+    || (result.disposition === 'ready-for-independent-review' && unprovenIds.length > 0)) {
+    fail('HOLDOUT_INTEGRITY_INVALID', 'historical evidence findings and unproven references disagree');
+  }
+}
+
+function historicalCase(value) {
+  assertClosed(value, ['kind', 'schemaVersion', 'id', 'title', 'calibration', 'claim', 'authorship', 'contract', 'candidate'], [], 'historical case');
+  if (value.kind !== 'peers-touch-experience-case' || value.schemaVersion !== 1 || value.calibration !== 'blind') {
+    fail('HOLDOUT_INTEGRITY_INVALID', 'historical case must be a blind Experience Case');
+  }
+  assertId(value.id, 'historical case ID');
+  assertClosed(value.authorship, ['contractAuthorId', 'candidateAuthorId', 'evidenceAuthorIds'], [], 'historical authorship');
+  assertId(value.authorship.contractAuthorId, 'historical contract author');
+  assertId(value.authorship.candidateAuthorId, 'historical candidate author');
+  if (!Array.isArray(value.authorship.evidenceAuthorIds) || !Array.isArray(value.candidate?.evidence)
+    || !isPlainObject(value.contract) || !isPlainObject(value.candidate)) {
+    fail('HOLDOUT_INTEGRITY_INVALID', 'historical case author/evidence bindings are invalid');
+  }
+  value.authorship.evidenceAuthorIds.forEach((id) => assertId(id, 'historical evidence author'));
+  const candidate = { ...value.candidate };
+  delete candidate.evidence;
+  return {
+    case: value,
+    digests: {
+      case: canonicalDigest(value), contract: canonicalDigest(value.contract),
+      candidate: canonicalDigest(candidate),
+    },
+  };
+}
+
+function currentEvaluation(value, options) {
+  try {
+    const result = evaluateExperienceCase(
+      validateExperienceCaseValue(value, options), options,
+    );
+    return { currentResultDigest: canonicalDigest(result), currentEvaluationStatus: 'evaluated' };
+  } catch (error) {
+    if (!(error instanceof ExperienceDesignError)) throw error;
+    return {
+      currentResultDigest: null, currentEvaluationStatus: 'unproven',
+      currentEvaluationError: { code: error.code, message: error.message },
+    };
+  }
 }
 
 export function validateHoldoutLedger({
@@ -199,10 +349,8 @@ export function validateHoldoutLedger({
       record.caseDigest,
       'holdout case',
     );
-    const loadedCase = validateExperienceCaseValue(caseArtifact.value, {
-      ruleCatalog,
-      grammar,
-    });
+    const snapshot = historicalInputs(fixturesRoot, record);
+    const loadedCase = historicalCase(caseArtifact.value);
     if (
       loadedCase.case.calibration !== 'blind'
       || loadedCase.case.id !== record.holdoutId
@@ -217,21 +365,7 @@ export function validateHoldoutLedger({
       record.firstResultDigest,
       'first holdout result',
     );
-    const expectedResult = evaluateExperienceCase(loadedCase, {
-      ruleCatalog,
-      grammar,
-      evaluatorVersionDigest,
-      repoRoot,
-    });
-    if (
-      canonicalDigest(expectedResult) !== record.firstResultDigest
-      || canonicalDigest(resultArtifact.value) !== canonicalDigest(expectedResult)
-    ) {
-      fail(
-        'HOLDOUT_INTEGRITY_INVALID',
-        'first holdout result is not the deterministic result for the case',
-      );
-    }
+    validateHistoricalResult(resultArtifact.value, loadedCase, snapshot);
     const reviewArtifact = readAddressed(
       reviewDirectory,
       record.reviewReceiptDigest,
@@ -244,11 +378,7 @@ export function validateHoldoutLedger({
 
     if (record.promotedCaseId !== undefined) {
       const promoted = findPromotedCase(fixturesRoot, record);
-      const loadedPromoted = validateExperienceCaseValue(promoted, {
-        ruleCatalog,
-        grammar,
-      });
-      const provenance = loadedPromoted.case.promotedFromBlind;
+      const provenance = promoted.promotedFromBlind;
       if (
         provenance === undefined
         || provenance.holdoutId !== record.holdoutId
@@ -268,7 +398,33 @@ export function validateHoldoutLedger({
       firstResultDigest: record.firstResultDigest,
       reviewReceiptDigest: record.reviewReceiptDigest,
       ledgerDigest,
+      evaluatorSnapshotDigest: record.evaluatorSnapshotDigest,
+      ...currentEvaluation(caseArtifact.value, { ruleCatalog, grammar, evaluatorVersionDigest, repoRoot }),
     });
+  }
+  const promotedIds = new Set();
+  for (const { value: promoted } of calibrationCases(fixturesRoot)) {
+    if (!isPlainObject(promoted)) continue;
+    if (promoted.promotedFromBlind === undefined) continue;
+    if (typeof promoted.id !== 'string'
+      || promotedIds.has(promoted.id)
+      || holdoutIds.has(promoted.id)) {
+      fail('HOLDOUT_INTEGRITY_INVALID', 'promotion ID is invalid, duplicated, or reused from a sealed blind case');
+    }
+    promotedIds.add(promoted.id);
+    const provenance = promoted.promotedFromBlind;
+    const record = records.find((entry) => entry.holdoutId === provenance.holdoutId);
+    if (record === undefined) {
+      fail('HOLDOUT_INTEGRITY_INVALID', 'promoted calibration case has no sealed blind chain');
+    }
+    const ledger = readAddressed(ledgerDirectory, record.ledgerDigest, 'promotion ledger').value;
+    if (promoted.id === ledger.holdoutId || ledger.promotedCaseId !== promoted.id
+      || ledger.promotedCaseDigest !== canonicalDigest(promoted)
+      || ['caseDigest', 'firstResultDigest', 'reviewReceiptDigest'].some(
+        (field) => provenance[field] !== ledger[field],
+      )) {
+      fail('HOLDOUT_INTEGRITY_INVALID', 'promotion lacks reciprocal immutable ledger binding');
+    }
   }
 
   return {

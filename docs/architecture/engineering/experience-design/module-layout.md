@@ -44,6 +44,7 @@ tooling/
 │   ├── review-receipt.mjs
 │   ├── holdout.mjs
 │   ├── calibration.mjs
+│   ├── admission.mjs
 │   ├── evaluator.test.mjs
 │   ├── evidence.test.mjs
 │   ├── schema.test.mjs
@@ -59,6 +60,7 @@ tooling/
 │       ├── boundary/
 │       ├── holdout/
 │       ├── holdout-results/
+│       ├── evaluator-snapshots/
 │       ├── reviews/
 │       └── holdout-ledger/
 └── skills/
@@ -95,6 +97,7 @@ tooling/
 | `experience-design.mjs` | CLI parsing and stable output |
 | `review-receipt.mjs` | Digest and reviewer-independence validation |
 | `holdout.mjs` | Content-addressed blind chain and promotion validation |
+| `admission.mjs` | Final independent decision and current SourceFence admission |
 | `calibration.mjs` | Three-class coverage and exact expectation runner |
 | `fixtures/` | Calibrated cases and content-addressed blind holdout records |
 | `*.test.mjs` | Rule, fixture and Skill integration proof |
