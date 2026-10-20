@@ -824,6 +824,9 @@ Calibration suite rules:
 - `calibrate`, `validate-holdouts` and `check` consume `--package-root` as the
   explicit external fixture/ledger root; omitted means repository calibration
   fixtures. Unsupported command options fail rather than being ignored.
+- holdout promotion discovery ignores calibration files that cannot yet be
+  parsed. The calibration manifest remains the owner that executes
+  `validation-error` fixtures and compares their exact expected error code.
 
 ## 16. Lifecycle
 
