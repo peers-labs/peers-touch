@@ -8,7 +8,7 @@
 
 ## 1. 文档职责
 
-- `docs/global/workflow.md`：唯一规范研发流程。
+- `docs/development/workflow.md`：唯一规范研发流程。
 - 本目录 `design.md`：工具的职责、调用关系和失败处理。
 - `data-model.md`：可选任务记录、操作记录、证据与恢复要求。
 - `integration.md`：调用方清单、切换范围和具体保留检查。

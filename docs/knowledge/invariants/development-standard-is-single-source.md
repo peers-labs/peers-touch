@@ -1,9 +1,9 @@
 ---
 kind: invariant
-title: Development has one human-facing operating standard
+title: Development has one shared operating standard
 status: active
 owns:
-  - docs/global/workflow.md
+  - docs/development/workflow.md
   - docs/architecture/engineering/development-workflow/
   - tooling/skills/pt-dev-workflow/
   - tooling/skills/pt-god-view/
@@ -18,33 +18,34 @@ related:
 detected: 2026-09-20
 ---
 
-# Development has one human-facing operating standard
+# Development has one shared operating standard
 
 ## What must hold
 
-`docs/global/workflow.md` is the only human-facing end-to-end development
-procedure. Small, standard, and large work follow the same ownership,
-declaration, execution, evidence, review, and cleanup flow; only required
+`docs/development/workflow.md` is the only end-to-end development procedure for
+humans and agents. Small, standard, and complex work follow the same intake,
+design, implementation, evidence, review, and delivery flow; only required
 artifact depth differs.
 
 Architecture documents define control-plane ownership, schemas, decisions, and
-integration contracts. Skills define one owner's executable behavior and
-consume machine decisions. Neither may publish a competing end-to-end
-procedure.
+integration contracts. `AGENTS.md`, Skills, Make/devctl, Hooks, and CI adapt or
+execute the shared procedure. None may publish a competing end-to-end flow.
 
 ## Why this is non-negotiable
 
-Duplicating the flow across global docs, architecture docs, and Skills makes
-authorization, continuation, and evidence ordering drift independently. A
-single human standard plus owner-specific machine contracts keeps instructions
-readable without creating another source of truth.
+Duplicating the flow across human docs, agent docs, architecture docs, and
+Skills makes authorization, continuation, and evidence ordering drift. A
+single shared standard plus owner-specific machine contracts keeps instructions
+readable and prevents audience-specific truth.
 
 ## How to verify
 
 - `tooling/scripts/review/skill-check.sh` passes.
-- `docs/global/workflow.md` names small, standard, and large artifact depth.
-- Workflow Skills reference `docs/global/workflow.md` and consume
+- `docs/development/workflow.md` names small, standard, and complex work.
+- Workflow Skills reference `docs/development/workflow.md` and consume
   `CONTINUE | HARD_BLOCK | COMPLETE` where relevant.
+- `AGENTS.md` links to the shared Dev knowledge base instead of duplicating
+  platform guides or command matrices.
 - Architecture docs identify themselves as implementation contracts rather
   than another human procedure.
 - No current workflow document or Skill introduces a versioned workflow name

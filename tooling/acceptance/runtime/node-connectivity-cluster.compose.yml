@@ -9,6 +9,11 @@ x-station-common: &station-common
       BUILD_TIME: ${PT_NCP_BUILD_TIME:?PT_NCP_BUILD_TIME is required}
       BUILDER_IMAGE: ${PT_NCP_BUILDER_IMAGE:-hub.byted.org/library/ubuntu:22.04}
       BASE_IMAGE: ${PT_NCP_BASE_IMAGE:-hub.byted.org/library/ubuntu:22.04}
+      APT_MIRROR: ${APT_MIRROR:-https://mirrors.aliyun.com}
+      GO_TARBALL_MIRROR: ${GO_TARBALL_MIRROR:-https://mirrors.aliyun.com/golang}
+      GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
+      GOSUMDB: ${GOSUMDB:-off}
+      GONOSUMCHECK: ${GONOSUMCHECK:-*}
   environment: &station-environment
     PEERS_NODE_ROLE: station
     PEERS_AUTH_SECRET: ${PEERS_AUTH_SECRET:?PEERS_AUTH_SECRET is required}

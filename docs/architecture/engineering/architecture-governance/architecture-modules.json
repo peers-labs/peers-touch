@@ -34,7 +34,6 @@
     "docs/architecture/engineering/api-governance",
     "docs/architecture/engineering/prototypes",
     "docs/architecture/engineering/quality",
-    "docs/architecture/engineering/toolchain",
     "docs/architecture/platform/applet-runtime",
     "docs/architecture/platform/client/frontend-runtime",
     "docs/architecture/platform/client/mobile",
@@ -125,6 +124,53 @@
       "externalCapabilityRegistries": []
     },
     {
+      "id": "release-distribution",
+      "root": "docs/architecture/engineering/release-distribution",
+      "status": "active",
+      "owner": "Architecture Team",
+      "characteristics": {
+        "protocol": false,
+        "stateMachine": true,
+        "persistence": true,
+        "ownership": true,
+        "moduleLayout": true,
+        "crossRuntime": true,
+        "integration": true
+      },
+      "requiredDocuments": [
+        "README.md",
+        "design.md",
+        "decisions.md",
+        "data-model.md",
+        "module-layout.md",
+        "integration.md"
+      ],
+      "decisionIds": [
+        "RD-D01",
+        "RD-D02",
+        "RD-D03",
+        "RD-D04",
+        "RD-D05",
+        "RD-D06",
+        "RD-D07",
+        "RD-D08",
+        "RD-D09",
+        "RD-D10",
+        "RD-D11",
+        "RD-D12",
+        "RD-D13",
+        "RD-D14",
+        "RD-D15"
+      ],
+      "governedPaths": [
+        ".github/workflows/release.yml",
+        "docs/architecture/engineering/release-distribution",
+        "tooling/distribution"
+      ],
+      "capabilities": [],
+      "externalCapabilityRegistries": []
+    },
+    {
       "id": "development-workflow",
       "root": "docs/architecture/engineering/development-workflow",
       "status": "active",
@@ -170,7 +216,7 @@
       ],
       "governedPaths": [
         "docs/architecture/engineering/development-workflow",
-        "docs/global/workflow.md",
+        "docs/development/workflow.md",
         "tooling/scripts/README.md",
         "tooling/scripts/local-dev/completion-review.mjs",
         "tooling/scripts/local-dev/completion-review.test.mjs",
@@ -334,6 +380,46 @@
       "externalCapabilityRegistries": []
     },
     {
+      "id": "developer-toolchain",
+      "root": "docs/architecture/engineering/toolchain",
+      "status": "active",
+      "owner": "Developer Infrastructure",
+      "characteristics": {
+        "protocol": true,
+        "stateMachine": true,
+        "persistence": true,
+        "ownership": true,
+        "moduleLayout": true,
+        "crossRuntime": true,
+        "integration": true
+      },
+      "requiredDocuments": [
+        "README.md",
+        "design.md",
+        "decisions.md",
+        "data-model.md",
+        "module-layout.md",
+        "integration.md"
+      ],
+      "decisionIds": [
+        "DTC-D01",
+        "DTC-D02",
+        "DTC-D03",
+        "DTC-D04",
+        "DTC-D05",
+        "DTC-D06",
+        "DTC-D10",
+        "DTC-D11"
+      ],
+      "governedPaths": [
+        "docs/architecture/engineering/toolchain",
+        "tooling/dev.ps1",
+        "tooling/devctl"
+      ],
+      "capabilities": [],
+      "externalCapabilityRegistries": []
+    },
+    {
       "id": "local-dev-control-plane",
       "root": "docs/architecture/engineering/local-dev",
       "status": "active",
@@ -384,7 +470,6 @@
         "tooling/scripts/local-dev/machine-dev.mjs",
         "tooling/scripts/local-dev/machine-dev.test.mjs",
         "tooling/scripts/local-dev/mobile-ios-sim.sh",
-        "tooling/scripts/local-dev/profile.sh",
         "tooling/scripts/local-dev/redact-env.sh",
         "tooling/scripts/local-dev/relay-check.sh",
         "tooling/scripts/local-dev/relay-dev.sh",

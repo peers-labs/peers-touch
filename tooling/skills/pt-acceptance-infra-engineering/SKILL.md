@@ -184,7 +184,7 @@ make acceptance-infra-validate
 make acceptance-plan-self
 git diff --check -- \
   AGENTS.md \
-  docs/global/workflow.md \
+  docs/development/workflow.md \
   docs/architecture/engineering/acceptance \
   tooling/acceptance \
   tooling/scripts \

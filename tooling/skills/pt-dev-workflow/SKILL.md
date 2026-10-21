@@ -8,7 +8,7 @@ produces: ["implemented result", "verification evidence", "delivery state", "res
 
 # Peers-Touch Development Workflow
 
-Human operating standard: `docs/global/workflow.md`.
+Shared human and Agent standard: `docs/development/workflow.md`.
 
 This Skill organizes work. It does not create a second lifecycle beside the
 seven-step standard and does not derive authority from Hook, chat identity,

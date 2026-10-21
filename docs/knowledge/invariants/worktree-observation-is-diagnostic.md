@@ -59,4 +59,3 @@ reconciliation provides visibility without changing control-plane ownership.
 
 - LDCP-D08 separates discovery, registration, and runtime activity.
 - LDCP-D19 retires the browser dashboard and keeps the CLI projection read-only.
-- LDCP-D15 combines opportunity reports with periodic reconciliation.

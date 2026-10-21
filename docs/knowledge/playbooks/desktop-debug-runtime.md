@@ -67,5 +67,6 @@ Do not use hard packaged `.app` debugging by default. Packaging is only the righ
 
 ## Crosswalks
 
-- This playbook operationalizes `AGENTS.md §4` Desktop debug uses Make.
+- This playbook operationalizes
+  [`Desktop Development`](../../development/platforms/desktop.md).
 - It avoids conflating Desktop runtime lifecycle work with release packaging validation.

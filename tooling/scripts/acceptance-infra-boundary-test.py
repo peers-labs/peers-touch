@@ -35,7 +35,7 @@ class AcceptanceInfraBoundaryTests(unittest.TestCase):
 
     def test_agent_handbook_and_workflow_route_by_ownership(self) -> None:
         agents = read("AGENTS.md")
-        workflow = read("docs/global/workflow.md")
+        workflow = read("docs/development/workflow.md")
 
         self.assertIn("pt-acceptance-infra-engineering", agents)
         self.assertIn("Acceptance Infra ownership first", agents)
@@ -141,7 +141,7 @@ class AcceptanceInfraBoundaryTests(unittest.TestCase):
 
     def test_acceptance_execution_modes_do_not_auto_escalate(self) -> None:
         agents = read("AGENTS.md")
-        workflow = read("docs/global/workflow.md")
+        workflow = read("docs/development/workflow.md")
         development = read("tooling/skills/pt-dev-workflow/SKILL.md")
         procedures = read(
             "tooling/skills/pt-acceptance-engineering/PROCEDURES.md"

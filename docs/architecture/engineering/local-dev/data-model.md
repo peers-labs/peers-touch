@@ -1,73 +1,39 @@
 # Local Dev Control Plane - Data Model
 
 > **Status**: active
-> **Version**: v1.4
-> **Created**: 2026-09-13 | **Updated**: 2026-10-15
+> **Version**: v2.0
+> **Updated**: 2026-10-21
 > **Owner**: Platform Team
-> **Module**: `tooling/scripts/local-dev/`
-
----
+> **Module**: `tooling/scripts/local-dev/machine-dev-*`
 
 ## 1. Machine Registry
 
-The machine registry is stored at:
+The authoritative registry is:
 
 ```text
 ~/.peers-touch/dev/registry.json
 ```
 
-Bootstrap audit state may use:
-
-```json
-{
-  "schemaVersion": 1,
-  "kind": "peers-touch-machine-dev-registry",
-  "authority": "observed-snapshot"
+```typescript
+interface MachineRegistry {
+  schemaVersion: 1;
+  kind: "peers-touch-machine-dev-registry";
+  authority: "machine-control-plane";
+  updatedAt: string;
+  registrations: WorkspaceRegistration[];
 }
 ```
 
-`observed-snapshot` means the file is diagnostic only. Future implementation
-does not read those registrations as authority. The first explicit
-`env-register` atomically promotes the document to:
+Before first registration, an inventory may use
+`authority: "observed-snapshot"`. Runtime resolution rejects that authority.
 
-```json
-{
-  "schemaVersion": 1,
-  "kind": "peers-touch-machine-dev-registry",
-  "authority": "machine-control-plane",
-  "updatedAt": "2026-09-13T00:00:00.000Z",
-  "registrations": []
-}
-```
+The schema is closed. Unknown authoritative fields, duplicate workspace IDs,
+duplicate slots, malformed timestamps, or identity mismatches fail closed.
 
-Bootstrap audit and D07 evidence-migration fields may remain as diagnostic
-fields during their owning migration. Runtime resolution consumes only the
-closed authoritative registration schema. Unknown authoritative fields,
-duplicate workspace IDs, duplicate slots, malformed timestamps, and identity
-mismatches fail closed.
+## 2. Workspace Registration
 
-The root projection distinguishes target and legacy evidence locations:
-
-```ts
-interface MachineRoots {
-  machineDevRoot: '~/.peers-touch/dev';
-  acceptanceEvidence: '~/.peers-touch/dev/acceptance';
-  legacyAcceptanceEvidence?: '~/Library/Application Support/PeersTouch/acceptance';
-}
-```
-
-## 2. Workspace Identity
-
-```text
-canonicalRoot = realpath(worktree root)
-workspaceId   = lower_hex(sha256(canonicalRoot))[0:16]
-```
-
-The registry key is `workspaceId`. `name` is display metadata and must not be a
-lookup key because two worktrees may have the same basename.
-
-```ts
-interface WorkspaceRecord {
+```typescript
+interface WorkspaceRegistration {
   workspaceId: string;
   canonicalRoot: string;
   name: string;
@@ -83,343 +49,141 @@ interface WorkspaceRecord {
 }
 ```
 
-An `observed-snapshot` may contain additional diagnostic projections. An
-authoritative registration persists and re-verifies canonical root, workspace
-ID, and registered branch before every resolved command. Current Git HEAD is
-captured from the worktree at operation time and is never persisted in the
-registration. A root or branch mismatch makes the registration `stale`;
-ordinary commits, merges, rebases, and pulls do not.
+Identity is derived as:
 
-Schema v1 authoritative registrations exclude `WorkspaceRecord.head`. This is
-a development-stage hard correction, not a version migration. Runtime has no
-compatibility reader for head-bearing registrations or alternate schema
-versions; incompatible files fail closed and must be corrected explicitly.
+```text
+canonicalRoot = realpath(worktreeRoot)
+workspaceId   = sha256(canonicalRoot)[0:16]
+```
 
-## 3. Profile Definition
+`name` is display metadata. Current Git HEAD is not a registration field.
 
-Profile definitions remain references to the sibling environment repository:
+## 3. Profile Projection
 
-```ts
-interface ProfileDefinition {
-  name: string;
-  resetPolicy: 'stable-protected' | 'agent-resettable';
-  stationMode: 'local' | 'compose' | 'remote';
+The machine owner resolves the selected Profile without copying its full env
+into the registry:
+
+```typescript
+interface ProfileProjection {
+  profile: string;
+  profileFile: string;
+  sourceState: "tracked-clean" | "local";
+  stationMode: "local" | "compose" | "remote";
   stationUrl: string;
+  stationHost: string;
   stationDeployEnvironment?: string;
-  relayUrl?: string;
-  relayDeployEnvironment?: string;
-  sourceCommit?: string;
-  sourceState:
-    | 'tracked'
-    | 'tracked-clean'
-    | 'tracked-dirty'
-    | 'untracked'
-    | 'local';
+  stationDeployFile?: string;
+  stationDeployHost?: string;
+  resetPolicy: "stable-protected" | "agent-resettable";
 }
 ```
 
-`resetPolicy` is not stored in the profile. The reader first requires the
-profile directory name and `PT_DEV_PROFILE` to match exactly, then applies
-`lowercase(profileId).endsWith("stable")`:
+The canonical Profile ID and the declared `PT_DEV_PROFILE` must match.
+`resetPolicy` is derived and never persisted.
 
-- `stable-protected`: autonomous `station.reset` is denied with
-  `PROFILE_RESET_PROTECTED`;
-- `agent-resettable`: the Agent may choose reset without human involvement
-  when the workspace capability, exact scope, current source identity, remote
-  topology, and OS lease all match.
+## 4. Capabilities
 
-The derived policy is projected into status but is not copied into
-`WorkspaceRecord`. No environment variable, Station mode, or legacy cache may
-override it.
-
-Target state removes machine-local slot authority from profile definitions.
-During migration, an observed legacy `PT_DEV_SLOT` may be reported as
-`legacySlot`, but it cannot override the machine allocation.
-
-## 4. Workspace Binding
-
-```ts
-interface WorkspaceBinding {
-  workspaceId: string;
-  canonicalRoot: string;
-  profile: string;
-  slot: number;
-  allowedCapabilities: StationCapability[];
-  purpose: string;
-  owner: string;
-  updatedAt: string;
-  updatedBy: string;
-}
-
+```typescript
 type StationCapability =
-  | 'station.connect'
-  | 'station.deploy'
-  | 'station.reset';
+  | "station.connect"
+  | "station.deploy"
+  | "station.reset";
 ```
 
 Rules:
 
-- One workspace has at most one active profile binding.
-- Registration is created only by the canonical `profile` or `env-register`
-  action; discovery never writes a `WorkspaceBinding`.
-- Slot is allocated independently of profile.
-- `station.connect` does not imply deploy or reset.
-- A reviewed non-stable remote Profile receives `station.deploy` on canonical
-  first selection and may use it without another Plan or chat grant.
-- A stable Profile receives only `station.connect` by default. A user-directed
-  explicit capability binding may add `station.deploy`; reset remains
-  forbidden.
-- `station.reset` may be added by the Agent for an `agent-resettable` Profile.
-  It still requires an exact command scope and OS-held lease.
-- `station.reset` cannot be added for a `stable-protected` Profile.
-- Missing capability is `WORKSPACE_CAPABILITY_MISSING`, not an authorization
-  request.
+- connect does not imply deploy or reset;
+- deploy and reset require a remote, non-loopback, tracked-clean target;
+- reset is rejected for a stable-protected Profile;
+- missing capability and stable protection are distinct failures;
+- Profile selection preserves only capabilities valid for the new Profile.
 
-### 4.1 Optional Task Progress
+## 5. Slot Allocation
 
-Task recovery state is repository-local and explicitly selected:
+One authoritative registry may assign a slot to only one workspace.
 
-```text
-.dev-workflow/tasks/<taskId>/
-└── task.json
+```typescript
+interface SlotPorts {
+  station: number;
+  desktopAppGateway: number;
+  desktopAppWeb: number;
+  mobileWeb: number;
+}
 ```
 
-It is not part of `WorkspaceRecord`, does not occupy the workspace, and is not
-read by runtime admission. The checksum-protected snapshot is the only task
-record. Revision/CAS protects concurrent updates and source changes invalidate
-stale evidence.
+Ports are derived from the registered slot. The Profile's slot value cannot
+override this allocation.
 
-Activity is derived and not manually asserted:
+## 6. Lease Request
 
-```ts
-type WorkspaceActivity = 'active' | 'idle' | 'stale';
+```typescript
+type LeaseResourceKind =
+  | "local.slot"
+  | "station.deploy"
+  | "station.reset";
+
+interface LeaseRequest {
+  resourceKind: LeaseResourceKind;
+  resourceId: string;
+  workspaceId: string;
+  source: {
+    branch: string;
+    head: string;
+  };
+  budgetSeconds: number;
+  leaseFile: string;
+}
 ```
 
-- `active`: at least one live runtime process/listener or lease matches
-  `workspaceId`, PID, and process-start identity.
-- `idle`: registration is valid but no runtime resource is live.
-- `stale`: the registered canonical root or branch no longer matches.
+Resource identity is normalized by the control plane:
 
-An unregistered discovered worktree has no `WorkspaceActivity`; it is simply
-outside the managed cohort.
+- `local.slot` uses the bound slot;
+- `station.deploy` uses the Profile's reviewed deployment environment;
+- `station.reset` uses the exact reset scope.
 
-## 5. Worktree-Local Profile
+The caller cannot substitute an arbitrary resource label.
 
-`make profile-init PROFILE=<name> SLOT=<n>` creates one local compose Profile
-under `.local/dev/profiles/`. It never overwrites an existing Profile and its
-identity must match the selected name. Runtime accepts it only when it is a
-non-symlink regular file directly inside that worktree-local directory, owned
-by the current user, inaccessible to group/other users, and composed only of
-shell-safe literal `KEY=VALUE` assignments. Machine resolution parses those
-values and emits shell-quoted exports; normal development never executes the
-local Profile with `source`.
+## 7. Lease Metadata
 
-Git-tracked, clean environment-repository Profiles remain canonical for remote
-deployment. A local Profile cannot authorize remote deploy or reset because it
-has no tracked deploy definition. `PT_DEV_PROFILE_FILE` remains reserved for
-run-scoped Acceptance composition and must declare
-`acceptance-runtime-manifest` authority plus an absolute profile root
-containing the owned regular file.
-
-## 6. Lease Record
-
-```ts
-interface LeaseRecord {
+```typescript
+interface LeaseMetadata {
   leaseId: string;
-  resourceKind: 'local.slot' | 'station.deploy' | 'station.reset' | 'runtime.profile';
+  resourceKind: LeaseResourceKind;
   resourceId: string;
   workspaceId: string;
   ownerPid: number;
   ownerProcessStart: string;
   acquiredAt: string;
-  expiresAt?: string;
 }
 ```
 
-The lock is enforced by `flock(2)` through
-`tooling/scripts/local-dev/machine-dev-lease.py`. The holder owns the file
-descriptor while its child process group executes. It forwards termination
-signals, enforces the declared budget, terminates the process group on timeout,
-and clears metadata before unlocking on success, command failure, signal, or
-timeout. The mutation child inherits the locked descriptor, so supervisor
-`SIGKILL` cannot release exclusivity while the child continues. After acquiring
-the resource lock and before launching the mutation, the holder revalidates the
-registry binding, prepared Git source identity, capability, reviewed Profile,
-target, reset policy, and exact scope under the registry lock; binding updates
-inspect leases under the same lock order.
+Metadata describes the live holder but does not create ownership. The lock is
+valid only while the OS lock is held by the matching process identity.
 
-JSON metadata is diagnostic and cannot establish a held lease without the live
-OS lock and matching PID/process-start identity. Metadata left by `SIGKILL` or
-machine failure is stale: status reports it separately, and the next successful
-OS lock acquisition replaces it.
+## 8. Status Projection
 
-## 7. Runtime Observation
+```typescript
+type WorkspaceActivity = "active" | "idle" | "stale";
 
-```ts
-interface RuntimeObservation {
+interface MachineStatus {
   observedAt: string;
-  listeners: Array<{
-    port: number;
-    pid: number;
-    processStart: string;
-    executable: string;
-    cwd?: string;
-    workspaceId?: string;
-  }>;
-  activeLeases: LeaseRecord[];
+  authority: "missing" | "observed-snapshot" | "machine-control-plane";
+  registrations: Array<
+    WorkspaceRegistration & {
+      activity: WorkspaceActivity;
+      resetPolicy?: "stable-protected" | "agent-resettable";
+      profileState: "available" | "blocked";
+      profileError?: {
+        code: string;
+        message: string;
+      };
+    }
+  >;
+  activeLeases: LeaseMetadata[];
+  staleLeaseMetadata: unknown[];
+  unregisteredObservations: unknown | null;
 }
 ```
 
-Declared and observed state must remain separate. A declared slot with no
-listener is allocated but idle; a listener without a matching binding is an
-unowned runtime conflict.
-
-## 7.1 Workflow Snapshot Projection
-
-```ts
-interface DevelopmentWorkflowSnapshot {
-  observedAt: string;
-  worktrees: Array<{
-    workspaceId: string;
-    canonicalRoot: string;
-    source: CurrentGitSource;
-    tasks: TaskProgress[];
-    taskErrors: TaskProgressError[];
-  }>;
-  errors: SnapshotError[];
-  runtime: unknown | null;
-  digest: string;
-}
-```
-
-`workflow-snapshot.mjs` generates this object on request and never persists it.
-One corrupt task or unavailable workspace becomes a local typed finding and
-does not hide other rows. The CLI has no listener, browser, PID, refresh loop,
-or runtime lifecycle.
-
-## 8. Conflict Model
-
-```ts
-interface RegistryConflict {
-  kind:
-    | 'worktree-profile-sharing'
-    | 'slot-reuse'
-    | 'local-slot-live-conflict'
-    | 'station-capability-conflict'
-    | 'isolated-local-roots'
-    | 'untracked-environment-definitions'
-    | 'stale-worktree-profile-binding'
-    | 'runtime-identity-mismatch';
-  severity: 'low' | 'medium' | 'high' | 'blocking';
-  resource?: string;
-  workspaceIds?: string[];
-  detail?: string;
-}
-```
-
-Static slot reuse is reported during migration. It becomes blocking when two
-workspaces attempt to run local clients on the same slot.
-
-## 9. Runtime Admission Boundary
-
-Runtime admission reads the authoritative workspace binding, reviewed Profile,
-normalized target, current Git source, stable protection, operation-specific
-authorization, and OS-held lease. Optional task records, Plans, and Hook
-context neither grant nor block acquisition. Live leases and process
-observation determine actual resource possession. Secrets and raw handles are
-invalid in registry and lease metadata.
-
-## 10. Atomicity
-
-Registry mutation must:
-
-1. Acquire the machine registry lock.
-2. Read and validate the complete current document.
-3. Reconcile live leases and process identity.
-4. Apply one closed mutation.
-5. Write a same-directory temporary file.
-6. Flush and atomically replace `registry.json`.
-7. Flush the containing directory where supported.
-
-Unknown schema versions or unknown mutation variants fail closed.
-
-Plan binding creation uses a complete owner-only temporary file and atomic
-no-replace publication. An existing different tuple returns
-`WORKSPACE_PLAN_REBIND_DENIED`; no mutation or deletion follows.
-
-## 11. Acceptance Evidence Root
-
-The local developer default is:
-
-```text
-~/.peers-touch/dev/acceptance
-```
-
-The Evidence Store layout remains:
-
-```text
-<acceptance-root>/<workspaceId>/<gateId>/<runId>/
-```
-
-`ArtifactRef` remains root-relative and does not persist the physical root.
-Therefore a verified whole-root relocation preserves logical references.
-
-Migration state is explicit:
-
-```ts
-type AcceptanceRootMigrationState =
-  | 'legacy'
-  | 'quiescing'
-  | 'quiesced'
-  | 'copying'
-  | 'verified'
-  | 'cut-over'
-  | 'removing';
-```
-
-`cut-over` is legal only when no writer or live run exists and the target root
-passes manifest, latest-pointer, content-hash, file-count, and byte-count
-verification. There is no dual-read state.
-
-Worktree readiness is explicit in the run-scoped migration manifest:
-
-```ts
-type AcceptanceRootContractStatus =
-  | 'unknown'
-  | 'legacy-capable'
-  | 'canonical-ready';
-
-interface AcceptanceRootWorktreeReadiness {
-  workspaceId: string;
-  status: AcceptanceRootContractStatus;
-  sourceCommit?: string;
-  verifiedAt?: string;
-}
-```
-
-`canonical-ready` requires source evidence that the worktree's resolver:
-
-- defaults to `~/.peers-touch/dev/acceptance`;
-- rejects the product Application Support namespace;
-- has no legacy fallback, dual-read, or dual-write;
-- keeps machine-global leases independent from artifact-root override.
-
-The migration command dynamically reads `git worktree list`; it does not
-auto-register the result. Every discovered worktree must either prove
-`canonical-ready` or be physically removed from the Git worktree registry
-before `cut-over`. The readiness matrix belongs to the migration manifest, not
-the long-lived machine registry.
-
-### 11.1 Terminal State
-
-Migration has no persistent terminal `legacy-removed` state. After the old
-directory is removed and absence is verified:
-
-1. Write an immutable completion receipt under
-   `~/.peers-touch/dev/migrations/acceptance-root-relocation-v1.json`.
-2. Remove `legacyAcceptanceEvidence` from `roots`.
-3. Remove the complete `acceptanceEvidenceMigration` object.
-4. Remove operational legacy-path branches from active docs and tooling.
-
-The completion receipt is historical evidence only. Runtime resolvers, status
-commands, and allocation logic must not read it.
+Status is recomputed from registry, Git, Profile, and lease observations. It
+does not infer task progress or completion.

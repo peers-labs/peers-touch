@@ -1065,7 +1065,6 @@ Rules:
 
 - [全局架构](../../../global/architecture.md)
 - [领域模型规范](../../../global/domain-model.md)
-- [第一性原理](../../../global/first-principles.md)
 - [SubServer 开发标准](../../../station/subserver-standard.md)
 - [多端同步协议](../../../client/mobile/sync-protocol.md)
 - [Station/Desktop 职责边界](../../platform/station-desktop-boundary.md)

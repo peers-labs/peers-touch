@@ -55,7 +55,7 @@ Read these before designing:
 - `docs/README.md`
 - `docs/global/architecture-document-standard.md`
 - `docs/global/architecture.md`
-- `docs/global/first-principles.md`
+- `docs/development/README.md`
 - `docs/knowledge/playbooks/documenting-large-requirements.md`
 - The nearest domain and platform sources for every path in scope.
 - Relevant `docs/knowledge/` invariants, pitfalls, and playbooks.

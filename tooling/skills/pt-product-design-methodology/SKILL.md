@@ -86,7 +86,7 @@ system can actually perform, not only nouns, categories, or aspirations.
 Read before designing:
 
 - `docs/README.md`
-- `docs/global/first-principles.md`
+- `docs/development/README.md`
 - Relevant architecture and platform sources.
 - Relevant `docs/knowledge/` invariants, pitfalls, and playbooks.
 - Existing research, feedback, support incidents, and acceptance evidence.

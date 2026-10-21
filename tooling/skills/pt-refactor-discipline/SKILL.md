@@ -92,15 +92,16 @@ The design is part of the change, not a chore after it. In the same change:
   top-down: architecture (`docs/architecture/`, `docs/global/architecture.md`) →
   platform (`docs/client/*`, `docs/station/`) → spec (`docs/global/coding-guide/`).
   For module-/architecture-level work, write or update the formal doc under
-  `docs/` and add/refresh the execution plan (AGENTS.md §3 Large Requirement
-  Protocol; use [`pt-plan-and-document`](../pt-plan-and-document/SKILL.md) to place it).
+  `docs/` and add or refresh an execution plan when the shared development
+  workflow requires one; use
+  [`pt-plan-and-document`](../pt-plan-and-document/SKILL.md) to place it.
 - **Proto contracts** change first when data models change — proto-first, never
   hand-edit generated files, regenerate via the correct build path (AGENTS.md §5).
 - **Knowledge layer** (`docs/knowledge/`) is the one place that is *append-only*:
   supersede stale invariants/pitfalls/playbooks with
   `status: superseded-by:<path>`, never delete them. Add a pitfall entry if the
   old design caused a bug you are now removing.
-- **Directory READMEs** for every directory you restructured (AGENTS.md §8).
+- **Directory READMEs** for every directory you restructured.
 
 This is how "no split-brain" holds over time: the doc that governs a path and the
 code on that path are updated by the same hand, in the same change.
@@ -121,7 +122,8 @@ code on that path are updated by the same hand, in the same change.
    inventory, delete the old path, update docs/proto/knowledge/READMEs in the
    same change. No item from step 3 left pointing at the old world.
 5. **Prove it's clean.** Search the tree for the old symbol/path/doc — zero live
-   references outside version history. Run the platform gates (AGENTS.md §10).
+   references outside version history. Follow
+   `docs/development/verification.md` and the relevant platform guide.
    If UI/UX behavior changed, run
    [`pt-prototype-sync-guardian`](../pt-prototype-sync-guardian/SKILL.md).
 6. **Audit for debt.** Use [`pt-quality-check`](../pt-quality-check/SKILL.md) /

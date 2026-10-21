@@ -182,6 +182,16 @@ function ensureAuthSecret(filePath) {
   return fs.readFileSync(filePath, 'utf8').trim();
 }
 
+export function composeRuntimeEnvironment(resolved, environment) {
+  const values = runtimeEnvironment(resolved, environment);
+  for (const key of ['APT_MIRROR', 'GO_TARBALL_MIRROR', 'GOPROXY', 'GOSUMDB', 'GONOSUMCHECK']) {
+    const reviewed = resolved.profile[key];
+    if (reviewed) values[key] = reviewed;
+    else delete values[key];
+  }
+  return values;
+}
+
 function runCompose(root, resolved, action, environment) {
   const profile = resolved.profile;
   const composeFile = path.join(root, 'tooling', 'docker', 'compose.yml');
@@ -210,10 +220,11 @@ function runCompose(root, resolved, action, environment) {
   } else {
     args.push('station');
   }
+  const composeEnvironment = composeRuntimeEnvironment(resolved, environment);
   const result = spawnSync('docker', args, {
     cwd: root,
     env: {
-      ...runtimeEnvironment(resolved, environment),
+      ...composeEnvironment,
       COMPOSE_PROJECT_NAME:
         profile.PT_STATION_COMPOSE_PROJECT || `pt-${profile.PT_DEV_PROFILE}`,
       STATION_PORT: profile.PT_STATION_PORT,

@@ -3,7 +3,7 @@
 > **Status**: draft
 > **Layer**: Architecture
 > **Owner**: Station
-> **Upstream**: `docs/global/architecture.md`, `docs/global/first-principles.md` (L0-4), `docs/global/coding-guide/api-field-placement.md`
+> **Upstream**: `docs/global/architecture.md`, `docs/global/domain-model.md`, `docs/global/coding-guide/api-field-placement.md`
 
 ---
 

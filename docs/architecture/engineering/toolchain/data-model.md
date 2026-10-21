@@ -1,29 +1,16 @@
 # Developer Toolchain - Data Model
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-09-12 | **Updated**: 2026-09-12
+> **Version**: v2.0
+> **Updated**: 2026-10-21
 > **Owner**: Developer Infrastructure
 > **Module**: `tooling/devctl/`
 
----
+## 1. Profile Definition
 
-## 1. Profile Model
-
-Profiles remain line-oriented env files containing declarative assignments:
-
-```text
-KEY=value
-KEY="value with spaces"
-KEY='literal value'
-```
-
-Blank lines and full-line comments are ignored. Variable expansion, command
-substitution, shell functions, redirection, and executable statements are
-invalid. The parser strips one matching quote pair and otherwise preserves the
-value.
-
-Required fields:
+A Profile is a declarative env file. Blank lines and full-line comments are
+ignored. Values may use one matching quote pair. Variable expansion, command
+substitution, redirection, and executable shell syntax are rejected.
 
 ```typescript
 interface DevProfile {
@@ -38,40 +25,83 @@ interface DevProfile {
 }
 ```
 
-Mode-specific fields are validated only when that mode is selected.
-Unknown fields are passed to child processes so existing profile extensions
-remain usable.
+Mode-specific fields are validated only for the selected mode. Unknown
+declarative fields remain available to product processes.
 
-## 2. Active Profile Reference
+## 2. Local Compose Bootstrap
+
+`devctl profile init <name> --slot <n>` creates two files:
+
+```text
+.local/dev/profiles/<name>.env   topology and local port defaults
+.local/dev/compose/<name>.env    Compose project and generated credentials
+```
+
+The Profile references the Compose file through
+`PT_STATION_COMPOSE_ENV_FILE`. The credential file contains random
+`PEERS_AUTH_SECRET` and `PEERS_DB_PASSWORD` values. Both files are private on
+POSIX and neither is overwritten.
+
+Profile topology and credentials stay separate. Credential values are never
+returned by `config`, `doctor`, or runtime state.
+
+## 3. Resolved Runtime Profile
+
+The machine Dev Control Plane selects the Profile and owns local allocation.
+`devctl` combines that binding with one Profile definition:
 
 ```typescript
-interface ActiveProfileReference {
-  worktreeId: string;
-  profileName: string;
-  activePath: string;
-  resolvedPath: string;
-  canonical: boolean;
+interface ResolvedRuntimeProfile {
+  reference: {
+    workspaceId: string;
+    workspaceRoot: string;
+    profileName: string;
+    resolvedPath: string;
+    authority: "machine-control-plane";
+    canonical: boolean;
+  };
+  profile: DevProfile;
+  paths: {
+    profileState: string;
+    profileData: string;
+    profileLogs: string;
+    profilePids: string;
+  };
 }
 ```
 
-The active reference is worktree-specific. The file name and
-`PT_DEV_PROFILE` value must match before any runtime mutation.
+Machine allocation replaces local client ports and local or Compose Station
+ports. A tracked-clean environment Profile is canonical for remote deployment;
+a worktree-local Profile is valid only for that worktree.
 
-## 3. Runtime State Record
+An Acceptance runtime manifest may provide a run-scoped Profile file. It must
+declare `acceptance-runtime-manifest` authority and remain inside the declared
+runtime Profile root. It does not replace the workspace binding.
+
+## 4. Runtime Paths
+
+Managed runtime state resolves under:
+
+```text
+~/.peers-touch/dev/workspaces/<workspaceId>/runtime/<profile>/
+├── data/
+├── logs/
+└── pids/
+```
+
+The Local Dev owner resolves the platform-specific machine root. `devctl` does
+not persist product data in the registry and does not use a worktree profile
+pointer.
+
+## 5. Managed Process Record
 
 ```typescript
-type ManagedService =
-  | "station"
-  | "desktop-app-vite"
-  | "desktop-app-tauri";
-
-interface RuntimeStateRecord {
+interface ManagedProcessRecord {
   schemaVersion: 1;
-  service: ManagedService;
+  service: string;
   profile: string;
   worktreeId: string;
   pid: number;
-  processGroupId?: number;
   command: string;
   args: string[];
   commandFingerprint: string;
@@ -81,34 +111,24 @@ interface RuntimeStateRecord {
   observedStartedAt?: string;
   logPath: string;
   readinessUrl?: string;
+  sourceCommit?: string;
 }
 ```
 
-The record contains no secrets and is written atomically through a temporary
-file plus rename.
+Records are written atomically and contain no environment values. Before reuse
+or termination, `devctl` re-observes the PID, process start time, and command
+identity.
 
-## 4. Runtime State Machine
+Process status is one of:
 
-```text
-ABSENT
-  | start + preflight pass
-  v
-STARTING -- readiness pass --> READY
-  |                             |
-  | process exit / timeout      | stop
-  v                             v
-FAILED <-------------------- STOPPING
-  |                             |
-  +--------- cleanup ----------> ABSENT
+- `absent`: no record exists;
+- `running`: the record matches a live process;
+- `stale`: the recorded process no longer exists;
+- `foreign`: the PID exists but its identity does not match.
 
-record exists + PID missing       -> STALE -> ABSENT
-record exists + identity mismatch -> FOREIGN (fail closed)
-port occupied + no valid record   -> FOREIGN (fail closed)
-```
+Stale records may be removed. Foreign processes are never stopped.
 
-`FOREIGN` is never auto-killed.
-
-## 5. Diagnostic Result
+## 6. Diagnostic Result
 
 ```typescript
 interface DiagnosticCheck {
@@ -122,7 +142,7 @@ interface DiagnosticCheck {
 interface DiagnosticReport {
   schemaVersion: 1;
   platform: NodeJS.Platform;
-  profile?: string;
+  profile: string;
   checks: DiagnosticCheck[];
   summary: {
     pass: number;
@@ -132,64 +152,12 @@ interface DiagnosticReport {
 }
 ```
 
-Optional native accelerators may report `warn`; a missing dependency required
-for the requested command reports `fail`.
+`doctor` checks only dependencies needed by the selected topology. Compose
+requires Docker; local Station requires Go. Desktop also requires pnpm, Cargo,
+Rust, and `protoc`.
 
-## 6. Secret Handling
+## 7. Secret Handling
 
-Keys matching `TOKEN`, `SECRET`, `PASSWORD`, `PRIVATE_KEY`, `API_KEY`, or
-credential-like suffixes are redacted from config and diagnostic output.
-Runtime state records never persist environment values.
-
-## 7. Formal Plan Binding
-
-The formal Markdown plan carries the worktree binding in its existing metadata
-block:
-
-```markdown
-> **Status**: active, approved for execution
-> **Branch**: `fix/example`
-> **Workspace ID**: `0123456789abcdef`
-> **Initial HEAD**: `<40-character commit>`
-```
-
-Only `Status`, `Branch`, and `Workspace ID` participate in active-plan
-discovery. `Initial HEAD` defines the default impact range. Runtime HEAD and
-dirty-worktree identity are observed, not persisted as plan progress.
-
-Exactly one plan may be active for a workspace ID.
-
-## 8. Acceptance Execution Contract
-
-Each tracked plan contains one fenced JSON object under
-`## Acceptance Execution`:
-
-```json
-{
-  "schemaVersion": 1,
-  "closures": {
-    "C1": ["desktop-check"]
-  },
-  "completion": ["desktop-check"],
-  "full": ["desktop-check", "desktop-native-e2e"]
-}
-```
-
-The existing Implementation Status table owns closure state. The contract only
-maps closure IDs to Gate IDs and therefore does not duplicate progress.
-
-Derived execution:
-
-```typescript
-interface AcceptanceExecution {
-  executionPlan: string;
-  closure: string;
-  mode: "closure" | "completion" | "full";
-  gates: string[];
-  candidateGates: string[];
-  changedPaths: string[];
-  timeoutBudgetSeconds: number;
-}
-```
-
-The generated object is an ephemeral projection. It is not another plan.
+Keys containing `TOKEN`, `SECRET`, `PASSWORD`, `PRIVATE_KEY`, `API_KEY`, or
+`CREDENTIAL` are redacted from user-facing configuration. Managed process
+records store command identity and paths, never environment values.

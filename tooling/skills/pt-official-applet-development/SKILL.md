@@ -27,7 +27,7 @@ Applies to:
 2. Read [`docs/architecture/platform/applet-runtime/README.md`](../../../docs/architecture/platform/applet-runtime/README.md) for current applet-runtime document priority.
 3. If implementing Note, read [`docs/architecture/platform/applet-runtime/note-applet-validation-design.md`](../../../docs/architecture/platform/applet-runtime/note-applet-validation-design.md).
 4. If implementing Note, follow [`docs/architecture/platform/applet-runtime/execution-plans/2026-06-17-note-official-applet-implementation-plan.md`](../../../docs/architecture/platform/applet-runtime/execution-plans/2026-06-17-note-official-applet-implementation-plan.md).
-5. If touching Desktop, Station, or Mobile, also read the matching `docs/.agent/<platform>.md`.
+5. If touching Desktop, Station, or Mobile, also read the matching `docs/development/platforms/<platform>.md`.
 
 ## Scaffold First
 

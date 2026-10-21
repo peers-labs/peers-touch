@@ -70,7 +70,7 @@ test('FLOW-A01 Hook permits ordinary work without identity, declaration, or Plan
     const result = await evaluateWorkflowEvent(event(root));
     assert.equal(result.action, 'ALLOW');
     assert.equal(result.executionRoot, root);
-    assert.match(result.additionalContext, /docs\/global\/workflow\.md/);
+    assert.match(result.additionalContext, /docs\/development\/workflow\.md/);
   } finally {
     cleanupFixture(root);
   }

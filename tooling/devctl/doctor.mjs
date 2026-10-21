@@ -107,11 +107,15 @@ export function runDoctor(root, environment = process.env) {
   const checks = [
     toolCheck('node', 'node', ['all'], runtimeEnv),
     toolCheck('pnpm', 'pnpm', ['checks', 'desktop'], runtimeEnv),
-    toolCheck('go', 'go', ['station'], runtimeEnv),
     toolCheck('cargo', 'cargo', ['desktop'], runtimeEnv),
     toolCheck('rustc', 'rustc', ['desktop'], runtimeEnv),
     toolCheck('protoc', 'protoc', ['station', 'generated-contracts'], runtimeEnv),
   ];
+  if (resolved.profile.PT_STATION_MODE === 'compose') {
+    checks.push(toolCheck('docker', 'docker', ['station'], runtimeEnv));
+  } else if (resolved.profile.PT_STATION_MODE === 'local') {
+    checks.push(toolCheck('go', 'go', ['station'], runtimeEnv));
+  }
 
   if (process.platform === 'win32') {
     checks.push(

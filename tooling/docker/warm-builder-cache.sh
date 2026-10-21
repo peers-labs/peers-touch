@@ -14,13 +14,21 @@ ENV_REPO="${PT_ENV_REPO:-$(dirname "$PROJECT_ROOT")/env}"
 DOCKERFILE="tooling/docker/builder-base.Dockerfile"
 IMAGE_TAG="peers-station-builder:go1.24.6"
 
-build_on_host() {
+build_on_host() (
   local env_file="$1"
   local env_name
   env_name="$(basename "$env_file" .env.example)"
 
+  # The reviewed deploy env (or these restricted-network defaults) owns build
+  # transport. Ambient developer shell values must not change a remote image.
+  unset APT_MIRROR GO_TARBALL_MIRROR GOPROXY GOSUMDB GONOSUMCHECK || true
   # shellcheck source=/dev/null
   source "$env_file"
+  : "${APT_MIRROR:=https://mirrors.aliyun.com}"
+  : "${GO_TARBALL_MIRROR:=https://mirrors.aliyun.com/golang}"
+  : "${GOPROXY:=https://goproxy.cn,direct}"
+  : "${GOSUMDB:=off}"
+  : "${GONOSUMCHECK:=*}"
 
   local host="${PT_DEPLOY_HOST:-}"
   local user="${PT_DEPLOY_USER:-}"
@@ -33,20 +41,30 @@ build_on_host() {
 
   echo "[BUILD] $env_name ($user@$host) ..."
 
-  # Client-side expansion injects the selected deploy profile into the remote script.
-  # shellcheck disable=SC2087
-  ssh "$user@$host" bash -s <<EOF
-set -e
-cd "\$HOME/$path"
-if docker image inspect $IMAGE_TAG >/dev/null 2>&1; then
-  echo "  [CACHED] $IMAGE_TAG already exists on $host"
-else
-  echo "  [BUILDING] $IMAGE_TAG on $host ..."
-  docker build -f $DOCKERFILE -t $IMAGE_TAG .
-  echo "  [DONE] $IMAGE_TAG built on $host"
-fi
+  # Quote each SSH argument once; profile overrides must not become remote code.
+  local remote_command quoted argument
+  local build_args=()
+  for argument in APT_MIRROR GO_TARBALL_MIRROR GOPROXY GOSUMDB GONOSUMCHECK; do
+    if [[ -n "${!argument:-}" ]]; then
+      build_args+=(--build-arg "$argument=${!argument}")
+    fi
+  done
+  remote_command="bash -s --"
+  for argument in "$path" "$DOCKERFILE" "$IMAGE_TAG" "${build_args[@]}"; do
+    printf -v quoted '%q' "$argument"
+    remote_command+=" $quoted"
+  done
+  ssh "$user@$host" "$remote_command" <<'EOF'
+set -euo pipefail
+deploy_path="$1"
+dockerfile="$2"
+image_tag="$3"
+shift 3
+cd "$HOME/$deploy_path"
+# Always evaluate the Dockerfile and ARGs; an old tag alone is not a cache key.
+docker build -f "$dockerfile" -t "$image_tag" "$@" .
 EOF
-}
+)
 
 target="${1:-}"
 
