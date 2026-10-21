@@ -160,11 +160,13 @@ test('current repository satisfies the module registry', () => {
     'bot',
     'chat-storage-governance',
     'cross-station-social',
+    'developer-toolchain',
     'development-workflow',
     'local-dev-control-plane',
     'mobile-social-parity',
     'node-connectivity',
     'oauth-login-broker',
+    'release-distribution',
     'secure-content',
     'station-access-lifecycle',
   ]);
