@@ -1,0 +1,311 @@
+---
+interface Props {
+  locale: 'en' | 'zh';
+  slug: string;
+  title: string;
+  description: string;
+  openLabel: string;
+  loadingLabel: string;
+  /* Reader SVG viewBox width / height; the embedded document hugs its
+     artboard exactly, so the frame uses the same ratio instead of a
+     one-size viewport that leaves dead space below each diagram. */
+  aspect: number;
+  collapsible?: boolean;
+  eager?: boolean;
+}
+
+const {
+  locale,
+  slug,
+  title,
+  description,
+  openLabel,
+  loadingLabel,
+  aspect,
+  collapsible = false,
+  eager = false,
+} = Astro.props;
+
+/* Embedded readers render diagram surface only: title/description already
+   live in the outer row, and reader chrome (toolbar, inspector, export)
+   stays available in the present=1 fullscreen view. */
+const source = `/architecture-assets/${slug}.${locale}.html?theme=light&embed=1`;
+const fullscreenSource = `/architecture-assets/${slug}.${locale}.html?theme=light&present=1`;
+---
+
+{collapsible ? (
+  <details class="diagram-detail" data-diagram-detail={slug}>
+    <summary>
+      <span class="diagram-summary__text">
+        <strong>{title}</strong>
+        <small>{description}</small>
+      </span>
+      <span class="diagram-summary__actions">
+        <a class="diagram-pop" href={fullscreenSource} target="_blank" rel="noopener" aria-label={openLabel} title={openLabel}>
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M6 2H2v4M10 2h4v4M6 14H2v-4M10 14h4v-4"></path>
+          </svg>
+        </a>
+        <i class="diagram-toggle" aria-hidden="true"></i>
+      </span>
+    </summary>
+    <div class="diagram-detail__body">
+      <div class="diagram-detail__inner">
+        <div class="diagram-frame" style={`--diagram-aspect:${aspect}`}>
+          <iframe
+            data-architecture-frame
+            data-diagram={slug}
+            data-src={source}
+            title={title}
+            loading="lazy"
+          ></iframe>
+          <p>{loadingLabel}</p>
+        </div>
+      </div>
+    </div>
+  </details>
+) : (
+  <article class="diagram-block" data-diagram-block={slug}>
+    <header>
+      <div class="diagram-block__text">
+        <h3>{title}</h3>
+        <p>{description}</p>
+      </div>
+      <a class="diagram-pop diagram-pop--head" href={fullscreenSource} target="_blank" rel="noopener" aria-label={openLabel} title={openLabel}>
+        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M6 2H2v4M10 2h4v4M6 14H2v-4M10 14h4v-4"></path>
+        </svg>
+      </a>
+    </header>
+    <div class="diagram-frame" style={`--diagram-aspect:${aspect}`}>
+      <iframe
+        src={source}
+        data-architecture-frame
+        data-diagram={slug}
+        data-src={source}
+        title={title}
+        loading={eager ? 'eager' : 'lazy'}
+      ></iframe>
+      <p>{loadingLabel}</p>
+      <a class="diagram-pop diagram-pop--float" href={fullscreenSource} target="_blank" rel="noopener" aria-label={openLabel} title={openLabel}>
+        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M6 2H2v4M10 2h4v4M6 14H2v-4M10 14h4v-4"></path>
+        </svg>
+      </a>
+    </div>
+  </article>
+)}
+
+<style>
+  .diagram-block + .diagram-block,
+  .diagram-detail + .diagram-detail {
+    margin-top: 0;
+  }
+  h3,
+  p {
+    margin: 0;
+  }
+  /* Row/block title and description share the exact .pt-indexed-card
+     typography used on Home, Roadmap and Community. */
+  h3,
+  summary strong {
+    display: block;
+    color: var(--pt-text-primary);
+    font-size: 1.1rem;
+    font-weight: 700;
+    line-height: 1.35;
+  }
+  header p,
+  summary small {
+    display: block;
+    margin-top: 6px;
+    color: var(--pt-text-secondary);
+    font-size: 0.95rem;
+    line-height: 1.65;
+  }
+
+  /* Quiet square icon button shared by rows and block headers. */
+  .diagram-pop {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    flex: 0 0 auto;
+    border: 1px solid var(--pt-border-hairline);
+    border-radius: var(--pt-radius-sm);
+    color: var(--pt-accent);
+    background: var(--pt-surface-base);
+    transition:
+      border-color var(--pt-motion-fast) var(--pt-ease),
+      background var(--pt-motion-fast) var(--pt-ease);
+  }
+  .diagram-pop:hover,
+  .diagram-pop:focus-visible {
+    border-color: var(--pt-accent);
+    background: var(--pt-surface-subtle);
+  }
+
+  .diagram-block > header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 24px;
+    margin-bottom: 14px;
+  }
+  .diagram-block__text {
+    max-width: 760px;
+    min-width: 0;
+  }
+
+  .diagram-frame {
+    position: relative;
+    /* Frames stay inside the shared 1120px shell and use the same white
+       mock-window idiom as every product surface on How it works
+       (hairline border, 12px radius, float shadow). */
+    width: 100%;
+    /* Embed reader document height is exactly (iframeWidth - 16px chrome)
+       / viewBoxRatio + 16px; the denominator tracks the narrowest frame of
+       the breakpoint band (621px viewport => ~555px iframe), so the wide
+       end errs tall by a few px and the narrow end never clips. */
+    aspect-ratio: calc(var(--diagram-aspect) / (1 + 16px * (var(--diagram-aspect) - 1) / 555px));
+    overflow: hidden;
+    border: 1px solid var(--pt-border-hairline);
+    border-radius: var(--pt-radius-md);
+    background: var(--pt-surface-base);
+    box-shadow: var(--pt-shadow-float);
+  }
+  .diagram-frame iframe {
+    position: relative;
+    z-index: 2;
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+  }
+  .diagram-frame > p {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: grid;
+    place-items: center;
+    color: var(--pt-text-muted);
+    font-size: 12px;
+  }
+  .diagram-frame.is-loaded > p {
+    display: none;
+  }
+  /* Fullscreen entry floats on the canvas only on narrow screens, where
+     the header cannot share a row with the title. */
+  .diagram-pop--float {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 3;
+    display: none;
+    color: var(--pt-accent);
+    background: rgba(255, 255, 255, 0.82);
+    border-color: var(--pt-border-hairline);
+    box-shadow: var(--pt-shadow-soft);
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+  }
+  .diagram-pop--float:hover,
+  .diagram-pop--float:focus-visible {
+    background: #fff;
+    border-color: var(--pt-accent);
+  }
+
+  .diagram-detail summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    padding-block: 20px;
+    cursor: pointer;
+    list-style: none;
+  }
+  .diagram-summary__text {
+    min-width: 0;
+    max-width: 760px;
+  }
+  .diagram-summary__actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+  }
+  .diagram-detail summary::-webkit-details-marker {
+    display: none;
+  }
+  /* + / − affordance: two strokes, the vertical one collapses on open. */
+  .diagram-detail summary i {
+    position: relative;
+    width: 32px;
+    height: 32px;
+    flex: 0 0 auto;
+    border: 1px solid var(--pt-border-hairline);
+    border-radius: var(--pt-radius-sm);
+    color: var(--pt-accent);
+    font-style: normal;
+    transition:
+      border-color var(--pt-motion-fast) var(--pt-ease),
+      background var(--pt-motion-fast) var(--pt-ease);
+  }
+  .diagram-detail summary i::before,
+  .diagram-detail summary i::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    border-radius: 1px;
+    background: currentColor;
+    transition: transform var(--pt-motion-normal) var(--pt-ease);
+  }
+  .diagram-detail summary i::before {
+    width: 12px;
+    height: 1.5px;
+    transform: translate(-50%, -50%);
+  }
+  .diagram-detail summary i::after {
+    width: 1.5px;
+    height: 12px;
+    transform: translate(-50%, -50%);
+  }
+  .diagram-detail.is-open summary i::after {
+    transform: translate(-50%, -50%) scaleY(0);
+  }
+
+  /* Smooth expand/collapse, driven by .is-open (not [open]): a closed
+     <details> does not render its content at all, so [open] cannot animate
+     the first painted frame. JS renders the 0fr state first, then flips the
+     class. The iframe keeps full layout height; only the track is clipped,
+     so the reader never reflows. */
+  .diagram-detail__body {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows var(--pt-motion-normal) var(--pt-ease);
+  }
+  .diagram-detail.is-open .diagram-detail__body {
+    grid-template-rows: 1fr;
+  }
+  .diagram-detail__inner {
+    min-height: 0;
+    padding-bottom: 22px;
+    overflow: hidden;
+  }
+
+  @media (max-width: 620px) {
+    .diagram-frame {
+      aspect-ratio: calc(var(--diagram-aspect) / (1 + 16px * (var(--diagram-aspect) - 1) / 278px));
+    }
+    .diagram-pop--head {
+      display: none;
+    }
+    .diagram-pop--float {
+      display: grid;
+    }
+    .diagram-detail summary {
+      padding-block: 18px;
+    }
+  }
+</style>
