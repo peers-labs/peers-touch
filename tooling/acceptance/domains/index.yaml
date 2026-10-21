@@ -39,7 +39,7 @@
       "profile": "tooling/acceptance/domains/desktop-shell.yaml",
       "capabilities": "tooling/acceptance/capabilities/desktop-shell.yaml",
       "coverage": "managed_domain",
-      "notes": "Native Desktop process, window, menu, tray, focus, package, and cleanup domain. Initial formal proof is bounded to the macOS tray residency journey."
+      "notes": "Native Desktop process, window, menu, tray, focus, package, install, and cleanup domain. Formal proof includes macOS tray residency and the exact-source Linux user-install journey; unsupported Linux host prerequisites remain explicit environment blockers."
     },
     {
       "id": "applet",

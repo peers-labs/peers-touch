@@ -65,6 +65,7 @@ pub struct PushScopeInput {
 pub struct PushActivationProjection {
     armed: bool,
     lifecycle_generation: u64,
+    scheduled_reconcile_registered: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -113,6 +114,7 @@ struct ActivePushScope {
     lifecycle_generation: u64,
     environment: PushEnvironment,
     app_install_epoch_sha256: [u8; 32],
+    scheduled_reconcile_registered: bool,
     last_native_sequence: HashMap<String, u64>,
     last_scheduled_sequence: HashMap<String, u64>,
     pending_registration: Option<PushTokenBinding>,
@@ -129,6 +131,7 @@ pub struct PushBridgeRuntime {
 enum AcceptedPushCallback {
     Token(PushTokenBinding),
     Wakeup(PushWakeup),
+    RegistrationFailure(String),
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -180,6 +183,7 @@ pub async fn activate<R: Runtime>(
         return Err(push_error("lifecycle generation is not active"));
     }
     let app_install_epoch_sha256 = load_or_create_install_epoch(storage)?;
+    let native_scope_token = native_scope_token(&session, input.environment);
     let (retained_registrations, pending_registration) = {
         let active = lock_active(runtime)?;
         if let Some(scope) = active.as_ref() {
@@ -194,6 +198,7 @@ pub async fn activate<R: Runtime>(
                     return Ok(PushActivationProjection {
                         armed: true,
                         lifecycle_generation,
+                        scheduled_reconcile_registered: scope.scheduled_reconcile_registered,
                     });
                 }
                 (
@@ -213,14 +218,22 @@ pub async fn activate<R: Runtime>(
         .try_state::<PlatformPermissions<R>>()
         .ok_or_else(|| push_error("native platform plugin is not registered"))?;
     let response = platform
-        .arm_push(lifecycle_generation, input.environment.wire_name())
+        .arm_push(
+            lifecycle_generation,
+            input.environment.wire_name(),
+            &native_scope_token,
+        )
         .await
         .map_err(|error| push_error(format!("arm native push: {error}")))?;
     if !response.armed {
         return Err(push_error("native push is unavailable on this platform"));
     }
     let scheduled = match platform
-        .schedule_reconcile(lifecycle_generation, input.environment.wire_name())
+        .schedule_reconcile(
+            lifecycle_generation,
+            input.environment.wire_name(),
+            &native_scope_token,
+        )
         .await
     {
         Ok(scheduled) => scheduled,
@@ -229,7 +242,7 @@ pub async fn activate<R: Runtime>(
             return Err(push_error(format!("schedule native reconcile: {error}")));
         }
     };
-    if !scheduled.registered || scheduled.identifier != schedule_identifier(input.environment) {
+    if scheduled.identifier != schedule_identifier(input.environment) {
         let _ = platform.disarm_push().await;
         return Err(push_error("native scheduled reconcile identity mismatch"));
     }
@@ -242,6 +255,7 @@ pub async fn activate<R: Runtime>(
         lifecycle_generation,
         environment: input.environment,
         app_install_epoch_sha256,
+        scheduled_reconcile_registered: scheduled.registered,
         last_native_sequence: HashMap::new(),
         last_scheduled_sequence: HashMap::new(),
         pending_registration,
@@ -250,6 +264,7 @@ pub async fn activate<R: Runtime>(
     Ok(PushActivationProjection {
         armed: true,
         lifecycle_generation,
+        scheduled_reconcile_registered: scheduled.registered,
     })
 }
 
@@ -417,6 +432,13 @@ pub async fn drain<R: Runtime>(
                     }
                 }
             }
+            AcceptedPushCallback::RegistrationFailure(error_code) => {
+                if first_failure.is_none() {
+                    first_failure = Some(push_error(format!(
+                        "native push registration failed: {error_code}"
+                    )));
+                }
+            }
         }
     }
     if let Some(error) = first_failure {
@@ -568,6 +590,16 @@ fn admit_callback(
         "token" => AcceptedPushCallback::Token(parse_token_callback(&callback, scope.environment)?),
         "receipt" | "tap" => {
             AcceptedPushCallback::Wakeup(parse_wakeup_callback(&callback, now_ms)?)
+        }
+        "registration_failed" => {
+            if callback.environment.as_deref() != Some(scope.environment.wire_name()) {
+                return Err(push_error("native push failure environment mismatch"));
+            }
+            AcceptedPushCallback::RegistrationFailure(clean_text(
+                callback.error_code.as_deref(),
+                64,
+                "native push failure code",
+            )?)
         }
         _ => return Ok(None),
     };
@@ -914,6 +946,25 @@ fn schedule_identifier(environment: PushEnvironment) -> &'static str {
     }
 }
 
+fn native_scope_token(
+    session: &AuthenticatedNativeSession,
+    environment: PushEnvironment,
+) -> String {
+    let mut digest = Sha256::new();
+    digest.update(b"peers-touch:mobile-native-push-scope:v1");
+    for value in [
+        session.station_peer_id(),
+        session.actor_ptid(),
+        session.session_id(),
+        session.device_id(),
+        environment.wire_name(),
+    ] {
+        digest.update([0]);
+        digest.update(value.as_bytes());
+    }
+    hex::encode(digest.finalize())
+}
+
 fn current_time_ms() -> MobileResult<u64> {
     let elapsed = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -949,6 +1000,7 @@ mod tests {
                 lifecycle_generation: generation,
                 environment: PushEnvironment::Development,
                 app_install_epoch_sha256: install,
+                scheduled_reconcile_registered: true,
                 last_native_sequence: HashMap::new(),
                 last_scheduled_sequence: HashMap::new(),
                 pending_registration: None,
@@ -976,6 +1028,7 @@ mod tests {
             target_hint: None,
             issued_at_ms: None,
             expires_at_ms: None,
+            error_code: None,
         }
     }
 
@@ -1003,6 +1056,26 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
+    }
+
+    #[test]
+    fn native_registration_failure_is_not_silently_discarded() {
+        let current = 42;
+        let runtime = runtime(current);
+        let mut callback = token_callback(current, 1);
+        callback.kind = "registration_failed".to_string();
+        callback.apns_token_base64 = None;
+        callback.apns_topic = None;
+        callback.error_code = Some("apns_registration_failed".to_string());
+
+        let accepted = admit_callback(&runtime, callback, 10, current)
+            .expect("typed native registration failure")
+            .expect("failure callback accepted");
+        assert!(matches!(
+            accepted,
+            AcceptedPushCallback::RegistrationFailure(code)
+                if code == "apns_registration_failed"
+        ));
     }
 
     #[test]

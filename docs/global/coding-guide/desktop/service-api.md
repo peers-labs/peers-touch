@@ -199,10 +199,13 @@ api.listAvailableModels()                  // → { models: AvailableModel[]; de
 api.addModel(providerId, data)             // → { ok: boolean }
 api.updateModel(providerId, modelId, data) // → { ok: boolean }
 api.deleteModel(providerId, modelId)       // → { ok: boolean }
-api.fetchRemoteModels(providerId, data)    // → { ok: boolean; models: string[] }
+api.discoverModels(providerId)             // → { models: ModelItem[]; observed_at?: string }
 api.toggleModel(providerId, modelId, on)   // → { ok: boolean }
-api.toggleAllModels(providerId, on)        // → { ok: boolean }
 ```
+
+CLI model discovery is Station-owned and read-only in Desktop. CLI model
+create/update/delete/toggle and bulk-toggle operations are invalid; the Direct
+provider schema retains custom model CRUD.
 
 ### Skills
 

@@ -28,7 +28,7 @@ layer owns this change and read it before editing:
 - `AGENTS.md` — Iron Laws (§5), Bug Fix Protocol (§6), doc hierarchy (§3).
 - `docs/README.md` — entry point to find the right source document.
 - The layered sources (constrain top-down): architecture (`docs/architecture/`,
-  `docs/global/architecture.md`) → platform (`docs/client/*`, `docs/station/`)
+  `docs/architecture/architecture.md`) → platform (`docs/client/*`, `docs/station/`)
   → spec (`docs/global/coding-guide/`).
 - The relevant `docs/.agent/<platform>.md` for the platform you are touching.
 - `docs/knowledge/` invariants / pitfalls / playbooks whose `owns:` covers your

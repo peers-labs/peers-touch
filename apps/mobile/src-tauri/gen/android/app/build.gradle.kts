@@ -1,9 +1,14 @@
 import java.util.Properties
+import groovy.json.JsonSlurper
 
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("rust")
+}
+
+if (System.getenv("PT_ANDROID_FIREBASE_RESOURCES_JSON") == null && file("google-services.json").isFile) {
+    apply(plugin = "com.google.gms.google-services")
 }
 
 val tauriProperties = Properties().apply {
@@ -12,6 +17,9 @@ val tauriProperties = Properties().apply {
         propFile.inputStream().use { load(it) }
     }
 }
+
+val firebaseResources = System.getenv("PT_ANDROID_FIREBASE_RESOURCES_JSON")
+    ?.let { JsonSlurper().parseText(it) as Map<*, *> }
 
 android {
     compileSdk = 34
@@ -23,6 +31,15 @@ android {
         targetSdk = 34
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
+        firebaseResources?.forEach { (name, value) ->
+            require(name in setOf(
+                "google_app_id", "gcm_defaultSenderId", "google_api_key",
+                "project_id", "google_storage_bucket",
+            ) && value is String && value.isNotBlank()) {
+                "Invalid controlled Firebase application resource"
+            }
+            resValue("string", name as String, value as String)
+        }
     }
     buildTypes {
         getByName("debug") {

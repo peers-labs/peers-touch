@@ -1,7 +1,6 @@
 # Peers-Touch Terminology Glossary
 
 > Quick reference for current project terminology.
-> Historical Flutter/GetX-era terms may appear in `docs/context/`, but they are not current source-of-truth terminology.
 
 ---
 
@@ -11,10 +10,12 @@
 User-facing applications in the Peers-Touch system.
 
 - Desktop: `apps/desktop/`
-- Mobile: `apps/mobile/android/` and `apps/mobile/ios/`
+- Mobile: `apps/mobile/src/` and `apps/mobile/src-tauri/`, released through
+  Android and iOS hosts
 
 ### Model
-The shared contract layer defined by Protocol Buffers.
+The shared contract substrate defined by Protocol Buffers. It has no runtime
+process or request-routing role.
 
 - Source of truth: `model/domain/*.proto`
 
@@ -33,12 +34,14 @@ Cross-station communication and interoperability across decentralized deployment
 
 ## Architecture Terms
 
-### Three-Tier Architecture
-The repository-wide system shape:
+### Runtime Topology
+The live repository-wide system relationship:
 
-- Client
-- Model
-- Station
+- Client ↔ Station
+
+### Contract Substrate
+The shared wire schemas and generated bindings consumed by Client and Station.
+Contract authoring order is separate from runtime topology.
 
 ### Proto / Protobuf
 The only allowed shared data model definition mechanism.
@@ -64,7 +67,7 @@ A delivery-oriented document that records migration order, rollout phases, or im
 ## Desktop Terms
 
 ### Desktop Web
-The TypeScript/React runtime rendered in browser or WebView.
+The TypeScript/React runtime rendered in the native Tauri WebView.
 
 ### Desktop Rust
 The Rust runtime used by Desktop for local application services and gateway responsibilities.
@@ -88,8 +91,40 @@ The normalized provider/model view consumed by Desktop after merging presets, lo
 
 ## Mobile Terms
 
-### Native Dual Platform
-The current Mobile mainline architecture: Android and iOS are implemented natively, not through a shared Flutter runtime.
+### Client Form
+A top-level product/runtime shape. Peers Touch has two client forms: Desktop
+and Mobile.
+
+### Release Target
+A separately built, packaged, signed, and verified artifact. Peers Touch has
+Desktop, Android, and iOS release targets.
+
+### Portable Rust Core
+An embedded host-neutral Rust library for reusable protocol, security, state,
+or transaction mechanisms. It is not a process, service, or business
+authority.
+
+### Runtime Port
+A narrow typed capability contract implemented by a Desktop, Android, or iOS
+host for an embedded runtime or portable core.
+
+### Reusable Asset
+A capability-owned Model contract, portable Rust core, shared TypeScript core,
+or policy-neutral UI primitive with one canonical root and explicit consumers.
+
+### Reuse Admission
+The mandatory classification step that chooses reuse, extension, extraction,
+Presentation Policy specialization, or Platform Host specialization before a
+new client implementation is created.
+
+### Divergence Record
+An accepted current architecture record that justifies parallel
+implementations by variation axis, roots, consumers, evidence, and review
+trigger.
+
+### Native Plugin Layer
+The Android Kotlin and iOS Swift capability adapters under the Tauri Mobile
+host. Plugins expose OS capabilities and do not own Mobile business state.
 
 ### Applet Container
 The Mobile host runtime for Lynx-based applets and Bridge V2 integration.
@@ -173,11 +208,6 @@ Interactive Connectivity Establishment related capability for candidate discover
 
 ---
 
-## Legacy Terms
-
-### GetX
-A historical Flutter-era state management and dependency pattern that may still appear in archived documents under `docs/context/`.
-
 ### StatefulWidget / StatelessWidget
 Historical Flutter widget terminology. These are not current project-wide client architecture rules.
 
@@ -197,7 +227,7 @@ A historical shared UI library name that may appear in archived Flutter-era mate
 ## Related Documents
 
 - `docs/README.md`
-- `docs/global/architecture.md`
+- `docs/architecture/architecture.md`
 - `docs/client/common/globalcontext.md`
 - `docs/station/base.md`
 

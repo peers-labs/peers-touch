@@ -10,12 +10,13 @@ use openmls_basic_credential::SignatureKeyPair;
 use openmls_memory_storage::MemoryStorage;
 use openmls_rust_crypto::RustCrypto;
 use openmls_traits::OpenMlsProvider;
-use std::fs::{self, File, OpenOptions};
-use std::io::Write;
-use std::path::PathBuf;
+use std::collections::HashMap;
+use std::sync::RwLock;
 
 pub const PEERS_CIPHERSUITE: Ciphersuite =
     Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519;
+const MAX_MLS_PROVIDER_STATE_BYTES: usize = 64 * 1024 * 1024;
+const MAX_MLS_PROVIDER_STATE_ENTRIES: usize = 100_000;
 
 #[derive(Debug, Default)]
 pub struct PeersMLSProvider {
@@ -32,70 +33,115 @@ impl PeersMLSProvider {
         &mut self.storage
     }
 
-    pub fn save_state(&self, name: &str) -> Result<(), String> {
-        self.storage.save(name.to_string())
-    }
-
-    pub fn load_state(&mut self, name: &str) -> Result<(), String> {
-        self.storage.load(name.to_string())
-    }
-
     pub fn export_state(&self) -> Result<Vec<u8>, String> {
-        let path = secure_temp_state_path()?;
-        let file = create_secure_temp_file(&path)?;
-        let result = self.storage.save_to_file(&file);
-        drop(file);
-        let bytes = result.and_then(|_| fs::read(&path).map_err(|e| e.to_string()));
-        let _ = fs::remove_file(path);
-        bytes
+        let values = self
+            .storage
+            .values
+            .read()
+            .map_err(|_| "messaging MLS storage lock poisoned".to_string())?;
+        let mut entries = values.iter().collect::<Vec<_>>();
+        entries.sort_by(|left, right| left.0.cmp(right.0));
+        let mut bytes = Vec::new();
+        write_u64(&mut bytes, entries.len() as u64);
+        for (key, value) in entries {
+            write_u64(&mut bytes, key.len() as u64);
+            write_u64(&mut bytes, value.len() as u64);
+            bytes.extend_from_slice(key);
+            bytes.extend_from_slice(value);
+        }
+        if bytes.len() > MAX_MLS_PROVIDER_STATE_BYTES {
+            return Err("messaging MLS storage exceeds the portable state bound".to_string());
+        }
+        Ok(bytes)
     }
 
     pub fn import_state(&mut self, bytes: &[u8]) -> Result<(), String> {
-        let path = secure_temp_state_path()?;
-        let mut file = create_secure_temp_file(&path)?;
-        let result = file
-            .write_all(bytes)
-            .and_then(|_| file.sync_all())
-            .map_err(|e| e.to_string());
-        drop(file);
-        let result = result.and_then(|_| {
-            let file = File::open(&path).map_err(|e| e.to_string())?;
-            self.storage.load_from_file(&file)
-        });
-        let _ = fs::remove_file(path);
-        result
+        if bytes.len() > MAX_MLS_PROVIDER_STATE_BYTES {
+            return Err("messaging MLS storage exceeds the portable state bound".to_string());
+        }
+        let mut cursor = 0;
+        let count = read_u64(bytes, &mut cursor)?;
+        let count = usize::try_from(count)
+            .map_err(|_| "messaging MLS storage entry count is invalid".to_string())?;
+        if count > MAX_MLS_PROVIDER_STATE_ENTRIES {
+            return Err("messaging MLS storage entry count exceeds policy".to_string());
+        }
+        let mut values = HashMap::with_capacity(count);
+        for _ in 0..count {
+            let key_length = read_length(bytes, &mut cursor)?;
+            let value_length = read_length(bytes, &mut cursor)?;
+            let key = read_bytes(bytes, &mut cursor, key_length)?;
+            let value = read_bytes(bytes, &mut cursor, value_length)?;
+            if values.insert(key, value).is_some() {
+                return Err("messaging MLS storage contains duplicate keys".to_string());
+            }
+        }
+        if cursor != bytes.len() {
+            return Err("messaging MLS storage has trailing bytes".to_string());
+        }
+        self.storage = MemoryStorage {
+            values: RwLock::new(values),
+        };
+        Ok(())
     }
 }
 
-fn secure_temp_state_path() -> Result<PathBuf, String> {
-    let root = std::env::var("PEERS_STORAGE_ROOT")
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-        .map(PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir);
-    let dir = root
-        .join("peers-touch")
-        .join("desktop")
-        .join("runtime")
-        .join("mls-export");
-    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).map_err(|e| e.to_string())?;
-    }
-    Ok(dir.join(format!("{}.state", ulid::Ulid::new())))
+fn write_u64(bytes: &mut Vec<u8>, value: u64) {
+    bytes.extend_from_slice(&value.to_be_bytes());
 }
 
-fn create_secure_temp_file(path: &std::path::Path) -> Result<File, String> {
-    let mut options = OpenOptions::new();
-    options.create_new(true).read(true).write(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
+fn read_u64(bytes: &[u8], cursor: &mut usize) -> Result<u64, String> {
+    let end = cursor
+        .checked_add(8)
+        .ok_or_else(|| "messaging MLS storage length overflow".to_string())?;
+    let encoded = bytes
+        .get(*cursor..end)
+        .ok_or_else(|| "messaging MLS storage is truncated".to_string())?;
+    *cursor = end;
+    Ok(u64::from_be_bytes(encoded.try_into().map_err(|_| {
+        "messaging MLS storage integer is invalid".to_string()
+    })?))
+}
+
+fn read_length(bytes: &[u8], cursor: &mut usize) -> Result<usize, String> {
+    let length = read_u64(bytes, cursor)?;
+    usize::try_from(length).map_err(|_| "messaging MLS storage field length is invalid".to_string())
+}
+
+fn read_bytes(bytes: &[u8], cursor: &mut usize, length: usize) -> Result<Vec<u8>, String> {
+    let end = cursor
+        .checked_add(length)
+        .ok_or_else(|| "messaging MLS storage field length overflow".to_string())?;
+    let value = bytes
+        .get(*cursor..end)
+        .ok_or_else(|| "messaging MLS storage is truncated".to_string())?
+        .to_vec();
+    *cursor = end;
+    Ok(value)
+}
+
+#[cfg(test)]
+fn corrupt_trailing_byte(mut bytes: Vec<u8>) -> Vec<u8> {
+    bytes.push(0);
+    bytes
+}
+
+#[cfg(test)]
+fn corrupt_duplicate_key(bytes: &[u8]) -> Vec<u8> {
+    let mut cursor = 8;
+    let key_length = read_length(bytes, &mut cursor).unwrap();
+    let value_length = read_length(bytes, &mut cursor).unwrap();
+    let key = read_bytes(bytes, &mut cursor, key_length).unwrap();
+    let value = read_bytes(bytes, &mut cursor, value_length).unwrap();
+    let mut duplicate = Vec::new();
+    write_u64(&mut duplicate, 2);
+    for _ in 0..2 {
+        write_u64(&mut duplicate, key.len() as u64);
+        write_u64(&mut duplicate, value.len() as u64);
+        duplicate.extend_from_slice(&key);
+        duplicate.extend_from_slice(&value);
     }
-    options.open(path).map_err(|e| e.to_string())
+    duplicate
 }
 
 impl OpenMlsProvider for PeersMLSProvider {
@@ -152,8 +198,6 @@ mod tests {
 
     #[test]
     fn c2_persistence_cold_start_recovery() {
-        let state_name = "peers_mls_c2_test";
-
         let (alice_signer, alice_cwk) = create_credential(b"alice");
         let (bob_signer, bob_cwk) = create_credential(b"bob");
 
@@ -182,12 +226,12 @@ mod tests {
             .create_message(&alice_provider, &alice_signer, b"before-persist")
             .expect("encrypt msg");
 
-        alice_provider.save_state(state_name).expect("save state");
+        let encoded = alice_provider.export_state().expect("export state");
 
         let mut restored_provider = PeersMLSProvider::new();
         restored_provider
-            .load_state(state_name)
-            .expect("load state");
+            .import_state(&encoded)
+            .expect("import state");
 
         let restored_group = MlsGroup::load(
             restored_provider.storage(),
@@ -206,9 +250,39 @@ mod tests {
             "post-restore message encryption failed: {:?}",
             msg2.err()
         );
+    }
 
-        let _ = std::fs::remove_file(
-            std::env::temp_dir().join(format!("openmls_cli_{state_name}_ks.json")),
+    #[test]
+    fn state_codec_rejects_trailing_bytes_and_duplicate_keys() {
+        let provider = PeersMLSProvider::new();
+        let (signer, credential) = create_credential(b"codec");
+        create_key_package(&provider, &signer, credential).expect("persist key package");
+        let encoded = provider.export_state().expect("export");
+
+        assert!(PeersMLSProvider::new()
+            .import_state(&corrupt_trailing_byte(encoded.clone()))
+            .is_err());
+        assert!(PeersMLSProvider::new()
+            .import_state(&corrupt_duplicate_key(&encoded))
+            .is_err());
+    }
+
+    #[test]
+    fn state_codec_rejects_unbounded_entry_count_before_allocation() {
+        let encoded = u64::MAX.to_be_bytes();
+
+        assert!(PeersMLSProvider::new().import_state(&encoded).is_err());
+    }
+
+    #[test]
+    fn state_codec_is_deterministic() {
+        let provider = PeersMLSProvider::new();
+        let (signer, credential) = create_credential(b"deterministic");
+        create_key_package(&provider, &signer, credential).expect("persist key package");
+
+        assert_eq!(
+            provider.export_state().unwrap(),
+            provider.export_state().unwrap()
         );
     }
 }

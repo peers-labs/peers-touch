@@ -1,0 +1,41 @@
+{
+  "id": "unified-client-shared-semantics",
+  "status": "active",
+  "product_area": "chat",
+  "owners": [
+    "packages/client-chat-core/**",
+    "packages/client-media-security/**",
+    "packages/client-storage/**",
+    "apps/desktop/src/components/chat/chatPresentationPolicy.ts",
+    "apps/mobile/src/pages/chat/chatPresentationPolicy.ts",
+    "tooling/acceptance/gates/unified_client/shared_semantics.py"
+  ],
+  "truth_sources": [
+    "CCR-D08 reuse-first capability placement",
+    "CCR-D09 shared UI stops at policy-neutral entity semantics",
+    "CCR-D10 every shared direct dependency is registered",
+    "CCR-D13 renderer-neutral TypeScript semantics use one client-* owner"
+  ],
+  "visible_surfaces": [
+    {
+      "type": "source-contract",
+      "state": "shared-client-semantics"
+    }
+  ],
+  "required_gates": [
+    "unified-client-shared-semantics"
+  ],
+  "acceptance": {
+    "architecture_assertions": [
+      "Chat projection, wire codec, media descriptor codec, storage scope/reconciliation and capability admission each have one renderer-neutral owner",
+      "Desktop and Mobile are production consumers of the canonical client-* packages",
+      "navigation, density, gesture, focus, safe-area, keyboard and window policy remain in Client Form shells",
+      "Android and iOS do not fork Mobile React components, stores or route descriptors"
+    ],
+    "negative": [
+      "the source Gate does not prove physical Android, signed iOS or Desktop native user journeys",
+      "a shared package must not import React, Tauri, antd, LobeUI or Zustand",
+      "visual similarity alone does not authorize a universal cross-client component"
+    ]
+  }
+}

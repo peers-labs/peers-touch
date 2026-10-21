@@ -16,6 +16,15 @@ use std::sync::{Mutex, OnceLock};
 
 static GLOBAL_CONTEXT_STATE: OnceLock<Mutex<serde_json::Value>> = OnceLock::new();
 
+#[cfg(target_os = "macos")]
+const DESKTOP_HOST_OS: &str = "macos";
+#[cfg(target_os = "windows")]
+const DESKTOP_HOST_OS: &str = "windows";
+#[cfg(target_os = "linux")]
+const DESKTOP_HOST_OS: &str = "linux";
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+compile_error!("Desktop host OS must be macOS, Windows, or Linux");
+
 fn success_payload(command: &str, data: serde_json::Value) -> AppResult<StubPayload> {
     AppResult::success(StubPayload {
         command: command.to_string(),
@@ -133,7 +142,17 @@ fn now_ms() -> i64 {
 }
 
 pub fn system_health() -> AppResult<StubPayload> {
-    success_payload("system_health", json!({ "status": "ok" }))
+    success_payload(
+        "system_health",
+        json!({
+            "status": "ok",
+            "clientForm": "desktop",
+            "releaseTarget": "desktop",
+            "processModel": "tauri-desktop",
+            "hostOs": DESKTOP_HOST_OS,
+            "sourceCommit": env!("PT_BUILD_SOURCE_COMMIT")
+        }),
+    )
 }
 
 pub fn open_external_url(input: ExternalUrlInput) -> AppResult<StubPayload> {
@@ -694,4 +713,32 @@ pub fn context_health() -> AppResult<StubPayload> {
             "updatedAt": state["meta"]["updatedAt"].clone()
         }),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn system_health_reports_compiled_desktop_identity() {
+        let result = system_health();
+        assert!(result.ok);
+        assert!(result.error.is_none());
+
+        let payload = result.data.expect("system health payload");
+        assert_eq!(payload.command, "system_health");
+        let status: serde_json::Value =
+            serde_json::from_str(&payload.status).expect("valid system health JSON");
+        assert_eq!(
+            status,
+            json!({
+                "status": "ok",
+                "clientForm": "desktop",
+                "releaseTarget": "desktop",
+                "processModel": "tauri-desktop",
+                "hostOs": DESKTOP_HOST_OS,
+                "sourceCommit": env!("PT_BUILD_SOURCE_COMMIT")
+            })
+        );
+    }
 }

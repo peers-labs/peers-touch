@@ -1,14 +1,15 @@
 import { Brain } from 'lucide-react';
 import { registerModule } from './registry';
-import { MemoryPage } from '../pages/MemoryPage';
-import { MemorySettingsTab } from '../components/settings/MemorySettingsTab';
+import { MemorySettingsSection } from '../components/settings/MemorySettingsSection';
 
 registerModule({
   id: 'memory',
   name: 'Memory',
   icon: Brain,
-  page: MemoryPage,
-  settingsPanel: MemorySettingsTab,
-  sidebarEntry: { position: 'top', order: 35, title: 'Memory' },
-  settingsEntry: { order: 25, label: 'Memory' },
+  settingsPanel: MemorySettingsSection,
+  settingsEntry: {
+    order: 25,
+    label: 'Memory',
+    sectionHostPolicy: { cache: 'selected-only' },
+  },
 });

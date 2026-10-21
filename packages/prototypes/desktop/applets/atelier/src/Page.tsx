@@ -476,7 +476,7 @@ function BudgetStrip({ budget, fallbackPercent, fallbackLabel }: { budget?: Budg
       style={{ height: 28, display: 'inline-flex', alignItems: 'center', gap: 6, border: `1px solid ${C.border}`, borderRadius: 8, padding: '0 10px', fontSize: 11, color: C.textSecondary, marginRight: 10, backgroundColor: C.fillSecondary }}
     >
       <span style={{ color: C.textTertiary }}>Budget</span>
-      <span style={{ width: 46, height: 6, borderRadius: 99, backgroundColor: C.fillTertiary, overflow: 'hidden', display: 'inline-flex' }}>
+      <span style={{ width: 46, height: 6, borderRadius: 99, backgroundColor: C.fillSecondary, overflow: 'hidden', display: 'inline-flex' }}>
         <span style={{ width: `${Math.min(100, Math.max(0, dimensions[0]?.percent ?? fallbackPercent))}%`, backgroundColor: color, borderRadius: 99 }} />
       </span>
       <span style={{ color }}>{budget?.summary ?? fallbackLabel}</span>
@@ -741,7 +741,7 @@ export function AtelierPage({ runtime = DEFAULT_RUNTIME }: { runtime?: AtelierRu
   const [state, setState] = useState(initialSnapshot.state);
   const [selected, setSelected] = useState(initialSnapshot.selectedTaskId);
   const [runtimeStatus, setRuntimeStatus] = useState<AtelierRuntimeStatus | undefined>(initialSnapshot.status);
-  const [pluginId, setPluginId] = useState(DEFAULT_PLUGIN_ID);
+  const [pluginId, setPluginId] = useState<string>(DEFAULT_PLUGIN_ID);
   const [draft, setDraft] = useState('');
   const [mode, setMode] = useState<TaskIntentPreset>('work');
   const [runKind, setRunKind] = useState<RunKind>(ATELIER_DEFAULT_RUN_TARGET_KIND);

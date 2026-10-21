@@ -8,14 +8,18 @@ import os
 import re
 import secrets
 import shutil
+import stat
+import struct
 import subprocess
 import sys
 import threading
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, BinaryIO, Mapping
 
+from . import finalization_contracts as finalization
 from .errors import (
     EvidenceConflict,
     EvidenceError,
@@ -383,7 +387,19 @@ def write_current_artifact(
     )
     lock = _FileLock(run_dir / ".artifact-write.lock")
     lock.acquire(blocking=True)
+    finalization_lock = _FileLock(run_dir / ".finalization.lock")
     try:
+        _acquire_bounded(
+            finalization_lock,
+            timeout_seconds=60,
+            operation="write-current-artifact",
+        )
+        if (run_dir / "sealed.json").exists():
+            raise EvidenceConflict(
+                "artifacts are sealed for finalization",
+                operation="write-artifact",
+                path_role=relative_path,
+            )
         target = current_artifact_path(
             relative_path,
             repo_root=repo_root,
@@ -398,6 +414,7 @@ def write_current_artifact(
         _atomic_write(target, value, path_role=relative_path)
         return target
     finally:
+        finalization_lock.release()
         lock.release()
 
 
@@ -547,6 +564,18 @@ def _fsync_directory(path: Path) -> None:
         os.close(descriptor)
 
 
+def _fsync_file(path: Path, *, path_role: str) -> None:
+    try:
+        with path.open("rb") as handle:
+            os.fsync(handle.fileno())
+    except OSError as error:
+        raise _map_os_error(
+            error,
+            operation="fsync-file",
+            path_role=path_role,
+        ) from error
+
+
 def _sha256_bytes(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
 
@@ -596,12 +625,69 @@ def _atomic_write(path: Path, value: bytes, *, path_role: str) -> None:
         ) from error
 
 
+def _atomic_write_no_replace(
+    path: Path,
+    value: bytes,
+    *,
+    path_role: str,
+) -> bool:
+    """Publish immutable bytes once; return False only for an equal retry."""
+    if path.is_symlink():
+        raise EvidenceSymlinkRejected(
+            f"symlink artifact is forbidden: {path}",
+            operation="atomic-write-no-replace",
+            path_role=path_role,
+        )
+    _private_directory(path.parent, f"{path_role}-parent")
+    temporary = path.parent / f".tmp-{secrets.token_hex(8)}"
+    try:
+        with temporary.open("xb") as handle:
+            if os.name != "nt":
+                os.chmod(temporary, 0o600)
+            handle.write(value)
+            handle.flush()
+            os.fsync(handle.fileno())
+        try:
+            os.link(temporary, path)
+        except FileExistsError:
+            if path.is_symlink() or not path.is_file():
+                raise EvidenceConflict(
+                    f"immutable path is not a regular file: {path.name}",
+                    operation="atomic-write-no-replace",
+                    path_role=path_role,
+                )
+            if path.read_bytes() != value:
+                raise EvidenceConflict(
+                    f"immutable path already has different bytes: {path.name}",
+                    operation="atomic-write-no-replace",
+                    path_role=path_role,
+                )
+            _fsync_file(path, path_role=path_role)
+            _fsync_directory(path.parent)
+            return False
+        _fsync_directory(path.parent)
+        return True
+    except EvidenceError:
+        raise
+    except OSError as error:
+        raise _map_os_error(
+            error,
+            operation="atomic-write-no-replace",
+            path_role=path_role,
+        ) from error
+    finally:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
 class _FileLock:
     def __init__(self, path: Path) -> None:
         self.path = path
         self._handle: BinaryIO | None = None
 
-    def acquire(self, *, blocking: bool) -> bool:
+    def acquire(self, *, blocking: bool, shared: bool = False) -> bool:
         if self._handle is not None:
             return True
         _private_directory(self.path.parent, "lock-parent")
@@ -612,18 +698,35 @@ class _FileLock:
                 path_role="lock",
             )
         try:
-            handle = self.path.open("a+b")
             if os.name != "nt":
+                descriptor = os.open(
+                    self.path,
+                    os.O_RDWR
+                    | os.O_CREAT
+                    | os.O_CLOEXEC
+                    | getattr(os, "O_NOFOLLOW", 0),
+                    0o600,
+                )
+                handle = os.fdopen(descriptor, "r+b", closefd=True)
                 os.chmod(self.path, 0o600)
                 import fcntl
 
-                flags = fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB)
+                flags = (
+                    fcntl.LOCK_SH if shared else fcntl.LOCK_EX
+                ) | (0 if blocking else fcntl.LOCK_NB)
                 try:
                     fcntl.flock(handle.fileno(), flags)
                 except BlockingIOError:
                     handle.close()
                     return False
             else:
+                if shared:
+                    raise EvidenceConflict(
+                        "shared Gate publish locks require POSIX flock",
+                        operation="acquire-lock",
+                        path_role="lock",
+                    )
+                handle = self.path.open("a+b")
                 import msvcrt
 
                 if self.path.stat().st_size == 0:
@@ -645,6 +748,15 @@ class _FileLock:
         self._handle = handle
         return True
 
+    def fileno(self) -> int:
+        if self._handle is None:
+            raise EvidenceConflict(
+                "lock is not held",
+                operation="inspect-lock",
+                path_role="lock",
+            )
+        return self._handle.fileno()
+
     def release(self) -> None:
         handle = self._handle
         if handle is None:
@@ -662,6 +774,64 @@ class _FileLock:
                 msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
         finally:
             handle.close()
+
+
+def _acquire_bounded(
+    lock: _FileLock,
+    *,
+    timeout_seconds: float,
+    operation: str,
+) -> None:
+    deadline = time.monotonic() + timeout_seconds
+    while not lock.acquire(blocking=False):
+        if time.monotonic() >= deadline:
+            raise EvidenceConflict(
+                f"{operation} lock acquisition timed out",
+                operation=operation,
+                path_role="lock",
+            )
+        time.sleep(min(0.01, max(0.0, deadline - time.monotonic())))
+
+
+class GatePublishLock:
+    """A held Gate publish lock without store or mutation capabilities."""
+
+    def __init__(
+        self,
+        lock: _FileLock,
+        identity: finalization.GatePublishLockIdentity,
+        *,
+        shared: bool,
+    ) -> None:
+        self._lock = lock
+        self.identity = identity
+        self.shared = shared
+        self._closed = False
+
+    @property
+    def held(self) -> bool:
+        return not self._closed
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        self._lock.release()
+
+    def __enter__(self) -> "GatePublishLock":
+        if self._closed:
+            raise EvidenceConflict(
+                "Gate publish lock is already closed",
+                operation="enter-publish-lock",
+                path_role="lock",
+            )
+        return self
+
+    def __exit__(self, *ignored: object) -> None:
+        self.close()
+
+    def __reduce__(self) -> object:
+        raise TypeError("GatePublishLock is process-local and non-serializable")
 
 
 @dataclass(frozen=True)
@@ -715,6 +885,47 @@ class ArtifactRef:
             ) from error
 
 
+def _contract_artifact_ref(reference: ArtifactRef) -> finalization.ArtifactRef:
+    return finalization.ArtifactRef.from_dict(reference.to_dict())
+
+
+def _store_artifact_ref(reference: finalization.ArtifactRef) -> ArtifactRef:
+    if type(reference) is not finalization.ArtifactRef:
+        raise EvidenceManifestInvalid(
+            "finalization ArtifactRef must use the pure contract"
+        )
+    return ArtifactRef.from_dict(reference.to_dict())
+
+
+def _canonical_contract_bytes(value: object) -> bytes:
+    try:
+        return finalization.canonical_json_bytes(value)
+    except ValueError as error:
+        raise EvidenceManifestInvalid(
+            "finalization contract is not canonical JSON"
+        ) from error
+
+
+def _length_prefixed_bundle(
+    magic: bytes,
+    manifest: object,
+    contents: tuple[bytes, ...],
+) -> bytes:
+    manifest_bytes = _canonical_contract_bytes(manifest)
+    return b"".join(
+        (
+            magic,
+            struct.pack(">Q", len(manifest_bytes)),
+            manifest_bytes,
+            *(
+                part
+                for content in contents
+                for part in (struct.pack(">Q", len(content)), content)
+            ),
+        )
+    )
+
+
 def _register_current_artifact_role(
     reference: ArtifactRef,
     role: str,
@@ -739,7 +950,19 @@ def _register_current_artifact_role(
     _private_directory(role_dir, "artifact-role-registry")
     lock = _FileLock(run_dir / ".artifact-roles.lock")
     lock.acquire(blocking=True)
+    finalization_lock = _FileLock(run_dir / ".finalization.lock")
     try:
+        _acquire_bounded(
+            finalization_lock,
+            timeout_seconds=60,
+            operation="register-current-artifact-role",
+        )
+        if (run_dir / "sealed.json").exists():
+            raise EvidenceConflict(
+                "artifact roles are sealed for finalization",
+                operation="register-artifact-role",
+                path_role=role,
+            )
         encoded = (
             json.dumps(
                 {"role": role, "artifact": reference.to_dict()},
@@ -759,6 +982,7 @@ def _register_current_artifact_role(
             path_role="artifact-role-registry",
         )
     finally:
+        finalization_lock.release()
         lock.release()
 
 
@@ -808,6 +1032,219 @@ class EvidenceStore:
             byte_budget=byte_budget,
         )
 
+    def acquire_gate_publish_lock(
+        self,
+        gate_id: str,
+        *,
+        shared: bool,
+        timeout_seconds: float = 10.0,
+    ) -> GatePublishLock:
+        normalized_gate = _validate_gate_id(gate_id)
+        if (
+            isinstance(timeout_seconds, bool)
+            or not isinstance(timeout_seconds, (int, float))
+            or not 0 < timeout_seconds <= 60
+        ):
+            raise EvidenceManifestInvalid(
+                "Gate publish lock timeout must be in (0, 60]"
+            )
+        path = self.workspace_dir / normalized_gate / ".publish.lock"
+        lock = _FileLock(path)
+        deadline = time.monotonic() + timeout_seconds
+        while not lock.acquire(blocking=False, shared=shared):
+            if time.monotonic() >= deadline:
+                raise EvidenceConflict(
+                    "Gate publish lock acquisition timed out",
+                    operation="acquire-gate-publish-lock",
+                    path_role="lock",
+                )
+            time.sleep(min(0.01, max(0.0, deadline - time.monotonic())))
+        try:
+            observed = os.fstat(lock.fileno())
+            if not stat.S_ISREG(observed.st_mode):
+                raise EvidenceManifestInvalid(
+                    "Gate publish lock must be a regular file"
+                )
+            identity = finalization.GatePublishLockIdentity.create(
+                workspace_id=self.workspace_id,
+                gate_id=normalized_gate,
+                device_id=str(observed.st_dev),
+                inode=str(observed.st_ino),
+            )
+            return GatePublishLock(lock, identity, shared=shared)
+        except BaseException:
+            lock.release()
+            raise
+
+    def read_active_power_controller_trust(
+        self,
+        gate_id: str,
+        *,
+        publish_lock: GatePublishLock,
+    ) -> tuple[
+        finalization.PowerControllerTrustCurrent,
+        finalization.ActivePowerControllerTrustGeneration,
+        dict[str, Any],
+    ]:
+        normalized_gate = _validate_gate_id(gate_id)
+        if (
+            type(publish_lock) is not GatePublishLock
+            or not publish_lock.held
+            or not publish_lock.shared
+            or publish_lock.identity.workspace_id != self.workspace_id
+            or publish_lock.identity.gate_id != normalized_gate
+        ):
+            raise EvidenceConflict(
+                "active controller trust requires the matching held shared lock",
+                operation="read-controller-trust",
+                path_role="lock",
+            )
+        trust_dir = (
+            self.workspace_dir
+            / normalized_gate
+            / "finalizer-enforcement"
+            / "controller-trust"
+        )
+        try:
+            current = finalization.PowerControllerTrustCurrent.from_dict(
+                self._read_contract_object(
+                    trust_dir / "current.json",
+                    path_role="controller-trust-current",
+                )
+            )
+            generation_ref = current.generation_ref
+            generation = finalization.ActivePowerControllerTrustGeneration.from_dict(
+                self._read_contract_object(
+                    trust_dir
+                    / "generations"
+                    / (
+                        f"{generation_ref.trust_generation}-"
+                        f"{generation_ref.trust_generation_digest}.json"
+                    ),
+                    path_role="controller-trust-generation",
+                )
+            )
+            if generation.reference() != generation_ref:
+                raise ValueError("current trust generation reference mismatch")
+            anchor = self._read_contract_object(
+                trust_dir / f"{generation.trust_anchor_digest}.json",
+                path_role="controller-trust-anchor",
+            )
+            anchor_keys = {
+                "artifactKind",
+                "schemaVersion",
+                "workspaceId",
+                "gateId",
+                "trustGeneration",
+                "predecessorGenerationRef",
+                "controllerIdentity",
+                "controllerSignatureAlgorithm",
+                "controllerPublicKeyHex",
+                "controllerPublicKeySha256",
+                "controllerRuntime",
+                "controllerRuntimeLockBackend",
+                "bootstrapCandidateDigest",
+                "qualificationManifestDigest",
+                "qualifiedBackendIdentityDigest",
+                "ownerApprovalDocumentPath",
+                "ownerApprovalDocumentSha256",
+                "sourceCommit",
+                "enrolledAt",
+                "enrollmentAuthorization",
+                "trustAnchorDigest",
+            }
+            if (
+                set(anchor) != anchor_keys
+                or anchor.get("artifactKind")
+                != "acceptance-power-controller-trust-anchor"
+                or type(anchor.get("schemaVersion")) is not int
+                or anchor.get("schemaVersion") != 1
+                or anchor.get("workspaceId") != self.workspace_id
+                or anchor.get("gateId") != normalized_gate
+                or anchor.get("trustGeneration") != generation.trust_generation
+                or anchor.get("trustAnchorDigest")
+                != generation.trust_anchor_digest
+                or finalization.domain_separated_sha256(
+                    "pt.acceptance.finalization.durability-power-controller-trust-anchor.v1",
+                    {
+                        key: value
+                        for key, value in anchor.items()
+                        if key != "trustAnchorDigest"
+                    },
+                )
+                != generation.trust_anchor_digest
+            ):
+                raise ValueError("active controller trust anchor mismatch")
+        except ValueError as error:
+            raise EvidenceManifestInvalid(
+                "active power-controller trust closure is invalid"
+            ) from error
+        return current, generation, anchor
+
+    def write_claim_admission_record(
+        self,
+        gate_id: str,
+        relative_path: str,
+        value: Mapping[str, object],
+        *,
+        replace: bool = False,
+    ) -> Path:
+        normalized_gate = _validate_gate_id(gate_id)
+        relative = _validate_relative_path(relative_path)
+        if relative.parts[0] not in {
+            "epochs",
+            "jobs",
+            "completions",
+            "emissions",
+            "pauses",
+            "boot-boundaries",
+        } and relative.as_posix() != "current-epoch.json":
+            raise EvidencePathTraversal(
+                "claim-admission record path is outside the closed namespace"
+            )
+        if not isinstance(value, Mapping):
+            raise EvidenceManifestInvalid(
+                "claim-admission record must be an object"
+            )
+        target = (
+            self.workspace_dir
+            / normalized_gate
+            / "claim-admission"
+            / relative
+        )
+        encoded = _canonical_contract_bytes(dict(value))
+        if replace:
+            _atomic_write(
+                target,
+                encoded,
+                path_role="claim-admission-record",
+            )
+        else:
+            _atomic_write_no_replace(
+                target,
+                encoded,
+                path_role="claim-admission-record",
+            )
+        return target
+
+    def read_claim_admission_record(
+        self,
+        gate_id: str,
+        relative_path: str,
+    ) -> dict[str, Any]:
+        normalized_gate = _validate_gate_id(gate_id)
+        relative = _validate_relative_path(relative_path)
+        target = (
+            self.workspace_dir
+            / normalized_gate
+            / "claim-admission"
+            / relative
+        )
+        return self._read_contract_object(
+            target,
+            path_role="claim-admission-record",
+        )
+
     def begin_run(
         self,
         gate_id: str,
@@ -849,6 +1286,462 @@ class EvidenceStore:
             operation="allocate-run",
             path_role="run",
         )
+
+    def _read_contract_object(
+        self,
+        path: Path,
+        *,
+        path_role: str,
+    ) -> dict[str, Any]:
+        _ensure_no_symlink(self.root, path)
+        try:
+            encoded = path.read_bytes()
+            value = json.loads(encoded.decode("utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise EvidenceManifestInvalid(
+                f"{path_role} is unavailable or malformed"
+            ) from error
+        if type(value) is not dict:
+            raise EvidenceManifestInvalid(f"{path_role} must be an object")
+        return value
+
+    def _contract_ref_bytes(
+        self,
+        reference: finalization.ArtifactRef,
+    ) -> bytes:
+        path = self.resolve(_store_artifact_ref(reference))
+        try:
+            return path.read_bytes()
+        except OSError as error:
+            raise _map_os_error(
+                error,
+                operation="read-finalization-artifact",
+                path_role=reference.path,
+            ) from error
+
+    def _source_capture_bundle(
+        self,
+        record: finalization.FinalizerRequirementRecord,
+        *,
+        executable_only: bool,
+    ) -> bytes:
+        artifacts = {
+            item.repo_relative_path: item
+            for item in record.protected_source_artifacts
+        }
+        captured = tuple(
+            item
+            for item in record.captured_sources
+            if not executable_only or item.executable_included
+        )
+        contents = tuple(
+            self._contract_ref_bytes(
+                artifacts[item.repo_relative_path].ref
+            )
+            for item in captured
+        )
+        if any(
+            len(content) != item.byte_length
+            or _sha256_bytes(content) != item.file_sha256
+            for item, content in zip(captured, contents)
+        ):
+            raise EvidenceManifestInvalid(
+                "protected source artifact content changed"
+            )
+        manifest = [
+            {
+                "repoRelativePath": item.repo_relative_path,
+                "fileSha256": item.file_sha256,
+                "byteLength": item.byte_length,
+            }
+            for item in captured
+        ]
+        return _length_prefixed_bundle(
+            b"pt-finalizer-bundle-v1",
+            manifest,
+            contents,
+        )
+
+    def _runtime_capture_bundle(
+        self,
+        record: finalization.FinalizerRequirementRecord,
+    ) -> bytes:
+        contents = tuple(
+            self._contract_ref_bytes(item.ref)
+            for item in record.runtime_evidence_artifacts
+        )
+        if any(
+            len(content) != item.byte_length
+            or _sha256_bytes(content) != item.file_sha256
+            for item, content in zip(
+                record.runtime_evidence_artifacts,
+                contents,
+            )
+        ):
+            raise EvidenceManifestInvalid(
+                "runtime evidence artifact content changed"
+            )
+        manifest = {
+            "captureId": record.runtime_capture_id,
+            "measurement": record.runtime_measurement.to_dict(),
+            "files": [
+                item.to_dict() for item in record.captured_runtime_files
+            ],
+        }
+        return _length_prefixed_bundle(
+            b"pt-finalizer-runtime-bundle-v1",
+            manifest,
+            contents,
+        )
+
+    def _validate_requirement_bundles(
+        self,
+        record: finalization.FinalizerRequirementRecord,
+        *,
+        executable: finalization.FinalizerExecutableArtifact | None = None,
+    ) -> None:
+        source_bundle = self._source_capture_bundle(
+            record,
+            executable_only=False,
+        )
+        if _sha256_bytes(source_bundle) != record.source_capture_bundle_digest:
+            raise EvidenceManifestInvalid(
+                "source capture bundle digest mismatch"
+            )
+        runtime_bundle = self._runtime_capture_bundle(record)
+        if _sha256_bytes(runtime_bundle) != record.runtime_capture_bundle_digest:
+            raise EvidenceManifestInvalid(
+                "runtime capture bundle digest mismatch"
+            )
+        if executable is not None:
+            executable_bundle = self._source_capture_bundle(
+                record,
+                executable_only=True,
+            )
+            if (
+                _sha256_bytes(executable_bundle) != executable.bundle_digest
+                or self._contract_ref_bytes(executable.ref)
+                != executable_bundle
+            ):
+                raise EvidenceManifestInvalid(
+                    "finalizer executable bundle differs from captured sources"
+                )
+
+    def _validate_active_enforcement(
+        self,
+        record: finalization.FinalizerRequirementRecord,
+    ) -> None:
+        gate_dir = self.workspace_dir / record.requirement.gate_id
+        enforcement_dir = gate_dir / "finalizer-enforcement"
+        pending_path = enforcement_dir / "activation-pending.json"
+        activated_path = enforcement_dir / "activated.json"
+        current_path = enforcement_dir / "current.json"
+        if pending_path.exists():
+            raise EvidenceConflict(
+                "required-finalizer activation is pending",
+                operation="allocate-required-run",
+                path_role="activation-pending",
+            )
+        interlock = self._validated_finalizer_interlock(
+            record.requirement.gate_id
+        )
+        if (
+            interlock.workspace_id != self.workspace_id
+            or interlock.gate_id != record.requirement.gate_id
+            or interlock.required_finalizer_id
+            != record.requirement.finalizer_id
+        ):
+            raise EvidenceManifestInvalid(
+                "publication interlock identity mismatch"
+            )
+        try:
+            activated = finalization.FinalizerEnforcementActivated.from_dict(
+                self._read_contract_object(
+                    activated_path,
+                    path_role="enforcement-activated",
+                )
+            )
+            current = finalization.FinalizerEnforcementCurrent.from_dict(
+                self._read_contract_object(
+                    current_path,
+                    path_role="enforcement-current",
+                )
+            )
+            generation = finalization.FinalizerEnforcementRecord.from_dict(
+                self._read_contract_object(
+                    enforcement_dir
+                    / "generations"
+                    / f"{current.generation}.json",
+                    path_role="enforcement-generation",
+                )
+            )
+        except ValueError as error:
+            raise EvidenceManifestInvalid(
+                "finalizer enforcement contract is invalid"
+            ) from error
+        expected_scope = (
+            self.workspace_id,
+            record.requirement.gate_id,
+            record.requirement.finalizer_id,
+        )
+        if (
+            (
+                activated.workspace_id,
+                activated.gate_id,
+                activated.required_finalizer_id,
+            )
+            != expected_scope
+            or (
+                current.workspace_id,
+                current.gate_id,
+                current.required_finalizer_id,
+            )
+            != expected_scope
+            or (
+                generation.workspace_id,
+                generation.gate_id,
+                generation.required_finalizer_id,
+            )
+            != expected_scope
+            or current.generation != record.enforcement_generation
+            or generation.generation != record.enforcement_generation
+            or current.enforcement_digest != record.enforcement_digest
+            or generation.enforcement_digest != record.enforcement_digest
+            or generation.requirement_digest != record.requirement_digest
+            or generation.config_digest != record.config_digest
+            or generation.source_digest != record.source_digest
+            or generation.protected_baseline_digest
+            != record.protected_baseline.digest()
+        ):
+            raise EvidenceConflict(
+                "finalizer enforcement changed before run allocation",
+                operation="allocate-required-run",
+                path_role="finalizer-enforcement",
+            )
+
+    def begin_required_run(
+        self,
+        *,
+        requirement_record: finalization.FinalizerRequirementRecord,
+        preflight_token: finalization.FinalizerPreflightToken,
+        source_capture: finalization.PreflightSourceCapture,
+        runtime_capture: finalization.PreflightRuntimeCapture,
+        supervisor_session: finalization.SupervisorSession,
+        immutable_artifacts: Mapping[str, bytes],
+    ) -> "RunHandle":
+        if (
+            type(requirement_record)
+            is not finalization.FinalizerRequirementRecord
+            or type(preflight_token) is not finalization.FinalizerPreflightToken
+            or type(source_capture) is not finalization.PreflightSourceCapture
+            or type(runtime_capture) is not finalization.PreflightRuntimeCapture
+            or type(supervisor_session) is not finalization.SupervisorSession
+        ):
+            raise EvidenceManifestInvalid(
+                "required run allocation requires concrete finalization contracts"
+            )
+        record = requirement_record
+        gate_id = _validate_gate_id(record.requirement.gate_id)
+        if record.workspace_id != self.workspace_id:
+            raise EvidenceManifestInvalid(
+                "required run workspace does not match store"
+            )
+        token_projection = (
+            preflight_token.enforcement_generation,
+            preflight_token.enforcement_digest,
+            preflight_token.requirement_digest,
+            preflight_token.config_digest,
+            preflight_token.source_digest,
+            preflight_token.supervisor_runtime_digest,
+            preflight_token.preflight_runtime_digest,
+            preflight_token.source_capture_id,
+            preflight_token.source_capture_digest,
+            preflight_token.runtime_capture_id,
+            preflight_token.runtime_capture_digest,
+            preflight_token.durability_profile_digest,
+        )
+        record_projection = (
+            record.enforcement_generation,
+            record.enforcement_digest,
+            record.requirement_digest,
+            record.config_digest,
+            record.source_digest,
+            record.finalizer_runtime.supervisor_runtime_digest,
+            record.runtime_measurement.preflight_runtime_digest,
+            record.source_capture_id,
+            record.source_capture_digest,
+            record.runtime_capture_id,
+            record.runtime_capture_digest,
+            record.durability_profile.durability_profile_digest,
+        )
+        if token_projection != record_projection:
+            raise EvidenceConflict(
+                "preflight token does not match requirement record",
+                operation="allocate-required-run",
+                path_role="preflight-token",
+            )
+        if (
+            supervisor_session.supervisor_session_id
+            != preflight_token.supervisor_session_id
+            or supervisor_session.supervisor_runtime_digest
+            != preflight_token.supervisor_runtime_digest
+            or supervisor_session.state != "READY"
+        ):
+            raise EvidenceConflict(
+                "preflight supervisor session is not live and READY",
+                operation="allocate-required-run",
+                path_role="supervisor-session",
+            )
+        if source_capture.consumed or runtime_capture.consumed:
+            raise EvidenceConflict(
+                "preflight capture was already consumed",
+                operation="allocate-required-run",
+                path_role="preflight-capture",
+            )
+        if (
+            source_capture.capture_id != record.source_capture_id
+            or source_capture.workspace_id != record.workspace_id
+            or source_capture.source_commit != record.source_commit
+            or source_capture.workspace_digest != record.workspace_digest
+            or source_capture.canonical_worktree_hash
+            != record.canonical_worktree_hash
+            or source_capture.source_files != record.captured_sources
+            or source_capture.source_capture_bundle_digest
+            != record.source_capture_bundle_digest
+            or source_capture.source_capture_digest
+            != record.source_capture_digest
+            or runtime_capture.capture_id != record.runtime_capture_id
+            or runtime_capture.measurement != record.runtime_measurement
+            or runtime_capture.files != record.captured_runtime_files
+            or runtime_capture.runtime_capture_bundle_digest
+            != record.runtime_capture_bundle_digest
+            or runtime_capture.runtime_capture_digest
+            != record.runtime_capture_digest
+        ):
+            raise EvidenceConflict(
+                "live preflight capture does not match requirement record",
+                operation="allocate-required-run",
+                path_role="preflight-capture",
+            )
+        for claim in (
+            source_capture.temporary_directory_claim,
+            runtime_capture.temporary_directory_claim,
+        ):
+            owner = claim.owner_binding
+            if (
+                type(owner)
+                is not finalization.TemporaryDirectoryOwnerBinding
+                or owner.supervisor_session_id
+                != preflight_token.supervisor_session_id
+            ):
+                raise EvidenceConflict(
+                    "preflight capture belongs to another supervisor session",
+                    operation="allocate-required-run",
+                    path_role="preflight-capture",
+                )
+        referenced = {
+            item.ref.path: item.ref
+            for item in (
+                *record.protected_source_artifacts,
+                *record.runtime_evidence_artifacts,
+            )
+        }
+        if set(immutable_artifacts) != set(referenced):
+            raise EvidenceManifestInvalid(
+                "immutable artifact bytes do not match requirement inventory"
+            )
+        for path, reference in referenced.items():
+            value = immutable_artifacts[path]
+            if type(value) is not bytes:
+                raise EvidenceManifestInvalid(
+                    "immutable artifact payload must be bytes"
+                )
+            if _sha256_bytes(value) != reference.sha256:
+                raise EvidenceManifestInvalid(
+                    f"immutable artifact hash mismatch: {path}"
+                )
+        run_ids = {reference.run_id for reference in referenced.values()}
+        if len(run_ids) != 1:
+            raise EvidenceManifestInvalid(
+                "required run artifacts do not share one run ID"
+            )
+        run_id = validate_run_id(next(iter(run_ids)))
+        gate_dir = self.workspace_dir / gate_id
+        _private_directory(gate_dir, "gate")
+        cleanup_lock = _FileLock(gate_dir / ".cleanup.lock")
+        cleanup_lock.acquire(blocking=True)
+        handle: RunHandle | None = None
+        run_dir = gate_dir / run_id
+        try:
+            self._validate_active_enforcement(record)
+            try:
+                run_dir.mkdir(mode=0o700)
+            except FileExistsError as error:
+                raise EvidenceConflict(
+                    f"run already exists: {run_id}",
+                    operation="allocate-required-run",
+                    path_role="run",
+                ) from error
+            except OSError as error:
+                raise _map_os_error(
+                    error,
+                    operation="allocate-required-run",
+                    path_role="run",
+                ) from error
+            handle = RunHandle(
+                store=self,
+                gate_id=gate_id,
+                run_id=run_id,
+                run_dir=run_dir,
+                source={
+                    "commit": record.source_commit,
+                    "workspaceDigest": record.workspace_digest,
+                    "canonicalWorktreeHash": record.canonical_worktree_hash,
+                },
+            )
+            for path in sorted(immutable_artifacts):
+                relative, target = handle._target(path)
+                value = immutable_artifacts[path]
+                _atomic_write_no_replace(
+                    target,
+                    value,
+                    path_role=f"required-artifact:{relative}",
+                )
+                handle._bytes_written += len(value)
+            self._validate_requirement_bundles(record)
+            requirement_bytes = _canonical_contract_bytes(record.to_dict())
+            _atomic_write_no_replace(
+                run_dir / "finalization-requirement.json",
+                requirement_bytes,
+                path_role="finalization-requirement",
+            )
+            _fsync_directory(run_dir)
+            _fsync_directory(gate_dir)
+            if source_capture.consumed or runtime_capture.consumed:
+                raise EvidenceConflict(
+                    "preflight capture changed during required allocation",
+                    operation="allocate-required-run",
+                    path_role="preflight-capture",
+                )
+            source_capture.consumed = True
+            runtime_capture.consumed = True
+            handle._requirement_record = record
+            handle._preflight_token = preflight_token
+            handle._supervisor_session = supervisor_session
+            handle.created_at = record.created_at
+            return handle
+        except BaseException:
+            if handle is not None:
+                handle._active_lock.release()
+            if run_dir.exists():
+                try:
+                    shutil.rmtree(run_dir)
+                    _fsync_directory(gate_dir)
+                except OSError:
+                    pass
+            raise
+        finally:
+            cleanup_lock.release()
 
     def resolve(self, reference: ArtifactRef, *, verify_hash: bool = True) -> Path:
         if reference.workspace_id != self.workspace_id:
@@ -1046,6 +1939,691 @@ class EvidenceStore:
             raise EvidenceManifestInvalid(f"latest pointer is unavailable for {gate_id}")
         return self.read_json(ArtifactRef.from_dict(pointer["manifest"]))
 
+    @staticmethod
+    def _manifest_result_tuple(
+        manifest: Mapping[str, Any],
+    ) -> finalization.CanonicalResultTuple:
+        result = manifest.get("result")
+        if type(result) is not dict:
+            raise EvidenceManifestInvalid(
+                "manifest result must be an object"
+            )
+        try:
+            return finalization.CanonicalResultTuple.from_dict(
+                {
+                    "status": result["status"],
+                    "completionStatus": result["completionStatus"],
+                    "proofStatus": result["proofStatus"],
+                }
+            )
+        except (KeyError, ValueError) as error:
+            raise EvidenceManifestInvalid(
+                "manifest result tuple is invalid"
+            ) from error
+
+    def _validated_finalizer_interlock(
+        self,
+        gate_id: str,
+    ) -> finalization.FinalizerPublicationInterlock:
+        path = (
+            self.workspace_dir
+            / gate_id
+            / "finalizer-enforcement"
+            / "publication-interlock.json"
+        )
+        interlock = self._read_contract_object(
+            path,
+            path_role="publication-interlock",
+        )
+        required = {
+            "artifactKind",
+            "schemaVersion",
+            "workspaceId",
+            "gateId",
+            "requiredFinalizerId",
+            "installedAt",
+            "installationSourceCommit",
+            "proofAdmissionSourceDigest",
+            "authorization",
+            "interlockDigest",
+        }
+        if (
+            set(interlock) != required
+            or interlock.get("artifactKind")
+            != "acceptance-finalizer-publication-interlock"
+            or interlock.get("schemaVersion") != 1
+            or interlock.get("workspaceId") != self.workspace_id
+            or interlock.get("gateId") != gate_id
+        ):
+            raise EvidenceManifestInvalid(
+                "publication interlock identity is invalid"
+            )
+        try:
+            expected = finalization.domain_separated_sha256(
+                "pt.acceptance.finalization.publication-interlock.v1",
+                {
+                    key: value
+                    for key, value in interlock.items()
+                    if key != "interlockDigest"
+                },
+            )
+        except ValueError as error:
+            raise EvidenceManifestInvalid(
+                "publication interlock payload is invalid"
+            ) from error
+        if interlock.get("interlockDigest") != expected:
+            raise EvidenceManifestInvalid(
+                "publication interlock digest is invalid"
+            )
+        authorization = interlock.get("authorization")
+        quiescence = (
+            authorization.get("proofAdmissionQuiescence")
+            if type(authorization) is dict
+            else None
+        )
+        if type(quiescence) is not dict:
+            raise EvidenceManifestInvalid(
+                "publication interlock lacks proof-admission quiescence"
+            )
+        coordinator_epoch_id = quiescence.get("coordinatorEpochId")
+        if type(coordinator_epoch_id) is not str:
+            raise EvidenceManifestInvalid(
+                "publication interlock epoch identity is invalid"
+            )
+        claim_dir = (
+            self.workspace_dir / gate_id / "claim-admission"
+        )
+        try:
+            epoch = finalization.ProofAdmissionEpochRecord.from_dict(
+                self._read_contract_object(
+                    claim_dir
+                    / "epochs"
+                    / f"{coordinator_epoch_id}.json",
+                    path_role="proof-admission-epoch",
+                )
+            )
+            current_epoch = (
+                finalization.ProofAdmissionCurrentEpoch.from_dict(
+                    self._read_contract_object(
+                        claim_dir / "current-epoch.json",
+                        path_role="proof-admission-current-epoch",
+                    )
+                )
+            )
+            pause = finalization.ProofAdmissionPauseRecord.from_dict(
+                self._read_contract_object(
+                    claim_dir
+                    / "pauses"
+                    / f"{coordinator_epoch_id}.json",
+                    path_role="proof-admission-pause",
+                )
+            )
+            jobs = tuple(
+                finalization.ProofAdmissionJobRecord.from_dict(
+                    self._read_contract_object(
+                        path,
+                        path_role="proof-admission-job",
+                    )
+                )
+                for path in sorted(
+                    (
+                        claim_dir
+                        / "jobs"
+                        / coordinator_epoch_id
+                    ).glob("*.json")
+                )
+            )
+            jobs_by_sequence = {
+                job.job_sequence: job for job in jobs
+            }
+            completions_list = []
+            for path in sorted(
+                (
+                    claim_dir
+                    / "completions"
+                    / coordinator_epoch_id
+                ).glob("*.json")
+            ):
+                raw = self._read_contract_object(
+                    path,
+                    path_role="proof-admission-completion",
+                )
+                sequence = raw.get("jobSequence")
+                job = jobs_by_sequence.get(sequence)
+                if job is None:
+                    raise ValueError(
+                        "completion has no matching job"
+                    )
+                completions_list.append(
+                    finalization.ProofAdmissionJobCompletion.from_dict(
+                        raw,
+                        job=job,
+                        epoch=epoch,
+                        pause=pause,
+                    )
+                )
+            completions = tuple(completions_list)
+            completions_by_sequence = {
+                item.job_sequence: item for item in completions
+            }
+            intents_list = []
+            acknowledgements_list = []
+            emissions_dir = (
+                claim_dir / "emissions" / coordinator_epoch_id
+            )
+            if emissions_dir.is_dir():
+                for directory in sorted(emissions_dir.iterdir()):
+                    if not directory.is_dir() or directory.is_symlink():
+                        raise ValueError(
+                            "emission identity must be a real directory"
+                        )
+                    intent_path = directory / "intent.json"
+                    acknowledgement_path = (
+                        directory / "acknowledged.json"
+                    )
+                    if not intent_path.exists():
+                        if acknowledgement_path.exists():
+                            raise ValueError(
+                                "acknowledgement lacks intent"
+                            )
+                        continue
+                    raw_intent = self._read_contract_object(
+                        intent_path,
+                        path_role="proof-admission-emission-intent",
+                    )
+                    sequence = raw_intent.get("jobSequence")
+                    job = jobs_by_sequence.get(sequence)
+                    completion = completions_by_sequence.get(sequence)
+                    if job is None or completion is None:
+                        raise ValueError(
+                            "emission intent lacks job completion"
+                        )
+                    intent = (
+                        finalization.ProofAdmissionEmissionIntent.from_dict(
+                            raw_intent,
+                            job=job,
+                            completion=completion,
+                            epoch=epoch,
+                        )
+                    )
+                    intents_list.append(intent)
+                    if acknowledgement_path.exists():
+                        acknowledgements_list.append(
+                            finalization.ProofAdmissionEmissionAcknowledgement.from_dict(
+                                self._read_contract_object(
+                                    acknowledgement_path,
+                                    path_role=(
+                                        "proof-admission-emission-acknowledgement"
+                                    ),
+                                ),
+                                intent=intent,
+                            )
+                        )
+            references = {
+                "epoch": epoch,
+                "current_epoch": current_epoch,
+                "pause": pause,
+                "jobs": jobs,
+                "completions": completions,
+                "intents": tuple(intents_list),
+                "acknowledgements": tuple(acknowledgements_list),
+            }
+            parsed = finalization.FinalizerPublicationInterlock.from_dict(
+                interlock,
+                **references,
+            )
+        except ValueError as error:
+            raise EvidenceManifestInvalid(
+                "publication interlock proof-admission closure is invalid"
+            ) from error
+        return parsed
+
+    def _read_finalizer_requirement(
+        self,
+        reference: ArtifactRef,
+    ) -> finalization.FinalizerRequirementRecord:
+        candidate = (
+            self.workspace_dir
+            / reference.gate_id
+            / reference.run_id
+            / "finalization-requirement.json"
+        )
+        _ensure_no_symlink(self.root, candidate)
+        if not candidate.is_file():
+            raise EvidenceManifestInvalid(
+                "finalization requirement record is missing"
+            )
+        path = self.resolve(
+            ArtifactRef(
+                workspace_id=reference.workspace_id,
+                gate_id=reference.gate_id,
+                run_id=reference.run_id,
+                path="finalization-requirement.json",
+                sha256=_sha256_file(candidate),
+                media_type="application/json",
+            )
+        )
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+            record = finalization.FinalizerRequirementRecord.from_dict(value)
+        except (
+            OSError,
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+            ValueError,
+        ) as error:
+            raise EvidenceManifestInvalid(
+                "finalization requirement record is invalid"
+            ) from error
+        if _canonical_contract_bytes(record.to_dict()) != path.read_bytes():
+            raise EvidenceManifestInvalid(
+                "finalization requirement bytes are not canonical"
+            )
+        return record
+
+    def _validate_completed_finalization_manifest(
+        self,
+        manifest: Mapping[str, Any],
+        manifest_ref: ArtifactRef,
+        requirement: finalization.FinalizerRequirementRecord,
+        evidence_record: finalization.EvidenceFinalizationRecord,
+    ) -> None:
+        run_dir = (
+            self.workspace_dir
+            / manifest_ref.gate_id
+            / manifest_ref.run_id
+        )
+        if (
+            (
+                run_dir.parent
+                / "aborts"
+                / manifest_ref.run_id
+                / "authorized.json"
+            ).exists()
+            or (
+                run_dir.parent
+                / "aborted-runs"
+                / manifest_ref.run_id
+            ).exists()
+        ):
+            raise EvidenceManifestInvalid(
+                "aborted or abort-authorized run is not authoritative"
+            )
+        try:
+            seal_value = self._read_contract_object(
+                run_dir / "sealed.json",
+                path_role="finalization-seal",
+            )
+            marker = finalization.SealedEvidenceMarker.from_dict(seal_value)
+        except ValueError as error:
+            raise EvidenceManifestInvalid(
+                "finalization seal is invalid"
+            ) from error
+        if (
+            _canonical_contract_bytes(marker.to_dict())
+            != (run_dir / "sealed.json").read_bytes()
+        ):
+            raise EvidenceManifestInvalid(
+                "finalization seal bytes are not canonical"
+            )
+        context = marker.finalizer_context
+        if (
+            evidence_record.state
+            is not finalization.EvidenceFinalizationState.COMPLETED
+            or evidence_record.primary_result != marker.primary_result
+            or evidence_record.primary_result_digest
+            != marker.primary_result_digest
+            or evidence_record.seal_digest != marker.seal_digest
+            or evidence_record.enforcement_generation
+            != requirement.enforcement_generation
+            or evidence_record.enforcement_digest
+            != requirement.enforcement_digest
+            or evidence_record.requirement_digest
+            != requirement.requirement_digest
+            or evidence_record.config_digest != requirement.config_digest
+            or evidence_record.source_digest != requirement.source_digest
+            or context.requirement_digest != requirement.requirement_digest
+            or context.config_digest != requirement.config_digest
+            or context.finalizer_source_digest != requirement.source_digest
+            or context.finalizer_runtime != requirement.finalizer_runtime
+        ):
+            raise EvidenceManifestInvalid(
+                "manifest finalization identity is inconsistent"
+            )
+        for reference in (
+            *(
+                item.ref for item in requirement.protected_source_artifacts
+            ),
+            *(
+                item.ref for item in requirement.runtime_evidence_artifacts
+            ),
+            context.finalizer_executable.ref,
+            *(artifact.ref for artifact in marker.snapshot.artifacts),
+        ):
+            self.resolve(_store_artifact_ref(reference))
+        self._validate_requirement_bundles(
+            requirement,
+            executable=context.finalizer_executable,
+        )
+        invocation_values = {
+            "finalizer_id": context.finalizer_id,
+            "finalizer_executable": context.finalizer_executable,
+            "finalizer_source_digest": context.finalizer_source_digest,
+            "finalizer_runtime": context.finalizer_runtime,
+            "supervisor_session_id": context.supervisor_session_id,
+            "supervisor_runtime_digest": context.supervisor_runtime_digest,
+            "enforcement_generation": context.enforcement_generation,
+            "enforcement_digest": context.enforcement_digest,
+            "requirement_digest": context.requirement_digest,
+            "config_digest": context.config_digest,
+            "workspace_id": context.workspace_id,
+            "gate_id": context.gate_id,
+            "evidence_run_id": context.evidence_run_id,
+            "provisioning_run_id": context.provisioning_run_id,
+            "runtime_manifest_ref": context.runtime_manifest_ref,
+            "source_commit": context.source_commit,
+            "workspace_digest": context.workspace_digest,
+            "canonical_worktree_hash": context.canonical_worktree_hash,
+            "snapshot_digest": context.snapshot_digest,
+            "required_role_identities": context.required_role_identities,
+            "primary_status": context.primary_status,
+            "primary_result_digest": context.primary_result_digest,
+        }
+        invocation = finalization.FinalizerInvocationIdentity.create(
+            **invocation_values
+        )
+        finalizer_input = finalization.FinalizerInput.create(
+            invocation=invocation,
+            context=context,
+            snapshot=marker.snapshot,
+        )
+        outcome = evidence_record.outcome
+        projection = (
+            outcome.child_outcome
+            if type(outcome)
+            is finalization.ChildGateEvidenceFinalization
+            else outcome
+        )
+        if (
+            projection is None
+            or projection.finalizer_id != invocation.finalizer_id
+            or projection.invocation_digest != invocation.invocation_digest
+            or projection.finalizer_input_digest
+            != finalizer_input.finalizer_input_digest
+            or projection.snapshot_digest != invocation.snapshot_digest
+            or projection.primary_result_digest
+            != invocation.primary_result_digest
+        ):
+            raise EvidenceManifestInvalid(
+                "historical finalizer outcome identity is invalid"
+            )
+        result = manifest.get("result")
+        if type(result) is not dict:
+            raise EvidenceManifestInvalid("manifest result is invalid")
+        published_tuple = self._manifest_result_tuple(manifest)
+        if published_tuple is not evidence_record.published_result_tuple():
+            raise EvidenceManifestInvalid(
+                "manifest result violates monotonic merge"
+            )
+        base_result = dict(result)
+        base_result.pop("evidenceFinalization", None)
+        base_result.update(marker.primary_result.result_tuple.to_dict())
+        if (
+            _canonical_contract_bytes(base_result)
+            != _canonical_contract_bytes(
+                marker.primary_result.document.json_value()
+            )
+        ):
+            raise EvidenceManifestInvalid(
+                "manifest result changed primary result content"
+            )
+
+    def _validate_pre_seal_finalization_manifest(
+        self,
+        manifest: Mapping[str, Any],
+        manifest_ref: ArtifactRef,
+        requirement: finalization.FinalizerRequirementRecord,
+        evidence_record: finalization.EvidenceFinalizationRecord,
+    ) -> None:
+        run_dir = (
+            self.workspace_dir
+            / manifest_ref.gate_id
+            / manifest_ref.run_id
+        )
+        if (run_dir / "sealed.json").exists():
+            raise EvidenceManifestInvalid(
+                "pre-seal finalization unexpectedly has a sealed marker"
+            )
+        if (
+            evidence_record.state
+            is not finalization.EvidenceFinalizationState.NOT_INVOKED_PRE_SEAL
+            or evidence_record.enforcement_generation
+            != requirement.enforcement_generation
+            or evidence_record.enforcement_digest
+            != requirement.enforcement_digest
+            or evidence_record.requirement_digest
+            != requirement.requirement_digest
+            or evidence_record.config_digest != requirement.config_digest
+            or evidence_record.source_digest != requirement.source_digest
+            or evidence_record.primary_result is None
+        ):
+            raise EvidenceManifestInvalid(
+                "pre-seal finalization record is inconsistent"
+            )
+        primary = evidence_record.primary_result
+        if primary.source_trace.source_commit != requirement.source_commit:
+            raise EvidenceManifestInvalid(
+                "pre-seal primary source does not match requirement"
+            )
+        for reference in primary.source_trace.evidence_refs:
+            self.resolve(_store_artifact_ref(reference))
+        if (
+            (
+                run_dir.parent
+                / "aborts"
+                / manifest_ref.run_id
+                / "authorized.json"
+            ).exists()
+            or (
+                run_dir.parent
+                / "aborted-runs"
+                / manifest_ref.run_id
+            ).exists()
+        ):
+            raise EvidenceManifestInvalid(
+                "aborted or abort-authorized run is not authoritative"
+            )
+        result = manifest.get("result")
+        if type(result) is not dict:
+            raise EvidenceManifestInvalid("manifest result is invalid")
+        if (
+            self._manifest_result_tuple(manifest)
+            is not evidence_record.published_result_tuple()
+        ):
+            raise EvidenceManifestInvalid(
+                "pre-seal result violates monotonic merge"
+            )
+        base_result = dict(result)
+        base_result.pop("evidenceFinalization", None)
+        base_result.update(primary.result_tuple.to_dict())
+        if _canonical_contract_bytes(base_result) != _canonical_contract_bytes(
+            primary.document.json_value()
+        ):
+            raise EvidenceManifestInvalid(
+                "pre-seal manifest changed primary result content"
+            )
+
+    def authoritative_latest(
+        self,
+        gate_id: str,
+    ) -> finalization.AuthoritativeLatestResolution:
+        normalized_gate = _validate_gate_id(gate_id)
+        gate_dir = self.workspace_dir / normalized_gate
+        enforcement_dir = gate_dir / "finalizer-enforcement"
+        marker_paths = {
+            "interlock": enforcement_dir / "publication-interlock.json",
+            "pending": enforcement_dir / "activation-pending.json",
+            "activated": enforcement_dir / "activated.json",
+            "current": enforcement_dir / "current.json",
+        }
+        presence = {
+            name: path.exists() for name, path in marker_paths.items()
+        }
+        if not any(presence.values()):
+            pointer = self._latest_pointer(normalized_gate, required=True)
+            if pointer is None:
+                raise EvidenceManifestInvalid(
+                    "legacy latest pointer is unavailable"
+                )
+            reference = ArtifactRef.from_dict(pointer["manifest"])
+            manifest = self.read_run_manifest(
+                reference,
+                manifest_sha256=reference.sha256,
+                expected_gate_id=normalized_gate,
+            )
+            return finalization.AuthoritativeLatestResolution.create(
+                authority_mode=finalization.LatestAuthorityMode.LEGACY,
+                workspace_id=self.workspace_id,
+                gate_id=normalized_gate,
+                interlock_digest=None,
+                generation=None,
+                enforcement_digest=None,
+                manifest_ref=_contract_artifact_ref(reference),
+                result_tuple=self._manifest_result_tuple(manifest),
+            )
+        if (
+            not presence["interlock"]
+            or presence["pending"]
+            or not presence["activated"]
+            or not presence["current"]
+        ):
+            raise EvidenceManifestInvalid(
+                "finalizer enforcement markers are incomplete"
+            )
+        interlock = self._validated_finalizer_interlock(normalized_gate)
+        try:
+            activated = finalization.FinalizerEnforcementActivated.from_dict(
+                self._read_contract_object(
+                    marker_paths["activated"],
+                    path_role="enforcement-activated",
+                )
+            )
+            current = finalization.FinalizerEnforcementCurrent.from_dict(
+                self._read_contract_object(
+                    marker_paths["current"],
+                    path_role="enforcement-current",
+                )
+            )
+            generation = finalization.FinalizerEnforcementRecord.from_dict(
+                self._read_contract_object(
+                    enforcement_dir
+                    / "generations"
+                    / f"{current.generation}.json",
+                    path_role="enforcement-generation",
+                )
+            )
+        except ValueError as error:
+            raise EvidenceManifestInvalid(
+                "finalizer enforcement history is invalid"
+            ) from error
+        if (
+            activated.workspace_id != self.workspace_id
+            or activated.gate_id != normalized_gate
+            or current.workspace_id != self.workspace_id
+            or current.gate_id != normalized_gate
+            or generation.workspace_id != self.workspace_id
+            or generation.gate_id != normalized_gate
+            or current.required_finalizer_id
+            != interlock.required_finalizer_id
+            or generation.required_finalizer_id
+            != current.required_finalizer_id
+            or current.generation != generation.generation
+            or current.enforcement_digest != generation.enforcement_digest
+        ):
+            raise EvidenceManifestInvalid(
+                "finalizer enforcement selector is inconsistent"
+            )
+        latest_path = (
+            enforcement_dir / "latest" / f"{current.generation}.json"
+        )
+        try:
+            pointer = finalization.LatestPointer.from_dict(
+                self._read_contract_object(
+                    latest_path,
+                    path_role="finalizer-generation-latest",
+                )
+            )
+        except ValueError as error:
+            raise EvidenceManifestInvalid(
+                "generation latest pointer is invalid"
+            ) from error
+        reference = _store_artifact_ref(pointer.manifest)
+        manifest = self.read_run_manifest(
+            reference,
+            manifest_sha256=pointer.manifest_sha256,
+            expected_gate_id=normalized_gate,
+        )
+        requirement = self._read_finalizer_requirement(reference)
+        result = manifest.get("result")
+        if type(result) is not dict:
+            raise EvidenceManifestInvalid("manifest result is invalid")
+        try:
+            evidence_record = (
+                finalization.EvidenceFinalizationRecord.from_dict(
+                    result["evidenceFinalization"]
+                )
+            )
+        except (KeyError, ValueError) as error:
+            raise EvidenceManifestInvalid(
+                "manifest finalization record is invalid"
+            ) from error
+        if (
+            requirement.enforcement_generation != current.generation
+            or requirement.enforcement_digest
+            != current.enforcement_digest
+            or requirement.requirement_digest
+            != generation.requirement_digest
+            or requirement.config_digest != generation.config_digest
+            or requirement.source_digest != generation.source_digest
+        ):
+            raise EvidenceManifestInvalid(
+                "requirement record does not match active generation"
+            )
+        if (
+            evidence_record.state
+            is finalization.EvidenceFinalizationState.COMPLETED
+        ):
+            self._validate_completed_finalization_manifest(
+                manifest,
+                reference,
+                requirement,
+                evidence_record,
+            )
+        elif (
+            evidence_record.state
+            is finalization.EvidenceFinalizationState.NOT_INVOKED_PRE_SEAL
+        ):
+            self._validate_pre_seal_finalization_manifest(
+                manifest,
+                reference,
+                requirement,
+                evidence_record,
+            )
+        else:
+            raise EvidenceManifestInvalid(
+                "enforced latest forbids NOT_REQUIRED finalization"
+            )
+        return finalization.AuthoritativeLatestResolution.create(
+            authority_mode=finalization.LatestAuthorityMode.FINALIZER_ENFORCED,
+            workspace_id=self.workspace_id,
+            gate_id=normalized_gate,
+            interlock_digest=interlock.interlock_digest,
+            generation=current.generation,
+            enforcement_digest=current.enforcement_digest,
+            manifest_ref=pointer.manifest,
+            result_tuple=self._manifest_result_tuple(manifest),
+        )
+
     def latest_artifact_ref(
         self,
         gate_id: str,
@@ -1087,6 +2665,27 @@ class EvidenceStore:
                             runtime_cell=runtime_cell,
                         )
                     )
+                generation_latest = (
+                    gate_dir / "finalizer-enforcement" / "latest"
+                )
+                if generation_latest.is_dir():
+                    for pointer_path in sorted(
+                        generation_latest.glob("*.json")
+                    ):
+                        pointer = self._read_contract_object(
+                            pointer_path,
+                            path_role="finalizer-generation-latest",
+                        )
+                        try:
+                            pointers.append(
+                                finalization.LatestPointer.from_dict(
+                                    pointer
+                                ).to_dict()
+                            )
+                        except ValueError as error:
+                            raise EvidenceManifestInvalid(
+                                "generation latest pointer is invalid"
+                            ) from error
                 if any(
                     pointer is not None
                     and pointer.get("runId") == normalized_run
@@ -1101,6 +2700,18 @@ class EvidenceStore:
             if not lock.acquire(blocking=False):
                 raise EvidenceRunActive(f"run is active: {normalized_run}")
             lock.release()
+            if (
+                (run_dir / "sealed.json").exists()
+                or (
+                    gate_dir
+                    / "aborts"
+                    / normalized_run
+                    / "authorized.json"
+                ).exists()
+            ):
+                raise EvidenceConflict(
+                    "sealed or abort-authorized run requires explicit abort"
+                )
             try:
                 shutil.rmtree(run_dir)
                 _fsync_directory(gate_dir)
@@ -1142,6 +2753,24 @@ class RunHandle:
         self._manifest_ref: ArtifactRef | None = None
         self._redacted_artifacts: set[str] = set()
         self._redaction_values: tuple[str, ...] = ()
+        self._finalization_lock = _FileLock(run_dir / ".finalization.lock")
+        self._requirement_record: (
+            finalization.FinalizerRequirementRecord | None
+        ) = None
+        self._preflight_token: finalization.FinalizerPreflightToken | None = None
+        self._seal_marker: finalization.SealedEvidenceMarker | None = None
+        self._finalization_artifacts: dict[
+            tuple[str, str | None],
+            finalization.SnapshotArtifact,
+        ] = {}
+        self._reservation: (
+            finalization.FinalizationInvocationReservation | None
+        ) = None
+        self._finalizer_input: finalization.FinalizerInput | None = None
+        self._supervisor_session: finalization.SupervisorSession | None = None
+        self._pre_seal_manifest_bytes: bytes | None = None
+        self._pre_seal_pointer_bytes: bytes | None = None
+        self._pre_seal_primary_digest: str | None = None
 
     @property
     def manifest_ref(self) -> ArtifactRef:
@@ -1300,50 +2929,62 @@ class RunHandle:
         with self._mutex:
             if self.state != "ACTIVE":
                 raise EvidenceConflict("artifacts can only be written to an active run")
-            normalized, target = self._target(relative_path)
-            if (
-                redact_text_with_values(normalized, self._redaction_values)
-                != normalized
-            ):
-                raise EvidenceManifestInvalid(
-                    "Acceptance artifact path contains a resolved credential"
-                )
-            value, redacted = redact_artifact_bytes(
-                value,
-                self._redaction_values,
+            _acquire_bounded(
+                self._finalization_lock,
+                timeout_seconds=60,
+                operation="write-artifact",
             )
-            if redacted:
-                self._redacted_artifacts.add(normalized)
-            digest = _sha256_bytes(value)
-            if target.exists():
-                if target.is_symlink():
-                    raise EvidenceSymlinkRejected(f"symlink artifact is forbidden: {normalized}")
-                if _sha256_file(target) != digest:
-                    raise EvidenceConflict(f"artifact path already has different bytes: {normalized}")
-            else:
-                projected = self._bytes_written + len(value)
-                if self.store.byte_budget is not None and projected > self.store.byte_budget:
-                    raise EvidenceQuotaExceeded(
-                        "run byte budget exceeded",
-                        operation="write-artifact",
-                        path_role=role or normalized,
+            try:
+                if (self.run_dir / "sealed.json").exists():
+                    raise EvidenceConflict(
+                        "artifacts are sealed for finalization"
                     )
-                _atomic_write(target, value, path_role=role or normalized)
-                self._bytes_written = projected
-            reference = ArtifactRef(
-                workspace_id=self.store.workspace_id,
-                gate_id=self.gate_id,
-                run_id=self.run_id,
-                path=normalized,
-                sha256=digest,
-                media_type=media_type,
-            )
-            artifact_role = role or normalized
-            existing = self._artifacts.get(artifact_role)
-            if existing is not None and existing != reference:
-                raise EvidenceConflict(f"artifact role already exists: {artifact_role}")
-            self._artifacts[artifact_role] = reference
-            return reference
+                normalized, target = self._target(relative_path)
+                if (
+                    redact_text_with_values(normalized, self._redaction_values)
+                    != normalized
+                ):
+                    raise EvidenceManifestInvalid(
+                        "Acceptance artifact path contains a resolved credential"
+                    )
+                value, redacted = redact_artifact_bytes(
+                    value,
+                    self._redaction_values,
+                )
+                if redacted:
+                    self._redacted_artifacts.add(normalized)
+                digest = _sha256_bytes(value)
+                if target.exists():
+                    if target.is_symlink():
+                        raise EvidenceSymlinkRejected(f"symlink artifact is forbidden: {normalized}")
+                    if _sha256_file(target) != digest:
+                        raise EvidenceConflict(f"artifact path already has different bytes: {normalized}")
+                else:
+                    projected = self._bytes_written + len(value)
+                    if self.store.byte_budget is not None and projected > self.store.byte_budget:
+                        raise EvidenceQuotaExceeded(
+                            "run byte budget exceeded",
+                            operation="write-artifact",
+                            path_role=role or normalized,
+                        )
+                    _atomic_write(target, value, path_role=role or normalized)
+                    self._bytes_written = projected
+                reference = ArtifactRef(
+                    workspace_id=self.store.workspace_id,
+                    gate_id=self.gate_id,
+                    run_id=self.run_id,
+                    path=normalized,
+                    sha256=digest,
+                    media_type=media_type,
+                )
+                artifact_role = role or normalized
+                existing = self._artifacts.get(artifact_role)
+                if existing is not None and existing != reference:
+                    raise EvidenceConflict(f"artifact role already exists: {artifact_role}")
+                self._artifacts[artifact_role] = reference
+                return reference
+            finally:
+                self._finalization_lock.release()
 
     def write_json(
         self,
@@ -1364,6 +3005,838 @@ class RunHandle:
             role=role,
         )
 
+    def register_finalization_artifact(
+        self,
+        artifact: finalization.SnapshotArtifact,
+    ) -> None:
+        with self._mutex:
+            if self.state != "ACTIVE" or self._requirement_record is None:
+                raise EvidenceConflict(
+                    "finalization artifact registration requires an active required run"
+                )
+            if type(artifact) is not finalization.SnapshotArtifact:
+                raise EvidenceManifestInvalid(
+                    "finalization artifact must use SnapshotArtifact"
+                )
+            reference = artifact.ref
+            if (
+                reference.workspace_id,
+                reference.gate_id,
+                reference.run_id,
+            ) != (
+                self.store.workspace_id,
+                self.gate_id,
+                self.run_id,
+            ):
+                raise EvidenceManifestInvalid(
+                    "finalization artifact identity does not match run"
+                )
+            _acquire_bounded(
+                self._finalization_lock,
+                timeout_seconds=60,
+                operation="register-finalization-artifact",
+            )
+            try:
+                if (self.run_dir / "sealed.json").exists():
+                    raise EvidenceConflict(
+                        "artifact roles are sealed for finalization"
+                    )
+                self.store.resolve(_store_artifact_ref(reference))
+                identity = artifact.identity
+                existing = self._finalization_artifacts.get(identity)
+                if existing is not None:
+                    if existing != artifact:
+                        raise EvidenceConflict(
+                            "finalization artifact identity already has different content"
+                        )
+                    return
+                role_dir = self.run_dir / ".artifact-role-instances"
+                metadata_path = role_dir / (
+                    _sha256_bytes(
+                        _canonical_contract_bytes(
+                            {
+                                "roleName": identity[0],
+                                "discriminator": identity[1],
+                            }
+                        )
+                    )
+                    + ".json"
+                )
+                _atomic_write_no_replace(
+                    metadata_path,
+                    _canonical_contract_bytes(artifact.to_dict()),
+                    path_role="finalization-artifact-role",
+                )
+                self._finalization_artifacts[identity] = artifact
+            finally:
+                self._finalization_lock.release()
+
+    def _validate_required_control_files(self) -> None:
+        record = self._requirement_record
+        if record is None:
+            raise EvidenceConflict("run has no finalization requirement")
+        requirement_path = self.run_dir / "finalization-requirement.json"
+        expected = _canonical_contract_bytes(record.to_dict())
+        if (
+            requirement_path.is_symlink()
+            or not requirement_path.is_file()
+            or requirement_path.read_bytes() != expected
+        ):
+            raise EvidenceManifestInvalid(
+                "durable finalization requirement changed"
+            )
+        for reference in (
+            *(
+                item.ref for item in record.protected_source_artifacts
+            ),
+            *(
+                item.ref for item in record.runtime_evidence_artifacts
+            ),
+        ):
+            self.store.resolve(_store_artifact_ref(reference))
+
+    def _validate_seal_candidate(
+        self,
+        marker: finalization.SealedEvidenceMarker,
+    ) -> None:
+        record = self._requirement_record
+        token = self._preflight_token
+        if record is None or token is None:
+            raise EvidenceConflict("run has no required-finalizer allocation")
+        if type(marker) is not finalization.SealedEvidenceMarker:
+            raise EvidenceManifestInvalid(
+                "sealed marker must use SealedEvidenceMarker"
+            )
+        snapshot = marker.snapshot
+        context = marker.finalizer_context
+        if (
+            snapshot.workspace_id,
+            snapshot.gate_id,
+            snapshot.evidence_run_id,
+            snapshot.source_commit,
+            snapshot.workspace_digest,
+            snapshot.canonical_worktree_hash,
+        ) != (
+            self.store.workspace_id,
+            self.gate_id,
+            self.run_id,
+            record.source_commit,
+            record.workspace_digest,
+            record.canonical_worktree_hash,
+        ):
+            raise EvidenceManifestInvalid(
+                "sealed snapshot identity does not match required run"
+            )
+        if (
+            context.finalizer_id != record.requirement.finalizer_id
+            or context.enforcement_generation != record.enforcement_generation
+            or context.enforcement_digest != record.enforcement_digest
+            or context.requirement_digest != record.requirement_digest
+            or context.config_digest != record.config_digest
+            or context.finalizer_source_digest != record.source_digest
+            or context.finalizer_runtime != record.finalizer_runtime
+            or context.supervisor_session_id != token.supervisor_session_id
+            or context.supervisor_runtime_digest
+            != token.supervisor_runtime_digest
+        ):
+            raise EvidenceManifestInvalid(
+                "sealed finalizer context does not match requirement"
+            )
+        executable_files = tuple(
+            (item.repo_relative_path, item.file_sha256)
+            for item in record.captured_sources
+            if item.executable_included
+        )
+        if (
+            context.finalizer_executable.files != executable_files
+            or context.finalizer_executable.source_digest
+            != record.source_digest
+            or context.finalizer_executable.core_bootstrap_source_digest
+            != record.bootstrap_baseline.core_bootstrap_source_digest
+            or context.finalizer_executable.entrypoint
+            != record.registry_entry.entrypoint
+        ):
+            raise EvidenceManifestInvalid(
+                "sealed executable does not match captured sources"
+            )
+        self.store.resolve(
+            _store_artifact_ref(context.finalizer_executable.ref)
+        )
+        self.store._validate_requirement_bundles(
+            record,
+            executable=context.finalizer_executable,
+        )
+        registered = tuple(
+            self._finalization_artifacts[key]
+            for key in sorted(
+                self._finalization_artifacts,
+                key=lambda item: (
+                    item[0].encode("utf-8"),
+                    (b"\x00" if item[1] is None else b"\x01" + item[1].encode("utf-8")),
+                ),
+            )
+        )
+        if snapshot.artifacts != registered:
+            raise EvidenceManifestInvalid(
+                "sealed snapshot differs from registered role instances"
+            )
+        required_role_identities = tuple(
+            artifact.identity
+            for artifact in registered
+            if artifact.role_name in record.registry_entry.evidence_role_names
+        )
+        if (
+            {identity[0] for identity in required_role_identities}
+            != set(record.registry_entry.evidence_role_names)
+            or context.required_role_identities
+            != required_role_identities
+        ):
+            raise EvidenceManifestInvalid(
+                "required role identities do not match registry projection"
+            )
+        for artifact in registered:
+            self.store.resolve(_store_artifact_ref(artifact.ref))
+        if snapshot.runtime_manifest_ref not in tuple(
+            artifact.ref for artifact in registered
+        ):
+            raise EvidenceManifestInvalid(
+                "runtime manifest is absent from sealed artifact inventory"
+            )
+        expected_paths = {
+            "finalization-requirement.json",
+            context.finalizer_executable.ref.path,
+            *(
+                item.ref.path for item in record.protected_source_artifacts
+            ),
+            *(
+                item.ref.path for item in record.runtime_evidence_artifacts
+            ),
+            *(artifact.ref.path for artifact in registered),
+        }
+        actual_paths = {
+            path.relative_to(self.run_dir).as_posix()
+            for path in self.run_dir.rglob("*")
+            if path.is_file()
+            and not any(
+                part.startswith(".")
+                for part in path.relative_to(self.run_dir).parts
+            )
+            and path.relative_to(self.run_dir).as_posix()
+            not in {"sealed.json", "manifest.json"}
+        }
+        if actual_paths != expected_paths:
+            raise EvidenceManifestInvalid(
+                "run file inventory changed before seal; "
+                f"missing={sorted(expected_paths - actual_paths)}, "
+                f"unexpected={sorted(actual_paths - expected_paths)}"
+            )
+
+    def seal_for_finalization(
+        self,
+        marker: finalization.SealedEvidenceMarker,
+    ) -> None:
+        with self._mutex:
+            if self.state != "ACTIVE":
+                raise EvidenceConflict(
+                    "finalization seal requires one active run"
+                )
+            _acquire_bounded(
+                self._finalization_lock,
+                timeout_seconds=60,
+                operation="seal-finalization",
+            )
+            try:
+                if (self.run_dir / "sealed.json").exists():
+                    raise EvidenceConflict("run is already sealed")
+                self._validate_required_control_files()
+                self._validate_seal_candidate(marker)
+                _atomic_write_no_replace(
+                    self.run_dir / "sealed.json",
+                    _canonical_contract_bytes(marker.to_dict()),
+                    path_role="finalization-seal",
+                )
+                self._seal_marker = marker
+                self._reservation = (
+                    finalization.FinalizationReadyReservation()
+                )
+                self.state = "ARTIFACTS_SEALED"
+            finally:
+                self._finalization_lock.release()
+
+    def start_finalizer_invocation(
+        self,
+        finalizer_input: finalization.FinalizerInput,
+    ) -> None:
+        with self._mutex:
+            if (
+                self.state != "ARTIFACTS_SEALED"
+                or type(self._reservation)
+                is not finalization.FinalizationReadyReservation
+                or self._seal_marker is None
+            ):
+                raise EvidenceConflict(
+                    "finalizer invocation is not available"
+                )
+            if (
+                type(finalizer_input) is not finalization.FinalizerInput
+                or finalizer_input.context
+                != self._seal_marker.finalizer_context
+                or finalizer_input.snapshot != self._seal_marker.snapshot
+            ):
+                raise EvidenceManifestInvalid(
+                    "finalizer input does not match sealed marker"
+                )
+            self._reservation = finalization.start_finalizer_invocation(
+                self._reservation,
+                invocation_digest=(
+                    finalizer_input.invocation.invocation_digest
+                ),
+            )
+            self._finalizer_input = finalizer_input
+            self.state = "FINALIZER_RUNNING"
+
+    def cache_finalizer_outcome(
+        self,
+        outcome: finalization.GateEvidenceFinalization,
+        *,
+        supervisor_session: finalization.SupervisorSession,
+    ) -> None:
+        with self._mutex:
+            if (
+                self.state != "FINALIZER_RUNNING"
+                or type(self._reservation)
+                is not finalization.FinalizationInvocationStartedReservation
+                or self._finalizer_input is None
+            ):
+                raise EvidenceConflict(
+                    "finalizer outcome has no active invocation"
+                )
+            token = self._preflight_token
+            if (
+                type(supervisor_session)
+                is not finalization.SupervisorSession
+                or supervisor_session is not self._supervisor_session
+                or token is None
+                or supervisor_session.supervisor_session_id
+                != token.supervisor_session_id
+                or supervisor_session.supervisor_runtime_digest
+                != token.supervisor_runtime_digest
+                or supervisor_session.state != "CLOSED"
+            ):
+                raise EvidenceConflict(
+                    "supervisor must be closed before outcome caching"
+                )
+            invocation = self._finalizer_input.invocation
+            if type(outcome) is finalization.ChildGateEvidenceFinalization:
+                projection = outcome.child_outcome
+                if (
+                    projection.status
+                    is finalization.FinalizerOutcomeStatus.VALIDATED
+                    and projection.validated_role_instances
+                    != invocation.required_role_identities
+                ):
+                    raise EvidenceManifestInvalid(
+                        "validated role instances do not match invocation"
+                    )
+            elif type(outcome) is finalization.CoreGateEvidenceFinalization:
+                projection = outcome
+            else:
+                raise EvidenceManifestInvalid(
+                    "outcome must be GateEvidenceFinalization"
+                )
+            if (
+                projection.finalizer_id != invocation.finalizer_id
+                or projection.invocation_digest
+                != invocation.invocation_digest
+                or projection.finalizer_input_digest
+                != self._finalizer_input.finalizer_input_digest
+                or projection.snapshot_digest != invocation.snapshot_digest
+                or projection.primary_result_digest
+                != invocation.primary_result_digest
+            ):
+                raise EvidenceManifestInvalid(
+                    "finalizer outcome identity does not match invocation"
+                )
+            self._reservation = finalization.cache_finalizer_outcome(
+                self._reservation,
+                outcome=outcome,
+            )
+            self.state = "SUPERVISOR_CLOSED"
+
+    def _prepared_finalization_bytes(
+        self,
+    ) -> tuple[bytes, bytes, dict[str, Any], ArtifactRef]:
+        record = self._requirement_record
+        marker = self._seal_marker
+        reservation = self._reservation
+        if (
+            record is None
+            or marker is None
+            or type(reservation)
+            is not finalization.FinalizationOutcomeCachedReservation
+        ):
+            raise EvidenceConflict(
+                "finalization bytes require one cached outcome"
+            )
+        finalization_record = finalization.EvidenceFinalizationRecord(
+            artifact_kind="acceptance-evidence-finalization",
+            schema_version=1,
+            state=finalization.EvidenceFinalizationState.COMPLETED,
+            enforcement_generation=record.enforcement_generation,
+            enforcement_digest=record.enforcement_digest,
+            requirement_digest=record.requirement_digest,
+            config_digest=record.config_digest,
+            source_digest=record.source_digest,
+            seal_digest=marker.seal_digest,
+            primary_result=marker.primary_result,
+            primary_result_digest=marker.primary_result_digest,
+            failure_code=None,
+            outcome=reservation.cached_outcome,
+        )
+        result = marker.primary_result.document.json_value()
+        if type(result) is not dict:
+            raise EvidenceManifestInvalid(
+                "primary result document must be an object"
+            )
+        result = dict(result)
+        result.update(finalization_record.published_result_tuple().to_dict())
+        result["evidenceFinalization"] = finalization_record.to_dict()
+        artifacts: dict[str, dict[str, object]] = {
+            role: reference.to_dict()
+            for role, reference in sorted(self._artifacts.items())
+        }
+        for artifact in marker.snapshot.artifacts:
+            key = (
+                artifact.role_name
+                if artifact.discriminator is None
+                else f"{artifact.role_name}@{artifact.discriminator}"
+            )
+            value = artifact.ref.to_dict()
+            if key in artifacts and artifacts[key] != value:
+                raise EvidenceConflict(
+                    "manifest artifact key has conflicting role identities"
+                )
+            artifacts[key] = value
+        completed_at = _utc_now()
+        manifest = {
+            "artifactKind": "acceptance-run-manifest",
+            "schemaVersion": 1,
+            "workspaceId": self.store.workspace_id,
+            "gateId": self.gate_id,
+            "runId": self.run_id,
+            "state": "DURABLE",
+            "createdAt": self.created_at,
+            "completedAt": completed_at,
+            "source": self.source,
+            "runtime": {
+                "runtimeManifestRef": (
+                    marker.snapshot.runtime_manifest_ref.to_dict()
+                )
+            },
+            "result": result,
+            "artifacts": artifacts,
+            "redaction": {"status": "passed"},
+        }
+        manifest_bytes = _canonical_contract_bytes(manifest)
+        manifest_ref = ArtifactRef(
+            workspace_id=self.store.workspace_id,
+            gate_id=self.gate_id,
+            run_id=self.run_id,
+            path="manifest.json",
+            sha256=_sha256_bytes(manifest_bytes),
+            media_type="application/json",
+        )
+        pointer = finalization.LatestPointer.create(
+            workspace_id=self.store.workspace_id,
+            gate_id=self.gate_id,
+            run_id=self.run_id,
+            completed_at=completed_at,
+            manifest=_contract_artifact_ref(manifest_ref),
+        )
+        pointer_bytes = _canonical_contract_bytes(pointer.to_dict())
+        self._reservation = finalization.prepare_finalization_manifest(
+            reservation,
+            completed_at=completed_at,
+            manifest_bytes=manifest_bytes,
+            latest_pointer_bytes=pointer_bytes,
+        )
+        return manifest_bytes, pointer_bytes, manifest, manifest_ref
+
+    def _publish_finalizer_latest(
+        self,
+        record: finalization.FinalizerRequirementRecord,
+        pointer_bytes: bytes,
+    ) -> finalization.FinalizationLatestDisposition:
+        gate_dir = self.run_dir.parent
+        publish_lock = _FileLock(gate_dir / ".publish.lock")
+        publish_lock.acquire(blocking=True)
+        try:
+            self.store._validate_active_enforcement(record)
+            latest_dir = (
+                gate_dir / "finalizer-enforcement" / "latest"
+            )
+            _private_directory(
+                latest_dir,
+                "finalizer-generation-latest",
+            )
+            latest_path = latest_dir / (
+                f"{record.enforcement_generation}.json"
+            )
+            disposition = (
+                finalization.FinalizationLatestDisposition.PUBLISHED
+            )
+            try:
+                candidate = finalization.LatestPointer.from_dict(
+                    json.loads(pointer_bytes.decode("utf-8"))
+                )
+            except (
+                ValueError,
+                UnicodeDecodeError,
+                json.JSONDecodeError,
+            ) as error:
+                raise EvidenceManifestInvalid(
+                    "candidate generation latest pointer is invalid"
+                ) from error
+            if latest_path.exists():
+                current_value = self.store._read_contract_object(
+                    latest_path,
+                    path_role="finalizer-generation-latest",
+                )
+                try:
+                    current = finalization.LatestPointer.from_dict(
+                        current_value
+                    )
+                except ValueError as error:
+                    raise EvidenceManifestInvalid(
+                        "generation latest pointer is invalid"
+                    ) from error
+                current_order = (current.completed_at, current.run_id)
+                candidate_order = (
+                    candidate.completed_at,
+                    candidate.run_id,
+                )
+                if current.to_dict() == candidate.to_dict():
+                    if latest_path.read_bytes() != pointer_bytes:
+                        raise EvidenceManifestInvalid(
+                            "equal latest pointer has noncanonical bytes"
+                        )
+                    _fsync_file(
+                        latest_path,
+                        path_role="finalizer-generation-latest",
+                    )
+                    _fsync_directory(latest_dir)
+                    disposition = (
+                        finalization.FinalizationLatestDisposition.ALREADY_CURRENT
+                    )
+                elif current_order > candidate_order:
+                    disposition = (
+                        finalization.FinalizationLatestDisposition.SUPERSEDED
+                    )
+                else:
+                    _atomic_write(
+                        latest_path,
+                        pointer_bytes,
+                        path_role="finalizer-generation-latest",
+                    )
+            else:
+                _atomic_write(
+                    latest_path,
+                    pointer_bytes,
+                    path_role="finalizer-generation-latest",
+                )
+            return disposition
+        finally:
+            publish_lock.release()
+
+    def finalize_with_evidence(self) -> dict[str, Any]:
+        with self._mutex:
+            if self.state not in {
+                "SUPERVISOR_CLOSED",
+                "FINALIZING",
+                "DURABLE",
+            }:
+                raise EvidenceConflict(
+                    "required run is not ready for evidence finalization"
+                )
+            _acquire_bounded(
+                self._finalization_lock,
+                timeout_seconds=60,
+                operation="finalize-with-evidence",
+            )
+            try:
+                self._validate_required_control_files()
+                if self._seal_marker is None:
+                    raise EvidenceManifestInvalid("sealed marker is unavailable")
+                seal_path = self.run_dir / "sealed.json"
+                if seal_path.read_bytes() != _canonical_contract_bytes(
+                    self._seal_marker.to_dict()
+                ):
+                    raise EvidenceManifestInvalid("sealed marker changed")
+                self._validate_seal_candidate(self._seal_marker)
+                if (
+                    type(self._reservation)
+                    is finalization.FinalizationOutcomeCachedReservation
+                ):
+                    (
+                        manifest_bytes,
+                        pointer_bytes,
+                        manifest,
+                        manifest_ref,
+                    ) = self._prepared_finalization_bytes()
+                elif type(self._reservation) in (
+                    finalization.FinalizationManifestPreparedReservation,
+                    finalization.FinalizationManifestDurableReservation,
+                ):
+                    reservation = self._reservation
+                    manifest_bytes = reservation.manifest_bytes
+                    pointer_bytes = reservation.latest_pointer_bytes
+                    try:
+                        manifest = json.loads(manifest_bytes.decode("utf-8"))
+                    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+                        raise EvidenceManifestInvalid(
+                            "cached manifest bytes are invalid"
+                        ) from error
+                    manifest_ref = ArtifactRef(
+                        workspace_id=self.store.workspace_id,
+                        gate_id=self.gate_id,
+                        run_id=self.run_id,
+                        path="manifest.json",
+                        sha256=reservation.manifest_digest,
+                        media_type="application/json",
+                    )
+                else:
+                    raise EvidenceConflict(
+                        "finalization reservation cannot prepare a manifest"
+                    )
+                self.state = "FINALIZING"
+                if (
+                    type(self._reservation)
+                    is finalization.FinalizationManifestPreparedReservation
+                ):
+                    _atomic_write_no_replace(
+                        self.run_dir / "manifest.json",
+                        manifest_bytes,
+                        path_role="run-manifest",
+                    )
+                    self._reservation = (
+                        finalization.mark_finalization_manifest_durable(
+                            self._reservation
+                        )
+                    )
+                self._manifest = manifest
+                self._manifest_ref = manifest_ref
+                self.state = "DURABLE"
+            finally:
+                self._finalization_lock.release()
+
+            record = self._requirement_record
+            if record is None:
+                raise EvidenceConflict("required finalization record is absent")
+            disposition = self._publish_finalizer_latest(
+                record,
+                pointer_bytes,
+            )
+            if (
+                type(self._reservation)
+                is not finalization.FinalizationManifestDurableReservation
+            ):
+                raise EvidenceConflict(
+                    "latest resolution requires a durable reservation"
+                )
+            self._reservation = finalization.resolve_finalization_latest(
+                self._reservation,
+                disposition=disposition,
+            )
+            self.state = "LATEST_RESOLVED"
+            return dict(self._manifest or {})
+
+    def finalize_pre_seal_failure(
+        self,
+        primary_result: finalization.CanonicalPrimaryResult,
+        *,
+        supervisor_session: finalization.SupervisorSession,
+    ) -> dict[str, Any]:
+        with self._mutex:
+            record = self._requirement_record
+            if (
+                record is None
+                or self._preflight_token is None
+                or self._supervisor_session is None
+            ):
+                raise EvidenceConflict(
+                    "pre-seal finalization requires one allocated required run"
+                )
+            if self.state not in {"ACTIVE", "FINALIZING", "DURABLE"}:
+                raise EvidenceConflict(
+                    "run cannot publish a pre-seal failure from its current state"
+                )
+            if (
+                type(supervisor_session)
+                is not finalization.SupervisorSession
+                or supervisor_session is not self._supervisor_session
+                or supervisor_session.state != "CLOSED"
+            ):
+                raise EvidenceConflict(
+                    "live preflight supervisor must be closed"
+                )
+            if type(primary_result) is not finalization.CanonicalPrimaryResult:
+                raise EvidenceManifestInvalid(
+                    "primary result must use CanonicalPrimaryResult"
+                )
+            if (
+                primary_result.source_trace.source_commit
+                != record.source_commit
+            ):
+                raise EvidenceManifestInvalid(
+                    "primary result source does not match required run"
+                )
+            for reference in primary_result.source_trace.evidence_refs:
+                if (
+                    reference.workspace_id,
+                    reference.gate_id,
+                    reference.run_id,
+                ) != (
+                    self.store.workspace_id,
+                    self.gate_id,
+                    self.run_id,
+                ):
+                    raise EvidenceManifestInvalid(
+                        "primary result evidence ref does not match run"
+                    )
+                self.store.resolve(_store_artifact_ref(reference))
+            primary_digest = primary_result.digest()
+            if (
+                self._pre_seal_primary_digest is not None
+                and self._pre_seal_primary_digest != primary_digest
+            ):
+                raise EvidenceConflict(
+                    "pre-seal finalization retry changed primary result"
+                )
+            _acquire_bounded(
+                self._finalization_lock,
+                timeout_seconds=60,
+                operation="finalize-pre-seal-failure",
+            )
+            try:
+                if (
+                    (self.run_dir / "sealed.json").exists()
+                    or self._seal_marker is not None
+                    or self._reservation is not None
+                ):
+                    raise EvidenceConflict(
+                        "sealed run cannot use pre-seal failure branch"
+                    )
+                self._validate_required_control_files()
+                self.store._validate_requirement_bundles(record)
+                if self._pre_seal_manifest_bytes is None:
+                    finalization_record = (
+                        finalization.EvidenceFinalizationRecord(
+                            artifact_kind=(
+                                "acceptance-evidence-finalization"
+                            ),
+                            schema_version=1,
+                            state=(
+                                finalization.EvidenceFinalizationState
+                                .NOT_INVOKED_PRE_SEAL
+                            ),
+                            enforcement_generation=(
+                                record.enforcement_generation
+                            ),
+                            enforcement_digest=record.enforcement_digest,
+                            requirement_digest=record.requirement_digest,
+                            config_digest=record.config_digest,
+                            source_digest=record.source_digest,
+                            seal_digest=None,
+                            primary_result=primary_result,
+                            primary_result_digest=primary_digest,
+                            failure_code=(
+                                finalization.FinalizerFailureCode
+                                .NOT_INVOKED_PRE_SEAL
+                            ),
+                            outcome=None,
+                        )
+                    )
+                    result = primary_result.document.json_value()
+                    if type(result) is not dict:
+                        raise EvidenceManifestInvalid(
+                            "primary result document must be an object"
+                        )
+                    result = dict(result)
+                    result.update(
+                        finalization_record.published_result_tuple().to_dict()
+                    )
+                    result["evidenceFinalization"] = (
+                        finalization_record.to_dict()
+                    )
+                    completed_at = _utc_now()
+                    manifest = {
+                        "artifactKind": "acceptance-run-manifest",
+                        "schemaVersion": 1,
+                        "workspaceId": self.store.workspace_id,
+                        "gateId": self.gate_id,
+                        "runId": self.run_id,
+                        "state": "DURABLE",
+                        "createdAt": self.created_at,
+                        "completedAt": completed_at,
+                        "source": self.source,
+                        "runtime": {},
+                        "result": result,
+                        "artifacts": {
+                            role: reference.to_dict()
+                            for role, reference
+                            in sorted(self._artifacts.items())
+                        },
+                        "redaction": {"status": "passed"},
+                    }
+                    manifest_bytes = _canonical_contract_bytes(manifest)
+                    manifest_ref = ArtifactRef(
+                        workspace_id=self.store.workspace_id,
+                        gate_id=self.gate_id,
+                        run_id=self.run_id,
+                        path="manifest.json",
+                        sha256=_sha256_bytes(manifest_bytes),
+                        media_type="application/json",
+                    )
+                    pointer = finalization.LatestPointer.create(
+                        workspace_id=self.store.workspace_id,
+                        gate_id=self.gate_id,
+                        run_id=self.run_id,
+                        completed_at=completed_at,
+                        manifest=_contract_artifact_ref(manifest_ref),
+                    )
+                    self._pre_seal_manifest_bytes = manifest_bytes
+                    self._pre_seal_pointer_bytes = _canonical_contract_bytes(
+                        pointer.to_dict()
+                    )
+                    self._pre_seal_primary_digest = primary_digest
+                manifest_bytes = self._pre_seal_manifest_bytes
+                pointer_bytes = self._pre_seal_pointer_bytes
+                if manifest_bytes is None or pointer_bytes is None:
+                    raise EvidenceConflict(
+                        "pre-seal finalization cache is incomplete"
+                    )
+                _atomic_write_no_replace(
+                    self.run_dir / "manifest.json",
+                    manifest_bytes,
+                    path_role="run-manifest",
+                )
+                manifest = json.loads(manifest_bytes.decode("utf-8"))
+                self._manifest_ref = ArtifactRef(
+                    workspace_id=self.store.workspace_id,
+                    gate_id=self.gate_id,
+                    run_id=self.run_id,
+                    path="manifest.json",
+                    sha256=_sha256_bytes(manifest_bytes),
+                    media_type="application/json",
+                )
+                self._manifest = manifest
+                self.state = "DURABLE"
+            finally:
+                self._finalization_lock.release()
+            self._publish_finalizer_latest(record, pointer_bytes)
+            self.state = "LATEST_RESOLVED"
+            return dict(self._manifest or {})
+
     def finalize(
         self,
         *,
@@ -1374,6 +3847,10 @@ class RunHandle:
         with self._mutex:
             if self.state != "ACTIVE":
                 raise EvidenceConflict("run can only be finalized once")
+            if self._requirement_record is not None:
+                raise EvidenceConflict(
+                    "required-finalizer run must use finalize_with_evidence"
+                )
             self.state = "FINALIZING"
             completed_at = _utc_now()
             raw_result = dict(result)
@@ -1433,6 +3910,10 @@ class RunHandle:
             return manifest
 
     def publish_latest(self, *, runtime_cell: str | None = None) -> Path:
+        if self._requirement_record is not None:
+            raise EvidenceConflict(
+                "required-finalizer run must publish generation latest"
+            )
         if self.state not in {"DURABLE", "PUBLISHED"}:
             raise EvidenceConflict("latest can only publish a durable manifest")
         if self._manifest is None or self._manifest_ref is None:
@@ -1501,7 +3982,7 @@ class RunHandle:
 
     def close(self) -> None:
         self._active_lock.release()
-        if self.state in {"DURABLE", "PUBLISHED"}:
+        if self.state in {"DURABLE", "PUBLISHED", "LATEST_RESOLVED"}:
             self.state = "CLOSED"
         elif self.state != "CLOSED":
             self.state = "EVIDENCE_FAILED"

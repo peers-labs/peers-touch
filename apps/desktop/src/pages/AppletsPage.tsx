@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import type { RuntimeAppletInfo } from '../store/applets';
 import { useActiveAppletsSlice } from './useActiveAppletsStore';
+import type { Page } from '../types/navigation';
 
 const { Text } = Typography;
 
@@ -87,7 +88,7 @@ function appletIdentity(info: RuntimeAppletInfo) {
   };
 }
 
-export function AppletsPage({ onNavigate }: { onNavigate?: (page: string) => void }) {
+export function AppletsPage({ onNavigate }: { onNavigate?: (page: Page) => void }) {
   const { t } = useTranslation('applet');
   const { token } = theme.useToken();
   const {

@@ -336,6 +336,39 @@ describe('mobileNativeEventBridge lifecycle ordering', () => {
     installation.teardown();
   });
 
+  it('does not block bridge readiness when native push startup is unavailable', async () => {
+    bridgeMocks.readActiveSessionProjection.mockReturnValue({
+      stationPeerId: 'station-1',
+      actorPtid: 'ptid:alice',
+      sessionId: 'session-1',
+    });
+    bridgeMocks.drainNativePush.mockRejectedValueOnce(
+      new Error('native push registration failed'),
+    );
+    const errors: unknown[] = [];
+    const observe = (event: Event) => {
+      errors.push((event as CustomEvent).detail);
+    };
+    window.addEventListener('mobile-native-event-bridge:error', observe);
+
+    try {
+      const installation = installMobileNativeEventBridge();
+      await expect(installation.ready).resolves.toBeUndefined();
+      expect(bridgeMocks.activateNativePush).toHaveBeenCalledOnce();
+      expect(bridgeMocks.drainNativePush).toHaveBeenCalledOnce();
+      expect(errors).toEqual([{
+        operation: 'native-push-startup',
+        message: 'native push registration failed',
+      }]);
+      await installation.teardown();
+    } finally {
+      window.removeEventListener(
+        'mobile-native-event-bridge:error',
+        observe,
+      );
+    }
+  });
+
   it('uses canonical native wakeups to await the Messaging worker cycle', async () => {
     bridgeMocks.getPhase.mockReturnValue('ACTIVE');
     const installation = installMobileNativeEventBridge();

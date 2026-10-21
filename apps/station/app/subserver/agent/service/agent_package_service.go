@@ -484,16 +484,18 @@ func (s *AgentPackageService) preflightImport(
 
 	return &agentPackageImportPlan{
 		agentOptions: domain.AgentUpsertOptions{
-			ActorPTID:    ptid,
-			Name:         name,
-			Title:        pkg.GetAgent().GetTitle(),
-			Description:  pkg.GetAgent().GetDescription(),
-			ProviderID:   pkg.GetAgent().GetProviderId(),
-			ModelName:    pkg.GetAgent().GetModelName(),
-			Effort:       pkg.GetAgent().GetEffort(),
-			ThinkingMode: domain.ThinkingMode(pkg.GetAgent().GetThinkingMode()),
-			Visibility:   packageAgentVisibility(pkg.GetAgent().GetVisibility()),
-			ConfigJSON:   configJSON,
+			ActorPTID:         ptid,
+			Name:              name,
+			Title:             pkg.GetAgent().GetTitle(),
+			Description:       pkg.GetAgent().GetDescription(),
+			ProviderID:        pkg.GetAgent().GetProviderId(),
+			ModelName:         pkg.GetAgent().GetModelName(),
+			Effort:            pkg.GetAgent().GetEffort(),
+			ThinkingMode:      domain.ThinkingMode(pkg.GetAgent().GetThinkingMode()),
+			Visibility:        packageAgentVisibility(pkg.GetAgent().GetVisibility()),
+			IdentityPrompt:    pkg.GetAgent().GetIdentityPrompt(),
+			AgentConfigPrompt: pkg.GetAgent().GetAgentConfigPrompt(),
+			ConfigJSON:        configJSON,
 		},
 		portableBindings: portableBindings,
 	}, unresolved, nil
@@ -662,6 +664,11 @@ func normalizePortableAgentConfig(raw string, rejectLegacy bool) (string, bool, 
 	if err := json.Unmarshal([]byte(raw), &config); err != nil || config == nil {
 		return "", false, capabilityInvalid("Agent package config_json must be a JSON object")
 	}
+	for key := range retiredAgentPromptConfigKeys {
+		if _, exists := config[key]; exists {
+			return "", false, capabilityInvalid("Agent package contains retired Agent prompt aliases")
+		}
+	}
 	changed := stripLegacyPackageKeys(config)
 	for _, key := range []string{"chatConfig", "chat_config"} {
 		rawNested, ok := config[key]
@@ -742,20 +749,22 @@ func domainAgentToPackageModel(agent *domain.Agent) *model.Agent {
 		visibility = model.AgentVisibility_AGENT_VISIBILITY_WORKSPACE
 	}
 	return &model.Agent{
-		AgentId:        agent.AgentID,
-		Name:           agent.Name,
-		Title:          agent.Title,
-		Description:    agent.Description,
-		ProviderId:     agent.ProviderID,
-		ModelName:      agent.ModelName,
-		Effort:         agent.Effort,
-		Visibility:     visibility,
-		OwnerActorPtid: agent.OwnerActorPTID,
-		ConfigJson:     agent.ConfigJSON,
-		CreatedAt:      timestamppb.New(agent.CreatedAt),
-		UpdatedAt:      timestamppb.New(agent.UpdatedAt),
-		Version:        agent.Version,
-		ThinkingMode:   string(agent.ThinkingMode),
+		AgentId:           agent.AgentID,
+		Name:              agent.Name,
+		Title:             agent.Title,
+		Description:       agent.Description,
+		ProviderId:        agent.ProviderID,
+		ModelName:         agent.ModelName,
+		Effort:            agent.Effort,
+		Visibility:        visibility,
+		OwnerActorPtid:    agent.OwnerActorPTID,
+		IdentityPrompt:    agent.IdentityPrompt,
+		AgentConfigPrompt: agent.AgentConfigPrompt,
+		ConfigJson:        agent.ConfigJSON,
+		CreatedAt:         timestamppb.New(agent.CreatedAt),
+		UpdatedAt:         timestamppb.New(agent.UpdatedAt),
+		Version:           agent.Version,
+		ThinkingMode:      string(agent.ThinkingMode),
 	}
 }
 

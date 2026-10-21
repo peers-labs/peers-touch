@@ -45,6 +45,60 @@ def load_env_file(path: Path) -> dict[str, str]:
     return values
 
 
+def resolve_central_environment(
+    source_root: Path,
+    environment: Mapping[str, str],
+) -> Path:
+    """Resolve the single reviewed central transport for every runtime owner."""
+    env_repo = Path(
+        environment.get("PT_ENV_REPO", str(source_root.parent / "env"))
+    ).expanduser().resolve()
+    explicit = environment.get("PT_GIT_SERVER_ENV", "").strip()
+    candidates = (
+        [Path(explicit).expanduser().absolute()]
+        if explicit
+        else sorted((env_repo / "peers-touch").glob("*/deploy/git-server.env.example"))
+    )
+    if len(candidates) != 1:
+        raise ProvisioningError(
+            "central source transport must resolve exactly one reviewed "
+            "git-server.env.example; set PT_GIT_SERVER_ENV to select explicitly"
+        )
+    selected = candidates[0]
+    try:
+        relative = selected.relative_to(env_repo)
+    except ValueError as error:
+        raise ProvisioningError(
+            "central source transport definition must belong to the env repository"
+        ) from error
+    if (
+        len(relative.parts) != 4
+        or relative.parts[0] != "peers-touch"
+        or relative.parts[2:] != ("deploy", "git-server.env.example")
+        or any(part == ".." for part in selected.parts)
+    ):
+        raise ProvisioningError("central source transport definition has an invalid canonical path")
+    current = env_repo
+    for part in relative.parts:
+        current = current / part
+        if current.is_symlink():
+            raise ProvisioningError("central source transport definition contains a symlink")
+    if not selected.is_file():
+        raise ProvisioningError("central source transport definition is not a regular file")
+    tracked = subprocess.run(
+        ["git", "-C", str(env_repo), "ls-files", "--error-unmatch", str(relative)],
+        capture_output=True, text=True, check=False, timeout=30,
+    )
+    status = subprocess.run(
+        ["git", "-C", str(env_repo), "status", "--porcelain",
+         "--untracked-files=all", "--", str(relative)],
+        capture_output=True, text=True, check=False, timeout=30,
+    )
+    if tracked.returncode or status.returncode or status.stdout.strip():
+        raise ProvisioningError("central source transport definition must be tracked-clean")
+    return selected
+
+
 def _required(values: Mapping[str, str], key: str, source: Path) -> str:
     value = values.get(key, "").strip()
     if not value:
@@ -118,7 +172,7 @@ class SourceSyncRequest:
         *,
         source_root: Path,
         environments_dir: Path,
-        central_environment_path: Path,
+        central_environment_path: Path | None = None,
         environment_path: Path | None = None,
         branch: str = "",
         require_clean: bool = False,
@@ -156,6 +210,8 @@ class SourceSyncRequest:
                     f"{platform_value!r} in {selected_environment_path}"
                 ) from error
         source_mode = values.get("PT_DEPLOY_SOURCE", "central").strip()
+        if source_mode == "central" and central_environment_path is None:
+            central_environment_path = resolve_central_environment(source_root, os.environ)
         if source_mode not in ("direct", "central", "github", "local"):
             raise ProvisioningError(
                 "unsupported PT_DEPLOY_SOURCE "

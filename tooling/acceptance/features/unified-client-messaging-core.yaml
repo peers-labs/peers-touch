@@ -1,0 +1,45 @@
+{
+  "id": "unified-client-messaging-core",
+  "status": "active",
+  "product_area": "chat",
+  "owners": [
+    "packages/messaging-core/**",
+    "docs/architecture/domains/chat/messaging/**",
+    "tooling/acceptance/gates/chat/unified_client_core_contract.py"
+  ],
+  "truth_sources": [
+    "MP-D16 portable Device Messaging Engine ownership",
+    "messaging-core engine, outbox, inbox, recovery, receipt and attachment tests"
+  ],
+  "visible_surfaces": [
+    {
+      "type": "source-contract",
+      "state": "messaging-store-v1"
+    }
+  ],
+  "required_gates": [
+    "unified-client-messaging-core-contract"
+  ],
+  "acceptance": {
+    "architecture_assertions": [
+      "engine lifecycle and worker ownership are generation fenced",
+      "ambiguous command submissions require authoritative reconciliation before retry",
+      "store activation uses one transaction and never dual writes",
+      "recovery, receipt and attachment mechanisms remain portable and host neutral",
+      "all Host interaction uses narrow transport, encrypted-store, blob, clock, key-material, event-sink and cancellation ports",
+      "portable engine, protocol, recovery, receipt, attachment mechanism and ports import no Tauri, OS, Desktop/Mobile app, UI or Station business implementation",
+      "storage measurement and cache deletion use the shared messaging-native-filesystem Host adapter",
+      "Desktop and Mobile production consumers call the same core lifecycle, outbox, inbox and receipt owners"
+    ],
+    "migration_assertions": [
+      "Desktop and Mobile owner inventory maps every duplicated mechanism",
+      "messaging-store-v1 remains the sole active schema and migration owner",
+      "former Desktop and Mobile semantic owner files are deleted without a compatibility path"
+    ]
+  },
+  "negative": [
+    "this source contract does not prove Desktop, signed iOS or physical Android message journeys",
+    "Station authority and Model wire contracts must remain outside the client core",
+    "the Gate must fail if filesystem ownership returns to messaging-core or a former Host semantic owner returns"
+  ]
+}

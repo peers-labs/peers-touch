@@ -6,13 +6,14 @@
  *   2. Left Sidebar (180px): Section items within selected group
  *   3. Right: Content area (max-width 720px, padding 24px)
  *
- * Groups: General, AI, Channels, Applets, Data, Help
+ * Groups: General, Network, AI, Channels, Advanced
  *
  * Standalone web prototype: mock-data only, no real store / kernel / tauri.
  */
-import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import {
   Settings,
+  Search,
   Sparkles,
   Send,
   Puzzle,
@@ -68,9 +69,33 @@ import {
   Wrench,
   History,
   MonitorSmartphone,
+  Bot,
   type LucideIcon,
 } from 'lucide-react';
 import { T } from './theme';
+import {
+  PROTOTYPE_MCP_SERVERS,
+  PROTOTYPE_SKILLS,
+  type PrototypeSkillCatalogItem,
+} from '../../shared/agentExtensionCatalog';
+import {
+  getEnabledPrototypeChatModelProviders,
+  isPrototypeChatModelEnabled,
+  isPrototypeChatProviderEnabled,
+  loadPrototypeChatModelAvailability,
+  loadPrototypeDefaultModel,
+  PROTOTYPE_CHAT_MODEL_PROVIDERS,
+  savePrototypeChatModelEnabled,
+  savePrototypeChatProviderEnabled,
+  savePrototypeDefaultModel,
+  subscribePrototypeChatModelAvailability,
+  subscribePrototypeDefaultModel,
+  type PrototypeChatModelAvailability,
+  type PrototypeChatModelId,
+} from '../../shared/prototypeAgentModels';
+import { toast } from '../../shared/Toast';
+import { BotChannels } from './BotChannels';
+import { LarkChannels } from './LarkChannels';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // DESIGN SYSTEM (canonical atoms — ui-identity components.md §3 scale)
@@ -345,13 +370,13 @@ function SettingsRow({ label, desc, children }: {
   return (
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      gap: 16, padding: '9px 0',
+      flexWrap: 'wrap', gap: 12, padding: '9px 0',
     }}>
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ flex: '1 1 180px', minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 500, color: T.text }}>{label}</div>
         {desc ? <div style={{ fontSize: 12, color: T.textTertiary, marginTop: 2, lineHeight: 1.4 }}>{desc}</div> : null}
       </div>
-      <div style={{ flexShrink: 0 }}>{children}</div>
+      <div style={{ flex: '0 1 auto', maxWidth: '100%', marginLeft: 'auto' }}>{children}</div>
     </div>
   );
 }
@@ -1243,163 +1268,779 @@ function FederationSection({ federations, setFederations }: {
 
 type ModelKind = 'chat' | 'image' | 'embedding';
 type TestState = 'idle' | 'testing' | 'ok' | 'fail';
+type ProviderKind = 'direct' | 'cli';
+type CliAdapterId = 'codex-cli' | 'cursor-cli' | 'claude-cli' | 'trae-cli';
 
 interface ModelOption { id: string; name: string; kind: ModelKind; enabled: boolean; }
-interface Provider { id: string; name: string; apiKey: string; baseUrl: string; models: ModelOption[]; }
+interface ProviderBase {
+  id: string;
+  name: string;
+  kind: ProviderKind;
+  enabled: boolean;
+  models: ModelOption[];
+}
+interface DirectProvider extends ProviderBase {
+  kind: 'direct';
+  apiKey: string;
+  baseUrl: string;
+}
+interface CliProvider extends ProviderBase {
+  kind: 'cli';
+  adapterId: CliAdapterId;
+  defaultModel: string;
+  startupArgs: string;
+  environment: string;
+  timeoutSeconds: number;
+}
+type Provider = DirectProvider | CliProvider;
+
+interface CliAdapterDefinition {
+  id: CliAdapterId;
+  label: string;
+  command: string;
+  defaultModel: string;
+  capabilities: string[];
+}
+
+const CLI_ADAPTERS: CliAdapterDefinition[] = [
+  {
+    id: 'codex-cli',
+    label: 'Codex CLI',
+    command: 'codex --json exec --skip-git-repo-check -',
+    defaultModel: 'default',
+    capabilities: ['text input', 'streaming', 'tools', 'resume'],
+  },
+  {
+    id: 'cursor-cli',
+    label: 'Cursor CLI',
+    command: 'cursor-agent --print --output-format text --trust',
+    defaultModel: 'auto',
+    capabilities: ['text input', 'tools', 'workspace'],
+  },
+  {
+    id: 'claude-cli',
+    label: 'Claude CLI',
+    command: 'claude -p',
+    defaultModel: 'default',
+    capabilities: ['text input', 'tools', 'resume'],
+  },
+  {
+    id: 'trae-cli',
+    label: 'TRAE CLI',
+    command: 'traecli --json exec --skip-git-repo-check -',
+    defaultModel: 'default',
+    capabilities: ['text input', 'streaming', 'tools'],
+  },
+];
+
+function getCliAdapter(id: CliAdapterId): CliAdapterDefinition {
+  return CLI_ADAPTERS.find((adapter) => adapter.id === id) ?? CLI_ADAPTERS[0];
+}
+
+function configuredChatModels(providerId: string): ModelOption[] {
+  return PROTOTYPE_CHAT_MODEL_PROVIDERS
+    .find((provider) => provider.id === providerId)
+    ?.models.map((model) => ({
+      id: model.id,
+      name: model.label,
+      kind: 'chat' as const,
+      enabled: true,
+    })) ?? [];
+}
 
 const INITIAL_PROVIDERS: Provider[] = [
-  { id: 'openai', name: 'OpenAI-compatible', apiKey: 'sk-proj-xxxxxxxxxxxxxxxx', baseUrl: 'https://api.openai.com/v1', models: [
-    { id: 'gpt-5.4', name: 'gpt-5.4', kind: 'chat', enabled: true },
-    { id: 'gpt-5.4-mini', name: 'gpt-5.4-mini', kind: 'chat', enabled: true },
+  { id: 'openai', name: 'OpenAI-compatible', kind: 'direct', enabled: true, apiKey: 'sk-proj-xxxxxxxxxxxxxxxx', baseUrl: 'https://api.openai.com/v1', models: [
+    ...configuredChatModels('openai'),
     { id: 'text-embedding-3', name: 'text-embedding-3', kind: 'embedding', enabled: true },
     { id: 'dall-e-4', name: 'dall-e-4', kind: 'image', enabled: false },
   ]},
-  { id: 'anthropic', name: 'Anthropic', apiKey: 'sk-ant-xxxxxxxxxxxxxxxx', baseUrl: 'https://api.anthropic.com', models: [
-    { id: 'claude-sonnet', name: 'claude-sonnet-4', kind: 'chat', enabled: true },
-    { id: 'claude-haiku', name: 'claude-haiku-4', kind: 'chat', enabled: true },
+  { id: 'anthropic', name: 'Anthropic', kind: 'direct', enabled: false, apiKey: 'sk-ant-xxxxxxxxxxxxxxxx', baseUrl: 'https://api.anthropic.com', models: [
+    ...configuredChatModels('anthropic'),
   ]},
-  { id: 'ollama', name: 'Ollama (local)', apiKey: '', baseUrl: 'http://127.0.0.1:11434', models: [
-    { id: 'qwen-max', name: 'qwen-max', kind: 'chat', enabled: true },
+  { id: 'ollama', name: 'Ollama (local)', kind: 'direct', enabled: false, apiKey: '', baseUrl: 'http://127.0.0.1:11434', models: [
+    ...configuredChatModels('ollama'),
     { id: 'deepseek-v3', name: 'deepseek-v3', kind: 'chat', enabled: false },
     { id: 'nomic-embed', name: 'nomic-embed-text', kind: 'embedding', enabled: true },
   ]},
+  {
+    id: 'codex-cli',
+    name: 'Codex CLI',
+    kind: 'cli',
+    enabled: false,
+    adapterId: 'codex-cli',
+    defaultModel: 'default',
+    startupArgs: '',
+    environment: '',
+    timeoutSeconds: 120,
+    models: configuredChatModels('codex-cli'),
+  },
+  {
+    id: 'cursor-cli',
+    name: 'Cursor CLI',
+    kind: 'cli',
+    enabled: false,
+    adapterId: 'cursor-cli',
+    defaultModel: 'auto',
+    startupArgs: '',
+    environment: '',
+    timeoutSeconds: 120,
+    models: configuredChatModels('cursor-cli'),
+  },
+  {
+    id: 'claude-cli',
+    name: 'Claude CLI',
+    kind: 'cli',
+    enabled: false,
+    adapterId: 'claude-cli',
+    defaultModel: 'default',
+    startupArgs: '',
+    environment: '',
+    timeoutSeconds: 120,
+    models: configuredChatModels('claude-cli'),
+  },
+  {
+    id: 'trae-cli',
+    name: 'TRAE CLI',
+    kind: 'cli',
+    enabled: true,
+    adapterId: 'trae-cli',
+    defaultModel: 'default',
+    startupArgs: '',
+    environment: '',
+    timeoutSeconds: 120,
+    models: configuredChatModels('trae-cli'),
+  },
 ];
 
+function providersWithAvailability(
+  availability = loadPrototypeChatModelAvailability(),
+): Provider[] {
+  return INITIAL_PROVIDERS.map((provider) => {
+    const catalogProvider = PROTOTYPE_CHAT_MODEL_PROVIDERS.find((item) => item.id === provider.id);
+    if (!catalogProvider) return { ...provider, models: [...provider.models] };
+    return {
+      ...provider,
+      enabled: isPrototypeChatProviderEnabled(provider.id, availability),
+      models: provider.models.map((model) => ({
+        ...model,
+        enabled: catalogProvider.models.some((item) => item.id === model.id)
+          ? isPrototypeChatModelEnabled(provider.id, model.id, availability)
+          : model.enabled,
+      })),
+    };
+  });
+}
+
 const KIND_COLORS: Record<ModelKind, string> = { chat: '#1677ff', image: '#722ed1', embedding: '#13a8a8' };
+const SHOW_USABLE_PROVIDERS_KEY = 'peers-prototype-show-usable-providers';
+
+function loadShowUsableProviders(): boolean {
+  if (typeof window === 'undefined') return true;
+  return window.localStorage.getItem(SHOW_USABLE_PROVIDERS_KEY) !== 'false';
+}
+
+function isProviderUsable(provider: Provider): boolean {
+  if (!provider.enabled) return false;
+  if (provider.kind === 'cli') return true;
+  return provider.apiKey.trim().length > 0
+    || /^https?:\/\/(127\.0\.0\.1|localhost)(?::|\/|$)/i.test(provider.baseUrl.trim());
+}
 
 function ProvidersSection() {
-  const [providers, setProviders] = useState<Provider[]>(INITIAL_PROVIDERS);
+  const [providers, setProviders] = useState<Provider[]>(providersWithAvailability);
   const [selId, setSelId] = useState('openai');
+  const [showUsableOnly, setShowUsableOnly] = useState(loadShowUsableProviders);
   const [showKey, setShowKey] = useState(false);
-  const [test, setTest] = useState<TestState>('idle');
+  const [testByProvider, setTestByProvider] = useState<Record<string, TestState>>({});
+  const [addOpen, setAddOpen] = useState(false);
+  const [newProviderKind, setNewProviderKind] = useState<ProviderKind>('direct');
+  const [newCliAdapter, setNewCliAdapter] = useState<CliAdapterId>('codex-cli');
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const addDialogRef = useRef<HTMLDivElement>(null);
+  const addReturnFocusRef = useRef<HTMLElement | null>(null);
 
-  const sel = providers.find((p) => p.id === selId) ?? providers[0];
+  const visibleProviders = useMemo(
+    () => showUsableOnly ? providers.filter(isProviderUsable) : providers,
+    [providers, showUsableOnly],
+  );
+  const sel = (providers.find((p) => p.id === selId) ?? providers[0])!;
+  const test = testByProvider[sel.id] ?? 'idle';
 
-  const patchProvider = (id: string, p: Partial<Provider>) =>
-    setProviders((prev) => prev.map((x) => (x.id === id ? { ...x, ...p } : x)));
+  useEffect(() => {
+    if (!showUsableOnly || visibleProviders.length === 0) return;
+    if (visibleProviders.some((provider) => provider.id === selId)) return;
+    setSelId(visibleProviders[0].id);
+    setShowKey(false);
+    setAdvancedOpen(false);
+  }, [providers, selId, showUsableOnly, visibleProviders]);
+
+  const patchProvider = (id: string, patch: Partial<DirectProvider> | Partial<CliProvider>) =>
+    setProviders((prev) => prev.map((provider) => (
+      provider.id === id ? { ...provider, ...patch } as Provider : provider
+    )));
+
+  const toggleProvider = (provider: Provider) => {
+    const enabled = !provider.enabled;
+    patchProvider(provider.id, { enabled });
+    savePrototypeChatProviderEnabled(provider.id, enabled);
+  };
+
+  const toggleModel = (provider: Provider, model: ModelOption) => {
+    const enabled = !model.enabled;
+    patchProvider(provider.id, {
+      models: provider.models.map((item) => item.id === model.id ? { ...item, enabled } : item),
+    });
+    savePrototypeChatModelEnabled(provider.id, model.id, enabled);
+  };
+
+  const selectProvider = (id: string) => {
+    setSelId(id);
+    setShowKey(false);
+    setAdvancedOpen(false);
+  };
+
+  const toggleUsableOnly = () => {
+    const next = !showUsableOnly;
+    setShowUsableOnly(next);
+    window.localStorage.setItem(SHOW_USABLE_PROVIDERS_KEY, String(next));
+  };
+
+  const closeAddProvider = () => {
+    setAddOpen(false);
+    window.setTimeout(() => addReturnFocusRef.current?.focus(), 0);
+  };
+
+  const openAddProvider = () => {
+    addReturnFocusRef.current = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    setNewProviderKind('direct');
+    setNewCliAdapter('codex-cli');
+    setAddOpen(true);
+  };
+
+  useEffect(() => {
+    if (!addOpen) return;
+    addDialogRef.current
+      ?.querySelector<HTMLElement>('[role="radio"][aria-checked="true"]')
+      ?.focus();
+  }, [addOpen]);
 
   const addProvider = () => {
-    const id = `custom-${Date.now()}`;
-    setProviders((prev) => [...prev, { id, name: 'New Provider', apiKey: '', baseUrl: 'https://', models: [] }]);
-    setSelId(id);
+    const timestamp = Date.now();
+    const id = `${newProviderKind}-${timestamp}`;
+    let provider: Provider;
+    if (newProviderKind === 'direct') {
+      provider = {
+        id,
+        name: 'New direct provider',
+        kind: 'direct',
+        enabled: true,
+        apiKey: '',
+        baseUrl: 'https://',
+        models: [],
+      };
+    } else {
+      const adapter = getCliAdapter(newCliAdapter);
+      const copyNumber = providers.filter((item) => item.kind === 'cli' && item.adapterId === adapter.id).length + 1;
+      provider = {
+        id,
+        name: copyNumber > 1 ? `${adapter.label} ${copyNumber}` : adapter.label,
+        kind: 'cli',
+        enabled: true,
+        adapterId: adapter.id,
+        defaultModel: adapter.defaultModel,
+        startupArgs: '',
+        environment: '',
+        timeoutSeconds: 120,
+        models: configuredChatModels(adapter.id),
+      };
+    }
+    setProviders((prev) => [...prev, provider]);
+    selectProvider(id);
+    closeAddProvider();
   };
 
   const runTest = () => {
-    setTest('testing');
-    setTimeout(() => setTest(sel.baseUrl.startsWith('http') ? 'ok' : 'fail'), 700);
+    const provider = sel;
+    setTestByProvider((previous) => ({ ...previous, [provider.id]: 'testing' }));
+    window.setTimeout(() => {
+      const ok = provider.kind === 'direct'
+        ? provider.baseUrl.startsWith('http')
+        : getCliAdapter(provider.adapterId).command.length > 0;
+      setTestByProvider((previous) => ({ ...previous, [provider.id]: ok ? 'ok' : 'fail' }));
+    }, 700);
   };
+
+  const testLabel = test === 'testing'
+    ? 'Checking...'
+    : test === 'ok'
+      ? 'Ready'
+      : test === 'fail'
+        ? 'Not ready'
+        : 'Check';
 
   return (
     <SettingsContainer>
       <div style={{ display: 'flex', gap: 16 }}>
         {/* Provider list (260px) */}
         <div style={{ width: 260, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {providers.map((p) => {
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minHeight: 34, padding: '0 4px 6px' }}>
+            <span style={{ flex: 1, fontSize: 12, fontWeight: 500, color: T.textSecondary }}>Show usable only</span>
+            <Toggle on={showUsableOnly} label="Show usable only" onToggle={toggleUsableOnly} />
+          </div>
+          {visibleProviders.map((p) => {
             const active = p.id === selId;
             return (
-              <div key={p.id} onClick={() => { setSelId(p.id); setTest('idle'); setShowKey(false); }} style={{
+              <button
+                key={p.id}
+                type="button"
+                aria-label={`Select ${p.name} provider`}
+                aria-pressed={active}
+                onClick={() => selectProvider(p.id)}
+                style={{
+                width: '100%',
                 display: 'flex', alignItems: 'center', gap: 10,
                 padding: '12px 14px', borderRadius: 8, cursor: 'pointer',
                 border: `1px solid ${active ? T.primary : T.border}`,
                 backgroundColor: active ? T.primaryWash : T.white,
+                textAlign: 'left',
               }}>
-                <Server size={16} color={active ? T.primary : T.textTertiary} />
+                {p.kind === 'cli'
+                  ? <Command size={16} color={active ? T.primary : T.textTertiary} />
+                  : <Server size={16} color={active ? T.primary : T.textTertiary} />}
                 <span style={{ flex: 1, fontSize: 13, fontWeight: active ? 600 : 500, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {p.name}
                 </span>
-                <span style={{ width: 8, height: 8, borderRadius: '50%', background: p.apiKey || p.baseUrl.includes('127.0.0.1') ? '#10b981' : T.textQuaternary }} />
-              </div>
+                <Tag text={p.kind === 'cli' ? 'CLI' : 'Direct'} color={p.kind === 'cli' ? '#d97706' : '#1677ff'} />
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: p.enabled ? '#10b981' : T.textQuaternary, flexShrink: 0 }} />
+              </button>
             );
           })}
           <div style={{ marginTop: 8 }}>
-            <GhostBtn icon={Plus} label="Add Provider" onClick={addProvider} />
+            <GhostBtn icon={Plus} label="Add Provider" onClick={openAddProvider} />
           </div>
         </div>
 
         {/* Provider detail panel */}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <SettingsSection icon={Server} title={sel.name} subtitle="Provider configuration and available models."
+          <SettingsSection
+            icon={sel.kind === 'cli' ? Command : Server}
+            title={sel.name}
+            subtitle={sel.kind === 'cli' ? 'Registered local CLI adapter.' : 'Direct model API and available models.'}
             action={
               <div style={{ display: 'flex', gap: 8 }}>
                 <GhostBtn
                   icon={test === 'testing' ? Loader2 : test === 'ok' ? CheckCircle2 : test === 'fail' ? XCircle : Activity}
-                  label={test === 'testing' ? 'Testing...' : test === 'ok' ? 'Connected' : test === 'fail' ? 'Failed' : 'Test'}
+                  label={testLabel}
                   onClick={runTest}
                 />
               </div>
             }
           >
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 500, color: T.text, marginBottom: 6 }}>API Key</div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <input type={showKey ? 'text' : 'password'} value={sel.apiKey} placeholder="sk-..." onChange={(e) => patchProvider(sel.id, { apiKey: e.target.value })} style={{ ...inputStyle, flex: 1 }} />
-                  <GhostBtn icon={showKey ? EyeOff : Eye} label={showKey ? 'Hide' : 'Show'} onClick={() => setShowKey(!showKey)} />
+            <SettingsRow
+              label="Enabled"
+              desc={sel.kind === 'cli'
+                ? 'Make this adapter available to Agent topics.'
+                : 'Make this provider and its enabled models available to Agent topics.'}
+            >
+              <Toggle
+                on={sel.enabled}
+                label={`${sel.name} provider enabled`}
+                onToggle={() => toggleProvider(sel)}
+              />
+            </SettingsRow>
+            {sel.kind === 'direct' ? (
+              <div role="group" aria-label="Direct provider settings">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <Field label="API Key">
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <input
+                        aria-label="API Key"
+                        type={showKey ? 'text' : 'password'}
+                        value={sel.apiKey}
+                        placeholder="sk-..."
+                        onChange={(e) => patchProvider(sel.id, { apiKey: e.target.value })}
+                        style={{ ...inputStyle, flex: 1 }}
+                      />
+                      <GhostBtn icon={showKey ? EyeOff : Eye} label={showKey ? 'Hide' : 'Show'} onClick={() => setShowKey(!showKey)} />
+                    </div>
+                  </Field>
+                  <Field label="Base URL">
+                    <input
+                      aria-label="Base URL"
+                      value={sel.baseUrl}
+                      onChange={(e) => patchProvider(sel.id, { baseUrl: e.target.value })}
+                      style={inputStyle}
+                    />
+                  </Field>
                 </div>
-              </div>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 500, color: T.text, marginBottom: 6 }}>Base URL</div>
-                <input value={sel.baseUrl} onChange={(e) => patchProvider(sel.id, { baseUrl: e.target.value })} style={inputStyle} />
-              </div>
-            </div>
 
-            {/* Models sub-section */}
-            <div style={{ marginTop: 20, paddingTop: 16, borderTop: `1px solid ${T.borderSoft}` }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                <span style={{ fontSize: 14, fontWeight: 600, color: T.text }}>Models</span>
-                <GhostBtn icon={Plus} label="Add Model" onClick={() => patchProvider(sel.id, { models: [...sel.models, { id: `m-${Date.now()}`, name: 'new-model', kind: 'chat', enabled: true }] })} />
-              </div>
-              {sel.models.map((m, i) => (
-                <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderTop: i === 0 ? 'none' : `1px solid ${T.borderSoft}` }}>
-                  <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: T.text }}>{m.name}</span>
-                  <Tag text={m.kind} color={KIND_COLORS[m.kind]} />
-                  <Toggle on={m.enabled} onToggle={() => patchProvider(sel.id, { models: sel.models.map((x) => x.id === m.id ? { ...x, enabled: !x.enabled } : x) })} />
+                <div style={{ marginTop: 20, paddingTop: 16, borderTop: `1px solid ${T.borderSoft}` }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: T.text }}>Models</span>
+                    <GhostBtn icon={Plus} label="Add Model" onClick={() => patchProvider(sel.id, { models: [...sel.models, { id: `m-${Date.now()}`, name: 'new-model', kind: 'chat', enabled: true }] })} />
+                  </div>
+                  {sel.models.map((m, i) => (
+                    <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderTop: i === 0 ? 'none' : `1px solid ${T.borderSoft}` }}>
+                      <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: T.text }}>{m.name}</span>
+                      <Tag text={m.kind} color={KIND_COLORS[m.kind]} />
+                      <Toggle on={m.enabled} label={`${m.name} enabled`} onToggle={() => toggleModel(sel, m)} />
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </div>
+            ) : (
+              <div role="group" aria-label="CLI provider settings" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <Field label="Provider profile">
+                  <Select
+                    ariaLabel="CLI provider profile"
+                    value={sel.adapterId}
+                    width="100%"
+                    options={CLI_ADAPTERS.map((adapter) => ({ id: adapter.id, label: adapter.label }))}
+                    onChange={(value) => {
+                      const adapter = getCliAdapter(value as CliAdapterId);
+                      patchProvider(sel.id, {
+                        name: adapter.label,
+                        adapterId: adapter.id,
+                        defaultModel: adapter.defaultModel,
+                        models: configuredChatModels(adapter.id),
+                      });
+                      setTestByProvider((previous) => ({ ...previous, [sel.id]: 'idle' }));
+                      setAdvancedOpen(false);
+                    }}
+                  />
+                </Field>
+                <Field label="Default model">
+                  <input
+                    aria-label="CLI default model"
+                    value={sel.defaultModel}
+                    onChange={(event) => patchProvider(sel.id, { defaultModel: event.target.value })}
+                    style={inputStyle}
+                  />
+                </Field>
+                <Field label="Startup args" hint="One argument per line.">
+                  <textarea
+                    aria-label="CLI startup args"
+                    rows={3}
+                    value={sel.startupArgs}
+                    onChange={(event) => patchProvider(sel.id, { startupArgs: event.target.value })}
+                    style={{ ...inputStyle, resize: 'vertical', fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 12 }}
+                  />
+                </Field>
+                <Field label="Environment variables" hint="One KEY=VALUE entry per line.">
+                  <textarea
+                    aria-label="CLI environment variables"
+                    rows={3}
+                    value={sel.environment}
+                    onChange={(event) => patchProvider(sel.id, { environment: event.target.value })}
+                    style={{ ...inputStyle, resize: 'vertical', fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 12 }}
+                  />
+                </Field>
+
+                <div style={{ borderTop: `1px solid ${T.borderSoft}`, paddingTop: 4 }}>
+                  <button
+                    type="button"
+                    aria-expanded={advancedOpen}
+                    onClick={() => setAdvancedOpen((open) => !open)}
+                    style={{
+                      width: '100%', minHeight: 36, padding: 0, border: 0, background: 'transparent',
+                      display: 'flex', alignItems: 'center', gap: 8, color: T.textSecondary,
+                      fontSize: 13, fontWeight: 600, cursor: 'pointer', textAlign: 'left',
+                    }}
+                  >
+                    {advancedOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                    Advanced
+                  </button>
+                  {advancedOpen ? (
+                    <div role="group" aria-label="CLI advanced settings" style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '6px 0 8px 22px' }}>
+                      <Field label="Registered adapter command" hint="Owned by Station and read-only here.">
+                        <input
+                          aria-label="Registered adapter command"
+                          readOnly
+                          value={getCliAdapter(sel.adapterId).command}
+                          style={{ ...inputStyle, color: T.textSecondary, fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 12 }}
+                        />
+                      </Field>
+                      <Field label="Workspace policy">
+                        <input
+                          aria-label="CLI workspace policy"
+                          readOnly
+                          value="Isolated Agent workspace"
+                          style={{ ...inputStyle, color: T.textSecondary }}
+                        />
+                      </Field>
+                      <Field label="Timeout">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <input
+                            aria-label="CLI timeout seconds"
+                            type="number"
+                            min={10}
+                            max={3600}
+                            value={sel.timeoutSeconds}
+                            onChange={(event) => patchProvider(sel.id, {
+                              timeoutSeconds: Math.max(10, Math.min(3600, Number(event.target.value) || 10)),
+                            })}
+                            style={{ ...inputStyle, width: 120 }}
+                          />
+                          <span style={{ fontSize: 12, color: T.textTertiary }}>seconds</span>
+                        </div>
+                      </Field>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: T.text, marginBottom: 7 }}>Capabilities</div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                          {getCliAdapter(sel.adapterId).capabilities.map((capability) => (
+                            <Tag key={capability} text={capability} color="#0f766e" />
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 2 }}>
+                  <GhostBtn
+                    icon={History}
+                    label="Restore defaults"
+                    onClick={() => {
+                      const adapter = getCliAdapter(sel.adapterId);
+                      patchProvider(sel.id, {
+                        defaultModel: adapter.defaultModel,
+                        startupArgs: '',
+                        environment: '',
+                        timeoutSeconds: 120,
+                      });
+                      toast.info('Defaults restored');
+                    }}
+                  />
+                  <PrimaryBtn icon={CheckCircle2} label="Save" onClick={() => toast.success('Provider saved')} />
+                </div>
+              </div>
+            )}
           </SettingsSection>
         </div>
       </div>
+
+      {addOpen ? (
+        <div
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeAddProvider();
+          }}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 1000,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 20, background: 'rgba(15,23,42,0.28)',
+          }}
+        >
+          <div
+            ref={addDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Add provider"
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                closeAddProvider();
+                return;
+              }
+              if (event.key !== 'Tab') return;
+              const focusable = Array.from(
+                event.currentTarget.querySelectorAll<HTMLElement>(
+                  'button:not([disabled]), select:not([disabled]), input:not([disabled]), textarea:not([disabled])',
+                ),
+              );
+              if (focusable.length === 0) return;
+              const first = focusable[0];
+              const last = focusable[focusable.length - 1];
+              if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last.focus();
+              } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first.focus();
+              }
+            }}
+            style={{
+              width: 'min(440px, 100%)', borderRadius: 10, border: `1px solid ${T.borderSoft}`,
+              background: T.white, boxShadow: '0 18px 48px rgba(15,23,42,0.2)', padding: 18,
+            }}
+          >
+            <div style={{ fontSize: 15, fontWeight: 650, color: T.text }}>Add provider</div>
+            <div role="radiogroup" aria-label="Provider type" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 14 }}>
+              {([
+                { id: 'direct' as const, label: 'Direct model', icon: Server, desc: 'Connect to a model API.' },
+                { id: 'cli' as const, label: 'CLI', icon: Command, desc: 'Use a registered local adapter.' },
+              ]).map((option) => {
+                const active = newProviderKind === option.id;
+                const Icon = option.icon;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    aria-label={option.label}
+                    onClick={() => setNewProviderKind(option.id)}
+                    style={{
+                      minHeight: 82, padding: 12, borderRadius: 8, cursor: 'pointer', textAlign: 'left',
+                      border: `1px solid ${active ? T.primary : T.borderSoft}`,
+                      color: T.text, background: active ? T.primaryWash : T.white,
+                    }}
+                  >
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 650 }}>
+                      <Icon size={15} color={active ? T.primary : T.textSecondary} />
+                      {option.label}
+                    </span>
+                    <span style={{ display: 'block', marginTop: 6, fontSize: 11.5, lineHeight: 1.4, color: T.textTertiary }}>
+                      {option.desc}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            {newProviderKind === 'cli' ? (
+              <div style={{ marginTop: 14 }}>
+                <Field label="Registered adapter">
+                  <Select
+                    ariaLabel="New CLI adapter"
+                    value={newCliAdapter}
+                    width="100%"
+                    options={CLI_ADAPTERS.map((adapter) => ({ id: adapter.id, label: adapter.label }))}
+                    onChange={(value) => setNewCliAdapter(value as CliAdapterId)}
+                  />
+                </Field>
+              </div>
+            ) : null}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
+              <GhostBtn label="Cancel" onClick={closeAddProvider} />
+              <PrimaryBtn icon={Plus} label="Create provider" onClick={addProvider} />
+            </div>
+          </div>
+        </div>
+      ) : null}
     </SettingsContainer>
   );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// SECTION: MODELS (AI group) - cross-provider overview
+// SECTION: MODELS (AI group) - default selection only
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function ModelsSection() {
-  const [filter, setFilter] = useState<'all' | ModelKind>('all');
-
-  const allModels = INITIAL_PROVIDERS.flatMap((p) =>
-    p.models.map((m) => ({ ...m, provider: p.name }))
+  const [defaultModel, setDefaultModel] = useState<PrototypeChatModelId>(loadPrototypeDefaultModel);
+  const [availability, setAvailability] = useState<PrototypeChatModelAvailability>(
+    loadPrototypeChatModelAvailability,
   );
-  const filtered = filter === 'all' ? allModels : allModels.filter((m) => m.kind === filter);
+
+  useEffect(() => subscribePrototypeDefaultModel(setDefaultModel), []);
+  useEffect(() => subscribePrototypeChatModelAvailability(setAvailability), []);
+
+  const selectableProviders = getEnabledPrototypeChatModelProviders(availability);
 
   return (
     <SettingsContainer>
-      <SettingsSection icon={Brain} title="All Models" subtitle="Cross-provider model overview with type filtering.">
-        <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
-          {(['all', 'chat', 'image', 'embedding'] as const).map((f) => (
-            <div key={f} onClick={() => setFilter(f)} style={{
-              padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: filter === f ? 600 : 500,
-              cursor: 'pointer', color: filter === f ? T.primary : T.textSecondary,
-              backgroundColor: filter === f ? T.primaryWash : 'transparent',
-            }}>
-              {f === 'all' ? 'All' : f.charAt(0).toUpperCase() + f.slice(1)}
-            </div>
-          ))}
-        </div>
+      <SettingsSection
+        icon={Sparkles}
+        title="Default chat model"
+        subtitle="New Agent topics start with this model. A topic can override it from the composer."
+      >
+        <SettingsRow label="Model">
+          <select
+            aria-label="Default chat model"
+            value={defaultModel}
+            onChange={(event) => savePrototypeDefaultModel(event.target.value as PrototypeChatModelId)}
+            style={{ ...inputStyle, width: 260, height: 34, padding: '0 30px 0 10px', cursor: 'pointer' }}
+          >
+            {selectableProviders.map((provider) => (
+              <optgroup key={provider.id} label={provider.label}>
+                {provider.models.map((model) => (
+                  <option key={model.id} value={model.id}>{model.label}</option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        </SettingsRow>
+      </SettingsSection>
+    </SettingsContainer>
+  );
+}
 
+const DISCOVER_PACKAGES = [
+  { id: 'research-partner', name: 'Research Partner', publisher: 'Peers', type: 'Agent', installed: false },
+  { id: 'source-reader', name: 'Source Reader', publisher: 'Peers', type: 'Skill', installed: true },
+  { id: 'browser-tools', name: 'Browser Tools', publisher: 'Peers', type: 'MCP', installed: false },
+] as const;
+
+function DiscoverSection() {
+  const [query, setQuery] = useState('');
+  const [installedIds, setInstalledIds] = useState<Set<string>>(
+    () => new Set<string>(DISCOVER_PACKAGES.filter((item) => item.installed).map((item) => item.id)),
+  );
+  const packages = DISCOVER_PACKAGES.filter((item) => {
+    const normalized = query.trim().toLowerCase();
+    return !normalized
+      || item.name.toLowerCase().includes(normalized)
+      || item.publisher.toLowerCase().includes(normalized)
+      || item.type.toLowerCase().includes(normalized);
+  });
+
+  return (
+    <SettingsContainer>
+      <SettingsSection
+        icon={Search}
+        title="Discover"
+      >
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+          <input
+            aria-label="Search packages"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search packages"
+            style={{ ...inputStyle, width: 'min(220px, 100%)' }}
+          />
+        </div>
         <div style={{ display: 'flex', flexDirection: 'column' }}>
-          {filtered.map((m, i) => (
-            <div key={`${m.provider}-${m.id}`} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderTop: i === 0 ? 'none' : `1px solid ${T.borderSoft}` }}>
-              <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: T.text }}>{m.name}</span>
-              <span style={{ fontSize: 12, color: T.textTertiary }}>{m.provider}</span>
-              <Tag text={m.kind} color={KIND_COLORS[m.kind]} />
-              <span style={{ width: 8, height: 8, borderRadius: '50%', background: m.enabled ? '#10b981' : T.textQuaternary }} />
+          {packages.map((item, index) => (
+            <div
+              key={item.id}
+              style={{
+                minHeight: 56,
+                display: 'grid',
+                gridTemplateColumns: 'minmax(0, 1fr) auto auto',
+                alignItems: 'center',
+                gap: 12,
+                borderTop: index === 0 ? 'none' : `1px solid ${T.borderSoft}`,
+              }}
+            >
+              <div style={{ minWidth: 0 }}>
+                <div style={{ color: T.text, fontSize: 13, fontWeight: 600 }}>{item.name}</div>
+                <div style={{ color: T.textTertiary, fontSize: 12 }}>{item.publisher}</div>
+              </div>
+              <Tag text={item.type} color="#6d5bd0" />
+              {installedIds.has(item.id) ? (
+                <GhostBtn
+                  label="Uninstall"
+                  onClick={() => setInstalledIds((current) => {
+                    const next = new Set(current);
+                    next.delete(item.id);
+                    return next;
+                  })}
+                />
+              ) : (
+                <GhostBtn
+                  icon={Plus}
+                  label="Install"
+                  onClick={() => setInstalledIds((current) => new Set(current).add(item.id))}
+                />
+              )}
             </div>
           ))}
+          {packages.length === 0 ? (
+            <div style={{ padding: '28px 0', color: T.textTertiary, fontSize: 13, textAlign: 'center' }}>
+              No packages found
+            </div>
+          ) : null}
         </div>
       </SettingsSection>
     </SettingsContainer>
@@ -1495,21 +2136,9 @@ function MemorySection() {
 
 type SkillTab = 'installed' | 'builtin' | 'market';
 
-interface SkillItem {
-  id: string; name: string; desc: string;
-  source: 'user' | 'github' | 'builtin' | 'market';
-  scan: 'passed' | 'warning'; enabled: boolean; installed: boolean;
-}
+type SkillItem = PrototypeSkillCatalogItem;
 
-const SKILLS_DATA: SkillItem[] = [
-  { id: 'sk-1', name: 'meeting-digest', desc: 'Compress meeting notes into actionable items.', source: 'github', scan: 'passed', enabled: true, installed: true },
-  { id: 'sk-2', name: 'pdf-extract', desc: 'Extract structured fields from PDF documents.', source: 'user', scan: 'warning', enabled: true, installed: true },
-  { id: 'sk-3', name: 'web-summarize', desc: 'Fetch web page content and generate summaries.', source: 'builtin', scan: 'passed', enabled: true, installed: true },
-  { id: 'sk-4', name: 'code-review', desc: 'Review diffs with key-point analysis.', source: 'builtin', scan: 'passed', enabled: false, installed: true },
-  { id: 'sk-5', name: 'translate-pro', desc: 'Terminology-consistent multi-language translation.', source: 'market', scan: 'passed', enabled: false, installed: false },
-  { id: 'sk-6', name: 'sql-explain', desc: 'Explain and optimize SQL queries.', source: 'market', scan: 'passed', enabled: false, installed: false },
-  { id: 'sk-7', name: 'image-caption', desc: 'Generate descriptive captions for images.', source: 'market', scan: 'passed', enabled: false, installed: false },
-];
+const SKILLS_DATA: SkillItem[] = PROTOTYPE_SKILLS.map((skill) => ({ ...skill }));
 
 function SkillsSection() {
   const [tab, setTab] = useState<SkillTab>('installed');
@@ -1623,9 +2252,10 @@ interface MCPServer {
 }
 
 const INITIAL_MCP: MCPServer[] = [
-  { id: 'mcp-1', name: 'integrated_browser', transport: 'stdio', endpoint: 'npx @pt/mcp-browser', enabled: true, toolCount: 6, tools: ['navigate', 'click', 'snapshot', 'type', 'screenshot', 'evaluate'], test: 'ok' },
-  { id: 'mcp-2', name: 'web_search', transport: 'http', endpoint: 'https://mcp.example.com/search', enabled: true, toolCount: 2, tools: ['search', 'fetch'], test: 'idle' },
-  { id: 'mcp-3', name: 'filesystem', transport: 'stdio', endpoint: 'npx @pt/mcp-fs', enabled: false, toolCount: 4, tools: ['read', 'write', 'list', 'stat'], test: 'idle' },
+  ...PROTOTYPE_MCP_SERVERS.map((server) => ({
+    ...server,
+    test: server.test === 'error' ? 'fail' as const : server.test,
+  })),
 ];
 
 const JSON_SAMPLE = `{
@@ -1742,41 +2372,8 @@ function MCPSection() {
 // SECTION: CHANNELS (Channels group)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function ChannelsSection() {
-  const channels = [
-    { id: 'ch-1', name: 'Direct Messages', type: 'dm', icon: MessageSquare, connected: true },
-    { id: 'ch-2', name: 'Group Chats', type: 'group', icon: Users, connected: true },
-    { id: 'ch-3', name: 'Federation Relay', type: 'relay', icon: Network, connected: true },
-    { id: 'ch-4', name: 'Email Bridge', type: 'bridge', icon: Send, connected: false },
-    { id: 'ch-5', name: 'Matrix Bridge', type: 'bridge', icon: Globe, connected: false },
-  ];
-
-  const TYPE_COLORS: Record<string, string> = { dm: '#1677ff', group: '#722ed1', relay: '#13a8a8', bridge: '#d48806' };
-
-  return (
-    <SettingsContainer>
-      <SettingsSection icon={Send} title="Communication Channels" subtitle="Connected messaging channels and bridge integrations.">
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
-          {channels.map((ch, i) => {
-            const Icon = ch.icon;
-            return (
-              <div key={ch.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 0', borderTop: i === 0 ? 'none' : `1px solid ${T.borderSoft}` }}>
-                <div style={{ width: 36, height: 36, borderRadius: 9, backgroundColor: T.fillQuaternary, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <Icon size={18} color={T.textSecondary} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{ch.name}</div>
-                </div>
-                <Tag text={ch.type} color={TYPE_COLORS[ch.type] || T.textSecondary} />
-                <span style={{ width: 8, height: 8, borderRadius: '50%', background: ch.connected ? '#10b981' : T.textQuaternary }} />
-                <span style={{ fontSize: 12, color: ch.connected ? '#10b981' : T.textTertiary }}>{ch.connected ? 'Connected' : 'Offline'}</span>
-              </div>
-            );
-          })}
-        </div>
-      </SettingsSection>
-    </SettingsContainer>
-  );
+function LarkSection() {
+  return <LarkChannels />;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -2138,12 +2735,13 @@ function CommandPaletteSection({ onOpen }: { onOpen: () => void }) {
 // IA + PAGE SHELL (4 groups; non-technical content first)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-type GroupId = 'general' | 'network' | 'ai' | 'advanced';
+type GroupId = 'general' | 'network' | 'ai' | 'channels' | 'advanced';
 type SectionId =
   | 'account' | 'notifications' | 'privacy' | 'appearance'
   | 'station' | 'discovery' | 'federation'
-  | 'providers' | 'models' | 'memory' | 'skills' | 'mcp'
-  | 'storage' | 'channels' | 'applets' | 'statistics' | 'cron' | 'command-menu' | 'logs' | 'about';
+  | 'providers' | 'models' | 'discover' | 'memory' | 'skills' | 'mcp'
+  | 'lark' | 'bots'
+  | 'storage' | 'applets' | 'statistics' | 'cron' | 'command-menu' | 'logs' | 'about';
 
 interface SectionDef { id: SectionId; label: string; icon: LucideIcon; }
 interface GroupDef { id: GroupId; label: string; icon: LucideIcon; sections: SectionDef[]; }
@@ -2171,16 +2769,23 @@ const GROUPS: GroupDef[] = [
     sections: [
       { id: 'providers', label: 'Providers', icon: Server },
       { id: 'models', label: 'Models', icon: Brain },
+      { id: 'discover', label: 'Discover', icon: Search },
       { id: 'memory', label: 'Memory', icon: HardDrive },
       { id: 'skills', label: 'Skills', icon: ScrollText },
       { id: 'mcp', label: 'MCP', icon: Plug },
     ],
   },
   {
+    id: 'channels', label: 'Channels', icon: Send,
+    sections: [
+      { id: 'bots', label: 'Bots', icon: Bot },
+      { id: 'lark', label: 'Lark', icon: MessageSquare },
+    ],
+  },
+  {
     id: 'advanced', label: 'Advanced', icon: Wrench,
     sections: [
       { id: 'storage', label: 'Data & Storage', icon: Database },
-      { id: 'channels', label: 'Channels', icon: Send },
       { id: 'applets', label: 'Applets', icon: Puzzle },
       { id: 'statistics', label: 'Statistics', icon: BarChart3 },
       { id: 'logs', label: 'Diagnostics & Logs', icon: ScrollText },
@@ -2203,11 +2808,13 @@ function renderSection(sectionId: SectionId, onOpenCommandPalette: () => void,
     case 'federation': return <FederationSection federations={federations} setFederations={setFederations} />;
     case 'providers': return <ProvidersSection />;
     case 'models': return <ModelsSection />;
+    case 'discover': return <DiscoverSection />;
     case 'memory': return <MemorySection />;
     case 'skills': return <SkillsSection />;
     case 'mcp': return <MCPSection />;
     case 'storage': return <DataStorageSection />;
-    case 'channels': return <ChannelsSection />;
+    case 'bots': return <BotChannels />;
+    case 'lark': return <LarkSection />;
     case 'applets': return <AppletsSection />;
     case 'statistics': return <StatisticsSection />;
     case 'logs': return <LogsSection />;
@@ -2219,8 +2826,11 @@ function renderSection(sectionId: SectionId, onOpenCommandPalette: () => void,
 }
 
 export function SettingsPage({ onOpenCommandPalette }: { onOpenCommandPalette: () => void }) {
-  const [activeGroup, setActiveGroup] = useState<GroupId>('general');
-  const [activeSection, setActiveSection] = useState<SectionId>('account');
+  const reviewParams = new URLSearchParams(window.location.search);
+  const reviewLark = reviewParams.get('state') === 'lark-settings';
+  const reviewChannel = reviewParams.get('section') === 'bots' ? 'bots' : 'lark';
+  const [activeGroup, setActiveGroup] = useState<GroupId>(reviewLark ? 'channels' : 'general');
+  const [activeSection, setActiveSection] = useState<SectionId>(reviewLark ? reviewChannel : 'account');
   const [federations, setFederations] = useState<JoinedFederation[]>(MOCK_FEDERATIONS);
 
   const group = GROUPS.find((g) => g.id === activeGroup) ?? GROUPS[0];

@@ -30,6 +30,7 @@ except ModuleNotFoundError:
 from tooling.acceptance.core import ArtifactRef, RunHandle
 from tooling.acceptance.core.attestation import source_workspace_digest
 from tooling.acceptance.gates.mobile.proof_contracts import validate_contract_payload
+from tooling.acceptance.provisioners.mobile_host_provider import HostProviderConfiguration
 
 
 GATE_ID = "mobile-native-access-e2e"
@@ -38,6 +39,8 @@ SCENARIO_BUILD_ATTESTATION_GATE_IDS = frozenset(
         "mobile-native-lifecycle-e2e",
         "mobile-native-platform-e2e",
         "mobile-social-android-native",
+        "unified-client-android-host-e2e",
+        "unified-client-ios-host-e2e",
     }
 )
 APPLICATION_ID = "com.peers.touch.mobile"
@@ -185,6 +188,7 @@ CONSTRUCTED_BUILD_ENVIRONMENT = frozenset(
         "NDK_HOME",
         "PATH",
         "PT_MOBILE_BUILD_IDENTITY_JSON",
+        "PT_ANDROID_FIREBASE_RESOURCES_JSON",
         "RUSTUP_HOME",
         "RUSTUP_TOOLCHAIN",
         "SDKROOT",
@@ -228,6 +232,7 @@ EXCLUDED_BUILD_INPUT_PARTS = frozenset(
         "build",
         "DerivedData",
         "Externals",
+        ".build",
         ".gradle",
         "Pods",
         "target",
@@ -262,6 +267,7 @@ SECRET_BUILD_INPUT_SUFFIXES = frozenset(
 )
 PRODUCER_INPUTS = (
     "tooling/acceptance/provisioners/mobile_native_build.py",
+    "tooling/acceptance/provisioners/mobile_host_provider.py",
     "tooling/acceptance/gates/mobile/proof-contract.schema.json",
     "tooling/acceptance/gates/mobile/proof_contracts.py",
 )
@@ -939,24 +945,26 @@ def _collect_input_tree(root: Path, relative_root: str) -> set[str]:
         retained_directories: list[str] = []
         for name in sorted(directories):
             candidate = current_path / name
-            relative = PurePosixPath(_repository_relative(root, candidate))
+            relative = PurePosixPath(candidate.relative_to(root).as_posix())
             if _is_excluded_build_input(relative):
                 continue
             if candidate.is_symlink():
                 raise MobileNativeBuildError(
                     f"build input contains a symlink: {relative.as_posix()}"
                 )
+            _repository_relative(root, candidate)
             retained_directories.append(name)
         directories[:] = retained_directories
         for name in sorted(files):
             candidate = current_path / name
-            relative = PurePosixPath(_repository_relative(root, candidate))
+            relative = PurePosixPath(candidate.relative_to(root).as_posix())
             if _is_excluded_build_input(relative):
                 continue
             if candidate.is_symlink() or not candidate.is_file():
                 raise MobileNativeBuildError(
                     f"build input is not a regular file: {relative.as_posix()}"
                 )
+            _repository_relative(root, candidate)
             result.add(relative.as_posix())
     return result
 
@@ -1252,6 +1260,7 @@ def construct_build_environment(
     sdk_paths: Mapping[str, str],
     identity_json: str | None = None,
     acceptance_harness: bool = True,
+    firebase_resources_json: str = "",
 ) -> dict[str, str]:
     if platform not in RESOLVER_ARGUMENTS:
         raise MobileNativeBuildError(f"unsupported Mobile platform: {platform}")
@@ -1283,6 +1292,10 @@ def construct_build_environment(
     }
     if acceptance_harness:
         environment["VITE_ACCEPTANCE_HARNESS"] = "1"
+    if firebase_resources_json:
+        if platform != "android":
+            raise MobileNativeBuildError("Firebase resources require the Android Host")
+        environment["PT_ANDROID_FIREBASE_RESOURCES_JSON"] = firebase_resources_json
     platform_names = (
         ("DEVELOPER_DIR", "SDKROOT")
         if platform == "ios"
@@ -4304,13 +4317,59 @@ def _single_controlled_output(
     return candidates[0]
 
 
+def _validate_apns_application(
+    artifact: Path,
+    *,
+    provider: HostProviderConfiguration,
+    signing: Mapping[str, Any],
+    runner: CommandRunner,
+    environment: Mapping[str, str],
+    executables: Mapping[str, str],
+) -> None:
+    if signing["teamIdentifier"] != provider.team_id:
+        raise MobileNativeBuildError("APNs provider team differs from the signed application")
+    with tempfile.TemporaryDirectory(prefix="pt-apns-signing-") as temporary:
+        destination = Path(temporary)
+        _safe_extract_archive(artifact, destination)
+        applications = list((destination / "Payload").glob("*.app"))
+        if len(applications) != 1:
+            raise MobileNativeBuildError("APNs application archive is invalid")
+        application = applications[0]
+        info = plistlib.loads((application / "Info.plist").read_bytes())
+        modes = info.get("UIBackgroundModes")
+        if not isinstance(modes, list) or not {"fetch", "remote-notification"}.issubset(modes):
+            raise MobileNativeBuildError("APNs application background modes are unavailable")
+        entitlements = _plist_from_command(_run_required(
+            runner,
+            [executables["codesign"], "-d", "--entitlements", ":-", str(application)],
+            cwd=destination, environment=environment,
+        ))
+        profile = _plist_from_command(_run_required(
+            runner,
+            [executables["security"], "cms", "-D", "-i",
+             str(application / "embedded.mobileprovision")],
+            cwd=destination, environment=environment,
+        ))
+        if (
+            entitlements.get("aps-environment") != "development"
+            or profile.get("Entitlements", {}).get("aps-environment") != "development"
+        ):
+            raise MobileNativeBuildError("APNs development entitlement is unproven")
+
+
 def orchestrate_source_bound_build(
     *,
     root: Path,
     platform: str,
     run_root: Path,
     runtime_cache: Path,
+    host_provider: HostProviderConfiguration | None = None,
 ) -> SuccessfulBuildReceipt:
+    if host_provider is not None and host_provider.platform != platform:
+        raise MobileNativeBuildError("Host provider targets another platform")
+    firebase_resources = (
+        host_provider.application_resources_json if host_provider is not None else ""
+    )
     repository = root.resolve(strict=True)
     resolved_run_root = run_root.resolve()
     if resolved_run_root == repository or repository in resolved_run_root.parents:
@@ -4396,6 +4455,7 @@ def orchestrate_source_bound_build(
         run_root=acceptance_root,
         executable_paths=toolchain.executable_paths,
         sdk_paths=toolchain.environment_paths,
+        firebase_resources_json=firebase_resources,
     )
     environment_without_identity = _prepend_controlled_path(
         environment_without_identity,
@@ -4408,6 +4468,7 @@ def orchestrate_source_bound_build(
         executable_paths=toolchain.executable_paths,
         sdk_paths=toolchain.environment_paths,
         acceptance_harness=False,
+        firebase_resources_json=firebase_resources,
     )
     release_environment_without_identity = _prepend_controlled_path(
         release_environment_without_identity,
@@ -4453,6 +4514,7 @@ def orchestrate_source_bound_build(
         executable_paths=toolchain.executable_paths,
         sdk_paths=toolchain.environment_paths,
         identity_json=canonical_json_bytes(identity).decode("ascii"),
+        firebase_resources_json=firebase_resources,
     )
     environment = _prepend_controlled_path(environment, cargo_wrapper.path.parent)
     _assert_protoc_on_sanitized_path(toolchain, environment)
@@ -4473,6 +4535,7 @@ def orchestrate_source_bound_build(
         sdk_paths=toolchain.environment_paths,
         identity_json=canonical_json_bytes(release_identity).decode("ascii"),
         acceptance_harness=False,
+        firebase_resources_json=firebase_resources,
     )
     release_environment = _prepend_controlled_path(
         release_environment,
@@ -4533,6 +4596,15 @@ def orchestrate_source_bound_build(
         environment=environment,
         executables=toolchain.executable_paths,
     )
+    if platform == "ios" and host_provider is not None:
+        _validate_apns_application(
+            artifact,
+            provider=host_provider,
+            signing=inspection.signing,
+            runner=command_runner,
+            environment=environment,
+            executables=toolchain.executable_paths,
+        )
     acceptance_package_scan = _scan_acceptance_application_package(
         artifact,
         platform,

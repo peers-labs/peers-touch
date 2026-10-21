@@ -1,0 +1,200 @@
+{
+  "kind": "unified-client-task-baseline-inventory",
+  "schemaVersion": 2,
+  "planId": "UCA-20261017",
+  "taskId": "UCA-01",
+  "planVersionDigest": "5e306508ef25c72c3f75107d7897d0105d9545301ec963d90a4092709442cca3",
+  "source": {
+    "head": "a32dce8acac78794f8775dbad7bb7e6967b74104",
+    "observedOriginMaster": "062705433d6c38c30482e2ae196f65747c6639fc",
+    "workspaceId": "8b99621815d8a125",
+    "workspaceDigest": "sha256:f4d7fe004ac799c6cf537a5f071234b5b1afedb4e508898eb5dcedf0a73b9eef",
+    "workspaceState": "dirty",
+    "note": "The task binds the stable dirty workspace observed immediately before this evidence update. History rewrite and commit are outside authorization."
+  },
+  "facts": {
+    "rustPlatformIdentity": "Mobile resolves android/ios from the compiled target; Desktop system_health reports desktop, tauri-desktop, the compiled host OS and PT_BUILD_SOURCE_COMMIT",
+    "typescriptPlatformIdentity": "Mobile and Desktop read native diagnostics through strict closed-shape validators and fail closed on unsupported, malformed or widened identity",
+    "mobileBuildMatrix": "Android and iOS both have init, dev, build and project-check entrypoints and are required by check:required-mobile-projects",
+    "sharedDependencyInventory": [
+      "cargo:messaging-core",
+      "cargo:secure-content-core",
+      "cargo:station-libp2p-http",
+      "cargo:station-trust",
+      "pnpm:@peers-touch/client-chat-core",
+      "pnpm:@peers-touch/client-media-security",
+      "pnpm:@peers-touch/client-storage"
+    ],
+    "acceptanceCatalog": "All ten unified-client Gate identities are registered; unfinished owner Gates fail closed through unified_client.unproven",
+    "aggregateContract": "The aggregate runs two bounded source checks and consumes exact-source child evidence, runtime cells, owner-zero Gates, Suite cleanup and the outcome-comparison digest without provisioning"
+  },
+  "capabilityInventory": {
+    "model": {
+      "status": "CANONICAL",
+      "roots": ["model/domain"],
+      "responsibility": "Cross-platform wire contracts and shared contract meaning"
+    },
+    "portableRust": {
+      "status": "CANONICAL_ROOTS_REGISTERED",
+      "roots": [
+        "packages/messaging-core",
+        "packages/secure-content-core",
+        "packages/station-libp2p-http",
+        "packages/station-trust"
+      ],
+      "responsibility": "Host-neutral protocol, security and transport mechanisms"
+    },
+    "sharedTypeScript": {
+      "status": "CANONICAL_ROOTS_REGISTERED",
+      "roots": [
+        "packages/client-chat-core",
+        "packages/client-media-security",
+        "packages/client-storage"
+      ],
+      "responsibility": "Renderer-neutral DTO, state, selector, codec and storage semantics"
+    },
+    "sharedUi": {
+      "status": "NO_CURRENT_CROSS_CLIENT_OWNER",
+      "roots": [],
+      "responsibility": "Only policy-neutral entity anatomy with two real consumers may create packages/ui/shared"
+    },
+    "presentationPolicy": {
+      "status": "FORM_SPECIFIC",
+      "roots": ["apps/desktop/src", "apps/mobile/src"],
+      "responsibility": "Desktop/Mobile navigation, density, gesture, focus, safe-area, keyboard and window policy"
+    },
+    "platformHost": {
+      "status": "TARGET_SPECIFIC_ADAPTERS",
+      "roots": [
+        "apps/desktop/src-tauri",
+        "apps/mobile/src-tauri/plugins",
+        "apps/mobile/src-tauri/gen/android",
+        "apps/mobile/src-tauri/gen/apple"
+      ],
+      "responsibility": "Desktop/Android/iOS OS integration behind typed runtime ports"
+    }
+  },
+  "hardCutInventories": {
+    "messaging": [
+      {
+        "currentOwner": "desktop.messaging.runtime",
+        "roots": [
+          "apps/desktop/src-tauri/src/messaging/engine.rs",
+          "apps/desktop/src-tauri/src/messaging/store.rs",
+          "apps/desktop/src-tauri/src/messaging/lifecycle.rs",
+          "apps/desktop/src-tauri/src/messaging/recovery.rs",
+          "apps/desktop/src-tauri/src/messaging/command_outbox.rs",
+          "apps/desktop/src-tauri/src/messaging/attachment_transfer.rs"
+        ],
+        "representativeSymbols": [
+          "MessagingEngine",
+          "EngineRegistry",
+          "MessagingStore"
+        ],
+        "targetTasks": ["UCA-04A", "UCA-04"]
+      },
+      {
+        "currentOwner": "mobile.messaging.runtime",
+        "roots": [
+          "apps/mobile/src-tauri/src/messaging/engine.rs",
+          "apps/mobile/src-tauri/src/messaging/adapter.rs",
+          "apps/mobile/src-tauri/src/messaging/lifecycle.rs",
+          "apps/mobile/src-tauri/src/messaging/recovery.rs"
+        ],
+        "representativeSymbols": [
+          "MobileMessagingEngine",
+          "MobileMessagingRuntime",
+          "MobileMessagingWorker"
+        ],
+        "targetTasks": ["UCA-04A", "UCA-04"]
+      }
+    ],
+    "secureContent": [
+      {
+        "currentOwner": "desktop.secure-content.runtime",
+        "roots": [
+          "apps/desktop/src-tauri/src/secure_content/adapter.rs",
+          "apps/desktop/src-tauri/src/secure_content/recovery.rs",
+          "apps/desktop/src-tauri/src/secure_content/store.rs",
+          "apps/desktop/src-tauri/src/secure_content/worker.rs"
+        ],
+        "representativeSymbols": [
+          "SecureContentTransport",
+          "SecureContentStore",
+          "SecureContentSupervisor"
+        ],
+        "targetTasks": ["UCA-05A", "UCA-05"]
+      },
+      {
+        "currentOwner": "mobile.secure-content.runtime",
+        "roots": [
+          "apps/mobile/src-tauri/src/secure_content/adapter.rs",
+          "apps/mobile/src-tauri/src/secure_content/recovery.rs",
+          "apps/mobile/src-tauri/src/secure_content/store.rs",
+          "apps/mobile/src-tauri/src/secure_content/worker.rs"
+        ],
+        "representativeSymbols": [
+          "PrivateSocialStore",
+          "PrivateSocialWorker",
+          "NativeSocialTransport"
+        ],
+        "targetTasks": ["UCA-05A", "UCA-05"]
+      }
+    ]
+  },
+  "changedFileAllowlist": [
+    "apps/desktop/src-tauri/src/application/system/mod.rs",
+    "apps/desktop/src/services/api.test.ts",
+    "apps/desktop/src/services/desktop_api.ts",
+    "apps/mobile/package.json",
+    "apps/mobile/scripts/native_platform_contract_test.py",
+    "apps/mobile/src/services/platform/mobilePlatform.test.ts",
+    "apps/mobile/src/services/platform/mobilePlatform.ts",
+    "apps/mobile/src/services/platform/platformContracts.test.ts",
+    "apps/mobile/src/services/platform/platformContracts.ts",
+    "apps/mobile/src-tauri/src/commands/build_identity.rs",
+    "apps/mobile/src-tauri/src/commands/health.rs",
+    "apps/mobile/src-tauri/src/lib.rs",
+    "apps/mobile/src-tauri/src/platform/contract.rs",
+    "apps/mobile/src-tauri/src/platform/identity.rs",
+    "apps/mobile/src-tauri/src/platform/ios.rs",
+    "apps/mobile/src-tauri/src/platform/mod.rs",
+    "docs/architecture/engineering/acceptance/data-model.md",
+    "docs/architecture/engineering/acceptance/integration.md",
+    "docs/architecture/engineering/architecture-governance/architecture-modules.json",
+    "docs/architecture/engineering/architecture-governance/data-model.md",
+    "docs/architecture/engineering/architecture-governance/integration.md",
+    "docs/architecture/platform/client/cross-client-runtime/execution-plans/20261017-unified-client-architecture/artifacts/UCA-01-baseline-inventory.json",
+    "docs/architecture/platform/client/cross-client-runtime/module-layout.md",
+    "docs/architecture/platform/client/mobile/integration.md",
+    "package.json",
+    "tooling/acceptance/gates.yaml",
+    "tooling/acceptance/gates/unified_client/__init__.py",
+    "tooling/acceptance/gates/unified_client/architecture_aggregate.py",
+    "tooling/acceptance/gates/unified_client/architecture_aggregate_test.py",
+    "tooling/acceptance/gates/unified_client/baseline_contract_test.py",
+    "tooling/acceptance/gates/unified_client/unproven.py",
+    "tooling/scripts/architecture/module-governance.mjs",
+    "tooling/scripts/architecture/module-governance.test.mjs"
+  ],
+  "excludedInventories": {
+    "applet": "Excluded by the Plan pending a separate architecture amendment"
+  },
+  "verification": {
+    "sourceCheck": "PASS",
+    "requiredProjectEntrypoints": "PASS",
+    "functionalCheck": "PASS",
+    "desktopIdentityRustTest": "PASS",
+    "planClosure": "PASS",
+    "blockers": [],
+    "notes": [
+      "The first source-check attempt hit the existing 10-second iOS archive-test timeout; the exact failed test passed in isolation and the complete source check then passed on retry",
+      "The current source check passed with 34 Mobile Vitest tests, 22 Mobile Python contract tests, 9 UCA Python tests, 38 Mobile Rust platform tests and 3 Mobile build-identity tests",
+      "The functional check passed with 52 Desktop Vitest tests and 9 UCA Python tests; the focused Desktop Rust identity test also passed",
+      "Desktop full tsc remains blocked by pre-existing unresolved @peers-touch/applet-contract and @peers-touch/applet-kernel workspace packages outside UCA-01",
+      "Stale legacy Mobile Gate expectations and undeclared Dashboard Relay routes belong to unrelated broad checks and were not modified inside UCA-01",
+      "The committed iOS generated host predates existing Rust source/config inputs; correction remains owned by UCA-03",
+      "No file outside the accepted Task scope was modified to close UCA-01"
+    ]
+  }
+}

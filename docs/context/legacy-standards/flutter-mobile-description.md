@@ -1,6 +1,6 @@
 > **Historical reference (Flutter/GetX era)**. This document describes the Flutter-era mobile positioning and design baseline.
 > The previous native Kotlin/Swift mainline note is superseded. Current Mobile uses Tauri v2 Mobile + shared Web UI + Rust + native plugins.
-> See `docs/client/mobile/base.md` and `docs/client/mobile/native-dual-platform.md` for current architecture.
+> See `docs/client/mobile/base.md` and `docs/client/mobile/native-plugin-layer.md` for current architecture.
 
 ---
 

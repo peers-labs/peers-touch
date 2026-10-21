@@ -1,18 +1,26 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import type { ConfigEnv, UserConfig } from 'vite'
 
-export default defineConfig({
-  plugins: [react()],
-  build: {
-    outDir: 'dist',
-    emptyOutDir: true,
-    rollupOptions: {
-      input: {
-        main: './index.html',
+const reactPluginPackage = '@vitejs/plugin-react'
+
+export default async function config({ command }: ConfigEnv): Promise<UserConfig> {
+  const plugins =
+    command === 'serve'
+      ? [(await import(reactPluginPackage)).default()]
+      : []
+
+  return {
+    plugins,
+    build: {
+      outDir: 'dist',
+      emptyOutDir: true,
+      rollupOptions: {
+        input: {
+          main: './index.html',
+        },
       },
     },
-  },
-  server: {
-    port: 3101,
-  },
-})
+    server: {
+      port: 3101,
+    },
+  }
+}

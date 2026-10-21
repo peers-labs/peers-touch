@@ -19,7 +19,13 @@ describe('unknown-tool recovery wiring', () => {
 
     expect(actionStart).toBeGreaterThan(-1);
     expect(actionEnd).toBeGreaterThan(actionStart);
-    expect(actionBranch).toContain('handleChooseCompatibleModel()');
+    expect(actionBranch).toContain(
+      "setAgentSurface(activeAgent.name, 'profile')",
+    );
+    expect(actionBranch).toContain(
+      "eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' })",
+    );
+    expect(actionBranch).not.toContain('handleChooseCompatibleModel()');
     expect(actionBranch).not.toContain('handleRetry()');
     expect(actionBranch).not.toContain('sendMessage(');
   });

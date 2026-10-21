@@ -5,10 +5,12 @@
   "owners": [
     "apps/mobile/src/app/**",
     "apps/mobile/src/components/**",
+    "apps/mobile/src/features/station/stationRegistry.ts",
     "apps/mobile/src/runtimes/recoveryProjection.ts",
+    "apps/mobile/src/runtimes/stationRuntime.ts",
     "packages/locales/**"
   ],
-  "truth_sources": ["runtime readiness projections", "command ledger projection", "Station/session validation"],
+  "truth_sources": ["runtime readiness projections", "command ledger projection", "signed Station route attestation and binding", "Station/session validation"],
   "visible_surfaces": [
     {"type": "mobile", "state": "recovery-overlay"},
     {"type": "mobile", "state": "route-recovery"}
@@ -18,7 +20,8 @@
     "product_assertions": ["MS-PA14", "MS-PA22", "MS-PA23", "MS-PA25", "MS-PA26", "MS-PA27"],
     "visible": [
       "blocking recovery states expose one truthful next action",
-      "an unavailable active route exposes one local lifecycle Retry without duplicate global notices"
+      "an unavailable active route exposes one local lifecycle Retry without duplicate global notices",
+      "the active Station route renews before expiry without changing Station or route generation"
     ]
   },
   "negative": [

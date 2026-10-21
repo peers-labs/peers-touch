@@ -2083,7 +2083,7 @@ class FoundationForbiddenActorCoordinator:
 
     @staticmethod
     def _navigate(client: Any, account: str) -> None:
-        navigation = client.harness("navigateToAgent", {}, timeout=60)
+        navigation = client.harness("navigateToAgent", {}, timeout=120)
         if (
             not isinstance(navigation, Mapping)
             or navigation.get("navigated") is not True
@@ -4053,7 +4053,7 @@ def _authenticate_clients(
         actor_ids[client.spec.runtime] = str(session_state["actorId"])
 
         # Step 2: Navigate to agent surface
-        nav_result = client.harness("navigateToAgent", {}, timeout=60)
+        nav_result = client.harness("navigateToAgent", {}, timeout=120)
         if not isinstance(nav_result, Mapping) or not nav_result.get("navigated"):
             raise ScenarioRunnerError(
                 f"{client.spec.runtime} navigation failed: {nav_result}"

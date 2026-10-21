@@ -1,6 +1,8 @@
 const COMMANDS: &[&str] = &[
     "check",
     "request",
+    "observeCapability",
+    "executeSystemAction",
     "startNetworkObservation",
     "armPush",
     "drainPushCallbacks",

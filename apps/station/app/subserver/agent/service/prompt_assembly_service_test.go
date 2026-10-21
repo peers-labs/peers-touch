@@ -17,9 +17,12 @@ func TestPromptAssemblyCanonicalTurnSegments(t *testing.T) {
 	currentInput := "Implement the typed ContextLedger."
 	result, err := service.AssembleTurnContext(
 		context.Background(),
-		"agent-1",
-		"Backend architect",
-		"Follow the accepted architecture.",
+		AgentPromptDefinition{
+			AgentID:           "agent-1",
+			Version:           7,
+			IdentityPrompt:    "Backend architect",
+			AgentConfigPrompt: "Follow the accepted architecture.",
+		},
 		nil,
 		currentInput,
 		nil,
@@ -83,6 +86,14 @@ func TestPromptAssemblyCanonicalTurnSegments(t *testing.T) {
 		if result.Segments[index].Type != expectedType {
 			t.Fatalf("segment %d type = %s, want %s", index, result.Segments[index].Type, expectedType)
 		}
+	}
+	if got := result.Segments[0].SourceRefs; len(got) != 1 ||
+		got[0] != "agent:agent-1:version=7:identity" {
+		t.Fatalf("Identity source is not pinned to AgentDefinition version: %+v", got)
+	}
+	if got := result.Segments[1].SourceRefs; len(got) != 1 ||
+		got[0] != "agent:agent-1:version=7:config" {
+		t.Fatalf("Agent config source is not pinned to AgentDefinition version: %+v", got)
 	}
 
 	current := result.Segments[len(result.Segments)-1]

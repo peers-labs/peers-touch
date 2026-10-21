@@ -385,6 +385,17 @@ class EnvironmentContractTests(unittest.TestCase):
             "station.reset:station-access-reset-actors",
         )
 
+    def test_station_access_fixture_binds_canonical_reset_authority(self):
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "station-access-native.yaml"
+        )
+
+        self.assertEqual(len(contract.fixtures), 1)
+        self.assertEqual(
+            contract.fixtures[0].authorization_ref,
+            "station.reset:station-access-reset-actors",
+        )
+
     def test_load_native_tauri_current_profile_contract(self):
         contract = EnvironmentContract.from_yaml(
             ENVIRONMENTS_DIR / "native-tauri-current-profile.yaml"

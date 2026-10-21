@@ -1,10 +1,10 @@
 # 开发流程工具设计决策
 
 > **Status**: active
-> **Created**: 2026-09-13 | **Updated**: 2026-10-15
+> **Created**: 2026-09-13 | **Updated**: 2026-10-17
 > **Owner**: Platform Team
 
-DWF-D46 与 DWF-D47 已确认，定义当前目标设计（轻量开发流硬切）。被其替代的旧决定在
+DWF-D46、DWF-D47 与 DWF-D48 已确认，定义当前目标设计。被其替代的旧决定在
 索引和正文中标记为 `superseded`；保留内容仅用于历史追溯，不再约束新实现。master 上
 2026-10-07/09 合并的 DWF-D42–D45（stable Plan in-place amendments、Agent 创建 worktree
 的 main-session provenance、单次 OWNER 动作单 workspace、machine-ledger schema 按
@@ -65,6 +65,7 @@ workspace 隔离）所依附的 PlanMount/OWNER/active-work 准入链由同一�
 | DWF-D45 | Isolate machine-ledger schema adoption by workspace | superseded by DWF-D46 |
 | DWF-D46 | 普通工作、可选任务记录、真实运行保护分别负责 | accepted |
 | DWF-D47 | Profile 授权开发运行，本地 commit 属于流程内部检查点 | accepted |
+| DWF-D48 | Complex Plans bind a human-readable outcome comparison | accepted |
 
 ## DWF-D46：普通工作、可选任务记录、真实运行保护分别负责
 
@@ -189,6 +190,57 @@ Profile、Git scope 和真实资源锁已经分别持有环境能力、源码边
 Agent 能独立完成从实现到 exact-source runtime 验证所需的环境准备和 checkpoint，
 同时只有验收后的结果才进入用户可见阶段性交付。未知主机、凭据、stable mutation、
 协作远端交付及历史操作仍然失败关闭或等待授权。
+
+## DWF-D48：复杂 Plan 绑定人类可读的执行前后效果对比
+
+**Status**: accepted
+**Date**: 2026-10-17
+
+### Context
+
+`plan.md`、Task Slice 和 Acceptance Execution 能约束实现与证明，却不能让人直接看清
+执行前后的使用体验、产品能力、架构和技术变化。过去的 amendment 文本只解释计划
+文件如何变化，不回答“实施后用户和工程究竟得到什么”。独立 companion report 又
+没有进入 Plan digest，目标内容可以在执行过程中漂移。
+
+### Decision
+
+- 所有新建的复杂正式 Plan 在当前未发布合同内包含 `outcome-comparison.md`；
+  不新增 `schemaVersion`、`v2` 或其它合成版本标签。
+- 报告计划区至少覆盖 `user-experience`、`product-capability`、`architecture`、
+  `technology`、`quality-operations` 五个维度。没有直接终端用户变化时，必须明确
+  记录无直接变化及开发者/运维影响。
+- 每个变化项有稳定 criterion ID，并映射到一个或多个 Task；Plan 声明的每个 Gate
+  也必须被至少一个 criterion 覆盖。
+- 计划区写明执行前事实及其依据、目标态、预期用户效果、架构变化、技术变化、明确
+  不变项和风险。其规范化摘要进入 `planVersionDigest`；冻结后修改计划区必须形成新
+  Plan Version。
+- 实际结果区不进入 Plan digest，允许执行期间按当前源码证据回填。状态只允许
+  `PASS | PARTIAL | BLOCKED | UNPROVEN | NOT_APPLICABLE`；`PASS/PARTIAL`
+  必须绑定源码身份和证据引用。
+- Completion Review 逐项核对实际效果和偏差。最终 Acceptance aggregate 或 completion
+  evidence 记录完整报告 SHA-256，使交付结论与人类可读结果快照一致。
+- 既有未带比较报告的 Plan 继续只读可验证，不批量伪造比较报告；任何后续正式修订
+  仍使用当前合同，并从当时可验证的 baseline 建立报告。
+
+### Rationale
+
+Plan digest 应冻结“预期改变什么”，而不是冻结执行日志；执行结果必须能随着真实证据
+更新，又不能反向篡改原目标。一个分区报告同时满足人类评审、Task/Gate 可追踪和
+实施后偏差审计，不需要第二套任务状态或外部流程服务。
+
+### Alternatives Considered
+
+- 只在交付消息中写总结：拒绝，因为跨会话不可审计，也无法在实施前确认预期。
+- 把整个报告放入 Plan digest：拒绝，因为实际结果回填会无意义地改变冻结 Plan。
+- 仅保存机器 JSON：拒绝，因为不能满足产品、用户体验和架构效果的人类评审。
+- 仅要求 UX 变化：拒绝，因为基础设施和架构 Plan 仍需解释产品能力、技术与运维影响。
+
+### Consequences
+
+Plan authoring、validator、review prompt 和 Completion Review 都增加同一份 outcome
+contract。报告不是实现完成证明；没有 current-source evidence 的项目保持
+`UNPROVEN`。计划区变更会使旧 Plan digest 失效，结果区变更只使其先前完成证据失效。
 
 ## DWF-D01: EXECUTE Owns A Mandatory Inner State Machine
 

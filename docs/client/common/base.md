@@ -1,134 +1,151 @@
-# Client: Cross-Platform Shared Strategy
+# Client Common Architecture
 
-> **Rules for Cross-Platform Sharing (Proto + API Contract + Applet SDK)**
-
----
-
-## 🎯 Overview
-
-The cross-platform sharing strategy has evolved from the legacy Flutter shared library model (`peers_touch_base` / `peers_touch_ui`) to a **Proto + API Contract + Applet SDK** model.
-
-**Background:**
-- **Mobile** has migrated from Flutter/native dual-platform UI to **Tauri v2 Mobile + shared Web UI + Rust + native plugins**.
-- **Desktop** is built with **Tauri + React/TS + Rust**.
-- The legacy Flutter shared libraries (`peers_touch_base` / `peers_touch_ui`) are no longer applicable and have been **archived as historical reference only**.
-- Android Kotlin and iOS Swift remain valid for native plugins, not as the primary UI mainline.
-
-**Current Sharing Strategy:**
-1. **Proto Model Layer**: `model/domain/**/*.proto` → each platform generates its own typed contracts.
-2. **Applet SDK**: `packages/applet-sdk/` → shared TS SDK reused directly within Lynx containers across platforms.
-3. **API Contract**: Station HTTP API paths and parameter structures → each platform independently implements its own HTTP Client.
+> **Status**: active
+> **Version**: v2.1
+> **Updated**: 2026-10-17
+> **Owner**: Client Platform Team
 
 ---
 
-## 📜 General Principles
+## 1. Scope
 
-### 1. Platform Agnostic
-- Proto definitions MUST remain language-neutral and platform-neutral.
-- Applet SDK MUST only depend on Lynx container APIs; no platform-specific native bridges.
-- API contracts define the **shape** (paths, params, response structures); each platform owns its HTTP client implementation.
-- If platform-specific logic is needed, define **interfaces at the Proto / API contract level** and implement them independently per platform.
+This document defines what Desktop and Mobile share and what remains
+client-form or release-target specific.
 
-### 2. Contract-Driven Separation
-- **Proto Model Layer** defines data structures and domain models only — no transport or UI concerns.
-- **Applet SDK** encapsulates applet lifecycle and communication — no business logic beyond applet orchestration.
-- **API Contract** specifies request/response schemas — no client implementation details leak into contract definitions.
+The governing architecture is
+[Cross-Client Runtime](../../architecture/platform/client/cross-client-runtime/README.md).
 
-### 3. Stability First
-- Changes to Proto definitions affect **ALL** platforms (Desktop, Android, iOS, Station).
-- **Breaking Changes**: Must be coordinated across all platform teams; use Proto field deprecation and reserved fields.
-- **Deprecation**: Mark deprecated Proto fields with `[deprecated = true]` and document migration paths before removal.
-- Applet SDK changes affect all platforms running Lynx containers — version and test accordingly.
+## 2. Shared Layers
 
----
+### 2.1 Model contracts
 
-## 📦 Dependency Graph
+`model/domain/**/*.proto` is the shared contract source. Desktop, Mobile, and
+Station consume generated contracts. No client maintains a parallel shared
+domain model.
 
-```mermaid
-graph TD
-    DesktopApp[Desktop App<br/>Tauri + React/TS + Rust] --> ProtoRust[Proto Model<br/>generated Rust]
-    DesktopApp --> AppletSDK[Applet SDK<br/>TS]
+### 2.2 Portable Rust mechanisms
 
-    MobileApp[Mobile App<br/>Tauri + Web UI + Rust] --> ProtoMobile[Proto Model<br/>generated Rust/TS]
-    MobileApp --> AppletSDKLynxM[Applet SDK<br/>TS in Lynx]
+Host-neutral Rust libraries under `packages/` may be embedded by Desktop and
+Mobile when they own reusable protocol, security, state, or transaction
+mechanisms.
 
-    NativePlugins[Android/iOS Plugins<br/>Kotlin + Swift] --> MobileApp
+Current client-consumed Rust libraries include:
 
-    Station[Station] --> ProtoGo[Proto Model<br/>generated Go]
+- `packages/messaging-core/`
+- `packages/secure-content-core/`
+- `packages/station-libp2p-http/`
+- `packages/station-trust/`
 
-    ProtoRust --> ProtoDef[model/domain/**/*.proto]
-    ProtoMobile --> ProtoDef
-    ProtoGo --> ProtoDef
+Each library retains its own semantic owner. Sharing code does not move
+business authority out of Station or contract authority out of Model.
 
-    AppletSDK --> AppletPkg[packages/applet-sdk/]
-    AppletSDKLynxM --> AppletPkg
+### 2.3 TypeScript packages
 
-    DesktopApp --> APIContract[Station HTTP API Contract]
-    MobileApp --> APIContract
+Shared TypeScript packages are capability-specific:
+
+- `packages/applet-contract/`
+- `packages/applet-kernel/`
+- `packages/applet-sdk/`
+- `packages/client-chat-core/`
+- `packages/client-media-security/`
+- `packages/client-storage/`
+- `packages/locales/`
+
+A package is shared only when both its API and ownership are intentionally
+cross-client. Similar source files inside Desktop and Mobile do not by
+themselves establish a shared package.
+
+Current shared semantic ownership is:
+
+- `client-chat-core`: IM projection, selectors, wire codec, composer
+  admission, and Chat Storage scope/reconciliation/retry;
+- `client-media-security`: media descriptor codec and browser-crypto policy;
+- `client-storage`: storage domains, scopes, envelopes, keys and repositories.
+
+Desktop/Mobile adapters bind generated Model types, transport and lifecycle.
+They do not duplicate the shared state machine or codec. Chat geometry and
+composer profiles remain in each Client Form's presentation-policy module.
+
+### 2.4 Product contracts
+
+Cross-client product semantics live in domain or common client documents, for
+example:
+
+- Chat lifecycle and Messaging Platform architecture;
+- shared UI Identity;
+- form-control and Chat UX contracts;
+- Frontend Runtime lifecycle and admission semantics.
+
+These contracts define common outcomes. Desktop and Mobile may use different
+presentation policies.
+
+## 3. Client-Form Responsibilities
+
+Desktop owns:
+
+- desktop navigation, windowing, shortcuts, tray, and dense layout;
+- Desktop Tauri host integration;
+- Desktop runtime projections and local OS ports.
+
+Mobile owns:
+
+- mobile navigation, touch, safe areas, keyboard, and background/resume;
+- one shared Mobile presentation/runtime tree;
+- Android and iOS host adapters and native capability plugins.
+
+Android and iOS are release targets of one Mobile product. They do not own
+separate feature or business-state trees.
+
+## 4. Dependency Rules
+
+```text
+Presentation
+  -> client runtime projections
+  -> Desktop/Mobile Rust host
+  -> portable Rust core and typed runtime ports
+  -> generated Model contracts and Station APIs
 ```
 
----
+Rules:
 
-## 🔗 Cross-Platform Shared Layers
+- presentation does not call OS SDKs directly;
+- native plugins do not mutate product stores;
+- portable cores do not import Tauri or UI types;
+- client-local durable state has an explicit local owner and migration policy;
+- Station confirms shared business outcomes;
+- evidence from Desktop, Android, or iOS proves only its declared runtime cell.
 
-### Proto Model Layer
-- **Source**: `model/domain/**/*.proto`
-- **Generation targets**:
-  - Desktop (Rust): via `protoc` + Rust plugin
-  - Android (Kotlin): via `protoc` + Kotlin/Java plugin
-  - iOS (Swift): via `protoc` + Swift plugin
-  - Station (Go): via `protoc` + Go plugin
-- **Rule**: All domain models, enums, and message types are defined here as the single source of truth.
+## 5. Package Admission
 
-### Applet SDK
-- **Source**: `packages/applet-sdk/`
-- **Runtime**: Runs inside Lynx containers on Desktop, Android, and iOS.
-- **Rule**: Provides a unified TS API for applet lifecycle, communication, and data access. Each platform hosts the Lynx container natively and bridges into the SDK.
+A new shared package requires:
 
-### API Contract
-- **Definition**: Station HTTP API — paths, HTTP methods, request/response parameter structures.
-- **Rule**: Each platform independently implements its own HTTP client (Rust `reqwest` for Desktop, `OkHttp`/`Ktor` for Android, `URLSession` for iOS) but all conform to the same API contract.
+1. a named semantic owner;
+2. an accepted cross-client contract or a second real consumer ready to use it;
+3. no duplicate source of truth;
+4. explicit public API and dependency direction;
+5. focused tests for shared semantics;
+6. architecture capability registration with canonical root and consumers;
+7. separate host integration evidence where applicable.
 
----
+When cross-client scope is already known, extract from the first
+implementation. Otherwise extraction must complete before the second consumer
+merges. Do not create a package merely because code looks similar when product
+or lifecycle semantics differ.
 
-## 🛠️ Development Workflow
+Reuse placement follows this order:
 
-1. **Modify Proto Definitions**:
-   - Edit `.proto` files in `model/domain/`.
-   - Run code generation for all target platforms to produce updated typed contracts.
-   - Verify generated code compiles on each platform.
+1. Model/Proto contract;
+2. portable Rust core;
+3. shared TypeScript core;
+4. policy-neutral shared UI primitive;
+5. Desktop/Mobile Presentation Policy;
+6. Desktop/Android/iOS Host adapter.
 
-2. **Modify Applet SDK**:
-   - Edit files in `packages/applet-sdk/`.
-   - Run TS type checks and tests within the package.
-   - Test in Lynx container environments on at least one platform.
+## 6. Related Sources
 
-3. **Modify API Contract**:
-   - Update Station API endpoints and document the contract changes.
-   - Update each platform's HTTP client implementation to conform to the new contract.
-   - Run integration tests across platforms.
-
-4. **Cross-Platform Verification**:
-   - Proto changes → regenerate and build on all platforms.
-   - Applet SDK changes → test on Desktop + at least one Mobile platform Lynx container.
-   - API contract changes → verify all platform HTTP clients against the updated Station.
-
----
-
-## 📁 Archived Packages
-
-The following legacy Flutter shared libraries have been **archived** and are retained for historical reference only:
-- `peers_touch_base` — former shared core logic, data models, networking, and utilities.
-- `peers_touch_ui` — former shared UI components, theme tokens, and design system.
-
-These packages are **NOT** used in the current architecture. Do not add new code to them.
-
----
-
-## 📚 Related Documents
-
-- **Common UX Methodology**: [ux-design-methodology.md](./ux-design-methodology.md)
-- **Form Control UX Contract**: [form-control-ux-contract.md](./form-control-ux-contract.md)
-- **Package Details**: [packages.md](./packages.md)
-- **Desktop Usage**: [../desktop/base.md](../desktop/base.md)
-- **Mobile Usage**: [../mobile/base.md](../mobile/base.md)
+- [Cross-Client Runtime](../../architecture/platform/client/cross-client-runtime/README.md)
+- [Frontend Runtime](../../architecture/platform/client/frontend-runtime/README.md)
+- [Desktop](../desktop/base.md)
+- [Mobile](../mobile/base.md)
+- [Shared packages](./packages.md)
+- [UI Identity](./ui-identity/README.md)

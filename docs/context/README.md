@@ -64,6 +64,10 @@ docs/context/
 
 Technical reports documenting completed feature implementations:
 
+- [**Android / iOS / Desktop Alignment Audit**](./implementation-reports/20261016-android-ios-mobile-desktop-alignment-audit.md)
+  - 基于 `a32dce8acac78794f8775dbad7bb7e6967b74104` 的 Infra、Chat、Social 当前源码快照审计
+  - 结合 Native Acceptance、真实截图、确认原型和 Android/iOS 官方规范，对比用户结果、系统链路、架构不对称、证据边界和收敛优先级
+
 - [**Desktop Global Lag Diagnosis**](./implementation-reports/20260706-desktop-global-lag-diagnosis.md)
   - Desktop 一级导航、二级 tab、右键菜单全局卡顿的框架级诊断报告
   - 包含 Vite browser、Tauri bridge、production build/preview、offline/no-gateway 基线边界
@@ -148,7 +152,7 @@ When moving documents here, add metadata at the top:
 ## 📚 Related Documentation
 
 - [Project Identity](../global/project-identity.md) - What is Peers-Touch?
-- [Architecture Overview](../global/architecture.md) - System architecture
+- [Architecture Overview](../architecture/architecture.md) - System architecture
 - [Docs Entry](../README.md) - Start here for document layering and navigation
 - [Extended Index](../meta/INDEX.md) - Complete directory index
 

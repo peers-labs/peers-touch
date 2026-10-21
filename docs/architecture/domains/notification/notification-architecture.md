@@ -70,14 +70,14 @@ Build a notification system that:
 
 ## 3. Architectural Identity
 
-### 3.1 Position in the Three-Tier Architecture
+### 3.1 Position in the Runtime and Contract Architecture
 
-In the Peers-Touch three-tier architecture (Client → Model → Station),
-Notification is a derived business domain that spans all three tiers. It owns
-notification entities and their lifecycle, but never owns the source-domain
-action that triggered a notification.
+Notification spans the Client ↔ Station runtime boundary and uses shared Model
+contracts. It owns notification entities and their lifecycle, but never owns
+the source-domain action that triggered a notification. Model defines wire
+meaning; it is not a runtime hop in this flow.
 
-**Station tier**: Notification is a derived business domain, not an authority
+**Station runtime**: Notification is a derived business domain, not an authority
 for Social, Chat, Task, or System actions. Social interactions, chat messages,
 task states, and follow relationships are owned by their respective domain
 SubServers. Notification observes these domains through a single-function
@@ -87,7 +87,7 @@ notification subsystem must be **failure-transparent** to all source domains.
 If the Notification SubServer is unavailable, posting, chatting, following,
 and task management must continue unimpaired.
 
-**Client tier**: Notification is the **cross-domain attention aggregation surface**. It is the only subsystem that legitimately combines signals from Social, Chat, Task, and System domains into a single user-facing stream. This cross-domain aggregation right is what makes Notification architecturally distinct from any single business domain's UI. The delivery channels — SSE, push notifications, sound alerts — are extensions of this aggregation surface across different physical endpoints and connectivity states.
+**Client runtime**: Notification is the **cross-domain attention aggregation surface**. It is the only subsystem that legitimately combines signals from Social, Chat, Task, and System domains into a single user-facing stream. This cross-domain aggregation right is what makes Notification architecturally distinct from any single business domain's UI. The delivery channels — SSE, push notifications, sound alerts — are extensions of this aggregation surface across different physical endpoints and connectivity states.
 
 **Business flow**: Notification is an **async side-effect**. Its relationship to business actions is that of echo to action — the action's success or failure does not depend on the echo's delivery. A post-like succeeds regardless of whether the notification was created, delivered, or read. This side-effect nature means notification data is eventually consistent with business state, not transactionally bound to it.
 
@@ -108,7 +108,7 @@ and task management must continue unimpaired.
 |---------|-------|------------------------|
 | Business domain state (likes, messages, follows) | Domain SubServers (social, friend_chat, etc.) | Observer — reacts to domain actions via `Produce()` |
 | Cross-station federation | Station federation layer | Consumer — federation delivers remote events locally; notification sees only local events |
-| Client UI rendering | Desktop (React/TS), Mobile (Kotlin/Swift) | Contract provider — defines data shape; client owns rendering and locale |
+| Client UI rendering | Desktop React/TS, shared Mobile React/TS | Contract provider — defines data shape; each client form owns rendering and locale; Kotlin/Swift remain native capability adapters |
 | Push infrastructure credentials | Station owner | Configuration consumer — reads APNs/FCM delivery credentials and derives the registration-protection key |
 | EventSystem transport | Events SubServer / frame layer | Reuser — publishes events through existing SSE + Broker infrastructure |
 
@@ -1633,8 +1633,12 @@ Asset location per platform:
 | Platform | Path |
 |----------|------|
 | Desktop | `apps/desktop/public/sounds/` (bundled as Tauri resource) |
-| iOS | `apps/mobile/ios/PeersTouch/Resources/Sounds/` (bundle resource) |
-| Android | `apps/mobile/android/app/src/main/res/raw/` (resource directory) |
+| iOS | `apps/mobile/src-tauri/gen/apple/` host resource bundle |
+| Android | `apps/mobile/src-tauri/gen/android/app/src/main/res/raw/` |
+
+The current Mobile host trees do not contain these sound assets. Sound
+delivery remains `UNPROVEN` on Android and iOS until the resources, native
+notification configuration, and source-bound runtime evidence exist.
 
 #### Desktop — Web Audio API
 

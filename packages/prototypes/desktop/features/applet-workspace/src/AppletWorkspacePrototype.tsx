@@ -192,7 +192,7 @@ export function AppletWorkspacePage() {
     setInstances((items) => items.filter((item) => item.id !== instanceId));
     if (activeTabId === instanceId) {
       const remaining = instances.filter((item) => item.id !== instanceId);
-      setActiveTabId(remaining.at(-1)?.id ?? 'home');
+      setActiveTabId(remaining[remaining.length - 1]?.id ?? 'home');
     }
     setNotice('已关闭');
   };

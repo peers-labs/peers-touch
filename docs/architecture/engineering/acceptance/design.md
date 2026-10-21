@@ -543,6 +543,16 @@ pointer丢失。
 
 ### 3.10 Native Runtime Cell Contract
 
+Physical Mobile cells attach to the already-ready `MobileNativeProvisioner`
+through a `RuntimeCellEvidence.to_dict()` projection. The registry receives the
+existing environment owner. It must not instantiate another environment, build,
+device broker, client, or Appium session. Mobile validates the current source,
+build ArtifactRef and physical lease ArtifactRefs in its concrete adapter.
+Device handles and ephemeral capabilities remain in the parent Provisioner.
+Cell `stop()` detaches the projection; runner environment cleanup remains the
+only resource cleanup owner. Desktop retains its existing contract and manifest.
+An absent physical owner or stale build blocks before Gate execution.
+
 Native Desktop Gate 可声明 `requiredRuntimeCells`。每个 cell 由独立 contract
 解析，运行结果按 `(gateId, cellId, sourceCommit)` 隔离：
 
@@ -1241,9 +1251,11 @@ executable bundle一致。Preflight通过supervised `BUNDLE_PREPARER`一次读�
 sources并在owner-only temporary directory构造process-local source capture；token绑定
 capture identity/digest，allocation只消费该capture一次并把exact bytes持久化为
 requirement-record ArtifactRefs及canonical executable bundle，不按path重读。
-Acceptance Infra固定bootstrap closure只含
-`core/finalization_contracts.py`、`core/finalizer_worker.py`和
-`core/finalization_supervisor.c`；Mobile generated
+Acceptance Infra固定bootstrap closure按UTF-8 lexical order只含
+`core/finalization_contracts.py`、`core/finalization_supervisor.c`、
+`core/finalizer_worker.py`和`core/result_contracts.py`；
+`result_contracts.py`是finalization contracts的既有canonical result依赖，
+必须同样capture/hash，不得通过package初始化隐式加载worktree其它模块。Mobile generated
 registration提供business validator/contract/schema closure。两组path/raw hash及
 bootstrap source digest均进入capture、requirement record和executable identity。
 Preflight also runs a separate supervised `RUNTIME_CAPTURE` before allocation. It
@@ -1257,8 +1269,11 @@ manifest length, JCS `captureId + measurement + ordered files` manifest, then
 big-endian length-prefixed exact file bytes in the runtime identity total order.
 Allocation and historical validation reconstruct the same bytes from persisted
 runtime ArtifactRefs and must reproduce the raw bundle SHA-256.
-The request carries a closed `RuntimePathInput` only for supervisor, Python,
-compiler and FILE-stdlib paths. Loaded-image identity is never caller supplied;
+The request carries a closed `RuntimeMeasurementBasis` binding reviewed
+supervisor source/build, protocol, complete stdlib closure and Core bootstrap
+digest, plus `RuntimePathInput` only for supervisor, Python, compiler and
+FILE-stdlib paths. The paths must equal the basis FILE closure. Loaded-image
+identity is never caller supplied;
 the worker-owned loader probe exclusively enumerates standalone/shared-cache
 images after loading the fixed bootstrap/import allowlist.
 Prepare、manifest parse和expand统一限制为64 files、512-byte path、
@@ -1316,7 +1331,7 @@ duplicates，任一失败双方关闭本次全部duplicates。完整identity另�
 `requestIdentityDigest`，因此worker kind和ordered roles不依赖只覆盖payload的digest。
 Finalizer request禁止ancillary FD。
 `PrepareBundleRequest`、`CaptureRuntimeRequest`、`MaterializeSnapshotRequest`、
-`ExecuteFinalizerRequest`和五种maintenance request组成closed worker request union；
+`ExecuteFinalizerRequest`、`PersistAuthorityRuntimeRequest`和五种maintenance request组成closed worker request union；
 每种non-maintenance worker同时拥有exact completed/failed result variant与
 `workerResultDigest`。因此每个worker kind的`requestPayloadDigest`和result都可独立
 重算，unknown shape直接拒绝。
@@ -1325,6 +1340,13 @@ READY、request acceptance、armed/worker-ready、bounded diagnostics、result�
 exit/signal/timeout、runner cancel request/cancel acknowledgement和close/close-ack。
 SCM_RIGHTS datagram只接受closed `DescriptorTransferFrame`并与stream request完整
 identity/correlate；每个frame有exact keys、frame digest和state-order validation。
+`finalization_contracts.py`中的`WorkerRequestFrame`、`WorkerResultFrame`与
+`SupervisorSession`是全部六种worker的唯一协议入口；result decoder始终使用原始
+request选择row，并校验完整identity。零descriptor的finalizer从request直接进入
+acceptance，其余row必须先完成descriptor transfer。`WRITE_ABORT_EVENT`使用固定
+60秒worker timer，其他row的armed timer必须等于已验证request的timeout。
+`closedAfterFailure`仅在失败会话收到有效close acknowledgement后为true，并保留
+原始typed failure供调用方判定。
 Supervisor session正常路径遵循
 `STARTING -> READY -> REQUEST_ACTIVE -> READY -> CLOSING -> CLOSED`；协议或process
 failure先进入保留typed failure的`FAILED`，再且仅能
@@ -1345,6 +1367,10 @@ open、fstat、bounded chunk和hash验证返回allowlisted payload；Linux使用
 host逐component `openat(O_DIRECTORY | O_NOFOLLOW)`并验证每层，不能只保护final
 component。Runner再通过stdin传给finalizer。Seal后不再读取或materialize artifact。
 Binary artifact只传ref/hash。
+每个inventory entry使用closed `ArtifactMaterializationInput`绑定
+`roleName + discriminator + ArtifactRef + payloadKind + schema identity`；
+`CANONICAL_JSON`要求`application/json`与非空schema，`BINARY`禁止schema，Runtime
+Manifest必须是JSON。Core只按该输入构造opaque payload，不从role name猜测schema。
 Finalizer不接收artifact root或绝对路径，使用sanitized environment与isolated
 temporary cwd；输入超过Catalog limit时fail closed。
 Python worker以`-I -S -E -B`启动，`sys.path`只含verified bundle与hashed stdlib
@@ -1988,7 +2014,8 @@ contract。两组都通过之前，D-19 capability不得宣称产品proof closur
   manifest、single-entry、expanded-byte、temporary-storage和wall-time hard limits，
   stored bundle、执行副本和逐文件hash必须一致，invocation digest绑定全部bytes。
 - source-capture closure必须同时包含固定Infra
-  `finalization_contracts.py/finalizer_worker.py/finalization_supervisor.c` raw hashes
+  `finalization_contracts.py/finalization_supervisor.c/finalizer_worker.py/result_contracts.py`
+  raw hashes
   与domain-neutral generated
   fixture source inventory；requirement record持久化capture ID/digest/bundle digest和
   每个component ArtifactRef。Historical reader必须从这些ArtifactRefs按

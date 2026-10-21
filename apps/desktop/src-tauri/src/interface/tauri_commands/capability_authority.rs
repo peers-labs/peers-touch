@@ -124,6 +124,18 @@ pub fn agent_capability_readiness(
     }
 }
 
+#[tauri::command]
+pub fn agent_command_capability_snapshot(
+    input: CapabilityReadinessInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Vec<u8>> {
+    match authenticated_token(&state, &window) {
+        Ok(token) => capability_authority::command_snapshot(state.station.client(), input, &token),
+        Err(error) => error,
+    }
+}
+
 #[cfg(feature = "acceptance-webdriver")]
 #[tauri::command]
 pub fn agent_capability_acceptance_scenario_prepare(

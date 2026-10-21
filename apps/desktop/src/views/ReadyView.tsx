@@ -9,12 +9,11 @@ import {
 import { listen } from '@tauri-apps/api/event';
 import { GlobalLayout } from '../components/GlobalLayout';
 import { AppSideNav } from '../components/AppSideNav';
-import { AgentCreateDialogHost } from '../components/agent/create';
+import { AgentModuleNav } from '../components/agent/AgentModuleNav';
 import { PageRouter } from '../components/PageRouter';
 import { CommandMenu } from '../components/CommandMenu';
 import { useHashRouter } from '../hooks/useHashRouter';
 import { useNavigation } from '../hooks/useNavigation';
-import { useAppletPins } from '../hooks/useAppletPins';
 import { useCommandMenuShortcut } from '../hooks/useCommandMenuShortcut';
 import { notifyActiveAppletPage } from '../runtimes/appletsRuntime';
 import { PageHost } from '../kernel/PageHost';
@@ -35,7 +34,6 @@ registerKernelPages();
 export function ReadyView({ lifecycle: _lifecycle }: ReadyViewProps) {
   const router = useHashRouter();
   const navigation = useNavigation(router);
-  const appletPins = useAppletPins();
   const setChatSurfaceVisible = useNavigationBadgeStore((s) => s.setChatSurfaceVisible);
   const standaloneApplet = isStandaloneAppletShell() && router.page.startsWith('applet:');
 
@@ -92,34 +90,43 @@ export function ReadyView({ lifecycle: _lifecycle }: ReadyViewProps) {
       <AppSideNav
         page={router.page}
         navigation={navigation}
-        appletPins={appletPins}
       />
     </ShellCommitProfiler>
   );
 
   return wrapReadyShellCommitProfiler(
-    <PageContextProvider value={{ router, navigation, appletPins }}>
+    <PageContextProvider value={{ router, navigation }}>
       <GlobalLayout sideNav={sideNav}>
-        <ShellCommitProfiler owner="shell:page-host" surface="page-host">
-          <PageHost
-            page={router.page}
-            fallback={
-              <PageRouter
+        <div style={{
+          width: '100%',
+          height: '100%',
+          minWidth: 0,
+          minHeight: 0,
+          display: 'flex',
+          flexDirection: 'column',
+        }}>
+          <AgentModuleNav page={router.page} navigation={navigation} />
+          <div style={{ flex: 1, minWidth: 0, minHeight: 0, position: 'relative' }}>
+            <ShellCommitProfiler owner="shell:page-host" surface="page-host">
+              <PageHost
                 page={router.page}
-                router={router}
-                navigation={navigation}
-                appletPins={appletPins}
+                fallback={
+                  <PageRouter
+                    page={router.page}
+                    router={router}
+                    navigation={navigation}
+                  />
+                }
               />
-            }
-          />
-        </ShellCommitProfiler>
+            </ShellCommitProfiler>
+          </div>
+        </div>
       </GlobalLayout>
       <CommandMenu
         navigateTo={navigation.navigateTo}
         navigateToAgentSurface={navigation.navigateToAgentSurface}
         navigateToSettings={navigation.navigateToSettings}
       />
-      <AgentCreateDialogHost />
     </PageContextProvider>,
   );
 }

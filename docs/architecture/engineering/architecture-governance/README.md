@@ -1,8 +1,8 @@
 # 架构模块治理
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-09-27 | **Updated**: 2026-10-05
+> **Version**: v1.3
+> **Created**: 2026-09-27 | **Updated**: 2026-10-17
 > **Owner**: Architecture Team
 > **Module**: `docs/architecture/`, `tooling/scripts/`, `tooling/plugins/`
 
@@ -16,6 +16,10 @@
 - taxonomy index 与嵌套 module root 的机器契约；
 - 已知 document collection 与 capability-owning module 的显式分离；
 - 模块 owner、代码作用域、契约根和消费方的正向登记；
+- 跨客户端共享 direct dependency 与 capability 登记的一致性；
+- 有界跨客户端分叉与 accepted decision、路径、证据和 review trigger 的一致性；
+- module registry 驱动的架构索引、统一 SVG renderer、稳定 Diagram ID 与
+  Markdown 反向引用；
 - 编辑前知识与架构上下文回执；
 - Plan、Review 和 CI 的 fail-closed 校验；
 - 当前架构文档只描述目标状态的约束。
@@ -56,6 +60,8 @@
 | [module-layout.md](./module-layout.md) | 文档与工具的目标目录 |
 | [integration.md](./integration.md) | Plan、Hook、Review、CI 与存量模块接入 |
 | [state-machines.md](./state-machines.md) | 全端状态机目录与 owner 索引 |
+| [Architecture Index](../../README.md) | Registry 驱动的 active module 索引 |
+| [Diagram References](../../references.md) | canonical 架构图反向引用 |
 | [execution-plans/20260927-architecture-module-governance/plan.md](./execution-plans/20260927-architecture-module-governance/plan.md) | 实施 Plan |
 
 ## 5. 当前状态

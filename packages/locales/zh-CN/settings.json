@@ -10,6 +10,7 @@
   "settings.module.account": "账户",
   "settings.module.providers": "提供商",
   "settings.module.models": "模型服务",
+  "settings.module.discover": "发现",
   "settings.module.memory": "记忆",
   "settings.module.skills": "技能",
   "settings.module.mcp": "MCP",

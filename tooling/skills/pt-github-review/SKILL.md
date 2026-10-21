@@ -331,6 +331,7 @@ Treat these as blocking unless the user explicitly asks for exploratory review:
 | `silent-error` | swallowed errors, ignored errors, empty catches, or missing context |
 | `logging-security` | logs tokens, passwords, secrets, or PII |
 | `architecture-boundary` | lower layer redefines architecture or platform ownership |
+| `architecture-viewpoint` | an architecture diagram mixes module, runtime, reuse, authority, deployment, or generation semantics, depicts Model as a runtime hop solely because contracts are proto-first, or changes a canonical Diagram spec without refreshing its SVG, index, and reverse references |
 | `architecture-module-governance` | a changed active architecture module is unregistered, incomplete, overlaps another module, or references undeclared capabilities |
 | `duplicate-side-effect-import` | same dynamic import path appears 2+ times in a single file |
 | `user-home-absolute-path` | committed documentation-like text contains a developer or CI user-home absolute path instead of a repo-relative path or portable placeholder |
@@ -397,11 +398,86 @@ Block or hold when:
 
 ## Platform Review Playbooks
 
+### Outcome Comparison Review
+
+For a complex Plan with an outcome comparison, or a change that updates its
+results, check:
+
+- the report covers user experience, product capability, architecture,
+  technology, and quality/operations in language a product or engineering
+  owner can understand;
+- baseline claims distinguish source facts, runtime observations, audits,
+  inferences, and unverified assumptions;
+- each outcome criterion maps to real Tasks and declared Gates, and all
+  Tasks/Gates are covered;
+- user-facing criteria describe concrete Journeys, feedback, recovery, and
+  platform differences rather than generic "experience improvement";
+- architecture criteria name old/new owners, sources of truth, dependency
+  direction, deleted paths, and explicit non-goals;
+- technology criteria name contract, state, storage, build, security,
+  performance, observability, migration, and rollback effects that materially
+  change;
+- the digest-bound planned section is unchanged during execution;
+- `PASS/PARTIAL` actual results bind current source and concrete evidence, and
+  no Task/Gate status is promoted automatically into an outcome claim;
+- the final completion or aggregate evidence binds the exact full report
+  digest.
+
+### Cross-Client Reuse Review
+
+For Desktop/Mobile/Android/iOS architecture changes, check:
+
+- classify contract, portable mechanism, renderer-neutral logic,
+  policy-neutral entity UI, product-form behavior, and OS capability as
+  independent placement axes rather than an ordered runtime stack;
+- select the narrowest canonical semantic owner whose lifecycle and variation
+  axis match the behavior;
+- query the architecture capability registry and workspace manifests before
+  accepting a new local package, crate, component, codec, cache, selector,
+  state machine, persistence owner, or DTO;
+- require the second semantic consumer to reuse or extract the canonical asset
+  before merge; known cross-client contract/security/protocol/persistence/
+  identity semantics are shared from the first implementation;
+- keep Android and iOS on one Mobile product/runtime/component tree;
+- keep Desktop/Mobile layout, navigation, gesture, focus, safe-area, keyboard,
+  and window behavior in Presentation Policy rather than a condition-heavy
+  universal component;
+- treat ordinary shells and typed OS/runtime-port adapters as specialization,
+  not semantic divergence;
+- require every parallel semantic implementation outside the shared
+  policy/port contract to have a current `reuseDivergences` record bound to an
+  accepted decision, canonical capability, dependent implementation
+  capabilities/roots, consumers, evidence Gates, and review trigger;
+- reject unregistered Desktop/Mobile shared direct workspace dependencies;
+- keep platform runtime evidence independent: shared tests, Android, iOS, and
+  Desktop cells do not prove one another.
+- require each architecture diagram to declare exactly one supported
+  viewpoint: `System Context`, `Logical Layer`, `Module Map`, `Runtime
+  Topology`, `Reuse Topology`, `Authority Map`, `Deployment Topology`,
+  `Dynamic Flow`, or `Control Plane`, with one stated arrow meaning;
+- require canonical project diagrams and new or redrawn module diagrams to use
+  a module-local `*.diagram.json` and the shared SVG renderer; Markdown must
+  embed the generated SVG without exposing renderer syntax or machine metadata;
+- run `node tooling/scripts/architecture/diagram-render.mjs --check` when a
+  canonical Diagram spec or SVG changes;
+- run `node tooling/scripts/architecture/document-index.mjs --check` when a
+  canonical SVG, architecture module registry, architecture index, or
+  diagram reference changes;
+- require generated SVGs to be rasterized and visually reviewed for hierarchy,
+  text fit, coherent connector routing, and accidental overlap; schema and XML
+  validity alone are insufficient;
+- reject contract authoring or reuse-classification sequences presented as
+  runtime or authority hierarchy. In runtime views, Client talks to Station
+  directly; Model stays outside the live node path as their shared contract
+  substrate.
+
 ### Proto Review
 
 Check:
 
 - shared concepts live in `model/domain/*.proto`;
+- proto-first is a contract authoring constraint, not evidence that Model is a
+  runtime tier, request intermediary, or visually dominant module;
 - field numbers are stable and removed fields are reserved;
 - generated files are not manually edited;
 - Station, Desktop, and Mobile contract consumers are updated or staged safely.

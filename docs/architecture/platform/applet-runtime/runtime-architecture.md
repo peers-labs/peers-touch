@@ -65,8 +65,8 @@ CapabilityGateway
 | Environment | Container | UI Runtime | Bridge | Gateway owner | 状态 |
 |-------------|-----------|------------|--------|---------------|------|
 | Desktop | Tauri WebView Host | Lynx for Web (`<lynx-view>`) | NativeModules → Rust Capability Gateway | Desktop Rust | 主线 (spike required) |
-| Android | Native Applet Container | Native LynxView | NativeModule Kotlin | Android native / Station client | 主线 |
-| iOS | Native Applet Container | Native LynxView | NativeModule Swift | iOS native / Station client | 主线 |
+| Android | Tauri native-plugin container | Native LynxView | Kotlin adapter → shared Mobile Rust gateway | Shared Mobile Rust Applet Kernel | 主线 |
+| iOS | Tauri native-plugin container | Native LynxView | Swift adapter → shared Mobile Rust gateway | Shared Mobile Rust Applet Kernel | 主线 |
 | HarmonyOS | reserved native plugin route | Lynx Harmony adapter if available | ArkTS NativeModule | Harmony native / Station client | 预留 |
 | Web | Web Host page | Lynx for Web 或 Web Host Renderer | injected host bridge | Web Host BFF / Station | 主线 |
 

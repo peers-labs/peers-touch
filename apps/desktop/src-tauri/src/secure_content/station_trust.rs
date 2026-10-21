@@ -186,8 +186,10 @@ fn require_authenticated_station_origin(origin: &str) -> Result<(), String> {
         || url.query().is_some()
         || url.fragment().is_some()
     {
-        return Err("Secure Content Station transport requires a canonical HTTP or HTTPS origin"
-            .to_string());
+        return Err(
+            "Secure Content Station transport requires a canonical HTTP or HTTPS origin"
+                .to_string(),
+        );
     }
     Ok(())
 }

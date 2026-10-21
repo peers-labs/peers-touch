@@ -220,6 +220,7 @@ export interface PublicStationEntry {
     endpointOrigin: string;
     relayPeerId?: string;
     routeGeneration: number;
+    attestationExpiresAtUnixMs?: number;
     health: 'available' | 'degraded' | 'unavailable' | 'revoked';
   }[];
 }

@@ -2,10 +2,16 @@
 
 use serde::Deserialize;
 use tauri::{command, AppHandle, Manager, Runtime, State};
-use tauri_plugin_peers_platform_permissions::PlatformPermissions;
+use tauri_plugin_peers_platform_permissions::{
+    NativeCapabilityState, NativeSystemActionState, PlatformPermissions,
+};
 
 use crate::error::MobileResult;
 use crate::platform::background_bridge;
+use crate::platform::ios::{
+    CapabilityFact, CapabilityFactState, PlatformHostPort, SystemAction, SystemActionOutcome,
+    SystemActionState,
+};
 use crate::platform::lifecycle_bridge::{
     self, LifecycleBridgeResult, NativeLifecycleEvent, NativeLifecycleSignal,
     ResumeReconciliationReport,
@@ -25,6 +31,170 @@ use crate::platform::push_bridge::{
     PushDrainProjection, PushScopeInput, ScheduledDrainProjection,
 };
 use crate::platform::secure_storage::SecureStorage;
+use crate::platform::MobilePlatform;
+
+const HOST_CAPABILITIES: &[&str] = &[
+    "background-execution",
+    "camera",
+    "document-picker",
+    "microphone",
+    "notifications",
+    "photo-library",
+    "push",
+    "share",
+    "system-settings",
+];
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CapabilityObservationInput {
+    capability: String,
+}
+
+#[command]
+pub async fn capability_observe<R: Runtime>(
+    app: AppHandle<R>,
+    mobile_platform: State<'_, MobilePlatform>,
+    input: CapabilityObservationInput,
+) -> MobileResult<CapabilityFact> {
+    if !HOST_CAPABILITIES.contains(&input.capability.as_str()) {
+        return Err(crate::error::MobileError::invalid_input(
+            "host capability is not part of the Mobile contract",
+        ));
+    }
+    let host = app.try_state::<PlatformPermissions<R>>().ok_or_else(|| {
+        crate::error::MobileError::coded(
+            "MOBILE_PLATFORM_HOST",
+            "native platform plugin is not registered",
+        )
+    })?;
+    let observation = host
+        .observe_capability(&input.capability)
+        .await
+        .map_err(|error| {
+            crate::error::MobileError::coded(
+                "MOBILE_PLATFORM_HOST",
+                format!("failed to observe host capability: {error}"),
+            )
+        })?;
+    if observation.timestamp_ms == 0
+        || observation.source.trim().is_empty()
+        || observation.source.len() > 128
+        || observation
+            .detail
+            .as_deref()
+            .is_some_and(|detail| detail.is_empty() || detail.len() > 256)
+    {
+        return Err(crate::error::MobileError::coded(
+            "MOBILE_PLATFORM_HOST",
+            "native capability observation is malformed",
+        ));
+    }
+    Ok(CapabilityFact {
+        capability: input.capability,
+        release_target: mobile_platform.release_target(),
+        state: match observation.state {
+            NativeCapabilityState::Available => CapabilityFactState::Available,
+            NativeCapabilityState::Unavailable => CapabilityFactState::Unavailable,
+            NativeCapabilityState::Denied => CapabilityFactState::Denied,
+            NativeCapabilityState::Restricted => CapabilityFactState::Restricted,
+            NativeCapabilityState::Unsupported => CapabilityFactState::Unsupported,
+            NativeCapabilityState::Unknown => CapabilityFactState::Unknown,
+        },
+        observed_at: format!("unix-ms:{}", observation.timestamp_ms),
+        source: observation.source,
+        detail: observation.detail,
+    })
+}
+
+#[command]
+pub async fn system_action_execute<R: Runtime>(
+    app: AppHandle<R>,
+    mobile_platform: State<'_, MobilePlatform>,
+    action: SystemAction,
+) -> MobileResult<SystemActionOutcome> {
+    let host = app.try_state::<PlatformPermissions<R>>().ok_or_else(|| {
+        crate::error::MobileError::coded(
+            "MOBILE_PLATFORM_HOST",
+            "native platform plugin is not registered",
+        )
+    })?;
+    let (kind, text, url) = native_action_fields(&action)?;
+    let outcome = host
+        .execute_system_action(kind, text, url)
+        .await
+        .map_err(|error| {
+            crate::error::MobileError::coded(
+                "MOBILE_PLATFORM_HOST",
+                format!("failed to execute host system action: {error}"),
+            )
+        })?;
+    if outcome
+        .reason
+        .as_deref()
+        .is_some_and(|reason| reason.is_empty() || reason.len() > 256)
+    {
+        return Err(crate::error::MobileError::coded(
+            "MOBILE_PLATFORM_HOST",
+            "native system action outcome is malformed",
+        ));
+    }
+    Ok(SystemActionOutcome {
+        release_target: mobile_platform.release_target(),
+        state: match outcome.state {
+            NativeSystemActionState::Completed => SystemActionState::Completed,
+            NativeSystemActionState::Cancelled => SystemActionState::Cancelled,
+            NativeSystemActionState::Unavailable => SystemActionState::Unavailable,
+            NativeSystemActionState::Failed => SystemActionState::Failed,
+        },
+        reason: outcome.reason,
+    })
+}
+
+fn native_action_fields(
+    action: &SystemAction,
+) -> MobileResult<(&'static str, Option<&str>, Option<&str>)> {
+    match action {
+        SystemAction::OpenAppSettings => Ok(("open_app_settings", None, None)),
+        SystemAction::OpenExternalUrl { url } => {
+            validate_external_url(url)?;
+            Ok(("open_external_url", None, Some(url.as_str())))
+        }
+        SystemAction::Share { text, url } => {
+            if text.trim().is_empty() || text.len() > 4096 {
+                return Err(crate::error::MobileError::invalid_input(
+                    "share text is empty or exceeds the Mobile contract",
+                ));
+            }
+            if let Some(url) = url {
+                validate_external_url(url)?;
+            }
+            Ok(("share", Some(text.as_str()), url.as_deref()))
+        }
+        SystemAction::ReturnToSystem => Ok(("return_to_system", None, None)),
+    }
+}
+
+fn validate_external_url(value: &str) -> MobileResult<()> {
+    if value.len() > 2048 {
+        return Err(crate::error::MobileError::invalid_input(
+            "external URL exceeds the Mobile contract",
+        ));
+    }
+    let url = tauri::Url::parse(value).map_err(|_| {
+        crate::error::MobileError::invalid_input("external URL is not a canonical URL")
+    })?;
+    if !matches!(url.scheme(), "http" | "https")
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return Err(crate::error::MobileError::invalid_input(
+            "external URL is not an allowed HTTP(S) origin",
+        ));
+    }
+    Ok(())
+}
 
 // ---------------------------------------------------------------------------
 // Lifecycle commands
@@ -228,4 +398,43 @@ pub fn moment_media_discard<R: Runtime>(
     input: StagedMomentMediaInput,
 ) -> MobileResult<()> {
     media_picker::discard_moment_media(&app, &storage, input)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{native_action_fields, SystemAction};
+
+    #[test]
+    fn system_actions_are_narrow_and_validate_external_urls() {
+        assert_eq!(
+            native_action_fields(&SystemAction::OpenAppSettings).unwrap(),
+            ("open_app_settings", None, None)
+        );
+        assert_eq!(
+            native_action_fields(&SystemAction::ReturnToSystem).unwrap(),
+            ("return_to_system", None, None)
+        );
+        assert!(native_action_fields(&SystemAction::OpenExternalUrl {
+            url: "file:///tmp/private".to_string(),
+        })
+        .is_err());
+        assert!(native_action_fields(&SystemAction::OpenExternalUrl {
+            url: "https://user@example.com".to_string(),
+        })
+        .is_err());
+    }
+
+    #[test]
+    fn share_requires_bounded_text_and_optional_canonical_url() {
+        assert!(native_action_fields(&SystemAction::Share {
+            text: "hello".to_string(),
+            url: Some("https://example.com/post/1".to_string()),
+        })
+        .is_ok());
+        assert!(native_action_fields(&SystemAction::Share {
+            text: " ".to_string(),
+            url: None,
+        })
+        .is_err());
+    }
 }

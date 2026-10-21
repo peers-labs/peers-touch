@@ -100,6 +100,69 @@ portable core ports + tests complete
 
 回滚必须回滚整个 W09 cutover commit/deployment，不恢复 Sender Keys compatibility path。
 
+### 3.1.1 UCA-04 Portable Core Hard Cut
+
+UCA-04A froze the current-to-target symbol inventory before consumer cutover.
+UCA-04 has now switched Desktop and Mobile production composition to the same
+portable engine APIs and deleted the former Desktop/Mobile semantic owners.
+
+| Current owner/symbol | Target owner | UCA-04 disposition |
+|---|---|---|
+| Desktop `MessagingEngine`, `EngineRegistry` | portable engine APIs plus Desktop adapter composition | move host-neutral orchestration; retain Station client and process registry |
+| Desktop `MessagingLifecycleWorker`, cycle cancellation/wake state | `EngineLifecycleRecord`, `EngineFence`, `LifecycleCancellation` | replace phase/generation policy; retain thread/event-loop scheduling |
+| Desktop `MessagingStore`, schema/migration helpers | core `MessagingRepository`, `EncryptedStore`, `messaging-store-v1` policy | migrate in one SQLCipher transaction; retain SQLCipher connection adapter |
+| Desktop `CommandOutboxWorker`, `CommandSubmitFailure::Ambiguous` | core command outbox and ambiguous-submit reconciliation boundary | delete duplicate worker and failure classifier policy |
+| Desktop `SubmittedCommand`, `CommandReconciliationDisposition`, `CommandReconciliationWorker` | `engine::reconcile_submitted_commands` plus `CommandResultTransport` | retain only typed Station request execution |
+| Desktop `QueueDrain`, `MessagingItemConsumer`, Direct/public/receipt processors | core `inbox`, `crypto`, `mls`, and `store` APIs | delete duplicated queue FSM and processors |
+| Desktop recovery codec/reconciliation helpers | core `recovery` codec/types and portable reconciliation APIs | retain phrase input, key access, archive transport and SQLCipher transaction adapter |
+| Desktop delivery receipt processor/outbox | core inbox/outbox receipt APIs | retain Conversation transport adapter |
+| Desktop attachment transfer worker and checkpoint policy | core `attachment` APIs and `AttachmentBlob` port | retain filesystem/blob and Station object transport adapters |
+| Desktop projection callback and clock helpers | `EngineEventSink` and `Clock` | retain Tauri event emission and system clock adapters |
+| Core `PeersMLSProvider` temporary-file export/import | deterministic in-memory provider-state codec | removed in UCA-04A; Host persists returned opaque bytes through encrypted store |
+| Core `storage_governance::{mod,cache}` physical path traversal/deletion | pure storage policy plus typed Host file/blob facts and actions | moved to shared `packages/messaging-native-filesystem`; core imports no filesystem/path/rustix owner |
+| Mobile `MessagingEngine` | portable engine APIs plus Mobile adapter composition | move host-neutral orchestration; retain Station transport and native runtime handle |
+| Mobile `MobileMessagingRuntime`, `MobileMessagingWorker`, `activation_generation` | `EngineLifecycleRecord`, `EngineFence`, `LifecycleCancellation` | replace phase/generation policy; retain push/background/event-loop scheduling |
+| Mobile `MobileMessagingStore`, `MobileOutboxStore`, local schema setup | core repositories, `EncryptedStore`, `messaging-store-v1` policy | migrate in one SQLCipher transaction; retain database connection adapter |
+| Mobile command dispatch/retry branches | core command outbox and reconciliation APIs | retain typed HTTP/protobuf transport only |
+| Mobile queue drain and mutation consumption | core inbox/consumer/repository APIs | delete adapter-owned queue and retry semantics |
+| Mobile recovery wrapper | core recovery codec/types plus `KeyMaterial` | retain native secret input and opaque Recovery transport |
+| Mobile attachment stage/cache/transfer decisions | core attachment APIs plus `AttachmentBlob` | retain sandbox path, picker/camera stream and blob implementation |
+| Mobile projection callback, device clock and OS lifecycle | `EngineEventSink`, `Clock`, `LifecycleCancellation` | retain platform callback adapters only |
+| Station Conversation/Device Inbox/Recovery/Key Exchange/Federation owners | unchanged Station resource owners | explicitly retained; no business truth moves into the client core |
+| Desktop/Mobile presentation stores, navigation, push and notification policy | form/Host responsibility | explicitly retained outside portable engine semantics |
+
+The portable contract now owns the host-neutral engine lifecycle fence,
+single-write store cutover, durable command outbox, authoritative command
+reconciliation, inbox/receipt processing, recovery codec, attachment transfer,
+and typed Host ports. Desktop and Mobile retain scheduling, transport,
+SQLCipher, native key/file, projection-event and OS lifecycle adapters only.
+There is one production worker per active Host profile and no compatibility
+worker.
+
+The `messaging-store-v1` activation order is fixed:
+
+```text
+close command admission
+  -> cancel and join the current Host worker
+  -> normalize every in-flight or ambiguous submit for authoritative readback
+  -> validate identity continuity and every legacy row
+  -> migrate schema and rows in one encrypted-store transaction
+  -> commit source schema + target schema + row count + source digest marker
+  -> bind the portable-core adapter
+  -> reopen admission
+  -> delete old engine/store/recovery symbols in the same UCA-04 source cut
+```
+
+There is no dual-write window, compatibility reader, fallback worker, or
+partial-table activation. A failed migration rolls back before the portable
+owner becomes writable and leaves the legacy owner closed and unchanged.
+
+`messaging-owner-hard-cut-zero` proves deleted owner files, unique core
+declarations, production consumer bindings and the OS-free core boundary.
+Desktop, signed iOS and physical Android receiver-visible runtime convergence
+remains a separate `unified-client-messaging-e2e` obligation and stays
+`UNPROVEN` while either physical Mobile cell is unavailable.
+
 ### 3.2 MLS Membership Cutover
 
 > `MP-D18` accepted by Owner on 2026-08-09.

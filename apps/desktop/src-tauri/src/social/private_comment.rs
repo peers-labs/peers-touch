@@ -4,6 +4,10 @@ use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use prost::Message;
 use rand::{rngs::OsRng, RngCore};
 use secure_content_core::envelope::{open_content_key, ContentKey, SealedContentKey};
+use secure_content_core::operation::{
+    decide_committed_readback, decide_unknown_outcome, DispatchCause, OperationCompletion,
+    OperationState, ReadbackDecision, ReadbackObservation,
+};
 use secure_content_core::payload::{
     decrypt_payload, derive_payload_key, encrypt_payload, EncryptedPayload as CoreEncryptedPayload,
     PayloadKeyContext, PAYLOAD_FORMAT_VERSION,
@@ -16,14 +20,14 @@ use crate::model::{actor, secure_content as wire, social};
 use crate::secure_content::adapter::{
     NativeErrorDisposition, NativeTransportError, SecureContentTransport,
 };
+use crate::secure_content::prekey_runtime::maintain_content_prekeys;
 use crate::secure_content::recovery::open_recovery_content_key;
 use crate::secure_content::station_trust::{
     current_session_sender_signing_key, verify_profile_actor_device_signing_key,
 };
 use crate::secure_content::store::{
-    CommentState, PublicationState, SecureContentStore, StoredCommentDraft,
+    AcquiredCommentSubmission, CommentState, SecureContentStore, StoredCommentDraft,
 };
-use crate::secure_content::worker::maintain_content_prekeys;
 use crate::secure_content::{SecureContentLease, SecureContentSupervisor};
 
 use super::crypto::{bounded_command_id, seal_content_envelopes, validate_content_plan};
@@ -285,7 +289,11 @@ impl<'a> PrivateCommentOrchestrator<'a> {
             request_sha256: None,
             root_key: None,
             publication_state: None,
+            lease_generation: 0,
             session_generation: self.lease.session.key.session_generation,
+            attempt_count: 0,
+            next_attempt_at_unix_ms: 0,
+            updated_at_unix_ms: crate::social::crypto::now_unix_ms(),
             comment_id: None,
             state: CommentState::Editing,
             error_code: None,
@@ -536,7 +544,7 @@ impl<'a> PrivateCommentOrchestrator<'a> {
                 input.draft_revision,
             )
             .map_err(|error| PrivateCommentFailure::failed("COMMENT_BUSY", error))?;
-        let existing = self.load_draft(input)?;
+        let mut existing = self.load_draft(input)?;
         enforce_comment_retry_deadline(&existing)?;
         if existing.state == CommentState::Posted {
             let comment_id = existing.comment_id.as_deref().ok_or_else(|| {
@@ -565,8 +573,14 @@ impl<'a> PrivateCommentOrchestrator<'a> {
                 comment: Some(comment),
             });
         }
-        if existing.publication_state == Some(PublicationState::CommittedPendingReadback) {
-            return self.reconcile_committed_submit(existing);
+        if matches!(
+            existing.publication_state,
+            Some(OperationState::UnknownOutcome | OperationState::CommittedPendingReadback)
+        ) {
+            if let Some(result) = self.reconcile_comment_readback(existing.clone())? {
+                return Ok(result);
+            }
+            existing = self.load_draft(input)?;
         }
         if comment_requires_reprepare(&existing)? {
             let failure = PrivateCommentFailure::failed(
@@ -596,38 +610,61 @@ impl<'a> PrivateCommentOrchestrator<'a> {
                 "private Comment submission is unavailable",
             )
         })?;
-        let draft = self.with_current_store("COMMENT_SUBMIT_FAILED", |store| {
+        let cause = match existing.publication_state {
+            Some(OperationState::Pending) => DispatchCause::ExplicitUserAction,
+            Some(OperationState::UnknownOutcome) => DispatchCause::ReadbackAuthorizedRetry,
+            Some(OperationState::RetryWait) => DispatchCause::RetryDeadlineReached,
+            _ => {
+                return Err(PrivateCommentFailure::failed(
+                    "COMMENT_SUBMIT_INVALID",
+                    "private Comment submission is not dispatchable",
+                ))
+            }
+        };
+        let acquired = self.with_current_store("COMMENT_SUBMIT_FAILED", |store| {
             store.acquire_comment_submission(
                 &input.draft_id,
                 input.draft_revision,
                 self.lease.session.key.session_generation,
+                cause,
             )
         })?;
         match self
             .transport
-            .submit_private_comment(&draft.post_id, request_bytes)
+            .submit_private_comment(&acquired.draft.post_id, request_bytes)
         {
             Ok(_) => {
-                let committed = self.mark_comment_committed(&draft)?;
-                self.reconcile_committed_submit(committed)
+                let committed = self.commit_comment_submit_response(&acquired)?;
+                self.reconcile_comment_readback(committed)?.ok_or_else(|| {
+                    PrivateCommentFailure::failed(
+                        "COMMENT_DRAFT_FAILED",
+                        "committed private Comment cannot retry submit",
+                    )
+                })
             }
             Err(error) => {
                 if error
                     .http_status
                     .is_some_and(|status| (200..300).contains(&status))
                 {
-                    let committed = self.mark_comment_committed(&draft)?;
-                    let failure =
-                        PrivateCommentFailure::failed(COMMENT_READBACK_PENDING, error.to_string());
-                    self.persist_readback_failure(&committed, &failure)?;
-                    return Err(failure);
+                    let committed = self.commit_comment_submit_response(&acquired)?;
+                    return self.reconcile_comment_readback(committed)?.ok_or_else(|| {
+                        PrivateCommentFailure::failed(
+                            "COMMENT_DRAFT_FAILED",
+                            "committed private Comment cannot retry submit",
+                        )
+                    });
                 }
-                let mut publication_state = submit_failure_publication_state(&error);
-                let failure = self.classify_submit_transport_failure(&draft, error);
-                if failure.state == CommentState::ParentUnavailable {
-                    publication_state = PublicationState::Terminal;
+                let completion =
+                    submit_failure_completion(acquired.lease.reconciles_unknown_outcome, &error);
+                let mut failure = self.classify_submit_transport_failure(&acquired.draft, error);
+                if let OperationCompletion::RetryAt(deadline) = completion {
+                    failure.retry_not_before_unix_ms = Some(deadline);
+                    if failure.retry_after_seconds.is_none() {
+                        failure.retry_after_seconds = Some(1);
+                    }
                 }
-                self.persist_submit_failure(&draft, &failure, publication_state)?;
+                self.persist_submit_failure(&acquired, &failure, completion)?;
                 Err(failure)
             }
         }
@@ -791,12 +828,7 @@ impl<'a> PrivateCommentOrchestrator<'a> {
         let mut recovered_resource = resource.clone();
         attach_comment_recovery_envelope(&mut recovered_resource, recovery_envelope)?;
         let sender_key = self.sender_signing_key(post_id, comment_id, &recovered_resource)?;
-        let root = open_recovery_content_key(
-            self.lease.store.as_ref(),
-            &self.lease.session.key.actor_ptid,
-            recovery_envelope,
-        )
-        .map_err(|error| {
+        let root = open_recovery_content_key(&self.lease, recovery_envelope).map_err(|error| {
             PrivateCommentFailure::failed("COMMENT_RECOVERY_KEY_UNAVAILABLE", error)
         })?;
         decrypt_comment_resource(
@@ -811,109 +843,202 @@ impl<'a> PrivateCommentOrchestrator<'a> {
         )
     }
 
-    fn finish_committed_submit(
+    fn reconcile_comment_readback(
         &self,
         draft: StoredCommentDraft,
-    ) -> Result<PrivateCommentSubmitResult, PrivateCommentFailure> {
-        let comment_id = draft
-            .comment_id
-            .clone()
-            .filter(|comment_id| comment_id == &draft.content_id)
-            .ok_or_else(|| {
-                PrivateCommentFailure::failed(
-                    COMMENT_READBACK_PENDING,
-                    "committed private Comment identity is unavailable",
-                )
-            })?;
-        let point = self
+    ) -> Result<Option<PrivateCommentSubmitResult>, PrivateCommentFailure> {
+        let comment_id = draft.content_id.clone();
+        let mut decrypted = None;
+        let mut readback_failure = None;
+        let observation = match self
             .transport
             .get_private_comment(&draft.post_id, &comment_id)
-            .map_err(PrivateCommentFailure::from_transport)?;
-        self.ensure_current()?;
-        let resource = point.comment.as_ref().ok_or_else(|| {
-            PrivateCommentFailure::failed(
-                "COMMENT_READBACK_FAILED",
-                "private Comment point read omitted the resource",
-            )
+        {
+            Ok(point) => {
+                let verified = (|| {
+                    self.ensure_current()?;
+                    let resource = point.comment.as_ref().ok_or_else(|| {
+                        PrivateCommentFailure::failed(
+                            "COMMENT_READBACK_FAILED",
+                            "private Comment point read omitted the resource",
+                        )
+                    })?;
+                    let sender_key =
+                        self.sender_signing_key(&draft.post_id, &comment_id, resource)?;
+                    let root = draft.root_key.ok_or_else(|| {
+                        PrivateCommentFailure::failed(
+                            "COMMENT_READBACK_FAILED",
+                            "private Comment root is unavailable",
+                        )
+                    })?;
+                    let opened = decrypt_comment_resource(
+                        self.lease.session.as_ref(),
+                        self.lease.store.as_ref(),
+                        &draft.post_id,
+                        &comment_id,
+                        resource,
+                        &sender_key,
+                        Some(ContentKey::from_bytes(root)),
+                        None,
+                    )?;
+                    self.persist_decrypted(&opened)?;
+                    Ok::<_, PrivateCommentFailure>(opened)
+                })();
+                match verified {
+                    Ok(opened) => {
+                        decrypted = Some(opened);
+                        ReadbackObservation::Committed {
+                            receipt_sha256: Sha256::digest(point.encode_to_vec()).into(),
+                        }
+                    }
+                    Err(failure) => {
+                        let detail = failure.message.clone();
+                        readback_failure = Some(failure);
+                        ReadbackObservation::Invalid { detail }
+                    }
+                }
+            }
+            Err(error) if error.http_status == Some(404) => {
+                ReadbackObservation::AuthoritativeAbsent
+            }
+            Err(error) if matches!(error.http_status, Some(403 | 410)) => {
+                let failure = PrivateCommentFailure {
+                    state: CommentState::ParentUnavailable,
+                    code: "COMMENT_PARENT_UNAVAILABLE".to_string(),
+                    message: error.to_string(),
+                    retry_after_seconds: None,
+                    retry_not_before_unix_ms: None,
+                };
+                let detail = failure.message.clone();
+                readback_failure = Some(failure);
+                ReadbackObservation::Invalid { detail }
+            }
+            Err(error) => {
+                let deadline = operation_retry_deadline(error.retry_after_seconds);
+                readback_failure = Some(PrivateCommentFailure {
+                    state: CommentState::Failed,
+                    code: COMMENT_READBACK_PENDING.to_string(),
+                    message: error.to_string(),
+                    retry_after_seconds: error.retry_after_seconds.or(Some(1)),
+                    retry_not_before_unix_ms: Some(deadline),
+                });
+                ReadbackObservation::Unavailable {
+                    retry_after_unix_ms: Some(deadline),
+                }
+            }
+        };
+        let operation = draft
+            .operation_record()
+            .map_err(|error| PrivateCommentFailure::failed("COMMENT_DRAFT_FAILED", error))?;
+        let decision = match draft.publication_state {
+            Some(OperationState::UnknownOutcome) => decide_unknown_outcome(&operation, observation),
+            Some(OperationState::CommittedPendingReadback) => {
+                decide_committed_readback(&operation, observation)
+            }
+            _ => {
+                return Err(PrivateCommentFailure::failed(
+                    "COMMENT_DRAFT_FAILED",
+                    "private Comment readback requires an unresolved operation",
+                ))
+            }
+        }
+        .map_err(|error| {
+            PrivateCommentFailure::failed("COMMENT_DRAFT_FAILED", error.to_string())
         })?;
-        let sender_key = self.sender_signing_key(&draft.post_id, &comment_id, resource)?;
-        let root = draft.root_key.ok_or_else(|| {
-            PrivateCommentFailure::failed(
-                "COMMENT_READBACK_FAILED",
-                "private Comment root is unavailable",
-            )
-        })?;
-        let decrypted = decrypt_comment_resource(
-            self.lease.session.as_ref(),
-            self.lease.store.as_ref(),
-            &draft.post_id,
-            &comment_id,
-            resource,
-            &sender_key,
-            Some(ContentKey::from_bytes(root)),
-            None,
-        )?;
-        self.persist_decrypted(&decrypted)?;
+        let (state, error_code, retry_after_seconds) = match &decision {
+            ReadbackDecision::CommitFromReadback { .. } => (CommentState::Posted, "", None),
+            ReadbackDecision::RetryExactCommand => {
+                (CommentState::Failed, "COMMENT_SUBMIT_RESULT_UNKNOWN", None)
+            }
+            ReadbackDecision::KeepUnknown { .. }
+            | ReadbackDecision::KeepCommittedPendingReadback { .. } => (
+                CommentState::Failed,
+                COMMENT_READBACK_PENDING,
+                readback_failure
+                    .as_ref()
+                    .and_then(|failure| failure.retry_after_seconds),
+            ),
+            ReadbackDecision::TerminalIntegrityFailure { .. } => (
+                readback_failure
+                    .as_ref()
+                    .map(|failure| failure.state)
+                    .unwrap_or(CommentState::Failed),
+                readback_failure
+                    .as_ref()
+                    .map(|failure| failure.code.as_str())
+                    .unwrap_or("COMMENT_INTEGRITY_FAILURE"),
+                None,
+            ),
+        };
         let changed = self.with_current_store("COMMENT_DRAFT_FAILED", |store| {
-            store.mark_comment_posted(
-                &draft.draft_id,
-                draft.draft_revision,
-                draft.session_generation,
-                &comment_id,
+            store.apply_comment_readback(
+                &draft,
+                &decision,
+                state,
+                error_code,
+                retry_after_seconds,
+                Some(&comment_id),
             )
         })?;
         if !changed {
             return Err(PrivateCommentFailure::failed(
                 "COMMENT_DRAFT_FAILED",
-                "private Comment completion lost its generation fence",
+                "private Comment readback lost its operation fence",
             ));
         }
-        let posted = self.load_draft(&PrivateCommentSubmitInput {
-            actor_ptid: self.lease.session.key.actor_ptid.clone(),
-            renderer_generation: self.lease.renderer_generation,
-            draft_id: draft.draft_id,
-            draft_revision: draft.draft_revision,
-        })?;
-        Ok(PrivateCommentSubmitResult {
-            draft: draft_projection(&posted)?,
-            comment: Some(decrypted.projection),
-        })
-    }
-
-    fn reconcile_committed_submit(
-        &self,
-        draft: StoredCommentDraft,
-    ) -> Result<PrivateCommentSubmitResult, PrivateCommentFailure> {
-        match self.finish_committed_submit(draft.clone()) {
-            Ok(result) => Ok(result),
-            Err(failure) => {
-                let failure = if failure.state == CommentState::ParentUnavailable {
-                    failure
-                } else {
-                    PrivateCommentFailure {
-                        state: CommentState::Failed,
-                        code: COMMENT_READBACK_PENDING.to_string(),
-                        message: failure.message,
-                        retry_after_seconds: failure.retry_after_seconds,
-                        retry_not_before_unix_ms: failure.retry_not_before_unix_ms,
-                    }
-                };
-                self.persist_readback_failure(&draft, &failure)?;
-                Err(failure)
+        match decision {
+            ReadbackDecision::RetryExactCommand => Ok(None),
+            ReadbackDecision::CommitFromReadback { .. } => {
+                let decrypted = decrypted.ok_or_else(|| {
+                    PrivateCommentFailure::failed(
+                        "COMMENT_READBACK_FAILED",
+                        "private Comment committed readback omitted its projection",
+                    )
+                })?;
+                let posted = self.load_draft(&PrivateCommentSubmitInput {
+                    actor_ptid: self.lease.session.key.actor_ptid.clone(),
+                    renderer_generation: self.lease.renderer_generation,
+                    draft_id: draft.draft_id,
+                    draft_revision: draft.draft_revision,
+                })?;
+                Ok(Some(PrivateCommentSubmitResult {
+                    draft: draft_projection(&posted)?,
+                    comment: Some(decrypted.projection),
+                }))
+            }
+            ReadbackDecision::KeepUnknown { .. }
+            | ReadbackDecision::KeepCommittedPendingReadback { .. } => Err(readback_failure
+                .unwrap_or_else(|| {
+                    PrivateCommentFailure::failed(
+                        COMMENT_READBACK_PENDING,
+                        "private Comment readback remains pending",
+                    )
+                })),
+            ReadbackDecision::TerminalIntegrityFailure { detail } => {
+                if state == CommentState::ParentUnavailable {
+                    self.with_current_store("COMMENT_DRAFT_FAILED", |store| {
+                        store.clear_comment_projections(&draft.post_id)
+                    })?;
+                }
+                Err(readback_failure.unwrap_or_else(|| {
+                    PrivateCommentFailure::failed("COMMENT_INTEGRITY_FAILURE", detail)
+                }))
             }
         }
     }
 
-    fn mark_comment_committed(
+    fn commit_comment_submit_response(
         &self,
-        draft: &StoredCommentDraft,
+        acquired: &AcquiredCommentSubmission,
     ) -> Result<StoredCommentDraft, PrivateCommentFailure> {
         let changed = self.with_current_store("COMMENT_DRAFT_FAILED", |store| {
-            store.mark_comment_committed_pending_readback(
-                &draft.draft_id,
-                draft.draft_revision,
-                draft.session_generation,
-                &draft.content_id,
+            store.complete_comment_submission(
+                acquired,
+                OperationCompletion::CommittedPendingReadback,
+                CommentState::Failed,
+                COMMENT_READBACK_PENDING,
+                None,
+                Some(&acquired.draft.content_id),
             )
         })?;
         if !changed {
@@ -925,8 +1050,8 @@ impl<'a> PrivateCommentOrchestrator<'a> {
         self.load_draft(&PrivateCommentSubmitInput {
             actor_ptid: self.lease.session.key.actor_ptid.clone(),
             renderer_generation: self.lease.renderer_generation,
-            draft_id: draft.draft_id.clone(),
-            draft_revision: draft.draft_revision,
+            draft_id: acquired.draft.draft_id.clone(),
+            draft_revision: acquired.draft.draft_revision,
         })
     }
 
@@ -990,43 +1115,6 @@ impl<'a> PrivateCommentOrchestrator<'a> {
                 .transport
                 .get_private_comment(&draft.post_id, &draft.reply_to_comment_id)
                 .is_err_and(|error| matches!(error.http_status, Some(403 | 404 | 410)))
-    }
-
-    fn persist_readback_failure(
-        &self,
-        draft: &StoredCommentDraft,
-        failure: &PrivateCommentFailure,
-    ) -> Result<(), PrivateCommentFailure> {
-        self.with_current_store("COMMENT_DRAFT_FAILED", |store| {
-            if failure.state == CommentState::ParentUnavailable {
-                if !store.mark_comment_terminal(
-                    &draft.draft_id,
-                    draft.draft_revision,
-                    draft.session_generation,
-                    failure.state,
-                    &failure.code,
-                )? {
-                    return Err(
-                        "private Comment readback terminal transition lost its generation fence"
-                            .to_string(),
-                    );
-                }
-                store.clear_comment_projections(&draft.post_id)?;
-                return Ok(());
-            }
-            if !store.mark_comment_readback_failed(
-                &draft.draft_id,
-                draft.draft_revision,
-                draft.session_generation,
-                COMMENT_READBACK_PENDING,
-                failure.retry_after_seconds,
-            )? {
-                return Err(
-                    "private Comment readback transition lost its generation fence".to_string(),
-                );
-            }
-            Ok(())
-        })
     }
 
     fn sender_signing_key(
@@ -1118,44 +1206,32 @@ impl<'a> PrivateCommentOrchestrator<'a> {
 
     fn persist_submit_failure(
         &self,
-        draft: &StoredCommentDraft,
+        acquired: &AcquiredCommentSubmission,
         failure: &PrivateCommentFailure,
-        publication_state: PublicationState,
+        completion: OperationCompletion,
     ) -> Result<(), PrivateCommentFailure> {
-        self.with_current_store("COMMENT_DRAFT_FAILED", |store| {
-            if publication_state == PublicationState::Terminal {
-                if !store.mark_comment_terminal(
-                    &draft.draft_id,
-                    draft.draft_revision,
-                    draft.session_generation,
-                    failure.state,
-                    &failure.code,
-                )? {
-                    return Err(
-                        "private Comment terminal transition lost its generation fence".to_string(),
-                    );
-                }
-                if failure.state == CommentState::ParentUnavailable {
-                    store.clear_comment_projections(&draft.post_id)?;
-                }
-                return Ok(());
-            }
-
-            if !store.mark_comment_retryable(
-                &draft.draft_id,
-                draft.draft_revision,
-                draft.session_generation,
-                publication_state,
+        let changed = self.with_current_store("COMMENT_DRAFT_FAILED", |store| {
+            store.complete_comment_submission(
+                acquired,
+                completion,
                 failure.state,
                 &failure.code,
                 failure.retry_after_seconds,
-            )? {
-                return Err(
-                    "private Comment retry transition lost its generation fence".to_string()
-                );
-            }
-            Ok(())
-        })
+                None,
+            )
+        })?;
+        if !changed {
+            return Err(PrivateCommentFailure::failed(
+                "COMMENT_DRAFT_FAILED",
+                "private Comment failure transition lost its operation fence",
+            ));
+        }
+        if failure.state == CommentState::ParentUnavailable {
+            self.with_current_store("COMMENT_DRAFT_FAILED", |store| {
+                store.clear_comment_projections(&acquired.draft.post_id)
+            })?;
+        }
+        Ok(())
     }
 
     fn load_draft(
@@ -1298,24 +1374,45 @@ fn receiver_verified_comment_sender_key(
     .map_err(|_| "receiver-verified private Comment sender signing key is invalid".to_string())
 }
 
-fn submit_failure_publication_state(error: &NativeTransportError) -> PublicationState {
+fn submit_failure_completion(
+    reconciles_unknown_outcome: bool,
+    error: &NativeTransportError,
+) -> OperationCompletion {
     if matches!(
         error.message.as_str(),
         PRIVATE_CONTENT_STALE_PLAN | "SOCIAL_PRIVATE_EXPIRED_PLAN"
     ) {
-        return PublicationState::PendingPublication;
+        return OperationCompletion::Terminal;
     }
     match error.http_status {
-        Some(403 | 404 | 409 | 410) => PublicationState::Terminal,
-        Some(429) => PublicationState::PendingPublication,
+        Some(403 | 404 | 409 | 410) => OperationCompletion::Terminal,
+        Some(429) => {
+            OperationCompletion::RetryAt(operation_retry_deadline(error.retry_after_seconds))
+        }
         _ => match error.disposition {
-            NativeErrorDisposition::Retryable => PublicationState::PendingPublication,
-            NativeErrorDisposition::UnknownCommit => PublicationState::UnknownCommit,
+            NativeErrorDisposition::Retryable => {
+                OperationCompletion::RetryAt(operation_retry_deadline(error.retry_after_seconds))
+            }
+            NativeErrorDisposition::UnknownCommit => OperationCompletion::UnknownOutcome,
+            NativeErrorDisposition::Terminal
+                if reconciles_unknown_outcome && matches!(error.http_status, Some(401 | 403)) =>
+            {
+                OperationCompletion::UnknownOutcome
+            }
             NativeErrorDisposition::Terminal | NativeErrorDisposition::PoolNotFound => {
-                PublicationState::Terminal
+                OperationCompletion::Terminal
             }
         },
     }
+}
+
+fn operation_retry_deadline(retry_after_seconds: Option<u64>) -> i64 {
+    let delay_ms = retry_after_seconds
+        .and_then(|seconds| seconds.checked_mul(1_000))
+        .and_then(|millis| i64::try_from(millis).ok())
+        .unwrap_or(1_000)
+        .max(1_000);
+    super::crypto::now_unix_ms().saturating_add(delay_ms)
 }
 
 fn default_comment_limit() -> u32 {
@@ -1387,14 +1484,17 @@ fn stored_comment_mentions(
     })
 }
 
-fn publication_state_name(state: PublicationState) -> String {
+fn publication_state_name(state: OperationState) -> String {
     match state {
-        PublicationState::PendingPublication => "PENDING_PUBLICATION",
-        PublicationState::InFlight => "IN_FLIGHT",
-        PublicationState::UnknownCommit => "UNKNOWN_COMMIT",
-        PublicationState::Published => "PUBLISHED",
-        PublicationState::Terminal => "TERMINAL",
-        PublicationState::CommittedPendingReadback => "COMMITTED_PENDING_READBACK",
+        OperationState::Prepared => "PREPARED",
+        OperationState::Pending => "PENDING_PUBLICATION",
+        OperationState::InFlight => "IN_FLIGHT",
+        OperationState::UnknownOutcome => "UNKNOWN_COMMIT",
+        OperationState::Committed => "PUBLISHED",
+        OperationState::RetryWait => "RETRY_WAIT",
+        OperationState::Terminal => "TERMINAL",
+        OperationState::Cancelled => "CANCELLED",
+        OperationState::CommittedPendingReadback => "COMMITTED_PENDING_READBACK",
     }
     .to_string()
 }
@@ -1489,9 +1589,7 @@ fn comment_plan_expired(draft: &StoredCommentDraft) -> Result<bool, PrivateComme
 }
 
 fn comment_requires_reprepare(draft: &StoredCommentDraft) -> Result<bool, PrivateCommentFailure> {
-    if draft.publication_state != Some(PublicationState::PendingPublication)
-        || draft.request_bytes.is_none()
-    {
+    if draft.request_bytes.is_none() {
         return Ok(false);
     }
     if draft.error_code.as_deref().is_some_and(|code| {
@@ -1500,7 +1598,10 @@ fn comment_requires_reprepare(draft: &StoredCommentDraft) -> Result<bool, Privat
             PRIVATE_CONTENT_STALE_PLAN | "SOCIAL_PRIVATE_EXPIRED_PLAN"
         )
     }) {
-        return Ok(true);
+        return Ok(draft.publication_state == Some(OperationState::Terminal));
+    }
+    if draft.publication_state != Some(OperationState::Pending) {
+        return Ok(false);
     }
     comment_plan_expired(draft)
 }
@@ -2124,7 +2225,11 @@ mod tests {
             request_sha256: None,
             root_key: None,
             publication_state: None,
+            lease_generation: 0,
             session_generation,
+            attempt_count: 0,
+            next_attempt_at_unix_ms: 0,
+            updated_at_unix_ms: crate::social::crypto::now_unix_ms(),
             comment_id: None,
             state: CommentState::Editing,
             error_code: None,
@@ -2232,8 +2337,8 @@ mod tests {
             message: "SOCIAL_PRIVATE_CONFLICT".to_string(),
         };
         assert_eq!(
-            submit_failure_publication_state(&error),
-            PublicationState::Terminal
+            submit_failure_completion(false, &error),
+            OperationCompletion::Terminal
         );
         let failure = PrivateCommentFailure::from_submit_transport(error);
 
@@ -2248,8 +2353,8 @@ mod tests {
                 message: code.to_string(),
             };
             assert_eq!(
-                submit_failure_publication_state(&retryable_plan),
-                PublicationState::PendingPublication
+                submit_failure_completion(false, &retryable_plan),
+                OperationCompletion::Terminal
             );
         }
     }
@@ -2263,10 +2368,10 @@ mod tests {
             disposition: NativeErrorDisposition::Retryable,
             message: "ERROR_CODE_INVALID_REQUEST".to_string(),
         };
-        assert_eq!(
-            submit_failure_publication_state(&retryable),
-            PublicationState::PendingPublication
-        );
+        assert!(matches!(
+            submit_failure_completion(false, &retryable),
+            OperationCompletion::RetryAt(_)
+        ));
         let unknown = NativeTransportError {
             http_status: Some(503),
             stable_code: crate::model::error::ErrorCode::InternalServerError as i32,
@@ -2275,8 +2380,8 @@ mod tests {
             message: "ERROR_CODE_INTERNAL_SERVER_ERROR".to_string(),
         };
         assert_eq!(
-            submit_failure_publication_state(&unknown),
-            PublicationState::UnknownCommit
+            submit_failure_completion(false, &unknown),
+            OperationCompletion::UnknownOutcome
         );
     }
 
@@ -2292,7 +2397,7 @@ mod tests {
         );
 
         draft.state = CommentState::Failed;
-        draft.publication_state = Some(PublicationState::CommittedPendingReadback);
+        draft.publication_state = Some(OperationState::CommittedPendingReadback);
         draft.error_code = Some(COMMENT_READBACK_PENDING.to_string());
         assert_eq!(
             enforce_comment_retry_deadline(&draft).unwrap_err().code,
@@ -2307,7 +2412,7 @@ mod tests {
     fn expired_comment_plan_requires_fresh_encryption_material() {
         let now_seconds = crate::social::crypto::now_unix_ms() / 1_000;
         let mut draft = comment_draft("draft-expired-plan", 1);
-        draft.publication_state = Some(PublicationState::PendingPublication);
+        draft.publication_state = Some(OperationState::Pending);
         draft.state = CommentState::Submitting;
         draft.request_bytes = Some(b"persisted-request".to_vec());
         draft.plan_bytes = Some(
@@ -2340,7 +2445,7 @@ mod tests {
         draft.error_code = Some(PRIVATE_CONTENT_STALE_PLAN.to_string());
         assert!(comment_requires_reprepare(&draft).unwrap());
 
-        draft.publication_state = Some(PublicationState::UnknownCommit);
+        draft.publication_state = Some(OperationState::UnknownOutcome);
         assert!(!comment_requires_reprepare(&draft).unwrap());
     }
 
@@ -2464,19 +2569,33 @@ mod tests {
             )
             .unwrap();
         let in_flight = store
-            .acquire_comment_submission(&draft.draft_id, draft.draft_revision, session_generation)
+            .acquire_comment_submission(
+                &draft.draft_id,
+                draft.draft_revision,
+                session_generation,
+                DispatchCause::ExplicitUserAction,
+            )
             .unwrap();
         let orchestrator = PrivateCommentOrchestrator {
             supervisor: &supervisor,
             transport: SecureContentTransport::new(lease.session.clone()).unwrap(),
             lease,
         };
-        let failure = PrivateCommentFailure::failed("COMMENT_READBACK_FAILED", "readback failed");
-
-        let committed = orchestrator.mark_comment_committed(&in_flight).unwrap();
-        orchestrator
-            .persist_readback_failure(&committed, &failure)
+        let committed = orchestrator
+            .commit_comment_submit_response(&in_flight)
             .unwrap();
+        assert!(store
+            .apply_comment_readback(
+                &committed,
+                &ReadbackDecision::KeepCommittedPendingReadback {
+                    retry_after_unix_ms: Some(crate::social::crypto::now_unix_ms() + 1_000),
+                },
+                CommentState::Failed,
+                COMMENT_READBACK_PENDING,
+                Some(1),
+                Some(&draft.content_id),
+            )
+            .unwrap());
 
         let persisted = store
             .comment_draft(&draft.draft_id, draft.draft_revision)
@@ -2484,12 +2603,17 @@ mod tests {
             .unwrap();
         assert_eq!(
             persisted.publication_state,
-            Some(PublicationState::CommittedPendingReadback)
+            Some(OperationState::CommittedPendingReadback)
         );
         assert_eq!(persisted.state, CommentState::Failed);
         assert!(persisted.text.is_empty());
         assert!(store
-            .acquire_comment_submission(&draft.draft_id, draft.draft_revision, session_generation,)
+            .acquire_comment_submission(
+                &draft.draft_id,
+                draft.draft_revision,
+                session_generation,
+                DispatchCause::ReadbackAuthorizedRetry,
+            )
             .is_err());
     }
 
@@ -2522,6 +2646,7 @@ mod tests {
                 &draft.draft_id,
                 draft.draft_revision,
                 lease.session.key.session_generation,
+                DispatchCause::ExplicitUserAction,
             )
             .unwrap();
         store
@@ -2549,17 +2674,14 @@ mod tests {
         };
 
         orchestrator
-            .persist_submit_failure(&in_flight, &failure, PublicationState::Terminal)
+            .persist_submit_failure(&in_flight, &failure, OperationCompletion::Terminal)
             .unwrap();
 
         let persisted = store
             .comment_draft(&draft.draft_id, draft.draft_revision)
             .unwrap()
             .unwrap();
-        assert_eq!(
-            persisted.publication_state,
-            Some(PublicationState::Terminal)
-        );
+        assert_eq!(persisted.publication_state, Some(OperationState::Terminal));
         assert_eq!(persisted.state, CommentState::ParentUnavailable);
         assert!(store
             .comment_projection(&draft.post_id, "cached-comment")

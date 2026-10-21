@@ -1,7 +1,7 @@
 # Peers-Touch 开发工作流
 
 > **Status**: active
-> **Created**: 2026-09-13 | **Updated**: 2026-10-14
+> **Created**: 2026-09-13 | **Updated**: 2026-10-17
 > **Owner**: Platform Team
 
 ## 从哪里开始
@@ -22,6 +22,7 @@
 - 将已确定的需求、方案和执行安排接到对应方法论与项目工具。
 - 在选定 worktree 内保存修改范围、任务进度和恢复所需信息。
 - 关联本次源码、运行结果和评审证据，避免使用过期结果宣称完成。
+- 为复杂 Plan 冻结人类可读的预期变化，并在执行后逐项记录实际效果与偏差。
 - 协调需要的运行资源，并在结束、取消或中断后处理本次工作。
 - 提供工作状态和故障检查，区分实现进度、环境状态与验收结论。
 
@@ -52,6 +53,8 @@
 - [接入与切换](./integration.md)：Skill、Make、Runtime 和 Acceptance 消费者。
 - [IDE 接入](./host-neutral-agent-integration.md)：事件、提示和选定范围安装。
 - [完成审查](./completion-review.md)：明确范围与当前证据的审查。
+- `outcome-comparison.md`：每个复杂 Plan 内的执行前基线、目标效果、Task/Gate
+  映射和执行后实际结果；不是独立状态真源。
 - [状态模型](./product-state-model.md)与[只读呈现](./progress-observability.md)：状态
   含义、事实来源及未知项。
 - [验收清单](./acceptance-matrix.md)：工具场景与可选现场 smoke 的证明边界。

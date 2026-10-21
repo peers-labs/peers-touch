@@ -1,0 +1,277 @@
+{
+  "kind": "peers-touch-architecture-diagram",
+  "schemaVersion": 3,
+  "id": "project.runtime-topology",
+  "module": "project",
+  "viewpoint": "runtime-topology",
+  "layout": "topology",
+  "output": "runtime-topology.svg",
+  "title": "Peers-Touch 运行时拓扑",
+  "canvas": {
+    "width": 1750,
+    "height": 800
+  },
+  "edgeMeaning": "箭头仅表示真实网络流",
+  "scene": {
+    "zones": [
+      {
+        "id": "desktop",
+        "title": "DESKTOP INSTALLATION",
+        "x": 40,
+        "y": 110,
+        "width": 340,
+        "height": 300,
+        "tone": "secondary"
+      },
+      {
+        "id": "mobile",
+        "title": "MOBILE INSTALLATION",
+        "x": 40,
+        "y": 450,
+        "width": 340,
+        "height": 300,
+        "tone": "secondary"
+      },
+      {
+        "id": "home",
+        "title": "HOME STATION DEPLOYMENT",
+        "x": 800,
+        "y": 110,
+        "width": 420,
+        "height": 640,
+        "tone": "primary"
+      },
+      {
+        "id": "remote",
+        "title": "REMOTE STATION DEPLOYMENT",
+        "x": 1270,
+        "y": 110,
+        "width": 420,
+        "height": 640,
+        "tone": "neutral"
+      },
+      {
+        "id": "relay",
+        "title": "RELAY DEPLOYMENT",
+        "x": 450,
+        "y": 430,
+        "width": 280,
+        "height": 180,
+        "tone": "external"
+      }
+    ],
+    "instances": [
+      {
+        "id": "desktop-app",
+        "role": "desktop",
+        "x": 70,
+        "y": 150,
+        "width": 280,
+        "height": 80,
+        "title": "Desktop App Process",
+        "caption": "WebView · Tauri · local state",
+        "tone": "secondary"
+      },
+      {
+        "id": "desktop-transport",
+        "role": "desktop",
+        "x": 70,
+        "y": 280,
+        "width": 280,
+        "height": 80,
+        "title": "Station Transport",
+        "caption": "Desktop-owned instance",
+        "tone": "neutral"
+      },
+      {
+        "id": "mobile-app",
+        "role": "mobile",
+        "x": 70,
+        "y": 490,
+        "width": 280,
+        "height": 80,
+        "title": "Mobile App Process",
+        "caption": "React · Tauri · Android / iOS",
+        "tone": "secondary"
+      },
+      {
+        "id": "mobile-transport",
+        "role": "mobile",
+        "x": 70,
+        "y": 620,
+        "width": 280,
+        "height": 80,
+        "title": "Station Transport",
+        "caption": "Mobile-owned instance",
+        "tone": "neutral"
+      },
+      {
+        "id": "home-station-process",
+        "role": "home",
+        "x": 840,
+        "y": 250,
+        "width": 340,
+        "height": 140,
+        "title": "Station Role Process",
+        "caption": "Frame ingress + App domains",
+        "tone": "primary"
+      },
+      {
+        "id": "home-relational",
+        "role": "home",
+        "x": 840,
+        "y": 520,
+        "width": 160,
+        "height": 100,
+        "title": "SQL State",
+        "caption": "Postgres / SQLite",
+        "tone": "state"
+      },
+      {
+        "id": "home-object",
+        "role": "home",
+        "x": 1020,
+        "y": 520,
+        "width": 160,
+        "height": 100,
+        "title": "Object State",
+        "caption": "local / S3 adapter",
+        "tone": "state"
+      },
+      {
+        "id": "remote-station-process",
+        "role": "remote",
+        "x": 1310,
+        "y": 250,
+        "width": 340,
+        "height": 140,
+        "title": "Remote Station Process",
+        "caption": "independent identity + App domains",
+        "tone": "neutral"
+      },
+      {
+        "id": "remote-state",
+        "role": "remote",
+        "x": 1310,
+        "y": 520,
+        "width": 340,
+        "height": 100,
+        "title": "Remote Durable State",
+        "caption": "records · inbox · recovery",
+        "tone": "state"
+      },
+      {
+        "id": "relay-process",
+        "role": "relay",
+        "x": 480,
+        "y": 470,
+        "width": 220,
+        "height": 100,
+        "title": "Relay Role Process",
+        "caption": "Circuit v2 · no App",
+        "tone": "external"
+      }
+    ],
+    "relations": [
+      {
+        "from": "desktop-transport",
+        "to": "home-station-process",
+        "fromAnchor": "right",
+        "toAnchor": "top",
+        "label": "direct",
+        "style": "primary",
+        "via": [
+          {
+            "x": 700,
+            "y": 320
+          },
+          {
+            "x": 700,
+            "y": 200
+          },
+          {
+            "x": 1010,
+            "y": 200
+          }
+        ]
+      },
+      {
+        "from": "mobile-transport",
+        "to": "home-station-process",
+        "fromAnchor": "right",
+        "toAnchor": "bottom",
+        "label": "direct",
+        "style": "primary",
+        "via": [
+          {
+            "x": 1010,
+            "y": 660
+          }
+        ]
+      },
+      {
+        "from": "desktop-transport",
+        "to": "relay-process",
+        "fromAnchor": "bottom",
+        "toAnchor": "top",
+        "label": null,
+        "style": "secondary",
+        "via": [
+          {
+            "x": 210,
+            "y": 420
+          },
+          {
+            "x": 590,
+            "y": 420
+          }
+        ]
+      },
+      {
+        "from": "mobile-transport",
+        "to": "relay-process",
+        "fromAnchor": "top",
+        "toAnchor": "bottom",
+        "label": null,
+        "style": "secondary",
+        "via": [
+          {
+            "x": 210,
+            "y": 600
+          },
+          {
+            "x": 590,
+            "y": 600
+          }
+        ]
+      },
+      {
+        "from": "relay-process",
+        "to": "home-station-process",
+        "fromAnchor": "right",
+        "toAnchor": "left",
+        "label": null,
+        "style": "secondary",
+        "via": [
+          {
+            "x": 760,
+            "y": 520
+          },
+          {
+            "x": 760,
+            "y": 320
+          }
+        ]
+      },
+      {
+        "from": "home-station-process",
+        "to": "remote-station-process",
+        "fromAnchor": "right",
+        "toAnchor": "left",
+        "label": "federation",
+        "style": "secondary",
+        "via": []
+      }
+    ]
+  }
+}

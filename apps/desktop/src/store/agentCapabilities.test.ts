@@ -5,6 +5,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { RuntimeCapabilitySnapshotSchema } from '../gen/proto/domain/agent/agent_pb';
 import {
   AgentCapabilityBindingSchema,
+  AgentCommandCapabilityKind,
+  AgentCommandCapabilitySnapshotSchema,
   CapabilityApprovalPolicy,
   CapabilityManifestSchema,
   CapabilityReadinessSnapshotSchema,
@@ -22,6 +24,7 @@ const capabilityApi = vi.hoisted(() => ({
   listCapabilityManifestInventory: vi.fn(),
   listAgentCapabilityBindings: vi.fn(),
   readAgentCapabilityReadiness: vi.fn(),
+  readAgentCommandCapabilitySnapshot: vi.fn(),
   upsertAgentCapabilityBinding: vi.fn(),
   deleteAgentCapabilityBinding: vi.fn(),
   createKnowledgeResourceDescriptor: vi.fn(),
@@ -36,6 +39,7 @@ vi.mock('../services/desktop_api', () => ({
 
 import {
   selectAgentCapabilityBindingsBySource,
+  selectAgentCommandCapabilityProjectionState,
   selectAgentCapabilityReadinessBySource,
   selectCapabilityManifestBySource,
   useAgentCapabilityStore,
@@ -78,6 +82,22 @@ const readiness = create(CapabilityReadinessSnapshotSchema, {
     reasonCode: 'mcp_operation_not_active',
   }],
 });
+const commandSnapshot = create(AgentCommandCapabilitySnapshotSchema, {
+  snapshotId: 'command-snapshot-1',
+  agentId: 'agent-1',
+  agentVersion: 8n,
+  expiresAt: timestampFromDate(new Date('2099-01-01T00:00:00Z')),
+  items: [{
+    capabilityId: mcpManifest.capabilityId,
+    capabilityVersion: mcpManifest.version,
+    bindingId: mcpBinding.bindingId,
+    bindingRevision: mcpBinding.revision,
+    kind: AgentCommandCapabilityKind.TOOL,
+    sourceKind: CapabilitySourceKind.MCP,
+    sourceInstanceId: 'mcp_fixture_echo',
+    readiness: CapabilityReadinessState.READY,
+  }],
+});
 const knowledgeDescriptor = create(KnowledgeResourceDescriptorSchema, {
   resourceId: 'knowledge-1',
   ptid: 'ptid:actor-1',
@@ -104,6 +124,9 @@ describe('agent capability authority store', () => {
     });
     capabilityApi.listAgentCapabilityBindings.mockResolvedValue([mcpBinding]);
     capabilityApi.readAgentCapabilityReadiness.mockResolvedValue(readiness);
+    capabilityApi.readAgentCommandCapabilitySnapshot.mockResolvedValue(
+      commandSnapshot,
+    );
     capabilityApi.upsertAgentCapabilityBinding.mockResolvedValue(mcpBinding);
     capabilityApi.deleteAgentCapabilityBinding.mockResolvedValue(mcpBinding);
     capabilityApi.listKnowledgeResourceDescriptors.mockResolvedValue({
@@ -129,22 +152,50 @@ describe('agent capability authority store', () => {
     await store.loadCatalog();
     await store.loadAgent('agent-1', {
       clientCapabilitySessionId: 'session-desktop',
+      providerId: 'provider-topic',
+      modelId: 'model-topic',
     });
 
     const state = useAgentCapabilityStore.getState();
     expect(state.manifests).toEqual([mcpManifest, connectorManifest]);
     expect(state.bindingsByAgentId['agent-1']).toEqual([mcpBinding]);
     expect(state.readinessByAgentId['agent-1']).toBe(readiness);
+    expect(state.commandSnapshotsByAgentId['agent-1']).toBe(commandSnapshot);
+    expect(
+      selectAgentCommandCapabilityProjectionState(state, 'agent-1'),
+    ).toBe('ready');
     expect(capabilityApi.readAgentCapabilityReadiness).toHaveBeenCalledWith({
       agent_id: 'agent-1',
       runtime_snapshot_id: undefined,
       client_capability_session_id: 'session-desktop',
+      provider_id: 'provider-topic',
+      model_id: 'model-topic',
     });
+  });
+
+  it('keeps the last accepted command snapshot stale without blocking other projections', async () => {
+    await useAgentCapabilityStore.getState().loadAgent('agent-1');
+    capabilityApi.readAgentCommandCapabilitySnapshot.mockRejectedValueOnce(
+      new Error('station unavailable'),
+    );
+
+    await expect(
+      useAgentCapabilityStore.getState().loadAgent('agent-1'),
+    ).rejects.toThrow('station unavailable');
+
+    const state = useAgentCapabilityStore.getState();
+    expect(state.commandSnapshotsByAgentId['agent-1']).toBe(commandSnapshot);
+    expect(
+      selectAgentCommandCapabilityProjectionState(state, 'agent-1'),
+    ).toBe('stale');
+    expect(state.bindingsByAgentId['agent-1']).toEqual([mcpBinding]);
   });
 
   it('submits plain CAS fields and refreshes bindings plus readiness', async () => {
     await useAgentCapabilityStore.getState().loadAgent('agent-1', {
       clientCapabilitySessionId: 'session-desktop',
+      providerId: 'provider-topic',
+      modelId: 'model-topic',
     });
     capabilityApi.readAgentCapabilityReadiness.mockClear();
 
@@ -174,7 +225,30 @@ describe('agent capability authority store', () => {
       agent_id: 'agent-1',
       runtime_snapshot_id: undefined,
       client_capability_session_id: 'session-desktop',
+      provider_id: 'provider-topic',
+      model_id: 'model-topic',
     });
+  });
+
+  it('projects a persisted binding when readiness reconciliation is degraded', async () => {
+    capabilityApi.readAgentCapabilityReadiness.mockRejectedValueOnce(
+      new Error('agent.capabilityReadinessFailed'),
+    );
+
+    await expect(useAgentCapabilityStore.getState().upsertBinding({
+      agentId: mcpBinding.agentId,
+      capabilityId: mcpBinding.capabilityId,
+      capabilityVersion: mcpBinding.capabilityVersion,
+      enabled: true,
+      approvalPolicy: CapabilityApprovalPolicy.MANUAL,
+      expectedAgentVersion: 8n,
+      expectedBindingRevision: 0n,
+      idempotencyKey: 'upsert-while-readiness-degraded',
+    })).resolves.toBe(mcpBinding);
+
+    expect(
+      useAgentCapabilityStore.getState().bindingsByAgentId['agent-1'],
+    ).toEqual([mcpBinding]);
   });
 
   it('joins source selectors through canonical manifest identity', async () => {
@@ -385,6 +459,22 @@ describe('Agent composer readiness projection', () => {
       compatibility: 'incompatible',
       canSend: false,
       reasonCode: 'runtime_capability_unavailable',
+    });
+  });
+
+  it('allows a model turn when the Agent has no enabled capability bindings', () => {
+    expect(projectAgentComposerReadiness(
+      'agent-1',
+      8,
+      [],
+      undefined,
+      5_000,
+    )).toMatchObject({
+      state: 'ready',
+      compatibility: 'compatible',
+      canSend: true,
+      reasonCode: 'no_enabled_capability_bindings',
+      authority: 'station-capability-authority',
     });
   });
 

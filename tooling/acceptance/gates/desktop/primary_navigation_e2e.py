@@ -346,7 +346,30 @@ class DesktopPrimaryNavigationGate(AcceptanceGate):
             "document.querySelector('[data-page=\"search\"]')",
             "legacy Notes route fallback",
         )
-        for entry in ("notes", "oss", "cron", "channels"):
+        primary_nav_ids = session.execute_script(
+            """
+            return [...document.querySelectorAll('[data-pt-primary-nav]')]
+              .map((element) => element.getAttribute('data-pt-primary-nav'));
+            """
+        )
+        self.assert_condition(
+            "primary_navigation_has_exact_destinations",
+            primary_nav_ids
+            == ["search", "chat", "agent", "moments", "settings"],
+            json.dumps(primary_nav_ids),
+        )
+        for entry in (
+            "home",
+            "project",
+            "evaluation",
+            "marketplace",
+            "memory",
+            "applets",
+            "notes",
+            "oss",
+            "cron",
+            "channels",
+        ):
             self.assert_condition(
                 f"primary_navigation_omits_{entry}",
                 len(
@@ -365,12 +388,50 @@ class DesktopPrimaryNavigationGate(AcceptanceGate):
             )
             == 0,
         )
+        self.assert_condition(
+            "primary_navigation_rejects_dynamic_injection",
+            not any(
+                isinstance(entry, str)
+                and (
+                    entry.startswith("agent:")
+                    or entry.startswith("applet:")
+                )
+                for entry in primary_nav_ids
+            ),
+            json.dumps(primary_nav_ids),
+        )
         assertions["primary_navigation_clean"] = True
         assertions["notes_route_falls_back_without_applet_redirect"] = True
 
-        self._click(
+        self._click(session, '[data-pt-primary-nav="agent"]')
+        self._wait(
             session,
-            '[data-pt-primary-nav="applets"]',
+            "document.querySelector('[data-pt-agent-module-nav]')",
+            "Agent module navigation",
+        )
+        agent_module_items = session.execute_script(
+            """
+            return [...document.querySelectorAll('[data-pt-agent-module-item]')]
+              .map((element) => element.getAttribute('data-pt-agent-module-item'));
+            """
+        )
+        self.assert_condition(
+            "agent_module_has_exact_work_surfaces",
+            agent_module_items == ["chat", "atelier"],
+            json.dumps(agent_module_items),
+        )
+        assertions["agent_module_has_exact_work_surfaces"] = True
+
+        self._click(session, '[data-pt-primary-nav="moments"]')
+        self._wait(
+            session,
+            "document.querySelector('[data-page=\"moments\"]')",
+            "Moments primary page",
+        )
+        assertions["moments_primary_navigation_works"] = True
+
+        session.execute_script(
+            "location.hash = '#/applets'"
         )
         self._wait(
             session,
@@ -400,6 +461,23 @@ class DesktopPrimaryNavigationGate(AcceptanceGate):
             "document.querySelector('[data-page=\"settings\"]')",
             "Settings page",
         )
+        self._click(session, '[data-pt-secondary-tab="ai"]')
+        self._click(session, '[data-pt-section-item="discover"]')
+        self._wait(
+            session,
+            "document.querySelector('[data-testid=\"marketplace-page\"]')",
+            "Discover Settings section",
+        )
+        assertions["discover_owned_by_settings_ai"] = True
+
+        self._click(session, '[data-pt-section-item="memory"]')
+        self._wait(
+            session,
+            "document.querySelector('[data-pt-memory-settings]')",
+            "Memory Settings section",
+        )
+        assertions["memory_owned_by_settings_ai"] = True
+
         self._click(session, '[data-pt-secondary-tab="tools"]')
         self._click(session, '[data-pt-section-item="cron"]')
         self._wait(

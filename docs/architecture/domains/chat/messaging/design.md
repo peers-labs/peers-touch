@@ -89,6 +89,14 @@ clock、randomness、queue transport 和 projection sink。Desktop/Mobile adapte
 这些 ports，不得复制 Direct、OpenMLS、dedup、cursor、ACK、recovery codec 或 receipt
 state machine。
 
+UCA-04A completed the portable contract with a generation-fenced engine
+lifecycle, `messaging-store-v1` single-write migration policy, authoritative
+submitted-command reconciliation, ambiguous-submit handling, opaque attachment
+blob reuse, event sink and lifecycle-cancellation ports. UCA-04 then atomically
+switched both Host consumers, deleted their former semantic owners and moved
+physical storage I/O into the shared native filesystem adapter. Runtime product
+proof remains release-target-specific.
+
 ## 2. 当前能力与系统架构
 
 本节是当前实现快照，不改变后续章节定义的 accepted target architecture。状态必须同时由

@@ -1,8 +1,8 @@
 # Platform Architecture
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-10-05 | **Updated**: 2026-10-05
+> **Version**: v1.1
+> **Created**: 2026-10-05 | **Updated**: 2026-10-16
 > **Owner**: Architecture Team
 
 ---
@@ -20,7 +20,7 @@ belong under `shared/`.
 
 | Platform boundary | Entry | Code roots |
 |---|---|---|
-| Client runtimes | [client/](./client/README.md) | `apps/desktop`, `apps/mobile` |
+| Client forms, hosts, portable cores, and runtimes | [client/](./client/README.md) | `apps/desktop`, `apps/mobile`, portable client Rust packages |
 | Station platform | [station/](./station/README.md) | `apps/station/frame`, access pipeline |
 | Shared contracts | [contracts/](./contracts/README.md) | `model/domain`, handler contracts |
 | Runtime coordination | [runtime/](./runtime/README.md) | storage paths and service DAG |

@@ -51,14 +51,17 @@ interface AgentTopicState {
   ensureDraftTopic: (agentId: string, agentName: string, title: string) => AgentTopic;
   promoteDraftTopic: (agentId: string, draftKey: string, session: Session) => void;
   deleteTopic: (key: string) => Promise<void>;
+  deleteTopics: (keys: string[]) => Promise<void>;
   renameTopic: (key: string, title: string) => Promise<void>;
   smartRenameTopic: (key: string) => Promise<{ title: string }>;
   revertGeneratedTitle: (key: string) => Promise<void>;
   pinTopic: (key: string, pinned: boolean) => Promise<void>;
+  setTopicModel: (key: string, model: string, provider: string) => Promise<void>;
   favoriteTopic: (key: string, favorite: boolean) => Promise<void>;
   setSearchQuery: (query: string) => void;
   setSearchMode: (mode: TopicSearchMode) => void;
   setSortBy: (sortBy: TopicSortBy) => void;
+  discardAgentProjection: (agentId: string) => void;
   resetProjection: () => void;
 }
 
@@ -118,6 +121,7 @@ function findSelectedAgentId(): string {
 }
 
 const topicLoadsByAgentId = new Map<string, Promise<AgentTopic[]>>();
+const topicModelMutations = new Set<string>();
 
 export const useAgentTopicStore = createDesktopStore<AgentTopicState>('agentTopics', (set, get) => ({
   topicsByAgentId: {},
@@ -139,7 +143,8 @@ export const useAgentTopicStore = createDesktopStore<AgentTopicState>('agentTopi
     const inFlight = topicLoadsByAgentId.get(agentId);
     if (inFlight) return inFlight;
 
-    const load = (async () => {
+    let load!: Promise<AgentTopic[]>;
+    load = (async () => {
       log.info('agentTopics', 'loading agent topics', { agentId, reason });
       set((state) => {
         const loadErrorsByAgentId = { ...state.loadErrorsByAgentId };
@@ -152,7 +157,8 @@ export const useAgentTopicStore = createDesktopStore<AgentTopicState>('agentTopi
         };
       });
       try {
-        const sessions = await chatService.listAgentSessions(agentId);
+        const sessions = await Promise.resolve().then(() => chatService.listAgentSessions(agentId));
+        if (topicLoadsByAgentId.get(agentId) !== load) return [];
         const existingByKey = new Map((get().topicsByAgentId[agentId] || []).map((topic) => [topic.key, topic]));
         const drafts = (get().topicsByAgentId[agentId] || []).filter((topic) =>
           isAgentDraftKey(topic.key),
@@ -167,6 +173,7 @@ export const useAgentTopicStore = createDesktopStore<AgentTopicState>('agentTopi
         }));
         return topics;
       } catch (error) {
+        if (topicLoadsByAgentId.get(agentId) !== load) return [];
         const message = error instanceof Error ? error.message : String(error);
         const loadError: AgentTopicLoadError = {
           message,
@@ -244,7 +251,12 @@ export const useAgentTopicStore = createDesktopStore<AgentTopicState>('agentTopi
       activeAgentId: agentId,
       topicsByAgentId: {
         ...state.topicsByAgentId,
-        [agentId]: [topic, ...(state.topicsByAgentId[agentId] || [])],
+        [agentId]: [
+          topic,
+          ...(state.topicsByAgentId[agentId] || []).filter(
+            (existing) => !isAgentDraftKey(existing.key),
+          ),
+        ],
       },
     }));
     return topic;
@@ -273,6 +285,8 @@ export const useAgentTopicStore = createDesktopStore<AgentTopicState>('agentTopi
           key: session.key,
           title: session.title || draft?.title || '',
           created_at: draft?.created_at || session.created_at,
+          model_override: session.model_override ?? draft?.model_override,
+          provider_override: session.provider_override ?? draft?.provider_override,
         },
         draft,
       );
@@ -288,14 +302,22 @@ export const useAgentTopicStore = createDesktopStore<AgentTopicState>('agentTopi
   },
 
   deleteTopic: async (key: string) => {
-    const before = get().topicsByAgentId;
-    set((state) => ({ topicsByAgentId: removeTopic(state.topicsByAgentId, key) }));
-    try {
-      await chatService.deleteSession(key);
-    } catch (error) {
-      set({ topicsByAgentId: before });
-      throw error;
-    }
+    await get().deleteTopics([key]);
+  },
+
+  deleteTopics: async (keys: string[]) => {
+    const selected = [...new Set(keys)];
+    const persisted = selected.filter((key) => !isAgentDraftKey(key));
+    if (persisted.length) await chatService.deleteSessions(persisted);
+    set((state) => ({
+      topicsByAgentId: selected.reduce(removeTopic, state.topicsByAgentId),
+      generatingTitleKeys: Object.fromEntries(
+        Object.entries(state.generatingTitleKeys).filter(([key]) => !selected.includes(key)),
+      ),
+      titleHistoryByKey: Object.fromEntries(
+        Object.entries(state.titleHistoryByKey).filter(([key]) => !selected.includes(key)),
+      ),
+    }));
   },
 
   renameTopic: async (key: string, title: string) => {
@@ -395,6 +417,41 @@ export const useAgentTopicStore = createDesktopStore<AgentTopicState>('agentTopi
     }
   },
 
+  setTopicModel: async (key, model, provider) => {
+    if (!key || (Boolean(model) !== Boolean(provider))) {
+      throw new Error('Topic model selection requires both Provider and model');
+    }
+    if (!Object.values(get().topicsByAgentId).some((topics) => (
+      topics.some((topic) => topic.key === key)
+    ))) {
+      throw new Error('Topic is no longer available');
+    }
+    if (topicModelMutations.has(key)) {
+      throw new Error('Topic model selection is already being saved');
+    }
+    topicModelMutations.add(key);
+    try {
+      if (!isAgentDraftKey(key)) {
+        const conversation = await api.getAgentConversation(key);
+        await api.updateAgentConversation({
+          conversation_id: key,
+          expected_version: conversation.version,
+          model_name: model,
+          provider_id: provider,
+        });
+      }
+      set((state) => ({
+        topicsByAgentId: replaceTopic(state.topicsByAgentId, key, (topic) => ({
+          ...topic,
+          model_override: model || undefined,
+          provider_override: provider || undefined,
+        })),
+      }));
+    } finally {
+      topicModelMutations.delete(key);
+    }
+  },
+
   favoriteTopic: async (key: string, favorite: boolean) => {
     const before = get().topicsByAgentId;
     set((state) => ({
@@ -428,8 +485,26 @@ export const useAgentTopicStore = createDesktopStore<AgentTopicState>('agentTopi
     set({ sortBy });
   },
 
+  discardAgentProjection: (agentId) => {
+    const keys = new Set((get().topicsByAgentId[agentId] || []).map((topic) => topic.key));
+    keys.add(createAgentDraftKey(agentId));
+    topicLoadsByAgentId.delete(agentId);
+    for (const key of keys) topicModelMutations.delete(key);
+    const without = <T,>(records: Record<string, T>, removed: Set<string>) =>
+      Object.fromEntries(Object.entries(records).filter(([key]) => !removed.has(key)));
+    set((state) => ({
+      topicsByAgentId: without(state.topicsByAgentId, new Set([agentId])),
+      loadingAgentIds: without(state.loadingAgentIds, new Set([agentId])),
+      loadErrorsByAgentId: without(state.loadErrorsByAgentId, new Set([agentId])),
+      generatingTitleKeys: without(state.generatingTitleKeys, keys),
+      titleHistoryByKey: without(state.titleHistoryByKey, keys),
+      ...(state.activeAgentId === agentId ? { activeAgentId: '', lastError: undefined } : {}),
+    }));
+  },
+
   resetProjection: () => {
     topicLoadsByAgentId.clear();
+    topicModelMutations.clear();
     set({
       topicsByAgentId: {},
       activeAgentId: '',

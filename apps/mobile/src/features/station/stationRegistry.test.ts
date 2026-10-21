@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import type { NativeStationRouteCandidate } from '../../services/mobileCommands';
 import {
+  addStationRoute,
   buildStationUrl,
+  emptyStationRegistry,
   replaceStationEntryIdentity,
   type StoredStationRegistry,
 } from './stationRegistry';
@@ -101,6 +104,85 @@ describe('Station registry trust boundary', () => {
       {
         stationPeerId: 'station-new',
         url: 'https://other.example',
+      },
+    )).toEqual({
+      ok: false,
+      error: 'mobile.launch.stationIdentityInvalid',
+    });
+  });
+
+  it('accepts the unified libp2p transport for a verified Direct route', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(30);
+    const route: NativeStationRouteCandidate = {
+      stationPeerId: 'station-a',
+      nodePeerId: 'node-a',
+      stationRootPublicKey: [1, 2, 3],
+      nodeAuthorizationDigest: Array(32).fill(4),
+      authorizationEpoch: 1,
+      routeId: 'direct-node-a',
+      routeType: 'direct',
+      transport: 'libp2p_http_v1',
+      endpointOrigin: 'http://10.37.94.156:18080',
+      routeGeneration: 1,
+      innerTlsSpkiSha256: Array(32).fill(5),
+      addresses: ['/ip4/10.37.94.156/tcp/4001/p2p/node-a'],
+      attestationBytes: [6],
+      attestationExpiresAtUnixMs: 60,
+      sourceRef: 'a'.repeat(64),
+    };
+
+    const result = addStationRoute(
+      emptyStationRegistry(),
+      {
+        identity: {
+          stationPeerId: route.stationPeerId,
+          url: route.endpointOrigin,
+        },
+        stationRootPublicKey: route.stationRootPublicKey,
+        route,
+      },
+      {
+        checkedAt: 29,
+        online: true,
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.registry.entries[0]?.routes?.[0]).toMatchObject({
+      routeId: route.routeId,
+      routeType: 'direct',
+      transport: 'libp2p_http_v1',
+      innerTlsSpkiSha256: route.innerTlsSpkiSha256,
+    });
+  });
+
+  it('rejects the removed direct HTTPS transport', () => {
+    const route = {
+      stationPeerId: 'station-a',
+      nodePeerId: 'node-a',
+      stationRootPublicKey: [1, 2, 3],
+      nodeAuthorizationDigest: Array(32).fill(4),
+      authorizationEpoch: 1,
+      routeId: 'legacy-direct-node-a',
+      routeType: 'direct',
+      transport: 'direct_https',
+      endpointOrigin: 'https://station.example',
+      routeGeneration: 1,
+      innerTlsSpkiSha256: Array(32).fill(5),
+      addresses: ['https://station.example'],
+      sourceRef: 'b'.repeat(64),
+    } as unknown as NativeStationRouteCandidate;
+
+    expect(addStationRoute(
+      emptyStationRegistry(),
+      {
+        identity: {
+          stationPeerId: route.stationPeerId,
+          url: route.endpointOrigin,
+        },
+        stationRootPublicKey: route.stationRootPublicKey,
+        route,
       },
     )).toEqual({
       ok: false,

@@ -1,7 +1,7 @@
 # 开发流程工具重构设计
 
 > **Status**: active
-> **Created**: 2026-09-13 | **Updated**: 2026-10-14
+> **Created**: 2026-09-13 | **Updated**: 2026-10-17
 > **Owner**: Platform Team
 
 ## 1. 目标与范围
@@ -94,6 +94,22 @@ Agent 在动手前核对目标 worktree 的真实目录、分支和已有改动�
 
 任务记录损坏时，该任务的自动恢复不可用，但不能阻止另一项已明确授权且不冲突的工作。新任务仍检查实际修改范围与资源；损坏记录不自动删除，也不能用人工填“成功”补齐。
 
+复杂正式 Plan 还包含 `outcome-comparison.md`。它不是进度记录，而是 Plan 的人类可读
+效果合同：
+
+```text
+Outcome Comparison Contract + Planned Outcome Comparison
+  -> canonical digest enters Plan Version digest
+
+Actual Outcome Results
+  -> current-source status/evidence/deviation
+  -> final report SHA enters completion or aggregate evidence
+```
+
+计划区冻结执行前基线、目标效果和 criterion 到 Task/Gate 的映射。实际结果区可以在
+执行期间更新，但 `PASS/PARTIAL` 必须同时有源码身份和证据引用。这样既不因回填结果
+制造新 Plan，也不允许执行者事后改写原目标。
+
 ## 6. 运行环境与真实资源冲突
 
 复用 `make profile`、`make station`、`make desktop` 和当前平台入口。Make 保持薄转发，不再增加 `dev-quick` 等快任务专用入口。
@@ -138,6 +154,10 @@ stable reset 始终拒绝。Agent 不能伪造 Profile、扩大到未知目标�
 验证与 Acceptance。功能通过不授权 push、合并、发布、历史改写或 stable 环境重置。
 尚需用户亲自验证的事项保持待确认。
 
+有正式 Plan 时，完成判断同时逐项核对 outcome criterion。Task/Gate 通过但用户效果、
+架构 hard cut 或技术变化未实际发生时，对应项只能是 `PARTIAL` 或 `UNPROVEN`。
+Outcome report 汇总现有证据，不成为新的证据生产者或权限来源。
+
 结束时只处理本次持有的资源。关闭记录可恢复，但只能描述本任务的收尾，不能成为同 worktree 的全局新任务门禁。仍有资源未释放时明确列出并阻止相冲突的操作，不能因为缺少一张总关闭回执就封住整个工作区。
 
 ## 8. Hook 与安装的失败边界
@@ -173,6 +193,8 @@ stable reset 始终拒绝。Agent 不能伪造 Profile、扩大到未知目标�
 - 非 stable Profile 的部署与精确 reset 可持续执行；stable 自主重置、抢占设备以及冒用资源标识被实际操作入口拒绝。
 - 多场景复用环境，场景不重复准备资源；清理只释放本任务持有的资源。
 - 验证与审查不依赖 Hook，旧证据不能证明新源码，框架通过不能代替业务通过。
+- 复杂 Plan 的用户体验、产品、架构、技术、质量运维效果在实施前可读、实施后可按
+  current-source evidence 逐项核对，计划区漂移和结果区伪造都会失败关闭。
 - 新旧实现切换后，正式入口、Skill、规范和测试采用同一套职责；不能留无限期兼容开关。
 
 正式设计评审和实现验收都按这些结果检查。本次文档成形不能替代任何运行通过结论。

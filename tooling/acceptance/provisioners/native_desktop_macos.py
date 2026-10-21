@@ -180,7 +180,17 @@ class NativeDesktopMacOSProvisioner:
     def ready(
         self,
         gate_id: str = "runtime-cell-preflight",
+        *,
+        artifact_kind: str = "acceptance-binary",
     ) -> RuntimeCellManifest:
+        if artifact_kind != "acceptance-binary":
+            raise BlockedError(
+                reason=(
+                    f"macOS runtime cell does not support artifact kind "
+                    f"{artifact_kind!r}"
+                ),
+                resource=f"runtime-cell-artifact:{self.contract.cell_id}",
+            )
         if sys.platform != "darwin":
             raise BlockedError(
                 reason="desktop-macos-native requires a macOS orchestrator",

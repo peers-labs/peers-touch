@@ -8,9 +8,6 @@ import {
   Lock, ShieldAlert, Bot,
 } from 'lucide-react';
 import {
-  CHAT_COMPOSER_CAPABILITIES_DESKTOP_MAIN,
-} from '@peers-touch/client-chat-core';
-import {
   socialThreadKey,
   useSocialChatStore,
 } from '../../store/socialChat';
@@ -27,6 +24,9 @@ import { log } from '../../utils/logger';
 import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
 import { presentError, type PresentedError } from '../../services/errorPresenter';
 import { ChatComposer, type ChatComposerDraft } from './ChatComposer';
+import {
+  DESKTOP_CHAT_COMPOSER_CAPABILITIES_MAIN,
+} from './chatPresentationPolicy';
 import {
   type ChatMessage,
   messageThreadRootUlid,
@@ -874,7 +874,7 @@ export function ChatMessageArea({
           replyPreview={replyingPreview}
           replyPreviewKey={replyToUlid}
           sending={false}
-          capabilities={CHAT_COMPOSER_CAPABILITIES_DESKTOP_MAIN}
+          capabilities={DESKTOP_CHAT_COMPOSER_CAPABILITIES_MAIN}
         />
       </Flexbox>
     );
@@ -1228,7 +1228,7 @@ export function ChatMessageArea({
         replyPreviewKey={replyToUlid}
         editPreview={editingUlid ? currentMessages.find((m) => m.ulid === editingUlid)?.content || '' : undefined}
         sending={sending}
-        capabilities={CHAT_COMPOSER_CAPABILITIES_DESKTOP_MAIN}
+        capabilities={DESKTOP_CHAT_COMPOSER_CAPABILITIES_MAIN}
       />
       )}
 

@@ -596,11 +596,11 @@ No lifecycle step is assigned to a business module inside this plan.
 
 | Workstream | Status | Evidence |
 |---|---|---|
-| D19-W1 Pure contracts/result algebra | in progress | canonical result algebra, requirement/config/registry/baseline foundations, and the first C3c durability slice pass; remaining §20 closed schemas are pending |
+| D19-W1 Pure contracts/result algebra | in progress | durable source/runtime capture, requirement record, six-state one-shot reservation, runtime projection, enforcement/abort/maintenance contracts pass; remaining power-controller/trust contracts stay with W5-SRC |
 | D19-W2 Generic registration/schema | complete | registry, protected baseline, planner, validator, boundary, and coverage focused tests pass |
-| D19-W3 Evidence Store lifecycle | pending | not run |
-| D19-W4 Supervisor/worker runtime | pending | not run |
-| D19-W5 Durability/controller trust | pending | W5-SRC and both external qualification epochs remain unproven |
+| D19-W3 Evidence Store lifecycle | in progress | required-run allocation, seal, completed/pre-seal publication, lost-ACK equality, generation latest, historical authoritative reader, cleanup protection, interlock/activation/abort authorization pass; destructive tombstone/delete remains fail-closed |
+| D19-W4 Supervisor/worker runtime | in progress | all six worker kinds, native lifecycle, source/runtime capture, materializer/finalizer, authority runtime, five maintenance operations and native openat2 helper source pass locally; exact Linux mutation runtime evidence remains pending |
+| D19-W5 Durability/controller trust | in progress | controller journal/lifecycle/store adversarial checks and qualification-only witness authorization/identity checks pass; W5-SRC closure and both external qualification epochs remain unproven |
 | D19-W6 Proof admission/authority | pending | W6-A qualification CLI subset and W6-B final source are not run |
 | D19-W7 Runner/tooling cutover | pending | not run |
 | D19-W8 Synthetic self-validation | pending | not run |
@@ -633,18 +633,59 @@ Current W1 sub-closures:
   preflight platform/runtime measurement, expectation records, probe runtime,
   power-controller, trust, receipt, journal, and dispatch contracts remain
   pending.
-- `W1-C3d` pending: remaining enforcement/activation/authority/abort and
-  maintenance request/result unions after C3b/C3c types exist.
+- `W1-C3d` complete: enforcement/activation/authority/abort event chain and
+  maintenance request/result unions are closed and mutation-tested.
+
+Current implementation frontier:
+
+- W5-SRC controller storage uses descriptor-relative no-follow traversal,
+  regular-file/same-device validation, bounded canonical JSON, immutable
+  equal-byte durability replay, and synced directory creation. Controller
+  mutation verifies the live process/current epoch/runtime lock plus the
+  complete bounded signed journal and its deterministic head. Safe same-epoch
+  unheaded transitions may be adopted once; a later call cannot adopt an
+  unheaded power dispatch. Closed, forked, replaced-lock, prior-epoch,
+  conflicting-head, corrupt-signature, forked-journal, and duplicate-actuator
+  cases fail closed in synthetic checks.
+- W5-SRC witness authorization and identity now use closed qualification-only
+  contracts with canonical SEC1 P-256 keys, derived witness/authorization IDs,
+  confirmation and object digests, and immutable authorization copies.
+  Qualification signatures use the dedicated interruption/recovery domains
+  and low-S P1363 encodings. Production Ed25519 point/scalar validation uses
+  pinned PyNaCl/libsodium alongside the existing cryptography verifier.
+  Trust admission binds the resolved ACTIVE public key to the controller
+  signer before dispatch.
+- These checks establish source behavior only. Complete typed controller
+  epoch/lease/receipt/journal/request/result contracts, qualified live
+  host/store/mount equality, signed recovery authority and its stored
+  ArtifactRef closure, trust transition reservations/history, and the W6-A
+  executable qualification CLI remain unfinished. The current controller
+  module is not an operationally qualified power authority.
+- W5-Q1/Q2 require the complete Linux and Darwin physical/external-VM
+  qualification matrix at the required reviewed source commits. The observed
+  workstation restart supplies no before/interruption/after/recovery chain
+  and does not close either qualification epoch. W6-B and W7 remain behind
+  their accepted dependency gates.
+- W3/W4 normal publication and non-destructive authority mutation paths pass.
+- Linux destructive abort now routes every plan/delete path through the
+  verified native supervisor binary's maintenance-only
+  `openat2(RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS |
+  RESOLVE_NO_MAGICLINKS | RESOLVE_NO_XDEV)` helper mode; macOS compile and
+  fail-closed dispatch pass. Exact Linux compile/runtime mutation evidence is
+  still pending; this local checkpoint provides source addressability but does
+  not establish runtime or qualification evidence.
 
 Current evidence:
 
 ```text
-96 result/finalization/runtime/registry tests PASS
-15 acceptance-plan tests PASS
-14 acceptance-validate tests PASS
-15 acceptance-coverage-report tests PASS
+194 finalization/runtime/store/maintenance tests PASS
+56 Evidence Store/finalizer registry tests PASS
+40 acceptance-plan tests PASS
+23 acceptance-validate tests PASS
+18 acceptance-coverage-report tests PASS
 8 acceptance-infra-boundary tests PASS
 py_compile PASS
+C supervisor syntax check with json-c/OpenSSL headers PASS
 owned-file git diff --check PASS
 legacy CellProofState/CellResult/aggregate_matrix ownership scan PASS
 ```
@@ -669,7 +710,8 @@ Unified native Goal G0 status:
 - Mobile status copies now consistently record accepted D-19 architecture and
   plan, active Infra execution, blocked E2-5, and
   `E2-6 = UNPROVEN / NOT STARTED`.
-- Commit/index mutation remains pending explicit Owner authorization.
+- DWF-D47 permits this coherent local checkpoint. It does not authorize push,
+  PR, merge, release, deployment, destructive mutation, or qualification.
 
 ## 12. Risks, Non-Claims, And Escalation
 

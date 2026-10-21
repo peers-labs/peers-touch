@@ -483,7 +483,6 @@ pub fn skills_update(
         name: input.name,
         description: input.description,
         content: input.content,
-        enabled: input.enabled,
     };
     match station_client
         .request_proto::<model::agent::UpdateSkillRequest, model::agent::UpdateSkillResponse>(
@@ -538,18 +537,27 @@ pub fn skills_toggle(
     input: SkillToggleInput,
     token: &str,
 ) -> AppResult<StubPayload> {
-    skills_update(
-        station_client,
-        SkillUpdateInput {
-            agent_id: input.agent_id,
-            id: input.id,
-            name: None,
-            description: None,
-            content: None,
-            enabled: Some(input.enabled),
-        },
+    if token.trim().is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
+    let skill_id = input.id.trim();
+    if skill_id.is_empty() {
+        return invalid_argument("id is required");
+    }
+    match station_client.request_json_auth(
+        Method::POST,
+        "/sub-agent/agent/growth/skill/toggle",
         token,
-    )
+        None,
+        Some(&json!({
+            "agent_id": agent_id(input.agent_id),
+            "skill_id": skill_id,
+            "enabled": input.enabled,
+        })),
+    ) {
+        Ok(response) => success_payload("skills_toggle", response),
+        Err(err) => station_error("skills_toggle", err),
+    }
 }
 
 #[cfg(test)]

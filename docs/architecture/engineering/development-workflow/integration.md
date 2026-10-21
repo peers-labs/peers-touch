@@ -1,7 +1,7 @@
 # 新流程如何接入现有工具
 
 > **Status**: active
-> **Created**: 2026-09-13 | **Updated**: 2026-10-14
+> **Created**: 2026-09-13 | **Updated**: 2026-10-17
 > **Owner**: Platform Team
 
 本文定义[重构设计](./design.md)的当前接入和切换边界。项目只有一套自包含流程。
@@ -26,6 +26,9 @@
 - 保留 `git worktree add` 的硬禁令；只有用户显式要求创建 worktree 才能执行，
   不从 Plan、Task、调度、冲突、验证或恢复推导创建授权。
 - 正式计划按需使用；用户不建计划的要求不能被工具、评审或测试覆盖。
+- 创建复杂正式 Plan 时，`pt-architecture-execution-methodology` 生成效果维度与
+  criterion crosswalk，`pt-plan-and-document` 持久化 `outcome-comparison.md`，
+  `pt-dev-workflow` 在验证和交付阶段回填实际结果。
 - 连续执行不在每个任务或评审步骤再次确认；已有授权复用。
 - 运行、安全、质量和业务验证按自身合同处理，未授权操作和未验证结果不能放行或报成功。
 
@@ -73,6 +76,11 @@ Review 和 PR 计划输入均不依赖旧 mount/Session。
 新范围在 `.registry` 和 Gate 中按当前能力登记，沿用现有 framework 运行路径。无效或旧证据拒绝；framework 自测与真实业务验证分别输出。业务缺口交由业务 Acceptance 处理，不由 Infra 补造身份、mock 或降低断言。
 
 PR 无 Plan 时继续支持 `- None`。有明确计划时只验证该输入，不从分支或扫描目录推断任务归属。部署、合并和发布授权仍分别判断。
+
+`plan-package.mjs` 对既有未带 Outcome Comparison 的 Plan 保持只读兼容；新复杂
+Plan 在当前合同内校验计划区 digest、五类效果维度、criterion 到全部 Task/Gate 的
+覆盖及结果状态，不新增 `schemaVersion`。实际结果更新不改变 Plan digest，但会使
+引用旧完整报告摘要的 completion evidence 过期。
 
 ## 6. 切换与既有任务
 

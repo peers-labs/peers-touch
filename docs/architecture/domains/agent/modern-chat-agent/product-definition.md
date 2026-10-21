@@ -1,8 +1,8 @@
 # Modern Chat Agent — Product Definition
 
 > **Status**: accepted
-> **Version**: v1.2
-> **Created**: 2026-07-30 | **Updated**: 2026-10-05
+> **Version**: v1.3
+> **Created**: 2026-07-30 | **Updated**: 2026-10-20
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -112,6 +112,23 @@ Missing closure:
 Feasibility judgment: repository foundations support this vertical loop without
 inventing a second runtime. The loop is `unproven` until the exact runtime
 scenario and Station readback pass.
+
+### 4.1 Deterministic Agent Commands
+
+The Composer exposes a Commands & Skills palette as a deterministic projection,
+not as free-form prompt text:
+
+- `/help` is Desktop-owned static help for the registered command set.
+- `/tools` and `/skills` read the selected Agent's versioned Station capability
+  snapshot; they do not start a model Turn.
+- `/clear` asks Station to create a new empty Topic. It never deletes or rewrites
+  the previous Topic, messages, Turn trace, or attribution.
+- Skill entries reflect enabled `AgentCapabilityBinding` state and readiness.
+  A stale last-accepted snapshot is labeled stale and cannot invoke capability
+  actions, but ordinary text conversation remains available.
+
+Command visibility does not grant authority. Station admission and Tool approval
+remain the execution owners.
 
 ## 5. Product Capability Profile
 

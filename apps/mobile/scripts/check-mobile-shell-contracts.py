@@ -18,6 +18,8 @@ EXPECTED_CAPABILITIES = {
     "mobile-station-access",
     "mobile-runtime-lifecycle",
     "mobile-command-recovery",
+    "mobile-secure-content-portable-core",
+    "mobile-secure-content-runtime",
     "mobile-social-product",
     "mobile-social-cross-platform-interoperability",
     "mobile-native-quality",

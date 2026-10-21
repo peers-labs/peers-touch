@@ -18,6 +18,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	touchmodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"gorm.io/gorm"
@@ -1045,6 +1046,60 @@ func TestToolDispatchServiceProposeAuthorizedBatchUsesCapabilityAuthority(t *tes
 	}
 }
 
+func TestToolDispatchServiceAuthorizesSkillViewByPinnedSkillSource(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		requested  string
+		wantAccept bool
+	}{
+		{name: "matching Skill", requested: "Bound Skill", wantAccept: true},
+		{name: "different Skill", requested: "Other Skill", wantAccept: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newToolDispatchFixture(t)
+			proposal := fixture.authorizedProposalForOwner(
+				t,
+				strings.ReplaceAll(test.name, " ", "-"),
+				model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_AUTO,
+				model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_READY,
+				true,
+				model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_STATION,
+			)
+			call := &proposal.Calls[0]
+			if err := fixture.db.Model(&persistence.CapabilityManifest{}).
+				Where(
+					"capability_id = ? AND version = ?",
+					call.CapabilityID,
+					call.SchemaVersion,
+				).
+				Updates(map[string]interface{}{
+					"source_kind": int32(
+						model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_SKILL,
+					),
+					"source_instance_id": "Bound Skill",
+				}).Error; err != nil {
+				t.Fatalf("persist Skill manifest identity: %v", err)
+			}
+			call.ToolName = "skill_view"
+			call.Arguments = []byte(fmt.Sprintf(`{"name":%q}`, test.requested))
+
+			_, err := fixture.service.ProposeAuthorizedBatch(
+				context.Background(),
+				proposal,
+			)
+			if test.wantAccept {
+				if err != nil {
+					t.Fatalf("matching pinned Skill rejected: %v", err)
+				}
+				return
+			}
+			if !isCapabilityError(err, errcode.AgentInvalidSourceState) {
+				t.Fatalf("different Skill authority accepted: %v", err)
+			}
+		})
+	}
+}
+
 func TestToolDispatchServiceProposeAuthorizedBatchFailsClosed(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -1471,6 +1526,165 @@ func TestTurnServiceExecutesAuthorizedStationToolExactlyOnce(t *testing.T) {
 			"duplicate delivery count = %d, want 1",
 			call.DuplicateDeliveryCount,
 		)
+	}
+}
+
+func TestTurnServicePersistsAppliedSkillBodyInContextLedger(t *testing.T) {
+	fixture := newToolDispatchFixture(t)
+	restore := setupTestCatalog()
+	t.Cleanup(restore)
+	if err := fixture.db.AutoMigrate(
+		&persistence.Skill{},
+		&persistence.SkillVersion{},
+	); err != nil {
+		t.Fatalf("migrate Skill persistence: %v", err)
+	}
+
+	const (
+		skillID      = "skill-context-ledger"
+		skillName    = "Context Ledger Skill"
+		skillContent = "Preserve this exact Skill body."
+	)
+	proposal := fixture.authorizedProposalForOwner(
+		t,
+		"skill-context-ledger",
+		model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_AUTO,
+		model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_READY,
+		true,
+		model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_STATION,
+	)
+	proposal.Provider = "test-provider"
+	proposal.Model = "test-model"
+	call := &proposal.Calls[0]
+	var originalManifest persistence.CapabilityManifest
+	if err := fixture.db.Where(
+		"capability_id = ? AND version = ?",
+		call.CapabilityID,
+		call.SchemaVersion,
+	).First(&originalManifest).Error; err != nil {
+		t.Fatalf("load original capability manifest: %v", err)
+	}
+	skillCapabilityID := "skill:" + skillID
+	skillManifest := originalManifest
+	skillManifest.CapabilityID = skillCapabilityID
+	skillManifest.SourceKind = int32(
+		model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_SKILL,
+	)
+	skillManifest.SourceInstanceID = skillName
+	skillManifest.PayloadHash = hashString("skill-context-ledger-manifest")
+	if err := fixture.db.Create(&skillManifest).Error; err != nil {
+		t.Fatalf("persist Skill capability manifest: %v", err)
+	}
+	if err := fixture.db.Model(&persistence.AgentCapabilityBinding{}).
+		Where("binding_id = ?", call.BindingID).
+		Update("capability_id", skillCapabilityID).Error; err != nil {
+		t.Fatalf("pin Skill capability binding: %v", err)
+	}
+	var snapshotRecord persistence.CapabilityReadinessSnapshot
+	if err := fixture.db.First(
+		&snapshotRecord,
+		"snapshot_id = ?",
+		proposal.ReadinessSnapshotID,
+	).Error; err != nil {
+		t.Fatalf("load Skill readiness snapshot: %v", err)
+	}
+	var snapshot model.CapabilityReadinessSnapshot
+	if err := proto.Unmarshal(snapshotRecord.Payload, &snapshot); err != nil {
+		t.Fatalf("decode Skill readiness snapshot: %v", err)
+	}
+	snapshot.Capabilities[0].CapabilityId = skillCapabilityID
+	snapshotPayload, err := proto.MarshalOptions{Deterministic: true}.Marshal(&snapshot)
+	if err != nil {
+		t.Fatalf("encode Skill readiness snapshot: %v", err)
+	}
+	if err := fixture.db.Model(&snapshotRecord).Updates(map[string]interface{}{
+		"payload":      snapshotPayload,
+		"payload_hash": hashBytes(snapshotPayload),
+	}).Error; err != nil {
+		t.Fatalf("persist Skill readiness snapshot: %v", err)
+	}
+	call.ToolName = "skill_view"
+	call.CapabilityID = skillCapabilityID
+	call.Arguments = []byte(fmt.Sprintf(`{"name":%q}`, skillName))
+
+	now := fixture.now
+	if err := fixture.db.Create(&persistence.Skill{
+		ID: skillID, AgentID: proposal.AgentID, Name: skillName,
+		Description: "ContextLedger regression fixture", Content: skillContent,
+		TrustLevel: string(domain.TrustLevelCommunity), Version: 1,
+		CreatedAt: now, UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("persist Skill: %v", err)
+	}
+	if err := fixture.db.Create(&persistence.SkillVersion{
+		ID: "skill-version-context-ledger", SkillID: skillID,
+		AgentID: proposal.AgentID, Version: 1, Content: skillContent,
+		Trigger: "create", CreatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("persist Skill version: %v", err)
+	}
+
+	resolver := fixture.seedPinnedRuntimeAuthority(t, proposal, 0)
+	ledger := &model.ContextLedger{
+		ContextLedgerId: "context:" + proposal.AttemptID,
+		TurnId:          proposal.TurnID,
+		AttemptId:       proposal.AttemptID,
+		PromptVersion:   "v1",
+	}
+	ledgerJSON, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(ledger)
+	if err != nil {
+		t.Fatalf("encode initial ContextLedger: %v", err)
+	}
+	if err := fixture.db.Model(&persistence.TurnAttempt{}).
+		Where("id = ?", proposal.AttemptID).
+		Update("context_ledger", string(ledgerJSON)).Error; err != nil {
+		t.Fatalf("persist initial ContextLedger: %v", err)
+	}
+	if _, err := fixture.service.ProposeAuthorizedBatch(
+		context.Background(),
+		proposal,
+	); err != nil {
+		t.Fatalf("propose Skill tool: %v", err)
+	}
+
+	skills := NewSkillService(NewSkillsGuardService(), nil)
+	skills.db = fixture.db
+	turnService := &TurnService{
+		toolDispatch:      fixture.service,
+		toolRegistry:      NewToolRegistryService(nil, skills),
+		admissionResolver: resolver,
+	}
+	if err := turnService.executeReadyStationTools(context.Background()); err != nil {
+		t.Fatalf("execute Skill tool: %v", err)
+	}
+
+	var attempt persistence.TurnAttempt
+	if err := fixture.db.First(
+		&attempt,
+		"id = ?",
+		proposal.AttemptID,
+	).Error; err != nil {
+		t.Fatalf("reload Skill attempt: %v", err)
+	}
+	var persisted model.ContextLedger
+	if err := protojson.Unmarshal([]byte(attempt.ContextLedger), &persisted); err != nil {
+		t.Fatalf("decode persisted ContextLedger: %v", err)
+	}
+	expectedRef := "skill:" + skillID + ":version=1"
+	bodyCount := 0
+	for _, segment := range persisted.GetSegments() {
+		if segment.GetType() !=
+			model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_SKILL_BODY {
+			continue
+		}
+		bodyCount++
+		if !containsStr(segment.GetSourceRefs(), expectedRef) ||
+			segment.GetContentHash() != sha256Hex(skillContent) {
+			t.Fatalf("persisted Skill body lineage is invalid: %+v", segment)
+		}
+	}
+	if bodyCount != 1 {
+		t.Fatalf("persisted Skill body segment count = %d, want 1", bodyCount)
 	}
 }
 

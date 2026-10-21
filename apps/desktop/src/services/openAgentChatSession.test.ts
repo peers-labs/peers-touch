@@ -15,11 +15,19 @@ const topicState = vi.hoisted(() => ({
   loadTopicsForAgent: vi.fn(),
   createDraftTopic: vi.fn(),
   ensureDraftTopic: vi.fn(),
+  upsertTopics: vi.fn(),
 }));
 const chatState = vi.hoisted(() => ({
   currentSessionKey: 'previous-conversation',
   mergeSessions: vi.fn(),
   selectSession: vi.fn(),
+}));
+const agentApi = vi.hoisted(() => ({
+  createAgentConversation: vi.fn(),
+}));
+
+vi.mock('../services/desktop_api', () => ({
+  api: agentApi,
 }));
 
 vi.mock('../store/agent', () => ({
@@ -40,7 +48,10 @@ vi.mock('../store/chat', () => ({
   },
 }));
 
-import { openAgentChatSession } from './openAgentChatSession';
+import {
+  createStationAgentTopic,
+  openAgentChatSession,
+} from './openAgentChatSession';
 
 const agent = {
   id: 'agent-2',
@@ -65,6 +76,18 @@ describe('openAgentChatSession load failure', () => {
     topicState.ensureDraftTopic.mockReturnValue(draft);
     chatState.currentSessionKey = 'previous-conversation';
     chatState.selectSession.mockResolvedValue(undefined);
+    agentApi.createAgentConversation.mockResolvedValue({
+      conversation_id: 'conversation-new',
+      agent_id: agent.id,
+      ptid: 'ptid:actor-1',
+      title: 'New Chat',
+      status: 'active',
+      active_branch_message_id: '',
+      queued_turn_count: 0,
+      version: 1,
+      created_at: '2026-10-20T00:00:00Z',
+      updated_at: '2026-10-20T00:00:00Z',
+    });
   });
 
   it('moves the selected Agent to a local draft instead of showing another Agent session', async () => {
@@ -99,5 +122,18 @@ describe('openAgentChatSession load failure', () => {
       accepted.key,
       accepted,
     );
+  });
+
+  it('creates /clear topics through Station before selecting them', async () => {
+    const topic = await createStationAgentTopic(agent, 'New Chat');
+
+    expect(agentApi.createAgentConversation).toHaveBeenCalledWith({
+      agent_id: agent.id,
+      title: 'New Chat',
+    });
+    expect(topic.key).toBe('conversation-new');
+    expect(topicState.upsertTopics).toHaveBeenCalledWith(agent.id, [topic]);
+    expect(chatState.mergeSessions).toHaveBeenCalledWith([topic]);
+    expect(chatState.selectSession).toHaveBeenCalledWith(topic.key, topic);
   });
 });

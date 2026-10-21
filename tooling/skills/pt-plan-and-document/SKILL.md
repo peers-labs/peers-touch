@@ -3,7 +3,7 @@ name: "pt-plan-and-document"
 description: "Persists accepted product, architecture, or execution models. For execution planning it renders and validates an explicit frozen Plan Version without creating runtime workspace occupancy."
 stage: "PLAN"
 requires: ["accepted source model", "repository documentation rules"]
-produces: ["persisted documents", "validated frozen Plan Version", "review prompt"]
+produces: ["persisted documents", "validated frozen Plan Version", "human-readable outcome comparison", "review prompt"]
 next: "pt-dev-workflow agent review loop"
 ---
 
@@ -20,6 +20,7 @@ next: "pt-dev-workflow agent review loop"
 - 选择落盘目录和文件名；
 - 渲染 accepted model；
 - 创建 frozen Plan Version / Task Slice 文件；
+- 创建并绑定 `outcome-comparison.md`；
 - 运行结构校验；
 - 更新导航；
 - 生成 review prompt。
@@ -98,6 +99,12 @@ docs/architecture/<taxonomy>/<module>/
 `requiredDocuments`，登记非重叠 `governedPaths`、当前 capability allowlist
 和外部 capability ID 引用；不得登记已删除名称、历史别名或迁移黑名单。
 
+新增 canonical 项目图，或新建、重画模块主图时，在所属目录创建
+`*.diagram.json`，由 `diagram-render.mjs` 生成统一 SVG。Markdown 只嵌入成品
+SVG。完成 spec、文档与链接更新后，依次运行 diagram renderer 和 document index，
+使视觉资产、模块索引和反向引用从现有 registry、Diagram spec 与真实 Markdown
+link graph 重新生成。
+
 ## 3. 持久化 Plan Version
 
 将 accepted plan model 渲染为：
@@ -105,18 +112,32 @@ docs/architecture/<taxonomy>/<module>/
 ```text
 execution-plans/<date>-<slug>/
 ├── plan.md
+├── outcome-comparison.md
 ├── tasks/<task-id>.md
 └── archive/
 ```
 
 `plan.md` 持有：
 
+- 固定 `outcomeComparison.path`，且不写 `schemaVersion` 或 `vN` 标签；
 - stable goal、scope/non-goals；
 - product/architecture traceability；
 - Task index 和 dependency DAG；
 - version identity 与 authorization；
 - 唯一的 `Acceptance Execution` contract；
 - 不包含 execution worktree、Task lifecycle 或 current selection。
+
+`outcome-comparison.md` 持有：
+
+- `Outcome Comparison Contract`：稳定 criterion ID、五类效果维度、Task/Gate
+  crosswalk 及计划区 digest；
+- `Planned Outcome Comparison`：执行前事实、目标态、预期用户/产品/架构/技术/
+  质量运维效果、明确不变项和风险；
+- `Actual Outcome Results`：初始全部 `UNPROVEN`，执行中仅按 current-source
+  evidence 更新状态、实际效果、证据和偏差。
+
+计划区进入 Plan Version digest；结果区不进入 digest。更新计划区必须创建新
+`versionId`，回填结果区只使引用旧完整报告摘要的完成证据过期。
 
 每个 Task Slice 只持有一个 vertical closure：
 
@@ -137,6 +158,7 @@ execution-plans/<date>-<slug>/
 - manifest 不超过 300 行 / 20 KiB；
 - Task Slice 不超过 200 行 / 12 KiB；
 - Plan Version 冻结后不可原地修改；
+- `outcome-comparison.md` 计划区冻结，实际结果区按证据更新；
 - archive 不参与 discovery、resume 或状态；
 - 每个 closure 在 `Acceptance Execution` 中恰好出现一次；
 - repository path 使用 repo-relative POSIX 表示；
@@ -155,9 +177,12 @@ Context Anchor 只存在于聊天；执行进度如需跨会话恢复，由 Dev 
 ```bash
 make plan-validate PLAN=<package-plan.md>
 node tooling/scripts/architecture/module-governance.mjs validate
+node tooling/scripts/architecture/diagram-render.mjs --check
+node tooling/scripts/architecture/document-index.mjs --check
 ```
 
 3. 生成并记录完整 Plan Version digest；不得把 authoring worktree 写入 Plan。
+   digest 必须包含 Outcome Comparison Contract 与计划区摘要。
 4. 使用 `planctl inspect --plan <package-plan.md>` 从明确路径读取冻结版本；
    不创建 PlanMount、ExecutionRun、declaration、Session 或 active-work。
 5. 复杂任务如需恢复，由 Development Run 以明确 `taskId` 创建可选任务记录，
@@ -194,6 +219,7 @@ strength，返回 `PRODUCT_AMENDMENT_REQUIRED`、`DESIGN_AMENDMENT_REQUIRED` 或
 - vertical closure 和 dependency 审查；
 - scope/cutover/deletion 审查；
 - risk/state-based verification 审查；
+- Outcome Comparison 的基线真实性、五维覆盖、Task/Gate 完整映射和非夸大结果；
 - authorization 和 claim boundary；
 - `planctl validate` 结果。
 
@@ -209,6 +235,8 @@ sources 已能裁决的问题，Agent 自动修复并重审；仅当存在 DWF-D
 - [ ] 输入模型已被 owning methodology 接受
 - [ ] 文件位置、命名、元数据、导航正确
 - [ ] Plan Version 和所有 Task Slice 通过 `planctl validate`
+- [ ] `outcome-comparison.md` 覆盖五个效果维度、全部 Task/Gate，计划区摘要已绑定
+- [ ] Actual Outcome Results 初始为 `UNPROVEN`，未伪造执行结果
 - [ ] 涉及的 active 架构模块已登记并通过共享 module governance validator
 - [ ] Plan Version digest 已冻结且不含 execution worktree identity
 - [ ] `planctl inspect` 可直接读取明确 Plan Version 和 Task Slice
@@ -239,6 +267,8 @@ sources 已能裁决的问题，Agent 自动修复并重审；仅当存在 DWF-D
 - 把通用 success/network/timeout/invalid/cancel 套餐写进每个 closure；
 - 创建 active 单文件计划或第二套状态表；
 - 把 runtime 日志、raw output 或 Context Anchor 写进 package；
+- 只写技术文件清单，不解释用户、产品、架构和运维效果；
+- 把目标态写成实际结果，或用 Task/Gate 完成度自动生成 `PASS`；
 - 写共享 `project_memory.md active_work` 表；
 - 从 branch、目录、mtime 或历史 active-work 猜选 Plan/Task；
 - 为 Plan 使用创建或切换 worktree；

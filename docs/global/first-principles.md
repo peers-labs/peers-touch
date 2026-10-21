@@ -15,14 +15,26 @@
 - Mobile: `apps/mobile/src` + `apps/mobile/src-tauri`; Android/iOS code is native
   plugin/generated platform integration, not the primary UI mainline
 - Station: `apps/station/app` and `apps/station/frame`
-- Shared client libraries: `client/common/*`
+- Portable client Rust libraries: capability-owned crates under `packages/`
+- Cross-client architecture:
+  `docs/architecture/platform/client/cross-client-runtime/`
 
-### 3) Desktop command path consistency
+### 3) Reuse before specialization
+- Search architecture capabilities and workspace packages before creating a
+  client-local component, helper, runtime, package, or crate.
+- Shared contracts, protocol/security/state semantics, and product-entity
+  semantics have one canonical implementation.
+- A second consumer must reuse or extract the canonical asset before merge.
+- Desktop/Mobile Presentation Policy and Desktop/Android/iOS Host adapters are
+  the only default divergence axes.
+- Any other parallel implementation requires an accepted divergence record.
+
+### 4) Desktop command path consistency
 - Desktop business calls should prefer Tauri command bridge.
 - Contract/input types in TS must align with Rust `interface/contracts`.
 - New commands must be registered in `apps/desktop/src-tauri/src/main.rs`.
 
-### 4) Logging and security
+### 5) Logging and security
 - No debug-print style logs in production paths.
 - No secrets in logs.
 - Validate auth/ownership checks for all read/write handlers.
@@ -50,9 +62,13 @@ CI=false pnpm run tauri:build
 
 ### Mobile
 ```bash
-cd apps/mobile/android && ./gradlew build
-cd apps/mobile/ios && xcodebuild -scheme PeersTouch -configuration Debug build
+pnpm mobile:check
 ```
+
+`pnpm mobile:check` proves shared source checks only. A release or capability
+claim for Android or iOS additionally requires its own source-bound native
+build and runtime Gate. Evidence from one OS never proves the other; a missing
+required cell is `UNPROVEN`.
 
 ### Station
 ```bash
@@ -81,6 +97,7 @@ go test ./...
 ## ✅ Quick Self-Check
 
 - [ ] Are paths and commands aligned with `apps/*`?
+- [ ] Did the change reuse or register the canonical cross-client capability?
 - [ ] Are contracts and command names consistent end-to-end?
 - [ ] Are lint/build/test checks passed on touched modules?
 - [ ] Is runtime verification done in app mode for desktop?

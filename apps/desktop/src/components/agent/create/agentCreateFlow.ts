@@ -1,41 +1,33 @@
+import { toast } from '@lobehub/ui';
+import { useAgentStore } from '../../../store/agent';
+import i18n from '../../../i18n';
+
 export type OpenCreatedAgentProfile = (agentName: string) => void;
 
-export interface AgentCreateRequest {
-  id: number;
-  openProfile: OpenCreatedAgentProfile;
-}
+let creating = false;
 
-type Listener = () => void;
-
-let activeRequest: AgentCreateRequest | null = null;
-let requestSequence = 0;
-const listeners = new Set<Listener>();
-
-function emitChange(): void {
-  listeners.forEach((listener) => listener());
-}
-
+/** Every creation entry performs the same mutation and immediately enters Profile. */
 export function openAgentCreateFlow(openProfile: OpenCreatedAgentProfile): void {
-  if (activeRequest) return;
-  requestSequence += 1;
-  activeRequest = {
-    id: requestSequence,
-    openProfile,
-  };
-  emitChange();
-}
-
-export function closeAgentCreateFlow(requestId: number): void {
-  if (activeRequest?.id !== requestId) return;
-  activeRequest = null;
-  emitChange();
-}
-
-export function subscribeAgentCreateFlow(listener: Listener): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
-}
-
-export function getAgentCreateRequest(): AgentCreateRequest | null {
-  return activeRequest;
+  if (creating) return;
+  creating = true;
+  const state = useAgentStore.getState();
+  const existing = new Set(state.agents.map((agent) => agent.name));
+  let name = 'new-agent';
+  for (let suffix = 2; existing.has(name); suffix += 1) {
+    name = `new-agent-${suffix}`;
+  }
+  void state.createAgent({
+    name,
+    title: i18n.t('agent.chat.newAgentTitle', { ns: 'agent' }),
+    description: '',
+    avatar: '🤖',
+    visibility: 'private',
+    workspaceMode: 'agent',
+  }).then((agent) => {
+    openProfile(agent.name);
+  }).catch((error: unknown) => {
+    toast.error(error instanceof Error ? error.message : String(error));
+  }).finally(() => {
+    creating = false;
+  });
 }

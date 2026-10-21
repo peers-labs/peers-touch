@@ -106,6 +106,7 @@ pub fn handlers<R: tauri::Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync
         crate::runtime::station_route::station_identity_fetch,
         crate::runtime::station_route::station_route_activate,
         crate::runtime::station_route::station_route_remove,
+        crate::runtime::station_route::station_route_refresh,
         crate::runtime::station_route::station_route_restore,
         crate::runtime::station_route::station_route_snapshot,
         // Secure storage
@@ -145,6 +146,8 @@ pub fn handlers<R: tauri::Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync
         platform_bridge::permission_check,
         platform_bridge::permission_request,
         platform_bridge::permission_check_all,
+        platform_bridge::capability_observe,
+        platform_bridge::system_action_execute,
         platform_bridge::network_state,
         platform_bridge::network_start_observation,
         platform_bridge::network_ingest_native_signal,
@@ -265,6 +268,7 @@ pub fn handlers<R: tauri::Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync
         crate::runtime::station_route::station_identity_fetch,
         crate::runtime::station_route::station_route_activate,
         crate::runtime::station_route::station_route_remove,
+        crate::runtime::station_route::station_route_refresh,
         crate::runtime::station_route::station_route_restore,
         crate::runtime::station_route::station_route_snapshot,
         // Secure storage
@@ -305,6 +309,8 @@ pub fn handlers<R: tauri::Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync
         platform_bridge::permission_check,
         platform_bridge::permission_request,
         platform_bridge::permission_check_all,
+        platform_bridge::capability_observe,
+        platform_bridge::system_action_execute,
         platform_bridge::network_state,
         platform_bridge::network_start_observation,
         platform_bridge::network_ingest_native_signal,

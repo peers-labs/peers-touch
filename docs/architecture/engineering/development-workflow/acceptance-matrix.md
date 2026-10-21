@@ -1,10 +1,10 @@
 # 开发流程重构验收清单
 
 > **Status**: active
-> **Created**: 2026-09-26 | **Updated**: 2026-10-14
+> **Created**: 2026-09-26 | **Updated**: 2026-10-17
 > **Owner**: Platform Team
 
-以下编号定义稳定验收场景。FLOW-A01—A04、A06—A20 由
+以下编号定义稳定验收场景。FLOW-A01—A04、A06—A21 由
 `development-flow-tool-e2e` 直接执行。FLOW-A05 是可选的真实宿主 smoke，
 只用于诊断宿主差异，不是整体完成条件。文档不保存运行结果，正式状态以当前源码
 绑定的 Gate evidence 为准。
@@ -50,6 +50,11 @@
   Runtime 与 Acceptance。复杂任务保留北极星引用和本次贡献，完成审查拒绝以流程状态
   或 Gate 数量替代结果；已删除模块无活引用，无新的总账、兼容开关或快任务 Make 入口。
 - **FLOW-A20 / DEV-J03、DEV-J06**：选定工作区安装与移除可回退，配置合并保留非项目条目；不删除历史记录、不操作旧活跃实例、环境或其他窗口。
+- **FLOW-A21 / DEV-J01、DEV-J05、DEV-J06**：复杂 Plan 在同目录提供
+  `outcome-comparison.md`。计划区覆盖用户体验、产品、架构、技术和质量运维，
+  并完整映射 Task/Gate；任意计划区字节变化使 digest 校验失败。实际结果区保持
+  `UNPROVEN` 或绑定 current-source evidence 的闭合状态，更新实际结果不改变 Plan
+  digest，但会改变最终完整报告摘要。既有未带该报告的 Plan 仍可只读校验。
 
 ## 5. 证明边界
 

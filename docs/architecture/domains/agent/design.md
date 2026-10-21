@@ -17,6 +17,19 @@
 4. **可恢复执行**：Turn、ToolCall 和最终回复必须具备稳定身份，可在进程重启后读回。
 5. **证据不越权**：Acceptance Harness 只驱动生产路径并读取结果，不创建替代业务路径。
 
+普通 Agent Chat 的模型所有权由 Settings 与 Topic 持有。Settings 提供全局
+默认，Topic 可保存完整 `(provider_id, model_name)` 覆盖；更新和清空必须
+同时提交两个字段并受 Conversation version 约束。Agent Profile 只持有身份、
+SOUL.md、AGENTS.md 与能力扩展，不再作为普通 Chat 模型选择的回退来源。
+SOUL/AGENTS 分别投影到 Station `AgentDefinition.identity_prompt` 与
+`agent_config_prompt`；`config_json` aliases 和名称、描述、头像不能进入
+Provider Prompt。
+所有创建入口复用同一 mutation，创建 Local Agent 后立即进入 Profile。
+Station 在真实 turn 中装配类型化文档，并只从版本化
+`AgentCapabilityBinding` 构建 Skill index；`skill_view` 再按需加载同一固定
+版本正文。客户端保存成功、文档回读、重启恢复、Provider prompt 消费和
+ContextLedger 版本归因必须分别取得当前源码证据。
+
 详细产品、失败语义和运行时合同由
 [`modern-chat-agent/`](./modern-chat-agent/README.md) 定义。
 
@@ -79,6 +92,14 @@ AgentCapabilityBinding
 - cancel、retry、reconnect 和 replay 由稳定 Turn/ToolCall identity 约束。
 - 最终 Assistant message 的 ID 与内容可由 Station 和客户端独立读回。
 - Native 重启不得创建新的 Agent、Conversation 或替代回复。
+
+普通 Chat 澄清使用注册的 Station-owned `ask_user` 工具。问题与可选答案
+固定在授权 ToolCall 参数中；无论普通工具采用何种自动策略，澄清都等待人工
+提交。选项与 Other 仅修改 UI 草稿，Submit 通过现有工具决策命令提交答案。
+Station 在同一决策事务保存答案与 revision，执行器将答案写入既有工具结果，
+由 ToolBatch continuation 恢复原 Turn、attempt、模型与预算。Renderer 不将答案
+作为新用户消息发送，也不维护独立 intervention 执行状态。工具能力仍需通过
+现有 manifest、binding 与 readiness 授权，不能绕过授权集合。
 
 ## 4. 组件关系
 

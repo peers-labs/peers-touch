@@ -1,8 +1,8 @@
 # Secure Content - Architecture Design
 
 > **Status**: active
-> **Version**: v2.1
-> **Created**: 2026-09-13 | **Updated**: 2026-10-04
+> **Version**: v2.3
+> **Created**: 2026-09-13 | **Updated**: 2026-10-17
 > **Owner**: Architecture Team
 > **Module**: `model/domain/secure_content/`, `packages/secure-content-core/`, `apps/station/app/internal/securecontent/`
 
@@ -15,7 +15,7 @@
 | `SC-A01` | Secure Content is a shared contract and implementation kernel, never a business authority. |
 | `SC-A02` | Social and Conversation independently own routes, mutation UOWs, grants, persistence, and policy; an explicit owner-controlled read fence may wrap a caller's commit UOW. |
 | `SC-A03` | Private plaintext and content keys exist only in authenticated Native runtimes and encrypted local stores. |
-| `SC-A04` | Shared contracts are proto-first; Desktop and Mobile use one portable Rust implementation. |
+| `SC-A04` | Shared contracts are proto-first; Desktop and Mobile use one portable Rust crypto and client-operation mechanism. |
 | `SC-A05` | Station persists only ciphertext, commitments, routing metadata, and domain-authorized grants. |
 | `SC-A06` | Public-readable routes use strict optional authentication: absent is anonymous; supplied invalid is `401`. |
 | `SC-A07` | No partial recipient set, plaintext/public fallback, dual write, alias, or legacy read is legal. |
@@ -41,7 +41,7 @@
 | W7 runtime admission conflates the ephemeral client connection endpoint with the canonical endpoint bound by W12A schema activation | `verified_fact` | W7 checkpoint `15c0a7858`; `runtime_owner.py::_resolve_canonical_private_schema_attestation`; `runtime_manifest.py::_validate_services` | high | none |
 | One owner-published service entry can carry separate connection and schema-attestation endpoints without creating another topology owner | `accepted_decision` | accepted `SC-D28` | high | implementation proof |
 | Development runtime-manifest validation admits Native Tauri Desktop plus Mobile simulator/emulator clients and rejects a Browser client kind | `verified_fact` | `tooling/development/secure_content/run.py::RUNTIME_CLIENT_KINDS` and `_load_runtime_manifest` | high | none |
-| Mobile has generated Secure Content contracts but no private Social Native runtime or attachable product actions | `verified_fact` | `apps/mobile/src/gen/proto/domain/{secure_content,social}`, `apps/mobile/src-tauri/src/secure_content`, Mobile Moments/runtime inventory | high | W9 implementation and product evidence |
+| Mobile has a Native private Social runtime whose operation and object-transfer policies consume `secure-content-core` | `verified_fact` | `apps/mobile/src-tauri/src/secure_content/{runtime,object_runtime,store}.rs`; `apps/mobile/src-tauri/src/social/mod.rs` | high | signed iOS and physical Android product evidence |
 | `social_private_posts` is a mixed historical/canonical table name; the current migrator adds encrypted columns beside a possible plaintext-era schema | `verified_fact` | `migratePrivateContentPost`, `SocialPrivateContentPost`, W11 deletion commit `b8171e1f5` | high | accepted `SC-D23` and profile pre-audit |
 | An allowlisted full private Development reset plus owner-mediated object deletion can remove mixed private state without touching public or Conversation truth | `accepted_decision` | accepted `SC-D23` | high | implementation and two-profile post-audit |
 | Recovery admission verifies the predecessor journal digest before terminalizing the predecessor, but the terminal row cannot reproduce that old digest after its state or failure projection changes | `verified_fact` | W12A FIVEARM reset chain and `GORMSecureContentResetStore` | high | accepted `SC-D27` receipt implementation |
@@ -49,13 +49,14 @@
 | Social `Audience.target_id` is `uint64`, while canonical Conversation IDs are validated strings | `verified_fact` | `model/domain/social/post.proto`; Conversation `valueobject.ConversationID` | high | accepted `SC-D29` hard-cut contract |
 | `CUSTOM_DENY(PUBLIC)` cannot freeze a complete E2EE recipient set without an enumerable, revision-bound federated PUBLIC Actor authority | `verified_fact` | W8 audience result `b3890707...`; `GORMPrivateAudienceAuthority` | high | accepted v1 product narrowing and `SC-D29` |
 | W8 runs only `station-four` and publishes no owner-produced remote-recipient identity handle | `verified_fact` | W8 runtime manifest `221d49c7...`; `runtime_owner.py::_run_w8_scenario` | high | accepted `SC-D29` fixture contract |
+| Desktop and Mobile retain Host stores/transports while operation, readback, recovery continuation, PreKey planning and object-transfer policy have one portable owner | `verified_fact` | `packages/secure-content-core`; UCA-05 owner-zero Gate | high | physical runtime proof |
 
 ## 3. Scope
 
 In scope:
 
 - reusable payload, content-key-envelope, encrypted-object, and transfer semantics;
-- one portable Native cryptographic core;
+- one portable Native cryptographic and client-operation mechanism;
 - one stateless Station validation/state-machine kernel;
 - Social private Post, Comment, media, subtype, audience, recovery, and read contracts;
 - Conversation reuse without changing accepted Conversation attachment ownership;
@@ -78,7 +79,7 @@ Operational semantics and gates are defined in [operations.md](./operations.md).
 Desktop Social Runtime ---------+
                                  |
 Mobile Social Runtime ----------+--> packages/secure-content-core
-                                 |       payload / envelope / object crypto
+                                 |       crypto / operation FSM / typed ports
 Messaging Core -----------------+
 
 Social Subserver ---------------+
@@ -134,10 +135,38 @@ transaction before publication or a new claim exposes stored material.
 - object chunk crypto and descriptor validation;
 - transfer/checkpoint state machine;
 - recovery-prekey derivation and secret zeroization;
+- device-local Content PreKey publication planning and command identity;
+- durable operation-state and generation/lease transition validation;
+- readback-before-retry reconciliation decisions;
+- recovery continuation and typed client-operation outcomes;
 - fixed cross-language test vectors.
 
-It has no Tauri, HTTP, filesystem, database, Social, Conversation, or UI dependency.
-`messaging-core` imports it and keeps only Chat protocol integration.
+It has no Tauri, HTTP, SQLCipher, filesystem path, Social, Conversation, or UI
+dependency. Host interaction uses narrow encrypted-store, transport, clock,
+key-material, opaque-file, and lifecycle-cancellation ports. It cannot create
+or authorize a domain resource, attach an object, mutate a business grant, or
+decide revocation truth. `messaging-core` imports it and keeps only Chat
+protocol integration.
+
+The operation mechanism is deliberately split into pure decisions and narrow
+capabilities:
+
+- `operation::state` owns stable persisted values, explicit-versus-background
+  dispatch admission, session/lease fencing, interrupted-dispatch recovery, and
+  terminal transitions;
+- `operation::prekey_maintenance` owns endpoint/recovery pool planning and the
+  `cpk-pub-v1-*` identity over proof-free canonical request bytes;
+- `operation::reconciliation` owns the rule that only an authoritative absent
+  readback authorizes exact-command retry after `UNKNOWN_OUTCOME`;
+- `operation::outcome` owns typed mechanism outcomes and failures;
+- ports expose encrypted operation compare-and-swap, Content PreKey
+  inventory/publication, monotonic time, recovery/signing key material, opaque
+  blob access, and lifecycle cancellation.
+
+There is no generic business-submit transport port. A Social or Conversation
+adapter performs its owner-authorized outer transaction, converts the result or
+owner-supplied readback into the core's typed observation, and applies the
+returned transition through the encrypted-store port.
 
 ### 6.2 Station Internal Kernel
 

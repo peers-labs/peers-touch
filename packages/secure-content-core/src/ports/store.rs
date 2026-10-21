@@ -2,6 +2,31 @@ use crate::object::{
     ObjectDescriptor, ObjectTransferFailure, ObjectTransferRecord, ObjectTransferState,
     ObjectUploadSpec,
 };
+use crate::operation::{OperationFailure, OperationFence, OperationRecord};
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StoredOperation {
+    pub record: OperationRecord,
+    pub command_bytes: Vec<u8>,
+}
+
+impl StoredOperation {
+    pub fn validate(&self) -> Result<(), OperationFailure> {
+        self.record.validate_command_bytes(&self.command_bytes)
+    }
+}
+
+pub trait EncryptedOperationStore: Send + Sync {
+    fn operation(&self, operation_id: &str) -> Result<Option<StoredOperation>, OperationFailure>;
+
+    fn insert_operation(&self, operation: &StoredOperation) -> Result<(), OperationFailure>;
+
+    fn compare_and_swap_operation(
+        &self,
+        expected: OperationFence<'_>,
+        operation: &OperationRecord,
+    ) -> Result<bool, OperationFailure>;
+}
 
 pub trait ObjectCommitmentCodec: Send + Sync {
     fn upload_commitment(

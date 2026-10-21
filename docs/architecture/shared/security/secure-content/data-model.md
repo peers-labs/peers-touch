@@ -1,8 +1,8 @@
 # Secure Content - Data Model
 
 > **Status**: active
-> **Version**: v2.0
-> **Created**: 2026-09-13 | **Updated**: 2026-09-24
+> **Version**: v2.1
+> **Created**: 2026-09-13 | **Updated**: 2026-10-17
 > **Owner**: Architecture Team
 > **Module**: `model/domain/secure_content/`, `model/domain/social/`, `model/domain/key_exchange/`
 
@@ -1335,6 +1335,67 @@ Social submit atomically writes:
 Conversation retains its current event/object/grant atomic UOW.
 
 ## 11. State Machines
+
+### 11.1 Device-Local Client Operation
+
+`secure-content-operation-v1` is the only target schema for host-neutral Native
+operation state. Persisted numeric values are frozen:
+
+| Value | State | Meaning |
+|---:|---|---|
+| 1 | `PREPARED` | owner-built request waits for explicit user dispatch |
+| 2 | `PENDING` | persisted request is eligible for initial reconciliation |
+| 3 | `IN_FLIGHT` | one session/lease generation owns dispatch |
+| 4 | `UNKNOWN_OUTCOME` | a may-commit dispatch ended without authoritative outcome |
+| 5 | `COMMITTED_PENDING_READBACK` | commit response exists; owner readback is still required |
+| 6 | `COMMITTED` | authoritative completion is durable |
+| 7 | `RETRY_WAIT` | a known retryable failure has a persisted future deadline |
+| 8 | `TERMINAL` | non-retryable mechanism failure |
+| 9 | `CANCELLED` | lifecycle cancellation completed without further admission |
+
+Every record binds:
+
+```text
+operation_id
+command_id
+operation_kind
+command_sha256
+state
+session_generation
+lease_generation
+attempt_count
+next_attempt_at_unix_ms
+updated_at_unix_ms
+```
+
+`PREPARED` is never selected by background reconciliation. `UNKNOWN_OUTCOME`
+cannot acquire a new lease until the owner supplies a readback observation and
+the core returns `RetryExactCommand`. Completion compares operation ID,
+session generation, and lease generation atomically. Startup converts an
+orphaned `IN_FLIGHT` record to `UNKNOWN_OUTCOME` without changing command bytes
+or its existing fence.
+
+The UCA-05 consumer cut owns one transactional, per-store migration:
+
+- Desktop `PublicationState` and Mobile `DurableState` map into the frozen
+  values above;
+- business payload/projection columns remain in their Social/Conversation
+  adapter tables and are not absorbed into the portable record;
+- one migration marker binds source schema, target
+  `secure-content-operation-v1`, row count, and digest;
+- the new owner becomes writable only after every legacy row validates and the
+  marker commits;
+- rollback occurs before activation on any invalid row; no old/new dual write,
+  compatibility reader, or partial-table activation is allowed.
+
+UCA-05 activated this contract in both production stores. Desktop Moment and
+Comment rows and Mobile submission/PreKey rows persist the same lease,
+attempt, retry-deadline, state, command digest, session generation, and update
+time fields. Mobile object transfers separately persist the core
+`ObjectTransferRecord` checkpoint plus Host-only media type and encoded
+descriptor bytes.
+
+### 11.2 Domain And Object State
 
 Plan:
 

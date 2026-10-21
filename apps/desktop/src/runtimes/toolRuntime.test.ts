@@ -597,6 +597,22 @@ describe('toolRuntime projection authority', () => {
     });
   });
 
+  it('binds clarification answers to the decision and deduplicates identical submits', async () => {
+    submitAgentToolDecision.mockImplementation(() => new Promise(() => {}));
+    toolRuntime.consume({
+      ...approvalRequired,
+      data: { ...approvalRequired.data, toolName: 'ask_user' },
+    });
+    const first = toolRuntime.submitDecision('tool-call-1', true, 'Custom answer');
+    expect(toolRuntime.submitDecision('tool-call-1', true, 'Custom answer')).toBe(first);
+    expect(submitAgentToolDecision).toHaveBeenCalledTimes(1);
+    expect(submitAgentToolDecision.mock.calls[0][0]).toMatchObject({
+      tool_call_id: 'tool-call-1',
+      answer: 'Custom answer',
+      approved: true,
+    });
+  });
+
   it('retains the typed denial outcome in the terminal projection', async () => {
     submitAgentToolDecision.mockResolvedValue({
       accepted: true,

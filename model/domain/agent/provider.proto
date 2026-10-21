@@ -14,6 +14,21 @@ message ModelCapabilityConfig {
   map<string, bool> flags = 1;
 }
 
+message ProviderRuntimeConfig {
+  string default_model = 1;
+  repeated string startup_args = 2;
+  map<string, string> environment = 3;
+  int32 timeout_seconds = 4;
+}
+
+message ProviderAdapterCapabilities {
+  bool model_discovery = 1;
+  bool startup_args = 2;
+  bool environment = 3;
+  bool configurable_timeout = 4;
+  repeated string runtime_capabilities = 5;
+}
+
 message ProviderModelInfo {
   string id = 1;
   string display_name = 2;
@@ -21,9 +36,14 @@ message ProviderModelInfo {
   bool enabled = 4;
   int32 context_window = 5;
   ModelCapabilityConfig capabilities = 6;
+  string description = 7;
+  string default_reasoning_level = 8;
+  repeated string supported_reasoning_levels = 9;
 }
 
 message AgentProviderInfo {
+  reserved 19;
+
   string id = 1;
   string name = 2;
   string description = 3;
@@ -42,7 +62,10 @@ message AgentProviderInfo {
   string source = 16;
   string cli_command = 17;
   repeated ProviderModelInfo models = 18;
-  string models_command = 19;
+  ProviderRuntimeConfig runtime_config = 20;
+  ProviderRuntimeConfig default_runtime_config = 21;
+  ProviderAdapterCapabilities adapter_capabilities = 22;
+  string workspace_policy = 23;
 }
 
 message AgentModelInfo {
@@ -73,19 +96,19 @@ message CredentialResolveInfo {
   string protocol = 4;
 }
 
-// VerifyCli
-message VerifyCliRequest { string cli_command = 1; }
-message VerifyCliResponse {
-  bool available = 1;
+message CheckProviderRequest { string provider_id = 1; }
+message CheckProviderResponse {
+  bool ok = 1;
   string program = 2;
-  string path = 3;
-  string error = 4;
-  string install_hint = 5;
+  string error = 3;
+  string install_hint = 4;
 }
 
-// FetchCliModels
-message FetchCliModelsRequest { string provider_id = 1; }
-message FetchCliModelsResponse { repeated string models = 1; }
+message DiscoverProviderModelsRequest { string provider_id = 1; }
+message DiscoverProviderModelsResponse {
+  repeated ProviderModelInfo models = 1;
+  google.protobuf.Timestamp observed_at = 2;
+}
 
 // Provider CRUD
 message ListProvidersRequest {}
@@ -125,6 +148,7 @@ message UpdateProviderRequest {
   optional bool enabled = 5;
   bytes config_json = 6;
   string key_vaults = 7;
+  ProviderRuntimeConfig runtime_config = 8;
 }
 message UpdateProviderResponse { AgentProviderInfo provider = 1; }
 

@@ -39,9 +39,9 @@ Proto -> Station policy/evaluation -> Dashboard management -> Desktop gate host 
    ```bash
    ./model/build.sh
    ```
-4. If native/mobile generated proto is needed for plugin layer, run:
+4. Generate Mobile TypeScript contracts:
    ```bash
-   ./tooling/scripts/proto-gen-mobile.sh
+   ./tooling/scripts/proto-gen-mobile.sh web
    ```
 
 ### Phase 2. Station Evaluation

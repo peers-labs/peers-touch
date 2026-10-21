@@ -1,4 +1,4 @@
-import type { Agent } from './desktop_api';
+import { api, type Agent } from './desktop_api';
 import { useAgentStore } from '../store/agent';
 import { useAgentTopicStore, type AgentTopic } from '../store/agentTopics';
 import { useChatStore } from '../store/chat';
@@ -8,6 +8,33 @@ export interface OpenAgentChatSessionOptions {
   forceReload?: boolean;
   draftTitle?: string;
   reason?: string;
+}
+
+export async function createStationAgentTopic(
+  agent: Agent,
+  title: string,
+): Promise<AgentTopic> {
+  const conversation = await api.createAgentConversation({
+    agent_id: agent.id,
+    title,
+  });
+  const topic: AgentTopic = {
+    id: conversation.conversation_id,
+    key: conversation.conversation_id,
+    agent_name: agent.name,
+    title: conversation.title,
+    message_count: 0,
+    version: conversation.version,
+    model_override: conversation.model_name,
+    provider_override: conversation.provider_id,
+    created_at: conversation.created_at,
+    updated_at: conversation.updated_at,
+    titleState: conversation.title ? 'manual' : 'untitled',
+  };
+  useAgentTopicStore.getState().upsertTopics(agent.id, [topic]);
+  useChatStore.getState().mergeSessions([topic]);
+  await useChatStore.getState().selectSession(topic.key, topic);
+  return topic;
 }
 
 function createDraftForAgent(agent: Agent, draftTitle?: string): AgentTopic {

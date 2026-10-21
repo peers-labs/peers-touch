@@ -3,31 +3,33 @@ import { ActionIcon, Dropdown, SearchBar, toast } from '@lobehub/ui';
 import type { MenuProps } from '@lobehub/ui';
 import { Modal, Skeleton, theme } from 'antd';
 import {
-  Copy,
-  Download,
   MoreHorizontal,
   Pencil,
-  Pin,
   Plus,
   Search,
-  Sparkles,
   Trash2,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { Agent } from '../../../services/desktop_api';
-import { api } from '../../../services/desktop_api';
-import { openAgentCreateFlow } from '../create';
 import { useActiveAgentSlice } from '../useActiveAgentStores';
 import { AgentIconTile } from '../AgentIconTile';
 import { PanelToggleDock } from './PanelToggleDock';
+import { openAgentCreateFlow } from '../create';
+import { openAgentChatSession } from '../../../services/openAgentChatSession';
 
 interface AgentRailProps {
   collapsed: boolean;
   onToggle: () => void;
   onOpenProfile: (agentName: string) => void;
+  onSelectAgent?: (agent: Agent) => void;
 }
 
-export function AgentRail({ collapsed, onToggle, onOpenProfile }: AgentRailProps) {
+export function AgentRail({
+  collapsed,
+  onToggle,
+  onOpenProfile,
+  onSelectAgent,
+}: AgentRailProps) {
   const { t } = useTranslation(['agent', 'common']);
   const { token } = theme.useToken();
   const [search, setSearch] = useState('');
@@ -36,9 +38,6 @@ export function AgentRail({ collapsed, onToggle, onOpenProfile }: AgentRailProps
     selectedAgent,
     loading,
     error,
-    setSelectedAgent,
-    setDefaultAgent,
-    duplicateAgent,
     deleteAgent,
     loadAgents,
   } = useActiveAgentSlice((state) => ({
@@ -46,9 +45,6 @@ export function AgentRail({ collapsed, onToggle, onOpenProfile }: AgentRailProps
     selectedAgent: state.selectedAgent,
     loading: state.loading,
     error: state.error,
-    setSelectedAgent: state.setSelectedAgent,
-    setDefaultAgent: state.setDefaultAgent,
-    duplicateAgent: state.duplicateAgent,
     deleteAgent: state.deleteAgent,
     loadAgents: state.loadAgents,
   }));
@@ -68,66 +64,20 @@ export function AgentRail({ collapsed, onToggle, onOpenProfile }: AgentRailProps
         (left.title || left.name).localeCompare(right.title || right.name),
     );
   }, [agents, search]);
+  const pinnedAgents = visibleAgents.filter((agent) => agent.pinned);
+  const otherAgents = visibleAgents.filter((agent) => !agent.pinned);
 
   const selectAgent = useCallback(
     (agent: Agent) => {
-      setSelectedAgent(agent.name);
+      void openAgentChatSession(agent, {
+        reason: 'agent-roster-selection',
+        draftTitle: t('agent.sidebar.newTopic'),
+      }).catch((error) => {
+        toast.error(error instanceof Error ? error.message : String(error));
+      });
+      onSelectAgent?.(agent);
     },
-    [setSelectedAgent],
-  );
-
-  const mutateAgent = useCallback(
-    async (operation: () => Promise<unknown>, successKey: string, agent: Agent) => {
-      try {
-        await operation();
-        await loadAgents();
-        toast.success(t(successKey, { name: agent.title || agent.name }));
-      } catch (errorValue) {
-        const message = errorValue instanceof Error ? errorValue.message : String(errorValue);
-        toast.error(message);
-      }
-    },
-    [loadAgents, t],
-  );
-
-  const cloneAgent = useCallback(
-    async (agent: Agent) => {
-      try {
-        const cloned = await duplicateAgent(agent.id);
-        toast.success(t('agent.chat.toast.agentCloned', {
-          name: cloned.title || cloned.name,
-        }));
-      } catch (errorValue) {
-        const message = errorValue instanceof Error ? errorValue.message : String(errorValue);
-        toast.error(message);
-      }
-    },
-    [duplicateAgent, t],
-  );
-
-  const exportAgent = useCallback(
-    async (agent: Agent) => {
-      try {
-        const exported = await api.exportAgentPackage(agent.id);
-        const blob = new Blob([JSON.stringify(exported.package, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const anchor = document.createElement('a');
-        anchor.href = url;
-        anchor.download = `${agent.name || agent.id}.agent.json`;
-        anchor.click();
-        URL.revokeObjectURL(url);
-        if (exported.unresolvedDependencies.length > 0) {
-          toast.warning(t('agent.sidebar.toast.agentExportUnresolved', {
-            count: exported.unresolvedDependencies.length,
-          }));
-        }
-        toast.success(t('agent.chat.toast.agentExported'));
-      } catch (errorValue) {
-        const message = errorValue instanceof Error ? errorValue.message : String(errorValue);
-        toast.error(message);
-      }
-    },
-    [t],
+    [onSelectAgent, t],
   );
 
   const confirmAgentDelete = useCallback(
@@ -159,6 +109,10 @@ export function AgentRail({ collapsed, onToggle, onOpenProfile }: AgentRailProps
     [deleteAgent, t],
   );
 
+  const createLocalAgent = useCallback(() => {
+    openAgentCreateFlow(onOpenProfile);
+  }, [onOpenProfile]);
+
   if (collapsed) {
     return (
       <aside
@@ -182,7 +136,7 @@ export function AgentRail({ collapsed, onToggle, onOpenProfile }: AgentRailProps
           data-pt-agent-create
           icon={Plus}
           title={t('agent.chat.newAgent')}
-          onClick={() => openAgentCreateFlow(onOpenProfile)}
+          onClick={() => void createLocalAgent()}
           size={{ blockSize: 36, size: 16 }}
         />
         <ActionIcon
@@ -282,7 +236,7 @@ export function AgentRail({ collapsed, onToggle, onOpenProfile }: AgentRailProps
           data-pt-agent-create
           icon={Plus}
           title={t('agent.chat.newAgent')}
-          onClick={() => openAgentCreateFlow(onOpenProfile)}
+          onClick={() => void createLocalAgent()}
           size={{ blockSize: 30, size: 15 }}
         />
       </div>
@@ -326,36 +280,36 @@ export function AgentRail({ collapsed, onToggle, onOpenProfile }: AgentRailProps
             {error}
           </button>
         ) : (
-          visibleAgents.map((agent) => (
-            <AgentRailItem
-              key={agent.id}
-              agent={agent}
-              selected={selectedAgent === agent.name}
-              onSelect={() => selectAgent(agent)}
-              onEdit={() => onOpenProfile(agent.name)}
-              onTogglePin={() =>
-                void mutateAgent(
-                  () => api.updateAgent(agent.id, { pinned: !agent.pinned }),
-                  agent.pinned
-                    ? 'agent.chat.toast.agentUnpinned'
-                    : 'agent.chat.toast.agentPinned',
-                  agent,
-                )
-              }
-              onSetDefault={() =>
-                void mutateAgent(
-                  () => setDefaultAgent(agent.id),
-                  'agent.chat.toast.defaultAgentUpdated',
-                  agent,
-                )
-              }
-              onClone={() =>
-                void cloneAgent(agent)
-              }
-              onExport={() => void exportAgent(agent)}
-              onDelete={() => confirmAgentDelete(agent)}
-            />
-          ))
+          <>
+            {pinnedAgents.length > 0 && (
+              <div style={{ padding: '8px 8px 4px', color: token.colorTextTertiary, fontSize: 11, fontWeight: 700 }}>
+                {t('agent.chat.pinned')}
+              </div>
+            )}
+            {pinnedAgents.map((agent) => (
+              <AgentRailItem
+                key={agent.id}
+                agent={agent}
+                selected={selectedAgent === agent.name}
+                onSelect={() => selectAgent(agent)}
+                onEdit={() => onOpenProfile(agent.name)}
+                onDelete={agent.name === 'assistant' ? undefined : () => confirmAgentDelete(agent)}
+              />
+            ))}
+            <div style={{ padding: '8px 8px 4px', color: token.colorTextTertiary, fontSize: 11, fontWeight: 700 }}>
+              {t('agent.chat.allAgents')}
+            </div>
+            {otherAgents.map((agent) => (
+              <AgentRailItem
+                key={agent.id}
+                agent={agent}
+                selected={selectedAgent === agent.name}
+                onSelect={() => selectAgent(agent)}
+                onEdit={() => onOpenProfile(agent.name)}
+                onDelete={agent.name === 'assistant' ? undefined : () => confirmAgentDelete(agent)}
+              />
+            ))}
+          </>
         )}
       </div>
       <PanelToggleDock
@@ -372,11 +326,7 @@ interface AgentRailItemProps {
   selected: boolean;
   onSelect: () => void;
   onEdit: () => void;
-  onTogglePin: () => void;
-  onSetDefault: () => void;
-  onClone: () => void;
-  onExport: () => void;
-  onDelete: () => void;
+  onDelete?: () => void;
 }
 
 function AgentRailItem({
@@ -384,61 +334,22 @@ function AgentRailItem({
   selected,
   onSelect,
   onEdit,
-  onTogglePin,
-  onSetDefault,
-  onClone,
-  onExport,
   onDelete,
 }: AgentRailItemProps) {
   const { t } = useTranslation('agent');
   const { token } = theme.useToken();
   const menuItems: MenuProps['items'] = [
     {
-      key: 'pin',
-      icon: <Pin size={14} />,
-      label: t(agent.pinned ? 'agent.chat.menu.unpin' : 'agent.chat.menu.pin'),
-      onClick: onTogglePin,
-    },
-    {
-      key: 'default',
-      icon: <Sparkles size={14} />,
-      label: (
-        <span data-pt-agent-id={agent.id} data-pt-agent-menu-action="default">
-          {t('agent.chat.menu.setDefault')}
-        </span>
-      ),
-      disabled: agent.isDefault,
-      onClick: onSetDefault,
-    },
-    { type: 'divider' },
-    {
       key: 'edit',
       icon: <Pencil size={14} />,
       label: (
         <span data-pt-agent-id={agent.id} data-pt-agent-menu-action="edit">
-          {t('agent.chat.menu.edit')}
+          {t('agent.profile.title')}
         </span>
       ),
       onClick: onEdit,
     },
-    {
-      key: 'clone',
-      icon: <Copy size={14} />,
-      label: (
-        <span data-pt-agent-id={agent.id} data-pt-agent-menu-action="clone">
-          {t('agent.chat.menu.clone')}
-        </span>
-      ),
-      onClick: onClone,
-    },
-    {
-      key: 'export',
-      icon: <Download size={14} />,
-      label: t('agent.chat.menu.export'),
-      onClick: onExport,
-    },
-    { type: 'divider' },
-    {
+    ...(onDelete ? [{
       key: 'delete',
       icon: <Trash2 size={14} />,
       label: (
@@ -448,7 +359,7 @@ function AgentRailItem({
       ),
       danger: true,
       onClick: onDelete,
-    },
+    }] : []),
   ];
 
   return (
@@ -505,7 +416,14 @@ function AgentRailItem({
           {agent.description}
         </span>
       </span>
-      <Dropdown menu={{ items: menuItems }} trigger={['click']} placement="bottomRight">
+      <Dropdown
+        menu={{
+          items: menuItems,
+          onClick: ({ domEvent }) => domEvent.stopPropagation(),
+        }}
+        trigger={['click']}
+        placement="bottomRight"
+      >
         <button
           data-pt-agent-id={agent.id}
           data-pt-agent-menu

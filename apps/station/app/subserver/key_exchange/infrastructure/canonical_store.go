@@ -119,6 +119,13 @@ func NewCanonicalStore(db *gorm.DB) (*CanonicalStore, error) {
 // Migrate installs the canonical Direct and MLS public-material schema.
 func (s *CanonicalStore) Migrate(ctx context.Context) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := migrateDirectKeyIdentity(tx); err != nil {
+			return domain.WrapError(
+				domain.ErrorCodeInternal,
+				"key_exchange.migrate",
+				err,
+			)
+		}
 		if err := migrateFederatedClaimIdentity(tx); err != nil {
 			return domain.WrapError(
 				domain.ErrorCodeInternal,
@@ -160,6 +167,33 @@ func (s *CanonicalStore) Migrate(ctx context.Context) error {
 		}
 		return nil
 	})
+}
+
+func migrateDirectKeyIdentity(db *gorm.DB) error {
+	for _, table := range []string{
+		"key_exchange_identity_keys",
+		"key_exchange_signed_pre_keys",
+		"key_exchange_one_time_pre_keys",
+	} {
+		if !db.Migrator().HasTable(table) || !db.Migrator().HasColumn(table, "actor_did") {
+			continue
+		}
+		var rows int64
+		if err := db.Table(table).Count(&rows).Error; err != nil {
+			return fmt.Errorf("count legacy %s rows: %w", table, err)
+		}
+		if rows != 0 {
+			return fmt.Errorf(
+				"legacy %s contains %d rows; explicit identity migration or reset is required",
+				table,
+				rows,
+			)
+		}
+		if err := db.Migrator().DropTable(table); err != nil {
+			return fmt.Errorf("drop empty legacy %s: %w", table, err)
+		}
+	}
+	return nil
 }
 
 func migrateFederatedClaimIdentity(db *gorm.DB) error {

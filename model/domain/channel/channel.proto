@@ -1,0 +1,747 @@
+syntax = "proto3";
+
+package peers_touch.model.channel.v1;
+
+option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/channel/model;model";
+
+// The Channel contract is platform-neutral. Plugins translate provider
+// envelopes and transfer provider resources; Station owns identities,
+// persistence, routing, turns, policies, delivery recovery and diagnostics.
+
+message ChannelMention {
+  string key = 1;
+  string open_id = 2;
+  string union_id = 3;
+  string tenant_key = 4;
+  string name = 5;
+  bool is_bot = 6;
+  string user_id = 7;
+}
+
+message ChannelResourceRef {
+  string provider_key = 1;
+  string kind = 2;       // image | file | audio | video | sticker
+  string file_name = 3;
+  string mime_type = 4;
+  uint64 size_bytes = 5;
+  string source_message_id = 6;
+}
+
+message NormalizedInboundEvent {
+  string binding_id = 1;
+  string provider_kind = 2;
+  string event_id = 3;
+  string message_id = 4;
+  string chat_id = 5;
+  string chat_type = 6;  // private | group
+  string sender_id = 7;
+  string sender_name = 8;
+  string text = 9;
+  map<string, string> metadata = 10;
+  string tenant_key = 11;
+  string sender_tenant_key = 12;
+  string message_type = 13;
+  repeated ChannelResourceRef resources = 14;
+  repeated ChannelMention mentions = 15;
+  string parent_id = 16;
+  string root_id = 17;
+  string thread_id = 18;
+  string content_json = 19;
+  bool sender_is_bot = 20;
+  string sender_user_id = 21;
+  string sender_union_id = 22;
+}
+
+enum InboundAckState {
+  INBOUND_ACK_STATE_UNSPECIFIED = 0;
+  INBOUND_ACK_STATE_ACCEPTED = 1;
+  INBOUND_ACK_STATE_DUPLICATE = 2;
+  INBOUND_ACK_STATE_RETRY = 3;
+  INBOUND_ACK_STATE_IGNORED = 4;
+}
+
+message InboundAck {
+  InboundAckState state = 1;
+  string error_code = 2;
+  string error_message = 3;
+  string inbound_id = 4;
+  string turn_id = 5;
+}
+
+enum DeliveryKind {
+  DELIVERY_KIND_UNSPECIFIED = 0;
+  DELIVERY_KIND_TEXT = 1;
+  DELIVERY_KIND_POST = 2;
+  DELIVERY_KIND_CARD = 3;
+  DELIVERY_KIND_IMAGE = 4;
+  DELIVERY_KIND_FILE = 5;
+}
+
+enum DeliveryOperation {
+  DELIVERY_OPERATION_UNSPECIFIED = 0;
+  DELIVERY_OPERATION_CREATE = 1;
+  DELIVERY_OPERATION_UPDATE = 2;
+  DELIVERY_OPERATION_REPLY = 3;
+}
+
+message DeliveryRequest {
+  string delivery_id = 1;
+  string binding_id = 2;
+  string target_chat_id = 3;
+  string text = 4;
+  string idempotency_key = 5;
+  DeliveryKind kind = 6;
+  string content_json = 7;
+  string reply_to_message_id = 8;
+  string root_id = 9;
+  string thread_id = 10;
+  DeliveryOperation operation = 11;
+  string provider_message_id = 12;
+  uint64 revision = 13;
+  bool terminal = 14;
+  ChannelResourceRef resource = 15;
+}
+
+message DeliveryReceipt {
+  string delivery_id = 1;
+  string provider_message_id = 2;
+  bool ok = 3;
+  string error_category = 4; // retryable | permanent | unauthorized | unknown
+  string error_message = 5;
+  int64 retry_after_seconds = 6;
+  int64 delivered_at_unix_ms = 7;
+}
+
+message ResourceFetchRequest {
+  string binding_id = 1;
+  string message_id = 2;
+  string provider_key = 3;
+  string kind = 4;
+  uint64 offset = 5;
+  uint32 max_bytes = 6;
+}
+
+message ResourceFetchResponse {
+  bytes data = 1;
+  bool eof = 2;
+  string file_name = 3;
+  string mime_type = 4;
+  uint64 total_bytes = 5;
+}
+
+message ResourceUploadRequest {
+  string binding_id = 1;
+  string upload_id = 2;
+  string kind = 3;       // image | file
+  string file_name = 4;
+  string mime_type = 5;
+  uint64 total_bytes = 6;
+  string checksum = 7;
+  uint64 offset = 8;
+  bytes data = 9;
+  bool eof = 10;
+}
+
+message ResourceUploadResponse {
+  string upload_id = 1;
+  uint64 accepted_offset = 2;
+  bool complete = 3;
+  string provider_key = 4;
+}
+
+message SyncAutomationTriggerRequest {
+  string binding_id = 1;
+  string automation_id = 2;
+  string trigger_type = 3;
+  string trigger_value = 4;
+  bool enabled = 5;
+}
+
+message SyncAutomationTriggerResponse {
+  bool ok = 1;
+  string error_message = 2;
+}
+
+message CardActionEvent {
+  string binding_id = 1;
+  string action_id = 2;
+  string message_id = 3;
+  string open_id = 4;
+  string tenant_key = 5;
+  string action = 6;
+  string value_json = 7;
+  string token = 8;
+}
+
+message CardActionAck {
+  bool ok = 1;
+  string toast = 2;
+  string error_code = 3;
+}
+
+message BindingStartRequest {
+  string binding_id = 1;
+  string provider_kind = 2;
+  string provider_app_id = 3;
+  string domain = 4;
+}
+
+message BindingStartResponse {
+  bool ok = 1;
+  string error_message = 2;
+}
+
+message BindingStopRequest {
+  string binding_id = 1;
+}
+
+message BindingStopResponse {
+  bool ok = 1;
+}
+
+enum ConnectionState {
+  CONNECTION_STATE_UNSPECIFIED = 0;
+  CONNECTION_STATE_STOPPED = 1;
+  CONNECTION_STATE_CONNECTING = 2;
+  CONNECTION_STATE_CONNECTED = 3;
+  CONNECTION_STATE_RECONNECTING = 4;
+  CONNECTION_STATE_UNAUTHORIZED = 5;
+  CONNECTION_STATE_FAILED = 6;
+}
+
+message ConnectionStatusReport {
+  string binding_id = 1;
+  ConnectionState state = 2;
+  string reason = 3;
+  string bot_open_id = 4;
+  string tenant_key = 5;
+}
+
+message ConnectionStatusAck {
+  bool ok = 1;
+}
+
+message CredentialRequest {
+  string binding_id = 1;
+  string usage = 2;
+}
+
+message CredentialResponse {
+  string app_id = 1;
+  string app_secret = 2;
+}
+
+// ---------------------------------------------------------------------------
+// Connection management
+// ---------------------------------------------------------------------------
+
+message CreateChannelBindingRequest {
+  string plugin_id = 1;
+  string provider_kind = 2;
+  string provider_app_id = 3;
+  string domain = 4;
+  string agent_id = 5;
+  bool enabled = 6;
+  string app_secret = 7;
+  string name = 8;
+  string description = 9;
+  string region = 10;      // feishu | lark
+  string app_mode = 11;    // managed | custom
+}
+
+message UpdateChannelBindingRequest {
+  string binding_id = 1;
+  optional string agent_id = 2;
+  optional bool enabled = 3;
+  optional string app_secret = 4;
+  optional string name = 5;
+  optional string description = 6;
+  optional string group_response_mode = 7; // mention | all | off
+  optional bool thread_isolation = 8;
+  optional string output_mode = 9;          // concise | detailed
+  optional string personal_oauth_connection_id = 10;
+  optional string access_mode = 11; // owner | approval | allowlist | open
+}
+
+message DeleteChannelBindingRequest {
+  string binding_id = 1;
+}
+
+message ListChannelBindingsRequest {}
+
+message StartChannelBindingRequest {
+  string binding_id = 1;
+}
+
+message StopChannelBindingRequest {
+  string binding_id = 1;
+}
+
+message SetDefaultChannelBindingRequest {
+  string binding_id = 1;
+}
+
+message ChannelBindingInfo {
+  string binding_id = 1;
+  string plugin_id = 2;
+  string provider_kind = 3;
+  string provider_app_id = 4;
+  string domain = 5;
+  string agent_id = 6;
+  bool enabled = 7;
+  string connection_state = 8;
+  string last_error = 9;
+  string name = 10;
+  string description = 11;
+  string region = 12;
+  string app_mode = 13;
+  bool is_default = 14;
+  string group_response_mode = 15;
+  bool thread_isolation = 16;
+  string output_mode = 17;
+  string personal_oauth_connection_id = 18;
+  string personal_oauth_status = 19;
+  string bot_open_id = 20;
+  string tenant_key = 21;
+  string readiness = 22;
+  int32 route_count = 23;
+  int32 automation_count = 24;
+  int64 created_at_unix_ms = 25;
+  int64 updated_at_unix_ms = 26;
+  string access_mode = 27;
+  string owner_provider_user_id = 28;
+}
+
+message CreateChannelBindingResponse {
+  ChannelBindingInfo binding = 1;
+}
+
+message UpdateChannelBindingResponse {
+  ChannelBindingInfo binding = 1;
+  bool credential_rotated = 2;
+}
+
+message DeleteChannelBindingResponse {}
+message StartChannelBindingResponse {}
+message StopChannelBindingResponse {}
+
+message SetDefaultChannelBindingResponse {
+  ChannelBindingInfo binding = 1;
+}
+
+message ListChannelBindingsResponse {
+  repeated ChannelBindingInfo bindings = 1;
+}
+
+message ValidateChannelAppRequest {
+  string provider_kind = 1;
+  string provider_app_id = 2;
+  string app_secret = 3;
+  string domain = 4;
+  string region = 5;
+}
+
+message ChannelCapabilityCheck {
+  string capability = 1;
+  string status = 2; // ready | missing | review_required | unsupported
+  string recovery_action = 3;
+}
+
+message ValidateChannelAppResponse {
+  bool valid = 1;
+  string app_name = 2;
+  string bot_open_id = 3;
+  string tenant_key = 4;
+  repeated ChannelCapabilityCheck checks = 5;
+  string console_url = 6;
+  string error_message = 7;
+}
+
+message CheckChannelHealthRequest {
+  string binding_id = 1;
+}
+
+message CheckChannelHealthResponse {
+  string status = 1;
+  repeated ChannelCapabilityCheck checks = 2;
+  int64 checked_at_unix_ms = 3;
+}
+
+// ---------------------------------------------------------------------------
+// Requester-scoped Lark authorization
+// ---------------------------------------------------------------------------
+
+enum ChannelRequesterAuthorizationStatus {
+  CHANNEL_REQUESTER_AUTHORIZATION_STATUS_UNSPECIFIED = 0;
+  CHANNEL_REQUESTER_AUTHORIZATION_STATUS_DISCONNECTED = 1;
+  CHANNEL_REQUESTER_AUTHORIZATION_STATUS_PENDING = 2;
+  CHANNEL_REQUESTER_AUTHORIZATION_STATUS_READY = 3;
+  CHANNEL_REQUESTER_AUTHORIZATION_STATUS_NEEDS_REFRESH = 4;
+  CHANNEL_REQUESTER_AUTHORIZATION_STATUS_EXPIRED = 5;
+  CHANNEL_REQUESTER_AUTHORIZATION_STATUS_SCOPE_DENIED = 6;
+  CHANNEL_REQUESTER_AUTHORIZATION_STATUS_REVOKED = 7;
+  CHANNEL_REQUESTER_AUTHORIZATION_STATUS_FAILED = 8;
+}
+
+message ChannelRequesterAuthorizationInfo {
+  string authorization_id = 1;
+  string binding_id = 2;
+  string provider_user_id = 3;
+  string tenant_key = 4;
+  string region = 5;
+  ChannelRequesterAuthorizationStatus status = 6;
+  string user_name = 7;
+  string email = 8;
+  repeated string granted_scopes = 9;
+  string recovery_action = 10;
+  string error_message = 11;
+  string verification_url = 12;
+  int64 expires_at_unix_ms = 13;
+  int64 last_verified_at_unix_ms = 14;
+  uint64 revision = 15;
+  repeated string requested_domains = 16;
+  repeated string pending_domains = 17;
+  int64 access_expires_at_unix_ms = 18;
+}
+
+message StartChannelRequesterAuthorizationRequest {
+  string binding_id = 1;
+  string provider_user_id = 2;
+  string tenant_key = 3;
+  repeated string domains = 4;
+  string idempotency_key = 5;
+}
+
+message StartChannelRequesterAuthorizationResponse {
+  ChannelRequesterAuthorizationInfo authorization = 1;
+}
+
+message GetChannelRequesterAuthorizationRequest {
+  string binding_id = 1;
+  string provider_user_id = 2;
+}
+
+message GetChannelRequesterAuthorizationResponse {
+  ChannelRequesterAuthorizationInfo authorization = 1;
+}
+
+message RefreshChannelRequesterAuthorizationRequest {
+  string binding_id = 1;
+  string authorization_id = 2;
+  uint64 expected_revision = 3;
+}
+
+message RefreshChannelRequesterAuthorizationResponse {
+  ChannelRequesterAuthorizationInfo authorization = 1;
+}
+
+message RevokeChannelRequesterAuthorizationRequest {
+  string binding_id = 1;
+  string authorization_id = 2;
+  uint64 expected_revision = 3;
+}
+
+message RevokeChannelRequesterAuthorizationResponse {
+  ChannelRequesterAuthorizationInfo authorization = 1;
+}
+
+message CancelChannelRequesterAuthorizationRequest {
+  string binding_id = 1;
+  string authorization_id = 2;
+  uint64 expected_revision = 3;
+}
+
+message CancelChannelRequesterAuthorizationResponse {
+  ChannelRequesterAuthorizationInfo authorization = 1;
+}
+
+// ---------------------------------------------------------------------------
+// Routing, conversations and access
+// ---------------------------------------------------------------------------
+
+message ChannelRoute {
+  string route_id = 1;
+  string binding_id = 2;
+  string chat_id = 3;
+  string chat_name = 4;
+  string agent_id = 5;
+  bool enabled = 6;
+  int64 created_at_unix_ms = 7;
+  int64 updated_at_unix_ms = 8;
+}
+
+message UpsertChannelRouteRequest {
+  string route_id = 1;
+  string binding_id = 2;
+  string chat_id = 3;
+  string chat_name = 4;
+  string agent_id = 5;
+  bool enabled = 6;
+}
+
+message DeleteChannelRouteRequest {
+  string binding_id = 1;
+  string route_id = 2;
+}
+
+message ListChannelRoutesRequest {
+  string binding_id = 1;
+}
+
+message UpsertChannelRouteResponse {
+  ChannelRoute route = 1;
+}
+
+message DeleteChannelRouteResponse {}
+
+message ChannelMemberAccess {
+  string access_id = 1;
+  string binding_id = 2;
+  string provider_user_id = 3;
+  string display_name = 4;
+  string status = 5; // pending | allowed | denied
+  int64 requested_at_unix_ms = 6;
+  int64 decided_at_unix_ms = 7;
+}
+
+message ListChannelMemberAccessRequest {
+  string binding_id = 1;
+}
+
+message DecideChannelMemberAccessRequest {
+  string binding_id = 1;
+  string access_id = 2;
+  string decision = 3; // allow | deny
+  string idempotency_key = 4;
+}
+
+message ListChannelMemberAccessResponse {
+  repeated ChannelMemberAccess members = 1;
+}
+
+message ListChannelRoutesResponse {
+  repeated ChannelRoute routes = 1;
+}
+
+message ChannelChat {
+  string chat_id = 1;
+  string name = 2;
+  string chat_type = 3;
+  string last_sender_name = 4;
+  int64 last_message_at_unix_ms = 5;
+}
+
+message ListChannelChatsRequest {
+  string binding_id = 1;
+}
+
+message ListChannelChatsResponse {
+  repeated ChannelChat chats = 1;
+}
+
+// ---------------------------------------------------------------------------
+// Automation and active delivery
+// ---------------------------------------------------------------------------
+
+message ChannelAutomation {
+  string automation_id = 1;
+  string binding_id = 2;
+  string trigger_type = 3;   // schedule | message | document
+  string trigger_value = 4;
+  string action_prompt = 5;
+  string agent_id = 6;
+  string destination_chat_id = 7;
+  bool enabled = 8;
+  string last_run_status = 9;
+  int64 last_run_at_unix_ms = 10;
+  string last_error = 11;
+  int64 created_at_unix_ms = 12;
+  int64 updated_at_unix_ms = 13;
+}
+
+message UpsertChannelAutomationRequest {
+  string automation_id = 1;
+  string binding_id = 2;
+  string trigger_type = 3;
+  string trigger_value = 4;
+  string action_prompt = 5;
+  string agent_id = 6;
+  string destination_chat_id = 7;
+  bool enabled = 8;
+}
+
+message DeleteChannelAutomationRequest {
+  string binding_id = 1;
+  string automation_id = 2;
+}
+
+message ListChannelAutomationsRequest {
+  string binding_id = 1;
+}
+
+message RunChannelAutomationRequest {
+  string binding_id = 1;
+  string automation_id = 2;
+  string idempotency_key = 3;
+}
+
+message UpsertChannelAutomationResponse {
+  ChannelAutomation automation = 1;
+}
+
+message DeleteChannelAutomationResponse {}
+
+message RunChannelAutomationResponse {
+  ChannelAutomation automation = 1;
+}
+
+message ListChannelAutomationsResponse {
+  repeated ChannelAutomation automations = 1;
+}
+
+message SendChannelMessageRequest {
+  string binding_id = 1;
+  string target_chat_id = 2;
+  string text = 3;
+  string idempotency_key = 4;
+}
+
+message SendChannelMessageResponse {
+  string delivery_id = 1;
+  string status = 2;
+  string provider_message_id = 3;
+  string error_message = 4;
+}
+
+// ---------------------------------------------------------------------------
+// Diagnostics
+// ---------------------------------------------------------------------------
+
+message ChannelEventInfo {
+  string event_id = 1;
+  string binding_id = 2;
+  string direction = 3;
+  string phase = 4;
+  string message_type = 5;
+  string summary = 6;
+  string sender_id = 7;
+  string sender_name = 8;
+  string target_id = 9;
+  string chat_type = 10;
+  string turn_id = 11;
+  string delivery_id = 12;
+  string error_code = 13;
+  string error_message = 14;
+  int64 occurred_at_unix_ms = 15;
+  int64 latency_ms = 16;
+}
+
+message ListChannelEventsRequest {
+  string binding_id = 1;
+  int32 limit = 2;
+  int32 offset = 3;
+}
+
+message ListChannelEventsResponse {
+  repeated ChannelEventInfo events = 1;
+  int64 total = 2;
+}
+
+message ChannelStatsRequest {
+  string binding_id = 1;
+}
+
+message ChannelStatsResponse {
+  int64 total_inbound = 1;
+  int64 total_outbound = 2;
+  int64 total_errors = 3;
+  int64 today_inbound = 4;
+  int64 today_outbound = 5;
+  int64 average_latency_ms = 6;
+}
+
+message RetryChannelDeliveryRequest {
+  string binding_id = 1;
+  string delivery_id = 2;
+}
+
+message RetryChannelDeliveryResponse {}
+
+message ExportChannelDiagnosticsRequest {
+  string binding_id = 1;
+}
+
+message ExportChannelDiagnosticsResponse {
+  bytes json_data = 1;
+  string file_name = 2;
+}
+
+// ---------------------------------------------------------------------------
+// QR scan-to-create provisioning
+// ---------------------------------------------------------------------------
+
+message StartChannelProvisioningRequest {
+  string app_name = 1;
+  string app_description = 2;
+  string region = 3;
+}
+
+message StartChannelProvisioningResponse {
+  string session_id = 1;
+  string qr_payload = 2;
+  int64 expires_in_seconds = 3;
+  string job_id = 4;
+}
+
+message ProvisionedBotInfo {
+  string app_id = 1;
+  string app_name = 2;
+  string avatar_url = 3;
+  string console_url = 4;
+  bool published_online = 5;
+  string owner_provider_user_id = 6;
+}
+
+message ProvisioningStep {
+  string step_id = 1;
+  string label = 2;
+  string status = 3; // pending | active | complete | waiting | failed
+  string detail = 4;
+}
+
+message PollChannelProvisioningRequest {
+  string session_id = 1;
+  string job_id = 2;
+}
+
+message PollChannelProvisioningResponse {
+  string status = 1;
+  ProvisionedBotInfo bot = 2;
+  string console_url = 3;
+  string error_message = 4;
+  repeated ProvisioningStep steps = 5;
+  string recovery_action = 6;
+}
+
+message ConfirmChannelProvisioningRequest {
+  string session_id = 1;
+  string job_id = 2;
+  string plugin_id = 3;
+  string provider_kind = 4;
+  string domain = 5;
+  string agent_id = 6;
+  bool enabled = 7;
+  string name = 8;
+}
+
+message ConfirmChannelProvisioningResponse {
+  ChannelBindingInfo binding = 1;
+  bool replayed = 2;
+}
+
+message CancelChannelProvisioningRequest {
+  string session_id = 1;
+  string job_id = 2;
+}
+
+message CancelChannelProvisioningResponse {}

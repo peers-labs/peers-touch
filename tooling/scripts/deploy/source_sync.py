@@ -22,6 +22,7 @@ from tooling.acceptance.core.lease import (
 from tooling.acceptance.core.source_sync import (
     RemoteSourceSynchronizer,
     SourceSyncRequest,
+    resolve_central_environment,
 )
 
 
@@ -99,13 +100,20 @@ def main() -> int:
             str(REPO_ROOT / ".local" / "deploy" / "envs"),
         )
     ).expanduser()
-    central_environment_path = Path(
-        os.environ.get(
-            "PT_GIT_SERVER_ENV",
-            str(REPO_ROOT / ".local" / "deploy" / "git-server.env"),
-        )
-    ).expanduser()
     try:
+        from tooling.acceptance.core.source_sync import load_env_file
+
+        selected_environment = (
+            args.environment_file
+            if args.environment_file is not None
+            else environments_dir / f"{args.environment}.env"
+        )
+        values = load_env_file(selected_environment)
+        central_environment_path = (
+            resolve_central_environment(args.source_root, dict(os.environ))
+            if values.get("PT_DEPLOY_SOURCE", "central").strip() == "central"
+            else selected_environment
+        )
         request = SourceSyncRequest.from_env_files(
             args.environment,
             source_root=args.source_root,

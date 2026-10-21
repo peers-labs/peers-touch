@@ -600,7 +600,7 @@ def authenticate_client(
         and bool(login.get("actorId")),
         f"Native actor login failed for {account}",
     )
-    navigation = client.harness("navigateToAgent", {}, timeout=60)
+    navigation = client.harness("navigateToAgent", {}, timeout=120)
     require(
         isinstance(navigation, Mapping)
         and navigation.get("navigated") is True,

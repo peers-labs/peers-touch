@@ -1,7 +1,3 @@
-use super::{
-    CommandResultTransport, CommandSubmitFailure, CommandTransport, QueueAcknowledger,
-    QueueTransport, COMMAND_RECONCILIATION_BATCH_LIMIT,
-};
 use crate::application::station_runtime::client::{
     StationClient, StationClientError, StationClientErrorKind,
 };
@@ -25,7 +21,13 @@ use crate::model::chat::{
     UpdateConversationMemberResponse,
 };
 use ed25519_dalek::{Signer, SigningKey};
+use messaging_core::engine::COMMAND_RECONCILIATION_BATCH_LIMIT;
 use messaging_core::identity::DeviceEnrollmentTransport;
+use messaging_core::inbox::QueueTransport;
+use messaging_core::outbox::{
+    CommandSubmitFailure, CommandTransport, DeliveryReceiptSubmitFailure, DeliveryReceiptTransport,
+};
+use messaging_core::ports::CommandResultTransport;
 use messaging_core::proto::actor::{
     ActorDeviceRef, EnrollActorDeviceRequest, EnrollActorDeviceResponse,
 };
@@ -206,7 +208,7 @@ impl StationDeliveryReceiptTransport {
         })
     }
 
-    pub fn submit(&self, receipt: &DeviceConsumptionReceipt) -> Result<(), StationClientError> {
+    fn submit_raw(&self, receipt: &DeviceConsumptionReceipt) -> Result<(), StationClientError> {
         let consumer = receipt.consumer.as_ref().ok_or_else(|| {
             StationClientError::new(
                 StationClientErrorKind::InvalidResponse,
@@ -244,6 +246,37 @@ impl StationDeliveryReceiptTransport {
             &self.device_id,
         )
         .map(|_| ())
+    }
+}
+
+impl DeliveryReceiptTransport for StationDeliveryReceiptTransport {
+    fn submit(
+        &self,
+        receipt: &DeviceConsumptionReceipt,
+    ) -> Result<(), DeliveryReceiptSubmitFailure> {
+        self.submit_raw(receipt)
+            .map_err(classify_delivery_receipt_failure)
+    }
+}
+
+fn classify_delivery_receipt_failure(error: StationClientError) -> DeliveryReceiptSubmitFailure {
+    use StationClientErrorKind::*;
+
+    let detail = error.to_string();
+    match error.kind {
+        InvalidResponse | Decode => {
+            DeliveryReceiptSubmitFailure::terminal("invalid_response", detail)
+        }
+        HttpStatus(status) if matches!(status, 400 | 404 | 409 | 410 | 422) => {
+            DeliveryReceiptSubmitFailure::terminal(format!("http_{status}"), detail)
+        }
+        HttpStatus(status) => {
+            DeliveryReceiptSubmitFailure::retryable(format!("http_{status}"), detail)
+        }
+        Network | Unavailable | SessionRevoked | Overloaded | AmbiguousOutcome | Cancelled
+        | StaleRoute | NoRoute | RoutePolicyConflict => {
+            DeliveryReceiptSubmitFailure::retryable("transport", detail)
+        }
     }
 }
 
@@ -1100,27 +1133,6 @@ impl QueueTransport for StationQueueTransport {
         )
         .map(|_| ())
         .map_err(|error| error.to_string())
-    }
-}
-
-impl QueueAcknowledger for StationQueueTransport {
-    fn acknowledge(
-        &self,
-        item_id: &str,
-        lane_sequence: i64,
-        consumer_epoch: u64,
-        payload_sha256: &[u8],
-    ) -> Result<(), String> {
-        QueueTransport::acknowledge(
-            self,
-            AcknowledgeDeviceInboxItemRequest {
-                device: Some(self.device.clone()),
-                item_id: item_id.to_string(),
-                lane_sequence,
-                consumer_epoch,
-                payload_sha256: payload_sha256.to_vec(),
-            },
-        )
     }
 }
 

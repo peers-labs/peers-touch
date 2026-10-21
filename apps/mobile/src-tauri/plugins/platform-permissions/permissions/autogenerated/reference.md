@@ -166,6 +166,58 @@ Denies the drainScheduledCallbacks command without any pre-configured scope.
 <tr>
 <td>
 
+`peers-platform-permissions:allow-executeSystemAction`
+
+</td>
+<td>
+
+Enables the executeSystemAction command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`peers-platform-permissions:deny-executeSystemAction`
+
+</td>
+<td>
+
+Denies the executeSystemAction command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`peers-platform-permissions:allow-observeCapability`
+
+</td>
+<td>
+
+Enables the observeCapability command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`peers-platform-permissions:deny-observeCapability`
+
+</td>
+<td>
+
+Denies the observeCapability command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `peers-platform-permissions:allow-pickMedia`
 
 </td>

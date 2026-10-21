@@ -44,7 +44,7 @@ export VITE_PORT=3000
 | `dev-clean.sh` | 推荐 | 清理开发进程 | 建议重启开发环境前执行 |
 | `dev-testnet-desktops.sh` | 可用 | 启动 testnet Desktop 多实例 | 支持 macOS 默认 Bash；通常通过 `make testnet-desktop NODES="a b"` 调用 |
 | `generate-mobile-brand-assets.py` | 可用 | 生成 Mobile 品牌资源 | 生成 App 内透明 wordmark；系统图标从 Desktop `icon-source.png` 裁掉外圈并保留源图主体占比，再同步生成 Tauri icon、iOS AppIcon 与 Android launcher icons |
-| `proto-gen-mobile.sh` | 可用 | 生成 Mobile proto 产物 | 支持 `kotlin` / `swift` / `web` / `all`；`web` 通过临时目录生成，只替换真实变化并统一新文件/变化文件的 EOF |
+| `proto-gen-mobile.sh` | 可用 | 生成共享 Mobile TypeScript Proto 产物 | 仅生成 `apps/mobile/src/gen/proto/`；通过临时目录只替换真实变化并统一 EOF；Kotlin/Swift native plugin 不维护平行业务绑定 |
 | `verify-worktree-binding.py` | 推荐 | capture/verify 当前执行 worktree 的 fail-closed identity | 校验 canonical root、branch、`workspaceId` 与 expected HEAD；必须从被绑定 root 运行，且不受无关 sibling worktree 变更影响 |
 | `verify-worktree-binding-test.py` | 可用 | 回归验证 worktree identity guard 与 Goal 队列契约 | 覆盖 wrong cwd、detached HEAD、identity drift、sibling worktree churn、持久 schema，以及 Ready/Parked queue 与 exhaustion-proof 阻塞语义 |
 | `local-dev/machine-dev.mjs` | 推荐 | 管理 machine-authoritative workspace registration 与 runtime lease | `make env-{register,update,check,status-all}`；显式删除 worktree 前用 `make env-unregister`，禁止手改 registry |
@@ -72,7 +72,7 @@ export VITE_PORT=3000
 | `acceptance-plan.py` | 推荐 | 根据 git diff 生成 Gate 影响投影，并与正式 Plan 校验 | `make acceptance-plan` 只投影当前 closure |
 | `acceptance-run.py` | 推荐 | 执行正式 Plan 当前 closure 的 Gate 并记录日志 | completion/full 必须显式请求 |
 | `execution-plan.py` | 推荐 | 解析显式 Plan Version；CI 必须显式输入 | 本地 `--allow-untracked` 在没有显式 Plan 时分类为 standalone |
-| `plan/planctl.mjs` | 推荐 | 直接 validate/inspect/select 一个显式 Plan Version 或 taskId | 不创建机器占用或隐式当前 Plan |
+| `plan/planctl.mjs` | 推荐 | 直接 validate/inspect/select 一个显式 Plan Version、Outcome Comparison 或 taskId | 当前未版本化合同冻结人类可读计划效果并校验实际结果状态；拒绝 `schemaVersion`，不创建机器占用或隐式当前 Plan |
 | `review/pr-plan-input.py` | 推荐 | 从 PR 正文的 `Execution Plans` 区段读取显式 Plan 列表或 `- None` standalone 标记 | CI 只对显式 Plan 路径执行 `execution-plan.py --plan`，不扫描 branch |
 | `acceptance-cell.py` | 推荐 | 管理 Native Desktop runtime cell 的 ready/status/logs/stop 生命周期 | 通过 `make acceptance-cell-{ready,status,logs,stop} CELL=<cell-id>` 调用；host 等敏感配置只从本地 profile 解析 |
 | `acceptance-report.py` | 推荐 | 汇总最新验收计划和执行结果 | 通过 `make acceptance-report` 调用 |

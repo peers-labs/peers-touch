@@ -120,6 +120,10 @@ from tooling.acceptance.provisioners.mobile_installation import (
 from tooling.acceptance.provisioners.mobile_service_bindings import (
     resolve_mobile_service_bindings,
 )
+from tooling.acceptance.provisioners.mobile_host_provider import (
+    HostProviderConfiguration,
+    load_host_provider_config,
+)
 from tooling.acceptance.provisioners.remote_source_identity import (
     resolve_remote_source_identity,
 )
@@ -179,6 +183,12 @@ MOBILE_NATIVE_SCENARIO_GATES = {
     "moments": "mobile-native-moments-e2e",
     "settings": "mobile-native-settings-e2e",
     "platform": "mobile-native-platform-e2e",
+    "uca-android-host": "unified-client-android-host-e2e",
+    "uca-ios-host": "unified-client-ios-host-e2e",
+}
+MOBILE_NATIVE_HOST_PLATFORMS = {
+    "uca-android-host": "android",
+    "uca-ios-host": "ios",
 }
 MOBILE_ANDROID_PHYSICAL_SCENARIO_GATES = {
     "android-social": "mobile-social-android-native",
@@ -2624,6 +2634,19 @@ def _load_mobile_native_scenario(
                 "service-isolation"
             ),
         )
+    if scenario_id in MOBILE_NATIVE_HOST_PLATFORMS:
+        host_platform = MOBILE_NATIVE_HOST_PLATFORMS[scenario_id]
+        if (
+            scenario.client_ids != (f"alice-{host_platform}",)
+            or scenario.service_ids != ("station-primary",)
+            or scenario.fixture_ids
+            or scenario.parent_harness_actions != ("build.identity",)
+            or scenario.require_exact_device_count
+        ):
+            raise BlockedError(
+                reason="UCA Host Suite must use one platform client and its reviewed Station",
+                resource=f"mobile-contract:scenario:{scenario_id}:host",
+            )
     if scenario_id in MOBILE_NATIVE_PRODUCT_SCENARIOS and (
         scenario.client_ids != tuple(EXPECTED_CLIENTS)
         or scenario.service_ids
@@ -3179,6 +3202,7 @@ def load_mobile_native_preflight_spec(
         )
     if (
         scenario.id != "android-social"
+        and scenario.id not in MOBILE_NATIVE_HOST_PLATFORMS
         and selected_platforms != set(EXPECTED_DRIVER_IDENTITIES)
     ):
         raise BlockedError(
@@ -3186,6 +3210,13 @@ def load_mobile_native_preflight_spec(
                 f"Mobile native scenario {scenario.id!r} must declare at "
                 "least one iOS and one Android physical client"
             ),
+            resource=f"mobile-contract:scenario:{scenario.id}:platforms",
+        )
+    if scenario.id in MOBILE_NATIVE_HOST_PLATFORMS and selected_platforms != {
+        MOBILE_NATIVE_HOST_PLATFORMS[scenario.id]
+    }:
+        raise BlockedError(
+            reason="UCA Host Suite physical platform identity differs",
             resource=f"mobile-contract:scenario:{scenario.id}:platforms",
         )
     leases = _required_object(payload, "leases", "mobile-contract:leases")
@@ -3403,6 +3434,8 @@ def _discover_appium_drivers(
         ) from error
     versions: dict[str, str] = {}
     for platform_name, driver in spec.drivers.items():
+        if platform_name not in {client.platform for client in spec.clients}:
+            continue
         entry = payload.get(driver.installed_name) if isinstance(payload, dict) else None
         version = (
             str(entry.get("version") or "").strip()
@@ -3673,6 +3706,8 @@ def preflight_mobile_native_inputs(
         )
 
     for platform, project in spec.projects.items():
+        if platform not in {client.platform for client in spec.clients}:
+            continue
         if not (repo_root / project).exists():
             platform_label = "iOS" if platform == "ios" else "Android"
             raise BlockedError(
@@ -3984,7 +4019,7 @@ def preflight_mobile_native_inputs(
             "major": major,
             "discovery": "adb-shell-dumpsys-webviewupdate",
         }
-    if len(browser_majors) != 1:
+    if android_clients and len(browser_majors) != 1:
         raise BlockedError(
             reason=(
                 "Android physical clients require one shared browser major "
@@ -3992,13 +4027,16 @@ def preflight_mobile_native_inputs(
             ),
             resource="mobile-runtime:android-browser-major",
         )
-    chromedriver = _prepare_chromedriver(
-        spec.chromedriver,
-        next(iter(browser_majors)),
-        android_abis,
-        repo_root=repo_root,
-        executor=executor,
-        environment=command_environment,
+    chromedriver = (
+        _prepare_chromedriver(
+            spec.chromedriver,
+            next(iter(browser_majors)),
+            android_abis,
+            repo_root=repo_root,
+            executor=executor,
+            environment=command_environment,
+        )
+        if android_clients else {}
     )
 
     _, storage_root = _required_env_ref(
@@ -9174,6 +9212,7 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
         self._port_reservations: list[_PortReservation] = []
         self._storage_roots: list[Path] = []
         self._cleanup_registered = False
+        self._host_provider: HostProviderConfiguration | None = None
 
     def prepare_credentials(
         self,
@@ -9185,7 +9224,22 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
                 gate_id=gate_id
             )
             self._select_scenario_contract(self._native_spec.scenario)
-        return super().prepare_credentials()
+        host_platform = MOBILE_NATIVE_HOST_PLATFORMS.get(self._native_spec.scenario.id)
+        if host_platform and self._host_provider is None:
+            provider_ref = {
+                "android": "PT_ANDROID_FCM_PROVIDER_CONFIG",
+                "ios": "PT_IOS_APNS_PROVIDER_CONFIG",
+            }[host_platform]
+            self._host_provider = load_host_provider_config(
+                host_platform, os.environ.get(provider_ref, "").strip(),
+            )
+        refs, values = super().prepare_credentials()
+        if self._host_provider is not None:
+            self._resolved_credential_values = tuple(dict.fromkeys((
+                *self._resolved_credential_values,
+                *self._host_provider.sensitive_values,
+            )))
+        return refs, values
 
     def create_gate_launch_context(
         self,
@@ -9634,6 +9688,7 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
                 platform=platform_name,
                 run_root=runtime_root / "source-builds" / platform_name,
                 runtime_cache=Path(self._native_inputs["runtimeCacheRoot"]),
+                host_provider=self._host_provider,
             )
             _, build_refs[platform_name] = (
                 produce_scenario_build_attestation(
@@ -10288,6 +10343,7 @@ class MobileNativeProvisioner(EnvironmentProvisioner):
                 reservation.release()
             except BaseException as error:
                 failures.append(f"port reservation: {type(error).__name__}")
+        self._host_provider = None
         if failures:
             raise ProvisioningError(
                 "Mobile native parent cleanup failed: " + "; ".join(failures)

@@ -30,6 +30,7 @@ Station、Desktop 或 Model 的跨模块真源。
 | Follow-up Suggestions | — | [design](./follow-up-suggestions/peers-design.md) | [acceptance](./follow-up-suggestions/acceptance.md) |
 | Home Page | — | — | [acceptance](./home-page/acceptance.md) |
 | Knowledge / RAG | [reference](./knowledge-rag/reference-analysis.md) | [design](./knowledge-rag/peers-design.md) | [acceptance](./knowledge-rag/acceptance.md) |
+| Lark | — | — | [prototype](./lark/prototype/README.md) |
 | LocalStorage Migration | — | — | [interface](./localstorage-migration/interface-design.md) |
 | Markdown Rendering | — | [design](./markdown-rendering/peers-design.md) | [acceptance](./markdown-rendering/acceptance.md) |
 | Marketplace | — | — | [acceptance](./marketplace/acceptance.md) |

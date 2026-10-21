@@ -108,5 +108,5 @@ The current group lifecycle source of truth defines local Station group behavior
 | `docs/context/architecture/social/group-lifecycle.md` | Superseded local group lifecycle design retained for history |
 | `docs/architecture/domains/chat/encryption/README.md` | Current device-addressed direct encryption, MLS, delivery, and recovery contract |
 | `docs/architecture/shared/communication/event-stream.md` | Reliable event stream and recovery model |
-| `docs/global/architecture.md` | Station/Model/Client ownership rule |
+| `docs/architecture/architecture.md` | Station/Model/Client ownership rule |
 | `docs/global/first-principles.md` | Proto-first contracts and auth/security constraints |

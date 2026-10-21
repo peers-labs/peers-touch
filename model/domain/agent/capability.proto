@@ -43,6 +43,12 @@ enum CapabilityApprovalPolicy {
   CAPABILITY_APPROVAL_POLICY_DENY = 4;
 }
 
+enum AgentCommandCapabilityKind {
+  AGENT_COMMAND_CAPABILITY_KIND_UNSPECIFIED = 0;
+  AGENT_COMMAND_CAPABILITY_KIND_TOOL = 1;
+  AGENT_COMMAND_CAPABILITY_KIND_SKILL = 2;
+}
+
 enum CapabilityOperationStatus {
   CAPABILITY_OPERATION_STATUS_UNSPECIFIED = 0;
   CAPABILITY_OPERATION_STATUS_PENDING = 1;
@@ -643,6 +649,41 @@ message ListAgentCapabilityBindingsResponse {
   repeated AgentCapabilityBinding bindings = 1;
 }
 
+message AgentCommandCapabilityItem {
+  string capability_id = 1;
+  string capability_version = 2;
+  string binding_id = 3;
+  uint64 binding_revision = 4;
+  AgentCommandCapabilityKind kind = 5;
+  CapabilitySourceKind source_kind = 6;
+  string source_instance_id = 7;
+  CapabilityDisplayMetadata display_metadata = 8;
+  CapabilityReadinessState readiness = 9;
+  string reason_code = 10;
+}
+
+message AgentCommandCapabilitySnapshot {
+  string snapshot_id = 1;
+  string ptid = 2;
+  string agent_id = 3;
+  uint64 agent_version = 4;
+  repeated AgentCommandCapabilityItem items = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp expires_at = 7;
+}
+
+message GetAgentCommandCapabilitySnapshotRequest {
+  string agent_id = 1;
+  string runtime_snapshot_id = 2;
+  optional string client_capability_session_id = 3;
+  string provider_id = 4;
+  string model_id = 5;
+}
+
+message GetAgentCommandCapabilitySnapshotResponse {
+  AgentCommandCapabilitySnapshot snapshot = 1;
+}
+
 message UpsertAgentCapabilityBindingRequest {
   AgentCapabilityBinding binding = 1;
   string idempotency_key = 2;
@@ -668,6 +709,8 @@ message GetCapabilityReadinessRequest {
   string agent_id = 1;
   string runtime_snapshot_id = 2;
   optional string client_capability_session_id = 3;
+  string provider_id = 4;
+  string model_id = 5;
 }
 
 message GetCapabilityReadinessResponse {

@@ -600,12 +600,12 @@ pub fn decrypt_text_projection_with_recovery(
         sender_signing_key,
     )?;
     let content_key =
-        open_recovery_content_key(store, &session.scope.actor_ptid, recovery_envelope).map_err(
-            |_| PrivateReadError {
+        open_recovery_content_key(session, store, recovery_envelope).map_err(|_| {
+            PrivateReadError {
                 kind: PrivateReadFailureKind::RecoveryRequired,
                 message: Some("private Social recovery key is unavailable".to_string()),
-            },
-        )?;
+            }
+        })?;
     decrypt_text_with_content_key(response, content_key, None)
 }
 
@@ -2067,13 +2067,14 @@ mod tests {
     use ed25519_dalek::{Signer, SigningKey};
     use messaging_core::identity::DeviceSigningKey;
     use secure_content_core::envelope::seal_content_key;
+    use secure_content_core::operation::{DispatchCause, OperationCompletion, OperationState};
     use secure_content_core::payload::{encrypt_payload_with_nonce, PayloadKeyContext};
     use secure_content_core::prekey::ContentPreKeyPrivate;
     use secure_content_core::recovery::{derive_recovery_prekey, RecoveryMaster};
     use zeroize::Zeroizing;
 
     use crate::secure_content::recovery::store_recovery_phrase;
-    use crate::secure_content::store::{DurableState, StoredPreKeyPublication};
+    use crate::secure_content::store::StoredPreKeyPublication;
     use crate::secure_content::{PrivateSocialScope, TrustedStationSigningKey};
 
     fn session(station_key: &SigningKey) -> NativeSocialSession {
@@ -2112,9 +2113,12 @@ mod tests {
             pool_epoch: 7,
             request_sha256: Sha256::digest(&request_bytes).into(),
             request_bytes,
-            state: DurableState::Pending,
+            state: OperationState::Pending,
             lease_generation: 0,
             session_generation: 0,
+            attempt_count: 0,
+            next_attempt_at_unix_ms: 0,
+            updated_at_unix_ms: 0,
         };
         let public_key = ContentPreKeyPrivate::from_bytes(private_key)
             .public_key()
@@ -2133,11 +2137,11 @@ mod tests {
                 ],
             )
             .unwrap();
-        let (leased, _) = store
-            .acquire_prekey_publication(&command.command_id)
+        let leased = store
+            .acquire_prekey_publication(&command.command_id, DispatchCause::InitialReconciliation)
             .unwrap();
         assert!(store
-            .finish_prekey_publication(&leased, DurableState::Committed)
+            .complete_prekey_publication(&leased, OperationCompletion::Committed)
             .unwrap());
         store
     }

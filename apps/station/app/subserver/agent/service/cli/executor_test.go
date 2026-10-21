@@ -30,7 +30,7 @@ printf '%s\n' '{"type":"done"}'
 		ConversationID: "conversation-1",
 		Provider:       "test-cli",
 		Model:          "default",
-		CliCommand:     commandPath + " " + promptPath,
+		Command:        []string{commandPath, promptPath},
 		SystemPrompt:   "system contract",
 		Messages: []domain.Message{
 			{Role: domain.MessageRoleUser, Content: "first question"},
@@ -68,11 +68,60 @@ printf '%s\n' '{"type":"done"}'
 	}
 }
 
+func TestExecutorAppliesStructuredStartupArgsEnvironmentAndTimeout(t *testing.T) {
+	root := t.TempDir()
+	argsPath := filepath.Join(root, "args.txt")
+	envPath := filepath.Join(root, "environment.txt")
+	commandPath := writeExecutable(t, root, "provider", `#!/bin/sh
+printf '%s\n' "$@" > "$PEERS_TEST_ARGS_PATH"
+printf '%s' "$PEERS_TEST_MODE" > "$PEERS_TEST_ENV_PATH"
+cat >/dev/null
+printf '%s\n' '{"type":"done","content":"configured"}'
+`)
+	executor := NewExecutor(&WorkspaceManager{BaseDir: filepath.Join(root, "workspaces")})
+
+	result, err := executor.Execute(context.Background(), &ExecuteRequest{
+		ActorPTID: "actor-1",
+		Command:   []string{commandPath, "-"},
+		StartupArgs: []string{
+			"--mode",
+			"fast",
+		},
+		Environment: map[string]string{
+			"PEERS_TEST_ARGS_PATH": argsPath,
+			"PEERS_TEST_ENV_PATH":  envPath,
+			"PEERS_TEST_MODE":      "review",
+		},
+		Timeout:  time.Second,
+		Messages: []domain.Message{{Role: domain.MessageRoleUser, Content: "hello"}},
+	}, nil)
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if result.Content != "configured" {
+		t.Fatalf("Execute() content = %q", result.Content)
+	}
+	args, err := os.ReadFile(argsPath)
+	if err != nil {
+		t.Fatalf("read arguments: %v", err)
+	}
+	if string(args) != "--mode\nfast\n-\n" {
+		t.Fatalf("structured arguments = %q", args)
+	}
+	environment, err := os.ReadFile(envPath)
+	if err != nil {
+		t.Fatalf("read environment: %v", err)
+	}
+	if string(environment) != "review" {
+		t.Fatalf("configured environment = %q", environment)
+	}
+}
+
 func TestExecutorReturnsTypedMissingBinary(t *testing.T) {
 	executor := NewExecutor(&WorkspaceManager{BaseDir: t.TempDir()})
 	_, err := executor.Execute(context.Background(), &ExecuteRequest{
-		ActorPTID:  "actor-1",
-		CliCommand: "peers-touch-cli-that-does-not-exist",
+		ActorPTID: "actor-1",
+		Command:   []string{"peers-touch-cli-that-does-not-exist"},
 		Messages: []domain.Message{
 			{Role: domain.MessageRoleUser, Content: "hello"},
 		},
@@ -94,8 +143,8 @@ exit 7
 `)
 	executor := NewExecutor(&WorkspaceManager{BaseDir: filepath.Join(root, "workspaces")})
 	_, err := executor.Execute(context.Background(), &ExecuteRequest{
-		ActorPTID:  "actor-1",
-		CliCommand: commandPath,
+		ActorPTID: "actor-1",
+		Command:   []string{commandPath},
 		Messages: []domain.Message{
 			{Role: domain.MessageRoleUser, Content: "hello"},
 		},
@@ -118,8 +167,8 @@ exit 1
 `)
 	executor := NewExecutor(&WorkspaceManager{BaseDir: filepath.Join(root, "workspaces")})
 	_, err := executor.Execute(context.Background(), &ExecuteRequest{
-		ActorPTID:  "actor-1",
-		CliCommand: commandPath,
+		ActorPTID: "actor-1",
+		Command:   []string{commandPath},
 		Messages: []domain.Message{
 			{Role: domain.MessageRoleUser, Content: "hello"},
 		},
@@ -140,8 +189,8 @@ sleep 5
 	executor := NewExecutor(&WorkspaceManager{BaseDir: filepath.Join(root, "workspaces")})
 	executor.Timeout = 20 * time.Millisecond
 	_, err := executor.Execute(context.Background(), &ExecuteRequest{
-		ActorPTID:  "actor-1",
-		CliCommand: commandPath,
+		ActorPTID: "actor-1",
+		Command:   []string{commandPath},
 		Messages: []domain.Message{
 			{Role: domain.MessageRoleUser, Content: "hello"},
 		},
@@ -171,7 +220,7 @@ printf '%s\n' '{"type":"done","content":"safe"}'
 		ActorPTID:      "actor-1",
 		AgentID:        "agent-1",
 		ConversationID: "conversation-1",
-		CliCommand:     commandPath + " " + envPath,
+		Command:        []string{commandPath, envPath},
 		Messages: []domain.Message{
 			{Role: domain.MessageRoleUser, Content: "hello"},
 		},
@@ -213,8 +262,8 @@ done
 	executor := NewExecutor(&WorkspaceManager{BaseDir: filepath.Join(root, "workspaces")})
 
 	_, err := executor.Execute(context.Background(), &ExecuteRequest{
-		ActorPTID:  "actor-1",
-		CliCommand: commandPath,
+		ActorPTID: "actor-1",
+		Command:   []string{commandPath},
 		Messages: []domain.Message{
 			{Role: domain.MessageRoleUser, Content: "hello"},
 		},
@@ -235,8 +284,8 @@ dd if=/dev/zero bs=1024 count=128 2>/dev/null | tr '\000' x
 	executor.Timeout = 2 * time.Second
 
 	result, err := executor.Execute(context.Background(), &ExecuteRequest{
-		ActorPTID:  "actor-1",
-		CliCommand: commandPath,
+		ActorPTID: "actor-1",
+		Command:   []string{commandPath},
 		Messages: []domain.Message{
 			{Role: domain.MessageRoleUser, Content: "hello"},
 		},

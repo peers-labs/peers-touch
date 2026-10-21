@@ -2,10 +2,8 @@
   "layout.nav.search": "Search",
   "layout.nav.chat": "Chat",
   "layout.nav.agent": "Agent",
-  "layout.nav.applets": "Applet Box",
   "layout.nav.contacts": "Contacts",
   "layout.nav.settings": "Settings",
-  "layout.nav.marketplace": "Marketplace",
 
   "layout.online.tooltip": "{{count}} visitor(s) online in the last 5 minutes",
 

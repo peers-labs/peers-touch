@@ -9,7 +9,7 @@
     "apps/station/app/subserver/agent/handler/package_catalog_handler.go",
     "apps/desktop/src-tauri/src/application/skills_market/trusted_catalog.rs",
     "apps/desktop/src-tauri/src/application/skills_market/mod.rs",
-    "apps/desktop/src/pages/MarketplacePage.tsx",
+    "apps/desktop/src/components/settings/DiscoverSettings.tsx",
     "apps/desktop/src/acceptance/agent/harness.ts",
     "tooling/acceptance/fixtures/agent_marketplace_catalog_fault_proxy.py"
   ],
@@ -39,7 +39,7 @@
       "uninstall removes each target through the same authority before clearing the local reconciliation ledger"
     ],
     "visible": [
-      "the native Marketplace shows source trust, signature state, package type, version, derived risk, scan verdict, install policy, and revocation",
+      "Settings > AI > Discover shows source trust, signature state, package type, version, derived risk, scan verdict, install policy, and revocation",
       "high-risk installation requires an explicit confirmation",
       "revoked packages remain inspectable but cannot be installed"
     ]
