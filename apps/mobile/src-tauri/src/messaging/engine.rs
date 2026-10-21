@@ -3,8 +3,9 @@ use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
-use crate::station_origin::{normalize_station_origin, StationOriginPolicy};
+use crate::station_origin::normalize_station_origin;
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine as _;
 use ed25519_dalek::VerifyingKey;
@@ -25,7 +26,7 @@ use messaging_core::crypto::signaling_envelope;
 use messaging_core::identity::{
     generate_device_identity_for_device_from_parts, is_stale_endpoint_error,
     load_or_create_device_identity_for_device, DeviceEnrollmentManager,
-    DeviceEnrollmentRepository, DeviceSigningKey, INITIAL_ACTOR_IDENTITY_PROFILE_VERSION,
+    DeviceEnrollmentRepository, DeviceSigningKey,
 };
 use messaging_core::inbox::{
     AcknowledgedItemObserver, ClaimedItemConsumer, CommandResultLifecycle, CommandResultProcessor,
@@ -130,6 +131,8 @@ use crate::runtime::reliability::{
 };
 
 const DRAIN_BATCH_LIMIT: u32 = 100;
+const COMMAND_PLAN_CONVERGENCE_TIMEOUT: Duration = Duration::from_secs(15);
+const COMMAND_PLAN_CONVERGENCE_INTERVAL: Duration = Duration::from_millis(200);
 pub const ATTACHMENT_STAGE_CHUNK_SIZE: usize = 1024 * 1024;
 const FRIEND_REQUEST_COMMAND_FORMAT_VERSION: u32 = 1;
 const FRIEND_REQUEST_COMMAND_LIFETIME_MS: i64 = 60 * 60 * 1_000;
@@ -308,9 +311,58 @@ pub(crate) fn validate_account_scope(
     {
         return Err("mobile messaging account scope is incomplete".to_string());
     }
-    normalize_station_origin(station_origin, StationOriginPolicy::current_build())
+    normalize_station_origin(station_origin)
         .map_err(|_| "mobile messaging Station origin is not canonical".to_string())?;
     Ok(())
+}
+
+fn reconcile_device_identity_profile(
+    store: &MobileMessagingStore,
+    ptid: &str,
+    device_id: &str,
+    actor_identity_seed: &[u8; 32],
+    actor_profile_version: u64,
+) -> Result<(), String> {
+    let Some(enrollment) = store.device_enrollment()? else {
+        return Ok(());
+    };
+    let certificate = &enrollment.certificate;
+    let device = certificate
+        .device
+        .as_ref()
+        .ok_or_else(|| "mobile messaging device identity has no endpoint".to_string())?;
+    if actor_device_ptid(device)? != ptid || device.device_id != device_id {
+        return Err(
+            "mobile messaging device identity does not match authenticated session".to_string(),
+        );
+    }
+    if certificate.observed_profile_version > actor_profile_version {
+        return Err("mobile messaging actor profile revision regressed".to_string());
+    }
+    let actor_identity = IdentityKeyPair::from_seed(actor_identity_seed);
+    if certificate.actor_identity_public_key != actor_identity.verifying_key().as_bytes()
+        || certificate.actor_identity_key_fingerprint
+            != Sha256::digest(actor_identity.verifying_key().as_bytes()).as_slice()
+    {
+        return Err("mobile messaging actor identity continuity mismatch".to_string());
+    }
+    if certificate.observed_profile_version == actor_profile_version {
+        return Ok(());
+    }
+    let (device_signing_seed, signing_key_id) = store
+        .device_signing_seed()?
+        .ok_or_else(|| "mobile messaging device signing key is unavailable".to_string())?;
+    if certificate.signing_key_id != signing_key_id {
+        return Err("mobile messaging device signing key identity is inconsistent".to_string());
+    }
+    let refreshed = generate_device_identity_for_device_from_parts(
+        ptid,
+        device_id,
+        actor_identity_seed,
+        actor_profile_version,
+        Some(&device_signing_seed),
+    )?;
+    store.refresh_device_identity_profile(&refreshed)
 }
 
 fn validate_call_signal_input(
@@ -478,16 +530,27 @@ impl MobileMessagingEngine {
         device_id: String,
         database_key: &[u8; 32],
         actor_identity_seed: [u8; 32],
+        actor_profile_version: u64,
         access_token: String,
         seed_backup: &dyn DeviceSigningSeedBackup,
         prekey_backup: Arc<dyn PreKeyBundleBackup>,
     ) -> Result<Self, String> {
         validate_account_scope(&station_peer_id, &station_origin, &actor_ptid)?;
-        if profile_id.trim().is_empty() || access_token.trim().is_empty() {
+        if profile_id.trim().is_empty()
+            || actor_profile_version == 0
+            || access_token.trim().is_empty()
+        {
             return Err("mobile messaging runtime credentials are incomplete".to_string());
         }
         let actor_identity_seed = Zeroizing::new(actor_identity_seed);
         let store = Arc::new(MobileMessagingStore::open(database_path, database_key)?);
+        reconcile_device_identity_profile(
+            store.as_ref(),
+            &actor_ptid,
+            &device_id,
+            &actor_identity_seed,
+            actor_profile_version,
+        )?;
         store.reconcile_completed_attachment_uploads()?;
         let attachment_root = database_path
             .parent()
@@ -501,7 +564,7 @@ impl MobileMessagingEngine {
                 &actor_ptid,
                 &device_id,
                 *actor_identity_seed,
-                INITIAL_ACTOR_IDENTITY_PROFILE_VERSION,
+                actor_profile_version,
             )?,
             None => {
                 // Local messaging data was lost. Restore the same device signing
@@ -519,7 +582,7 @@ impl MobileMessagingEngine {
                     &actor_ptid,
                     &device_id,
                     &*actor_identity_seed,
-                    INITIAL_ACTOR_IDENTITY_PROFILE_VERSION,
+                    actor_profile_version,
                     Some(&device_seed),
                 )?;
                 store.install_fresh_device_identity(&state)?;
@@ -2220,7 +2283,7 @@ impl MobileMessagingEngine {
         }
 
         let token = self.access_token()?;
-        let plan = self.prepare_command_plan(
+        let plan = self.prepare_converged_command_plan(
             &token,
             destination_conversation_id,
             ConversationCommandKind::ForwardMessage,
@@ -2569,7 +2632,11 @@ impl MobileMessagingEngine {
             return Err("mobile messaging edit target is not authored by this actor".to_string());
         }
         let token = self.access_token()?;
-        let plan = self.prepare_send_plan(&token, conversation_id)?;
+        let plan = self.prepare_converged_command_plan(
+            &token,
+            conversation_id,
+            ConversationCommandKind::EditMessage,
+        )?;
         let command_id = Ulid::new().to_string();
         let created_at_unix_ms = now_unix_ms();
         self.prepare_edit_with_plan(
@@ -2606,7 +2673,7 @@ impl MobileMessagingEngine {
             MetadataInteraction::Reaction { .. } => ConversationCommandKind::React,
             MetadataInteraction::Pin { .. } => ConversationCommandKind::PinMessage,
         };
-        let plan = self.prepare_command_plan(&token, conversation_id, command_kind)?;
+        let plan = self.prepare_converged_command_plan(&token, conversation_id, command_kind)?;
         let command_id = Ulid::new().to_string();
         self.prepare_metadata_with_plan(
             &plan,
@@ -3425,7 +3492,8 @@ impl MobileMessagingEngine {
             return Err("mobile messaging draft command kind is unsupported".to_string());
         }
         let token = self.access_token()?;
-        let plan = self.prepare_command_plan(&token, &draft.conversation_id, command_kind)?;
+        let plan =
+            self.prepare_converged_command_plan(&token, &draft.conversation_id, command_kind)?;
         if plan.conversation_kind != draft.conversation_kind {
             return Err(
                 "mobile messaging draft conversation kind does not match Station plan".to_string(),
@@ -3589,15 +3657,57 @@ impl MobileMessagingEngine {
             return Ok(false);
         };
         let token = self.access_token()?;
-        StationDeliveryReceiptTransport::new(
+        let transport = StationDeliveryReceiptTransport::new(
             self.scope.station_origin.clone(),
             token,
             self.scope.device_id.clone(),
-        )?
-        .submit(&receipt)?;
-        self.store
-            .mark_device_consumption_receipt_submitted(&receipt_id, &receipt_bytes)?;
+        )?;
+        match transport.submit(&receipt) {
+            Ok(()) => {
+                self.store
+                    .mark_device_consumption_receipt_submitted(&receipt_id, &receipt_bytes)?;
+            }
+            Err(error) if Self::is_terminal_delivery_receipt_rejection(&error) => {
+                let error_code = Self::delivery_receipt_rejection_code(&error);
+                log::warn!(
+                    "mobile delivery receipt {receipt_id} was permanently rejected by Station: {error}"
+                );
+                self.store.mark_device_consumption_receipt_rejected(
+                    &receipt_id,
+                    &receipt_bytes,
+                    &error_code,
+                    now_unix_ms(),
+                )?;
+            }
+            Err(error) => return Err(error.to_string()),
+        }
         Ok(true)
+    }
+
+    fn is_terminal_delivery_receipt_rejection(error: &StationTransportError) -> bool {
+        match error {
+            StationTransportError::Decode | StationTransportError::Invalid => true,
+            StationTransportError::HttpStatus { status, code, .. } => {
+                matches!(*status, 400 | 404 | 409 | 410 | 422)
+                    || (*status == 403
+                        && code.as_deref() == Some("CONVERSATION_INTERACTION_UNAUTHORIZED"))
+            }
+            StationTransportError::Deadline | StationTransportError::Network => false,
+        }
+    }
+
+    fn delivery_receipt_rejection_code(error: &StationTransportError) -> String {
+        match error {
+            StationTransportError::HttpStatus { status, code, .. } => code
+                .as_deref()
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+                .unwrap_or_else(|| format!("http_{status}")),
+            StationTransportError::Decode => "decode".to_string(),
+            StationTransportError::Invalid => "invalid".to_string(),
+            StationTransportError::Deadline => "deadline".to_string(),
+            StationTransportError::Network => "network".to_string(),
+        }
     }
 
     pub fn recover_stale_enrollment(&self, error: &str) -> Result<bool, String> {
@@ -3614,7 +3724,7 @@ impl MobileMessagingEngine {
         access_token: &str,
         conversation_id: &str,
     ) -> Result<messaging_core::proto::chat::PrepareConversationCommandResponse, String> {
-        self.prepare_command_plan(
+        self.prepare_converged_command_plan(
             access_token,
             conversation_id,
             ConversationCommandKind::Unspecified,
@@ -3647,6 +3757,33 @@ impl MobileMessagingEngine {
             authority_station_peer_id: authority_station_id,
             command_kind: command_kind as i32,
         })
+    }
+
+    fn prepare_converged_command_plan(
+        &self,
+        access_token: &str,
+        conversation_id: &str,
+        command_kind: ConversationCommandKind,
+    ) -> Result<PrepareConversationCommandResponse, String> {
+        let deadline = Instant::now() + COMMAND_PLAN_CONVERGENCE_TIMEOUT;
+        loop {
+            self.drain_once()?;
+            let plan = self.prepare_command_plan(access_token, conversation_id, command_kind)?;
+            let (local_sequence, local_hash) = self.store.authority_head(conversation_id)?;
+            if local_sequence == plan.authority_sequence && local_hash == plan.authority_hash {
+                return Ok(plan);
+            }
+            if Instant::now() >= deadline {
+                return Err(
+                    "mobile messaging local authority head did not converge with command plan"
+                        .to_string(),
+                );
+            }
+            std::thread::sleep(
+                COMMAND_PLAN_CONVERGENCE_INTERVAL
+                    .min(deadline.saturating_duration_since(Instant::now())),
+            );
+        }
     }
 
     fn core_endpoint(&self) -> CoreCryptoEndpoint {
@@ -4653,6 +4790,34 @@ mod tests {
     use ed25519_dalek::{Signature, Verifier};
 
     #[test]
+    fn membership_unauthorized_receipt_is_terminal_but_session_forbidden_is_retryable() {
+        let removed_member = StationTransportError::HttpStatus {
+            status: 403,
+            code: Some("CONVERSATION_INTERACTION_UNAUTHORIZED".to_string()),
+            details: Some("actor is not an active Conversation member".to_string()),
+            body: None,
+        };
+        let session_forbidden = StationTransportError::HttpStatus {
+            status: 403,
+            code: Some("SESSION_DEVICE_MISMATCH".to_string()),
+            details: None,
+            body: None,
+        };
+
+        assert!(MobileMessagingEngine::is_terminal_delivery_receipt_rejection(&removed_member));
+        assert_eq!(
+            MobileMessagingEngine::delivery_receipt_rejection_code(&removed_member),
+            "CONVERSATION_INTERACTION_UNAUTHORIZED"
+        );
+        assert!(!MobileMessagingEngine::is_terminal_delivery_receipt_rejection(&session_forbidden));
+        assert!(
+            !MobileMessagingEngine::is_terminal_delivery_receipt_rejection(
+                &StationTransportError::Network
+            )
+        );
+    }
+
+    #[test]
     fn consumer_epoch_observer_updates_runtime_epoch() {
         let (engine, root) = test_engine("consumer-epoch-observer");
 
@@ -4742,18 +4907,11 @@ mod tests {
     }
 
     #[test]
-    fn station_origin_policy_rejects_insecure_release_origins() {
+    fn station_origin_policy_accepts_user_selected_http_or_https() {
         let remote = "http://192.0.2.10:18132";
-        assert!(normalize_station_origin(
-            "https://station.example",
-            StationOriginPolicy::HttpsOnly,
-        )
-        .is_ok());
-        assert!(normalize_station_origin(remote, StationOriginPolicy::Development).is_ok());
-        assert!(normalize_station_origin(remote, StationOriginPolicy::HttpsOnly).is_err());
-        assert!(
-            normalize_station_origin("ftp://localhost", StationOriginPolicy::Development).is_err()
-        );
+        assert!(normalize_station_origin("https://station.example").is_ok());
+        assert!(normalize_station_origin(remote).is_ok());
+        assert!(normalize_station_origin("ftp://localhost").is_err());
     }
 
     #[test]
@@ -4768,7 +4926,7 @@ mod tests {
             "invalid origin",
         ] {
             assert!(
-                normalize_station_origin(rejected, StationOriginPolicy::Development).is_err(),
+                normalize_station_origin(rejected).is_err(),
                 "accepted malformed origin: {rejected}"
             );
         }
@@ -4778,7 +4936,7 @@ mod tests {
             "https://station.example/?query=1",
             "https://station.example/#fragment",
         ] {
-            assert!(normalize_station_origin(rejected, StationOriginPolicy::HttpsOnly).is_err());
+            assert!(normalize_station_origin(rejected).is_err());
         }
     }
 
@@ -4798,12 +4956,56 @@ mod tests {
             "mobile-device-1".to_string(),
             &[7; 32],
             [8; 32],
+            1,
             "token".to_string(),
             &NoopSeedBackup,
             noop_prekey_backup(),
         )
         .unwrap();
         (engine, root)
+    }
+
+    #[test]
+    fn reopening_profile_refreshes_the_device_certificate_revision() {
+        let root = std::env::temp_dir().join(format!(
+            "peers-mobile-messaging-profile-revision-{}",
+            Ulid::new()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let database_path = root.join("profile.sqlite3");
+        let open = |profile_revision| {
+            MobileMessagingEngine::open(
+                &database_path,
+                "profile-1".to_string(),
+                "station-1".to_string(),
+                "https://station.example".to_string(),
+                "ptid:alice".to_string(),
+                "mobile-device-1".to_string(),
+                &[7; 32],
+                [8; 32],
+                profile_revision,
+                "token".to_string(),
+                &NoopSeedBackup,
+                noop_prekey_backup(),
+            )
+            .unwrap()
+        };
+
+        drop(open(1));
+        let refreshed = open(8);
+        let enrollment = refreshed
+            .store()
+            .device_enrollment()
+            .unwrap()
+            .expect("device enrollment");
+        assert_eq!(enrollment.certificate.observed_profile_version, 8);
+        assert!(refreshed
+            .store()
+            .pending_device_enrollment()
+            .unwrap()
+            .is_some());
+        drop(refreshed);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

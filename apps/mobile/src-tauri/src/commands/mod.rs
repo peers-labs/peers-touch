@@ -238,6 +238,7 @@ pub fn handlers<R: tauri::Runtime>() -> impl Fn(Invoke<R>) -> bool + Send + Sync
         crate::social::social_private_submit_text,
         crate::social::social_private_teardown,
         crate::social::private_reaction::social_private_unreact,
+        crate::social::social_private_acceptance_prepare_keys,
         // OAuth (acceptance)
         oauth::access_cancel,
         oauth::access_decision,

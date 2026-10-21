@@ -3172,17 +3172,27 @@ func validatePrivatePostIndexes(database *gorm.DB, allowRetired bool) error {
 	requireAll := true
 	if allowRetired {
 		allowedExtraColumns = stringSet(RetiredPrivatePostColumns())
+		allowedExtraIndexes = map[string]canonicalIndexExpectation{
+			"uidx_social_private_post_id": {
+				Columns: []string{"post_id"},
+				Unique:  true,
+				Partial: true,
+			},
+			"uidx_social_private_post_content": {
+				Columns: []string{"content_id"},
+				Unique:  true,
+				Partial: true,
+			},
+		}
 		hasRetiredColumns, err := hasRetiredPrivatePostColumns(database)
 		if err != nil {
 			return err
 		}
 		requireAll = !hasRetiredColumns
 		if hasRetiredColumns {
-			allowedExtraIndexes = map[string]canonicalIndexExpectation{
-				"idx_spri_created": {
-					Columns: []string{"created_at"},
-					Unique:  false,
-				},
+			allowedExtraIndexes["idx_spri_created"] = canonicalIndexExpectation{
+				Columns: []string{"created_at"},
+				Unique:  false,
 			}
 		}
 	}
@@ -3208,6 +3218,7 @@ type canonicalColumnExpectation struct {
 type canonicalIndexExpectation struct {
 	Columns []string
 	Unique  bool
+	Partial bool
 }
 
 type postgresCanonicalIndexRow struct {
@@ -3491,8 +3502,7 @@ func validateCanonicalModelIndexes(
 		wanted, ok := expected[name]
 		if !ok {
 			if allowed, found := allowedExtraIndexes[name]; found &&
-				index.Unique == allowed.Unique &&
-				slices.Equal(index.Columns, allowed.Columns) {
+				canonicalIndexesEqual(index, allowed) {
 				continue
 			}
 			if allowedExtraColumns != nil &&
@@ -3507,17 +3517,23 @@ func validateCanonicalModelIndexes(
 				name,
 			)
 		}
-		if index.Unique != wanted.Unique ||
-			!slices.Equal(index.Columns, wanted.Columns) {
+		if !canonicalIndexMatches(
+			name,
+			index,
+			wanted,
+			allowedExtraIndexes,
+		) {
 			return resetError(
 				ResetCodeSchemaTargetUnreviewed,
-				"index %s.%s shape or uniqueness does not match the canonical model: got columns=%v unique=%t, want columns=%v unique=%t",
+				"index %s.%s shape does not match the canonical model: got columns=%v unique=%t partial=%t, want columns=%v unique=%t partial=%t",
 				statement.Schema.Table,
 				name,
 				index.Columns,
 				index.Unique,
+				index.Partial,
 				wanted.Columns,
 				wanted.Unique,
+				wanted.Partial,
 			)
 		}
 		seen[name] = struct{}{}
@@ -3536,6 +3552,29 @@ func validateCanonicalModelIndexes(
 	}
 
 	return nil
+}
+
+func canonicalIndexesEqual(
+	left canonicalIndexExpectation,
+	right canonicalIndexExpectation,
+) bool {
+	return left.Unique == right.Unique &&
+		left.Partial == right.Partial &&
+		slices.Equal(left.Columns, right.Columns)
+}
+
+func canonicalIndexMatches(
+	name string,
+	actual canonicalIndexExpectation,
+	canonical canonicalIndexExpectation,
+	allowedPreActivation map[string]canonicalIndexExpectation,
+) bool {
+	if canonicalIndexesEqual(actual, canonical) {
+		return true
+	}
+	allowed, found := allowedPreActivation[name]
+
+	return found && canonicalIndexesEqual(actual, allowed)
 }
 
 func canonicalModelIndexes(
@@ -3637,7 +3676,7 @@ ORDER BY index_relation.relname, index_column.ordinality
 		if row.IsPrimary {
 			continue
 		}
-		if row.IsPartial || !row.IsValid || !row.IsReady ||
+		if !row.IsValid || !row.IsReady ||
 			row.ColumnName == nil ||
 			row.Ordinal != ordinals[row.IndexName]+1 {
 			return nil, resetError(
@@ -3657,6 +3696,7 @@ ORDER BY index_relation.relname, index_column.ordinality
 			)
 		}
 		index.Unique = row.IsUnique
+		index.Partial = row.IsPartial
 		index.Columns = append(index.Columns, strings.ToLower(*row.ColumnName))
 		result[row.IndexName] = index
 		ordinals[row.IndexName] = row.Ordinal
@@ -4318,9 +4358,12 @@ func extractLegacyAttachmentKeys(postType string, raw string) ([]string, error) 
 	}
 	switch strings.ToUpper(strings.TrimSpace(postType)) {
 	case "IMAGE":
-		var identifiers []string
-		if err := decodeStrictJSON([]byte(raw), &identifiers); err == nil {
-			return normalizeObjectKeys(identifiers)
+		var legacyIdentifiers []string
+		if err := decodeStrictJSON(
+			[]byte(raw),
+			&legacyIdentifiers,
+		); err == nil {
+			return normalizeObjectKeys(legacyIdentifiers)
 		}
 		var attachments []struct {
 			ID              string          `json:"id"`
@@ -4336,6 +4379,7 @@ func extractLegacyAttachmentKeys(postType string, raw string) ([]string, error) 
 		if err := decodeStrictJSON([]byte(raw), &attachments); err != nil {
 			return nil, err
 		}
+		identifiers := make([]string, 0, len(attachments))
 		for _, attachment := range attachments {
 			identifier := attachment.ID
 			if identifier == "" {

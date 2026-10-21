@@ -312,6 +312,7 @@
         "chat-lifecycle-live-voice-e2e"
       ],
       "synthetic_paths": [
+        "apps/desktop/src-tauri/src/interface/tauri_commands/realtime.rs",
         "apps/desktop/src/modules/p2p/callP2p.ts",
         "apps/desktop/src/components/chat/CallSurface.tsx",
         "apps/desktop/src/acceptance/chat/harness.ts",
@@ -507,10 +508,10 @@
         "proven_scope": [
           "Only successful live runs with complete current source-bound reports prove W8 journeys",
         "CHAT-UR14 through CHAT-UR16 are proven only by a current-source two-Station Native run that observes lease-stable presence, explicit unknown fallback, fixed unread geometry, and stable message metadata geometry",
-          "Current-profile Native onboarding cold-restarts both actors and proves restorable no-PIN sessions reach the authenticated shell without credential or PIN UI",
-          "Current-profile Native onboarding proves local, federated-handle, and Station-scoped discovery, reject-and-retry relationship convergence, one Direct identity, and the first exact plaintext exchange",
-          "CHAT-UR08: Current-profile Native onboarding proves one selectable request-history row per counterparty PTID with current state and total attempt count",
-          "CHAT-UR09: Current-profile Native onboarding proves an authoritative Station-name summary plus expandable copyable raw identity details",
+          "Canonical-worktree Native onboarding cold-restarts both actors and proves restorable no-PIN sessions reach the authenticated shell without credential or PIN UI",
+          "Canonical-worktree Native onboarding proves All and Federation-scoped discovery, reject-and-retry relationship convergence, one Direct identity, and the first exact plaintext exchange",
+          "CHAT-UR08: Canonical-worktree Native onboarding proves one selectable request-history row per counterparty PTID with current state and total attempt count",
+          "CHAT-UR09: Canonical-worktree Native onboarding proves an authoritative Station-name summary plus expandable copyable raw identity details",
           "Current-source Native Direct sends keep the newest row clear of the composer and render seeded peer avatars from bundled image data",
           "Three source-bound Native clients distinguish same-name PTIDs by Federation and Home Station, render one avatar identity per PTID, converge on the UI-created MLS Group, and restore that Group after a member restart",
           "Unavailable-member Group preparation preserves the visible selection and exposes typed inline retry"

@@ -44,6 +44,10 @@ const source = readFileSync(
   new URL('./AccessGateHost.tsx', import.meta.url),
   'utf8',
 );
+const styles = readFileSync(
+  new URL('../../styles.css', import.meta.url),
+  'utf8',
+);
 
 afterEach(() => {
   recoveryMock.states = [];
@@ -64,7 +68,7 @@ describe('AccessGateHost schema gate surface', () => {
       decision: schemaDecision(),
     });
 
-    expect(markup).toContain('common.continue');
+    expect(markup).toContain('mobile.launch.continue');
     expect(markup).toContain('ant-btn-primary');
     expect(markup).not.toContain('auth-actions single');
   });
@@ -145,6 +149,12 @@ describe('AccessGateHost attempt recovery', () => {
     expect(source).toContain('onBack: () => Promise<void>');
     expect(source).toContain('onClick={() => void onRefresh()}');
     expect(source).toContain('onClick={() => void onBack()}');
+  });
+
+  it('keeps the single Station-change action at the mobile touch minimum', () => {
+    expect(styles).toMatch(
+      /\.auth-actions\.single \.ant-btn\s*\{[^}]*height:\s*44px;/s,
+    );
   });
 });
 

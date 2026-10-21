@@ -697,11 +697,11 @@ fn build_request(
         ),
         StationOperation::ActorProfileUpdate { input } => {
             validate_optional_text(input.display_name.as_deref(), 512, "display_name")?;
-            validate_optional_text(input.note.as_deref(), 32 * 1024, "note")?;
-            validate_optional_text(input.avatar.as_deref(), 4096, "avatar")?;
-            validate_optional_text(input.header.as_deref(), 4096, "header")?;
-            validate_optional_text(input.region.as_deref(), 256, "region")?;
-            validate_optional_text(input.timezone.as_deref(), 256, "timezone")?;
+            validate_optional_text_allow_empty(input.note.as_deref(), 32 * 1024, "note")?;
+            validate_optional_text_allow_empty(input.avatar.as_deref(), 4096, "avatar")?;
+            validate_optional_text_allow_empty(input.header.as_deref(), 4096, "header")?;
+            validate_optional_text_allow_empty(input.region.as_deref(), 256, "region")?;
+            validate_optional_text_allow_empty(input.timezone.as_deref(), 256, "timezone")?;
             validate_optional_text(
                 input.default_visibility.as_deref(),
                 128,
@@ -1540,6 +1540,17 @@ fn validate_optional_text(value: Option<&str>, maximum: usize, field: &str) -> M
     Ok(())
 }
 
+fn validate_optional_text_allow_empty(
+    value: Option<&str>,
+    maximum: usize,
+    field: &str,
+) -> MobileResult<()> {
+    if let Some(value) = value {
+        clean_text_allow_empty(value.to_string(), maximum, field)?;
+    }
+    Ok(())
+}
+
 fn validate_revision(value: &str, operation_id: &str) -> MobileResult<u64> {
     let revision = value
         .parse::<u64>()
@@ -1627,6 +1638,15 @@ mod tests {
         assert_eq!(operation.id(), "oss_download");
         assert!(!operation.id().contains('/'));
         assert!(!operation.id().contains("http"));
+    }
+
+    #[test]
+    fn profile_update_allows_clearing_optional_text_fields() {
+        assert!(validate_optional_text_allow_empty(Some(""), 32 * 1024, "note").is_ok());
+        assert!(validate_optional_text_allow_empty(Some("  "), 32 * 1024, "note").is_ok());
+        assert!(validate_optional_text_allow_empty(Some("bio"), 32 * 1024, "note").is_ok());
+        assert!(validate_optional_text_allow_empty(Some("a\rb"), 32 * 1024, "note").is_err());
+        assert!(validate_optional_text(Some(""), 512, "display_name").is_err());
     }
 
     #[test]

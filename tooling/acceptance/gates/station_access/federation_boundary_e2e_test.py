@@ -13,11 +13,17 @@ from tooling.acceptance.gates.station_access.federation_boundary_e2e import (
 
 
 class _FakeRuntime:
-    def __init__(self, *, contexts: list[dict[str, str]] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        contexts: list[dict[str, str]] | None = None,
+        federation_search_failures: int = 0,
+    ) -> None:
         self.manifest = {"environmentId": "station-access-native"}
         self.desktop_binding = SimpleNamespace()
         self.identities: dict[str, SimpleNamespace] = {}
         self.calls: list[tuple[str, str, dict[str, object]]] = []
+        self.federation_search_failures = federation_search_failures
         self.contexts = (
             [
                 {
@@ -60,10 +66,11 @@ class _FakeRuntime:
     @staticmethod
     def wait_until(predicate, _description: str, *, timeout_seconds: float):
         del timeout_seconds
-        value = predicate()
-        if value is None:
-            raise GateError("condition did not become ready")
-        return value
+        for _ in range(3):
+            value = predicate()
+            if value is not None:
+                return value
+        raise GateError("condition did not become ready")
 
     def actor_fixture(self, client_id: str) -> dict[str, str]:
         fixtures = {
@@ -98,6 +105,12 @@ class _FakeRuntime:
                 ]
             }
         if action == "social.people.search":
+            if self.federation_search_failures > 0:
+                self.federation_search_failures -= 1
+                raise GateError(
+                    "GET /actor/federation/resolve HTTP 503: "
+                    "gateway_request_failed"
+                )
             return {
                 "entries": [
                     {
@@ -169,6 +182,12 @@ class _FakeRuntime:
 
 
 class StationAccessFederationBoundaryGateTest(unittest.TestCase):
+    def test_uses_current_evidence_store_run_for_all_artifacts(self) -> None:
+        gate = StationAccessFederationBoundaryGate(runtime=_FakeRuntime())
+
+        self.assertIsNone(gate.report_path)
+        self.assertIsNone(gate.evidence_dir)
+
     def test_proves_explicit_context_and_client_boundary(self) -> None:
         runtime = _FakeRuntime()
         gate = StationAccessFederationBoundaryGate(runtime=runtime)
@@ -231,6 +250,24 @@ class StationAccessFederationBoundaryGateTest(unittest.TestCase):
         ).run()
 
         self.assertEqual(result["federationId"], "fed-1")
+
+    def test_retries_transient_federation_resolve_readiness(self) -> None:
+        runtime = _FakeRuntime(federation_search_failures=1)
+
+        result = StationAccessFederationBoundaryGate(
+            runtime=runtime,
+        ).run()
+
+        self.assertEqual(result["federationId"], "fed-1")
+        searches = [
+            call
+            for call in runtime.calls
+            if (
+                call[1] == "social.people.search"
+                and call[2].get("federationId") == "fed-1"
+            )
+        ]
+        self.assertEqual(len(searches), 2)
 
     def test_rejects_missing_federation_context(self) -> None:
         gate = StationAccessFederationBoundaryGate(
@@ -331,9 +368,7 @@ class StationAccessFederationBoundaryGateTest(unittest.TestCase):
                 "federation::federation_list_contexts,\n"
             ),
             "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs": (
-                '  "federation_resolve" => value,\n'
                 '  "federation_catalog_search" => value,\n'
-                '  "federation_list_contexts" => value,\n'
             ),
             "apps/mobile/src/services/gateways/gatewayTypes.ts": (
                 "operationId: 'federation_contexts_list'\n"
@@ -342,6 +377,7 @@ class StationAccessFederationBoundaryGateTest(unittest.TestCase):
                 "'/actor/federation/resolve'\n"
                 "'/sub-federation/catalog/search'\n"
                 "'/sub-federation/contexts'\n"
+                "'/sub-federation/federations'\n"
             ),
             "apps/mobile/src/services/stationTransport.ts": (
                 "case 'federation_contexts_list':\n"

@@ -53,7 +53,7 @@
       "visible native Desktop clients use isolated profiles, ports, storage roots, and observer sockets",
       "current-profile parity proof launches peers-group-chat and peers-chat-high-chat as distinct synchronized worktrees, with peers-group-chat initiating the journey",
       "a restorable native account cold-launches into the authenticated shell without provider credentials, while PIN-protected and sessionless accounts retain their distinct gates",
-      "native onboarding starts from canonical stranger state, shows stable local, federated-handle, and Station-scoped identity, and converges through reject, retry, accept, one Direct conversation, and exact plaintext",
+      "release onboarding launches isolated clients from one canonical exact-source worktree, starts from canonical stranger state, shows stable All and Federation-scoped identity, and converges through reject, retry, accept, one Direct conversation, and exact plaintext",
       "native onboarding submits, lists, rejects, retries, accepts, and reads back the friend-request lifecycle through the production Desktop and Station Social owners",
       "CHAT-UR08: Native Contacts consolidates request attempts by counterparty PTID, exposes current state and attempt count, and keeps terminal history selectable",
       "CHAT-UR09: Native contact identity renders the authoritative Station name in summaries and exposes raw identity values only in expandable copyable details",
@@ -94,6 +94,7 @@
   "constraints": [
     "live journeys must launch through make desktop",
     "two clients launched from one worktree cannot prove current-profile cross-worktree parity",
+    "release lifecycle Gates must not require named sibling worktrees; cross-worktree parity remains a separate Gate",
     "a restored authenticated actor must not be silently reused as the Gate's requested actor",
     "the renderer must not downgrade a native restorable session to provider reauthentication",
     "an existing relationship may be normalized only through production Social commands; fixture or client state must not fabricate stranger, pending, rejected, or accepted state",

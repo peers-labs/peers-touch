@@ -32,6 +32,13 @@ confirmation. It still requires the authoritative workspace capability, exact
 reviewed Profile and reset scope, matching current Git identity and
 tracked-clean remote topology, and the OS-held reset lease.
 
+The reset authority includes disposable product and Acceptance state:
+fixtures, accounts, devices, sessions, one-time Content PreKey pools, private
+domain data, caches, databases, and generated test products. A Plan task,
+declaration, authorization ref, manifest, or receipt may record and fence the
+operation, but none is a second permission source. The Agent generates missing
+audit metadata and continues through the canonical owner.
+
 Failures remain distinct: stable protection is `PROFILE_RESET_PROTECTED`,
 missing binding capability is `WORKSPACE_CAPABILITY_MISSING`, and command
 scope mismatch is `RESET_SCOPE_MISMATCH`. None may be translated into an
@@ -52,6 +59,10 @@ continuous Plan execution without adding a real safety boundary.
   non-terminal `stable` token remains Agent-resettable.
 - Non-stable Profile fixtures accept reset only with matching workspace
   binding, exact scope, current Git identity, and lease.
+- A depleted PreKey or stale actor-device Fixture on a non-stable Profile is
+  reset by the Agent without another user prompt.
+- Missing audit metadata is reported as an implementation defect, never as a
+  request for human reset authorization.
 - Machine Dev status projects `resetPolicy`, never a stored control mode.
 
 ## Crosswalks

@@ -41,6 +41,7 @@ const (
 	tblOSSFiles   = "oss_files"
 	tblOSSAudit   = "oss_audit"
 	tblOSSMeta    = "oss_meta"
+	tblFederation = "federation"
 )
 
 // OSSRepository is the dashboard-side view of the OSS subsystem.
@@ -1157,6 +1158,11 @@ func (r *ossRepository) RotateFederationLocalKey(ctx context.Context) (*domain.O
 	}
 	if r.localStationPeerID == "" {
 		return nil, errors.New("local Station peer ID is not configured")
+	}
+	if r.db != nil && r.db.Migrator().HasTable(tblFederation) {
+		return nil, errors.New(
+			"Federation signing key rotation requires coordinated STATION_KEY_ROTATED ledger support",
+		)
 	}
 	res, err := federation.RotateLocalKey(
 		ctx,

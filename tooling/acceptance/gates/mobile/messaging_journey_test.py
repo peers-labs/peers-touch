@@ -65,6 +65,9 @@ class FakeMessagingSession:
         self.lifecycle_scope_phases: list[str] = []
         self.messaging_projection_reads_while_bootstrapping = 0
         self.contact_open_inputs: list[dict[str, Any]] = []
+        self.contact_open_preparing_count = 0
+        self.friend_request_send_count = 0
+        self.people_search_queries: list[str] = []
         self.write_admission_reads = 0
         self.write_admission_sequence: list[dict[str, Any]] = []
         self.network.actors[actor.ptid] = actor
@@ -107,6 +110,7 @@ class FakeMessagingSession:
             if body["federationId"] != self.actor.federation_id:
                 raise AssertionError("search Federation context mismatch")
             query = str(body["query"])
+            self.people_search_queries.append(query)
             return [
                 {
                     "ptid": actor.ptid,
@@ -115,13 +119,20 @@ class FakeMessagingSession:
                 }
                 for actor in self.network.actors.values()
                 if (
-                    actor.federated_handle == query
+                    (
+                        actor.federated_handle == query
+                        or (
+                            actor.station_peer_id == self.actor.station_peer_id
+                            and actor.role == query
+                        )
+                    )
                     and actor.federation_id == body["federationId"]
                 )
             ]
         if action == "social.request.send":
             if not self.social_runtime_active:
                 raise GateError("mobile.social.runtimeUnavailable")
+            self.friend_request_send_count += 1
             receiver = self.network.actors[str(body["receiverPtid"])]
             if body["receiverHomeStationPeerId"] != receiver.station_peer_id:
                 raise AssertionError("receiver Home Station identity mismatch")
@@ -152,6 +163,9 @@ class FakeMessagingSession:
             return self._social_projection()
         if action == "social.contact.open":
             self.contact_open_inputs.append(body)
+            if self.contact_open_preparing_count > 0:
+                self.contact_open_preparing_count -= 1
+                raise DriverError("mobile.contacts.conversationPreparing")
             peer_ptid = str(body["peerPtid"])
             federation_id = str(body["federationId"])
             accepted = any(
@@ -512,8 +526,43 @@ class MobileMessagingJourneyTests(unittest.TestCase):
                 }
             ],
         )
+        self.assertEqual(
+            self.sender_session.people_search_queries,
+            [self.receiver.federated_handle],
+        )
         message = self.network.messages[result["conversationId"]][0]
         self.assertIn("ptid:bob", message["readByPtids"])
+
+    def test_same_station_direct_uses_catalog_prefix(self) -> None:
+        receiver = MessagingActor(
+            client_id="sim-ios-peer",
+            role="bob",
+            station_url=self.sender.station_url,
+            station_peer_id=self.sender.station_peer_id,
+            ptid="ptid:bob",
+            account_ref="station-account:bob@p.t",
+            federated_handle="@bob@station-primary.example",
+            federation_id=self.sender.federation_id,
+        )
+        receiver_session = FakeMessagingSession(self.network, receiver)
+        self.sender_session.social_runtime_active = True
+        receiver_session.social_runtime_active = True
+
+        self.journey._create_direct(
+            self.sender_session,
+            receiver_session,
+            self.sender,
+            receiver,
+        )
+        self.journey._create_direct(
+            self.sender_session,
+            receiver_session,
+            self.sender,
+            receiver,
+        )
+
+        self.assertEqual(self.sender_session.people_search_queries, ["bob", "bob"])
+        self.assertEqual(self.sender_session.friend_request_send_count, 1)
 
     def test_contact_direct_waits_for_effective_write_admission(self) -> None:
         self.journey.authenticate(self.sender_session, self.sender, password="1")
@@ -542,6 +591,21 @@ class MobileMessagingJourneyTests(unittest.TestCase):
             [{"peerPtid": "ptid:bob", "federationId": "federation-1"}],
         )
         self.assertEqual(result["conversationId"], "ptid:alice-ptid:bob")
+
+    def test_contact_direct_retries_conversation_preparing(self) -> None:
+        self.sender_session.social_runtime_active = True
+        self.receiver_session.social_runtime_active = True
+        self.sender_session.contact_open_preparing_count = 2
+
+        conversation_id = self.journey._create_direct(
+            self.sender_session,
+            self.receiver_session,
+            self.sender,
+            self.receiver,
+        )
+
+        self.assertEqual(conversation_id, "ptid:alice-ptid:bob")
+        self.assertEqual(len(self.sender_session.contact_open_inputs), 3)
 
     def test_contact_direct_admission_timeout_retains_last_public_reason(
         self,
@@ -644,6 +708,72 @@ class MobileMessagingJourneyTests(unittest.TestCase):
 
         self.assertEqual(session.scope_attempts, 2)
         self.assertEqual(session.social_attempts, 2)
+
+    def test_social_activation_rejects_failed_dependency_without_polling(self) -> None:
+        calls: list[str] = []
+
+        class Session:
+            def call_action(
+                self,
+                action: str,
+                _payload: Mapping[str, Any] | None = None,
+            ) -> Any:
+                calls.append(action)
+                if action == "social.projection.read":
+                    return {"active": False, "ingress": None}
+                if action == "lifecycle.snapshot":
+                    return {
+                        "runtimes": [
+                            {
+                                "id": "messaging",
+                                "status": "failed",
+                                "errorKey": "mobile.lifecycle.runtimeFailed",
+                            },
+                            {
+                                "id": "social",
+                                "status": "failed",
+                                "errorKey": (
+                                    "mobile.lifecycle.dependencyFailed:messaging"
+                                ),
+                            },
+                        ]
+                    }
+                raise AssertionError(action)
+
+        with self.assertRaisesRegex(
+            GateError,
+            "sim-ios runtime messaging failed",
+        ):
+            self.journey._social_runtime_active(Session(), "sim-ios")
+        self.assertEqual(
+            calls,
+            ["social.projection.read", "lifecycle.snapshot"],
+        )
+
+    def test_social_activation_waits_for_pending_runtime(self) -> None:
+        class Session:
+            def call_action(
+                self,
+                action: str,
+                _payload: Mapping[str, Any] | None = None,
+            ) -> Any:
+                if action == "social.projection.read":
+                    return {"active": False, "ingress": None}
+                if action == "lifecycle.snapshot":
+                    return {
+                        "runtimes": [
+                            {
+                                "id": "messaging",
+                                "status": "bootstrapping",
+                                "errorKey": None,
+                            }
+                        ]
+                    }
+                raise AssertionError(action)
+
+        self.assertFalse(
+            self.journey._social_runtime_active(Session(), "sim-ios")
+        )
 
     def test_authentication_rejects_non_station_account_reference(self) -> None:
         malformed = MessagingActor(

@@ -23,10 +23,11 @@
   },
   "fixtures": [
     {
-      "id": "mobile-social-ios-existing-actors",
-      "authorization_required": false,
+      "id": "mobile-social-simulator-actors",
+      "authorization_required": true,
+      "authorization_ref": "station.reset:mobile-social-simulator-actors",
       "target_assertion": "the Station is an approved non-stable development target",
-      "initial_assertion": "Alice, Bob and Eve already exist with distinct canonical PTIDs on one Station"
+      "initial_assertion": "Alice, Bob and Eve are reset to distinct canonical PTIDs with fresh device and Content PreKey state on one Station"
     }
   ],
   "credentials": [],
@@ -76,6 +77,7 @@
       "social.request.accept",
       "social.reconcile",
       "social.projection.read",
+      "moments.private.acceptance.prepareKeys",
       "reliability.draft.write",
       "reliability.draft.read",
       "reliability.draft.action",
@@ -92,11 +94,11 @@
   },
   "proof_scope": {
     "proves": [
-      "one source-attested Station and three verified existing actors",
+      "one source-attested Station and three reset-isolated actors",
       "two isolated iOS Simulator clients",
       "one reusable Suite Runtime for six MPS-RC01 scenarios",
       "real Mobile UI actions and receiver-visible Social assertions",
-      "account-switch scope isolation without destructive account reset"
+      "account-switch scope isolation after deterministic Fixture reset"
     ],
     "does_not_prove": [
       "Android behavior",

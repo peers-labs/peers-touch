@@ -18,7 +18,7 @@
   ],
   "acceptance": {
     "product_assertions": ["MS-PA04", "MS-PA05", "MS-PA13", "MS-PA14"],
-    "visible": ["cold start, resume, descriptor-owned primary/detail/overlay navigation, Station change, logout, and revocation preserve generation isolation"]
+    "visible": ["cold start, expired-route same-session resume, expired secondary Station selection, descriptor-owned primary/detail/overlay navigation, Station change, logout, and revocation preserve generation isolation"]
   },
   "negative": ["pages must not own long-lived freshness or route visibility", "old-generation results must not become visible"]
 }

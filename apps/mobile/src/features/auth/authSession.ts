@@ -15,6 +15,7 @@ import {
   type MobileAuthSession,
 } from './mobileAuthIdentity';
 import { secureRandomUuid } from '../../utils/randomIdentity';
+import { readableErrorMessage } from '../../utils/errorMessage';
 
 export type { MobileActorRef, MobileAuthSession } from './mobileAuthIdentity';
 
@@ -46,6 +47,56 @@ export const ACCESS_DECISION_ACTION_REQUIRED = 2;
 export const ACCESS_DECISION_GRANTED = 3;
 export const ACCESS_DECISION_BLOCKED = 4;
 export const ACCESS_DECISION_FAILED = 5;
+export const STATION_ACCESS_UNKNOWN_GATE = 'STATION_ACCESS_UNKNOWN_GATE';
+export const STATION_ACCESS_IDENTITY_MISMATCH = 'STATION_ACCESS_IDENTITY_MISMATCH';
+export const STATION_ACCESS_ATTEMPT_EXPIRED = 'STATION_ACCESS_ATTEMPT_EXPIRED';
+
+export type StationAccessFailureOutcome =
+  | typeof STATION_ACCESS_UNKNOWN_GATE
+  | typeof STATION_ACCESS_IDENTITY_MISMATCH
+  | typeof STATION_ACCESS_ATTEMPT_EXPIRED;
+
+const STATION_ACCESS_OUTCOME_MESSAGE_KEYS: Record<
+  StationAccessFailureOutcome,
+  string
+> = {
+  [STATION_ACCESS_UNKNOWN_GATE]: 'mobile.auth.unknownGate',
+  [STATION_ACCESS_IDENTITY_MISMATCH]: 'mobile.auth.stationIdentityMismatch',
+  [STATION_ACCESS_ATTEMPT_EXPIRED]: 'mobile.auth.attemptExpired',
+};
+
+const KNOWN_GATE_TYPES = new Set<number | string>([
+  1,
+  ACCESS_GATE_TYPE_AUTH_LOGIN,
+  3,
+  4,
+  ACCESS_GATE_TYPE_INVITE_CODE,
+  ACCESS_GATE_TYPE_DEVICE_TRUST,
+  7,
+  ACCESS_GATE_TYPE_TERMS_ACCEPTANCE,
+  ACCESS_GATE_TYPE_AUTH_OAUTH,
+  ACCESS_GATE_TYPE_CUSTOM,
+  'ACCESS_GATE_TYPE_STATION_CAPABILITY',
+  'ACCESS_GATE_TYPE_AUTH_LOGIN',
+  'ACCESS_GATE_TYPE_AUTH_SESSION_RESTORE',
+  'ACCESS_GATE_TYPE_INVITE_ALLOWLIST',
+  'ACCESS_GATE_TYPE_INVITE_CODE',
+  'ACCESS_GATE_TYPE_DEVICE_TRUST',
+  'ACCESS_GATE_TYPE_MAINTENANCE',
+  'ACCESS_GATE_TYPE_TERMS_ACCEPTANCE',
+  'ACCESS_GATE_TYPE_AUTH_OAUTH',
+  'ACCESS_GATE_TYPE_CUSTOM',
+]);
+
+export class StationAccessOutcomeError extends Error {
+  readonly code: StationAccessFailureOutcome;
+
+  constructor(code: StationAccessFailureOutcome) {
+    super(STATION_ACCESS_OUTCOME_MESSAGE_KEYS[code]);
+    this.name = 'StationAccessOutcomeError';
+    this.code = code;
+  }
+}
 
 // A single field descriptor parsed from a gate's input_schema_json. The Station
 // owns the schema so a gate's form can change without a client release.
@@ -207,6 +258,7 @@ export interface AccessDecision {
   currentGateId?: string;
   gates: AccessGate[];
   accessGrantId?: string;
+  expiresAtUnixMs?: number;
   message?: string;
 }
 
@@ -219,6 +271,8 @@ interface RawAccessDecision {
   gates?: RawAccessGate[];
   access_grant_id?: string;
   accessGrantId?: string;
+  expires_at_unix_ms?: number;
+  expiresAtUnixMs?: number;
   message?: string;
 }
 
@@ -304,13 +358,13 @@ export async function startStationAccessAttempt(
   stationUrl: string,
   sessionId?: string,
 ): Promise<AccessDecision> {
-  const result = await accessStart({
+  const result = await mapStationAccessOperation(() => accessStart({
     stationOrigin: stationUrl.replace(/\/+$/, ''),
     stationPeerId: stationPeerId.trim(),
     locale: globalThis.navigator?.language ?? '',
     sessionId,
-  });
-  const decision = normalizeDecision(result.decision);
+  }));
+  const decision = requireSupportedAccessDecision(normalizeDecision(result.decision));
   if (!decision.attemptId) throw new Error(AUTH_ERROR_KEYS.GATE_MISSING_ATTEMPT);
   return decision;
 }
@@ -322,12 +376,12 @@ export async function getStationAccessDecision(input: {
 }): Promise<AccessDecision> {
   const attemptId = input.attemptId.trim();
   if (!attemptId) throw new Error(AUTH_ERROR_KEYS.GATE_MISSING_ATTEMPT);
-  const result = await accessDecision({
+  const result = await mapStationAccessOperation(() => accessDecision({
     stationOrigin: input.stationUrl.replace(/\/+$/, ''),
     stationPeerId: input.stationPeerId.trim(),
     attemptId,
-  });
-  const decision = normalizeDecision(result.decision);
+  }));
+  const decision = requireSupportedAccessDecision(normalizeDecision(result.decision));
   if (!decision.attemptId) throw new Error(AUTH_ERROR_KEYS.GATE_MISSING_ATTEMPT);
   if (decision.attemptId !== attemptId) {
     throw new Error(AUTH_ERROR_KEYS.GATE_ATTEMPT_MISMATCH);
@@ -345,11 +399,11 @@ export async function cancelStationAccessAttempt(input: {
 }): Promise<boolean> {
   const attemptId = input.attemptId.trim();
   if (!attemptId) throw new Error(AUTH_ERROR_KEYS.GATE_MISSING_ATTEMPT);
-  return accessCancel({
+  return mapStationAccessOperation(() => accessCancel({
     stationOrigin: input.stationUrl.replace(/\/+$/, ''),
     stationPeerId: input.stationPeerId.trim(),
     attemptId,
-  });
+  }));
 }
 
 export async function submitStationLoginGate(input: StationLoginInput & {
@@ -373,7 +427,7 @@ export async function submitStationLoginGate(input: StationLoginInput & {
       password: input.password,
     },
   });
-  const decision = normalizeDecision(result.decision);
+  const decision = requireSupportedAccessDecision(normalizeDecision(result.decision));
   const session = nativeAccessSession(input.stationPeerId, stationUrl, result.session);
   if (isAccessGranted(decision) && !session) throw new Error(AUTH_ERROR_KEYS.MISSING_SESSION);
   return { decision, session };
@@ -402,7 +456,7 @@ export async function submitStationInviteCodeGate(input: {
     submissionId: input.submissionId,
     actionInput: { kind: 'invite_code', inviteCode: code },
   });
-  const decision = normalizeDecision(result.decision);
+  const decision = requireSupportedAccessDecision(normalizeDecision(result.decision));
   if (isAccessGranted(decision) && oauthAccessGrantFinalizer) {
     await oauthAccessGrantFinalizer();
   }
@@ -437,7 +491,7 @@ export async function submitStationSchemaGate(input: {
     submissionId: input.submissionId,
     actionInput: { kind: 'generic', fields: values },
   });
-  const decision = normalizeDecision(result.decision);
+  const decision = requireSupportedAccessDecision(normalizeDecision(result.decision));
   if (isAccessGranted(decision) && oauthAccessGrantFinalizer) {
     await oauthAccessGrantFinalizer();
   }
@@ -462,7 +516,7 @@ async function submitNativeAccessGate(input: {
   }
   const pendingKey = pendingSubmissionKey(input);
   const submissionId = input.submissionId ?? pendingSubmissionId(pendingKey);
-  const result = await accessSubmit({
+  const result = await mapStationAccessOperation(() => accessSubmit({
     stationOrigin: input.stationUrl.replace(/\/+$/, ''),
     stationPeerId: input.stationPeerId.trim(),
     attemptId: input.attemptId.trim(),
@@ -473,7 +527,7 @@ async function submitNativeAccessGate(input: {
     schemaDigest,
     submissionId,
     input: input.actionInput,
-  });
+  }));
   if (input.submissionId === undefined) {
     pendingAccessSubmissions.delete(pendingKey);
   }
@@ -702,10 +756,107 @@ export function currentAccessGate(decision: AccessDecision | null): AccessGate |
   return decision.gates.find((gate) => gate.gateId === decision.currentGateId);
 }
 
+export function stationAccessFailureOutcome(
+  value: AccessDecision | unknown,
+  now = Date.now(),
+): StationAccessFailureOutcome | null {
+  if (isAccessDecision(value)) {
+    if (
+      value.expiresAtUnixMs !== undefined
+      && (!Number.isFinite(value.expiresAtUnixMs) || value.expiresAtUnixMs <= now)
+    ) {
+      return STATION_ACCESS_ATTEMPT_EXPIRED;
+    }
+    if (isAccessActionRequired(value)) {
+      const gate = currentAccessGate(value);
+      if (!gate || !KNOWN_GATE_TYPES.has(gate.type)) {
+        return STATION_ACCESS_UNKNOWN_GATE;
+      }
+    }
+  }
+
+  const message = accessFailureText(value);
+  if (/access attempt.*(?:expired|not found)|attempt.*expired/i.test(message)) {
+    return STATION_ACCESS_ATTEMPT_EXPIRED;
+  }
+  if (/station[_ .-]?identity.*mismatch|identity.*mismatch|peer.*mismatch/i.test(message)) {
+    return STATION_ACCESS_IDENTITY_MISMATCH;
+  }
+  if (/unsupported.*(?:access )?gate|unknown.*gate|gate.*unsupported/i.test(message)) {
+    return STATION_ACCESS_UNKNOWN_GATE;
+  }
+  return null;
+}
+
+export function requireSupportedAccessDecision(
+  decision: AccessDecision,
+  now = Date.now(),
+): AccessDecision {
+  const outcome = stationAccessFailureOutcome(decision, now);
+  if (outcome) throw new StationAccessOutcomeError(outcome);
+  return decision;
+}
+
+export function stationAccessError(error: unknown): Error {
+  if (error instanceof StationAccessOutcomeError) return error;
+  const outcome = stationAccessFailureOutcome(error);
+  if (outcome) return new StationAccessOutcomeError(outcome);
+  if (error instanceof Error) return error;
+  const mapped = new Error(readableErrorMessage(error));
+  if (isRecord(error)) {
+    Object.assign(mapped, {
+      code: error.code,
+      details: error.details,
+      cause: error,
+    });
+  }
+  return mapped;
+}
+
 export function accessDecisionMessage(decision: AccessDecision | null): string {
   if (!decision) return '';
   if (decision.message) return decision.message;
   return decision.gates.map((gate) => gate.blockingReason).find(Boolean) ?? '';
+}
+
+async function mapStationAccessOperation<T>(
+  operation: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    throw stationAccessError(error);
+  }
+}
+
+function isAccessDecision(value: unknown): value is AccessDecision {
+  return Boolean(
+    value
+    && typeof value === 'object'
+    && (
+      typeof (value as Partial<AccessDecision>).state === 'string'
+      || typeof (value as Partial<AccessDecision>).state === 'number'
+    )
+    && Array.isArray((value as Partial<AccessDecision>).gates),
+  );
+}
+
+function accessFailureText(value: unknown): string {
+  if (value instanceof Error) {
+    const code = (value as Error & { code?: unknown }).code;
+    const details = (value as Error & { details?: unknown }).details;
+    return `${String(code ?? '')} ${value.message} ${safeString(details)}`;
+  }
+  return safeString(value);
+}
+
+function safeString(value: unknown): string {
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value) ?? '';
+  } catch {
+    return String(value);
+  }
 }
 
 export function normalizeDecision(raw?: RawAccessDecision): AccessDecision {
@@ -714,6 +865,7 @@ export function normalizeDecision(raw?: RawAccessDecision): AccessDecision {
     attemptId: raw?.attempt_id ?? raw?.attemptId ?? '',
     currentGateId: raw?.current_gate_id ?? raw?.currentGateId,
     accessGrantId: raw?.access_grant_id ?? raw?.accessGrantId,
+    expiresAtUnixMs: raw?.expires_at_unix_ms ?? raw?.expiresAtUnixMs,
     message: raw?.message,
     gates: (raw?.gates ?? []).map((gate) => ({
       gateId: gate.gate_id ?? gate.gateId ?? '',

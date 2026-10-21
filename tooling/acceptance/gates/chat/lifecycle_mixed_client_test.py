@@ -166,8 +166,7 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
                 self.assertNotIn("awaiting-runtime", source)
                 self.assertNotIn("runtime verification deferred", source)
                 self.assertIn("MixedNativeRuntime", source)
-                if path.startswith("lifecycle_mixed_client_"):
-                    self.assertIn("REPORT_PATH = None", source)
+                self.assertIn("REPORT_PATH = None", source)
 
     def test_chat_child_actions_are_environment_declared(self) -> None:
         payload = json.loads(
@@ -300,6 +299,7 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
         _runtime_service: MagicMock,
     ) -> None:
         events: list[str] = []
+        binding_attempts = 0
         station_results = {
             "configureStation": {
                 "configured": True,
@@ -343,9 +343,14 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
             *_args: object,
             **_kwargs: object,
         ) -> dict[str, object]:
+            nonlocal binding_attempts
             events.append(f"station:{method}")
             if method == "scopeState":
                 return next(scope_states)
+            if method == "bindingState":
+                binding_attempts += 1
+                if binding_attempts == 1:
+                    raise RuntimeError("renderer transition replaced the callback")
             return station_results[method]
 
         station_harness.side_effect = station_result
@@ -358,7 +363,10 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
             }[method]
         )
         session = MagicMock()
-        session.get_current_url.return_value = "tauri://localhost"
+        session.get_current_url.side_effect = (
+            "tauri://localhost",
+            AssertionError("native URL must be checked before login"),
+        )
         identity = MixedClientIdentity(
             client_id="desktop-bob",
             actor="bob",
@@ -400,6 +408,7 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
         )
 
         self.assertEqual(result, identity)
+        session.get_current_url.assert_called_once_with()
         chat_harness.assert_not_called()
         self.assertEqual(
             events,
@@ -407,6 +416,7 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
                 "station:configureStation",
                 "station:identityState",
                 "station:loginWithPassword",
+                "station:bindingState",
                 "station:bindingState",
                 "station:scopeState",
                 "station:scopeState",
@@ -470,27 +480,6 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
         self.assertEqual(
             result["deviceIdentityDigest"],
             identity.device_id,
-        )
-
-    def test_desktop_replacement_reuses_only_actor_identity_storage(self) -> None:
-        runtime = object.__new__(MixedNativeRuntime)
-        runtime.desktop_binding = MagicMock()
-        runtime.client_specs = {
-            "desktop-bob": {"id": "desktop-bob"},
-            "desktop-bob-peer": {"id": "desktop-bob-peer"},
-        }
-
-        runtime.prepare_desktop_actor_identity(
-            "desktop-bob",
-            "desktop-bob-peer",
-        )
-
-        runtime.desktop_binding.clone_actor_storage.assert_called_once_with(
-            "desktop-bob",
-            runtime.client_specs["desktop-bob"],
-            "desktop-bob-peer",
-            runtime.client_specs["desktop-bob-peer"],
-            "peers-touch/desktop/data/secure-store/identity-keys",
         )
 
     def test_mobile_start_waits_for_messaging_endpoint_activation(self) -> None:
@@ -653,6 +642,9 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
     def test_station_access_mobile_scope_preserves_logout_projections(
         self,
     ) -> None:
+        device_identity_digest = hashlib.sha256(
+            b"mobile-device"
+        ).hexdigest()
         identity = MixedClientIdentity(
             client_id="sim-ios",
             actor="bob",
@@ -662,7 +654,7 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
             ptid="ptid:bob",
             account_ref="station-account:bob",
             federation_id="fed-1",
-            device_id="mobile-device-digest",
+            device_id=device_identity_digest,
         )
         runtime = object.__new__(MixedNativeRuntime)
         runtime.gate_id = "station-access-scope-isolation-e2e"
@@ -678,7 +670,7 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
                 "activeStationPeerId": "station-peer",
                 "activeActorPtid": None,
                 "runtimeStationPeerId": None,
-                "deviceId": "mobile-device",
+                "deviceIdentityDigest": device_identity_digest,
                 "social": {
                     "stationPeerId": None,
                     "actorPtid": None,
@@ -706,7 +698,7 @@ class MixedClientAcceptanceContractTest(unittest.TestCase):
         self.assertEqual(result["group"]["groupCount"], 0)
         self.assertEqual(
             result["deviceIdentityDigest"],
-            runtime._identity_digest("mobile-device"),
+            device_identity_digest,
         )
         self.assertEqual(result["navigation"]["detailKeys"], [])
 

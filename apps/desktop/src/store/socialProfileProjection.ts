@@ -34,16 +34,29 @@ export interface GroupAvatarSlotProjection {
   avatar: string;
 }
 
-export function remoteProfileHandle(
-  profile: Pick<AccountProfile, 'acct' | 'username'>,
+export function actorDisplayName(
+  value: string | null | undefined,
+  fallback = '',
 ): string {
-  for (const candidate of [profile.acct, profile.username]) {
-    const value = candidate.trim();
-    if (
-      value.startsWith('@')
-      && value.indexOf('@', 1) > 1
-    ) {
-      return value;
+  const name = value?.trim() ?? '';
+  return !name
+    || /^(null|undefined)$/i.test(name)
+    || /^(ptid:|did:|https?:\/\/)/i.test(name)
+    || /^@?\S+@\S+$/.test(name)
+    ? fallback
+    : name;
+}
+
+export function remoteProfileHandle(
+  profile: Pick<AccountProfile, 'acct' | 'username'>
+    & Partial<Pick<AccountProfile, 'federated_handle'>>,
+): string {
+  for (const candidate of [profile.federated_handle, profile.acct, profile.username]) {
+    const value = candidate?.trim() ?? '';
+    const handle = value.replace(/^@/, '');
+    const separator = handle.indexOf('@');
+    if (separator > 0 && separator < handle.length - 1 && !/\s/.test(handle)) {
+      return `@${handle}`;
     }
   }
   return '';
@@ -116,13 +129,13 @@ function exactSessionProfile(
   for (const session of sessions) {
     if (session.participantAPtid === ptid) {
       return {
-        name: session.participantADisplayName || ptid,
+        name: actorDisplayName(session.participantADisplayName),
         avatar: session.participantAAvatar || '',
       };
     }
     if (session.participantBPtid === ptid) {
       return {
-        name: session.participantBDisplayName || ptid,
+        name: actorDisplayName(session.participantBDisplayName),
         avatar: session.participantBAvatar || '',
       };
     }
@@ -141,19 +154,22 @@ export function resolveActorIdentity({
   fallbackAvatar,
 }: ResolveActorIdentityInput): ActorIdentityProjection {
   const canonicalPtid = ptid.trim();
-  const groupNickname = nickname?.trim() || '';
+  const groupNickname = actorDisplayName(nickname);
+  const sessionProfile = exactSessionProfile(sessions, canonicalPtid);
   const isSelf = Boolean(currentUserPtid && canonicalPtid === currentUserPtid);
 
   if (isSelf) {
     const displayName = groupNickname
-      || currentUserProfile?.displayName?.trim()
-      || currentUserProfile?.username?.trim()
-      || fallbackName?.trim()
+      || actorDisplayName(currentUserProfile?.displayName)
+      || actorDisplayName(currentUserProfile?.username)
+      || sessionProfile?.name
+      || actorDisplayName(fallbackName)
       || canonicalPtid;
     return {
       ptid: canonicalPtid,
       displayName,
-      avatarUrl: currentUserProfile?.avatar?.trim() || fallbackAvatar?.trim() || '',
+      avatarUrl: currentUserProfile?.avatar?.trim()
+        || sessionProfile?.avatar || fallbackAvatar?.trim() || '',
       isSelf: true,
       resolution: 'self',
     };
@@ -164,23 +180,24 @@ export function resolveActorIdentity({
     return {
       ptid: canonicalPtid,
       displayName: groupNickname
-        || stationProfile.display_name?.trim()
-        || stationProfile.username?.trim()
-        || fallbackName?.trim()
+        || actorDisplayName(stationProfile.display_name)
+        || actorDisplayName(stationProfile.username)
+        || sessionProfile?.name
+        || actorDisplayName(fallbackName)
         || canonicalPtid,
-      avatarUrl: stationProfile.avatar?.trim() || fallbackAvatar?.trim() || '',
+      avatarUrl: stationProfile.avatar?.trim()
+        || sessionProfile?.avatar || fallbackAvatar?.trim() || '',
       isSelf: false,
       resolution: 'station',
     };
   }
 
-  const sessionProfile = exactSessionProfile(sessions, canonicalPtid);
   if (sessionProfile) {
     return {
       ptid: canonicalPtid,
       displayName: groupNickname
         || sessionProfile.name.trim()
-        || fallbackName?.trim()
+        || actorDisplayName(fallbackName)
         || canonicalPtid,
       avatarUrl: sessionProfile.avatar.trim() || fallbackAvatar?.trim() || '',
       isSelf: false,
@@ -190,7 +207,7 @@ export function resolveActorIdentity({
 
   return {
     ptid: canonicalPtid,
-    displayName: groupNickname || fallbackName?.trim() || canonicalPtid,
+    displayName: groupNickname || actorDisplayName(fallbackName) || canonicalPtid,
     avatarUrl: fallbackAvatar?.trim() || '',
     isSelf: false,
     resolution: 'fallback',

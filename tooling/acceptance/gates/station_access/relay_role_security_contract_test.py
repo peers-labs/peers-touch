@@ -12,6 +12,7 @@ from tooling.acceptance.core.redaction import redact_artifact_bytes
 from tooling.acceptance.gates.station_access.relay_role_security_contract import (
     FORBIDDEN_EGRESS,
     _find_forbidden_egress,
+    _parse_tls_endpoint,
     _probe_tls_with_openssl,
     _validate_runtime_evidence,
     validate_relay_role_source_contract,
@@ -31,6 +32,18 @@ def _protected_file(name: str) -> dict[str, object]:
 
 
 class RelayRoleSecurityContractTest(unittest.TestCase):
+    def test_tls_endpoint_accepts_https_and_explicit_tls_origins(self) -> None:
+        self.assertEqual(
+            _parse_tls_endpoint("https://relay.example:18081"),
+            ("relay.example", 18081),
+        )
+        self.assertEqual(
+            _parse_tls_endpoint("tls://relay.example:4501"),
+            ("relay.example", 4501),
+        )
+        with self.assertRaisesRegex(GateError, "root https:// or tls://"):
+            _parse_tls_endpoint("http://relay.example:18081")
+
     def test_current_repository_satisfies_source_contract(self) -> None:
         validate_relay_role_source_contract()
 
@@ -59,6 +72,28 @@ class RelayRoleSecurityContractTest(unittest.TestCase):
             evidence["circuitEndpoint"],
             "/dns4/relay.example/tcp/4001",
         )
+
+    def test_runtime_evidence_accepts_service_tree_equivalent_source(
+        self,
+    ) -> None:
+        manifest, attestation = self._runtime_evidence()
+        source_commit = "b" * 40
+        manifest["source"]["commit"] = source_commit
+        for runtime_name in ("stationRuntime", "relayRuntime"):
+            runtime = attestation["runtimeSecurity"][runtime_name]
+            runtime["sourceCompatibility"] = {
+                phase: {
+                    "mode": "service-tree-equivalent",
+                    "runtimeCommit": "a" * 40,
+                    "sourceCommit": source_commit,
+                    "changedPathCount": 2,
+                }
+                for phase in ("build", "runtime")
+            }
+
+        evidence = _validate_runtime_evidence(manifest, attestation)
+
+        self.assertEqual(evidence["sourceCommit"], source_commit)
 
     def test_runtime_evidence_rejects_shared_runtime_owner(self) -> None:
         manifest, attestation = self._runtime_evidence()

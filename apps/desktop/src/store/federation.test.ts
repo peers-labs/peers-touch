@@ -43,6 +43,18 @@ describe('federation actor Station directory', () => {
     }]);
   });
 
+  it('propagates context refresh failures to the runtime owner', async () => {
+    mocks.federationListContexts.mockRejectedValue(
+      new Error('Station unavailable'),
+    );
+
+    await expect(
+      useFederationStore.getState().refreshFederationContexts(),
+    ).rejects.toThrow('Station unavailable');
+    expect(useFederationStore.getState().lastError)
+      .toBe('Station unavailable');
+  });
+
   it('retains the authoritative Station name from the matching actor row', async () => {
     mocks.federationCatalogSearch.mockResolvedValue({
       entries: [
@@ -110,5 +122,25 @@ describe('federation actor Station directory', () => {
       stationPeerId: 'station-unknown',
       actorStationEntries: {},
     })).toBe('');
+  });
+
+  it('does not present a raw Station authority as a friendly name', () => {
+    for (const homeStationName of [
+      '10.37.221.38:18080',
+      'station.example:18080',
+      'https://station.example:18080',
+    ]) {
+      expect(resolveFederationStationName({
+        actorPtid: 'ptid:bob',
+        stationPeerId: 'station-bob',
+        actorStationEntries: {
+          'ptid:bob': {
+            actorPtid: 'ptid:bob',
+            homeStationPeerId: 'station-bob',
+            homeStationName,
+          } as FederationCatalogEntry,
+        },
+      })).toBe('');
+    }
   });
 });

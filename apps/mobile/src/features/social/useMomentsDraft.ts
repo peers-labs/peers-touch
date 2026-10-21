@@ -59,6 +59,8 @@ export interface UseMomentsDraftResult {
   readonly draftRestored: boolean;
   /** Whether the current scope has local draft state */
   readonly hasDraft: boolean;
+  /** Whether the current draft revision is durably persisted */
+  readonly draftPersisted: boolean;
   /** Save current state as draft */
   readonly saveDraft: (
     text: string,
@@ -210,6 +212,7 @@ export function useMomentsDraft(
   const actorPtid = authSession?.actorRef.ptid ?? null;
   const [draftRestored, setDraftRestored] = useState(false);
   const [hasDraft, setHasDraft] = useState(false);
+  const [draftPersisted, setDraftPersisted] = useState(false);
   const [saving, setSaving] = useState(false);
   const [discarding, setDiscarding] = useState(false);
   const [persistenceFailure, setPersistenceFailure] =
@@ -273,6 +276,7 @@ export function useMomentsDraft(
       try {
         await persistMomentDraft(port, scope, draft, Date.now());
         if (!isCurrent()) return false;
+        setDraftPersisted(true);
         updatePersistenceFailure(null);
         return true;
       } catch (error) {
@@ -310,6 +314,7 @@ export function useMomentsDraft(
 
     latestDraftRef.current = draft;
     draftRevisionRef.current += 1;
+    setDraftPersisted(false);
     if (mountedRef.current) setHasDraft(true);
     return {
       draft,
@@ -335,6 +340,7 @@ export function useMomentsDraft(
     draftRevisionRef.current += 1;
     setDraftRestored(true);
     setHasDraft(true);
+    setDraftPersisted(true);
     updatePersistenceFailure(null);
     onDraftRestoredRef.current?.(payload);
     return payload;
@@ -349,6 +355,7 @@ export function useMomentsDraft(
     draftRevisionRef.current = 0;
     setDraftRestored(false);
     setHasDraft(false);
+    setDraftPersisted(false);
     setSaving(false);
     setDiscarding(false);
     updatePersistenceFailure(null);
@@ -442,6 +449,7 @@ export function useMomentsDraft(
         latestDraftRef.current = null;
         setDraftRestored(false);
         setHasDraft(false);
+        setDraftPersisted(false);
         updatePersistenceFailure(null);
         getRecoveryProjection().resolveDraftRestore(
           stationPeerId,
@@ -514,6 +522,7 @@ export function useMomentsDraft(
   return {
     draftRestored,
     hasDraft,
+    draftPersisted,
     saveDraft,
     persistDraftNow,
     discardDraft,

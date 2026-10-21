@@ -38,4 +38,21 @@ describe('resolveSocialActorIdentity', () => {
       displayName: 'Bob',
     });
   });
+
+  it('projects the same readable author from a private post and a comment', () => {
+    const actorPtid =
+      'ptid:v1:actor:peers:p:alice:12203e0f255f835ecd0abd93aa0ea6f11bcd7580bcb1e7fcc0977567f44493fb62f7';
+    const postIdentity = resolveSocialActorIdentity({
+      actorPtid,
+      displayName: actorPtid,
+    });
+    expect(postIdentity.displayName).toBe('Alice');
+    expect(resolveSocialActorIdentity({ actorPtid })).toEqual(postIdentity);
+    expect(
+      resolveSocialActorIdentity(
+        { actorPtid, displayName: actorPtid },
+        { displayName: 'Alice Smith', username: 'alice', acct: 'alice', avatar: '' },
+      ).displayName,
+    ).toBe('Alice Smith');
+  });
 });

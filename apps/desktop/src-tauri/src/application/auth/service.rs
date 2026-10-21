@@ -220,12 +220,30 @@ pub(crate) fn prepare_messaging_profile(
             station_peer_id.as_deref(),
             &station_origins,
         );
-    let actor_identity = crate::domain::crypto::get_or_migrate_identity(
+    let actor_identity = match crate::domain::crypto::get_or_migrate_identity(
         &canonical_identity_key_ref,
         &legacy_identity_key_refs,
         expected_identity_fingerprint.as_ref(),
-    )
-    .map_err(|error| format!("messaging actor identity unavailable: {error}"))?;
+    ) {
+        Ok(identity) => identity,
+        Err(error) => {
+            if matches!(
+                &error,
+                crate::domain::crypto::CryptoError::IdentityContinuityConflict(_)
+            ) {
+                state
+                    .messaging_engines
+                    .mark_profile_recovery_required(account_id, actor_ptid)
+                    .map_err(|readiness_error| {
+                        format!(
+                            "messaging actor identity unavailable: {error}; \
+                             failed to record recovery readiness: {readiness_error}"
+                        )
+                    })?;
+            }
+            return Err(format!("messaging actor identity unavailable: {error}"));
+        }
+    };
     let actor_identity_seed = Zeroizing::new(actor_identity.seed_bytes());
     let engine = state.messaging_engines.activate_profile(
         account_id.to_string(),
@@ -1579,8 +1597,18 @@ pub fn ensure_station_session(
         email: p_email,
         avatar_url: p_avatar,
         avatar_local_path: p_local_avatar,
-        login_method: Some("oauth".to_string()),
+        login_method: Some(oauth_session_login_method(
+            profile.as_ref().map(|value| value.provider.as_str()),
+        )),
     })
+}
+
+fn oauth_session_login_method(provider: Option<&str>) -> String {
+    provider
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("oauth")
+        .to_string()
 }
 
 fn verify_session_with_station(
@@ -1669,6 +1697,7 @@ fn session_takeover_failure_is_retryable(error: &station_client::StationClientEr
     matches!(
         error.kind,
         station_client::StationClientErrorKind::Network
+            | station_client::StationClientErrorKind::Unavailable
             | station_client::StationClientErrorKind::Overloaded
             | station_client::StationClientErrorKind::StaleRoute
             | station_client::StationClientErrorKind::NoRoute
@@ -1679,7 +1708,7 @@ fn session_takeover_failure_is_retryable(error: &station_client::StationClientEr
 mod tests {
     use super::{
         canonical_actor_identity_fingerprint, canonical_actor_profile_version,
-        run_required_logout_cleanup, session_takeover_failed,
+        oauth_session_login_method, run_required_logout_cleanup, session_takeover_failed,
         session_takeover_failure_is_retryable, should_resume_access_binding,
         station_verification_rejects_session, DESKTOP_SESSION_CLASS, RESTORE_TAKEOVER_MAX_ATTEMPTS,
         RESTORE_TAKEOVER_RETRY_DELAY,
@@ -1698,6 +1727,14 @@ mod tests {
     #[test]
     fn desktop_uses_the_canonical_session_class() {
         assert_eq!(DESKTOP_SESSION_CLASS, "desktop");
+    }
+
+    #[test]
+    fn oauth_session_projects_the_concrete_provider() {
+        assert_eq!(oauth_session_login_method(Some("github")), "github");
+        assert_eq!(oauth_session_login_method(Some(" google ")), "google");
+        assert_eq!(oauth_session_login_method(None), "oauth");
+        assert_eq!(oauth_session_login_method(Some(" ")), "oauth");
     }
 
     #[test]
@@ -1876,6 +1913,7 @@ mod tests {
     fn takeover_retries_only_failures_known_not_to_have_been_submitted() {
         for kind in [
             StationClientErrorKind::Network,
+            StationClientErrorKind::Unavailable,
             StationClientErrorKind::Overloaded,
             StationClientErrorKind::StaleRoute,
             StationClientErrorKind::NoRoute,

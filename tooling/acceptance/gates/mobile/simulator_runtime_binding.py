@@ -370,6 +370,75 @@ class MobileSimulatorRuntimeBinding:
             expected_media_type="image/png",
         )
 
+    def semantic_click(
+        self,
+        client_id: str,
+        selector: str,
+    ) -> dict[str, object]:
+        return self._semantic_operation(
+            "semantic_click",
+            client_id,
+            {
+                "selector": self._semantic_text(
+                    selector,
+                    "selector",
+                    limit=2048,
+                ),
+            },
+            state_field="activated",
+        )
+
+    def semantic_observe(
+        self,
+        client_id: str,
+        selector: str,
+        *,
+        expected_text: str = "",
+    ) -> dict[str, object]:
+        return self._semantic_operation(
+            "semantic_observe",
+            client_id,
+            {
+                "selector": self._semantic_text(
+                    selector,
+                    "selector",
+                    limit=2048,
+                ),
+                "expectedText": self._semantic_text(
+                    expected_text,
+                    "expected text",
+                    limit=65536,
+                    allow_empty=True,
+                ),
+            },
+            state_field="matched",
+        )
+
+    def semantic_set_value(
+        self,
+        client_id: str,
+        selector: str,
+        value: str,
+    ) -> dict[str, object]:
+        return self._semantic_operation(
+            "semantic_set_value",
+            client_id,
+            {
+                "selector": self._semantic_text(
+                    selector,
+                    "selector",
+                    limit=2048,
+                ),
+                "value": self._semantic_text(
+                    value,
+                    "input value",
+                    limit=65536,
+                    allow_empty=True,
+                ),
+            },
+            state_field="updated",
+        )
+
     def authenticate_fixture_actor(
         self,
         client_id: str,
@@ -492,6 +561,68 @@ class MobileSimulatorRuntimeBinding:
     def _capture_id(cls, value: str) -> str:
         cls._require_identifier(value, "capture")
         return value
+
+    @staticmethod
+    def _semantic_text(
+        value: str,
+        label: str,
+        *,
+        limit: int,
+        allow_empty: bool = False,
+    ) -> str:
+        if (
+            not isinstance(value, str)
+            or (not allow_empty and not value)
+            or len(value.encode("utf-8")) > limit
+        ):
+            raise DriverError(
+                f"Mobile simulator semantic DOM {label} is invalid"
+            )
+        return value
+
+    def _semantic_operation(
+        self,
+        operation: str,
+        client_id: str,
+        payload: Mapping[str, object],
+        *,
+        state_field: str,
+    ) -> dict[str, object]:
+        self._require_identifier(client_id, "client")
+        response = self._client.invoke(
+            CAPABILITY_ID,
+            operation,
+            {
+                "clientId": client_id,
+                **dict(payload),
+            },
+            timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
+        )
+        if set(response) != {"clientId", "observation"}:
+            raise DriverError(
+                "Mobile simulator semantic DOM response has an invalid shape"
+            )
+        if response.get("clientId") != client_id:
+            raise DriverError(
+                "Mobile simulator semantic DOM client does not match"
+            )
+        observation = _mapping(
+            response.get("observation"),
+            "semantic DOM observation",
+        )
+        if (
+            set(observation)
+            != {"found", "visible", state_field, "tagName"}
+            or any(
+                not isinstance(observation.get(field), bool)
+                for field in ("found", "visible", state_field)
+            )
+            or not isinstance(observation.get("tagName"), str)
+        ):
+            raise DriverError(
+                "Mobile simulator semantic DOM observation is invalid"
+            )
+        return dict(observation)
 
     def _artifact_ref(
         self,

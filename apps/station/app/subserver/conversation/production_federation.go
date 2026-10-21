@@ -614,8 +614,9 @@ func (p *productionDeviceDeliveryPort) ApplyDeviceDelivery(
 		if err != nil {
 			return false, err
 		}
-		if err := boundService.ApplyFollowerEvent(ctx, record); err != nil {
-			return false, err
+		followerErr := boundService.ApplyFollowerEvent(ctx, record)
+		if !followerGapAllowsDeviceDelivery(followerErr) {
+			return false, followerErr
 		}
 	}
 	adapter, err := p.composition.transactionalAdapters.Bind(transaction.DB())
@@ -627,6 +628,11 @@ func (p *productionDeviceDeliveryPort) ApplyDeviceDelivery(
 	}
 
 	return existingErr == nil, nil
+}
+
+func followerGapAllowsDeviceDelivery(err error) bool {
+	return err == nil ||
+		conversationdomain.IsCode(err, conversationdomain.ErrorCodeStaleAuthorityHead)
 }
 
 func validateFollowerDeviceDeliverySource(

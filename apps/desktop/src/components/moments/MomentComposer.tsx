@@ -37,6 +37,7 @@ import {
 import { privateMomentPublishIntent } from '../../store/moments';
 import { log } from '../../utils/logger';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
+import { actorDisplayName } from '../../store/socialProfileProjection';
 import { SocialPrivateState } from './surfaces';
 import {
   useActiveDiscoverySlice,
@@ -210,10 +211,8 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
         );
       })
       .map((friend) => {
-        const identity = friend.displayName
-          || friend.username
-          || friend.federatedHandle
-          || friend.actorPtid;
+        const identity = actorDisplayName(friend.displayName)
+          || actorDisplayName(friend.username, t('moments.circle.memberUnavailable'));
         const station = friend.homeStationName
           || friend.homeStationDomain
           || friend.homeStationPeerId;
@@ -222,17 +221,15 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
           label: station ? `${identity} · ${station}` : identity,
         };
       })
-  ), [localStationPeerId, mutualFriends]);
+  ), [localStationPeerId, mutualFriends, t]);
   const followers = currentUserPtid
     ? followersByActor[currentUserPtid]?.items ?? []
     : [];
   const audiencePeople = useMemo(() => {
     const people = new Map<string, { actorPtid: string; label: string }>();
     for (const person of [...mutualFriends, ...followers]) {
-      const identity = person.displayName
-        || person.username
-        || person.federatedHandle
-        || person.actorPtid;
+      const identity = actorDisplayName(person.displayName)
+        || actorDisplayName(person.username, t('moments.circle.memberUnavailable'));
       const station = person.homeStationDomain || person.homeStationPeerId;
       people.set(person.actorPtid, {
         actorPtid: person.actorPtid,
@@ -242,7 +239,7 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
     return [...people.values()].sort(
       (left, right) => left.actorPtid.localeCompare(right.actorPtid),
     );
-  }, [followers, mutualFriends]);
+  }, [followers, mutualFriends, t]);
   const circleOptions = useMemo(
     () => circles.map((circle) => ({
       id: circle.id.toString(),

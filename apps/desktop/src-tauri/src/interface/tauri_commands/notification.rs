@@ -152,6 +152,7 @@ fn ambiguous_notification_preferences_error(error: &station_client::StationClien
     matches!(
         error.kind,
         station_client::StationClientErrorKind::Network
+            | station_client::StationClientErrorKind::Unavailable
             | station_client::StationClientErrorKind::Decode
             | station_client::StationClientErrorKind::InvalidResponse
     )

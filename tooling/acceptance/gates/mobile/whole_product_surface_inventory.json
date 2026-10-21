@@ -79,8 +79,7 @@
       {"id":"shell.chat-tab","kind":"primary-route","routeOrState":"tab:chat","surfaceSelector":"[data-product-surface=\"shell.chat-tab\"]","entryAction":"tap-chat-tab"},
       {"id":"shell.moments-tab","kind":"primary-route","routeOrState":"tab:moments","surfaceSelector":"[data-product-surface=\"shell.moments-tab\"]","entryAction":"tap-moments-tab"},
       {"id":"shell.contacts-tab","kind":"primary-route","routeOrState":"tab:contacts","surfaceSelector":"[data-product-surface=\"shell.contacts-tab\"]","entryAction":"tap-contacts-tab"},
-      {"id":"shell.settings-tab","kind":"primary-route","routeOrState":"tab:settings","surfaceSelector":"[data-product-surface=\"shell.settings-tab\"]","entryAction":"tap-settings-tab"},
-      {"id":"shell.degraded-module-notice","kind":"recovery","routeOrState":"shell:degraded-module","surfaceSelector":"[data-product-surface=\"shell.degraded-module-notice\"]","entryAction":"fixture-deferred-module"}
+      {"id":"shell.settings-tab","kind":"primary-route","routeOrState":"tab:settings","surfaceSelector":"[data-product-surface=\"shell.settings-tab\"]","entryAction":"tap-settings-tab"}
     ],
     "recovery": [
       {"id":"recovery.session-valid-restore","kind":"recovery","routeOrState":"session-valid-restore","surfaceSelector":"[data-product-surface=\"recovery.session-valid-restore\"]","entryAction":"restore-valid-session"},
@@ -90,9 +89,6 @@
       {"id":"recovery.draft-restore-failed","kind":"recovery","routeOrState":"draft-restore:failed","surfaceSelector":"[data-product-surface=\"recovery.draft-restore-failed\"]","entryAction":"fixture-draft-restore-failure"},
       {"id":"recovery.capacity","kind":"recovery","routeOrState":"capacity","surfaceSelector":"[data-acceptance-id=\"recovery-capacity\"]","entryAction":"fixture-command-capacity"},
       {"id":"recovery.command","kind":"recovery","routeOrState":"command","surfaceSelector":"[data-acceptance-id=\"recovery-command\"]","entryAction":"fixture-command-unknown"},
-      {"id":"recovery.deferred-capability","kind":"recovery","routeOrState":"deferred-capability","surfaceSelector":"[data-acceptance-id=\"recovery-deferred-capability\"]","entryAction":"fixture-deferred-runtime"},
-      {"id":"recovery.event-overflow","kind":"recovery","routeOrState":"event-overflow","surfaceSelector":"[data-acceptance-id=\"recovery-event-overflow\"]","entryAction":"fixture-event-overflow"},
-      {"id":"recovery.projection-stale","kind":"recovery","routeOrState":"projection-stale","surfaceSelector":"[data-product-surface=\"recovery.projection-stale\"]","entryAction":"fixture-stale-projection"},
       {"id":"recovery.write-revocation","kind":"recovery","routeOrState":"write-revocation","surfaceSelector":"[data-acceptance-id=\"recovery-write-revocation\"]","entryAction":"fixture-write-revocation"},
       {"id":"recovery.scope-exit","kind":"recovery","routeOrState":"scope-exit","surfaceSelector":"[data-acceptance-id=\"recovery-scope-exit\"]","entryAction":"attempt-scope-exit-with-draft"},
       {"id":"recovery.reset-incomplete","kind":"recovery","routeOrState":"reset-incomplete","surfaceSelector":"[data-acceptance-id=\"recovery-reset-incomplete\"]","entryAction":"fixture-reset-incomplete"},

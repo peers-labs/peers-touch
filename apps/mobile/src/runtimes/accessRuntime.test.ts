@@ -6,6 +6,7 @@ import type {
   AccessDecision,
   MobileAuthSession,
 } from '../features/auth/authSession';
+import { stationAccessError } from '../features/auth/authSession';
 import { useAuthStore } from '../features/auth/authStore';
 import {
   accessRuntimeTestContract,
@@ -13,6 +14,7 @@ import {
   createAccessRuntimeDescriptor,
   readAccessRuntimeProjection,
 } from './accessRuntime';
+import type { MobileStationEntry } from '../features/station/stationRegistry';
 
 const decision: AccessDecision = {
   state: 'ACCESS_DECISION_STATE_GRANTED',
@@ -95,14 +97,17 @@ describe('accessRuntime', () => {
     expect(startAttempt).toHaveBeenNthCalledWith(2);
   });
 
-  it('treats the typed Station 401 as a revoked session', async () => {
+  it('recovers a native object rejection through the Access boundary once', async () => {
     const refreshed = {
       ...decision,
       state: 'ACCESS_DECISION_STATE_ACTION_REQUIRED',
     };
     const startAttempt = vi.fn()
       .mockRejectedValueOnce(
-        new Error('mobile.auth.accessGateStationRejected:401'),
+        stationAccessError({
+          code: 'MOBILE_STATION_TRANSPORT',
+          message: 'mobile.auth.accessGateStationRejected:401',
+        }),
       )
       .mockResolvedValueOnce(refreshed);
     const clearSession = vi.fn().mockResolvedValue(undefined);
@@ -118,6 +123,22 @@ describe('accessRuntime', () => {
     expect(clearSession).toHaveBeenCalledOnce();
     expect(startAttempt).toHaveBeenNthCalledWith(1, 'revoked-session');
     expect(startAttempt).toHaveBeenNthCalledWith(2);
+  });
+
+  it.each([403, 503])('does not clear a session on native status %s', async (status) => {
+    const failure = stationAccessError({
+      code: 'MOBILE_STATION_TRANSPORT',
+      message: `mobile.auth.accessGateStationRejected:${status}`,
+    });
+    const startAttempt = vi.fn().mockRejectedValue(failure);
+    const clearSession = vi.fn();
+    await expect(
+      accessRuntimeTestContract.startAccessAttemptWithInvalidSessionRecovery(
+        'session-a', startAttempt, clearSession,
+      ),
+    ).rejects.toBe(failure);
+    expect(clearSession).not.toHaveBeenCalled();
+    expect(startAttempt).toHaveBeenCalledOnce();
   });
 
   it('does not hide non-session access failures behind a retry', async () => {
@@ -227,6 +248,57 @@ describe('accessRuntime', () => {
     );
 
     expect(activateSession).not.toHaveBeenCalled();
+  });
+
+  it('revalidates the persisted active route without rediscovery', async () => {
+    const station: MobileStationEntry = {
+      stationPeerId: 'station-a',
+      url: 'https://station.example',
+      label: 'Station A',
+      createdAt: 1,
+      lastUsedAt: 1,
+      pinnedStationRootPublicKey: [1],
+      routes: [{
+        nodePeerId: 'node-a',
+        nodeAuthorizationDigest: new Array(32).fill(2),
+        authorizationEpoch: 3,
+        routeId: 'direct-route',
+        routeType: 'direct',
+        transport: 'libp2p_http_v1',
+        endpointOrigin: 'https://station.example',
+        routeGeneration: 4,
+        innerTlsSpkiSha256: new Array(32).fill(5),
+        addresses: ['/dns4/station.example/tcp/4001/p2p/node-a'],
+        sourceRef: 'a'.repeat(64),
+        lastVerifiedAt: 6,
+        health: 'available',
+      }],
+      activeRouteId: 'direct-route',
+      routeRevision: 7,
+      lifecycleGeneration: 8,
+    };
+    const verifyRoute = vi.fn().mockResolvedValue({
+      stationPeerId: 'station-a',
+      routeId: 'direct-route',
+    });
+
+    await expect(
+      accessRuntimeTestContract.verifyActiveStationRoute(
+        station,
+        verifyRoute,
+      ),
+    ).resolves.toMatchObject({
+      stationPeerId: 'station-a',
+      routeId: 'direct-route',
+    });
+    expect(verifyRoute).toHaveBeenCalledWith({
+      stationPeerId: 'station-a',
+      routeId: 'direct-route',
+      routeGeneration: 4,
+      routeRevision: 7,
+      sourceRef: 'a'.repeat(64),
+      endpointOrigin: 'https://station.example',
+    });
   });
 
   it('declares the accepted pre-session runtime dependency boundary', () => {

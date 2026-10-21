@@ -122,6 +122,7 @@ export const MOBILE_ACCEPTANCE_ACTION_NAMES = [
   'social.contact.open',
   'social.reconcile',
   'social.projection.read',
+  'moments.private.acceptance.prepareKeys',
   'moments.private.publish',
   'moments.private.publishText',
   'moments.private.read',
@@ -160,6 +161,7 @@ export type MobileAcceptanceActionName =
 
 export interface StationAddInput {
   url: string;
+  routeType?: 'direct' | 'relay';
   draftDisposition?: DraftDisposition;
 }
 
@@ -1090,8 +1092,19 @@ export interface PrivateMomentReadActionOutput {
   textSha256?: string;
   mentionCount?: number;
   mediaStates?: string[];
+  reactions?: Array<{
+    kind: number;
+    count: string;
+    reactedByViewer: boolean;
+  }>;
+  reactionsHydrated?: boolean;
   errorCode?: string;
   retryAfterSeconds?: number;
+}
+
+export interface PrivateMomentKeyPreparationActionOutput {
+  endpointPrekeysAvailable: number;
+  recoveryPrekeysAvailable: number;
 }
 
 export interface PrivateMomentSnapshotActionOutput {
@@ -1101,6 +1114,26 @@ export interface PrivateMomentSnapshotActionOutput {
   actorPtid: string | null;
   publish: PrivateMomentPublishActionOutput[];
   reads: PrivateMomentReadActionOutput[];
+  commentDrafts: Array<{
+    draftIdSha256: string;
+    postId: string;
+    textSha256: string;
+    state: string;
+    errorCode?: string;
+    retryAfterSeconds?: number;
+  }>;
+  reactionCommands: Array<{
+    commandIdSha256: string;
+    postId: string;
+    kind: number;
+    operation: string;
+    state: string;
+    attemptCount: number;
+    projectionRevision: string;
+    errorCode?: string;
+    retryAfterSeconds?: number;
+    retryNotBeforeUnixMs?: number;
+  }>;
   publishStateHistory: PrivateSocialVisiblePublishState[];
   readStateHistoryByPostId: Record<string, PrivateSocialVisibleReadState[]>;
   report: {
@@ -1488,6 +1521,10 @@ export interface MobileAcceptanceActionContract {
   'social.projection.read': {
     input: undefined;
     output: PublicSocialRuntimeProjection;
+  };
+  'moments.private.acceptance.prepareKeys': {
+    input: undefined;
+    output: PrivateMomentKeyPreparationActionOutput;
   };
   'moments.private.publish': {
     input: PrivateMomentGenericPublishActionInput;

@@ -553,7 +553,7 @@ fn validate_marker_bindings(
     Ok(())
 }
 
-fn validate_authority_marker_bindings(
+pub fn validate_authority_marker_bindings(
     event: &ConversationEvent,
     marker: &PublicEventMarker,
 ) -> Result<(), String> {
@@ -568,7 +568,7 @@ fn validate_authority_marker_bindings(
     Ok(())
 }
 
-fn validate_member_authority_fact(
+pub fn validate_member_authority_fact(
     event: &ConversationEvent,
     fact: &ConversationMemberAuthorityCommittedFact,
     local_ptid: &str,

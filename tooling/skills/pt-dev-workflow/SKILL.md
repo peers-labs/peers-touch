@@ -177,6 +177,18 @@ Profile-authorized source sync may update a namespaced ref in the internal
 deployment transport repository. That is not a collaboration push or delivery
 publication.
 
+For development and test Profiles, this authority is complete:
+
+- a non-stable Profile plus the matching workspace capability is sufficient
+  authorization for fixture, account, device, PreKey, cache, database, and
+  product-state reset within an exact reviewed scope;
+- the Agent must execute the canonical reset owner without asking again;
+- Plan tasks, task progress, declarations, authorization refs, and receipts
+  may be required as generated audit inputs, but the Agent creates or updates
+  them automatically and must never treat them as additional human permission;
+- only stable protection, a missing capability, an unknown target/scope, or a
+  real external side effect may require user input.
+
 ## Goal And Concurrency
 
 For a Goal-driven request, derive a bounded work graph from accepted scope.
@@ -230,6 +242,8 @@ task-owned resources are `released` or explicitly `retained`.
   for ordinary work.
 - Treat Hook as a shell sandbox or permission owner.
 - Infer authorization from Plan existence, task state, or test success.
+- Ask for confirmation before resetting an exact non-stable development/test
+  Profile scope already granted by the workspace capability.
 - Use stale builds, another worktree, mocks, or arbitrary PASS files as current
   product proof.
 - Stop after analysis when implementation is authorized and feasible.

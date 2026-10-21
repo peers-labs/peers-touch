@@ -1,7 +1,10 @@
-use super::store::{InteractionMutation, InteractionReceiveCommit};
+use super::store::{
+    desktop_conversation_projection, ConversationMutation, ConversationMutationReceiveCommit,
+    InteractionMutation, InteractionReceiveCommit, MemberAuthorityReceiveCommit,
+};
 use super::{
-    verify_device_event_delivery, ClaimedItemConsumer, EngineEndpoint, MessagingStore,
-    PublicEventReceiveCommit, ReceiveCommitResult,
+    verify_device_event_delivery, ClaimedItemConsumer, ConversationStateReceiveCommit,
+    EngineEndpoint, MessagingStore, PublicEventReceiveCommit, ReceiveCommitResult,
 };
 use crate::model::chat::{
     conversation_event, CryptoEndpoint, DeviceConsumptionReceipt, DeviceInboxPayloadType,
@@ -9,6 +12,10 @@ use crate::model::chat::{
     MessageRetractedFact, MessagingContentKind, PreparedEndpointPayloadKind, PublicEventMarker,
     ReactionCommittedFact,
 };
+use messaging_core::inbox::public_event::{
+    validate_authority_marker_bindings, validate_member_authority_fact,
+};
+use messaging_core::mls::inbound::authority_snapshot_projection;
 use prost::Message;
 use std::sync::Arc;
 
@@ -120,8 +127,103 @@ impl PublicEventProcessor {
             Some(conversation_event::Payload::MessagePinCommitted(fact)) => {
                 self.process_pin(item, event, fact, consumer_epoch, now, committed_at_unix_ms)
             }
+            Some(conversation_event::Payload::ConversationUpdated(_))
+            | Some(conversation_event::Payload::ConversationDissolved(_)) => {
+                self.process_conversation_mutation(item, event, &delivery, consumer_epoch, now)
+            }
+            Some(conversation_event::Payload::MemberAuthorityCommitted(fact)) => {
+                let marker = PublicEventMarker::decode(delivery.endpoint_payload.as_slice())
+                    .map_err(|_| "messaging member-authority marker is invalid".to_string())?;
+                validate_authority_marker_bindings(event, &marker)?;
+                validate_member_authority_fact(event, fact, &self.endpoint.ptid)?;
+                let snapshot = fact
+                    .post_state
+                    .as_ref()
+                    .ok_or_else(|| "messaging member-authority snapshot is missing".to_string())?;
+                let projection = desktop_conversation_projection(&authority_snapshot_projection(
+                    event, snapshot, now,
+                )?);
+                let receipt = self.build_receipt(item, event, now);
+                let receipt_bytes = receipt.encode_to_vec();
+                let operator = event
+                    .actor
+                    .as_ref()
+                    .ok_or_else(|| "messaging member-authority operator is missing".to_string())?;
+                self.store
+                    .commit_member_authority_state(&MemberAuthorityReceiveCommit {
+                        state: ConversationStateReceiveCommit {
+                            item_id: &item.item_id,
+                            event_id: &event.event_id,
+                            conversation_id: &event.conversation_id,
+                            event_sequence: event.sequence,
+                            lane_sequence: item.lane_sequence,
+                            consumer_epoch,
+                            payload_sha256: &item.payload_sha256,
+                            event_hash: &event.event_hash,
+                            previous_event_hash: &event.previous_hash,
+                            projection: &projection,
+                            receipt_id: &receipt.receipt_id,
+                            receipt_bytes: &receipt_bytes,
+                            consumed_at_unix_ms: now,
+                        },
+                        command_id: &event.command_id,
+                        operator_ptid: &operator.ptid,
+                        operator_device_id: &operator.device_id,
+                        action: fact.action,
+                        target_ptid: &fact.target_ptid,
+                    })?;
+                Ok(())
+            }
             _ => Err("messaging public-event payload type is unsupported".to_string()),
         }
+    }
+
+    fn process_conversation_mutation(
+        &self,
+        item: &DurableDeviceInboxItem,
+        event: &crate::model::chat::ConversationEvent,
+        delivery: &crate::model::chat::DeviceEventDelivery,
+        consumer_epoch: u64,
+        now: i64,
+    ) -> Result<(), String> {
+        let marker = PublicEventMarker::decode(delivery.endpoint_payload.as_slice())
+            .map_err(|_| "messaging Conversation mutation marker is invalid".to_string())?;
+        validate_authority_marker_bindings(event, &marker)?;
+        let mutation = match event.payload.as_ref() {
+            Some(conversation_event::Payload::ConversationUpdated(update)) => {
+                ConversationMutation::Update {
+                    name: update.name.as_deref(),
+                    description: update.description.as_deref(),
+                    avatar_object_id: update.avatar_object_id.as_deref(),
+                }
+            }
+            Some(conversation_event::Payload::ConversationDissolved(_)) => {
+                ConversationMutation::Dissolve
+            }
+            _ => return Err("messaging Conversation mutation is unsupported".to_string()),
+        };
+        let receipt = self.build_receipt(item, event, now);
+        let receipt_bytes = receipt.encode_to_vec();
+        self.store
+            .commit_conversation_mutation_event(&ConversationMutationReceiveCommit {
+                item_id: &item.item_id,
+                event_id: &event.event_id,
+                conversation_id: &event.conversation_id,
+                command_id: &event.command_id,
+                event_sequence: event.sequence,
+                lane_sequence: item.lane_sequence,
+                consumer_epoch,
+                payload_sha256: &item.payload_sha256,
+                event_hash: &event.event_hash,
+                previous_event_hash: &event.previous_hash,
+                membership_epoch: event.membership_epoch,
+                mls_epoch: event.mls_epoch,
+                mutation,
+                receipt_id: &receipt.receipt_id,
+                receipt_bytes: &receipt_bytes,
+                consumed_at_unix_ms: now,
+            })?;
+        Ok(())
     }
 
     fn process_message_committed(
@@ -599,6 +701,255 @@ mod tests {
 
     fn prepare_send(store: &MessagingStore) {
         prepare_send_with_attachments(store, &[]);
+    }
+
+    fn lifecycle_item(
+        sequence: i64,
+        previous_hash: Vec<u8>,
+        payload: conversation_event::Payload,
+        membership_epoch: i64,
+    ) -> DurableDeviceInboxItem {
+        let mut item = queue_item();
+        item.item_id = format!("lifecycle-item-{sequence}");
+        item.event_id = format!("lifecycle-event-{sequence}");
+        item.lane_sequence = sequence;
+        let mut delivery = DeviceEventDelivery::decode(item.opaque_payload.as_slice()).unwrap();
+        let event = delivery.event.as_mut().unwrap();
+        event.event_id = item.event_id.clone();
+        event.command_id = format!("lifecycle-command-{sequence}");
+        event.sequence = sequence;
+        event.previous_hash = previous_hash;
+        event.membership_epoch = membership_epoch;
+        event.payload = Some(payload);
+        delivery.endpoint_payload = PublicEventMarker {
+            conversation_id: event.conversation_id.clone(),
+            event_id: event.event_id.clone(),
+            command_id: event.command_id.clone(),
+            sending_endpoint: event.actor.clone(),
+        }
+        .encode_to_vec();
+        delivery.endpoint_payload_sha256 = Sha256::digest(&delivery.endpoint_payload).to_vec();
+        let commitment = delivery_commitment(
+            &event.conversation_id,
+            &event.event_id,
+            "ptid:alice",
+            "alice-device",
+            PreparedEndpointPayloadKind::PublicEvent,
+            &delivery.endpoint_payload_sha256,
+        );
+        event.delivery_commitments = vec![commitment.to_vec()];
+        event.event_hash.clear();
+        event.event_hash = Sha256::digest(event.encode_to_vec()).to_vec();
+        delivery.delivery_commitment = commitment.to_vec();
+        item.opaque_payload = delivery.encode_to_vec();
+        item.payload_sha256 = Sha256::digest(&item.opaque_payload).to_vec();
+        item
+    }
+
+    #[test]
+    fn group_lifecycle_markers_commit_exact_intents_and_preserve_authority_projection() {
+        use crate::messaging::{ConversationMemberProjection, ConversationProjection};
+        use crate::model::chat::{
+            chat_command, ChatCommand, ConversationAuthorityMember, ConversationAuthoritySnapshot,
+            ConversationDissolvedFact, ConversationKind, ConversationMemberAuthorityAction,
+            ConversationMemberAuthorityCommand, ConversationMemberAuthorityCommittedFact,
+            ConversationUpdatedFact, MemberRole, UpdateConversationIntent,
+        };
+        let store = Arc::new(MessagingStore::in_memory().unwrap());
+        let endpoint = CryptoEndpoint {
+            ptid: "ptid:alice".to_string(),
+            device_id: "alice-device".to_string(),
+        };
+        store
+            .bootstrap_conversation_projection(&ConversationProjection {
+                conversation_id: "conversation-1".to_string(),
+                authority_station_id: "station-local".to_string(),
+                federation_id: "federation-1".to_string(),
+                kind: ConversationKind::Group as i32,
+                name: "original".to_string(),
+                description: "description".to_string(),
+                avatar_object_id: "avatar".to_string(),
+                owner_ptid: endpoint.ptid.clone(),
+                members: vec![
+                    ConversationMemberProjection {
+                        ptid: endpoint.ptid.clone(),
+                        role: MemberRole::Owner as i32,
+                        home_station_peer_id: "station-local".to_string(),
+                        ..Default::default()
+                    },
+                    ConversationMemberProjection {
+                        ptid: "ptid:bob".to_string(),
+                        role: MemberRole::Member as i32,
+                        home_station_peer_id: "station-remote".to_string(),
+                        ..Default::default()
+                    },
+                ],
+                membership_epoch: 1,
+                mls_epoch: 0,
+                active: true,
+                updated_at_unix_ms: 1_000,
+            })
+            .unwrap();
+        let processor = PublicEventProcessor::new(
+            store.clone(),
+            EngineEndpoint {
+                ptid: endpoint.ptid.clone(),
+                device_id: endpoint.device_id.clone(),
+            },
+            now,
+        )
+        .unwrap();
+        let command = ChatCommand {
+            command_id: "lifecycle-command-1".to_string(),
+            conversation_id: "conversation-1".to_string(),
+            sender: Some(endpoint.clone()),
+            authority_station_peer_id: "station-local".to_string(),
+            delivery_plan_sha256: vec![7; 32],
+            payload: Some(chat_command::Payload::UpdateConversation(
+                UpdateConversationIntent {
+                    name: Some("renamed".to_string()),
+                    ..Default::default()
+                },
+            )),
+            ..Default::default()
+        };
+        store
+            .persist_conversation_command(&super::super::store::ConversationCommandCommit {
+                command: &command,
+                expected_authority_sequence: 0,
+                expected_authority_hash: &[],
+                created_at_unix_ms: 1_000,
+            })
+            .unwrap();
+        store
+            .mark_command_submitted(&command.command_id, &command.encode_to_vec(), 0)
+            .unwrap();
+        let renamed = lifecycle_item(
+            1,
+            vec![],
+            conversation_event::Payload::ConversationUpdated(ConversationUpdatedFact {
+                name: Some("renamed".to_string()),
+                ..Default::default()
+            }),
+            1,
+        );
+        processor.consume(&renamed, 1).unwrap();
+        processor.consume(&renamed, 2).unwrap();
+        assert_eq!(
+            store
+                .command_status(&command.command_id)
+                .unwrap()
+                .unwrap()
+                .state,
+            "committed"
+        );
+        let hash = store.authority_head("conversation-1").unwrap().1;
+        let member_command = ConversationMemberAuthorityCommand {
+            command_id: "lifecycle-command-2".to_string(),
+            conversation_id: "conversation-1".to_string(),
+            operator: Some(endpoint.clone()),
+            action: ConversationMemberAuthorityAction::UpdateMember as i32,
+            target_ptid: "ptid:bob".to_string(),
+            role: Some(MemberRole::Admin as i32),
+            muted: Some(true),
+            authority_station_peer_id: "station-local".to_string(),
+            federation_id: "federation-1".to_string(),
+            authority_sequence: 1,
+            authority_hash: hash.clone(),
+            observed_membership_epoch: 1,
+            observed_mls_epoch: 0,
+            client_timestamp: Some(prost_types::Timestamp {
+                seconds: 1,
+                nanos: 0,
+            }),
+            ..Default::default()
+        };
+        store
+            .persist_member_authority_command(&member_command)
+            .unwrap();
+        store
+            .mark_command_submitted(
+                &member_command.command_id,
+                &member_command.encode_to_vec(),
+                0,
+            )
+            .unwrap();
+        let members = vec![
+            ConversationAuthorityMember {
+                ptid: endpoint.ptid.clone(),
+                role: "owner".to_string(),
+                home_station_peer_id: "station-local".to_string(),
+                ..Default::default()
+            },
+            ConversationAuthorityMember {
+                ptid: "ptid:bob".to_string(),
+                role: "admin".to_string(),
+                home_station_peer_id: "station-remote".to_string(),
+                muted: true,
+                ..Default::default()
+            },
+        ];
+        let member = lifecycle_item(
+            2,
+            hash,
+            conversation_event::Payload::MemberAuthorityCommitted(
+                ConversationMemberAuthorityCommittedFact {
+                    action: member_command.action,
+                    target_ptid: member_command.target_ptid.clone(),
+                    role: member_command.role,
+                    muted: member_command.muted,
+                    previous_owner_ptid: endpoint.ptid.clone(),
+                    owner_ptid: endpoint.ptid.clone(),
+                    from_membership_epoch: 1,
+                    to_membership_epoch: 2,
+                    post_state: Some(ConversationAuthoritySnapshot {
+                        kind: ConversationKind::Group as i32,
+                        name: "renamed".to_string(),
+                        description: "description".to_string(),
+                        avatar_object_id: "avatar".to_string(),
+                        owner_ptid: endpoint.ptid.clone(),
+                        federation_id: "federation-1".to_string(),
+                        active_members: members,
+                        active_endpoints: vec![endpoint.clone()],
+                        membership_epoch: 2,
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            ),
+            2,
+        );
+        processor.consume(&member, 2).unwrap();
+        processor.consume(&member, 3).unwrap();
+        let projection = store.conversation_projections().unwrap().remove(0);
+        assert_eq!(projection.description, "description");
+        assert_eq!(projection.avatar_object_id, "avatar");
+        assert_eq!(projection.members[1].role, MemberRole::Admin as i32);
+        assert!(projection.members[1].muted);
+        assert_eq!(projection.members[1].home_station_peer_id, "station-remote");
+        assert_eq!(
+            store
+                .command_status(&member_command.command_id)
+                .unwrap()
+                .unwrap()
+                .state,
+            "committed"
+        );
+        let terminal = lifecycle_item(
+            3,
+            store.authority_head("conversation-1").unwrap().1,
+            conversation_event::Payload::ConversationDissolved(ConversationDissolvedFact {
+                dissolved_by_ptid: endpoint.ptid,
+            }),
+            2,
+        );
+        processor.consume(&terminal, 3).unwrap();
+        processor.consume(&terminal, 4).unwrap();
+        assert!(!store.conversation_projections().unwrap()[0].active);
+        assert_eq!(store.lane_checkpoint().unwrap(), (3, 3));
+        assert!(store
+            .consumption_marker_matches(&terminal.item_id, &terminal.payload_sha256)
+            .unwrap());
     }
 
     #[test]

@@ -17,6 +17,7 @@ const userSource = source('../../pages/moments/MomentsUserPage.tsx');
 const circleSource = source('../../pages/moments/CircleManagePage.tsx');
 const discoverySource = source('../../store/discovery.ts');
 const runtimeSource = source('../../runtimes/momentsRuntime.ts');
+const appRuntimeHookSource = source('../../hooks/useAppRuntime.ts');
 const momentCardSource = source('./MomentCard.tsx');
 const actionBarSource = source('./surfaces/SocialActionBar.tsx');
 const enMoments = JSON.parse(
@@ -24,6 +25,20 @@ const enMoments = JSON.parse(
 ) as Record<string, string>;
 
 describe('Desktop Moments interaction contract', () => {
+  it('boots recovery projections independently from critical Chat readiness', () => {
+    const deferredProjection = appRuntimeHookSource.indexOf(
+      'void installDeferredAppRuntimeProjections(actorPtid);',
+    );
+    const criticalRuntime = appRuntimeHookSource.indexOf(
+      'void installAuthenticatedCriticalRuntimes(actorPtid).then(() => {',
+    );
+
+    expect(deferredProjection).toBeGreaterThan(-1);
+    expect(criticalRuntime).toBeGreaterThan(deferredProjection);
+    expect(appRuntimeHookSource).toContain('cancelDeferredProjections?.();');
+    expect(appRuntimeHookSource).toContain('cancelIdleRuntimes?.();');
+  });
+
   it('keeps post text away from its visible input boundary', () => {
     expect(composerSource).toContain('data-moments-composer-input');
     expect(composerSource).toContain("padding: '8px 12px'");

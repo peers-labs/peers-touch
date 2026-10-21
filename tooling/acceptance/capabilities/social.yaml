@@ -125,7 +125,10 @@
       "id": "social-private-cross-station-boundary",
       "domain": "social",
       "direction": "acceptance_validates_product",
-      "features": ["social-private-cross-station-desktop"],
+      "features": [
+        "social-private-cross-station-desktop",
+        "social-private-cross-platform-native"
+      ],
       "required_gates": [
         "station-api-ownership",
         "social-cross-station-contract",
@@ -137,6 +140,7 @@
         "social-cross-station-desktop-functional",
         "social-private-desktop-e2e",
         "social-cross-station-native-e2e",
+        "social-cross-station-mobile-desktop-e2e",
         "browser-social-zero-registration"
       ],
       "synthetic_paths": [
@@ -152,19 +156,24 @@
         "surfaces": [
           "Alice Native Desktop composer and pending delivery state",
           "Bob and Bob2 Native Desktop HOME/detail/comment/media/recovery surfaces",
-          "Eve Native Desktop uniform denial surface"
+          "Eve Native Desktop uniform denial surface",
+          "iOS Bob composer, feed, detail, comment, reaction and restart surfaces",
+          "iOS Eve uniform denial surface"
         ],
         "proven_by": [
           "social-cross-station-native-e2e",
+          "social-cross-station-mobile-desktop-e2e",
           "social-private-desktop-e2e",
           "browser-social-zero-registration"
         ],
         "proven_scope": [
           "SOC-SEC-AS12 historical fail-closed cutover evidence",
-          "SOC-SEC-AS17 through SOC-SEC-AS24 exact-source Native Desktop proof"
+          "SOC-SEC-AS17 through SOC-SEC-AS24 exact-source Native Desktop proof",
+          "SOC-SEC-RC09 iOS subset and SOC-SEC-AS25 Desktop to iOS interoperability when the mixed Gate passes"
         ],
         "unproven_scope": [
-          "Mobile Native parity",
+          "Android cross-platform interoperability",
+          "iOS to Android cross-mobile interoperability",
           "cross-Federation private delivery"
         ]
       }

@@ -90,7 +90,8 @@ export function StationSelector({
     setPendingRemoval(null);
   }
 
-  const showsHttpWarning = buildStationUrl(stationUrl)?.startsWith('http://');
+  const showsHttpWarning = surfaceFixture === 'address'
+    || buildStationUrl(stationUrl)?.startsWith('http://');
 
   return (
     <section className="station-selector">
@@ -210,7 +211,6 @@ export function StationSelector({
                   <Server size={18} aria-hidden="true" />
                   <span className="station-entry-copy">
                     <Text strong={isActive} className="mobile-truncate">{displayName}</Text>
-                    <Text type="secondary" className="mobile-truncate">{entry.url}</Text>
                   </span>
                   <span className={`station-entry-status ${status.className}`}>
                     {status.label}

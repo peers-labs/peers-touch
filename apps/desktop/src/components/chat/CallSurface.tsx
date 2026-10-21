@@ -28,7 +28,6 @@ import {
   Minimize2,
   PanelTop,
   Phone,
-  PhoneIncoming,
   PhoneOff,
   Settings,
   Video,
@@ -41,6 +40,8 @@ import {
 } from '../../modules/p2p/callP2p';
 import { log } from '../../utils/logger';
 import { ActionIcon, toast } from '@lobehub/ui';
+import { UserSquareAvatar } from '../common/UserSquareAvatar';
+import { useChatActorIdentity } from './useChatActorIdentity';
 
 const { Text } = Typography;
 
@@ -85,6 +86,7 @@ export function CallSurface() {
   // CALL_REQUEST while one is in flight) so we never need to
   // surface more than one at a time.
   const [active, setActive] = useState<ActivePeer | null>(null);
+  const peerIdentity = useChatActorIdentity(active?.peerPtid ?? '');
   const [displayMode, setDisplayMode] = useState<CallDisplayMode>('compact');
   const [now, setNow] = useState(() => Date.now());
   const [devices, setDevices] = useState<CallMediaDevices>({ audioInputs: [], videoInputs: [] });
@@ -272,20 +274,11 @@ export function CallSurface() {
           boxSizing: 'border-box',
         }}
       >
-        <Flexbox
-          align="center"
-          justify="center"
-          style={{
-            width: 40,
-            height: 40,
-            flexShrink: 0,
-            borderRadius: 10,
-            background: token.colorPrimaryBg,
-            color: token.colorPrimary,
-          }}
-        >
-          <PhoneIncoming size={20} />
-        </Flexbox>
+        <UserSquareAvatar
+          remoteUrl={peerIdentity.avatarUrl}
+          name={peerIdentity.displayName}
+          size={40}
+        />
         <Flexbox flex={1} style={{ minWidth: 0 }}>
           <Text strong ellipsis style={{ fontSize: 13 }}>
             {t('chat.social.call.incomingTitle', {
@@ -293,7 +286,7 @@ export function CallSurface() {
             })}
           </Text>
           <Text type="secondary" ellipsis style={{ fontSize: 11 }}>
-            {t('chat.social.call.incomingFrom', { from: peerPtid })}
+            {t('chat.social.call.incomingFrom', { from: peerIdentity.displayName })}
           </Text>
         </Flexbox>
         <Flexbox horizontal align="center" gap={4} style={{ flexShrink: 0 }}>
@@ -459,22 +452,13 @@ export function CallSurface() {
             boxSizing: 'border-box',
           }}
         >
-          <Flexbox
-            align="center"
-            justify="center"
-            style={{
-              width: 40,
-              height: 40,
-              flexShrink: 0,
-              borderRadius: 10,
-              background: token.colorPrimaryBg,
-              color: token.colorPrimary,
-            }}
-          >
-            <Phone size={20} />
-          </Flexbox>
+          <UserSquareAvatar
+            remoteUrl={peerIdentity.avatarUrl}
+            name={peerIdentity.displayName}
+            size={40}
+          />
           <Flexbox flex={1} style={{ minWidth: 0 }}>
-            <Text strong ellipsis style={{ fontSize: 13 }}>{peerPtid}</Text>
+            <Text strong ellipsis style={{ fontSize: 13 }}>{peerIdentity.displayName}</Text>
             <Text type="secondary" ellipsis style={{ fontSize: 11 }}>{status}</Text>
           </Flexbox>
           {callControls}
@@ -503,7 +487,11 @@ export function CallSurface() {
             />
           ) : (
             <Flexbox align="center" justify="center" style={{ width: '100%', height: '100%', background: token.colorFillTertiary }}>
-              <Video size={expandedVideo ? 54 : 40} style={{ color: token.colorTextTertiary }} />
+              <UserSquareAvatar
+                remoteUrl={peerIdentity.avatarUrl}
+                name={peerIdentity.displayName}
+                size={expandedVideo ? 80 : 56}
+              />
             </Flexbox>
           )}
 
@@ -609,7 +597,12 @@ export function CallSurface() {
           }}
         >
           <Flexbox horizontal align="center" justify="space-between" gap={8} style={{ minWidth: 0, flex: 1 }}>
-            <Text strong ellipsis>{peerPtid}</Text>
+            <UserSquareAvatar
+              remoteUrl={peerIdentity.avatarUrl}
+              name={peerIdentity.displayName}
+              size={32}
+            />
+            <Text strong ellipsis style={{ flex: 1 }}>{peerIdentity.displayName}</Text>
             <Text type="secondary" style={{ fontSize: 12, flexShrink: 0 }}>{status}</Text>
           </Flexbox>
           {callControls}

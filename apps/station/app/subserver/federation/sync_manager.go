@@ -2,7 +2,6 @@ package federation
 
 import (
 	"context"
-	"crypto/subtle"
 	"errors"
 	"fmt"
 	"sync"
@@ -12,7 +11,6 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/federation/domain"
 	pb "github.com/peers-labs/peers-touch/station/app/subserver/federation/pb"
 	log "github.com/peers-labs/peers-touch/station/frame/core/logger"
-	"google.golang.org/protobuf/proto"
 )
 
 var ErrSyncStopped = errors.New("sync stopped")
@@ -23,6 +21,10 @@ type RemoteLedgerFetcher interface {
 }
 
 type RemoteGovernanceClient interface {
+	ResolveStationIdentity(
+		ctx context.Context,
+		endpoint string,
+	) (*RemoteStationIdentity, error)
 	SubmitProposal(ctx context.Context, endpoint, targetPeerID string, req *pb.SubmitProposalRequest) (*pb.SubmitProposalResponse, error)
 }
 
@@ -39,7 +41,6 @@ type LedgerSyncManager struct {
 	syncCursorRepo domain.SyncCursorRepository
 	membershipRepo domain.MembershipRepository
 	publisher      *LedgerEventPublisher
-	hashSvc        *domain.HashService
 	fetcher        RemoteLedgerFetcher
 	localStationID string
 }
@@ -51,7 +52,6 @@ func NewLedgerSyncManager(
 	syncCursorRepo domain.SyncCursorRepository,
 	membershipRepo domain.MembershipRepository,
 	publisher *LedgerEventPublisher,
-	hashSvc *domain.HashService,
 	fetcher RemoteLedgerFetcher,
 	localStationID string,
 ) *LedgerSyncManager {
@@ -63,7 +63,6 @@ func NewLedgerSyncManager(
 		syncCursorRepo: syncCursorRepo,
 		membershipRepo: membershipRepo,
 		publisher:      publisher,
-		hashSvc:        hashSvc,
 		fetcher:        fetcher,
 		localStationID: localStationID,
 	}
@@ -214,6 +213,9 @@ func (m *LedgerSyncManager) updateCursor(ctx context.Context, fed *domain.Federa
 }
 
 func (m *LedgerSyncManager) ApplyRemoteEvent(ctx context.Context, event *pb.LedgerEvent) error {
+	if event == nil {
+		return fmt.Errorf("remote Federation event is required")
+	}
 	fed, err := m.federationRepo.GetByID(ctx, event.FederationId)
 	if err != nil {
 		return err
@@ -222,118 +224,26 @@ func (m *LedgerSyncManager) ApplyRemoteEvent(ctx context.Context, event *pb.Ledg
 		return fmt.Errorf("federation not found: %s", event.FederationId)
 	}
 
-	if subtle.ConstantTimeCompare(event.PrevHash, fed.HeadHash) != 1 {
-		if err := m.federationRepo.UpdateStatus(ctx, event.FederationId, "fork_detected"); err != nil {
-			log.Warnf(ctx, "[federation-sync] failed to update fork status for %s: %v", event.FederationId, err)
+	if err := m.ledgerSvc.ValidateRemoteEvent(ctx, event); err != nil {
+		return fmt.Errorf(
+			"validate remote Federation event seq=%d: %w",
+			event.Seq,
+			err,
+		)
+	}
+	mutation, err := application.ProjectionMutationForEvent(event)
+	if err != nil {
+		return err
+	}
+
+	if err := m.ledgerSvc.CommitRemoteEvent(ctx, event, mutation); err != nil {
+		if errors.Is(err, domain.ErrForkDetected) {
+			if statusErr := m.federationRepo.UpdateStatus(ctx, event.FederationId, "fork_detected"); statusErr != nil {
+				log.Warnf(ctx, "[federation-sync] failed to update fork status for %s: %v", event.FederationId, statusErr)
+			}
 		}
-		return domain.ErrForkDetected
-	}
-
-	valid, err := m.hashSvc.VerifyEventHash(event, event.PayloadHash)
-	if err != nil {
-		return err
-	}
-	if !valid {
-		return fmt.Errorf("event hash verification failed for seq=%d federation=%s", event.Seq, event.FederationId)
-	}
-	applyProjection, err := m.remoteProjectionMutation(ctx, event)
-	if err != nil {
-		return err
-	}
-
-	if err := m.eventRepo.Append(ctx, event); err != nil {
-		return err
-	}
-	if err := applyProjection(); err != nil {
-		return err
-	}
-
-	if err := m.federationRepo.UpdateHead(ctx, event.FederationId, event.EventHash, event.Seq); err != nil {
 		return err
 	}
 
 	return m.publisher.PublishToLocalActors(ctx, event)
-}
-
-func (m *LedgerSyncManager) remoteProjectionMutation(
-	ctx context.Context,
-	event *pb.LedgerEvent,
-) (func() error, error) {
-	switch event.EventType {
-	case pb.EventType_STATION_JOIN_APPROVED:
-		payload := &pb.StationJoinApprovedPayload{}
-		if err := proto.Unmarshal(event.PayloadBytes, payload); err != nil {
-			return nil, err
-		}
-		if payload.ApprovedStationPeerId == "" ||
-			payload.ApprovedStationName == "" ||
-			payload.ApprovedStationUrl == "" {
-			return nil, fmt.Errorf("remote Federation join projection is incomplete")
-		}
-		role := payload.Role
-		if role == "" {
-			role = "member_station"
-		}
-		return func() error {
-			return m.membershipRepo.Upsert(ctx, &domain.MembershipRecord{
-				FederationID:      event.FederationId,
-				StationPeerID:     payload.ApprovedStationPeerId,
-				StationName:       payload.ApprovedStationName,
-				StationURL:        payload.ApprovedStationUrl,
-				Role:              role,
-				Status:            "active",
-				ApprovedByEventID: event.EventId,
-			})
-		}, nil
-	case pb.EventType_STATION_LEFT:
-		payload := &pb.StationLeftPayload{}
-		if err := proto.Unmarshal(event.PayloadBytes, payload); err != nil {
-			return nil, err
-		}
-		if payload.LeavingStationPeerId == "" {
-			return nil, fmt.Errorf("remote Federation leave projection is incomplete")
-		}
-		return func() error {
-			return m.membershipRepo.UpdateStatus(
-				ctx,
-				event.FederationId,
-				payload.LeavingStationPeerId,
-				"left",
-			)
-		}, nil
-	case pb.EventType_STATION_SUSPENDED:
-		payload := &pb.StationSuspendedPayload{}
-		if err := proto.Unmarshal(event.PayloadBytes, payload); err != nil {
-			return nil, err
-		}
-		if payload.TargetStationPeerId == "" {
-			return nil, fmt.Errorf("remote Federation suspension projection is incomplete")
-		}
-		return func() error {
-			return m.membershipRepo.UpdateStatus(
-				ctx,
-				event.FederationId,
-				payload.TargetStationPeerId,
-				"suspended",
-			)
-		}, nil
-	case pb.EventType_STATION_REMOVED:
-		payload := &pb.StationRemovedPayload{}
-		if err := proto.Unmarshal(event.PayloadBytes, payload); err != nil {
-			return nil, err
-		}
-		if payload.TargetStationPeerId == "" {
-			return nil, fmt.Errorf("remote Federation removal projection is incomplete")
-		}
-		return func() error {
-			return m.membershipRepo.UpdateStatus(
-				ctx,
-				event.FederationId,
-				payload.TargetStationPeerId,
-				"removed",
-			)
-		}, nil
-	default:
-		return func() error { return nil }, nil
-	}
 }

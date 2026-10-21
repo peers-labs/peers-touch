@@ -14,9 +14,10 @@ import {
 } from '../../services/socialRealtime';
 import { useRelationshipsStore } from '../../store/relationships';
 import { useSessionStore } from '../../store/session';
-import { useSocialChatStore } from '../../store/socialChat';
+import { socialThreadKey, useSocialChatStore } from '../../store/socialChat';
 import { messageGroupSeq, type SocialMessage } from '../../store/socialProjection';
 import { ActorDeviceStatus } from '../../gen/proto/domain/actor/actor_pb';
+import { groupCallManager } from '../../modules/groupCall';
 import { callP2p } from '../../modules/p2p/callP2p';
 import { registerAcceptanceHarness } from '../registry';
 import { requireCanonicalAcceptancePtid } from './identity';
@@ -161,10 +162,19 @@ interface SendInteractionMessageInput {
   threadRootMessageId?: string;
 }
 
+interface SendInteractionMessageBatchInput {
+  conversationId: string;
+  kind: ConversationKind;
+  prefix: string;
+  count: number;
+  startIndex?: number;
+}
+
 interface MessageInteractionInput {
   conversationId: string;
   kind: ConversationKind;
   messageId: string;
+  threadRootMessageId?: string;
 }
 
 interface EditMessageInput extends MessageInteractionInput {
@@ -211,12 +221,18 @@ function interactionProjection(
   kind: ConversationKind,
   conversationId: string,
   messageId: string,
+  threadRootMessageId = '',
 ) {
   const state = useSocialChatStore.getState();
-  const message = state
-    .getIMMessages(kind, conversationId)
+  const messages = threadRootMessageId
+    ? state.getIMThreadMessages(kind, conversationId, threadRootMessageId)
+    : state.getIMMessages(kind, conversationId);
+  const rawMessages = threadRootMessageId
+    ? state.threadMessages[socialThreadKey(kind, conversationId, threadRootMessageId)] ?? []
+    : state.messages[conversationId] ?? [];
+  const message = messages
     .find((item) => item.id === messageId);
-  const raw = (state.messages[conversationId] ?? [])
+  const raw = rawMessages
     .find((item) => item.ulid === messageId);
   if (!message || !raw) return null;
   return {
@@ -244,6 +260,29 @@ function activeActorPtid(): string {
   return requireCanonicalAcceptancePtid(
     useSocialChatStore.getState().currentUserPtid,
   );
+}
+
+function acceptanceCallSnapshot(snapshot: ReturnType<typeof callP2p.getCall>) {
+  const tracks = (stream?: MediaStream) => (
+    stream?.getTracks().map((track) => ({
+      kind: track.kind,
+      enabled: track.enabled,
+      muted: track.muted,
+      readyState: track.readyState,
+    })) ?? []
+  );
+  if (!snapshot) return null;
+  return {
+    callId: snapshot.callId,
+    mediaKind: snapshot.mediaKind,
+    state: snapshot.state,
+    startedAt: snapshot.startedAt ?? null,
+    micMuted: snapshot.micMuted ?? false,
+    cameraOff: snapshot.cameraOff ?? false,
+    endReason: snapshot.endReason ?? null,
+    localTracks: tracks(snapshot.localStream),
+    remoteTracks: tracks(snapshot.remoteStream),
+  };
 }
 
 async function waitForIdentityState(
@@ -689,6 +728,38 @@ export function installAcceptanceHarness(): void {
       };
     },
 
+    async sendInteractionMessageBatch({
+      conversationId,
+      kind,
+      prefix,
+      count,
+      startIndex = 1,
+    }: SendInteractionMessageBatchInput) {
+      if (count < 1 || count > 100) {
+        throw new Error('interaction message batch count must be between 1 and 100');
+      }
+      if (startIndex < 1) {
+        throw new Error('interaction message batch startIndex must be positive');
+      }
+      const messageIds: string[] = [];
+      for (let offset = 0; offset < count; offset += 1) {
+        const index = startIndex + offset;
+        const outcome = await imServiceV1.messaging.sendMessage(
+          conversationId,
+          kind === 'friend' ? 'direct' : 'group',
+          `${prefix}-${String(index).padStart(3, '0')}`,
+        );
+        messageIds.push(outcome.messageId);
+      }
+      return {
+        conversationId,
+        count: messageIds.length,
+        firstMessageId: messageIds[0] ?? '',
+        lastMessageId: messageIds[messageIds.length - 1] ?? '',
+        messageIds,
+      };
+    },
+
     async editInteractionMessage({
       conversationId,
       kind,
@@ -764,9 +835,22 @@ export function installAcceptanceHarness(): void {
       conversationId,
       kind,
       messageId,
+      threadRootMessageId = '',
     }: MessageInteractionInput) {
       await refreshConversation(kind, conversationId);
-      return interactionProjection(kind, conversationId, messageId);
+      if (threadRootMessageId) {
+        await useSocialChatStore.getState().loadThreadMessages(
+          conversationId,
+          threadRootMessageId,
+          kind,
+        );
+      }
+      return interactionProjection(
+        kind,
+        conversationId,
+        messageId,
+        threadRootMessageId,
+      );
     },
 
     async openInteractionThread({
@@ -804,7 +888,7 @@ export function installAcceptanceHarness(): void {
         conversationId,
         kind,
         messageId,
-        present: Boolean(interactionProjection(kind, conversationId, messageId)),
+        submitted: true,
       };
     },
 
@@ -1200,6 +1284,132 @@ export function installAcceptanceHarness(): void {
     async dispatchRealtimeFrame({ eventId = '', dataB64 }: { eventId?: string; dataB64: string }) {
       dispatchRealtimeFrameForAcceptance({ event_id: eventId, data_b64: dataB64 });
       return { accepted: Boolean(dataB64) };
+    },
+
+    async callStart({ peerPtid, mediaKind }: { peerPtid: string; mediaKind: 'audio' | 'video' }) {
+      const myPtid = activeActorPtid();
+      await callP2p.startCall(myPtid, peerPtid, mediaKind);
+      return { actorPtid: myPtid, peerPtid, mediaKind, started: true };
+    },
+
+    async callAccept({ peerPtid }: { peerPtid: string }) {
+      const myPtid = activeActorPtid();
+      await callP2p.acceptCall(myPtid, peerPtid);
+      return { actorPtid: myPtid, peerPtid, accepted: true };
+    },
+
+    async callReject({ peerPtid }: { peerPtid: string }) {
+      const myPtid = activeActorPtid();
+      await callP2p.rejectCall(myPtid, peerPtid);
+      return { actorPtid: myPtid, peerPtid, rejected: true };
+    },
+
+    async callEnd({ peerPtid }: { peerPtid: string }) {
+      const myPtid = activeActorPtid();
+      await callP2p.endCall(myPtid, peerPtid);
+      return { actorPtid: myPtid, peerPtid, ended: true };
+    },
+
+    async callSnapshot({ peerPtid }: { peerPtid: string }) {
+      const myPtid = activeActorPtid();
+      const snapshot = acceptanceCallSnapshot(callP2p.getCall(myPtid, peerPtid));
+      return { actorPtid: myPtid, peerPtid, snapshot };
+    },
+
+    async callToggleMic({ peerPtid, muted }: { peerPtid: string; muted: boolean }) {
+      const myPtid = activeActorPtid();
+      callP2p.toggleMic(myPtid, peerPtid, muted);
+      const snapshot = acceptanceCallSnapshot(callP2p.getCall(myPtid, peerPtid));
+      return { actorPtid: myPtid, peerPtid, snapshot };
+    },
+
+    async callToggleCamera({ peerPtid, off }: { peerPtid: string; off: boolean }) {
+      const myPtid = activeActorPtid();
+      callP2p.toggleCamera(myPtid, peerPtid, off);
+      const snapshot = acceptanceCallSnapshot(callP2p.getCall(myPtid, peerPtid));
+      return { actorPtid: myPtid, peerPtid, snapshot };
+    },
+
+    async callRestartConnection({ peerPtid }: { peerPtid: string }) {
+      const myPtid = activeActorPtid();
+      callP2p.restartCallConnection(myPtid, peerPtid);
+      const snapshot = acceptanceCallSnapshot(callP2p.getCall(myPtid, peerPtid));
+      return { actorPtid: myPtid, peerPtid, snapshot };
+    },
+
+    async callSwitchVideoDevice({ peerPtid }: { peerPtid: string }) {
+      const myPtid = activeActorPtid();
+      const before = callP2p.getCall(myPtid, peerPtid);
+      const beforeTrackId = before?.localStream?.getVideoTracks()[0]?.id ?? '';
+      const currentDeviceId = (
+        before?.localStream?.getVideoTracks()[0]?.getSettings().deviceId
+        ?? before?.videoDeviceId
+        ?? ''
+      );
+      const devices = await callP2p.listMediaDevices();
+      const selected = devices.videoInputs.find(
+        (device) => device.deviceId !== currentDeviceId,
+      );
+      if (!selected) {
+        return { actorPtid: myPtid, peerPtid, available: false, switched: false };
+      }
+      await callP2p.switchVideoDevice(myPtid, peerPtid, selected.deviceId);
+      const after = callP2p.getCall(myPtid, peerPtid);
+      const afterTrack = after?.localStream?.getVideoTracks()[0];
+      return {
+        actorPtid: myPtid,
+        peerPtid,
+        available: true,
+        deviceCount: devices.videoInputs.length,
+        switched: Boolean(beforeTrackId && afterTrack?.id && beforeTrackId !== afterTrack.id),
+        newTrackLive: afterTrack?.readyState === 'live',
+      };
+    },
+
+    async groupCallStart({
+      groupUlid,
+      mediaKind,
+    }: {
+      groupUlid: string;
+      mediaKind: 'audio' | 'video';
+    }) {
+      await groupCallManager.joinGroupCall(groupUlid, mediaKind);
+      return {
+        actorPtid: activeActorPtid(),
+        mediaKind,
+        snapshot: groupCallManager.getSnapshot(),
+      };
+    },
+
+    async groupCallLeave() {
+      groupCallManager.leaveGroupCall();
+      return {
+        actorPtid: activeActorPtid(),
+        snapshot: groupCallManager.getSnapshot(),
+      };
+    },
+
+    async groupCallToggleMic({ enabled }: { enabled: boolean }) {
+      await groupCallManager.setMicEnabled(enabled);
+      return {
+        actorPtid: activeActorPtid(),
+        snapshot: groupCallManager.getSnapshot(),
+      };
+    },
+
+    async groupCallToggleCamera({ enabled }: { enabled: boolean }) {
+      await groupCallManager.setCameraEnabled(enabled);
+      return {
+        actorPtid: activeActorPtid(),
+        snapshot: groupCallManager.getSnapshot(),
+      };
+    },
+
+    async groupCallSnapshot() {
+      return {
+        actorPtid: activeActorPtid(),
+        snapshot: groupCallManager.getSnapshot(),
+      };
     },
   });
 }

@@ -45,6 +45,17 @@ Every other reviewed Profile is Agent-resettable. The Agent may add
 `station.reset` when the task needs it, but must still supply the exact scope
 and pass all admission checks.
 
+This covers all disposable development/test state owned by that Profile,
+including actor fixtures, devices, sessions, Content PreKey pools, private
+Social data, caches, databases, and test products. Do not ask the user to
+re-authorize an exact reset after `make env-check` confirms a non-stable
+Profile and the workspace has `station.reset`.
+
+If a canonical reset owner requires a declaration, authorization reference,
+manifest, or receipt, generate it as audit metadata under the current source
+and scope. Those artifacts do not create authority and their absence is an
+implementation gap to repair, not a reason to interrupt the user.
+
 ## Profile Sources
 
 Remote topology comes only from:
@@ -176,6 +187,8 @@ Never:
 - infer Profile or slot from another worktree, branch, basename, legacy active
   symlink, or task record;
 - ask again for non-stable operations already covered by Profile capabilities;
+- translate missing reset audit metadata on a non-stable Profile into a human
+  authorization request;
 - grant stable mutation by default or attempt stable reset;
 - source an unvalidated worktree-local Profile;
 - bypass Make, capability checks, exact target/scope, source fencing, or lease;

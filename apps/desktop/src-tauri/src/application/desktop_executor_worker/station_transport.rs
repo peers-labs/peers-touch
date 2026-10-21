@@ -579,6 +579,7 @@ fn station_error_kind_name(value: &StationClientErrorKind) -> &'static str {
         StationClientErrorKind::SessionRevoked => "sessionRevoked",
         StationClientErrorKind::HttpStatus(_) => "httpStatus",
         StationClientErrorKind::Network => "network",
+        StationClientErrorKind::Unavailable => "unavailable",
         StationClientErrorKind::Decode => "decode",
         StationClientErrorKind::InvalidResponse => "invalidResponse",
         StationClientErrorKind::Overloaded => "overloaded",

@@ -75,6 +75,7 @@ MAX_INVOCATION_LIFETIME_SECONDS = 900
 @dataclass(frozen=True)
 class ProfileTarget:
     profile_id: str
+    service_id: str
     deployment_environment: str
     destructive_scope: str
     activation_work_item_id: str
@@ -88,6 +89,7 @@ PROFILE_TARGETS = MappingProxyType(
     {
         "four": ProfileTarget(
             profile_id="four",
+            service_id="station-four",
             deployment_environment="station-four",
             destructive_scope="station-four-social-private",
             activation_work_item_id="secure-content-w12a-four",
@@ -98,6 +100,7 @@ PROFILE_TARGETS = MappingProxyType(
         ),
         "fiveArm": ProfileTarget(
             profile_id="fiveArm",
+            service_id="station-five-arm",
             deployment_environment="station-five-arm",
             destructive_scope="station-five-arm-social-private",
             activation_work_item_id="secure-content-w12a-five-arm",
@@ -109,6 +112,22 @@ PROFILE_TARGETS = MappingProxyType(
     }
 )
 PROFILE_ORDER = tuple(PROFILE_TARGETS)
+CROSS_STATION_SOCIAL_PROFILE_TARGETS = MappingProxyType(
+    {
+        "chat-native-disposable": ProfileTarget(
+            profile_id="chat-native-disposable",
+            service_id="station-four",
+            deployment_environment="chat-native-disposable-station",
+            destructive_scope="chat-native-disposable-social-private",
+            activation_work_item_id="cross-station-social-schema-four",
+            activation_workstream_id="CSS-SCHEMA-FOUR",
+            final_work_item_id="secure-content-w12-four",
+            final_workstream_id="W12F-FOUR",
+            ordinal=1,
+        ),
+        "fiveArm": PROFILE_TARGETS["fiveArm"],
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -130,6 +149,7 @@ class ActivationOwnerDescriptor:
     aggregate_workstream_id: str
     source_evidence_root: str
     journey_id: str
+    profile_targets: Mapping[str, ProfileTarget]
     activation_bindings: Mapping[str, ActivationWorkItemBinding]
     allowed_intents: tuple[str, ...]
 
@@ -145,6 +165,7 @@ SECURE_CONTENT_OWNER = ActivationOwnerDescriptor(
     aggregate_workstream_id=SOURCE_TASK_ID,
     source_evidence_root=SOURCE_EVIDENCE_ROOT,
     journey_id=JOURNEY_ID,
+    profile_targets=PROFILE_TARGETS,
     activation_bindings=MappingProxyType(
         {
             profile_id: ActivationWorkItemBinding(
@@ -174,9 +195,10 @@ CROSS_STATION_SOCIAL_OWNER = ActivationOwnerDescriptor(
     aggregate_workstream_id="CSS-W-ACTIVATION",
     source_evidence_root="CSS-08A",
     journey_id="SOC-SEC-SCHEMA-ACTIVATION",
+    profile_targets=CROSS_STATION_SOCIAL_PROFILE_TARGETS,
     activation_bindings=MappingProxyType(
         {
-            "four": ActivationWorkItemBinding(
+            "chat-native-disposable": ActivationWorkItemBinding(
                 work_item_id="cross-station-social-schema-four",
                 workstream_id="CSS-SCHEMA-FOUR",
                 task_id="CSS-08A-schema-activation",
@@ -508,11 +530,21 @@ def _require_intent(value: Any) -> str:
     return intent
 
 
-def _target(profile_id: str) -> ProfileTarget:
+def _profile_order(owner: ActivationOwnerDescriptor) -> tuple[str, ...]:
+    return tuple(owner.profile_targets)
+
+
+def _target(
+    owner: ActivationOwnerDescriptor,
+    profile_id: str,
+) -> ProfileTarget:
     try:
-        return PROFILE_TARGETS[profile_id]
+        return owner.profile_targets[profile_id]
     except KeyError as error:
-        raise ValidationError(f"unsupported profile {profile_id!r}") from error
+        raise ValidationError(
+            f"owner {owner.owner_id!r} does not support profile "
+            f"{profile_id!r}"
+        ) from error
 
 
 def _owner_descriptor(owner_id: str) -> ActivationOwnerDescriptor:
@@ -1931,7 +1963,9 @@ class SchemaActivationOwner:
         self.owner_descriptor = registered_owner
         self.command_runner = command_runner
         self.identity_loader = identity_loader or self._load_identity
-        self.declaration_loader = declaration_loader or self._load_declaration
+        self.declaration_loader = (
+            declaration_loader or self._project_source_declaration
+        )
         if profile_declaration_loader is not None:
             self.profile_declaration_loader = profile_declaration_loader
         elif declaration_loader is not None:
@@ -1939,7 +1973,9 @@ class SchemaActivationOwner:
                 lambda work_item_id, _: self.declaration_loader(work_item_id)
             )
         else:
-            self.profile_declaration_loader = self._activate_profile_declaration
+            self.profile_declaration_loader = (
+                self._project_profile_declaration
+            )
         self.clean_checker = clean_checker or self._check_clean
         self.source_checkpoint_runner = source_checkpoint_runner or (
             CurrentSourceCheckpointRunner(
@@ -2080,7 +2116,7 @@ class SchemaActivationOwner:
         budget = _require_integer(
             budget_seconds, "budget_seconds", minimum=1
         )
-        target = _target(profile_id)
+        target = _target(self.owner_descriptor, profile_id)
         work_item_id, expected_workstream, task_id = _work_item(
             target,
             checked_intent,
@@ -2138,6 +2174,7 @@ class SchemaActivationOwner:
             "source_commit": generation,
             "workspace_id": identity["workspaceId"],
             "profile_id": target.profile_id,
+            "station_service_id": target.service_id,
             "deployment_environment": target.deployment_environment,
             "destructive_scope": target.destructive_scope,
             "declaration_id": declaration["declarationId"],
@@ -2422,9 +2459,10 @@ class SchemaActivationOwner:
         generation = _require_text(
             generation_id, "generation_id", pattern=GIT_COMMIT
         )
-        if tuple(profiles) != PROFILE_ORDER:
+        profile_order = _profile_order(self.owner_descriptor)
+        if tuple(profiles) != profile_order:
             raise ValidationError(
-                f"profiles must be exactly {','.join(PROFILE_ORDER)} in serial order"
+                f"profiles must be exactly {','.join(profile_order)} in serial order"
             )
         identity = self._current_identity(
             generation,
@@ -2434,8 +2472,8 @@ class SchemaActivationOwner:
         source_result = self._load_source_result(generation)
         child_results: list[Mapping[str, Any]] = []
         children: list[dict[str, Any]] = []
-        for profile_id in PROFILE_ORDER:
-            target = _target(profile_id)
+        for profile_id in profile_order:
+            target = _target(self.owner_descriptor, profile_id)
             paths = sorted(
                 self._profile_parent(checked_intent, generation, profile_id).glob(
                     "*/result.json"
@@ -2474,7 +2512,10 @@ class SchemaActivationOwner:
             raise ValidationError("profile declarations must be distinct")
         if _require_timestamp(
             child_results[1]["completed_at"], "fiveArm completed_at"
-        ) < _require_timestamp(child_results[0]["completed_at"], "four completed_at"):
+        ) < _require_timestamp(
+            child_results[0]["completed_at"],
+            f"{profile_order[0]} completed_at",
+        ):
             raise ValidationError("profile results do not prove serial execution")
         aggregate_directory = self._aggregate_directory(
             checked_intent, generation
@@ -2494,7 +2535,7 @@ class SchemaActivationOwner:
                 "source_commit": generation,
                 "workspace_id": identity["workspaceId"],
                 "reset_intent": checked_intent,
-                "profiles": list(PROFILE_ORDER),
+                "profiles": list(profile_order),
                 "source_freeze_ref": self._source_result_ref(generation),
                 "source_freeze_digest": source_result["result_digest"],
                 "children": children,
@@ -2576,17 +2617,23 @@ class SchemaActivationOwner:
         )
         return _decode_process_json(completed, "worktree binding capture")
 
-    def _load_declaration(self, work_item_id: str) -> Mapping[str, Any]:
-        completed = self.command_runner(
-            ["make", "dev-check", f"WORK_ITEM={work_item_id}"],
-            cwd=self.repo_root,
-            capture_output=True,
-            text=True,
-            check=False,
+    def _project_source_declaration(
+        self,
+        work_item_id: str,
+    ) -> Mapping[str, Any]:
+        return self._project_declaration(
+            work_item_id,
+            self.owner_descriptor.source_workstream_id,
         )
-        return _decode_process_json(completed, "Development declaration readback")
 
-    def _activate_profile_declaration(
+    def _project_profile_declaration(
+        self,
+        work_item_id: str,
+        workstream_id: str,
+    ) -> Mapping[str, Any]:
+        return self._project_declaration(work_item_id, workstream_id)
+
+    def _project_declaration(
         self,
         work_item_id: str,
         workstream_id: str,
@@ -2600,24 +2647,75 @@ class SchemaActivationOwner:
             )
             if projection.work_item_id != work_item_id:
                 raise work_item_control.ManifestError(
-                    "profile work-item projection does not match the requested owner"
+                    "work-item projection does not match the requested owner"
                 )
-            return work_item_control.ensure_active_projection(
-                projection,
-                repo_root=self.repo_root,
-            )
-        except (
-            work_item_control.ManifestError,
-            work_item_control.LedgerReadbackError,
-            work_item_control.CommandError,
-        ) as error:
+            if projection.plan_ref != self.owner_descriptor.plan_path:
+                raise work_item_control.ManifestError(
+                    "work-item projection does not match the owner Plan"
+                )
+        except work_item_control.ManifestError as error:
             raise BoundaryUnavailable(
-                f"profile Development declaration is unavailable: {error}",
+                f"tracked Plan work-item projection is unavailable: {error}",
                 details={
                     "work_item_id": work_item_id,
                     "workstream_id": workstream_id,
                 },
             ) from error
+
+        identity = _validate_identity(self.identity_loader(), self.repo_root)
+        source_claims = [
+            {"pathPrefix": path_prefix, "mode": mode}
+            for mode, path_prefix in (
+                value.split(":", 1)
+                for value in projection.source_claim_arguments
+            )
+        ]
+        runtime_claims = [
+            {"kind": kind, "resourceId": resource_id, "mode": mode}
+            for mode, kind, resource_id in (
+                value.split(":", 2)
+                for value in projection.runtime_claim_arguments
+            )
+        ]
+        authorization = {
+            "checkpoint": dict(projection.authorization["checkpoint"]),
+            "delivery": dict(projection.authorization["delivery"]),
+            "runtime": {
+                "deployProfiles": sorted(
+                    projection.authorization["runtime"]["deployProfiles"]
+                ),
+                "destructiveResetScopes": sorted(
+                    projection.authorization["runtime"][
+                        "destructiveResetScopes"
+                    ]
+                ),
+            },
+            "history": dict(projection.authorization["history"]),
+        }
+        declaration = {
+            "kind": "tracked-plan-work-item-projection",
+            "declarationId": f"{work_item_id}-{identity['workspaceId']}",
+            "workItemId": work_item_id,
+            "workstreamId": workstream_id,
+            "workClass": projection.work_class,
+            "purpose": projection.purpose,
+            "planId": self.owner_descriptor.plan_id,
+            "planPath": projection.plan_ref,
+            "taskId": projection.task_id,
+            "journeyId": projection.journey_id,
+            "workspaceId": identity["workspaceId"],
+            "workspaceRoot": identity["root"],
+            "branch": identity["branch"],
+            "sourceHead": identity["head"],
+            "sourceClaims": source_claims,
+            "runtimeClaims": runtime_claims,
+            "authorization": authorization,
+            "state": "ACTIVE",
+        }
+        return {
+            **declaration,
+            "declarationDigest": canonical_digest(declaration),
+        }
 
     def _check_clean(self) -> None:
         completed = self.command_runner(
@@ -2752,7 +2850,11 @@ class SchemaActivationOwner:
     ) -> None:
         if target.ordinal == 1:
             return
-        predecessor = _target(PROFILE_ORDER[target.ordinal - 2])
+        profile_order = _profile_order(self.owner_descriptor)
+        predecessor = _target(
+            self.owner_descriptor,
+            profile_order[target.ordinal - 2],
+        )
         paths = sorted(
             self._profile_parent(
                 intent, generation_id, predecessor.profile_id
@@ -2865,6 +2967,7 @@ class SchemaActivationOwner:
             "source_commit": manifest["source_commit"],
             "workspace_id": manifest["workspace_id"],
             "profile_id": manifest["profile_id"],
+            "station_service_id": request["station_service_id"],
             "deployment_environment": manifest["deployment_environment"],
             "destructive_scope": manifest["destructive_scope"],
             "declaration_id": request["declaration_id"],
@@ -3100,6 +3203,7 @@ class SchemaActivationOwner:
             if intent == "SCHEMA_ACTIVATION"
             else "W12"
         )
+        profile_order = _profile_order(self.owner_descriptor)
         expected = {
             "schema_version": SCHEMA_VERSION,
             "kind": AGGREGATE_RESULT_KIND,
@@ -3109,7 +3213,7 @@ class SchemaActivationOwner:
             "source_commit": generation_id,
             "workspace_id": self.workspace_id,
             "reset_intent": intent,
-            "profiles": list(PROFILE_ORDER),
+            "profiles": list(profile_order),
             "status": "PASS",
             "claim": (
                 "CANONICAL_SCHEMA_ACTIVE_ONLY"
@@ -3121,7 +3225,7 @@ class SchemaActivationOwner:
             if result.get(field) != expected_value:
                 raise ValidationError(f"aggregate result has invalid {field}")
         children = result["children"]
-        if not isinstance(children, list) or len(children) != len(PROFILE_ORDER):
+        if not isinstance(children, list) or len(children) != len(profile_order):
             raise ValidationError("aggregate children are incomplete")
         for index, child_value in enumerate(children):
             child = _require_exact_keys(
@@ -3135,7 +3239,7 @@ class SchemaActivationOwner:
                     "schema_attestation_digest",
                 },
             )
-            if child.get("profile_id") != PROFILE_ORDER[index]:
+            if child.get("profile_id") != profile_order[index]:
                 raise ValidationError("aggregate child order is invalid")
             _require_text(child["reset_id"], "child reset_id", pattern=IDENTIFIER)
             _validate_ref(child["result_ref"], "child result_ref")
@@ -3190,7 +3294,7 @@ def _parser() -> argparse.ArgumentParser:
 
     run = subparsers.add_parser("run")
     run.add_argument("--workstream", required=True)
-    run.add_argument("--profile", required=True, choices=PROFILE_ORDER)
+    run.add_argument("--profile", required=True)
     run.add_argument("--intent", required=True, choices=INTENTS)
     run.add_argument("--generation-id")
     run.add_argument("--budget-seconds", required=True, type=int)

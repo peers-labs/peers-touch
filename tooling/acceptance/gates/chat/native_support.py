@@ -37,6 +37,9 @@ from tooling.acceptance.fixtures.chat_native_reset import (
     LOCAL_SOURCE_RUNTIME,
     acceptance_station_environment,
 )
+from tooling.acceptance.station_registry_native_support import (
+    station_registry_snapshot,
+)
 from tooling.acceptance.transports import SshTarget, SshTransport
 
 
@@ -46,6 +49,7 @@ ACCOUNTS = {
     "bob": "bob@p.t",
     "charlie": "carol@p.t",
 }
+CHAT_FIXTURE_FEDERATION_NAME = "chat-native-acceptance"
 NATIVE_DEV_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 
 
@@ -93,6 +97,24 @@ def runtime_station_service(
         return service
     except ProvisioningError as error:
         raise GateError(str(error)) from error
+
+
+def active_direct_route_multiaddr(client: TauriSession) -> str:
+    snapshot = station_registry_snapshot(client)
+    route = snapshot.get("route")
+    if not isinstance(route, dict) or route.get("route_type") != "direct":
+        raise GateError("Native Chat requires an active signed Direct route")
+    addresses = [
+        str(address)
+        for address in route.get("addresses", [])
+        if isinstance(address, str)
+        and "/p2p-circuit/" not in address
+    ]
+    if len(addresses) != 1:
+        raise GateError(
+            "Native Chat requires exactly one signed Direct multiaddr"
+        )
+    return addresses[0]
 
 
 @dataclass(frozen=True)
@@ -500,33 +522,32 @@ def shared_federation_id(
         )
         for actor in actors
     }
-    ordered_candidates = [
-        str(item.get("federationId") or "")
-        for item in (contexts[actors[0]] or {}).get("federations", [])
-        if isinstance(item, dict) and item.get("federationId")
-    ]
-    remaining = [
-        {
-            str(item.get("federationId") or "")
+    projected = {
+        actor: {
+            str(item.get("federationId") or ""): str(item.get("name") or "")
             for item in (contexts[actor] or {}).get("federations", [])
             if isinstance(item, dict) and item.get("federationId")
         }
-        for actor in actors[1:]
-    ]
-    federation_id = next(
-        (
-            candidate
-            for candidate in ordered_candidates
-            if all(candidate in values for values in remaining)
-        ),
-        "",
-    )
-    if not federation_id:
-        raise GateError(
-            "Native actors have no shared Federation: "
-            f"{', '.join(actors)}"
+        for actor in actors
+    }
+    shared_fixture_ids = [
+        federation_id
+        for federation_id, name in projected[actors[0]].items()
+        if name == CHAT_FIXTURE_FEDERATION_NAME
+        and all(
+            values.get(federation_id) == CHAT_FIXTURE_FEDERATION_NAME
+            for values in (
+                projected[actor]
+                for actor in actors[1:]
+            )
         )
-    return federation_id
+    ]
+    if len(shared_fixture_ids) != 1:
+        raise GateError(
+            "Native actors do not have exactly one shared Chat Fixture "
+            f"Federation: {', '.join(actors)}"
+        )
+    return shared_fixture_ids[0]
 
 
 def wait_for_peer_key_bundle(

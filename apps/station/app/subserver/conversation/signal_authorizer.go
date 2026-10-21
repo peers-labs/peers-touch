@@ -2,9 +2,15 @@ package conversation
 
 import (
 	"context"
+	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/events"
 	"github.com/peers-labs/peers-touch/station/frame/core/social_gate"
+)
+
+const (
+	signalAuthorizationConvergenceTimeout = 2 * time.Second
+	signalAuthorizationRetryInterval      = 100 * time.Millisecond
 )
 
 // conversationSignalAuthorizer implements events.SignalAuthorizer by delegating
@@ -15,8 +21,20 @@ type conversationSignalAuthorizer struct {
 }
 
 func (a *conversationSignalAuthorizer) CanSignal(senderPTID, recipientPTID string) (bool, error) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(
+		context.Background(),
+		signalAuthorizationConvergenceTimeout,
+	)
+	defer cancel()
 
+	return a.canSignal(ctx, senderPTID, recipientPTID)
+}
+
+func (a *conversationSignalAuthorizer) canSignal(
+	ctx context.Context,
+	senderPTID string,
+	recipientPTID string,
+) (bool, error) {
 	blocked, err := a.rel.IsBlocked(ctx, recipientPTID, senderPTID)
 	if err != nil {
 		return false, err
@@ -33,11 +51,31 @@ func (a *conversationSignalAuthorizer) CanSignal(senderPTID, recipientPTID strin
 		return false, nil
 	}
 
-	shared, err := a.rel.HaveSharedConversation(ctx, senderPTID, recipientPTID)
-	if err != nil {
-		return false, err
+	// Ephemeral cross-Station signaling can overtake the durable follower
+	// event that materializes the shared Conversation on the recipient Home
+	// Station. Re-read only that projection for a bounded window.
+	ticker := time.NewTicker(signalAuthorizationRetryInterval)
+	defer ticker.Stop()
+
+	for {
+		shared, err := a.rel.HaveSharedConversation(
+			ctx,
+			senderPTID,
+			recipientPTID,
+		)
+		if err != nil {
+			return false, err
+		}
+		if shared {
+			return true, nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return false, nil
+		case <-ticker.C:
+		}
 	}
-	return shared, nil
 }
 
 func registerSignalAuthorizer(rel social_gate.RelationshipQuerier) {

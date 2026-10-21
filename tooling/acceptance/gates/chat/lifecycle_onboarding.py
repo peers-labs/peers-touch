@@ -33,7 +33,7 @@ STEP_TIMEOUT = 120.0
 ONBOARDING_REQUIRED_ASSERTIONS = {
     "local_search_identity",
     "federated_handle_search_identity",
-    "station_scoped_search_identity",
+    "federation_scoped_search_identity",
     "friend_request_pending_visible",
     "duplicate_request_suppressed",
     "friend_request_rejected_visible",
@@ -138,7 +138,6 @@ class LifecycleOnboardingGate(NativeTwoClientGate):
             actor_manifest=actor_manifest,
             runtime_binding=runtime_binding,
             gate_id=GATE_ID,
-            allow_existing_fixture=True,
         )
 
     def _snapshot(self, actor: str, peer: str) -> dict[str, Any]:
@@ -327,27 +326,31 @@ class LifecycleOnboardingGate(NativeTwoClientGate):
 
     @staticmethod
     def _set_input(client: TauriSession, selector: str, value: str) -> None:
-        element = client.find_element(selector, 10)
-        client.execute_script(
-            """
-            const root = arguments[0];
-            const input = root instanceof HTMLInputElement
-              ? root
-              : root.querySelector('input');
-            const value = arguments[1];
-            if (!input) throw new Error('input missing');
-            const setter = Object.getOwnPropertyDescriptor(
-              HTMLInputElement.prototype, 'value'
-            )?.set;
-            if (!setter) throw new Error('input setter missing');
-            setter.call(input, value);
-            input.dispatchEvent(new InputEvent('input', {
-              bubbles: true, data: value, inputType: 'insertText',
-            }));
-            input.dispatchEvent(new Event('change', { bubbles: true }));
-            """,
-            element,
-            value,
+        surface = client.find_element(selector, 10)
+        input_element = (
+            surface
+            if str(getattr(surface, "tag_name", "")).lower() == "input"
+            else surface.find_element(By.CSS_SELECTOR, "input")
+        )
+        client.semantic_replace_text(input_element, value)
+        wait_until(
+            lambda: client.execute_script(
+                """
+                const input = arguments[0];
+                const expected = arguments[1];
+                const search = document.querySelector(arguments[2]);
+                return input?.value === expected
+                  && Boolean(search)
+                  && !search.disabled
+                  && !search.classList.contains('ant-btn-loading');
+                """,
+                input_element,
+                value,
+                SELECTORS["find_people_search"],
+            ),
+            "Find People input and search action readiness",
+            timeout=10,
+            interval=0.05,
         )
 
     def _open_find_people(self, client: TauriSession) -> None:
@@ -423,31 +426,36 @@ class LifecycleOnboardingGate(NativeTwoClientGate):
         client: TauriSession,
         query: str,
         expected_ptid: str,
+        predicate: Callable[[dict[str, Any]], bool] | None = None,
     ) -> dict[str, Any]:
         self._set_input(client, SELECTORS["find_people_input"], query)
         client.find_element(SELECTORS["find_people_search"], 10).click()
         return wait_until(
-            lambda: self._search_result_snapshot(client, expected_ptid),
+            lambda: (
+                result
+                if (
+                    (result := self._search_result_snapshot(
+                        client,
+                        expected_ptid,
+                    ))
+                    and (predicate is None or predicate(result))
+                )
+                else None
+            ),
             f"search result for {expected_ptid}",
             timeout=STEP_TIMEOUT,
         )
 
-    def _select_station_scope(
+    def _select_federation_scope(
         self,
         client: TauriSession,
         federation_id: str,
-        station_id: str,
     ) -> None:
         federation_selector = (
             "[data-chat-find-people-scope=\"federation\"]"
             f"[data-chat-find-people-federation-id={json.dumps(federation_id)}]"
         )
         client.find_element(federation_selector, 10).click()
-        station_selector = (
-            "[data-chat-find-people-scope=\"station\"]"
-            f"[data-chat-find-people-station-id={json.dumps(station_id)}]"
-        )
-        client.find_element(station_selector, 30).click()
 
     def _send_visible_request(
         self,
@@ -491,10 +499,20 @@ class LifecycleOnboardingGate(NativeTwoClientGate):
             json.dumps(local, sort_keys=True),
         )
 
+        federation_id = shared_federation_id(
+            self.clients,
+            (sender, receiver),
+        )
+        self._select_federation_scope(
+            client,
+            federation_id,
+        )
         exact = self._search_result(
             client,
             federated_handle,
             receiver_ptid,
+            lambda result: result.get("federatedHandle")
+            == federated_handle,
         )
         self.assert_condition(
             "federated_handle_search_identity",
@@ -504,18 +522,9 @@ class LifecycleOnboardingGate(NativeTwoClientGate):
             json.dumps(exact, sort_keys=True),
         )
 
-        federation_id = shared_federation_id(
-            self.clients,
-            (sender, receiver),
-        )
-        self._select_station_scope(
-            client,
-            federation_id,
-            station_peer_id,
-        )
         scoped = self._search_result(client, username, receiver_ptid)
         self.assert_condition(
-            "station_scoped_search_identity",
+            "federation_scoped_search_identity",
             scoped.get("peerPtid") == receiver_ptid
             and scoped.get("homeStationPeerId") == station_peer_id,
             json.dumps(scoped, sort_keys=True),
@@ -596,7 +605,7 @@ class LifecycleOnboardingGate(NativeTwoClientGate):
             "identity": receiver_identity,
             "local": local,
             "federated": exact,
-            "station": scoped,
+            "federation": scoped,
             "pendingRequestId": pending_request["id"],
         }
 
@@ -618,6 +627,14 @@ class LifecycleOnboardingGate(NativeTwoClientGate):
             receiver_identity.get("federatedHandle") or ""
         )
         self._open_find_people(client)
+        federation_id = shared_federation_id(
+            self.clients,
+            (sender, receiver),
+        )
+        self._select_federation_scope(
+            client,
+            federation_id,
+        )
         result = self._search_result(
             client,
             federated_handle,

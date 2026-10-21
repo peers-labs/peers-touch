@@ -53,6 +53,12 @@ from tooling.acceptance.fixtures.secure_content_w7 import (
     W7FixtureOwner,
     canonical_digest as fixture_identity_digest,
 )
+from tooling.acceptance.fixtures.chat_native_actors import (
+    ACTOR_ACCOUNTS,
+    ACTOR_PASSWORD,
+    FederationRoutingActor,
+    prepare_federation_routing,
+)
 from tooling.acceptance.gates.agent.foundation_runtime_client import (
     FoundationClientError,
     FoundationClientSpec,
@@ -120,6 +126,10 @@ SLOT = 5
 SOCIAL_ACCEPTANCE_SLOT = 12
 SOCIAL_CROSS_STATION_SLOT = 13
 STATION_ID = "station-four"
+SOCIAL_CROSS_STATION_PRIMARY_PROFILE = "chat-native-disposable"
+SOCIAL_CROSS_STATION_PRIMARY_DEPLOYMENT_ENVIRONMENT = (
+    "chat-native-disposable-station"
+)
 SECONDARY_PROFILE = "fiveArm"
 SECONDARY_STATION_ID = "station-five-arm"
 DESKTOP_JOURNEY = "sc-dj-desktop-pilot"
@@ -231,7 +241,12 @@ SOCIAL_CROSS_STATION_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
     }
 )
 SOCIAL_CROSS_STATION_CLIENT_BINDINGS = (
-    ("cross-station-social-alice", "alice", PROFILE, STATION_ID),
+    (
+        "cross-station-social-alice",
+        "alice",
+        SOCIAL_CROSS_STATION_PRIMARY_PROFILE,
+        STATION_ID,
+    ),
     (
         "cross-station-social-bob",
         "bob",
@@ -978,14 +993,22 @@ def _decode_access_login(payload: bytes) -> tuple[str, str]:
     return token, actor_ptid
 
 
-def _station_proto_post(url: str, payload: bytes) -> bytes:
+def _station_proto_post(
+    url: str,
+    payload: bytes,
+    *,
+    bearer_token: str = "",
+) -> bytes:
+    headers = {
+        "Accept": "application/protobuf",
+        "Content-Type": "application/protobuf",
+    }
+    if bearer_token:
+        headers["Authorization"] = f"Bearer {bearer_token}"
     request = urllib.request.Request(
         url,
         data=payload,
-        headers={
-            "Accept": "application/protobuf",
-            "Content-Type": "application/protobuf",
-        },
+        headers=headers,
         method="POST",
     )
     with urllib.request.urlopen(request, timeout=30) as response:
@@ -2038,11 +2061,16 @@ def _wait_for_private_moment_states(
     deadline = time.monotonic() + max(0.0, timeout_seconds)
     last_projection: Mapping[str, Any] = {}
     while True:
-        last_projection = _moments_harness(
-            client,
-            "readPrivateMoment",
-            {"postId": post_id},
-        )
+        try:
+            last_projection = _moments_harness(
+                client,
+                "readPrivateMoment",
+                {"postId": post_id},
+            )
+        except RuntimeOwnerBlocked as error:
+            if "moments.acceptance.privateProjectionMissing" not in str(error):
+                raise
+            last_projection = {}
         if last_projection.get("state") in accepted_states:
             return last_projection
         remaining = deadline - time.monotonic()
@@ -2127,9 +2155,81 @@ def _prepare_accepted_friendship(
     )
 
 
+def _prepare_social_suite_federation(
+    *,
+    primary_url: str,
+    secondary_url: str,
+    primary_peer_id: str,
+    secondary_peer_id: str,
+    primary_product_url: str,
+    fixture_epoch: str,
+    cleanup_stack: ExitStack,
+) -> str:
+    owner_tokens = {}
+    for service_id, url, peer_id in (
+        ("primary", primary_url, primary_peer_id),
+        ("secondary", secondary_url, secondary_peer_id),
+    ):
+        owner_tokens[service_id], _ = _station_login(
+            url,
+            station_peer_id=peer_id,
+            account=ACTOR_ACCOUNTS["alice"],
+            password=ACTOR_PASSWORD,
+        )
+    created = _station_proto_post(
+        f"{primary_url.rstrip('/')}/sub-federation/federations",
+        _proto_bytes(1, f"CSS-09 {fixture_epoch}")
+        + _proto_bytes(2, "Suite-owned Social Federation")
+        + _proto_bytes(3, "single_admin"),
+        bearer_token=owner_tokens["primary"],
+    )
+    federation_id = _proto_first_bytes(created, 1).decode("utf-8")
+    if not federation_id:
+        raise RuntimeOwnerBlocked(
+            "FIXTURE_OWNER_UNAVAILABLE",
+            "Station owner did not create the Social Suite Federation",
+            resource="fixture:cross-station-social-federation",
+        )
+
+    def archive() -> None:
+        result = _station_proto_post(
+            f"{primary_url.rstrip('/')}/sub-federation/federations/"
+            f"{urllib.parse.quote(federation_id, safe='')}/delete",
+            _proto_bytes(1, federation_id),
+            bearer_token=owner_tokens["primary"],
+        )
+        if not any(
+            field == 1 and wire == 0 and value == 1
+            for field, wire, value in _proto_fields(result)
+        ):
+            raise RuntimeOwnerBlocked(
+                "CLEANUP_FAILED",
+                "Station owner did not archive the Social Suite Federation",
+                resource="fixture:cross-station-social-federation",
+            )
+
+    cleanup_stack.callback(archive)
+    joined = _station_proto_post(
+        f"{secondary_url.rstrip('/')}/sub-federation/federations/join",
+        _proto_bytes(1, primary_product_url)
+        + _proto_bytes(2, federation_id)
+        + _proto_bytes(3, "Suite-owned cross-Station Social"),
+        bearer_token=owner_tokens["secondary"],
+    )
+    if _proto_first_bytes(joined, 1).decode("utf-8") != "active":
+        raise RuntimeOwnerBlocked(
+            "FIXTURE_OWNER_UNAVAILABLE",
+            "Station owner did not join the Social Suite Federation",
+            resource="fixture:cross-station-social-federation",
+        )
+    return federation_id
+
+
 def _prepare_cross_station_social_fixture(
     alice: FoundationRuntimeClient,
     bob: FoundationRuntimeClient,
+    *,
+    federation_id: str,
 ) -> dict[str, str]:
     alice_identity = _moments_harness(alice, "federatedActorIdentity")
     bob_identity = _moments_harness(bob, "federatedActorIdentity")
@@ -2156,48 +2256,7 @@ def _prepare_cross_station_social_fixture(
             resource="fixture:cross-station-social-actors",
         )
 
-    authority = _moments_harness(alice, "federationJoinAuthority")
-    federation_id = _required_text(
-        authority.get("federationId"),
-        "cross-station Federation ID",
-    )
-    federation_endpoint = _required_text(
-        authority.get("federationEndpoint"),
-        "cross-station Federation endpoint",
-    )
-    members = _moments_harness(
-        alice,
-        "federationMemberStations",
-        {"federationId": federation_id},
-    )
-    station_peer_ids = members.get("stationPeerIds")
-    if not isinstance(station_peer_ids, Sequence) or isinstance(
-        station_peer_ids,
-        (str, bytes),
-    ):
-        raise RuntimeOwnerBlocked(
-            "FIXTURE_OWNER_UNAVAILABLE",
-            "Cross-Station Social Federation membership is invalid",
-            resource="fixture:cross-station-social-federation",
-        )
-    if bob_station not in station_peer_ids:
-        joined = _moments_harness(
-            bob,
-            "joinAcceptanceFederation",
-            {
-                "federationEndpoint": federation_endpoint,
-                "federationId": federation_id,
-            },
-        )
-        if (
-            joined.get("federationId") != federation_id
-            or joined.get("status") != "active"
-        ):
-            raise RuntimeOwnerBlocked(
-                "FIXTURE_OWNER_UNAVAILABLE",
-                "fiveArm did not join the Cross-Station Social Federation",
-                resource="fixture:cross-station-social-federation",
-            )
+    federation_id = _required_text(federation_id, "Suite Federation ID")
     for client, expected_station, label in (
         (alice, alice_station, "Alice"),
         (bob, bob_station, "Bob"),
@@ -2224,16 +2283,43 @@ def _prepare_cross_station_social_fixture(
         bob_identity.get("federatedHandle"),
         "cross-station Bob handle",
     )
-    _wait_for_federated_locator(
-        alice,
-        federated_handle=bob_handle,
-        expected_home_station_peer_id=bob_station,
+    alice_handle = _required_text(
+        alice_identity.get("federatedHandle"),
+        "cross-station Alice handle",
     )
-    _wait_for_federated_profile(
-        alice,
-        federated_handle=bob_handle,
-        expected_home_station_peer_id=bob_station,
-    )
+    alice_station_url = _required_text(
+        alice.station_url,
+        "cross-station Alice Station URL",
+    ).rstrip("/")
+    bob_station_url = _required_text(
+        bob.station_url,
+        "cross-station Bob Station URL",
+    ).rstrip("/")
+    try:
+        prepare_federation_routing(
+            {
+                alice_station_url: (
+                    FederationRoutingActor(
+                        ptid=alice_ptid,
+                        federated_handle=alice_handle,
+                        home_station_peer_id=alice_station,
+                    ),
+                ),
+                bob_station_url: (
+                    FederationRoutingActor(
+                        ptid=bob_ptid,
+                        federated_handle=bob_handle,
+                        home_station_peer_id=bob_station,
+                    ),
+                ),
+            }
+        )
+    except BlockedError as error:
+        raise RuntimeOwnerBlocked(
+            "FIXTURE_OWNER_UNAVAILABLE",
+            "Cross-Station Social Federation routing did not converge",
+            resource="fixture:cross-station-social-routing",
+        ) from error
     resolved = _wait_for_federated_actor_resolution(
         alice,
         federation_id=federation_id,
@@ -2286,79 +2372,6 @@ def _prepare_cross_station_social_fixture(
         "bobStationPeerId": bob_station,
         "federationId": federation_id,
     }
-
-
-def _wait_for_federated_locator(
-    client: FoundationRuntimeClient,
-    *,
-    federated_handle: str,
-    expected_home_station_peer_id: str,
-    timeout_seconds: float = 300.0,
-    poll_interval_seconds: float = 5.0,
-    monotonic: Callable[[], float] = time.monotonic,
-    sleep: Callable[[float], None] = time.sleep,
-    http_get: Callable[..., tuple[int, bytes]] = _http_get,
-) -> Mapping[str, Any]:
-    query = urllib.parse.urlencode(
-        {
-            "handle": federated_handle,
-            "timeout": "15s",
-        }
-    )
-    url = (
-        f"{client.station_url.rstrip('/')}"
-        f"/sub-bootstrap/locator/lookup?{query}"
-    )
-    deadline = monotonic() + timeout_seconds
-    while True:
-        status, body = http_get(
-            url,
-            headers={"Accept": "application/json"},
-        )
-        if status == 200:
-            try:
-                envelope = json.loads(body.decode("utf-8"))
-            except (UnicodeDecodeError, json.JSONDecodeError) as error:
-                raise RuntimeOwnerBlocked(
-                    "FIXTURE_OWNER_UNAVAILABLE",
-                    "Cross-Station Social locator probe returned invalid JSON",
-                    resource="fixture:cross-station-social-locator",
-                ) from error
-            data = (
-                envelope.get("data")
-                if isinstance(envelope, Mapping)
-                and isinstance(envelope.get("data"), Mapping)
-                else {}
-            )
-            if (
-                data.get("home_station_peer_id")
-                != expected_home_station_peer_id
-                or not str(data.get("federated_handle") or "").strip()
-            ):
-                raise RuntimeOwnerBlocked(
-                    "FIXTURE_OWNER_UNAVAILABLE",
-                    "Cross-Station Social locator probe returned stale identity",
-                    resource="fixture:cross-station-social-locator",
-                )
-            return data
-        if status != 404:
-            raise RuntimeOwnerBlocked(
-                "FIXTURE_OWNER_UNAVAILABLE",
-                (
-                    "Cross-Station Social locator convergence probe returned "
-                    f"HTTP {status}"
-                ),
-                resource="fixture:cross-station-social-locator",
-            )
-        remaining = deadline - monotonic()
-        if remaining <= 0:
-            break
-        sleep(min(poll_interval_seconds, remaining))
-    raise RuntimeOwnerBlocked(
-        "FIXTURE_OWNER_UNAVAILABLE",
-        "Cross-Station Social locator did not converge before the deadline",
-        resource="fixture:cross-station-social-locator",
-    )
 
 
 def _wait_for_federated_actor_resolution(
@@ -2433,79 +2446,6 @@ def _wait_for_federated_actor_resolution(
         "FIXTURE_OWNER_UNAVAILABLE",
         "Cross-Station Social resolver did not converge before the deadline",
         resource="fixture:cross-station-social-resolver",
-    )
-
-
-def _wait_for_federated_profile(
-    client: FoundationRuntimeClient,
-    *,
-    federated_handle: str,
-    expected_home_station_peer_id: str,
-    timeout_seconds: float = 300.0,
-    poll_interval_seconds: float = 5.0,
-    monotonic: Callable[[], float] = time.monotonic,
-    sleep: Callable[[float], None] = time.sleep,
-    http_get: Callable[..., tuple[int, bytes]] = _http_get,
-) -> Mapping[str, Any]:
-    query = urllib.parse.urlencode(
-        {
-            "handle": federated_handle,
-            "timeout": "15s",
-        }
-    )
-    url = (
-        f"{client.station_url.rstrip('/')}"
-        f"/sub-bootstrap/federation/resolve?{query}"
-    )
-    deadline = monotonic() + timeout_seconds
-    while True:
-        status, body = http_get(
-            url,
-            headers={"Accept": "application/json"},
-        )
-        if status == 200:
-            try:
-                envelope = json.loads(body.decode("utf-8"))
-            except (UnicodeDecodeError, json.JSONDecodeError) as error:
-                raise RuntimeOwnerBlocked(
-                    "FIXTURE_OWNER_UNAVAILABLE",
-                    "Cross-Station Social profile probe returned invalid JSON",
-                    resource="fixture:cross-station-social-profile",
-                ) from error
-            data = (
-                envelope.get("data")
-                if isinstance(envelope, Mapping)
-                and isinstance(envelope.get("data"), Mapping)
-                else {}
-            )
-            if (
-                data.get("home_station_peer_id")
-                != expected_home_station_peer_id
-                or not str(data.get("handle") or "").strip()
-            ):
-                raise RuntimeOwnerBlocked(
-                    "FIXTURE_OWNER_UNAVAILABLE",
-                    "Cross-Station Social profile probe returned stale identity",
-                    resource="fixture:cross-station-social-profile",
-                )
-            return data
-        if status < 500 and status != 404:
-            raise RuntimeOwnerBlocked(
-                "FIXTURE_OWNER_UNAVAILABLE",
-                (
-                    "Cross-Station Social profile convergence probe returned "
-                    f"HTTP {status}"
-                ),
-                resource="fixture:cross-station-social-profile",
-            )
-        remaining = deadline - monotonic()
-        if remaining <= 0:
-            break
-        sleep(min(poll_interval_seconds, remaining))
-    raise RuntimeOwnerBlocked(
-        "FIXTURE_OWNER_UNAVAILABLE",
-        "Cross-Station Social profile did not converge before the deadline",
-        resource="fixture:cross-station-social-profile",
     )
 
 
@@ -2689,6 +2629,8 @@ def _resolve_machine_profile(
     repo_root: Path,
     *,
     expected_slot: int = SLOT,
+    expected_profile: str = PROFILE,
+    expected_deployment_environment: str = STATION_ID,
 ) -> tuple[dict[str, Any], dict[str, str]]:
     process = subprocess.run(
         [
@@ -2707,7 +2649,7 @@ def _resolve_machine_profile(
         raise RuntimeOwnerBlocked(
             "PROFILE_AUTHORITY_UNAVAILABLE",
             "machine profile authority returned invalid JSON",
-            resource="profile:four",
+            resource=f"profile:{expected_profile}",
         ) from error
     binding = resolved.get("binding") if isinstance(resolved, Mapping) else None
     profile = resolved.get("profile") if isinstance(resolved, Mapping) else None
@@ -2715,17 +2657,19 @@ def _resolve_machine_profile(
         process.returncode != 0
         or not isinstance(binding, Mapping)
         or not isinstance(profile, Mapping)
-        or binding.get("profile") != PROFILE
+        or binding.get("profile") != expected_profile
         or binding.get("slot") != expected_slot
-        or profile.get("stationDeployEnvironment") != STATION_ID
+        or profile.get("stationDeployEnvironment")
+        != expected_deployment_environment
     ):
         raise RuntimeOwnerBlocked(
             "CONTROLLER_BINDING_MISMATCH",
             (
-                "runtime owner requires the authoritative Profile four, "
+                "runtime owner requires the authoritative Profile "
+                f"{expected_profile}, "
                 f"slot {expected_slot} binding"
             ),
-            resource="profile:four",
+            resource=f"profile:{expected_profile}",
         )
     profile_path = Path(str(profile.get("profileFile") or ""))
     try:
@@ -2733,8 +2677,8 @@ def _resolve_machine_profile(
     except (OSError, ValueError) as error:
         raise RuntimeOwnerBlocked(
             "PROFILE_AUTHORITY_UNAVAILABLE",
-            f"cannot load Profile four: {error}",
-            resource="profile:four",
+            f"cannot load Profile {expected_profile}: {error}",
+            resource=f"profile:{expected_profile}",
         ) from error
     return dict(resolved), profile_env
 
@@ -3293,7 +3237,11 @@ def _require_social_acceptance_source(
             != schema_activation.AGGREGATE_RESULT_KIND
             or unsigned.get("source_commit") != generation
             or unsigned.get("reset_intent") != "SCHEMA_ACTIVATION"
-            or unsigned.get("profiles") != [PROFILE, SECONDARY_PROFILE]
+            or unsigned.get("profiles")
+            != [
+                SOCIAL_CROSS_STATION_PRIMARY_PROFILE,
+                SECONDARY_PROFILE,
+            ]
             or unsigned.get("status") != "PASS"
             or unsigned.get("claim") != "CANONICAL_SCHEMA_ACTIVE_ONLY"
             or not isinstance(generation, str)
@@ -4861,7 +4809,6 @@ def _make_client(
     *,
     repo_root: Path,
     runtime_root: Path,
-    station_url: str,
     profile_env: Mapping[str, str],
     source_commit: str,
     client_id: str,
@@ -4882,7 +4829,10 @@ def _make_client(
             storage_root=runtime_root / "clients" / client_id / "run" / "storage",
             profile=f"secure-content-{runtime_kind}-{client_id}",
         ),
-        station_url=station_url,
+        station_url=_required_text(
+            profile_env.get("PT_STATION_URL"),
+            f"{client_id} canonical Station origin",
+        ).rstrip("/"),
         profile_env={
             **profile_env,
             "PT_BUILD_SOURCE_COMMIT": source_commit,
@@ -5591,6 +5541,24 @@ def _start_client(
     account: str,
     password: str,
 ) -> Mapping[str, Any]:
+    _start_authenticated_client(
+        client,
+        account=account,
+        password=password,
+    )
+    previous_namespace = client.harness_namespace
+    try:
+        return _wait_for_moments_snapshot(client)
+    finally:
+        client.harness_namespace = previous_namespace
+
+
+def _start_authenticated_client(
+    client: FoundationRuntimeClient,
+    *,
+    account: str,
+    password: str,
+) -> None:
     try:
         client.start()
     except FoundationClientError as error:
@@ -5607,11 +5575,6 @@ def _start_client(
         account=account,
         password=password,
     )
-    previous_namespace = client.harness_namespace
-    try:
-        return _wait_for_moments_snapshot(client)
-    finally:
-        client.harness_namespace = previous_namespace
 
 
 def _manifest_payload(
@@ -6658,7 +6621,6 @@ class W7RuntimeOwner:
                 client = _make_client(
                     repo_root=self.repo_root,
                     runtime_root=owner_root,
-                    station_url=station_url,
                     profile_env=profile_env,
                     source_commit=str(identity["head"]),
                     client_id=client_id,
@@ -7190,7 +7152,9 @@ class W7RuntimeOwner:
             raise RuntimeOwnerBlocked(
                 "CONTROLLER_BINDING_MISMATCH",
                 f"Cross-Station Social requires slot {SOCIAL_CROSS_STATION_SLOT}",
-                resource="profile:four",
+                resource=(
+                    f"profile:{SOCIAL_CROSS_STATION_PRIMARY_PROFILE}"
+                ),
             )
         identity = _require_social_acceptance_source(
             self.repo_root,
@@ -7213,6 +7177,10 @@ class W7RuntimeOwner:
         resolved, profile_env = _resolve_machine_profile(
             self.repo_root,
             expected_slot=slot,
+            expected_profile=SOCIAL_CROSS_STATION_PRIMARY_PROFILE,
+            expected_deployment_environment=(
+                SOCIAL_CROSS_STATION_PRIMARY_DEPLOYMENT_ENVIRONMENT
+            ),
         )
         _secondary_profile_path, secondary_profile_env = (
             _resolve_secondary_profile(resolved)
@@ -7309,7 +7277,7 @@ class W7RuntimeOwner:
                 schema_identity,
                 primary_attestation,
                 service_id=STATION_ID,
-                profile_id=PROFILE,
+                profile_id=SOCIAL_CROSS_STATION_PRIMARY_PROFILE,
                 attested_endpoint=profile_env["PT_STATION_URL"],
                 accepted_intents=("SCHEMA_ACTIVATION",),
             )
@@ -7383,9 +7351,6 @@ class W7RuntimeOwner:
                 client = _make_client(
                     repo_root=self.repo_root,
                     runtime_root=owner_root,
-                    station_url=(
-                        station_url if index == 0 else secondary_station_url
-                    ),
                     profile_env=(
                         profile_env if index == 0 else secondary_profile_env
                     ),
@@ -7440,7 +7405,22 @@ class W7RuntimeOwner:
             recovery_phrase, recovery_preparation = _prepare_portable_recovery(
                 bob
             )
-            fixture_identity = _prepare_cross_station_social_fixture(alice, bob)
+            federation_id = _prepare_social_suite_federation(
+                primary_url=station_url,
+                secondary_url=secondary_station_url,
+                primary_peer_id=primary_attestation.runtime_identity,
+                secondary_peer_id=secondary_attestation.runtime_identity,
+                primary_product_url=profile_env["PT_STATION_URL"],
+                fixture_epoch=fixture_epoch,
+                cleanup_stack=stack,
+            )
+            for client in (alice, bob):
+                _moments_harness(client, "reconcileFederationProjection")
+            fixture_identity = _prepare_cross_station_social_fixture(
+                alice,
+                bob,
+                federation_id=federation_id,
+            )
             eve_token, eve_ptid = _station_login(
                 secondary_station_url,
                 station_peer_id=secondary_attestation.runtime_identity,
@@ -7545,14 +7525,16 @@ class W7RuntimeOwner:
                     "workspaceId": str(identity["workspaceId"]),
                     "worktreeSetDigest": str(identity["worktreeSetDigest"]),
                     "controllerBinding": {
-                        "profileId": PROFILE,
+                        "profileId": SOCIAL_CROSS_STATION_PRIMARY_PROFILE,
                         "slot": slot,
                     },
                     "fixtureManifestRef": fixture_ref,
                     "fixtureManifestDigest": fixture_digest,
                     "services": {
                         STATION_ID: {
-                            "profileId": PROFILE,
+                            "profileId": (
+                                SOCIAL_CROSS_STATION_PRIMARY_PROFILE
+                            ),
                             "runtimeIdentitySha256": _sha256(
                                 primary_attestation.runtime_identity
                             ),
@@ -8049,7 +8031,6 @@ class W7RuntimeOwner:
             bob2 = _make_client(
                 repo_root=self.repo_root,
                 runtime_root=owner_root,
-                station_url=secondary_station_url,
                 profile_env=secondary_profile_env,
                 source_commit=str(identity["head"]),
                 client_id=bob2_id,
@@ -8064,7 +8045,7 @@ class W7RuntimeOwner:
                 active_client_ids=active_client_ids,
             )
             active_client_ids.add(id(bob2))
-            bob2_snapshot = _start_client(
+            _start_authenticated_client(
                 bob2,
                 account=accounts["bob"],
                 password=password,
@@ -8100,6 +8081,7 @@ class W7RuntimeOwner:
                     resource=f"client:{bob2_id}",
                 )
             _prepare_private_content_keys(bob2)
+            bob2_snapshot = _wait_for_moments_snapshot(bob2)
             clients[bob2_id] = bob2
             payloads[bob2_id] = _client_payload(
                 bob2_id,
@@ -8271,7 +8253,7 @@ class W7RuntimeOwner:
             "controlCommit": control_commit,
             "worktreeSetDigest": str(identity["worktreeSetDigest"]),
             "profileBindings": {
-                PROFILE: STATION_ID,
+                SOCIAL_CROSS_STATION_PRIMARY_PROFILE: STATION_ID,
                 SECONDARY_PROFILE: SECONDARY_STATION_ID,
             },
             "serviceRuntimeIdentityDigests": {
@@ -8310,7 +8292,10 @@ class W7RuntimeOwner:
             "activation": {
                 "aggregatePath": str(activation_path),
                 "resultDigest": activation_digest,
-                "profiles": [PROFILE, SECONDARY_PROFILE],
+                "profiles": [
+                    SOCIAL_CROSS_STATION_PRIMARY_PROFILE,
+                    SECONDARY_PROFILE,
+                ],
             },
             "runtimeManifest": runtime_summary,
             "scenarioResults": scenario_results,
@@ -8615,7 +8600,6 @@ class W7RuntimeOwner:
                 owner_root=owner_root,
                 identity=identity,
                 profile_environments=profile_environments,
-                station_endpoints=station_endpoints,
                 accounts=accounts,
                 password=password,
                 stack=stack,
@@ -8870,7 +8854,6 @@ class W7RuntimeOwner:
         owner_root: Path,
         identity: Mapping[str, Any],
         profile_environments: Mapping[str, Mapping[str, str]],
-        station_endpoints: _StationEndpoints,
         accounts: Mapping[str, str],
         password: str,
         stack: ExitStack,
@@ -8913,7 +8896,6 @@ class W7RuntimeOwner:
             client = _make_client(
                 repo_root=self.repo_root,
                 runtime_root=owner_root,
-                station_url=station_endpoints[service_id].transport_url,
                 profile_env=profile_environments[profile_id],
                 source_commit=str(identity["head"]),
                 client_id=physical_id,
@@ -9748,9 +9730,6 @@ class W7RuntimeOwner:
                 client = _make_client(
                     repo_root=self.repo_root,
                     runtime_root=owner_root,
-                    station_url=station_endpoints[
-                        service_id
-                    ].transport_url,
                     profile_env=profile_environments[profile_id],
                     source_commit=str(identity["head"]),
                     client_id=client_id,
@@ -10190,7 +10169,6 @@ class W7RuntimeOwner:
                 client = _make_client(
                     repo_root=self.repo_root,
                     runtime_root=owner_root,
-                    station_url=station_url,
                     profile_env=profile_env,
                     source_commit=str(identity["head"]),
                     client_id=client_id,
@@ -10237,7 +10215,6 @@ class W7RuntimeOwner:
             remote_client = _make_client(
                 repo_root=self.repo_root,
                 runtime_root=owner_root,
-                station_url=secondary_station_url,
                 profile_env=secondary_profile_env,
                 source_commit=str(identity["head"]),
                 client_id=remote_client_id,
@@ -10337,7 +10314,6 @@ class W7RuntimeOwner:
             eve_client = _make_client(
                 repo_root=self.repo_root,
                 runtime_root=owner_root,
-                station_url=station_url,
                 profile_env=profile_env,
                 source_commit=str(identity["head"]),
                 client_id=eve_client_id,
@@ -10489,7 +10465,6 @@ class W7RuntimeOwner:
                 bob_replacement = _make_client(
                     repo_root=self.repo_root,
                     runtime_root=owner_root,
-                    station_url=station_url,
                     profile_env=profile_env,
                     source_commit=str(identity["head"]),
                     client_id="secure-content-desktop-bob2",
@@ -10504,7 +10479,7 @@ class W7RuntimeOwner:
                     active_client_ids=active_client_ids,
                 )
                 active_client_ids.add(id(bob_replacement))
-                replacement_snapshot = _start_client(
+                _start_authenticated_client(
                     bob_replacement,
                     account=accounts[bob_account_role],
                     password=password,
@@ -10992,7 +10967,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "run-final-suite",
         ),
     )
-    parser.add_argument("--profile", default=PROFILE)
+    parser.add_argument("--profile")
     parser.add_argument("--profiles")
     parser.add_argument("--slot", type=int, default=SLOT)
     parser.add_argument("--result-root", type=Path)
@@ -11006,14 +10981,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         "run-social-desktop-acceptance-suite": SOCIAL_ACCEPTANCE_SLOT,
         "run-social-cross-station-suite": SOCIAL_CROSS_STATION_SLOT,
     }.get(args.action, SLOT)
-    if args.profile != PROFILE or args.slot != required_slot:
+    required_profile = (
+        SOCIAL_CROSS_STATION_PRIMARY_PROFILE
+        if args.action == "run-social-cross-station-suite"
+        else PROFILE
+    )
+    selected_profile = args.profile or required_profile
+    if selected_profile != required_profile or args.slot != required_slot:
         blocked = RuntimeOwnerBlocked(
             "CONTROLLER_BINDING_MISMATCH",
             (
-                f"{args.action} runtime owner requires --profile four "
+                f"{args.action} runtime owner requires "
+                f"--profile {required_profile} "
                 f"--slot {required_slot}"
             ),
-            resource="profile:four",
+            resource=f"profile:{required_profile}",
         )
         print(json.dumps(blocked.payload(), sort_keys=True), file=sys.stderr)
         return 2
@@ -11034,7 +11016,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     }
     if (
         args.action in dual_profile_actions
-        and selected_profiles != (PROFILE, SECONDARY_PROFILE)
+        and selected_profiles
+        != (
+            (
+                SOCIAL_CROSS_STATION_PRIMARY_PROFILE
+                if args.action == "run-social-cross-station-suite"
+                else PROFILE
+            ),
+            SECONDARY_PROFILE,
+        )
     ):
         resource = {
             "run-w7-desktop-suite": "runtime:secure-content-w7",
@@ -11054,7 +11044,18 @@ def main(argv: Sequence[str] | None = None) -> int:
             "CONTROLLER_BINDING_MISMATCH",
             (
                 f"{args.action} requires exactly "
-                "--profiles four,fiveArm"
+                "--profiles "
+                + ",".join(
+                    (
+                        (
+                            SOCIAL_CROSS_STATION_PRIMARY_PROFILE
+                            if args.action
+                            == "run-social-cross-station-suite"
+                            else PROFILE
+                        ),
+                        SECONDARY_PROFILE,
+                    )
+                )
             ),
             resource=resource,
         )

@@ -528,11 +528,11 @@ func expectedResetTask(
 	intent ResetIntent,
 	profileID string,
 ) (string, bool) {
-	if profileID != "four" && profileID != "fiveArm" {
-		return "", false
-	}
 	switch planID {
 	case SecureContentResetPlanID:
+		if profileID != "four" && profileID != "fiveArm" {
+			return "", false
+		}
 		switch intent {
 		case ResetIntentSchemaActivation:
 			return "W12D", true
@@ -540,7 +540,8 @@ func expectedResetTask(
 			return "W12", true
 		}
 	case CrossStationSocialResetPlanID:
-		if intent == ResetIntentSchemaActivation {
+		if intent == ResetIntentSchemaActivation &&
+			(profileID == "chat-native-disposable" || profileID == "fiveArm") {
 			return CrossStationSocialActivationTask, true
 		}
 	}
@@ -552,6 +553,10 @@ func expectedResetTarget(profileID string) (string, string, bool) {
 	switch profileID {
 	case "four":
 		return "station-four", "station-four-social-private", true
+	case "chat-native-disposable":
+		return "chat-native-disposable-station",
+			"chat-native-disposable-social-private",
+			true
 	case "fiveArm":
 		return "station-five-arm", "station-five-arm-social-private", true
 	default:

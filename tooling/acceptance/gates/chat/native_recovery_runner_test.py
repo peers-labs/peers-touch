@@ -220,6 +220,7 @@ class NativeRecoveryRuntimeBindingTests(unittest.TestCase):
                 "alice_to_bob_plaintext",
                 "alice_to_bob_delivered",
                 "recovery_phrase_valid",
+                "same_device_no_engine_restore",
                 "reinstall_restore",
             },
         )

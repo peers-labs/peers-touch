@@ -169,6 +169,16 @@ class MixedClientCrossStationGate(AcceptanceGate):
                 "offline_queue_drain",
                 offline_received.get("messageId") == offline_message_id,
             )
+            reply_text = f"ccu-cross-restored-reply-{time.time_ns()}"
+            reply_id = self.runtime.send_message(
+                mobile_id, direct_id, reply_text, kind="direct",
+            )
+            self.runtime.wait_for_message(
+                desktop_id, direct_id, reply_id,
+                lambda value: value.get("plaintext") == reply_text,
+                kind="direct", timeout_seconds=STEP_TIMEOUT,
+                description="Desktop receives Mobile reply after resume",
+            )
 
             self.runtime.interact(
                 mobile_id,

@@ -290,7 +290,7 @@ importers:
         version: 2.13.0
       '@lobehub/ui':
         specifier: ^5.15.6
-        version: 5.25.0(@lobehub/fluent-emoji@1.2.0(@babel/core@7.29.7)(@emotion/is-prop-valid@1.4.0)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(antd@6.5.3(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(@lobehub/icons@5.15.0)(@shikijs/themes@4.4.1)(@types/mdast@4.0.4)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(antd@6.5.3(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(micromark-util-types@2.0.2)(micromark@4.0.2)(motion@12.43.0(@emotion/is-prop-valid@1.4.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+        version: 5.25.0(@lobehub/fluent-emoji@1.2.0(@babel/core@7.29.7)(@emotion/is-prop-valid@1.4.0)(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(antd@6.5.3(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(@lobehub/icons@5.15.0)(@shikijs/themes@4.4.1)(@types/mdast@4.0.4)(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(antd@6.5.3(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(micromark-util-types@2.0.2)(micromark@4.0.2)(motion@12.43.0(@emotion/is-prop-valid@1.4.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@peers-touch/client-chat-core':
         specifier: workspace:*
         version: link:../../packages/client-chat-core
@@ -320,7 +320,7 @@ importers:
         version: 2.0.1(react@19.2.8)
       zustand:
         specifier: ^5.0.11
-        version: 5.0.14(@types/react@18.3.31)(immer@11.1.15)(react@19.2.8)(use-sync-external-store@1.6.0(react@19.2.8))
+        version: 5.0.14(@types/react@19.2.18)(immer@11.1.15)(react@19.2.8)(use-sync-external-store@1.6.0(react@19.2.8))
     devDependencies:
       '@bufbuild/protoc-gen-es':
         specifier: ^2.10.2
@@ -332,11 +332,11 @@ importers:
         specifier: ^24.10.1
         version: 24.13.3
       '@types/react':
-        specifier: ^18.3.28
-        version: 18.3.31
+        specifier: ^19.2.18
+        version: 19.2.18
       '@types/react-dom':
-        specifier: ^18.3.7
-        version: 18.3.7(@types/react@18.3.31)
+        specifier: ^19.2.4
+        version: 19.2.4(@types/react@19.2.18)
       '@vitejs/plugin-react':
         specifier: ^5.1.1
         version: 5.2.0(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(terser@5.49.0)(yaml@2.9.1))

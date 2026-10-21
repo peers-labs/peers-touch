@@ -205,6 +205,7 @@ function SettingsPageContent({
   const currentUserPtid = useSocialStore((state) => state.currentUserPtid);
   const friendRequests = useSocialStore((state) => state.friendRequests);
   const peerOnline = useSocialStore((state) => state.peerOnline);
+  const peerProfiles = useSocialStore((state) => state.peerProfiles);
   const groupCount = useSocialStore((state) => state.messagingConversations.reduce(
     (count, conversation) => count + Number(
       conversation.active && conversation.kind === 2,
@@ -217,8 +218,9 @@ function SettingsPageContent({
       friendRequests,
       currentUserPtid,
       peerOnline,
+      peerProfiles,
     ).length,
-    [currentUserPtid, friendRequests, peerOnline],
+    [currentUserPtid, friendRequests, peerOnline, peerProfiles],
   );
 
   // Settings controller — owns dirty/save/discard/conflict lifecycle

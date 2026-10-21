@@ -152,6 +152,10 @@ leaves。
 inventory、lane cursor、consumption markers、authority heads 与 retired
 checkpoints 从 live SQLCipher store 直接转移到 staging；Direct ratchet、MLS
 group/session/transition、pending command 与 transfer state 仍必须清除。
+没有活动 Engine 不代表新安装。Desktop 在平台安全存储中以 PTID 和安装设备 ID
+保存独立的 DSK 备份，聊天数据库丢失后使用同一签名材料重新签发 certificate。
+恢复在原子替换数据库前完成 Station enrollment 验证；已登记设备缺少 DSK 时
+要求设备授权恢复，不得在原设备 ID 下生成替代签名密钥。失败保留原数据库。
 
 ## MP-D09: 统一 Conversation Framework
 

@@ -39,6 +39,7 @@ message FederationSummary {
   uint32 member_station_count = 8;
   string my_role = 9;
   ActorCapability capability = 10;
+  bytes head_hash = 11;
 }
 
 message ActorCapability {

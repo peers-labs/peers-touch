@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-10-16
-covered_docs_hash: b4d5981623d5b6ba15e72d6c0eeeb0aaa0c790c8f43f40aa69639d8f6ebc18ea
+last_verified_at: 2026-10-22
+covered_docs_hash: bb3f6a131ec944a3fb2b637437907c7c4df52591379207b2838565623beb0b99
 
 covered_docs:
   - AGENTS.md
@@ -31,6 +31,64 @@ covered_docs:
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
 
+## Mobile Origin Contract Review
+
+The Mobile lifecycle contract follows the shared origin normalizer: every
+build accepts canonical user-selected HTTP(S), while malformed origins and
+identity substitution remain rejected. Acceptance binds the reviewed Profile
+through the existing Station-add flow; no launch-time development-origin
+environment variable is consumed by the app.
+
+This reconciles the current implementation and accepted transport choice with
+the upstream removal of phantom configuration. It does not change review
+severity or evidence policy; no new Skill, fixture, or knowledge rule is needed.
+
+## User-Accepted Execution Closure Review
+
+The release report now records the user's accepted Chat / Social execution
+closure and PR authorization separately from full release Acceptance.
+Deferred Gates retain their source-bound status, and full client and aggregate
+proof remain `UNPROVEN`. Normal authenticated setup is reused without treating
+that setup as proof of revocation, permission denial, or Session isolation.
+
+The report changes no Gate contract, evidence rule, or review severity. The
+existing exact-source and explicit-scope rules already cover this distinction;
+no `SKILL.md`, fixture, or knowledge update is required.
+
+The generated coverage report is synchronized with the current registry's
+Federation lifecycle, mixed private Social, and release analysis wiring.
+Its Proven counts remain zero. This updates a derived wiring inventory,
+without claiming product proof or changing review policy.
+
+## Release Operation Evidence Review
+
+The release report and recovery contracts now require eighteen native operation
+cells with immutable Journey, platform, step, screenshot, and receiver bindings.
+The aggregate validates each cell against the current candidate and accepts
+only completion results from its own execution.
+
+These rules strengthen the existing review requirement for exact-source,
+receiver-visible proof. The current review Skill already rejects stale,
+Harness-only, and incomplete evidence. No new review procedure is required;
+the release operation and aggregate regressions enforce the concrete binding.
+
+## 2026-10-17 Release Acceptance Index Review
+
+The Acceptance README now links the frozen 0.0.1 Mobile iOS and Desktop
+release plan. The plan itself remains excluded from the freshness digest and
+does not change review severity, evidence policy, or implementation ownership.
+No `SKILL.md`, fixture, or knowledge update is required.
+
+## 2026-10-16 Bot Module Governance Review
+
+The existing Bot product architecture is now registered as an active module
+with machine-readable ownership, required-document metadata, and accepted
+ADR-lite decisions. This closes fail-closed architecture discovery without
+changing review severity or introducing a new product rule. The current
+GitHub Review Skill already rejects unregistered active modules and consumes
+the shared architecture validator, so no `SKILL.md`, generic review fixture,
+or knowledge entry is required.
+
 ## 2026-10-16 Acceptance Scheduling Review
 
 Development verification now uses one mutually exclusive mode per pass:
@@ -42,16 +100,6 @@ The existing D-20 review boundary already owns this judgment, so
 `pt-github-review/SKILL.md` does not need another rule. The Acceptance Infra
 boundary test now pins the four modes and rejects the duplicate command shape;
 no business Gate fixture or knowledge entry is required.
-
-## 2026-10-16 Bot Module Governance Review
-
-The existing Bot product architecture is now registered as an active module
-with machine-readable ownership, required-document metadata, and accepted
-ADR-lite decisions. This closes fail-closed architecture discovery without
-changing review severity or introducing a new product rule. The current
-GitHub Review Skill already rejects unregistered active modules and consumes
-the shared architecture validator, so no `SKILL.md`, generic review fixture,
-or knowledge entry is required.
 
 ## 2026-10-15 Development Operation Authority Review
 

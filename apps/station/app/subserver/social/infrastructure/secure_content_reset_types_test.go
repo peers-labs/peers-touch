@@ -79,8 +79,9 @@ func TestResetTaskAllowlistMatchesIntentAndProfile(t *testing.T) {
 		{"final fiveArm", SecureContentResetPlanID, ResetIntentFinalCut, "fiveArm", "W12", false},
 		{"wrong final four", SecureContentResetPlanID, ResetIntentFinalCut, "four", "W12D", true},
 		{"wrong final fiveArm", SecureContentResetPlanID, ResetIntentFinalCut, "fiveArm", "W12D", true},
-		{"cross-station activation four", CrossStationSocialResetPlanID, ResetIntentSchemaActivation, "four", CrossStationSocialActivationTask, false},
+		{"cross-station activation disposable", CrossStationSocialResetPlanID, ResetIntentSchemaActivation, "chat-native-disposable", CrossStationSocialActivationTask, false},
 		{"cross-station activation fiveArm", CrossStationSocialResetPlanID, ResetIntentSchemaActivation, "fiveArm", CrossStationSocialActivationTask, false},
+		{"cross-station legacy four denied", CrossStationSocialResetPlanID, ResetIntentSchemaActivation, "four", CrossStationSocialActivationTask, true},
 		{"cross-station final cut denied", CrossStationSocialResetPlanID, ResetIntentFinalCut, "four", "W12", true},
 		{"unknown plan denied", "OTHER-PLAN", ResetIntentSchemaActivation, "four", CrossStationSocialActivationTask, true},
 	}
@@ -89,7 +90,10 @@ func TestResetTaskAllowlistMatchesIntentAndProfile(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			deployment := "station-four"
 			scope := "station-four-social-private"
-			if test.profileID == "fiveArm" {
+			if test.profileID == "chat-native-disposable" {
+				deployment = "chat-native-disposable-station"
+				scope = "chat-native-disposable-social-private"
+			} else if test.profileID == "fiveArm" {
 				deployment = "station-five-arm"
 				scope = "station-five-arm-social-private"
 			}

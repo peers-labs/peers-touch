@@ -57,8 +57,8 @@ const collector = "http://10.0.0.1:7784/event"
                 """
 export const actions = {
   'social.people.search': async (input) => {
-    const federationId = input?.federationId;
-    return [{ federationId }];
+    const contextId = input?.federationId;
+    return [{ federationId: contextId }];
   },
   'social.request.send': async () => undefined,
 };
@@ -81,9 +81,9 @@ export interface SocialPeopleSearchActionInput {
             self.assertEqual(
                 codes,
                 {
+                    "federation-context-readback-missing",
                     "observed-identity-missing",
                     "request-echoed-as-evidence",
-                    "request-identity-contract",
                 },
             )
 
@@ -130,7 +130,8 @@ export const harness = {
             """
 export const actions = {
   'social.people.search': async () => {
-    const results = [{ federationId: 'observed' }];
+    const [context] = await readFederationContexts();
+    const results = [{ federationId: context.federationId }];
     return results.map((result) => ({
       federationId: result.federationId,
     }));

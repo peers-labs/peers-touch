@@ -22,6 +22,7 @@ import {
 } from '../chatGeometry';
 import { MessageStatus } from '../../../gen/proto/domain/chat/chat_pb';
 import type { DesktopIMSenderProfileProjection } from '../../../store/socialProjection';
+import { actorDisplayName } from '../../../store/socialProfileProjection';
 import { ChatMessageContent } from './ChatMessageContent';
 import {
   isEncryptedPlaceholder,
@@ -417,7 +418,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
   const isOwn = isOwnMessage(message, currentUserPtid);
   const isGroup = !isFriendMessage(message);
   const senderProfile = getSenderProfile(activeKind, activeConversationId, message.senderPtid);
-  const senderName = senderProfile.name;
+  const senderName = actorDisplayName(senderProfile.name, t('chat.social.detail.unknownMember'));
   const senderAvatar = senderProfile.avatar;
   const replyToUlid = messageReplyToUlid(message);
   const encryptedPlaceholder = isEncryptedPlaceholder(message);

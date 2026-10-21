@@ -76,6 +76,39 @@ class AndroidSocialGateTests(unittest.TestCase):
         self.assertGreaterEqual(RUNTIME_REUSE.min_warm_reuse_rate, 0.8)
         self.assertFalse(RUNTIME_REUSE.allow_client_replacement)
 
+    def test_android_reuses_the_open_product_reaction_picker(self) -> None:
+        source = inspect.getsource(
+            AndroidSocialGate._run_ios_thread_reaction
+        )
+
+        self.assertLess(
+            SCENARIO_IDS.index("rc02-thread-reaction"),
+            SCENARIO_IDS.index("rc02-circles-publish"),
+        )
+        self.assertEqual(source.count('"social-reaction-open"'), 1)
+        self.assertIn('state.get("publicPostId")', source)
+        self.assertIn('"moments.comment"', source)
+        self.assertIn("data-reaction-picker-item", source)
+        self.assertNotIn("moments.private.comment.submit", source)
+        self.assertNotIn("social-reaction-choice", source)
+
+    def test_android_waits_for_durable_moment_draft_before_restart(self) -> None:
+        source = inspect.getsource(
+            AndroidSocialGate._run_android_recovery_lifecycle
+        )
+
+        self.assertIn('"data-draft-persisted"', source)
+        self.assertIn('"true"', source)
+        restart = source.index('"lifecycle.restart"')
+        restore = source.index('"recovery-draft-restore-action"')
+        renavigate = source.index('"navigation.apply"', restore)
+        reopen = source.index('"social-composer-open"', restore)
+        restored_text = source.index('"Android restored Moment draft"')
+        self.assertLess(restart, restore)
+        self.assertLess(restore, renavigate)
+        self.assertLess(renavigate, reopen)
+        self.assertLess(reopen, restored_text)
+
     def test_active_scenario_cleanup_preserves_failed_suite_report(self) -> None:
         gate = AndroidSocialGate()
         ledger = SuiteRuntimeLedger(
