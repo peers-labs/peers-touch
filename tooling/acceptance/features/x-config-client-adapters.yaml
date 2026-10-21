@@ -1,0 +1,54 @@
+{
+  "id": "x-config-client-adapters",
+  "status": "active",
+  "product_area": "x-config",
+  "owners": [
+    "apps/desktop/src-tauri/src/application/x_config/**",
+    "apps/desktop/src/runtimes/xConfigRuntime.ts",
+    "apps/desktop/src/services/xConfig.ts",
+    "apps/desktop/src/components/common/StationPicker.tsx",
+    "apps/mobile/src-tauri/src/runtime/x_config.rs",
+    "apps/mobile/src/runtimes/runtimeRegistry.ts",
+    "apps/mobile/src/features/station/xConfig.ts",
+    "apps/mobile/src/features/station/StationSelector.tsx"
+  ],
+  "truth_sources": [
+    "shared x-config-core verified snapshot",
+    "platform secure watermark",
+    "platform last-known-good cache",
+    "existing Station signed discovery and verified registry"
+  ],
+  "visible_surfaces": [
+    {
+      "type": "desktop-client",
+      "surface": "Station Picker verified entries and suggestions"
+    },
+    {
+      "type": "mobile-client",
+      "surface": "Station Selector verified entries and suggestions"
+    }
+  ],
+  "required_gates": [
+    "x-config-desktop-adapter-contract",
+    "x-config-mobile-adapter-contract"
+  ],
+  "acceptance": {
+    "service": [
+      "Desktop and Mobile import one shared signature, rollback, cache and projection core",
+      "refresh uses a five-second timeout, a 256 KiB body limit, no redirects, ETag and bounded backoff",
+      "accepted sequence, digest and signing key watermark use platform secure storage",
+      "release descriptors remain typed metadata and cannot install or execute content"
+    ],
+    "visible": [
+      "verified Station entries and suggestions are distinct typed rows",
+      "stale suggestions remain visible but non-actionable",
+      "selecting a suggestion invokes authenticated Station discovery before registry persistence"
+    ]
+  },
+  "negative": [
+    "React components do not fetch, parse or verify signed snapshots",
+    "catalog order never selects an active Station",
+    "invalid, removed or expired suggestions cannot mutate Station binding, route revision, lifecycle generation or Session",
+    "source checks do not prove installed Desktop, iOS, Android, Simulator or physical-device UI behavior"
+  ]
+}

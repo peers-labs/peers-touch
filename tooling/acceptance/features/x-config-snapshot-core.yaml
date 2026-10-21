@@ -1,0 +1,42 @@
+{
+  "id": "x-config-snapshot-core",
+  "status": "active",
+  "product_area": "x-config",
+  "owners": [
+    "model/domain/x_config/**",
+    "packages/x-config-core/**"
+  ],
+  "truth_sources": [
+    "publisher-signed exact snapshot bytes",
+    "platform secure watermark",
+    "platform last-known-good cache"
+  ],
+  "visible_surfaces": [
+    {
+      "type": "client-kernel",
+      "surface": "Station suggestions and release projection"
+    }
+  ],
+  "required_gates": [
+    "x-config-snapshot-core-contract"
+  ],
+  "acceptance": {
+    "service": [
+      "snapshot signature covers exact statement bytes under the X Config domain",
+      "schema, channel, time, payload bounds, endpoint material and public Station consent fail closed",
+      "secure sequence watermark rejects rollback and equal-sequence byte conflicts",
+      "cache or watermark persistence failure leaves the prior accepted projection unchanged and restart selects only the immutable generation matching the secure watermark",
+      "release projection filters channel, platform, architecture, version and expiry without executing content"
+    ],
+    "visible": [
+      "current endpoint seeds project as typed suggestions",
+      "expired data remains non-actionable",
+      "verified Station state is outside the snapshot merge owner"
+    ]
+  },
+  "negative": [
+    "the verifier never reserializes a decoded statement to validate its signature",
+    "invalid remote data never clears last-known-good client state",
+    "release metadata never initiates installation"
+  ]
+}

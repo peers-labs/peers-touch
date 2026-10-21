@@ -10,6 +10,7 @@ from tooling.acceptance.core import (
 )
 
 from .chat_storage_native import ChatStorageNativeProvisioner
+from .x_config_home import XConfigHomeProvisioner
 from .desktop_primary_navigation_native import (
     DesktopPrimaryNavigationNativeProvisioner,
 )
@@ -69,6 +70,7 @@ from .station_access_relay_role import StationAccessRelayRoleProvisioner
 
 
 _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
+    XConfigHomeProvisioner.environment_id: XConfigHomeProvisioner,
     ChatMixedNativeProvisioner.environment_id: ChatMixedNativeProvisioner,
     ChatStorageNativeProvisioner.environment_id: ChatStorageNativeProvisioner,
     CrossStationSocialNativeProvisioner.environment_id: (
@@ -238,6 +240,7 @@ def get_runtime_cell_lifecycle(cell_id: str) -> RuntimeCellLifecycle:
 __all__ = [
     "ChatMixedNativeProvisioner",
     "ChatStorageNativeProvisioner",
+    "XConfigHomeProvisioner",
     "CrossStationSocialNativeProvisioner",
     "DesktopPrimaryNavigationNativeProvisioner",
     "DesktopShellNativeProvisioner",

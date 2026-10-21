@@ -349,6 +349,19 @@ pub fn agent_conversation_archive(
 }
 
 #[tauri::command]
+pub fn agent_conversation_delete_batch(
+    input: crate::contracts::AgentConversationDeleteBatchInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    if token.trim().is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
+    application_agent_turn::agent_conversation_delete_batch(state.station.client(), input, &token)
+}
+
+#[tauri::command]
 pub fn agent_conversation_restore(
     input: AgentConversationRestoreInput,
     state: State<'_, Arc<AppState>>,

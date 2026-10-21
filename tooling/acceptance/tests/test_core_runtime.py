@@ -32,7 +32,11 @@ from tooling.acceptance.core import (
 )
 from tooling.acceptance.core.harness import ASYNC_HARNESS_SCRIPT
 from tooling.acceptance.core.redaction import REDACTED
-from tooling.acceptance.drivers.tauri import LocalTauriLauncher, TauriDriver
+from tooling.acceptance.drivers.tauri import (
+    LocalTauriLauncher,
+    TauriDriver,
+    TauriSession,
+)
 
 
 class MockDriver(DomDriver):
@@ -459,6 +463,41 @@ class TauriDriverAttachTests(unittest.TestCase):
         self.assertFalse(hasattr(driver, "_process"))
         driver.stop()
         session.quit.assert_called_once()
+
+    def test_preserved_session_stops_app_before_disconnecting_webdriver(self):
+        order: list[str] = []
+        launcher = MagicMock()
+        launcher.stop.side_effect = lambda **_: order.append("launcher")
+        session = TauriSession(launcher)
+        native_driver = MagicMock(spec=TauriDriver)
+        native_driver.disconnect.side_effect = lambda: order.append("driver")
+        session._driver = native_driver
+        session._launcher_started = True
+
+        session.stop(preserve_state=True)
+
+        self.assertEqual(order, ["launcher", "driver"])
+        launcher.stop.assert_called_once_with(preserve_state=True)
+        native_driver.disconnect.assert_called_once_with()
+        native_driver.stop.assert_not_called()
+        self.assertIsNone(session._driver)
+        self.assertFalse(session._launcher_started)
+
+    def test_normal_session_closes_webdriver_before_app(self):
+        order: list[str] = []
+        launcher = MagicMock()
+        launcher.stop.side_effect = lambda: order.append("launcher")
+        session = TauriSession(launcher)
+        native_driver = MagicMock(spec=TauriDriver)
+        native_driver.stop.side_effect = lambda: order.append("driver")
+        session._driver = native_driver
+        session._launcher_started = True
+
+        session.stop()
+
+        self.assertEqual(order, ["driver", "launcher"])
+        native_driver.stop.assert_called_once_with()
+        launcher.stop.assert_called_once_with()
 
 
 class FixtureInterfaceTests(unittest.TestCase):

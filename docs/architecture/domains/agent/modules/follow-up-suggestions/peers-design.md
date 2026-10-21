@@ -1,7 +1,7 @@
 # P2-M8: Follow-up Suggestions — Design (S2)
 
 > **Module**: P2-M8 Follow-up Suggestions
-> **Status**: S2 design
+> **Status**: implemented; Native proof pending
 > **Depends on**: P0 streaming (done event)
 
 ---
@@ -14,7 +14,7 @@ Rationale:
 - One roundtrip, not two (no separate "extract" call after done)
 - Station already has full conversation context at turn end
 - Simpler client — just render what arrives, no extra API wiring
-- Toggle via agent config (no per-message decision on client)
+- Optional output shares the admitted Topic Provider and execution budget.
 
 ## 2. Data Flow
 
@@ -30,7 +30,9 @@ Desktop streaming handler
 
 Desktop UI
   → FollowUpChips component renders below last assistant message
-  → click → sendMessage(suggestion)
+  → click expands Add to input / Reply now
+  → Add to input appends without replacing the draft
+  → Reply now submits the suggestion while retaining the draft
   → chips disappear once user sends any message
 ```
 
@@ -46,11 +48,21 @@ message DonePayload {
 
 ## 4. Station Change
 
-In `turn_service.go`, after main LLM response completes and before sending done event:
-- If agent config has `follow_up_enabled = true` (default: true)
-- Make a fast LLM call with system prompt: "Generate 3 brief follow-up questions the user might ask next, based on this conversation. Return as JSON array of strings."
-- Parse response → attach to DonePayload
-- If generation fails or times out (2s max), send done without suggestions (graceful degradation)
+`follow_up_suggestions.go` generates optional output before `completeTurn`:
+
+- Resolve the same admitted Provider/Model and actor-scoped credential.
+- Call through `callProviderWithRuntimeAuthority`; capability provenance,
+  input limits and provider-attempt reservation remain mandatory.
+- Bound the conversation excerpt to 2048 characters per side and output to
+  256 tokens or the smaller admitted limit.
+- Use a two-second child deadline. Skip when the parent has at most two
+  seconds remaining, so auxiliary work cannot consume the completion margin.
+- Isolate auxiliary CLI execution with a turn-specific conversation reference.
+- Accept exactly three distinct, non-empty JSON strings of at most 240 characters.
+- Failure, invalid output or timeout omits suggestions.
+- Include call usage in the attempt ledger and trace.
+- Persist `TurnEvent.suggestions` in the same transaction as the assistant
+  message and terminal event; live delivery and replay use that committed event.
 
 ## 5. Desktop Changes
 
@@ -92,7 +104,8 @@ case 'done': {
 `components/chat/FollowUpChips.tsx`:
 - Renders `message.followUpSuggestions` as clickable chips
 - Positioned below the last assistant message
-- On click: calls `sendMessage(chip.text)` + clears suggestions from store
+- On click: expands explicit Add to input and Reply now actions.
+- Insert uses `appendComposer`; send uses the existing `sendMessage` owner.
 - Disappears when streaming starts (new message)
 
 ### 5.4 Integration
@@ -101,19 +114,15 @@ case 'done': {
 
 ## 6. Agent Config
 
-Add `follow_up_enabled` to agent config (default true). Proto field in `agent.proto`:
-```protobuf
-optional bool follow_up_enabled = 19;
-```
-
-Client toggle in agent settings (simple switch).
+There is no Agent Profile model selector or follow-up toggle. Suggestions use
+the Topic override or Settings default selected during turn admission.
 
 ## 7. File Changes
 
 | File | Change |
 |------|--------|
 | `model/domain/agent/turn_stream.proto` | Add `repeated string follow_up_suggestions = 3` to DonePayload |
-| `model/domain/agent/agent.proto` | Add `optional bool follow_up_enabled = 19` to ExecuteTurnRequest (or agent config) |
+| `apps/station/.../follow_up_suggestions.go` | Bound generation using admitted runtime authority |
 | `apps/station/.../turn_service.go` | Generate suggestions after main response |
 | `apps/desktop/src/store/streaming/types.ts` | Add `suggestions?` to DoneEventPayload |
 | `apps/desktop/src/store/chat.ts` | Add `followUpSuggestions?` to ChatMessage |
@@ -126,3 +135,12 @@ Client toggle in agent settings (simple switch).
 - Per-message client-side extraction (LobeHub pattern) — we use server-side generation instead
 - Custom suggestion count config — fixed at 3
 - Suggestion caching/history
+
+## 9. Verification
+
+Focused Station tests cover malformed Provider output, bounded strings and
+committed terminal-event serialization. The Native
+`conversation-follow-up` scenario requires a real authorized HTTP Provider
+request, visible suggestions, two-stage interaction and preserved draft.
+Fixture output alone cannot establish product proof. Native remains UNPROVEN
+until the current-source Suite and cleanup pass.

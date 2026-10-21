@@ -35,6 +35,12 @@ GLOBAL_ENV_FIELDS = (
 OPTIONAL_GLOBAL_ENV_FIELDS = (
     ("OAUTH_SITE_ID", "config"),
     ("OAUTH_GITHUB_API_BASE_URL", "config"),
+    ("OAUTH_OPERATOR_LOGIN_SITE_ID", "config"),
+    ("OAUTH_OPERATOR_LOGIN_AUDIENCE", "config"),
+    ("OAUTH_OPERATOR_LOGIN_CALLBACK_URL", "config"),
+    ("OAUTH_OPERATOR_LOGIN_SIGNING_KEY_ID", "config"),
+    ("OAUTH_OPERATOR_LOGIN_SIGNING_PRIVATE_KEY_B64", "secret"),
+    ("OAUTH_OPERATOR_LOGIN_REDEEM_SECRET_B64", "secret"),
 )
 
 FORBIDDEN_SYNC_KEYS = frozenset({"ADDR", "OAUTH_ADMIN_PASSWORD", "VERCEL"})
@@ -288,11 +294,13 @@ def discover_source(repo_root: Path, catalog: dict[str, Any]) -> dict[str, Any]:
     for provider_dir in required_paths["routes"].iterdir():
         if not provider_dir.is_dir():
             continue
-        routes[provider_dir.name] = sorted(
+        provider_routes = sorted(
             child.name
             for child in provider_dir.iterdir()
             if child.is_dir() and (child / "index.go").is_file()
         )
+        if {"start", "callback"} & set(provider_routes):
+            routes[provider_dir.name] = provider_routes
     config_providers, enabled = _config_providers(required_paths["config"])
     env_prefixes: dict[str, str] = {}
     for constant_name, prefix in re.findall(

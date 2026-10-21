@@ -113,6 +113,7 @@ func (s *agentSubServer) Init(ctx context.Context, opts ...option.Option) error 
 	}
 	s.agentDB = rds
 	capabilityBackfillRegistry := service.NewToolRegistryService(nil, nil)
+	service.RegisterChannelRequesterTools(capabilityBackfillRegistry, nil)
 	service.RegisterSessionSearchTool(
 		capabilityBackfillRegistry,
 		service.NewSessionSearchService(),
@@ -294,7 +295,12 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	providerConfigSvc := service.NewProviderConfigService()
 	modelConfigSvc := service.NewModelConfigService()
 	credentialConfigSvc := service.NewCredentialConfigService()
+	runtimeModelCatalog := service.NewRuntimeModelCatalog()
+	providerModelDiscoverySvc := service.NewProviderModelDiscoveryService(
+		runtimeModelCatalog,
+	)
 	admissionResolver := service.NewRuntimeAdmissionResolver(providerConfigSvc, modelConfigSvc)
+	admissionResolver.SetRuntimeModelCatalog(runtimeModelCatalog)
 	runtimeEvidenceSvc := service.NewRuntimeEvidenceService()
 	credentialPoolSvc := service.NewCredentialPoolService()
 	delegationSvc := service.NewDelegationService()
@@ -324,6 +330,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		runtimeEvidenceSvc,
 		convSvc,
 	)
+	agentSvc.SetConversationDeletion(convSvc, externalRuntimeSvc)
 	runtimeEvidenceSvc.SetExternalRuntimeAvailability(externalRuntimeSvc.Available)
 	admissionResolver.SetExternalRuntimeAvailability(externalRuntimeSvc.Available)
 
@@ -414,6 +421,8 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		modelConfigSvc,
 		credentialConfigSvc,
 		admissionResolver,
+		runtimeModelCatalog,
+		providerModelDiscoverySvc,
 	)
 	runtimeEvidenceHandlers := handler.NewRuntimeEvidenceHandlers(
 		runtimeEvidenceSvc,
@@ -431,6 +440,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	toolDispatchSvc.SetConversationService(convSvc)
 	capabilityAuthoritySvc := service.NewCapabilityAuthorityService(s.agentDB)
 	capabilityAuthoritySvc.SetEventBus(eventBus)
+	skillSvc.SetCapabilityAuthority(capabilityAuthoritySvc)
 	capabilityReadinessSvc := service.NewCapabilityAuthorityReadinessService(
 		capabilityAuthoritySvc,
 		agentSvc,
@@ -519,6 +529,11 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	s.evaluationService = evaluationSvc
 	s.externalRuntimeService = externalRuntimeSvc
 
+	s.wireChannelTurnExecutor(
+		turnSvc, convSvc, turnAdmissionSvc,
+		agentSvc, capabilityAuthoritySvc, toolRegistrySvc, growthMetricsSvc,
+	)
+
 	handlers := []server.Handler{
 		server.NewTypedHandler("agent-list", "/agent/list", server.POST, agentHandlers.HandleListAgents, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-list-get", "/agent/list", server.GET, agentHandlers.HandleListAgents, logIDWrapper, jwtWrapper),
@@ -580,6 +595,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewHTTPHandler("agent-conversation-create", "/agent/conversation/create", server.POST, convHandlers.HandleCreateConversation, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-conversation-update", "/agent/conversation/update", server.POST, convHandlers.HandleUpdateConversation, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-conversation-archive", "/agent/conversation/archive", server.POST, convHandlers.HandleArchiveConversation, logIDWrapper, jwtWrapper),
+		server.NewHTTPHandler("agent-conversation-delete-batch", "/agent/conversation/delete-batch", server.POST, convHandlers.HandleDeleteConversations, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-conversation-restore", "/agent/conversation/restore", server.POST, convHandlers.HandleRestoreConversation, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-conversation-runtime-reset", "/agent/conversation/runtime/reset", server.POST, convHandlers.HandleResetConversationRuntime, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-conversation-messages", "/agent/conversation/messages", server.POST, convHandlers.HandleListMessages, logIDWrapper, jwtWrapper),
@@ -600,6 +616,8 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-provider-create", "/agent/provider/create", server.POST, providerHandlers.HandleProviderCreate, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-provider-update", "/agent/provider/update", server.POST, providerHandlers.HandleProviderUpdate, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-provider-delete", "/agent/provider/delete", server.POST, providerHandlers.HandleProviderDelete, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-provider-check", "/agent/provider/check", server.POST, providerHandlers.HandleProviderCheck, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-provider-model-discover", "/agent/provider/model/discover", server.POST, providerHandlers.HandleDiscoverProviderModels, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-model-list", "/agent/model/list", server.POST, providerHandlers.HandleModelList, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-model-create", "/agent/model/create", server.POST, providerHandlers.HandleModelCreate, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-model-update", "/agent/model/update", server.POST, providerHandlers.HandleModelUpdate, logIDWrapper, jwtWrapper),

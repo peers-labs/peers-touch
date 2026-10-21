@@ -20,6 +20,11 @@ var (
 	ErrStorageUnavailable         = errors.New("oauth_storage_unavailable")
 	ErrRecordCorrupt              = errors.New("oauth_record_corrupt")
 	ErrKeyUnavailable             = errors.New("oauth_key_unavailable")
+	ErrOperatorHandoffExists      = errors.New("operator_handoff_exists")
+	ErrOperatorHandoffNotFound    = errors.New("operator_handoff_not_found")
+	ErrOperatorHandoffConsumed    = errors.New("operator_handoff_consumed")
+	ErrOperatorHandoffExpired     = errors.New("operator_handoff_expired")
+	ErrOperatorHandoffBinding     = errors.New("operator_handoff_binding_mismatch")
 )
 
 type OAuthStore interface {
@@ -33,6 +38,15 @@ type OAuthStore interface {
 	ReplaceCredential(ctx context.Context, refresh entity.CredentialRefresh) (*entity.OAuthCredential, error)
 	MarkCredentialRefreshUncertain(ctx context.Context, claim entity.CredentialRefreshClaim, errorCode string, occurredAt time.Time) error
 	AdminSnapshot(ctx context.Context, limit int) (entity.AdminSnapshot, error)
+	CreateOperatorLoginHandoff(ctx context.Context, handoff entity.OperatorLoginHandoff) error
+	ConsumeOperatorLoginHandoff(
+		ctx context.Context,
+		codeFingerprint string,
+		siteID string,
+		audience string,
+		receiverChallenge []byte,
+		now time.Time,
+	) (*entity.OperatorLoginHandoff, error)
 }
 
 type OAuthMaintenanceStore interface {

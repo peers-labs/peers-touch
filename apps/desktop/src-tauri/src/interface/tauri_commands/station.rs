@@ -392,7 +392,7 @@ pub(crate) fn station_remove_with_state(
     })
 }
 
-fn discovery_error(error: StationDiscoveryError) -> AppResult<StubPayload> {
+pub(crate) fn discovery_error(error: StationDiscoveryError) -> AppResult<StubPayload> {
     let code = match error.code {
         "station_unreachable" | "station_discovery_unavailable" => ErrorCode::InternalError,
         "station_no_candidates" => ErrorCode::NotFound,
@@ -414,7 +414,7 @@ fn discovery_error(error: StationDiscoveryError) -> AppResult<StubPayload> {
     )
 }
 
-fn binding_error(error: StationBindingError) -> AppResult<StubPayload> {
+pub(crate) fn binding_error(error: StationBindingError) -> AppResult<StubPayload> {
     let code = match error.code.as_str() {
         "station_unselected" => ErrorCode::InvalidArgument,
         "station_not_registered" | "station_route_unavailable" => ErrorCode::NotFound,

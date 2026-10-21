@@ -9,6 +9,7 @@
     { "src": "/api/oauth/github/callback", "dest": "/api/oauth/github/callback" },
     { "src": "/api/oauth/google/callback", "dest": "/api/oauth/google/callback" },
     { "src": "/api/oauth/weixin/callback", "dest": "/api/oauth/weixin/callback" },
+    { "src": "/api/oauth/operator/redeem", "dest": "/api/oauth/operator/redeem" },
     { "src": "/api/healthz", "dest": "/api/healthz" }
   ]
 }

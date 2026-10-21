@@ -10,6 +10,9 @@ ROOT = Path(__file__).resolve().parents[4]
 RUNNER = ROOT / "tooling" / "acceptance" / "gates" / "agent" / "native_agent_runner.py"
 GATE_CATALOG = ROOT / "tooling" / "acceptance" / "gates.yaml"
 HARNESS = ROOT / "apps" / "desktop" / "src" / "acceptance" / "agent" / "harness.ts"
+AGENT_PAGE_DESCRIPTOR = (
+    ROOT / "apps" / "desktop" / "src" / "pages" / "AgentChatPage.descriptor.tsx"
+)
 CAPABILITY_SUPERVISOR = (
     ROOT
     / "apps"
@@ -30,6 +33,16 @@ IDENTITY_RUNTIME = (
     ROOT / "apps" / "desktop" / "src" / "kernel" / "identityRuntime.ts"
 )
 DESKTOP_MAIN = ROOT / "apps" / "desktop" / "src-tauri" / "src" / "main.rs"
+DESKTOP_AUTH_COMMANDS = (
+    ROOT
+    / "apps"
+    / "desktop"
+    / "src-tauri"
+    / "src"
+    / "interface"
+    / "tauri_commands"
+    / "auth.rs"
+)
 FOUNDATION_RUNTIME_CLIENT = (
     ROOT
     / "tooling"
@@ -160,12 +173,128 @@ class AgentNativeRunnerStaticTest(unittest.TestCase):
     def test_runner_enables_e2e_feature(self) -> None:
         self.assertIn("PT_DESKTOP_E2E", self.source)
 
+    def test_chat_scenarios_use_process_targeted_native_special_keys(self) -> None:
+        self.assertIn("def press_native_key(", self.source)
+        self.assertIn(
+            "self.runtime_binding.native_adapter.post_key_to_process(",
+            self.source,
+        )
+        scenario_root = RUNNER.parent
+        for path in sorted(scenario_root.glob("chat_*_scenarios.py")):
+            source = path.read_text(encoding="utf-8")
+            with self.subTest(path=path.name):
+                self.assertNotIn("selenium.webdriver.common.keys", source)
+                self.assertNotIn("Keys.", source)
+
+    def test_chat_model_fixtures_use_protojson_capability_config(self) -> None:
+        self.assertIn("def model_capability_config(", self.source)
+        self.assertIn('return {"flags": dict(flags)}', self.source)
+        for filename in (
+            "chat_profile_scenarios.py",
+            "chat_model_scenarios.py",
+            "chat_conversation_scenarios.py",
+            "chat_native_suite.py",
+        ):
+            source = (RUNNER.parent / filename).read_text(encoding="utf-8")
+            with self.subTest(filename=filename):
+                self.assertIn("model_capability_config(", source)
+                self.assertNotIn('"function_call"', source)
+                self.assertNotIn('"vision"', source)
+
+    def test_chat_roster_menu_anchor_accepts_both_vertical_placements(self) -> None:
+        source = (RUNNER.parent / "chat_roster_scenarios.py").read_text(
+            encoding="utf-8",
+        )
+
+        self.assertIn("const isViewportVisible = (element) =>", source)
+        self.assertIn(".find(isViewportVisible)", source)
+        self.assertIn("trigger.top - menu.bottom", source)
+        self.assertIn("menu.top - trigger.bottom", source)
+        self.assertIn('geometry.get("horizontalGap", 1000) <= 12', source)
+        self.assertIn('geometry.get("verticalGap", 1000) <= 12', source)
+        self.assertNotIn(
+            'abs(geometry["trigger"]["y"] - geometry["menu"]["y"])',
+            source,
+        )
+
+    def test_visible_element_helpers_reject_offscreen_portals(self) -> None:
+        self.assertGreaterEqual(
+            self.source.count("const isViewportVisible = (element) =>"),
+            5,
+        )
+        for viewport_edge in (
+            "rect.right > 0",
+            "rect.bottom > 0",
+            "rect.left < window.innerWidth",
+            "rect.top < window.innerHeight",
+        ):
+            with self.subTest(viewport_edge=viewport_edge):
+                self.assertGreaterEqual(self.source.count(viewport_edge), 5)
+
+    def test_profile_prompt_targets_only_viewport_composer(self) -> None:
+        source = (RUNNER.parent / "chat_profile_scenarios.py").read_text(
+            encoding="utf-8",
+        )
+        start = source.index("def consume_documents(")
+        end = source.index("def empty_document(", start)
+        consumption = source[start:end]
+
+        self.assertIn(
+            'reconciled = runner.harness("reconcileChatSuiteModelProjection")',
+            consumption,
+        )
+        self.assertIn('reconciled.get("reconciled") is True', consumption)
+        self.assertIn('expected_model in authority_models', consumption)
+        self.assertIn('reconciled.get("storeError") is None', consumption)
+        self.assertIn('expected_model in store_models', consumption)
+        self.assertIn(
+            "const composer = [...document.querySelectorAll("
+            "'[data-pt-agent-composer]')]",
+            consumption,
+        )
+        self.assertIn("'[data-pt-agent-model-picker]'", consumption)
+        self.assertIn("].find(isViewportVisible)", consumption)
+        self.assertIn("candidate.dataset.ptAgentModelProvider", consumption)
+        self.assertIn("candidate.dataset.ptAgentModelId", consumption)
+        self.assertIn("target?.scrollIntoView", consumption)
+        self.assertIn("model_selector", consumption)
+        self.assertIn('runner.set_input_value(', consumption)
+        self.assertNotIn(
+            "document.querySelector('[data-pt-agent-composer]')",
+            consumption,
+        )
+        self.assertNotIn("candidate.querySelector('span[title]')", consumption)
+        self.assertNotIn("driver.find_element(", consumption)
+
+    def test_chat_suite_reconcile_exposes_model_authority_and_store(self) -> None:
+        source = HARNESS.read_text(encoding="utf-8")
+        start = source.index("async reconcileChatSuiteModelProjection()")
+        end = source.index(
+            "async reconcileChatSuiteRosterProjection()",
+            start,
+        )
+        reconcile = source[start:end]
+
+        self.assertIn("const authority = await api.listAvailableModels()", reconcile)
+        self.assertIn("await useAgentStore.getState().loadModels()", reconcile)
+        self.assertIn("authorityModels: projectModels(authority.models)", reconcile)
+        self.assertIn(
+            "storeModels: projectModels(agentState.availableModels)",
+            reconcile,
+        )
+        self.assertIn("storeError: agentState.error", reconcile)
+        self.assertIn("providerId: model.provider_id", reconcile)
+        self.assertIn("modelId: model.id", reconcile)
+        self.assertNotIn("reconcileRuntime('agent-capability'", reconcile)
+        self.assertNotIn("reconcileRuntime('agent-topic'", reconcile)
+
     def test_runner_cleans_up_process_and_driver(self) -> None:
         self.assertIn("self.tauri_driver.stop()", self.source)
         self.assertNotIn("os.killpg", self.source)
         self.assertIn("shutil.rmtree(self.run_root", self.source)
         self.assertNotIn("shutil.rmtree(self.storage_root", self.source)
         self.assertIn("self.desktop_log_bytes", self.source)
+        self.assertIn("content = session.log_path.read_bytes()[-1_000_000:]", self.source)
         self.assertIn("portsReleased", self.source)
         self.assertIn("storageReleased", self.source)
 
@@ -278,7 +407,7 @@ class AgentNativeRunnerStaticTest(unittest.TestCase):
         self.assertLess(transport_health_step, configure_step)
         self.assertLess(configure_step, journey_dispatch)
         self.assertIn(
-            '{"stationUrl": self.station_transport_url}',
+            '{"stationUrl": self.client_station_transport_url}',
             self.source,
         )
         self.assertNotIn("stations.json", self.source)
@@ -292,6 +421,14 @@ class AgentNativeRunnerStaticTest(unittest.TestCase):
         )
         self.assertIn(
             "self.proxy.url if self.proxy is not None else self.station_url",
+            self.source,
+        )
+        self.assertIn(
+            "TcpFaultProxy.from_multiaddr(direct_multiaddr)",
+            self.source,
+        )
+        self.assertIn(
+            "self.runtime_binding.apply_verified_direct_route_override(",
             self.source,
         )
         self.assertNotIn('"PT_STATION_URL": self.proxy.url', self.source)
@@ -1904,10 +2041,130 @@ class AgentHarnessStaticTest(unittest.TestCase):
         )
 
     def test_harness_exposes_navigate_to_agent(self) -> None:
-        self.assertIn("navigateToAgent", self.source)
-        self.assertIn("EVENT.NAVIGATION_REQUESTED", self.source)
-        self.assertIn("resource: 'sessions'", self.source)
-        self.assertIn("getClientRects()", self.source)
+        start = self.source.index("async navigateToAgent()")
+        end = self.source.index(
+            "async reconcileChatSuiteModelProjection()",
+            start,
+        )
+        navigate = self.source[start:end]
+
+        self.assertLess(
+            navigate.index("identityRuntime.boot()"),
+            navigate.index("'authenticated Agent runtime owner'"),
+        )
+        self.assertLess(
+            navigate.index("'authenticated Agent runtime owner'"),
+            navigate.index("const actorId ="),
+        )
+        self.assertNotIn("installRuntime(", navigate)
+        self.assertNotIn("bootstrapRuntime(", navigate)
+        descriptor = AGENT_PAGE_DESCRIPTOR.read_text(encoding="utf-8")
+        self.assertIn(
+            "runtimes: ['agent-capability', 'agent-topic', 'agent-chat', "
+            "'agent-tool', 'social']",
+            descriptor,
+        )
+        self.assertIn("session.authenticated", navigate)
+        self.assertIn("identity.lifecycle.state === 'ready'", navigate)
+        self.assertIn("api.accountListRestorable()", navigate)
+        self.assertIn("api.acceptanceSessionPersistenceState()", navigate)
+        self.assertIn("api.authRestoreSession()", navigate)
+        self.assertEqual(
+            navigate.count("await boundedAcceptanceProbe("),
+            3,
+        )
+        self.assertIn(
+            "'restorable account diagnostic'",
+            navigate,
+        )
+        self.assertIn(
+            "'session persistence diagnostic'",
+            navigate,
+        )
+        self.assertIn(
+            "'session restore diagnostic'",
+            navigate,
+        )
+        self.assertIn(
+            "agent.acceptance.authenticatedAgentOwnerUnavailable:",
+            navigate,
+        )
+        self.assertIn("restoreFailure,", navigate)
+        self.assertIn("restorableSessionCount:", navigate)
+        self.assertIn("agent.acceptance.authenticatedAgentOwnerRequired", navigate)
+        self.assertIn("EVENT.NAVIGATION_REQUESTED", navigate)
+        self.assertIn("resource: 'sessions'", navigate)
+        self.assertIn("getClientRects()", navigate)
+        self.assertIn("actorId,", navigate)
+        self.assertIn(
+            "identityState: identityRuntime.getSnapshot().lifecycle.state",
+            navigate,
+        )
+
+    def test_profile_restart_requires_restored_actor_continuity(self) -> None:
+        profile = (RUNNER.parent / "chat_profile_scenarios.py").read_text(
+            encoding="utf-8",
+        )
+        start = profile.index("def restart_documents(")
+        restart = profile[start:]
+
+        self.assertIn(
+            'navigation = runner.harness("navigateToAgent", timeout=120)',
+            restart,
+        )
+        self.assertIn(
+            'navigation.get("actorId") == runner.actor_ptid',
+            restart,
+        )
+        self.assertIn(
+            'navigation.get("identityState") == "ready"',
+            restart,
+        )
+        self.assertIn('"identityReadback": navigation', restart)
+        self.assertIn(
+            'persistence_before = runner.harness("getSessionPersistenceState")',
+            restart,
+        )
+        self.assertIn(
+            'persistence_before.get("rawSessionPresent") is True',
+            restart,
+        )
+
+    def test_session_persistence_probe_is_acceptance_only_and_redacted(self) -> None:
+        commands = DESKTOP_AUTH_COMMANDS.read_text(encoding="utf-8")
+        main = DESKTOP_MAIN.read_text(encoding="utf-8")
+        start = commands.index("pub fn acceptance_session_persistence_state()")
+        end = commands.index("pub fn auth_restore_session(", start)
+        probe = commands[start:end]
+
+        self.assertIn('#[cfg(feature = "acceptance-webdriver")]', commands[:start])
+        self.assertIn("auth::acceptance_session_persistence_state", main)
+        self.assertIn('"rawSessionPresent"', probe)
+        self.assertIn('"rawSessionActorMatches"', probe)
+        self.assertNotIn('"actor_ptid"', probe)
+        self.assertNotIn('"token"', probe)
+
+    def test_session_restore_resumes_station_before_network_recovery(self) -> None:
+        source = DESKTOP_AUTH_SERVICE.read_text(encoding="utf-8")
+        start = source.index("pub(crate) fn auth_restore_session_for_device(")
+        end = source.index("pub fn auth_validate_token(", start)
+        restore = source[start:end]
+
+        local_session = restore.index(
+            "session_vault::load_raw_session_for_account",
+        )
+        station_scope = restore.index(
+            "access_scope::<AuthSessionPayload>(&state.station)",
+        )
+        oauth_recovery = restore.index(
+            "reconcile_broker_cancellations_after_restart",
+        )
+        takeover = restore.index(
+            "takeover_station_session_token_for_device",
+        )
+        self.assertLess(local_session, station_scope)
+        self.assertLess(station_scope, oauth_recovery)
+        self.assertLess(oauth_recovery, takeover)
 
     def test_harness_exposes_send_message(self) -> None:
         self.assertIn("sendMessage", self.source)
@@ -1919,7 +2176,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
     def test_harness_exposes_wait_for_response(self) -> None:
         self.assertIn("waitForAssistantResponse", self.source)
 
-    def test_provider_fixture_requires_station_model_and_readiness(self) -> None:
+    def test_provider_fixture_requires_station_model_and_topic_ownership(self) -> None:
         ensure_provider = self.source.index("async ensureProvider")
         model_readback = self.source.index(
             "let availableModels = await api.listAvailableModels()",
@@ -1933,29 +2190,29 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "agent.acceptance.providerModelCapabilityMismatch",
             model_persistence,
         )
-        profile_update = self.source.index(
-            "await agentStore.updateAgentProfile",
+        projection_load = self.source.index(
+            "await agentStore.loadModels()",
             model_verification,
         )
-        readiness_readback = self.source.index(
-            "await api.getAgentCapabilityReadiness",
-            profile_update,
+        topic_update = self.source.index(
+            "await useAgentTopicStore.getState().setTopicModel",
+            projection_load,
         )
         configured_result = self.source.index(
             "return { configured: true",
-            readiness_readback,
+            topic_update,
         )
 
-        self.assertLess(model_readback, profile_update)
+        self.assertLess(model_readback, projection_load)
         self.assertLess(model_persistence, model_verification)
-        self.assertLess(model_verification, profile_update)
-        self.assertLess(profile_update, readiness_readback)
-        self.assertLess(readiness_readback, configured_result)
-        self.assertIn("model.provider_id === providerId", self.source)
-        self.assertIn(
-            "modelCapabilities.snapshot_id !== readiness.runtime_snapshot_id",
-            self.source,
+        self.assertLess(model_verification, projection_load)
+        self.assertLess(projection_load, topic_update)
+        self.assertLess(topic_update, configured_result)
+        self.assertNotIn(
+            "updateAgentProfile",
+            self.source[ensure_provider:configured_result],
         )
+        self.assertIn("model.provider_id === providerId", self.source)
 
     def test_agent_crud_uses_authenticated_station_authority(self) -> None:
         application = DESKTOP_AGENT_CRUD.read_text(encoding="utf-8")
@@ -2009,7 +2266,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
     def test_gateway_model_delete_uses_station_provider_owner(self) -> None:
         gateway = DESKTOP_HTTP_GATEWAY.read_text(encoding="utf-8")
         start = gateway.index('"model_delete" =>')
-        end = gateway.index('"model_fetch_remote" =>', start)
+        end = gateway.index('"model_discover" =>', start)
         model_delete = gateway[start:end]
 
         self.assertIn("token_from_state(state)", model_delete)
@@ -2024,6 +2281,14 @@ class AgentHarnessStaticTest(unittest.TestCase):
         ):
             with self.subTest(method=method):
                 self.assertIn(method, self.source)
+
+    def test_runtime_snapshot_preserves_typed_error_details(self) -> None:
+        start = self.source.index("async getRuntimeSnapshot()")
+        end = self.source.index("async getCoreLifecycleAgentState()", start)
+        snapshot = self.source[start:end]
+
+        self.assertIn("typedError: assistant.typedError", snapshot)
+        self.assertIn("details: { ...assistant.typedError.details }", snapshot)
 
     def test_harness_exposes_foundation_group_one_actions(self) -> None:
         for method in (
@@ -3918,6 +4183,33 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
             "await installAuthenticatedCriticalRuntimes(user.actorPtid)",
             harness,
         )
+        navigate_start = harness.index("async navigateToAgent()")
+        navigate_end = harness.index(
+            "async reconcileChatSuiteModelProjection()",
+            navigate_start,
+        )
+        navigate = harness[navigate_start:navigate_end]
+        self.assertNotIn("installIdleRuntimes(", navigate)
+        self.assertNotIn("bootstrapRuntime(", navigate)
+        idle_wait_start = harness.index(
+            "async waitForIdleSessionRuntimes()",
+            navigate_start,
+        )
+        idle_wait_end = harness.index(
+            "async getSessionPersistenceState()",
+            idle_wait_start,
+        )
+        idle_wait = harness[idle_wait_start:idle_wait_end]
+        self.assertIn(
+            "getIdleRuntimeInstallStatus(actorId) === 'ready'",
+            idle_wait,
+        )
+        self.assertNotIn("installIdleRuntimes(", idle_wait)
+        self.assertNotIn("bootstrapRuntime(", idle_wait)
+        login_start = harness.index("async loginWithPassword(")
+        login_end = harness.index("async logout()", login_start)
+        login = harness[login_start:login_end]
+        self.assertNotIn("installDeferredAppRuntimeProjections(", login)
         self.assertIn("tearDownSessionRuntimes()", runtime_hook)
         self.assertIn(
             "installIdleRuntimes(actorPtid, CRITICAL_SESSION_RUNTIME_IDS)",
@@ -3957,6 +4249,9 @@ class AgentSelectorsBoundInProductSource(unittest.TestCase):
         self.assertIn("data-pt-agent-composer", source)
         self.assertIn("data-pt-agent-composer-send", source)
         self.assertIn("data-pt-agent-stop", source)
+        self.assertIn("data-pt-agent-model-picker", source)
+        self.assertIn("data-pt-agent-model-provider={model.provider_id}", source)
+        self.assertIn("data-pt-agent-model-id={model.id}", source)
 
     def test_message_selectors_bound(self) -> None:
         assistant = (ROOT / "apps/desktop/src/components/messages/AssistantMessage.tsx").read_text(encoding="utf-8")

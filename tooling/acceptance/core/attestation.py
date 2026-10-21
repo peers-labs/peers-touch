@@ -7,7 +7,7 @@ import urllib.error
 import urllib.request
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Callable, Tuple
+from typing import Any, Callable, Dict, Tuple
 
 from ._paths import REPO_ROOT
 from .errors import BlockedError, ProvisioningError
@@ -27,7 +27,7 @@ PROTOCOL_SOURCE_PATHS = (
     ":(glob)apps/station/**/*.pb.go",
 )
 RemoteSourceIdentityProvider = Callable[[str], Tuple[str, str, str]]
-RuntimeVersionProvider = Callable[[str], dict[str, Any]]
+RuntimeVersionProvider = Callable[[str], Dict[str, Any]]
 
 
 def commits_match(actual: str, expected: str) -> bool:

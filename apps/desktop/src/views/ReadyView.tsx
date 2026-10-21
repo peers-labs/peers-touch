@@ -9,7 +9,6 @@ import {
 import { listen } from '@tauri-apps/api/event';
 import { GlobalLayout } from '../components/GlobalLayout';
 import { AppSideNav } from '../components/AppSideNav';
-import { AgentCreateDialogHost } from '../components/agent/create';
 import { PageRouter } from '../components/PageRouter';
 import { CommandMenu } from '../components/CommandMenu';
 import { useHashRouter } from '../hooks/useHashRouter';
@@ -119,7 +118,6 @@ export function ReadyView({ lifecycle: _lifecycle }: ReadyViewProps) {
         navigateToAgentSurface={navigation.navigateToAgentSurface}
         navigateToSettings={navigation.navigateToSettings}
       />
-      <AgentCreateDialogHost />
     </PageContextProvider>,
   );
 }

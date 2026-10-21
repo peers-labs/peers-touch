@@ -3,8 +3,10 @@ import { Button, Input, Modal, Typography } from 'antd';
 import {
   AlertTriangle,
   Check,
+  Cloud,
   LoaderCircle,
   Plus,
+  RadioTower,
   Server,
   Trash2,
   X,
@@ -16,6 +18,7 @@ import {
   type MobileStationEntry,
 } from './stationRegistry';
 import { stationDisplayName } from './stationDisplayName';
+import type { XConfigSuggestion } from '../../services/mobileCommands';
 
 const { Text, Title } = Typography;
 
@@ -31,8 +34,10 @@ export function StationSelector({
   checking,
   verifyingUrls,
   checkedUrls,
+  suggestions,
   surfaceFixture,
   onAdd,
+  onSelectSuggestion,
   onSelect,
   onRemove,
 }: {
@@ -42,8 +47,10 @@ export function StationSelector({
   checking: boolean;
   verifyingUrls: string[];
   checkedUrls: string[];
+  suggestions: XConfigSuggestion[];
   surfaceFixture?: StationSelectorSurfaceFixture;
   onAdd: (stationUrl: string) => boolean | Promise<boolean>;
+  onSelectSuggestion: (seedId: string) => boolean | Promise<boolean>;
   onSelect: (stationPeerId: string) => void | Promise<void>;
   onRemove: (stationPeerId: string) => void;
 }) {
@@ -59,10 +66,13 @@ export function StationSelector({
     surfaceFixture === 'address' || surfaceFixture === 'address-invalid',
   );
   const [pendingRemoval, setPendingRemoval] = useState<MobileStationEntry | null>(null);
+  const [selectingSuggestionId, setSelectingSuggestionId] = useState<string | null>(null);
+  const [failedSuggestionId, setFailedSuggestionId] = useState<string | null>(null);
   const hasEntries = entries.length > 0;
   const showStationInput = !hasEntries || addingStation;
   const normalizedUrl = useMemo(() => buildStationUrl(stationUrl), [stationUrl]);
   const canAdd = Boolean(normalizedUrl);
+  const visibleSuggestions = visibleXConfigSuggestions(entries, suggestions);
 
   useEffect(() => {
     if (surfaceFixture === 'remove-confirm' && entries[0]) {
@@ -88,6 +98,20 @@ export function StationSelector({
     if (!pendingRemoval) return;
     onRemove(pendingRemoval.stationPeerId);
     setPendingRemoval(null);
+  }
+
+  async function selectSuggestion(suggestion: XConfigSuggestion) {
+    if (!suggestion.actionable || selectingSuggestionId) return;
+    setSelectingSuggestionId(suggestion.seedId);
+    setFailedSuggestionId(null);
+    try {
+      const accepted = await onSelectSuggestion(suggestion.seedId);
+      if (!accepted) setFailedSuggestionId(suggestion.seedId);
+    } catch {
+      setFailedSuggestionId(suggestion.seedId);
+    } finally {
+      setSelectingSuggestionId(null);
+    }
   }
 
   const showsHttpWarning = buildStationUrl(stationUrl)?.startsWith('http://');
@@ -168,7 +192,7 @@ export function StationSelector({
       ) : null}
 
       <div className="station-list">
-        {entries.length === 0 ? (
+        {entries.length === 0 && visibleSuggestions.length === 0 ? (
           <div
             className="station-empty"
             data-product-surface="entry.station-empty"
@@ -235,6 +259,48 @@ export function StationSelector({
             );
           })
         )}
+        {visibleSuggestions.length > 0 ? (
+          <>
+            <div className="station-suggestion-heading">
+              {t('common.stationPicker.suggestions')}
+            </div>
+            {visibleSuggestions.map((suggestion) => {
+              const selecting = selectingSuggestionId === suggestion.seedId;
+              const failed = failedSuggestionId === suggestion.seedId;
+              const status = failed
+                ? t('common.stationPicker.suggestionInvalid')
+                : suggestion.freshness === 'stale'
+                  ? t('common.stationPicker.suggestionStale')
+                  : t('common.stationPicker.suggested');
+              return (
+                <button
+                  type="button"
+                  key={suggestion.seedId}
+                  className={`station-suggestion ${failed ? 'failed' : ''}`}
+                  data-x-config-seed-id={suggestion.seedId}
+                  data-x-config-freshness={suggestion.freshness}
+                  disabled={!suggestion.actionable || selecting}
+                  onClick={() => void selectSuggestion(suggestion)}
+                >
+                  {selecting
+                    ? <LoaderCircle className="station-submit-spinner" size={18} aria-hidden="true" />
+                    : suggestion.kind === 'relay'
+                      ? <RadioTower size={18} aria-hidden="true" />
+                      : <Cloud size={18} aria-hidden="true" />}
+                  <span className="station-entry-copy">
+                    <Text strong className="mobile-truncate">{suggestion.displayName}</Text>
+                    <Text type="secondary" className="mobile-truncate">
+                      {suggestion.canonicalOrigin}
+                    </Text>
+                  </span>
+                  <span className={`station-entry-status ${failed ? 'offline' : ''}`} aria-live={failed ? 'polite' : undefined}>
+                    {status}
+                  </span>
+                </button>
+              );
+            })}
+          </>
+        ) : null}
       </div>
 
       {hasEntries && !addingStation ? (
@@ -295,6 +361,22 @@ export function stationAvailabilityState(
   if (verifying) return 'validating';
   if (!checked) return 'unknown';
   return entry.online ? 'online' : 'offline';
+}
+
+export function visibleXConfigSuggestions(
+  entries: MobileStationEntry[],
+  suggestions: XConfigSuggestion[],
+): XConfigSuggestion[] {
+  const verifiedOrigins = new Set(
+    entries.flatMap((entry) => (
+      entry.routes?.length
+        ? entry.routes.map((route) => route.endpointOrigin)
+        : [entry.url]
+    )),
+  );
+  return suggestions.filter(
+    (suggestion) => !verifiedOrigins.has(suggestion.canonicalOrigin),
+  );
 }
 
 function getStationStatus(

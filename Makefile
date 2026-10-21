@@ -131,6 +131,7 @@ help-deploy:
 	@echo "Remote Deployment (pull model)"
 	@echo "=============================="
 	@echo "  make deploy ENV=<name>         Deploy to remote host"
+	@echo "  make deploy-repair ENV=<name>  Run reviewed non-reset repair command"
 	@echo "  make deploy ENV=<name> BRANCH=feat/x  Deploy specific branch"
 	@echo "  make deploy-status ENV=<name>  Check remote status"
 	@echo "  make deploy-logs ENV=<name>    Fetch remote logs"

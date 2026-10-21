@@ -1525,6 +1525,41 @@ export interface StationRouteBindingProjection {
   transportOrigin: string;
 }
 
+export type XConfigFreshness = 'current' | 'stale' | 'embedded' | 'unavailable';
+
+export interface XConfigSuggestion {
+  seedId: string;
+  kind: 'relay' | 'direct_station';
+  displayName: string;
+  canonicalOrigin: string;
+  regions: string[];
+  freshness: Exclude<XConfigFreshness, 'unavailable'>;
+  actionable: boolean;
+  sourceSequence: number;
+}
+
+export interface XConfigRelease {
+  releaseId: string;
+  version: string;
+  manifestUrl: string;
+  manifestSha256Hex: string;
+  releaseSigningKeyId: string;
+  releaseNotesUrl: string;
+}
+
+export interface XConfigProjection {
+  channel: string;
+  sequence?: number;
+  expiresAtUnixMs?: number;
+  freshness: XConfigFreshness;
+  suggestions: XConfigSuggestion[];
+  release?: XConfigRelease;
+  refreshing: boolean;
+  lastRefreshAttemptAtUnixMs?: number;
+  nextRefreshAtUnixMs?: number;
+  lastRefreshError?: string;
+}
+
 export async function discoverStationEndpoint(
   input: string,
 ): Promise<StationEndpointDiscovery> {
@@ -1564,6 +1599,22 @@ export async function readStationRouteBinding(): Promise<StationRouteBindingProj
 
 export async function fetchActiveStationIdentity(): Promise<VerifiedStationIdentity> {
   return invoke<VerifiedStationIdentity>('station_identity_fetch');
+}
+
+export async function readXConfigProjection(): Promise<XConfigProjection> {
+  return invoke<XConfigProjection>('x_config_projection');
+}
+
+export async function refreshXConfigProjection(
+  force = false,
+): Promise<XConfigProjection> {
+  return invoke<XConfigProjection>('x_config_refresh', { force });
+}
+
+export async function discoverXConfigSuggestion(
+  seedId: string,
+): Promise<StationEndpointDiscovery> {
+  return invoke<StationEndpointDiscovery>('x_config_discover_suggestion', { seedId });
 }
 
 export type MobileOAuthProvider = 'github' | 'google';

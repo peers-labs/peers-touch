@@ -20,3 +20,4 @@ shared frontend runtime. Platform-internal implementation guidance remains in
 | Desktop runtime | [desktop/](./desktop/README.md) |
 | Mobile shell and native kernel | [mobile/](./mobile/README.md) |
 | Shared frontend Page/Runtime/Boot model | [frontend-runtime/](./frontend-runtime/README.md) |
+| Signed bootstrap and release configuration | [control-plane/](./control-plane/README.md) |

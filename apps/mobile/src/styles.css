@@ -1213,6 +1213,41 @@ select,
   -webkit-overflow-scrolling: touch;
 }
 
+.station-suggestion-heading {
+  padding: 8px 4px 2px;
+  color: rgba(15, 23, 42, 0.42);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.station-suggestion {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 6px 8px;
+  border: 1px solid rgba(102, 126, 234, 0.12);
+  border-radius: 12px;
+  background: transparent;
+  color: rgba(15, 23, 42, 0.76);
+  font: inherit;
+  text-align: left;
+}
+
+.station-suggestion:disabled {
+  color: rgba(15, 23, 42, 0.34);
+}
+
+.station-suggestion:not(:disabled):active {
+  background: rgba(102, 126, 234, 0.055);
+}
+
+.station-suggestion.failed {
+  border-color: rgba(207, 19, 34, 0.22);
+}
+
 .station-empty {
   display: flex;
   align-items: center;

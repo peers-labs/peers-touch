@@ -179,7 +179,7 @@ type EventSyncPort interface {
 
 // AttachmentDataPlanePort keeps raw ciphertext streaming separate from its
 // canonical protobuf metadata. All methods receive the authenticated source
-// Station independently of client-controlled request fields.
+// Station independently of x-configled request fields.
 type AttachmentDataPlanePort interface {
 	GetUpload(
 		ctx context.Context,

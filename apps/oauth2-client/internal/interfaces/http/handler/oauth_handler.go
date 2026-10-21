@@ -13,6 +13,7 @@ import (
 type OAuthHandler struct {
 	StartAuth      usecase.StartAuthUseCase
 	HandleCallback usecase.HandleCallbackUseCase
+	OperatorLogin  usecase.OperatorLoginService
 	Sites          usecase.SiteRegistry
 }
 

@@ -71,6 +71,7 @@ type ToolCall struct {
 	SchemaVersion               string     `gorm:"not null;type:varchar(64);default:'1'"`
 	ExecutionOwner              string     `gorm:"not null;type:varchar(30);default:'unspecified'"`
 	BoundedArguments            []byte     `gorm:"not null;type:bytea"`
+	ClarificationAnswer         string     `gorm:"not null;type:text;default:''"`
 	ResourceRefs                []byte     `gorm:"not null;type:bytea"`
 	ArgumentsHash               string     `gorm:"not null;type:varchar(64);default:''"`
 	RedactedArguments           string     `gorm:"not null;type:text;default:''"`

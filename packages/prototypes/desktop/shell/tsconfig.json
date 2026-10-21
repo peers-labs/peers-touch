@@ -6,6 +6,11 @@
     "module": "ESNext",
     "baseUrl": ".",
     "paths": {
+      "react": ["./node_modules/@types/react"],
+      "react/*": ["./node_modules/@types/react/*"],
+      "react-dom": ["./node_modules/@types/react-dom"],
+      "react-dom/*": ["./node_modules/@types/react-dom/*"],
+      "@peers-touch/prototype-desktop-atelier": ["../applets/atelier/src/Page.tsx"],
       "@lobehub/ui": ["./node_modules/@lobehub/ui"],
       "antd": ["./node_modules/antd"],
       "lucide-react": ["./node_modules/lucide-react"],

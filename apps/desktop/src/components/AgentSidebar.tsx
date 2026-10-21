@@ -1,214 +1,129 @@
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import type { MouseEvent, ReactNode } from 'react';
-import { Flexbox } from 'react-layout-kit';
-import { ActionIcon, Block, Center, SearchBar, Text } from '@lobehub/ui';
 import {
-  Plus,
-  Download,
-  MessageSquarePlus,
-  User,
-  Search,
-  Hash,
-  ChevronRight,
-  Trash2,
-  Pin,
-  MoreHorizontal,
-  Star,
-  Sparkles,
-  Pencil,
-  Copy,
-  Undo2,
-  Upload,
-  Loader2,
-  Settings2,
-  MessageCircle,
-  FolderPlus,
-  FolderOpen,
-  FolderMinus,
-  RefreshCw,
-} from 'lucide-react';
-import { theme, Modal, Popover } from 'antd';
-import type { GlobalToken } from 'antd';
-import type { InputRef } from 'antd';
-import { Dropdown, Input, toast } from '@lobehub/ui';
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react';
+import { ActionIcon, Dropdown, Input, SearchBar, toast } from '@lobehub/ui';
 import type { MenuProps } from '@lobehub/ui';
-import { useTranslation } from 'react-i18next';
-import type { AgentTopic } from '../store/agentTopics';
-import type { AgentMessageSearchResult } from '../store/agentSearch';
-import { api, type Agent, parseAgentChatConfig } from '../services/desktop_api';
-import { AgentIconTile } from './agent/AgentIconTile';
+import { Modal, theme } from 'antd';
+import type { GlobalToken, InputRef } from 'antd';
 import {
-  useActiveAgentSearchSlice,
+  CheckSquare2,
+  ChevronRight,
+  Hash,
+  ListChecks,
+  MessageSquarePlus,
+  MoreHorizontal,
+  Pencil,
+  Pin,
+  Search,
+  Square,
+  Trash2,
+  User,
+  X,
+} from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { Flexbox } from 'react-layout-kit';
+
+import { resolveI18nValue } from '../i18n';
+import type { AgentTopic } from '../store/agentTopics';
+import { useChatStore } from '../store/chat';
+import {
   useActiveAgentSlice,
   useActiveAgentTopicSlice,
   useActiveChatSlice,
 } from './agent/useActiveAgentStores';
 import { openAgentChatSession } from '../services/openAgentChatSession';
-import { usePortalStore } from '../store/portal';
-import { useSessionGroupStore } from '../store/sessionGroups';
-import type { SessionGroup } from '../store/sessionGroups';
-import { resolveI18nValue } from '../i18n';
-import {
-  selectAgentCapabilityBindings,
-  selectAgentCapabilityReadiness,
-  useAgentCapabilityStore,
-  type AgentCapabilityState,
-} from '../store/agentCapabilities';
-import {
-  CapabilityReadinessState,
-  type AgentCapabilityBinding,
-  type CapabilityReadinessSnapshot,
-} from '../gen/proto/domain/agent/capability_pb';
-
-const OVERFLOW_TOOLTIP_ELLIPSIS = { tooltipWhenOverflow: true } as const;
-const EMPTY_CAPABILITY_BINDINGS: AgentCapabilityBinding[] = [];
-
-interface AgentCapabilityBadgeProjection {
-  bindings: AgentCapabilityBinding[];
-  readiness?: CapabilityReadinessSnapshot;
-}
-
-function createAgentCapabilityBadgeSelector(agentId: string) {
-  let bindingsReference: AgentCapabilityBinding[] | undefined;
-  let readinessReference: CapabilityReadinessSnapshot | undefined;
-  let projection: AgentCapabilityBadgeProjection | undefined;
-
-  return (state: AgentCapabilityState): AgentCapabilityBadgeProjection => {
-    const bindings = state.bindingsByAgentId[agentId] ?? EMPTY_CAPABILITY_BINDINGS;
-    const readiness = state.readinessByAgentId[agentId];
-    if (
-      projection
-      && bindingsReference === bindings
-      && readinessReference === readiness
-    ) {
-      return projection;
-    }
-    bindingsReference = bindings;
-    readinessReference = readiness;
-    projection = {
-      bindings: selectAgentCapabilityBindings(state, agentId),
-      readiness: selectAgentCapabilityReadiness(state, agentId),
-    };
-    return projection;
-  };
-}
-
-function capabilityBadgeState(
-  bindings: AgentCapabilityBinding[],
-  readiness?: CapabilityReadinessSnapshot,
-): CapabilityReadinessState | undefined {
-  const enabledBindings = bindings.filter(
-    (binding) => binding.enabled && !binding.tombstonedAt,
-  );
-  if (enabledBindings.length === 0) return undefined;
-  const states = enabledBindings.map((binding) => readiness?.capabilities.find(
-    (item) =>
-      item.bindingId === binding.bindingId
-      && item.bindingRevision === binding.revision,
-  )?.state ?? CapabilityReadinessState.UNKNOWN);
-  if (states.some((state) =>
-    state === CapabilityReadinessState.UNAVAILABLE
-    || state === CapabilityReadinessState.BLOCKED)) {
-    return CapabilityReadinessState.UNAVAILABLE;
-  }
-  if (states.some((state) =>
-    state === CapabilityReadinessState.UNKNOWN
-    || state === CapabilityReadinessState.UNSPECIFIED)) {
-    return CapabilityReadinessState.UNKNOWN;
-  }
-  if (states.some((state) => state === CapabilityReadinessState.DEGRADED)) {
-    return CapabilityReadinessState.DEGRADED;
-  }
-  return CapabilityReadinessState.READY;
-}
 
 interface AgentSidebarProps {
-  onEditAgent: (agent: Agent) => void;
-  onCreateAgent: () => void;
-  onNavigateProfile?: (agentName: string) => void;
+  onNavigateProfile: (agentName: string) => void;
   onNavigateChat?: () => void;
-  onNavigateMarketplace?: () => void;
-  onAgentChanged?: (agentName: string) => void;
-  hideAgentPicker?: boolean;
 }
 
-function groupTopicsByDate(sessions: AgentTopic[], t: (key: string) => string): { key: string; label: string; items: AgentTopic[] }[] {
+interface TopicDateGroup {
+  key: string;
+  label: string;
+  items: AgentTopic[];
+}
+
+const TOPIC_ACTION_SLOT_STYLE: CSSProperties = {
+  flex: '1 1 0',
+  minWidth: 0,
+  width: 'auto',
+};
+
+function groupTopicsByDate(
+  topics: AgentTopic[],
+  t: (key: string) => string,
+): TopicDateGroup[] {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const yesterday = new Date(today.getTime() - 86400000);
-  const weekAgo = new Date(today.getTime() - 7 * 86400000);
+  const yesterday = new Date(today.getTime() - 86_400_000);
+  const weekAgo = new Date(today.getTime() - 7 * 86_400_000);
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const groups = new Map<string, AgentTopic[]>();
 
-  const groups: Record<string, AgentTopic[]> = {};
-  const groupOrder: string[] = [];
-
-  const addToGroup = (key: string, session: AgentTopic) => {
-    if (!groups[key]) {
-      groups[key] = [];
-      groupOrder.push(key);
-    }
-    groups[key].push(session);
+  const add = (key: string, topic: AgentTopic) => {
+    const existing = groups.get(key) ?? [];
+    groups.set(key, [...existing, topic]);
   };
 
-  const sorted = [...sessions].sort(
-    (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
-  );
+  [...topics]
+    .sort(
+      (left, right) =>
+        new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime(),
+    )
+    .forEach((topic) => {
+      const updatedAt = new Date(topic.updated_at);
+      if (updatedAt >= today) add('today', topic);
+      else if (updatedAt >= yesterday) add('yesterday', topic);
+      else if (updatedAt >= weekAgo) add('week', topic);
+      else if (updatedAt >= monthStart) add('month', topic);
+      else {
+        add(
+          `${updatedAt.getFullYear()}-${String(updatedAt.getMonth() + 1).padStart(2, '0')}`,
+          topic,
+        );
+      }
+    });
 
-  for (const s of sorted) {
-    const d = new Date(s.updated_at);
-    if (d >= today) {
-      addToGroup('today', s);
-    } else if (d >= yesterday) {
-      addToGroup('yesterday', s);
-    } else if (d >= weekAgo) {
-      addToGroup('week', s);
-    } else if (d >= monthStart) {
-      addToGroup('month', s);
-    } else {
-      const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      addToGroup(monthKey, s);
-    }
-  }
-
-  const labelMap: Record<string, string> = {
+  const labels: Record<string, string> = {
     today: t('agent.sidebar.dateGroup.today'),
     yesterday: t('agent.sidebar.dateGroup.yesterday'),
     week: t('agent.sidebar.dateGroup.thisWeek'),
     month: t('agent.sidebar.dateGroup.thisMonth'),
   };
-
-  return groupOrder.map((key) => ({
+  return [...groups.entries()].map(([key, items]) => ({
     key,
-    label:
-      labelMap[key] ||
-      new Date(key + '-01').toLocaleDateString('en-US', { year: 'numeric', month: 'long' }),
-    items: groups[key],
+    items,
+    label: labels[key] || new Date(`${key}-01`).toLocaleDateString(undefined, {
+      month: 'long',
+      year: 'numeric',
+    }),
   }));
 }
 
-export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, onNavigateChat, onNavigateMarketplace, onAgentChanged, hideAgentPicker = false }: AgentSidebarProps) {
-  const { t } = useTranslation('agent');
-  const {
-    agents,
-    loadAgents,
-    selectedAgent,
-    defaultAgent,
-    setDefaultAgent,
-  } = useActiveAgentSlice((s) => ({
-    agents: s.agents,
-    loadAgents: s.loadAgents,
-    selectedAgent: s.selectedAgent,
-    defaultAgent: s.defaultAgent,
-    setDefaultAgent: s.setDefaultAgent,
+export function AgentSidebar({
+  onNavigateProfile,
+  onNavigateChat,
+}: AgentSidebarProps) {
+  const { t } = useTranslation(['agent', 'common']);
+  const { token } = theme.useToken();
+  const { currentAgent } = useActiveAgentSlice((state) => ({
+    currentAgent: state.agents.find(
+      (agent) => agent.name === state.selectedAgent,
+    ),
   }));
   const {
     currentSessionKey,
-    sessions: storeSessions,
+    sessions,
     selectSession,
-  } = useActiveChatSlice((s) => ({
-    currentSessionKey: s.currentSessionKey,
-    sessions: s.sessions,
-    selectSession: s.selectSession,
+  } = useActiveChatSlice((state) => ({
+    currentSessionKey: state.currentSessionKey,
+    sessions: state.sessions,
+    selectSession: state.selectSession,
   }));
   const {
     activeAgentId,
@@ -217,554 +132,379 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
     loadErrorsByAgentId,
     loadTopicsForAgent,
     createDraftTopic,
-    deleteTopic,
+    deleteTopics: deleteTopicBatch,
     renameTopic,
-    smartRenameTopic,
-    revertGeneratedTitle,
     pinTopic,
-    favoriteTopic,
-  } = useActiveAgentTopicSlice((s) => ({
-    activeAgentId: s.activeAgentId,
-    topicsByAgentId: s.topicsByAgentId,
-    loadingAgentIds: s.loadingAgentIds,
-    loadErrorsByAgentId: s.loadErrorsByAgentId,
-    loadTopicsForAgent: s.loadTopicsForAgent,
-    createDraftTopic: s.createDraftTopic,
-    deleteTopic: s.deleteTopic,
-    renameTopic: s.renameTopic,
-    smartRenameTopic: s.smartRenameTopic,
-    revertGeneratedTitle: s.revertGeneratedTitle,
-    pinTopic: s.pinTopic,
-    favoriteTopic: s.favoriteTopic,
+  } = useActiveAgentTopicSlice((state) => ({
+    activeAgentId: state.activeAgentId,
+    topicsByAgentId: state.topicsByAgentId,
+    loadingAgentIds: state.loadingAgentIds,
+    loadErrorsByAgentId: state.loadErrorsByAgentId,
+    loadTopicsForAgent: state.loadTopicsForAgent,
+    createDraftTopic: state.createDraftTopic,
+    deleteTopics: state.deleteTopics,
+    renameTopic: state.renameTopic,
+    pinTopic: state.pinTopic,
   }));
-  const {
-    searching: messageSearching,
-    results: messageSearchResults,
-    searchAgentMessages,
-    resetSearch,
-  } = useActiveAgentSearchSlice((s) => ({
-    searching: s.searching,
-    results: s.results,
-    searchAgentMessages: s.searchAgentMessages,
-    resetSearch: s.resetSearch,
-  }));
-
-  const [searchText, setSearchText] = useState('');
-  const [topicSearch, setTopicSearch] = useState('');
-  const [showSearch, setShowSearch] = useState(false);
-  const importInputRef = useRef<HTMLInputElement>(null);
-  const { token } = theme.useToken();
-
-  // Session groups
-  const allSessionGroups = useSessionGroupStore((s) => s.groups);
-  const createSessionGroup = useSessionGroupStore((s) => s.createGroup);
-  const renameSessionGroup = useSessionGroupStore((s) => s.renameGroup);
-  const deleteSessionGroup = useSessionGroupStore((s) => s.deleteGroup);
-  const moveTopicToGroup = useSessionGroupStore((s) => s.moveTopicToGroup);
-  const getGroupsForAgent = useSessionGroupStore((s) => s.getGroupsForAgent);
-  const getGroupForTopic = useSessionGroupStore((s) => s.getGroupForTopic);
-
-  const currentAgent = useMemo(
-    () => agents.find((a) => a.name === selectedAgent),
-    [agents, selectedAgent],
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedTopicIds, setSelectedTopicIds] = useState<Set<string>>(
+    new Set(),
   );
+  const [interactionAgentId, setInteractionAgentId] = useState<string>();
 
-  const agentTopics = useMemo(
-    () => (currentAgent ? topicsByAgentId[currentAgent.id] || [] : []),
+  if (interactionAgentId !== currentAgent?.id) {
+    setInteractionAgentId(currentAgent?.id);
+    setSearchOpen(false);
+    setQuery('');
+    setSelectionMode(false);
+    setSelectedTopicIds(new Set());
+  }
+
+  const topics = useMemo(
+    () => (currentAgent ? topicsByAgentId[currentAgent.id] ?? [] : []),
     [currentAgent, topicsByAgentId],
   );
+  const filteredTopics = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) return topics;
+    return topics.filter((topic) => (
+      resolveI18nValue(topic.title).toLowerCase().includes(normalized)
+    ));
+  }, [query, topics]);
+  const pinnedTopics = filteredTopics.filter(
+    (topic) => topic.pinned || topic.favorite,
+  );
+  const datedGroups = useMemo(
+    () => groupTopicsByDate(
+      filteredTopics.filter((topic) => !topic.pinned && !topic.favorite),
+      t,
+    ),
+    [filteredTopics, t],
+  );
+  const loading = currentAgent
+    ? Boolean(loadingAgentIds[currentAgent.id])
+    : false;
+  const loadError = currentAgent
+    ? loadErrorsByAgentId[currentAgent.id]
+    : undefined;
 
-  const loadAgentTopics = useCallback(() => {
-    if (!currentAgent) {
-      return;
-    }
-    void loadTopicsForAgent(currentAgent.id, 'sidebar').catch(() => undefined);
+  const reloadTopics = useCallback(() => {
+    if (!currentAgent) return;
+    void loadTopicsForAgent(currentAgent.id, 'topic-rail').catch(() => undefined);
   }, [currentAgent, loadTopicsForAgent]);
 
-  useEffect(() => {
-    setShowSearch(false);
-    setTopicSearch('');
-    resetSearch();
-  }, [currentAgent?.id, resetSearch]);
-
-  useEffect(() => {
-    if (!showSearch || topicSearch.trim().length < 2) {
-      resetSearch();
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      void searchAgentMessages(topicSearch, agentTopics);
-    }, 250);
-    return () => window.clearTimeout(timer);
-  }, [agentTopics, resetSearch, searchAgentMessages, showSearch, topicSearch]);
-
-  const handleSwitchAgent = useCallback(
-    (agent: Agent) => {
-      onAgentChanged?.(agent.name);
-
-      openAgentChatSession(agent, { reason: 'switch-agent' })
-        .catch(() => undefined);
-    },
-    [onAgentChanged],
-  );
-
-  const handleNewTopic = useCallback(() => {
-    const agentName = selectedAgent || 'assistant';
-    const topic = createDraftTopic(currentAgent?.id || activeAgentId || agentName, agentName, t('agent.sidebar.newTopic'));
-    selectSession(topic.key, topic);
+  const startTopic = useCallback(() => {
+    const agentName = currentAgent?.name || 'assistant';
+    const topic = createDraftTopic(
+      currentAgent?.id || activeAgentId || agentName,
+      agentName,
+      t('agent.sidebar.newTopic'),
+    );
+    void selectSession(topic.key, topic);
     onNavigateChat?.();
-  }, [activeAgentId, createDraftTopic, currentAgent, selectedAgent, selectSession, onNavigateChat, t]);
+  }, [
+    activeAgentId,
+    createDraftTopic,
+    currentAgent,
+    onNavigateChat,
+    selectSession,
+    t,
+  ]);
 
-  const handleExportAgentPackage = useCallback(async () => {
-    if (!currentAgent) return;
-    try {
-      const exported = await api.exportAgentPackage(currentAgent.id);
-      const blob = new Blob([JSON.stringify(exported.package, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = `${currentAgent.name || currentAgent.id}.agent.json`;
-      anchor.click();
-      URL.revokeObjectURL(url);
-      if (exported.unresolvedDependencies.length > 0) {
-        toast.warning(t('agent.sidebar.toast.agentExportUnresolved', {
-          count: exported.unresolvedDependencies.length,
-        }));
+  const selectTopic = useCallback((topic: AgentTopic) => {
+    const projected = sessions.find((session) => session.key === topic.key) ?? topic;
+    void selectSession(topic.key, projected);
+    onNavigateChat?.();
+  }, [onNavigateChat, selectSession, sessions]);
+
+  const deleteTopics = useCallback(async (topicIds: Set<string>) => {
+    if (topicIds.size === 0) return;
+    const remaining = topics.filter((topic) => !topicIds.has(topic.key));
+    const currentDeleted = topicIds.has(currentSessionKey);
+    await deleteTopicBatch([...topicIds]);
+    await useChatStore.getState().purgeSessions([...topicIds]);
+    if (currentDeleted) {
+      if (remaining[0]) {
+        await selectSession(remaining[0].key, remaining[0]);
+      } else if (currentAgent) {
+        const draft = createDraftTopic(
+          currentAgent.id,
+          currentAgent.name,
+          t('agent.sidebar.newTopic'),
+        );
+        await selectSession(draft.key, draft);
       }
-      toast.success(t('agent.sidebar.toast.agentExported'));
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : String(e);
-      toast.error(message || t('agent.sidebar.toast.agentExportFailed'));
     }
-  }, [currentAgent, t]);
+    setSelectedTopicIds(new Set());
+    setSelectionMode(false);
+    reloadTopics();
+  }, [
+    createDraftTopic,
+    currentAgent,
+    currentSessionKey,
+    deleteTopicBatch,
+    reloadTopics,
+    selectSession,
+    t,
+    topics,
+  ]);
 
-  const handleImportAgentPackage = useCallback(async (file: File) => {
-    try {
-      const text = await file.text();
-      const pkg = JSON.parse(text);
-      const result = await api.importAgentPackage(pkg);
-      if (result.unresolvedDependencies.length > 0) {
-        toast.error(t('agent.sidebar.toast.agentImportUnresolved', {
-          count: result.unresolvedDependencies.length,
-        }));
-        return;
-      }
-      if (!result.agent) {
-        throw new Error(t('agent.sidebar.toast.agentImportFailed'));
-      }
-      const imported = result.agent;
-      await loadAgents();
-      void openAgentChatSession(imported, { reason: 'import-agent-package' });
-      toast.success(t('agent.sidebar.toast.agentImported', { name: imported.title || imported.name }));
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : String(e);
-      toast.error(message || t('agent.sidebar.toast.agentImportFailed'));
-    }
-  }, [loadAgents, t]);
+  const confirmBatchDelete = () => {
+    if (selectedTopicIds.size === 0) return;
+    Modal.confirm({
+      centered: true,
+      title: t('agent.sidebar.batchDelete.title', {
+        count: selectedTopicIds.size,
+      }),
+      content: t('agent.sidebar.batchDelete.content'),
+      okText: t('agent.sidebar.menu.delete'),
+      okButtonProps: { danger: true },
+      onOk: () => deleteTopics(selectedTopicIds),
+    });
+  };
 
-  const handleCloneAgent = useCallback(async () => {
-    if (!currentAgent) return;
-    try {
-      const cloned = await api.duplicateAgent(currentAgent.id, `${currentAgent.name} copy`);
-      await loadAgents();
-      void openAgentChatSession(cloned, { reason: 'clone-agent' });
-      toast.success(t('agent.sidebar.toast.agentCloned', { name: cloned.title || cloned.name }));
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : String(e);
-      toast.error(message || t('agent.sidebar.toast.agentCloneFailed'));
-    }
-  }, [currentAgent, loadAgents, t]);
-
-  const handleSetDefaultAgent = useCallback(async (agent: Agent) => {
-    try {
-      await setDefaultAgent(agent.id);
-      toast.success(t('agent.sidebar.toast.defaultAgentUpdated', { name: agent.title || agent.name }));
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : String(e);
-      toast.error(message || t('agent.sidebar.toast.defaultAgentUpdateFailed'));
-    }
-  }, [setDefaultAgent, t]);
-
-  const handleToggleAgentPin = useCallback(async (agent: Agent) => {
-    try {
-      await api.updateAgent(agent.id, { pinned: !agent.pinned });
-      await loadAgents();
-      toast.success(t(agent.pinned ? 'agent.sidebar.toast.agentUnpinned' : 'agent.sidebar.toast.agentPinned', { name: agent.title || agent.name }));
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : String(e);
-      toast.error(message || t('agent.sidebar.toast.agentPinUpdateFailed'));
-    }
-  }, [loadAgents, t]);
-
-  const handleToggleAgentFavorite = useCallback(async (agent: Agent) => {
-    try {
-      await api.updateAgent(agent.id, { favorite: !agent.favorite });
-      await loadAgents();
-      toast.success(t(agent.favorite ? 'agent.sidebar.toast.agentUnfavorited' : 'agent.sidebar.toast.agentFavorited', { name: agent.title || agent.name }));
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : String(e);
-      toast.error(message || t('agent.sidebar.toast.agentFavoriteUpdateFailed'));
-    }
-  }, [loadAgents, t]);
-
-  const handleDeleteTopic = useCallback(
-    async (sessionKey: string) => {
-      const wasCurrent = currentSessionKey === sessionKey;
-      const nextTopic = agentTopics.find((topic) => topic.key !== sessionKey);
-      await deleteTopic(sessionKey);
-      if (wasCurrent) {
-        if (nextTopic) {
-          await selectSession(nextTopic.key, nextTopic);
-        } else if (currentAgent) {
-          const topic = createDraftTopic(currentAgent.id, currentAgent.name, t('agent.sidebar.newTopic'));
-          await selectSession(topic.key, topic);
-        }
-      }
-      loadAgentTopics();
-    },
-    [agentTopics, createDraftTopic, currentAgent, currentSessionKey, deleteTopic, loadAgentTopics, selectSession, t],
-  );
-
-  const handleSelectTopic = useCallback(
-    (key: string) => {
-      // Prefer store session when it carries model overrides from the chat projection.
-      const session =
-        storeSessions.find((s) => s.key === key) ?? agentTopics.find((s) => s.key === key);
-      selectSession(key, session);
-      onNavigateChat?.();
-    },
-    [agentTopics, storeSessions, selectSession, onNavigateChat],
-  );
-
-  const pinnedTopics = useMemo(
-    () => agentTopics.filter((t) => t.pinned || t.favorite),
-    [agentTopics],
-  );
-
-  const topicGroups = useMemo(() => {
-    let filtered = agentTopics;
-    if (topicSearch) {
-      const q = topicSearch.toLowerCase();
-      filtered = agentTopics.filter(
-        (s) => (s.title || '').toLowerCase().includes(q) || s.key.toLowerCase().includes(q),
-      );
-    }
-    return groupTopicsByDate(filtered, t);
-  }, [agentTopics, topicSearch, t]);
-
-  // Session groups for current agent
-  const agentSessionGroups = useMemo(
-    () => (currentAgent ? getGroupsForAgent(currentAgent.id) : []),
-    [currentAgent, getGroupsForAgent, allSessionGroups],
-  );
-
-  // Topics that belong to a session group (keys)
-  const groupedTopicKeys = useMemo(() => {
-    const keys = new Set<string>();
-    for (const g of agentSessionGroups) {
-      for (const k of g.topicKeys) keys.add(k);
-    }
-    return keys;
-  }, [agentSessionGroups]);
-
-  const handleCreateSessionGroup = useCallback(() => {
-    if (!currentAgent) return;
-    const name = window.prompt(t('agent.sidebar.groups.namePlaceholder'));
-    if (!name?.trim()) return;
-    createSessionGroup(currentAgent.id, name.trim());
-  }, [currentAgent, createSessionGroup, t]);
-
-  const totalTopics = agentTopics.length;
-  const loadingTopics = currentAgent ? !!loadingAgentIds[currentAgent.id] : false;
-  const topicLoadError = currentAgent ? loadErrorsByAgentId[currentAgent.id] : undefined;
-  const showMessageResults = showSearch && topicSearch.trim().length >= 2;
-  const handleRetryTopics = useCallback(() => {
-    if (!currentAgent) return;
-    void openAgentChatSession(currentAgent, {
-      forceReload: true,
-      draftTitle: t('agent.sidebar.newTopic'),
-      reason: 'sidebar-retry',
-    }).catch(() => undefined);
-  }, [currentAgent, t]);
+  const toggleSelected = (topicId: string) => {
+    setSelectedTopicIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(topicId)) next.delete(topicId);
+      else next.add(topicId);
+      return next;
+    });
+  };
 
   return (
-    <Flexbox height="100%" style={{ background: token.colorBgContainer }}>
-      {hideAgentPicker ? (
-        <AgentContextCard agent={currentAgent} token={token} t={t} />
-      ) : (
-        <AgentPicker
-          agents={agents}
-          selectedAgent={selectedAgent}
-          defaultAgent={defaultAgent}
-          searchText={searchText}
-          onSearchChange={setSearchText}
-          onSelect={handleSwitchAgent}
-          onSetDefault={handleSetDefaultAgent}
-          onTogglePin={handleToggleAgentPin}
-          onToggleFavorite={handleToggleAgentFavorite}
-          onCreate={onCreateAgent}
-          onClone={handleCloneAgent}
-          onExport={handleExportAgentPackage}
-          onImportClick={() => importInputRef.current?.click()}
-          onNavigateMarketplace={onNavigateMarketplace}
-          token={token}
-          t={t}
-        />
-      )}
-      <input
-        ref={importInputRef}
-        type="file"
-        accept=".json,application/json"
-        style={{ display: 'none' }}
-        onChange={(event) => {
-          const file = event.currentTarget.files?.[0];
-          event.currentTarget.value = '';
-          if (file) void handleImportAgentPackage(file);
+    <Flexbox
+      data-pt-agent-topic-list
+      height="100%"
+      style={{ background: token.colorBgContainer }}
+    >
+      <div
+        style={{
+          height: 44,
+          padding: '0 14px',
+          display: 'flex',
+          alignItems: 'center',
+          flexShrink: 0,
+          minWidth: 0,
         }}
-      />
-
-      {/* Nav Actions */}
-      <Flexbox style={{ padding: hideAgentPicker ? '0 14px 8px' : '8px', flexShrink: 0, borderBottom: hideAgentPicker ? 'none' : `1px solid ${token.colorBorderSecondary}` }} gap={2}>
-        <NavItem
-          testId="start-topic"
-          icon={<MessageSquarePlus size={16} />}
-          label={t('agent.sidebar.startNewTopic')}
-          onClick={handleNewTopic}
-          token={token}
-        />
-        <NavItem
-          icon={<User size={16} />}
-          label={t('agent.sidebar.agentProfile')}
-          onClick={() => currentAgent && (onNavigateProfile ? onNavigateProfile(currentAgent.name) : onEditAgent(currentAgent))}
-          token={token}
-        />
-        <NavItem
-          icon={<Search size={16} />}
-          label={t('agent.sidebar.search')}
-          onClick={() => setShowSearch(!showSearch)}
-          active={showSearch}
-          token={token}
-          style={hideAgentPicker ? { height: 30, paddingInline: 0 } : undefined}
-        />
-      </Flexbox>
-
-      {showSearch && (
-        <div style={{ padding: hideAgentPicker ? '0 14px 8px' : '0 12px 8px' }}>
-          <SearchBar
-            placeholder={t('agent.sidebar.searchTopics')}
-            value={topicSearch}
-            onChange={(e) => setTopicSearch(e.target.value)}
-            allowClear
-            size="small"
-          />
-        </div>
-      )}
-
-      {/* Topic Section */}
-      <Flexbox flex={1} style={{ overflow: 'auto', padding: hideAgentPicker ? '8px 14px 16px' : '8px' }}>
-        {/* Section header */}
-        <Flexbox
-          horizontal
-          align="center"
-          justify="space-between"
-          style={{ padding: hideAgentPicker ? '0 0 6px' : '0 8px 6px' }}
+      >
+        <span
+          style={{
+            minWidth: 0,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            color: token.colorText,
+            fontSize: 13,
+            fontWeight: 700,
+          }}
         >
-          <span style={{ fontSize: 12, fontWeight: 600, color: token.colorTextSecondary }}>
-            {t('agent.sidebar.topic')} {totalTopics > 0 ? totalTopics : ''}
-          </span>
-          {loadingTopics ? (
-            <span style={{ fontSize: 11, color: token.colorTextTertiary }}>
-              {t('agent.sidebar.topicSyncing')}
-            </span>
-          ) : (
-            <Settings2 size={13} color={token.colorTextTertiary} />
-          )}
-        </Flexbox>
+          {currentAgent?.title || currentAgent?.name || t('agent.sidebar.noAgentsYet')}
+        </span>
+      </div>
 
-        {topicLoadError && (
-          <Flexbox
-            data-pt-agent-topic-load-error={currentAgent?.id}
-            role="alert"
-            gap={6}
-            style={{
-              margin: '0 4px 8px',
-              padding: '8px 10px',
-              borderRadius: 8,
-              background: token.colorErrorBg,
-              color: token.colorErrorText,
-            }}
-          >
-            <span style={{ fontSize: 12, fontWeight: 600 }}>
-              {t('agent.sidebar.topicLoadFailed')}
-            </span>
-            <span
-              title={topicLoadError.message}
-              style={{
-                fontSize: 11,
-                color: token.colorTextSecondary,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
+      <Flexbox
+        horizontal
+        align="center"
+        gap={4}
+        style={{ height: 42, padding: '2px 14px 6px', flexShrink: 0 }}
+      >
+        {searchOpen ? (
+          <>
+            <SearchBar
+              autoFocus
+              allowClear
+              size="small"
+              value={query}
+              placeholder={t('agent.sidebar.searchTopics')}
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key !== 'Escape') return;
+                setQuery('');
+                setSearchOpen(false);
               }}
-            >
-              {topicLoadError.message}
-            </span>
-            <button
-              data-pt-agent-topic-load-retry
-              type="button"
-              disabled={loadingTopics}
-              onClick={handleRetryTopics}
-              style={{
-                alignSelf: 'flex-start',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4,
-                padding: 0,
-                border: 0,
-                background: 'transparent',
-                color: token.colorPrimary,
-                cursor: loadingTopics ? 'default' : 'pointer',
-                font: 'inherit',
-                fontSize: 11,
-                fontWeight: 600,
+              style={{ flex: 1, minWidth: 0 }}
+            />
+            <ActionIcon
+              icon={X}
+              size={{ blockSize: 30, size: 14 }}
+              title={t('common.action.cancel', { ns: 'common' })}
+              onClick={() => {
+                setQuery('');
+                setSearchOpen(false);
               }}
-            >
-              <RefreshCw size={12} />
-              {t('agent.sidebar.retryTopicLoad')}
-            </button>
-          </Flexbox>
-        )}
-
-        {showMessageResults ? (
-          <MessageSearchResults
-            results={messageSearchResults}
-            searching={messageSearching}
-            onSelectResult={handleSelectTopic}
-            token={token}
-            t={t}
-          />
-        ) : totalTopics === 0 ? (
-          <NavItem
-              testId="start-topic"
-              icon={<MessageSquarePlus size={16} />}
-              label={t('agent.sidebar.startNewTopic')}
-              onClick={handleNewTopic}
-            token={token}
-            style={{ margin: '0 4px' }}
-          />
+            />
+          </>
         ) : (
           <>
-            {pinnedTopics.length > 0 && !topicSearch && (
-              <div style={{ marginBottom: 4 }}>
-                <Flexbox
-                  horizontal
-                  align="center"
-                  gap={4}
+            <ActionIcon
+              data-pt-agent-session-start
+              icon={MessageSquarePlus}
+              size={{ blockSize: 34, size: 15 }}
+              title={t('agent.sidebar.startNewTopic')}
+              onClick={startTopic}
+              style={TOPIC_ACTION_SLOT_STYLE}
+            />
+            <ActionIcon
+              data-pt-agent-topic-profile
+              icon={User}
+              size={{ blockSize: 34, size: 15 }}
+              title={t('agent.sidebar.agentProfile')}
+              onClick={() => currentAgent && onNavigateProfile(currentAgent.name)}
+              style={TOPIC_ACTION_SLOT_STYLE}
+            />
+            <ActionIcon
+              data-pt-agent-topic-search
+              icon={Search}
+              size={{ blockSize: 34, size: 15 }}
+              title={t('agent.sidebar.search')}
+              onClick={() => setSearchOpen(true)}
+              style={TOPIC_ACTION_SLOT_STYLE}
+            />
+          </>
+        )}
+      </Flexbox>
+
+      <Flexbox
+        horizontal
+        align="center"
+        gap={4}
+        style={{
+          height: 34,
+          padding: '0 8px 0 14px',
+          borderTop: `1px solid ${token.colorBorderSecondary}`,
+          borderBottom: `1px solid ${token.colorBorderSecondary}`,
+          flexShrink: 0,
+        }}
+      >
+        <span
+          style={{
+            color: token.colorTextSecondary,
+            fontSize: 12,
+            fontWeight: 600,
+          }}
+        >
+          {t('agent.sidebar.topicsCount', { count: topics.length })}
+        </span>
+        {loading ? (
+          <span style={{ marginLeft: 'auto', color: token.colorTextTertiary, fontSize: 11 }}>
+            {t('agent.sidebar.topicSyncing')}
+          </span>
+        ) : (
+          <Flexbox horizontal gap={2} style={{ marginLeft: 'auto' }}>
+            {selectionMode ? (
+              <>
+                <span
                   style={{
-                    minHeight: 28,
-                    padding: '0 8px',
+                    minWidth: 18,
+                    color: token.colorTextTertiary,
+                    fontSize: 11,
+                    textAlign: 'center',
                   }}
                 >
-                  <Pin size={12} style={{ color: token.colorTextQuaternary }} />
-                  <span style={{ fontSize: 12, color: token.colorTextSecondary, fontWeight: 500 }}>
-                    {t('agent.sidebar.pinnedSection')}
-                  </span>
-                </Flexbox>
-                <Flexbox gap={1}>
-                  {pinnedTopics.map((topic) => (
-                    <TopicItem
-                      key={`pinned-${topic.key}`}
-                      topic={topic}
-                      isActive={topic.key === currentSessionKey}
-                      onSelect={() => handleSelectTopic(topic.key)}
-                      onDelete={() => handleDeleteTopic(topic.key)}
-                      onReload={loadAgentTopics}
-                      onRenameTopic={renameTopic}
-                      onSmartRenameTopic={smartRenameTopic}
-                      onRevertGeneratedTitle={revertGeneratedTitle}
-                      onPinTopic={pinTopic}
-                      onFavoriteTopic={favoriteTopic}
-                      sessionGroups={agentSessionGroups}
-                      onMoveToGroup={moveTopicToGroup}
-                      currentGroupId={getGroupForTopic(topic.key)?.id}
-                      token={token}
-                      t={t}
-                    />
-                  ))}
-                </Flexbox>
-              </div>
-            )}
-
-            {/* Session Groups */}
-            {agentSessionGroups.length > 0 && !topicSearch && (
-              <>
-                {agentSessionGroups.map((sg) => {
-                  const groupTopics = agentTopics.filter((tp) => sg.topicKeys.includes(tp.key));
-                  return (
-                    <SessionGroupSection
-                      key={sg.id}
-                      group={sg}
-                      topics={groupTopics}
-                      currentSessionKey={currentSessionKey}
-                      onSelectTopic={handleSelectTopic}
-                      onDeleteTopic={handleDeleteTopic}
-                      onReload={loadAgentTopics}
-                      onRenameTopic={renameTopic}
-                      onSmartRenameTopic={smartRenameTopic}
-                      onRevertGeneratedTitle={revertGeneratedTitle}
-                      onPinTopic={pinTopic}
-                      onFavoriteTopic={favoriteTopic}
-                      onRenameGroup={renameSessionGroup}
-                      onDeleteGroup={deleteSessionGroup}
-                      sessionGroups={agentSessionGroups}
-                      onMoveToGroup={moveTopicToGroup}
-                      getGroupForTopic={getGroupForTopic}
-                      token={token}
-                      t={t}
-                    />
-                  );
-                })}
-              </>
-            )}
-
-            {/* Create Group action */}
-            {!topicSearch && (
-              <Flexbox
-                horizontal
-                align="center"
-                gap={4}
-                onClick={handleCreateSessionGroup}
-                style={{
-                  minHeight: 28,
-                  padding: '0 8px',
-                  cursor: 'pointer',
-                  marginBottom: 4,
-                }}
-              >
-                <FolderPlus size={12} style={{ color: token.colorTextQuaternary }} />
-                <span style={{ fontSize: 11, color: token.colorTextTertiary }}>
-                  {t('agent.sidebar.groups.create')}
+                  {selectedTopicIds.size}
                 </span>
-              </Flexbox>
+                <ActionIcon
+                  data-pt-agent-topic-batch-delete
+                  icon={Trash2}
+                  size={{ blockSize: 28, size: 14 }}
+                  disabled={selectedTopicIds.size === 0}
+                  title={t('agent.sidebar.batchDelete.deleteSelected')}
+                  onClick={confirmBatchDelete}
+                />
+                <ActionIcon
+                  icon={X}
+                  size={{ blockSize: 28, size: 14 }}
+                  title={t('common.action.cancel', { ns: 'common' })}
+                  onClick={() => {
+                    setSelectionMode(false);
+                    setSelectedTopicIds(new Set());
+                  }}
+                />
+              </>
+            ) : (
+              <ActionIcon
+                data-pt-agent-topic-batch-select
+                icon={ListChecks}
+                size={{ blockSize: 28, size: 14 }}
+                title={t('agent.sidebar.batchDelete.select')}
+                onClick={() => setSelectionMode(true)}
+              />
             )}
+          </Flexbox>
+        )}
+      </Flexbox>
 
-            {topicGroups.map((group) => (
+      <Flexbox flex={1} gap={4} style={{ minHeight: 0, overflowY: 'auto', padding: '8px' }}>
+        {loadError ? (
+          <button
+            type="button"
+            data-pt-agent-topic-load-error={currentAgent?.id}
+            data-pt-agent-topic-load-retry
+            onClick={() => {
+              if (!currentAgent) return;
+              void openAgentChatSession(currentAgent, {
+                forceReload: true,
+                draftTitle: t('agent.sidebar.newTopic'),
+                reason: 'topic-rail-retry',
+              }).catch(() => undefined);
+            }}
+            style={{
+              width: '100%',
+              padding: 10,
+              border: 0,
+              borderRadius: 7,
+              background: token.colorErrorBg,
+              color: token.colorErrorText,
+              cursor: 'pointer',
+              textAlign: 'left',
+              fontSize: 12,
+            }}
+          >
+            {t('agent.sidebar.topicLoadFailed')}
+          </button>
+        ) : null}
+        {filteredTopics.length === 0 ? (
+          <div style={{ padding: '10px 8px', color: token.colorTextTertiary, fontSize: 12 }}>
+            {query
+              ? t('agent.sidebar.noMatchingTopics')
+              : t('agent.sidebar.noTopics')}
+          </div>
+        ) : (
+          <>
+            {pinnedTopics.length > 0 ? (
               <TopicGroup
-                key={`${currentAgent?.id || 'agent'}:${group.key}`}
-                label={group.label}
-                topics={group.items.filter((tp) => !groupedTopicKeys.has(tp.key))}
+                label={t('agent.sidebar.pinnedSection')}
+                topics={pinnedTopics}
                 currentSessionKey={currentSessionKey}
-                onSelectTopic={handleSelectTopic}
-                onDeleteTopic={handleDeleteTopic}
-                onReload={loadAgentTopics}
-                onRenameTopic={renameTopic}
-                onSmartRenameTopic={smartRenameTopic}
-                onRevertGeneratedTitle={revertGeneratedTitle}
-                onPinTopic={pinTopic}
-                onFavoriteTopic={favoriteTopic}
-                sessionGroups={agentSessionGroups}
-                onMoveToGroup={moveTopicToGroup}
-                getGroupForTopic={getGroupForTopic}
+                selectionMode={selectionMode}
+                selectedTopicIds={selectedTopicIds}
+                onSelect={selectTopic}
+                onToggleSelected={toggleSelected}
+                onDelete={(topic) => deleteTopics(new Set([topic.key]))}
+                onPin={pinTopic}
+                onRename={renameTopic}
+                onReload={reloadTopics}
+                token={token}
+                t={t}
+              />
+            ) : null}
+            {datedGroups.map((group) => (
+              <TopicGroup
+                key={group.key}
+                label={group.label}
+                topics={group.items}
+                currentSessionKey={currentSessionKey}
+                selectionMode={selectionMode}
+                selectedTopicIds={selectedTopicIds}
+                onSelect={selectTopic}
+                onToggleSelected={toggleSelected}
+                onDelete={(topic) => deleteTopics(new Set([topic.key]))}
+                onPin={pinTopic}
+                onRename={renameTopic}
+                onReload={reloadTopics}
                 token={token}
                 t={t}
               />
@@ -776,1125 +516,282 @@ export function AgentSidebar({ onEditAgent, onCreateAgent, onNavigateProfile, on
   );
 }
 
-function AgentContextCard({
-  agent,
-  token,
-  t,
-}: {
-  agent?: Agent;
-  token: GlobalToken;
-  t: (key: string, options?: Record<string, unknown>) => string;
-}) {
-  if (!agent) {
-    return (
-      <div style={{ padding: 10, borderBottom: `1px solid ${token.colorBorderSecondary}`, color: token.colorTextTertiary, fontSize: 12 }}>
-        {t('agent.sidebar.noAgentsYet')}
-      </div>
-    );
-  }
-  return (
-    <Flexbox
-      horizontal
-      align="center"
-      gap={10}
-      style={{
-        margin: '16px 14px 12px',
-        padding: 14,
-        borderRadius: 22,
-        border: 'none',
-        background: token.colorBgContainer,
-        boxShadow: '0 14px 40px rgba(15, 23, 42, 0.08)',
-        flexShrink: 0,
-      }}
-    >
-      <AgentIconTile agent={agent} size={44} />
-      <Flexbox flex={1} style={{ minWidth: 0 }}>
-        <span style={{ fontSize: 13, fontWeight: 700, color: token.colorText, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {agent.title || agent.name}
-        </span>
-        <span style={{ fontSize: 11, color: token.colorTextTertiary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {agent.description || t('agent.canvas.agentFallback')}
-        </span>
-      </Flexbox>
-      <Sparkles size={14} color={token.colorWarning} />
-    </Flexbox>
-  );
-}
-
-function MessageSearchResults({
-  results,
-  searching,
-  onSelectResult,
-  token,
-  t,
-}: {
-  results: AgentMessageSearchResult[];
-  searching: boolean;
-  onSelectResult: (key: string) => void;
-  token: GlobalToken;
-  t: (key: string, options?: Record<string, unknown>) => string;
-}) {
-  if (searching) {
-    return (
-      <Flexbox horizontal align="center" gap={8} style={{ padding: '10px 8px', color: token.colorTextSecondary, fontSize: 12 }}>
-        <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
-        {t('agent.sidebar.searchingMessages')}
-      </Flexbox>
-    );
-  }
-
-  if (results.length === 0) {
-    return (
-      <div style={{ padding: '10px 8px', color: token.colorTextTertiary, fontSize: 12 }}>
-        {t('agent.sidebar.noMessageResults')}
-      </div>
-    );
-  }
-
-  return (
-    <Flexbox gap={4}>
-      <div style={{ padding: '0 8px 6px', color: token.colorTextSecondary, fontSize: 12, fontWeight: 600 }}>
-        {t('agent.sidebar.messageResults', { count: results.length })}
-      </div>
-      {results.map((result) => (
-        <Flexbox
-          key={result.id}
-          onClick={() => onSelectResult(result.topicKey)}
-          gap={3}
-          style={{
-            padding: '8px',
-            borderRadius: 8,
-            cursor: 'pointer',
-            background: token.colorFillQuaternary,
-          }}
-        >
-          <span style={{ fontSize: 12, color: token.colorText, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {resolveI18nValue(result.topicTitle) || result.topicKey}
-          </span>
-          <span style={{ fontSize: 11, color: token.colorTextSecondary, lineHeight: 1.35 }}>
-            {result.snippet}
-          </span>
-        </Flexbox>
-      ))}
-    </Flexbox>
-  );
-}
-
-function NavItem({
-  icon,
-  label,
-  onClick,
-  active,
-  token,
-  style,
-  testId,
-}: {
-  icon: ReactNode;
-  label: string;
-  onClick?: () => void;
-  active?: boolean;
-  token: GlobalToken;
-  style?: React.CSSProperties;
-  testId?: string;
-}) {
-  return (
-    <Block
-      data-pt-agent-nav={testId}
-      data-pt-agent-session-start={testId === 'start-topic' ? true : undefined}
-      horizontal
-      align="center"
-      clickable
-      gap={8}
-      height={36}
-      paddingInline={4}
-      variant={active ? 'filled' : 'borderless'}
-      onClick={() => onClick?.()}
-      style={{
-        color: active ? token.colorText : token.colorTextSecondary,
-        userSelect: 'none',
-        ...style,
-      }}
-    >
-      <Center flex="none" height={28} width={28}>
-        <span style={{ display: 'flex', color: active ? token.colorText : token.colorTextDescription }}>
-          {icon}
-        </span>
-      </Center>
-      <Text
-        color={active ? token.colorText : token.colorTextSecondary}
-        ellipsis={OVERFLOW_TOOLTIP_ELLIPSIS}
-        style={{ flex: 1 }}
-      >
-        {label}
-      </Text>
-    </Block>
-  );
-}
-
-function SessionGroupSection({
-  group,
-  topics,
-  currentSessionKey,
-  onSelectTopic,
-  onDeleteTopic,
-  onReload,
-  onRenameTopic,
-  onSmartRenameTopic,
-  onRevertGeneratedTitle,
-  onPinTopic,
-  onFavoriteTopic,
-  onRenameGroup,
-  onDeleteGroup,
-  sessionGroups,
-  onMoveToGroup,
-  getGroupForTopic,
-  token,
-  t,
-}: {
-  group: SessionGroup;
-  topics: AgentTopic[];
-  currentSessionKey: string;
-  onSelectTopic: (key: string) => void;
-  onDeleteTopic: (key: string) => void;
-  onReload: () => void;
-  onRenameTopic: (key: string, title: string) => Promise<void>;
-  onSmartRenameTopic: (key: string) => Promise<{ title: string }>;
-  onRevertGeneratedTitle: (key: string) => Promise<void>;
-  onPinTopic: (key: string, pinned: boolean) => Promise<void>;
-  onFavoriteTopic: (key: string, favorite: boolean) => Promise<void>;
-  onRenameGroup: (groupId: string, name: string) => void;
-  onDeleteGroup: (groupId: string) => void;
-  sessionGroups: SessionGroup[];
-  onMoveToGroup: (topicKey: string, targetGroupId: string | null) => void;
-  getGroupForTopic: (topicKey: string) => SessionGroup | undefined;
-  token: GlobalToken;
-  t: (key: string, options?: Record<string, unknown>) => string;
-}) {
-  const [collapsed, setCollapsed] = useState(false);
-  const [renaming, setRenaming] = useState(false);
-  const [renameValue, setRenameValue] = useState(group.name);
-  const renameRef = useRef<InputRef>(null);
-
-  useEffect(() => {
-    if (renaming) {
-      setTimeout(() => renameRef.current?.focus({ cursor: 'end' }), 50);
-    }
-  }, [renaming]);
-
-  const handleRenameStart = useCallback(() => {
-    setRenameValue(group.name);
-    setRenaming(true);
-  }, [group.name]);
-
-  const handleRenameSave = useCallback(() => {
-    setRenaming(false);
-    const trimmed = renameValue.trim();
-    if (!trimmed || trimmed === group.name) return;
-    onRenameGroup(group.id, trimmed);
-  }, [renameValue, group.id, group.name, onRenameGroup]);
-
-  const handleDelete = useCallback(() => {
-    Modal.confirm({
-      title: t('agent.sidebar.groups.delete'),
-      content: t('agent.sidebar.groups.deleteConfirm'),
-      okButtonProps: { danger: true },
-      centered: true,
-      onOk: () => onDeleteGroup(group.id),
-    });
-  }, [group.id, onDeleteGroup, t]);
-
-  return (
-    <div style={{ marginBottom: 4 }}>
-      <Flexbox
-        horizontal
-        align="center"
-        gap={4}
-        style={{
-          minHeight: 28,
-          padding: '0 8px',
-          cursor: 'pointer',
-        }}
-      >
-        <ChevronRight
-          size={12}
-          onClick={() => setCollapsed(!collapsed)}
-          style={{
-            color: token.colorTextQuaternary,
-            transform: collapsed ? 'rotate(0deg)' : 'rotate(90deg)',
-            transition: 'transform 0.15s',
-          }}
-        />
-        <FolderOpen size={12} style={{ color: token.colorPrimary, flexShrink: 0 }} />
-        {renaming ? (
-          <Input
-            ref={renameRef}
-            value={renameValue}
-            onChange={(e) => setRenameValue(e.target.value)}
-            onPressEnter={handleRenameSave}
-            onBlur={handleRenameSave}
-            onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setRenaming(false); } }}
-            onClick={(e) => e.stopPropagation()}
-            size="small"
-            style={{ flex: 1, fontSize: 12 }}
-          />
-        ) : (
-          <span
-            onClick={() => setCollapsed(!collapsed)}
-            style={{ flex: 1, fontSize: 12, color: token.colorTextSecondary, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-          >
-            {group.name}
-            <span style={{ marginLeft: 4, color: token.colorTextQuaternary, fontWeight: 400 }}>
-              {topics.length}
-            </span>
-          </span>
-        )}
-        {!renaming && (
-          <Dropdown
-            menu={{
-              items: [
-                { key: 'rename', icon: <Pencil size={14} />, label: t('agent.sidebar.groups.rename'), onClick: handleRenameStart },
-                { type: 'divider' },
-                { key: 'delete', icon: <Trash2 size={14} />, label: t('agent.sidebar.groups.delete'), danger: true, onClick: handleDelete },
-              ],
-            }}
-            trigger={['click']}
-            placement="bottomRight"
-          >
-            <div
-              onClick={(e) => e.stopPropagation()}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, borderRadius: 4, flexShrink: 0, cursor: 'pointer', color: token.colorTextTertiary }}
-            >
-              <MoreHorizontal size={12} />
-            </div>
-          </Dropdown>
-        )}
-      </Flexbox>
-
-      {!collapsed && (
-        <Flexbox gap={1}>
-          {topics.length === 0 ? (
-            <span style={{ padding: '4px 24px', fontSize: 11, color: token.colorTextQuaternary }}>
-              {t('agent.sidebar.groups.empty')}
-            </span>
-          ) : (
-            topics.map((topic) => (
-              <TopicItem
-                key={topic.key}
-                topic={topic}
-                isActive={topic.key === currentSessionKey}
-                onSelect={() => onSelectTopic(topic.key)}
-                onDelete={() => onDeleteTopic(topic.key)}
-                onReload={onReload}
-                onRenameTopic={onRenameTopic}
-                onSmartRenameTopic={onSmartRenameTopic}
-                onRevertGeneratedTitle={onRevertGeneratedTitle}
-                onPinTopic={onPinTopic}
-                onFavoriteTopic={onFavoriteTopic}
-                sessionGroups={sessionGroups}
-                onMoveToGroup={onMoveToGroup}
-                currentGroupId={getGroupForTopic(topic.key)?.id}
-                token={token}
-                t={t}
-              />
-            ))
-          )}
-        </Flexbox>
-      )}
-    </div>
-  );
-}
-
 function TopicGroup({
   label,
   topics,
   currentSessionKey,
-  onSelectTopic,
-  onDeleteTopic,
+  selectionMode,
+  selectedTopicIds,
+  onSelect,
+  onToggleSelected,
+  onDelete,
+  onPin,
+  onRename,
   onReload,
-  onRenameTopic,
-  onSmartRenameTopic,
-  onRevertGeneratedTitle,
-  onPinTopic,
-  onFavoriteTopic,
-  sessionGroups,
-  onMoveToGroup,
-  getGroupForTopic,
   token,
   t,
 }: {
   label: string;
   topics: AgentTopic[];
   currentSessionKey: string;
-  onSelectTopic: (key: string) => void;
-  onDeleteTopic: (key: string) => void;
+  selectionMode: boolean;
+  selectedTopicIds: Set<string>;
+  onSelect: (topic: AgentTopic) => void;
+  onToggleSelected: (topicId: string) => void;
+  onDelete: (topic: AgentTopic) => Promise<void>;
+  onPin: (topicId: string, pinned: boolean) => Promise<void>;
+  onRename: (topicId: string, title: string) => Promise<void>;
   onReload: () => void;
-  onRenameTopic: (key: string, title: string) => Promise<void>;
-  onSmartRenameTopic: (key: string) => Promise<{ title: string }>;
-  onRevertGeneratedTitle: (key: string) => Promise<void>;
-  onPinTopic: (key: string, pinned: boolean) => Promise<void>;
-  onFavoriteTopic: (key: string, favorite: boolean) => Promise<void>;
-  sessionGroups: SessionGroup[];
-  onMoveToGroup: (topicKey: string, targetGroupId: string | null) => void;
-  getGroupForTopic: (topicKey: string) => SessionGroup | undefined;
   token: GlobalToken;
   t: (key: string, options?: Record<string, unknown>) => string;
 }) {
   const [collapsed, setCollapsed] = useState(false);
-
   return (
-    <div style={{ marginBottom: 4 }}>
-      <Flexbox
-        horizontal
-        align="center"
-        gap={4}
-        onClick={() => setCollapsed(!collapsed)}
+    <section>
+      <button
+        type="button"
+        onClick={() => setCollapsed((value) => !value)}
         style={{
-          minHeight: 28,
+          width: '100%',
+          height: 28,
           padding: '0 8px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 4,
+          border: 0,
+          background: 'transparent',
+          color: token.colorTextSecondary,
           cursor: 'pointer',
+          fontSize: 12,
+          fontWeight: 500,
+          textAlign: 'left',
         }}
       >
         <ChevronRight
           size={12}
           style={{
-            color: token.colorTextQuaternary,
             transform: collapsed ? 'rotate(0deg)' : 'rotate(90deg)',
-            transition: 'transform 0.15s',
+            transition: 'transform 0.15s ease',
           }}
         />
-        <span style={{ fontSize: 12, color: token.colorTextSecondary, fontWeight: 500 }}>
-          {label}
-        </span>
-      </Flexbox>
-
-      {!collapsed && (
+        {label}
+      </button>
+      {!collapsed ? (
         <Flexbox gap={1}>
           {topics.map((topic) => (
             <TopicItem
               key={topic.key}
+              active={topic.key === currentSessionKey}
+              selected={selectedTopicIds.has(topic.key)}
+              selectionMode={selectionMode}
               topic={topic}
-              isActive={topic.key === currentSessionKey}
-              onSelect={() => onSelectTopic(topic.key)}
-              onDelete={() => onDeleteTopic(topic.key)}
+              onSelect={() => onSelect(topic)}
+              onToggleSelected={() => onToggleSelected(topic.key)}
+              onDelete={() => onDelete(topic)}
+              onPin={onPin}
+              onRename={onRename}
               onReload={onReload}
-              onRenameTopic={onRenameTopic}
-              onSmartRenameTopic={onSmartRenameTopic}
-              onRevertGeneratedTitle={onRevertGeneratedTitle}
-              onPinTopic={onPinTopic}
-              onFavoriteTopic={onFavoriteTopic}
-              sessionGroups={sessionGroups}
-              onMoveToGroup={onMoveToGroup}
-              currentGroupId={getGroupForTopic(topic.key)?.id}
               token={token}
               t={t}
             />
           ))}
         </Flexbox>
-      )}
-    </div>
+      ) : null}
+    </section>
   );
 }
 
-// TopicItem — LobeChat-style topic with context menu
-// - Right-click: context menu
-// - Hover: "..." dropdown button
-// - Rename: inline Input replacing the title text (not a Popover)
-// - Delete: Modal.confirm()
-// - Smart Rename: calls backend LLM to generate title
 function TopicItem({
   topic,
-  isActive,
+  active,
+  selected,
+  selectionMode,
   onSelect,
+  onToggleSelected,
   onDelete,
+  onPin,
+  onRename,
   onReload,
-  onRenameTopic,
-  onSmartRenameTopic,
-  onRevertGeneratedTitle,
-  onPinTopic,
-  onFavoriteTopic,
-  sessionGroups,
-  onMoveToGroup,
-  currentGroupId,
   token,
   t,
 }: {
   topic: AgentTopic;
-  isActive: boolean;
+  active: boolean;
+  selected: boolean;
+  selectionMode: boolean;
   onSelect: () => void;
-  onDelete: () => void;
+  onToggleSelected: () => void;
+  onDelete: () => Promise<void>;
+  onPin: (topicId: string, pinned: boolean) => Promise<void>;
+  onRename: (topicId: string, title: string) => Promise<void>;
   onReload: () => void;
-  onRenameTopic: (key: string, title: string) => Promise<void>;
-  onSmartRenameTopic: (key: string) => Promise<{ title: string }>;
-  onRevertGeneratedTitle: (key: string) => Promise<void>;
-  onPinTopic: (key: string, pinned: boolean) => Promise<void>;
-  onFavoriteTopic: (key: string, favorite: boolean) => Promise<void>;
-  sessionGroups?: SessionGroup[];
-  onMoveToGroup?: (topicKey: string, targetGroupId: string | null) => void;
-  currentGroupId?: string;
   token: GlobalToken;
   t: (key: string, options?: Record<string, unknown>) => string;
 }) {
   const [hovered, setHovered] = useState(false);
   const [renaming, setRenaming] = useState(false);
-  const [renameTitle, setRenameTitle] = useState('');
-  const renameInputRef = useRef<InputRef>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const renameRef = useRef<InputRef>(null);
 
-  useEffect(() => {
-    if (renaming) {
-      setTimeout(() => renameInputRef.current?.focus({ cursor: 'end' }), 50);
-    }
-  }, [renaming]);
-
-  const handleClick = useCallback(() => {
-    if (renaming) return;
-    onSelect();
-  }, [onSelect, renaming]);
-
-  const handleRename = useCallback(() => {
-    setRenameTitle(topic.title || '');
+  const startRename = () => {
+    setRenameValue(resolveI18nValue(topic.title));
     setRenaming(true);
-  }, [topic.title]);
-
-  const handleSaveRename = useCallback(async () => {
-    const newTitle = renameTitle.trim();
+    requestAnimationFrame(() => renameRef.current?.focus({ cursor: 'end' }));
+  };
+  const saveRename = async () => {
+    const value = renameValue.trim();
     setRenaming(false);
-    if (!newTitle || newTitle === (topic.title || '')) return;
+    if (!value || value === resolveI18nValue(topic.title)) return;
     try {
-      await onRenameTopic(topic.key, newTitle);
+      await onRename(topic.key, value);
       onReload();
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : String(e);
-      toast.error(message || t('agent.sidebar.toast.renameFailed'));
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : t('agent.sidebar.toast.renameFailed'),
+      );
     }
-  }, [renameTitle, topic.title, topic.key, onRenameTopic, onReload, t]);
-
-  const handleSmartRename = useCallback(async () => {
+  };
+  const togglePin = async () => {
     try {
-      toast.loading(t('agent.sidebar.toast.generatingTitle'));
-      const res = await onSmartRenameTopic(topic.key);
-      toast.success(t('agent.sidebar.toast.renamedTo', { title: res.title }));
+      await onPin(topic.key, !topic.pinned);
       onReload();
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : String(e);
-      toast.error(message || t('agent.sidebar.toast.smartRenameFailed'));
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : t('agent.sidebar.toast.renameFailed'),
+      );
     }
-  }, [topic.key, onSmartRenameTopic, onReload, t]);
-
-  const handleUndoGeneratedTitle = useCallback(async (event: MouseEvent) => {
-    event.stopPropagation();
-    try {
-      await onRevertGeneratedTitle(topic.key);
-      toast.success(t('agent.sidebar.toast.titleReverted'));
-      onReload();
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : String(e);
-      toast.error(message || t('agent.sidebar.toast.renameFailed'));
-    }
-  }, [topic.key, onRevertGeneratedTitle, onReload, t]);
-
-  const handleDeleteConfirm = useCallback(() => {
+  };
+  const confirmDelete = () => {
     Modal.confirm({
+      centered: true,
       title: t('agent.sidebar.deleteConfirm.title'),
       content: t('agent.sidebar.deleteConfirm.content'),
       okText: t('agent.sidebar.menu.delete'),
       okButtonProps: { danger: true },
-      centered: true,
-      onOk: () => onDelete(),
+      onOk: onDelete,
     });
-  }, [onDelete]);
-
-  const handlePin = useCallback(async () => {
-    await onPinTopic(topic.key, !topic.pinned);
-  }, [topic.key, topic.pinned, onPinTopic]);
-
-  const handleFavorite = useCallback(async () => {
-    await onFavoriteTopic(topic.key, !topic.favorite);
-  }, [topic.key, topic.favorite, onFavoriteTopic]);
-
-  const handleOpenComments = useCallback(() => {
-    usePortalStore.getState().openTopicComments(topic.key);
-  }, [topic.key]);
-
-  // Build "Move to group" submenu items
-  const moveToGroupItems: MenuProps['items'] = useMemo(() => {
-    if (!sessionGroups || !onMoveToGroup) return [];
-    const items: MenuProps['items'] = [];
-    for (const sg of sessionGroups) {
-      if (sg.id === currentGroupId) continue;
-      items.push({
-        key: `move-to-${sg.id}`,
-        icon: <FolderOpen size={14} />,
-        label: sg.name,
-        onClick: () => onMoveToGroup(topic.key, sg.id),
-      });
-    }
-    if (currentGroupId) {
-      if (items.length > 0) items.push({ type: 'divider' });
-      items.push({
-        key: 'remove-from-group',
-        icon: <FolderMinus size={14} />,
-        label: t('agent.sidebar.menu.removeFromGroup'),
-        onClick: () => onMoveToGroup(topic.key, null),
-      });
-    }
-    return items;
-  }, [sessionGroups, onMoveToGroup, currentGroupId, topic.key, t]);
-
+  };
   const menuItems: MenuProps['items'] = [
-    { key: 'pin', icon: <Pin size={14} />, label: topic.pinned ? t('agent.sidebar.menu.unpin') : t('agent.sidebar.menu.pin'), onClick: handlePin },
-    { key: 'favorite', icon: <Star size={14} />, label: topic.favorite ? t('agent.sidebar.menu.unfavorite') : t('agent.sidebar.menu.favorite'), onClick: handleFavorite },
+    {
+      key: 'pin',
+      icon: <Pin size={14} />,
+      label: topic.pinned
+        ? t('agent.sidebar.menu.unpin')
+        : t('agent.sidebar.menu.pin'),
+      onClick: togglePin,
+    },
+    {
+      key: 'rename',
+      icon: <Pencil size={14} />,
+      label: t('agent.sidebar.menu.rename'),
+      onClick: startRename,
+    },
     { type: 'divider' },
-    ...(moveToGroupItems.length > 0
-      ? [{ key: 'move-to-group', icon: <FolderOpen size={14} />, label: t('agent.sidebar.menu.moveToGroup'), children: moveToGroupItems }, { type: 'divider' as const }]
-      : []),
-    { key: 'smart-rename', icon: <Sparkles size={14} />, label: t('agent.sidebar.menu.smartRename'), onClick: handleSmartRename },
-    { key: 'rename', icon: <Pencil size={14} />, label: t('agent.sidebar.menu.rename'), onClick: handleRename },
-    { key: 'comments', icon: <MessageCircle size={14} />, label: t('agent.sidebar.menu.comments'), onClick: handleOpenComments },
-    { type: 'divider' },
-    { key: 'delete', icon: <Trash2 size={14} />, label: t('agent.sidebar.menu.delete'), danger: true, onClick: handleDeleteConfirm },
+    {
+      key: 'delete',
+      danger: true,
+      icon: <Trash2 size={14} />,
+      label: t('agent.sidebar.menu.delete'),
+      onClick: confirmDelete,
+    },
   ];
 
-  return (
-    <Dropdown menu={{ items: menuItems }} trigger={['contextMenu']}>
-      <Flexbox
-        horizontal
-        align="center"
-        gap={8}
-        onClick={handleClick}
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
-        style={{
-          minHeight: 36,
-          padding: '4px 8px',
-          borderRadius: 8,
-          cursor: 'pointer',
-          background: isActive ? token.colorFillSecondary : hovered ? token.colorFillTertiary : 'transparent',
-          transition: 'background 0.18s ease',
-        }}
-      >
-        <Hash
-          size={14}
-          style={{
-            color: isActive ? token.colorText : token.colorTextDescription,
-            flexShrink: 0,
-          }}
-        />
-
-        {/* Title + Popover rename (appears below the title, not covering it) */}
-        <Popover
-          open={renaming}
-          placement="bottomLeft"
-          trigger={[]}
-          content={
-            <Input
-              ref={renameInputRef}
-              value={renameTitle}
-              onChange={(e) => setRenameTitle(e.target.value)}
-              onPressEnter={handleSaveRename}
-              onBlur={handleSaveRename}
-              onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setRenaming(false); } }}
-              onClick={(e) => e.stopPropagation()}
-              style={{ width: 220 }}
-              size="small"
-            />
-          }
-          styles={{ container: { padding: 8 } }}
-          arrow={false}
-        >
-          <span
-            style={{
-              flex: 1,
-              fontSize: 13,
-              color: isActive ? token.colorText : token.colorTextSecondary,
-              fontWeight: isActive ? 500 : 400,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {resolveI18nValue(topic.title) || t('agent.sidebar.newTopic')}
-          </span>
-        </Popover>
-
-        {topic.titleState === 'generating' && (
-          <span style={{ fontSize: 11, color: token.colorTextTertiary, flexShrink: 0 }}>
-            {t('agent.sidebar.titleState.generating')}
-          </span>
-        )}
-
-        {topic.titleState === 'generated' && topic.previousTitle && (
-          <button
-            type="button"
-            title={t('agent.sidebar.titleState.undoGenerated')}
-            onClick={handleUndoGeneratedTitle}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 3,
-              border: 0,
-              background: 'transparent',
-              color: token.colorPrimary,
-              cursor: 'pointer',
-              fontSize: 11,
-              padding: 0,
-              flexShrink: 0,
-            }}
-          >
-            <Undo2 size={12} />
-            {t('agent.sidebar.titleState.generated')}
-          </button>
-        )}
-
-        {(hovered || isActive) && !renaming && (
-          <Dropdown menu={{ items: menuItems }} trigger={['click']} placement="bottomRight">
-            <div
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                width: 20, height: 20, borderRadius: 4, flexShrink: 0,
-                cursor: 'pointer', color: token.colorTextTertiary,
-              }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = token.colorFillSecondary; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-            >
-              <MoreHorizontal size={14} />
-            </div>
-          </Dropdown>
-        )}
-      </Flexbox>
-    </Dropdown>
-  );
-}
-
-function AgentPicker({
-  agents,
-  selectedAgent,
-  defaultAgent,
-  searchText,
-  onSearchChange,
-  onSelect,
-  onSetDefault,
-  onTogglePin,
-  onToggleFavorite,
-  onCreate,
-  onClone,
-  onExport,
-  onImportClick,
-  onNavigateMarketplace,
-  token,
-  t,
-}: {
-  agents: Agent[];
-  selectedAgent: string;
-  defaultAgent: string;
-  searchText: string;
-  onSearchChange: (v: string) => void;
-  onSelect: (a: Agent) => void;
-  onSetDefault: (a: Agent) => void;
-  onTogglePin: (a: Agent) => void;
-  onToggleFavorite: (a: Agent) => void;
-  onCreate: () => void;
-  onClone: () => void;
-  onExport: () => void;
-  onImportClick: () => void;
-  onNavigateMarketplace?: () => void;
-  token: GlobalToken;
-  t: (key: string, options?: Record<string, unknown>) => string;
-}) {
-  const filtered = searchText
-    ? agents.filter(
-        (a) =>
-          (a.title || '').toLowerCase().includes(searchText.toLowerCase()) ||
-          (a.name || '').toLowerCase().includes(searchText.toLowerCase()) ||
-          (a.description || '').toLowerCase().includes(searchText.toLowerCase()),
-      )
-    : agents;
-
-  const pinnedAgents = filtered.filter((a) => a.pinned);
-  const unpinnedAgents = filtered.filter((a) => !a.pinned);
-  const [collapsed, setCollapsed] = useState(false);
-
-  return (
+  const rowContent = (
     <Flexbox
-      gap={8}
-      style={{
-        padding: '8px',
-        flexShrink: 0,
-        borderBottom: `1px solid ${token.colorBorderSecondary}`,
-      }}
-    >
-      <Flexbox horizontal align="center" gap={8} style={{ minHeight: 32, padding: '0 4px' }}>
-        <button
-          type="button"
-          title={t(collapsed ? 'agent.sidebar.expandAgents' : 'agent.sidebar.collapseAgents')}
-          onClick={() => setCollapsed(!collapsed)}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-            flex: 1,
-            minWidth: 0,
-            border: 0,
-            background: 'transparent',
-            color: token.colorTextSecondary,
-            cursor: 'pointer',
-            padding: 0,
-            font: 'inherit',
-            textAlign: 'left',
-          }}
-        >
-          <ChevronRight
-            size={13}
-            style={{
-              color: token.colorTextQuaternary,
-              transform: collapsed ? 'rotate(0deg)' : 'rotate(90deg)',
-              transition: 'transform 0.15s ease',
-              flexShrink: 0,
-            }}
-          />
-          <span style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {t('agent.sidebar.switchAgent')}
-          </span>
-        </button>
-        <ActionIcon
-          icon={Upload}
-          size="small"
-          onClick={onImportClick}
-          title={t('agent.sidebar.importAgent')}
-        />
-        {onNavigateMarketplace && (
-          <ActionIcon
-            icon={Sparkles}
-            size="small"
-            onClick={onNavigateMarketplace}
-            title={t('agent.sidebar.marketplace')}
-          />
-        )}
-        <ActionIcon
-          icon={Download}
-          size="small"
-          onClick={onExport}
-          title={t('agent.sidebar.exportAgent')}
-        />
-        <ActionIcon
-          icon={Copy}
-          size="small"
-          onClick={onClone}
-          title={t('agent.sidebar.cloneAgent')}
-        />
-        <ActionIcon
-          icon={Plus}
-          size="small"
-          onClick={onCreate}
-          title={t('agent.sidebar.createAgent')}
-          style={{ background: token.colorPrimary, color: '#fff', borderRadius: 6 }}
-        />
-      </Flexbox>
-
-      {!collapsed && (
-        <>
-          <SearchBar
-            placeholder={t('agent.sidebar.searchAgents')}
-            value={searchText}
-            onChange={(e) => onSearchChange(e.target.value)}
-            allowClear
-            size="small"
-          />
-
-          <Flexbox
-            gap={1}
-            style={{
-              maxHeight: 236,
-              overflow: 'auto',
-            }}
-          >
-            {filtered.length === 0 && (
-              <Flexbox
-                align="center"
-                justify="center"
-                style={{
-                  color: token.colorTextQuaternary,
-                  padding: '16px 8px',
-                  fontSize: 13,
-                }}
-              >
-                {searchText ? t('agent.sidebar.noMatchingAgents') : t('agent.sidebar.noAgentsYet')}
-              </Flexbox>
-            )}
-
-            {pinnedAgents.map((agent) => (
-              <AgentPickerItem
-                key={agent.id}
-                agent={agent}
-                isSelected={selectedAgent === agent.name}
-                isDefault={defaultAgent === agent.name || agent.isDefault}
-                onSelect={() => onSelect(agent)}
-                onSetDefault={() => onSetDefault(agent)}
-                onTogglePin={() => onTogglePin(agent)}
-                onToggleFavorite={() => onToggleFavorite(agent)}
-                token={token}
-                t={t}
-              />
-            ))}
-
-            {pinnedAgents.length > 0 && unpinnedAgents.length > 0 && (
-              <div style={{ height: 1, background: token.colorBorderSecondary, margin: '4px 8px' }} />
-            )}
-
-            {unpinnedAgents.map((agent) => (
-              <AgentPickerItem
-                key={agent.id}
-                agent={agent}
-                isSelected={selectedAgent === agent.name}
-                isDefault={defaultAgent === agent.name || agent.isDefault}
-                onSelect={() => onSelect(agent)}
-                onSetDefault={() => onSetDefault(agent)}
-                onTogglePin={() => onTogglePin(agent)}
-                onToggleFavorite={() => onToggleFavorite(agent)}
-                token={token}
-                t={t}
-              />
-            ))}
-          </Flexbox>
-        </>
-      )}
-    </Flexbox>
-  );
-}
-
-function AgentPickerItem({
-  agent,
-  isSelected,
-  isDefault,
-  onSelect,
-  onSetDefault,
-  onTogglePin,
-  onToggleFavorite,
-  token,
-  t,
-}: {
-  agent: Agent;
-  isSelected: boolean;
-  isDefault: boolean;
-  onSelect: () => void;
-  onSetDefault: () => void;
-  onTogglePin: () => void;
-  onToggleFavorite: () => void;
-  token: GlobalToken;
-  t: (key: string, options?: Record<string, unknown>) => string;
-}) {
-  const [hovered, setHovered] = useState(false);
-  const capabilitySelector = useMemo(
-    () => createAgentCapabilityBadgeSelector(agent.id),
-    [agent.id],
-  );
-  const capabilityProjection = useAgentCapabilityStore(capabilitySelector);
-  const canonicalCapabilityState = capabilityBadgeState(
-    capabilityProjection.bindings,
-    capabilityProjection.readiness,
-  );
-  const chatConfig = parseAgentChatConfig(agent);
-  const statusBadges = [
-    chatConfig.memory?.enabled
-      ? { label: t('agent.sidebar.status.memory'), color: token.colorSuccess }
-      : undefined,
-    canonicalCapabilityState === undefined
-      ? undefined
-      : {
-          label: [
-            t('agent.sidebar.status.tools'),
-            canonicalCapabilityState === CapabilityReadinessState.READY
-              ? t('agent.profile.enabled')
-              : canonicalCapabilityState === CapabilityReadinessState.DEGRADED
-                ? t('agent.profile.degradation.partial')
-                : canonicalCapabilityState === CapabilityReadinessState.UNAVAILABLE
-                  ? t('agent.profile.degradation.unavailable')
-                  : t('agent.profile.unknown'),
-          ].join(' · '),
-          color:
-            canonicalCapabilityState === CapabilityReadinessState.READY
-              ? token.colorSuccess
-              : canonicalCapabilityState === CapabilityReadinessState.DEGRADED
-                ? token.colorWarning
-                : canonicalCapabilityState === CapabilityReadinessState.UNAVAILABLE
-                  ? token.colorError
-                  : token.colorTextQuaternary,
-        },
-    chatConfig.workspace?.root
-      ? { label: t('agent.sidebar.status.workspace'), color: token.colorSuccess }
-      : undefined,
-  ].filter((badge): badge is { label: string; color: string } => badge !== undefined);
-
-  return (
-    <Block
+      data-pt-agent-topic-row={topic.key}
       horizontal
       align="center"
-      clickable
       gap={8}
-      height={38}
-      paddingInline={4}
-      variant={isSelected ? 'filled' : 'borderless'}
-      onClick={onSelect}
+      role="button"
+      tabIndex={0}
+      onClick={() => {
+        if (renaming) return;
+        if (selectionMode) onToggleSelected();
+        else onSelect();
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        if (selectionMode) onToggleSelected();
+        else onSelect();
+      }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
-        minWidth: 0,
-        userSelect: 'none',
+        minHeight: 36,
+        padding: '4px 8px',
+        borderRadius: 7,
+        background: active ? token.colorFillSecondary : hovered
+          ? token.colorFillTertiary
+          : 'transparent',
+        cursor: 'pointer',
       }}
     >
-      <Center flex="none" height={28} width={28}>
-        <AgentIconTile agent={agent} size={22} selected={isSelected} subtle />
-      </Center>
-      <Text
-        color={isSelected ? token.colorText : token.colorTextSecondary}
-        ellipsis={OVERFLOW_TOOLTIP_ELLIPSIS}
-        style={{
-          flex: 1,
-          minWidth: 0,
-          fontWeight: isSelected ? 600 : 400,
-        }}
-      >
-        {agent.title || agent.name}
-      </Text>
-      {statusBadges.length > 0 && (
+      {selectionMode ? (
+        selected
+          ? <CheckSquare2 size={14} color={token.colorPrimary} />
+          : <Square size={14} color={token.colorTextTertiary} />
+      ) : (
+        <Hash size={14} color={active ? token.colorText : token.colorTextDescription} />
+      )}
+      {renaming ? (
+        <Input
+          ref={renameRef}
+          size="small"
+          value={renameValue}
+          onChange={(event) => setRenameValue(event.target.value)}
+          onPressEnter={() => void saveRename()}
+          onBlur={() => void saveRename()}
+          onKeyDown={(event) => {
+            event.stopPropagation();
+            if (event.key === 'Escape') setRenaming(false);
+          }}
+          onClick={(event) => event.stopPropagation()}
+          style={{ flex: 1, minWidth: 0 }}
+        />
+      ) : (
         <span
-          title={t('agent.sidebar.status.summary', {
-            status: statusBadges.map(({ label }) => label).join(' · '),
-          })}
           style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 3,
-            flexShrink: 0,
+            flex: 1,
+            minWidth: 0,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            color: active ? token.colorText : token.colorTextSecondary,
+            fontSize: 13,
+            fontWeight: active ? 500 : 400,
           }}
         >
-          {statusBadges.slice(0, 3).map((badge) => (
-            <span
-              key={badge.label}
-              style={{
-                width: 6,
-                height: 6,
-                borderRadius: 3,
-                background: badge.color,
-              }}
-            />
-          ))}
+          {resolveI18nValue(topic.title) || t('agent.sidebar.newTopic')}
         </span>
       )}
-      {isDefault && (
-        <span
-          title={t('agent.sidebar.defaultAgent')}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: token.colorWarning,
-            flexShrink: 0,
-          }}
-        >
-          <Sparkles size={12} fill="currentColor" />
-        </span>
-      )}
-      {!isDefault && hovered && (
-        <button
-          type="button"
-          title={t('agent.sidebar.setDefaultAgent')}
-          onClick={(event) => {
-            event.stopPropagation();
-            onSetDefault();
-          }}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: 20,
-            height: 20,
-            border: 0,
-            borderRadius: 5,
-            background: 'transparent',
-            color: token.colorTextQuaternary,
-            cursor: 'pointer',
-            flexShrink: 0,
-          }}
-        >
-          <Sparkles size={12} />
-        </button>
-      )}
-      {(agent.favorite || hovered) && (
-        <button
-          type="button"
-          title={t(agent.favorite ? 'agent.sidebar.unfavoriteAgent' : 'agent.sidebar.favoriteAgent')}
-          onClick={(event) => {
-            event.stopPropagation();
-            onToggleFavorite();
-          }}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: 20,
-            height: 20,
-            border: 0,
-            borderRadius: 5,
-            background: 'transparent',
-            color: agent.favorite ? token.colorWarning : token.colorTextQuaternary,
-            cursor: 'pointer',
-            flexShrink: 0,
-          }}
-        >
-          <Star size={12} fill={agent.favorite ? 'currentColor' : 'none'} />
-        </button>
-      )}
-      {agent.pinned && (
-        <button
-          type="button"
-          title={t('agent.sidebar.unpinAgent')}
-          onClick={(event) => {
-            event.stopPropagation();
-            onTogglePin();
-          }}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: 20,
-            height: 20,
-            border: 0,
-            borderRadius: 5,
-            background: 'transparent',
-            color: token.colorPrimary,
-            cursor: 'pointer',
-            flexShrink: 0,
-          }}
-        >
-          <Pin size={12} fill="currentColor" />
-        </button>
-      )}
-      {!agent.pinned && hovered && (
-        <button
-          type="button"
-          title={t('agent.sidebar.pinAgent')}
-          onClick={(event) => {
-            event.stopPropagation();
-            onTogglePin();
-          }}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: 20,
-            height: 20,
-            border: 0,
-            borderRadius: 5,
-            background: 'transparent',
-            color: token.colorTextQuaternary,
-            cursor: 'pointer',
-            flexShrink: 0,
-          }}
-        >
-          <Pin size={12} />
-        </button>
-      )}
-    </Block>
+      {!selectionMode && !renaming && (hovered || active) ? (
+        <Dropdown menu={{ items: menuItems }} trigger={['click']} placement="bottomRight">
+          <span
+            aria-label={t('agent.sidebar.topicActions')}
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              width: 24,
+              height: 24,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: 6,
+              color: token.colorTextTertiary,
+            }}
+          >
+            <MoreHorizontal size={14} />
+          </span>
+        </Dropdown>
+      ) : null}
+    </Flexbox>
   );
+
+  return selectionMode
+    ? rowContent
+    : (
+        <Dropdown menu={{ items: menuItems }} trigger={['contextMenu']}>
+          {rowContent}
+        </Dropdown>
+      );
 }

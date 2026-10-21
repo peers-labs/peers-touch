@@ -128,9 +128,10 @@ type TurnConfig struct {
 
 	AttemptID string
 
-	MemoryDisabled bool // When true, L3 memory snapshot is skipped in prompt assembly.
-	promptAssembly *PromptAssemblyResult
-	currentInput   string
+	MemoryDisabled      bool // When true, L3 memory snapshot is skipped in prompt assembly.
+	promptAssembly      *PromptAssemblyResult
+	currentInput        string
+	followUpSuggestions []string
 }
 
 type TurnEventSink func(ctx context.Context, event TurnEvent)
@@ -164,6 +165,7 @@ type TurnEvent struct {
 	Details          map[string]string `json:"details,omitempty"`
 	OutcomeError     json.RawMessage   `json:"outcome_error,omitempty"`
 	Iteration        int               `json:"iteration,omitempty"`
+	Suggestions      []string          `json:"suggestions,omitempty"`
 }
 
 var errTurnEventPersistence = errors.New("turn event persistence failed")
@@ -1778,6 +1780,9 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	if len(attachmentSegments) > 0 {
 		assemblyResult.Segments = append(assemblyResult.Segments, attachmentSegments...)
 		for _, segment := range attachmentSegments {
+			if segment.DecisionReason == "" {
+				continue
+			}
 			if err := s.emitTurnEvent(ctx, config, turnID, TurnEvent{
 				Type:   "progress",
 				Stage:  "attachment_omitted",
@@ -1816,10 +1821,6 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	}
 	config.promptAssembly = assemblyResult
 	config.currentInput = processedInput
-	// Attachment bytes are admission-only transient data until a provider
-	// adapter has an explicit native image/file mapping. Never persist them.
-	config.AdmittedAttachments = nil
-
 	// A provider call is an external side effect. Persist the trace authority
 	// before starting it so abrupt process loss cannot leave a durable Turn
 	// without its corresponding trace.
@@ -2022,6 +2023,12 @@ func (s *TurnService) finishTurnExecution(
 
 	// Step 10 — Persist the assistant message, terminal state, step, and
 	// replayable terminal events in one transaction.
+	config.followUpSuggestions = s.generateFollowUpSuggestions(
+		ctx, config, userInput, assistantResponse, trace,
+	)
+	if err := s.persistAttemptUsage(ctx, turnID, config.AttemptID, trace); err != nil {
+		return nil, err
+	}
 	if err := s.completeTurn(ctx, config, turnID, assistantResponse, toolIterations); err != nil {
 		return nil, err
 	}
@@ -2928,6 +2935,7 @@ func (s *TurnService) providerCallWithRetry(
 			Model:           config.Model,
 			SystemPrompt:    systemPrompt,
 			Messages:        messages,
+			Attachments:     config.AdmittedAttachments,
 			Tools:           toolDefinitions,
 			ProviderType:    config.Provider,
 			Effort:          config.Effort,
@@ -4405,6 +4413,11 @@ func (s *TurnService) executeReadyStationTools(ctx context.Context) error {
 		executionErr := validateStationToolBudgetBeforeExecution(config, call)
 		if executionErr == nil {
 			switch call.ToolName {
+			case clarificationToolName:
+				output = claim.ClarificationAnswer
+				if strings.TrimSpace(output) == "" {
+					executionErr = invalidToolState("clarification answer was not committed")
+				}
 			case "station_human_decision_resume":
 				output, executionErr = s.executeStationHumanDecisionResumeTool(
 					toolCtx,
@@ -7079,6 +7092,7 @@ func (s *TurnService) completeTurn(
 				AgentID:        turn.AgentID,
 				Stage:          "turn_completed",
 				Iteration:      toolIterations,
+				Suggestions:    config.followUpSuggestions,
 			}
 			payload, err := json.Marshal(event)
 			if err != nil {
@@ -7173,7 +7187,52 @@ func (s *TurnService) completeAssistantMessageTx(
 	content string,
 	now time.Time,
 ) error {
+	completionMetadata := func(existing json.RawMessage) (json.RawMessage, error) {
+		if len(config.followUpSuggestions) == 0 {
+			return existing, nil
+		}
+		metadata := make(map[string]any)
+		if len(existing) > 0 {
+			if err := json.Unmarshal(existing, &metadata); err != nil {
+				return nil, fmt.Errorf("decode assistant message metadata: %w", err)
+			}
+		}
+		metadata["follow_up_suggestions"] = append(
+			[]string(nil),
+			config.followUpSuggestions...,
+		)
+		encoded, err := json.Marshal(metadata)
+		if err != nil {
+			return nil, fmt.Errorf("encode assistant message metadata: %w", err)
+		}
+		return encoded, nil
+	}
 	if strings.TrimSpace(config.AssistantMessageID) != "" {
+		updates := map[string]interface{}{
+			"content":    content,
+			"model_name": config.Model,
+			"status":     "completed",
+			"updated_at": now,
+		}
+		if len(config.followUpSuggestions) > 0 {
+			var pending persistence.AgentMessage
+			if err := tx.Select("metadata_json").
+				Where(
+					"id = ? AND conversation_id = ? AND turn_id = ? AND status = ?",
+					config.AssistantMessageID,
+					config.ConversationID,
+					turnID,
+					"pending",
+				).
+				Take(&pending).Error; err != nil {
+				return err
+			}
+			metadataJSON, err := completionMetadata(pending.MetadataJSON)
+			if err != nil {
+				return err
+			}
+			updates["metadata_json"] = metadataJSON
+		}
 		result := tx.Model(&persistence.AgentMessage{}).
 			Where(
 				"id = ? AND conversation_id = ? AND turn_id = ? AND status = ?",
@@ -7182,12 +7241,7 @@ func (s *TurnService) completeAssistantMessageTx(
 				turnID,
 				"pending",
 			).
-			Updates(map[string]interface{}{
-				"content":    content,
-				"model_name": config.Model,
-				"status":     "completed",
-				"updated_at": now,
-			})
+			Updates(updates)
 		if result.Error != nil {
 			return result.Error
 		}
@@ -7226,6 +7280,11 @@ func (s *TurnService) completeAssistantMessageTx(
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
+	metadataJSON, err := completionMetadata(nil)
+	if err != nil {
+		return err
+	}
+	message.MetadataJSON = metadataJSON
 	if message.ParentMessageID == nil {
 		message.ParentMessageID = optionalString(conversation.ActiveBranchMessageID)
 	}
@@ -7853,11 +7912,17 @@ func (s *TurnService) resolveAgentDefaults(ctx context.Context, config *TurnConf
 	if err := db.WithContext(ctx).Where("id = ?", config.AgentID).First(&agent).Error; err != nil {
 		return
 	}
-	if config.Provider == "" {
-		config.Provider = strings.TrimSpace(agent.ProviderID)
-	}
-	if config.Model == "" {
-		config.Model = strings.TrimSpace(agent.ModelName)
+	if config.Provider == "" && config.Model == "" && config.ConversationID != "" {
+		var conversation persistence.Conversation
+		if err := db.WithContext(ctx).
+			Where("id = ? AND actor_ptid = ? AND agent_id = ?",
+				config.ConversationID, config.ActorID, config.AgentID).
+			First(&conversation).Error; err == nil {
+			if conversation.ProviderID != "" && conversation.ModelName != nil {
+				config.Provider = strings.TrimSpace(conversation.ProviderID)
+				config.Model = strings.TrimSpace(*conversation.ModelName)
+			}
+		}
 	}
 	if config.Effort == "" {
 		config.Effort = strings.TrimSpace(agent.Effort)
@@ -7873,7 +7938,7 @@ func (s *TurnService) resolveAgentDefaults(ctx context.Context, config *TurnConf
 	extractStr := func(keys ...string) string {
 		for _, k := range keys {
 			if v, ok := cfg[k]; ok {
-				if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
+				if s, ok := v.(string); ok {
 					return s
 				}
 			}
@@ -7881,16 +7946,10 @@ func (s *TurnService) resolveAgentDefaults(ctx context.Context, config *TurnConf
 		return ""
 	}
 	if config.Identity == "" {
-		config.Identity = extractStr("identity", "soulMd", "soul_md", "soul", "systemPrompt", "system_prompt")
+		config.Identity = extractStr("soulMd", "identity", "soul_md", "soul", "systemPrompt", "system_prompt")
 	}
 	if config.AgentConfigPrompt == "" {
-		config.AgentConfigPrompt = extractStr("agentConfigPrompt", "agent_config_prompt", "agentsMd", "agents_md", "agents")
-	}
-	if config.Provider == "" {
-		config.Provider = strings.TrimSpace(agent.ProviderID)
-	}
-	if config.Model == "" {
-		config.Model = strings.TrimSpace(agent.ModelName)
+		config.AgentConfigPrompt = extractStr("agentsMd", "agentConfigPrompt", "agent_config_prompt", "agents_md", "agents")
 	}
 }
 

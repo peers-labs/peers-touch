@@ -158,12 +158,41 @@ pub fn list_available_models(
     )?)
 }
 
+pub fn check_provider(
+    station_client: &StationClient,
+    token: &str,
+    provider_id: &str,
+) -> Result<Value, StationApiError> {
+    Ok(station_client.request_json_auth(
+        Method::POST,
+        "/sub-agent/agent/provider/check",
+        token,
+        None,
+        Some(&json!({"provider_id": provider_id})),
+    )?)
+}
+
+pub fn discover_provider_models(
+    station_client: &StationClient,
+    token: &str,
+    provider_id: &str,
+) -> Result<Value, StationApiError> {
+    Ok(station_client.request_json_auth(
+        Method::POST,
+        "/sub-agent/agent/provider/model/discover",
+        token,
+        None,
+        Some(&json!({"provider_id": provider_id})),
+    )?)
+}
+
 pub fn update_provider_full(
     station_client: &StationClient,
     token: &str,
     provider_id: &str,
     enabled: bool,
     config_json: Option<&str>,
+    runtime_config: Option<&Value>,
     version: i64,
 ) -> Result<Value, StationApiError> {
     let mut body = json!({
@@ -177,6 +206,9 @@ pub fn update_provider_full(
                 body["base_url"] = json!(base_url);
             }
         }
+    }
+    if let Some(runtime_config) = runtime_config {
+        body["runtime_config"] = runtime_config.clone();
     }
 
     Ok(station_client.request_json_auth(

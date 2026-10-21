@@ -44,6 +44,13 @@ pub mod bot {
     pub use v1::*;
 }
 
+pub mod channel {
+    pub mod v1 {
+        include!(concat!(env!("OUT_DIR"), "/peers_touch.model.channel.v1.rs"));
+    }
+    pub use v1::*;
+}
+
 pub mod actor {
     pub mod v1 {
         include!(concat!(env!("OUT_DIR"), "/peers_touch.model.actor.v1.rs"));

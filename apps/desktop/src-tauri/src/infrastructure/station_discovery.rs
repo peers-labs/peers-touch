@@ -7,7 +7,11 @@ use reqwest::blocking::Client;
 use reqwest::redirect::Policy;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use station_trust::{verify_node_authorization_bytes, verify_station_route_attestation_bytes};
+use station_trust::{
+    endpoint_tls_client_config, proto::PublicEndpointConnectionMaterial,
+    verify_node_authorization_bytes, verify_public_connection_material,
+    verify_station_route_attestation_bytes, VerifiedPublicEndpointConnectionMaterial,
+};
 use std::net::IpAddr;
 #[cfg(any(test, feature = "acceptance-webdriver"))]
 use std::path::Path;
@@ -87,6 +91,43 @@ where
     F: FnOnce(TransportIdentityScope, &[u8]) -> Result<(Vec<u8>, Vec<u8>), String>,
 {
     let parsed = parse_input(input)?;
+    discover_parsed(parsed, None, sign_source_proof)
+}
+
+pub fn discover_station_public_material<F>(
+    material: &PublicEndpointConnectionMaterial,
+    sign_source_proof: F,
+) -> Result<VerifiedEndpoint, StationDiscoveryError>
+where
+    F: FnOnce(TransportIdentityScope, &[u8]) -> Result<(Vec<u8>, Vec<u8>), String>,
+{
+    let expected =
+        verify_public_connection_material(material, true, unix_ms()).map_err(|error| {
+            StationDiscoveryError::new(
+                "station_public_material_invalid",
+                format!("Public endpoint connection material is invalid: {error}"),
+                false,
+            )
+        })?;
+    let parsed = ParsedInput {
+        origin: expected.canonical_discovery_origin.clone(),
+        connection_grant: None,
+        relay_peer_id: None,
+        identity_scope: TransportIdentityScope::ProvisionalEndpointOrigin(
+            expected.canonical_discovery_origin.clone(),
+        ),
+    };
+    discover_parsed(parsed, Some(&expected), sign_source_proof)
+}
+
+fn discover_parsed<F>(
+    parsed: ParsedInput,
+    expected: Option<&VerifiedPublicEndpointConnectionMaterial>,
+    sign_source_proof: F,
+) -> Result<VerifiedEndpoint, StationDiscoveryError>
+where
+    F: FnOnce(TransportIdentityScope, &[u8]) -> Result<(Vec<u8>, Vec<u8>), String>,
+{
     let mut challenge = [0_u8; DISCOVERY_CHALLENGE_SIZE];
     rand::thread_rng().fill_bytes(&mut challenge);
     let source_proof = match (
@@ -134,7 +175,7 @@ where
         source_proof,
     };
     let endpoint = format!("{}{}", parsed.origin, ACCESS_PATH);
-    let response = discovery_client()?
+    let response = discovery_client(expected)?
         .post(endpoint)
         .header("Accept", "application/protobuf")
         .header("Content-Type", "application/protobuf")
@@ -181,22 +222,40 @@ where
         &challenge,
         response,
         unix_ms(),
+        expected,
     )
 }
 
-fn discovery_client() -> Result<Client, StationDiscoveryError> {
-    let builder = Client::builder()
+fn discovery_client(
+    expected: Option<&VerifiedPublicEndpointConnectionMaterial>,
+) -> Result<Client, StationDiscoveryError> {
+    let mut builder = Client::builder()
         .use_rustls_tls()
         .timeout(Duration::from_secs(10))
         .redirect(Policy::none());
-    #[cfg(any(test, feature = "acceptance-webdriver"))]
-    let builder = if let Some(path) = std::env::var_os("PT_ACCEPTANCE_RELAY_TLS_CA_FILE") {
-        if path.as_os_str().is_empty() {
-            return Err(acceptance_tls_root_error(
-                "Acceptance Relay trust anchor path is empty",
-            ));
+    if let Some(expected) = expected {
+        if let Some(config) = endpoint_tls_client_config(&expected.tls_trust).map_err(|error| {
+            StationDiscoveryError::new(
+                "station_public_tls_invalid",
+                format!("Public endpoint TLS trust is invalid: {error}"),
+                false,
+            )
+        })? {
+            builder = builder.use_preconfigured_tls(config);
         }
-        builder.add_root_certificate(load_acceptance_tls_root(Path::new(&path))?)
+    }
+    #[cfg(any(test, feature = "acceptance-webdriver"))]
+    let builder = if expected.is_none() {
+        if let Some(path) = std::env::var_os("PT_ACCEPTANCE_RELAY_TLS_CA_FILE") {
+            if path.as_os_str().is_empty() {
+                return Err(acceptance_tls_root_error(
+                    "Acceptance Relay trust anchor path is empty",
+                ));
+            }
+            builder.add_root_certificate(load_acceptance_tls_root(Path::new(&path))?)
+        } else {
+            builder
+        }
     } else {
         builder
     };
@@ -228,6 +287,7 @@ fn verify_discovery_response(
     challenge: &[u8],
     response: AccessEndpointResponse,
     now_unix_ms: i64,
+    expected: Option<&VerifiedPublicEndpointConnectionMaterial>,
 ) -> Result<VerifiedEndpoint, StationDiscoveryError> {
     let statement = crate::model::peer::AccessEndpointStatement::decode(
         response.endpoint_statement_bytes.as_slice(),
@@ -235,13 +295,19 @@ fn verify_discovery_response(
     .map_err(|_| invalid_discovery("Endpoint statement cannot be decoded"))?;
     let endpoint_role = AccessEndpointRole::try_from(statement.endpoint_role).ok();
     let canonical_origin = normalize_origin(&statement.canonical_origin)?;
-    let origin_is_valid = match endpoint_role {
-        Some(AccessEndpointRole::DirectStation) => {
-            canonical_origin == requested_origin.trim_end_matches('/')
-        }
-        Some(AccessEndpointRole::Relay) => canonical_origin.starts_with("https://"),
-        _ => false,
-    };
+    let origin_is_valid = expected.map_or_else(
+        || match endpoint_role {
+            Some(AccessEndpointRole::DirectStation) => {
+                canonical_origin == requested_origin.trim_end_matches('/')
+            }
+            Some(AccessEndpointRole::Relay) => canonical_origin.starts_with("https://"),
+            _ => false,
+        },
+        |expected| {
+            endpoint_role.map(|role| role as i32) == Some(expected.expected_endpoint_role as i32)
+                && canonical_origin == expected.canonical_discovery_origin
+        },
+    );
     if statement.encode_to_vec() != response.endpoint_statement_bytes
         || statement.challenge != challenge
         || !origin_is_valid
@@ -261,8 +327,7 @@ fn verify_discovery_response(
         &response.endpoint_statement_bytes,
         &statement.endpoint_peer_id,
     )?;
-
-    match endpoint_role {
+    let verified = match endpoint_role {
         Some(AccessEndpointRole::DirectStation) => {
             if response.outcome != AccessEndpointOutcome::Ready as i32 || connection_grant.is_some()
             {
@@ -374,7 +439,55 @@ fn verify_discovery_response(
             })
         }
         _ => Err(invalid_discovery("Endpoint role is unsupported")),
+    }?;
+    if let Some(expected) = expected {
+        validate_public_discovery_identity(&verified, expected)?;
     }
+    Ok(verified)
+}
+
+fn validate_public_discovery_identity(
+    endpoint: &VerifiedEndpoint,
+    expected: &VerifiedPublicEndpointConnectionMaterial,
+) -> Result<(), StationDiscoveryError> {
+    if endpoint.canonical_origin != expected.canonical_discovery_origin {
+        return Err(invalid_discovery(
+            "Endpoint discovery does not match public connection material",
+        ));
+    }
+    match expected.expected_endpoint_role {
+        station_trust::proto::AccessEndpointRole::Relay => {
+            if endpoint.role != VerifiedEndpointRole::Relay
+                || endpoint.endpoint_peer_id != expected.expected_endpoint_identity
+            {
+                return Err(invalid_discovery(
+                    "Relay discovery does not match public connection material",
+                ));
+            }
+        }
+        station_trust::proto::AccessEndpointRole::DirectStation => {
+            let expected_root = expected.station_root_public_key.as_deref().ok_or_else(|| {
+                invalid_discovery("Public Station connection material has no Station root")
+            })?;
+            if endpoint.role != VerifiedEndpointRole::DirectStation
+                || endpoint.routes.is_empty()
+                || endpoint.routes.iter().any(|route| {
+                    route.station_peer_id != expected.expected_endpoint_identity
+                        || route.station_root_public_key != expected_root
+                })
+            {
+                return Err(invalid_discovery(
+                    "Discovered Station identity does not match public connection material",
+                ));
+            }
+        }
+        station_trust::proto::AccessEndpointRole::Unspecified => {
+            return Err(invalid_discovery(
+                "Public connection material has no endpoint role",
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn verify_relay_outcome(response: &AccessEndpointResponse) -> Result<(), StationDiscoveryError> {
@@ -673,6 +786,7 @@ mod tests {
             &challenge,
             direct_response(&root, &node, &challenge, "https://station.example", now),
             now,
+            None,
         )
         .unwrap();
 
@@ -691,6 +805,18 @@ mod tests {
         assert!(verified.routes[0].attestation_bytes.is_some());
         assert!(verified.routes[0].addresses[0].starts_with("/ip4/127.0.0.1/tcp/4001/p2p/"));
         assert_eq!(verified.routes[0].expires_at_unix_ms, Some(now + 60_000));
+        validate_public_discovery_identity(
+            &verified,
+            &VerifiedPublicEndpointConnectionMaterial {
+                canonical_discovery_origin: "https://station.example".to_string(),
+                expected_endpoint_role: station_trust::proto::AccessEndpointRole::DirectStation,
+                expected_endpoint_identity: root.public().to_peer_id().to_string(),
+                station_root_public_key: Some(root.public().encode_protobuf()),
+                tls_trust: station_trust::VerifiedEndpointTlsTrust::WebPki,
+                expires_at_unix_ms: now + 60_000,
+            },
+        )
+        .unwrap();
     }
 
     #[test]
@@ -703,9 +829,15 @@ mod tests {
             direct_response(&root, &node, &challenge, "https://station.example", now);
         response.station_routes.clear();
 
-        let error =
-            verify_discovery_response("https://station.example", None, &challenge, response, now)
-                .unwrap_err();
+        let error = verify_discovery_response(
+            "https://station.example",
+            None,
+            &challenge,
+            response,
+            now,
+            None,
+        )
+        .unwrap_err();
         assert_eq!(error.code, "station_discovery_invalid");
         assert!(normalize_origin("http://station.example").is_err());
         assert_eq!(
@@ -752,9 +884,15 @@ mod tests {
         route.node_signature = sign(&node, STATION_ROUTE_DOMAIN, &route.statement_bytes);
         route.node_authorization = Some(authorization);
 
-        let error =
-            verify_discovery_response("https://station.example", None, &challenge, response, now)
-                .unwrap_err();
+        let error = verify_discovery_response(
+            "https://station.example",
+            None,
+            &challenge,
+            response,
+            now,
+            None,
+        )
+        .unwrap_err();
         assert_eq!(error.code, "station_discovery_invalid");
     }
 
@@ -773,9 +911,15 @@ mod tests {
             &response.endpoint_statement_bytes,
         );
 
-        let error =
-            verify_discovery_response("https://station.example", None, &challenge, response, now)
-                .unwrap_err();
+        let error = verify_discovery_response(
+            "https://station.example",
+            None,
+            &challenge,
+            response,
+            now,
+            None,
+        )
+        .unwrap_err();
         assert_eq!(error.code, "station_discovery_invalid");
     }
 

@@ -43,6 +43,7 @@ func TestOpenAIThinkingModePayload(t *testing.T) {
 				"test-model",
 				"",
 				[]domain.Message{{Role: domain.MessageRoleUser, Content: "hello"}},
+				nil,
 				"low",
 				test.mode,
 				64,

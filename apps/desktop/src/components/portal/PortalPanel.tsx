@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { Flexbox } from 'react-layout-kit';
 import { DraggablePanel } from '@lobehub/ui';
-import { theme } from 'antd';
+import { Drawer, theme } from 'antd';
 
 import { usePortalStore } from '../../store/portal';
 import { useChatStore, extractMessageArtifacts } from '../../store/chat';
@@ -16,7 +16,10 @@ import { WorkingProgressView } from './views/WorkingProgressView';
 import { AgentOverviewView } from './views/AgentOverviewView';
 import { TurnDetailsView } from './views/TurnDetailsView';
 
-export function PortalPanel() {
+export function PortalPanel({ artifactsOnly = false, overlay = false }: {
+  artifactsOnly?: boolean;
+  overlay?: boolean;
+}) {
   const { token } = theme.useToken();
   const expanded = usePortalStore((s) => s.expanded);
   const activeView = usePortalStore((s) => s.activeView);
@@ -28,6 +31,10 @@ export function PortalPanel() {
   );
 
   if (!expanded) return null;
+  if (artifactsOnly && activeView
+    && activeView.type !== 'artifacts' && activeView.type !== 'artifactDetail') return null;
+  if (artifactsOnly && activeView?.type === 'artifactDetail'
+    && !allArtifacts.some(artifact => artifact.id === activeView.artifact.id)) return null;
 
   const isFullHeightView = activeView?.type === 'thread' || activeView?.type === 'topicComments';
 
@@ -65,17 +72,7 @@ export function PortalPanel() {
     return null;
   };
 
-  return (
-    <DraggablePanel
-      placement="right"
-      defaultSize={{ width: 400 }}
-      minWidth={320}
-      maxWidth={560}
-      expand={expanded}
-      onExpandChange={(expand) => {
-        if (!expand) usePortalStore.getState().collapse();
-      }}
-    >
+  const content = (
       <Flexbox
         data-pt-agent-portal
         data-pt-agent-portal-view={activeView?.type ?? 'artifacts'}
@@ -87,11 +84,39 @@ export function PortalPanel() {
           overflow: 'hidden',
         }}
       >
-        <PortalHeader activeView={activeView} />
+        <PortalHeader activeView={activeView} artifactsOnly={artifactsOnly} />
         <Flexbox style={{ flex: 1, overflow: isFullHeightView ? 'hidden' : 'auto', padding: isFullHeightView ? 0 : 16 }}>
           {renderView()}
         </Flexbox>
       </Flexbox>
+  );
+  if (overlay) {
+    return (
+      <Drawer
+        open
+        placement="right"
+        width="min(560px, 100%)"
+        getContainer={false}
+        closable={false}
+        onClose={() => usePortalStore.getState().close()}
+        styles={{ body: { padding: 0 } }}
+      >
+        {content}
+      </Drawer>
+    );
+  }
+  return (
+    <DraggablePanel
+      placement="right"
+      defaultSize={{ width: 400 }}
+      minWidth={320}
+      maxWidth={560}
+      expand={expanded}
+      onExpandChange={(expand) => {
+        if (!expand) usePortalStore.getState().collapse();
+      }}
+    >
+      {content}
     </DraggablePanel>
   );
 }

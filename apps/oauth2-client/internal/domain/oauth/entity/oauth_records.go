@@ -172,3 +172,18 @@ type RotationResult struct {
 	Failed    int  `json:"failed"`
 	Complete  bool `json:"complete"`
 }
+
+type OperatorLoginHandoff struct {
+	SchemaVersion     int                  `json:"schema_version"`
+	CodeFingerprint   string               `json:"code_fingerprint"`
+	AssertionID       string               `json:"assertion_id"`
+	SiteID            string               `json:"site_id"`
+	Audience          string               `json:"audience"`
+	LoginAttemptID    string               `json:"login_attempt_id"`
+	Provider          valueobject.Provider `json:"provider"`
+	ProviderSubject   string               `json:"provider_subject"`
+	ReceiverChallenge []byte               `json:"receiver_challenge"`
+	CreatedAt         time.Time            `json:"created_at"`
+	ExpiresAt         time.Time            `json:"expires_at"`
+	ConsumedAt        *time.Time           `json:"consumed_at,omitempty"`
+}

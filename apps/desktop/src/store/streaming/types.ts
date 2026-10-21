@@ -64,7 +64,6 @@ export type TurnStreamEventType =
   | 'tool_result'
   | 'tool_approval_required'
   | 'tool_approval_decision'
-  | 'intervention_request'
   | 'progress'
   | 'image'
   | 'conversation_created'

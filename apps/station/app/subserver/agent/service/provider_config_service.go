@@ -105,8 +105,7 @@ func newProviderRecord(req ProviderCreateRequest) *persistence.AgentProvider {
 	if cp := catalog.Find(req.ProviderID); cp != nil {
 		provider.SourceType = "catalog"
 		provider.RuntimeKind = cp.RuntimeKind
-		provider.CliCommand = cp.CliCommand
-		provider.ModelsCommand = cp.ModelsCommand
+		provider.CliCommand = catalog.FormatArgv(cp.CLIArgv)
 		if provider.DisplayName == "" {
 			provider.DisplayName = cp.Name
 		}

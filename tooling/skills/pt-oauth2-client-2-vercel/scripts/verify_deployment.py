@@ -59,6 +59,7 @@ RECORD_CLASSES = (
     "identities",
     "credentials",
     "refresh-operations",
+    "operator-handoffs",
     "audits",
 )
 REQUIRED_CALLBACK_RECORD_CLASSES = (
@@ -70,6 +71,67 @@ REQUIRED_CALLBACK_RECORD_CLASSES = (
 ENVELOPE_FIELDS = frozenset(
     {"version", "key_id", "algorithm", "nonce", "ciphertext", "updated_at"}
 )
+# Mirrors semverRegexp in the OAuth handler contract:
+# /api/healthz returns {"status": "ok", "version": "major.minor.patch"}.
+HEALTHZ_VERSION_PATTERN = re.compile(r"^\d+\.\d+\.\d+$")
+# Mirrors operatorAttemptIDPattern and operatorReceiverBinding in
+# internal/application/oauth/usecase/operator_login.go.
+OPERATOR_ATTEMPT_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
+OPERATOR_START_BINDING_ERROR = "operator_handoff_binding_mismatch"
+OPERATOR_LOGIN_ENV_FIELDS = (
+    "OAUTH_OPERATOR_LOGIN_AUDIENCE",
+    "OAUTH_OPERATOR_LOGIN_SIGNING_KEY_ID",
+    "OAUTH_OPERATOR_LOGIN_SIGNING_PRIVATE_KEY_B64",
+    "OAUTH_OPERATOR_LOGIN_REDEEM_SECRET_B64",
+)
+
+
+def build_operator_return_to(callback_url: str) -> str:
+    """Build one start endpoint return_to bound to the admin operator callback."""
+    callback = urlparse(callback_url)
+    receiver_challenge = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(
+        b"="
+    ).decode("ascii")
+    login_attempt_id = secrets.token_urlsafe(24)
+    query = urlencode(
+        {
+            "receiver_challenge": receiver_challenge,
+            "login_attempt_id": login_attempt_id,
+        }
+    )
+    return callback._replace(query=query, fragment="").geturl()
+
+
+def resolve_operator_callback_url(
+    env: dict[str, str], site_id: str
+) -> Optional[str]:
+    """Return the operator callback when the deployed site is operator-locked."""
+    if env.get("OAUTH_OPERATOR_LOGIN_SITE_ID", "").strip() != site_id.strip():
+        return None
+    callback_url = env.get("OAUTH_OPERATOR_LOGIN_CALLBACK_URL", "").strip()
+    missing = [
+        key
+        for key in ("OAUTH_OPERATOR_LOGIN_CALLBACK_URL", *OPERATOR_LOGIN_ENV_FIELDS)
+        if not env.get(key, "").strip()
+    ]
+    if missing:
+        raise PreflightError(
+            "OPERATOR_LOGIN_CONFIG_INCOMPLETE",
+            {"missingKeys": missing},
+        )
+    parsed = urlparse(callback_url)
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.fragment != ""
+    ):
+        raise PreflightError(
+            "OPERATOR_LOGIN_CALLBACK_URL_INVALID",
+            {"callbackUrl": callback_url},
+        )
+    return callback_url
+
+
 BRIDGE_TIMESTAMP_WINDOW = timedelta(minutes=5)
 BRIDGE_CALLBACK_FIELDS = frozenset(
     {
@@ -141,6 +203,73 @@ def _expect_method_rejection(base_url: str, path: str, timeout: float) -> None:
         )
 
 
+def _verify_provider_start(
+    base_url: str,
+    provider: str,
+    context: dict[str, Any],
+    site_id: str,
+    timeout: float,
+    operator_callback_url: Optional[str],
+    expected_callback_base: Optional[str] = None,
+) -> dict[str, Any]:
+    params = {"site_id": site_id}
+    entry = "direct"
+    if operator_callback_url is not None:
+        # Operator-locked sites must reject an unbound start with the binding
+        # error before any session is persisted.
+        bare_url = base_url + f"/api/oauth/{provider}/start?" + urlencode(params)
+        bare_status, _, bare_body = _request(bare_url, timeout=timeout)
+        try:
+            bare_error = json.loads(bare_body).get("error")
+        except json.JSONDecodeError:
+            bare_error = None
+        if bare_status != 400 or bare_error != OPERATOR_START_BINDING_ERROR:
+            raise PreflightError(
+                "OPERATOR_START_BINDING_FAILED",
+                {"provider": provider, "status": bare_status},
+            )
+        params["return_to"] = build_operator_return_to(operator_callback_url)
+        entry = "operator-handoff"
+
+    start_url = (
+        base_url + f"/api/oauth/{provider}/start?" + urlencode(params)
+    )
+    status, headers, _ = _request(start_url, timeout=timeout)
+    location_value = _header(headers, "Location")
+    location = urlparse(location_value)
+    query = parse_qs(location.query)
+    # Provider callbacks are registered against the stable HTTPS domain, even
+    # when the candidate runs on an ephemeral Preview URL.
+    callback_base = expected_callback_base or base_url
+    callback = callback_base + context["callbackPath"]
+    if (
+        status not in {302, 303, 307, 308}
+        or location.scheme != "https"
+        or location.hostname != context["authorizationHost"]
+        or query.get("redirect_uri") != [callback]
+        or not query.get("state", [""])[0]
+    ):
+        raise PreflightError(
+            "PROVIDER_START_CONTRACT_FAILED",
+            {"provider": provider, "status": status},
+        )
+    if context["capabilities"].get("pkce") == "S256" and (
+        query.get("code_challenge_method") != ["S256"]
+        or not query.get("code_challenge", [""])[0]
+    ):
+        raise PreflightError(
+            "PROVIDER_PKCE_CONTRACT_FAILED",
+            {"provider": provider},
+        )
+    return {
+        "authorizationHost": location.hostname,
+        "callback": callback,
+        "entry": entry,
+        "pkce": context["capabilities"].get("pkce"),
+        "status": "PASS",
+    }
+
+
 def verify_http_contract(
     base_url: str,
     providers: list[str],
@@ -148,6 +277,8 @@ def verify_http_contract(
     site_id: str,
     timeout: float,
     allow_http: bool = False,
+    operator_callback_url: Optional[str] = None,
+    expected_callback_base: Optional[str] = None,
 ) -> dict[str, Any]:
     if allow_http:
         parsed_base = urlparse(base_url)
@@ -156,6 +287,12 @@ def verify_http_contract(
         base_url = base_url.rstrip("/")
     else:
         base_url = normalize_base_url(base_url)
+    if expected_callback_base is not None:
+        expected_callback_base = (
+            expected_callback_base.rstrip("/")
+            if allow_http
+            else normalize_base_url(expected_callback_base)
+        )
 
     status, headers, body = _request(
         base_url + "/api/healthz",
@@ -176,7 +313,15 @@ def verify_http_contract(
             "HEALTH_CONTRACT_FAILED",
             {"status": status, "reason": error.__class__.__name__},
         ) from error
-    if status != 200 or health != {"status": "ok"}:
+    health_version = health.get("version") if isinstance(health, dict) else None
+    if (
+        status != 200
+        or not isinstance(health, dict)
+        or set(health) != {"status", "version"}
+        or health.get("status") != "ok"
+        or not isinstance(health_version, str)
+        or not HEALTHZ_VERSION_PATTERN.match(health_version)
+    ):
         raise PreflightError("HEALTH_CONTRACT_FAILED", {"status": status})
 
     method_paths = ["/api/healthz", "/api/admin", "/api/admin/data"]
@@ -211,47 +356,24 @@ def verify_http_contract(
 
     provider_results: dict[str, dict[str, Any]] = {}
     for provider in providers:
-        context = catalog["providers"][provider]
-        start_url = (
-            base_url
-            + f"/api/oauth/{provider}/start?"
-            + urlencode({"site_id": site_id})
+        provider_results[provider] = _verify_provider_start(
+            base_url,
+            provider,
+            catalog["providers"][provider],
+            site_id,
+            timeout,
+            operator_callback_url,
+            expected_callback_base,
         )
-        status, headers, _ = _request(start_url, timeout=timeout)
-        location_value = _header(headers, "Location")
-        location = urlparse(location_value)
-        query = parse_qs(location.query)
-        callback = base_url + context["callbackPath"]
-        if (
-            status not in {302, 303, 307, 308}
-            or location.scheme != "https"
-            or location.hostname != context["authorizationHost"]
-            or query.get("redirect_uri") != [callback]
-            or not query.get("state", [""])[0]
-        ):
-            raise PreflightError(
-                "PROVIDER_START_CONTRACT_FAILED",
-                {"provider": provider, "status": status},
-            )
-        if context["capabilities"].get("pkce") == "S256" and (
-            query.get("code_challenge_method") != ["S256"]
-            or not query.get("code_challenge", [""])[0]
-        ):
-            raise PreflightError(
-                "PROVIDER_PKCE_CONTRACT_FAILED",
-                {"provider": provider},
-            )
-        provider_results[provider] = {
-            "authorizationHost": location.hostname,
-            "callback": callback,
-            "pkce": context["capabilities"].get("pkce"),
-            "status": "PASS",
-        }
     return {
         "status": "PASS",
         "health": "PASS",
         "methodContract": "GET-only",
         "ambiguousCallbackRejected": True,
+        "startEntry": (
+            "operator-handoff" if operator_callback_url is not None else "direct"
+        ),
+        "registeredCallbackBase": expected_callback_base or base_url,
         "providers": provider_results,
     }
 
@@ -995,7 +1117,7 @@ class _SelfTestHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         if parsed.path == "/api/healthz":
-            self._json(200, {"status": "ok"})
+            self._json(200, {"status": "ok", "version": "0.1.0"})
             return
         if parsed.path.endswith("/callback"):
             self._json(400, {"error": "invalid_callback_result"})
@@ -1066,6 +1188,10 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--repo-root", type=Path, default=default_repo_root())
     result.add_argument("--env-file", type=Path)
     result.add_argument("--base-url")
+    result.add_argument(
+        "--stable-base-url",
+        help="Stable HTTPS domain registered as the Provider callback",
+    )
     result.add_argument("--provider", action="append", default=[])
     result.add_argument("--site-id", default="default")
     result.add_argument("--run-live-provider")
@@ -1098,6 +1224,11 @@ def main(argv: Optional[list[str]] = None) -> int:
                 catalog,
                 list(args.provider),
             )
+            env_file = args.env_file or default_env_file(repo_root)
+            env = parse_env_file(env_file) if env_file.exists() else {}
+            operator_callback_url = resolve_operator_callback_url(
+                env, args.site_id
+            )
             if args.run_live_provider:
                 context = catalog["providers"].get(args.run_live_provider, {})
                 if context.get("status") != "active":
@@ -1114,6 +1245,11 @@ def main(argv: Optional[list[str]] = None) -> int:
                             "config": "apps/oauth2-client/config/sites.json",
                         },
                     )
+                if operator_callback_url is not None:
+                    raise PreflightError(
+                        "OPERATOR_LOGIN_LIVE_PROVIDER_UNSUPPORTED",
+                        {"siteId": args.site_id},
+                    )
             report = {
                 "status": "PASS",
                 "http": verify_http_contract(
@@ -1122,11 +1258,16 @@ def main(argv: Optional[list[str]] = None) -> int:
                     catalog,
                     args.site_id,
                     args.timeout,
+                    operator_callback_url=operator_callback_url,
+                    expected_callback_base=args.stable_base_url,
                 ),
             }
             if args.run_live_provider or args.verify_github_storage:
-                env_file = args.env_file or default_env_file(repo_root)
-                env = parse_env_file(env_file)
+                if not env:
+                    raise PreflightError(
+                        "ENV_FILE_UNAVAILABLE",
+                        {"path": str(env_file)},
+                    )
                 if args.run_live_provider:
                     report["githubRepository"] = (
                         verify_github_repository_private(

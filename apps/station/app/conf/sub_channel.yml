@@ -1,0 +1,8 @@
+peers:
+  node:
+    server:
+      subserver:
+        channel:
+          enabled: true
+          path: /sub-channel
+          rds-name: channel

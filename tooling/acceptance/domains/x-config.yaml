@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "id": "x-config",
+  "description": "Managed domain for authenticated catalog administration, trusted signed publication, static client distribution, and suggestion-only client projection.",
+  "capabilities": [
+    "acceptance-framework-self-consistency",
+    "x-config-operator-auth",
+    "x-config-snapshot-verification",
+    "x-config-trusted-publication",
+    "x-config-admin-workflow",
+    "x-config-client-adapters",
+    "x-config-api-closure"
+  ],
+  "validation_gate_id": "x-config-domain-validation"
+}
