@@ -277,7 +277,7 @@ function prototypeBridgeRuntimeErrorCode(error: unknown): string | undefined {
   if (isPrototypeRecord(error) && isPrototypeRecord(error.error) && typeof error.error.code === 'string' && error.error.code.trim().length > 0) {
     return error.error.code;
   }
-  if (error instanceof Error && isPrototypeRecord(error.cause)) {
+  if (error instanceof Error && 'cause' in error && isPrototypeRecord(error.cause)) {
     const cause = error.cause;
     if (typeof cause.code === 'string' && cause.code.trim().length > 0) {
       return cause.code;

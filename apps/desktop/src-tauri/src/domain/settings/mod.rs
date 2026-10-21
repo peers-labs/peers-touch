@@ -10,6 +10,7 @@ pub enum SettingKey {
     AgentDefaultProvider,
     AgentDefaultModel,
     AgentDefaultEffort,
+    ShowUsableProvidersOnly,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,6 +30,7 @@ pub fn parse_key(key: &str) -> Result<SettingKey, String> {
         "settings.agent.defaultProvider" => Ok(SettingKey::AgentDefaultProvider),
         "settings.agent.defaultModel" => Ok(SettingKey::AgentDefaultModel),
         "settings.agent.defaultEffort" => Ok(SettingKey::AgentDefaultEffort),
+        "settings.providers.showUsableOnly" => Ok(SettingKey::ShowUsableProvidersOnly),
         _ => Err("unsupported setting key".to_string()),
     }
 }
@@ -43,6 +45,7 @@ pub fn key_name(key: SettingKey) -> &'static str {
         SettingKey::AgentDefaultProvider => "settings.agent.defaultProvider",
         SettingKey::AgentDefaultModel => "settings.agent.defaultModel",
         SettingKey::AgentDefaultEffort => "settings.agent.defaultEffort",
+        SettingKey::ShowUsableProvidersOnly => "settings.providers.showUsableOnly",
     }
 }
 
@@ -56,6 +59,7 @@ pub fn default_value(key: SettingKey) -> Value {
         SettingKey::AgentDefaultProvider => Value::String("".to_string()),
         SettingKey::AgentDefaultModel => Value::String("".to_string()),
         SettingKey::AgentDefaultEffort => Value::String("medium".to_string()),
+        SettingKey::ShowUsableProvidersOnly => Value::Bool(true),
     }
 }
 
@@ -93,6 +97,10 @@ pub fn default_settings() -> Vec<(String, Value)> {
             key_name(SettingKey::AgentDefaultEffort).to_string(),
             default_value(SettingKey::AgentDefaultEffort),
         ),
+        (
+            key_name(SettingKey::ShowUsableProvidersOnly).to_string(),
+            default_value(SettingKey::ShowUsableProvidersOnly),
+        ),
     ]
 }
 
@@ -105,7 +113,8 @@ pub fn side_effect(key: SettingKey) -> SettingSideEffect {
         | SettingKey::ChatScreenshotShortcut
         | SettingKey::AgentDefaultProvider
         | SettingKey::AgentDefaultModel
-        | SettingKey::AgentDefaultEffort => SettingSideEffect::None,
+        | SettingKey::AgentDefaultEffort
+        | SettingKey::ShowUsableProvidersOnly => SettingSideEffect::None,
     }
 }
 
@@ -188,5 +197,39 @@ pub fn validate_value(key: SettingKey, value: &Value) -> Result<Value, String> {
             }
             Ok(Value::String(effort.to_string()))
         }
+        SettingKey::ShowUsableProvidersOnly => {
+            let enabled = value
+                .as_bool()
+                .ok_or_else(|| "settings.providers.showUsableOnly must be boolean".to_string())?;
+            Ok(Value::Bool(enabled))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn provider_visibility_preference_is_registered_with_a_true_default() {
+        let key = parse_key("settings.providers.showUsableOnly").unwrap();
+
+        assert_eq!(key, SettingKey::ShowUsableProvidersOnly);
+        assert_eq!(key_name(key), "settings.providers.showUsableOnly");
+        assert_eq!(default_value(key), Value::Bool(true));
+        assert_eq!(side_effect(key), SettingSideEffect::None);
+    }
+
+    #[test]
+    fn provider_visibility_preference_accepts_only_booleans() {
+        assert_eq!(
+            validate_value(SettingKey::ShowUsableProvidersOnly, &Value::Bool(false),).unwrap(),
+            Value::Bool(false),
+        );
+        assert!(validate_value(
+            SettingKey::ShowUsableProvidersOnly,
+            &Value::String("false".to_string()),
+        )
+        .is_err());
     }
 }

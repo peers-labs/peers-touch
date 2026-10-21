@@ -1,0 +1,31 @@
+{
+  "id": "agent-chat-production",
+  "status": "active",
+  "product_area": "agent",
+  "owners": ["apps/desktop/src/pages/ChatPage.tsx", "apps/desktop/src/pages/AgentProfilePage.tsx", "apps/station/app/subserver/agent"],
+  "truth_sources": ["Station Agent documents and capability bindings", "Station Conversation, Turn, ToolCall and Provider configuration", "Desktop actor-scoped drafts and attachment references"],
+  "visible_surfaces": [{"type": "ui", "surface": "Native Desktop Agent roster, Profile, Topic, composer, Settings and conversation"}],
+  "required_gates": ["agent-chat-profile-native", "agent-chat-models-native", "agent-chat-topics-native", "agent-chat-conversation-native", "agent-chat-layout-native", "agent-chat-workspace-native"],
+  "acceptance": {
+    "service": [
+      "SOUL.md and AGENTS.md persist including explicit empty values, survive restart and enter the actual Provider prompt",
+      "Settings owns the global model default and Topic owns the providerId/modelId override; Agent does not own ordinary Chat model settings",
+      "Agent deletion and Topic batch deletion atomically remove owned Station resources and clear associated client drafts, attachments and run projections",
+      "Station-owned ask_user persists the submitted answer and continues the original ToolBatch across restart"
+    ],
+    "visible": [
+      "All 121 confirmed prototype operations and additional production authority assertions have operation-specific Native UI actions, receiver assertions and source-bound artifacts",
+      "Creation enters Profile immediately and Profile autosaves identity, documents, avatar and bound extensions",
+      "Direct and CLI share one Provider list and model availability owner; CLI model discovery is Station-owned and read-only",
+      "Topic navigation, isolated drafts, conversation search, quick replies, attachments, artifacts, approval, clarification, Stop and typed recovery follow the confirmed scope",
+      "Wide, compact and ultra-narrow navigation retain access and restore overlay trigger focus"
+    ]
+  },
+  "negative": [
+    "No model control appears in Agent Profile",
+    "Duplicate, Set default, Queue and developer inspectors are absent from ordinary Agent Chat",
+    "API-only, Harness-only, prototype or source checks cannot prove a Native operation",
+    "Missing, stale or failed operation evidence remains UNPROVEN",
+    "Scenarios cannot provision, launch or login independently of their Suite"
+  ]
+}

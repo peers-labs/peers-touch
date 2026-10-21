@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
+	providercli "github.com/peers-labs/peers-touch/station/app/subserver/agent/service/cli"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 )
 
@@ -20,6 +22,8 @@ type ProviderHandlers struct {
 	modelConfig       *service.ModelConfigService
 	credentialCfg     *service.CredentialConfigService
 	admissionResolver *service.RuntimeAdmissionResolver
+	runtimeModels     *service.RuntimeModelCatalog
+	modelDiscovery    *service.ProviderModelDiscoveryService
 }
 
 func NewProviderHandlers(
@@ -27,12 +31,16 @@ func NewProviderHandlers(
 	modelConfig *service.ModelConfigService,
 	credentialCfg *service.CredentialConfigService,
 	admissionResolver *service.RuntimeAdmissionResolver,
+	runtimeModels *service.RuntimeModelCatalog,
+	modelDiscovery *service.ProviderModelDiscoveryService,
 ) *ProviderHandlers {
 	return &ProviderHandlers{
 		providerConfig:    providerConfig,
 		modelConfig:       modelConfig,
 		credentialCfg:     credentialCfg,
 		admissionResolver: admissionResolver,
+		runtimeModels:     runtimeModels,
+		modelDiscovery:    modelDiscovery,
 	}
 }
 
@@ -62,7 +70,8 @@ func (h *ProviderHandlers) HandleProviderList(ctx context.Context, _ *model.List
 		Providers: make([]*model.AgentProviderInfo, 0, len(entries)),
 	}
 
-	for _, cp := range entries {
+	for _, catalogProvider := range entries {
+		cp := h.runtimeModels.EffectiveProvider(actorPTID, catalogProvider)
 		if !catalogProviderAdvertisedByFrozenProfile(cp) ||
 			!h.admissionResolver.CatalogProviderAvailable(cp) {
 			continue
@@ -83,36 +92,13 @@ func (h *ProviderHandlers) HandleProviderList(ctx context.Context, _ *model.List
 			version = userMatch.Version
 		}
 
-		hidden := hiddenByProvider[cp.ID]
-		models := make([]*model.ProviderModelInfo, 0, len(cp.Models))
-		for _, m := range cp.Models {
-			if contains(hidden, m.ID) {
-				continue
-			}
-			info, err := catalogModelToProto(&m)
-			if err != nil {
-				return nil, server.NewHandlerError(http.StatusConflict, err.Error())
-			}
-			models = append(models, info)
-		}
-
-		catalogIDs := make(map[string]bool, len(models))
-		for _, m := range models {
-			catalogIDs[m.Id] = true
-		}
 		dbModels, err := h.modelConfig.List(ctx, actorPTID, cp.ID)
 		if err != nil {
 			return nil, toHandlerError(err)
 		}
-		for i := range dbModels {
-			if catalogIDs[dbModels[i].ModelID] || contains(hidden, dbModels[i].ModelID) {
-				continue
-			}
-			info, err := persistedModelToProviderProto(&dbModels[i])
-			if err != nil {
-				return nil, server.NewHandlerError(http.StatusConflict, err.Error())
-			}
-			models = append(models, info)
+		models, err := effectiveCatalogProviderModels(&cp, dbModels, hiddenByProvider[cp.ID])
+		if err != nil {
+			return nil, server.NewHandlerError(http.StatusConflict, err.Error())
 		}
 
 		baseURL := cp.DefaultBaseURL
@@ -142,9 +128,15 @@ func (h *ProviderHandlers) HandleProviderList(ctx context.Context, _ *model.List
 			CredentialStatus: credentialStatus,
 			Version:          version,
 			Source:           "catalog",
-			CliCommand:       cp.CliCommand,
-			ModelsCommand:    cp.ModelsCommand,
+			CliCommand:       catalog.FormatArgv(cp.CLIArgv),
 			Models:           models,
+			RuntimeConfig: service.EffectiveProviderRuntimeConfig(
+				&cp,
+				userMatch,
+			),
+			DefaultRuntimeConfig: service.DefaultProviderRuntimeConfig(&cp),
+			AdapterCapabilities:  providerAdapterCapabilities(&cp),
+			WorkspacePolicy:      cp.WorkspacePolicy,
 		})
 	}
 
@@ -198,7 +190,7 @@ func (h *ProviderHandlers) HandleProviderGet(ctx context.Context, req *model.Get
 	actorPTID := subjectActorPTID(ctx)
 	providerID := req.GetProviderId()
 
-	cp := catalog.Find(providerID)
+	cp := h.effectiveCatalogProvider(actorPTID, providerID)
 	userProviders, _ := h.providerConfig.List(ctx, actorPTID)
 	var userMatch *persistence.AgentProvider
 	for i := range userProviders {
@@ -243,35 +235,13 @@ func (h *ProviderHandlers) HandleProviderGet(ctx context.Context, req *model.Get
 			version = userMatch.Version
 		}
 
-		models := make([]*model.ProviderModelInfo, 0, len(cp.Models))
-		for _, m := range cp.Models {
-			if contains(hidden, m.ID) {
-				continue
-			}
-			info, err := catalogModelToProto(&m)
-			if err != nil {
-				return nil, server.NewHandlerError(http.StatusConflict, err.Error())
-			}
-			models = append(models, info)
-		}
-
-		catalogIDs := make(map[string]bool, len(models))
-		for _, m := range models {
-			catalogIDs[m.Id] = true
-		}
 		dbModels, err := h.modelConfig.List(ctx, actorPTID, providerID)
 		if err != nil {
 			return nil, toHandlerError(err)
 		}
-		for i := range dbModels {
-			if catalogIDs[dbModels[i].ModelID] || contains(hidden, dbModels[i].ModelID) {
-				continue
-			}
-			info, err := persistedModelToProviderProto(&dbModels[i])
-			if err != nil {
-				return nil, server.NewHandlerError(http.StatusConflict, err.Error())
-			}
-			models = append(models, info)
+		models, err := effectiveCatalogProviderModels(cp, dbModels, hidden)
+		if err != nil {
+			return nil, server.NewHandlerError(http.StatusConflict, err.Error())
 		}
 
 		showAPIKey := true
@@ -306,9 +276,15 @@ func (h *ProviderHandlers) HandleProviderGet(ctx context.Context, req *model.Get
 			CredentialStatus: credentialStatus,
 			Version:          version,
 			Source:           "catalog",
-			CliCommand:       cp.CliCommand,
-			ModelsCommand:    cp.ModelsCommand,
+			CliCommand:       catalog.FormatArgv(cp.CLIArgv),
 			Models:           models,
+			RuntimeConfig: service.EffectiveProviderRuntimeConfig(
+				cp,
+				userMatch,
+			),
+			DefaultRuntimeConfig: service.DefaultProviderRuntimeConfig(cp),
+			AdapterCapabilities:  providerAdapterCapabilities(cp),
+			WorkspacePolicy:      cp.WorkspacePolicy,
 		}}, nil
 	}
 
@@ -330,6 +306,17 @@ func (h *ProviderHandlers) HandleProviderGet(ctx context.Context, req *model.Get
 func (h *ProviderHandlers) HandleProviderUpdate(ctx context.Context, req *model.UpdateProviderRequest) (*model.UpdateProviderResponse, error) {
 	actorPTID := subjectActorPTID(ctx)
 	providerID := req.GetProviderId()
+	configJSON := req.GetConfigJson()
+	if req.RuntimeConfig != nil {
+		encoded, encodeErr := service.EncodeProviderRuntimeConfig(
+			h.effectiveCatalogProvider(actorPTID, providerID),
+			req.GetRuntimeConfig(),
+		)
+		if encodeErr != nil {
+			return nil, server.NewHandlerError(http.StatusBadRequest, encodeErr.Error())
+		}
+		configJSON = encoded
+	}
 
 	userProviders, _ := h.providerConfig.List(ctx, actorPTID)
 	var existing *persistence.AgentProvider
@@ -351,10 +338,10 @@ func (h *ProviderHandlers) HandleProviderUpdate(ctx context.Context, req *model.
 			DisplayName: req.DisplayName,
 			BaseURL:     req.BaseUrl,
 			Enabled:     req.Enabled,
-			ConfigJSON:  req.GetConfigJson(),
+			ConfigJSON:  configJSON,
 		})
 	} else {
-		cp := catalog.Find(providerID)
+		cp := h.effectiveCatalogProvider(actorPTID, providerID)
 		displayName := providerID
 		protocol := "openai-compatible"
 		baseURL := ""
@@ -377,7 +364,7 @@ func (h *ProviderHandlers) HandleProviderUpdate(ctx context.Context, req *model.
 			DisplayName: displayName,
 			BaseURL:     baseURL,
 			Protocol:    protocol,
-			ConfigJSON:  nil,
+			ConfigJSON:  configJSON,
 		})
 		if err == nil && !enabled {
 			provider, err = h.providerConfig.Update(ctx, service.ProviderUpdateRequest{
@@ -405,6 +392,85 @@ func (h *ProviderHandlers) HandleProviderUpdate(ctx context.Context, req *model.
 	}
 
 	return &model.UpdateProviderResponse{Provider: providerToProto(provider)}, nil
+}
+
+func (h *ProviderHandlers) HandleProviderCheck(
+	ctx context.Context,
+	req *model.CheckProviderRequest,
+) (*model.CheckProviderResponse, error) {
+	actorPTID := subjectActorPTID(ctx)
+	providerID := strings.TrimSpace(req.GetProviderId())
+	cp := h.effectiveCatalogProvider(actorPTID, providerID)
+	if cp == nil {
+		return nil, server.NewHandlerError(http.StatusNotFound, "provider not found")
+	}
+	if strings.EqualFold(cp.RuntimeKind, "cli") {
+		result := providercli.VerifyCliBinary(cp.CLIArgv)
+		return &model.CheckProviderResponse{
+			Ok:          result.Available,
+			Program:     result.Program,
+			Error:       result.Error,
+			InstallHint: result.InstallHint,
+		}, nil
+	}
+
+	userProvider, err := h.findUserProvider(ctx, actorPTID, providerID)
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	requiresAPIKey := cp.ShowAPIKey == nil || *cp.ShowAPIKey
+	if requiresAPIKey &&
+		(userProvider == nil || parseKeyVaultAPIKey(userProvider.KeyVaults) == "") {
+		return &model.CheckProviderResponse{
+			Ok:    false,
+			Error: "provider credential is not configured",
+		}, nil
+	}
+	return &model.CheckProviderResponse{Ok: true}, nil
+}
+
+func (h *ProviderHandlers) HandleDiscoverProviderModels(
+	ctx context.Context,
+	req *model.DiscoverProviderModelsRequest,
+) (*model.DiscoverProviderModelsResponse, error) {
+	actorPTID := subjectActorPTID(ctx)
+	providerID := strings.TrimSpace(req.GetProviderId())
+	cp := h.effectiveCatalogProvider(actorPTID, providerID)
+	if cp == nil {
+		return nil, server.NewHandlerError(http.StatusNotFound, "provider not found")
+	}
+	if len(cp.ModelCatalogArgv) == 0 {
+		return nil, server.NewHandlerError(
+			http.StatusBadRequest,
+			"provider does not support model discovery",
+		)
+	}
+	userProvider, err := h.findUserProvider(ctx, actorPTID, providerID)
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	models, observedAt, err := h.modelDiscovery.Discover(
+		ctx,
+		actorPTID,
+		cp,
+		userProvider,
+	)
+	if err != nil {
+		return nil, server.NewHandlerError(http.StatusBadGateway, err.Error())
+	}
+
+	response := &model.DiscoverProviderModelsResponse{
+		Models:     make([]*model.ProviderModelInfo, 0, len(models)),
+		ObservedAt: timestamppb.New(observedAt),
+	}
+	for i := range models {
+		info, projectionErr := catalogModelToProto(&models[i])
+		if projectionErr != nil {
+			return nil, server.NewHandlerError(http.StatusConflict, projectionErr.Error())
+		}
+		response.Models = append(response.Models, info)
+	}
+	return response, nil
 }
 
 func (h *ProviderHandlers) HandleListAvailableModels(ctx context.Context, _ *model.ListAvailableModelsRequest) (*model.ListAvailableModelsResponse, error) {
@@ -461,30 +527,36 @@ func (h *ProviderHandlers) HandleProviderDelete(ctx context.Context, req *model.
 }
 
 func (h *ProviderHandlers) HandleModelList(ctx context.Context, req *model.ListModelsRequest) (*model.ListModelsResponse, error) {
-	actorID := subjectActorID(ctx)
+	actorPTID := subjectActorPTID(ctx)
 	providerID := req.GetProviderId()
 
-	if cp := catalog.Find(providerID); cp != nil {
+	cp := h.effectiveCatalogProvider(actorPTID, providerID)
+	if cp != nil {
 		if !catalogProviderAdvertisedByFrozenProfile(*cp) ||
 			!h.admissionResolver.CatalogProviderAvailable(*cp) {
 			return &model.ListModelsResponse{}, nil
 		}
 	}
-	providers, err := h.providerConfig.List(ctx, actorID)
+	providers, err := h.providerConfig.List(ctx, actorPTID)
 	if err != nil {
 		return nil, toHandlerError(err)
 	}
+	var hidden []string
 	for i := range providers {
-		if providers[i].Name == providerID &&
-			!h.admissionResolver.ProviderRuntimeAvailable(
-				providers[i].RuntimeKind,
-				providers[i].Protocol,
-			) {
+		if providers[i].Name != providerID {
+			continue
+		}
+		if !h.admissionResolver.ProviderRuntimeAvailable(
+			providers[i].RuntimeKind,
+			providers[i].Protocol,
+		) {
 			return &model.ListModelsResponse{}, nil
 		}
+		hidden = parseHiddenModels(providers[i].HiddenModels)
+		break
 	}
 
-	models, err := h.modelConfig.List(ctx, actorID, providerID)
+	models, err := h.modelConfig.List(ctx, actorPTID, providerID)
 	if err != nil {
 		return nil, toHandlerError(err)
 	}
@@ -492,7 +564,25 @@ func (h *ProviderHandlers) HandleModelList(ctx context.Context, req *model.ListM
 	resp := &model.ListModelsResponse{
 		Models: make([]*model.AgentModelInfo, 0, len(models)),
 	}
+	if cp != nil {
+		effectiveModels, projectionErr := effectiveCatalogAgentModels(
+			actorPTID,
+			cp,
+			models,
+			hidden,
+		)
+		if projectionErr != nil {
+			return nil, server.NewHandlerError(http.StatusConflict, projectionErr.Error())
+		}
+		resp.Models = effectiveModels
+
+		return resp, nil
+	}
+
 	for i := range models {
+		if contains(hidden, models[i].ModelID) {
+			continue
+		}
 		info, convertErr := modelToProto(&models[i])
 		if convertErr != nil {
 			return nil, server.NewHandlerError(http.StatusConflict, convertErr.Error())
@@ -513,6 +603,9 @@ func (h *ProviderHandlers) HandleModelCreate(ctx context.Context, req *model.Cre
 	if modelID == "" {
 		return nil, server.NewHandlerError(http.StatusBadRequest, "model_id is required")
 	}
+	if err := h.ensureProviderModelsMutable(actorPTID, providerID); err != nil {
+		return nil, err
+	}
 
 	if err := h.ensureProviderRecord(ctx, actorPTID, providerID); err != nil {
 		return nil, toHandlerError(err)
@@ -531,7 +624,9 @@ func (h *ProviderHandlers) HandleModelCreate(ctx context.Context, req *model.Cre
 		return nil, toHandlerError(err)
 	}
 
-	_ = h.providerConfig.UnhideModel(ctx, actorPTID, providerID, modelID)
+	if err := h.providerConfig.UnhideModel(ctx, actorPTID, providerID, modelID); err != nil {
+		return nil, toHandlerError(err)
+	}
 
 	info, err := modelToProto(m)
 	if err != nil {
@@ -542,8 +637,11 @@ func (h *ProviderHandlers) HandleModelCreate(ctx context.Context, req *model.Cre
 
 func (h *ProviderHandlers) HandleModelUpdate(ctx context.Context, req *model.UpdateModelRequest) (*model.UpdateModelResponse, error) {
 	actorPTID := subjectActorPTID(ctx)
+	if err := h.ensureProviderModelsMutable(actorPTID, req.GetProviderId()); err != nil {
+		return nil, err
+	}
 
-	m, err := h.modelConfig.Update(ctx, service.ModelUpdateRequest{
+	updateRequest := service.ModelUpdateRequest{
 		ActorPTID:     actorPTID,
 		ProviderID:    req.GetProviderId(),
 		ModelID:       req.GetModelId(),
@@ -552,15 +650,73 @@ func (h *ProviderHandlers) HandleModelUpdate(ctx context.Context, req *model.Upd
 		Enabled:       req.Enabled,
 		Capabilities:  capabilityFlags(req.GetCapabilities()),
 		ContextWindow: int32PtrToInt(req.ContextWindow),
-	})
+	}
+	persistedModels, err := h.modelConfig.List(ctx, actorPTID, req.GetProviderId())
 	if err != nil {
 		return nil, toHandlerError(err)
 	}
+	for i := range persistedModels {
+		if persistedModels[i].ModelID != req.GetModelId() {
+			continue
+		}
+		updated, updateErr := h.modelConfig.Update(ctx, updateRequest)
+		if updateErr != nil {
+			return nil, toHandlerError(updateErr)
+		}
 
-	info, err := modelToProto(m)
+		info, projectionErr := modelToProto(updated)
+		if projectionErr != nil {
+			return nil, server.NewHandlerError(http.StatusConflict, projectionErr.Error())
+		}
+
+		return &model.UpdateModelResponse{Model: info}, nil
+	}
+
+	catalogModel := h.findCatalogModel(
+		actorPTID,
+		req.GetProviderId(),
+		req.GetModelId(),
+	)
+	if req.GetVersion() != 0 || catalogModel == nil {
+		_, updateErr := h.modelConfig.Update(ctx, updateRequest)
+
+		return nil, toHandlerError(updateErr)
+	}
+	if err := h.ensureProviderRecord(
+		ctx,
+		actorPTID,
+		req.GetProviderId(),
+	); err != nil {
+		return nil, toHandlerError(err)
+	}
+
+	createRequest, err := catalogModelCreateRequest(
+		actorPTID,
+		req.GetProviderId(),
+		catalogModel,
+		req,
+	)
 	if err != nil {
 		return nil, server.NewHandlerError(http.StatusConflict, err.Error())
 	}
+	created, err := h.modelConfig.Create(ctx, createRequest)
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	if err := h.providerConfig.UnhideModel(
+		ctx,
+		actorPTID,
+		req.GetProviderId(),
+		req.GetModelId(),
+	); err != nil {
+		return nil, toHandlerError(err)
+	}
+
+	info, err := modelToProto(created)
+	if err != nil {
+		return nil, server.NewHandlerError(http.StatusConflict, err.Error())
+	}
+
 	return &model.UpdateModelResponse{Model: info}, nil
 }
 
@@ -632,6 +788,9 @@ func (h *ProviderHandlers) HandleModelHide(ctx context.Context, req *model.HideM
 	}
 
 	providerID := req.GetProviderId()
+	if err := h.ensureProviderModelsMutable(actorPTID, providerID); err != nil {
+		return nil, err
+	}
 	if err := h.ensureProviderRecord(ctx, actorPTID, providerID); err != nil {
 		return nil, toHandlerError(err)
 	}
@@ -657,16 +816,14 @@ func (h *ProviderHandlers) HandleModelHiddenList(ctx context.Context, req *model
 func providerToProto(p *persistence.AgentProvider) *model.AgentProviderInfo {
 	cp := catalog.Find(p.Name)
 	info := &model.AgentProviderInfo{
-		Id:            p.Name,
-		Name:          p.DisplayName,
-		Enabled:       p.Enabled,
-		Protocol:      p.Protocol,
-		RuntimeKind:   p.RuntimeKind,
-		BaseUrl:       p.BaseURL,
-		CliCommand:    p.CliCommand,
-		ModelsCommand: p.ModelsCommand,
-		Version:       p.Version,
-		Source:        "custom",
+		Id:          p.Name,
+		Name:        p.DisplayName,
+		Enabled:     p.Enabled,
+		Protocol:    p.Protocol,
+		RuntimeKind: p.RuntimeKind,
+		BaseUrl:     p.BaseURL,
+		Version:     p.Version,
+		Source:      "custom",
 	}
 	if cp != nil && catalogProviderAdvertisedByFrozenProfile(*cp) {
 		info.Source = "catalog"
@@ -686,6 +843,13 @@ func providerToProto(p *persistence.AgentProvider) *model.AgentProviderInfo {
 		}
 		if info.Protocol == "" {
 			info.Protocol = cp.Protocol
+		}
+		if strings.EqualFold(strings.TrimSpace(p.RuntimeKind), "cli") {
+			info.CliCommand = catalog.FormatArgv(cp.CLIArgv)
+			info.RuntimeConfig = service.EffectiveProviderRuntimeConfig(cp, p)
+			info.DefaultRuntimeConfig = service.DefaultProviderRuntimeConfig(cp)
+			info.AdapterCapabilities = providerAdapterCapabilities(cp)
+			info.WorkspacePolicy = cp.WorkspacePolicy
 		}
 	}
 	if key := parseKeyVaultAPIKey(p.KeyVaults); key != "" {
@@ -722,13 +886,167 @@ func catalogModelToProto(m *catalog.CatalogModel) (*model.ProviderModelInfo, err
 		return nil, fmt.Errorf("model %q capability metadata is invalid: %w", m.ID, err)
 	}
 	return &model.ProviderModelInfo{
-		Id:            m.ID,
-		DisplayName:   m.DisplayName,
-		Type:          m.Type,
-		Enabled:       m.Enabled,
-		ContextWindow: int32(m.ContextWindow),
-		Capabilities:  modelCapabilityConfig(flags),
+		Id:                    m.ID,
+		DisplayName:           m.DisplayName,
+		Type:                  m.Type,
+		Enabled:               m.Enabled,
+		ContextWindow:         int32(m.ContextWindow),
+		Capabilities:          modelCapabilityConfig(flags),
+		Description:           m.Description,
+		DefaultReasoningLevel: m.DefaultReasoningLevel,
+		SupportedReasoningLevels: append(
+			[]string(nil),
+			m.SupportedReasoningLevels...,
+		),
 	}, nil
+}
+
+func effectiveCatalogProviderModels(
+	provider *catalog.CatalogProvider,
+	persistedModels []persistence.AgentModel,
+	hidden []string,
+) ([]*model.ProviderModelInfo, error) {
+	if providerIsCLI(provider) {
+		persistedModels = nil
+		hidden = nil
+	}
+	effectiveModels, err := service.ResolveEffectiveProviderModels(
+		provider,
+		persistedModels,
+		hidden,
+	)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]*model.ProviderModelInfo, 0, len(effectiveModels))
+	for _, effectiveModel := range effectiveModels {
+		catalogModel := catalogModelByID(provider, effectiveModel.ID)
+		description := ""
+		defaultReasoningLevel := ""
+		var supportedReasoningLevels []string
+		if catalogModel != nil {
+			description = catalogModel.Description
+			defaultReasoningLevel = catalogModel.DefaultReasoningLevel
+			supportedReasoningLevels = append(
+				[]string(nil),
+				catalogModel.SupportedReasoningLevels...,
+			)
+		}
+		result = append(result, &model.ProviderModelInfo{
+			Id:                       effectiveModel.ID,
+			DisplayName:              effectiveModel.DisplayName,
+			Type:                     effectiveModel.Type,
+			Enabled:                  effectiveModel.Enabled,
+			ContextWindow:            int32(effectiveModel.ContextWindow),
+			Capabilities:             modelCapabilityConfig(effectiveModel.Capabilities),
+			Description:              description,
+			DefaultReasoningLevel:    defaultReasoningLevel,
+			SupportedReasoningLevels: supportedReasoningLevels,
+		})
+	}
+
+	return result, nil
+}
+
+func effectiveCatalogAgentModels(
+	actorPTID string,
+	provider *catalog.CatalogProvider,
+	persistedModels []persistence.AgentModel,
+	hidden []string,
+) ([]*model.AgentModelInfo, error) {
+	if providerIsCLI(provider) {
+		persistedModels = nil
+		hidden = nil
+	}
+	effectiveModels, err := service.ResolveEffectiveProviderModels(
+		provider,
+		persistedModels,
+		hidden,
+	)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]*model.AgentModelInfo, 0, len(effectiveModels))
+	for _, effectiveModel := range effectiveModels {
+		info := &model.AgentModelInfo{
+			Id:            effectiveModel.ID,
+			ActorPtid:     actorPTID,
+			ProviderId:    provider.ID,
+			ModelId:       effectiveModel.ID,
+			DisplayName:   effectiveModel.DisplayName,
+			Enabled:       effectiveModel.Enabled,
+			ContextWindow: int32(effectiveModel.ContextWindow),
+			Capabilities:  modelCapabilityConfig(effectiveModel.Capabilities),
+		}
+		if effectiveModel.PersistedModel != nil {
+			persistedModel := effectiveModel.PersistedModel
+			info.Id = persistedModel.ID
+			info.Version = persistedModel.Version
+			info.CreatedAt = timestamppb.New(persistedModel.CreatedAt)
+			info.UpdatedAt = timestamppb.New(persistedModel.UpdatedAt)
+		}
+		result = append(result, info)
+	}
+
+	return result, nil
+}
+
+func (h *ProviderHandlers) findCatalogModel(
+	actorPTID string,
+	providerID string,
+	modelID string,
+) *catalog.CatalogModel {
+	provider := h.effectiveCatalogProvider(actorPTID, providerID)
+	if provider == nil {
+		return nil
+	}
+	for i := range provider.Models {
+		if provider.Models[i].ID == modelID {
+			return &provider.Models[i]
+		}
+	}
+
+	return nil
+}
+
+func catalogModelCreateRequest(
+	actorPTID string,
+	providerID string,
+	catalogModel *catalog.CatalogModel,
+	req *model.UpdateModelRequest,
+) (service.ModelCreateRequest, error) {
+	capabilities, err := service.ModelCapabilityFlagsFromNames(catalogModel.Capabilities)
+	if err != nil {
+		return service.ModelCreateRequest{}, fmt.Errorf(
+			"model %q capability metadata is invalid: %w",
+			catalogModel.ID,
+			err,
+		)
+	}
+
+	createRequest := service.ModelCreateRequest{
+		ActorPTID:     actorPTID,
+		ProviderID:    providerID,
+		ModelID:       catalogModel.ID,
+		DisplayName:   catalogModel.DisplayName,
+		Enabled:       catalogModel.Enabled,
+		Capabilities:  capabilities,
+		ContextWindow: catalogModel.ContextWindow,
+	}
+	if req.DisplayName != nil {
+		createRequest.DisplayName = req.GetDisplayName()
+	}
+	if req.Enabled != nil {
+		createRequest.Enabled = req.GetEnabled()
+	}
+	if req.Capabilities != nil {
+		createRequest.Capabilities = capabilityFlags(req.GetCapabilities())
+	}
+	if req.ContextWindow != nil {
+		createRequest.ContextWindow = int(req.GetContextWindow())
+	}
+
+	return createRequest, nil
 }
 
 func persistedModelToProviderProto(m *persistence.AgentModel) (*model.ProviderModelInfo, error) {
@@ -812,6 +1130,86 @@ func parseKeyVaultAPIKey(kv string) string {
 		return v
 	}
 	return ""
+}
+
+func providerAdapterCapabilities(
+	provider *catalog.CatalogProvider,
+) *model.ProviderAdapterCapabilities {
+	if provider == nil {
+		return nil
+	}
+	return &model.ProviderAdapterCapabilities{
+		ModelDiscovery:      len(provider.ModelCatalogArgv) > 0,
+		StartupArgs:         provider.SupportsConfiguration("startup-args"),
+		Environment:         provider.SupportsConfiguration("environment"),
+		ConfigurableTimeout: provider.SupportsConfiguration("timeout"),
+		RuntimeCapabilities: append(
+			[]string(nil),
+			provider.Capabilities...,
+		),
+	}
+}
+
+func providerIsCLI(provider *catalog.CatalogProvider) bool {
+	return provider != nil &&
+		strings.EqualFold(strings.TrimSpace(provider.RuntimeKind), "cli")
+}
+
+func catalogModelByID(
+	provider *catalog.CatalogProvider,
+	modelID string,
+) *catalog.CatalogModel {
+	if provider == nil {
+		return nil
+	}
+	for i := range provider.Models {
+		if provider.Models[i].ID == modelID {
+			return &provider.Models[i]
+		}
+	}
+	return nil
+}
+
+func (h *ProviderHandlers) effectiveCatalogProvider(
+	actorPTID string,
+	providerID string,
+) *catalog.CatalogProvider {
+	provider := catalog.Find(providerID)
+	if provider == nil {
+		return nil
+	}
+	effective := h.runtimeModels.EffectiveProvider(actorPTID, *provider)
+	return &effective
+}
+
+func (h *ProviderHandlers) findUserProvider(
+	ctx context.Context,
+	actorPTID string,
+	providerID string,
+) (*persistence.AgentProvider, error) {
+	providers, err := h.providerConfig.List(ctx, actorPTID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range providers {
+		if providers[i].Name == providerID {
+			return &providers[i], nil
+		}
+	}
+	return nil, nil
+}
+
+func (h *ProviderHandlers) ensureProviderModelsMutable(
+	actorPTID string,
+	providerID string,
+) error {
+	if providerIsCLI(h.effectiveCatalogProvider(actorPTID, providerID)) {
+		return server.NewHandlerError(
+			http.StatusBadRequest,
+			"CLI provider models are a read-only Station runtime catalog",
+		)
+	}
+	return nil
 }
 
 // ensureProviderRecord creates a DB record for the provider if one doesn't

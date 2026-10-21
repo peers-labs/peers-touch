@@ -886,6 +886,11 @@ class StationAccessRelayRoleProvisioner(EnvironmentProvisioner):
         environment = [
             f"PEERS_NODE_SERVER_BASEURL={canonical_origin}",
         ]
+        environment.extend(
+            StationAccessRelayRoleProvisioner._preserved_station_cli_environment(
+                config,
+            )
+        )
         if config.libp2p_port is not None:
             environment.append(f"LIBP2P_PORT={config.libp2p_port}")
         completed = config.transport().run_argv(
@@ -917,6 +922,99 @@ class StationAccessRelayRoleProvisioner(EnvironmentProvisioner):
                 reason=f"Station canonical origin restart failed: {detail[-1000:]}",
                 resource=f"station:{config.environment_name}",
             )
+
+    @staticmethod
+    def _preserved_station_cli_environment(
+        config: PosixServiceRuntimeConfig,
+    ) -> list[str]:
+        transport = config.transport()
+        containers = transport.run_argv(
+            (
+                "docker",
+                "ps",
+                "-q",
+                "--filter",
+                f"label=com.docker.compose.project={config.compose_project}",
+                "--filter",
+                f"label=com.docker.compose.service={config.compose_service}",
+            ),
+            timeout=30,
+            check=True,
+        ).stdout.split()
+        if not containers:
+            return []
+        if len(containers) != 1:
+            raise BlockedError(
+                reason="Station canonical origin restart found ambiguous containers",
+                resource=f"station:{config.environment_name}",
+            )
+        inspected = transport.run_argv(
+            ("docker", "inspect", containers[0]),
+            timeout=30,
+            check=True,
+        )
+        try:
+            payload = json.loads(inspected.stdout)
+        except json.JSONDecodeError as error:
+            raise BlockedError(
+                reason="Station canonical origin runtime inspection is invalid",
+                resource=f"station:{config.environment_name}",
+            ) from error
+        if not isinstance(payload, list) or len(payload) != 1:
+            raise BlockedError(
+                reason="Station canonical origin runtime inspection is incomplete",
+                resource=f"station:{config.environment_name}",
+            )
+        container = payload[0]
+        if not isinstance(container, Mapping):
+            raise BlockedError(
+                reason="Station canonical origin runtime inspection is incomplete",
+                resource=f"station:{config.environment_name}",
+            )
+        config_env = container.get("Config", {}).get("Env", [])
+        mounts = container.get("Mounts", [])
+        env = {
+            key: value
+            for item in config_env
+            if isinstance(item, str) and "=" in item
+            for key, value in (item.split("=", 1),)
+        } if isinstance(config_env, list) else {}
+        mount_sources = {
+            str(item.get("Destination") or ""): str(item.get("Source") or "")
+            for item in mounts
+            if isinstance(item, Mapping)
+        } if isinstance(mounts, list) else {}
+        binary = env.get("PEERS_HOST_CLI_BIN", "").strip()
+        binary_source = mount_sources.get(
+            "/usr/local/bin/host-cli-bin",
+            "",
+        ).strip()
+        if bool(binary) != bool(binary_source):
+            raise BlockedError(
+                reason="Station CLI runtime binding is incomplete",
+                resource=f"station:{config.environment_name}:cli",
+            )
+        if not binary:
+            return []
+        preserved = [
+            f"PEERS_HOST_CLI_BIN_MOUNT={binary_source}",
+            f"PEERS_HOST_CLI_BIN={binary}",
+        ]
+        cli_home = env.get("PEERS_HOST_CLI_HOME", "").strip()
+        home_source = mount_sources.get("/root/.host-cli-home", "").strip()
+        if bool(cli_home) != bool(home_source):
+            raise BlockedError(
+                reason="Station CLI home binding is incomplete",
+                resource=f"station:{config.environment_name}:cli-home",
+            )
+        if cli_home:
+            preserved.extend(
+                (
+                    f"PEERS_HOST_CLI_HOME_MOUNT={home_source}",
+                    f"PEERS_HOST_CLI_HOME={cli_home}",
+                )
+            )
+        return preserved
 
     @staticmethod
     def _wait_https_proxy(

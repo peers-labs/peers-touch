@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -21,6 +22,7 @@ type Store struct {
 	credentials map[string]entity.OAuthCredential
 	refreshOps  map[string]map[string]refreshOperation
 	events      map[string]entity.AuditEvent
+	handoffs    map[string]entity.OperatorLoginHandoff
 }
 
 type refreshOperation struct {
@@ -38,6 +40,7 @@ func NewStore() *Store {
 		credentials: make(map[string]entity.OAuthCredential),
 		refreshOps:  make(map[string]map[string]refreshOperation),
 		events:      make(map[string]entity.AuditEvent),
+		handoffs:    make(map[string]entity.OperatorLoginHandoff),
 	}
 }
 
@@ -201,6 +204,85 @@ func (s *Store) RecordAuthorizationFailure(_ context.Context, failure entity.Aut
 		}
 	}
 	return nil
+}
+
+func (s *Store) CreateOperatorLoginHandoff(
+	_ context.Context,
+	handoff entity.OperatorLoginHandoff,
+) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if handoff.SchemaVersion != 1 ||
+		handoff.CodeFingerprint == "" ||
+		handoff.AssertionID == "" ||
+		handoff.SiteID == "" ||
+		handoff.Audience == "" ||
+		handoff.LoginAttemptID == "" ||
+		handoff.ProviderSubject == "" ||
+		len(handoff.ReceiverChallenge) != sha256.Size ||
+		handoff.CreatedAt.IsZero() ||
+		!handoff.ExpiresAt.After(handoff.CreatedAt) {
+		return repository.ErrRecordCorrupt
+	}
+	if existing, ok := s.handoffs[handoff.CodeFingerprint]; ok {
+		if sameOperatorHandoff(existing, handoff) {
+			return nil
+		}
+		return repository.ErrOperatorHandoffExists
+	}
+	handoff.ReceiverChallenge = append([]byte(nil), handoff.ReceiverChallenge...)
+	s.handoffs[handoff.CodeFingerprint] = handoff
+	return nil
+}
+
+func (s *Store) ConsumeOperatorLoginHandoff(
+	_ context.Context,
+	codeFingerprint string,
+	siteID string,
+	audience string,
+	receiverChallenge []byte,
+	now time.Time,
+) (*entity.OperatorLoginHandoff, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	handoff, ok := s.handoffs[codeFingerprint]
+	if !ok {
+		return nil, repository.ErrOperatorHandoffNotFound
+	}
+	if handoff.ConsumedAt != nil {
+		return nil, repository.ErrOperatorHandoffConsumed
+	}
+	if !now.UTC().Before(handoff.ExpiresAt) {
+		return nil, repository.ErrOperatorHandoffExpired
+	}
+	if handoff.SiteID != siteID ||
+		handoff.Audience != audience ||
+		!bytes.Equal(handoff.ReceiverChallenge, receiverChallenge) {
+		return nil, repository.ErrOperatorHandoffBinding
+	}
+	consumedAt := now.UTC()
+	handoff.ConsumedAt = &consumedAt
+	s.handoffs[codeFingerprint] = handoff
+	out := handoff
+	out.ReceiverChallenge = append([]byte(nil), handoff.ReceiverChallenge...)
+	return &out, nil
+}
+
+func sameOperatorHandoff(
+	left entity.OperatorLoginHandoff,
+	right entity.OperatorLoginHandoff,
+) bool {
+	return left.SchemaVersion == right.SchemaVersion &&
+		left.CodeFingerprint == right.CodeFingerprint &&
+		left.AssertionID == right.AssertionID &&
+		left.SiteID == right.SiteID &&
+		left.Audience == right.Audience &&
+		left.LoginAttemptID == right.LoginAttemptID &&
+		left.Provider == right.Provider &&
+		left.ProviderSubject == right.ProviderSubject &&
+		bytes.Equal(left.ReceiverChallenge, right.ReceiverChallenge) &&
+		left.CreatedAt.Equal(right.CreatedAt) &&
+		left.ExpiresAt.Equal(right.ExpiresAt)
 }
 
 func (s *Store) LoadCredential(_ context.Context, identityID string) (*entity.OAuthCredential, error) {

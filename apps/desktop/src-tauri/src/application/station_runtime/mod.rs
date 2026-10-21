@@ -632,30 +632,43 @@ impl StationRuntime {
         &self,
         dial_multiaddr: Option<&str>,
     ) -> Result<(), String> {
-        let Some(dial_multiaddr) = dial_multiaddr else {
-            return self
-                .transport
-                .clear_acceptance_direct_route_overrides()
-                .map_err(|error| error.to_string());
+        let lease = match self.binding.route_lease(TrafficClass::Interactive) {
+            Ok(lease) => lease,
+            Err(_) if dial_multiaddr.is_none() => {
+                return self
+                    .transport
+                    .clear_acceptance_direct_route_overrides()
+                    .map_err(|clear_error| clear_error.to_string());
+            }
+            Err(error) => return Err(error.message),
         };
-        let lease = self
-            .binding
-            .route_lease(TrafficClass::Interactive)
-            .map_err(|error| error.message)?;
         if lease.route.route_type != StationRouteType::Direct {
+            if dial_multiaddr.is_none() {
+                return self
+                    .transport
+                    .clear_acceptance_direct_route_overrides()
+                    .map_err(|error| error.to_string());
+            }
             return Err(
                 "Acceptance Direct route override requires an active Direct route".to_string(),
             );
         }
-        self.transport
-            .set_acceptance_direct_route_override(
+        let previous_override = self
+            .transport
+            .replace_acceptance_direct_route_override(
                 &lease.station_peer_id,
                 &lease.route_id,
                 &lease.route.node_peer_id,
                 dial_multiaddr,
             )
             .map_err(|error| error.to_string())?;
-        self.transport.close_route(&lease);
+        self.transport
+            .close_route_with_direct_override(&lease, previous_override);
+        if dial_multiaddr.is_none() {
+            self.transport
+                .clear_acceptance_direct_route_overrides()
+                .map_err(|error| error.to_string())?;
+        }
         Ok(())
     }
 

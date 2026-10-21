@@ -4,6 +4,7 @@ const settingsStore = vi.hoisted(() => ({
   refreshActiveAccount: vi.fn(),
   loadAgents: vi.fn(),
   loadChatPreferences: vi.fn(),
+  loadProviderPreferences: vi.fn(),
 }));
 
 const sessionStore = vi.hoisted(() => ({
@@ -28,6 +29,7 @@ describe('settingsRuntime', () => {
     settingsStore.refreshActiveAccount.mockResolvedValue(undefined);
     settingsStore.loadAgents.mockResolvedValue(undefined);
     settingsStore.loadChatPreferences.mockResolvedValue(undefined);
+    settingsStore.loadProviderPreferences.mockResolvedValue(undefined);
     sessionStore.subscribe.mockReturnValue(() => undefined);
   });
 
@@ -37,6 +39,7 @@ describe('settingsRuntime', () => {
     expect(settingsStore.refreshActiveAccount).toHaveBeenCalledTimes(1);
     expect(settingsStore.loadAgents).toHaveBeenCalledTimes(1);
     expect(settingsStore.loadChatPreferences).toHaveBeenCalledTimes(1);
+    expect(settingsStore.loadProviderPreferences).toHaveBeenCalledTimes(1);
   });
 
   it('reconciles settings-owned projection data', async () => {
@@ -45,5 +48,6 @@ describe('settingsRuntime', () => {
     expect(settingsStore.refreshActiveAccount).toHaveBeenCalledTimes(1);
     expect(settingsStore.loadAgents).toHaveBeenCalledTimes(1);
     expect(settingsStore.loadChatPreferences).toHaveBeenCalledTimes(1);
+    expect(settingsStore.loadProviderPreferences).toHaveBeenCalledTimes(1);
   });
 });

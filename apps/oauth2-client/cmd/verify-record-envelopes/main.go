@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	recordcrypto "github.com/peers-labs/peers-touch/oauth2-client/internal/infrastructure/crypto"
+	githubstore "github.com/peers-labs/peers-touch/oauth2-client/internal/infrastructure/persistence/github"
 )
 
 const maxInputBytes = 128 << 20
@@ -44,20 +45,10 @@ func decodeSecret(value string) ([]byte, error) {
 }
 
 func recordKind(path string) (string, error) {
-	switch {
-	case strings.HasPrefix(path, "oauth-data/transactions/"):
-		return "authorization-transaction", nil
-	case strings.HasPrefix(path, "oauth-data/identities/"):
-		return "oauth-identity", nil
-	case strings.HasPrefix(path, "oauth-data/credentials/"):
-		return "oauth-credential", nil
-	case strings.HasPrefix(path, "oauth-data/refresh-operations/"):
-		return "oauth-refresh-operation", nil
-	case strings.HasPrefix(path, "oauth-data/audits/"):
-		return "oauth-audit", nil
-	default:
-		return "", errors.New("unknown record path")
+	if kind, ok := githubstore.RecordKindForPath(path); ok {
+		return kind, nil
 	}
+	return "", errors.New("unknown record path")
 }
 
 func verify(request verificationRequest) (verificationResult, error) {

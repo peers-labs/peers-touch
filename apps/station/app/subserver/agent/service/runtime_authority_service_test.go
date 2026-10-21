@@ -2335,7 +2335,7 @@ func TestExecuteTurnEnforcesCapabilityReadinessAdmission(t *testing.T) {
 				t.Fatalf("admitted capability turn failed: %v", executeErr)
 			}
 			if turn == nil || turn.Status != domain.TurnStatusCompleted ||
-				providerCalls != 1 || toolExecutions != 0 || messageCount != 2 {
+				providerCalls != 2 || toolExecutions != 0 || messageCount != 2 {
 				t.Fatalf(
 					"admitted capability result: turn=%+v provider=%d tool=%d message=%d",
 					turn,
@@ -2745,8 +2745,69 @@ func TestResolveAgentDefaultsLoadsThinkingModeWithoutConfigJSON(t *testing.T) {
 	if config.ThinkingMode != domain.ThinkingModeDisabled {
 		t.Fatalf("thinking mode = %q, want disabled", config.ThinkingMode)
 	}
-	if config.Provider != "ark" || config.Model != "seed" || config.Effort != "high" {
-		t.Fatalf("structured Agent defaults were not loaded: %+v", config)
+	if config.Provider != "" || config.Model != "" || config.Effort != "high" {
+		t.Fatalf("Agent model settings leaked into Topic routing: %+v", config)
+	}
+}
+
+func TestResolveAgentDefaultsCanonicalDocumentsOwnEmptyAndContent(t *testing.T) {
+	db := openRuntimeAuthorityDB(t, "canonical_profile_documents")
+	now := time.Now().UTC()
+	if err := db.Create(&persistence.Agent{
+		ID: "agent-documents", Name: "Documents",
+		OwnerActorPTID: "ptid:person:owner", Version: 1,
+		ConfigJSON: `{"soulMd":"current soul","agentsMd":"current instructions","identity":"old soul","agentConfigPrompt":"old instructions"}`,
+		CreatedAt:  now, UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed agent: %v", err)
+	}
+	config := &TurnConfig{AgentID: "agent-documents"}
+	(&TurnService{}).resolveAgentDefaults(context.Background(), config)
+	if config.Identity != "current soul" || config.AgentConfigPrompt != "current instructions" {
+		t.Fatalf("canonical documents did not own prompt input: %+v", config)
+	}
+	if err := db.Model(&persistence.Agent{}).Where("id = ?", config.AgentID).
+		Update("config_json", `{"soulMd":"","agentsMd":"","identity":"old soul","agentConfigPrompt":"old instructions"}`).Error; err != nil {
+		t.Fatalf("clear documents: %v", err)
+	}
+	cleared := &TurnConfig{AgentID: config.AgentID}
+	(&TurnService{}).resolveAgentDefaults(context.Background(), cleared)
+	if cleared.Identity != "" || cleared.AgentConfigPrompt != "" {
+		t.Fatalf("cleared documents resurrected legacy prompt content: %+v", cleared)
+	}
+}
+
+func TestResolveAgentDefaultsLoadsOnlyOwnedTopicModelPair(t *testing.T) {
+	db := openRuntimeAuthorityDB(t, "owned_topic_model_defaults")
+	now := time.Now().UTC()
+	if err := db.Create(&persistence.Agent{
+		ID: "agent-topic-model", Name: "Topic model",
+		ProviderID: "legacy-provider", ModelName: "legacy-model",
+		OwnerActorPTID: "ptid:person:owner", Version: 1,
+		CreatedAt: now, UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed agent: %v", err)
+	}
+	topicModel := "default"
+	if err := db.Create(&persistence.Conversation{
+		ID: "topic-model", AgentID: "agent-topic-model", ActorPTID: "ptid:person:owner",
+		ProviderID: "cli-two", ModelName: &topicModel, Title: "Topic", Version: 1,
+		CreatedAt: now, UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed Topic: %v", err)
+	}
+	for _, actorID := range []string{"ptid:person:owner", "ptid:person:other"} {
+		config := &TurnConfig{
+			AgentID: "agent-topic-model", ConversationID: "topic-model", ActorID: actorID,
+		}
+		(&TurnService{}).resolveAgentDefaults(context.Background(), config)
+		if actorID == "ptid:person:owner" {
+			if config.Provider != "cli-two" || config.Model != "default" {
+				t.Fatalf("owned Topic composite model was lost: %+v", config)
+			}
+		} else if config.Provider != "" || config.Model != "" {
+			t.Fatalf("foreign Topic model leaked into turn defaults: %+v", config)
+		}
 	}
 }
 

@@ -1,32 +1,62 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Flexbox } from 'react-layout-kit';
-import { Typography, Modal, Form, theme, Divider, Avatar } from 'antd';
+import { Typography, Modal, Form, theme, Divider, Avatar, Radio, Select, Switch } from 'antd';
 import { Input, Button, TextArea, InputPassword, Tag, toast } from '@lobehub/ui';
-import { Search, Plus, Brain } from 'lucide-react';
+import { Search, Plus, Brain, TerminalSquare } from 'lucide-react';
 import { ProviderIcon } from './ProviderIcon';
 import { useTranslation } from 'react-i18next';
-import { useActiveProviderSlice } from './useActiveSettingsStores';
+import { isProviderUsable } from '../../store/providerReadiness';
+import { useActiveProviderSlice, useActiveSettingsSlice } from './useActiveSettingsStores';
 
 const { Text } = Typography;
 
 export function ProviderMenu() {
   const { t } = useTranslation('provider');
-  const { providers, selectedId, selectProvider, createProvider } = useActiveProviderSlice((s) => ({
+  const { providers, selectedId, selectProvider, createProvider, readinessById } = useActiveProviderSlice((s) => ({
     providers: s.providers,
     selectedId: s.selectedId,
     selectProvider: s.selectProvider,
     createProvider: s.createProvider,
+    readinessById: s.readinessById,
+  }));
+  const { showUsableOnly, setShowUsableOnly } = useActiveSettingsSlice((state) => ({
+    showUsableOnly: state.showUsableProvidersOnly,
+    setShowUsableOnly: state.setShowUsableProvidersOnly,
   }));
   const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
+  const providerListRef = useRef<HTMLDivElement>(null);
   const { token } = theme.useToken();
 
-  const filtered = providers.filter((p) =>
-    p.name.toLowerCase().includes(search.toLowerCase()),
+  const usableProviders = useMemo(
+    () => providers.filter((provider) =>
+      isProviderUsable(provider, readinessById[provider.id])),
+    [providers, readinessById],
   );
-  const enabledList = filtered.filter((p) => p.enabled);
-  const disabledList = filtered.filter((p) => !p.enabled);
+  const filtered = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return (showUsableOnly ? usableProviders : providers).filter((provider) =>
+      !query
+      || provider.name.toLowerCase().includes(query)
+      || provider.id.toLowerCase().includes(query),
+    );
+  }, [providers, search, showUsableOnly, usableProviders]);
+
+  useEffect(() => {
+    if (!showUsableOnly || usableProviders.length === 0) return;
+    if (usableProviders.some((provider) => provider.id === selectedId)) return;
+    void selectProvider(usableProviders[0].id);
+  }, [selectProvider, selectedId, showUsableOnly, usableProviders]);
+
+  const selectedProviderIsListed = filtered.some((provider) => provider.id === selectedId);
+  useEffect(() => {
+    if (!selectedId || !selectedProviderIsListed) return;
+    const selectedRow = Array.from(
+      providerListRef.current?.querySelectorAll<HTMLElement>('[data-item-id]') ?? [],
+    ).find((row) => row.dataset.itemId === selectedId);
+    selectedRow?.scrollIntoView({ block: 'nearest' });
+  }, [selectedId, selectedProviderIsListed]);
 
   const renderItem = (p: typeof providers[0]) => {
     const isSelected = p.id === selectedId;
@@ -102,22 +132,41 @@ export function ProviderMenu() {
         />
       </Flexbox>
 
-      <Flexbox flex={1} gap={4} style={{ overflow: 'auto', paddingRight: 4 }}>
-        {enabledList.length > 0 && (
-          <>
-            <Text type="secondary" style={{ fontSize: 11, fontWeight: 600, padding: '8px 14px 2px', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              {t('provider.menu.enabled')}
-            </Text>
-            {enabledList.map(renderItem)}
-          </>
-        )}
-        {disabledList.length > 0 && (
-          <>
-            <Text type="secondary" style={{ fontSize: 11, fontWeight: 600, padding: '12px 14px 2px', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              {t('provider.menu.disabled')}
-            </Text>
-            {disabledList.map(renderItem)}
-          </>
+      <Flexbox horizontal align="center" justify="space-between" style={{ minHeight: 32, padding: '0 4px' }}>
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          {t('provider.menu.showUsableOnly')}
+        </Text>
+        <Switch
+          size="small"
+          checked={showUsableOnly}
+          aria-label={t('provider.menu.showUsableOnly')}
+          onChange={(checked) => {
+            void setShowUsableOnly(checked).catch(() => {
+              toast.error(t('provider.menu.preferenceSaveFailed'));
+            });
+          }}
+        />
+      </Flexbox>
+
+      <Flexbox
+        ref={providerListRef}
+        flex={1}
+        gap={4}
+        style={{
+          minHeight: 0,
+          overflowX: 'hidden',
+          overflowY: 'auto',
+          paddingRight: 4,
+          scrollbarWidth: 'thin',
+        }}
+      >
+        {filtered.map(renderItem)}
+        {filtered.length === 0 && (
+          <Text type="secondary" style={{ padding: '16px 8px', fontSize: 12 }}>
+            {showUsableOnly
+              ? t('provider.menu.noUsableProviders')
+              : t('provider.menu.noMatchingProviders')}
+          </Text>
         )}
       </Flexbox>
 
@@ -125,6 +174,11 @@ export function ProviderMenu() {
         open={showCreate}
         onClose={() => setShowCreate(false)}
         onCreate={createProvider}
+        providers={providers}
+        onSelectProvider={async (providerId) => {
+          if (showUsableOnly) await setShowUsableOnly(false);
+          await selectProvider(providerId);
+        }}
       />
     </Flexbox>
   );
@@ -146,21 +200,31 @@ function CreateProviderModal({
   open,
   onClose,
   onCreate,
+  providers,
+  onSelectProvider,
 }: {
   open: boolean;
   onClose: () => void;
   onCreate: (data: { id: string; name: string; description?: string; logo?: string; base_url: string; api_key?: string }) => Promise<void>;
+  providers: Array<{ id: string; name: string; runtime_kind: string }>;
+  onSelectProvider: (providerId: string) => Promise<void>;
 }) {
   const { t } = useTranslation('provider');
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
+  const providerKind = Form.useWatch<'direct' | 'cli'>('kind', form) ?? 'direct';
+  const cliProviders = providers.filter((provider) => provider.runtime_kind === 'cli');
 
   const handleOk = async () => {
     try {
       const values = await form.validateFields();
       setLoading(true);
-      await onCreate(values);
-      toast.success(t('provider.menu.created'));
+      if (values.kind === 'cli') {
+        await onSelectProvider(values.cli_provider_id);
+      } else {
+        await onCreate(values);
+        toast.success(t('provider.menu.created'));
+      }
       form.resetFields();
       onClose();
     } catch (e: unknown) {
@@ -189,13 +253,52 @@ function CreateProviderModal({
           onClick={handleOk}
           style={{ borderRadius: 8 }}
         >
-          {t('provider.menu.createBtn')}
+          {providerKind === 'cli'
+            ? t('provider.menu.configureBtn')
+            : t('provider.menu.createBtn')}
         </Button>
       }
       destroyOnHidden
       width={520}
+      afterOpenChange={(nextOpen) => {
+        if (nextOpen) form.setFieldsValue({ kind: 'direct' });
+      }}
     >
       <Form form={form} layout="horizontal" labelCol={{ span: 8 }} wrapperCol={{ span: 16 }} style={{ marginTop: 8 }}>
+        <Form.Item name="kind" label={t('provider.menu.providerType')} initialValue="direct">
+          <Radio.Group>
+            <Radio value="direct" className="pt-provider-kind-direct">
+              {t('provider.menu.directModel')}
+            </Radio>
+            <Radio value="cli" className="pt-provider-kind-cli">
+              {t('provider.menu.cli')}
+            </Radio>
+          </Radio.Group>
+        </Form.Item>
+
+        {providerKind === 'cli' ? (
+          <Form.Item
+            name="cli_provider_id"
+            label={t('provider.menu.registeredAdapter')}
+            rules={[{ required: true, message: t('provider.menu.registeredAdapterRequired') }]}
+          >
+            <Select
+              className="pt-provider-cli-adapter-select"
+              options={cliProviders.map((provider) => ({
+                value: provider.id,
+                className: 'pt-provider-cli-adapter-option',
+                label: (
+                  <Flexbox horizontal align="center" gap={8}>
+                    <TerminalSquare size={14} />
+                    <span>{provider.name}</span>
+                  </Flexbox>
+                ),
+              }))}
+              placeholder={t('provider.menu.registeredAdapterPlaceholder')}
+            />
+          </Form.Item>
+        ) : (
+          <>
         <SectionTitle>{t('provider.menu.basicInfo')}</SectionTitle>
 
         <Form.Item
@@ -243,6 +346,8 @@ function CreateProviderModal({
             autoComplete="new-password"
           />
         </Form.Item>
+          </>
+        )}
       </Form>
     </Modal>
   );

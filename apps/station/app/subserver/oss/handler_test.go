@@ -273,6 +273,9 @@ func (s *stubFileService) SaveFile(context.Context, service.UploadAttribution, m
 func (s *stubFileService) GetFileMeta(context.Context, string) (*ossmodel.FileMeta, error) {
 	return nil, nil
 }
+func (s *stubFileService) ReadOwnedFile(context.Context, string, string, uint64) (*ossmodel.FileMeta, []byte, error) {
+	return nil, nil, nil
+}
 func (s *stubFileService) PrepareUpload(context.Context, storage.PresignedBackend, service.UploadAttribution, service.PrepareUploadRequest, time.Duration) (service.PrepareUploadResult, error) {
 	return service.PrepareUploadResult{}, nil
 }

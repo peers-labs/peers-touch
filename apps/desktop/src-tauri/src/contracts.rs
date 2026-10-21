@@ -311,6 +311,7 @@ pub struct ProviderUpdateInput {
     pub enabled: bool,
     pub key_vaults: Option<String>,
     pub config_json: Option<String>,
+    pub runtime_config: Option<serde_json::Value>,
     pub runtime_kind: Option<String>,
     pub protocol: Option<String>,
     #[serde(default)]
@@ -326,6 +327,7 @@ pub struct ProviderCheckInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderCreateInput {
+    pub id: String,
     pub name: String,
     pub description: String,
     pub logo: String,
@@ -478,44 +480,6 @@ pub struct ModelConfigSetInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderIdInputV2 {
     pub provider_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChannelIdInput {
-    pub id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChannelCreateInput {
-    pub name: String,
-    pub r#type: String,
-    pub config: String,
-    pub enabled: Option<bool>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChannelUpdateInput {
-    pub id: String,
-    pub name: Option<String>,
-    pub r#type: Option<String>,
-    pub config: Option<String>,
-    pub enabled: Option<bool>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChannelSendMessageInput {
-    pub id: String,
-    pub text: String,
-    pub title: Option<String>,
-    pub target_id: Option<String>,
-    pub target_type: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChannelEventsInput {
-    pub id: String,
-    pub limit: Option<u32>,
-    pub offset: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1129,6 +1093,7 @@ pub struct AgentConversationUpdateInput {
     pub title: Option<String>,
     pub description: Option<String>,
     pub model_name: Option<String>,
+    pub provider_id: Option<String>,
     pub meta: Option<HashMap<String, String>>,
     pub active_branch_message_id: Option<String>,
 }
@@ -1146,6 +1111,11 @@ pub struct AgentConversationArchiveInput {
     pub conversation_id: String,
     pub permanent: Option<bool>,
     pub expected_version: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentConversationDeleteBatchInput {
+    pub targets: Vec<AgentConversationRestoreInput>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1420,6 +1390,8 @@ pub struct AgentToolDecisionIntentInput {
     pub expected_revision: u64,
     pub approved: bool,
     pub idempotency_key: String,
+    #[serde(default)]
+    pub answer: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1549,21 +1521,14 @@ pub struct ProviderModelDeleteInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProviderModelFetchInput {
+pub struct ProviderModelDiscoverInput {
     pub provider_id: String,
-    pub data: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderModelToggleInput {
     pub provider_id: String,
     pub model_id: String,
-    pub enabled: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProviderModelToggleAllInput {
-    pub provider_id: String,
     pub enabled: bool,
 }
 

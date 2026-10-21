@@ -1,3 +1,4 @@
+use crate::application::x_config::XConfigRuntime;
 use crate::application::station_runtime::StationRuntime;
 use crate::infrastructure::event_stream::EventStreamRuntime;
 use crate::infrastructure::i18n::I18nService;
@@ -22,6 +23,9 @@ pub struct AppState {
     pub event_streams: EventStreamRuntime,
     pub storage: StorageLayout,
     pub i18n: I18nService,
+    /// App-scoped owner for signed public X Config cache, rollback
+    /// watermark, release metadata, and non-authoritative Station suggestions.
+    pub x_config: XConfigRuntime,
     /// App-scoped owner for Station binding, typed requests, resources, and
     /// Direct/Circuit transport lifecycle.
     pub station: StationRuntime,
@@ -36,12 +40,14 @@ pub struct AppState {
 impl AppState {
     pub fn new(layout: StorageLayout, i18n: I18nService, station: StationRuntime) -> Self {
         let messaging_engines = EngineRegistry::new(station.client().clone());
+        let x_config = XConfigRuntime::new(&layout);
         Self {
             identity_transition: Mutex::new(()),
             settings: Mutex::new(SettingsState::default()),
             event_streams: EventStreamRuntime::new(),
             storage: layout,
             i18n,
+            x_config,
             station,
             messaging_engines,
             secure_content: SecureContentSupervisor::new(),

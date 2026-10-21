@@ -6,6 +6,7 @@ import { ChevronDown, ChevronUp, Search } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { useAgentStore } from '../../store/agent';
+import { useTopicModel } from '../../hooks/useTopicModel';
 import type { AvailableModel } from '../../services/desktop_api';
 import { ProviderIcon } from '../settings/ProviderIcon';
 import {
@@ -34,16 +35,18 @@ export function ModelPicker() {
   const [search, setSearch] = useState('');
   const searchInputRef = useRef<InputRef>(null);
 
-  const selectedModel = useAgentStore(s => s.selectedModel);
-  const selectedProviderId = useAgentStore(s => s.selectedProviderId);
+  const { selectedModel, selectedProviderId, setSelectedModel } = useTopicModel();
   const defaultModel = useAgentStore(s => s.defaultModel);
+  const defaultProviderId = useAgentStore(s => s.defaultProviderId);
   const availableModels = useAgentStore(s => s.availableModels);
-  const setSelectedModel = useAgentStore(s => s.setSelectedModel);
 
   const currentModelId = selectedModel || defaultModel;
-  const modelInfo =
-    availableModels.find((m) => m.id === currentModelId && (!selectedProviderId || m.provider_id === selectedProviderId)) ||
-    availableModels.find((m) => m.id === currentModelId);
+  const currentProviderId = selectedProviderId || defaultProviderId;
+  const modelInfo = availableModels.find(
+    (model) =>
+      model.id === currentModelId
+      && model.provider_id === currentProviderId,
+  );
   const currentModelKey = modelInfo ? modelMenuKey(modelInfo) : currentModelId;
 
   const modelDisplayName = modelInfo?.display_name || modelInfo?.id || currentModelId;

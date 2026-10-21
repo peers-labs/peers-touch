@@ -2,12 +2,12 @@ import { create, toBinary } from '@bufbuild/protobuf';
 import type { Message as ProtoMessage } from '@bufbuild/protobuf';
 import type { GenMessage } from '@bufbuild/protobuf/codegenv2';
 import { identityRuntime } from '../../kernel/identityRuntime';
-import { bootstrapRuntime, installRuntime } from '../../kernel/runtime';
+import { getIdleRuntimeInstallStatus } from '../../kernel/boot';
+import { reconcileRuntime } from '../../kernel/runtime';
 import { EVENT, eventBus, eventDebugBuffer } from '../../kernel/events';
 import i18n, { changeLanguage } from '../../i18n';
 import {
   installAuthenticatedCriticalRuntimes,
-  installDeferredAppRuntimeProjections,
 } from '../../services/appRuntime';
 import {
   api,
@@ -1952,6 +1952,27 @@ async function waitFor(
     await new Promise((resolve) => setTimeout(resolve, 300));
   }
   throw new Error(`timed out waiting for: ${description}`);
+}
+
+async function boundedAcceptanceProbe<T>(
+  probe: Promise<T>,
+  description: string,
+  timeoutMs = 5_000,
+): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      probe,
+      new Promise<T>((_, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error(`timed out waiting for: ${description}`)),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timeout !== null) clearTimeout(timeout);
+  }
 }
 
 async function navigateToAgentSessionSurface(
@@ -32301,8 +32322,6 @@ async function restoreCliProviderPrimaryJourney(input: {
   if (
     !agent
     || agent.name !== input.agentName
-    || agent.provider !== CLI_PRIMARY_PROVIDER_ID
-    || agent.model !== CLI_PRIMARY_MODEL_ID
   ) {
     throw new Error('agent.acceptance.cliProviderAgentRestoreMissing');
   }
@@ -32319,6 +32338,12 @@ async function restoreCliProviderPrimaryJourney(input: {
   await useChatStore.getState().syncMessages();
 
   const readback = await foundationConversationReadback(input.conversationId);
+  if (
+    readback.conversation.provider_id !== CLI_PRIMARY_PROVIDER_ID
+    || readback.conversation.model_name !== CLI_PRIMARY_MODEL_ID
+  ) {
+    throw new Error('agent.acceptance.cliProviderTopicModelRestoreMissing');
+  }
   const assistant = readback.messages.find(
     (message) =>
       message.messageId === input.assistantMessageId
@@ -32361,8 +32386,8 @@ async function restoreCliProviderPrimaryJourney(input: {
   return evidenceValue({
     station: {
       agentId: agent.id,
-      providerId: agent.provider,
-      modelId: agent.model,
+      providerId: readback.conversation.provider_id,
+      modelId: readback.conversation.model_name,
       conversationId: readback.conversation.conversation_id,
       turnId: assistant.turnId,
       assistantMessageId: assistant.messageId,
@@ -33023,9 +33048,6 @@ export function installAcceptanceHarness(): void {
       if (user?.actorPtid) {
         await installAuthenticatedCriticalRuntimes(user.actorPtid);
       }
-      if (user?.actorPtid) {
-        await installDeferredAppRuntimeProjections(user.actorPtid);
-      }
       return {
         authenticated: Boolean(user?.actorPtid),
         actorId: user?.actorPtid ?? null,
@@ -33255,12 +33277,72 @@ export function installAcceptanceHarness(): void {
     },
 
     async navigateToAgent() {
-      // Ensure agent-capability and agent-topic runtimes are bootstrapped
-      // (normally triggered by PageHost when navigating to AgentChatPage)
-      const actorId = useSessionStore.getState().currentUser?.actorPtid ?? null;
-      for (const runtimeId of ['agent-capability', 'agent-topic', 'agent-tool']) {
-        installRuntime(runtimeId);
-        await bootstrapRuntime(runtimeId, actorId);
+      identityRuntime.boot();
+      try {
+        await waitFor(
+          () => {
+            const session = useSessionStore.getState();
+            const identity = identityRuntime.getSnapshot();
+            return (
+              session.authenticated
+              && Boolean(session.currentUser?.actorPtid)
+              && identity.lifecycle.state === 'ready'
+            );
+          },
+          'authenticated Agent runtime owner',
+          30_000,
+        );
+      } catch (error) {
+        const session = useSessionStore.getState();
+        const identity = identityRuntime.getSnapshot();
+        const restorableAccounts = await boundedAcceptanceProbe(
+          api.accountListRestorable(),
+          'restorable account diagnostic',
+        ).catch(() => []);
+        const persistence = await boundedAcceptanceProbe(
+          api.acceptanceSessionPersistenceState(),
+          'session persistence diagnostic',
+        ).catch(() => null);
+        let restoreFailure: Record<string, unknown> | null = null;
+        try {
+          await boundedAcceptanceProbe(
+            api.authRestoreSession(),
+            'session restore diagnostic',
+          );
+        } catch (restoreError) {
+          restoreFailure = restoreError instanceof AuthCommandException
+            ? {
+                code: restoreError.code,
+                message: restoreError.message,
+                details: restoreError.details ?? null,
+              }
+            : {
+                message: restoreError instanceof Error
+                  ? restoreError.message
+                  : String(restoreError),
+              };
+        }
+        throw new Error(
+          'agent.acceptance.authenticatedAgentOwnerUnavailable:'
+          + stableJson({
+            waitError: error instanceof Error ? error.message : String(error),
+            authenticated: session.authenticated,
+            actorPresent: Boolean(session.currentUser?.actorPtid),
+            identityState: identity.lifecycle.state,
+            identityPhase: identity.phase.kind,
+            identityReason: 'reason' in identity.phase ? identity.phase.reason : null,
+            restorableAccountCount: restorableAccounts.length,
+            restorableSessionCount: restorableAccounts.filter(
+              (account) => account.has_session,
+            ).length,
+            persistence,
+            restoreFailure,
+          }),
+        );
+      }
+      const actorId = useSessionStore.getState().currentUser?.actorPtid;
+      if (!actorId) {
+        throw new Error('agent.acceptance.authenticatedAgentOwnerRequired');
       }
 
       await waitFor(
@@ -33286,7 +33368,99 @@ export function installAcceptanceHarness(): void {
         'agent composer to appear',
         30_000,
       );
-      return { navigated: true };
+      return {
+        navigated: true,
+        actorId,
+        identityState: identityRuntime.getSnapshot().lifecycle.state,
+      };
+    },
+
+    async waitForIdleSessionRuntimes() {
+      const actorId = useSessionStore.getState().currentUser?.actorPtid;
+      if (!actorId) {
+        throw new Error('agent.acceptance.authenticatedAgentOwnerRequired');
+      }
+      try {
+        await waitFor(
+          () => getIdleRuntimeInstallStatus(actorId) === 'ready',
+          'production idle session runtimes',
+          115_000,
+        );
+      } catch (error) {
+        throw new Error(
+          'agent.acceptance.idleSessionRuntimesUnavailable:'
+          + stableJson({
+            actorId,
+            state: getIdleRuntimeInstallStatus(actorId),
+            waitError: error instanceof Error ? error.message : String(error),
+          }),
+        );
+      }
+      return {
+        actorId,
+        state: getIdleRuntimeInstallStatus(actorId),
+      };
+    },
+
+    async getSessionPersistenceState() {
+      return api.acceptanceSessionPersistenceState();
+    },
+
+    async reconcileChatSuiteModelProjection() {
+      const authority = await api.listAvailableModels();
+      await useAgentStore.getState().loadModels();
+      const agentState = useAgentStore.getState();
+      const projectModels = (
+        models: typeof agentState.availableModels,
+      ) => models.map((model) => ({
+        providerId: model.provider_id,
+        modelId: model.id,
+        enabled: model.enabled,
+      }));
+      return {
+        reconciled: agentState.error === null,
+        authorityModels: projectModels(authority.models),
+        storeModels: projectModels(agentState.availableModels),
+        storeError: agentState.error,
+      };
+    },
+
+    async reconcileChatSuiteRosterProjection() {
+      await useAgentStore.getState().loadAgents();
+      return { reconciled: useAgentStore.getState().error === null };
+    },
+
+    async reconcileChatSuiteCapabilityProjection() {
+      await reconcileRuntime('agent-capability', 'acceptance-chat-suite-setup');
+      return { reconciled: true };
+    },
+
+    async reconcileChatSuiteTopicProjection() {
+      await reconcileRuntime('agent-topic', 'acceptance-chat-suite-setup');
+      return { reconciled: true };
+    },
+
+    async getChatSuiteCapabilityInventory({ agentId }: { agentId: string }) {
+      const [inventory, bindings] = await Promise.all([
+        api.listCapabilityManifestInventory(),
+        api.listAgentCapabilityBindings(agentId),
+      ]);
+      return evidenceValue({ ...inventory, bindings });
+    },
+
+    async prepareChatSuiteToolApproval({ agentId }: { agentId: string }) {
+      const agent = await api.getAgent(agentId);
+      const fixture = await foundationToolFixture(agentId, 'secondary', {
+        toolName: 'skills_list',
+      });
+      if (fixture.binding) {
+        throw new Error('agent.acceptance.chatSuiteToolBindingAlreadyExists');
+      }
+      const binding = await updateFoundationToolPolicy(
+        agent, fixture, null, CapabilityApprovalPolicy.MANUAL,
+      );
+      await reconcileRuntime('agent-capability', 'acceptance-chat-suite-setup');
+      return evidenceValue({ binding, toolName: fixture.toolName });
     },
 
     async ensureProvider({
@@ -33410,37 +33584,14 @@ export function installAcceptanceHarness(): void {
           agentCount: refreshedAgentStore.agents.length,
           selectedAgentPresent: agent !== undefined,
         });
-        if (agent) {
-          const agentId = agent.id || agent.name;
-          if (agent.provider !== providerId || agent.model !== modelId) {
-            stage = 'update-agent-profile';
-            await agentStore.updateAgentProfile(agentId, {
-              provider: providerId,
-              model: modelId,
-            });
-            await agentStore.loadAgents();
-            reportEnsureProviderStage('agent-profile-updated');
-          }
-
-          stage = 'load-readiness';
-          const readiness = await api.getAgentCapabilityReadiness({
-            agent_id: agentId,
-          });
-          const modelCapabilities = readiness.model_capabilities;
-          reportEnsureProviderStage('readiness-loaded', {
-            runtimeSnapshotPresent: Boolean(readiness.runtime_snapshot_id),
-            modelSnapshotPresent: Boolean(modelCapabilities?.snapshot_id),
-            snapshotsMatch:
-              modelCapabilities?.snapshot_id === readiness.runtime_snapshot_id,
-          });
-          if (
-            !readiness.runtime_snapshot_id
-            || !modelCapabilities?.snapshot_id
-            || modelCapabilities.snapshot_id !== readiness.runtime_snapshot_id
-          ) {
-            throw new Error('agent.acceptance.providerReadinessBlocked');
-          }
-        }
+        stage = 'load-model-projection';
+        await agentStore.loadModels();
+        stage = 'select-topic-model';
+        await useAgentTopicStore.getState().setTopicModel(
+          useChatStore.getState().currentSessionKey,
+          modelId,
+          providerId,
+        );
         return { configured: true, providerId, modelId, agentName: agent?.name };
       } catch (error) {
         reportEnsureProviderStage('failed', {
@@ -33463,14 +33614,11 @@ export function installAcceptanceHarness(): void {
       const agent = refreshed.agents.find((a) => a.name === refreshed.selectedAgent)
         || refreshed.agents[0];
       if (agent) {
-        const agentId = agent.id || agent.name;
-        if (agent.provider !== runtimeFixture.providerId || agent.model !== runtimeFixture.modelId) {
-          await agentStore.updateAgentProfile(agentId, {
-            provider: runtimeFixture.providerId,
-            model: runtimeFixture.modelId,
-          });
-          await agentStore.loadAgents();
-        }
+        await useAgentTopicStore.getState().setTopicModel(
+          useChatStore.getState().currentSessionKey,
+          runtimeFixture.modelId,
+          runtimeFixture.providerId,
+        );
       }
       return { configured: true, providerId: runtimeFixture.providerId, modelId: runtimeFixture.modelId };
     },
@@ -37302,6 +37450,7 @@ export function installAcceptanceHarness(): void {
           loading: m.loading,
           error: m.error,
           hasToolCalls: (m.toolCalls?.length ?? 0) > 0,
+          followUpSuggestions: m.followUpSuggestions ?? [],
         })),
       };
     },
@@ -37364,6 +37513,12 @@ export function installAcceptanceHarness(): void {
               content: assistant.content,
               loading: assistant.loading,
               error: assistant.error ?? null,
+              typedError: assistant.typedError
+                ? {
+                    ...assistant.typedError,
+                    details: { ...assistant.typedError.details },
+                  }
+                : null,
             }
           : null,
       };
@@ -37425,6 +37580,11 @@ export function installAcceptanceHarness(): void {
     },
 
     async prepareAgentTopicLoadFailure({ agentId }: { agentId: string }) {
+      await waitFor(
+        () => !useAgentTopicStore.getState().loadingAgentIds[agentId],
+        'Agent topic load idle before fault request',
+        10_000,
+      );
       const topicStore = useAgentTopicStore.getState();
       const before = topicStore.getTopicsForAgent(agentId);
       let rejected = false;

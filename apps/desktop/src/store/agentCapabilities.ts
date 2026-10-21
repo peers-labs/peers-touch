@@ -278,7 +278,7 @@ export const useAgentCapabilityStore = createDesktopStore<AgentCapabilityState>(
         },
       }));
       try {
-        const [bindings, readiness] = await Promise.all([
+        const [bindingsResult, readinessResult] = await Promise.allSettled([
           api.listAgentCapabilityBindings(agentId),
           api.readAgentCapabilityReadiness({
             agent_id: agentId,
@@ -289,16 +289,22 @@ export const useAgentCapabilityStore = createDesktopStore<AgentCapabilityState>(
         ]);
         if (!isCurrentAgentLoad(agentId, sequence, epoch)) return;
         set((state) => ({
-          bindingsByAgentId: {
-            ...state.bindingsByAgentId,
-            [agentId]: bindings,
-          },
-          readinessByAgentId: {
-            ...state.readinessByAgentId,
-            [agentId]: readiness,
-          },
+          bindingsByAgentId: bindingsResult.status === 'fulfilled'
+            ? {
+                ...state.bindingsByAgentId,
+                [agentId]: bindingsResult.value,
+              }
+            : state.bindingsByAgentId,
+          readinessByAgentId: readinessResult.status === 'fulfilled'
+            ? {
+                ...state.readinessByAgentId,
+                [agentId]: readinessResult.value,
+              }
+            : state.readinessByAgentId,
           lastLoadedAt: Date.now(),
         }));
+        if (bindingsResult.status === 'rejected') throw bindingsResult.reason;
+        if (readinessResult.status === 'rejected') throw readinessResult.reason;
       } catch (error) {
         const message = toStoreError(error);
         log.error('agentCapabilities', 'Failed to load Agent capability projection', {
@@ -351,7 +357,19 @@ export const useAgentCapabilityStore = createDesktopStore<AgentCapabilityState>(
           intent.idempotencyKey,
         );
         if (epoch === projectionEpoch) {
-          await get().loadAgent(intent.agentId, intent);
+          try {
+            await get().loadAgent(intent.agentId, intent);
+          } catch (error) {
+            log.warn(
+              'agentCapabilities',
+              'Binding persisted while readiness reconciliation is degraded',
+              {
+                agentId: intent.agentId,
+                capabilityId: intent.capabilityId,
+                error: toStoreError(error),
+              },
+            );
+          }
         }
         return binding;
       } catch (error) {
@@ -396,7 +414,19 @@ export const useAgentCapabilityStore = createDesktopStore<AgentCapabilityState>(
           intent.reason,
         );
         if (epoch === projectionEpoch) {
-          await get().loadAgent(intent.agentId, intent);
+          try {
+            await get().loadAgent(intent.agentId, intent);
+          } catch (error) {
+            log.warn(
+              'agentCapabilities',
+              'Binding deletion persisted while readiness reconciliation is degraded',
+              {
+                agentId: intent.agentId,
+                bindingId: intent.bindingId,
+                error: toStoreError(error),
+              },
+            );
+          }
         }
         return binding;
       } catch (error) {

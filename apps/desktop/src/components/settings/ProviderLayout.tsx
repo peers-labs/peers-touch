@@ -11,8 +11,8 @@ export function ProviderLayout() {
       {/* Left panel - provider list */}
       <Flexbox
         style={{
-          width: 220,
-          minWidth: 220,
+          width: 260,
+          minWidth: 260,
           borderRight: `1px solid ${token.colorBorderSecondary}`,
           height: '100%',
           overflow: 'hidden',

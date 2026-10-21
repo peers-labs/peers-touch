@@ -1,7 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-import { stationAvailabilityState } from './StationSelector';
+import {
+  stationAvailabilityState,
+  visibleXConfigSuggestions,
+} from './StationSelector';
 
 const source = readFileSync(
   new URL('./StationSelector.tsx', import.meta.url),
@@ -82,6 +85,64 @@ describe('StationSelector reachability states', () => {
       'disabled={!activeStation || !activeStationChecked}',
     );
     expect(launchSource).toContain("'common.action.retry'");
+  });
+});
+
+describe('StationSelector X Config suggestions', () => {
+  it('renders suggestions as a separate non-authoritative state', () => {
+    expect(source).toContain('data-x-config-seed-id');
+    expect(source).toContain('common.stationPicker.suggestions');
+    expect(source).toContain('common.stationPicker.suggestionStale');
+    expect(source).toContain('disabled={!suggestion.actionable || selecting}');
+  });
+
+  it('removes a suggestion only when a verified route owns the same origin', () => {
+    const entries = [{
+      stationPeerId: 'station-a',
+      url: 'https://station.example',
+      label: 'Station A',
+      createdAt: 1,
+      lastUsedAt: 1,
+      routes: [{
+        nodePeerId: 'node-a',
+        nodeAuthorizationDigest: [],
+        authorizationEpoch: 1,
+        routeId: 'direct-a',
+        routeType: 'direct' as const,
+        transport: 'direct_https' as const,
+        endpointOrigin: 'https://station.example',
+        routeGeneration: 1,
+        addresses: [],
+        sourceRef: 'source-a',
+        lastVerifiedAt: 1,
+        health: 'available' as const,
+      }],
+    }];
+    const suggestions = [
+      {
+        seedId: 'station-public',
+        kind: 'direct_station' as const,
+        displayName: 'Public Station',
+        canonicalOrigin: 'https://station.example',
+        regions: ['global'],
+        freshness: 'current' as const,
+        actionable: true,
+        sourceSequence: 1,
+      },
+      {
+        seedId: 'relay-public',
+        kind: 'relay' as const,
+        displayName: 'Public Relay',
+        canonicalOrigin: 'https://relay.example',
+        regions: ['global'],
+        freshness: 'current' as const,
+        actionable: true,
+        sourceSequence: 1,
+      },
+    ];
+
+    expect(visibleXConfigSuggestions(entries, suggestions).map((item) => item.seedId))
+      .toEqual(['relay-public']);
   });
 });
 

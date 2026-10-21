@@ -17,3 +17,7 @@ peers:
           enable: false
           default: false
           dsn: host=localhost user=peers_touch password=peers_touch dbname=peers_touch port=5432 sslmode=disable TimeZone=Asia/Shanghai
+        - name: channel
+          enable: false
+          default: false
+          dsn: host=localhost user=peers_touch password=peers_touch dbname=peers_touch port=5432 sslmode=disable TimeZone=Asia/Shanghai

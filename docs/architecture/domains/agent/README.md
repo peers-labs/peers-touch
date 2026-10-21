@@ -57,11 +57,23 @@ WebView renderer、Desktop Rust、Station 的 Agent 能力边界、设计目标�
 
 ## 4. 执行计划
 
+当前执行入口为
+[Linux Desktop 与 Agent 深度闭环](./execution-plans/20261020-agent-depth-linux-desktop/plan.md)：
+在不增加 AgentBox CUT 能力的前提下，完成 Linux 用户态 Native 安装、
+类型化 AgentDefinition、Station-backed Commands & Skills 和 Turn Attribution。
+
+[Agent Chat Production Acceptance](./execution-plans/20261018-agent-chat-acceptance/plan.md)
+已由 Owner 于 2026-10-20 停止；已通过的 Agent Core Lifecycle 证据保留，
+未执行的 Profile/Models/Topics/Conversation/Layout/Workspace Gate 仍为
+`UNPROVEN`，不迁移为新 Plan 的完成证据。
+
 执行计划独立于架构文档，按依赖顺序排列。状态标记：`done` = 代码已实现并跑通，`code` = 代码已编写但未端到端验证，`pending` = 未开始。
 
 | 优先级 | 状态 | 文档 | 定位 |
 |---|---|---|---|
-| Current | prepared | [MCP Dual Runtime](./execution-plans/20261003-mcp-dual-runtime/plan.md) | **当前执行入口** — Station-owned MCP 配置，Station-local 与 Desktop-local 双执行位置 hard cut |
+| Current | approved | [Linux Desktop 与 Agent 深度闭环](./execution-plans/20261020-agent-depth-linux-desktop/plan.md) | Linux `desktop-install` 平台 adapter、AgentDefinition hard cut、Slash command 与 Context attribution 的一体化 Native 闭环 |
+| Stopped | cancelled / partial evidence retained | [Agent Chat Production Acceptance](./execution-plans/20261018-agent-chat-acceptance/plan.md) | Owner 于 2026-10-20 停止；仅保留已通过的 Agent Core Lifecycle 证据，其余 Gate 不作完成声明 |
+| Prepared | prepared | [MCP Dual Runtime](./execution-plans/20261003-mcp-dual-runtime/plan.md) | Station-owned MCP 配置，Station-local 与 Desktop-local 双执行位置 hard cut；不覆盖当前 ADL Plan |
 | Completed | completed | [Minimum Usable Agent Chat](./execution-plans/20261001-minimum-usable-agent-chat/plan.md) | Direct Model Agent Chat、Skill/MCP 注入、最终回复与重启恢复基线 |
 | Historical | completed / remaining scope descoped | [Modern Chat Agent V2 Alignment Plan Package](./execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md) | 2026-10-01 由 Product Owner 强制停止；未完成的外部 runtime、419-cell remediation 和 aggregate proof 全部退出首版路径 |
 | Historical | superseded | [Modern Chat Agent V2 overview](./execution-plans/20260817-modern-chat-agent-v2.md) · [Legacy formal execution DAG](./execution-plans/20260817-modern-chat-agent-v2-execution.md) | 保留产品、架构、历史依赖和证据输入；不再承担 current Task 或 active execution 状态 |

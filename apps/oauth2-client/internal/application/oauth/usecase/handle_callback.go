@@ -33,6 +33,7 @@ type HandleCallbackUseCase struct {
 	Store         repository.OAuthStore
 	Providers     map[valueobject.Provider]port.ProviderGateway
 	Fingerprinter port.SecretFingerprinter
+	OperatorLogin OperatorLoginService
 	Clock         Clock
 }
 
@@ -121,10 +122,37 @@ func (u HandleCallbackUseCase) Execute(ctx context.Context, input HandleCallback
 	if err != nil {
 		return u.errorOutput(site, session, PublicErrorCode(err)), err
 	}
-	return u.successOutput(site, session, identity)
+	return u.successOutput(ctx, site, session, identity)
 }
 
-func (u HandleCallbackUseCase) successOutput(site SiteConfig, session *entity.AuthSession, identity *entity.OAuthIdentity) (*HandleCallbackOutput, error) {
+func (u HandleCallbackUseCase) successOutput(
+	ctx context.Context,
+	site SiteConfig,
+	session *entity.AuthSession,
+	identity *entity.OAuthIdentity,
+) (*HandleCallbackOutput, error) {
+	if site.OperatorLogin != nil {
+		handoffCode, loginAttemptID, err := u.OperatorLogin.Issue(
+			ctx,
+			site.OperatorLogin,
+			session,
+			identity,
+		)
+		if err != nil {
+			return nil, err
+		}
+		redirectURL, err := appendQuery(
+			site.OperatorLogin.CallbackURL,
+			map[string]string{
+				"code":             handoffCode,
+				"login_attempt_id": loginAttemptID,
+			},
+		)
+		if err != nil {
+			return nil, err
+		}
+		return &HandleCallbackOutput{RedirectURL: redirectURL}, nil
+	}
 	target := site.SuccessURL
 	if session.ReturnTo != "" {
 		target = session.ReturnTo

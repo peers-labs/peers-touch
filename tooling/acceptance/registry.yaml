@@ -2,6 +2,179 @@
   "version": 1,
   "rules": [
     {
+      "id": "x-config-api-closure",
+      "features": ["x-config-api-closure"],
+      "when": {
+        "paths": [
+          "tooling/acceptance/gates/x_config/**",
+          "tooling/acceptance/provisioners/x_config_*.py",
+          "tooling/acceptance/environments/x-config-*-api.yaml",
+          "tooling/acceptance/features/x-config-api-closure.yaml",
+          "packages/x-config-core/examples/verify_production.rs"
+        ]
+      },
+      "require": [
+        "x-config-home-operator-login-e2e",
+        "x-config-home-publication-e2e",
+        "x-config-api-aggregate-e2e",
+        "x-config-domain-validation"
+      ]
+    },
+    {
+      "id": "x-config-domain-contract",
+      "features": [
+        "x-config-operator-login",
+        "x-config-snapshot-core",
+        "x-config-publication",
+        "x-config-client-adapters",
+        "x-config-admin-console",
+        "x-config-api-closure"
+      ],
+      "when": {
+        "paths": [
+          "tooling/acceptance/capabilities/x-config.yaml",
+          "tooling/acceptance/domains/x-config.yaml"
+        ]
+      },
+      "require": [
+        "x-config-domain-validation"
+      ]
+    },
+    {
+      "id": "x-config-operator-login",
+      "features": [
+        "x-config-operator-login"
+      ],
+      "when": {
+        "paths": [
+          "model/domain/oauth/operator_login.proto",
+          "packages/github-repository/**",
+          "apps/oauth2-client/internal/application/oauth/usecase/operator_login*",
+          "apps/oauth2-client/internal/infrastructure/persistence/**",
+          "apps/oauth2-client/internal/interfaces/http/handler/operator_login*",
+          "apps/oauth2-client/api/oauth/operator/**",
+          "apps/x-config/internal/application/operatorauth/**",
+          "apps/x-config/internal/infrastructure/operatorstore/**",
+          "apps/x-config/internal/interfaces/http/auth_handler.go",
+          "tooling/acceptance/features/x-config-operator-login.yaml"
+        ]
+      },
+      "require": [
+        "x-config-operator-login-contract",
+        "x-config-home-operator-login-e2e",
+        "x-config-domain-validation"
+      ]
+    },
+    {
+      "id": "x-config-snapshot-core",
+      "features": [
+        "x-config-snapshot-core"
+      ],
+      "when": {
+        "paths": [
+          "model/domain/x_config/**",
+          "packages/x-config-core/**",
+          "apps/station/frame/touch/model/xconfig/**",
+          "apps/desktop/src/gen/proto/domain/x_config/**",
+          "tooling/acceptance/features/x-config-snapshot-core.yaml"
+        ]
+      },
+      "require": [
+        "proto-build",
+        "x-config-snapshot-core-contract",
+        "x-config-domain-validation"
+      ]
+    },
+    {
+      "id": "x-config-publication",
+      "features": [
+        "x-config-publication"
+      ],
+      "when": {
+        "paths": [
+          "apps/x-config/internal/application/admin/**",
+          "apps/x-config/internal/infrastructure/catalogrepo/**",
+          "apps/x-config/internal/interfaces/http/public_handler.go",
+          "apps/x-config/internal/publication/**",
+          "tooling/acceptance/features/x-config-publication.yaml"
+        ]
+      },
+      "require": [
+        "x-config-snapshot-publication-contract",
+        "x-config-home-publication-e2e",
+        "x-config-domain-validation"
+      ]
+    },
+    {
+      "id": "x-config-client-adapters",
+      "features": [
+        "x-config-client-adapters"
+      ],
+      "when": {
+        "paths": [
+          "apps/desktop/src-tauri/src/application/x_config/**",
+          "apps/desktop/src-tauri/src/infrastructure/station_discovery.rs",
+          "apps/desktop/src-tauri/src/interface/tauri_commands/x_config.rs",
+          "apps/desktop/src/runtimes/xConfigRuntime.ts",
+          "apps/desktop/src/services/xConfig*",
+          "apps/desktop/src/components/common/StationPicker*",
+          "apps/mobile/src-tauri/src/runtime/x_config.rs",
+          "apps/mobile/src-tauri/src/runtime/station_route.rs",
+          "apps/mobile/src/runtimes/runtimeRegistry.ts",
+          "apps/mobile/src/features/station/xConfig*",
+          "apps/mobile/src/features/station/StationSelector*",
+          "tooling/acceptance/features/x-config-client-adapters.yaml"
+        ]
+      },
+      "require": [
+        "x-config-desktop-adapter-contract",
+        "x-config-mobile-adapter-contract",
+        "x-config-domain-validation"
+      ]
+    },
+    {
+      "id": "x-config-admin-console",
+      "features": [
+        "x-config-admin-console"
+      ],
+      "when": {
+        "paths": [
+          "apps/x-config/internal/application/admin/**",
+          "apps/x-config/internal/domain/catalog/**",
+          "apps/x-config/internal/infrastructure/catalogrepo/**",
+          "apps/x-config/internal/infrastructure/endpointvalidator/**",
+          "apps/x-config/internal/interfaces/http/admin_handler.go",
+          "apps/x-config/console/**",
+          "tooling/acceptance/features/x-config-admin-console.yaml"
+        ]
+      },
+      "require": [
+        "x-config-admin-api-contract",
+        "x-config-console-admin-e2e",
+        "x-config-domain-validation"
+      ]
+    },
+    {
+      "id": "agent-chat-production",
+      "features": ["agent-chat-production"],
+      "when": {
+        "paths": [
+          "tooling/acceptance/gates/agent/chat_*",
+          "tooling/acceptance/features/agent-chat-production.yaml",
+          "apps/desktop/src/pages/AgentProfilePage.tsx",
+          "apps/desktop/src/components/agent/workbench/**",
+          "apps/desktop/src/components/messages/ClarificationQuestion.tsx",
+          "apps/station/app/subserver/agent/service/clarification*",
+          "apps/station/app/subserver/agent/service/conversation_deletion_service*"
+        ]
+      },
+      "require": [
+        "agent-chat-profile-native", "agent-chat-models-native",
+        "agent-chat-topics-native", "agent-chat-conversation-native",
+        "agent-chat-layout-native", "agent-chat-workspace-native"
+      ]
+    },
+    {
       "id": "oauth2-client-vercel-publication",
       "features": [
         "oauth2-client-vercel-publication"
@@ -91,6 +264,65 @@
         "oauth-login-broker-provider-identity",
         "oauth-login-broker-architecture",
         "oauth-login-broker-contract"
+      ]
+    },
+    {
+      "id": "lark-channel-production-contract",
+      "features": [
+        "lark-channel-production-contract"
+      ],
+      "when": {
+        "paths": [
+          "model/domain/channel/**",
+          "apps/station/app/cmd/lark-channel-plugin/**",
+          "apps/station/app/subserver/channel/**",
+          "apps/station/app/subserver/agent/channel_wire.go",
+          "apps/station/app/subserver/agent/service/channel_turn_executor.go",
+          "apps/station/app/subserver/agent/service/lark_requester_tools.go",
+          "apps/desktop/src/components/settings/channels/**",
+          "apps/desktop/src/gen/proto/domain/channel/**",
+          "apps/desktop/src/runtimes/channelRuntime.ts",
+          "apps/desktop/src/services/channelActions.ts",
+          "apps/desktop/src/store/channel.ts",
+          "apps/desktop/src-tauri/src/application/channels/**",
+          "apps/desktop/src-tauri/src/interface/tauri_commands/channels.rs",
+          "tooling/docker/station.Dockerfile",
+          "tooling/docker/compose.yml",
+          "tooling/docker/entrypoint.sh",
+          "tooling/plugins/build-lark-plugin.sh",
+          "tooling/acceptance/capabilities/channel.yaml",
+          "tooling/acceptance/domains/channel.yaml",
+          "tooling/acceptance/domains/channel/**",
+          "tooling/acceptance/gates/channel/**",
+          "tooling/acceptance/features/lark-channel-production-contract.yaml"
+        ]
+      },
+      "require": [
+        "lark-channel-source",
+        "station-api-ownership",
+        "lark-01-e2e",
+        "lark-02-e2e",
+        "lark-03-e2e",
+        "lark-04-e2e",
+        "lark-05-e2e",
+        "lark-06-e2e",
+        "lark-07-e2e",
+        "lark-08-e2e",
+        "lark-09-e2e",
+        "lark-10-e2e",
+        "lark-11-e2e",
+        "lark-12-e2e",
+        "lark-13-e2e",
+        "lark-14-e2e",
+        "lark-15-e2e",
+        "lark-16-e2e",
+        "lark-17-e2e",
+        "lark-18a-e2e",
+        "lark-18b-e2e",
+        "lark-18c-e2e",
+        "lark-19-e2e",
+        "lark-20-e2e",
+        "channel-domain-validation"
       ]
     },
     {

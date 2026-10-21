@@ -44,6 +44,7 @@ from tooling.acceptance.provisioners.home_station import (
     attach_source_bound_relay_services,
     agent_native_requires_disposable_fixture,
     agent_native_requires_provider,
+    agent_native_requires_runtime_binding,
     agent_profile_for_gate,
     audit_remote_station_cli_processes,
     resolve_existing_actor,
@@ -1090,7 +1091,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
             / "home_station.py"
         ).read_text(encoding="utf-8")
         self.assertIn(
-            "require_runtime_identity=gate_id == MESSAGE_PUBLISHING_GATE",
+            "or gate_id == MESSAGE_PUBLISHING_GATE",
             source,
         )
 
@@ -1448,9 +1449,63 @@ class ProvisionerBlockingTests(unittest.TestCase):
             },
         )
 
+    def test_agent_core_lifecycle_manifest_binds_runtime_client_to_station(self):
+        gate_id = "agent-core-lifecycle-native-e2e"
+        provisioner = HomeStationProvisioner(
+            EnvironmentContract(id="home-station")
+        )
+        manifest = dataclasses.replace(
+            provisioner._new_base_manifest(gate_id),
+            profile_slot=2,
+        )
+        actor_ref = {
+            "artifactKind": "acceptance-artifact-ref",
+            "workspaceId": "0" * 16,
+            "gateId": gate_id,
+            "runId": manifest.run_id,
+            "path": "runtime/actors.json",
+            "sha256": "0" * 64,
+            "mediaType": "application/json",
+        }
+        with patch(
+            "tooling.acceptance.provisioners.home_station."
+            "resolve_existing_actor",
+            return_value=MagicMock(),
+        ), patch(
+            "tooling.acceptance.provisioners.home_station."
+            "persist_actor_manifest",
+            return_value=(None, None, actor_ref),
+        ), patch.object(
+            provisioner,
+            "_assert_client_ports_available",
+        ):
+            bound_manifest = provisioner._agent_native_manifest(
+                manifest,
+                gate_id=gate_id,
+                station_url="http://station.example:18080",
+                deployment_environment="station-two",
+                profile_env={
+                    "CHAT_NATIVE_DEMO_PASSWORD": "fixture-password",
+                    "PT_DESKTOP_APP_GATEWAY_PORT": "3230",
+                    "PT_DESKTOP_APP_WEB_PORT": "3410",
+                },
+            )
+
+        client = bound_manifest.clients[0]
+        self.assertEqual(client.id, "alice")
+        self.assertEqual(client.required_service_roles, ("station",))
+        self.assertEqual(
+            client.service_bindings["station"],
+            ClientServiceBinding(
+                service_id="station",
+                required_kind="station",
+            ),
+        )
+
     def test_agent_core_lifecycle_reuses_actor_without_http_provider(self):
         gate_id = "agent-core-lifecycle-native-e2e"
 
+        self.assertTrue(agent_native_requires_runtime_binding(gate_id))
         self.assertFalse(agent_native_requires_disposable_fixture(gate_id))
         self.assertFalse(agent_native_requires_provider(gate_id))
         self.assertTrue(
@@ -1677,32 +1732,30 @@ class ProvisionerBlockingTests(unittest.TestCase):
         self.assertEqual(urlopen.call_count, 1)
         logout.close.assert_called_once_with()
 
-    def test_home_station_existing_actor_uses_canonical_access_client(self):
-        expected = ActorIdentity(
+    def test_existing_actor_resolution_uses_public_identity_without_session(self):
+        identity = MagicMock(
             role="alice",
-            account_ref="station-account:alice@p.t",
+            account_ref="station-account:alice@example.com",
             ptid="ptid:alice",
-            device_policy="ephemeral-acceptance",
         )
+
         with patch(
             "tooling.acceptance.provisioners.home_station."
-            "resolve_existing_preset_actor",
-            return_value=expected,
-        ) as resolve:
+            "resolve_public_actor_identity",
+            return_value=identity,
+        ) as resolve, patch(
+            "tooling.acceptance.provisioners.home_station.urllib.request.urlopen",
+        ) as urlopen:
             actor = resolve_existing_actor(
                 "http://station.example:18080",
                 "alice",
                 "fixture-password",
             )
 
-        self.assertEqual(actor, expected)
-        resolve.assert_called_once_with(
-            station_url="http://station.example:18080",
-            role="alice",
-            account="alice@p.t",
-            password="fixture-password",
-            device_policy="ephemeral-acceptance",
-        )
+        self.assertEqual(actor.ptid, "ptid:alice")
+        self.assertEqual(actor.device_policy, "ephemeral-acceptance")
+        resolve.assert_called_once_with("http://station.example:18080", "alice")
+        urlopen.assert_not_called()
 
     def test_agent_stream_credentials_must_come_from_one_profile(self):
         provisioner = HomeStationProvisioner(

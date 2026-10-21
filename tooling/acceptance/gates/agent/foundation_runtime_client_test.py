@@ -45,6 +45,34 @@ class TcpFaultProxyTest(unittest.TestCase):
         ):
             TcpFaultProxy.from_url("https://station.example")
 
+    def test_direct_multiaddr_preserves_the_station_peer_identity(self) -> None:
+        proxy = TcpFaultProxy.from_multiaddr(
+            "/ip4/10.0.0.10/tcp/18280/p2p/station-peer-two"
+        )
+        try:
+            self.assertEqual(
+                proxy.multiaddr,
+                f"/ip4/127.0.0.1/tcp/{proxy.port}/p2p/station-peer-two",
+            )
+            with self.assertRaisesRegex(
+                TcpFaultProxyError,
+                "has no HTTP URL",
+            ):
+                _ = proxy.url
+        finally:
+            proxy.close()
+
+    def test_rejects_circuit_and_malformed_direct_multiaddrs(self) -> None:
+        for value in (
+            "/ip4/10.0.0.10/tcp/18280/p2p-circuit/p2p/station-peer-two",
+            "/ip4/10.0.0.10/udp/18280/p2p/station-peer-two",
+            "/ip4/10.0.0.10/tcp/0/p2p/station-peer-two",
+        ):
+            with self.subTest(value=value), self.assertRaises(
+                TcpFaultProxyError
+            ):
+                TcpFaultProxy.from_multiaddr(value)
+
     def test_cut_restore_and_close_control_real_tcp_path(self) -> None:
         server = socketserver.ThreadingTCPServer(("127.0.0.1", 0), _EchoHandler)
         server.daemon_threads = True

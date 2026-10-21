@@ -10,10 +10,12 @@ import json
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from datetime import datetime, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import parse_qs, urlencode, urlparse
 from unittest import mock
 
 
@@ -21,6 +23,7 @@ SCRIPT_DIR = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
 
 import preflight  # noqa: E402
+import prepare_artifact  # noqa: E402
 import sync_vercel_env  # noqa: E402
 import verify_deployment  # noqa: E402
 
@@ -146,6 +149,7 @@ class PreflightTests(unittest.TestCase):
         discovery = preflight.discover_source(REPO_ROOT, catalog)
         self.assertTrue(discovery["catalogMatches"])
         self.assertEqual(discovery["providers"], ["github", "google", "weixin"])
+        self.assertNotIn("operator", discovery["providers"])
         self.assertEqual(discovery["enabledProviders"], ["github", "google"])
         self.assertEqual(
             discovery["evidence"]["github"]["capabilities"]["pkce"],
@@ -192,6 +196,25 @@ class PreflightTests(unittest.TestCase):
             "Go Functions must use Vercel auto-discovery instead of functions globs",
             errors,
         )
+
+    def test_upload_artifact_includes_neutral_git_module(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "artifact"
+            result = prepare_artifact.prepare_artifact(REPO_ROOT, output)
+            go_mod = (
+                output / "apps/oauth2-client/go.mod"
+            ).read_text(encoding="utf-8")
+
+            self.assertEqual(result["status"], "PASS")
+            self.assertGreater(result["sharedModuleFiles"], 0)
+            self.assertIn(prepare_artifact.NEW_REPLACE, go_mod)
+            self.assertNotIn(prepare_artifact.OLD_REPLACE, go_mod)
+            self.assertTrue(
+                (
+                    output
+                    / "apps/oauth2-client/packages/github-repository/go.mod"
+                ).is_file()
+            )
 
     def test_catalog_drift_is_detected(self) -> None:
         catalog = preflight.load_catalog(preflight.DEFAULT_CATALOG)
@@ -403,7 +426,8 @@ class SkillGovernanceTests(unittest.TestCase):
             "发布 OAuth2 client server",
         ):
             self.assertIn(trigger, description)
-        self.assertIn("vercel deploy --target=preview --yes", skill)
+        self.assertIn("scripts/prepare_artifact.py", skill)
+        self.assertIn("--target=preview", skill)
         self.assertIn("creates a new Production deployment", skill)
         agents = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
         self.assertIn("| `pt-oauth2-client-2-vercel` |", agents)
@@ -568,6 +592,81 @@ class SyncTests(unittest.TestCase):
         )
 
 
+class _OperatorBrokerHandler(BaseHTTPRequestHandler):
+    catalog = preflight.load_catalog(preflight.DEFAULT_CATALOG)
+    base_url = "http://127.0.0.1"
+    bare_rejects = True
+
+    def _json(self, status: int, payload: dict[str, object]) -> None:
+        body = json.dumps(payload).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_POST(self) -> None:  # noqa: N802
+        self.send_response(405)
+        self.send_header("Allow", "GET")
+        self.end_headers()
+
+    def do_GET(self) -> None:  # noqa: N802
+        parsed = urlparse(self.path)
+        if parsed.path == "/api/healthz":
+            self._json(200, {"status": "ok", "version": "0.1.0"})
+            return
+        parts = [part for part in parsed.path.split("/") if part]
+        if len(parts) == 4 and parts[:2] == ["api", "oauth"]:
+            provider, action = parts[2], parts[3]
+            query = parse_qs(parsed.query)
+            if action == "callback":
+                if "code" in query and "error" in query:
+                    self._json(400, {"error": "invalid_callback_result"})
+                    return
+                self._json(404, {"error": "not_found"})
+                return
+            if action == "start":
+                if self.bare_rejects and "return_to" not in query:
+                    self._json(
+                        400, {"error": "operator_handoff_binding_mismatch"}
+                    )
+                    return
+                context = self.catalog["providers"][provider]
+                params = {
+                    "redirect_uri": self.base_url + context["callbackPath"],
+                    "state": "opaque-state",
+                }
+                if context["capabilities"].get("pkce") == "S256":
+                    params["code_challenge_method"] = "S256"
+                    params["code_challenge"] = "fixture-challenge"
+                location = (
+                    "https://" + context["authorizationHost"] + "/?"
+                    + urlencode(params)
+                )
+                self.send_response(302)
+                self.send_header("Location", location)
+                self.end_headers()
+                return
+        self._json(404, {"error": "not_found"})
+
+    def log_message(self, format: str, *args: object) -> None:
+        return
+
+
+class _FixedHealthHandler(BaseHTTPRequestHandler):
+    health_body: bytes = b"{}"
+
+    def do_GET(self) -> None:  # noqa: N802
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(self.health_body)))
+        self.end_headers()
+        self.wfile.write(self.health_body)
+
+    def log_message(self, format: str, *args: object) -> None:
+        return
+
+
 class VerificationTests(unittest.TestCase):
     def test_http_contract_self_test(self) -> None:
         catalog = preflight.load_catalog(preflight.DEFAULT_CATALOG)
@@ -575,11 +674,186 @@ class VerificationTests(unittest.TestCase):
         self.assertEqual(result["status"], "PASS")
         self.assertEqual(result["http"]["methodContract"], "GET-only")
 
+    def test_healthz_requires_exact_status_and_semver_version(self) -> None:
+        catalog = preflight.load_catalog(preflight.DEFAULT_CATALOG)
+        invalid_bodies = [
+            b'{"status":"ok"}',
+            b'{"status":"ok","version":"v0.1.0"}',
+            b'{"status":"ok","version":"0.1"}',
+            b'{"status":"degraded","version":"0.1.0"}',
+            b'{"status":"ok","version":"0.1.0","extra":true}',
+        ]
+        for health_body in invalid_bodies:
+            _FixedHealthHandler.health_body = health_body
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _FixedHealthHandler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_port}"
+                with self.assertRaises(preflight.PreflightError) as raised:
+                    verify_deployment.verify_http_contract(
+                        base_url,
+                        ["github", "google"],
+                        catalog,
+                        "default",
+                        5,
+                        allow_http=True,
+                    )
+                self.assertEqual(
+                    raised.exception.code,
+                    "HEALTH_CONTRACT_FAILED",
+                    health_body,
+                )
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join()
+
+    def test_operator_return_to_matches_broker_binding_contract(self) -> None:
+        callback_url = (
+            "https://admin.example.test/api/admin/auth/callback?existing=1"
+        )
+        for _ in range(5):
+            bound = urlparse(
+                verify_deployment.build_operator_return_to(callback_url)
+            )
+            self.assertEqual(bound.scheme, "https")
+            self.assertEqual(bound.hostname, "admin.example.test")
+            self.assertEqual(bound.path, "/api/admin/auth/callback")
+            self.assertEqual(bound.fragment, "")
+            query = parse_qs(bound.query)
+            self.assertEqual(set(query), {"receiver_challenge", "login_attempt_id"})
+            challenge = base64.urlsafe_b64decode(
+                query["receiver_challenge"][0] + "=="
+            )
+            self.assertEqual(len(challenge), 32)
+            self.assertRegex(
+                query["login_attempt_id"][0],
+                r"^[A-Za-z0-9_-]{16,128}$",
+            )
+
+    def test_resolve_operator_callback_url(self) -> None:
+        complete_env = {
+            "OAUTH_OPERATOR_LOGIN_SITE_ID": "default",
+            "OAUTH_OPERATOR_LOGIN_CALLBACK_URL": (
+                "https://admin.example.test/api/admin/auth/callback"
+            ),
+            "OAUTH_OPERATOR_LOGIN_AUDIENCE": "x-config-admin",
+            "OAUTH_OPERATOR_LOGIN_SIGNING_KEY_ID": "operator-login-2026-10",
+            "OAUTH_OPERATOR_LOGIN_SIGNING_PRIVATE_KEY_B64": "x",
+            "OAUTH_OPERATOR_LOGIN_REDEEM_SECRET_B64": "y",
+        }
+        self.assertIsNone(
+            verify_deployment.resolve_operator_callback_url({}, "default")
+        )
+        mismatched = dict(complete_env)
+        mismatched["OAUTH_OPERATOR_LOGIN_SITE_ID"] = "other"
+        self.assertIsNone(
+            verify_deployment.resolve_operator_callback_url(mismatched, "default")
+        )
+        incomplete = dict(complete_env)
+        del incomplete["OAUTH_OPERATOR_LOGIN_AUDIENCE"]
+        with self.assertRaises(preflight.PreflightError) as raised:
+            verify_deployment.resolve_operator_callback_url(incomplete, "default")
+        self.assertEqual(raised.exception.code, "OPERATOR_LOGIN_CONFIG_INCOMPLETE")
+        invalid_url = dict(complete_env)
+        invalid_url["OAUTH_OPERATOR_LOGIN_CALLBACK_URL"] = "http://admin.example.test/cb"
+        with self.assertRaises(preflight.PreflightError) as raised:
+            verify_deployment.resolve_operator_callback_url(invalid_url, "default")
+        self.assertEqual(
+            raised.exception.code, "OPERATOR_LOGIN_CALLBACK_URL_INVALID"
+        )
+        self.assertEqual(
+            verify_deployment.resolve_operator_callback_url(
+                complete_env, "default"
+            ),
+            "https://admin.example.test/api/admin/auth/callback",
+        )
+
+    def test_operator_http_contract_rejects_unbound_start(self) -> None:
+        class WeakOperatorHandler(_OperatorBrokerHandler):
+            bare_rejects = False
+
+        catalog = preflight.load_catalog(preflight.DEFAULT_CATALOG)
+        server = ThreadingHTTPServer(("127.0.0.1", 0), WeakOperatorHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            _OperatorBrokerHandler.base_url = (
+                f"http://127.0.0.1:{server.server_port}"
+            )
+            with self.assertRaises(preflight.PreflightError) as raised:
+                verify_deployment.verify_http_contract(
+                    _OperatorBrokerHandler.base_url,
+                    ["github", "google"],
+                    catalog,
+                    "default",
+                    5,
+                    allow_http=True,
+                    operator_callback_url=(
+                        "https://admin.example.test/api/admin/auth/callback"
+                    ),
+                )
+            self.assertEqual(raised.exception.code, "OPERATOR_START_BINDING_FAILED")
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+
+    def test_operator_http_contract_passes_with_bound_start(self) -> None:
+        catalog = preflight.load_catalog(preflight.DEFAULT_CATALOG)
+        server = ThreadingHTTPServer(("127.0.0.1", 0), _OperatorBrokerHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            _OperatorBrokerHandler.base_url = (
+                f"http://127.0.0.1:{server.server_port}"
+            )
+            result = verify_deployment.verify_http_contract(
+                _OperatorBrokerHandler.base_url,
+                ["github", "google"],
+                catalog,
+                "default",
+                5,
+                allow_http=True,
+                operator_callback_url=(
+                    "https://admin.example.test/api/admin/auth/callback"
+                ),
+            )
+            self.assertEqual(result["status"], "PASS")
+            self.assertEqual(result["startEntry"], "operator-handoff")
+            self.assertEqual(
+                result["registeredCallbackBase"],
+                _OperatorBrokerHandler.base_url,
+            )
+            self.assertEqual(
+                {name: item["entry"] for name, item in result["providers"].items()},
+                {"github": "operator-handoff", "google": "operator-handoff"},
+            )
+            self.assertEqual(
+                {name: item["callback"] for name, item in result["providers"].items()},
+                {
+                    "github": _OperatorBrokerHandler.base_url
+                    + "/api/oauth/github/callback",
+                    "google": _OperatorBrokerHandler.base_url
+                    + "/api/oauth/google/callback",
+                },
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+
     def test_live_provider_does_not_narrow_enabled_provider_checks(self) -> None:
         observed: dict[str, object] = {}
 
-        def verify_http(base_url, providers, catalog, site_id, timeout):
+        def verify_http(
+            base_url, providers, catalog, site_id, timeout, **kwargs
+        ):
             observed["httpProviders"] = providers
+            observed["operatorCallback"] = kwargs.get(
+                "operator_callback_url"
+            )
             return {"status": "PASS"}
 
         def run_live(base_url, env, provider, site_id, timeout):
@@ -1002,6 +1276,7 @@ class VerificationTests(unittest.TestCase):
         self.assertTrue(result["allKeyIdsConfigured"])
         self.assertTrue(result["repositoryPrivate"])
         self.assertFalse(result["plaintextSecrets"])
+        self.assertIn("operator-handoffs", result["recordClasses"])
 
     def test_github_persistence_does_not_require_refresh_before_first_login(
         self,

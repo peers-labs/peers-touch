@@ -40,6 +40,7 @@ Inside `desktop-web`, long-lived runtimes own projection freshness:
 | `agent-tool` | Station-authored ToolCall proposal, approval-decision, and result projections; user decision-intent submission through Desktop Rust |
 | `home` | Station-authored Home projection bootstrap, actor-scoped reset, exact recent-conversation handoff, and periodic reconciliation |
 | `evaluation` | Station-authored benchmark, dataset, case, run, result, metrics, and recovery projection; actor-scoped reset, event consumption, and periodic reconciliation |
+| `x-config` | App-scoped signed snapshot cache, secure rollback watermark, bounded foreground refresh, non-authoritative Station suggestions, and non-executable release metadata |
 | `notification` store | Notification list, unread counts, notification presentation state |
 | `navigationBadges` | Cross-surface unread and badge projection |
 | Page components | Rendering, selection, local interaction state only |
@@ -175,6 +176,13 @@ interface PageDescriptor {
 | `steady` | runtimes own their own reconcile timers | each runtime |
 
 Each phase is observable via `kernel/boot.ts → markPhaseStart/End` (logged through the unified `log.info('boot', ...)` channel) so cold-start cost is measurable in dev console.
+
+The five-second bootstrap boundary marks a runtime as degraded and releases
+first-paint ownership; it does not authorize the idle pipeline to enqueue the
+next native bootstrap while the same underlying operation is still in flight.
+Idle session bootstraps remain actor-scoped, single-flight, and serial until the
+bounded transport operation settles. Acceptance may observe this readiness
+barrier, but must not install or bootstrap runtimes itself.
 
 PageHost also owns page-resource lease dispatch:
 

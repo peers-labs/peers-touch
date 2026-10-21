@@ -34,6 +34,7 @@ _ADAPTER_OPERATIONS = frozenset(
         "post_mouse",
         "read_clipboard",
         "reveal_file_chooser_location",
+        "verify_focused_text",
         "window_stack_at_point",
         "write_clipboard",
     }
@@ -70,6 +71,13 @@ elif operation == "post_key":
 elif operation == "reveal_file_chooser_location":
     adapter.reveal_file_chooser_location()
     result = {}
+elif operation == "verify_focused_text":
+    result = {
+        "verified": adapter.verify_focused_text(
+            str(payload["expected"]),
+            timeout_seconds=float(payload["timeoutSeconds"]),
+        )
+    }
 elif operation == "focused_control":
     result = adapter.focused_control(int(payload["processId"])).to_dict()
 elif operation == "window_stack_at_point":

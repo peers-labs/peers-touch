@@ -1,0 +1,15 @@
+{
+  "id": "x-config-home-runtime",
+  "profile": {"required": false, "identity_match": false},
+  "services": {},
+  "fixtures": [],
+  "credentials": [],
+  "clients": [],
+  "cleanup": {
+    "resources": [
+      "home-runtime-authority",
+      "operator-session-authority",
+      "publication-verification-artifacts"
+    ]
+  }
+}

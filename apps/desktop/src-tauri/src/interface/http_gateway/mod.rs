@@ -47,7 +47,6 @@ use crate::application::mcp as app_mcp;
 use crate::application::memory as app_memory;
 use crate::application::model_config as app_model_config;
 // FIXME: removed during merge — module deleted
-// use crate::application::models as app_models;
 use crate::application::notebook as app_notebook;
 use crate::application::oauth2 as app_oauth2;
 use crate::application::oss as app_oss;
@@ -1271,6 +1270,32 @@ fn http_gateway_bearer_token(state: &AppState) -> Option<String> {
 
 fn unauthorized_error() -> AppResult<StubPayload> {
     AppResult::fail(ErrorCode::Unauthorized, "authentication required", None)
+}
+
+fn dispatch_channel_operation(
+    args: Value,
+    state: &AppState,
+    operation: fn(
+        &crate::application::station_runtime::client::StationClient,
+        app_channels::EncodedChannelRequestInput,
+        &str,
+    ) -> AppResult<Vec<u8>>,
+) -> Value {
+    let input = match parse_args::<app_channels::EncodedChannelRequestInput>(args) {
+        Ok(input) => input,
+        Err(error) => return error,
+    };
+    let token = match http_gateway_bearer_token(state) {
+        Some(token) => token,
+        None => {
+            return to_json(AppResult::<Vec<u8>>::fail(
+                ErrorCode::Unauthorized,
+                "authentication required",
+                None,
+            ))
+        }
+    };
+    to_json(operation(state.station.client(), input, &token))
 }
 
 fn http_gateway_admin_context(state: &AppState) -> Option<crate::domain::admin::AccessContext> {
@@ -3124,6 +3149,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             to_json(app_provider::provider_check(
+                state.station.client(),
                 scope.as_deref().unwrap_or(""),
                 &token,
                 input,
@@ -3252,8 +3278,8 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 &input.model_id,
             ))
         }
-        "model_fetch_remote" => {
-            let input = match parse_args::<ProviderModelFetchInput>(args) {
+        "model_discover" => {
+            let input = match parse_args::<ProviderModelDiscoverInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
@@ -3265,7 +3291,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(t) => t,
                 Err(e) => return e,
             };
-            to_json(app_provider::model_fetch_remote(
+            to_json(app_provider::model_discover(
                 state.station.client(),
                 scope.as_deref().unwrap_or(""),
                 &token,
@@ -3277,32 +3303,18 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            let scope = match resolve_scope(state) {
-                Ok(s) => s,
+            let token = match token_from_state(state) {
+                Ok(t) => t,
                 Err(e) => return e,
             };
-            to_json(AppResult::<StubPayload>::fail(
-                ErrorCode::NotFound,
-                "models module removed",
-                None,
+            to_json(app_provider::model_toggle(
+                state.station.client(),
+                &token,
+                &input.provider_id,
+                &input.model_id,
+                input.enabled,
             ))
         }
-        "model_toggle_all" => {
-            let input = match parse_args::<ProviderModelToggleAllInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            let scope = match resolve_scope(state) {
-                Ok(s) => s,
-                Err(e) => return e,
-            };
-            to_json(AppResult::<StubPayload>::fail(
-                ErrorCode::NotFound,
-                "models module removed",
-                None,
-            ))
-        }
-
         // =================================================================
         // Agents
         // =================================================================
@@ -3529,6 +3541,21 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 None => return to_json(unauthorized_error()),
             };
             to_json(app_agent_turn::agent_conversation_archive(
+                state.station.client(),
+                input,
+                &token,
+            ))
+        }
+        "agent_conversation_delete_batch" => {
+            let input = match parse_args::<crate::contracts::AgentConversationDeleteBatchInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_conversation_delete_batch(
                 state.station.client(),
                 input,
                 &token,
@@ -5554,92 +5581,102 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         }
 
         // =================================================================
-        // Channels (no state)
+        // Channels
         // =================================================================
-        "channels_list" => to_json(app_channels::channels_list()),
-        "channels_get" => {
-            let input = match parse_args::<ChannelIdInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_channels::channels_get(input))
+        "channels_list_bindings" => {
+            dispatch_channel_operation(args, state, app_channels::list_bindings)
         }
-        "channels_create" => {
-            let input = match parse_args::<ChannelCreateInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_channels::channels_create(input))
+        "channels_create_binding" => {
+            dispatch_channel_operation(args, state, app_channels::create_binding)
         }
-        "channels_update" => {
-            let input = match parse_args::<ChannelUpdateInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_channels::channels_update(input))
+        "channels_update_binding" => {
+            dispatch_channel_operation(args, state, app_channels::update_binding)
         }
-        "channels_delete" => {
-            let input = match parse_args::<ChannelIdInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_channels::channels_delete(input))
+        "channels_delete_binding" => {
+            dispatch_channel_operation(args, state, app_channels::delete_binding)
         }
-        "channels_test" => {
-            let input = match parse_args::<ChannelIdInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_channels::channels_test(input))
+        "channels_start_binding" => {
+            dispatch_channel_operation(args, state, app_channels::start_binding)
         }
-        "channels_send" => {
-            let input = match parse_args::<ChannelSendMessageInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_channels::channels_send(input))
+        "channels_stop_binding" => {
+            dispatch_channel_operation(args, state, app_channels::stop_binding)
         }
-        "channels_list_chats" => {
-            let input = match parse_args::<ChannelIdInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_channels::channels_list_chats(input))
+        "channels_set_default_binding" => {
+            dispatch_channel_operation(args, state, app_channels::set_default_binding)
         }
-        "channels_start_bot" => {
-            let input = match parse_args::<ChannelIdInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_channels::channels_start_bot(input))
+        "channels_validate_app" => {
+            dispatch_channel_operation(args, state, app_channels::validate_app)
         }
-        "channels_stop_bot" => {
-            let input = match parse_args::<ChannelIdInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_channels::channels_stop_bot(input))
+        "channels_check_health" => {
+            dispatch_channel_operation(args, state, app_channels::check_health)
         }
-        "channels_bot_status" => {
-            let input = match parse_args::<ChannelIdInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_channels::channels_bot_status(input))
+        "channels_start_requester_authorization" => {
+            dispatch_channel_operation(args, state, app_channels::start_requester_authorization)
+        }
+        "channels_get_requester_authorization" => {
+            dispatch_channel_operation(args, state, app_channels::get_requester_authorization)
+        }
+        "channels_refresh_requester_authorization" => {
+            dispatch_channel_operation(args, state, app_channels::refresh_requester_authorization)
+        }
+        "channels_revoke_requester_authorization" => {
+            dispatch_channel_operation(args, state, app_channels::revoke_requester_authorization)
+        }
+        "channels_cancel_requester_authorization" => {
+            dispatch_channel_operation(args, state, app_channels::cancel_requester_authorization)
+        }
+        "channels_list_routes" => {
+            dispatch_channel_operation(args, state, app_channels::list_routes)
+        }
+        "channels_upsert_route" => {
+            dispatch_channel_operation(args, state, app_channels::upsert_route)
+        }
+        "channels_delete_route" => {
+            dispatch_channel_operation(args, state, app_channels::delete_route)
+        }
+        "channels_list_member_access" => {
+            dispatch_channel_operation(args, state, app_channels::list_member_access)
+        }
+        "channels_decide_member_access" => {
+            dispatch_channel_operation(args, state, app_channels::decide_member_access)
+        }
+        "channels_list_chats" => dispatch_channel_operation(args, state, app_channels::list_chats),
+        "channels_list_automations" => {
+            dispatch_channel_operation(args, state, app_channels::list_automations)
+        }
+        "channels_upsert_automation" => {
+            dispatch_channel_operation(args, state, app_channels::upsert_automation)
+        }
+        "channels_delete_automation" => {
+            dispatch_channel_operation(args, state, app_channels::delete_automation)
+        }
+        "channels_run_automation" => {
+            dispatch_channel_operation(args, state, app_channels::run_automation)
+        }
+        "channels_send_message" => {
+            dispatch_channel_operation(args, state, app_channels::send_message)
         }
         "channels_list_events" => {
-            let input = match parse_args::<ChannelEventsInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_channels::channels_list_events(input))
+            dispatch_channel_operation(args, state, app_channels::list_events)
         }
-        "channels_stats" => {
-            let input = match parse_args::<ChannelIdInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_channels::channels_stats(input))
+        "channels_get_stats" => dispatch_channel_operation(args, state, app_channels::get_stats),
+        "channels_retry_delivery" => {
+            dispatch_channel_operation(args, state, app_channels::retry_delivery)
+        }
+        "channels_export_diagnostics" => {
+            dispatch_channel_operation(args, state, app_channels::export_diagnostics)
+        }
+        "channels_start_provisioning" => {
+            dispatch_channel_operation(args, state, app_channels::start_provisioning)
+        }
+        "channels_poll_provisioning" => {
+            dispatch_channel_operation(args, state, app_channels::poll_provisioning)
+        }
+        "channels_confirm_provisioning" => {
+            dispatch_channel_operation(args, state, app_channels::confirm_provisioning)
+        }
+        "channels_cancel_provisioning" => {
+            dispatch_channel_operation(args, state, app_channels::cancel_provisioning)
         }
 
         // =================================================================

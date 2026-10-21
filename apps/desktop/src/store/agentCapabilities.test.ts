@@ -177,6 +177,27 @@ describe('agent capability authority store', () => {
     });
   });
 
+  it('projects a persisted binding when readiness reconciliation is degraded', async () => {
+    capabilityApi.readAgentCapabilityReadiness.mockRejectedValueOnce(
+      new Error('agent.capabilityReadinessFailed'),
+    );
+
+    await expect(useAgentCapabilityStore.getState().upsertBinding({
+      agentId: mcpBinding.agentId,
+      capabilityId: mcpBinding.capabilityId,
+      capabilityVersion: mcpBinding.capabilityVersion,
+      enabled: true,
+      approvalPolicy: CapabilityApprovalPolicy.MANUAL,
+      expectedAgentVersion: 8n,
+      expectedBindingRevision: 0n,
+      idempotencyKey: 'upsert-while-readiness-degraded',
+    })).resolves.toBe(mcpBinding);
+
+    expect(
+      useAgentCapabilityStore.getState().bindingsByAgentId['agent-1'],
+    ).toEqual([mcpBinding]);
+  });
+
   it('joins source selectors through canonical manifest identity', async () => {
     await useAgentCapabilityStore.getState().loadCatalog();
     await useAgentCapabilityStore.getState().loadAgent('agent-1');
@@ -385,6 +406,22 @@ describe('Agent composer readiness projection', () => {
       compatibility: 'incompatible',
       canSend: false,
       reasonCode: 'runtime_capability_unavailable',
+    });
+  });
+
+  it('allows a model turn when the Agent has no enabled capability bindings', () => {
+    expect(projectAgentComposerReadiness(
+      'agent-1',
+      8,
+      [],
+      undefined,
+      5_000,
+    )).toMatchObject({
+      state: 'ready',
+      compatibility: 'compatible',
+      canSend: true,
+      reasonCode: 'no_enabled_capability_bindings',
+      authority: 'station-capability-authority',
     });
   });
 

@@ -34,6 +34,10 @@ import {
   activeStationEntry,
 } from '../features/station/stationRegistry';
 import {
+  loadXConfigProjection,
+  refreshXConfigProjection,
+} from '../features/station/xConfig';
+import {
   startSocialRuntime,
   type SocialRuntimeController,
 } from '../features/social/socialRuntime';
@@ -114,6 +118,45 @@ function createSecureStorageDescriptor(): MobileRuntimeDescriptor {
     async teardown(): Promise<RuntimeOperationResult> {
       return {
         runtimeId: 'secure-storage',
+        success: true,
+        durationMs: 0,
+      };
+    },
+  };
+}
+
+function createXConfigRuntimeDescriptor(): MobileRuntimeDescriptor {
+  const refresh = () => {
+    void refreshXConfigProjection(false).catch((error) => {
+      reportRuntimeDescriptorError('x-config', error);
+    });
+  };
+
+  return {
+    id: 'x-config',
+    title: 'X Config Runtime',
+    responsibility:
+      'Owns the signed public suggestion and release projection without mutating verified Station state.',
+    dependsOn: ['secure-storage'],
+
+    async bootstrap(): Promise<void> {
+      await loadXConfigProjection().catch((error) => {
+        reportRuntimeDescriptorError('x-config', error);
+      });
+      refresh();
+    },
+
+    async suspend(): Promise<void> {
+      // Cached projection remains readable while the app is suspended.
+    },
+
+    async resume(): Promise<void> {
+      refresh();
+    },
+
+    async teardown(): Promise<RuntimeOperationResult> {
+      return {
+        runtimeId: 'x-config',
         success: true,
         durationMs: 0,
       };
@@ -685,6 +728,7 @@ export function createMobileRuntimeDescriptors(): MobileRuntimeDescriptor[] {
   return [
     createDeviceSettingsRuntimeDescriptor(),
     createSecureStorageDescriptor(),
+    createXConfigRuntimeDescriptor(),
     createStationRuntimeDescriptor(),
     createAuthRuntimeDescriptor(),
     createAccessRuntimeDescriptor(),

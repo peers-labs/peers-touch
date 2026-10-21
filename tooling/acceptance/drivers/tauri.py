@@ -140,6 +140,10 @@ class TauriDriver(DomDriver):
                 warnings.warn(f"failed to close WebDriver session: {error}", RuntimeWarning)
             self._driver = None
 
+    def disconnect(self) -> None:
+        """Drop the client after its app process is gone without closing the WebView."""
+        self._driver = None
+
     def wait_for_ready(self, timeout: float = APP_STARTUP_TIMEOUT) -> dict[str, Any]:
         def renderer_state(driver: WebDriver):
             try:
@@ -847,14 +851,21 @@ class TauriSession(DomDriver):
             raise
 
     def stop(self, *, preserve_state: bool = False) -> None:
+        if preserve_state:
+            try:
+                if self._launcher_started:
+                    self.launcher.stop(preserve_state=True)
+            finally:
+                self._launcher_started = False
+                if self._driver is not None:
+                    self._driver.disconnect()
+                    self._driver = None
+            return
         if self._driver is not None:
             self._driver.stop()
             self._driver = None
         if self._launcher_started:
-            if preserve_state:
-                self.launcher.stop(preserve_state=True)
-            else:
-                self.launcher.stop()
+            self.launcher.stop()
             self._launcher_started = False
 
     def is_alive(self) -> bool:

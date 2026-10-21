@@ -25,6 +25,36 @@
 完整字段与 proto 定义以 `model/domain/agent/` 为唯一跨层合同真源；本文不复制
 字段级 schema。
 
+普通 Chat 的模型选择属于 Conversation（产品名 Topic）。覆盖以完整
+Provider/Model 对保存；两个空值恢复 Settings 默认继承，字段缺省保持原值。
+Conversation 更新使用 `expected_version` 防止丢失并发修改。Agent 的历史
+模型字段不参与普通 Chat 默认解析；Profile 文档和扩展仍归 Agent 持有。
+
+### 删除事务
+
+Topic 单删与批量删除共用 Station `conversation/delete-batch` 合同，输入为
+会话 ID 与调用方回读的版本。Station 按 ID 排序锁定全部成员，检查 Actor、
+版本和活动/排队 Turn 后提交整组 tombstone；任何前置检查失败均不删除成员。
+
+外部运行目录由 ExternalRuntimeService 的持久化 reset fence 管理。整组
+fence 在一个事务内准备，再执行目录 cleanup，最后在一个事务内提交 reset
+结果与全部 Topic 删除。目录清理不可逆；部分 cleanup 失败时全部 Topic
+保留并受 recoverable fence 保护，不能把已清理目录恢复为可运行 binding。
+删除重试沿用原 reset fence 和版本；通用启动 reset 恢复器跳过删除 fence，
+避免单独提交一个成员而释放整批保护。进程中断后成员继续被 fence 阻止运行，
+由原批量删除请求重试提交；当前不承诺后台自动完成整批删除。
+
+Agent 删除复用上述删除 owner，同时检查活动 Evaluation，清理 Agent 的
+Topic、capability/knowledge/skill 绑定及 workspace/file 元数据，再删除
+Profile 记录。共享 OSS blob 保留在 OSS owner 下，不按 Agent 删除共享内容。其他 Actor
+仍持有该 Agent 的 Topic 时拒绝删除。会话创建与新 Turn admission 锁定
+Agent，以防与 Agent 删除并发产生孤儿会话。历史 Turn、Message、执行
+receipt 和事件保留为审计数据，不作为活动 Topic 展示。共享 Skill、知识
+资源和 MCP Server 不随 Agent 删除。
+
+Desktop 仅在 Station 成功后清理对应 Topic、草稿、消息缓存和运行投影。
+批量命令失败不做乐观删除，也不回滚整个 store 覆盖无关并发更新。
+
 ## 2. Turn 状态
 
 ```text
@@ -89,6 +119,13 @@ Turn admission 同时要求：
 - 所需 executor 与 secret reference 在声明的 owner 边界内可解析。
 
 ## 6. 持久化与恢复
+
+澄清问题复用 ToolCall 的 bounded arguments，答案保存于
+`clarification_answer`。现有 `SubmitToolApprovalDecisionRequest.answer` 仅允许
+用于 `ask_user`；同一决策的 payload hash 包含答案。空答案、超限答案、
+非澄清工具携带答案，以及相同幂等键下的不同答案必须拒绝。
+成功执行后答案通过既有 ToolResult/Message 投影进入时间线；重启回读恢复同一
+问题、答案及 ToolBatch，不生成替代 Turn。人工等待仍受执行期限和原运行预算约束。
 
 Station 持久化 Agent、Conversation、Turn、Message、MCP Server、
 Tool Manifest、Binding 和 ToolCall 权威记录。Desktop 可缓存投影，但重启后
