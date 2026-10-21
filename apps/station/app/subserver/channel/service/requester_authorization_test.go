@@ -813,17 +813,15 @@ func TestManagedLarkCLIRunnerRejectsStorageOverridingWrapper(t *testing.T) {
 func TestManagedLarkCLIRunnerIsolatesConfigDataAndInheritedIdentity(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "lark-cli")
 	script := `#!/bin/sh
-printf '%s\n%s\n%s\n%s\n' \
+printf '%s\n%s\n%s\n' \
   "$LARKSUITE_CLI_CONFIG_DIR" \
   "$LARKSUITE_CLI_DATA_DIR" \
-  "${LARKSUITE_CLI_USER_ACCESS_TOKEN-}" \
-  "${AGENT_BOX_LARK_PROFILE-}"
+  "${LARKSUITE_CLI_USER_ACCESS_TOKEN-}"
 `
 	if err := os.WriteFile(path, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("LARKSUITE_CLI_USER_ACCESS_TOKEN", "must-not-leak")
-	t.Setenv("AGENT_BOX_LARK_PROFILE", "must-not-leak")
 	runner := &managedLarkCLIRunner{executable: path}
 	configDir := filepath.Join(t.TempDir(), "authorization")
 	stdout, stderr, err := runner.Run(

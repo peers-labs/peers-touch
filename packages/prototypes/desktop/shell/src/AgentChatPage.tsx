@@ -75,7 +75,7 @@ interface Thread {
 }
 
 // An ordinary Agent the user can chat with. Threads, drafts and the selected
-// model are owned per agent. Creation is instant (AgentBox Create Local
+// model are owned per agent. Creation is instant (reference-client Create Local
 // parity): the entity exists immediately and lands in its Profile Builder;
 // identity and extensions persist on change, with no blocking form.
 interface ChatAgent {
@@ -458,7 +458,7 @@ export function AgentChatPage({
   const [ultraNarrow, setUltraNarrow] = useState(false);
   const [railOpen, setRailOpen] = useState(true);
   // Roster. Seed with the built-in Agent; created Agents join instantly and
-  // are configured afterwards in the Profile Builder (AgentBox parity).
+  // are configured afterwards in the Profile Builder (reference-client parity).
   const [agents, setAgents] = useState<ChatAgent[]>(() => {
     const stored = loadStoredAgents();
     return stored.some((agent) => agent.id === BUILTIN_AGENT_ID)
@@ -476,7 +476,7 @@ export function AgentChatPage({
   const [activeAgentId, setActiveAgentId] = useState<string>(BUILTIN_AGENT_ID);
   const [profileTargetId, setProfileTargetId] = useState<string | null>(null); // which agent the profile surface edits
   const [profileSection, setProfileSection] = useState<'identity' | 'extensions'>('identity');
-  // AgentBox parity: the expanded rail is always the Agent roster. Topics are
+  // Reference-client parity: the expanded rail is always the Agent roster. Topics are
   // contextual to the selected Agent and keep their own sibling rail.
   const [agentQuery, setAgentQuery] = useState('');
   const [agentDeleteTarget, setAgentDeleteTarget] = useState<ChatAgent | null>(null);
@@ -780,7 +780,7 @@ export function AgentChatPage({
   }, [activeAgentId, threads]);
 
   // A roster-row selection always opens that Agent's Chat. Profile is an
-  // explicit row-menu action, matching AgentBox instead of changing meaning
+  // explicit row-menu action, matching the reference client instead of changing meaning
   // based on the surface that happened to be open.
   const pickAgent = (id: string) => {
     activateAgent(id);
@@ -828,7 +828,7 @@ export function AgentChatPage({
     setRailOpen((open) => !open);
   };
 
-  // Create Local parity (AgentBox): the Agent is created INSTANTLY with an
+  // Create Local parity (reference client): the Agent is created INSTANTLY with an
   // auto-generated unique name, joins the roster, becomes active, and lands in
   // its Profile Builder workspace — no blocking "name it first" form. The
   // builder auto-saves; Back returns straight to the new Agent's chat.
@@ -878,7 +878,7 @@ export function AgentChatPage({
   };
 
   const openAgentProfile = (id: string) => {
-    // AgentBox opens the builder with the Agent as context, and Back returns
+    // The reference client opens the builder with the Agent as context, and Back returns
     // to that Agent's chat — activate it here so the two surfaces agree.
     setProfileTargetId(id);
     setProfileSection('identity');
@@ -917,7 +917,7 @@ export function AgentChatPage({
     });
   };
 
-  // AgentBox parity: non-default agents are deletable. Removal is a full
+  // Reference-client parity: non-default agents are deletable. Removal is a full
   // closed loop — roster record + order + per-agent profile/extension keys +
   // in-memory threads/drafts/timers all go away; the active surface falls
   // back to the built-in Agent. The built-in Agent has no delete affordance.
@@ -1545,7 +1545,7 @@ export function AgentChatPage({
   return (
     <div ref={rootRef} data-testid="desktop-shell-agent-chat" style={S.root}>
       <style>{AGENT_CHAT_CSS}</style>
-      {/* AgentBox topology, Peers visual identity: the Agent roster remains
+      {/* Reference-client topology, Peers visual identity: the Agent roster remains
           module-owned; Chat adds a sibling Topic rail, while Profile does not. */}
       <aside
         data-expanded={railOpen}
@@ -2030,7 +2030,7 @@ export function AgentChatPage({
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// AgentCreateMenu — roster header "+" (AgentBox My Agents parity).
+// AgentCreateMenu — roster header "+" (reference-client My Agents parity).
 // Create Local: instant create + Profile Builder; Create Orchestrator: the
 // orchestration canvas. Import / From Hub are cut — no contract behind them.
 // ─────────────────────────────────────────────────────────────────────────
@@ -2155,7 +2155,7 @@ function AgentCreateMenu({ triggerStyle, triggerIcon, onLocal, onOrchestrator, o
 // ─────────────────────────────────────────────────────────────────────────
 // Agent roster — the expanded rail's permanent information architecture.
 // Rows are a list, never chips: initial tile + name + description; the trailing
-// "⋯" opens an anchored AgentBox-style action menu. Start New Topic and Search
+// "⋯" opens an anchored reference-client-style action menu. Start New Topic and Search
 // stay in the selected Agent's Topic rail, so row actions never cause hidden
 // cross-surface jumps. The built-in Agent is pinned and cannot be deleted.
 // ─────────────────────────────────────────────────────────────────────────
@@ -2441,7 +2441,7 @@ function DeleteAgentDialog({ name, onCancel, onConfirm }: {
   );
 }
 
-// Centered destructive confirmation (benchmark: AgentBox topic delete modal).
+// Centered destructive confirmation (benchmark: reference-client topic delete modal).
 // Portalled to body; the chat subtree is inert while it is open. Focus starts
 // on the safe action, Tab cycles inside, Esc/scrim cancels and returns focus
 // to the opener (handled by onCancel).
@@ -2825,7 +2825,7 @@ function MessageRow({
   onEditPrompt: (mid: string, next: string) => void;
   onOpenArtifact: (artifact: ArtifactRef, opener: HTMLElement) => void;
 }) {
-  // Inline edit-and-resend (AgentBox-aligned): replacing a sent prompt
+  // Inline edit-and-resend (reference-client-aligned): replacing a sent prompt
   // truncates the thread there and re-runs from the edited message.
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(message.text);
@@ -3485,7 +3485,7 @@ function Composer({
           )}
 
           <div style={S.composerToolbar}>
-            {/* Left: slash commands + upload (AgentBox DEFAULT_LEFT_ACTIONS) */}
+            {/* Left: slash commands + upload (reference-client DEFAULT_LEFT_ACTIONS) */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <div style={{ position: 'relative' }}>
                 <button
@@ -3947,7 +3947,7 @@ const S: Record<string, any> = {
   activityList: { display: 'flex', flexDirection: 'column', gap: 4, margin: '0 0 10px' },
   activityItem: { display: 'flex', alignItems: 'flex-start', gap: 8, padding: '6px 10px', borderRadius: 8, background: T.surface, fontSize: 12, color: T.textSecondary },
   activityLabel: { fontWeight: 500, minWidth: 0, overflowWrap: 'anywhere' },
-  // Commands always wrap (AgentBox: pre-wrap + break-all); never clipped, since
+  // Commands always wrap (reference client: pre-wrap + break-all); never clipped, since
   // the row is the audit record of what was actually considered.
   mono: { fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 12, color: T.textSecondary, background: T.white, border: `1px solid ${T.border}`, borderRadius: T.radiusSm, padding: '1px 6px', whiteSpace: 'pre-wrap', wordBreak: 'break-all', minWidth: 0 },
 

@@ -12,7 +12,7 @@ PROTOTYPE_CHECKS = (
     ROOT / "packages/prototypes/desktop/shell/qa/agent_chat_checks.cjs"
 )
 GROUP_TARGETS = {
-    "Agent roster keeps stable ownership and AgentBox-style row actions":
+    "Agent roster keeps stable ownership and reference-client-style row actions":
         ("profile", "profile-create"),
     "Profile edits one Agent and binds capabilities from bounded pickers":
         ("profile", "profile-documents"),
@@ -32,7 +32,7 @@ GROUP_TARGETS = {
         ("conversation", "conversation-retry"),
     "Agent and Topic owners preserve isolated drafts":
         ("topics", "topics-rename-cancel"),
-    "Wide, compact and mobile topology matches observed AgentBox behavior":
+    "Wide, compact and mobile topology matches observed reference-client behavior":
         ("layout", "workspace-narrow"),
 }
 ADDITIONAL_OPERATIONS = {
