@@ -5,7 +5,7 @@
 #
 # This image rarely changes (only on Go version bump or base OS update).
 
-ARG BASE_IMAGE=ubuntu:22.04
+ARG BASE_IMAGE=ubuntu:22.04@sha256:0a9887931b0e38af2e3487ed39e29436b0535c4f3f52e57745baaf79d1898956
 ARG GO_VERSION=1.24.6
 
 FROM ${BASE_IMAGE}

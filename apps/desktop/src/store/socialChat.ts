@@ -78,6 +78,7 @@ import {
 import { currentAuthenticatedActorPtid } from './session';
 import {
   accountProfileFromFederationResolve,
+  actorDisplayName,
   remoteProfileHandle,
   resolveActorIdentity,
 } from './socialProfileProjection';
@@ -356,10 +357,9 @@ interface SocialChatState {
    * callers can fall back to in-session display name + avatar without
    * re-issuing the request.
    *
-   * Lives in `socialChat` because the chat layer is the only consumer
-   * that needs to pair sessions/groups with peer identity context.
-   * Refreshes whenever a peer is selected; SSE `actor.profile.updated`
-   * (when wired in) should also invalidate the entry.
+   * This is the shared Desktop actor-profile cache used by Chat, Moments,
+   * and other identity-bearing surfaces. Domain runtimes hydrate visible
+   * actors; `actor.profile.updated` invalidates the same canonical entry.
    */
   peerProfiles: Record<string, AccountProfile | null>;
   /** Per-peer in-flight loader flag; prevents redundant concurrent fetches. */
@@ -474,6 +474,7 @@ interface SocialChatState {
   selectSession: (ulid: string) => void;
   selectGroup: (ulid: string) => void;
   loadMessages: (ulid: string, kind?: 'friend' | 'group') => Promise<void>;
+  clearConversationProjection: (ulid: string) => void;
   loadOlderMessages: (ulid: string, kind?: 'friend' | 'group') => Promise<void>;
   retryMessage: (
     ulid: string,
@@ -664,7 +665,7 @@ function friendUnreadForViewer(s: FriendChatSession, viewerDid: string | null): 
  * panel, contacts page, group-create modal, ...) all agree on:
  *   - which side is "the friend" when the viewer is participant A
  *     vs. when the viewer is participant B,
- *   - the display-name fallback chain (proto display_name -> DID),
+ *   - the display-name fallback chain without exposing PTID as presentation,
  *   - the avatar URL fallback chain (proto avatar -> empty string,
  *     which UserSquareAvatar then resolves through its own
  *     local-then-remote-then-fallback rules).
@@ -680,14 +681,14 @@ export function peerOfSession(
     if (s.participantAPtid === viewerDid) {
       return {
         did: s.participantBPtid || '',
-        name: s.participantBDisplayName || s.participantBPtid || '',
+        name: actorDisplayName(s.participantBDisplayName),
         avatar: s.participantBAvatar || '',
       };
     }
     if (s.participantBPtid === viewerDid) {
       return {
         did: s.participantAPtid || '',
-        name: s.participantADisplayName || s.participantAPtid || '',
+        name: actorDisplayName(s.participantADisplayName),
         avatar: s.participantAAvatar || '',
       };
     }
@@ -695,7 +696,8 @@ export function peerOfSession(
   }
   return {
     did: s.participantBPtid || s.participantAPtid || '',
-    name: s.participantBDisplayName || s.participantBPtid || s.participantAPtid || '',
+    name: actorDisplayName(s.participantBDisplayName)
+      || actorDisplayName(s.participantADisplayName),
     avatar: s.participantBAvatar || s.participantAAvatar || '',
   };
 }
@@ -771,6 +773,21 @@ function socialMessageExplicitThreadRootUlid(msg: SocialMessage): string {
 
 export function socialThreadKey(kind: 'friend' | 'group', ulid: string, rootUlid: string): string {
   return `${kind}:${ulid}:${rootUlid}`;
+}
+
+function omitConversationThreadEntries<T>(
+  entries: Record<string, T>,
+  conversationUlid: string,
+): Record<string, T> {
+  const prefixes = [
+    `friend:${conversationUlid}:`,
+    `group:${conversationUlid}:`,
+  ];
+  return Object.fromEntries(
+    Object.entries(entries).filter(([key]) => (
+      !prefixes.some((prefix) => key.startsWith(prefix))
+    )),
+  );
 }
 
 export function resolveReplyThreadRootUlid(
@@ -1425,6 +1442,68 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       set({ loading: false });
       throw error;
     }
+  },
+
+  clearConversationProjection: (ulid) => {
+    if (!ulid) return;
+    set((state) => {
+      const conversationThreadMessages = Object.entries(state.threadMessages)
+        .filter(([key]) => (
+          key.startsWith(`friend:${ulid}:`) || key.startsWith(`group:${ulid}:`)
+        ))
+        .flatMap(([, messages]) => messages);
+      const removedMessageIds = new Set(
+        [...(state.messages[ulid] ?? []), ...conversationThreadMessages]
+          .map((message) => message.ulid),
+      );
+      const reactions = { ...state.reactions };
+      const pinnedMessages = { ...state.pinnedMessages };
+      for (const messageId of removedMessageIds) {
+        delete reactions[messageId];
+        delete pinnedMessages[messageId];
+      }
+      const lastPreviews = { ...state.lastPreviews };
+      const sendOutcomes = { ...state.sendOutcomes };
+      const typingPeers = { ...state.typingPeers };
+      delete lastPreviews[ulid];
+      delete sendOutcomes[ulid];
+      delete typingPeers[ulid];
+      const activeConversation = (
+        state.activeSessionUlid === ulid || state.activeGroupUlid === ulid
+      );
+
+      return {
+        messages: { ...state.messages, [ulid]: [] },
+        threadMessages: omitConversationThreadEntries(state.threadMessages, ulid),
+        threadCounts: omitConversationThreadEntries(state.threadCounts, ulid),
+        threadLoading: omitConversationThreadEntries(state.threadLoading, ulid),
+        threadLoadingMore: omitConversationThreadEntries(state.threadLoadingMore, ulid),
+        threadError: omitConversationThreadEntries(state.threadError, ulid),
+        threadHasMore: omitConversationThreadEntries(state.threadHasMore, ulid),
+        threadNextCursor: omitConversationThreadEntries(state.threadNextCursor, ulid),
+        messageHasMore: { ...state.messageHasMore, [ulid]: false },
+        messageNextBeforeSequence: {
+          ...state.messageNextBeforeSequence,
+          [ulid]: null,
+        },
+        messageLoadingMore: { ...state.messageLoadingMore, [ulid]: false },
+        lastPreviews,
+        reactions,
+        pinnedMessages,
+        sendOutcomes,
+        typingPeers,
+        searchResults: state.searchResults.filter(
+          (result) => result.conversationId !== ulid,
+        ),
+        scrollToMessageUlid: (
+          state.scrollToMessageUlid
+          && removedMessageIds.has(state.scrollToMessageUlid)
+        )
+          ? null
+          : state.scrollToMessageUlid,
+        ...(activeConversation ? { openThreadRootUlid: null } : {}),
+      };
+    });
   },
 
   loadOlderMessages: async (ulid, kind) => {
@@ -2227,6 +2306,13 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
     for (const s of state.sessions) {
       if (state.conversationLocalState[conversationKey('friend', s.ulid)]?.hidden) continue;
       const peer = peerOfSession(s, did);
+      const identity = resolveActorIdentity({
+        ptid: peer.did,
+        currentUserPtid: did,
+        currentUserProfile: state.currentUserProfile,
+        peerProfiles: state.peerProfiles,
+        sessions: state.sessions,
+      });
       const loadedMsgs = state.messages[s.ulid];
       const loadedMainMsgs = loadedMsgs?.filter((message) => !socialMessageExplicitThreadRootUlid(message));
       const friendPreview = loadedMainMsgs && loadedMainMsgs.length > 0
@@ -2235,8 +2321,8 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
       out.push({
         type: 'friend',
         ulid: s.ulid,
-        name: peer.name || 'Friend',
-        avatar: peer.avatar || '',
+        name: actorDisplayName(identity.displayName, 'Friend'),
+        avatar: identity.avatarUrl,
         lastActivity: activityFromSession(s),
         unread: visibleConversationUnread(
           friendUnreadForViewer(s, did),
@@ -2310,11 +2396,10 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
         const friendReq = peerPtid
           ? state.friendRequests.find((r) => r.senderPtid === peerPtid || r.receiverPtid === peerPtid)
           : undefined;
-        const peerName = peer?.nickname
-          || profile?.display_name
-          || profile?.username
-          || (friendReq ? (friendReq.senderPtid === peerPtid ? friendReq.senderDisplayName : friendReq.receiverDisplayName) : '')
-          || peerPtid
+        const peerName = actorDisplayName(peer?.nickname)
+          || actorDisplayName(profile?.display_name)
+          || actorDisplayName(profile?.username)
+          || actorDisplayName(friendReq ? (friendReq.senderPtid === peerPtid ? friendReq.senderDisplayName : friendReq.receiverDisplayName) : '')
           || 'Friend';
         out.push(projectDesktopIMConversation({
           type: 'friend',
@@ -2396,58 +2481,28 @@ export const useSocialChatStore = createDesktopStore<SocialChatState>('socialCha
   getIMSenderProfile: (kind, conversationUlid, senderPtid) => {
     const state = get();
     const did = senderPtid.trim();
-    const isSelf = Boolean(state.currentUserPtid && did === state.currentUserPtid);
-
-    if (isSelf) {
-      return {
-        id: did,
-        name: state.currentUserProfile?.displayName
-          || state.currentUserProfile?.username
-          || state.currentUserPtid
-          || did,
-        avatar: state.currentUserProfile?.avatar || '',
-        isSelf,
-      };
-    }
-
-    if (kind === 'friend') {
-      const session = state.sessions.find((item) => item.ulid === conversationUlid);
-      const peer = session ? peerOfSession(session, state.currentUserPtid) : null;
-      if (peer?.name) {
-        return { id: did || peer.did || '', name: peer.name, avatar: peer.avatar || '', isSelf };
-      }
-      const profile = state.peerProfiles[did];
-      if (profile) {
-        return { id: did, name: profile.display_name || profile.username || did, avatar: profile.avatar || '', isSelf };
-      }
-      const convMembers = state.conversationMembers[conversationUlid] || [];
-      const memberEntry = convMembers.find((m) => m.ptid === did);
-      if (memberEntry?.nickname) {
-        return { id: did, name: memberEntry.nickname, avatar: '', isSelf };
-      }
-      const friendReq = state.friendRequests.find((r) => r.senderPtid === did || r.receiverPtid === did);
-      if (friendReq) {
-        const name = friendReq.senderPtid === did ? friendReq.senderDisplayName : friendReq.receiverDisplayName;
-        const avatar = friendReq.senderPtid === did ? friendReq.senderAvatar : friendReq.receiverAvatar;
-        if (name) return { id: did, name, avatar: avatar || '', isSelf };
-      }
-      return { id: did, name: did, avatar: '', isSelf };
-    }
-
-    const member = state.groupMembers[conversationUlid]?.find((item) => item.ptid === did);
-    const profile = state.peerProfiles[did];
-    const profileName = profile?.display_name || profile?.username || '';
-    const fallback = actorProfileFromSessions(
-      state.sessions,
-      state.currentUserPtid,
-      did,
-      state.currentUserProfile,
+    const member = kind === 'group'
+      ? state.groupMembers[conversationUlid]?.find((item) => item.ptid === did)
+      : state.conversationMembers[conversationUlid]?.find((item) => item.ptid === did);
+    const request = state.friendRequests.find(
+      (item) => item.senderPtid === did || item.receiverPtid === did,
     );
+    const sender = request?.senderPtid === did;
+    const identity = resolveActorIdentity({
+      ptid: did,
+      currentUserPtid: state.currentUserPtid,
+      currentUserProfile: state.currentUserProfile,
+      peerProfiles: state.peerProfiles,
+      sessions: state.sessions,
+      nickname: member?.nickname,
+      fallbackName: sender ? request?.senderDisplayName : request?.receiverDisplayName,
+      fallbackAvatar: sender ? request?.senderAvatar : request?.receiverAvatar,
+    });
     return {
       id: did,
-      name: member?.nickname || profileName || fallback.name || did,
-      avatar: profile?.avatar || fallback.avatar || '',
-      isSelf,
+      name: identity.displayName,
+      avatar: identity.avatarUrl,
+      isSelf: identity.isSelf,
     };
   },
 

@@ -394,7 +394,7 @@ fn remove_sidecars(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn remove_database_files(path: &Path) -> Result<(), String> {
+pub(super) fn remove_database_files(path: &Path) -> Result<(), String> {
     remove_sidecars(path)?;
     if path.exists() {
         fs::remove_file(path).map_err(|error| error.to_string())?;

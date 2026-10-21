@@ -5,6 +5,7 @@ import { ArrowLeft, Check, Search } from 'lucide-react';
 import { useMobileI18n } from '../../app/mobileI18n';
 import { MobileNotice } from '../../components/MobileNotice';
 import { SocialActorAvatar } from '../../features/social/SocialActorAvatar';
+import { actorDisplayName } from '../../features/social/socialProjection';
 import { useSocialCirclesStore } from '../../features/social/socialCircles';
 import { useSocialStore } from '../../features/social/socialStore';
 import type { CircleMember } from '../../gen/proto/domain/social/circle_pb';
@@ -162,7 +163,8 @@ export function SocialCircleMemberPickerPage({
                   />
                   <span className="circle-row-copy">
                     <Text strong ellipsis>
-                      {actor.displayName || actor.username || actor.ptid}
+                      {actorDisplayName(actor.displayName || actor.username, actor.ptid)
+                        || t('mobile.contacts.unknownUser')}
                     </Text>
                     <Text type="secondary" ellipsis>
                       {actor.federation?.handle || actor.ptid}

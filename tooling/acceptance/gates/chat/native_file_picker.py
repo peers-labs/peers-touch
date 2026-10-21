@@ -4,7 +4,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import StaleElementReferenceException, TimeoutException
 from selenium.webdriver.support.ui import WebDriverWait
 
 from tooling.acceptance.core import GateError
@@ -21,6 +21,42 @@ from tooling.acceptance.drivers.tauri import TauriSession
 DEFAULT_TIMEOUT_SECONDS = 30.0
 POLL_SECONDS = 0.05
 REVEAL_ATTEMPTS = 4
+
+
+def wait_for_actionable_file_trigger(
+    *,
+    actor: str,
+    client: TauriSession,
+    selector: str,
+    timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+) -> Any:
+    """Wait for the currently visible file-picker trigger in a dynamic surface."""
+
+    match_count = 0
+
+    def actionable(_: Any) -> Any | None:
+        nonlocal match_count
+        matches = client.find_elements(selector)
+        match_count = len(matches)
+        for candidate in reversed(matches):
+            try:
+                if candidate.is_displayed() and candidate.is_enabled():
+                    return candidate
+            except StaleElementReferenceException:
+                continue
+        return None
+
+    try:
+        return WebDriverWait(
+            client.driver,
+            timeout_seconds,
+            poll_frequency=POLL_SECONDS,
+        ).until(actionable)
+    except TimeoutException:
+        raise GateError(
+            f"{actor} Native file chooser trigger is not actionable; "
+            f"selector={selector!r}; matches={match_count}"
+        ) from None
 
 
 def select_native_file(

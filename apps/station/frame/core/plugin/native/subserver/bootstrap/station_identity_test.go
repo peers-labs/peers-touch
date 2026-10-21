@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"bytes"
+	stded25519 "crypto/ed25519"
 	"crypto/rand"
 	"testing"
 	"time"
@@ -132,6 +133,68 @@ func TestStationIdentityTwoNodesRetainOneLogicalStation(t *testing.T) {
 	if identity.Statement.GetStationPeerId() !=
 		firstVerified.Statement.GetStationPeerId() {
 		t.Fatal("challenge response did not retain the logical Station identity")
+	}
+}
+
+func TestStationIdentityBindsFederationSigningKey(t *testing.T) {
+	fixture := newStationIdentityFixture(t)
+	federationPublicKey, _, err := stded25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	challenge := bytes.Repeat(
+		[]byte{0x4a},
+		peerpb.StationIdentityChallengeSize,
+	)
+	response, err := peerpb.SignStationIdentityResponseWithFederationKey(
+		fixture.nodeKey,
+		fixture.authorization,
+		"https://station.example:443",
+		challenge,
+		stationNodeCapabilities,
+		federationPublicKey,
+		fixture.now,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	verified, err := peerpb.VerifyStationIdentityResponse(
+		response,
+		challenge,
+		"https://station.example:443",
+		[]string{"station-identity"},
+		fixture.now,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(
+		verified.Statement.GetFederationSigningPublicKey(),
+		federationPublicKey,
+	) {
+		t.Fatal("Federation signing key was not bound to Station identity")
+	}
+
+	tampered := proto.Clone(response).(*peerpb.StationIdentityResponse)
+	statement := &peerpb.StationIdentityStatement{}
+	if err := proto.Unmarshal(tampered.StatementBytes, statement); err != nil {
+		t.Fatal(err)
+	}
+	statement.FederationSigningPublicKey[0] ^= 0xff
+	tampered.StatementBytes, err = proto.MarshalOptions{
+		Deterministic: true,
+	}.Marshal(statement)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := peerpb.VerifyStationIdentityResponse(
+		tampered,
+		challenge,
+		"https://station.example:443",
+		[]string{"station-identity"},
+		fixture.now,
+	); err == nil {
+		t.Fatal("tampered Federation signing key was accepted")
 	}
 }
 

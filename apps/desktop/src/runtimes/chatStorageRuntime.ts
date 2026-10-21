@@ -7,6 +7,7 @@ import {
 
 import {
   ChatRetentionPreset,
+  ChatStorageOperationKind,
   ChatStorageOperationState,
 } from '../gen/proto/domain/chat/storage_pb';
 import type {
@@ -535,6 +536,20 @@ export function chatStorageReleasedBytes(result: ChatStorageResult | null): bigi
   return operation.physicalBytesBefore > operation.physicalBytesAfter
     ? operation.physicalBytesBefore - operation.physicalBytesAfter
     : 0n;
+}
+
+export function isConversationClearProjectionCommitted(
+  result: ChatStorageResult | null,
+): boolean {
+  const operation = result?.operation;
+  if (operation?.kind !== ChatStorageOperationKind.CLEAR_CONVERSATION) return false;
+  return operation.state === ChatStorageOperationState.DELETING_FILES
+    || operation.state === ChatStorageOperationState.COMPACTING
+    || operation.state === ChatStorageOperationState.COMPACTION_PENDING
+    || operation.state === ChatStorageOperationState.PAUSED_SCOPE_INACTIVE
+    || operation.state === ChatStorageOperationState.SUCCEEDED
+    || operation.state === ChatStorageOperationState.FAILED_RETRYABLE
+    || operation.state === ChatStorageOperationState.FAILED_TERMINAL;
 }
 
 export function shouldRefreshChatStorageForPage(

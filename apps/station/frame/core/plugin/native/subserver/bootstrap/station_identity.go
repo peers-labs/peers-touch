@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
 	cfg "github.com/peers-labs/peers-touch/station/frame/core/config"
 	peerpb "github.com/peers-labs/peers-touch/station/frame/touch/model/peer"
 )
@@ -22,13 +23,26 @@ var stationNodeCapabilities = []string{
 }
 
 func (s *SubServer) stationIdentity(
-	_ context.Context,
+	ctx context.Context,
 	req *peerpb.StationIdentityRequest,
 ) (*peerpb.StationIdentityResponse, error) {
-	return s.SignStationIdentityResponse(req.GetChallenge())
+	return s.SignStationIdentityResponseContext(
+		ctx,
+		req.GetChallenge(),
+	)
 }
 
 func (s *SubServer) SignStationIdentityResponse(
+	challenge []byte,
+) (*peerpb.StationIdentityResponse, error) {
+	return s.SignStationIdentityResponseContext(
+		context.Background(),
+		challenge,
+	)
+}
+
+func (s *SubServer) SignStationIdentityResponseContext(
+	ctx context.Context,
 	challenge []byte,
 ) (*peerpb.StationIdentityResponse, error) {
 	if s.host == nil {
@@ -39,12 +53,25 @@ func (s *SubServer) SignStationIdentityResponse(
 	if err != nil {
 		return nil, err
 	}
-	return peerpb.SignStationIdentityResponse(
+	federationKey, err := authfed.Singleton().Get(ctx)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"load Station Federation signing key: %w",
+			err,
+		)
+	}
+	if federationKey == nil {
+		return nil, fmt.Errorf(
+			"Station Federation signing key is unavailable",
+		)
+	}
+	return peerpb.SignStationIdentityResponseWithFederationKey(
 		s.host.Peerstore().PrivKey(s.host.ID()),
 		authorization,
 		canonicalStationOrigin(),
 		challenge,
 		stationNodeCapabilities,
+		federationKey.Pub,
 		now,
 	)
 }

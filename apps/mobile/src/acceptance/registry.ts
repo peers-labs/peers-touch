@@ -369,6 +369,11 @@ export function createMobileAcceptanceHarness(): MobileAcceptanceNamespace {
     registry,
   );
   registerMobileAcceptanceAction(
+    'moments.private.acceptance.prepareKeys',
+    mobileAcceptanceActions['moments.private.acceptance.prepareKeys'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
     'moments.private.publish',
     mobileAcceptanceActions['moments.private.publish'],
     registry,

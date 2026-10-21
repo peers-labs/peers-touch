@@ -257,11 +257,25 @@ func (c *AttachmentController) ImportAttachment(
 	findErr := c.ownedDB(ctx).
 		Where("relay_peer_id = ?", target.RelayPeerID.String()).
 		First(&existing).Error
-	if findErr == nil && (existing.Enabled || existing.CleanupPending) {
-		return nil, ErrAttachmentExists
+	if findErr == nil {
+		if existing.Enabled ||
+			(existing.CleanupPending &&
+				(c.runtimeHasTarget(target.RelayPeerID) ||
+					c.controlHasTarget(target.RelayPeerID))) {
+			return nil, ErrAttachmentExists
+		}
 	}
 	if findErr != nil && !errors.Is(findErr, gorm.ErrRecordNotFound) {
 		return nil, findErr
+	}
+	if findErr == nil && existing.CleanupPending {
+		if err := os.Remove(existing.CredentialFile); err != nil &&
+			!errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf(
+				"remove stale Relay credential before reattachment: %w",
+				err,
+			)
+		}
 	}
 
 	prepared, credential, err := c.runtime.prepareTarget(ctx, target)

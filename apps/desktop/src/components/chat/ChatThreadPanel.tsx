@@ -23,6 +23,7 @@ import {
   type DesktopIMSenderProfileProjection,
   type SocialMessage,
 } from '../../store/socialProjection';
+import { actorDisplayName } from '../../store/socialProfileProjection';
 import { log } from '../../utils/logger';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { ChatComposer, type ChatComposerDraft } from './ChatComposer';
@@ -93,6 +94,7 @@ function ThreadMessageItem({
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
   const senderProfile = getSenderProfile(activeKind, activeConversationId, message.senderPtid);
+  const senderName = actorDisplayName(senderProfile.name, t('chat.social.detail.unknownMember'));
   const isOwn = isOwnMessage(message, currentUserPtid);
   const isRecalled = isRecalledMessage(message);
   const sentMs = messageTimestampMs(message);
@@ -136,7 +138,7 @@ function ThreadMessageItem({
       >
         <UserSquareAvatar
           remoteUrl={senderProfile.avatar}
-          name={senderProfile.name}
+          name={senderName}
           size={root ? 30 : 28}
         />
       </span>
@@ -144,7 +146,7 @@ function ThreadMessageItem({
         <Flexbox horizontal align="center" justify="space-between" gap={8}>
           <Flexbox horizontal align="center" gap={6} style={{ minWidth: 0 }}>
             <Text ellipsis strong style={{ fontSize: 12, maxWidth: 150 }}>
-              {isOwn ? t('chat.social.thread.you') : senderProfile.name}
+              {isOwn ? t('chat.social.thread.you') : senderName}
             </Text>
             <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>
               {formatThreadTime(message)}

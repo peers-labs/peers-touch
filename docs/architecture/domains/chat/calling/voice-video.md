@@ -425,6 +425,11 @@ Architecture-level UX invariants:
   Desktop navigation visible, and only explicit full-screen mode may cover the
   entire viewport;
 - video calls show remote video plus local picture-in-picture;
+- every one-to-one call surface resolves the peer's canonical profile display
+  name and rounded-square avatar; PTID, DID, account address, station address,
+  and literal `null`/`undefined` values are never primary call identity;
+- group-call headers name the group, and participant chips/tiles use each
+  participant's canonical display name and avatar;
 - every failure state must be user-explainable and localized;
 - no UI surface may expose raw SDP, ICE candidates, TURN usernames, or device ids.
 

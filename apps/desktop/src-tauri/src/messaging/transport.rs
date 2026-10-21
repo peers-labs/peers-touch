@@ -33,12 +33,93 @@ use messaging_core::proto::actor_device_ptid;
 use prost::Message;
 use reqwest::Method;
 use sha2::{Digest, Sha256};
+#[cfg(any(test, feature = "acceptance-webdriver"))]
+use std::sync::{Mutex, OnceLock};
 
 const GROUP_CREATION_PATH: &str = "/conversation/group";
 const AUTHORITY_COMMAND_PATH: &str = "/conversation/command";
 const COMMAND_RESULTS_PATH: &str = "/conversation/command/results";
 const COMMAND_PROPOSAL_FORMAT_VERSION: u32 = 1;
 const COMMAND_PROPOSAL_LIFETIME_MS: i64 = 5 * 60 * 1_000;
+
+#[cfg(any(test, feature = "acceptance-webdriver"))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AcceptanceCommandTransportFaultSnapshot {
+    pub armed_command_id: String,
+    pub failed_command_id: String,
+    pub failure_count: u64,
+}
+
+#[cfg(any(test, feature = "acceptance-webdriver"))]
+#[derive(Default)]
+struct AcceptanceCommandTransportFault {
+    armed_command_id: Option<String>,
+    failed_command_id: String,
+    failure_count: u64,
+}
+
+#[cfg(any(test, feature = "acceptance-webdriver"))]
+fn acceptance_command_transport_fault() -> &'static Mutex<AcceptanceCommandTransportFault> {
+    static FAULT: OnceLock<Mutex<AcceptanceCommandTransportFault>> = OnceLock::new();
+    FAULT.get_or_init(|| Mutex::new(AcceptanceCommandTransportFault::default()))
+}
+
+#[cfg(any(test, feature = "acceptance-webdriver"))]
+fn acceptance_command_transport_fault_snapshot(
+    fault: &AcceptanceCommandTransportFault,
+) -> AcceptanceCommandTransportFaultSnapshot {
+    AcceptanceCommandTransportFaultSnapshot {
+        armed_command_id: fault.armed_command_id.clone().unwrap_or_default(),
+        failed_command_id: fault.failed_command_id.clone(),
+        failure_count: fault.failure_count,
+    }
+}
+
+#[cfg(any(test, feature = "acceptance-webdriver"))]
+pub fn set_acceptance_command_transport_fault(
+    command_id: Option<&str>,
+) -> Result<AcceptanceCommandTransportFaultSnapshot, String> {
+    let mut fault = acceptance_command_transport_fault()
+        .lock()
+        .map_err(|_| "messaging acceptance command transport fault lock poisoned".to_string())?;
+    if let Some(command_id) = command_id {
+        let command_id = command_id.trim();
+        if command_id.is_empty() {
+            return Err(
+                "messaging acceptance command transport fault requires a command ID".to_string(),
+            );
+        }
+        fault.armed_command_id = Some(command_id.to_string());
+        fault.failed_command_id.clear();
+        fault.failure_count = 0;
+    } else {
+        fault.armed_command_id = None;
+    }
+    Ok(acceptance_command_transport_fault_snapshot(&fault))
+}
+
+#[cfg(any(test, feature = "acceptance-webdriver"))]
+pub fn get_acceptance_command_transport_fault(
+) -> Result<AcceptanceCommandTransportFaultSnapshot, String> {
+    acceptance_command_transport_fault()
+        .lock()
+        .map_err(|_| "messaging acceptance command transport fault lock poisoned".to_string())
+        .map(|fault| acceptance_command_transport_fault_snapshot(&fault))
+}
+
+#[cfg(any(test, feature = "acceptance-webdriver"))]
+fn consume_acceptance_command_transport_fault(command_id: &str) -> Result<bool, String> {
+    let mut fault = acceptance_command_transport_fault()
+        .lock()
+        .map_err(|_| "messaging acceptance command transport fault lock poisoned".to_string())?;
+    if fault.armed_command_id.as_deref() != Some(command_id) {
+        return Ok(false);
+    }
+    fault.armed_command_id = None;
+    fault.failed_command_id = command_id.to_string();
+    fault.failure_count = fault.failure_count.saturating_add(1);
+    Ok(true)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CommandSubmissionRoute {
@@ -338,7 +419,7 @@ impl StationCommandTransport {
             None,
             &self.device_id,
         )
-        .map_err(classify_command_transport_error)?;
+        .map_err(classify_remote_public_head_transport_error)?;
         let head = response
             .head
             .ok_or_else(|| CommandSubmitFailure::Terminal {
@@ -372,6 +453,16 @@ impl CommandTransport for StationCommandTransport {
 
 impl StationCommandTransport {
     fn submit_chat_command(&self, command: &ChatCommand) -> Result<(), CommandSubmitFailure> {
+        #[cfg(any(test, feature = "acceptance-webdriver"))]
+        if consume_acceptance_command_transport_fault(&command.command_id).map_err(|_| {
+            CommandSubmitFailure::Terminal {
+                code: "acceptance_transport_fault_invalid".to_string(),
+            }
+        })? {
+            return Err(CommandSubmitFailure::Retryable {
+                code: "network".to_string(),
+            });
+        }
         let sender = command
             .sender
             .as_ref()
@@ -505,7 +596,7 @@ impl StationCommandTransport {
             None,
             &self.device_id,
         )
-        .map_err(classify_command_transport_error)?;
+        .map_err(classify_remote_public_head_transport_error)?;
         build_remote_member_authority_proposal(
             command,
             identity,
@@ -892,6 +983,7 @@ fn classify_command_transport_error(
             code: "session_revoked".to_string(),
         },
         StationClientErrorKind::Overloaded
+        | StationClientErrorKind::Unavailable
         | StationClientErrorKind::Cancelled
         | StationClientErrorKind::StaleRoute
         | StationClientErrorKind::NoRoute => CommandSubmitFailure::Retryable {
@@ -907,6 +999,17 @@ fn classify_command_transport_error(
             }
         }
     }
+}
+
+fn classify_remote_public_head_transport_error(
+    error: crate::application::station_runtime::client::StationClientError,
+) -> CommandSubmitFailure {
+    // Authority preparation may lead the sender Home Station's follower.
+    // Reprepare the durable command instead of terminalizing the message.
+    if matches!(&error.kind, StationClientErrorKind::HttpStatus(403)) {
+        return CommandSubmitFailure::StaleAuthorityPlan { expired: false };
+    }
+    classify_command_transport_error(error)
 }
 
 impl StationDeviceTransport {
@@ -1070,6 +1173,25 @@ mod tests {
     }
 
     #[test]
+    fn acceptance_command_transport_fault_is_exact_and_one_shot() {
+        set_acceptance_command_transport_fault(Some("command-acceptance")).unwrap();
+
+        assert!(!consume_acceptance_command_transport_fault("command-other").unwrap());
+        assert!(consume_acceptance_command_transport_fault("command-acceptance").unwrap());
+        assert!(!consume_acceptance_command_transport_fault("command-acceptance").unwrap());
+
+        let observed = get_acceptance_command_transport_fault().unwrap();
+        assert_eq!(observed.armed_command_id, "");
+        assert_eq!(observed.failed_command_id, "command-acceptance");
+        assert_eq!(observed.failure_count, 1);
+
+        let snapshot = set_acceptance_command_transport_fault(None).unwrap();
+        assert_eq!(snapshot.armed_command_id, "");
+        assert_eq!(snapshot.failed_command_id, "command-acceptance");
+        assert_eq!(snapshot.failure_count, 1);
+    }
+
+    #[test]
     fn prepared_epoch_zero_group_genesis_uses_group_creation_route() {
         let command = prepared_group_genesis_command();
 
@@ -1230,6 +1352,20 @@ mod tests {
                 }
             );
         }
+    }
+
+    #[test]
+    fn follower_public_head_denial_requires_fresh_authority_plan() {
+        assert_eq!(
+            classify_remote_public_head_transport_error(
+                crate::application::station_runtime::client::StationClientError {
+                    kind: StationClientErrorKind::HttpStatus(403),
+                    message: "follower projection has not converged".to_string(),
+                    details: None,
+                },
+            ),
+            CommandSubmitFailure::StaleAuthorityPlan { expired: false }
+        );
     }
 
     #[test]

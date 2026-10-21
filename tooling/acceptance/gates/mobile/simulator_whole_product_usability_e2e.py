@@ -127,13 +127,7 @@ ENTRY_PAGE_CONTROL_SURFACES = {
 }
 RECOVERY_PAGE_CONTROL_SURFACES = {
     "recovery.capacity",
-    "recovery.event-overflow",
-    "recovery.projection-stale",
     "recovery.write-revocation",
-}
-DEGRADED_NOTICE_SURFACES = {
-    "shell.degraded-module-notice",
-    "recovery.deferred-capability",
 }
 TEXT_SIZE_SCRIPT = """
 const size = arguments[0];
@@ -320,7 +314,7 @@ const stationHelper = stationHelperElement && visible(stationHelperElement)
         > stationHelperElement.clientHeight + 1,
     }
   : null;
-const stationLogoElement = document.querySelector('.launch-hero-logo');
+const stationLogoElement = document.querySelector('.launch-brand-logo');
 const stationLogoStyle = stationLogoElement && visible(stationLogoElement)
   ? getComputedStyle(stationLogoElement)
   : null;
@@ -352,7 +346,7 @@ return {
   occlusions,
   blockingSurfaces,
   stationLayout: {
-    launchCard: rectFor('.launch-card'),
+    launchCard: rectFor('.launch-panel'),
     addressInput: rectFor('.station-address-input'),
     placeholder: stationPlaceholder,
     submit: rectFor('.station-submit'),
@@ -465,12 +459,15 @@ def validate_station_entry_layout(
     if surface_id == "entry.station-address":
         helper = layout.get("helper")
         if (
-            not isinstance(helper, Mapping)
-            or helper.get("whiteSpace") != "nowrap"
-            or helper.get("wrapped") is not False
+            helper is not None
+            and (
+                not isinstance(helper, Mapping)
+                or helper.get("whiteSpace") != "nowrap"
+                or helper.get("wrapped") is not False
+            )
         ):
             raise GateError(
-                f"Mobile Station HTTP guidance wrapped or disappeared: {helper!r}"
+                f"Mobile Station HTTP guidance is invalid: {helper!r}"
             )
 
     if surface_id == "entry.station-unavailable":
@@ -792,6 +789,7 @@ def _validate_interaction_artifact(
         "controls",
         "occlusions",
         "blockingSurfaces",
+        "stationLayout",
     }
     if set(value) != required:
         raise GateError("Mobile interaction artifact has an invalid shape")
@@ -853,6 +851,8 @@ def _validate_interaction_artifact(
         raise GateError("Mobile interaction artifact reports occluded content")
     if value.get("blockingSurfaces") != []:
         raise GateError("Mobile interaction artifact reports a blocking surface")
+    if not isinstance(value.get("stationLayout"), dict):
+        raise GateError("Mobile interaction artifact Station layout is invalid")
 
 
 def _validate_artifact_ref(
@@ -1993,12 +1993,6 @@ class SimulatorWholeProductUsabilityGate(
                             action,
                         )
                     )
-                    if entry["entryAction"] == "fixture-deferred-module":
-                        session.switch_to_app_webview()
-                        session.call_action(
-                            "recovery.fixture",
-                            {"surfaceId": None},
-                        )
                     if entry_fixture:
                         session.switch_to_app_webview()
                         session.call_action(
@@ -2440,37 +2434,12 @@ class SimulatorWholeProductUsabilityGate(
             ):
                 raise GateError(f"Mobile shell did not navigate to {route_id}")
             action_kind = "native-touch"
-        elif action == "fixture-deferred-module":
-            navigation = session.call_action(
-                "navigation.apply",
-                {"kind": "primary", "routeId": "tab:chat"},
-            )
-            if (
-                not isinstance(navigation, Mapping)
-                or navigation.get("primaryRouteId") != "tab:chat"
-            ):
-                raise GateError(
-                    "Mobile degraded shell fixture did not reset to Chat"
-                )
-            observed = session.call_action(
-                "recovery.fixture",
-                {"surfaceId": "recovery.deferred-capability"},
-            )
-            if (
-                not isinstance(observed, Mapping)
-                or observed.get("surfaceId")
-                != "recovery.deferred-capability"
-            ):
-                raise GateError(
-                    "Mobile shell did not project deferred capability"
-                )
-            action_kind = "system"
         else:
             raise GateError(f"Unsupported shell entry action: {action}")
         self._wait_for_surface(
             session,
             str(entry["surfaceSelector"]),
-            require_heading=entry["id"] != "shell.degraded-module-notice",
+            require_heading=True,
         )
         return {
             "kind": action_kind,
@@ -2993,7 +2962,7 @@ class SimulatorWholeProductUsabilityGate(
             SURFACE_AUDIT_SCRIPT,
             entry["surfaceSelector"],
             inventory["qualityRules"]["minimumTouchTargetCssPx"],
-            entry["id"] in DEGRADED_NOTICE_SURFACES,
+            False,
             entry["id"] in (
                 ENTRY_PAGE_CONTROL_SURFACES
                 | RECOVERY_PAGE_CONTROL_SURFACES

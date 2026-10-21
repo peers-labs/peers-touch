@@ -1,6 +1,7 @@
 package infrastructure
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"time"
@@ -15,8 +16,10 @@ import (
 type Repos struct {
 	Federation      domain.FederationRepository
 	LedgerEvent     domain.LedgerEventRepository
+	LedgerCommitter domain.LedgerEventCommitter
 	Membership      domain.MembershipRepository
 	ActorRole       domain.ActorRoleRepository
+	StationRole     domain.StationRoleRepository
 	SyncCursor      domain.SyncCursorRepository
 	ActorSigningKey domain.ActorSigningKeyRepository
 }
@@ -25,8 +28,10 @@ func NewRepos(db *gorm.DB) *Repos {
 	return &Repos{
 		Federation:      &federationRepo{db: db},
 		LedgerEvent:     &ledgerEventRepo{db: db},
+		LedgerCommitter: &ledgerEventCommitter{db: db},
 		Membership:      &membershipRepo{db: db},
 		ActorRole:       &actorRoleRepo{db: db},
+		StationRole:     &stationRoleRepo{db: db},
 		SyncCursor:      &syncCursorRepo{db: db},
 		ActorSigningKey: &actorSigningKeyRepo{db: db},
 	}
@@ -45,6 +50,7 @@ func MigrateSchema(db *gorm.DB) error {
 			&ledgerEventModel{},
 			&membershipModel{},
 			&actorRoleModel{},
+			&stationRoleAssignmentModel{},
 			&actorSigningKeyModel{},
 			&syncCursorModel{},
 		); err != nil {
@@ -97,8 +103,8 @@ func (federationModel) TableName() string { return "federation" }
 type ledgerEventModel struct {
 	ID                     int64  `gorm:"primaryKey;autoIncrement"`
 	EventID                string `gorm:"unique;type:varchar(30);not null"`
-	FederationID           string `gorm:"type:varchar(30);not null;index:idx_ledger_event_federation_seq"`
-	Seq                    int64  `gorm:"not null;index:idx_ledger_event_federation_seq"`
+	FederationID           string `gorm:"type:varchar(30);not null;uniqueIndex:uidx_ledger_event_federation_seq"`
+	Seq                    int64  `gorm:"not null;uniqueIndex:uidx_ledger_event_federation_seq"`
 	PrevHash               []byte `gorm:"type:bytea;not null"`
 	EventHash              []byte `gorm:"type:bytea;not null"`
 	EventType              int32  `gorm:"type:smallint;not null"`
@@ -143,6 +149,19 @@ type actorRoleModel struct {
 }
 
 func (actorRoleModel) TableName() string { return "federation_actor_role" }
+
+type stationRoleAssignmentModel struct {
+	ID            int64      `gorm:"primaryKey;autoIncrement"`
+	ActorPTID     string     `gorm:"column:actor_ptid;type:varchar(255);not null;uniqueIndex:idx_station_role_actor_role"`
+	Role          string     `gorm:"type:varchar(30);not null;uniqueIndex:idx_station_role_actor_role"`
+	GrantedByPTID string     `gorm:"column:granted_by_actor_ptid;type:varchar(255);not null"`
+	CreatedAt     time.Time  `gorm:"not null;autoCreateTime"`
+	RevokedAt     *time.Time `gorm:""`
+}
+
+func (stationRoleAssignmentModel) TableName() string {
+	return "station_role_assignment"
+}
 
 type actorSigningKeyModel struct {
 	ID        int64      `gorm:"primaryKey;autoIncrement"`
@@ -269,7 +288,11 @@ func toFederationRecord(m *federationModel) *domain.FederationRecord {
 type ledgerEventRepo struct{ db *gorm.DB }
 
 func (r *ledgerEventRepo) Append(ctx context.Context, event *pb.LedgerEvent) error {
-	m := &ledgerEventModel{
+	return r.db.WithContext(ctx).Create(ledgerEventModelFrom(event)).Error
+}
+
+func ledgerEventModelFrom(event *pb.LedgerEvent) *ledgerEventModel {
+	return &ledgerEventModel{
 		EventID:                event.EventId,
 		FederationID:           event.FederationId,
 		Seq:                    int64(event.Seq),
@@ -287,7 +310,6 @@ func (r *ledgerEventRepo) Append(ctx context.Context, event *pb.LedgerEvent) err
 		SequencerSignature:     event.SequencerSignature,
 		CreatedAtUnixMs:        event.CreatedAtUnixMs,
 	}
-	return r.db.WithContext(ctx).Create(m).Error
 }
 
 func (r *ledgerEventRepo) GetBySeq(ctx context.Context, federationID string, seq uint64) (*pb.LedgerEvent, error) {
@@ -352,6 +374,106 @@ func (r *ledgerEventRepo) GetHead(ctx context.Context, federationID string) (*pb
 	return toLedgerEventPb(&m), nil
 }
 
+type ledgerEventCommitter struct{ db *gorm.DB }
+
+func (c *ledgerEventCommitter) Commit(
+	ctx context.Context,
+	event *pb.LedgerEvent,
+	mutation domain.LedgerProjectionMutation,
+) error {
+	if event == nil {
+		return fmt.Errorf("ledger event is required")
+	}
+	return c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var federation federationModel
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("federation_id = ?", event.FederationId).
+			First(&federation).Error; err != nil {
+			return err
+		}
+		var committed ledgerEventModel
+		err := tx.Where("federation_id = ? AND seq = ?", event.FederationId, int64(event.Seq)).
+			First(&committed).Error
+		if err == nil {
+			if bytes.Equal(committed.EventHash, event.EventHash) {
+				return nil
+			}
+			return domain.ErrForkDetected
+		}
+		if err != gorm.ErrRecordNotFound {
+			return err
+		}
+		expectedHeadSeq := int64(0)
+		if event.Seq > 0 {
+			expectedHeadSeq = int64(event.Seq - 1)
+		}
+		if federation.Status != "active" ||
+			federation.HeadSeq != expectedHeadSeq ||
+			!bytes.Equal(federation.HeadHash, event.PrevHash) {
+			return domain.ErrForkDetected
+		}
+		if err := tx.Create(ledgerEventModelFrom(event)).Error; err != nil {
+			return err
+		}
+		head := tx.Model(&federationModel{}).
+			Where(
+				"federation_id = ? AND status = ? AND head_seq = ? AND head_hash = ?",
+				event.FederationId,
+				"active",
+				expectedHeadSeq,
+				event.PrevHash,
+			).
+			Updates(map[string]interface{}{
+				"head_hash": event.EventHash,
+				"head_seq":  int64(event.Seq),
+			})
+		if head.Error != nil {
+			return head.Error
+		}
+		if head.RowsAffected == 0 {
+			return domain.ErrForkDetected
+		}
+		if mutation.Membership != nil {
+			if mutation.Membership.ApprovedByEventID == "" {
+				mutation.Membership.ApprovedByEventID = event.EventId
+			}
+			if err := (&membershipRepo{db: tx}).Upsert(
+				ctx,
+				mutation.Membership,
+			); err != nil {
+				return err
+			}
+		}
+		if mutation.MembershipStationPeerID != "" {
+			result := tx.Model(&membershipModel{}).
+				Where(
+					"federation_id = ? AND station_peer_id = ?",
+					event.FederationId,
+					mutation.MembershipStationPeerID,
+				).
+				Update("status", mutation.MembershipStatus)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				return gorm.ErrRecordNotFound
+			}
+		}
+		if mutation.FederationStatus != "" {
+			result := tx.Model(&federationModel{}).
+				Where("federation_id = ?", event.FederationId).
+				Update("status", mutation.FederationStatus)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				return gorm.ErrRecordNotFound
+			}
+		}
+		return nil
+	})
+}
+
 func toLedgerEventPb(m *ledgerEventModel) *pb.LedgerEvent {
 	return &pb.LedgerEvent{
 		EventId:                m.EventID,
@@ -411,6 +533,21 @@ func (r *membershipRepo) ListByFederation(ctx context.Context, federationID stri
 	var models []membershipModel
 	err := r.db.WithContext(ctx).
 		Where("federation_id = ?", federationID).
+		Find(&models).Error
+	if err != nil {
+		return nil, err
+	}
+	result := make([]*domain.MembershipRecord, len(models))
+	for i := range models {
+		result[i] = toMembershipRecord(&models[i])
+	}
+	return result, nil
+}
+
+func (r *membershipRepo) ListByStation(ctx context.Context, stationPeerID string) ([]*domain.MembershipRecord, error) {
+	var models []membershipModel
+	err := r.db.WithContext(ctx).
+		Where("station_peer_id = ?", stationPeerID).
 		Find(&models).Error
 	if err != nil {
 		return nil, err
@@ -510,6 +647,67 @@ func (r *actorRoleRepo) Revoke(ctx context.Context, federationID, actorPTID stri
 		Update("revoked_at", &now).Error
 }
 
+// ═══ StationRoleRepository ═══════════════════════════════════════════════
+
+type stationRoleRepo struct{ db *gorm.DB }
+
+func (r *stationRoleRepo) EnsureInitialOwner(ctx context.Context) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var count int64
+		if err := tx.Model(&stationRoleAssignmentModel{}).
+			Where("role = ? AND revoked_at IS NULL", domain.StationRoleOwner).
+			Count(&count).Error; err != nil {
+			return err
+		}
+		if count > 0 {
+			return nil
+		}
+		var actor struct {
+			PTID string `gorm:"column:ptid"`
+		}
+		if err := tx.Table("touch_actor").
+			Select("ptid").
+			Where("origin = ?", "local").
+			Order("created_at ASC, id ASC").
+			First(&actor).Error; err != nil {
+			return fmt.Errorf("resolve initial Station owner: %w", err)
+		}
+		if actor.PTID == "" {
+			return fmt.Errorf("resolve initial Station owner: actor PTID is empty")
+		}
+		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(
+			&stationRoleAssignmentModel{
+				ActorPTID:     actor.PTID,
+				Role:          domain.StationRoleOwner,
+				GrantedByPTID: actor.PTID,
+			},
+		).Error
+	})
+}
+
+func (r *stationRoleRepo) HasAnyRole(
+	ctx context.Context,
+	actorPTID string,
+	roles ...string,
+) (bool, error) {
+	if actorPTID == "" || len(roles) == 0 {
+		return false, nil
+	}
+	if err := r.EnsureInitialOwner(ctx); err != nil {
+		return false, err
+	}
+	var count int64
+	err := r.db.WithContext(ctx).
+		Model(&stationRoleAssignmentModel{}).
+		Where(
+			"actor_ptid = ? AND role IN ? AND revoked_at IS NULL",
+			actorPTID,
+			roles,
+		).
+		Count(&count).Error
+	return count > 0, err
+}
+
 // ═══ ActorSigningKeyRepository ═══════════════════════════════════════════
 
 type actorSigningKeyRepo struct{ db *gorm.DB }
@@ -522,7 +720,7 @@ func (r *actorSigningKeyRepo) Store(ctx context.Context, record *domain.ActorSig
 	}
 	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "actor_ptid"}},
-		DoUpdates: clause.AssignmentColumns([]string{"public_key", "encrypted_private_key"}),
+		DoNothing: true,
 	}).Create(m).Error
 }
 

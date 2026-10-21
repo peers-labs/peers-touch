@@ -1,12 +1,7 @@
-import {
-  useMemo,
-  useState,
-  type ReactNode,
-} from 'react';
+import { useState, type ReactNode } from 'react';
 import { Typography } from 'antd';
 import {
   Globe2,
-  Heart,
   MessageCircle,
   MoreHorizontal,
   Share2,
@@ -15,7 +10,11 @@ import {
 } from 'lucide-react';
 
 import { useMobileI18n } from '../../app/mobileI18n';
-import { SocialActorAvatar } from '../../features/social/SocialActorAvatar';
+import { ReactionChip } from '../../components/reactions/ReactionChip';
+import { ReactionPicker } from '../../components/reactions/ReactionPicker';
+import { MOBILE_REACTION_CHOICES } from '../../components/reactions/reactionChoices';
+import { MobileAvatar } from '../../components/MobileAvatar';
+import { useSocialActorIdentity } from '../../features/social/useSocialActorIdentity';
 import type {
   MomentPolicyState,
   ReactionMutationState,
@@ -23,7 +22,6 @@ import type {
 import {
   ActivitySource_Kind,
   Audience_Kind,
-  ReactionKind,
   RelationshipReason_Kind,
   type FeedObjectExplanation,
   type Post,
@@ -32,8 +30,6 @@ import { MomentActionsSheet } from './MomentActionsSheet';
 import { MomentContent, type OpenMomentMedia } from './MomentContent';
 
 const { Text } = Typography;
-const PRIMARY_REACTION_KIND = ReactionKind.REACTION_LOVE;
-const PRIMARY_REACTION_EMOJI = '\u{2764}\u{FE0F}';
 
 function formatRelativeTime(
   timestampMs: number,
@@ -126,6 +122,8 @@ interface MomentFeedItemProps {
   readonly reactionMutation?: ReactionMutationState;
   readonly explanation?: FeedObjectExplanation;
   readonly policyState?: MomentPolicyState;
+  readonly reactionPickerOpen: boolean;
+  readonly onReactionPickerOpenChange: (open: boolean) => void;
 }
 
 export function MomentFeedItem({
@@ -140,6 +138,8 @@ export function MomentFeedItem({
   reactionMutation,
   explanation,
   policyState = 'visible',
+  reactionPickerOpen,
+  onReactionPickerOpenChange,
 }: MomentFeedItemProps) {
   const { t } = useMobileI18n();
   const [showActions, setShowActions] = useState(false);
@@ -147,11 +147,13 @@ export function MomentFeedItem({
     ? Number(post.createdAt.seconds) * 1000
     : 0;
   const timeLabel = createdAtMs > 0 ? formatRelativeTime(createdAtMs, t) : '';
-  const authorName =
-    post.author?.displayName ||
-    post.author?.username ||
-    post.authorPtid ||
-    t('mobile.moments.time.justNow');
+  const authorIdentity = useSocialActorIdentity({
+    actorPtid: post.authorPtid || post.author?.id || '',
+    avatar: post.author?.avatarUrl,
+    displayName: post.author?.displayName,
+    username: post.author?.username,
+  });
+  const authorName = authorIdentity.displayName || t('mobile.contacts.unknownUser');
   const source = explanation?.source;
   const sourceLabel =
     source?.stationDomain || post.author?.homeStationDomain || '';
@@ -173,12 +175,18 @@ export function MomentFeedItem({
     .filter(Boolean)
     .join(' · ');
 
-  const heartReaction = useMemo(
-    () => post.reactions.find(({ kind }) => kind === PRIMARY_REACTION_KIND),
-    [post.reactions],
+  const visibleReactions = MOBILE_REACTION_CHOICES.flatMap((choice) => {
+    const summary = post.reactions.find(({ kind }) => kind === choice.kind);
+    return summary && summary.count > 0n ? [{ ...choice, summary }] : [];
+  });
+  const selectedEmojis = new Set(
+    MOBILE_REACTION_CHOICES.filter((choice) =>
+      post.reactions.some(
+        (summary) =>
+          summary.kind === choice.kind && summary.reactedByViewer,
+      ),
+    ).map((choice) => choice.emoji),
   );
-  const heartCount = Number(heartReaction?.count ?? 0);
-  const viewerReacted = heartReaction?.reactedByViewer ?? false;
   const reactionBusy =
     reactionMutation?.status === 'pending' ||
     reactionMutation?.status === 'retrying' ||
@@ -241,12 +249,11 @@ export function MomentFeedItem({
           }
           disabled={!onOpenAuthor}
         >
-          <SocialActorAvatar
-            actorPtid={post.authorPtid || post.author?.id || ''}
-            avatar={post.author?.avatarUrl}
-            displayName={authorName}
+          <MobileAvatar
+            identityKey={authorIdentity.actorPtid}
+            src={authorIdentity.avatar}
+            name={authorName}
             size={42}
-            username={post.author?.username}
           />
           <span>
             <strong>{authorName}</strong>
@@ -258,7 +265,10 @@ export function MomentFeedItem({
             type="button"
             className="moments-more"
             aria-label={t('mobile.moments.actions')}
-            onClick={() => setShowActions(true)}
+            onClick={() => {
+              onReactionPickerOpenChange(false);
+              setShowActions(true);
+            }}
           >
             <MoreHorizontal size={18} />
           </button>
@@ -272,49 +282,48 @@ export function MomentFeedItem({
         <span>{trustLabel}</span>
       </div>
 
+      {visibleReactions.length > 0 ? (
+        <div className="moments-reaction-summary">
+          {visibleReactions.map(({ kind, emoji, summary }) => (
+            <ReactionChip
+              key={kind}
+              emoji={emoji}
+              count={Number(summary.count)}
+              selected={summary.reactedByViewer}
+              label={t('mobile.chat.reactWith', { reaction: emoji })}
+              data-reaction-kind={kind}
+              disabled={reactionBusy}
+              aria-busy={reactionBusy}
+              onClick={() => onReact(post.id, kind)}
+            />
+          ))}
+        </div>
+      ) : null}
+
       <div
         className="moments-actions"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="moments-reaction-summary" aria-hidden={heartCount === 0}>
-          {heartCount > 0 ? (
-            <span
-              className={viewerReacted
-                ? 'moments-reaction-tag mine'
-                : 'moments-reaction-tag'}
-            >
-              {PRIMARY_REACTION_EMOJI} {heartCount}
-            </span>
-          ) : null}
-        </div>
         <div className="moments-action-group">
-          <button
-            type="button"
-            className={[
-              'moments-action',
-              viewerReacted ? 'reacted' : '',
-              reactionMutation?.status ?? '',
-            ]
-              .filter(Boolean)
-              .join(' ')}
+          <ReactionChip
             data-acceptance-id="social-reaction-open"
-            data-reaction-kind={PRIMARY_REACTION_KIND}
-            onClick={() => onReact(post.id, PRIMARY_REACTION_KIND)}
+            onClick={() =>
+              onReactionPickerOpenChange(!reactionPickerOpen)
+            }
             disabled={reactionBusy}
             aria-busy={reactionBusy}
-            aria-label={t('mobile.moments.reaction.love')}
-          >
-            <Heart
-              size={18}
-              fill={viewerReacted ? 'currentColor' : 'none'}
-            />
-          </button>
+            aria-expanded={reactionPickerOpen}
+            label={t('mobile.chat.addReaction')}
+          />
           <button
             type="button"
             className="moments-action"
             data-acceptance-id="social-thread-open"
             data-post-id={post.id}
-            onClick={() => onOpenComments(post.id)}
+            onClick={() => {
+              onReactionPickerOpenChange(false);
+              onOpenComments(post.id);
+            }}
             aria-label={t('mobile.moments.comment.title')}
           >
             <MessageCircle size={18} />
@@ -333,6 +342,19 @@ export function MomentFeedItem({
           </button>
         </div>
       </div>
+
+      {reactionPickerOpen ? (
+        <ReactionPicker
+          selectedEmojis={selectedEmojis}
+          disabled={reactionBusy}
+          onToggle={(emoji) => {
+            const choice = MOBILE_REACTION_CHOICES.find(
+              (item) => item.emoji === emoji,
+            );
+            if (choice) onReact(post.id, choice.kind);
+          }}
+        />
+      ) : null}
 
       {reactionMutation ? (
         <Text

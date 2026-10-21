@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -81,7 +82,10 @@ func (s *subServer) handleResolveFederationActor(
 
 	resolveCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	resolved, err := resolverpkg.New(resolverpkg.Config{}).ResolveByHandleInFederation(
+	resolved, err := resolverpkg.New(resolverpkg.Config{
+		HTTPClient:         &http.Client{Timeout: 15 * time.Second},
+		StationURLResolver: s,
+	}).ResolveByHandleInFederation(
 		resolveCtx,
 		req.FederationId,
 		req.Handle,
@@ -171,10 +175,16 @@ func (s *subServer) handleCatalogSearch(ctx context.Context, req *pb.FederationC
 		return nil, fmt.Errorf("federation lookup failed: %w", err)
 	}
 	isMember := false
+	memberStationNames := make(map[string]string, len(members.Stations))
+	memberStationIDs := make([]string, 0, len(members.Stations))
 	for _, m := range members.Stations {
+		if m == nil || m.Status != "active" {
+			continue
+		}
+		memberStationIDs = append(memberStationIDs, m.StationPeerId)
+		memberStationNames[m.StationPeerId] = m.StationName
 		if m.StationPeerId == stationPeerID {
 			isMember = true
-			break
 		}
 	}
 	if !isMember {
@@ -199,8 +209,23 @@ func (s *subServer) handleCatalogSearch(ctx context.Context, req *pb.FederationC
 
 	var actors []touchdb.Actor
 	dbQuery := rds.Where(
-		"(preferred_username LIKE ? OR name LIKE ? OR federated_handle LIKE ?) AND origin = ? AND visibility >= 3",
-		searchPattern, searchPattern, searchPattern, "local",
+		`(preferred_username LIKE ? OR name LIKE ? OR federated_handle LIKE ?)
+AND visibility >= 3
+AND (
+  origin = ?
+  OR (
+    origin = ?
+    AND home_station_peer_id IN ?
+    AND cached_until_unix_ms > ?
+  )
+)`,
+		searchPattern,
+		searchPattern,
+		searchPattern,
+		touchactor.OriginLocal,
+		touchactor.OriginRemoteCached,
+		memberStationIDs,
+		time.Now().UnixMilli(),
 	).Limit(pageSize + 1)
 
 	if err := dbQuery.Find(&actors).Error; err != nil {
@@ -215,6 +240,15 @@ func (s *subServer) handleCatalogSearch(ctx context.Context, req *pb.FederationC
 
 	entries := make([]*pb.FederationCatalogEntry, 0, len(actors))
 	for _, a := range actors {
+		homeStationPeerID := a.HomeStationPeerID
+		homeStationName := memberStationNames[homeStationPeerID]
+		if a.Origin == touchactor.OriginLocal {
+			homeStationPeerID = stationPeerID
+			homeStationName = stationName
+		}
+		if homeStationName == "" {
+			homeStationName = a.HomeStationDomain
+		}
 		handle := a.FederatedHandle
 		if handle == "" {
 			handle = fmt.Sprintf("@%s", a.PreferredUsername)
@@ -225,8 +259,8 @@ func (s *subServer) handleCatalogSearch(ctx context.Context, req *pb.FederationC
 			FederatedHandle:   handle,
 			DisplayName:       a.Name,
 			AvatarUrl:         a.Icon,
-			HomeStationPeerId: stationPeerID,
-			HomeStationName:   stationName,
+			HomeStationPeerId: homeStationPeerID,
+			HomeStationName:   homeStationName,
 			Visibility:        "indexed",
 		})
 	}

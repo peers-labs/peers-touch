@@ -75,7 +75,6 @@ import {
   reconcileReliableSocialRelationships,
   reliabilityCommandRecoveryActions,
   registerReliabilityReconciliationWake,
-  rebindReliabilityGeneration,
   suspendReliabilityRuntime,
   type CommandProjection,
 } from './commandRuntime';
@@ -547,22 +546,16 @@ function createCommandRuntimeDescriptor(): MobileRuntimeDescriptor {
 
     async resume(context): Promise<void> {
       runtimeContext = context;
+      await transition;
       suspended = false;
       const session = admittedRuntimeSession(useAuthStore.getState());
-      await enqueueSession(session, async (activeSession, isCurrent) => {
-        if (!activeSession) return;
-        const generation = await fetchLifecycleGeneration();
-        if (!isCurrent()) return;
-        await rebindReliabilityGeneration(
-          activeSession.stationPeerId, activeSession.actorRef.ptid, generation,
-        );
-        if (!isCurrent()) return;
-        await reconcileActive(activeSession, generation, isCurrent);
-        if (!isCurrent()) return;
-        await openReliabilityAdmission(
-          activeSession.stationPeerId, activeSession.actorRef.ptid, generation,
-        );
-      });
+      if (!session) {
+        clearRetryTimer();
+        const current = await readReliabilityRuntimeStatus();
+        if (current.active) await closeReliabilityScope('retain');
+        return;
+      }
+      await enqueueSession(session);
     },
 
     async teardown(context): Promise<RuntimeOperationResult> {

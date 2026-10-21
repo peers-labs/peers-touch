@@ -3,9 +3,10 @@
 
 from __future__ import annotations
 
+import argparse
 import sys
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 from tooling.acceptance.core import (
@@ -31,12 +32,17 @@ PEER_IOS_CLIENT = "sim-ios-peer"
 PRIMARY_BINDING = "station-primary"
 SECONDARY_BINDING = "station-secondary"
 SWITCH_COUNT = 10
+MIN_ROUTE_EXPIRY_WAIT_SECONDS = 310
+MAX_ROUTE_EXPIRY_WAIT_SECONDS = 360
 PROVEN_SCOPE = (
     "AS-04 simulator valid-session restore and same-account revocation",
     (
         "AS-10 simulator Station switching, generation fencing, "
         "old-scope absence, and logout"
     ),
+)
+ROUTE_EXPIRY_PROVEN_SCOPE = (
+    "expired-route same-session resume and secondary Station selection"
 )
 UNPROVEN_SCOPE = (
     "Android runtime behavior",
@@ -55,11 +61,23 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
         self,
         *,
         binding_factory: Callable[[], MobileSimulatorRuntimeBinding] | None = None,
+        route_expiry_wait_seconds: int = 0,
+        monotonic: Callable[[], float] | None = None,
+        sleep: Callable[[float], None] | None = None,
     ) -> None:
         super().__init__()
+        if route_expiry_wait_seconds != 0 and not (
+            MIN_ROUTE_EXPIRY_WAIT_SECONDS
+            <= route_expiry_wait_seconds
+            <= MAX_ROUTE_EXPIRY_WAIT_SECONDS
+        ):
+            raise GateError("route expiry observation must wait 310-360 seconds")
         self.binding_factory = (
             binding_factory or MobileSimulatorRuntimeBinding.from_environment
         )
+        self.route_expiry_wait_seconds = route_expiry_wait_seconds
+        self._monotonic = monotonic or time.monotonic
+        self._sleep = sleep or time.sleep
         self.events: list[dict[str, Any]] = []
         self.cleanup: list[dict[str, Any]] = []
         self._activated_clients: list[str] = []
@@ -82,8 +100,9 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
                 binding = self.binding_factory()
                 journey_result = self._run_journey(binding)
                 status = "PASS"
-                completion_status = "DONE"
-                proof_status = "PROVEN"
+                if self.route_expiry_wait_seconds:
+                    completion_status = "DONE"
+                    proof_status = "PROVEN"
                 exit_code = 0
                 result = self._result_base(status)
                 result.update(journey_result)
@@ -184,18 +203,38 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
                 ios_primary.scope["activeStationPeerId"]
             ),
         )
-        ios_authenticated = self._wait_for_scope(
+        ios_authenticated = self._wait_for_authenticated_scope(
             binding,
             IOS_CLIENT,
-            lambda scope: scope["activeActorPtid"] == alice_ptid,
-        )
-        self._assert_authenticated_scope(
-            ios_authenticated,
             expected_station_peer_id=str(
                 ios_primary.scope["activeStationPeerId"]
             ),
             expected_actor_ptid=alice_ptid,
         )
+
+        expiry_wait = self.route_expiry_wait_seconds
+        if expiry_wait:
+            binding.call_action(IOS_CLIENT, "lifecycle.suspend")
+            deadline = self._monotonic() + expiry_wait
+            while True:
+                remaining = deadline - self._monotonic()
+                if remaining <= 0:
+                    break
+                self._sleep(min(0.25, remaining))
+            binding.call_action(IOS_CLIENT, "lifecycle.resume")
+            renewed_scope = self._wait_for_authenticated_scope(
+                binding,
+                IOS_CLIENT,
+                expected_station_peer_id=str(
+                    ios_primary.scope["activeStationPeerId"]
+                ),
+                expected_actor_ptid=alice_ptid,
+            )
+            self._record(
+                "expired-route-resumed-with-same-session",
+                IOS_CLIENT, generation=int(renewed_scope["generation"]),
+                waitSeconds=expiry_wait,
+            )
 
         restart_result = binding.call_action(
             IOS_CLIENT,
@@ -203,21 +242,14 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
         )
         if restart_result != {"requested": True, "scope": "webview"}:
             raise GateError("iOS lifecycle.restart response is invalid")
-        restored_scope = self._wait_for_scope(
+        restored_scope = self._wait_for_authenticated_scope(
             binding,
             IOS_CLIENT,
-            lambda scope: (
-                scope["activeActorPtid"] == alice_ptid
-                and int(scope["generation"])
-                > int(ios_authenticated["generation"])
-            ),
-        )
-        self._assert_authenticated_scope(
-            restored_scope,
             expected_station_peer_id=str(
                 ios_primary.scope["activeStationPeerId"]
             ),
             expected_actor_ptid=alice_ptid,
+            minimum_generation=int(ios_authenticated["generation"]),
         )
         self._record(
             "valid-session-restored",
@@ -311,13 +343,17 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
                 ios_secondary.scope["activeStationPeerId"]
             ),
         )
-        current_scope = self._wait_for_scope(
+        if expiry_wait:
+            self._record(
+                "expired-secondary-route-selected",
+                IOS_CLIENT,
+                bindingRole=SECONDARY_BINDING,
+                generation=int(ios_secondary.scope["generation"]),
+                waitSeconds=expiry_wait,
+            )
+        current_scope = self._wait_for_authenticated_scope(
             binding,
             IOS_CLIENT,
-            lambda scope: scope["activeActorPtid"] == secondary_alice_ptid,
-        )
-        self._assert_authenticated_scope(
-            current_scope,
             expected_station_peer_id=str(
                 ios_secondary.scope["activeStationPeerId"]
             ),
@@ -368,18 +404,9 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
                     else secondary_alice_ptid
                 ),
             )
-            current_scope = self._wait_for_scope(
+            current_scope = self._wait_for_authenticated_scope(
                 binding,
                 IOS_CLIENT,
-                lambda scope: scope["activeActorPtid"]
-                == (
-                    alice_ptid
-                    if binding_role == PRIMARY_BINDING
-                    else secondary_alice_ptid
-                ),
-            )
-            self._assert_authenticated_scope(
-                current_scope,
                 expected_station_peer_id=station_peer_id,
                 expected_actor_ptid=(
                     alice_ptid
@@ -452,6 +479,15 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
             )
 
         result = {
+            "routeExpiry": (
+                {
+                    "waitSeconds": expiry_wait,
+                    "sameSessionResumed": True,
+                    "secondaryBindingSelected": True,
+                }
+                if expiry_wait
+                else None
+            ),
             "restored": {
                 "clientId": IOS_CLIENT,
                 "generationAdvanced": True,
@@ -583,12 +619,38 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
             raise GateError(
                 f"{client_id} login did not preserve Alice identity"
             )
+        self._wait_for_runtime_readiness(binding, client_id)
         self._record(
             "authenticated",
             client_id,
             actorIdentityMatched=True,
         )
         return actor_ptid
+
+    @staticmethod
+    def _wait_for_runtime_readiness(
+        binding: MobileSimulatorRuntimeBinding,
+        client_id: str,
+    ) -> None:
+        readiness = _mapping(
+            binding.call_action(
+                client_id,
+                "lifecycle.waitReady",
+                {"includeDiagnostics": True},
+            ),
+            f"{client_id} lifecycle readiness",
+        )
+        runtimes = readiness.get("runtimes")
+        if (
+            readiness.get("phase") != "ACTIVE"
+            or not isinstance(runtimes, list)
+            or not all(
+                isinstance(runtime, Mapping)
+                and runtime.get("status") == "ready"
+                for runtime in runtimes
+            )
+        ):
+            raise GateError(f"{client_id} runtime graph is not ready")
 
     def _wait_for_scope(
         self,
@@ -618,6 +680,37 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
             f"launchState={latest.get('launchState') if latest else None!r}"
         )
 
+    def _wait_for_authenticated_scope(
+        self,
+        binding: MobileSimulatorRuntimeBinding,
+        client_id: str,
+        *,
+        expected_station_peer_id: str,
+        expected_actor_ptid: str,
+        minimum_generation: int | None = None,
+    ) -> dict[str, Any]:
+        scope = self._wait_for_scope(
+            binding,
+            client_id,
+            lambda value: (
+                self._scope_is_authenticated(
+                    value,
+                    expected_station_peer_id=expected_station_peer_id,
+                    expected_actor_ptid=expected_actor_ptid,
+                )
+                and (
+                    minimum_generation is None
+                    or int(value["generation"]) > minimum_generation
+                )
+            ),
+        )
+        self._assert_authenticated_scope(
+            scope,
+            expected_station_peer_id=expected_station_peer_id,
+            expected_actor_ptid=expected_actor_ptid,
+        )
+        return scope
+
     @staticmethod
     def _assert_authenticated_scope(
         scope: Mapping[str, Any],
@@ -625,16 +718,29 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
         expected_station_peer_id: str,
         expected_actor_ptid: str,
     ) -> None:
-        if (
-            scope.get("launchState") != "shell"
-            or scope.get("activeStationPeerId") != expected_station_peer_id
-            or scope.get("runtimeStationPeerId")
-            != expected_station_peer_id
-            or scope.get("activeActorPtid") != expected_actor_ptid
+        if not SimulatorStationLifecycleGate._scope_is_authenticated(
+            scope,
+            expected_station_peer_id=expected_station_peer_id,
+            expected_actor_ptid=expected_actor_ptid,
         ):
             raise GateError(
                 "Mobile authenticated lifecycle scope is inconsistent"
             )
+
+    @staticmethod
+    def _scope_is_authenticated(
+        scope: Mapping[str, Any],
+        *,
+        expected_station_peer_id: str,
+        expected_actor_ptid: str,
+    ) -> bool:
+        return (
+            scope.get("launchState") == "shell"
+            and scope.get("activeStationPeerId") == expected_station_peer_id
+            and scope.get("runtimeStationPeerId")
+            == expected_station_peer_id
+            and scope.get("activeActorPtid") == expected_actor_ptid
+        )
 
     @classmethod
     def _assert_cleared_scope(
@@ -735,6 +841,12 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
         return "; ".join(failures) if failures else None
 
     def _result_base(self, status: str) -> dict[str, Any]:
+        observed_scope = list(PROVEN_SCOPE)
+        unproven_scope = list(UNPROVEN_SCOPE)
+        if self.route_expiry_wait_seconds:
+            observed_scope.append(ROUTE_EXPIRY_PROVEN_SCOPE)
+        else:
+            unproven_scope.append(ROUTE_EXPIRY_PROVEN_SCOPE)
         return {
             "artifactKind": "acceptance-gate-evidence-report",
             "gateId": self.gate_id,
@@ -747,13 +859,12 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
             "phase": "W3 Station Lifecycle",
             "bom": ["W3", "W6D", "W9-C"],
             "spec": ["AS-04", "AS-10", "MS-AG02", "MS-AG05"],
-            "observedScope": (
-                list(PROVEN_SCOPE) if status == "PASS" else []
-            ),
-            "unprovenScope": list(UNPROVEN_SCOPE),
+            "observedScope": observed_scope if status == "PASS" else [],
+            "unprovenScope": unproven_scope,
             "physicalDeviceClaimed": False,
             "stationMocksUsed": False,
             "switchCount": SWITCH_COUNT,
+            "routeExpiryWaitSeconds": self.route_expiry_wait_seconds,
             "sampleEmissionAllowed": status == "PASS",
         }
 
@@ -779,8 +890,39 @@ def _mapping(value: object, label: str) -> dict[str, Any]:
     return dict(value)
 
 
-def main() -> int:
-    return SimulatorStationLifecycleGate().execute()
+def _parse_route_expiry_wait_seconds(value: str) -> int:
+    try:
+        wait_seconds = int(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(
+            "route expiry wait must be an integer"
+        ) from error
+    if wait_seconds == 0 or (
+        MIN_ROUTE_EXPIRY_WAIT_SECONDS
+        <= wait_seconds
+        <= MAX_ROUTE_EXPIRY_WAIT_SECONDS
+    ):
+        return wait_seconds
+    raise argparse.ArgumentTypeError(
+        "route expiry wait must be 0 or 310-360 seconds"
+    )
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--route-expiry-wait-seconds",
+        type=_parse_route_expiry_wait_seconds,
+        default=0,
+        help=(
+            "wait 310-360 seconds before resume and secondary Station "
+            "selection; 0 skips the expiry observation"
+        ),
+    )
+    args = parser.parse_args(argv)
+    return SimulatorStationLifecycleGate(
+        route_expiry_wait_seconds=args.route_expiry_wait_seconds,
+    ).execute()
 
 
 if __name__ == "__main__":

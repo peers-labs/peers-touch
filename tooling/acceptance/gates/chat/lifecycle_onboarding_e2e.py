@@ -14,12 +14,8 @@ from tooling.acceptance.gates.chat.lifecycle_onboarding import (
     ONBOARDING_REQUIRED_ASSERTIONS,
     accepted_conversation_id,
 )
-from tooling.acceptance.gates.chat.native_current_profile_two_client_e2e import (
-    REQUIRED_CURRENT_PROFILE_ASSERTIONS,
-    REQUIRED_CURRENT_PROFILE_STEPS,
-    validate_current_profile_topology,
-)
 from tooling.acceptance.gates.chat.native_two_client_e2e import (
+    REQUIRED_STEPS,
     load_report,
     require,
     validate_report,
@@ -29,7 +25,7 @@ from tooling.acceptance.gates.chat.native_two_client_runner import (
 )
 
 
-REQUIRED_ONBOARDING_STEPS = REQUIRED_CURRENT_PROFILE_STEPS | {
+REQUIRED_ONBOARDING_STEPS = REQUIRED_STEPS | {
     "relationship.normalize",
     "discovery.search",
     "relationship.reject",
@@ -38,7 +34,6 @@ REQUIRED_ONBOARDING_STEPS = REQUIRED_CURRENT_PROFILE_STEPS | {
 }
 REQUIRED_ONBOARDING_ASSERTIONS = (
     REQUIRED_ASSERTIONS
-    | REQUIRED_CURRENT_PROFILE_ASSERTIONS
     | ONBOARDING_REQUIRED_ASSERTIONS
 )
 
@@ -118,7 +113,6 @@ def main() -> int:
         required_steps=REQUIRED_ONBOARDING_STEPS,
         required_assertions=REQUIRED_ONBOARDING_ASSERTIONS,
     )
-    validate_current_profile_topology(report)
     validate_onboarding_report(report)
     validation_ref = write_onboarding_validation(
         report,

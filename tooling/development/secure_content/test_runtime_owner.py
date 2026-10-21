@@ -95,8 +95,6 @@ from tooling.development.secure_content.runtime_owner import (
     _refresh_and_wait_for_moments_snapshot,
     _wait_for_accepted_friendship_projection,
     _wait_for_federated_actor_resolution,
-    _wait_for_federated_locator,
-    _wait_for_federated_profile,
     _wait_for_private_moment_state,
     _wait_for_private_moment_states,
     _parse_args,
@@ -123,6 +121,7 @@ from tooling.development.secure_content.runtime_owner import (
     _start_mobile_client,
     _stop_client_or_raise,
     _storage_identity,
+    _start_authenticated_client,
     _validate_fixture,
     _wait_for_mls_readiness,
     _verify_live_canonical_private_schema_attestation,
@@ -461,7 +460,7 @@ class RuntimeOwnerTest(unittest.TestCase):
                 (
                     "cross-station-social-alice",
                     "alice",
-                    "four",
+                    "chat-native-disposable",
                     "station-four",
                 ),
                 (
@@ -536,6 +535,20 @@ class RuntimeOwnerTest(unittest.TestCase):
             replacement,
             cross_source.index('scenario_id="AS23"'),
         )
+        replacement_start = cross_source.index(
+            "_start_authenticated_client(",
+            cross_source.index("bob2 = _make_client("),
+        )
+        replacement_recovery = cross_source.index(
+            "restored = _restore_portable_recovery(",
+            replacement_start,
+        )
+        replacement_snapshot = cross_source.index(
+            "bob2_snapshot = _wait_for_moments_snapshot(",
+            replacement_recovery,
+        )
+        self.assertLess(replacement_start, replacement_recovery)
+        self.assertLess(replacement_recovery, replacement_snapshot)
         replay_start = cross_source.index('scenario_id="AS24"')
         replay_end = cross_source.index(
             'scenario_id="same-station-regression"',
@@ -624,6 +637,10 @@ class RuntimeOwnerTest(unittest.TestCase):
         self.assertIn("_run_social_acceptance_pre_restart(", source)
         self.assertIn("_social_acceptance_scenario_registry(", source)
         replacement_start = source.index("bob_replacement = _make_client(")
+        authenticated_start = source.index(
+            "_start_authenticated_client(",
+            replacement_start,
+        )
         recovery_read = source.index(
             'before_recovery = _wait_for_private_moment_state(',
             replacement_start,
@@ -652,6 +669,7 @@ class RuntimeOwnerTest(unittest.TestCase):
             "payloads[bob_client_id] = _client_payload(",
             refreshed_snapshot,
         )
+        self.assertLess(authenticated_start, recovery_read)
         self.assertLess(recovery_read, recovery_restore)
         self.assertLess(recovery_restore, replacement_enrollment)
         self.assertLess(replacement_enrollment, recovered_read)
@@ -1098,7 +1116,7 @@ class RuntimeOwnerTest(unittest.TestCase):
                 [
                     "run-social-cross-station-suite",
                     "--profiles",
-                    "four,fiveArm",
+                    "chat-native-disposable,fiveArm",
                     "--slot",
                     "13",
                 ]
@@ -1109,12 +1127,15 @@ class RuntimeOwnerTest(unittest.TestCase):
 
     def test_social_cross_station_cli_rejects_wrong_binding(self) -> None:
         cases = (
-            (["run-social-cross-station-suite"], "profile:four"),
+            (
+                ["run-social-cross-station-suite"],
+                "profile:chat-native-disposable",
+            ),
             (
                 [
                     "run-social-cross-station-suite",
                     "--profiles",
-                    "fiveArm,four",
+                    "fiveArm,chat-native-disposable",
                     "--slot",
                     "13",
                 ],
@@ -1124,11 +1145,11 @@ class RuntimeOwnerTest(unittest.TestCase):
                 [
                     "run-social-cross-station-suite",
                     "--profiles",
-                    "four,fiveArm",
+                    "chat-native-disposable,fiveArm",
                     "--slot",
                     "12",
                 ],
-                "profile:four",
+                "profile:chat-native-disposable",
             ),
             (
                 [
@@ -1136,11 +1157,11 @@ class RuntimeOwnerTest(unittest.TestCase):
                     "--profile",
                     "fiveArm",
                     "--profiles",
-                    "four,fiveArm",
+                    "chat-native-disposable,fiveArm",
                     "--slot",
                     "13",
                 ],
-                "profile:four",
+                "profile:chat-native-disposable",
             ),
         )
         for arguments, resource in cases:
@@ -1341,7 +1362,7 @@ class RuntimeOwnerTest(unittest.TestCase):
             ],
             "run-social-cross-station-suite": [
                 "--profiles",
-                "four,fiveArm",
+                "chat-native-disposable,fiveArm",
                 "--slot",
                 "13",
             ],
@@ -2803,8 +2824,9 @@ class RuntimeOwnerTest(unittest.TestCase):
                 _make_client(
                     repo_root=Path(__file__).resolve().parents[3],
                     runtime_root=Path(directory),
-                    station_url="https://station.invalid",
-                    profile_env={},
+                    profile_env={
+                        "PT_STATION_URL": "https://station.invalid/",
+                    },
                     source_commit=COMMIT,
                     client_id="desktop-alice",
                     runtime_kind="native-tauri",
@@ -2825,6 +2847,35 @@ class RuntimeOwnerTest(unittest.TestCase):
                 "PT_BUILD_SOURCE_COMMIT"
             ],
         )
+        self.assertEqual(
+            "https://station.invalid",
+            client_type.call_args.kwargs["station_url"],
+        )
+
+    def test_client_launch_rejects_missing_canonical_station_origin(self) -> None:
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch(
+                "tooling.development.secure_content.runtime_owner._free_port",
+                side_effect=(4501, 4502, 4503),
+            ),
+            patch(
+                "tooling.development.secure_content.runtime_owner."
+                "FoundationRuntimeClient"
+            ) as client_type,
+            self.assertRaises(RuntimeOwnerBlocked),
+        ):
+            _make_client(
+                repo_root=Path(__file__).resolve().parents[3],
+                runtime_root=Path(directory),
+                profile_env={},
+                source_commit=COMMIT,
+                client_id="desktop-alice",
+                runtime_kind="native-tauri",
+                port_bases=(4501, 4502, 4503),
+                reserved_ports=set(),
+            )
+        client_type.assert_not_called()
 
     def test_social_acceptance_source_projection_allows_only_harness_delta(
         self,
@@ -3129,6 +3180,7 @@ class RuntimeOwnerTest(unittest.TestCase):
 
     def test_cross_station_fixture_uses_one_explicit_federation(self) -> None:
         alice = MagicMock()
+        alice.station_url = "http://station-four"
         alice.harness_namespace = "agent"
         alice.harness.side_effect = (
             {
@@ -3136,11 +3188,6 @@ class RuntimeOwnerTest(unittest.TestCase):
                 "federatedHandle": "@alice@four.invalid",
                 "homeStationPeerId": "station-four-peer",
             },
-            {
-                "federationId": "federation-1",
-                "federationEndpoint": "https://four.invalid",
-            },
-            {"stationPeerIds": ["station-four-peer"]},
             {
                 "stationPeerIds": [
                     "station-four-peer",
@@ -3151,17 +3198,13 @@ class RuntimeOwnerTest(unittest.TestCase):
             {"accepted": True},
         )
         bob = MagicMock()
+        bob.station_url = "http://station-five"
         bob.harness_namespace = "agent"
         bob.harness.side_effect = (
             {
                 "actorPtid": "ptid:bob",
                 "federatedHandle": "@bob@five-arm.invalid",
                 "homeStationPeerId": "station-five-arm-peer",
-            },
-            {
-                "federationId": "federation-1",
-                "status": "active",
-                "proposalId": "proposal-1",
             },
             {
                 "stationPeerIds": [
@@ -3176,8 +3219,8 @@ class RuntimeOwnerTest(unittest.TestCase):
         with (
             patch(
                 "tooling.development.secure_content.runtime_owner."
-                "_wait_for_federated_locator"
-            ) as wait_for_locator,
+                "prepare_federation_routing"
+            ) as prepare_routing,
             patch(
                 "tooling.development.secure_content.runtime_owner."
                 "_wait_for_federated_actor_resolution",
@@ -3187,28 +3230,23 @@ class RuntimeOwnerTest(unittest.TestCase):
                     "homeStationPeerId": "station-five-arm-peer",
                 },
             ) as wait_for_resolution,
-            patch(
-                "tooling.development.secure_content.runtime_owner."
-                "_wait_for_federated_profile"
-            ) as wait_for_profile,
         ):
-            result = _prepare_cross_station_social_fixture(alice, bob)
+            result = _prepare_cross_station_social_fixture(
+                alice, bob, federation_id="federation-1",
+            )
 
         self.assertEqual("federation-1", result["federationId"])
-        wait_for_locator.assert_called_once_with(
-            alice,
-            federated_handle="@bob@five-arm.invalid",
-            expected_home_station_peer_id="station-five-arm-peer",
+        stations = prepare_routing.call_args.args[0]
+        self.assertEqual(
+            {"http://station-four", "http://station-five"},
+            set(stations),
         )
+        self.assertEqual("ptid:alice", stations["http://station-four"][0].ptid)
+        self.assertEqual("ptid:bob", stations["http://station-five"][0].ptid)
         wait_for_resolution.assert_called_once_with(
             alice,
             federation_id="federation-1",
             federated_handle="@bob@five-arm.invalid",
-        )
-        wait_for_profile.assert_called_once_with(
-            alice,
-            federated_handle="@bob@five-arm.invalid",
-            expected_home_station_peer_id="station-five-arm-peer",
         )
         self.assertIn(
             call(
@@ -3222,65 +3260,118 @@ class RuntimeOwnerTest(unittest.TestCase):
             ),
             alice.harness.call_args_list,
         )
-        self.assertIn(
-            call(
-                "joinAcceptanceFederation",
-                {
-                    "federationEndpoint": "https://four.invalid",
-                    "federationId": "federation-1",
-                },
-                timeout=120,
-            ),
-            bob.harness.call_args_list,
-        )
-
-    def test_cross_station_locator_waits_only_for_not_found(self) -> None:
-        responses = iter(
-            (
-                (404, b'{"error":"not_found"}'),
-                (
-                    200,
-                    json.dumps(
-                        {
-                            "data": {
-                                "federated_handle": "bob@five-arm.invalid",
-                                "home_station_peer_id": (
-                                    "station-five-arm-peer"
-                                ),
-                            }
-                        }
-                    ).encode("utf-8"),
-                ),
+        self.assertFalse(
+            any(
+                invocation.args[0] in {
+                    "federationJoinAuthority", "joinAcceptanceFederation",
+                }
+                for client in (alice, bob)
+                for invocation in client.harness.call_args_list
             )
         )
-        sleeps: list[float] = []
-        urls: list[str] = []
 
-        def http_get(
-            url: str,
-            **_kwargs: object,
-        ) -> tuple[int, bytes]:
-            urls.append(url)
-            return next(responses)
+    def test_social_suite_archives_owner_federation_when_join_fails(self) -> None:
+        with (
+            patch.object(
+                runtime_owner_module,
+                "_station_login",
+                side_effect=(
+                    ("primary-owner-access", "ptid:primary-owner"),
+                    ("secondary-owner-access", "ptid:secondary-owner"),
+                ),
+            ) as login,
+            patch.object(
+                runtime_owner_module,
+                "_station_proto_post",
+                side_effect=(
+                    _proto_bytes(1, "suite-federation"),
+                    _proto_bytes(1, "pending"),
+                    _proto_uint(1, 1),
+                ),
+            ) as post,
+            self.assertRaises(RuntimeOwnerBlocked),
+            ExitStack() as cleanup,
+        ):
+            runtime_owner_module._prepare_social_suite_federation(
+                primary_url="http://primary-transport",
+                secondary_url="http://secondary-transport",
+                primary_peer_id="primary-peer",
+                secondary_peer_id="secondary-peer",
+                primary_product_url="https://primary-product",
+                fixture_epoch="fixture-epoch",
+                cleanup_stack=cleanup,
+            )
 
-        resolved = _wait_for_federated_locator(
-            SimpleNamespace(station_url="http://station.invalid"),
-            federated_handle="@bob@five-arm.invalid",
-            expected_home_station_peer_id="station-five-arm-peer",
-            timeout_seconds=10,
-            poll_interval_seconds=2,
-            monotonic=MagicMock(side_effect=(0.0, 1.0)),
-            sleep=sleeps.append,
-            http_get=http_get,
-        )
-
-        self.assertEqual("bob@five-arm.invalid", resolved["federated_handle"])
-        self.assertEqual([2], sleeps)
-        self.assertEqual(2, len(urls))
+        self.assertEqual(2, login.call_count)
+        self.assertTrue(all(
+            item.kwargs["account"] == runtime_owner_module.ACTOR_ACCOUNTS["alice"]
+            for item in login.call_args_list
+        ))
+        self.assertEqual(3, post.call_count)
         self.assertIn(
-            "handle=%40bob%40five-arm.invalid",
-            urls[0],
+            (1, 2, b"https://primary-product"),
+            list(_proto_fields(post.call_args_list[1].args[1])),
         )
+        self.assertEqual(
+            "primary-owner-access",
+            post.call_args_list[2].kwargs["bearer_token"],
+        )
+        self.assertTrue(post.call_args_list[2].args[0].endswith(
+            "/suite-federation/delete",
+        ))
+
+    def test_cross_station_fixture_maps_routing_failure_without_identity_leak(
+        self,
+    ) -> None:
+        alice = MagicMock(station_url="http://station-four")
+        alice.harness_namespace = "agent"
+        alice.harness.side_effect = (
+            {
+                "actorPtid": "ptid:alice",
+                "federatedHandle": "@alice@four.invalid",
+                "homeStationPeerId": "station-four-peer",
+            },
+            {
+                "stationPeerIds": [
+                    "station-four-peer",
+                    "station-five-arm-peer",
+                ]
+            },
+        )
+        bob = MagicMock(station_url="http://station-five")
+        bob.harness_namespace = "agent"
+        bob.harness.side_effect = (
+            {
+                "actorPtid": "ptid:bob",
+                "federatedHandle": "@bob@five-arm.invalid",
+                "homeStationPeerId": "station-five-arm-peer",
+            },
+            {
+                "stationPeerIds": [
+                    "station-four-peer",
+                    "station-five-arm-peer",
+                ]
+            },
+        )
+
+        with patch(
+            "tooling.development.secure_content.runtime_owner."
+            "prepare_federation_routing",
+            side_effect=BlockedError(
+                reason="private actor handle did not converge",
+                resource="fixture-federation-routing:private",
+            ),
+        ), self.assertRaises(RuntimeOwnerBlocked) as raised:
+            _prepare_cross_station_social_fixture(
+                alice, bob, federation_id="federation-1",
+            )
+
+        self.assertEqual("FIXTURE_OWNER_UNAVAILABLE", raised.exception.code)
+        self.assertEqual(
+            "fixture:cross-station-social-routing",
+            raised.exception.resource,
+        )
+        self.assertNotIn("private actor handle", str(raised.exception))
 
     def test_cross_station_resolution_retries_only_not_found(self) -> None:
         client = SimpleNamespace(
@@ -3325,41 +3416,6 @@ class RuntimeOwnerTest(unittest.TestCase):
             "fixture:cross-station-social-resolver",
             raised.exception.resource,
         )
-
-    def test_cross_station_profile_waits_for_remote_convergence(self) -> None:
-        responses = iter(
-            (
-                (500, b'{"code":"500"}'),
-                (
-                    200,
-                    json.dumps(
-                        {
-                            "data": {
-                                "handle": "@bob@five-arm.invalid",
-                                "home_station_peer_id": (
-                                    "station-five-arm-peer"
-                                ),
-                            }
-                        }
-                    ).encode("utf-8"),
-                ),
-            )
-        )
-        sleeps: list[float] = []
-
-        resolved = _wait_for_federated_profile(
-            SimpleNamespace(station_url="http://station.invalid"),
-            federated_handle="@bob@five-arm.invalid",
-            expected_home_station_peer_id="station-five-arm-peer",
-            timeout_seconds=10,
-            poll_interval_seconds=2,
-            monotonic=MagicMock(side_effect=(0.0, 1.0)),
-            sleep=sleeps.append,
-            http_get=lambda *_args, **_kwargs: next(responses),
-        )
-
-        self.assertEqual("@bob@five-arm.invalid", resolved["handle"])
-        self.assertEqual([2], sleeps)
 
     def test_friendship_projection_timeout_fails_closed(self) -> None:
         client = MagicMock()
@@ -3422,6 +3478,28 @@ class RuntimeOwnerTest(unittest.TestCase):
             ],
             client.harness.call_args_list,
         )
+
+    def test_private_moment_state_waits_for_replacement_scope_mount(self) -> None:
+        client = MagicMock()
+        client.harness_namespace = "agent"
+        client.spec.profile = "secure-content-desktop-bob2"
+        client.harness.side_effect = (
+            RuntimeError("moments.acceptance.privateProjectionMissing"),
+            {"state": "RECOVERY_REQUIRED", "errorCode": "RECOVERY_REQUIRED"},
+        )
+
+        with patch(
+            "tooling.development.secure_content.runtime_owner.time.sleep"
+        ):
+            projection = _wait_for_private_moment_state(
+                client,
+                post_id="post-1",
+                expected_state="RECOVERY_REQUIRED",
+                actor_label="Bob replacement device",
+            )
+
+        self.assertEqual("RECOVERY_REQUIRED", projection["state"])
+        self.assertEqual(2, client.harness.call_count)
 
     def test_private_moment_states_waits_for_remote_revocation(self) -> None:
         client = MagicMock()
@@ -3764,6 +3842,40 @@ class RuntimeOwnerTest(unittest.TestCase):
         wait_for_snapshot.assert_called_once_with(client)
         self.assertEqual(snapshot, result)
         self.assertEqual("agent", client.harness_namespace)
+
+    def test_start_authenticated_client_does_not_require_moments_readiness(
+        self,
+    ) -> None:
+        client = MagicMock()
+        client.spec = SimpleNamespace(
+            profile="secure-content-desktop-bob2",
+            runtime="native-tauri",
+        )
+
+        with (
+            patch(
+                "tooling.development.secure_content.runtime_owner."
+                "_authenticate_running_client",
+            ) as authenticate,
+            patch(
+                "tooling.development.secure_content.runtime_owner."
+                "_wait_for_moments_snapshot",
+            ) as wait_for_snapshot,
+        ):
+            _start_authenticated_client(
+                client,
+                account="bob@p.t",
+                password="1",
+            )
+
+        client.start.assert_called_once_with()
+        client.configure_station.assert_called_once_with()
+        authenticate.assert_called_once_with(
+            client,
+            account="bob@p.t",
+            password="1",
+        )
+        wait_for_snapshot.assert_not_called()
 
     def test_start_client_converts_exhausted_driver_startup_to_typed_blocker(
         self,

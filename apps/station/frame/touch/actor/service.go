@@ -2,6 +2,7 @@ package actor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -57,13 +58,24 @@ func GetActorByEmail(ctx context.Context, email string) (*db.Actor, error) {
 		return nil, fmt.Errorf("database connection failed: %w", err)
 	}
 
+	actor, err := getActorByEmail(rds, email)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		logger.Warnf(ctx, "Actor not found for email: %s", email)
+		return nil, gorm.ErrRecordNotFound
+	}
+	if err != nil {
+		logger.Errorf(ctx, "Failed to query actor: %v", err)
+		return nil, err
+	}
+	return actor, nil
+}
+
+func getActorByEmail(rds *gorm.DB, email string) (*db.Actor, error) {
 	var actor db.Actor
 	if err := rds.Where("email = ?", email).First(&actor).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			logger.Warnf(ctx, "Actor not found for email: %s", email)
-			return nil, fmt.Errorf("actor not found: %s", email)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, gorm.ErrRecordNotFound
 		}
-		logger.Errorf(ctx, "Failed to query actor: %v", err)
 		return nil, fmt.Errorf("query actor failed: %w", err)
 	}
 

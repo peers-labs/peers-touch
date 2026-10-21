@@ -576,7 +576,7 @@ func (s *subServer) handlePrepareMembership(
 			),
 		)
 	}
-	response, err := s.prepareMembershipPlan(ctx, request, requester)
+	response, err := s.prepareMembershipPlan(ctx, request, requester, s.localStation)
 
 	return response, mapProductionConversationError(ctx, err)
 }
@@ -585,6 +585,7 @@ func (s *subServer) prepareMembershipPlan(
 	ctx context.Context,
 	request *chatmodel.PrepareConversationMembershipRequest,
 	requester valueobject.Endpoint,
+	requesterHome valueobject.StationID,
 ) (*chatmodel.PrepareConversationMembershipResponse, error) {
 	conversationID, err := valueobject.NewConversationID(request.GetConversationId())
 	if err != nil {
@@ -613,6 +614,18 @@ func (s *subServer) prepareMembershipPlan(
 	)
 	if err != nil {
 		return nil, err
+	}
+	requesterBound := false
+	for _, route := range verifiedRoutes {
+		if route.Endpoint == requester && route.HomeStation == requesterHome {
+			requesterBound = true
+			break
+		}
+	}
+	if !requesterBound {
+		return nil, server.Forbidden(
+			"Conversation membership requester is not active at the authenticated Home Station",
+		)
 	}
 	manifestSetHash, manifestStateHash, err := productionEndpointManifestSetHashes(
 		manifests,

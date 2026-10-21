@@ -187,6 +187,25 @@ class RecordingClient:
                     else {"ok": True}
                 ),
             }
+        if operation in {
+            "semantic_click",
+            "semantic_observe",
+            "semantic_set_value",
+        }:
+            state_field = {
+                "semantic_click": "activated",
+                "semantic_observe": "matched",
+                "semantic_set_value": "updated",
+            }[operation]
+            return {
+                "clientId": client_id,
+                "observation": {
+                    "found": True,
+                    "visible": True,
+                    state_field: True,
+                    "tagName": "button",
+                },
+            }
         if operation == "stop":
             return {"clientId": client_id, "stopped": True}
         raise AssertionError(operation)
@@ -316,6 +335,57 @@ class MobileSimulatorRuntimeBindingTests(unittest.TestCase):
                 "actionPayload": {},
             },
         )
+
+    def test_semantic_dom_operations_are_closed_and_do_not_echo_content(
+        self,
+    ) -> None:
+        client = RecordingClient()
+        binding = MobileSimulatorRuntimeBinding(client)  # type: ignore[arg-type]
+
+        clicked = binding.semantic_click(
+            "sim-ios",
+            '[data-acceptance-id="compose"]',
+        )
+        observed = binding.semantic_observe(
+            "sim-ios",
+            '[data-post-id="post-1"]',
+            expected_text="private text",
+        )
+        updated = binding.semantic_set_value(
+            "sim-ios",
+            "textarea",
+            "private text",
+        )
+
+        self.assertTrue(clicked["activated"])
+        self.assertTrue(observed["matched"])
+        self.assertTrue(updated["updated"])
+        operations = [item[1] for item in client.calls]
+        self.assertEqual(
+            operations,
+            [
+                "semantic_click",
+                "semantic_observe",
+                "semantic_set_value",
+            ],
+        )
+        for response in (clicked, observed, updated):
+            self.assertNotIn("private text", repr(response))
+
+    def test_settings_gate_can_observe_and_reconcile_write_admission(self) -> None:
+        gate_id = "mobile-simulator-settings-e2e"
+        client = RecordingClient(gate_id)
+        binding = MobileSimulatorRuntimeBinding(  # type: ignore[arg-type]
+            client,
+            gate_id=gate_id,
+        )
+
+        for action in ("recovery.snapshot", "social.reconcile"):
+            with self.subTest(action=action):
+                self.assertEqual(
+                    binding.call_action("sim-ios", action, {}),
+                    {"ok": True},
+                )
 
     def test_fixture_authentication_keeps_credentials_parent_owned(self) -> None:
         client = RecordingClient()

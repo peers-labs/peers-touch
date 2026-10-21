@@ -9,7 +9,6 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::fmt;
 use std::io::{Cursor, Read};
-use std::net::IpAddr;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -73,7 +72,7 @@ pub enum TrafficClass {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StationRouteSecurity {
     VerifiedRoute,
-    TlsOrLoopback,
+    HttpOrHttps,
 }
 
 impl StationRouteSecurity {
@@ -82,15 +81,13 @@ impl StationRouteSecurity {
         let Ok(url) = reqwest::Url::parse(origin) else {
             return false;
         };
-        let Some(host) = url.host_str() else {
-            return false;
-        };
-        let loopback = host.eq_ignore_ascii_case("localhost")
-            || host
-                .parse::<IpAddr>()
-                .map(|address| address.is_loopback())
-                .unwrap_or(false);
-        url.scheme() == "https" || (url.scheme() == "http" && loopback)
+        matches!(url.scheme(), "http" | "https")
+            && url.host_str().is_some()
+            && url.username().is_empty()
+            && url.password().is_none()
+            && url.path() == "/"
+            && url.query().is_none()
+            && url.fragment().is_none()
     }
 }
 
@@ -267,6 +264,7 @@ pub enum StationClientErrorKind {
     SessionRevoked,
     HttpStatus(u16),
     Network,
+    Unavailable,
     Decode,
     InvalidResponse,
     Overloaded,
@@ -338,6 +336,7 @@ impl StationClientError {
                         403 => ErrorCode::Forbidden,
                         404 => ErrorCode::NotFound,
                         409 => ErrorCode::Conflict,
+                        502 | 503 => ErrorCode::Unavailable,
                         _ => ErrorCode::InternalError,
                     }
                 }
@@ -347,6 +346,7 @@ impl StationClientError {
             | StationClientErrorKind::StaleRoute
             | StationClientErrorKind::RoutePolicyConflict => ErrorCode::Conflict,
             StationClientErrorKind::NoRoute => ErrorCode::NotFound,
+            StationClientErrorKind::Unavailable => ErrorCode::Unavailable,
             _ => ErrorCode::InternalError,
         };
         AppResult::fail(code, context.into(), self.details)
@@ -1389,6 +1389,9 @@ fn map_transport_error(
             StationClientErrorKind::RoutePolicyConflict,
             "station_route_policy_conflict",
         ),
+        StationTransportErrorKind::Unavailable => {
+            (StationClientErrorKind::Unavailable, "station_unavailable")
+        }
         _ => (StationClientErrorKind::Network, "station_transport_failed"),
     };
     StationClientError::new(
@@ -1775,21 +1778,41 @@ mod tests {
     }
 
     #[test]
+    fn service_unavailability_preserves_a_typed_app_error() {
+        let error = map_transport_error(
+            StationTransportError::new(
+                StationTransportErrorKind::Unavailable,
+                "Station unavailable",
+                false,
+            ),
+            ReplayPolicy::SafeRead,
+        );
+        let result: AppResult<Value> = error.into_app_result("Federation sequencer unavailable");
+
+        assert_eq!(
+            result.error.expect("typed error").code,
+            ErrorCode::Unavailable
+        );
+    }
+
+    #[test]
     fn only_safe_reads_receive_implicit_replay() {
         assert_eq!(default_replay_policy(&Method::GET), ReplayPolicy::SafeRead);
         assert_eq!(default_replay_policy(&Method::POST), ReplayPolicy::Never);
     }
 
     #[test]
-    fn authenticated_route_security_rejects_remote_plaintext() {
+    fn authenticated_route_security_accepts_user_selected_http_or_https() {
         for policy in [
             StationRouteSecurity::VerifiedRoute,
-            StationRouteSecurity::TlsOrLoopback,
+            StationRouteSecurity::HttpOrHttps,
         ] {
             assert!(policy.permits("https://station.test"));
             assert!(policy.permits("http://127.0.0.1:18080"));
             assert!(policy.permits("http://localhost:18080"));
-            assert!(!policy.permits("http://station.test"));
+            assert!(policy.permits("http://station.test"));
+            assert!(!policy.permits("ftp://station.test"));
+            assert!(!policy.permits("http://station.test/path"));
         }
     }
 

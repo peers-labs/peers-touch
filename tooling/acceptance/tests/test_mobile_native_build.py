@@ -792,6 +792,21 @@ def orchestrate_fake_android(
 
 
 class MobileNativeBuildTest(unittest.TestCase):
+    def test_ios_secure_input_package_declares_default_localization(self) -> None:
+        package = (
+            REPO_ROOT
+            / "apps/mobile/src-tauri/plugins/secure-input/ios/Package.swift"
+        ).read_text(encoding="utf-8")
+        self.assertRegex(
+            package,
+            (
+                r'let package = Package\(\s*'
+                r'name: "tauri-plugin-peers-secure-input",\s*'
+                r'defaultLocalization: "en",'
+            ),
+        )
+        self.assertIn('resources: [.process("Resources")]', package)
+
     def test_canonical_file_digest_is_order_independent_and_path_bound(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

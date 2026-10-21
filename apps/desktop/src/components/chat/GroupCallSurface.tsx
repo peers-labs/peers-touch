@@ -18,6 +18,9 @@ import { groupCallManager } from '../../modules/groupCall';
 import type { GroupCallSnapshot, Participant } from '../../modules/groupCall';
 import { log } from '../../utils/logger';
 import { ActionIcon, toast } from '@lobehub/ui';
+import { UserSquareAvatar } from '../common/UserSquareAvatar';
+import { useChatActorIdentity } from './useChatActorIdentity';
+import { useSocialChatStore } from '../../store/socialChat';
 
 const { Text } = Typography;
 
@@ -25,6 +28,16 @@ type DisplayMode = 'compact' | 'expanded' | 'fullscreen';
 
 const TRAY_EDGE = 20;
 const TRAY_MAX_WIDTH = 360;
+
+function ParticipantBadge({ actorPtid }: { actorPtid: string }) {
+  const identity = useChatActorIdentity(actorPtid);
+  return (
+    <Flexbox horizontal align="center" gap={5} style={{ minWidth: 0 }} title={identity.displayName}>
+      <UserSquareAvatar remoteUrl={identity.avatarUrl} name={identity.displayName} size={24} />
+      <Text ellipsis style={{ fontSize: 11, maxWidth: 74 }}>{identity.displayName}</Text>
+    </Flexbox>
+  );
+}
 
 function ParticipantTile({
   participant,
@@ -35,6 +48,7 @@ function ParticipantTile({
 }) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
+  const identity = useChatActorIdentity(participant.actorPtid);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const qualityColor =
     participant.connectionQuality === 'excellent' || participant.connectionQuality === 'good'
@@ -63,7 +77,7 @@ function ParticipantTile({
       justify="center"
       style={{
         width: 80,
-        height: 80,
+        height: 108,
         borderRadius: 12,
         background: token.colorFillSecondary,
         border: participant.isSpeaking
@@ -76,19 +90,21 @@ function ParticipantTile({
       <video
         ref={videoRef}
         muted={isLocal}
-        aria-label={participant.actorPtid}
+        aria-label={identity.displayName}
         style={{
           display: participant.isCameraEnabled ? 'block' : 'none',
           width: '100%',
-          height: '100%',
+          height: 80,
           objectFit: 'cover',
           borderRadius: 10,
         }}
       />
       {!participant.isCameraEnabled && (
-        <Text strong ellipsis style={{ fontSize: 11, maxWidth: 68, textAlign: 'center' }}>
-          {isLocal ? t('chat.groupCall.you') : participant.actorPtid.slice(0, 12)}
-        </Text>
+        <UserSquareAvatar
+          remoteUrl={identity.avatarUrl}
+          name={identity.displayName}
+          size={44}
+        />
       )}
       <Flexbox
         horizontal
@@ -96,12 +112,15 @@ function ParticipantTile({
         gap={2}
         style={{
           position: 'absolute',
-          bottom: 4,
+          bottom: 6,
           left: 4,
           right: 4,
           justifyContent: 'center',
         }}
       >
+        <Text ellipsis style={{ fontSize: 11, maxWidth: 52 }}>
+          {isLocal ? t('chat.groupCall.you') : identity.displayName}
+        </Text>
         {!participant.isMicEnabled && <MicOff size={10} color={token.colorTextTertiary} />}
         {!participant.isCameraEnabled && <CameraOff size={10} color={token.colorTextTertiary} />}
         <span
@@ -120,6 +139,7 @@ function ParticipantTile({
 
 function ParticipantAudio({ participant }: { participant: Participant }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const identity = useChatActorIdentity(participant.actorPtid);
 
   useEffect(() => groupCallManager.attachParticipantMedia(
     participant.actorPtid,
@@ -131,7 +151,7 @@ function ParticipantAudio({ participant }: { participant: Participant }) {
     <audio
       ref={audioRef}
       data-group-call-remote-audio={participant.actorPtid}
-      aria-label={participant.actorPtid}
+      aria-label={identity.displayName}
     />
   );
 }
@@ -142,6 +162,11 @@ export function GroupCallSurface() {
   const [snapshot, setSnapshot] = useState<GroupCallSnapshot>(
     () => groupCallManager.getSnapshot(),
   );
+  const groupName = useSocialChatStore((state) => (
+    state.groups.find((group) => group.ulid === snapshot.groupUlid)?.name
+    || state.conversations.find((group) => group.conversationId === snapshot.groupUlid)?.name
+    || ''
+  ));
   const [activeRooms, setActiveRooms] = useState<Map<string, string>>(new Map());
   const [displayMode, setDisplayMode] = useState<DisplayMode>('compact');
   const surfaceRef = useRef<HTMLDivElement | null>(null);
@@ -277,9 +302,10 @@ export function GroupCallSurface() {
         </Flexbox>
         <Flexbox flex={1} style={{ minWidth: 0 }}>
           <Text strong ellipsis style={{ fontSize: 13 }}>
-            {stateLabel}
+            {groupName || stateLabel}
           </Text>
           <Text type="secondary" style={{ fontSize: 11 }}>
+            {groupName ? `${stateLabel} · ` : ''}
             {t('chat.groupCall.participants', { count: participantCount })}
           </Text>
         </Flexbox>
@@ -316,6 +342,14 @@ export function GroupCallSurface() {
           )}
         </Flexbox>
       </Flexbox>
+
+      {displayMode === 'compact' && snapshot.participants.length > 0 ? (
+        <Flexbox horizontal gap={8} wrap="wrap" style={{ marginBottom: 8 }}>
+          {snapshot.participants.slice(0, 4).map((participant) => (
+            <ParticipantBadge key={participant.actorPtid} actorPtid={participant.actorPtid} />
+          ))}
+        </Flexbox>
+      ) : null}
 
       <div aria-hidden="true" style={{ display: 'none' }}>
         {snapshot.participants.slice(1).map((participant) => (

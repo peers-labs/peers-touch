@@ -428,9 +428,6 @@ CREATE VIRTUAL TABLE IF NOT EXISTS messaging_message_search_fts USING fts5(
     attachment_filenames,
     tokenize = 'unicode61'
 );
-CREATE TABLE IF NOT EXISTS messaging_schema_migrations (
-    migration_id TEXT PRIMARY KEY
-);
 CREATE TABLE IF NOT EXISTS chat_storage_policy (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     station_peer_id TEXT NOT NULL,
@@ -795,35 +792,6 @@ SET conversation_id = COALESCE(
         ),
         0
     );
-INSERT INTO messaging_message_search_fts(
-    conversation_id, message_id, plaintext, attachment_filenames
-)
-SELECT
-    message.conversation_id,
-    message.message_id,
-    COALESCE(NULLIF(message.edited_text, ''), message.plaintext),
-    COALESCE(
-        (
-            SELECT group_concat(attachment.filename, char(10))
-            FROM messaging_attachment_projections attachment
-            WHERE attachment.message_id = message.message_id
-        ),
-        ''
-    )
-FROM messaging_message_projections message
-WHERE NOT EXISTS (
-    SELECT 1
-    FROM messaging_schema_migrations
-    WHERE migration_id = 'message-search-backfill-v1'
-)
-AND NOT EXISTS (
-    SELECT 1
-    FROM messaging_message_search_fts search
-    WHERE search.conversation_id = message.conversation_id
-      AND search.message_id = message.message_id
-);
-INSERT OR IGNORE INTO messaging_schema_migrations(migration_id)
-VALUES ('message-search-backfill-v1');
 "#;
 
 pub trait MessagingSchemaBackend {

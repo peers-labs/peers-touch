@@ -10,6 +10,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
+from urllib.parse import urlparse
 
 GIT_COMMIT = re.compile(r"^[0-9a-f]{40}$")
 DIGEST = re.compile(r"^[0-9a-f]{64}$")
@@ -31,6 +32,32 @@ def reviewed_remote_transport(deployment_environment: str) -> Any:
         return resolve(deployment_environment)
     except Exception as error:
         raise ActivationTransportError(str(error)) from error
+
+
+def _station_port(environment: Mapping[str, str]) -> int:
+    raw = environment.get("PT_DEPLOY_HTTP_PORT", "").strip()
+    if not raw:
+        health_url = _required(
+            environment.get("PT_DEPLOY_HEALTH_URL"),
+            "PT_DEPLOY_HEALTH_URL",
+        )
+        try:
+            raw = str(urlparse(health_url).port or "")
+        except ValueError as error:
+            raise ActivationTransportError(
+                "PT_DEPLOY_HEALTH_URL has an invalid port"
+            ) from error
+    try:
+        port = int(raw)
+    except ValueError as error:
+        raise ActivationTransportError(
+            "reviewed Station port is invalid"
+        ) from error
+    if port < 1024 or port > 65535:
+        raise ActivationTransportError(
+            "reviewed Station port is outside the allowed range"
+        )
+    return port
 
 
 def read_service_version(station_url: str) -> Mapping[str, Any]:
@@ -168,7 +195,13 @@ class ReviewedSchemaActivationTransport:
         completed = transport.run_argv(
             _remote_command(
                 deploy_path,
-                ["remote-quiesce", "--profile", profile_id],
+                [
+                    "remote-quiesce",
+                    "--profile",
+                    profile_id,
+                    "--station-port",
+                    str(_station_port(environment)),
+                ],
             ),
             timeout=budget_seconds,
         )
@@ -238,6 +271,8 @@ class ReviewedSchemaActivationTransport:
                     "declaration_digest",
                     pattern=DIGEST,
                 ),
+                "--station-port",
+                str(_station_port(environment)),
             ],
         )
         return [
@@ -295,6 +330,8 @@ class ReviewedSchemaActivationTransport:
                     "destructive_scope",
                     pattern=IDENTIFIER,
                 ),
+                "--station-port",
+                str(_station_port(environment)),
             ],
         )
         return [
@@ -317,6 +354,11 @@ class ReviewedSchemaActivationTransport:
         deployment_environment = _required(
             request.get("deployment_environment"),
             "deployment_environment",
+            pattern=IDENTIFIER,
+        )
+        station_service_id = _required(
+            request.get("station_service_id"),
+            "station_service_id",
             pattern=IDENTIFIER,
         )
         source_commit = _required(
@@ -380,7 +422,7 @@ class ReviewedSchemaActivationTransport:
         from tooling.acceptance.core.provisioning import ServiceAttestation
 
         attestation = ServiceAttestation(
-            service_id=deployment_environment,
+            service_id=station_service_id,
             service_kind="station",
             environment_id=profile_id,
             deployment_environment=deployment_environment,
@@ -469,27 +511,113 @@ class ReviewedSchemaActivationTransport:
         return load_env_file(profile_path)
 
 
-def _compose_command(repo_root: Path) -> list[str]:
-    station_env = repo_root.parent / "station.env"
-    compose = repo_root / "tooling/docker/compose.yml"
-    if not station_env.is_file() or not compose.is_file():
-        raise ActivationTransportError(
-            "remote Station compose contract is unavailable"
-        )
-    return [
-        "docker",
-        "compose",
-        "--env-file",
-        str(station_env),
-        "-p",
-        "pt-station",
-        "-f",
-        str(compose),
-        "--profile",
-        "station",
-        "--profile",
-        "infra",
+def _compose_container(
+    repo_root: Path,
+    *,
+    compose_project: str,
+    compose_service: str,
+) -> str:
+    command = ["docker", "ps", "--format", "{{.ID}}"]
+    for value in (
+        f"label=com.docker.compose.project={compose_project}",
+        f"label=com.docker.compose.service={compose_service}",
+    ):
+        command.extend(["--filter", value])
+    containers = [
+        line.strip()
+        for line in _run_checked(
+            command,
+            cwd=repo_root,
+            timeout=15,
+        ).stdout.splitlines()
+        if line.strip()
     ]
+    if len(containers) != 1:
+        raise ActivationTransportError(
+            "reviewed Compose service must own exactly one running container"
+        )
+    return containers[0]
+
+
+def _station_container_for_port(
+    repo_root: Path,
+    station_port: int,
+) -> tuple[str, Mapping[str, Any]]:
+    candidates = [
+        line.strip()
+        for line in _run_checked(
+            [
+                "docker",
+                "ps",
+                "--format",
+                "{{.ID}}",
+                "--filter",
+                "label=com.docker.compose.service=station",
+            ],
+            cwd=repo_root,
+            timeout=15,
+        ).stdout.splitlines()
+        if line.strip()
+    ]
+    matches: list[tuple[str, Mapping[str, Any]]] = []
+    for container_id in candidates:
+        container = _inspect_container(repo_root, container_id)
+        network_settings = container.get("NetworkSettings")
+        ports = (
+            network_settings.get("Ports")
+            if isinstance(network_settings, Mapping)
+            else None
+        )
+        if not isinstance(ports, Mapping):
+            continue
+        host_ports = {
+            str(binding.get("HostPort") or "")
+            for bindings in ports.values()
+            if isinstance(bindings, list)
+            for binding in bindings
+            if isinstance(binding, Mapping)
+        }
+        if str(station_port) in host_ports:
+            matches.append((container_id, container))
+    if len(matches) != 1:
+        raise ActivationTransportError(
+            "reviewed Station endpoint must identify exactly one "
+            "running Compose container"
+        )
+    return matches[0]
+
+
+def _compose_project(container: Mapping[str, Any]) -> str:
+    config = container.get("Config")
+    labels = config.get("Labels") if isinstance(config, Mapping) else None
+    return _required(
+        labels.get("com.docker.compose.project")
+        if isinstance(labels, Mapping)
+        else None,
+        "Compose project",
+        pattern=IDENTIFIER,
+    )
+
+
+def _station_data_volume(container: Mapping[str, Any]) -> str:
+    mounts = container.get("Mounts")
+    if not isinstance(mounts, list):
+        raise ActivationTransportError(
+            "Station data volume metadata is unavailable"
+        )
+    matches = [
+        str(mount.get("Name") or "")
+        for mount in mounts
+        if isinstance(mount, Mapping)
+        and mount.get("Type") == "volume"
+        and mount.get("Destination") == "/app/data"
+        and mount.get("Name")
+    ]
+    if len(matches) != 1 or IDENTIFIER.fullmatch(matches[0]) is None:
+        raise ActivationTransportError(
+            "Station must own exactly one reviewed data volume"
+        )
+    return matches[0]
 
 
 def _attestation_path(repo_root: Path, profile_id: str) -> Path:
@@ -522,19 +650,32 @@ def _remote_source(repo_root: Path, expected_commit: str) -> None:
         )
 
 
-def _quiesce(repo_root: Path) -> None:
-    compose = _compose_command(repo_root)
+def _quiesce(
+    repo_root: Path,
+    *,
+    station_port: int,
+) -> None:
+    station_container, _inspection = _station_container_for_port(
+        repo_root,
+        station_port,
+    )
     _run_checked(
-        [*compose, "stop", "-t", "30", "station"],
+        ["docker", "stop", "-t", "30", station_container],
         cwd=repo_root,
         timeout=60,
     )
-    running = _run_checked(
-        [*compose, "ps", "-q", "--status", "running", "station"],
+    state = _run_checked(
+        [
+            "docker",
+            "inspect",
+            "--format",
+            "{{.State.Running}}",
+            station_container,
+        ],
         cwd=repo_root,
         timeout=15,
     ).stdout.strip()
-    if running:
+    if state != "false":
         raise ActivationTransportError("Station did not become quiescent")
 
 
@@ -569,6 +710,44 @@ def _install_attestation(repo_root: Path, profile_id: str) -> None:
     print(json.dumps({"status": "PASS", "path": str(path)}))
 
 
+def _inspect_container(repo_root: Path, container_id: str) -> Mapping[str, Any]:
+    try:
+        value = json.loads(
+            _run_checked(
+                ["docker", "inspect", container_id],
+                cwd=repo_root,
+                timeout=15,
+            ).stdout
+        )
+    except json.JSONDecodeError as error:
+        raise ActivationTransportError(
+            "reviewed Compose container inspection is invalid"
+        ) from error
+    if not isinstance(value, list) or len(value) != 1 or not isinstance(
+        value[0],
+        Mapping,
+    ):
+        raise ActivationTransportError(
+            "reviewed Compose container inspection is incomplete"
+        )
+    return value[0]
+
+
+def _container_environment(container: Mapping[str, Any]) -> dict[str, str]:
+    config = container.get("Config")
+    values = config.get("Env") if isinstance(config, Mapping) else None
+    if not isinstance(values, list):
+        raise ActivationTransportError(
+            "reviewed Compose container environment is unavailable"
+        )
+    result: dict[str, str] = {}
+    for raw in values:
+        if isinstance(raw, str) and "=" in raw:
+            key, value = raw.split("=", 1)
+            result[key] = value
+    return result
+
+
 def _remote_maintenance(arguments: argparse.Namespace) -> None:
     repo_root = Path(arguments.repo_root).resolve()
     _remote_source(repo_root, arguments.source_commit)
@@ -577,25 +756,47 @@ def _remote_maintenance(arguments: argparse.Namespace) -> None:
         raise ActivationTransportError(
             "service attestation is missing before maintenance startup"
         )
-    compose = _compose_command(repo_root)
-    station_container = _run_checked(
-        [*compose, "ps", "-q", "--status", "running", "station"],
-        cwd=repo_root,
-        timeout=15,
-    ).stdout.strip()
-    if not station_container:
-        raise ActivationTransportError(
-            "Station must be running before schema audit"
+    station_container, station = _station_container_for_port(
+        repo_root,
+        arguments.station_port,
+    )
+    compose_project = _compose_project(station)
+    database_container = _compose_container(
+        repo_root,
+        compose_project=compose_project,
+        compose_service="postgres",
+    )
+    database = _inspect_container(repo_root, database_container)
+    network = f"{compose_project}_default"
+    for label, container in (
+        ("Station", station),
+        ("PostgreSQL", database),
+    ):
+        network_settings = container.get("NetworkSettings")
+        networks = (
+            network_settings.get("Networks")
+            if isinstance(network_settings, Mapping)
+            else None
         )
-    station_environment = _load_shell_environment(
-        repo_root.parent / "station.env"
+        if not isinstance(networks, Mapping) or network not in networks:
+            raise ActivationTransportError(
+                f"{label} is not attached to the reviewed Compose network"
+            )
+    data_volume = _station_data_volume(station)
+    station_config = station.get("Config")
+    station_image = _required(
+        station_config.get("Image")
+        if isinstance(station_config, Mapping)
+        else None,
+        "Station image",
     )
-    database_user = station_environment.get("POSTGRES_USER", "peers")
+    database_environment = _container_environment(database)
+    database_user = database_environment.get("POSTGRES_USER", "peers")
     database_password = _required(
-        station_environment.get("PEERS_DB_PASSWORD"),
-        "PEERS_DB_PASSWORD",
+        database_environment.get("POSTGRES_PASSWORD"),
+        "POSTGRES_PASSWORD",
     )
-    database_name = station_environment.get("POSTGRES_DB", "peers_touch")
+    database_name = database_environment.get("POSTGRES_DB", "peers_touch")
     runtime_environment = (
         repo_root.parent
         / "secure-content"
@@ -651,19 +852,19 @@ def _remote_maintenance(arguments: argparse.Namespace) -> None:
             "--rm",
             "-i",
             "--network",
-            "pt-station_default",
+            network,
             "--env-file",
             str(runtime_environment),
             "--entrypoint",
             "/bin/sh",
             "-v",
-            "pt-station_peers_data:/app/data",
+            f"{data_volume}:/app/data",
             "-v",
             (
                 f"{attestation}:"
                 "/app/secure-content-service-attestation.json:ro"
             ),
-            "pt-station-station",
+            station_image,
             "-lc",
             shell,
         ],
@@ -716,7 +917,10 @@ def _remote_maintenance(arguments: argparse.Namespace) -> None:
                     and not quiesced
                     and not arguments.skip_quiesce
                 ):
-                    _quiesce(repo_root)
+                    _quiesce(
+                        repo_root,
+                        station_port=arguments.station_port,
+                    )
                     quiesced = True
                 process.stdin.write(line)
                 process.stdin.flush()
@@ -788,41 +992,9 @@ def _parser() -> argparse.ArgumentParser:
     verify.add_argument("--profile", required=True)
     verify.add_argument("--deployment-environment", required=True)
     verify.add_argument("--destructive-scope", required=True)
+    for remote in (quiesce, session, verify):
+        remote.add_argument("--station-port", required=True, type=int)
     return parser
-
-
-def _load_shell_environment(path: Path) -> dict[str, str]:
-    if not path.is_file():
-        raise ActivationTransportError(
-            "remote Station environment is unavailable"
-        )
-    completed = subprocess.run(
-        [
-            "bash",
-            "-lc",
-            'set -a; source "$1"; env -0',
-            "secure-content-environment",
-            str(path),
-        ],
-        capture_output=True,
-        timeout=15,
-        check=False,
-    )
-    if completed.returncode != 0:
-        detail = completed.stderr.decode(
-            "utf-8",
-            errors="replace",
-        )[-4000:].strip()
-        raise ActivationTransportError(
-            f"remote Station environment could not be loaded: {detail}"
-        )
-    result: dict[str, str] = {}
-    for entry in completed.stdout.split(b"\0"):
-        if not entry or b"=" not in entry:
-            continue
-        key, value = entry.split(b"=", 1)
-        result[key.decode("utf-8")] = value.decode("utf-8")
-    return result
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -836,9 +1008,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         repo_root = Path(arguments.repo_root).resolve()
         if arguments.command == "install-attestation":
             _install_attestation(repo_root, arguments.profile)
-        elif arguments.command == "remote-quiesce":
-            _quiesce(repo_root)
         else:
+            if arguments.station_port < 1024 or arguments.station_port > 65535:
+                raise ActivationTransportError(
+                    "station_port is outside the allowed range"
+                )
+            if arguments.command == "remote-quiesce":
+                _quiesce(
+                    repo_root,
+                    station_port=arguments.station_port,
+                )
+                return 0
             arguments.source_commit = _required(
                 arguments.source_commit,
                 "source_commit",

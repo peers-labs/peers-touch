@@ -26,6 +26,9 @@ from tooling.acceptance.gates.chat.native_current_profile_two_client_e2e import 
 from tooling.acceptance.gates.chat.native_two_client_runner import (
     CURRENT_PROFILE_REQUIRED_ASSERTIONS,
     CURRENT_PROFILE_GATE_ID,
+    LIFECYCLE_DIRECT_GATE_ID,
+    LIFECYCLE_ONBOARDING_GATE_ID,
+    LIFECYCLE_RICH_VOICE_GATE_ID,
     NativeTwoClientGate,
     STATION_BINDING_PROJECTION_TIMEOUT,
     SUBMITTED_COMMAND_RECOVERY_GATE_ID,
@@ -112,7 +115,7 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         self.assertIn(".messaging_engines", source)
         self.assertNotIn("device_install::get_or_create_device_id", source)
         self.assertEqual(
-            source.count("station_client::request_proto_for_device::<"),
+            source.count("request_proto_for_device::<"),
             5,
         )
         for request in (
@@ -1148,6 +1151,12 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
 
         self.assertTrue(is_current_profile_gate(CURRENT_PROFILE_GATE_ID))
         self.assertTrue(is_current_profile_gate(SUBMITTED_COMMAND_RECOVERY_GATE_ID))
+        for lifecycle_gate_id in (
+            LIFECYCLE_ONBOARDING_GATE_ID,
+            LIFECYCLE_DIRECT_GATE_ID,
+            LIFECYCLE_RICH_VOICE_GATE_ID,
+        ):
+            self.assertFalse(is_current_profile_gate(lifecycle_gate_id))
         self.assertFalse(is_current_profile_gate(self.module.GATE_ID))
         self.assertEqual(
             self.module.expected_journey_for_gate(

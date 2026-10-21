@@ -32,7 +32,16 @@ CLIENT_ID = "sim-ios"
 STATION_SERVICE_ID = "station-primary"
 RELAY_SERVICE_ID = "relay"
 REQUIRED_BUSINESS_RUNTIMES = frozenset(
-    {"messaging", "chat-storage", "command", "social", "group"}
+    {
+        "station",
+        "auth",
+        "access",
+        "session",
+        "messaging",
+        "chat-storage",
+        "command",
+        "social",
+    }
 )
 
 

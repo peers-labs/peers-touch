@@ -15,6 +15,7 @@ const composerMocks = vi.hoisted(() => ({
   draft: {
     draftRestored: false,
     hasDraft: false,
+    draftPersisted: false,
     saveDraft: vi.fn(),
     persistDraftNow: vi.fn(async () => true),
     discardDraft: vi.fn(async () => true),
@@ -65,6 +66,7 @@ describe('Moment composer media restoration', () => {
   beforeEach(() => {
     composerMocks.draft.draftRestored = false;
     composerMocks.draft.hasDraft = false;
+    composerMocks.draft.draftPersisted = false;
     composerMocks.draft.saving = false;
     composerMocks.draft.discarding = false;
     composerMocks.draft.persistenceFailure = null;
@@ -89,6 +91,12 @@ describe('Moment composer media restoration', () => {
     expect(restored.every((item) => item.source === 'restored-reference')).toBe(true);
     expect(restored.every((item) => !('file' in item))).toBe(true);
     expect(restored.every((item) => item.image === undefined)).toBe(true);
+  });
+
+  it('exposes authoritative draft persistence to native acceptance', () => {
+    composerMocks.draft.draftPersisted = true;
+
+    expect(renderMomentComposer()).toContain('data-draft-persisted="true"');
   });
 
   it('allows image-only publication after every upload completes', () => {

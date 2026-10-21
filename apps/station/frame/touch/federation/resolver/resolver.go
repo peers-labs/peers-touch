@@ -15,6 +15,7 @@ import (
 	"time"
 
 	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
+	corefederation "github.com/peers-labs/peers-touch/station/frame/core/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	fednode "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation/locator"
@@ -86,6 +87,8 @@ type Resolver struct {
 	remoteTimeout time.Duration
 	skipCache     bool
 	peerKeys      authfed.PeerKeyStore
+	httpClient    *http.Client
+	stationURLs   corefederation.StationURLResolver
 }
 
 // Config tunes the resolver. Zero value gives sensible production
@@ -106,6 +109,11 @@ type Config struct {
 	// locator and profile pair. Production defaults to the shared
 	// federation TOFU store.
 	PeerKeys authfed.PeerKeyStore
+
+	// HTTPClient and StationURLResolver provide the reviewed Direct route
+	// when no verified Circuit route is currently available.
+	HTTPClient         *http.Client
+	StationURLResolver corefederation.StationURLResolver
 }
 
 // New constructs a resolver. The zero Config is fine.
@@ -116,6 +124,8 @@ func New(cfg Config) *Resolver {
 		remoteTimeout: cfg.RemoteTimeout,
 		skipCache:     cfg.SkipCache,
 		peerKeys:      cfg.PeerKeys,
+		httpClient:    cfg.HTTPClient,
+		stationURLs:   cfg.StationURLResolver,
 	}
 	if r.now == nil {
 		r.now = time.Now
@@ -125,6 +135,9 @@ func New(cfg Config) *Resolver {
 	}
 	if r.remoteTimeout <= 0 {
 		r.remoteTimeout = 15 * time.Second
+	}
+	if r.httpClient == nil {
+		r.httpClient = &http.Client{Timeout: r.remoteTimeout}
 	}
 	if r.peerKeys == nil {
 		r.peerKeys = authfed.NewPeerKeyStoreGORM("")
@@ -537,20 +550,39 @@ func (r *Resolver) resolveRemote(
 	canon string,
 	rec *locatorpb.ActorLocatorRecord,
 ) (*Resolved, error) {
-	rc := fednode.RelayAccessSnapshot()
-	if rc == nil || !rc.Available() {
-		return nil, ErrRelayUnavailable
-	}
-
-	target := (&url.URL{
-		Scheme:   "https",
-		Host:     "station.invalid",
-		Path:     "/actor/federation/profile",
-		RawQuery: url.Values{"handle": []string{canon}}.Encode(),
-	}).String()
-
 	reqCtx, cancel := context.WithTimeout(ctx, r.remoteTimeout)
 	defer cancel()
+
+	rc := fednode.RelayAccessSnapshot()
+	target := ""
+	viaRelay := rc != nil && rc.Available()
+	if viaRelay {
+		target = (&url.URL{
+			Scheme:   "https",
+			Host:     "station.invalid",
+			Path:     "/actor/federation/profile",
+			RawQuery: url.Values{"handle": []string{canon}}.Encode(),
+		}).String()
+	} else {
+		if r.stationURLs == nil {
+			return nil, ErrRelayUnavailable
+		}
+		origin, err := r.stationURLs.ResolveActiveStationURL(
+			reqCtx,
+			rec.GetHomeStationPeerId(),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("resolver: resolve direct Station route: %w", err)
+		}
+		target, err = directProfileURL(
+			origin,
+			rec.GetHomeStationDomain(),
+			canon,
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, target, nil)
 	if err != nil {
@@ -558,7 +590,12 @@ func (r *Resolver) resolveRemote(
 	}
 	req.Header.Set("Accept", "application/protobuf")
 
-	resp, err := rc.RoundTrip(reqCtx, rec.GetHomeStationPeerId(), req)
+	var resp *http.Response
+	if viaRelay {
+		resp, err = rc.RoundTrip(reqCtx, rec.GetHomeStationPeerId(), req)
+	} else {
+		resp, err = r.httpClient.Do(req)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("resolver: Station route GET: %w", err)
 	}
@@ -598,4 +635,29 @@ func (r *Resolver) resolveRemote(
 		return nil, errors.New("resolver: profile Home Station does not match locator")
 	}
 	return &Resolved{Envelope: env, Locator: rec, IsLocal: false}, nil
+}
+
+func directProfileURL(
+	origin string,
+	expectedDomain string,
+	handle string,
+) (string, error) {
+	parsed, err := url.ParseRequestURI(strings.TrimSpace(origin))
+	if err != nil ||
+		(parsed.Scheme != "http" && parsed.Scheme != "https") ||
+		parsed.Hostname() == "" ||
+		parsed.User != nil ||
+		(parsed.Path != "" && parsed.Path != "/") ||
+		parsed.RawQuery != "" ||
+		parsed.Fragment != "" {
+		return "", fmt.Errorf("resolver: invalid direct Station origin")
+	}
+	if !strings.EqualFold(parsed.Host, strings.TrimSpace(expectedDomain)) {
+		return "", errors.New(
+			"resolver: direct Station origin does not match signed locator",
+		)
+	}
+	parsed.Path = "/actor/federation/profile"
+	parsed.RawQuery = url.Values{"handle": []string{handle}}.Encode()
+	return parsed.String(), nil
 }

@@ -179,6 +179,125 @@ func TestAttachmentControllerPersistsCredentialBeforeDesiredIntentAndCleansUp(
 	}
 }
 
+func TestImportAttachmentReplacesCleanupPendingWithFreshInvitation(
+	t *testing.T,
+) {
+	relayPeerID := testPeerID(t)
+	stationPeerID := testPeerID(t)
+	controlServer := httptest.NewServer(http.HandlerFunc(
+		func(response http.ResponseWriter, request *http.Request) {
+			response.Header().Set("Content-Type", "application/json")
+			switch request.URL.Path {
+			case "/api/v1/relay/enrollment/challenge":
+				_ = json.NewEncoder(response).Encode(enrollmentChallenge{
+					ChallengeID: "fresh-challenge",
+					RelayPeerID: relayPeerID.String(),
+					Challenge:   make([]byte, 32),
+				})
+			case "/api/v1/relay/register":
+				_ = json.NewEncoder(response).Encode(relayCredential{
+					Token:         "fresh-relay-token",
+					RelayPeerID:   relayPeerID.String(),
+					StationPeerID: stationPeerID.String(),
+					EnrollmentID:  8,
+					Generation:    2,
+					ExpiresAt: time.Now().UTC().
+						Add(time.Hour).
+						Format(time.RFC3339),
+				})
+			default:
+				http.NotFound(response, request)
+			}
+		},
+	))
+	defer controlServer.Close()
+
+	runtime := newAttachmentTestRuntime(t, Pool{Mode: PoolModeOff})
+	defer runtime.Close()
+	db := openAttachmentTestDB(t, "relay-attachment-fresh-invitation")
+	controller, err := NewAttachmentController(
+		db,
+		runtime,
+		stationPeerID.String(),
+		filepath.Join(t.TempDir(), "credentials"),
+	)
+	if err != nil {
+		t.Fatalf("create Attachment Controller: %v", err)
+	}
+	if err := controller.Initialize(t.Context()); err != nil {
+		t.Fatalf("initialize Attachment Controller: %v", err)
+	}
+
+	staleCredentialFile := filepath.Join(
+		t.TempDir(),
+		"stale-credential.json",
+	)
+	if err := persistRelayCredential(
+		staleCredentialFile,
+		relayCredential{
+			Token:         "stale-relay-token",
+			RelayPeerID:   relayPeerID.String(),
+			StationPeerID: stationPeerID.String(),
+			EnrollmentID:  7,
+			Generation:    1,
+			ExpiresAt: time.Now().UTC().
+				Add(time.Hour).
+				Format(time.RFC3339),
+		},
+	); err != nil {
+		t.Fatalf("persist stale Relay credential: %v", err)
+	}
+	stale := relayAttachmentPO{
+		StationPeerID:  controller.stationPeerID,
+		NodePeerID:     controller.nodePeerID,
+		RelayPeerID:    relayPeerID.String(),
+		ControlOrigin:  controlServer.URL,
+		DialAddresses:  []string{"/ip4/127.0.0.1/tcp/1/p2p/" + relayPeerID.String()},
+		CredentialFile: staleCredentialFile,
+		Source:         attachmentSourceInvitation,
+		Enabled:        false,
+		CleanupPending: true,
+		LastError:      "stale credential",
+	}
+	if err := db.Create(&stale).Error; err != nil {
+		t.Fatalf("create cleanup-pending attachment: %v", err)
+	}
+
+	attachment, err := controller.ImportAttachment(
+		t.Context(),
+		InvitationPackage{
+			SchemaVersion:         1,
+			RelayPeerID:           relayPeerID.String(),
+			ControlOrigin:         controlServer.URL,
+			DialAddresses:         stale.DialAddresses,
+			InviteToken:           "fresh-invitation",
+			IntendedStationPeerID: stationPeerID.String(),
+			Label:                 "recovered",
+		},
+	)
+	if err != nil {
+		t.Fatalf("replace cleanup-pending attachment: %v", err)
+	}
+	if attachment.State != AttachmentStateAttaching {
+		t.Fatalf("recovered attachment state = %s", attachment.State)
+	}
+
+	var stored relayAttachmentPO
+	if err := controller.ownedDB(t.Context()).
+		First(&stored, "relay_peer_id = ?", relayPeerID.String()).Error; err != nil {
+		t.Fatalf("load recovered attachment: %v", err)
+	}
+	if !stored.Enabled || stored.CleanupPending ||
+		stored.RetirementConfirmed || stored.LastError != "" ||
+		stored.Label != "recovered" {
+		t.Fatalf("fresh invitation did not replace stale intent: %+v", stored)
+	}
+	credential, err := loadRelayCredential(stored.CredentialFile)
+	if err != nil || credential.Token != "fresh-relay-token" {
+		t.Fatalf("fresh invitation retained stale credential: %+v err=%v", credential, err)
+	}
+}
+
 func TestAttachmentControllerHonorsDisabledBootstrapTombstone(t *testing.T) {
 	relayPeerID := testPeerID(t)
 	stationPeerID := testPeerID(t)

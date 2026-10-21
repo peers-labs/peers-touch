@@ -12,6 +12,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	"github.com/peers-labs/peers-touch/station/frame/core/util/id"
 	profilepb "github.com/peers-labs/peers-touch/station/frame/touch/federation/profile/pb"
+	modelpb "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -398,6 +399,14 @@ func buildRow(canon string, in UpsertInput, now time.Time, existing *db.Actor) d
 
 	cachedUntil := in.Envelope.GetExpiresAtUnixMs()
 	visibility := int16(visibilityByHandle)
+	if envProfile != nil {
+		switch envProfile.GetDiscoverability() {
+		case modelpb.ActorVisibility_ACTOR_VISIBILITY_INDEXED:
+			visibility = int16(visibilityIndexed)
+		case modelpb.ActorVisibility_ACTOR_VISIBILITY_HIDDEN:
+			visibility = int16(visibilityHidden)
+		}
+	}
 	if in.Locator.GetTombstone() {
 		visibility = int16(visibilityHidden)
 		// Tombstoned rows MUST NOT be considered fresh by Lookup —

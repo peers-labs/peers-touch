@@ -9,7 +9,7 @@ import unittest
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 
-from tooling.acceptance.core import BlockedError, GateError
+from tooling.acceptance.core import BlockedError, GateError, REPO_ROOT
 from tooling.acceptance.drivers.native import MouseAction, NativeInputMode
 from tooling.acceptance.gates.station_access.desktop_oauth_native_e2e import (
     ACCOUNT_IDENTITY_SUMMARY_SELECTOR,
@@ -18,7 +18,7 @@ from tooling.acceptance.gates.station_access.desktop_oauth_native_e2e import (
     DesktopOAuthNativeGate,
     LEGACY_ACCOUNT_LOGIN_PROVIDER_FIELD_SELECTOR,
     OAUTH_AVATAR_URL,
-    find_people_scopes_are_distinct,
+    find_people_scope_respects_client_boundary,
     is_native_tauri_url,
 )
 from tooling.acceptance.provisioners.station_access_desktop_oauth_native import (
@@ -152,6 +152,26 @@ class _FakeHoverRuntimeBinding:
 
 
 class DesktopOAuthNativeGateTest(unittest.TestCase):
+    def test_account_navigation_uses_the_navigation_owner_without_hash_reload(
+        self,
+    ) -> None:
+        source = (
+            REPO_ROOT
+            / "apps/desktop/src/acceptance/station_access/harness.ts"
+        ).read_text(encoding="utf-8")
+        method = source.split(
+            "async openAccountIdentity() {",
+            1,
+        )[1].split("async beginOAuthLogin", 1)[0]
+
+        self.assertNotIn("window.location.hash", method)
+        self.assertIn(
+            "eventBus.publish(EVENT.NAVIGATION_REQUESTED",
+            method,
+        )
+        self.assertIn("resource: 'settings'", method)
+        self.assertIn("id: 'account'", method)
+
     def test_chat_navigation_targets_the_production_role_button(self) -> None:
         self.assertEqual(
             CHAT_NAV_SELECTOR,
@@ -172,10 +192,11 @@ class DesktopOAuthNativeGateTest(unittest.TestCase):
             '[data-pt-account-identity="login-provider"]',
         )
 
-    def test_accepts_distinct_same_name_scope_evidence(self) -> None:
+    def test_accepts_federation_scope_without_member_station_topology(self) -> None:
         self.assertTrue(
-            find_people_scopes_are_distinct(
+            find_people_scope_respects_client_boundary(
                 {
+                    "all": {"label": "All"},
                     "federation": {
                         "name": "local",
                         "label": "Federation: local",
@@ -186,36 +207,27 @@ class DesktopOAuthNativeGateTest(unittest.TestCase):
                             "Search every discoverable person in the local federation."
                         ),
                     },
-                    "station": {
-                        "name": "local",
-                        "label": "Station: local",
-                        "ariaLabel": (
-                            "Search only people whose Home Station is local."
-                        ),
-                        "tooltip": (
-                            "Search only people whose Home Station is local."
-                        ),
-                    },
+                    "memberStationSelectorCount": 0,
                 }
             )
         )
 
-    def test_rejects_ambiguous_same_name_scope_evidence(self) -> None:
+    def test_rejects_member_station_topology_exposure(self) -> None:
         self.assertFalse(
-            find_people_scopes_are_distinct(
+            find_people_scope_respects_client_boundary(
                 {
+                    "all": {"label": "All"},
                     "federation": {
                         "name": "local",
-                        "label": "local",
-                        "ariaLabel": "local",
-                        "tooltip": "local",
+                        "label": "Federation: local",
+                        "ariaLabel": (
+                            "Search every discoverable person in the local federation."
+                        ),
+                        "tooltip": (
+                            "Search every discoverable person in the local federation."
+                        ),
                     },
-                    "station": {
-                        "name": "local",
-                        "label": "local",
-                        "ariaLabel": "local",
-                        "tooltip": "local",
-                    },
+                    "memberStationSelectorCount": 1,
                 }
             )
         )
@@ -346,11 +358,14 @@ class DesktopOAuthNativeGateTest(unittest.TestCase):
             "http://127.0.0.1:49152/callback?session_id=lp-123",
         )
         self.assertIn("oauth2_start_loopback", session.script)
+        self.assertIn("purpose: 'account_login'", session.script)
         self.assertEqual(session.provider_id, "github")
 
     def test_builds_deterministic_loopback_callback(self) -> None:
         callback_url = DesktopOAuthNativeGate._build_callback_url(
-            "http://127.0.0.1:49152/callback?session_id=lp-123",
+            "http://127.0.0.1:49152/callback?"
+            "session_id=lp-123&purpose=account_login&"
+            "receiver_challenge=receiver-proof",
             provider_id="github",
             provider_user_id="fixture-user",
             email="fixture@test.invalid",
@@ -364,12 +379,21 @@ class DesktopOAuthNativeGateTest(unittest.TestCase):
         self.assertEqual(query["provider_user_id"], ["fixture-user"])
         self.assertEqual(query["email"], ["fixture@test.invalid"])
         self.assertEqual(query["avatar_url"], [OAUTH_AVATAR_URL])
+        self.assertEqual(query["bridge_version"], ["v1"])
+        self.assertEqual(query["site_id"], ["default"])
+        self.assertEqual(query["purpose"], ["account_login"])
+        self.assertEqual(query["receiver_id"], ["lp-123"])
+        self.assertEqual(query["receiver_challenge"], ["receiver-proof"])
+        self.assertEqual(query["email_verified"], ["true"])
+        self.assertRegex(query["assertion_id"][0], r"^[0-9a-f]{64}$")
         self.assertEqual(query["ts"], ["2026-09-29T15:30:00Z"])
         self.assertEqual(query["sig"], ["a" * 64])
 
     def test_omits_missing_loopback_signature(self) -> None:
         callback_url = DesktopOAuthNativeGate._build_callback_url(
-            "http://127.0.0.1:49152/callback?session_id=lp-123&sig=stale",
+            "http://127.0.0.1:49152/callback?"
+            "session_id=lp-123&purpose=account_login&"
+            "receiver_challenge=receiver-proof&sig=stale",
             provider_id="github",
             provider_user_id="fixture-user",
             email="fixture@test.invalid",
@@ -382,35 +406,57 @@ class DesktopOAuthNativeGateTest(unittest.TestCase):
     def test_signer_matches_oauth_client_canonical_message(self) -> None:
         secret = "isolated-native-oauth-secret"
         timestamp = "2026-09-29T15:30:00Z"
+        fields = {
+            "assertion_id": "a" * 64,
+            "avatar_url": "https://example.test/avatar.png",
+            "bridge_version": "v1",
+            "display_name": "Alice Example",
+            "email": "alice@example.test",
+            "email_verified": "true",
+            "provider": "github",
+            "provider_user_id": "42",
+            "purpose": "account_login",
+            "receiver_challenge": (
+                "YldFvi9dnPnO1KMwjEHki8bjxSoF5-7xwsrPIniWNjs"
+            ),
+            "receiver_id": "lp-test",
+            "site_id": "default",
+            "ts": timestamp,
+            "union_id": "union-42",
+            "username": "alice",
+        }
         handler = OAuthBridgeSignerCapabilityHandler(secret)
         response = handler.invoke(
             "sign",
             {
-                "provider": "github",
-                "providerUserId": "fixture-user",
-                "email": "fixture@test.invalid",
-                "timestamp": timestamp,
+                "fields": fields,
             },
             deadline_monotonic=time.monotonic() + 1,
             cancellation=threading.Event(),
         )
-        expected_message = "github:fixture-user:fixture@test.invalid:" + timestamp
-        expected = hmac.new(
-            secret.encode(),
-            expected_message.encode(),
-            hashlib.sha256,
-        ).hexdigest()
+        expected_message = (
+            "assertion_id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            "aaaaaaaaaaaaaaaa&avatar_url=https%3A%2F%2Fexample.test%2F"
+            "avatar.png&bridge_version=v1&display_name=Alice+Example&"
+            "email=alice%40example.test&email_verified=true&provider=github&"
+            "provider_user_id=42&purpose=account_login&receiver_challenge="
+            "YldFvi9dnPnO1KMwjEHki8bjxSoF5-7xwsrPIniWNjs&receiver_id="
+            "lp-test&site_id=default&ts=2026-09-29T15%3A30%3A00Z&"
+            "union_id=union-42&username=alice"
+        )
 
         self.assertEqual(
-            oauth_bridge_signature_message(
-                "github",
-                "fixture-user",
-                "fixture@test.invalid",
-                timestamp,
-            ),
+            oauth_bridge_signature_message(fields),
             expected_message,
         )
-        self.assertEqual(response["signature"], expected)
+        self.assertEqual(
+            response["signature"],
+            hmac.new(
+                secret.encode(),
+                expected_message.encode(),
+                hashlib.sha256,
+            ).hexdigest(),
+        )
         self.assertTrue(handler.close().secrets_zeroized)
 
     def test_gate_requests_signature_without_receiving_secret(self) -> None:
@@ -421,6 +467,11 @@ class DesktopOAuthNativeGateTest(unittest.TestCase):
         gate.capability_client = client
 
         signed = gate._sign_callback(
+            callback_url=(
+                "http://127.0.0.1:49152/callback?"
+                "session_id=lp-123&purpose=account_login&"
+                "receiver_challenge=receiver-proof"
+            ),
             provider_id="google",
             provider_user_id="fixture-user",
             email="fixture@test.invalid",
@@ -430,6 +481,14 @@ class DesktopOAuthNativeGateTest(unittest.TestCase):
         self.assertEqual(client.capability_id, "station-access.oauth-bridge-signer")
         self.assertEqual(client.operation, "sign")
         self.assertNotIn("secret", client.payload)
+        self.assertEqual(
+            client.payload["fields"]["receiver_id"],
+            "lp-123",
+        )
+        self.assertEqual(
+            client.payload["fields"]["purpose"],
+            "account_login",
+        )
 
     def test_signer_capability_rejects_mismatched_run_identity(self) -> None:
         provisioner = object.__new__(
@@ -501,7 +560,6 @@ class DesktopOAuthNativeGateTest(unittest.TestCase):
     def test_accepts_pre_authentication_loopback_cancellation(self) -> None:
         status = json.dumps(
             {
-                "cancelled": True,
                 "status": "cancelled",
             }
         )

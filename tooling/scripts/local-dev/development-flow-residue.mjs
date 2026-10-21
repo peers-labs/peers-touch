@@ -93,11 +93,14 @@ const RETIRED_TOKENS = [
 
 const SKIPPED_DIRECTORIES = new Set([
   '.git',
+  '.local',
   '.trae-html-share-packages',
   'deliverables',
+  'dist',
   'node_modules',
   'output',
   'reports',
+  'target',
 ]);
 
 const TEXT_EXTENSIONS = new Set([

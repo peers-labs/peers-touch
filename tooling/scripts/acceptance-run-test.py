@@ -699,6 +699,9 @@ class AcceptanceRunTest(unittest.TestCase):
             "artifactKind": "acceptance-runtime-cell-manifest",
             "cellId": "desktop-linux-native",
             "gateId": "synthetic-gate",
+            "nativeAdapter": {
+                "inputMode": "exclusive-native-input",
+            },
             "state": "LEASED",
         }
         lifecycle.ready.return_value = manifest
@@ -756,6 +759,48 @@ class AcceptanceRunTest(unittest.TestCase):
 
         lifecycle.stop.assert_called_once_with()
 
+    def test_runtime_cell_projects_its_input_mode_to_gate_process(self) -> None:
+        module = load_module()
+
+        self.assertEqual(
+            module.runtime_cell_subprocess_environment(
+                {
+                    "nativeAdapter": {
+                        "inputMode": "exclusive-native-input",
+                    }
+                }
+            ),
+            {
+                "PT_ACCEPTANCE_DESKTOP_INPUT_MODE": (
+                    "exclusive-native-input"
+                ),
+                "PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION": (
+                    "isolated-gui-session"
+                ),
+            },
+        )
+        self.assertEqual(
+            module.runtime_cell_subprocess_environment(
+                {
+                    "nativeAdapter": {
+                        "inputMode": "semantic-nonintrusive",
+                    }
+                }
+            ),
+            {
+                "PT_ACCEPTANCE_DESKTOP_INPUT_MODE": (
+                    "semantic-nonintrusive"
+                ),
+                "PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION": (
+                    "shared-user-session"
+                ),
+            },
+        )
+        with self.assertRaisesRegex(RuntimeError, "invalid input mode"):
+            module.runtime_cell_subprocess_environment(
+                {"nativeAdapter": {"inputMode": "unknown"}}
+            )
+
     def test_main_orders_environment_cell_gate_and_reverse_cleanup(
         self,
     ) -> None:
@@ -810,6 +855,9 @@ class AcceptanceRunTest(unittest.TestCase):
                     "artifactKind": "acceptance-runtime-cell-manifest",
                     "cellId": "desktop-linux-native",
                     "gateId": "synthetic-native-gate",
+                    "nativeAdapter": {
+                        "inputMode": "exclusive-native-input",
+                    },
                     "state": "LEASED",
                 },
                 None,
@@ -821,6 +869,14 @@ class AcceptanceRunTest(unittest.TestCase):
                     kwargs["env"][module.AGGREGATE_SOURCE_ENV]
                 ),
                 {"commit": "abc123", "workspaceDigest": "clean"},
+            )
+            self.assertEqual(
+                kwargs["env"]["PT_ACCEPTANCE_DESKTOP_INPUT_MODE"],
+                "exclusive-native-input",
+            )
+            self.assertEqual(
+                kwargs["env"]["PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION"],
+                "isolated-gui-session",
             )
             events.append("gate")
             return mock.Mock(stdout="", stderr="", returncode=1)
@@ -1017,6 +1073,9 @@ class AcceptanceRunTest(unittest.TestCase):
                     "artifactKind": "acceptance-runtime-cell-manifest",
                     "cellId": "desktop-linux-native",
                     "gateId": "synthetic-context-gate",
+                    "nativeAdapter": {
+                        "inputMode": "exclusive-native-input",
+                    },
                     "state": "LEASED",
                 },
                 None,
@@ -1302,6 +1361,9 @@ class AcceptanceRunTest(unittest.TestCase):
                     "artifactKind": "acceptance-runtime-cell-manifest",
                     "cellId": "desktop-linux-native",
                     "gateId": "synthetic-context-gate",
+                    "nativeAdapter": {
+                        "inputMode": "exclusive-native-input",
+                    },
                     "state": "LEASED",
                 },
                 None,
@@ -1659,6 +1721,9 @@ class AcceptanceRunTest(unittest.TestCase):
                         "artifactKind": "acceptance-runtime-cell-manifest",
                         "cellId": "desktop-linux-native",
                         "gateId": "synthetic-context-gate",
+                        "nativeAdapter": {
+                            "inputMode": "exclusive-native-input",
+                        },
                         "state": "LEASED",
                     },
                     None,

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "id": "social",
-  "description": "Social is a managed product domain for Public and end-to-end encrypted Private Moments. Its required proof covers same-Station and same-Federation cross-Station Native Desktop journeys while Browser Social, Mobile parity, and cross-Federation private delivery remain explicitly unproven.",
+  "description": "Social is a managed product domain for Public and end-to-end encrypted Private Moments. Its required proof covers same-Station Native behavior, same-Federation cross-Station Native Desktop journeys, and Desktop-to-iOS interoperability while Browser Social, Android cross-platform parity, cross-mobile interoperability, and cross-Federation private delivery remain explicitly unproven.",
   "capabilities": [
     "acceptance-framework-self-consistency",
     "social-private-explicit-audience",

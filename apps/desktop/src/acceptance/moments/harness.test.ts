@@ -446,6 +446,86 @@ describe('Moments acceptance harness', () => {
     );
   });
 
+  it('drives create, leave, and delete through the acceptance-only Federation boundary', async () => {
+    const snapshot = {
+      actorPtid: 'ptid:test:alice',
+      federatedHandle: '@alice@four.invalid',
+      homeStationPeerId: 'station-four',
+      homeStationDomain: 'four.invalid',
+      federations: [],
+    };
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === 'acceptance_federation_fixture_snapshot') {
+        return { ok: true, data: snapshot } as never;
+      }
+      if (command === 'acceptance_federation_fixture_create') {
+        return {
+          ok: true,
+          data: { federationId: 'federation-1' },
+        } as never;
+      }
+      if (command === 'acceptance_federation_fixture_leave') {
+        return {
+          ok: true,
+          data: { federationId: 'federation-1', success: true },
+        } as never;
+      }
+      if (command === 'acceptance_federation_fixture_delete') {
+        return {
+          ok: true,
+          data: { federationId: 'federation-1', success: true },
+        } as never;
+      }
+      throw new Error(`unexpected command ${command}`);
+    });
+
+    await expect(harness().federationFixtureSnapshot()).resolves.toEqual(snapshot);
+    await expect(harness().createAcceptanceFederation({
+      name: 'Release Federation',
+      description: '0.0.1 lifecycle proof',
+    })).resolves.toEqual({ federationId: 'federation-1' });
+    await expect(harness().leaveAcceptanceFederation({
+      federationId: 'federation-1',
+      reason: 'lifecycle proof',
+    })).resolves.toEqual({
+      federationId: 'federation-1',
+      success: true,
+    });
+    await expect(harness().deleteAcceptanceFederation({
+      federationId: 'federation-1',
+    })).resolves.toEqual({
+      federationId: 'federation-1',
+      success: true,
+    });
+
+    expect(invoke).toHaveBeenCalledWith(
+      'acceptance_federation_fixture_create',
+      {
+        input: {
+          name: 'Release Federation',
+          description: '0.0.1 lifecycle proof',
+        },
+      },
+    );
+    expect(invoke).toHaveBeenCalledWith(
+      'acceptance_federation_fixture_leave',
+      {
+        input: {
+          federation_id: 'federation-1',
+          reason: 'lifecycle proof',
+        },
+      },
+    );
+    expect(invoke).toHaveBeenCalledWith(
+      'acceptance_federation_fixture_delete',
+      {
+        input: {
+          federation_id: 'federation-1',
+        },
+      },
+    );
+  });
+
   it('creates a Federation when active membership has no sequencer endpoint', async () => {
     let snapshotReads = 0;
     vi.mocked(invoke).mockImplementation(async (command) => {

@@ -20,13 +20,12 @@ from tooling.acceptance.drivers.native import (
 )
 from tooling.acceptance.drivers.native.runtime import NativeLaunchOptions
 from tooling.acceptance.drivers.tauri import TauriSession
-from tooling.acceptance.fixtures.chat_attachment_fault_proxy import (
-    ATTACHMENT_DOWNLOAD_PREFIX,
-    ATTACHMENT_UPLOAD_BEGIN_PATH,
-    AcceptanceStationAttachmentFaultProxy,
+from tooling.acceptance.gates.chat.native_file_picker import (
+    select_native_file,
+    wait_for_actionable_file_trigger,
 )
-from tooling.acceptance.gates.chat.native_file_picker import select_native_file
 from tooling.acceptance.gates.chat.native_support import (
+    active_direct_route_multiaddr,
     async_harness,
     enter_chat_page,
     selected_native_runtime,
@@ -35,6 +34,9 @@ from tooling.acceptance.gates.chat.native_support import (
 from tooling.acceptance.gates.chat.native_two_client_runner import (
     LIFECYCLE_RICH_VOICE_GATE_ID,
     NativeTwoClientGate,
+)
+from tooling.acceptance.node_connectivity_native_support import (
+    DirectRouteFaultProxy,
 )
 
 
@@ -84,7 +86,6 @@ class LifecycleRichVoiceGate(NativeTwoClientGate):
             actor_manifest=actor_manifest,
             runtime_binding=runtime_binding,
             gate_id=GATE_ID,
-            allow_existing_fixture=True,
         )
 
     @staticmethod
@@ -104,11 +105,12 @@ class LifecycleRichVoiceGate(NativeTwoClientGate):
         source_path: Path,
     ) -> None:
         client = self.clients[actor]
-        trigger = client.find_element(trigger_selector, STEP_TIMEOUT)
-        if not trigger.is_displayed() or not trigger.is_enabled():
-            raise GateError(
-                f"{actor} Native file chooser trigger is not actionable"
-            )
+        trigger = wait_for_actionable_file_trigger(
+            actor=actor,
+            client=client,
+            selector=trigger_selector,
+            timeout_seconds=STEP_TIMEOUT,
+        )
         select_native_file(
             actor=actor,
             client=client,
@@ -798,29 +800,35 @@ class LifecycleRichVoiceGate(NativeTwoClientGate):
         revision = int(
             composer.get_attribute("data-chat-send-outcome-revision") or 0
         )
-        proxy = AcceptanceStationAttachmentFaultProxy(self.station_url)
-        proxy_started = False
+        upload_proxy = DirectRouteFaultProxy(
+            active_direct_route_multiaddr(self.clients[actor]),
+        )
+        download_proxy = DirectRouteFaultProxy(
+            active_direct_route_multiaddr(self.clients[peer]),
+        )
+        proxies_started = False
         upload_override = None
         download_override = None
         try:
-            proxy.start()
-            proxy_started = True
+            upload_proxy.start()
+            download_proxy.start()
+            proxies_started = True
             upload_override = self.runtime_binding.create_transport_override(
                 actor,
                 "station",
-                proxy.url,
+                upload_proxy.multiaddr,
             )
             download_override = self.runtime_binding.create_transport_override(
                 peer,
                 "station",
-                proxy.url,
+                download_proxy.multiaddr,
             )
-            self.runtime_binding.apply_transport_override(
+            self.runtime_binding.apply_verified_direct_route_override(
                 actor,
                 "station",
                 upload_override,
             )
-            proxy.arm_upload_connection_loss_once()
+            upload_proxy.arm_once()
             self._select_native_file(
                 actor,
                 "[data-chat-attachment-picker]",
@@ -852,13 +860,13 @@ class LifecycleRichVoiceGate(NativeTwoClientGate):
                 timeout=180,
             )
             if (
-                outcome["state"] != "draft"
+                outcome["state"] != "pending"
                 or not outcome["messageId"]
                 or len(outcome["attachmentIds"]) != 1
             ):
                 raise GateError(
                     "interrupted rich attachment did not retain one durable "
-                    f"draft identity: {outcome}"
+                    f"pending identity: {outcome}"
                 )
             message_id = str(outcome["messageId"])
             attachment_id = str(outcome["attachmentIds"][0])
@@ -879,15 +887,10 @@ class LifecycleRichVoiceGate(NativeTwoClientGate):
                 lambda: (
                     snapshot
                     if (
-                        (snapshot := proxy.evidence())[
-                            "uploadConnectionLossCount"
-                        ]
-                        == 1
-                        and snapshot["forwardedPaths"].get(
-                            ATTACHMENT_UPLOAD_BEGIN_PATH,
-                            0,
-                        )
-                        >= 1
+                        (snapshot := upload_proxy.evidence())[
+                            "failureCount"
+                        ] == 1
+                        and snapshot["forwardedConnections"] >= 1
                     )
                     else None
                 ),
@@ -897,8 +900,8 @@ class LifecycleRichVoiceGate(NativeTwoClientGate):
             self.assert_condition(
                 "rich_attachment_upload_retry_identity",
                 isinstance(actor_attachment, dict)
-                and upload_evidence["uploadLossesRemaining"] == 0
-                and upload_evidence["uploadConnectionLossCount"] == 1,
+                and upload_evidence["dropRemaining"] == 0
+                and upload_evidence["failureCount"] == 1,
                 json.dumps(
                     {
                         "messageId": message_id,
@@ -909,7 +912,7 @@ class LifecycleRichVoiceGate(NativeTwoClientGate):
                     sort_keys=True,
                 ),
             )
-            self.runtime_binding.clear_transport_override(
+            self.runtime_binding.clear_verified_direct_route_override(
                 actor,
                 "station",
                 upload_override,
@@ -934,28 +937,35 @@ class LifecycleRichVoiceGate(NativeTwoClientGate):
                 timeout=180,
             )
             projections[peer] = peer_attachment
-            self.runtime_binding.apply_transport_override(
+            self.runtime_binding.apply_verified_direct_route_override(
                 peer,
                 "station",
                 download_override,
             )
-            proxy.arm_download_connection_loss_once()
+            download_proxy.arm_once()
             peer_path = self._open_attachment(peer, attachment_id)
             hashes[peer] = self.runtime_binding.native_file_sha256(
                 peer,
                 peer_path,
             )
-            download_evidence = proxy.evidence()
-            forwarded_downloads = sum(
-                count
-                for path, count in download_evidence["forwardedPaths"].items()
-                if path.startswith(ATTACHMENT_DOWNLOAD_PREFIX)
+            download_evidence = wait_until(
+                lambda: (
+                    snapshot
+                    if (
+                        (snapshot := download_proxy.evidence())[
+                            "failureCount"
+                        ] == 1
+                        and snapshot["forwardedConnections"] >= 1
+                    )
+                    else None
+                ),
+                "rich attachment download to resume after connection loss",
+                timeout=30,
             )
             self.assert_condition(
                 "rich_attachment_download_retry_identity",
-                download_evidence["downloadConnectionLossCount"] == 1
-                and download_evidence["downloadLossesRemaining"] == 0
-                and forwarded_downloads >= 1
+                download_evidence["failureCount"] == 1
+                and download_evidence["dropRemaining"] == 0
                 and hashes[peer] == expected_hash,
                 json.dumps(
                     {
@@ -989,7 +999,7 @@ class LifecycleRichVoiceGate(NativeTwoClientGate):
             cleanup_errors: list[str] = []
             if upload_override is not None:
                 try:
-                    self.runtime_binding.clear_transport_override(
+                    self.runtime_binding.clear_verified_direct_route_override(
                         actor,
                         "station",
                         upload_override,
@@ -998,18 +1008,22 @@ class LifecycleRichVoiceGate(NativeTwoClientGate):
                     cleanup_errors.append(f"upload override: {error}")
             if download_override is not None:
                 try:
-                    self.runtime_binding.clear_transport_override(
+                    self.runtime_binding.clear_verified_direct_route_override(
                         peer,
                         "station",
                         download_override,
                     )
                 except Exception as error:
                     cleanup_errors.append(f"download override: {error}")
-            if proxy_started:
-                try:
-                    proxy.stop()
-                except Exception as error:
-                    cleanup_errors.append(f"fault proxy: {error}")
+            if proxies_started:
+                for label, proxy in (
+                    ("upload proxy", upload_proxy),
+                    ("download proxy", download_proxy),
+                ):
+                    try:
+                        proxy.stop()
+                    except Exception as error:
+                        cleanup_errors.append(f"{label}: {error}")
             if cleanup_errors:
                 raise GateError(
                     "rich attachment fault transport cleanup failed: "

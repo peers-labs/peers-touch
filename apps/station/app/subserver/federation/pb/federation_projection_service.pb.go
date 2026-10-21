@@ -181,6 +181,7 @@ type FederationSummary struct {
 	MemberStationCount     uint32                 `protobuf:"varint,8,opt,name=member_station_count,json=memberStationCount,proto3" json:"member_station_count,omitempty"`
 	MyRole                 string                 `protobuf:"bytes,9,opt,name=my_role,json=myRole,proto3" json:"my_role,omitempty"`
 	Capability             *ActorCapability       `protobuf:"bytes,10,opt,name=capability,proto3" json:"capability,omitempty"`
+	HeadHash               []byte                 `protobuf:"bytes,11,opt,name=head_hash,json=headHash,proto3" json:"head_hash,omitempty"`
 	unknownFields          protoimpl.UnknownFields
 	sizeCache              protoimpl.SizeCache
 }
@@ -281,6 +282,13 @@ func (x *FederationSummary) GetMyRole() string {
 func (x *FederationSummary) GetCapability() *ActorCapability {
 	if x != nil {
 		return x.Capability
+	}
+	return nil
+}
+
+func (x *FederationSummary) GetHeadHash() []byte {
+	if x != nil {
+		return x.HeadHash
 	}
 	return nil
 }
@@ -985,7 +993,7 @@ const file_domain_federation_federation_projection_service_proto_rawDesc = "" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x16\n" +
 	"\x06status\x18\x03 \x01(\tR\x06status\"o\n" +
 	"\x17ListFederationsResponse\x12T\n" +
-	"\vfederations\x18\x01 \x03(\v22.peers_touch.model.federation.v1.FederationSummaryR\vfederations\"\x9a\x03\n" +
+	"\vfederations\x18\x01 \x03(\v22.peers_touch.model.federation.v1.FederationSummaryR\vfederations\"\xb7\x03\n" +
 	"\x11FederationSummary\x12#\n" +
 	"\rfederation_id\x18\x01 \x01(\tR\ffederationId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
@@ -1000,7 +1008,8 @@ const file_domain_federation_federation_projection_service_proto_rawDesc = "" +
 	"\n" +
 	"capability\x18\n" +
 	" \x01(\v20.peers_touch.model.federation.v1.ActorCapabilityR\n" +
-	"capability\"\xc2\x02\n" +
+	"capability\x12\x1b\n" +
+	"\thead_hash\x18\v \x01(\fR\bheadHash\"\xc2\x02\n" +
 	"\x0fActorCapability\x12\x1d\n" +
 	"\n" +
 	"can_invite\x18\x01 \x01(\bR\tcanInvite\x12(\n" +

@@ -1384,23 +1384,25 @@ class MacOSNativeDesktopAdapter(NativeDesktopAdapter):
     ) -> bool:
         self.require_exclusive_input("accept macOS media capture permission")
         process_id = self._validated_process_id(process_id)
+        try:
+            self.activate_process(process_id)
+        except DriverError as error:
+            if "did not become frontmost" not in str(error):
+                raise
         script = f"""
         tell application "System Events"
           tell first application process whose unix id is {process_id}
-            repeat 40 times
-              repeat with candidateWindow in windows
-                repeat with candidateSheet in sheets of candidateWindow
-                  repeat with candidateButton in buttons of candidateSheet
-                    try
-                      if (value of attribute "AXIdentifier" of candidateButton as text) is "{_MEDIA_PERMISSION_ALLOW_BUTTON_IDENTIFIER}" then
-                        click candidateButton
-                        return "pressed"
-                      end if
-                    end try
-                  end repeat
+            repeat with candidateWindow in windows
+              repeat with candidateSheet in sheets of candidateWindow
+                repeat with candidateButton in buttons of candidateSheet
+                  try
+                    if (value of attribute "AXIdentifier" of candidateButton as text) is "{_MEDIA_PERMISSION_ALLOW_BUTTON_IDENTIFIER}" then
+                      click candidateButton
+                      return "pressed"
+                    end if
+                  end try
                 end repeat
               end repeat
-              delay 0.05
             end repeat
             return "missing"
           end tell
@@ -1412,12 +1414,10 @@ class MacOSNativeDesktopAdapter(NativeDesktopAdapter):
                 capture_output=True,
                 text=True,
                 check=False,
-                timeout=5,
+                timeout=2,
             )
-        except subprocess.TimeoutExpired as error:
-            raise DriverError(
-                "Native media-capture permission inspection timed out"
-            ) from error
+        except subprocess.TimeoutExpired:
+            return False
         if completed.returncode != 0:
             raise DriverError(
                 "Native media-capture permission action failed: "

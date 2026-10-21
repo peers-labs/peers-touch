@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 
 from tooling.acceptance.core import REPO_ROOT
+from tooling.acceptance.gates.chat import lifecycle_presence_layout
 from tooling.acceptance.gates.chat.lifecycle_presence_layout import (
     GATE_ID,
     PRESENCE_LEASE_SECONDS,
@@ -17,6 +18,9 @@ from tooling.acceptance.gates.chat.lifecycle_presence_layout import (
     conversation_geometry_equal,
     message_geometry_equal,
     scroll_anchor_equal,
+)
+from tooling.acceptance.gates.chat.lifecycle_presence_layout_e2e import (
+    validate_presence_layout_report,
 )
 from tooling.acceptance.gates.chat.native_two_client_runner import (
     journey_for_gate,
@@ -102,6 +106,9 @@ class LifecyclePresenceLayoutContractTest(unittest.TestCase):
     def test_gate_uses_two_station_native_runtime(self) -> None:
         gates = json.loads(self.source("tooling/acceptance/gates.yaml"))
         gate = gates["gates"][GATE_ID]
+        self.assertTrue(
+            callable(lifecycle_presence_layout.runtime_station_service)
+        )
         self.assertEqual(
             gate["environment"],
             "native-tauri-embedded-webdriver",
@@ -145,7 +152,12 @@ class LifecyclePresenceLayoutContractTest(unittest.TestCase):
         harness = self.source("apps/desktop/src/acceptance/chat/harness.ts")
         for contract in (
             "request_cooperative_activation(",
-            "AcceptanceStationPresenceFaultProxy",
+            "DirectRouteFaultProxy",
+            "active_direct_route_multiaddr(",
+            "runtime_station_service(",
+            "apply_verified_direct_route_override(",
+            "clear_verified_direct_route_override(",
+            "proxy.arm()",
             'data-chat-presence-tag',
             'data-chat-session-unread-lane',
             'data-message-metadata-rail',
@@ -153,6 +165,7 @@ class LifecyclePresenceLayoutContractTest(unittest.TestCase):
             "wait_until(",
         ):
             self.assertIn(contract, runner)
+        self.assertNotIn("arm_query_failure(", runner)
         self.assertNotIn("time.sleep(", runner)
         self.assertIn("sendInteractionMessageBatch", harness)
         self.assertIn("imServiceV1.messaging.sendMessage(", harness)
@@ -167,9 +180,43 @@ class LifecyclePresenceLayoutContractTest(unittest.TestCase):
         runner = self.source(
             "tooling/acceptance/gates/chat/lifecycle_presence_layout.py"
         )
+        self.assertIn('"engineMessages"', runner)
+        self.assertIn(
+            "receiver prerequisite messages before unread baseline",
+            runner,
+        )
+        self.assertIn("authoritative_unread == 0", runner)
         self.assertIn("while next_index <= UNREAD_OVERFLOW_TARGET:", runner)
         self.assertIn("wait_for_unread_projection(", runner)
         self.assertIn('"overflowBatches": overflow_batches', runner)
+
+    def test_validator_accepts_signed_direct_outage_evidence(self) -> None:
+        validate_presence_layout_report(
+            {
+                "runtime": {
+                    "presenceLayout": {
+                        "focus": {"focusSamples": [{}, {}, {}]},
+                        "unknown": {
+                            "proxy": {"failureCount": 1},
+                            "recovered": {"valid": True},
+                        },
+                        "messages": {
+                            "messageIds": ["message-1", "message-2", "message-3"],
+                            "threadMessageId": "thread-1",
+                        },
+                        "unread": {
+                            "single": {"unread": 1},
+                            "capped": {"unread": 100, "badgeText": "99+"},
+                        },
+                        "lease": {
+                            "leaseSeconds": 90,
+                            "requiredObservationSeconds": 95,
+                            "result": {"elapsedSeconds": 96},
+                        },
+                    }
+                }
+            }
+        )
 
     def test_conversation_geometry_requires_reserved_shapes(self) -> None:
         before = {

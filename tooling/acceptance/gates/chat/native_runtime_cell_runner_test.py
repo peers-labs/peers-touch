@@ -320,9 +320,11 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             key_exchange_commands,
         )
         self.assertIn(
-            "execute_keypackage_count(context)",
+            "gateway_key_exchange_context(state)",
             gateway,
         )
+        self.assertIn("execute_keypackage_count(", gateway)
+        self.assertIn("state.station.client(),", gateway)
 
     def test_native_acceptance_commands_are_registered_with_tauri(self) -> None:
         main = (
@@ -345,16 +347,22 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertIn(command, main)
 
-    def test_federation_commands_are_registered_with_tauri(self) -> None:
+    def test_only_ordinary_client_federation_commands_are_registered(self) -> None:
         main = (
             ROOT / "apps/desktop/src-tauri/src/main.rs"
         ).read_text(encoding="utf-8")
-        commands = (
+        allowed_commands = (
+            "federation_resolve",
+            "federation_catalog_search",
+            "federation_list_contexts",
+        )
+        for command in allowed_commands:
+            with self.subTest(command=command):
+                self.assertIn(f"federation::{command}", main)
+        forbidden_commands = (
             "federation_get_self",
             "federation_update_visibility",
-            "federation_resolve",
             "federation_health",
-            "federation_catalog_search",
             "federation_list_federations",
             "federation_create",
             "federation_join",
@@ -362,9 +370,9 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             "federation_delete",
             "federation_list_member_stations",
         )
-        for command in commands:
+        for command in forbidden_commands:
             with self.subTest(command=command):
-                self.assertIn(f"federation::{command}", main)
+                self.assertNotIn(f"federation::{command}", main)
 
     def test_account_device_identity_comes_from_the_active_engine(self) -> None:
         source = (
@@ -997,15 +1005,39 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
         contexts = {
             clients["alice"]: {
                 "federations": [
-                    {"federationId": "fed-other"},
-                    {"federationId": "fed-shared"},
+                    {
+                        "federationId": "fed-stale",
+                        "name": "Legacy Federation",
+                    },
+                    {
+                        "federationId": "fed-shared",
+                        "name": "chat-native-acceptance",
+                    },
                 ]
             },
             clients["bob"]: {
-                "federations": [{"federationId": "fed-shared"}]
+                "federations": [
+                    {
+                        "federationId": "fed-stale",
+                        "name": "Legacy Federation",
+                    },
+                    {
+                        "federationId": "fed-shared",
+                        "name": "chat-native-acceptance",
+                    },
+                ]
             },
             clients["charlie"]: {
-                "federations": [{"federationId": "fed-shared"}]
+                "federations": [
+                    {
+                        "federationId": "fed-stale",
+                        "name": "Legacy Federation",
+                    },
+                    {
+                        "federationId": "fed-shared",
+                        "name": "chat-native-acceptance",
+                    },
+                ]
             },
         }
         with patch(

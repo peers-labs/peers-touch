@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prove 24-word recovery phrase backup and history restore across reinstall."""
+"""Prove visible 24-word recovery, including an inactive same-device Engine."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from tooling.acceptance.core import (
     AcceptanceGate,
     ActorRuntime,
     GateError,
+    call_async_harness,
 )
 from tooling.acceptance.drivers.native import NativeDesktopRuntimeBinding
 from tooling.acceptance.drivers.native.runtime import NativeLaunchOptions
@@ -53,6 +54,7 @@ REQUIRED_ASSERTIONS = {
     "alice_to_bob_plaintext",
     "alice_to_bob_delivered",
     "recovery_phrase_valid",
+    "same_device_no_engine_restore",
     "reinstall_restore",
 }
 
@@ -404,15 +406,29 @@ class NativeRecoveryGate(AcceptanceGate):
         bob.find_element(SELECTORS["recovery_backup"], 10).click()
         return phrase
 
-    def reinstall_and_restore(self, phrase: str, text: str, conversation_id: str = "") -> None:
+    def reinstall_and_restore(
+        self, phrase: str, text: str, conversation_id: str = "", *, without_engine: bool = False,
+    ) -> None:
         bob = self.clients["bob"]
-        self.stop_authenticated_client(bob)
-        self.start_injected_client("bob")
-        new_bob = self.clients["bob"]
+        before = async_harness(bob, "getRealtimeDevice", {})
+        if without_engine:
+            detached = bob.execute_async_script("""
+                const done = arguments[arguments.length - 1];
+                window.__TAURI__.core.invoke('messaging_acceptance_pause_lifecycle', {
+                  input: { expected_actor_ptid: arguments[0], detach_engine: true },
+                }).then(done).catch(error => done({error: String(error)}));
+            """, self.ptids["bob"])
+            if not isinstance(detached, dict) or detached.get("ok") is not True or detached.get("data", {}).get("engineDetached") is not True:
+                raise GateError("recovery did not detach the matching profile engine")
+            new_bob = bob
+        else:
+            self.stop_authenticated_client(bob)
+            self.start_injected_client("bob")
+            new_bob = self.clients["bob"]
         if self.ptids["bob"] != str(
             self.actor_specs["bob"].get("ptid") or ""
         ):
-            raise GateError("Bob identity changed after reinstall")
+            raise GateError("Bob identity changed during recovery")
         new_bob.find_element(SELECTORS["settings_nav"], 30).click()
         new_bob.find_element(SELECTORS["security_section"], 10).click()
         WebDriverWait(new_bob.driver, 30).until(
@@ -445,6 +461,13 @@ class NativeRecoveryGate(AcceptanceGate):
             phrase,
         )
         new_bob.find_element(SELECTORS["recovery_restore_submit"], 10).click()
+        resumed = wait_until(
+            lambda: call_async_harness(
+                new_bob, "resumeMessagingLifecycle", {"actorPtid": self.ptids["bob"]},
+                namespace="chat", script_timeout=120,
+            ),
+            "recovered engine activation", 120,
+        )
         enter_chat_page(new_bob)
         for attempt in range(8):
             try:
@@ -460,15 +483,25 @@ class NativeRecoveryGate(AcceptanceGate):
                 time.sleep(3)
         restored = wait_until(
             lambda: message_snapshot(new_bob, text),
-            "restored exact plaintext after reinstall",
+            "restored exact plaintext without active engine",
             120,
         )
         self.assert_condition(
-            "reinstall_restore",
+            "same_device_no_engine_restore" if without_engine else "reinstall_restore",
             text in str(restored.get("text") or "")
             and bool(restored.get("messageUlid")),
             f"message_id={restored.get('messageUlid', '')}",
         )
+        after = async_harness(new_bob, "getRealtimeDevice", {})
+        if without_engine and before.get("deviceId") != after.get("deviceId"):
+            raise GateError("recovery changed the authenticated installation device ID")
+        self.report.runtime["sameDeviceNoEngineRestore"] = {
+            "devicePreserved": True,
+            "engineResumed": bool(resumed),
+            "restoredMessageId": restored.get("messageUlid"),
+        }
+        fresh_text = f"post-recovery-delivery-{time.time_ns()}"
+        self.prove_initial_delivery(fresh_text)
 
     def verify_fixture_ready(self) -> bool:
         verify_runtime_fixture_ready(
@@ -631,6 +664,11 @@ class NativeRecoveryGate(AcceptanceGate):
                 "recovery_phrase_valid",
                 len(phrase.split()) == 24,
                 f"word_count={len(phrase.split())}",
+            )
+            self.step(
+                "recovery.same_device_no_engine_restore",
+                lambda: self.reinstall_and_restore(phrase, text, conversation_id, without_engine=True),
+                "bob",
             )
             self.step(
                 "recovery.reinstall_restore",

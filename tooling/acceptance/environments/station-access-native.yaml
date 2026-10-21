@@ -25,6 +25,7 @@
     {
       "id": "station-access-reset-actors",
       "authorization_required": true,
+      "authorization_ref": "station.reset:station-access-reset-actors",
       "initial_assertion": "Alice and Bob are reset to the deterministic baseline on the selected approved development Station"
     }
   ],

@@ -82,8 +82,9 @@ The user must not enter the Station shell without passing the Station-driven acc
   auth endpoint availability, and required capabilities through `mobile-rust`.
 - The explicit first-add action pins the peer ID. A known URL returning another
   identity is blocking and requires explicit Station replacement.
-- Production credentials and OAuth require TLS. HTTP is limited to an explicit
-  development profile, is visibly marked, and cannot establish production trust.
+- Users may choose a canonical `http://` or `https://` Station/Relay origin in
+  every build. HTTPS retains ordinary certificate verification. Both choices
+  require signed Station identity, route attestation, and Access Gate checks.
 - Development and acceptance Simulator runs do not read a launch-time Station
   environment variable. The acceptance provisioner resolves the Station origin
   from the active reviewed deploy profile and binds it through the same
@@ -91,17 +92,11 @@ The user must not enter the Station shell without passing the Station-driven acc
   (`apps/mobile/src/acceptance/actions.ts`, provisioner profile keys such as
   `PT_MOBILE_DIRECT_STATION_URL`); the app never reads a `*_DEV_STATION_ORIGIN`
   variable and no Simulator `SIMCTL_CHILD_*` forwarding exists.
-- Origin policy is build-gated. Debug builds and builds compiled with the
-  `acceptance-harness` Cargo feature permit an explicit HTTP development origin,
-  so a self-contained simulator acceptance artifact can use its declared HTTP
-  Station profile without a debug server. Production Release builds are
-  HTTPS-only.
 - Canonicalization in `normalize_station_origin`
-  (`apps/mobile/src-tauri/src/station_origin.rs`) accepts only
-  `http(s)://host:port/`. Any non-HTTP(S) scheme, embedded credentials,
-  non-root path, query, fragment, or missing/invalid port is rejected, and a
-  known origin that later presents a different challenge-signed `station_peer_id`
-  remains blocking and requires explicit Station replacement.
+  (`apps/mobile/src-tauri/src/station_origin.rs`) lowercases the host and
+  produces `http(s)://host:port/`, using port 80 or 443 when omitted. Any
+  non-HTTP(S) scheme, embedded credentials, non-root path, query, fragment,
+  missing host, or invalid port is rejected.
 
 ### 4.3 Access Gate Chain
 

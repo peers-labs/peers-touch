@@ -65,12 +65,18 @@ describe('StationSelector reachability states', () => {
     )).toBe('offline');
   });
 
+  it('keeps raw Station authority out of the saved Station row', () => {
+    expect(source).not.toContain(
+      '<Text type="secondary" className="mobile-truncate">{entry.url}</Text>',
+    );
+  });
+
   it('requires a current identity check before enabling Continue', () => {
     expect(appSource).toContain(
-      'identity = await verifyStationEntry(selectedStation)',
+      'identity = await verifyStationEntryRuntime(selectedStation)',
     );
     expect(appSource).toContain(
-      'return verifyBoundStationRoute({',
+      'verifyBoundStationRoute({',
     );
     expect(appSource).toContain(
       'requireMatchingStationIdentity(selectedStation, identity.stationPeerId)',
@@ -89,6 +95,8 @@ describe('StationSelector layout contract', () => {
   it('uses one URL field with an HTTP placeholder instead of a protocol picker', () => {
     expect(source).toContain("surfaceFixture === 'address'");
     expect(source).toContain("'http://station.local:18280'");
+    expect(source).toContain("surfaceFixture === 'address'");
+    expect(source).toContain("buildStationUrl(stationUrl)?.startsWith('http://')");
     expect(source).toContain('className="station-field-helper warning"');
     expect(source).toContain('className="station-submit"');
     expect(source).not.toContain('<select');
@@ -96,7 +104,12 @@ describe('StationSelector layout contract', () => {
   });
 
   it('anchors the surface and preserves a useful one-line address field', () => {
-    expect(styles).toMatch(/\.launch-content\s*\{[^}]*flex:\s*1;/s);
+    expect(styles).toMatch(
+      /\.launch-content\s*\{[^}]*flex:\s*1;[^}]*justify-content:\s*flex-end;/s,
+    );
+    expect(styles).toMatch(
+      /\.launch-content\s*\{[^}]*padding:\s*24px 22px calc\(var\(--safe-area-bottom\) \+ 12px\);/s,
+    );
     expect(styles).toMatch(/\.launch-panel\s*\{[^}]*flex:\s*0 0 auto;/s);
     expect(styles).toMatch(
       /\.station-address-input\s*\{[^}]*height:\s*44px;[^}]*font-size:\s*16px;/s,

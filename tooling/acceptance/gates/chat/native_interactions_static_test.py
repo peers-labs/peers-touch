@@ -60,9 +60,24 @@ class NativeInteractionContractsTest(unittest.TestCase):
         runner = self.source(
             "tooling/acceptance/gates/chat/native_interactions_runner.py"
         )
+        helper_start = harness.index("function interactionProjection(")
+        helper_end = harness.index(
+            "function activeSessionActorPtid(",
+            helper_start,
+        )
+        helper_source = harness[helper_start:helper_end]
+        action_start = harness.index("    async interactionProjection({")
+        action_end = harness.index(
+            "    async openInteractionThread({",
+            action_start,
+        )
+        action_source = harness[action_start:action_end]
 
-        self.assertIn("socialThreadKey(", harness)
-        self.assertIn("social.loadThreadMessages(", harness)
+        self.assertIn("getIMThreadMessages(", helper_source)
+        self.assertIn("state.threadMessages[socialThreadKey(", helper_source)
+        self.assertIn("threadRootMessageId = ''", action_source)
+        self.assertIn(".loadThreadMessages(", action_source)
+        self.assertIn("threadRootMessageId,", action_source)
         self.assertIn(
             '"threadRootMessageId": thread_root_message_id',
             runner,
@@ -72,6 +87,33 @@ class NativeInteractionContractsTest(unittest.TestCase):
             runner,
         )
         self.assertIn("deployment_environment=delivery_environment", runner)
+
+    def test_missing_reply_target_waits_for_actor_hide_convergence(self) -> None:
+        harness = self.source("apps/desktop/src/acceptance/chat/harness.ts")
+        runner = self.source(
+            "tooling/acceptance/gates/chat/native_interactions_runner.py"
+        )
+        action_start = harness.index("    async deleteLocalInteractionMessage({")
+        action_end = harness.index(
+            "    async typingProjection(",
+            action_start,
+        )
+        action_source = harness[action_start:action_end]
+        scenario_start = runner.index(
+            '        target_actor = "bob"',
+        )
+        scenario_end = runner.index(
+            '        edited_text = f"{prefix}-edited"',
+            scenario_start,
+        )
+        scenario_source = runner[scenario_start:scenario_end]
+
+        self.assertIn(".deleteMessage(", action_source)
+        self.assertIn("submitted: true", action_source)
+        self.assertNotIn("applyMessageMutation(", action_source)
+        self.assertIn("actor-hide convergence", scenario_source)
+        self.assertIn("self.projection(", scenario_source)
+        self.assertIn("is None", scenario_source)
 
     def test_native_actor_aliases_use_canonical_dev_accounts(self) -> None:
         support = self.source(
@@ -149,6 +191,9 @@ class NativeInteractionContractsTest(unittest.TestCase):
         self.assertIn('"outbox": outbox', store)
         self.assertIn('"attemptCount"', store)
         self.assertIn('"commandSha256"', store)
+        self.assertIn('"authorityHead": authority_head', store)
+        self.assertIn('"eventSequence"', store)
+        self.assertIn('"eventHash"', store)
 
     def test_native_runners_are_observation_bounded_and_source_bound(self) -> None:
         for path in (
@@ -168,19 +213,25 @@ class NativeInteractionContractsTest(unittest.TestCase):
             self.assertNotIn("time.sleep(", source)
             self.assertNotIn("localhost:18080", source)
 
-    def test_interaction_retry_preserves_the_last_submission_error(self) -> None:
+    def test_interaction_retry_submits_once_before_transport_loss(self) -> None:
         source = self.source(
             "tooling/acceptance/gates/chat/native_interactions_runner.py"
         )
-        retry_start = source.index("            def _submit_edit()")
-        retry_end = source.index(
-            "            edit = wait_until(",
-            retry_start,
-        )
+        retry_start = source.index("    def prove_pending_timeout_retry(")
+        retry_end = source.index("    def restart_client(", retry_start)
         retry_submission = source[retry_start:retry_end]
 
-        self.assertIn("return async_harness(", retry_submission)
-        self.assertNotIn("except Exception", retry_submission)
+        self.assertEqual(
+            retry_submission.count('"editInteractionMessage"'),
+            1,
+        )
+        self.assertNotIn("def _submit_edit", retry_submission)
+        self.assertLess(
+            retry_submission.index('"editInteractionMessage"'),
+            retry_submission.index(
+                '"messaging_acceptance_command_transport_fault"',
+            ),
+        )
         self.assertIn("contentState={content_state}", source)
 
     def test_group_sync_waits_for_eventual_member_projection(self) -> None:
@@ -196,6 +247,20 @@ class NativeInteractionContractsTest(unittest.TestCase):
         self.assertIn('f"{actor} projected Group {conversation_id}"', sync_source)
         self.assertIn("STEP_TIMEOUT", sync_source)
 
+    def test_actor_hide_waits_for_engine_authority_head(self) -> None:
+        source = self.source(
+            "tooling/acceptance/gates/chat/native_interactions_runner.py"
+        )
+        start = source.index('        target_actor = "bob"')
+        end = source.index("        deleted = async_harness(", start)
+        actor_hide = source[start:end]
+
+        self.assertIn("target_authority_sequence", actor_hide)
+        self.assertIn('"authorityHead"', actor_hide)
+        self.assertIn('"eventSequence"', actor_hide)
+        self.assertIn('"eventHash"', actor_hide)
+        self.assertIn("wait_until(", actor_hide)
+
     def test_interaction_runner_binds_selected_runtime_cell(self) -> None:
         source = self.source(
             "tooling/acceptance/gates/chat/native_interactions_runner.py"
@@ -206,9 +271,6 @@ class NativeInteractionContractsTest(unittest.TestCase):
             "selected runtime cell requires injected runtime resources",
             "runtime_binding.cell_id != selected_cell",
             "self.runtime_binding.create_bound_session(",
-            "self.runtime_binding.create_transport_override(",
-            "self.runtime_binding.apply_transport_override(",
-            "self.runtime_binding.clear_transport_override(",
             "native_runtime_source_identity(",
             "self.runtime_binding.finalize_cleanup(",
             'bool(cleanup.get("processesReleased"))',
@@ -217,6 +279,7 @@ class NativeInteractionContractsTest(unittest.TestCase):
         ):
             self.assertIn(required, source)
         self.assertNotIn("expose_orchestrator_endpoint(", source)
+        self.assertNotIn("create_transport_override(", source)
         self.assertNotIn("start_authenticated_client(", source)
 
     def test_selected_runtime_rejects_uninjected_gate_construction(self) -> None:
@@ -314,32 +377,135 @@ class NativeInteractionContractsTest(unittest.TestCase):
         self.assertNotIn("CancelPendingMessagingCommand", source)
         self.assertNotIn("cancel_pending", source)
 
-    def test_timeout_retry_uses_disposable_station_fault_proxy(self) -> None:
+    def test_timeout_retry_uses_exact_command_transport_fault(self) -> None:
         runner = self.source(
             "tooling/acceptance/gates/chat/native_interactions_runner.py"
         )
-        proxy = self.source(
-            "tooling/acceptance/fixtures/chat_submit_fault_proxy.py"
-        )
-        self.assertIn("AcceptanceStationSubmitFaultProxy", runner)
-        self.assertIn("arm_connection_loss", runner)
-        self.assertNotIn('"messaging_dispatch"', runner)
-        self.assertNotIn('"messaging_drain"', runner)
-        self.assertNotIn("def drain(", runner)
-        self.assertNotIn("self.drain(", runner)
-        self.assertIn('"engineInteractionSnapshot"', runner)
-        self.assertIn('"retry_wait"', runner)
-        self.assertIn("receiverVisibleCount", runner)
+        start = runner.index("    def prove_pending_timeout_retry(")
+        end = runner.index("    def restart_client(", start)
+        timeout_retry = runner[start:end]
         self.assertIn(
-            'CONVERSATION_COMMAND_PATH = "/conversation/command"',
-            proxy,
+            '"messaging_acceptance_pause_lifecycle"',
+            timeout_retry,
         )
-        self.assertNotIn('"/messaging/', proxy)
-        self.assertIn("acceptance_station_environment(station_url)", proxy)
-        self.assertIn("requestSha256", proxy)
-        self.assertIn("commandSha256", proxy)
-        self.assertIn("_authority_command_bytes", proxy)
-        self.assertNotIn("localhost:18080", proxy)
+        self.assertIn(
+            '"messaging_acceptance_resume_lifecycle"',
+            timeout_retry,
+        )
+        self.assertLess(
+            timeout_retry.index(
+                '"messaging_acceptance_pause_lifecycle"',
+            ),
+            timeout_retry.index('"editInteractionMessage"'),
+        )
+        self.assertLess(
+            timeout_retry.index('"editInteractionMessage"'),
+            timeout_retry.index(
+                '"messaging_acceptance_command_transport_fault"',
+            ),
+        )
+        self.assertLess(
+            timeout_retry.index(
+                '"messaging_acceptance_command_transport_fault"',
+            ),
+            timeout_retry.index(
+                '"messaging_acceptance_resume_lifecycle"',
+            ),
+        )
+        self.assertNotIn('"messaging_dispatch"', timeout_retry)
+        self.assertNotIn('"messaging_drain"', timeout_retry)
+        self.assertNotIn("def drain(", timeout_retry)
+        self.assertNotIn("self.drain(", timeout_retry)
+        self.assertIn('"retry_wait"', timeout_retry)
+        self.assertIn("receiverVisibleCount", timeout_retry)
+        self.assertIn('"commandSha256"', timeout_retry)
+        self.assertIn('"failureCount"', timeout_retry)
+        self.assertIn('"network"', timeout_retry)
+        self.assertIn('"observe_only": True', timeout_retry)
+        self.assertGreaterEqual(
+            timeout_retry.count(
+                '"messaging_acceptance_pause_lifecycle"',
+            ),
+            2,
+        )
+        self.assertNotIn(
+            "AcceptanceStationSubmitFaultProxy",
+            timeout_retry,
+        )
+        self.assertNotIn("DirectRouteFaultProxy", timeout_retry)
+
+    def test_durable_interaction_submit_survives_deferred_worker_wake(
+        self,
+    ) -> None:
+        commands = self.source(
+            "apps/desktop/src-tauri/src/interface/tauri_commands/messaging.rs"
+        )
+        main = self.source("apps/desktop/src-tauri/src/main.rs")
+        transport = self.source(
+            "apps/desktop/src-tauri/src/messaging/transport.rs"
+        )
+
+        pause_start = commands.index(
+            "pub fn messaging_acceptance_pause_lifecycle("
+        )
+        pause_end = commands.index(
+            "pub fn messaging_acceptance_resume_lifecycle(",
+            pause_start,
+        )
+        pause = commands[pause_start:pause_end]
+        edit_start = commands.index("pub fn messaging_submit_edit(")
+        edit_end = commands.index(
+            "pub fn messaging_submit_metadata_interaction(",
+            edit_start,
+        )
+        edit = commands[edit_start:edit_end]
+        metadata_end = commands.index(
+            "pub async fn messaging_stage_attachment_source(",
+            edit_end,
+        )
+        metadata = commands[edit_end:metadata_end]
+
+        self.assertIn("deactivate_profile_worker", pause)
+        self.assertIn(
+            "messaging_acceptance_pause_lifecycle",
+            main,
+        )
+        self.assertIn(
+            "messaging_acceptance_command_transport_fault",
+            main,
+        )
+        self.assertIn(
+            "set_acceptance_command_transport_fault",
+            commands,
+        )
+        self.assertIn(
+            "get_acceptance_command_transport_fault",
+            commands,
+        )
+        self.assertIn(
+            "consume_acceptance_command_transport_fault",
+            transport,
+        )
+        self.assertIn(
+            "acceptance_command_transport_fault_is_exact_and_one_shot",
+            transport,
+        )
+        self.assertIn(
+            "messaging edit lifecycle wake deferred",
+            edit,
+        )
+        self.assertIn(
+            "messaging interaction lifecycle wake deferred",
+            metadata,
+        )
+        self.assertNotIn(
+            "return AppResult::fail(ErrorCode::InternalError, error, None);",
+            edit[edit.index("wake_profile"):],
+        )
+        self.assertNotIn(
+            "return AppResult::fail(ErrorCode::InternalError, error, None);",
+            metadata[metadata.index("wake_profile"):],
+        )
 
     def test_native_interactions_use_window_owned_membership_and_engine(self) -> None:
         runner = self.source(
@@ -861,10 +1027,12 @@ class ContactMessageResilienceTest(unittest.TestCase):
             "apps/station/app/subserver/conversation/production_composition.go"
         )
         self.assertIn(
-            "&persistence.ConversationMemberModel{}",
+            "persistence.MigrateCanonicalSchema(ctx, tx)",
             composition,
-            "production composition must migrate the canonical member model",
+            "production composition must delegate authority schema migration "
+            "to the canonical persistence owner",
         )
+        self.assertNotIn("&persistence.ConversationMemberModel{}", composition)
         self.assertNotIn("repairMemberIndex", composition)
 
     def test_toast_host_is_mounted_at_app_root(self) -> None:

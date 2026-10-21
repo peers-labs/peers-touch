@@ -27,6 +27,16 @@ export interface FederationActorStationCandidate {
   username: string;
 }
 
+function isRawStationAuthority(value: string): boolean {
+  if (/^https?:\/\//i.test(value)) return true;
+  if (/\s/.test(value)) return false;
+  return (
+    /^(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?$/.test(value)
+    || /^\[[0-9a-f:]+\](?::\d+)?$/i.test(value)
+    || /^[a-z0-9-]+(?:\.[a-z0-9-]+)+(?::\d+)?$/i.test(value)
+  );
+}
+
 export function resolveFederationStationName(input: {
   actorPtid?: string;
   stationPeerId?: string;
@@ -40,7 +50,8 @@ export function resolveFederationStationName(input: {
     actorEntry?.homeStationName.trim()
     && (!stationPeerId || actorEntry.homeStationPeerId.trim() === stationPeerId)
   ) {
-    return actorEntry.homeStationName.trim();
+    const name = actorEntry.homeStationName.trim();
+    return isRawStationAuthority(name) ? '' : name;
   }
   return '';
 }
@@ -89,6 +100,7 @@ export const useFederationStore = createDesktopStore<FederationState>('federatio
         lastError: msg,
         self: state.self,
       }));
+      throw err;
     }
   },
 
@@ -99,6 +111,8 @@ export const useFederationStore = createDesktopStore<FederationState>('federatio
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       log.warn('federation', 'refreshFederationContexts failed', { error: msg });
+      set({ lastError: msg });
+      throw err;
     }
   },
 

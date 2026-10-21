@@ -15,7 +15,6 @@ import {
   CircleAlert,
   ExternalLink,
   Globe2,
-  Heart,
   ImagePlus,
   Link as LinkIcon,
   LoaderCircle,
@@ -43,13 +42,18 @@ import {
 import type {
   Moment,
   MomentComment,
+  ReactionKind,
 } from '../types';
 import {
   GRADIENTS,
-  MOMENT_REACTION_EMOJI,
+  REACTION_EMOJI,
+  REACTION_KINDS,
 } from '../types';
 import { demoAvatarUrls, demoMoments } from '../data';
 import { UserSquareAvatar } from '../components/UserSquareAvatar';
+import { ReactionChip } from '../../../../shared/ReactionChip';
+import { ReactionPicker } from '../../../../shared/ReactionPicker';
+import copy from '../../../../../locales/en/common.json';
 
 const { Text } = Typography;
 
@@ -239,6 +243,7 @@ export function MomentsPage({
   const [view, setView] = useState<SocialView>('feed');
   const [activeCommentComposerId, setActiveCommentComposerId] = useState<string | null>(null);
   const [expandedCommentListId, setExpandedCommentListId] = useState<string | null>(null);
+  const [reactionPickerId, setReactionPickerId] = useState<string | null>(null);
   const [mediaPreview, setMediaPreview] = useState<MediaPreview | null>(null);
   const [actionMomentId, setActionMomentId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -263,6 +268,7 @@ export function MomentsPage({
     setScope('home');
     setActiveCommentComposerId(null);
     setExpandedCommentListId(null);
+    setReactionPickerId(null);
   }, [scenario]);
 
   useEffect(() => {
@@ -291,19 +297,33 @@ export function MomentsPage({
 
   function navigate(next: SocialView) {
     onImmersiveVisibilityChange?.(next !== 'feed');
+    setReactionPickerId(null);
     setView(next);
   }
 
-  function toggleReaction(id: string) {
+  function toggleReaction(id: string, kind: ReactionKind) {
     setMoments((current) => current.map((moment) => {
       if (moment.id !== id) return moment;
-      const counts = { love: moment.reactionCounts?.love ?? 0 };
-      if (moment.myReaction === 'love') {
-        counts.love = Math.max(0, counts.love - 1);
-        return { ...moment, myReaction: undefined, reactionCounts: counts, likes: Math.max(0, moment.likes - 1) };
+      const counts = { ...(moment.reactionCounts ?? {}) };
+      const selected = new Set(moment.myReactions ?? []);
+      if (selected.has(kind)) {
+        counts[kind] = Math.max(0, (counts[kind] ?? 1) - 1);
+        selected.delete(kind);
+        return {
+          ...moment,
+          myReactions: [...selected],
+          reactionCounts: counts,
+          likes: Math.max(0, moment.likes - 1),
+        };
       }
-      counts.love += 1;
-      return { ...moment, myReaction: 'love' as const, reactionCounts: counts, likes: moment.likes + 1 };
+      counts[kind] = (counts[kind] ?? 0) + 1;
+      selected.add(kind);
+      return {
+        ...moment,
+        myReactions: [...selected],
+        reactionCounts: counts,
+        likes: moment.likes + 1,
+      };
     }));
   }
 
@@ -322,6 +342,7 @@ export function MomentsPage({
     setMoments((current) => current.map((moment) => (
       moment.id === momentId ? { ...moment, comments: [...moment.comments, comment] } : moment
     )));
+    setExpandedCommentListId(momentId);
     setCommentInputs((current) => ({ ...current, [momentId]: '' }));
   }
 
@@ -413,7 +434,10 @@ export function MomentsPage({
             key={item}
             type="button"
             className={scope === item ? 'active' : ''}
-            onClick={() => setScope(item)}
+            onClick={() => {
+              setReactionPickerId(null);
+              setScope(item);
+            }}
           >
             {item === 'home' ? 'Home' : 'Explore'}
           </button>
@@ -437,11 +461,20 @@ export function MomentsPage({
             scenario={moment.id === moments[0]?.id ? scenario : 'social-parity'}
             commentComposerOpen={activeCommentComposerId === moment.id}
             commentsExpanded={expandedCommentListId === moment.id}
+            reactionPickerOpen={reactionPickerId === moment.id}
             onOpenProfile={() => navigate('profile')}
-            onReact={() => toggleReaction(moment.id)}
-            onToggleCommentComposer={() => setActiveCommentComposerId((current) => (
-              current === moment.id ? null : moment.id
-            ))}
+            onReact={(kind) => toggleReaction(moment.id, kind)}
+            onToggleReactionPicker={() =>
+              setReactionPickerId((current) =>
+                current === moment.id ? null : moment.id,
+              )
+            }
+            onToggleCommentComposer={() => {
+              setReactionPickerId(null);
+              setActiveCommentComposerId((current) =>
+                current === moment.id ? null : moment.id,
+              );
+            }}
             onToggleMoreComments={() => setExpandedCommentListId((current) => (
               current === moment.id ? null : moment.id
             ))}
@@ -451,8 +484,14 @@ export function MomentsPage({
               [moment.id]: value,
             }))}
             onComment={() => addComment(moment.id)}
-            onOpenMedia={(kind) => setMediaPreview({ momentId: moment.id, kind })}
-            onOpenActions={() => setActionMomentId(moment.id)}
+            onOpenMedia={(kind) => {
+              setReactionPickerId(null);
+              setMediaPreview({ momentId: moment.id, kind });
+            }}
+            onOpenActions={() => {
+              setReactionPickerId(null);
+              setActionMomentId(moment.id);
+            }}
           />
         ))}
       </div>
@@ -672,8 +711,10 @@ function MomentArticle({
   scenario,
   commentComposerOpen,
   commentsExpanded,
+  reactionPickerOpen,
   onOpenProfile,
   onReact,
+  onToggleReactionPicker,
   onToggleCommentComposer,
   onToggleMoreComments,
   commentText,
@@ -686,8 +727,10 @@ function MomentArticle({
   scenario: MomentsEvidenceScenario;
   commentComposerOpen: boolean;
   commentsExpanded: boolean;
+  reactionPickerOpen: boolean;
   onOpenProfile: () => void;
-  onReact: () => void;
+  onReact: (kind: ReactionKind) => void;
+  onToggleReactionPicker: () => void;
   onToggleCommentComposer: () => void;
   onToggleMoreComments: () => void;
   commentText: string;
@@ -700,6 +743,7 @@ function MomentArticle({
   const interactionsDisabled = hidesPlaintext || scenario === 'social-source-unavailable';
   const visibleComments = commentsExpanded ? moment.comments : moment.comments.slice(0, 10);
   const hiddenCommentCount = Math.max(0, moment.comments.length - visibleComments.length);
+  const myReactions = new Set(moment.myReactions ?? []);
   return (
     <article className="mp-social-moment">
       <div className="mp-social-author-row">
@@ -764,22 +808,46 @@ function MomentArticle({
         {moment.remote ? <Globe2 size={13} /> : <ShieldCheck size={13} />}
         <span>{moment.audience} · {moment.reason}</span>
       </div>
-      <div className="mp-moment-actions">
+
+      {REACTION_KINDS.some(
+        (kind) => (moment.reactionCounts?.[kind] ?? 0) > 0,
+      ) ? (
         <div className="mp-moment-reaction-summary">
-          {(moment.reactionCounts?.love ?? 0) > 0 ? (
-            <span className={moment.myReaction === 'love' ? 'mp-moment-reaction-tag mine' : 'mp-moment-reaction-tag'}>
-              {MOMENT_REACTION_EMOJI.love} {moment.reactionCounts?.love}
-            </span>
-          ) : null}
+          {REACTION_KINDS.map((kind) => {
+            const count = moment.reactionCounts?.[kind] ?? 0;
+            if (count === 0) return null;
+            return (
+              <ReactionChip
+                key={kind}
+                touch
+                scope="moment"
+                reactionId={kind}
+                emoji={REACTION_EMOJI[kind]}
+                count={count}
+                selected={myReactions.has(kind)}
+                label={copy['mobile.chat.reactWith'].replace(
+                  '{{reaction}}',
+                  REACTION_EMOJI[kind],
+                )}
+                disabled={interactionsDisabled}
+                onClick={() => onReact(kind)}
+              />
+            );
+          })}
         </div>
+      ) : null}
+
+      <div className="mp-moment-actions">
         <div className="mp-moment-action-group">
-          <button
-            type="button"
+          <ReactionChip
+            touch
+            scope="moment"
             disabled={interactionsDisabled}
-            className={moment.myReaction ? 'mp-moment-action reacted' : 'mp-moment-action'}
-            aria-label="Follow this Moment"
-            onClick={onReact}
-          ><Heart size={18} fill={moment.myReaction ? 'currentColor' : 'none'} /></button>
+            className="mp-moment-reaction-open"
+            label={copy['mobile.chat.addReaction']}
+            expanded={reactionPickerOpen}
+            onClick={onToggleReactionPicker}
+          />
           <button type="button" disabled={hidesPlaintext} className={commentComposerOpen ? 'mp-moment-action active' : 'mp-moment-action'} aria-label={commentComposerOpen ? 'Hide comment composer' : 'Add comment'} onClick={onToggleCommentComposer}>
             <MessageCircle size={18} /><span className="mp-moment-action-count">{moment.comments.length}</span>
           </button>
@@ -794,6 +862,24 @@ function MomentArticle({
           </button>
         </div>
       </div>
+
+      {reactionPickerOpen ? (
+        <ReactionPicker
+          className="mp-moment-reaction-picker"
+          label={copy['mobile.chat.addReaction']}
+          items={REACTION_KINDS.map((kind) => ({
+            id: kind,
+            emoji: REACTION_EMOJI[kind],
+            selected: myReactions.has(kind),
+            label: copy['mobile.chat.reactWith'].replace(
+              '{{reaction}}',
+              REACTION_EMOJI[kind],
+            ),
+          }))}
+          disabled={interactionsDisabled}
+          onToggle={onReact}
+        />
+      ) : null}
 
       {!hidesPlaintext && (moment.comments.length > 0 || commentComposerOpen) && (
         <section className="mp-social-comments mp-social-comments-inline" aria-label={`Comments on ${moment.name}'s Moment`}>

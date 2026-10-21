@@ -1018,21 +1018,46 @@ export async function privateSocialReact(
   input: PrivateSocialAccountInput & { postId: string; kind: number },
 ): Promise<PrivateReactionMutationResult> {
   requirePrivateSocialMutation(input);
-  return invoke<PrivateReactionMutationResult>('social_private_react', { input });
+  return invoke<PrivateReactionMutationResult>('social_private_react', {
+    input: {
+      ...privateSocialReactionScope(input),
+      postId: input.postId,
+      kind: input.kind,
+    },
+  });
 }
 
 export async function privateSocialUnreact(
   input: PrivateSocialAccountInput & { postId: string; kind: number },
 ): Promise<PrivateReactionMutationResult> {
   requirePrivateSocialMutation(input);
-  return invoke<PrivateReactionMutationResult>('social_private_unreact', { input });
+  return invoke<PrivateReactionMutationResult>('social_private_unreact', {
+    input: {
+      ...privateSocialReactionScope(input),
+      postId: input.postId,
+      kind: input.kind,
+    },
+  });
 }
 
 export async function privateSocialReactionRetry(
   input: PrivateSocialAccountInput & { commandId: string },
 ): Promise<PrivateReactionMutationResult> {
   requirePrivateSocialMutation(input);
-  return invoke<PrivateReactionMutationResult>('social_private_reaction_retry', { input });
+  return invoke<PrivateReactionMutationResult>('social_private_reaction_retry', {
+    input: {
+      ...privateSocialReactionScope(input),
+      commandId: input.commandId,
+    },
+  });
+}
+
+function privateSocialReactionScope(input: PrivateSocialAccountInput) {
+  return {
+    stationPeerId: input.stationPeerId,
+    actorPtid: input.actorPtid,
+    activationGeneration: input.activationGeneration,
+  };
 }
 
 export async function privateSocialReconcile(
@@ -1496,7 +1521,7 @@ export interface NativeStationRouteCandidate {
   authorizationEpoch: number;
   routeId: string;
   routeType: StationRouteType;
-  transport: 'direct_https' | 'libp2p_http_v1';
+  transport: 'libp2p_http_v1';
   endpointOrigin: string;
   relayPeerId?: string;
   routeGeneration: number;

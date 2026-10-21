@@ -289,6 +289,18 @@ pub struct MessagingCommandStatusInput {
 #[derive(Debug, Deserialize)]
 pub struct MessagingAcceptanceActorInput {
     pub expected_actor_ptid: String,
+    #[serde(default)]
+    pub detach_engine: bool,
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+#[derive(Debug, Deserialize)]
+pub struct MessagingAcceptanceCommandTransportFaultInput {
+    pub expected_actor_ptid: String,
+    #[serde(default)]
+    pub command_id: String,
+    #[serde(default)]
+    pub observe_only: bool,
 }
 
 #[cfg(feature = "acceptance-webdriver")]
@@ -1547,6 +1559,97 @@ pub fn messaging_acceptance_prepare_submitted_command(
 
 #[cfg(feature = "acceptance-webdriver")]
 #[tauri::command]
+pub fn messaging_acceptance_pause_lifecycle(
+    input: MessagingAcceptanceActorInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let session = match state.sessions.get(window.label()) {
+        Some(session) => session,
+        None => {
+            return AppResult::fail(
+                ErrorCode::Unauthorized,
+                "acceptance.chat.windowSessionMissing",
+                Some(json!({ "reason": "window_session_missing" })),
+            )
+        }
+    };
+    let actor_ptid = match require_acceptance_actor(&input.expected_actor_ptid, &session.actor.ptid)
+    {
+        Ok(actor_ptid) => actor_ptid,
+        Err(error) => return error,
+    };
+    if let Err(error) = state
+        .messaging_engines
+        .set_acceptance_profile_worker_paused(&session.account_id, true)
+    {
+        return AppResult::fail(ErrorCode::InternalError, error, None);
+    }
+    if input.detach_engine {
+        return match state.messaging_engines.deactivate(&session.account_id) {
+            Ok(engine) => {
+                drop(engine);
+                AppResult::success(json!({
+                    "actorPtid": actor_ptid,
+                    "paused": true,
+                    "engineDetached": true,
+                }))
+            }
+            Err(error) => AppResult::fail(ErrorCode::InternalError, error, None),
+        };
+    }
+    match state
+        .messaging_engines
+        .deactivate_profile_worker(&session.account_id)
+    {
+        Ok(()) => AppResult::success(json!({
+            "actorPtid": actor_ptid,
+            "paused": true,
+        })),
+        Err(error) => AppResult::fail(ErrorCode::InternalError, error, None),
+    }
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+#[tauri::command]
+pub fn messaging_acceptance_command_transport_fault(
+    input: MessagingAcceptanceCommandTransportFaultInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let session = match state.sessions.get(window.label()) {
+        Some(session) => session,
+        None => {
+            return AppResult::fail(
+                ErrorCode::Unauthorized,
+                "acceptance.chat.windowSessionMissing",
+                Some(json!({ "reason": "window_session_missing" })),
+            )
+        }
+    };
+    if let Err(error) = require_acceptance_actor(&input.expected_actor_ptid, &session.actor.ptid) {
+        return error;
+    }
+    let command_id = input.command_id.trim();
+    let snapshot = if input.observe_only {
+        crate::messaging::get_acceptance_command_transport_fault()
+    } else {
+        crate::messaging::set_acceptance_command_transport_fault(
+            (!command_id.is_empty()).then_some(command_id),
+        )
+    };
+    match snapshot {
+        Ok(snapshot) => AppResult::success(json!({
+            "armedCommandId": snapshot.armed_command_id,
+            "failedCommandId": snapshot.failed_command_id,
+            "failureCount": snapshot.failure_count,
+        })),
+        Err(error) => AppResult::fail(ErrorCode::InternalError, error, None),
+    }
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+#[tauri::command]
 pub fn messaging_acceptance_resume_lifecycle(
     input: MessagingAcceptanceActorInput,
     state: State<'_, Arc<AppState>>,
@@ -1567,6 +1670,12 @@ pub fn messaging_acceptance_resume_lifecycle(
         Ok(actor_ptid) => actor_ptid,
         Err(error) => return error,
     };
+    if let Err(error) = state
+        .messaging_engines
+        .set_acceptance_profile_worker_paused(&session.account_id, false)
+    {
+        return AppResult::fail(ErrorCode::InternalError, error, None);
+    }
     match state
         .messaging_engines
         .activate_profile_worker(&session.account_id, session.jwt.clone())
@@ -2224,7 +2333,11 @@ pub fn messaging_submit_edit(
         Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
     };
     if let Err(error) = state.messaging_engines.wake_profile(&account_id) {
-        return AppResult::fail(ErrorCode::InternalError, error, None);
+        tracing::warn!(
+            command_id,
+            error = %error,
+            "messaging edit lifecycle wake deferred after durable preparation"
+        );
     }
     AppResult::success(json!({
         "command_id": command_id,
@@ -2270,7 +2383,11 @@ pub fn messaging_submit_metadata_interaction(
         Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
     };
     if let Err(error) = state.messaging_engines.wake_profile(&account_id) {
-        return AppResult::fail(ErrorCode::InternalError, error, None);
+        tracing::warn!(
+            command_id,
+            error = %error,
+            "messaging interaction lifecycle wake deferred after durable preparation"
+        );
     }
     AppResult::success(json!({
         "command_id": command_id,

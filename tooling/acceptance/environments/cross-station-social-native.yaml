@@ -50,6 +50,18 @@
       }
     },
     {
+      "id": "federation-secondary-owner",
+      "actor": "federation_secondary_owner",
+      "runtime": "native-tauri",
+      "required_service_roles": ["station"],
+      "service_bindings": {
+        "station": {
+          "service_id": "station-five-arm",
+          "required_kind": "station"
+        }
+      }
+    },
+    {
       "id": "eve",
       "actor": "eve",
       "runtime": "native-tauri",

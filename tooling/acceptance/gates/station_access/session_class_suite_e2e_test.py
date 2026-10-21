@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import tempfile
 import unittest
 from pathlib import Path
@@ -41,7 +42,6 @@ class _FakeRuntime:
         self.desktop_binding = _FakeBinding()
         self.desktop_revoked = False
         self.mobile_revoked = False
-        self.prepared_desktop_identity: list[tuple[str, str]] = []
         self.marked_desktop_revoked: list[str] = []
         self.started: list[str] = []
         self.identities = {
@@ -166,15 +166,6 @@ class _FakeRuntime:
     def mark_desktop_auth_revoked(self, client_id: str) -> None:
         self.marked_desktop_revoked.append(client_id)
 
-    def prepare_desktop_actor_identity(
-        self,
-        source_client_id: str,
-        target_client_id: str,
-    ) -> None:
-        self.prepared_desktop_identity.append(
-            (source_client_id, target_client_id)
-        )
-
     def scope_snapshot(self, client_id: str) -> dict[str, object]:
         identity = self.identities[client_id]
         if client_id == "sim-ios" and self.mobile_revoked:
@@ -264,6 +255,12 @@ class _TestGate(StationAccessSessionClassSuiteGate):
 
 
 class StationAccessSessionClassSuiteGateTest(unittest.TestCase):
+    def test_suite_consumes_the_provisioner_owned_identity_fixture(self) -> None:
+        source = inspect.getsource(StationAccessSessionClassSuiteGate.run)
+
+        self.assertNotIn("prepare_desktop_actor_identity", source)
+        self.assertNotIn("clone_actor_storage", source)
+
     def test_mobile_route_failure_uses_child_callable_recovery_snapshot(
         self,
     ) -> None:
@@ -475,10 +472,6 @@ class StationAccessSessionClassSuiteGateTest(unittest.TestCase):
             ],
         )
         self.assertEqual(runtime.marked_desktop_revoked, ["desktop-bob"])
-        self.assertEqual(
-            runtime.prepared_desktop_identity,
-            [("desktop-bob", "desktop-bob-peer")],
-        )
         self.assertEqual(
             gate.mobile_receiver_scenarios,
             [
