@@ -153,7 +153,7 @@ test('FLOW-A04 thin TRAE adapter attaches guidance without identity authority', 
   assert.equal(response.hookSpecificOutput.permissionDecision, 'allow');
   assert.match(
     response.hookSpecificOutput.additionalContext,
-    /docs\/global\/workflow\.md/,
+    /docs\/development\/workflow\.md/,
   );
   assert.equal(reports.length, 1);
   assert.equal(reports[0].host, 'trae');

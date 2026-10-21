@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-21
-covered_docs_hash: 399aeb5a421f7b03d44e7d541f7211c8f8bca8776efee85ce030de6b67afded6
+covered_docs_hash: ef7306360cd17f5237290055dab619db35b55b75dea52bac1874fab650197967
 
 covered_docs:
   - AGENTS.md
@@ -45,7 +45,10 @@ instead of a removed `AGENTS.md` section. Existing single-source,
 documentation, architecture-module, process-identity, Profile, and evidence
 rules already cover the refactor; no new generic fixture is required.
 The final prose review removed duplicate navigation and procedure summaries
-without changing review semantics or requiring a `SKILL.md` update.
+without changing review semantics or requiring a `SKILL.md` update. The pin
+also moves with the current regeneration of the tracked, auto-generated
+`docs/architecture/engineering/acceptance/coverage-report.md`, whose only
+content delta is its generation date; review rules and fixtures are unchanged.
 
 ## 2026-10-16 Acceptance Scheduling Review
 
