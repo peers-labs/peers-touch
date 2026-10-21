@@ -13,7 +13,6 @@ const t = getDict(locale);
 
 <Base locale={locale} page="roadmap" currentPath={Astro.url.pathname}>
   <section class="pt-shell page-head">
-    <p class="pt-eyebrow">{t.roadmap.eyebrow}</p>
     <h1 class="page-head__title">{t.roadmap.title}</h1>
     <p class="page-head__subtitle">{t.roadmap.subtitle}</p>
   </section>
@@ -41,25 +40,7 @@ const t = getDict(locale);
 </Base>
 
 <style>
-  .page-head {
-    padding-block: clamp(40px, 5vw, 56px) var(--pt-space-xl);
-  }
-  .page-head__title {
-    max-width: 520px;
-    font-size: 44.8px;
-    font-weight: 800;
-    margin-top: var(--pt-space-xs);
-    line-height: 53.76px;
-    letter-spacing: 0;
-  }
-  .page-head__subtitle {
-    max-width: 32em;
-    font-size: 17.6px;
-    color: var(--pt-text-secondary);
-    margin-top: var(--pt-space-sm);
-    line-height: 1.7;
-  }
-
+  /* .page-head* are shared global classes from tokens.css. */
   .roadmap {
     margin-top: var(--pt-space-sm);
   }
@@ -126,16 +107,6 @@ const t = getDict(locale);
   }
 
   @media (max-width: 720px) {
-    .page-head {
-      padding-block: var(--pt-space-xl);
-    }
-    .page-head__title {
-      font-size: 36px;
-      line-height: 43.2px;
-    }
-    .page-head__subtitle {
-      font-size: 16px;
-    }
     .roadmap__title {
       font-size: 28px;
       line-height: 33.6px;

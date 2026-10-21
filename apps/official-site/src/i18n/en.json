@@ -17,7 +17,6 @@
     "zh": "中文"
   },
   "home": {
-    "eyebrow": "Your relationships · Your data · Your station",
     "title": "Your social world belongs in your own hands.",
     "subtitle": "Who you know and what you post should belong to you — not sit on a tech giant's servers as data to be mined. On Peers-Touch your identity, relationships, and data live in a Station you own. Stations connect through open protocols into a decentralized federation, where each Station is a personal or community-owned center rather than part of a platform-controlled one.",
     "ctaPrimary": "How it works",
@@ -77,11 +76,9 @@
     ]
   },
   "product": {
-    "eyebrow": "How it works",
     "title": "A decentralized network. Your Station is your own center.",
     "subtitle": "Peers-Touch isn't another app living on someone else's servers. Your Station is the personal center that holds your identity, relationships, and data. Stations interoperate through open protocols, while native apps and an AI runtime bring the network to life on your devices.",
     "network": {
-      "eyebrow": "The network",
       "title": "Many Stations, one network — and no landlord.",
       "note": "Run your own Station, or join one you trust. Either way, you're on the same open network.",
       "diagram": {
@@ -106,7 +103,6 @@
       ]
     },
     "layers": {
-      "eyebrow": "Architecture",
       "title": "Three parts, all working for you.",
       "note": "Use Peers on the devices you already have, move between them without losing your place, and keep your social world on a Station you choose.",
       "items": [
@@ -128,7 +124,6 @@
       ]
     },
     "agents": {
-      "eyebrow": "AI runtime",
       "title": "An AI that works on your data — not a vendor's cloud.",
       "note": "The agent runtime lives on your devices and Station. It reasons over data you own, calls tools, and talks to other agents.",
       "diagram": {
@@ -193,7 +188,6 @@
     }
   },
   "roadmap": {
-    "eyebrow": "Roadmap",
     "title": "Build the network first. Deepen what it can do next.",
     "subtitle": "Each phase ships working software you can run and test. Identity and Stations first, then social, privacy, and intelligence.",
     "sectionTitle": "Four phases",
@@ -241,7 +235,6 @@
     ]
   },
   "community": {
-    "eyebrow": "Community",
     "title": "Build the network with us.",
     "subtitle": "Peers-Touch is open source. Join the discussion, run a Station, contribute code or design, or help shape what comes next.",
     "waysTitle": "Choose a starting point",
