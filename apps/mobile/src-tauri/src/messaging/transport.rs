@@ -7,11 +7,16 @@ use messaging_core::attachment::{
     PreparedAttachmentUpload,
 };
 use messaging_core::crypto::prekeys::PreKeyTransport;
+use messaging_core::engine::COMMAND_RECONCILIATION_BATCH_LIMIT;
 use messaging_core::identity::{DeviceEnrollmentTransport, DeviceSigningKey};
 use messaging_core::inbox::QueueTransport;
 use messaging_core::mls::key_packages::MlsKeyPackageTransport;
 use messaging_core::mls::membership_transition::MembershipTransitionIntentInput;
-use messaging_core::outbox::{CommandSubmitFailure, CommandTransport, KeyBundleTransport};
+use messaging_core::outbox::{
+    CommandSubmitFailure, CommandTransport, DeliveryReceiptSubmitFailure, DeliveryReceiptTransport,
+    KeyBundleTransport,
+};
+use messaging_core::ports::CommandResultTransport;
 use messaging_core::proto::actor::{
     ActorDeviceRef, ActorProfile, EnrollActorDeviceRequest, EnrollActorDeviceResponse,
 };
@@ -36,12 +41,14 @@ use messaging_core::proto::chat::{
     PrepareConversationGroupRequest, PrepareConversationGroupResponse,
     PrepareConversationMembershipRequest, PrepareConversationMembershipResponse,
     PutAttachmentChunkRequest, PutAttachmentChunkResponse,
-    SubmitConversationAuthorityCommandRequest, SubmitConversationAuthorityCommandResponse,
-    SubmitConversationDeliveryReceiptRequest, SubmitConversationDeliveryReceiptResponse,
-    SubmitConversationReadCursorRequest, SubmitConversationReadCursorResponse,
-    SubmitConversationTypingRequest, SubmitConversationTypingResponse,
-    TransferConversationOwnershipRequest, TransferConversationOwnershipResponse,
-    UpdateConversationMemberRequest, UpdateConversationMemberResponse,
+    ResolveConversationCommandResultsRequest, ResolveConversationCommandResultsResponse,
+    ResolvedConversationCommandResult, SubmitConversationAuthorityCommandRequest,
+    SubmitConversationAuthorityCommandResponse, SubmitConversationDeliveryReceiptRequest,
+    SubmitConversationDeliveryReceiptResponse, SubmitConversationReadCursorRequest,
+    SubmitConversationReadCursorResponse, SubmitConversationTypingRequest,
+    SubmitConversationTypingResponse, TransferConversationOwnershipRequest,
+    TransferConversationOwnershipResponse, UpdateConversationMemberRequest,
+    UpdateConversationMemberResponse,
 };
 use messaging_core::proto::common::PeersResponse;
 use messaging_core::proto::key_exchange::{
@@ -74,6 +81,7 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const GROUP_CREATION_PATH: &str = "/conversation/group";
 const AUTHORITY_COMMAND_PATH: &str = "/conversation/command";
+const COMMAND_RESULTS_PATH: &str = "/conversation/command/results";
 const COMMAND_PROPOSAL_FORMAT_VERSION: u32 = 1;
 const COMMAND_PROPOSAL_LIFETIME_MS: i64 = 5 * 60 * 1_000;
 const MEMBER_AUTHORITY_ERROR_HEADER: &str = "X-Peers-Error-Code";
@@ -754,10 +762,7 @@ impl StationDeliveryReceiptTransport {
 }
 
 impl StationDeliveryReceiptTransport {
-    pub(crate) fn submit(
-        &self,
-        receipt: &DeviceConsumptionReceipt,
-    ) -> Result<(), StationTransportError> {
+    fn submit_raw(&self, receipt: &DeviceConsumptionReceipt) -> Result<(), StationTransportError> {
         if receipt.conversation_id.trim().is_empty()
             || receipt.event_id.trim().is_empty()
             || receipt.receipt_id.trim().is_empty()
@@ -781,6 +786,42 @@ impl StationDeliveryReceiptTransport {
             },
         )
         .map(|_| ())
+    }
+}
+
+impl DeliveryReceiptTransport for StationDeliveryReceiptTransport {
+    fn submit(
+        &self,
+        receipt: &DeviceConsumptionReceipt,
+    ) -> Result<(), DeliveryReceiptSubmitFailure> {
+        self.submit_raw(receipt)
+            .map_err(classify_delivery_receipt_failure)
+    }
+}
+
+fn classify_delivery_receipt_failure(error: StationTransportError) -> DeliveryReceiptSubmitFailure {
+    let detail = error.to_string();
+    match error {
+        StationTransportError::Deadline | StationTransportError::Network => {
+            DeliveryReceiptSubmitFailure::retryable("transport", detail)
+        }
+        StationTransportError::HttpStatus { status, code, .. }
+            if matches!(status, 400 | 404 | 409 | 410 | 422)
+                || (status == 403
+                    && code.as_deref() == Some("CONVERSATION_INTERACTION_UNAUTHORIZED")) =>
+        {
+            DeliveryReceiptSubmitFailure::terminal(
+                code.filter(|value| !value.is_empty())
+                    .unwrap_or_else(|| format!("http_{status}")),
+                detail,
+            )
+        }
+        StationTransportError::HttpStatus { status, .. } => {
+            DeliveryReceiptSubmitFailure::retryable(format!("http_{status}"), detail)
+        }
+        StationTransportError::Decode | StationTransportError::Invalid => {
+            DeliveryReceiptSubmitFailure::terminal("invalid_response", detail)
+        }
     }
 }
 
@@ -1622,6 +1663,36 @@ impl CommandTransport for StationCommandTransport {
             });
         }
         self.submit_member_authority_command(&command)
+    }
+}
+
+impl CommandResultTransport for StationCommandTransport {
+    fn resolve(
+        &self,
+        request: ResolveConversationCommandResultsRequest,
+    ) -> Result<Vec<ResolvedConversationCommandResult>, String> {
+        if request.commands.is_empty()
+            || request.commands.len() > COMMAND_RECONCILIATION_BATCH_LIMIT
+            || request.commands.iter().any(|command| {
+                command.conversation_id.trim().is_empty()
+                    || command.command_id.trim().is_empty()
+                    || command.command_sha256.len() != 32
+            })
+        {
+            return Err("mobile messaging command result request is invalid".to_string());
+        }
+        post_proto::<
+            ResolveConversationCommandResultsRequest,
+            ResolveConversationCommandResultsResponse,
+        >(
+            &self.station_origin,
+            self.access_token.as_str(),
+            &self.device_id,
+            COMMAND_RESULTS_PATH,
+            &request,
+        )
+        .map(|response| response.results)
+        .map_err(|error| error.to_string())
     }
 }
 
@@ -2913,6 +2984,28 @@ mod tests {
             classify_remote_public_head_error(StationTransportError::http_status(403)),
             CommandSubmitFailure::StaleAuthorityPlan { expired: false }
         );
+    }
+
+    #[test]
+    fn receipt_error_classification_preserves_terminal_membership_rejection() {
+        let removed_member = classify_delivery_receipt_failure(StationTransportError::HttpStatus {
+            status: 403,
+            code: Some("CONVERSATION_INTERACTION_UNAUTHORIZED".to_string()),
+            details: Some("actor is not an active Conversation member".to_string()),
+            body: None,
+        });
+        assert!(!removed_member.retryable);
+        assert_eq!(removed_member.code, "CONVERSATION_INTERACTION_UNAUTHORIZED");
+
+        let session_forbidden =
+            classify_delivery_receipt_failure(StationTransportError::HttpStatus {
+                status: 403,
+                code: Some("SESSION_DEVICE_MISMATCH".to_string()),
+                details: None,
+                body: None,
+            });
+        assert!(session_forbidden.retryable);
+        assert!(classify_delivery_receipt_failure(StationTransportError::Network).retryable);
     }
 
     #[test]

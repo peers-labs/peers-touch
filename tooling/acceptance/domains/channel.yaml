@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "id": "channel",
+  "description": "Channel is the Station-owned messaging bridge domain. Its initial managed scope covers the production Lark connection, requester OAuth, governed work tools, delivery recovery, and Desktop management projection without claiming unrun live Lark journeys.",
+  "capabilities": [
+    "acceptance-framework-self-consistency",
+    "lark-channel-production-contract"
+  ],
+  "validation_gate_id": "channel-domain-validation"
+}

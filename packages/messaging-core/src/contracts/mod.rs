@@ -132,6 +132,34 @@ pub struct MemberAuthorityReceiveCommit<'a> {
     pub target_ptid: &'a str,
 }
 
+pub enum ConversationMutation<'a> {
+    Update {
+        name: Option<&'a str>,
+        description: Option<&'a str>,
+        avatar_object_id: Option<&'a str>,
+    },
+    Dissolve,
+}
+
+pub struct ConversationMutationReceiveCommit<'a> {
+    pub item_id: &'a str,
+    pub event_id: &'a str,
+    pub conversation_id: &'a str,
+    pub command_id: &'a str,
+    pub event_sequence: i64,
+    pub lane_sequence: i64,
+    pub consumer_epoch: u64,
+    pub payload_sha256: &'a [u8],
+    pub event_hash: &'a [u8],
+    pub previous_event_hash: &'a [u8],
+    pub membership_epoch: i64,
+    pub mls_epoch: i64,
+    pub mutation: ConversationMutation<'a>,
+    pub receipt_id: &'a str,
+    pub receipt_bytes: &'a [u8],
+    pub consumed_at_unix_ms: i64,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReceiveCommitResult {
     Committed,

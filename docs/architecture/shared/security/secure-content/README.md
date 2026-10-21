@@ -1,8 +1,8 @@
 # Secure Content
 
 > **Status**: active
-> **Version**: v1.6
-> **Created**: 2026-09-13 | **Updated**: 2026-10-04
+> **Version**: v1.7
+> **Created**: 2026-09-13 | **Updated**: 2026-10-17
 > **Owner**: Architecture Team
 > **Module**: `model/domain/secure_content/`, `packages/secure-content-core/`, `apps/station/app/internal/securecontent/`
 
@@ -12,8 +12,8 @@
 
 This document set defines:
 
-- the reusable client cryptography and Station validation/state-machine kernel for
-  end-to-end encrypted content;
+- the reusable client cryptography, host-neutral Native operation mechanism,
+  and Station validation/state-machine kernel for end-to-end encrypted content;
 - the boundary between domain authorization and shared encryption/byte-transfer
   mechanics;
 - canonical payload, object, key-envelope, upload, grant, and recovery contracts;
@@ -61,7 +61,9 @@ wire, storage, and recovery behavior.
 5. Every recipient response is scoped to the authenticated actor and device.
 6. Public and private content remain physically and behaviorally distinct.
 7. Desktop and Mobile Native runtimes use the same core; Desktop has no browser runtime.
-8. Old Social and Chat generic-crypto paths are deleted in one governed hard cut.
+8. PreKey planning, command identity, durable operation transitions,
+   readback-before-retry, and recovery continuation have one portable owner.
+9. Old Social and Chat generic-crypto paths are deleted in one governed hard cut.
 
 ## 4. Documents
 
@@ -102,7 +104,7 @@ Accepted product inputs:
 - [`../../../domains/social/core/acceptance-matrix.md`](../../../domains/social/core/acceptance-matrix.md):
   `SOC-SEC-AS01` through `SOC-SEC-AS24`.
 
-The product contract and `SC-D01` through `SC-D29` are accepted. `SC-D21`
+The product contract and `SC-D01` through `SC-D30` are accepted. `SC-D21`
 defines deterministic Native lifecycle barriers, runtime-owner restart
 continuation, and owner-provisioned fixture handles required to resume W7S; its
 former Browser observation branch is retired by `DWF-D39`.
@@ -138,3 +140,12 @@ next product milestone, prohibited Browser Social, and deferred Mobile. Secure
 Content remains the crypto/validation substrate; Social and the shared
 Federation runtime own the new business and transport closures documented in
 [`../../../domains/social/cross-station/`](../../../domains/social/cross-station/README.md).
+
+`SC-D30` assigns the device-local operation mechanism to
+`packages/secure-content-core`. The portable state, planning, reconciliation,
+recovery-continuation, typed outcome, and Host port contract is source-complete
+and production-consumed. UCA-05 atomically migrated Desktop and Mobile to
+`secure-content-operation-v1`, deleted both legacy workers, moved Moment and
+Comment reconciliation to core decisions, and bound Mobile private object
+uploads to the core transfer worker. Signed iOS and physical Android product
+evidence remains independently `UNPROVEN`.

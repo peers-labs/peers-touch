@@ -181,6 +181,68 @@ func TestAgentUpdateRebasesLiveBindingsAndPublishesInvalidation(t *testing.T) {
 	)
 }
 
+func TestAgentTypedPromptsRoundTripAndRejectLegacyAliases(t *testing.T) {
+	db := openAgentServiceTestDB(t, "agent_typed_prompt_roundtrip")
+	service := NewAgentService()
+
+	created, err := service.createAgentTx(
+		context.Background(),
+		db,
+		domain.AgentUpsertOptions{
+			ActorPTID:         "ptid:person:prompt-owner",
+			Name:              "Typed Prompt Agent",
+			IdentityPrompt:    "Identity document",
+			AgentConfigPrompt: "",
+			ConfigJSON:        `{"temperature":0.2}`,
+		},
+	)
+	if err != nil {
+		t.Fatalf("create typed Agent: %v", err)
+	}
+	if created.IdentityPrompt != "Identity document" || created.AgentConfigPrompt != "" {
+		t.Fatalf("created typed prompts = %+v", created)
+	}
+
+	updated, err := service.UpdateAgent(context.Background(), domain.AgentUpsertOptions{
+		ActorPTID:         created.OwnerActorPTID,
+		AgentID:           created.AgentID,
+		Name:              created.Name,
+		Visibility:        created.Visibility,
+		ThinkingMode:      created.ThinkingMode,
+		IdentityPrompt:    "",
+		AgentConfigPrompt: "Instruction document",
+		ConfigJSON:        created.ConfigJSON,
+		Version:           created.Version,
+	})
+	if err != nil {
+		t.Fatalf("update typed Agent: %v", err)
+	}
+	if updated.IdentityPrompt != "" || updated.AgentConfigPrompt != "Instruction document" {
+		t.Fatalf("updated typed prompts = %+v", updated)
+	}
+
+	var stored persistence.Agent
+	if err := db.First(&stored, "id = ?", created.AgentID).Error; err != nil {
+		t.Fatalf("read typed Agent after restart boundary: %v", err)
+	}
+	if stored.IdentityPrompt != "" ||
+		stored.AgentConfigPrompt != "Instruction document" ||
+		stored.ConfigJSON != `{"temperature":0.2}` {
+		t.Fatalf("stored typed Agent = %+v", stored)
+	}
+
+	_, err = service.UpdateAgent(context.Background(), domain.AgentUpsertOptions{
+		ActorPTID:  created.OwnerActorPTID,
+		AgentID:    created.AgentID,
+		Name:       created.Name,
+		ConfigJSON: `{"soulMd":"legacy duplicate"}`,
+		Version:    updated.Version,
+	})
+	if !isAgentServiceError(err, errcode.AgentInvalidRequest) {
+		t.Fatalf("legacy prompt alias error = %v", err)
+	}
+}
+
 func TestAgentUpdateRollsBackWhenBindingRebaseFails(t *testing.T) {
 	db := openAgentServiceTestDB(t, "agent_update_binding_rollback")
 	service := NewAgentService()

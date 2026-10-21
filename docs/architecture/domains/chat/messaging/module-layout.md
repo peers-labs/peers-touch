@@ -101,38 +101,61 @@ packages/messaging-core/
     ├── lib.rs
     ├── contracts/
     ├── engine/
-    ├── direct/
+    │   ├── lifecycle.rs
+    │   ├── reconciliation.rs
+    │   └── store_policy.rs
+    ├── crypto/
     ├── mls/
     ├── inbox/
     ├── outbox/
-    ├── receipt/
     ├── recovery/
     ├── attachment/
-    ├── search/
-    ├── projection/
+    ├── storage_governance/
+    ├── store/
     └── ports/
         ├── encrypted_store.rs
         ├── attachment_blob.rs
-        ├── attachment_transfer.rs
+        ├── command_result_transport.rs
+        ├── event_sink.rs
         ├── key_material.rs
+        ├── lifecycle_cancellation.rs
         ├── queue_transport.rs
         ├── clock.rs
         └── projection_sink.rs
 
+packages/messaging-native-filesystem/
+├── Cargo.toml
+└── src/lib.rs
+
 apps/desktop/src-tauri/src/messaging/
-├── adapter.rs
+├── engine.rs
+├── store.rs
+├── transport.rs
+├── attachment_transfer.rs
+├── recovery.rs
 ├── lifecycle.rs
-└── commands.rs
+└── <key/file/Tauri adapters>
 
 apps/mobile/src-tauri/src/messaging/
 ├── adapter.rs
+├── engine.rs
+├── transport.rs
+├── attachment_blob.rs
+├── recovery.rs
 ├── lifecycle.rs
 └── commands.rs
 ```
 
 Core 中不得出现 Tauri command、concrete `reqwest` client、平台路径、React/Lynx type、
-Keychain API 或 UI copy。Desktop/Mobile adapter 中不得出现 ratchet/OpenMLS algorithm、
-queue FSM、recovery codec 或 duplicated SQL schema definition。
+Keychain API 或 UI copy。`attachment_blob` 复用 `secure-content-core` 的 opaque
+`ObjectBlob` port，不复制 object I/O contract。Desktop/Mobile adapter 中不得出现
+ratchet/OpenMLS algorithm、queue FSM、recovery codec、lifecycle transition policy、
+command reconciliation policy 或 duplicated SQL schema definition。
+
+`messaging-native-filesystem` is the single native adapter for physical storage
+measurement, immutable cleanup capture, inode identity and bounded deletion.
+It depends on `messaging-core` facts/ports; the portable core never depends on
+it.
 
 ## 2. Registration And Source Rules
 

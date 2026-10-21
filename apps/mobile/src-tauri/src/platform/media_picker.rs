@@ -1,5 +1,5 @@
 use std::fs::{self, File, OpenOptions};
-use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
+use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -94,6 +94,7 @@ struct StagedMediaMetadata {
 }
 
 pub(crate) struct PreparedMomentMedia {
+    plaintext_path: PathBuf,
     ciphertext_path: PathBuf,
     mime_type: String,
     plaintext_size: u64,
@@ -102,81 +103,27 @@ pub(crate) struct PreparedMomentMedia {
     ciphertext_sha256: [u8; 32],
     material: ObjectCryptoMaterial,
     chunk_count: u32,
-    chunk_ciphertext_sha256: Vec<Vec<u8>>,
 }
 
 impl PreparedMomentMedia {
-    pub(crate) fn upload_spec(
-        &self,
-        resource: &wire::SecureResourceRef,
-        object_id: &str,
-    ) -> wire::EncryptedObjectUploadSpec {
-        wire::EncryptedObjectUploadSpec {
-            resource: Some(resource.clone()),
-            object_id: object_id.to_string(),
-            ciphertext_size: self.ciphertext_size,
-            ciphertext_sha256: self.ciphertext_sha256.to_vec(),
-            chunk_size: self.material.chunk_size(),
-            chunk_count: self.chunk_count,
-            encryption_suite: wire::ObjectEncryptionSuite::Aes256GcmChunked as i32,
-            tag_size: OBJECT_TAG_SIZE,
-            nonce_strategy: wire::ObjectNonceStrategy::Counter32Be as i32,
-            chunk_ciphertext_sha256: self.chunk_ciphertext_sha256.clone(),
-        }
+    pub(crate) fn plaintext_path(&self) -> &Path {
+        &self.plaintext_path
     }
 
-    pub(crate) fn descriptor_commitment_sha256(
-        &self,
-        resource: &wire::SecureResourceRef,
-        object_id: &str,
-    ) -> [u8; 32] {
-        let input = wire::EncryptedObjectDescriptorCommitmentInput {
-            format_version: 1,
-            resource: Some(resource.clone()),
-            object_id: object_id.to_string(),
-            upload_spec: Some(self.upload_spec(resource, object_id)),
-        };
-        Sha256::digest(input.encode_to_vec()).into()
+    pub(crate) fn mime_type(&self) -> &str {
+        &self.mime_type
     }
 
-    pub(crate) fn chunk_count(&self) -> u32 {
-        self.chunk_count
+    pub(crate) fn object_key(&self) -> [u8; 32] {
+        *self.material.object_key()
     }
 
-    pub(crate) fn chunk_stride(&self) -> u64 {
-        u64::from(self.material.chunk_size() + OBJECT_TAG_SIZE)
+    pub(crate) fn base_nonce(&self) -> [u8; 12] {
+        *self.material.base_nonce()
     }
 
-    pub(crate) fn chunk_sha256(&self, chunk_index: u32) -> MobileResult<[u8; 32]> {
-        self.chunk_ciphertext_sha256
-            .get(chunk_index as usize)
-            .ok_or_else(|| picker_error("private Moment media chunk hash is unavailable"))?
-            .as_slice()
-            .try_into()
-            .map_err(|_| picker_error("private Moment media chunk hash is invalid"))
-    }
-
-    pub(crate) fn ciphertext_chunk(&self, chunk_index: u32) -> MobileResult<Vec<u8>> {
-        if chunk_index >= self.chunk_count {
-            return Err(picker_error("private Moment media chunk index is invalid"));
-        }
-        let offset = u64::from(chunk_index)
-            .saturating_mul(u64::from(self.material.chunk_size() + OBJECT_TAG_SIZE));
-        let remaining = self.ciphertext_size.saturating_sub(offset);
-        let length = remaining.min(u64::from(self.material.chunk_size() + OBJECT_TAG_SIZE));
-        let mut file = File::open(&self.ciphertext_path)
-            .map_err(|error| picker_error(format!("open private Moment ciphertext: {error}")))?;
-        file.seek(SeekFrom::Start(offset))
-            .map_err(|error| picker_error(format!("seek private Moment ciphertext: {error}")))?;
-        let mut ciphertext = vec![
-            0_u8;
-            usize::try_from(length).map_err(|_| {
-                picker_error("private Moment ciphertext chunk size is invalid")
-            })?
-        ];
-        file.read_exact(&mut ciphertext)
-            .map_err(|error| picker_error(format!("read private Moment ciphertext: {error}")))?;
-        Ok(ciphertext)
+    pub(crate) fn plaintext_size(&self) -> u64 {
+        self.plaintext_size
     }
 
     pub(crate) fn attachment_metadata(
@@ -340,7 +287,7 @@ pub(crate) fn prepare_private_moment_media<R: Runtime>(
         ],
     );
     let mut base_nonce = [0_u8; 12];
-    base_nonce.copy_from_slice(&nonce_digest[..12]);
+    base_nonce[..8].copy_from_slice(&nonce_digest[..8]);
     let material = ObjectCryptoMaterial::from_parts(
         object_key,
         base_nonce,
@@ -902,7 +849,6 @@ fn prepare_moment_media_with_material(
         let mut writer = BufWriter::new(create_private_file(&ciphertext_path)?);
         let mut plaintext_hasher = Sha256::new();
         let mut ciphertext_hasher = Sha256::new();
-        let mut chunk_ciphertext_sha256 = Vec::with_capacity(chunk_count as usize);
         for chunk_index in 0..chunk_count {
             let offset = u64::from(chunk_index) * u64::from(OBJECT_CHUNK_SIZE);
             let chunk_length =
@@ -919,7 +865,6 @@ fn prepare_moment_media_with_material(
                 .write_all(&encrypted.ciphertext)
                 .map_err(|error| picker_error(format!("write encrypted media chunk: {error}")))?;
             ciphertext_hasher.update(&encrypted.ciphertext);
-            chunk_ciphertext_sha256.push(encrypted.ciphertext_sha256.to_vec());
         }
         let mut trailing = [0_u8; 1];
         if reader
@@ -942,9 +887,9 @@ fn prepare_moment_media_with_material(
             return Err(picker_error("staged media changed after selection"));
         }
         let ciphertext_sha256: [u8; 32] = ciphertext_hasher.finalize().into();
-        Ok::<_, MobileError>((plaintext_sha256, ciphertext_sha256, chunk_ciphertext_sha256))
+        Ok::<_, MobileError>((plaintext_sha256, ciphertext_sha256))
     })();
-    let (plaintext_sha256, ciphertext_sha256, chunk_ciphertext_sha256) = match encryption_result {
+    let (plaintext_sha256, ciphertext_sha256) = match encryption_result {
         Ok(result) => result,
         Err(error) => {
             let _ = fs::remove_file(&ciphertext_path);
@@ -958,6 +903,7 @@ fn prepare_moment_media_with_material(
         return Err(picker_error("encrypted media size mismatch"));
     }
     Ok(PreparedMomentMedia {
+        plaintext_path,
         ciphertext_path,
         mime_type: metadata.mime_type.clone(),
         plaintext_size: metadata.byte_length,
@@ -966,7 +912,6 @@ fn prepare_moment_media_with_material(
         ciphertext_sha256,
         material,
         chunk_count,
-        chunk_ciphertext_sha256,
     })
 }
 
@@ -1103,10 +1048,6 @@ mod tests {
             prepare_moment_media_with_material(&destination_root, &metadata, retry_material)
                 .unwrap();
         assert_eq!(fs::read(&retry.ciphertext_path).unwrap(), ciphertext);
-        assert_eq!(
-            retry.chunk_ciphertext_sha256,
-            prepared.chunk_ciphertext_sha256
-        );
         let decrypted = decrypt_object_chunk(
             &material,
             &EncryptedObjectChunk {

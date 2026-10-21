@@ -1,13 +1,19 @@
 # Peers Touch Desktop (Tauri)
 
-## PREFACE
+> **Status**: active
+> **Updated**: 2026-10-16
 
-Desktop has been migrated to a Tauri architecture and is no longer Flutter-based.
+## Platform Baseline
 
 Current stack:
 - Frontend: React + TypeScript (`apps/desktop/src`)
 - Desktop shell and command layer: Tauri + Rust (`apps/desktop/src-tauri/src`)
 - API bridge: `apps/desktop/src/services/desktop_api.ts`
+- Portable Rust mechanisms: capability-owned crates under `packages/`
+
+Desktop/Mobile form, host, portable-core, port, and presentation-policy
+relationships are defined by
+[`cross-client-runtime`](../../architecture/platform/client/cross-client-runtime/README.md).
 
 ## Core Rules
 
@@ -28,6 +34,12 @@ Current stack:
 4. Contract consistency:
    - TS input/output types must align with Rust contracts.
    - Command names must be registered in `src-tauri/src/main.rs`.
+
+5. Portable core boundary:
+   - Shared protocol/security/state mechanisms remain host-neutral Rust
+     libraries.
+   - Desktop Rust composes ports and local stores.
+   - Portable cores do not own Station business truth or Desktop presentation.
 
 ## Directory Baseline
 
@@ -80,10 +92,3 @@ cd apps/desktop
 source ~/.cargo/env
 CI=false pnpm run tauri:build
 ```
-
-## Notes
-
----
-
-> Legacy note: Any references to `client/desktop`, `flutter build`, or GetX in other documents
-> should be considered outdated. This file is the current Desktop baseline.

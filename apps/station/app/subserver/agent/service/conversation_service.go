@@ -363,7 +363,12 @@ func (s *ConversationService) CreateConversation(ctx context.Context, agentID, p
 	if modelName != "" {
 		row.ModelName = &modelName
 	}
-	if err := db.WithContext(ctx).Create(row).Error; err != nil {
+	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := getVisibleAgentForConversationTx(tx, ptid, agentID); err != nil {
+			return err
+		}
+		return tx.Create(row).Error
+	}); err != nil {
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to create conversation", err)
 	}
 	logger.Infof(ctx, "conversation created: conv_id=%s agent_id=%s ptid=%s", row.ID, agentID, ptid)
@@ -410,7 +415,12 @@ func (s *ConversationService) CreateConversationWithID(ctx context.Context, conv
 	if modelName != "" {
 		row.ModelName = &modelName
 	}
-	if err := db.WithContext(ctx).Create(row).Error; err != nil {
+	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := getVisibleAgentForConversationTx(tx, ptid, agentID); err != nil {
+			return err
+		}
+		return tx.Create(row).Error
+	}); err != nil {
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError, "failed to create conversation", err)
 	}
 	logger.Infof(ctx, "conversation created with id: conv_id=%s agent_id=%s ptid=%s", row.ID, agentID, ptid)
@@ -429,7 +439,8 @@ func (s *ConversationService) UpdateConversation(
 	expectedVersion uint64,
 	title string,
 	description string,
-	modelName string,
+	modelName *string,
+	providerID *string,
 	meta map[string]string,
 	activeBranchMessageID *string,
 ) (*domain.Conversation, error) {
@@ -453,8 +464,19 @@ func (s *ConversationService) UpdateConversation(
 	if description != "" {
 		updates["description"] = description
 	}
-	if strings.TrimSpace(modelName) != "" {
-		updates["model_name"] = modelName
+	if (modelName == nil) != (providerID == nil) {
+		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
+			"model_name and provider_id must replace the Topic override together", nil)
+	}
+	if modelName != nil {
+		model := strings.TrimSpace(*modelName)
+		provider := strings.TrimSpace(*providerID)
+		if (model == "") != (provider == "") {
+			return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
+				"model_name and provider_id must both be set or both be empty", nil)
+		}
+		updates["model_name"] = optionalString(model)
+		updates["provider_id"] = provider
 	}
 	if len(meta) > 0 {
 		var row persistence.Conversation

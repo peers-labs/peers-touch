@@ -245,7 +245,12 @@ providers:
     default_base_url: ""
     runtime_kind: cli
     credential_env_key: OPENAI_API_KEY
-    cli_command: codex --json exec --skip-git-repo-check -
+    cli_argv: [codex, --json, exec, --skip-git-repo-check, "-"]
+    default_model: default
+    default_timeout_seconds: 120
+    workspace_policy: isolated-agent-workspace
+    configurable: [default-model, startup-args, environment, timeout]
+    adapter_capabilities: [streaming]
     models: []
   - id: cursor-cli
     name: Cursor CLI
@@ -260,8 +265,13 @@ providers:
     api_key_url: ""
     default_base_url: ""
     runtime_kind: cli
-    cli_command: cursor-agent --print --output-format text --trust
-    models_command: cursor-agent --list-models
+    cli_argv: [cursor-agent, --print, --output-format, text, --trust]
+    model_catalog_argv: [cursor-agent, --list-models]
+    default_model: default
+    default_timeout_seconds: 120
+    workspace_policy: isolated-agent-workspace
+    configurable: [default-model, startup-args, environment, timeout]
+    adapter_capabilities: [streaming]
     models: []
   - id: claude-cli
     name: Claude CLI
@@ -277,7 +287,12 @@ providers:
     default_base_url: ""
     runtime_kind: cli
     credential_env_key: ANTHROPIC_API_KEY
-    cli_command: claude -p
+    cli_argv: [claude, -p]
+    default_model: default
+    default_timeout_seconds: 120
+    workspace_policy: isolated-agent-workspace
+    configurable: [default-model, startup-args, environment, timeout]
+    adapter_capabilities: [streaming]
     models:
       - id: default
         display_name: Default
@@ -298,8 +313,13 @@ providers:
     api_key_url: ""
     default_base_url: ""
     runtime_kind: cli
-    cli_command: traecli --json exec --skip-git-repo-check -
-    models_command: traecli debug models
+    cli_argv: [traecli, --json, exec, --skip-git-repo-check, "-"]
+    model_catalog_argv: [traecli, debug, models]
+    default_model: default
+    default_timeout_seconds: 120
+    workspace_policy: isolated-agent-workspace
+    configurable: [default-model, startup-args, environment, timeout]
+    adapter_capabilities: [streaming, reasoning, image-input]
     models:
       - id: default
         display_name: Default

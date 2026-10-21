@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const REGISTRY_KIND = 'peers-touch-architecture-module-registry';
-export const REGISTRY_SCHEMA_VERSION = 3;
+export const REGISTRY_SCHEMA_VERSION = 5;
 export const PRE_EDIT_CONTEXT_KIND = 'peers-touch-pre-edit-context';
 export const PRE_EDIT_CONTEXT_SCHEMA_VERSION = 1;
 export const DEFAULT_REGISTRY_PATH =
@@ -19,6 +19,7 @@ const REGISTRY_KEYS = new Set([
   'taxonomyIndexes',
   'documentCollections',
   'modules',
+  'reuseDivergences',
 ]);
 const MODULE_KEYS = new Set([
   'id',
@@ -49,12 +50,51 @@ const CAPABILITY_KEYS = new Set([
   'allowedDependencies',
   'evidenceGates',
 ]);
+const CAPABILITY_OPTIONAL_KEYS = new Set(['reuseLayer']);
 const EXTERNAL_REGISTRY_KEYS = new Set([
   'path',
   'capabilityIds',
   'gate',
 ]);
+const REUSE_DIVERGENCE_KEYS = new Set([
+  'capabilityId',
+  'axis',
+  'canonicalRoot',
+  'implementations',
+  'rationale',
+  'decisionId',
+  'reviewTrigger',
+]);
+const REUSE_DIVERGENCE_IMPLEMENTATION_KEYS = new Set([
+  'capabilityId',
+  'root',
+  'consumers',
+  'evidenceGates',
+]);
+const REUSE_DIVERGENCE_AXES = new Set([
+  'presentation-policy',
+  'os-capability',
+  'runtime-constraint',
+  'security-boundary',
+]);
+const REUSE_LAYERS = new Set([
+  'model-contract',
+  'portable-rust-core',
+  'shared-ts-core',
+  'shared-ui-primitive',
+  'presentation-policy',
+  'platform-adapter',
+]);
 const BASE_DOCUMENTS = ['README.md', 'design.md', 'decisions.md'];
+const CLIENT_TS_MANIFESTS = [
+  'apps/desktop/package.json',
+  'apps/mobile/package.json',
+];
+const CLIENT_RUST_MANIFESTS = [
+  'apps/desktop/src-tauri/Cargo.toml',
+  'apps/mobile/src-tauri/Cargo.toml',
+];
+const ACCEPTANCE_GATES_PATH = 'tooling/acceptance/gates.yaml';
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const MODULE_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
 const DEPENDENCY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/;
@@ -72,7 +112,18 @@ for item in value["capabilities"]:
     if not isinstance(item, dict) or not isinstance(item.get("id"), str):
         raise ValueError("each capability must have a string id")
     ids.append(item["id"])
-print(json.dumps(ids))
+sys.stdout.write(json.dumps(ids))
+`;
+const PYTHON_YAML_GATE_IDS = String.raw`
+import json
+import pathlib
+import sys
+import yaml
+
+value = yaml.safe_load(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+if not isinstance(value, dict) or not isinstance(value.get("gates"), dict):
+    raise ValueError("gates must be an object")
+sys.stdout.write(json.dumps(sorted(value["gates"].keys())))
 `;
 
 export class ArchitectureGovernanceError extends Error {
@@ -100,6 +151,12 @@ function fail(code, message, details) {
   throw new ArchitectureGovernanceError(code, message, details);
 }
 
+function commandFailureReason(result) {
+  if (result.error instanceof Error) return result.error.message;
+  const stderr = String(result.stderr ?? '').trim();
+  return stderr || `process exited with status ${String(result.status)}`;
+}
+
 function isPlainObject(value) {
   return (
     value !== null
@@ -123,6 +180,29 @@ function assertClosedObject(value, keys, context) {
       'ARCHITECTURE_REGISTRY_INVALID',
       `${context} has unknown or missing fields`,
       { actual, expected },
+    );
+  }
+}
+
+function assertClosedObjectWithOptional(
+  value,
+  requiredKeys,
+  optionalKeys,
+  context,
+) {
+  if (!isPlainObject(value)) {
+    fail('ARCHITECTURE_REGISTRY_INVALID', `${context} must be an object`);
+  }
+  const actual = new Set(Object.keys(value));
+  const missing = [...requiredKeys].filter((key) => !actual.has(key));
+  const unknown = [...actual].filter(
+    (key) => !requiredKeys.has(key) && !optionalKeys.has(key),
+  );
+  if (missing.length > 0 || unknown.length > 0) {
+    fail(
+      'ARCHITECTURE_REGISTRY_INVALID',
+      `${context} has unknown or missing fields`,
+      { missing: missing.sort(), unknown: unknown.sort() },
     );
   }
 }
@@ -201,6 +281,23 @@ function requireCurrentPath(
   code = 'ARCHITECTURE_REGISTRY_INVALID',
 ) {
   const resolved = resolveRepoPath(repoRoot, relative, context);
+  const normalized = normalizeRepoPath(relative, context);
+  let current = repoRoot;
+  for (const segment of normalized.split('/')) {
+    current = path.join(current, segment);
+    let component;
+    try {
+      component = fs.lstatSync(current);
+    } catch {
+      fail(code, `${context} does not exist`, { path: relative });
+    }
+    if (component.isSymbolicLink()) {
+      fail(code, `${context} must not contain symlink components`, {
+        path: relative,
+        component: path.relative(repoRoot, current).split(path.sep).join('/'),
+      });
+    }
+  }
   let metadata;
   try {
     metadata = fs.lstatSync(resolved);
@@ -423,7 +520,7 @@ function loadExternalCapabilityIds(repoRoot, relative) {
     fail(
       'ARCHITECTURE_REGISTRY_INVALID',
       `${relative} could not be parsed as a capability registry`,
-      { reason: result.stderr.trim() },
+      { reason: commandFailureReason(result) },
     );
   }
   const ids = parseJson(
@@ -442,8 +539,656 @@ function pathContains(prefix, candidate) {
   return candidate === prefix || candidate.startsWith(`${prefix}/`);
 }
 
+function pathHasArchitectureOwner(modules, candidate) {
+  return modules.some((module) =>
+    module.governedPaths.some((prefix) => pathContains(prefix, candidate)));
+}
+
+function loadAcceptanceGateIds(repoRoot) {
+  const absolute = requireCurrentPath(
+    repoRoot,
+    ACCEPTANCE_GATES_PATH,
+    'Acceptance gate registry',
+    'ARCHITECTURE_REUSE_INVALID',
+  );
+  const result = spawnSync(
+    'python3',
+    ['-c', PYTHON_YAML_GATE_IDS, absolute],
+    {
+      encoding: 'utf8',
+      maxBuffer: 1024 * 1024,
+    },
+  );
+  if (result.status !== 0) {
+    fail(
+      'ARCHITECTURE_REUSE_INVALID',
+      'Acceptance gate registry could not be resolved',
+      { reason: commandFailureReason(result) },
+    );
+  }
+  const ids = parseJson(
+    result.stdout,
+    'ARCHITECTURE_REUSE_INVALID',
+    'Acceptance gate IDs',
+  );
+  assertUniqueStrings(ids, 'Acceptance gate IDs', {
+    min: 1,
+    pattern: ID_PATTERN,
+  });
+  return new Set(ids);
+}
+
+function workspacePackageManifests(repoRoot) {
+  requireCurrentPath(
+    repoRoot,
+    'pnpm-workspace.yaml',
+    'pnpm workspace manifest',
+    'ARCHITECTURE_REUSE_INVALID',
+  );
+  const result = spawnSync(
+    'pnpm',
+    ['list', '--recursive', '--depth', '-1', '--json'],
+    {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      maxBuffer: 16 * 1024 * 1024,
+    },
+  );
+  if (result.status !== 0) {
+    fail(
+      'ARCHITECTURE_REUSE_INVALID',
+      'pnpm workspace packages could not be resolved',
+      { reason: commandFailureReason(result) },
+    );
+  }
+  const workspacePackages = parseJson(
+    result.stdout,
+    'ARCHITECTURE_REUSE_INVALID',
+    'pnpm workspace package list',
+  );
+  if (!Array.isArray(workspacePackages)) {
+    fail(
+      'ARCHITECTURE_REUSE_INVALID',
+      'pnpm workspace package list must be an array',
+    );
+  }
+  const manifests = new Map();
+  for (const [index, workspacePackage] of workspacePackages.entries()) {
+    if (
+      !isPlainObject(workspacePackage)
+      || typeof workspacePackage.name !== 'string'
+      || workspacePackage.name.trim() === ''
+      || typeof workspacePackage.path !== 'string'
+      || workspacePackage.path.trim() === ''
+    ) {
+      fail(
+        'ARCHITECTURE_REUSE_INVALID',
+        `pnpm workspace package list item ${index} is invalid`,
+      );
+    }
+    const packageRoot = fs.realpathSync(workspacePackage.path);
+    const relative = repoRelativePath(
+      repoRoot,
+      path.join(packageRoot, 'package.json'),
+      `pnpm workspace package ${workspacePackage.name}`,
+    );
+    requireCurrentPath(
+      repoRoot,
+      relative,
+      `pnpm workspace package ${workspacePackage.name}`,
+      'ARCHITECTURE_REUSE_INVALID',
+    );
+    const value = parseJson(
+      readUtf8(
+        repoRoot,
+        relative,
+        'ARCHITECTURE_REUSE_INVALID',
+        'workspace package manifest',
+      ),
+      'ARCHITECTURE_REUSE_INVALID',
+      relative,
+    );
+    if (value.name !== workspacePackage.name) {
+      fail(
+        'ARCHITECTURE_REUSE_INVALID',
+        'pnpm workspace package identity is inconsistent',
+        {
+          expected: workspacePackage.name,
+          actual: value.name,
+          manifest: relative,
+        },
+      );
+    }
+    if (manifests.has(value.name)) {
+      fail(
+        'ARCHITECTURE_REUSE_INVALID',
+        'workspace package names must be unique',
+        { name: value.name, manifests: [manifests.get(value.name), relative] },
+      );
+    }
+    manifests.set(value.name, relative);
+  }
+  return manifests;
+}
+
+function workspaceProtocolPackage(name, specifier, workspacePackages) {
+  if (typeof specifier !== 'string' || !specifier.startsWith('workspace:')) {
+    return null;
+  }
+  if (workspacePackages.has(name)) return name;
+  const alias = specifier.slice('workspace:'.length);
+  const match = /^(@[^/]+\/[^@]+|[^@]+)@/.exec(alias);
+  return match !== null && workspacePackages.has(match[1]) ? match[1] : null;
+}
+
+function directWorkspaceDependencies(repoRoot, relative, workspacePackages) {
+  const value = parseJson(
+    readUtf8(
+      repoRoot,
+      relative,
+      'ARCHITECTURE_REUSE_INVALID',
+      'client package manifest',
+    ),
+    'ARCHITECTURE_REUSE_INVALID',
+    relative,
+  );
+  const declared = {
+    ...(isPlainObject(value.dependencies) ? value.dependencies : {}),
+    ...(isPlainObject(value.optionalDependencies)
+      ? value.optionalDependencies
+      : {}),
+  };
+  return new Map(
+    Object.entries(declared)
+      .map(([name, specifier]) => {
+        const packageName = workspaceProtocolPackage(
+          name,
+          specifier,
+          workspacePackages,
+        );
+        return packageName === null
+          ? null
+          : [packageName, workspacePackages.get(packageName)];
+      })
+      .filter((entry) => entry !== null),
+  );
+}
+
+function repoRelativePath(repoRoot, absolute, context) {
+  const relative = path.relative(repoRoot, absolute).split(path.sep).join('/');
+  if (
+    relative === ''
+    || relative === '..'
+    || relative.startsWith('../')
+    || path.isAbsolute(relative)
+  ) {
+    fail(
+      'ARCHITECTURE_REUSE_INVALID',
+      `${context} must resolve inside the repository`,
+      { path: absolute },
+    );
+  }
+  return normalizeRepoPath(relative, context);
+}
+
+function directCargoPathDependencies(repoRoot, relative) {
+  const manifest = requireCurrentPath(
+    repoRoot,
+    relative,
+    'client Cargo manifest',
+    'ARCHITECTURE_REUSE_INVALID',
+  );
+  const result = spawnSync(
+    'cargo',
+    [
+      'metadata',
+      '--no-deps',
+      '--format-version',
+      '1',
+      '--manifest-path',
+      manifest,
+    ],
+    {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      maxBuffer: 16 * 1024 * 1024,
+    },
+  );
+  if (result.status !== 0) {
+    fail(
+      'ARCHITECTURE_REUSE_INVALID',
+      `${relative} could not be resolved by cargo metadata`,
+      { reason: commandFailureReason(result) },
+    );
+  }
+  const metadata = parseJson(
+    result.stdout,
+    'ARCHITECTURE_REUSE_INVALID',
+    `${relative} cargo metadata`,
+  );
+  if (!Array.isArray(metadata.packages)) {
+    fail(
+      'ARCHITECTURE_REUSE_INVALID',
+      `${relative} cargo metadata packages must be an array`,
+    );
+  }
+  const canonicalManifest = fs.realpathSync(manifest);
+  const owner = metadata.packages.find(
+    (candidate) =>
+      typeof candidate?.manifest_path === 'string'
+      && fs.realpathSync(candidate.manifest_path) === canonicalManifest,
+  );
+  if (owner === undefined || !Array.isArray(owner.dependencies)) {
+    fail(
+      'ARCHITECTURE_REUSE_INVALID',
+      `${relative} package is missing from cargo metadata`,
+    );
+  }
+  return new Map(
+    owner.dependencies
+      .filter(
+        (dependency) =>
+          dependency?.kind === null
+          && typeof dependency.name === 'string'
+          && typeof dependency.path === 'string',
+      )
+      .map((dependency) => {
+        const dependencyManifest = repoRelativePath(
+          repoRoot,
+          path.join(dependency.path, 'Cargo.toml'),
+          `${relative} path dependency ${dependency.name}`,
+        );
+        requireCurrentPath(
+          repoRoot,
+          dependencyManifest,
+          `${relative} path dependency ${dependency.name}`,
+          'ARCHITECTURE_REUSE_INVALID',
+        );
+        return [dependency.name, dependencyManifest];
+      }),
+  );
+}
+
+function sharedDependencyEntries(
+  ecosystem,
+  manifests,
+  dependencyMaps,
+) {
+  const [first, ...rest] = dependencyMaps;
+  return [...first.entries()]
+    .filter(([name, target]) =>
+      rest.every((dependencies) => dependencies.get(name) === target))
+    .map(([name, manifest]) => ({
+      ecosystem,
+      package: name,
+      manifest,
+      consumers: [...manifests],
+    }));
+}
+
+export function collectSharedClientDependencies({
+  repoRoot = process.cwd(),
+} = {}) {
+  const canonicalRoot = fs.realpathSync(repoRoot);
+  const workspacePackages = workspacePackageManifests(canonicalRoot);
+  return [
+    ...sharedDependencyEntries(
+      'pnpm',
+      CLIENT_TS_MANIFESTS,
+      CLIENT_TS_MANIFESTS.map((relative) =>
+        directWorkspaceDependencies(
+          canonicalRoot,
+          relative,
+          workspacePackages,
+        )),
+    ),
+    ...sharedDependencyEntries(
+      'cargo',
+      CLIENT_RUST_MANIFESTS,
+      CLIENT_RUST_MANIFESTS.map((relative) =>
+        directCargoPathDependencies(canonicalRoot, relative)),
+    ),
+  ].sort((left, right) =>
+    compareStrings(
+      `${left.ecosystem}:${left.package}`,
+      `${right.ecosystem}:${right.package}`,
+    ));
+}
+
+function validateCrossClientReuseCoverage(repoRoot, modules) {
+  const reuseModule = modules.find(
+    (module) => module.id === 'cross-client-runtime',
+  );
+  if (reuseModule === undefined) {
+    return [];
+  }
+  const capabilities = modules.flatMap((module) => module.capabilities);
+  const inventory = collectSharedClientDependencies({ repoRoot });
+  const classifiedInventory = inventory.map((dependency) => {
+    const matchingCapabilities = capabilities.filter((capability) =>
+      capability.contractRoots.some((contractRoot) =>
+        pathContains(contractRoot, dependency.manifest))
+      && dependency.consumers.every((consumer) =>
+        capability.consumers.includes(consumer)));
+    if (matchingCapabilities.length !== 1) {
+      return {
+        ...dependency,
+        matchingCapabilities,
+      };
+    }
+    const [capability] = matchingCapabilities;
+    const expectedLayers = dependency.ecosystem === 'cargo'
+      ? ['portable-rust-core', 'platform-adapter']
+      : dependency.manifest.startsWith('packages/ui/')
+        ? ['shared-ui-primitive']
+        : ['shared-ts-core'];
+    return {
+      ...dependency,
+      capabilityId: capability.id,
+      owner: capability.owner,
+      canonicalRoots: [...capability.contractRoots],
+      allowedDependencies: [...capability.allowedDependencies],
+      evidenceGates: [...capability.evidenceGates],
+      reuseLayer: capability.reuseLayer,
+      expectedLayers,
+      matchingCapabilities,
+    };
+  });
+  const missing = classifiedInventory.filter(
+    (dependency) => dependency.matchingCapabilities.length !== 1,
+  );
+  if (missing.length > 0) {
+    fail(
+      'ARCHITECTURE_REUSE_UNREGISTERED',
+      'Desktop/Mobile shared dependencies require architecture capabilities',
+      { missing },
+    );
+  }
+  const misclassified = classifiedInventory.filter(
+    (dependency) => (
+      !dependency.expectedLayers.includes(dependency.reuseLayer)
+    ),
+  );
+  if (misclassified.length > 0) {
+    fail(
+      'ARCHITECTURE_REUSE_INVALID',
+      'Desktop/Mobile shared dependencies require the correct reuse layer',
+      {
+        misclassified: misclassified.map((dependency) => ({
+          package: dependency.package,
+          capabilityId: dependency.capabilityId,
+          expectedLayers: dependency.expectedLayers,
+          actualLayer: dependency.reuseLayer,
+        })),
+      },
+    );
+  }
+  const reusePolicy = reuseModule.capabilities.find(
+    (capability) => capability.id === 'client.reuse.admission',
+  );
+  if (reusePolicy === undefined) {
+    fail(
+      'ARCHITECTURE_REUSE_UNREGISTERED',
+      'cross-client reuse admission capability is missing',
+    );
+  }
+  const requiredConsumers = [
+    ...CLIENT_TS_MANIFESTS,
+    ...CLIENT_RUST_MANIFESTS,
+  ];
+  const missingPolicyConsumers = requiredConsumers.filter(
+    (consumer) => !reusePolicy.consumers.includes(consumer),
+  );
+  if (missingPolicyConsumers.length > 0) {
+    fail(
+      'ARCHITECTURE_REUSE_UNREGISTERED',
+      'cross-client reuse admission omits canonical client manifests',
+      { missingConsumers: missingPolicyConsumers },
+    );
+  }
+  return classifiedInventory.map(({
+    expectedLayers: _expectedLayers,
+    matchingCapabilities: _matchingCapabilities,
+    ...dependency
+  }) => dependency);
+}
+
+function validateReuseDivergences(
+  repoRoot,
+  divergences,
+  modules,
+  capabilityIds,
+) {
+  if (!Array.isArray(divergences)) {
+    fail(
+      'ARCHITECTURE_REUSE_INVALID',
+      'registry.reuseDivergences must be an array',
+    );
+  }
+  const capabilities = new Map(
+    modules.flatMap((module) =>
+      module.capabilities.map((capability) => [capability.id, capability])),
+  );
+  const acceptedDecisions = new Set(
+    modules.flatMap((module) => module.decisionIds),
+  );
+  const acceptanceGateIds = loadAcceptanceGateIds(repoRoot);
+  const decisionIds = new Set();
+  return divergences.map((divergence, index) => {
+    const context = `registry.reuseDivergences[${index}]`;
+    assertClosedObject(divergence, REUSE_DIVERGENCE_KEYS, context);
+    assertString(
+      divergence.capabilityId,
+      `${context}.capabilityId`,
+      ID_PATTERN,
+    );
+    if (!capabilityIds.has(divergence.capabilityId)) {
+      fail(
+        'ARCHITECTURE_REUSE_INVALID',
+        `${context}.capabilityId is not registered`,
+        { capabilityId: divergence.capabilityId },
+      );
+    }
+    if (!REUSE_DIVERGENCE_AXES.has(divergence.axis)) {
+      fail(
+        'ARCHITECTURE_REUSE_INVALID',
+        `${context}.axis is not an accepted divergence axis`,
+        { axis: divergence.axis },
+      );
+    }
+    const canonicalRoot = normalizeRepoPath(
+      divergence.canonicalRoot,
+      `${context}.canonicalRoot`,
+    );
+    requireCurrentPath(repoRoot, canonicalRoot, `${context}.canonicalRoot`);
+    const capability = capabilities.get(divergence.capabilityId);
+    if (
+      !capability.contractRoots.some((contractRoot) =>
+        pathContains(contractRoot, canonicalRoot))
+    ) {
+      fail(
+        'ARCHITECTURE_REUSE_INVALID',
+        `${context}.canonicalRoot is outside the capability contract roots`,
+        { canonicalRoot, capabilityId: divergence.capabilityId },
+      );
+    }
+    if (
+      !Array.isArray(divergence.implementations)
+      || divergence.implementations.length === 0
+    ) {
+      fail(
+        'ARCHITECTURE_REUSE_INVALID',
+        `${context}.implementations must contain at least one item`,
+      );
+    }
+    const implementationRoots = new Set();
+    divergence.implementations.forEach((implementation, position) => {
+      const implementationContext =
+        `${context}.implementations[${position}]`;
+      assertClosedObject(
+        implementation,
+        REUSE_DIVERGENCE_IMPLEMENTATION_KEYS,
+        implementationContext,
+      );
+      assertString(
+        implementation.capabilityId,
+        `${implementationContext}.capabilityId`,
+        ID_PATTERN,
+      );
+      const implementationCapability = capabilities.get(
+        implementation.capabilityId,
+      );
+      if (
+        implementationCapability === undefined
+        || implementation.capabilityId === divergence.capabilityId
+      ) {
+        fail(
+          'ARCHITECTURE_REUSE_INVALID',
+          `${implementationContext}.capabilityId must identify a distinct registered capability`,
+          { capabilityId: implementation.capabilityId },
+        );
+      }
+      if (
+        !implementationCapability.allowedDependencies.includes(
+          divergence.capabilityId,
+        )
+      ) {
+        fail(
+          'ARCHITECTURE_REUSE_INVALID',
+          `${implementationContext}.capabilityId does not depend on the canonical capability`,
+          {
+            capabilityId: implementation.capabilityId,
+            canonicalCapabilityId: divergence.capabilityId,
+          },
+        );
+      }
+      const normalizedRoot = normalizeRepoPath(
+        implementation.root,
+        `${implementationContext}.root`,
+      );
+      if (implementationRoots.has(normalizedRoot)) {
+        fail(
+          'ARCHITECTURE_REUSE_INVALID',
+          `${context}.implementations contains a duplicate root`,
+          { root: normalizedRoot },
+        );
+      }
+      implementationRoots.add(normalizedRoot);
+      requireCurrentPath(
+        repoRoot,
+        normalizedRoot,
+        `${implementationContext}.root`,
+      );
+      if (
+        pathContains(canonicalRoot, normalizedRoot)
+        || pathContains(normalizedRoot, canonicalRoot)
+      ) {
+        fail(
+          'ARCHITECTURE_REUSE_INVALID',
+          `${implementationContext}.root must be separate from the canonical root`,
+          { root: normalizedRoot, canonicalRoot },
+        );
+      }
+      if (!pathHasArchitectureOwner(modules, normalizedRoot)) {
+        fail(
+          'ARCHITECTURE_REUSE_INVALID',
+          `${implementationContext}.root has no registered architecture owner`,
+          { root: normalizedRoot },
+        );
+      }
+      if (
+        !implementationCapability.contractRoots.some((contractRoot) =>
+          pathContains(contractRoot, normalizedRoot))
+      ) {
+        fail(
+          'ARCHITECTURE_REUSE_INVALID',
+          `${implementationContext}.root is outside the implementation capability contract roots`,
+          {
+            root: normalizedRoot,
+            capabilityId: implementation.capabilityId,
+          },
+        );
+      }
+      assertUniqueStrings(
+        implementation.consumers,
+        `${implementationContext}.consumers`,
+        { min: 1 },
+      );
+      implementation.consumers.forEach((value, consumerIndex) => {
+        const normalized = normalizeRepoPath(
+          value,
+          `${implementationContext}.consumers[${consumerIndex}]`,
+        );
+        requireCurrentPath(
+          repoRoot,
+          normalized,
+          `${implementationContext}.consumers[${consumerIndex}]`,
+        );
+        if (!pathHasArchitectureOwner(modules, normalized)) {
+          fail(
+            'ARCHITECTURE_REUSE_INVALID',
+            `${implementationContext}.consumers[${consumerIndex}] has no registered architecture owner`,
+            { consumer: normalized },
+          );
+        }
+        if (!implementationCapability.consumers.includes(normalized)) {
+          fail(
+            'ARCHITECTURE_REUSE_INVALID',
+            `${implementationContext}.consumers[${consumerIndex}] is not registered on the implementation capability`,
+            {
+              consumer: normalized,
+              capabilityId: implementation.capabilityId,
+            },
+          );
+        }
+      });
+      assertUniqueStrings(
+        implementation.evidenceGates,
+        `${implementationContext}.evidenceGates`,
+        { min: 1, pattern: ID_PATTERN },
+      );
+      const unknownGates = implementation.evidenceGates.filter(
+        (gateId) =>
+          !acceptanceGateIds.has(gateId)
+          || !implementationCapability.evidenceGates.includes(gateId),
+      );
+      if (unknownGates.length > 0) {
+        fail(
+          'ARCHITECTURE_REUSE_INVALID',
+          `${implementationContext}.evidenceGates contains unknown or unauthorized Gates`,
+          { unknownGates },
+        );
+      }
+    });
+    assertString(divergence.rationale, `${context}.rationale`);
+    assertString(divergence.decisionId, `${context}.decisionId`, ID_PATTERN);
+    if (!acceptedDecisions.has(divergence.decisionId)) {
+      fail(
+        'ARCHITECTURE_REUSE_INVALID',
+        `${context}.decisionId is not an accepted registered decision`,
+        { decisionId: divergence.decisionId },
+      );
+    }
+    if (decisionIds.has(divergence.decisionId)) {
+      fail(
+        'ARCHITECTURE_REUSE_INVALID',
+        'reuse divergence decision IDs must be unique',
+        { decisionId: divergence.decisionId },
+      );
+    }
+    decisionIds.add(divergence.decisionId);
+    assertString(divergence.reviewTrigger, `${context}.reviewTrigger`);
+    return divergence;
+  });
+}
+
 function validateCapability(repoRoot, module, capability, context) {
-  assertClosedObject(capability, CAPABILITY_KEYS, context);
+  assertClosedObjectWithOptional(
+    capability,
+    CAPABILITY_KEYS,
+    CAPABILITY_OPTIONAL_KEYS,
+    context,
+  );
   assertString(capability.id, `${context}.id`, ID_PATTERN);
   assertString(capability.owner, `${context}.owner`, ID_PATTERN);
   assertUniqueStrings(capability.contractRoots, `${context}.contractRoots`, {
@@ -459,20 +1204,28 @@ function validateCapability(repoRoot, module, capability, context) {
     min: 1,
     pattern: ID_PATTERN,
   });
-  for (const field of ['contractRoots', 'consumers']) {
-    capability[field].forEach((value, index) => {
-      requireCurrentPath(repoRoot, value, `${context}.${field}[${index}]`);
-      if (
-        !module.governedPaths.some((prefix) => pathContains(prefix, value))
-      ) {
-        fail(
-          'ARCHITECTURE_REGISTRY_INVALID',
-          `${context}.${field}[${index}] is outside module governed paths`,
-          { path: value },
-        );
-      }
-    });
+  if (
+    capability.reuseLayer !== undefined
+    && !REUSE_LAYERS.has(capability.reuseLayer)
+  ) {
+    fail(
+      'ARCHITECTURE_REGISTRY_INVALID',
+      `${context}.reuseLayer is invalid`,
+      { reuseLayer: capability.reuseLayer },
+    );
   }
+  capability.contractRoots.forEach((value, index) => {
+    requireCurrentPath(repoRoot, value, `${context}.contractRoots[${index}]`);
+    if (!module.governedPaths.some((prefix) => pathContains(prefix, value))) {
+      fail(
+        'ARCHITECTURE_REGISTRY_INVALID',
+        `${context}.contractRoots[${index}] is outside module governed paths`,
+        { path: value },
+      );
+    }
+  });
+  capability.consumers.forEach((value, index) =>
+    requireCurrentPath(repoRoot, value, `${context}.consumers[${index}]`));
 }
 
 function validateExternalRegistry(repoRoot, external, context) {
@@ -660,6 +1413,7 @@ export function validateArchitectureRegistry({
     || !Array.isArray(value.taxonomyIndexes)
     || !Array.isArray(value.documentCollections)
     || !Array.isArray(value.modules)
+    || !Array.isArray(value.reuseDivergences)
     || value.modules.length === 0
   ) {
     fail(
@@ -761,6 +1515,16 @@ export function validateArchitectureRegistry({
     }
   }
   assertUnambiguousGovernedPaths(modules);
+  const sharedClientDependencies = validateCrossClientReuseCoverage(
+    canonicalRoot,
+    modules,
+  );
+  const reuseDivergences = validateReuseDivergences(
+    canonicalRoot,
+    value.reuseDivergences,
+    modules,
+    capabilityIds,
+  );
   return {
     ok: true,
     registry: value,
@@ -770,6 +1534,8 @@ export function validateArchitectureRegistry({
     modules,
     moduleIds: [...moduleIds].sort(),
     capabilityIds: [...capabilityIds].sort(),
+    sharedClientDependencies,
+    reuseDivergences,
   };
 }
 
@@ -1251,6 +2017,8 @@ function main() {
         ok: true,
         modules: result.moduleIds,
         capabilities: result.capabilityIds,
+        sharedClientDependencies: result.sharedClientDependencies,
+        reuseDivergences: result.reuseDivergences,
       };
     } else if (options.command === 'changed-paths') {
       output = validateChangedArchitecturePaths({

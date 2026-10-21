@@ -34,6 +34,7 @@ _ADAPTER_OPERATIONS = frozenset(
         "post_mouse",
         "read_clipboard",
         "reveal_file_chooser_location",
+        "verify_focused_text",
         "window_stack_at_point",
         "write_clipboard",
     }
@@ -70,6 +71,13 @@ elif operation == "post_key":
 elif operation == "reveal_file_chooser_location":
     adapter.reveal_file_chooser_location()
     result = {}
+elif operation == "verify_focused_text":
+    result = {
+        "verified": adapter.verify_focused_text(
+            str(payload["expected"]),
+            timeout_seconds=float(payload["timeoutSeconds"]),
+        )
+    }
 elif operation == "focused_control":
     result = adapter.focused_control(int(payload["processId"])).to_dict()
 elif operation == "window_stack_at_point":
@@ -246,6 +254,69 @@ def _wait_actor_port(
     raise RuntimeError(f"runtime-cell actor port {port} readiness timed out")
 
 
+def _select_actor_window_process(
+    process_table: str,
+    window_table: str,
+    process_group_id: int,
+) -> int:
+    group_members: set[int] = set()
+    for line in process_table.splitlines():
+        fields = line.split()
+        if len(fields) != 2:
+            continue
+        try:
+            process_id, group_id = (int(value) for value in fields)
+        except ValueError:
+            continue
+        if group_id == process_group_id:
+            group_members.add(process_id)
+    for line in reversed(window_table.splitlines()):
+        fields = line.split(maxsplit=4)
+        if len(fields) < 3:
+            continue
+        try:
+            process_id = int(fields[2])
+        except ValueError:
+            continue
+        if process_id in group_members:
+            return process_id
+    return 0
+
+
+def _wait_actor_window_process(
+    container_name: str,
+    process_group_id: int,
+    display: str,
+    deadline: float,
+) -> int:
+    while time.monotonic() < deadline:
+        processes = _container_command(
+            container_name,
+            "ps",
+            "-eo",
+            "pid=,pgid=",
+        ).stdout
+        windows = _container_command(
+            container_name,
+            "env",
+            f"DISPLAY={display}",
+            "wmctrl",
+            "-lp",
+        ).stdout
+        process_id = _select_actor_window_process(
+            processes,
+            windows,
+            process_group_id,
+        )
+        if process_id > 0:
+            return process_id
+        time.sleep(0.1)
+    raise RuntimeError(
+        "runtime-cell actor process group "
+        f"{process_group_id} has no EWMH window"
+    )
+
+
 def _stop_actor_record(
     container_name: str,
     run_root: Path,
@@ -255,7 +326,8 @@ def _stop_actor_record(
 ) -> dict[str, object]:
     actor = _slug(str(record.get("actor") or ""), "actor")
     process_id = int(record.get("processId") or 0)
-    if process_id > 0:
+    process_group_id = int(record.get("processGroupId") or process_id)
+    if process_group_id > 0:
         subprocess.run(
             (
                 "docker",
@@ -263,7 +335,7 @@ def _stop_actor_record(
                 container_name,
                 "/bin/bash",
                 "-lc",
-                f"kill -TERM -- -{process_id}",
+                f"kill -TERM -- -{process_group_id}",
             ),
             capture_output=True,
             check=False,
@@ -277,7 +349,7 @@ def _stop_actor_record(
                     container_name,
                     "/bin/bash",
                     "-lc",
-                    f"kill -0 -- -{process_id}",
+                    f"kill -0 -- -{process_group_id}",
                 ),
                 capture_output=True,
                 check=False,
@@ -293,7 +365,7 @@ def _stop_actor_record(
                     container_name,
                     "/bin/bash",
                     "-lc",
-                    f"kill -KILL -- -{process_id}",
+                    f"kill -KILL -- -{process_group_id}",
                 ),
                 capture_output=True,
                 check=False,
@@ -307,7 +379,7 @@ def _stop_actor_record(
                         container_name,
                         "/bin/bash",
                         "-lc",
-                        f"kill -0 -- -{process_id}",
+                        f"kill -0 -- -{process_group_id}",
                     ),
                     capture_output=True,
                     check=False,
@@ -317,7 +389,8 @@ def _stop_actor_record(
                 time.sleep(0.05)
             else:
                 raise RuntimeError(
-                    f"runtime-cell actor process {process_id} remains active"
+                    "runtime-cell actor process group "
+                    f"{process_group_id} remains active"
                 )
     actor_root = run_root / "actors" / actor
     log_path = actor_root / "app.log"
@@ -335,6 +408,7 @@ def _stop_actor_record(
     return {
         "actor": actor,
         "processId": process_id,
+        "processGroupId": process_group_id,
         "logContent": log_content,
         "statePreserved": preserve_state,
         "stopped": True,
@@ -944,25 +1018,36 @@ def actor_start(args: argparse.Namespace) -> int:
         pid_path = actor_root / "app.pid"
         while time.monotonic() < deadline and not pid_path.is_file():
             time.sleep(0.05)
-        process_id = int(pid_path.read_text(encoding="utf-8").strip())
+        process_group_id = int(pid_path.read_text(encoding="utf-8").strip())
         _wait_actor_port(
             container_name,
-            process_id,
+            process_group_id,
             webdriver_port,
             deadline,
         )
         _wait_actor_port(
             container_name,
-            process_id,
+            process_group_id,
             gateway_port,
+            deadline,
+        )
+        process_id = _wait_actor_window_process(
+            container_name,
+            process_group_id,
+            args.display,
             deadline,
         )
     except (OSError, RuntimeError, ValueError):
         if pid_path.is_file():
+            process_group_id = pid_path.read_text().strip()
             _stop_actor_record(
                 container_name,
                 run_root,
-                {"actor": actor, "processId": pid_path.read_text().strip()},
+                {
+                    "actor": actor,
+                    "processId": process_group_id,
+                    "processGroupId": process_group_id,
+                },
             )
         else:
             _remove_tree(actor_root)
@@ -970,6 +1055,7 @@ def actor_start(args: argparse.Namespace) -> int:
     record: dict[str, object] = {
         "actor": actor,
         "processId": process_id,
+        "processGroupId": process_group_id,
         "webdriverPort": webdriver_port,
         "gatewayPort": gateway_port,
         "profile": profile,

@@ -68,6 +68,7 @@ func TestRoleCompositionAllowlists(t *testing.T) {
 	wantStationPlugins := []string{
 		"agent",
 		"bootstrap",
+		"channel",
 		"launcher",
 		"oauth",
 		"oss",
@@ -82,6 +83,7 @@ func TestRoleCompositionAllowlists(t *testing.T) {
 
 	for _, forbidden := range []string{
 		"actor_identity",
+		"channel",
 		"conversation",
 		"federation",
 		"oauth",

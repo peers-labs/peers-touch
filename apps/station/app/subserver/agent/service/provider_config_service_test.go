@@ -12,8 +12,7 @@ func TestProviderRecordSupportedByFrozenProfileAllowsCatalogCLIRegistration(t *t
 	}
 	if provider.RuntimeKind != "cli" ||
 		provider.Protocol != "cli" ||
-		provider.CliCommand == "" ||
-		provider.ModelsCommand == "" {
+		provider.CliCommand == "" {
 		t.Fatalf("catalog CLI execution metadata was not persisted: %+v", provider)
 	}
 }

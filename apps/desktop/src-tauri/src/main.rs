@@ -179,11 +179,9 @@ fn acceptance_input_mode_is_exclusive(
             if isolation == Some("isolated-gui-session") {
                 Ok(true)
             } else {
-                Err(
-                    "exclusive-native-input requires \
+                Err("exclusive-native-input requires \
                      PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION=isolated-gui-session"
-                        .to_string(),
-                )
+                    .to_string())
             }
         }
         value => Err(format!(
@@ -369,38 +367,22 @@ mod acceptance_window_tests {
 
     #[test]
     fn semantic_input_is_the_default() {
+        assert!(!acceptance_input_mode_is_exclusive(None, None).expect("mode should parse"));
         assert!(
-            !acceptance_input_mode_is_exclusive(None, None)
-                .expect("mode should parse")
-        );
-        assert!(
-            !acceptance_input_mode_is_exclusive(
-                Some("semantic-nonintrusive"),
-                None,
-            )
+            !acceptance_input_mode_is_exclusive(Some("semantic-nonintrusive"), None,)
                 .expect("mode should parse")
         );
     }
 
     #[test]
     fn exclusive_input_requires_an_explicit_mode() {
-        assert!(
-            acceptance_input_mode_is_exclusive(
-                Some("exclusive-native-input"),
-                Some("isolated-gui-session"),
-            )
-            .expect("mode should parse")
-        );
-        assert!(
-            acceptance_input_mode_is_exclusive(
-                Some("exclusive-native-input"),
-                None,
-            )
-            .is_err()
-        );
-        assert!(
-            acceptance_input_mode_is_exclusive(Some("legacy"), None).is_err()
-        );
+        assert!(acceptance_input_mode_is_exclusive(
+            Some("exclusive-native-input"),
+            Some("isolated-gui-session"),
+        )
+        .expect("mode should parse"));
+        assert!(acceptance_input_mode_is_exclusive(Some("exclusive-native-input"), None,).is_err());
+        assert!(acceptance_input_mode_is_exclusive(Some("legacy"), None).is_err());
     }
 
     #[test]
@@ -655,7 +637,7 @@ fn main() {
                     }
                 }))
                 .expect("messaging projection notifier must initialize");
-            #[cfg(debug_assertions)]
+            #[cfg(any(debug_assertions, feature = "acceptance-webdriver"))]
             interface::http_gateway::start(Arc::clone(state.inner()), app.handle().clone());
             application::desktop_executor_worker::start(Arc::clone(state.inner()));
             let capability_supervisor = app
@@ -749,6 +731,8 @@ fn main() {
             auth::acceptance_logout_window_session,
             #[cfg(feature = "acceptance-webdriver")]
             auth::acceptance_window_session_identity,
+            #[cfg(feature = "acceptance-webdriver")]
+            auth::acceptance_session_persistence_state,
             auth::auth_restore_session,
             auth::auth_validate_token,
             auth::ensure_station_session,
@@ -843,7 +827,7 @@ fn main() {
             provider::provider_delete,
             provider::provider_apply_preset,
             provider::provider_list_available_models,
-            provider::model_fetch_remote,
+            provider::model_discover,
             provider::model_toggle,
             provider::model_delete,
             provider::model_add,
@@ -894,6 +878,7 @@ fn main() {
             agent_turn::agent_turn_trace_list,
             agent_turn::agent_turn_trace_get,
             agent_turn::agent_turn_diagnostics_export,
+            agent_turn::agent_turn_attributions_get,
             agent_turn::agent_submit_tool_decision,
             runtime_evidence::agent_runtime_profile_effective,
             capability_authority::agent_capability_manifest_list,
@@ -901,6 +886,7 @@ fn main() {
             capability_authority::agent_capability_binding_upsert,
             capability_authority::agent_capability_binding_delete,
             capability_authority::agent_capability_readiness,
+            capability_authority::agent_command_capability_snapshot,
             #[cfg(feature = "acceptance-webdriver")]
             capability_authority::agent_capability_acceptance_scenario_prepare,
             #[cfg(feature = "acceptance-webdriver")]
@@ -934,6 +920,7 @@ fn main() {
             agent_turn::agent_conversation_messages,
             agent_turn::agent_conversation_update,
             agent_turn::agent_conversation_archive,
+            agent_turn::agent_conversation_delete_batch,
             agent_turn::agent_conversation_restore,
             agent_turn::agent_conversation_runtime_reset,
             agent_turn::agent_retry_turn,
@@ -1081,19 +1068,39 @@ fn main() {
             model_config::model_config_set,
             model_config::model_config_delete,
             model_config::model_config_provider_references,
-            channels::channels_list,
-            channels::channels_get,
-            channels::channels_create,
-            channels::channels_update,
-            channels::channels_delete,
-            channels::channels_test,
-            channels::channels_send,
+            channels::channels_list_bindings,
+            channels::channels_create_binding,
+            channels::channels_update_binding,
+            channels::channels_delete_binding,
+            channels::channels_start_binding,
+            channels::channels_stop_binding,
+            channels::channels_set_default_binding,
+            channels::channels_validate_app,
+            channels::channels_check_health,
+            channels::channels_start_requester_authorization,
+            channels::channels_get_requester_authorization,
+            channels::channels_refresh_requester_authorization,
+            channels::channels_revoke_requester_authorization,
+            channels::channels_cancel_requester_authorization,
+            channels::channels_list_routes,
+            channels::channels_upsert_route,
+            channels::channels_delete_route,
+            channels::channels_list_member_access,
+            channels::channels_decide_member_access,
             channels::channels_list_chats,
-            channels::channels_start_bot,
-            channels::channels_stop_bot,
-            channels::channels_bot_status,
+            channels::channels_list_automations,
+            channels::channels_upsert_automation,
+            channels::channels_delete_automation,
+            channels::channels_run_automation,
+            channels::channels_send_message,
             channels::channels_list_events,
-            channels::channels_stats,
+            channels::channels_get_stats,
+            channels::channels_retry_delivery,
+            channels::channels_export_diagnostics,
+            channels::channels_start_provisioning,
+            channels::channels_poll_provisioning,
+            channels::channels_confirm_provisioning,
+            channels::channels_cancel_provisioning,
             oauth2::oauth2_list_providers,
             oauth2::oauth2_get_provider,
             oauth2::oauth2_get_credential_info,
@@ -1300,6 +1307,7 @@ fn main() {
             }
             // Clicking the dock icon with the window resident-hidden reopens
             // and focuses it, mirroring the tray Show action.
+            #[cfg(target_os = "macos")]
             if matches!(event, tauri::RunEvent::Reopen { .. }) {
                 application::tray::restore_main_window(app);
             }

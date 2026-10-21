@@ -2,7 +2,7 @@
 
 > Status: Canonical shared component identity contract.
 > Audience: Product designers, client engineers, reviewers, and AI agents.
-> Updated: 2026-06-18.
+> Updated: 2026-10-17.
 
 ## 1. Purpose
 
@@ -18,7 +18,11 @@ Implementation order:
 2. Use LobeUI primitive and map it to UI Identity tokens.
 3. Use antd only when LobeUI lacks the required behavior.
 4. Create a module component if the pattern recurs within one module.
-5. Create a shared component only after at least two modules need it.
+5. Before a second module or client form implements the same entity/pattern,
+   extract its canonical shared semantics.
+6. Share the React component only when anatomy and interaction are independent
+   of Desktop/Mobile Presentation Policy; otherwise share headless logic and
+   keep separate shells.
 
 ## 3. Buttons
 
@@ -62,6 +66,9 @@ controls, not two hand-built look-alikes.
 - Recurring entities (relationship request, contact row, session row,
   identity block, decision pair, status tag) live in one shared component;
   surfaces compose it, never restyle it.
+- Desktop and Mobile may wrap the same entity semantics in different shells,
+  but action contracts, accessibility labels, stable markers, and state
+  derivation remain one shared asset.
 - Entity components carry a stable `data-entity` contract marker and their
   controls carry stable `data-decision-action` / role markers, so the
   geometry gate can prove cross-surface identity (same size, radius, control

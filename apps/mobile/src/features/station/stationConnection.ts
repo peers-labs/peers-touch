@@ -124,7 +124,7 @@ export async function restoreAndVerifyStationRoute(input: {
   sourceRef: string;
   endpointOrigin: string;
 }): Promise<StationIdentityResult> {
-  const binding = await restoreStationRouteBinding(input);
+  const { binding } = await restoreStationRouteBinding(input);
   const verified = await fetchActiveStationIdentity();
   return requireRouteIdentity(binding.stationPeerId, binding.routeId, verified);
 }

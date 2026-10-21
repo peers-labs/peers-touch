@@ -372,6 +372,59 @@ pub fn acceptance_window_session_identity(
     })
 }
 
+#[cfg(feature = "acceptance-webdriver")]
+#[tauri::command]
+pub fn acceptance_session_persistence_state() -> AppResult<StubPayload> {
+    let identity = match crate::infrastructure::auth_identity::read_state() {
+        Ok(identity) => identity,
+        Err(error) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "Failed to inspect persisted session identity",
+                Some(serde_json::json!({
+                    "command": "acceptance_session_persistence_state",
+                    "reason": "identity_state_unavailable",
+                    "cause": error,
+                })),
+            )
+        }
+    };
+    let active_account_id = identity.active_account_id.clone();
+    let active_account = active_account_id.as_deref().and_then(|account_id| {
+        identity
+            .accounts
+            .iter()
+            .find(|account| account.id == account_id)
+    });
+    let requires_pin = active_account_id
+        .as_deref()
+        .is_some_and(crate::infrastructure::session_vault::account_requires_pin);
+    let persisted = active_account_id.as_deref().and_then(|account_id| {
+        crate::infrastructure::session_vault::load_raw_session_for_account(account_id, None)
+            .ok()
+            .flatten()
+    });
+    AppResult::success(StubPayload {
+        command: "acceptance_session_persistence_state".to_string(),
+        status: serde_json::json!({
+            "activeAccountPresent": active_account.is_some(),
+            "accountHasSessionMetadata": active_account
+                .is_some_and(|account| account.has_session),
+            "accountRequiresPin": requires_pin,
+            "rawSessionPresent": persisted.is_some(),
+            "rawSessionActorMatches": persisted.as_ref().is_some_and(|session| {
+                active_account
+                    .is_some_and(|account| account.actor_ptid == session.actor_ptid)
+            }),
+            "rawSessionSource": persisted.as_ref().map(|session| match session.source {
+                crate::infrastructure::session_store::SessionSource::Password => "password",
+                crate::infrastructure::session_store::SessionSource::OauthBridge => "oauth_bridge",
+            }),
+        })
+        .to_string(),
+    })
+}
+
 #[tauri::command]
 pub fn auth_restore_session(
     state: State<'_, Arc<AppState>>,

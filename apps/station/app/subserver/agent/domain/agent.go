@@ -18,20 +18,22 @@ const (
 )
 
 type Agent struct {
-	AgentID        string
-	Name           string
-	Title          string
-	Description    string
-	ProviderID     string
-	ModelName      string
-	Effort         string
-	ThinkingMode   ThinkingMode
-	Visibility     AgentVisibility
-	OwnerActorPTID string
-	ConfigJSON     string
-	Version        int64
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	AgentID           string
+	Name              string
+	Title             string
+	Description       string
+	ProviderID        string
+	ModelName         string
+	Effort            string
+	ThinkingMode      ThinkingMode
+	Visibility        AgentVisibility
+	OwnerActorPTID    string
+	IdentityPrompt    string
+	AgentConfigPrompt string
+	ConfigJSON        string
+	Version           int64
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 type AgentListOptions struct {
@@ -42,16 +44,18 @@ type AgentListOptions struct {
 }
 
 type AgentUpsertOptions struct {
-	ActorPTID    string
-	AgentID      string
-	Name         string
-	Title        string
-	Description  string
-	ProviderID   string
-	ModelName    string
-	Effort       string
-	ThinkingMode ThinkingMode
-	Visibility   AgentVisibility
-	ConfigJSON   string
-	Version      int64
+	ActorPTID         string
+	AgentID           string
+	Name              string
+	Title             string
+	Description       string
+	ProviderID        string
+	ModelName         string
+	Effort            string
+	ThinkingMode      ThinkingMode
+	Visibility        AgentVisibility
+	IdentityPrompt    string
+	AgentConfigPrompt string
+	ConfigJSON        string
+	Version           int64
 }

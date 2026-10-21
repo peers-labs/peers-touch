@@ -81,6 +81,20 @@ func newHomeCommandTestService(t *testing.T) (*HomeCommandService, *gorm.DB, *ho
 		ThinkingMode: domain.ThinkingModeAuto,
 		Version:      3,
 	}
+	now := time.Date(2026, 9, 16, 4, 58, 0, 0, time.UTC)
+	if err := db.Create(&persistence.Agent{
+		ID:             agent.AgentID,
+		Name:           agent.Name,
+		Title:          agent.Title,
+		ProviderID:     agent.ProviderID,
+		ModelName:      agent.ModelName,
+		OwnerActorPTID: "ptid:actor-1",
+		Version:        agent.Version,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}).Error; err != nil {
+		t.Fatalf("seed Home command Agent: %v", err)
+	}
 	seedHomeReadiness(t, db, "ptid:actor-1", agent.AgentID, uint64(agent.Version))
 	admission := newTurnAdmissionServiceWithDB(db)
 	starter := &homeTurnStarterStub{db: db, accept: true}

@@ -2,10 +2,24 @@ import type { AccountIdentity } from '../services/desktop_api';
 
 export type { AccountIdentity };
 
-const CORE_PAGES = ['home', 'chat', 'agent', 'evaluation', 'settings', 'search', 'agent-profile', 'agent-orchestration', 'agent-groups', 'marketplace', 'custom-plugins', 'tasks'] as const;
+const CORE_PAGES = [
+  'home',
+  'search',
+  'chat',
+  'agent',
+  'moments',
+  'settings',
+  'applets',
+  'evaluation',
+  'agent-profile',
+  'agent-orchestration',
+  'agent-groups',
+  'custom-plugins',
+  'tasks',
+] as const;
 
 export type CorePage = (typeof CORE_PAGES)[number];
-export type Page = CorePage | `applet:${string}` | (string & {});
+export type Page = CorePage | `applet:${string}`;
 export const DEFAULT_READY_PAGE: Page = 'search';
 
 export function isCorePageOrKnown(segment: string): segment is Page {
@@ -72,9 +86,4 @@ export interface Navigation {
   navigateToAgentSurface: (agentName: string, surface: 'chat' | 'profile') => void;
   navigateToSettings: (tab: string, highlightId?: string) => void;
   handleSearchNavigate: (url: string) => void;
-}
-
-export interface AppletPins {
-  pinnedApplets: string[];
-  togglePin: (appletId: string) => void;
 }

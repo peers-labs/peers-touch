@@ -321,6 +321,10 @@ func TestTurnServiceExportTurnDiagnostics(t *testing.T) {
 			ToolName:  "local_file_read",
 			Arguments: `{"path":"/Users/alice/private/source.txt","token":"raw-token"}`,
 			Result:    `{"email":"alice@example.com","safe":"visible"}`,
+		}, {
+			ToolName:  "skill_view",
+			Arguments: `{"name":"Private Skill"}`,
+			Result:    "private Skill body must not enter diagnostics",
 		}},
 	}
 	if err := (&TurnService{}).saveTurnTrace(context.Background(), trace); err != nil {
@@ -342,6 +346,7 @@ func TestTurnServiceExportTurnDiagnostics(t *testing.T) {
 		"/private/tmp/private",
 		"alice@example.com",
 		"must-not-export",
+		"private Skill body must not enter diagnostics",
 	} {
 		if strings.Contains(text, forbidden) {
 			t.Fatalf("diagnostic replay leaked %q: %s", forbidden, text)
@@ -365,6 +370,8 @@ func TestTurnServiceExportTurnDiagnostics(t *testing.T) {
 		replay.ToolCalls[0].GetDuplicateDeliveryCount() != 2 ||
 		replay.GetToolIterationLimit() != 2 ||
 		len(replay.Messages) != 2 ||
+		len(replay.GetTrace().GetToolCalls()) != 2 ||
+		replay.GetTrace().GetToolCalls()[1].GetResult() != diagnosticRedactedValue ||
 		replay.Messages[0].GetContentHash() == "" {
 		t.Fatalf("diagnostic replay lost exact-turn evidence: %+v", replay)
 	}

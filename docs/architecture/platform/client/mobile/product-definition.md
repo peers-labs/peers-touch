@@ -1,8 +1,8 @@
 # Mobile Shell — 产品定义
 
 > **Status**: active
-> **Version**: v1.2
-> **Created**: 2026-08-27 | **Updated**: 2026-10-12
+> **Version**: v1.3
+> **Created**: 2026-08-27 | **Updated**: 2026-10-16
 > **Owner**: Mobile Product Team
 > **Module**: `apps/mobile/`
 
@@ -72,7 +72,7 @@ making the device a business authority.
 | MS-C12 | One-to-one voice/video call | required | Start or receive audio/video from a Direct conversation; ring, accept/reject, resolve one winning device, connect, mute, toggle camera, reconnect, and end without losing Chat context. |
 | MS-C13 | Chat Docs custom tab | deferred | No enabled tab until a shared-document domain and product journey are accepted. |
 | MS-C14 | Local message flag | degraded | May remain device-local if clearly labeled and never presented as cross-device truth. |
-| MS-C15 | Whole-product usability | required | Every reachable Mobile surface is understandable, operable, accessible, and visually coherent in the foreground iOS runtime; technical identifiers and module failures never replace or obstruct the user's primary task. |
+| MS-C15 | Whole-product usability | required | Every reachable Mobile surface is understandable, operable, accessible, and visually coherent on Android and iOS; technical identifiers and module failures never replace or obstruct the user's primary task. |
 
 ## 6. Platform Matrix
 
@@ -93,8 +93,9 @@ making the device a business authority.
 - Deferred MS-C11 and MS-C13 do not count toward readiness, but any visible entry
   must be disabled with a useful reason.
 - A narrow functional Gate cannot establish whole-product readiness. Completion
-  requires a foreground iOS walkthrough of every launch, tab, detail, overlay,
-  empty, loading, failure, recovery, and destructive-confirmation surface.
+  requires foreground Android and iOS walkthroughs of every launch, tab,
+  detail, overlay, empty, loading, failure, recovery, and
+  destructive-confirmation surface.
 - No required walkthrough surface may expose a raw PTID, Station URL, runtime
   identifier, untranslated key, or internal error as its primary label when a
   human-readable projection exists.
@@ -126,9 +127,9 @@ The interaction reference is:
 - `docs/architecture/platform/client/mobile/prototype/README.md`
 - `packages/prototypes/mobile/chat/UI-IDENTITY-AUDIT.md`
 
-The happy-path interaction and expanded recovery/accessibility amendment were
-confirmed by the Owner on 2026-08-27. Prototype evidence never proves Station
-integration, native lifecycle, security, or production runtime behavior.
+The confirmed prototype defines interaction intent. Prototype evidence never
+proves Station integration, native lifecycle, security, or production runtime
+behavior.
 
 ## 10. Non-Goals
 

@@ -72,16 +72,12 @@ func (s *CapabilityAuthorityReadinessService) Get(
 	if err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(agent.ProviderID) == "" || strings.TrimSpace(agent.ModelName) == "" {
-		return nil, errcode.New(
-			errcode.AgentInvalidSourceState,
-			http.StatusConflict,
-			"runtime configuration is required for capability readiness",
-			nil,
-		)
+	providerID, modelID, err := capabilityReadinessModelSelection(agent, req)
+	if err != nil {
+		return nil, err
 	}
 	admission, err := s.admission.Resolve(
-		ctx, ptid, agent.ProviderID, agent.ModelName,
+		ctx, ptid, providerID, modelID,
 	)
 	if err != nil {
 		return nil, err
@@ -102,6 +98,33 @@ func (s *CapabilityAuthorityReadinessService) Get(
 		strings.TrimSpace(req.GetClientCapabilitySessionId()),
 		admission,
 	)
+}
+
+func capabilityReadinessModelSelection(
+	agent *domain.Agent,
+	req *model.GetCapabilityReadinessRequest,
+) (string, string, error) {
+	requestedProviderID := strings.TrimSpace(req.GetProviderId())
+	requestedModelID := strings.TrimSpace(req.GetModelId())
+	if (requestedProviderID == "") != (requestedModelID == "") {
+		return "", "", capabilityInvalid(
+			"provider_id and model_id must be supplied together",
+		)
+	}
+	if requestedProviderID != "" {
+		return requestedProviderID, requestedModelID, nil
+	}
+	providerID := strings.TrimSpace(agent.ProviderID)
+	modelID := strings.TrimSpace(agent.ModelName)
+	if providerID == "" || modelID == "" {
+		return "", "", errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"Topic or Settings runtime configuration is required for capability readiness",
+			nil,
+		)
+	}
+	return providerID, modelID, nil
 }
 
 func (s *CapabilityAuthorityReadinessService) ResolveForTurn(

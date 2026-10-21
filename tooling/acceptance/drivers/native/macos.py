@@ -810,6 +810,7 @@ except Exception as error:
 
 _KEY_CODES = {
     NativeKey.A: 0,
+    NativeKey.C: 8,
     NativeKey.G: 5,
     NativeKey.L: 37,
     NativeKey.V: 9,

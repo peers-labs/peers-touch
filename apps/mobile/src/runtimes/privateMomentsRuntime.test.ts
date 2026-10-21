@@ -109,7 +109,7 @@ beforeEach(() => {
   commandMocks.teardown.mockResolvedValue({
     active: false,
     activationGeneration: 0,
-    workerMode: 'on_demand',
+    reconciliationMode: 'on_demand',
   });
   commandMocks.prepareText.mockImplementation(async (intent) => (
     projection(intent.draftId, intent.draftRevision, 'READY_PRIVATE')
@@ -185,7 +185,7 @@ function activeStatus(activationGeneration: number) {
     actorPtid: 'ptid:alice',
     deviceId: 'device-1',
     activationGeneration,
-    workerMode: 'on_demand' as const,
+    reconciliationMode: 'on_demand' as const,
   };
 }
 

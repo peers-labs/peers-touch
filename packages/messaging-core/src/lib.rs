@@ -2,6 +2,7 @@ pub mod attachment;
 pub mod codec;
 pub mod contracts;
 pub mod crypto;
+pub mod engine;
 pub mod identity;
 pub mod inbox;
 pub mod mls;

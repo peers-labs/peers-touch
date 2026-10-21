@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import inspect
+import signal
 import unittest
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from tooling.acceptance.core import (
@@ -15,6 +18,7 @@ from tooling.acceptance.gates.mobile.simulator_social_e2e import (
     IOS_SOCIAL_ENVIRONMENT_ID,
     IOS_SOCIAL_PARITY_SCENARIOS,
     IOS_SOCIAL_RUNTIME_REUSE,
+    RECOVERY_RELAUNCH_ACTIONS,
     SCENARIO_GATES,
     SimulatorSocialGate,
 )
@@ -928,6 +932,508 @@ class SimulatorSocialGateTests(unittest.TestCase):
     def test_unknown_scenario_fails_before_runtime_allocation(self) -> None:
         with self.assertRaisesRegex(ValueError, "unsupported"):
             SimulatorSocialGate("unknown")
+
+    def test_build_identity_must_match_web_rust_and_provisioned_build(
+        self,
+    ) -> None:
+        expected = {
+            "schema": "peers-mobile-build-identity",
+            "buildId": "build-ios",
+            "platform": "ios",
+        }
+        session = Mock()
+        session.call_action.return_value = {
+            "identity": dict(expected),
+            "embeddedIdentitySha256": "sha256:" + ("a" * 64),
+        }
+
+        observed = SimulatorSocialGate._verify_build_identity(
+            session,
+            expected,
+            "installed build",
+        )
+
+        self.assertEqual(observed["identity"], expected)
+        session.call_action.assert_called_once_with("build.identity")
+        session.call_action.return_value = {
+            "identity": {**expected, "buildId": "other"},
+            "embeddedIdentitySha256": "sha256:" + ("a" * 64),
+        }
+        with self.assertRaisesRegex(GateError, "provisioned build"):
+            SimulatorSocialGate._verify_build_identity(
+                session,
+                expected,
+                "installed build",
+            )
+
+    def test_recovery_dispatch_receives_journey_and_build_identity(
+        self,
+    ) -> None:
+        gate = SimulatorSocialGate("recovery")
+        artifacts = Artifacts()
+        expected_identity = {
+            "schema": "peers-mobile-build-identity",
+            "buildId": "build-ios",
+        }
+        sender_session = Mock()
+        receiver_session = Mock()
+        journey = Mock()
+        journey.authenticate.side_effect = [
+            {"actor": "alice"},
+            {"actor": "bob"},
+        ]
+        actors = {
+            "sim-ios": self._actor("sim-ios", "alice"),
+            "sim-ios-peer": self._actor("sim-ios-peer", "bob"),
+        }
+        manifest = {
+            "mobileSimulator": {
+                "applications": {
+                    "ios": {"buildIdentity": expected_identity},
+                },
+                "appium": {"serverUrl": "http://127.0.0.1:4723"},
+            },
+        }
+
+        with (
+            patch(
+                "tooling.acceptance.gates.mobile.simulator_social_e2e."
+                "_validate_source_identity",
+                return_value={"commit": "a" * 40},
+            ),
+            patch(
+                "tooling.acceptance.gates.mobile.simulator_social_e2e."
+                "_validate_runtime_identity",
+                return_value={"appium": "verified"},
+            ),
+            patch(
+                "tooling.acceptance.gates.mobile.simulator_social_e2e."
+                "MobileMessagingJourney",
+                return_value=journey,
+            ),
+            patch.object(gate, "_reject_credentials"),
+            patch.object(
+                gate,
+                "_client_specs",
+                return_value=(
+                    SimpleNamespace(client_id="sim-ios"),
+                    SimpleNamespace(client_id="sim-ios-peer"),
+                ),
+            ),
+            patch.object(
+                gate,
+                "_start_social_session",
+                side_effect=[sender_session, receiver_session],
+            ),
+            patch.object(
+                gate,
+                "_verify_build_identity",
+                side_effect=[
+                    {"identity": expected_identity},
+                    {"identity": expected_identity},
+                ],
+            ),
+            patch.object(gate, "_load_actors", return_value=actors),
+            patch.object(
+                gate,
+                "_prepare_fresh_actor_identity",
+                side_effect=[
+                    {"clientId": "sim-ios", "prepared": True},
+                    {"clientId": "sim-ios-peer", "prepared": True},
+                ],
+            ),
+            patch.object(
+                gate,
+                "_run_recovery_journey",
+                return_value={"scenario": "recovery"},
+            ) as run_recovery,
+            patch.object(
+                gate,
+                "_capture_client",
+                return_value={"captured": True},
+            ),
+        ):
+            gate._run_social_journey(artifacts, manifest)
+
+        run_recovery.assert_called_once_with(
+            sender_session=sender_session,
+            receiver_session=receiver_session,
+            sender=actors["sim-ios"],
+            receiver=actors["sim-ios-peer"],
+            journey=journey,
+            journey_id=artifacts.run_id[-12:],
+            expected_build_identity=expected_identity,
+        )
+
+    def test_fresh_actor_identity_is_prepared_without_exposing_seed(
+        self,
+    ) -> None:
+        actor = self._actor("sim-ios", "alice")
+        session = Mock()
+        session.call_action.return_value = {"prepared": True}
+
+        with patch(
+            "tooling.acceptance.gates.mobile.simulator_social_e2e."
+            "secrets.token_bytes",
+            return_value=b"a" * 32,
+        ):
+            result = SimulatorSocialGate._prepare_fresh_actor_identity(
+                session,
+                actor,
+            )
+
+        user_scope = f"{actor.station_peer_id}|{actor.ptid}"
+        expected_digest = hashlib.sha256(
+            user_scope.encode("utf-8")
+            + b"\x1f"
+            + actor.ptid.encode("utf-8")
+        ).digest()[:16].hex()
+        session.call_action.assert_called_once_with(
+            "runtime.prepareActorIdentity",
+            {
+                "storageKey": (
+                    "mobile-crypto-identity.v1.identity."
+                    + expected_digest
+                ),
+                "seedBase64": "YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE=",
+            },
+        )
+        self.assertEqual(
+            result,
+            {
+                "clientId": "sim-ios",
+                "devicePolicy": "fresh",
+                "prepared": True,
+            },
+        )
+        self.assertNotIn("seedBase64", result)
+        self.assertNotIn("storageKey", result)
+
+    def test_recovery_command_diagnostics_distinguish_identity_and_state(
+        self,
+    ) -> None:
+        gate = SimulatorSocialGate("recovery")
+        with self.assertRaisesRegex(
+            GateError,
+            "missing from durable snapshot",
+        ):
+            gate._require_command(
+                {"commands": []},
+                "command-1",
+                "a" * 64,
+                {"unknown-outcome"},
+            )
+        with self.assertRaisesRegex(
+            GateError,
+            "payload identity changed",
+        ):
+            gate._require_command(
+                {
+                    "commands": [{
+                        "commandId": "command-1",
+                        "payloadSha256": "b" * 64,
+                        "state": "unknown-outcome",
+                    }],
+                },
+                "command-1",
+                "a" * 64,
+                {"unknown-outcome"},
+            )
+        with self.assertRaisesRegex(
+            GateError,
+            "state left the expected recovery set: committed",
+        ):
+            gate._require_command(
+                {
+                    "commands": [{
+                        "commandId": "command-1",
+                        "payloadSha256": "a" * 64,
+                        "state": "committed",
+                    }],
+                },
+                "command-1",
+                "a" * 64,
+                {"unknown-outcome"},
+            )
+
+    def test_reliability_snapshot_waits_for_command_runtime_scope(
+        self,
+    ) -> None:
+        session = Mock()
+        session.call_action.side_effect = [
+            DriverError("acceptance.mobile.reliabilityScopeUnavailable"),
+            {
+                "runtime": {"active": True},
+                "commands": [],
+                "drafts": [],
+                "checkpoints": [],
+            },
+        ]
+
+        result = SimulatorSocialGate(
+            "recovery"
+        )._wait_for_reliability_snapshot(
+            session,
+            "restored reliability snapshot",
+        )
+
+        self.assertEqual(result["runtime"], {"active": True})
+        self.assertEqual(session.call_action.call_count, 2)
+
+    def test_recovery_waits_for_actor_device_enrollment(
+        self,
+    ) -> None:
+        actor = self._actor("sim-ios", "alice")
+        session = Mock()
+        session.call_action.side_effect = [
+            {
+                "actorPtid": actor.ptid,
+                "deviceId": "device-alice",
+                "active": False,
+            },
+            {
+                "actorPtid": actor.ptid,
+                "deviceId": "device-alice",
+                "active": True,
+            },
+        ]
+
+        result = SimulatorSocialGate("recovery")._wait_for_enrolled_device(
+            session,
+            actor,
+            "recovery device enrollment",
+        )
+
+        self.assertTrue(result["active"])
+        self.assertEqual(result["actorPtid"], actor.ptid)
+        self.assertEqual(session.call_action.call_count, 2)
+
+    def test_device_enrollment_timeout_reports_deferred_runtime_ids(
+        self,
+    ) -> None:
+        actor = self._actor("sim-ios", "alice")
+        session = Mock()
+        session.call_action.return_value = {
+            "states": [{
+                "kind": "deferred-capability",
+                "detail": {"runtimeIds": ["messaging", "command"]},
+            }],
+        }
+
+        with (
+            patch(
+                "tooling.acceptance.gates.mobile.simulator_social_e2e."
+                "time.monotonic",
+                side_effect=[0.0, 31.0],
+            ),
+            self.assertRaisesRegex(
+                GateError,
+                r"recoveryStates=deferred-capability\(command,messaging\)",
+            ),
+        ):
+            SimulatorSocialGate("recovery")._wait_for_enrolled_device(
+                session,
+                actor,
+                "recovery device enrollment",
+            )
+
+    def test_runtime_graph_readiness_rejects_failed_runtime(
+        self,
+    ) -> None:
+        session = Mock()
+        session.call_action.return_value = {
+            "generation": 3,
+            "phase": "ACTIVE",
+            "runtimes": [
+                {"id": "session", "status": "ready"},
+                {"id": "native-event-bridge", "status": "failed"},
+            ],
+            "runtimeErrors": [{
+                "runtimeId": "native-event-bridge",
+                "error": "native bridge unavailable",
+            }],
+        }
+
+        with self.assertRaisesRegex(
+            GateError,
+            "runtime graph failed: native-event-bridge",
+        ):
+            SimulatorSocialGate("recovery")._require_runtime_graph_ready(
+                session,
+                "normal process restart",
+            )
+
+    def test_ios_process_restart_distinguishes_terminate_and_sigkill(
+        self,
+    ) -> None:
+        class Session:
+            platform = "ios"
+            device = SimpleNamespace(identifier="simulator-id")
+            build = SimpleNamespace(
+                application_id="com.peers.touch.mobile"
+            )
+
+            def __init__(self, before_pid: int, after_pid: int) -> None:
+                self.pids = [before_pid, after_pid]
+                self.scripts: list[tuple[str, object]] = []
+                self.required_actions: list[str] = []
+
+            def switch_to_native(self) -> None:
+                return None
+
+            def execute_script(
+                self,
+                script: str,
+                payload: object = None,
+            ) -> object:
+                self.scripts.append((script, payload))
+                if script == "mobile: activeAppInfo":
+                    return {"pid": self.pids.pop(0)}
+                return None
+
+            def reconnect_after_runtime_relaunch(self) -> None:
+                return None
+
+            def wait_for_ready(self) -> None:
+                return None
+
+            def switch_to_app_webview(self) -> None:
+                return None
+
+            def require_harness(self, actions: list[str]) -> None:
+                self.required_actions = actions
+
+        normal = Session(101, 102)
+        forced = Session(201, 202)
+        with (
+            patch(
+                "tooling.acceptance.gates.mobile.simulator_social_e2e."
+                "time.sleep",
+            ),
+            patch(
+                "tooling.acceptance.gates.mobile.simulator_social_e2e."
+                "os.kill",
+            ) as kill,
+        ):
+            normal_result = SimulatorSocialGate._restart_ios_application(
+                normal,
+                force_kill=False,
+            )
+            forced_result = SimulatorSocialGate._restart_ios_application(
+                forced,
+                force_kill=True,
+            )
+
+        self.assertEqual(normal_result["mode"], "terminate")
+        self.assertEqual(forced_result["mode"], "sigkill")
+        self.assertEqual(forced_result["signal"], "SIGKILL")
+        self.assertIn(
+            (
+                "mobile: terminateApp",
+                {"bundleId": "com.peers.touch.mobile"},
+            ),
+            normal.scripts,
+        )
+        kill.assert_called_once_with(201, signal.SIGKILL)
+        self.assertEqual(
+            forced.required_actions,
+            list(RECOVERY_RELAUNCH_ACTIONS),
+        )
+
+    def test_route_renewal_crosses_prior_expiry_without_generation_change(
+        self,
+    ) -> None:
+        before = {
+            "activeStationPeerId": "station-1",
+            "entries": [{
+                "stationPeerId": "station-1",
+                "activeRouteId": "route-1",
+                "routeRevision": 4,
+                "routes": [{
+                    "routeId": "route-1",
+                    "routeGeneration": 7,
+                    "attestationExpiresAtUnixMs": 2_000,
+                    "health": "available",
+                }],
+            }],
+        }
+        after = {
+            "activeStationPeerId": "station-1",
+            "entries": [{
+                "stationPeerId": "station-1",
+                "activeRouteId": "route-1",
+                "routeRevision": 5,
+                "routes": [{
+                    "routeId": "route-1",
+                    "routeGeneration": 7,
+                    "attestationExpiresAtUnixMs": 8_000,
+                    "health": "available",
+                }],
+            }],
+        }
+        session = Mock()
+        session.call_action.side_effect = [before, after]
+        with (
+            patch(
+                "tooling.acceptance.gates.mobile.simulator_social_e2e."
+                "time.time",
+                side_effect=[1.0, 3.0],
+            ),
+            patch(
+                "tooling.acceptance.gates.mobile.simulator_social_e2e."
+                "time.monotonic",
+                side_effect=[0.0, 1.0, 2.0],
+            ),
+        ):
+            result = SimulatorSocialGate(
+                "recovery"
+            )._await_route_attestation_renewal(session)
+
+        self.assertTrue(result["crossedPriorExpiry"])
+        self.assertEqual(result["routeGeneration"], 7)
+        self.assertEqual(result["beforeRouteRevision"], 4)
+        self.assertEqual(result["afterRouteRevision"], 5)
+
+    def test_station_outage_restores_same_source_bound_container(
+        self,
+    ) -> None:
+        stopped = {
+            "stopped": True,
+            "deploymentEnvironment": "profile-three",
+            "runtimeOwner": "docker-compose:test/station",
+            "containerId": "station-container",
+            "beforeProcessIds": [101],
+            "sourceCommit": "a" * 40,
+            "buildCommit": "a" * 40,
+        }
+        restored = {
+            "restored": True,
+            "deploymentEnvironment": "profile-three",
+            "runtimeOwner": "docker-compose:test/station",
+            "containerId": "station-container",
+            "beforeProcessIds": [101],
+            "afterProcessIds": [202],
+            "sourceCommit": "a" * 40,
+            "buildCommit": "a" * 40,
+        }
+        capability = Mock()
+        capability.invoke.side_effect = [stopped, restored]
+        outage_observed: list[str] = []
+
+        with patch(
+            "tooling.acceptance.gates.mobile.simulator_social_e2e."
+            "EphemeralGateClient.from_environment",
+            return_value=capability,
+        ):
+            result = SimulatorSocialGate._restart_source_bound_station(
+                during_outage=lambda: outage_observed.append("stopped"),
+            )
+
+        self.assertEqual(outage_observed, ["stopped"])
+        self.assertEqual(result["beforeProcessIds"], [101])
+        self.assertEqual(result["afterProcessIds"], [202])
+        self.assertEqual(capability.invoke.call_count, 2)
+        capability.close.assert_called_once_with()
 
     def test_recovery_ui_uses_restart_and_authoritative_draft_readback(
         self,

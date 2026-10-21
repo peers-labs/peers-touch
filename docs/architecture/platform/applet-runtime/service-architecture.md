@@ -107,8 +107,7 @@ invoke(applet_id, session_id, method, params)
 | Host | Gateway 所在层 |
 |------|----------------|
 | Desktop | Tauri Rust application/domain/infrastructure |
-| Android | Kotlin native plugin / core applet module |
-| iOS | Swift native plugin / core applet module |
+| Mobile | Shared Mobile Rust Applet Kernel; Kotlin/Swift only adapt native Lynx/OS capabilities |
 | HarmonyOS | ArkTS native plugin reserved |
 | Web | Web Host BFF, optionally backed by Station |
 

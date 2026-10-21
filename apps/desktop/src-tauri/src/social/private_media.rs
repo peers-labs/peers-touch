@@ -158,7 +158,7 @@ mod tests {
     use sha2::{Digest, Sha256};
 
     use super::*;
-    use crate::secure_content::worker::new_download_record;
+    use crate::secure_content::object_runtime::new_download_record;
 
     const GRANT_BINDING_VECTOR: &str = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),

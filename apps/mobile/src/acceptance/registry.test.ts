@@ -630,6 +630,24 @@ describe('Mobile Acceptance Harness', () => {
           createdAt: 1,
           lastUsedAt: 2,
           online: true,
+          activeRouteId: 'route-direct',
+          routeRevision: 4,
+          lifecycleGeneration: 2,
+          routes: [{
+            nodePeerId: 'node-peer',
+            nodeAuthorizationDigest: [1],
+            authorizationEpoch: 1,
+            routeId: 'route-direct',
+            routeType: 'direct',
+            transport: 'libp2p_http_v1',
+            endpointOrigin: 'https://station.example',
+            routeGeneration: 3,
+            addresses: ['/ip4/127.0.0.1/tcp/4001'],
+            attestationExpiresAtUnixMs: 2_000_000_000_000,
+            sourceRef: 'source',
+            lastVerifiedAt: 1,
+            health: 'available',
+          }],
           privateKey: 'must-not-cross',
         }],
       },
@@ -687,7 +705,14 @@ describe('Mobile Acceptance Harness', () => {
     expect(projection).toMatchObject({
       station: {
         activeStationPeerId: 'station-peer',
-        entries: [{ stationPeerId: 'station-peer' }],
+        entries: [{
+          stationPeerId: 'station-peer',
+          routes: [{
+            routeId: 'route-direct',
+            routeGeneration: 3,
+            attestationExpiresAtUnixMs: 2_000_000_000_000,
+          }],
+        }],
       },
       access: {
         session: {

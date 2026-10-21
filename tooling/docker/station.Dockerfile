@@ -28,7 +28,7 @@ RUN if ! command -v go >/dev/null 2>&1; then \
 
 ENV PATH="/usr/local/go/bin:${PATH}"
 
-ARG GOPROXY=https://goproxy.cn,direct
+ARG GOPROXY=https://goproxy.cn|https://mirrors.aliyun.com/goproxy/|direct
 ENV GOPROXY=${GOPROXY}
 ENV GOSUMDB=off
 ENV GONOSUMCHECK=*
@@ -53,6 +53,11 @@ WORKDIR /src
 COPY apps/station/app/ ./station/app/
 COPY apps/station/frame/ ./station/frame/
 COPY apps/applets/ ./applets/
+COPY tooling/plugins/build-lark-plugin.sh ./tooling/plugins/build-lark-plugin.sh
+
+RUN /src/tooling/plugins/build-lark-plugin.sh \
+    /out/plugins/lark \
+    /src/station/app
 
 # Build — ARGs declared here so changing commit/time only invalidates this layer,
 # not the expensive apt-get / go-mod-download layers above.
@@ -75,8 +80,11 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
       -X github.com/peers-labs/peers-touch/station/app/subserver/app_meta.BuildTime=${BUILD_TIME}" \
     -o /out/secure-content-maintenance ./cmd/secure_content_maintenance
 
-# ─── Stage 2: Runtime ──────────────────────────────────────────────────────────
-FROM ${BASE_IMAGE}
+# ─── Stage 2: Runtime dependencies ─────────────────────────────────────────────
+FROM ${BASE_IMAGE} AS runtime-base
+
+ARG TARGETARCH
+ARG LARK_CLI_VERSION=1.0.95
 
 RUN sed -i \
       -e 's|http://archive.ubuntu.com|http://mirrors.tuna.tsinghua.edu.cn|g' \
@@ -87,10 +95,35 @@ RUN sed -i \
     apt-get install -y --no-install-recommends ca-certificates tzdata wget gettext-base && \
     rm -rf /var/lib/apt/lists/*
 
+RUN case "${TARGETARCH}" in \
+      amd64) LARK_CLI_SHA256=7da92d426b7d000908c76a36b87a7d0357c270debf4c7149bbc6010b20d2541e ;; \
+      arm64) LARK_CLI_SHA256=063012a63bb22479855e335d922cc588b883e00d115de51da76a8ffe22db987a ;; \
+      riscv64) LARK_CLI_SHA256=88dacebc23f19a2749e64ee63049cd96e8e6b553c4225ed5d4cbf1e63e3053ff ;; \
+      *) echo "unsupported lark-cli architecture: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac && \
+    LARK_CLI_ARCHIVE="lark-cli-${LARK_CLI_VERSION}-linux-${TARGETARCH}.tar.gz" && \
+    wget -q "https://registry.npmmirror.com/-/binary/lark-cli/v${LARK_CLI_VERSION}/${LARK_CLI_ARCHIVE}" \
+      -O "/tmp/${LARK_CLI_ARCHIVE}" && \
+    echo "${LARK_CLI_SHA256}  /tmp/${LARK_CLI_ARCHIVE}" | sha256sum -c - && \
+    mkdir -p /tmp/lark-cli-dist /usr/share/doc/lark-cli && \
+    tar -xzf "/tmp/${LARK_CLI_ARCHIVE}" -C /tmp/lark-cli-dist && \
+    install -m 0755 /tmp/lark-cli-dist/lark-cli /usr/local/bin/lark-cli && \
+    install -m 0644 /tmp/lark-cli-dist/LICENSE /usr/share/doc/lark-cli/LICENSE && \
+    test "$(lark-cli --version)" = "lark-cli version ${LARK_CLI_VERSION}" && \
+    rm -rf "/tmp/${LARK_CLI_ARCHIVE}" /tmp/lark-cli-dist
+
+# ─── Stage 3: Station runtime ──────────────────────────────────────────────────
+FROM runtime-base AS runtime
+
 WORKDIR /app
+
+ENV PT_CHANNEL_LARK_CLI=/usr/local/bin/lark-cli \
+    PT_CHANNEL_LARK_PLUGIN_PACKAGE=/app/plugins/lark \
+    PT_CHANNEL_PLUGIN_ROOT=/app/data/channel/plugins
 
 COPY --from=builder /out/peers-touch-station .
 COPY --from=builder /out/secure-content-maintenance .
+COPY --from=builder /out/plugins/ ./plugins/
 
 COPY apps/station/app/conf/ ./conf/
 

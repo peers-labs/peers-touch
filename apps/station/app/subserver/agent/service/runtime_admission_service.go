@@ -21,8 +21,15 @@ import (
 type RuntimeAdmissionResolver struct {
 	providers     *ProviderConfigService
 	models        *ModelConfigService
+	runtimeModels *RuntimeModelCatalog
 	now           func() time.Time
 	externalReady func() bool
+}
+
+func (r *RuntimeAdmissionResolver) SetRuntimeModelCatalog(
+	runtimeModels *RuntimeModelCatalog,
+) {
+	r.runtimeModels = runtimeModels
 }
 
 func NewRuntimeAdmissionResolver(
@@ -82,7 +89,11 @@ func (r *RuntimeAdmissionResolver) ListAvailableModels(
 
 	var result []ResolvedAvailableModel
 
-	for _, cp := range catalog.List() {
+	for _, registeredProvider := range catalog.List() {
+		cp := registeredProvider
+		if r.runtimeModels != nil {
+			cp = r.runtimeModels.EffectiveProvider(actorPTID, registeredProvider)
+		}
 		if !catalogProviderAdvertised(cp) || !r.CatalogProviderAvailable(cp) {
 			continue
 		}
@@ -105,82 +116,34 @@ func (r *RuntimeAdmissionResolver) ListAvailableModels(
 				err,
 			)
 		}
-		dbModelsByID := make(map[string]*persistence.AgentModel, len(dbModels))
-		for i := range dbModels {
-			dbModelsByID[dbModels[i].ModelID] = &dbModels[i]
+		if strings.EqualFold(strings.TrimSpace(cp.RuntimeKind), providerRuntimeCLI) {
+			dbModels = nil
+			hidden = nil
 		}
-
-		for _, m := range cp.Models {
-			if !admitCatalogModel(m, hidden) {
-				continue
-			}
-			databaseModel := dbModelsByID[m.ID]
-			if databaseModel != nil && !databaseModel.Enabled {
-				continue
-			}
-			capabilities, err := resolveModelCapabilityFacts(&m, databaseModel)
-			if err != nil {
-				return nil, errcode.New(
-					errcode.AgentInvalidSourceState,
-					http.StatusConflict,
-					fmt.Sprintf("model %q capability metadata is invalid", m.ID),
-					err,
-				)
-			}
-			displayName := m.DisplayName
-			contextWindow := m.ContextWindow
-			if databaseModel != nil {
-				if strings.TrimSpace(databaseModel.DisplayName) != "" {
-					displayName = databaseModel.DisplayName
-				}
-				if databaseModel.ContextWindow > 0 {
-					contextWindow = databaseModel.ContextWindow
-				}
-			}
-			if contextWindow <= 1 {
+		effectiveModels, err := ResolveEffectiveProviderModels(&cp, dbModels, hidden)
+		if err != nil {
+			return nil, errcode.New(
+				errcode.AgentInvalidSourceState,
+				http.StatusConflict,
+				fmt.Sprintf("provider %q model metadata is invalid", cp.ID),
+				err,
+			)
+		}
+		for _, effectiveModel := range effectiveModels {
+			if !effectiveModel.Enabled ||
+				effectiveModel.Type != "chat" ||
+				effectiveModel.ContextWindow <= 1 {
 				continue
 			}
 			result = append(result, ResolvedAvailableModel{
-				ID:            m.ID,
+				ID:            effectiveModel.ID,
 				ProviderID:    cp.ID,
 				ProviderName:  cp.Name,
-				DisplayName:   displayName,
-				Type:          m.Type,
-				Enabled:       m.Enabled,
-				ContextWindow: int32(contextWindow),
-				Capabilities:  map[string]bool(capabilities),
-			})
-		}
-
-		catalogIDs := make(map[string]bool, len(cp.Models))
-		for _, m := range cp.Models {
-			catalogIDs[m.ID] = true
-		}
-		for i := range dbModels {
-			if !dbModels[i].Enabled || catalogIDs[dbModels[i].ModelID] || containsStr(hidden, dbModels[i].ModelID) {
-				continue
-			}
-			if dbModels[i].ContextWindow <= 1 {
-				continue
-			}
-			capabilities, err := resolveModelCapabilityFacts(nil, &dbModels[i])
-			if err != nil {
-				return nil, errcode.New(
-					errcode.AgentInvalidSourceState,
-					http.StatusConflict,
-					fmt.Sprintf("model %q capability metadata is invalid", dbModels[i].ModelID),
-					err,
-				)
-			}
-			result = append(result, ResolvedAvailableModel{
-				ID:            dbModels[i].ModelID,
-				ProviderID:    cp.ID,
-				ProviderName:  cp.Name,
-				DisplayName:   dbModels[i].DisplayName,
-				Type:          "chat",
-				Enabled:       dbModels[i].Enabled,
-				ContextWindow: int32(dbModels[i].ContextWindow),
-				Capabilities:  map[string]bool(capabilities),
+				DisplayName:   effectiveModel.DisplayName,
+				Type:          effectiveModel.Type,
+				Enabled:       effectiveModel.Enabled,
+				ContextWindow: int32(effectiveModel.ContextWindow),
+				Capabilities:  effectiveModel.Capabilities,
 			})
 		}
 	}
@@ -281,6 +244,10 @@ func (r *RuntimeAdmissionResolver) Resolve(
 	}
 
 	cp := catalog.Find(providerID)
+	if cp != nil && r.runtimeModels != nil {
+		effective := r.runtimeModels.EffectiveProvider(actorPTID, *cp)
+		cp = &effective
+	}
 	if cp == nil && userMatch == nil {
 		return nil, errcode.New(errcode.AgentProviderDisabled, http.StatusBadRequest,
 			fmt.Sprintf("provider %q not found", providerID), nil)
@@ -333,6 +300,10 @@ func (r *RuntimeAdmissionResolver) Resolve(
 		return nil, errcode.New(errcode.AgentInternal, http.StatusInternalServerError,
 			"failed to load model capability source", err)
 	}
+	if cp != nil &&
+		strings.EqualFold(strings.TrimSpace(cp.RuntimeKind), providerRuntimeCLI) {
+		dbModels = nil
+	}
 	for i := range dbModels {
 		if dbModels[i].ModelID == modelID {
 			databaseMatch = &dbModels[i]
@@ -351,6 +322,9 @@ func (r *RuntimeAdmissionResolver) Resolve(
 			}
 			return ""
 		}())
+		if strings.EqualFold(strings.TrimSpace(cp.RuntimeKind), providerRuntimeCLI) {
+			hidden = nil
+		}
 		for _, m := range cp.Models {
 			if m.ID == modelID {
 				if !m.Enabled || m.Type != "chat" || containsStr(hidden, modelID) {
@@ -810,7 +784,7 @@ func catalogProviderAdvertised(cp catalog.CatalogProvider) bool {
 func CatalogProviderAvailable(cp catalog.CatalogProvider) bool {
 	if strings.EqualFold(strings.TrimSpace(cp.RuntimeKind), providerRuntimeCLI) ||
 		strings.EqualFold(strings.TrimSpace(cp.Protocol), providerRuntimeCLI) {
-		return providercli.VerifyCliBinary(cp.CliCommand).Available
+		return providercli.VerifyCliBinary(cp.CLIArgv).Available
 	}
 	return true
 }

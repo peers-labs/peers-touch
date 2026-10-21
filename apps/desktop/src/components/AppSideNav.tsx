@@ -1,34 +1,28 @@
-import { useCallback, useEffect, useMemo, type ReactNode } from 'react';
+import { useCallback, useEffect, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ActionIcon, SideNav } from '@lobehub/ui';
-import { Badge, theme } from 'antd';
+import { Badge } from 'antd';
 import {
   Bot,
   MessageCircle,
   Settings,
   Search,
-  FlaskConical,
-  Blocks,
   Sparkles,
 } from 'lucide-react';
 import { NotificationBell } from './NotificationBell';
 import { UserProfilePopover, useUserAvatar } from './UserProfilePopover';
 import { UserSquareAvatar } from './common/UserSquareAvatar';
-import { AgentIconTile } from './agent/AgentIconTile';
-import AppletManager from '../applet/AppletManager';
-import { getModulesWithSidebar } from '../modules/registry';
 import { useAgentStore } from '../store/agent';
 import { useChatStore } from '../store/chat';
 import { useNavigationBadgeStore } from '../store/navigationBadges';
 import { openAgentChatSession } from '../utils/openAgentChatSession';
-import { useAppletsStore } from '../store/applets';
-import type { Page, Navigation, AppletPins } from '../types/navigation';
+import type { Page, Navigation } from '../types/navigation';
 import { markInteractionStarted } from '../kernel/frontendRuntimeProfiler';
+import { getDesktopHostPolicy } from '../kernel/hostPolicy';
 
 interface AppSideNavProps {
   page: Page;
   navigation: Navigation;
-  appletPins: AppletPins;
 }
 
 function PrimaryNavAnchor({ pageId, children }: { readonly pageId: string; readonly children: ReactNode }) {
@@ -45,41 +39,20 @@ function isEditableTarget(target: EventTarget | null): boolean {
   return target.isContentEditable || tagName === 'input' || tagName === 'textarea' || tagName === 'select';
 }
 
-export function AppSideNav({ page, navigation, appletPins }: AppSideNavProps) {
+export function AppSideNav({ page, navigation }: AppSideNavProps) {
   const userAvatar = useUserAvatar();
-  const appletManager = AppletManager.getInstance();
   const { t } = useTranslation('layout');
-  const { token } = theme.useToken();
   const agents = useAgentStore((state) => state.agents);
   const selectedAgent = useAgentStore((state) => state.selectedAgent);
   const setAgentSurface = useAgentStore((state) => state.setAgentSurface);
   const newSession = useChatStore((state) => state.newSession);
   const chatUnreadTotal = useNavigationBadgeStore((state) => state.chatUnreadTotal);
-  const installedApplets = useAppletsStore((state) => state.applets);
-  const installedAppletById = useMemo(
-    () => new Map(installedApplets.map((info) => [info.manifest.id, info.manifest])),
-    [installedApplets],
-  );
-  const pinnedAgents = useMemo(() => agents.filter((agent) => agent.pinned), [agents]);
+  const momentsEnabled = getDesktopHostPolicy().nativeSocialEnabled;
 
-  const navigatePrimary = useCallback((pageId: string) => {
+  const navigatePrimary = useCallback((pageId: Page) => {
     markInteractionStarted('shell', `primary-nav:${pageId}`, { pageId });
     navigation.navigateTo(pageId);
   }, [navigation]);
-
-  const openPinnedAgent = useCallback((agentName: string) => {
-    const agent = agents.find((item) => item.name === agentName);
-    if (!agent) {
-      navigation.navigateTo('agent');
-      return;
-    }
-    markInteractionStarted('shell', 'primary-nav:pinned-agent', { agentName });
-    void openAgentChatSession(agent, {
-      draftTitle: t('agent.sidebar.newTopic', { ns: 'agent' }),
-      reason: 'global-pinned-agent',
-    });
-    navigation.navigateTo('agent');
-  }, [agents, navigation, t]);
 
   const navigateAgentChat = useCallback(() => {
     markInteractionStarted('shell', 'primary-nav:agent', { pageId: 'agent' });
@@ -170,45 +143,6 @@ export function AppSideNav({ page, navigation, appletPins }: AppSideNavProps) {
                 title={t('layout.nav.search')}
               />
             </PrimaryNavAnchor>
-            {pinnedAgents.length > 0 && (
-              <span
-                role="separator"
-                aria-label="pinned-agents"
-                style={{
-                  width: 24,
-                  height: 1,
-                  margin: '4px auto',
-                  background: token.colorBorderSecondary,
-                  display: 'block',
-                }}
-              />
-            )}
-            {pinnedAgents.map((agent) => {
-              const active = page === 'agent' && selectedAgent === agent.name;
-              return (
-                <PrimaryNavAnchor key={agent.id} pageId={`agent:${agent.name}`}>
-                  <button
-                    type="button"
-                    title={agent.title || agent.name}
-                    onClick={() => openPinnedAgent(agent.name)}
-                    style={{
-                      width: 40,
-                      height: 40,
-                      border: 0,
-                      padding: 0,
-                      borderRadius: 10,
-                      background: active ? token.colorPrimaryBg : 'transparent',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <AgentIconTile agent={agent} size={28} selected={active} subtle />
-                  </button>
-                </PrimaryNavAnchor>
-              );
-            })}
             <PrimaryNavAnchor pageId="chat">
               <span
                 data-pt-navigation-badge="chat"
@@ -230,57 +164,27 @@ export function AppSideNav({ page, navigation, appletPins }: AppSideNavProps) {
               <ActionIcon
                 icon={Bot}
                 size="large"
-                active={page === 'agent' || page === 'agent-profile' || page === 'agent-orchestration'}
+                active={
+                  page === 'agent'
+                  || page === 'agent-profile'
+                  || page === 'agent-orchestration'
+                  || page === 'applet:peers.atelier'
+                }
                 onClick={navigateAgentChat}
                 title={t('layout.nav.agent')}
               />
             </PrimaryNavAnchor>
-            <PrimaryNavAnchor pageId="evaluation">
-              <ActionIcon
-                icon={FlaskConical}
-                size="large"
-                active={page === 'evaluation'}
-                onClick={() => navigatePrimary('evaluation')}
-                title={t('agent.eval.title', { ns: 'agent' })}
-              />
-            </PrimaryNavAnchor>
-            <PrimaryNavAnchor pageId="marketplace">
-              <ActionIcon
-                icon={Sparkles}
-                size="large"
-                active={page === 'marketplace'}
-                onClick={() => navigatePrimary('marketplace')}
-                title={t('layout.nav.marketplace')}
-              />
-            </PrimaryNavAnchor>
-            {getModulesWithSidebar()
-              .filter((m) => m.sidebarEntry!.position === 'top')
-              .map((m) => (
-                <PrimaryNavAnchor key={m.id} pageId={m.id}>
-                  <ActionIcon
-                    icon={m.icon}
-                    size="large"
-                    active={page === m.id}
-                    onClick={() => navigatePrimary(m.id)}
-                    title={m.id === 'applets' ? t('layout.nav.applets') : m.sidebarEntry?.title || m.name}
-                  />
-                </PrimaryNavAnchor>
-              ))}
-            {appletPins.pinnedApplets.filter((appletId) => installedAppletById.has(appletId)).map((appletId) => {
-              const info = installedAppletById.get(appletId) ?? appletManager.getAppletInfo(appletId);
-              if (!info) return null;
-              return (
-                <PrimaryNavAnchor key={appletId} pageId={`applet:${appletId}`}>
-                  <ActionIcon
-                    icon={Blocks}
-                    size="large"
-                    active={page === `applet:${appletId}`}
-                    onClick={() => navigatePrimary(`applet:${appletId}`)}
-                    title={info.name}
-                  />
-                </PrimaryNavAnchor>
-              );
-            })}
+            {momentsEnabled && (
+              <PrimaryNavAnchor pageId="moments">
+                <ActionIcon
+                  icon={Sparkles}
+                  size="large"
+                  active={page === 'moments'}
+                  onClick={() => navigatePrimary('moments')}
+                  title={t('moments.title', { ns: 'moments' })}
+                />
+              </PrimaryNavAnchor>
+            )}
           </>
         }
         bottomActions={

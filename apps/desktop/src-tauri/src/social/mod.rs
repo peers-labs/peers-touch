@@ -23,8 +23,8 @@ use crate::error::{AppResult, ErrorCode};
 use crate::messaging::MessagingProfileReadiness;
 use crate::model::actor::ActorProfile;
 use crate::secure_content::adapter::jwt_session_id;
+use crate::secure_content::prekey_runtime::maintain_content_prekeys;
 use crate::secure_content::station_trust::resolve_station_signing_key;
-use crate::secure_content::worker::maintain_content_prekeys;
 use crate::secure_content::{SecureContentLease, SecureContentSession, SecureContentSessionKey};
 use crate::state::AppState;
 

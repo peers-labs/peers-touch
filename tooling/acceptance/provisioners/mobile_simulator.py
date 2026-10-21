@@ -82,6 +82,7 @@ from tooling.acceptance.fixtures.chat_native_actors import (
 )
 from tooling.acceptance.fixtures.chat_native_reset import (
     fixture_federation_id_from_station_ids,
+    prepare_local_friend_request_lifecycle,
     reset_fixture_follow_edges,
 )
 from tooling.acceptance.gates.mobile.simulator_harness_contract import (
@@ -111,6 +112,7 @@ from tooling.acceptance.provisioners.remote_source_identity import (
 )
 from tooling.acceptance.provisioners.posix_service_runtime import (
     PosixServiceRuntimeConfig,
+    inspect_posix_runtime,
     resolve_posix_relay_trust_anchor,
 )
 from tooling.acceptance.provisioners.preset_actor import (
@@ -144,8 +146,11 @@ STATION_BOUND_SIMULATOR_GATE_IDS = frozenset(
     }
 )
 SIMULATOR_APPIUM_CAPABILITY_ID = "mobile.simulator.appium-session"
+MOBILE_STATION_OUTAGE_CAPABILITY_ID = "mobile.station-outage"
+MOBILE_RECOVERY_GATE_ID = "mobile-simulator-recovery-e2e"
 SIMULATOR_CAPABILITY_TIMEOUT_SECONDS = 180.0
 STATION_LIFECYCLE_CAPABILITY_IDLE_TIMEOUT_SECONDS = 600.0
+MOBILE_STATION_OUTAGE_CHANNEL_TIMEOUT_SECONDS = 720.0
 SIMULATOR_BINDING_PROOF_MECHANISM = (
     "mobile-simulator-active-station-peer-id"
 )
@@ -2249,6 +2254,42 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
         self.sleep = sleep
         self.monotonic = monotonic
 
+    def _build_inputs_digest(self, platform: str) -> str:
+        return canonical_build_inputs_digest(self.repo_root, platform)
+
+    def _platform_build_identity(
+        self,
+        manifest: RuntimeManifest,
+        *,
+        platform: str,
+        command_env: Mapping[str, str],
+    ) -> dict[str, Any]:
+        environment = {
+            name: command_env[name]
+            for name in sorted(SELECTED_BUILD_ENVIRONMENT_KEYS)
+            if name in command_env
+        }
+        try:
+            return create_build_identity(
+                build_id=f"{manifest.run_id}-{platform}",
+                platform=platform,
+                source=SourceIdentity(
+                    source_commit=manifest.source_commit,
+                    workspace_state=(
+                        "clean"
+                        if manifest.workspace_digest == "clean"
+                        else "dirty"
+                    ),
+                    workspace_digest=manifest.workspace_digest,
+                ),
+                build_inputs_digest=self._build_inputs_digest(platform),
+                environment_digest=canonical_value_digest(environment),
+            )
+        except MobileNativeBuildError as error:
+            raise ProvisioningError(
+                f"Mobile simulator build identity is invalid: {error}"
+            ) from error
+
     def provision(self, gate_id: str) -> RuntimeManifest:
         self._manifest = self._new_base_manifest(gate_id)
         try:
@@ -2265,11 +2306,23 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
                 **os.environ,
                 **spec.build_environment,
             }
+            command_env.pop("PT_MOBILE_BUILD_IDENTITY_JSON", None)
             manifest = self._preflighted(
                 self._manifest,
                 profile_name="mobile-simulator",
                 slot=0,
             )
+            build_identity = self._platform_build_identity(
+                manifest,
+                platform="ios",
+                command_env=command_env,
+            )
+            build_environment = {
+                **command_env,
+                "PT_MOBILE_BUILD_IDENTITY_JSON": canonical_json_bytes(
+                    build_identity
+                ).decode("ascii"),
+            }
             owner = f"acceptance:{gate_id}:{manifest.run_id}"
             self.acquire_profile_lease("mobile-simulator", owner)
 
@@ -2340,7 +2393,7 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
                 )
                 self._run_checked(
                     command,
-                    env=command_env,
+                    env=build_environment,
                     timeout=1800,
                     resource=f"mobile-simulator:build:{name}",
                 )
@@ -2356,6 +2409,7 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
                     runtime_root,
                 )
             }
+            applications["ios"]["buildIdentity"] = build_identity
             for device in (ios_device, peer_device):
                 self._deploy_ios(
                     device["udid"],
@@ -4798,6 +4852,341 @@ def _project_device_identity_fields(value: object) -> object:
     return value
 
 
+class MobileStationOutageCapabilityHandler(EphemeralCapabilityHandler):
+    """Parent-owned, fail-safe Station process outage for Mobile recovery."""
+
+    _ALLOWED_OPERATIONS = ("stop", "start")
+
+    def __init__(
+        self,
+        *,
+        deployment_environment: str,
+        expected_commit: str,
+    ) -> None:
+        if os.environ.get(
+            "PT_MOBILE_ACCEPTANCE_ALLOW_STATION_RESTART"
+        ) != "1":
+            raise BlockedError(
+                reason=(
+                    "PT_MOBILE_ACCEPTANCE_ALLOW_STATION_RESTART=1 is "
+                    "required for the authorized Mobile Station outage"
+                ),
+                resource="mobile.station-outage:authorization",
+            )
+        self._config = PosixServiceRuntimeConfig.load(
+            deployment_environment,
+            expected_role="station",
+        )
+        self._transport = self._config.transport()
+        self._expected_commit = expected_commit
+        self._before: dict[str, Any] | None = None
+        self._container_id = ""
+        self._stopped = False
+        self._closed = False
+
+    @property
+    def allowed_operations(self) -> tuple[str, ...]:
+        return self._ALLOWED_OPERATIONS
+
+    @property
+    def sensitive_values(self) -> tuple[str, ...]:
+        return ()
+
+    def invoke(
+        self,
+        operation: str,
+        payload: Mapping[str, object],
+        *,
+        deadline_monotonic: float,
+        cancellation: threading.Event,
+    ) -> Mapping[str, object]:
+        self._require_active(
+            deadline_monotonic,
+            cancellation,
+            operation,
+        )
+        if payload:
+            raise EphemeralCapabilityBlocked(
+                "Mobile Station outage payload must be empty",
+                resource=f"{MOBILE_STATION_OUTAGE_CAPABILITY_ID}:{operation}",
+            )
+        if operation == "stop":
+            return self._stop_station(
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+        if operation == "start":
+            return self._start_station(
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+            )
+        raise EphemeralCapabilityBlocked(
+            "Mobile Station outage operation is not implemented",
+            resource=f"{MOBILE_STATION_OUTAGE_CAPABILITY_ID}:{operation}",
+        )
+
+    def project_response(
+        self,
+        operation: str,
+        response: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        projected = dict(response)
+        if projected.get("status") != "OK":
+            return projected
+        result = projected.get("result")
+        expected = {
+            "stop": {
+                "stopped",
+                "deploymentEnvironment",
+                "runtimeOwner",
+                "containerId",
+                "beforeProcessIds",
+                "sourceCommit",
+                "buildCommit",
+            },
+            "start": {
+                "restored",
+                "deploymentEnvironment",
+                "runtimeOwner",
+                "containerId",
+                "beforeProcessIds",
+                "afterProcessIds",
+                "sourceCommit",
+                "buildCommit",
+            },
+        }
+        if (
+            not isinstance(result, Mapping)
+            or operation not in expected
+            or set(result) != expected[operation]
+        ):
+            raise ValueError(
+                "Mobile Station outage response has an invalid shape"
+            )
+        return projected
+
+    def quarantine(self, reason: str, *, deadline_monotonic: float) -> bool:
+        del reason
+        if not self._stopped:
+            return True
+        try:
+            self._start_station(
+                deadline_monotonic=deadline_monotonic,
+                cancellation=threading.Event(),
+            )
+        except Exception:
+            return False
+        return True
+
+    def close(self) -> EphemeralHandlerCleanup:
+        if self._closed:
+            return EphemeralHandlerCleanup(
+                closed=not self._stopped,
+                secrets_zeroized=True,
+            )
+        closed = True
+        if self._stopped:
+            try:
+                self._start_station(
+                    deadline_monotonic=(
+                        time.monotonic()
+                        + SIMULATOR_CAPABILITY_TIMEOUT_SECONDS
+                    ),
+                    cancellation=threading.Event(),
+                )
+            except Exception:
+                closed = False
+        self._closed = closed and not self._stopped
+        return EphemeralHandlerCleanup(
+            closed=closed and not self._stopped,
+            secrets_zeroized=True,
+        )
+
+    def _stop_station(
+        self,
+        *,
+        deadline_monotonic: float,
+        cancellation: threading.Event,
+    ) -> dict[str, object]:
+        if self._stopped:
+            raise EphemeralCapabilityBlocked(
+                "Mobile Station outage is already active",
+                resource=MOBILE_STATION_OUTAGE_CAPABILITY_ID,
+            )
+        before = inspect_posix_runtime(
+            self._config,
+            transport=self._transport,
+        )
+        self._require_commit(before, "before restart")
+        container_id = str(before.get("containerId") or "")
+        if not container_id:
+            raise EphemeralCapabilityBlocked(
+                "Mobile Station container identity is unavailable",
+                resource=MOBILE_STATION_OUTAGE_CAPABILITY_ID,
+            )
+        self._require_active(
+            deadline_monotonic,
+            cancellation,
+            "stop",
+        )
+        completed = self._transport.run_argv(
+            ["docker", "stop", "--time", "10", container_id],
+            timeout=self._remaining(deadline_monotonic),
+            check=False,
+        )
+        if completed.returncode != 0:
+            detail = redact_text(
+                completed.stderr.strip() or completed.stdout.strip()
+            )
+            raise EphemeralCapabilityBlocked(
+                "Mobile Station process stop failed"
+                + (f": {detail[-1000:]}" if detail else ""),
+                resource=MOBILE_STATION_OUTAGE_CAPABILITY_ID,
+            )
+        self._before = before
+        self._container_id = container_id
+        self._stopped = True
+        return {
+            "stopped": True,
+            "deploymentEnvironment": self._config.environment_name,
+            "runtimeOwner": before.get("runtimeOwner"),
+            "containerId": container_id,
+            "beforeProcessIds": before.get("processIds"),
+            "sourceCommit": before.get("sourceCommit"),
+            "buildCommit": before.get("buildCommit"),
+        }
+
+    def _start_station(
+        self,
+        *,
+        deadline_monotonic: float,
+        cancellation: threading.Event,
+    ) -> dict[str, object]:
+        if not self._stopped or self._before is None or not self._container_id:
+            raise EphemeralCapabilityBlocked(
+                "Mobile Station outage is not active",
+                resource=MOBILE_STATION_OUTAGE_CAPABILITY_ID,
+            )
+        self._require_active(
+            deadline_monotonic,
+            cancellation,
+            "start",
+        )
+        completed = self._transport.run_argv(
+            ["docker", "start", self._container_id],
+            timeout=self._remaining(deadline_monotonic),
+            check=False,
+        )
+        if completed.returncode != 0:
+            detail = redact_text(
+                completed.stderr.strip() or completed.stdout.strip()
+            )
+            raise EphemeralCapabilityBlocked(
+                "Mobile Station process restoration failed"
+                + (f": {detail[-1000:]}" if detail else ""),
+                resource=MOBILE_STATION_OUTAGE_CAPABILITY_ID,
+            )
+        last_error = ""
+        after: dict[str, Any] | None = None
+        while time.monotonic() < deadline_monotonic:
+            self._require_active(
+                deadline_monotonic,
+                cancellation,
+                "start",
+            )
+            try:
+                candidate = inspect_posix_runtime(
+                    self._config,
+                    transport=self._transport,
+                )
+                self._require_commit(candidate, "after restart")
+                after = candidate
+                break
+            except (BlockedError, ProvisioningError, OSError) as error:
+                last_error = redact_text(str(error))
+                cancellation.wait(1)
+        if after is None:
+            raise EphemeralCapabilityBlocked(
+                "Mobile Station process did not recover"
+                + (f": {last_error[-1000:]}" if last_error else ""),
+                resource=MOBILE_STATION_OUTAGE_CAPABILITY_ID,
+            )
+        if after.get("containerId") != self._container_id:
+            raise EphemeralCapabilityBlocked(
+                "Mobile Station container identity changed across restart",
+                resource=MOBILE_STATION_OUTAGE_CAPABILITY_ID,
+            )
+        before_pids = self._before.get("processIds")
+        after_pids = after.get("processIds")
+        if (
+            not isinstance(before_pids, list)
+            or not isinstance(after_pids, list)
+            or not before_pids
+            or not after_pids
+            or before_pids == after_pids
+        ):
+            raise EphemeralCapabilityBlocked(
+                "Mobile Station process identity did not change",
+                resource=MOBILE_STATION_OUTAGE_CAPABILITY_ID,
+            )
+        result = {
+            "restored": True,
+            "deploymentEnvironment": self._config.environment_name,
+            "runtimeOwner": after.get("runtimeOwner"),
+            "containerId": self._container_id,
+            "beforeProcessIds": before_pids,
+            "afterProcessIds": after_pids,
+            "sourceCommit": after.get("sourceCommit"),
+            "buildCommit": after.get("buildCommit"),
+        }
+        self._stopped = False
+        self._before = None
+        self._container_id = ""
+        return result
+
+    def _require_commit(
+        self,
+        status: Mapping[str, Any],
+        phase: str,
+    ) -> None:
+        source_commit = str(status.get("sourceCommit") or "")
+        build_commit = str(status.get("buildCommit") or "")
+        if not (
+            commits_match(source_commit, self._expected_commit)
+            and commits_match(build_commit, self._expected_commit)
+        ):
+            raise EphemeralCapabilityBlocked(
+                f"Mobile Station source identity changed {phase}",
+                resource=MOBILE_STATION_OUTAGE_CAPABILITY_ID,
+            )
+
+    def _require_active(
+        self,
+        deadline_monotonic: float,
+        cancellation: threading.Event,
+        operation: str,
+    ) -> None:
+        if (
+            self._closed
+            or cancellation.is_set()
+            or time.monotonic() >= deadline_monotonic
+        ):
+            raise EphemeralCapabilityBlocked(
+                f"Mobile Station outage {operation} was cancelled or expired",
+                resource=MOBILE_STATION_OUTAGE_CAPABILITY_ID,
+            )
+
+    @staticmethod
+    def _remaining(deadline_monotonic: float) -> float:
+        remaining = deadline_monotonic - time.monotonic()
+        if remaining <= 0:
+            raise EphemeralCapabilityBlocked(
+                "Mobile Station outage deadline expired",
+                resource=MOBILE_STATION_OUTAGE_CAPABILITY_ID,
+            )
+        return min(remaining, 30.0)
+
+
 class MobileSimulatorAppiumCapabilityHandler(EphemeralCapabilityHandler):
     """Keep simulator, Appium, build, and Station topology in the parent."""
 
@@ -6917,7 +7306,12 @@ class MobileStationLifecycleSimulatorProvisioner(EnvironmentProvisioner):
                             f"application:{platform}"
                         ),
                     ).items()
-                    if key in {"id", "sha256", "callbackScheme"}
+                    if key in {
+                        "id",
+                        "sha256",
+                        "callbackScheme",
+                        "buildIdentity",
+                    }
                 }
                 for platform in available_platforms
             },
@@ -7941,9 +8335,34 @@ class _MobileTwoActorSimulatorProvisioner(EnvironmentProvisioner):
             resolved_actors[service_id] = {
                 actor.role: actor for actor in actors
             }
+            friend_request_lifecycle_prepared = False
+            if gate_id == MOBILE_RECOVERY_GATE_ID:
+                actors_by_role = resolved_actors[service_id]
+                alice = actors_by_role.get("alice")
+                bob = actors_by_role.get("bob")
+                if alice is None or bob is None:
+                    raise BlockedError(
+                        reason=(
+                            "Mobile recovery Fixture requires Alice and Bob"
+                        ),
+                        resource=(
+                            f"{self.environment_id}:"
+                            "friend-request-lifecycle"
+                        ),
+                    )
+                prepare_local_friend_request_lifecycle(
+                    binding.deployment_environment,
+                    alice.ptid,
+                    bob.ptid,
+                    reset_authorized=True,
+                )
+                friend_request_lifecycle_prepared = True
             stations[service_id] = {
                 "targetVerified": self.requires_actor_reset,
                 "existingActorsVerified": not self.requires_actor_reset,
+                "friendRequestLifecyclePrepared": (
+                    friend_request_lifecycle_prepared
+                ),
                 "actors": [
                     {
                         "role": actor.role,
@@ -8470,6 +8889,13 @@ class MobileDirectSimulatorProvisioner(
     actor_manifest_kind = "mobile-direct-simulator-actor-manifest"
     actor_manifest_path = "runtime/mobile-direct-simulator-actors.json"
 
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._station_outage_handler: (
+            MobileStationOutageCapabilityHandler | None
+        ) = None
+        self._station_outage_cleanup_registered = False
+
     def _inject_station_profile_bindings(
         self,
         profile_env: Mapping[str, str],
@@ -8514,6 +8940,84 @@ class MobileDirectSimulatorProvisioner(
             url_key: station_url,
             deployment_key: deployment_environment,
         }
+
+    def create_gate_launch_context(
+        self,
+        *,
+        gate_id: str,
+        evidence_run_id: str,
+        provisioning_run_id: str,
+        required_capabilities: tuple[str, ...],
+    ) -> EphemeralGateLaunchContext:
+        if (
+            gate_id != MOBILE_RECOVERY_GATE_ID
+            or required_capabilities
+            != (MOBILE_STATION_OUTAGE_CAPABILITY_ID,)
+        ):
+            raise BlockedError(
+                reason=(
+                    "Mobile Direct recovery Gate requires the exact "
+                    "Station outage capability"
+                ),
+                resource=f"ephemeral-capabilities:{gate_id}",
+            )
+        if (
+            not isinstance(self._manifest, MobileSimulatorRuntimeManifest)
+            or not self._manifest.is_ready()
+            or evidence_run_id != self.evidence_run.run_id
+            or provisioning_run_id != self._manifest.run_id
+        ):
+            raise BlockedError(
+                reason="Mobile Direct parent authorities are not ready",
+                resource=f"ephemeral-capabilities:{gate_id}:run-identities",
+            )
+        service = self._manifest.services.get("station")
+        if (
+            service is None
+            or service.service_kind != "station"
+            or service.workspace_digest != "clean"
+            or not service.deployment_environment
+            or not service.live_commit
+        ):
+            raise BlockedError(
+                reason=(
+                    "Mobile Direct Station outage target is not "
+                    "source-attested"
+                ),
+                resource=f"ephemeral-capabilities:{gate_id}:station",
+            )
+        handler = MobileStationOutageCapabilityHandler(
+            deployment_environment=service.deployment_environment,
+            expected_commit=service.live_commit,
+        )
+        context = EphemeralGateLaunchContext(
+            required_capabilities=required_capabilities,
+            request_timeout_seconds=(
+                MOBILE_STATION_OUTAGE_CHANNEL_TIMEOUT_SECONDS
+            ),
+        )
+        context.register_capability(
+            MOBILE_STATION_OUTAGE_CAPABILITY_ID,
+            handler,
+        )
+        self._station_outage_handler = handler
+        if not self._station_outage_cleanup_registered:
+            self.register_cleanup(
+                "mobile-station-outage",
+                self._cleanup_station_outage,
+            )
+            self._station_outage_cleanup_registered = True
+        return context
+
+    def _cleanup_station_outage(self) -> None:
+        if self._station_outage_handler is None:
+            return
+        result = self._station_outage_handler.close()
+        self._station_outage_handler = None
+        if not result.closed or not result.secrets_zeroized:
+            raise ProvisioningError(
+                "Mobile Station outage cleanup did not restore the target"
+            )
 
 
 class MobileSocialIOSSimulatorProvisioner(

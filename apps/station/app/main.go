@@ -32,6 +32,7 @@ import (
 	groupcall "github.com/peers-labs/peers-touch/station/app/subserver/groupcall"
 
 	_ "github.com/peers-labs/peers-touch/station/app/subserver/agent"
+	_ "github.com/peers-labs/peers-touch/station/app/subserver/channel"
 	_ "github.com/peers-labs/peers-touch/station/app/subserver/oss"
 
 	_ "github.com/peers-labs/peers-touch/station/frame/core/plugin/native"

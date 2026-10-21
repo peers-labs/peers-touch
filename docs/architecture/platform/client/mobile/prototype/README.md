@@ -463,8 +463,8 @@ Current-source verification:
 
 The native expired-session state was not recreated by mutating retained client
 state. Its production composition is covered by focused tests and the direct
-prototype scenario; physical expired-session execution is optional diagnostics
-under MS-D26.
+prototype scenario. Android and iOS lifecycle proof remains separate from
+prototype evidence under MS-D26.
 
 ### 2026-09-12 Long-List Sample
 
@@ -494,7 +494,7 @@ Integrator checks:
 
 The added sample is not Owner-confirmed or landed. The next subsection extends
 its request/member and controlled-search coverage. Native search,
-full production pixel parity, and optional physical-device performance remain
+full production pixel parity, and physical-device performance remain
 outside this prototype evidence.
 
 ### 2026-09-12 Request, Member, And Search Samples

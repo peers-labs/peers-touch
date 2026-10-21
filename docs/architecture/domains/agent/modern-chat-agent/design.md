@@ -232,10 +232,30 @@ model facts, frozen memory, skill index and activated skills, selected branch
 history/summary, knowledge, workspace references, attachments, tool schemas,
 and current input.
 
+Before assembly, Turn admission resolves one actor-owned, versioned
+`AgentDefinition`. Identity and Agent instructions come only from its typed
+`identity_prompt` and `agent_config_prompt`; the ledger source refs pin that
+Agent version. Callers cannot submit prompt overrides, and display metadata or
+retired `config_json` aliases cannot enter the Provider request.
+
+The Skill index is built only from enabled, compatible
+`AgentCapabilityBinding` rows in the admitted readiness snapshot. The first
+Provider request receives names and descriptions, not Skill bodies.
+`skill_view` may load only a Skill ID/version pinned by that snapshot; the
+loaded body is then added to the redacted ContextLedger with its exact
+versioned source ref.
+
 Every segment records source references, hash/version, token estimate,
 inclusion/truncation decision, and trust/policy metadata. The budget includes
 text, reasoning replay, images/files, tool schemas, and completion reserve.
 Compression preserves branch semantics and source attribution.
+
+Ordinary Chat never reads diagnostic replay or current Agent configuration to
+explain an old response. Station projects a bounded `TurnAttributionProjection`
+from the terminal attempt's persisted ContextLedger and ToolCall lineage.
+Desktop renders that immutable projection and treats missing/malformed identity
+as unavailable. Capability Binding mutation, catalog refresh and Profile edits
+therefore cannot rewrite historical badges or detail.
 
 Memory describes learned user/Agent experience; knowledge supplies external
 facts; skills supply procedures; tools supply executable capabilities. These
@@ -250,6 +270,13 @@ external resume, and limits. Each requested capability resolves to `native`,
 
 Clients cannot infer capability from provider names. Degradation is disclosed
 before execution and the per-turn snapshot is authoritative.
+
+Commands & Skills reads a distinct versioned
+`AgentCommandCapabilitySnapshot` assembled by the same Station manifest,
+binding and readiness authorities. Desktop owns only the static `/help`
+registry and the stale/unavailable cache state. `/tools` and `/skills` cannot
+join local catalogs, and `/clear` calls the Station Conversation owner to
+create a new empty Topic without mutating the previous Topic.
 
 Thinking mode and reasoning effort are separate inputs. Agent configuration
 owns the default thinking mode; a Turn may explicitly override it. Station
@@ -440,6 +467,8 @@ Connector, and client-local capabilities. It includes:
 
 `AgentCapabilityBinding` refers to the manifest ID/version and owns enabled
 state, approval policy, expected Agent version, and binding revision.
+Source-specific flags such as historical `Skill.enabled` are not admission
+authorities and must not be intersected with the binding.
 
 `CapabilityReadinessSnapshot` is immutable for one admission decision and
 combines manifest, Agent binding, model/runtime compatibility, connection state,

@@ -175,9 +175,11 @@ func TestPromptAssemblyUsesAuthorizedKnowledge(t *testing.T) {
 
 	result, err := NewPromptAssemblyService(nil, nil).Assemble(
 		context.Background(),
-		fixture.agentID,
-		"identity",
-		"",
+		AgentPromptDefinition{
+			AgentID:        fixture.agentID,
+			Version:        1,
+			IdentityPrompt: "identity",
+		},
 		authorized.ToolNames(),
 		"Where is prompt context loaded from?",
 		fixture.db,

@@ -95,8 +95,6 @@
   "applet.runtime.title": "Applet",
   "applet.runtime.notFound": "Applet \"{{id}}\" not found. Please build packages/applets first.",
   "applet.runtime.diagnostic": "Diagnostic {{index}}: {{issue}}",
-  "applet.runtime.unpin": "Unpin",
-  "applet.runtime.pin": "Pin",
   "applet.runtime.source": "Source: /applets-dist/{{id}}",
   "applet.runtime.running": "Running",
   "applet.runtime.close": "Close",

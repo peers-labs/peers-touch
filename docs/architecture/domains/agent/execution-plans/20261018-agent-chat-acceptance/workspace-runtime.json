@@ -1,0 +1,33 @@
+{
+  "scope": "suite",
+  "entryCheckId": "workspace-native",
+  "scenarioIds": [
+    "profile-create",
+    "profile-documents",
+    "profile-prompt-consumption",
+    "profile-skill-consumption",
+    "profile-restart",
+    "workspace-wide",
+    "workspace-compact",
+    "workspace-narrow",
+    "topics-rename-cancel",
+    "topics-pin",
+    "topics-batch-delete",
+    "agent-delete-cascade",
+    "models-default",
+    "models-cli-discovery",
+    "models-topic-isolation",
+    "models-disable-recovery",
+    "conversation-follow-up",
+    "conversation-send-stop",
+    "conversation-retry",
+    "conversation-clarification",
+    "conversation-tool-approval"
+  ],
+  "maxProvisioningRuns": 1,
+  "maxClientLaunches": 3,
+  "minWarmReuseRate": 0.85,
+  "requireAttachOnlyScenarios": true,
+  "requireReceiverVisibleProof": true,
+  "allowClientReplacement": true
+}

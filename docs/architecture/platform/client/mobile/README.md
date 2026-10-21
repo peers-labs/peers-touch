@@ -1,142 +1,113 @@
 # Mobile Shell Architecture
 
-> **Status**: active; whole-product foreground usability amendment accepted
-> **Version**: v1.3
-> **Created**: 2026-08-27 | **Updated**: 2026-10-08
+> **Status**: active
+> **Version**: v2.0
+> **Created**: 2026-08-27 | **Updated**: 2026-10-16
 > **Owner**: Mobile Architecture Team
 > **Module**: `apps/mobile/`
 
 ---
 
-## 1. Document Scope
+## 1. Scope
 
-本文档集定义：
+This module defines:
 
-- Mobile Shell 的产品合同、状态机和验收边界。
-- Tauri v2 Mobile 下 Shell、导航、runtime projection、Rust capability
-  kernel 与 native plugin 的职责关系。
-- 原型到当前实现的 Gap、Proto 映射和集成影响面。
+- Mobile product journeys, visible states, and capability scope;
+- Mobile lifecycle, navigation, runtime projection, and local reliability;
+- Mobile Rust and native plugin boundaries;
+- Android/iOS release-target parity and evidence requirements;
+- receiver-perspective product acceptance.
 
-本文档集不定义：
+It does not own:
 
-- Station 子服务内部实现。
-- Desktop 内核实现细节。
-- 交付顺序；架构评审通过后才由 execution plan 定义。
-- 原型样式源码；原型入口见 `prototype/README.md`。
+- Station domain implementation;
+- Model contract truth;
+- Desktop runtime internals;
+- cross-client form/core/host semantics, owned by
+  [Cross-Client Runtime](../cross-client-runtime/README.md);
+- delivery order, owned by an accepted execution plan.
 
-## 2. Background
+## 2. Product Shape
 
-Mobile 已具备真实的 Station access gate、好友/群聊 runtime、E2EE、通知、
-联系人和 Moments 发布能力，但顶层生命周期仍由 `App.tsx` effects 分散驱动，
-runtime registry 仅是状态说明，Moments/Profile/Settings 与已确认原型仍有明显
-产品闭环差距。该文档集定义目标边界，避免直接把原型组件复制进生产代码。
+Mobile is one product released through Android and iOS hosts:
+
+```text
+Mobile presentation
+  apps/mobile/src/
+        |
+        v
+Mobile Rust runtime
+  apps/mobile/src-tauri/src/
+        |
+        +-> portable Rust cores
+        +-> typed native plugins
+        +-> Station / generated Model contracts
+        |
+        +-> Android Host
+        +-> iOS Host
+```
+
+Android and iOS share product semantics and runtime ownership. Native
+availability, packaging, provider setup, and runtime proof remain independent.
 
 ## 3. Design Goals
 
-1. Shell 只负责可见生命周期和导航，不拥有业务 freshness。
-2. Auth、session、command、social、group、moments 和 notification 各有唯一
-   runtime owner，pre-session 与 post-session 生命周期不混用。
-3. 所有跨端业务模型来自 `model/domain/`。
-4. Station 切换、logout、revocation 和 resume 都具备原子 teardown/rebootstrap。
-5. Mobile 使用移动端导航、BottomSheet、安全区和键盘合同。
-6. 原型能力逐项映射为真实、可验证、无 mock 的产品闭环。
+1. Shell owns visible lifecycle and navigation, not business freshness.
+2. Auth, session, command, social, messaging, moments, notification, call, and
+   settings capabilities have explicit owners.
+3. Shared business models come from `model/domain/`.
+4. Station change, logout, revocation, background, and resume use
+   generation-fenced teardown and rebootstrap.
+5. Mobile presentation follows touch, stack navigation, safe-area, keyboard,
+   accessibility, and foreground/background contracts.
+6. Native capability facts produce explicit admission projections.
+7. Product readiness requires source-bound evidence for every required Android
+   and iOS runtime cell.
 
-## 4. Document Navigation
+## 4. Document Map
 
 | Document | Purpose |
 |---|---|
 | [product-definition.md](./product-definition.md) | Product promise and capability profile |
 | [experience-contract.md](./experience-contract.md) | End-to-end journeys |
-| [product-state-model.md](./product-state-model.md) | Visible product states and recovery |
-| [product-feasibility.md](./product-feasibility.md) | Capability-by-capability feasibility closure |
-| [acceptance-matrix.md](./acceptance-matrix.md) | Receiver-perspective acceptance |
+| [product-state-model.md](./product-state-model.md) | Visible states and recovery |
+| [product-feasibility.md](./product-feasibility.md) | Capability feasibility |
+| [acceptance-matrix.md](./acceptance-matrix.md) | Product and architecture evidence matrix |
 | [design.md](./design.md) | Architecture boundaries and contracts |
-| [decisions.md](./decisions.md) | ADR-lite decisions |
+| [decisions.md](./decisions.md) | Accepted decisions |
 | [data-model.md](./data-model.md) | State and Proto mapping |
-| [integration.md](./integration.md) | Initial implementation gap and target impact |
-| [module-layout.md](./module-layout.md) | Target module ownership |
-| [native-oauth-proof/README.md](./native-oauth-proof/README.md) | Optional W2-E2 physical OAuth diagnostics: Fixture, Station proof, browser lease, and build provenance |
-| [mobile-acceptance-environment.md](./mobile-acceptance-environment.md) | Mobile acceptance environment contract: tiers, gate mapping, Station dependency, network model |
-| [prototype/README.md](./prototype/README.md) | Mobile Shell prototype; baseline and Social parity amendment confirmed |
-| [social-parity/README.md](./social-parity/README.md) | Complete Desktop Social semantic parity, Mobile adaptation, prototype amendment, and iOS/Android/interop evidence contract |
-| [execution-plans/20260827-mobile-shell-implementation/plan.md](./execution-plans/20260827-mobile-shell-implementation/plan.md) | Dependency-ordered implementation and Acceptance plan |
-| [execution-plans/20260829-mobile-native-oauth-proof.md](./execution-plans/20260829-mobile-native-oauth-proof.md) | Historical focused W2-E2 physical-diagnostics plan |
-| [execution-plans/20261006-infra-chat-usability/plan.md](./execution-plans/20261006-infra-chat-usability/plan.md) | Focused Infra/Chat usability, mixed-client parity, and Session class takeover plan |
-| [execution-plans/20261008-mobile-whole-product-usability/plan.md](./execution-plans/20261008-mobile-whole-product-usability/plan.md) | Successor plan for page-by-page foreground iOS usability closure |
+| [integration.md](./integration.md) | Current implementation mapping and gaps |
+| [module-layout.md](./module-layout.md) | Source ownership |
+| [mobile-acceptance-environment.md](./mobile-acceptance-environment.md) | Android/iOS environment and evidence contract |
+| [prototype/README.md](./prototype/README.md) | Confirmed Mobile prototype |
+| [social-parity/README.md](./social-parity/README.md) | Social parity and interoperability contract |
 
 ## 5. Upstream Sources
 
-- `docs/global/architecture.md`: Client / Model / Station ownership.
-- `docs/architecture/platform/client/frontend-runtime/`: shared runtime, admission and evidence.
-- `docs/architecture/domains/social/runtime/`: social supervisor and projection domains.
-- `docs/architecture/platform/station/access/`: Station-owned access chain.
-- `docs/architecture/engineering/api-governance/proposals/20260918-conversation-member-authority.md`:
-  accepted Conversation member administration and atomic owner transfer.
-- `docs/architecture/domains/chat/lifecycle/`: cross-client Chat product composition.
-- `docs/architecture/domains/notification/notification-architecture.md`: notification
-  preferences, push-device registration, and APNs/FCM delivery ownership.
-- `docs/architecture/shared/security/secure-content/`: private Social content and encrypted
-  media ownership.
-- `docs/architecture/domains/identity/unified-actor-system.md`: PTID boundary.
-- `docs/architecture/platform/runtime/service-coordination.md`: signed Station identity handshake.
-- `docs/client/mobile/`: lifecycle, native plugin and sync refinements.
-- `docs/client/common/ui-identity/`: shared visual, state and component-tree rules.
+- [Project architecture](../../../architecture.md)
+- [Cross-Client Runtime](../cross-client-runtime/README.md)
+- [Frontend Runtime](../frontend-runtime/README.md)
+- [Station Access](../../station/access/README.md)
+- [Chat Lifecycle](../../../domains/chat/lifecycle/README.md)
+- [Messaging Platform](../../../domains/chat/messaging/README.md)
+- [Social Runtime](../../../domains/social/runtime/README.md)
+- [Notification](../../../domains/notification/notification-architecture.md)
+- [Secure Content](../../../shared/security/secure-content/README.md)
+- [Mobile platform](../../../../client/mobile/base.md)
+- [UI Identity](../../../../client/common/ui-identity/README.md)
 
-## 6. Status
+## 6. Current Readiness Rule
 
-The PRODUCT contract, recovery/accessibility amendment, Prototype, and base
-architecture were accepted by the Owner on 2026-08-27. The W2-E2 physical OAuth
-diagnostic design, MOP-D01..MOP-D04 and focused execution plan were accepted on
-2026-08-29. W2-E2-A through W2-E2-C and W2-E2-FREEZE are complete, covering
-E2-0 through E2-4. D-19 Infra landed (PR #105) and E2-5 source-side closure is
-complete (finalizer module, registry, baseline, capability YAML, gate catalog,
-11 adversarial tests). MS-D26 now makes source-bound iOS Simulator evidence
-canonical, using two isolated iOS clients where the Journey requires independent
-sessions or actors. MS-D27 binds the current Mobile product proof to one
-source-attested Station and defers cross-Station/Relay proof until the
-Desktop/Mobile cross-Station plan. Android and E2-6 physical proof remain
-optional diagnostics.
+Source presence and platform readiness are separate:
 
-The 2026-10-06 Social parity module adds a separate required product and
-architecture claim over the existing Mobile Shell. It does not rewrite the
-same-Station Mobile plan: full Social parity additionally requires Android
-physical-device proof plus Desktop/iOS/Android two-Station interoperability.
-Its prototype amendment was Owner-confirmed on 2026-10-06.
+- shared Rust/TypeScript tests prove portable semantics;
+- iOS native evidence proves only its declared iOS cell;
+- Android native evidence proves only its declared Android cell;
+- a whole-Mobile claim requires every required Android and iOS cell;
+- missing, stale, or mismatched evidence is `UNPROVEN`;
+- simulator, emulator, and physical-device cells are selected by capability
+  need and cannot be substituted across OS boundaries.
 
-## 7. Accepted Owner-Contract Closure Amendment
-
-The 2026-09-18 amendment closes the architecture prerequisites for the remaining
-Mobile Shell work as one review unit. It covers:
-
-- schema-bound generic Access Gate submission and Station-only finalization;
-- canonical Conversation member administration and atomic ownership transfer;
-- Social-owned directional block, unblock, blocked-list, and relationship
-  projection semantics across Stations;
-- Conversation-owned forward, retract, actor-local hide, and moderation-redact
-  semantics with authoritative command readback;
-- Social/Secure-Content-owned Moments policy explanations and encrypted media
-  production;
-- explicit Actor Profile, Notification, Social blocked-user, and device-setting
-  ownership, with no additional account-preference owner in this release;
-- Rust-owned authenticated business transport and native push, scheduled
-  wakeup, and media-picker lifecycles;
-- completed atomic deletion of the six Mobile legacy callers, their retired
-  Group/Chat-owned Social trees, and a repository-wide semantic reference
-  audit.
-
-The amendment preserves required `MS-C01..MS-C10`, degraded `MS-C14`, and the
-original exclusions. `MS-D29` later activates required one-to-one voice/video
-calls (`MS-C12`) under the governing Chat lifecycle and independent Mobile
-proof boundary. `MS-C11` WeChat OAuth and `MS-C13` Chat Docs remain excluded.
-Current call source and prototype coverage are not readiness evidence;
-`MS-PA30` and `MS-PA31` remain `UNPROVEN`.
-
-The Owner accepted `MS-D16..MS-D24` on 2026-09-18 and accepted `MS-D22A` on
-2026-09-19. Those approvals authorize execution planning; they do not
-authorize implementation. The Owner subsequently accepted `MS-D25` on
-2026-09-19 to record the completed integration of typed Moments outcomes with
-the Rust-owned media staging lifecycle; that decision does not promote
-optional physical diagnostics. The
-recovered Plan Package, immutable workspace binding, active-work registration,
-and one Plan approval remain mandatory before a Development Session can select
-the first current Task.
+Current implementation gaps and evidence status are recorded in
+[integration.md](./integration.md) and
+[acceptance-matrix.md](./acceptance-matrix.md).

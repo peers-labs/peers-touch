@@ -1047,7 +1047,9 @@
             "mobile-native-access-e2e",
             "mobile-native-lifecycle-e2e",
             "mobile-native-platform-e2e",
-            "mobile-social-android-native"
+            "mobile-social-android-native",
+            "unified-client-android-host-e2e",
+            "unified-client-ios-host-e2e"
           ]
         },
         "clientId": {
@@ -1270,7 +1272,9 @@
             "mobile-native-access-e2e",
             "mobile-native-lifecycle-e2e",
             "mobile-native-platform-e2e",
-            "mobile-social-android-native"
+            "mobile-social-android-native",
+            "unified-client-android-host-e2e",
+            "unified-client-ios-host-e2e"
           ]
         },
         "leaseId": {
@@ -1371,7 +1375,14 @@
           "$ref": "#/$defs/nonEmptyString"
         },
         "gateId": {
-          "const": "mobile-native-access-e2e"
+          "enum": [
+            "mobile-native-access-e2e",
+            "mobile-native-lifecycle-e2e",
+            "mobile-native-platform-e2e",
+            "mobile-social-android-native",
+            "unified-client-android-host-e2e",
+            "unified-client-ios-host-e2e"
+          ]
         },
         "producer": {
           "const": "mobile-native-build"

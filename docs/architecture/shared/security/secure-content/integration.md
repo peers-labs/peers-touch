@@ -1,8 +1,8 @@
 # Secure Content - Integration And Migration
 
 > **Status**: active
-> **Version**: v1.9
-> **Created**: 2026-09-13 | **Updated**: 2026-09-24
+> **Version**: v2.1
+> **Created**: 2026-09-13 | **Updated**: 2026-10-17
 > **Owner**: Architecture Team
 
 ---
@@ -51,12 +51,15 @@ moving authority.
 
 ### Shared Kernels
 
-- `packages/secure-content-core`: portable Native crypto and transfer FSM.
+- `packages/secure-content-core`: portable Native crypto, operation-state,
+  reconciliation, recovery-continuation, typed-port, and transfer FSM.
 - `apps/station/app/internal/securecontent`: stateless Go validation, transition,
   policy, typed-error, and repository-conformance kernel.
 - `model/domain/secure_content`: cross-platform contract source.
 
-Neither kernel owns routes, persistence, transactions, recipient policy, or workers.
+Neither kernel owns routes, business persistence, transactions, recipient
+policy, grants, authorization, or domain workers. The Rust core may own
+device-local operation records through an injected encrypted-store port.
 
 ### Actor Identity And Key Exchange
 
@@ -250,8 +253,11 @@ Composer / Detail / Comment UI
   -> Social domain routes
 ```
 
-Desktop and Mobile Native own key access, encryption, transfer checkpoints,
-decryption, local SQLCipher projection, and recovery. Web layers own plaintext
+Desktop and Mobile Native each bind an independent Secure Content Core instance.
+The core owns encryption, transfer checkpoints, operation states,
+readback-before-retry decisions, and recovery continuation. Host adapters own
+key access, local SQLCipher/file implementation, transport, event loop, native
+secret input, and lifecycle signals. Web layers own plaintext
 composition/rendering but never cryptographic material or transfer state.
 
 Desktop has no browser runtime or browser-specific private-content branch.
@@ -267,7 +273,59 @@ before W7. W7 then adds the Desktop Native publisher/store/supervisor and proves
 persist-before-publish, unknown-outcome replay, root-key-before-key-deletion,
 account/Station switching, revocation and teardown through the product Journey.
 
-### 6.1 Proposed W7 Evidence Integration
+### 6.1 SC-D30 Operation Owner Inventory
+
+UCA-05A froze the complete current-to-target inventory. UCA-05 then performed
+the atomic consumer/schema cut and made the portable APIs the only production
+mechanism owner.
+
+| Current owner/symbol | Target owner | UCA-05 disposition |
+|---|---|---|
+| Desktop `PublicationState` | `operation::OperationState` | migrate persisted values, delete enum |
+| Desktop `StoredPublication`, operation fields in `StoredMomentCommand` | `operation::OperationRecord` plus Social adapter payload | migrate common fields; retain only business payload/projection |
+| Desktop `acquire_publication`, `acquire_moment_command`, transition helpers | `acquire_operation`, `complete_operation`, encrypted-store CAS | replace transaction mapping, delete duplicate transition policy |
+| Desktop `recover_orphaned_leases`, `checkpoint_session_generation` | `recover_interrupted_operation` plus lifecycle cancellation port | replace state decisions; retain SQL transaction adapter |
+| Desktop `maintain_pool` | `plan_content_prekey_maintenance` | retain inventory transport only |
+| Desktop `publication_command_id` | `content_prekey_publication_command_id` | delete adapter hash implementation |
+| Desktop `publish_command` disposition branch | typed core outcome/state transitions plus `ContentPreKeyTransport` | retain Station client request execution only |
+| Desktop `recovery_prekey`, `open_recovery_content_key` | `continue_recovery_envelope` plus `ContentKeyMaterial` | retain phrase input and encrypted master storage only |
+| Desktop `FilesystemObjectBlob` and object transport codecs | `ObjectBlob` / object transport Host adapters | retain as platform adapters; transfer/checkpoint policy already lives in core |
+| Mobile `DurableState` | `operation::OperationState` | migrate persisted values, delete enum |
+| Mobile `StoredPreKeyPublication`, operation fields in `StoredSubmission` | `operation::OperationRecord` plus Social adapter payload | migrate common fields; retain draft/root/projection payload |
+| Mobile `acquire_*`, `finish_*`, `recover_interrupted_dispatches` | core acquire/complete/recovery plus encrypted-store CAS | replace transaction mapping, delete duplicate transition policy |
+| Mobile `maintain_prekey_pool` | `plan_content_prekey_maintenance` | retain inventory transport only |
+| Mobile `publication_command_id` | `content_prekey_publication_command_id` | delete adapter hash implementation |
+| Mobile `dispatch_prekey_publication` disposition branch | typed core outcome/state transitions plus `ContentPreKeyTransport` | retain HTTP/protobuf transport adapter only |
+| Mobile `unknown_submission_readback` | `decide_unknown_outcome` and `apply_readback_decision` | retain Social point-read and proof verification only |
+| Mobile `recovery_prekey`, `open_recovery_content_key` | `continue_recovery_envelope` plus `ContentKeyMaterial` | retain phrase input and encrypted master storage only |
+| Mobile Social begin/chunk/complete upload loop | `ObjectTransferWorker` plus `ObjectTransferRepository` | delete Social chunk policy; retain file, SQLCipher, codec and transport adapters |
+| Social prepare/submit, authorization, grants, projections, routes and readback proof | Social domain adapter | explicitly retained; never moved into core |
+| Conversation attachment routes, receipts, grants and membership truth | Conversation domain adapter | explicitly retained; never moved into core |
+
+The schema activation order is fixed:
+
+```text
+close admission
+  -> drain or mark in-flight rows UNKNOWN_OUTCOME
+  -> validate and migrate every legacy row in one encrypted-store transaction
+  -> commit secure-content-operation-v1 marker
+  -> bind the core-backed adapter
+  -> reopen admission
+  -> delete old state/worker symbols in the same source cut
+```
+
+There is no dual-write window. A failed migration leaves the legacy owner
+closed and unchanged; it does not activate a compatibility reader or a second
+worker.
+
+The hard cut is source-closed: both `worker.rs` owners are deleted; Desktop
+Moment/Comment tables map every transition through core lease/completion/readback
+functions; Mobile persists core object checkpoints and uses the worker for
+private attachment upload. `secure-content-owner-hard-cut-zero` proves this
+owner boundary. Product runtime remains `UNPROVEN` for any missing signed iOS
+or physical Android evidence cell.
+
+### 6.2 Proposed W7 Evidence Integration
 
 Under accepted `SC-D21`, W7 evidence integrates through existing owners:
 
@@ -297,7 +355,7 @@ restart request, changed boot identity, retained-storage identity, and owner
 acknowledgement. Any absent or mismatched binding blocks the affected journey
 without weakening it to source-only evidence.
 
-### 6.2 Accepted W7-W12 Runtime Integration
+### 6.3 Accepted W7-W12 Runtime Integration
 
 Under accepted `SC-D22`, as amended by accepted `SC-D28`, the runtime owner
 publishes one `secure-content-development-runtime-v3` manifest using the
@@ -464,11 +522,12 @@ W8 and W9 extend the same product semantics, not the same implementation:
 
 - Desktop and Mobile Native both call the Social proto routes and
   `packages/secure-content-core`;
-- Desktop and Mobile each own their encrypted local store, supervisor, typed
-  Native adapter, and UI projection;
+- Desktop and Mobile each own encrypted-store, transport, file, key-material,
+  lifecycle, typed Native adapter, and UI-projection implementations;
 - Mobile web never receives root keys or performs payload/object crypto;
-- Mobile Rust owns persist-before-send, unknown-outcome reconciliation,
-  recovery-key handling, transfer checkpoints, and zeroization;
+- the shared core owns persist-before-send operation transitions,
+  unknown-outcome reconciliation order, recovery-key handling, transfer
+  checkpoints, and zeroization;
 - fixed external debug/telemetry endpoints are removed from Mobile production
   and acceptance-enabled source before W9 checks.
 

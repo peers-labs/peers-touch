@@ -1,6 +1,97 @@
 {
   "version": 1,
   "gates": {
+    "agent-chat-profile-native": {
+      "requiredRuntimeCells": ["desktop-linux-native"],
+      "argv": ["python3", "tooling/acceptance/gates/agent/chat_native_suite.py", "--area", "profile"],
+      "timeout_seconds": 1800,
+      "environment": "home-station", "provisioner": "home-station",
+      "tier": "env-evidence", "initial_proof_status": "UNPROVEN",
+      "required_artifact_roles": ["receiver-dom", "station-readback", "cleanup", "operation-coverage"],
+      "description": "Native Profile creation, document autosave, authoritative readback, restart, typed prompt consumption, pinned Skill index/body evidence, and deletion."
+    },
+    "agent-definition-roundtrip-native-e2e": {
+      "requiredRuntimeCells": ["desktop-linux-native"],
+      "argv": ["python3", "tooling/acceptance/gates/agent/agent_definition_roundtrip.py"],
+      "timeout_seconds": 1800,
+      "environment": "home-station", "provisioner": "home-station",
+      "tier": "env-evidence", "initial_proof_status": "UNPROVEN",
+      "required_artifact_roles": ["receiver-dom", "station-readback", "suite-runtime", "cleanup", "validation"],
+      "description": "Profile-two Native AgentDefinition create/edit, explicit empty and non-empty package roundtrip, restart readback, CAS conflict draft retention, and owned-fixture cleanup."
+    },
+    "agent-slash-command-native-e2e": {
+      "requiredRuntimeCells": ["desktop-linux-native"],
+      "argv": ["python3", "tooling/acceptance/gates/agent/chat_native_suite.py", "--area", "commands"],
+      "timeout_seconds": 1800,
+      "environment": "home-station", "provisioner": "home-station",
+      "tier": "env-evidence", "initial_proof_status": "UNPROVEN",
+      "required_artifact_roles": ["receiver-dom", "station-readback", "suite-runtime", "cleanup", "operation-coverage", "validation"],
+      "description": "Profile-two Native Commands and Skills palette proof for Desktop /help, versioned Station /tools and /skills, Station-created /clear, stale/unavailable fail-closed behavior, ordinary text continuity, keyboard focus, and narrow layout."
+    },
+    "agent-context-projection-native-e2e": {
+      "requiredRuntimeCells": ["desktop-linux-native"],
+      "argv": ["python3", "tooling/acceptance/gates/agent/chat_native_suite.py", "--area", "attribution"],
+      "timeout_seconds": 1800,
+      "environment": "home-station", "provisioner": "home-station",
+      "tier": "env-evidence", "initial_proof_status": "UNPROVEN",
+      "required_artifact_roles": ["receiver-dom", "station-readback", "suite-runtime", "cleanup", "operation-coverage", "validation"],
+      "description": "Profile-two Native historical Turn attribution proof from ContextLedger and ToolCall lineage, including typed badges, included/omitted/truncated detail, exact versions, redaction, binding-change immutability, and restart readback."
+    },
+    "agent-depth-linux-native-e2e": {
+      "requiredRuntimeCells": ["desktop-linux-native"],
+      "runtimeCellArtifact": "installed-appimage",
+      "argv": ["python3", "tooling/acceptance/gates/agent/depth_linux_native.py"],
+      "timeout_seconds": 10800,
+      "environment": "home-station", "provisioner": "home-station",
+      "tier": "env-evidence", "initial_proof_status": "UNPROVEN",
+      "required_artifact_roles": ["source-receipt", "install-log", "receiver-dom", "station-readback", "suite-runtime", "cleanup", "validation"],
+      "description": "Build and install an acceptance-enabled exact-source Linux AppImage through make desktop-install, then prove one reusable Profile-two Native AgentDefinition, command snapshot, Skill activation, immutable historical attribution, restart readback, and reverse cleanup journey."
+    },
+    "agent-chat-models-native": {
+      "requiredRuntimeCells": ["desktop-linux-native"],
+      "argv": ["python3", "tooling/acceptance/gates/agent/chat_native_suite.py", "--area", "models"],
+      "timeout_seconds": 1800,
+      "environment": "home-station", "provisioner": "home-station",
+      "tier": "env-evidence", "initial_proof_status": "UNPROVEN",
+      "required_artifact_roles": ["receiver-dom", "station-readback", "cleanup", "operation-coverage"],
+      "description": "Native mixed Provider Settings, Station CLI discovery, shared availability and Topic model ownership."
+    },
+    "agent-chat-topics-native": {
+      "requiredRuntimeCells": ["desktop-linux-native"],
+      "argv": ["python3", "tooling/acceptance/gates/agent/chat_native_suite.py", "--area", "topics"],
+      "timeout_seconds": 1800,
+      "environment": "home-station", "provisioner": "home-station",
+      "tier": "env-evidence", "initial_proof_status": "UNPROVEN",
+      "required_artifact_roles": ["receiver-dom", "station-readback", "cleanup", "operation-coverage"],
+      "description": "Native Topic management, isolated drafts and atomic deletion."
+    },
+    "agent-chat-conversation-native": {
+      "requiredRuntimeCells": ["desktop-linux-native"],
+      "argv": ["python3", "tooling/acceptance/gates/agent/chat_native_suite.py", "--area", "conversation"],
+      "timeout_seconds": 2400,
+      "environment": "home-station", "provisioner": "home-station",
+      "tier": "env-evidence", "initial_proof_status": "UNPROVEN",
+      "required_artifact_roles": ["receiver-dom", "station-readback", "cleanup", "operation-coverage"],
+      "description": "Native conversation actions, inline clarification and tool continuation, Stop and typed recovery."
+    },
+    "agent-chat-layout-native": {
+      "requiredRuntimeCells": ["desktop-linux-native"],
+      "argv": ["python3", "tooling/acceptance/gates/agent/chat_native_suite.py", "--area", "layout"],
+      "timeout_seconds": 1200,
+      "environment": "home-station", "provisioner": "home-station",
+      "tier": "env-evidence", "initial_proof_status": "UNPROVEN",
+      "required_artifact_roles": ["receiver-dom", "station-readback", "cleanup", "operation-coverage"],
+      "description": "Native wide, compact and narrow navigation, menu anchoring, focus restoration and overflow."
+    },
+    "agent-chat-workspace-native": {
+      "requiredRuntimeCells": ["desktop-linux-native"],
+      "argv": ["python3", "tooling/acceptance/gates/agent/chat_native_suite.py", "--area", "workspace"],
+      "timeout_seconds": 5400,
+      "environment": "home-station", "provisioner": "home-station",
+      "tier": "env-evidence", "initial_proof_status": "UNPROVEN",
+      "required_artifact_roles": ["receiver-dom", "station-readback", "cleanup", "operation-coverage"],
+      "description": "One Native workspace Suite with complete operation coverage and terminal cleanup."
+    },
     "oauth-login-broker-handoff-contract": {
       "command": "sh -c 'cd apps/oauth2-client && go test ./internal/application/oauth/usecase && cd ../station && go test ./app/subserver/oauth ./frame/touch ./frame/touch/auth ./frame/touch/model/db && cd ../desktop && pnpm exec vitest run src/store/oauth2.test.ts && pnpm run check && cargo test --manifest-path src-tauri/Cargo.toml oauth'",
       "timeout_seconds": 1200,
@@ -734,6 +825,23 @@
       "tier": "local-evidence",
       "description": "Build the Desktop Tauri application in release mode from the current clean source without packaging an installer."
     },
+    "desktop-linux-install-native-e2e": {
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.desktop.linux_install_e2e"
+      ],
+      "timeout_seconds": 7200,
+      "environment": "local",
+      "tier": "env-evidence",
+      "initial_proof_status": "UNPROVEN",
+      "required_artifact_roles": [
+        "source-receipt",
+        "desktop-entry",
+        "install-log"
+      ],
+      "description": "On a Linux graphical session with the declared Tauri prerequisites, build the exact-source AppImage through make desktop-install, verify atomic user-scoped XDG installation, protocol registration, running-inode replacement, deep-link dispatch, source receipt, and reverse cleanup."
+    },
     "desktop-shell-tray-e2e": {
       "argv": [
         "python3",
@@ -768,7 +876,7 @@
         "desktop-macos-native"
       ],
       "tier": "env-evidence",
-      "description": "Launch the exact-source Native Tauri Desktop and prove primary-nav cleanup, Settings ownership, selected-only Cron lifecycle, canonical Command Palette access, legacy Notes fallback, native input, and native screenshot evidence."
+      "description": "Launch the exact-source Native Tauri Desktop and prove the fixed Search/Chat/Agent/Moments primary rail, Agent-owned Chat/Atelier secondary navigation, hidden Applets launcher, Discover and Memory ownership under Settings > AI, selected-only Cron lifecycle, canonical Command Palette access, legacy Notes fallback, native input, and native screenshot evidence."
     },
     "mobile-native-build": {
       "argv": [
@@ -781,6 +889,84 @@
       "provisioner": "mobile-simulator",
       "tier": "env-evidence",
       "description": "Build and verify the source-bound Mobile Tauri iOS Simulator application through the canonical isolated native provisioner."
+    },
+    "unified-client-android-host-e2e": {
+      "argv": ["python3", "-m", "tooling.acceptance.gates.mobile.android_host_e2e", "--reuse-suite-runtime"],
+      "ephemeralCapabilities": ["mobile.native.appium-session"],
+      "timeout_seconds": 3600,
+      "environment": "mobile-native",
+      "provisioner": "mobile-native",
+      "requiredRuntimeCells": ["mobile-android-native"],
+      "tier": "env-evidence",
+      "description": "Fail closed after UCA-02 source closure until a dedicated exact-source physical Android Suite proves FCM, killed-process wake, Back, full-resolution media, system actions, receiver-visible outcomes and cleanup."
+    },
+    "unified-client-ios-host-e2e": {
+      "argv": ["python3", "-m", "tooling.acceptance.gates.mobile.ios_host_e2e", "--reuse-suite-runtime"],
+      "ephemeralCapabilities": ["mobile.native.appium-session"],
+      "timeout_seconds": 3600,
+      "environment": "mobile-native",
+      "provisioner": "mobile-native",
+      "requiredRuntimeCells": ["mobile-ios-native"],
+      "tier": "env-evidence",
+      "description": "Fail closed after UCA-03 source closure until a dedicated signed physical iOS Suite proves APNs success/failure, background wake, system actions, receiver-visible outcomes and cleanup."
+    },
+    "unified-client-messaging-core-contract": {
+      "command": "python3 -m tooling.acceptance.gates.chat.unified_client_core_contract",
+      "timeout_seconds": 900,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Prove the MP-D16 portable Messaging Engine lifecycle, single-write store policy, authoritative command reconciliation, recovery/receipt/attachment APIs, typed Host ports, production consumer cutover, OS-free core and shared native filesystem adapter."
+    },
+    "unified-client-messaging-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.chat.unified_client_core_suite --runtime-cells desktop-macos-native,mobile-ios-native,mobile-android-native --reuse-suite-runtime",
+      "timeout_seconds": 7200,
+      "environment": "local",
+      "tier": "env-evidence",
+      "requiredRuntimeCells": ["desktop-macos-native", "mobile-ios-native", "mobile-android-native"],
+      "description": "Validate exact-source Desktop, signed iOS and physical Android Messaging convergence in one reusable Suite Runtime; remain UNPROVEN when physical evidence is unavailable."
+    },
+    "messaging-owner-hard-cut-zero": {
+      "command": "python3 -m tooling.acceptance.gates.unified_client.messaging_owner_zero",
+      "timeout_seconds": 300,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Prove that former Desktop/Mobile Messaging semantic owners and callers are absent, portable-core declarations are unique, and both Hosts share one native filesystem adapter."
+    },
+    "secure-content-portable-core": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.secure_content_portable_core",
+      "timeout_seconds": 600,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Prove the SC-D30 host-neutral Secure Content operation state, PreKey planning, readback-first reconciliation, recovery continuation, typed ports, migration inventory, and production consumer contract."
+    },
+    "unified-client-secure-content-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.unified_secure_content_suite --runtime-cells desktop-macos-native,mobile-ios-native,mobile-android-native --reuse-suite-runtime",
+      "timeout_seconds": 7200,
+      "environment": "local",
+      "tier": "env-evidence",
+      "requiredRuntimeCells": ["desktop-macos-native", "mobile-ios-native", "mobile-android-native"],
+      "description": "Validate exact-source Desktop, signed iOS and physical Android Secure Content publish, receiver, restart, revocation and object-resume convergence in one reusable Suite Runtime; remain UNPROVEN when physical evidence is unavailable."
+    },
+    "secure-content-owner-hard-cut-zero": {
+      "command": "python3 -m tooling.acceptance.gates.unified_client.secure_content_owner_zero",
+      "timeout_seconds": 300,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Prove that former Desktop/Mobile Secure Content operation and object-transfer owners are absent and both production Hosts consume the portable core."
+    },
+    "unified-client-shared-semantics": {
+      "command": "python3 -m tooling.acceptance.gates.unified_client.shared_semantics",
+      "timeout_seconds": 300,
+      "environment": "local",
+      "tier": "ci-structure",
+      "description": "Prove one renderer-neutral owner for shared Chat projection, media descriptor codec, wire codec, storage scope/reconciliation and capability admission while Desktop/Mobile Presentation Policy remains form-specific."
+    },
+    "unified-client-architecture-aggregate": {
+      "command": "python3 -m tooling.acceptance.gates.unified_client.architecture_aggregate",
+      "timeout_seconds": 900,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Run bounded source checks and aggregate exact-source child evidence, runtime cells, owner-zero Gates, reusable Suite cleanup and outcome-comparison identity without provisioning."
     },
     "station-access-lifecycle-aggregate-e2e": {
       "command": "python3 -m tooling.acceptance.gates.station_access.lifecycle_aggregate",
@@ -951,7 +1137,7 @@
       "environment": "chat-mixed-native",
       "provisioner": "chat-mixed-native",
       "tier": "env-evidence",
-      "description": "Prove Desktop↔Mobile same-Station Direct + Group + receipt + typing + attachment convergence."
+      "description": "Prove Desktop\u2194Mobile same-Station Direct + Group + receipt + typing + attachment convergence."
     },
     "chat-lifecycle-mixed-client-cross-station-e2e": {
       "argv": [
@@ -966,7 +1152,7 @@
       "environment": "chat-mixed-native",
       "provisioner": "chat-mixed-native",
       "tier": "env-evidence",
-      "description": "Prove Desktop↔Mobile cross-Station Direct + Group + offline + reconnect + interaction convergence."
+      "description": "Prove Desktop\u2194Mobile cross-Station Direct + Group + offline + reconnect + interaction convergence."
     },
     "chat-lifecycle-mixed-client-multi-device-e2e": {
       "argv": [
@@ -1393,6 +1579,7 @@
       ]
     },
     "agent-core-lifecycle-native-e2e": {
+      "requiredRuntimeCells": ["desktop-linux-native"],
       "argv": [
         "python3",
         "tooling/acceptance/gates/agent/native_agent_runner.py",
@@ -1403,11 +1590,11 @@
       "environment": "home-station",
       "provisioner": "home-station",
       "tier": "env-evidence",
-      "description": "Run the approved-profile native Agent core lifecycle: create, list, select, edit, duplicate, set default, start an empty session, delete, verify negative states, compare Station readback, and clean up.",
+      "description": "Run the approved-profile native Agent core lifecycle: repeat Create into Profile, list, select, edit, verify retired actions stay absent, start an empty session, recover topics, delete, compare Station readback, and clean up.",
       "runtime_matrix": {
         "id": "agent-core-lifecycle-native-matrix",
-        "version": "2026-09-28.1",
-        "sha256": "9605afef17f67b05dfceb4b44b242ca245512d559cb27cb0ab77d7e94050bdb2",
+        "version": "2026-10-18.1",
+        "sha256": "5a75aba6f5e4fe2bf1b7786498cd947a0c212a0332f0df6c899f781880d16c38",
         "expected_tuple_count": 6,
         "expected_assertion_count": 12
       },
@@ -2100,12 +2287,13 @@
       "description": "Prove required same-Station contact, Direct, Group, interaction, attachment, search, receipt, and restart readback on simulator cells."
     },
     "mobile-simulator-recovery-e2e": {
-      "command": "python3 -m tooling.acceptance.gates.mobile.simulator_social_e2e --scenario recovery",
-      "timeout_seconds": 2400,
+      "argv": ["python3", "-m", "tooling.acceptance.gates.mobile.simulator_social_e2e", "--scenario", "recovery"],
+      "ephemeralCapabilities": ["mobile.station-outage"],
+      "timeout_seconds": 3600,
       "environment": "mobile-direct-simulator",
       "provisioner": "mobile-direct-simulator",
       "tier": "env-evidence",
-      "description": "Prove same-Station deterministic unknown-outcome reconciliation and exact-scope Chat/Moments draft restart recovery on the required simulator pair."
+      "description": "Prove same-Station unknown-outcome reconciliation, normal process restart, SIGKILL, real Chat composer draft/history restoration, route-attestation renewal across expiry, source-bound Station outage with visible Retry, and receiver-visible post-recovery send on the required iOS Simulator pair."
     },
     "mobile-simulator-recovery-ui-e2e": {
       "command": "python3 -m tooling.acceptance.gates.mobile.simulator_social_e2e --scenario recovery-ui",
@@ -2347,6 +2535,174 @@
       "environment": "local",
       "tier": "local-evidence",
       "description": "Prove the executable Workflow Doctor contract, installed integration, current Plan mount, workflow projection, completion review, and executable documentation."
+    },
+    "lark-channel-source": {
+      "command": "sh -c 'python3 -m unittest tooling.acceptance.domains.channel.journey_test && cd apps/station && go test ./app/subserver/channel/... ./app/subserver/agent/service/... && cd ../desktop && pnpm exec tsc -p tsconfig.channel.json --noEmit && ESLINT_USE_FLAT_CONFIG=false pnpm exec eslint src/components/settings/channels src/runtimes/channelRuntime.ts src/services/channelActions.ts src/store/channel.ts src/modules/channels.ts --ext ts,tsx --report-unused-disable-directives --max-warnings 0'",
+      "timeout_seconds": 1200,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate the Channel-owned Lark connection, requester OAuth isolation and recovery, governed requester tools, unique route contracts, and targeted Desktop projection/settings source."
+    },
+    "lark-01-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J01 --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove durable Lark ingress, fast acknowledgement, replay idempotency, restart recovery, and one receiver result on the exact Suite source."
+    },
+    "lark-02-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J02 --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove delivery retry and unknown-outcome recovery reuse the completed Turn without another model or side-effect execution."
+    },
+    "lark-03-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J03 --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove owner-bound provisioning confirmation, credential reservation recovery, and repeated-confirm idempotency."
+    },
+    "lark-04-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J04 --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove non-blocking provisioning progress, one continuous Desktop drawer, cancel, close, reopen, and same-app recovery."
+    },
+    "lark-05-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J05 --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove the requested Lark bot name, description, and real avatar are provider-visible and profile failures remain explicit."
+    },
+    "lark-06-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J06 --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove capability-scoped permission waiting, explicit degradation, repair, and no duplicate provider application."
+    },
+    "lark-07-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J07 --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove a real Lark international account and a validated custom app independently send and receive through their own regional APIs."
+    },
+    "lark-08-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J08 --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove multiple Lark bindings keep independent Agent, route, health, default, pause, resume, restart, and deletion state."
+    },
+    "lark-09-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J09 --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove a real screenshot reaches attachment admission, model consumption, and a receiver answer containing the image fact."
+    },
+    "lark-10-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J10 --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove file, post, quote, merge-forward, source identity, unsupported media, and receiver-openable outbound artifact behavior."
+    },
+    "lark-11-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J11 --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove streaming card revisions, rate-limit fallback, and terminal fencing converge without stale overwrite or Turn replay."
+    },
+    "lark-12-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J12 --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove ask, approval, rejection, cancellation, retry, feedback, duplicate click, expiry, and revoke actions remain bound to one Turn."
+    },
+    "lark-13-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J13 --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove owner, approval, allowlist, and open access use real provider identities and fail closed on identity borrowing."
+    },
+    "lark-14-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J14 --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove group mention policy, two-chat and two-thread isolation, route selection, and bot-loop suppression."
+    },
+    "lark-15-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J15 --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove bounded authorized group-context backfill and advanced response policy without cross-thread, removed-member, or expired-window leakage."
+    },
+    "lark-16-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J16 --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove two requester OAuth grants independently refresh, extend, expire, reconnect, revoke, and remain isolated from bot identity."
+    },
+    "lark-17-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J17 --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove requester-scoped document, Drive, Wiki, and contact reads with a real cross-user private-resource denial."
+    },
+    "lark-18a-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J18A --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove approved document create/edit actions produce receiver-readable artifacts while rejection produces no provider-side mutation."
+    },
+    "lark-18b-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J18B --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove approved Drive create, upload, and move operations produce readable results while rejection and revoke leave no side effect."
+    },
+    "lark-18c-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J18C --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove every required reference extension has a source, identity, scope, side-effect contract, execution chain, and independent receiver result."
+    },
+    "lark-19-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J19 --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove event, document, schedule, manual, and proactive automations execute once and honor cancel, expiry, fault, and requester revoke."
+    },
+    "lark-20-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.channel.lark_e2e --journey LARK-J20 --manifest \"$PT_SUITE_RUNTIME_MANIFEST\"",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove Channel activity, delivery, plugin recovery, consumer hard cut, redacted export, and task-owned resource release."
+    },
+    "channel-domain-validation": {
+      "command": "python3 tooling/scripts/acceptance-validate.py --domain channel",
+      "timeout_seconds": 600,
+      "environment": "local",
+      "tier": "ci-structure",
+      "description": "Validate the Channel managed-domain Feature, Capability, Registry, and Gate graph while keeping unrun live Lark journeys explicit."
     }
   }
 }

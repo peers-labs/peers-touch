@@ -1,0 +1,41 @@
+{
+  "id": "agent-chat-production",
+  "status": "active",
+  "product_area": "agent",
+  "owners": ["apps/desktop/src/pages/ChatPage.tsx", "apps/desktop/src/pages/AgentProfilePage.tsx", "apps/station/app/subserver/agent"],
+  "truth_sources": ["Station Agent documents and capability bindings", "Station Conversation, Turn, ToolCall and Provider configuration", "Desktop actor-scoped drafts and attachment references"],
+  "visible_surfaces": [{"type": "ui", "surface": "Native Desktop Agent roster, Profile, Topic, composer, Settings and conversation"}],
+  "required_gates": ["agent-definition-roundtrip-native-e2e", "agent-slash-command-native-e2e", "agent-context-projection-native-e2e", "agent-depth-linux-native-e2e", "agent-chat-profile-native", "agent-chat-models-native", "agent-chat-topics-native", "agent-chat-conversation-native", "agent-chat-layout-native", "agent-chat-workspace-native"],
+  "acceptance": {
+    "service": [
+      "SOUL.md and AGENTS.md are typed AgentDefinition fields that persist explicit empty and non-empty values, survive Native restart, roundtrip through Agent packages without config_json aliases, and enter the actual Provider prompt",
+      "A concurrent AgentDefinition winner rejects a stale Profile save without partial Station mutation or local document draft loss",
+      "AgentCapabilityBinding is the only Skill enablement authority; the Provider receives the pinned authorized Skill index first and skill_view records the exact Skill body version in the redacted ContextLedger",
+      "Commands and Skills reads one versioned Station snapshot; /clear creates a new Station Topic and stale or unavailable projection never becomes local capability authority",
+      "Terminal Turn attribution is derived only from historical ContextLedger and ToolCall lineage and remains unchanged after current binding edits",
+      "Settings owns the global model default and Topic owns the providerId/modelId override; Agent does not own ordinary Chat model settings",
+      "Agent deletion and Topic batch deletion atomically remove owned Station resources and clear associated client drafts, attachments and run projections",
+      "Station-owned ask_user persists the submitted answer and continues the original ToolBatch across restart"
+    ],
+    "visible": [
+      "All 136 confirmed prototype operations and additional production authority assertions have operation-specific Native UI actions, receiver assertions and source-bound artifacts",
+      "Creation enters Profile immediately and Profile autosaves identity, documents, avatar and bound extensions",
+      "A rejected concurrent document save leaves the exact local draft visible with failure feedback",
+      "Direct and CLI share one Provider list and model availability owner; CLI model discovery is Station-owned and read-only",
+      "Topic navigation, isolated drafts, conversation search, quick replies, attachments, artifacts, approval, clarification, Stop and typed recovery follow the confirmed scope",
+      "Wide, compact and ultra-narrow navigation retain access and restore overlay trigger focus",
+      "Commands and Skills is keyboard-operable at wide and narrow widths, preserves the draft, and leaves ordinary text chat available when capability actions are stale",
+      "Completed responses expose compact actual-participation badges and redacted included, omitted, truncated, and exact-version detail"
+    ]
+  },
+  "negative": [
+    "No model control appears in Agent Profile",
+    "Duplicate, Set default, Queue and developer inspectors are absent from ordinary Agent Chat",
+    "API-only, Harness-only, prototype or source checks cannot prove a Native operation",
+    "Missing, stale or failed operation evidence remains UNPROVEN",
+    "Scenarios cannot provision, launch or login independently of their Suite",
+    "Agent display metadata and retired config_json prompt aliases cannot enter Provider identity or instruction layers",
+    "Command projection never falls back to localStorage or grants execution authority",
+    "Current Agent bindings and Knowledge or Attachment display state cannot rewrite historical Turn attribution"
+  ]
+}

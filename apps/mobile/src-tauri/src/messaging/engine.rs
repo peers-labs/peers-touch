@@ -13,26 +13,24 @@ use messaging_core::attachment::{
     AttachmentRetryPolicy, AttachmentTransferControl, AttachmentTransferRecord,
     AttachmentTransferWorker,
 };
-use messaging_core::codec::verification::verify_device_event_delivery;
 use messaging_core::contracts::{
     CommandStatusProjection, ConversationMessageProjection, ConversationProjection,
     CryptoEndpoint as CoreCryptoEndpoint,
 };
 use messaging_core::crypto::identity::IdentityKeyPair;
-use messaging_core::crypto::prekeys::{
-    PendingPreKeyBundle, PreKeyBundleBackup, PreKeyPublisher,
-};
+use messaging_core::crypto::prekeys::{PendingPreKeyBundle, PreKeyBundleBackup, PreKeyPublisher};
 use messaging_core::crypto::signaling_envelope;
+use messaging_core::engine::{reconcile_submitted_commands, CommandReconciliationProgress};
 use messaging_core::identity::{
     generate_device_identity_for_device_from_parts, is_stale_endpoint_error,
-    load_or_create_device_identity_for_device, DeviceEnrollmentManager,
-    DeviceEnrollmentRepository, DeviceSigningKey,
+    load_or_create_device_identity_for_device, DeviceEnrollmentManager, DeviceEnrollmentRepository,
+    DeviceSigningKey,
 };
 use messaging_core::inbox::{
-    AcknowledgedItemObserver, ClaimedItemConsumer, CommandResultLifecycle, CommandResultProcessor,
-    ConsumerEpochObserver, ConversationStateProcessor, DeliveryReceiptProcessor,
-    DirectMessageProcessor, DrainProgress, MessagingItemConsumer, MlsItemConsumer,
-    PublicEventProcessor, QueueDrain, ServicePlaintextProcessor, SkippedPayloadProcessor,
+    AcknowledgedItemObserver, ClaimedItemConsumer, CommandResultProcessor, ConsumerEpochObserver,
+    ConversationStateProcessor, DeliveryReceiptProcessor, DirectMessageProcessor, DrainProgress,
+    MessagingItemConsumer, PublicEventProcessor, QueueDrain, ServicePlaintextProcessor,
+    SkippedPayloadProcessor,
 };
 use messaging_core::mls::actor_device_identity::ActorDeviceIdentity;
 use messaging_core::mls::group::MlsGroupManager;
@@ -48,26 +46,21 @@ use messaging_core::mls::outbound::{
     GroupEditTextIntent, GroupForwardIntent, GroupSendTextIntent, MlsOutboundPreparer,
 };
 use messaging_core::mls::startup::restore_persisted_mls_state;
-use messaging_core::mls::{
-    MlsApplicationProcessor, MlsRetirementProcessor, MlsSenderTransitionProcessor,
-    MlsTransitionProcessor,
-};
+use messaging_core::mls::MlsItemProcessor;
 use messaging_core::outbox::{
-    CommandDispatchProgress, CommandOutboxWorker, CommandRetryPolicy, DirectEditIntent,
-    DirectForwardIntent, DirectOutboundPreparer, DirectSendIntent, DirectSessionBootstrapper,
-    MetadataInteraction, MetadataInteractionPreparer,
+    CommandDispatchProgress, CommandOutboxWorker, CommandRetryPolicy, DeliveryReceiptDispatcher,
+    DirectEditIntent, DirectForwardIntent, DirectOutboundPreparer, DirectSendIntent,
+    DirectSessionBootstrapper, MetadataInteraction, MetadataInteractionPreparer,
 };
 use messaging_core::proto::actor::{ActorDevice, ActorKind, ActorRef};
 use messaging_core::proto::chat::{
-    chat_command, conversation_event, ActorReadCursor, AttachmentContentKind,
-    AttachmentTransferState, ChatCommand, ChatStorageOperationState, ChatStoragePolicy,
-    ChatStorageResult, ChatStorageScope, ChatStorageSnapshot, Conversation,
-    ConversationCommandKind, ConversationKind, ConversationMemberAuthorityAction,
-    ConversationMemberAuthorityCommand, ConversationStatus, CryptoEndpoint,
-    DeviceConsumptionReceipt, DeviceInboxPayloadType, DissolveConversationIntent,
-    DurableDeviceInboxItem, MemberRole, MessagingMembershipAction, MlsLeaveIntent,
-    PrepareConversationCommandRequest, PrepareConversationCommandResponse,
-    PreparedEndpointPayloadKind, PublicEventMarker, SubmitConversationReadCursorRequest,
+    chat_command, ActorReadCursor, AttachmentContentKind, AttachmentTransferState, ChatCommand,
+    ChatStorageOperationState, ChatStoragePolicy, ChatStorageResult, ChatStorageScope,
+    ChatStorageSnapshot, Conversation, ConversationCommandKind, ConversationKind,
+    ConversationMemberAuthorityAction, ConversationMemberAuthorityCommand, ConversationStatus,
+    CryptoEndpoint, DissolveConversationIntent, DurableDeviceInboxItem, MemberRole,
+    MessagingMembershipAction, MlsLeaveIntent, PrepareConversationCommandRequest,
+    PrepareConversationCommandResponse, SubmitConversationReadCursorRequest,
     SubmitConversationTypingRequest, UpdateConversationIntent, VoiceNoteMetadata,
 };
 use messaging_core::proto::social::{
@@ -98,6 +91,7 @@ use messaging_core::storage_governance::{
     measure_storage, PhysicalStorageClass, PhysicalStoragePath, StorageAccountingInput,
 };
 use messaging_core::store::MessagingRepository;
+use messaging_native_filesystem::{path_ref, path_refs, NativeMessagingFilesystem};
 use prost::Message;
 use rand::rngs::OsRng;
 use rand::RngCore;
@@ -112,10 +106,9 @@ use zeroize::Zeroizing;
 
 use super::adapter::{
     load_storage_retention_policy, AttachmentDownloadProjection, CompletedSenderAttachmentSource,
-    ConversationCommandCommit, ConversationMutation, ConversationMutationReceiveCommit,
-    ConversationSummary, MobileConversationProjection, MobileMemberAuthorityProjection,
-    MobileMessagingStore, MobileOutboxStore, PendingAttachmentUpload, PendingMembershipIntent,
-    PendingMessageDraft,
+    ConversationCommandCommit, ConversationSummary, MobileConversationProjection,
+    MobileMemberAuthorityProjection, MobileMessagingStore, PendingAttachmentUpload,
+    PendingMembershipIntent, PendingMessageDraft,
 };
 use super::attachment_blob::FilesystemAttachmentBlob;
 use super::mls_leave_intent::StationMlsLeaveIntentTransport;
@@ -409,56 +402,8 @@ fn validate_attachment_content_metadata(
     }
 }
 
-struct MobileMlsItemConsumer {
-    manager: Arc<MlsGroupManager>,
-    application: MlsApplicationProcessor<MobileMessagingStore>,
-    transition: MlsTransitionProcessor<MobileMessagingStore>,
-    retirement: MlsRetirementProcessor<MobileMessagingStore>,
-    sender_transition: MlsSenderTransitionProcessor<MobileMessagingStore>,
-}
-
-impl MlsItemConsumer for MobileMlsItemConsumer {
-    fn consume_application(
-        &self,
-        item: &DurableDeviceInboxItem,
-        consumer_epoch: u64,
-    ) -> Result<(), String> {
-        self.application.consume(item, consumer_epoch)
-    }
-
-    fn consume_transition(
-        &self,
-        item: &DurableDeviceInboxItem,
-        consumer_epoch: u64,
-    ) -> Result<(), String> {
-        self.transition.consume(item, consumer_epoch)
-    }
-
-    fn consume_retirement(
-        &self,
-        item: &DurableDeviceInboxItem,
-        consumer_epoch: u64,
-    ) -> Result<(), String> {
-        self.retirement.consume(item, consumer_epoch)
-    }
-
-    fn consume_sender_transition(
-        &self,
-        item: &DurableDeviceInboxItem,
-        consumer_epoch: u64,
-    ) -> Result<(), String> {
-        self.sender_transition.consume(item, consumer_epoch)
-    }
-}
-
-impl CommandResultLifecycle for MobileMlsItemConsumer {
-    fn discard_pending_transition(&self, conversation_id: &str, transition_id: &str) {
-        self.manager
-            .discard_pending_transition_if_matches(conversation_id, transition_id);
-    }
-}
-
-type CoreItemConsumer = MessagingItemConsumer<MobileMessagingStore, MobileMlsItemConsumer>;
+type CoreItemConsumer =
+    MessagingItemConsumer<MobileMessagingStore, MlsItemProcessor<MobileMessagingStore>>;
 
 pub struct MobileMessagingEngine {
     profile_id: String,
@@ -636,33 +581,12 @@ impl MobileMessagingEngine {
             actor_identity.clone(),
             now_unix_ms,
         )?;
-        let mls = Arc::new(MobileMlsItemConsumer {
-            manager: mls_manager.clone(),
-            application: MlsApplicationProcessor::new(
-                mls_manager.clone(),
-                store.clone(),
-                endpoint.clone(),
-                now_unix_ms,
-            )?,
-            transition: MlsTransitionProcessor::new(
-                mls_manager.clone(),
-                store.clone(),
-                endpoint.clone(),
-                now_unix_ms,
-            )?,
-            retirement: MlsRetirementProcessor::new(
-                mls_manager.clone(),
-                store.clone(),
-                endpoint.clone(),
-                now_unix_ms,
-            )?,
-            sender_transition: MlsSenderTransitionProcessor::new(
-                mls_manager.clone(),
-                store.clone(),
-                endpoint.clone(),
-                now_unix_ms,
-            )?,
-        });
+        let mls = Arc::new(MlsItemProcessor::new(
+            mls_manager.clone(),
+            store.clone(),
+            endpoint.clone(),
+            now_unix_ms,
+        )?);
         let command_result =
             CommandResultProcessor::new(store.clone(), mls.clone(), endpoint.clone(), now_unix_ms)?;
         let consumer = Arc::new(MessagingItemConsumer::new(
@@ -720,43 +644,43 @@ impl MobileMessagingEngine {
         }
         let database_path = self.store.storage_database_path()?;
         let mut physical_paths = vec![
-            PhysicalStoragePath::required(database_path.clone(), PhysicalStorageClass::System),
+            PhysicalStoragePath::required(path_ref(&database_path), PhysicalStorageClass::System),
             PhysicalStoragePath::optional(
-                sqlite_sidecar_path(&database_path, "-wal"),
+                path_ref(sqlite_sidecar_path(&database_path, "-wal")),
                 PhysicalStorageClass::System,
             ),
             PhysicalStoragePath::optional(
-                sqlite_sidecar_path(&database_path, "-shm"),
+                path_ref(sqlite_sidecar_path(&database_path, "-shm")),
                 PhysicalStorageClass::System,
             ),
             PhysicalStoragePath::optional(
-                self.attachment_root.join("cache"),
+                path_ref(self.attachment_root.join("cache")),
                 PhysicalStorageClass::Cache,
             ),
             PhysicalStoragePath::optional(
-                self.attachment_root.join("sources"),
+                path_ref(self.attachment_root.join("sources")),
                 PhysicalStorageClass::Protected,
             ),
         ];
-        physical_paths.extend(
-            self.store
-                .storage_media_paths()?
-                .into_iter()
-                .map(|path| PhysicalStoragePath::required(path, PhysicalStorageClass::Media)),
-        );
+        physical_paths.extend(self.store.storage_media_paths()?.into_iter().map(|path| {
+            PhysicalStoragePath::required(path_ref(path), PhysicalStorageClass::Media)
+        }));
 
         let scope = ChatStorageScope {
             station_peer_id: self.scope.station_peer_id.clone(),
             actor_ptid: self.scope.actor_ptid.clone(),
             device_id: self.scope.device_id.clone(),
         };
-        let mut snapshot = measure_storage(StorageAccountingInput {
-            scope: scope.clone(),
-            revision: scope_revision.to_string(),
-            measured_at_unix_ms: now_unix_ms(),
-            physical_paths,
-            conversations: self.store.storage_logical_usage()?,
-        })
+        let mut snapshot = measure_storage(
+            StorageAccountingInput {
+                scope: scope.clone(),
+                revision: scope_revision.to_string(),
+                measured_at_unix_ms: now_unix_ms(),
+                physical_paths,
+                conversations: self.store.storage_logical_usage()?,
+            },
+            &NativeMessagingFilesystem,
+        )
         .map_err(|error| error.to_string())?;
         snapshot.retention_policy =
             Some(load_storage_retention_policy(self.store.as_ref(), &scope)?);
@@ -776,10 +700,11 @@ impl MobileMessagingEngine {
         let protected_paths = self.store.storage_cache_protected_paths()?;
         let operation = prepare_cache_cleanup(
             self.store.as_ref(),
+            &NativeMessagingFilesystem,
             CacheCleanupPlanInput {
                 scope_revision: scope_revision.to_string(),
-                cache_roots: vec![cache_root.clone()],
-                protected_paths: protected_paths.clone(),
+                cache_roots: vec![path_ref(&cache_root)],
+                protected_paths: path_refs(&protected_paths),
                 physical_bytes_before: before.physical_total_bytes,
                 now_unix_ms: now_unix_ms(),
             },
@@ -787,9 +712,10 @@ impl MobileMessagingEngine {
         .map_err(|error| error.to_string())?;
         let mut progress = execute_cache_cleanup(
             self.store.as_ref(),
+            &NativeMessagingFilesystem,
             &operation,
-            std::slice::from_ref(&cache_root),
-            &protected_paths,
+            &[path_ref(&cache_root)],
+            &path_refs(&protected_paths),
             now_unix_ms(),
         )
         .map_err(|error| error.to_string())?;
@@ -961,9 +887,10 @@ impl MobileMessagingEngine {
         ) {
             let progress = execute_cache_cleanup(
                 self.store.as_ref(),
+                &NativeMessagingFilesystem,
                 &operation,
-                std::slice::from_ref(cache_root),
-                &protected_paths,
+                &[path_ref(cache_root)],
+                &path_refs(&protected_paths),
                 now_unix_ms(),
             )
             .map_err(|error| error.to_string())?;
@@ -1026,9 +953,10 @@ impl MobileMessagingEngine {
         ) {
             let progress = execute_cache_cleanup(
                 self.store.as_ref(),
+                &NativeMessagingFilesystem,
                 &operation,
-                std::slice::from_ref(cache_root),
-                &protected_paths,
+                &[path_ref(cache_root)],
+                &path_refs(&protected_paths),
                 now_unix_ms(),
             )
             .map_err(|error| error.to_string())?;
@@ -3035,126 +2963,7 @@ impl MobileMessagingEngine {
         item: &DurableDeviceInboxItem,
         consumer_epoch: u64,
     ) -> Result<(), String> {
-        if self.consume_conversation_mutation_event(item, consumer_epoch)? {
-            return Ok(());
-        }
         self.consumer.consume(item, consumer_epoch)
-    }
-
-    fn consume_conversation_mutation_event(
-        &self,
-        item: &DurableDeviceInboxItem,
-        consumer_epoch: u64,
-    ) -> Result<bool, String> {
-        if DeviceInboxPayloadType::try_from(item.payload_type).ok()
-            != Some(DeviceInboxPayloadType::ConversationEvent)
-        {
-            return Ok(false);
-        }
-        let Ok(candidate) = messaging_core::proto::chat::DeviceEventDelivery::decode(
-            item.opaque_payload.as_slice(),
-        ) else {
-            return Ok(false);
-        };
-        let Some(candidate_event) = candidate.event.as_ref() else {
-            return Ok(false);
-        };
-        if !matches!(
-            candidate_event.payload.as_ref(),
-            Some(
-                conversation_event::Payload::ConversationUpdated(_)
-                    | conversation_event::Payload::ConversationDissolved(_)
-            )
-        ) {
-            return Ok(false);
-        }
-
-        let consumed_at_unix_ms = now_unix_ms();
-        MessagingRepository::persist_claimed_item(
-            self.store.as_ref(),
-            &item.item_id,
-            &item.event_id,
-            &item.conversation_id,
-            item.lane_sequence,
-            consumer_epoch,
-            &item.payload_sha256,
-            &item.opaque_payload,
-            consumed_at_unix_ms,
-        )?;
-        if MessagingRepository::consumption_marker_matches(
-            self.store.as_ref(),
-            &item.item_id,
-            &item.payload_sha256,
-        )? {
-            return Ok(true);
-        }
-        let delivery =
-            verify_device_event_delivery(item, &self.scope.actor_ptid, &self.scope.device_id)?;
-        if PreparedEndpointPayloadKind::try_from(delivery.payload_kind)
-            .map_err(|_| "mobile messaging Conversation mutation payload kind is invalid")?
-            != PreparedEndpointPayloadKind::PublicEvent
-        {
-            return Err(
-                "mobile messaging Conversation mutation requires a public event".to_string(),
-            );
-        }
-        let event = delivery.event.as_ref().ok_or_else(|| {
-            "mobile messaging Conversation mutation event is unavailable".to_string()
-        })?;
-        let marker = PublicEventMarker::decode(delivery.endpoint_payload.as_slice())
-            .map_err(|_| "mobile messaging Conversation mutation marker is invalid".to_string())?;
-        if marker.conversation_id != event.conversation_id
-            || marker.event_id != event.event_id
-            || marker.command_id != event.command_id
-            || marker.sending_endpoint != event.actor
-        {
-            return Err(
-                "mobile messaging Conversation mutation marker binding mismatch".to_string(),
-            );
-        }
-        let mutation = match event.payload.as_ref() {
-            Some(conversation_event::Payload::ConversationUpdated(update)) => {
-                ConversationMutation::Update {
-                    name: update.name.as_deref(),
-                    description: update.description.as_deref(),
-                }
-            }
-            Some(conversation_event::Payload::ConversationDissolved(_)) => {
-                ConversationMutation::Dissolve
-            }
-            _ => return Ok(false),
-        };
-        let receipt = DeviceConsumptionReceipt {
-            receipt_id: format!("device-consumed:{}", item.item_id),
-            conversation_id: event.conversation_id.clone(),
-            event_id: event.event_id.clone(),
-            consumer: Some(self.proto_endpoint()),
-            event_sequence: event.sequence,
-            lane_sequence: item.lane_sequence,
-            payload_sha256: item.payload_sha256.clone(),
-            consumed_at: Some(timestamp(consumed_at_unix_ms)),
-        };
-        let receipt_bytes = receipt.encode_to_vec();
-        self.store
-            .commit_conversation_mutation_event(&ConversationMutationReceiveCommit {
-                item_id: &item.item_id,
-                event_id: &event.event_id,
-                conversation_id: &event.conversation_id,
-                command_id: &event.command_id,
-                event_sequence: event.sequence,
-                lane_sequence: item.lane_sequence,
-                consumer_epoch,
-                payload_sha256: &item.payload_sha256,
-                event_hash: &event.event_hash,
-                previous_event_hash: &event.previous_hash,
-                membership_epoch: event.membership_epoch,
-                mls_epoch: event.mls_epoch,
-                mutation,
-                receipt_id: &receipt.receipt_id,
-                receipt_bytes: &receipt_bytes,
-                consumed_at_unix_ms,
-            })?;
-        Ok(true)
     }
 
     pub fn drain_once(&self) -> Result<DrainProgress, String> {
@@ -3215,9 +3024,10 @@ impl MobileMessagingEngine {
             }
             let progress = execute_cache_cleanup(
                 self.store.as_ref(),
+                &NativeMessagingFilesystem,
                 &operation,
-                &roots,
-                &protected_paths,
+                &path_refs(&roots),
+                &path_refs(&protected_paths),
                 now_unix_ms(),
             )
             .map_err(|error| error.to_string())?;
@@ -3270,6 +3080,38 @@ impl MobileMessagingEngine {
         Ok(())
     }
 
+    pub fn reconcile_submitted_commands_once(
+        &self,
+    ) -> Result<CommandReconciliationProgress, String> {
+        let _guard = self
+            .dispatch_lock
+            .lock()
+            .map_err(|_| "mobile messaging dispatch lock poisoned".to_string())?;
+        let progress = reconcile_submitted_commands(
+            self.store.as_ref(),
+            &StationCommandTransport::new(
+                self.scope.station_origin.clone(),
+                self.access_token()?,
+                self.scope.device_id.clone(),
+            )?,
+            &CoreCryptoEndpoint {
+                ptid: self.scope.actor_ptid.clone(),
+                device_id: self.scope.device_id.clone(),
+            },
+            now_unix_ms(),
+        )?;
+        if let CommandReconciliationProgress::Reconciled {
+            terminal_membership_conversations,
+            ..
+        } = &progress
+        {
+            for conversation_id in terminal_membership_conversations {
+                self.mls_manager.discard_pending_transition(conversation_id);
+            }
+        }
+        Ok(progress)
+    }
+
     pub fn dispatch_command_once(&self) -> Result<CommandDispatchProgress, String> {
         let _intent_guard = self
             .send_intent_lock
@@ -3282,7 +3124,7 @@ impl MobileMessagingEngine {
         let token = self.access_token()?;
         let (enrollment, signing_key) = self.store.active_device_signing_identity()?;
         let progress = CommandOutboxWorker::new(
-            MobileOutboxStore(self.store.clone()),
+            self.store.clone(),
             StationCommandTransport::new(
                 self.scope.station_origin.clone(),
                 token,
@@ -3651,63 +3493,20 @@ impl MobileMessagingEngine {
     }
 
     pub fn dispatch_delivery_receipt_once(&self) -> Result<bool, String> {
-        let Some((receipt_id, receipt_bytes, receipt)) =
-            self.store.next_device_consumption_receipt()?
-        else {
-            return Ok(false);
-        };
         let token = self.access_token()?;
         let transport = StationDeliveryReceiptTransport::new(
             self.scope.station_origin.clone(),
             token,
             self.scope.device_id.clone(),
         )?;
-        match transport.submit(&receipt) {
-            Ok(()) => {
-                self.store
-                    .mark_device_consumption_receipt_submitted(&receipt_id, &receipt_bytes)?;
-            }
-            Err(error) if Self::is_terminal_delivery_receipt_rejection(&error) => {
-                let error_code = Self::delivery_receipt_rejection_code(&error);
-                log::warn!(
-                    "mobile delivery receipt {receipt_id} was permanently rejected by Station: {error}"
-                );
-                self.store.mark_device_consumption_receipt_rejected(
-                    &receipt_id,
-                    &receipt_bytes,
-                    &error_code,
-                    now_unix_ms(),
-                )?;
-            }
-            Err(error) => return Err(error.to_string()),
-        }
-        Ok(true)
-    }
-
-    fn is_terminal_delivery_receipt_rejection(error: &StationTransportError) -> bool {
-        match error {
-            StationTransportError::Decode | StationTransportError::Invalid => true,
-            StationTransportError::HttpStatus { status, code, .. } => {
-                matches!(*status, 400 | 404 | 409 | 410 | 422)
-                    || (*status == 403
-                        && code.as_deref() == Some("CONVERSATION_INTERACTION_UNAUTHORIZED"))
-            }
-            StationTransportError::Deadline | StationTransportError::Network => false,
-        }
-    }
-
-    fn delivery_receipt_rejection_code(error: &StationTransportError) -> String {
-        match error {
-            StationTransportError::HttpStatus { status, code, .. } => code
-                .as_deref()
-                .filter(|value| !value.is_empty())
-                .map(str::to_string)
-                .unwrap_or_else(|| format!("http_{status}")),
-            StationTransportError::Decode => "decode".to_string(),
-            StationTransportError::Invalid => "invalid".to_string(),
-            StationTransportError::Deadline => "deadline".to_string(),
-            StationTransportError::Network => "network".to_string(),
-        }
+        DeliveryReceiptDispatcher::new(
+            self.store.clone(),
+            CoreCryptoEndpoint {
+                ptid: self.scope.actor_ptid.clone(),
+                device_id: self.scope.device_id.clone(),
+            },
+        )?
+        .dispatch_once(&transport)
     }
 
     pub fn recover_stale_enrollment(&self, error: &str) -> Result<bool, String> {
@@ -4788,34 +4587,6 @@ fn timestamp(unix_ms: i64) -> prost_types::Timestamp {
 mod tests {
     use super::*;
     use ed25519_dalek::{Signature, Verifier};
-
-    #[test]
-    fn membership_unauthorized_receipt_is_terminal_but_session_forbidden_is_retryable() {
-        let removed_member = StationTransportError::HttpStatus {
-            status: 403,
-            code: Some("CONVERSATION_INTERACTION_UNAUTHORIZED".to_string()),
-            details: Some("actor is not an active Conversation member".to_string()),
-            body: None,
-        };
-        let session_forbidden = StationTransportError::HttpStatus {
-            status: 403,
-            code: Some("SESSION_DEVICE_MISMATCH".to_string()),
-            details: None,
-            body: None,
-        };
-
-        assert!(MobileMessagingEngine::is_terminal_delivery_receipt_rejection(&removed_member));
-        assert_eq!(
-            MobileMessagingEngine::delivery_receipt_rejection_code(&removed_member),
-            "CONVERSATION_INTERACTION_UNAUTHORIZED"
-        );
-        assert!(!MobileMessagingEngine::is_terminal_delivery_receipt_rejection(&session_forbidden));
-        assert!(
-            !MobileMessagingEngine::is_terminal_delivery_receipt_rejection(
-                &StationTransportError::Network
-            )
-        );
-    }
 
     #[test]
     fn consumer_epoch_observer_updates_runtime_epoch() {

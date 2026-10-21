@@ -91,19 +91,56 @@ export function getBootTrace(): ReadonlyArray<PhaseEntry> {
 
 const BOOTSTRAP_TIMEOUT_MS = 5000;
 
-async function bootstrapWithTimeout(runtimeId: string, actorPtid: string | null): Promise<void> {
-  const timeout = new Promise<'timeout'>((resolve) =>
-    setTimeout(() => resolve('timeout'), BOOTSTRAP_TIMEOUT_MS),
-  );
-  const bootstrap = bootstrapRuntime(runtimeId, actorPtid).then(() => 'done' as const);
+export type IdleRuntimeInstallStatus =
+  | 'pending'
+  | 'running'
+  | 'degraded'
+  | 'ready';
+
+interface BootstrapOutcome {
+  completion: Promise<void>;
+  timedOut: boolean;
+}
+
+interface IdleRuntimeInstall {
+  actorPtid: string;
+  generation: number;
+  promise: Promise<void>;
+  status: Exclude<IdleRuntimeInstallStatus, 'pending' | 'ready'>;
+}
+
+let idleRuntimeGeneration = 0;
+let idleRuntimeInstall: IdleRuntimeInstall | null = null;
+let idleRuntimeReadyActorPtid: string | null = null;
+
+async function bootstrapWithTimeout(
+  runtimeId: string,
+  actorPtid: string | null,
+): Promise<BootstrapOutcome> {
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+  const timeout = new Promise<'timeout'>((resolve) => {
+    timeoutHandle = setTimeout(
+      () => resolve('timeout'),
+      BOOTSTRAP_TIMEOUT_MS,
+    );
+  });
+  const completion = bootstrapRuntime(runtimeId, actorPtid);
+  const bootstrap = completion.then(() => 'done' as const);
 
   const result = await Promise.race([bootstrap, timeout]);
+  if (result === 'done' && timeoutHandle !== null) {
+    clearTimeout(timeoutHandle);
+  }
   if (result === 'timeout') {
     log.warn('boot', `bootstrap.timeout: ${runtimeId} exceeded ${BOOTSTRAP_TIMEOUT_MS}ms — entering degraded mode`, {
       runtimeId,
       timeoutMs: BOOTSTRAP_TIMEOUT_MS,
     });
   }
+  return {
+    completion,
+    timedOut: result === 'timeout',
+  };
 }
 
 /**
@@ -135,23 +172,95 @@ export async function installCriticalRuntimes(
  * the active actor. Runs during the `runtime:idle` window so first paint
  * is unaffected.
  */
-export async function installIdleRuntimes(
+export function installIdleRuntimes(
   actorPtid: string | null,
   criticalSessionRuntimes: ReadonlyArray<string>,
 ): Promise<void> {
-  if (!actorPtid) return;
+  if (!actorPtid) return Promise.resolve();
+  if (idleRuntimeReadyActorPtid === actorPtid) return Promise.resolve();
+  if (idleRuntimeInstall) {
+    if (
+      idleRuntimeInstall.actorPtid === actorPtid
+      && idleRuntimeInstall.generation === idleRuntimeGeneration
+    ) {
+      return idleRuntimeInstall.promise;
+    }
+    return idleRuntimeInstall.promise.then(
+      () => installIdleRuntimes(actorPtid, criticalSessionRuntimes),
+    );
+  }
+
+  const generation = idleRuntimeGeneration;
+  const install: IdleRuntimeInstall = {
+    actorPtid,
+    generation,
+    promise: Promise.resolve(),
+    status: 'running',
+  };
+  install.promise = installIdleRuntimesForActor(
+    install,
+    criticalSessionRuntimes,
+  ).finally(() => {
+    if (idleRuntimeInstall === install) {
+      idleRuntimeInstall = null;
+    }
+  });
+  idleRuntimeInstall = install;
+  return install.promise;
+}
+
+async function installIdleRuntimesForActor(
+  install: IdleRuntimeInstall,
+  criticalSessionRuntimes: ReadonlyArray<string>,
+): Promise<void> {
   markPhaseStart('runtime:idle');
   const installed: string[] = [];
-  for (const desc of listRuntimes('session')) {
-    if (criticalSessionRuntimes.includes(desc.id)) continue;
-    installRuntime(desc.id);
-    await bootstrapWithTimeout(desc.id, actorPtid);
-    installed.push(desc.id);
+  try {
+    for (const desc of listRuntimes('session')) {
+      if (install.generation !== idleRuntimeGeneration) return;
+      if (criticalSessionRuntimes.includes(desc.id)) continue;
+      installRuntime(desc.id);
+      const outcome = await bootstrapWithTimeout(
+        desc.id,
+        install.actorPtid,
+      );
+      if (outcome.timedOut) {
+        install.status = 'degraded';
+        // The pipeline is already off the first-paint path. Keep one real
+        // bootstrap in flight so a slow native invoke cannot queue every
+        // remaining runtime behind it.
+        await outcome.completion;
+      }
+      if (install.generation !== idleRuntimeGeneration) return;
+      installed.push(desc.id);
+    }
+    idleRuntimeReadyActorPtid = install.actorPtid;
+  } finally {
+    markPhaseEnd('runtime:idle', {
+      actorPtid: install.actorPtid,
+      cancelled: install.generation !== idleRuntimeGeneration,
+      installed,
+    });
   }
-  markPhaseEnd('runtime:idle', { installed });
+}
+
+export function getIdleRuntimeInstallStatus(
+  actorPtid: string | null,
+): IdleRuntimeInstallStatus {
+  if (!actorPtid) return 'pending';
+  if (idleRuntimeReadyActorPtid === actorPtid) return 'ready';
+  if (
+    idleRuntimeInstall?.actorPtid === actorPtid
+    && idleRuntimeInstall.generation === idleRuntimeGeneration
+  ) {
+    return idleRuntimeInstall.status;
+  }
+  return 'pending';
 }
 
 export function tearDownSessionRuntimes(): void {
+  idleRuntimeGeneration += 1;
+  idleRuntimeReadyActorPtid = null;
   for (const desc of listRuntimes('session')) {
     teardownRuntime(desc.id);
   }

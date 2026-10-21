@@ -6,7 +6,7 @@ This directory contains Protocol Buffer definitions for the Peers Touch project.
 
 - **Go (Station) and TypeScript (Desktop)**: `build.sh` (macOS/Linux)
 - **Go (Station)**: `build.ps1` (Windows)
-- **Mobile (Web TypeScript/Kotlin/Swift)**: `tooling/scripts/proto-gen-mobile.sh`
+- **Mobile (shared TypeScript)**: `tooling/scripts/proto-gen-mobile.sh web`
 
 Dart/Flutter generation has been removed — that path is deprecated.
 
@@ -16,8 +16,8 @@ Dart/Flutter generation has been removed — that path is deprecated.
 # Go and Desktop TypeScript generation
 ./build.sh
 
-# Mobile generation (Web TypeScript + configured native targets)
-../tooling/scripts/proto-gen-mobile.sh
+# Shared Mobile TypeScript generation
+../tooling/scripts/proto-gen-mobile.sh web
 ```
 
 ## Directory Structure
@@ -49,13 +49,16 @@ The Conversation Authority contract family is split by resource owner:
 - `domain/social/`: relationship and Friend Request contracts.
 
 `packages/messaging-core/build.rs` compiles the portable Rust subset consumed by
-Desktop and Mobile. Platform code must not define parallel handwritten models.
+Desktop and Mobile. Kotlin/Swift native plugins generate bindings only for a
+typed OS capability contract that directly requires them; they do not maintain
+parallel Mobile business models.
 
 ## Requirements
 
 - `protoc` (Protocol Buffer Compiler)
 - `protoc-gen-go` (Go plugin)
 - `apps/desktop/node_modules/.bin/protoc-gen-es` (Desktop TypeScript plugin)
+- `apps/mobile/node_modules/.bin/protoc-gen-es` (shared Mobile TypeScript plugin)
 - `perl` (terminal-newline normalization on macOS/Linux)
 
 ## Do NOT Manually Edit Generated Files

@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Blocks, ExternalLink, EyeOff, Maximize2, Minimize2, Pin, PinOff, X } from 'lucide-react';
+import { Blocks, ExternalLink, EyeOff, Maximize2, Minimize2, X } from 'lucide-react';
 import { theme } from 'antd';
 import { Button, Tag } from '@lobehub/ui';
 
@@ -14,7 +14,6 @@ interface AppletContainerShellProps {
   readonly controlsVisible: boolean;
   readonly debugEvents: LynxDebugEvent[];
   readonly immersive: boolean;
-  readonly pinned?: boolean;
   readonly runtimeContent: ReactNode;
   readonly subtitle?: string;
   readonly version?: string;
@@ -24,7 +23,6 @@ interface AppletContainerShellProps {
   readonly onExitImmersive: () => void;
   readonly onHideControls: () => void;
   readonly onOpenStandalone: () => void;
-  readonly onPin?: () => void;
   readonly onShowControls: () => void;
 }
 
@@ -34,7 +32,6 @@ export function AppletContainerShell({
   controlsVisible,
   debugEvents,
   immersive,
-  pinned = false,
   runtimeContent,
   subtitle,
   version,
@@ -44,7 +41,6 @@ export function AppletContainerShell({
   onExitImmersive,
   onHideControls,
   onOpenStandalone,
-  onPin,
   onShowControls,
 }: AppletContainerShellProps) {
   const { t } = useTranslation('applet');
@@ -80,15 +76,6 @@ export function AppletContainerShell({
               >
                 {t('applet.runtime.fullscreen')}
               </Button>
-              {onPin && (
-                <Button
-                  size="small"
-                  onClick={onPin}
-                  icon={pinned ? <PinOff size={14} /> : <Pin size={14} />}
-                >
-                  {pinned ? t('applet.runtime.unpin') : t('applet.runtime.pin')}
-                </Button>
-              )}
               <Button
                 size="small"
                 onClick={onClose}

@@ -918,7 +918,7 @@ class ToolRuntime implements RuntimeDescriptor {
     return next;
   }
 
-  submitDecision(toolCallId: string, approved: boolean): Promise<AgentToolDecisionIntentResponse> {
+  submitDecision(toolCallId: string, approved: boolean, answer?: string): Promise<AgentToolDecisionIntentResponse> {
     const projection = this.state[toolCallId];
     if (!projection?.approvalId ||
       projection.status !== 'approval_required') {
@@ -928,7 +928,7 @@ class ToolRuntime implements RuntimeDescriptor {
       return Promise.reject(new Error(EXECUTOR_UNAVAILABLE_LOCALE_KEY));
     }
 
-    const actionKey = `${toolCallId}:${projection.decisionRevision}:${approved}`;
+    const actionKey = JSON.stringify([toolCallId, projection.decisionRevision, approved, answer ?? '']);
     const decisionId = projection.decisionId ||
       this.decisionIntentIds.get(actionKey) ||
       crypto.randomUUID();
@@ -943,6 +943,7 @@ class ToolRuntime implements RuntimeDescriptor {
       expected_revision: projection.decisionRevision,
       approved,
       idempotency_key: decisionId,
+      ...(answer !== undefined ? { answer } : {}),
     };
     const request = api.submitAgentToolDecision(input)
       .then((response) => {

@@ -45,6 +45,10 @@
 13. **Stable binding, live source**: the registry owns durable root, branch,
     profile, slot, and capability binding only. Current Git HEAD is read from
     the worktree for each operation and revalidated after OS-lock acquisition.
+14. **One Desktop install lifecycle**: `desktop-install` resolves one
+    platform adapter, freezes source identity before build, installs only the
+    native platform artifact, verifies receiver-side registration, and rolls
+    every replaced file back on failure. Adapters do not own orchestration.
 
 ## 2. System Architecture
 
@@ -413,3 +417,16 @@ The target implementation must prove:
 - Existing non-stable Profile reset never requests human authorization; missing
   capability, scope, topology, identity, and lease failures remain separately
   typed and fail closed.
+- `desktop-install` keeps one orchestrator for dependency preparation,
+  generated sources, applets, source freeze/recheck, Tauri build, install and
+  result projection. macOS owns `.app` resolution/codesign; Linux owns
+  AppImage/XDG paths and protocol registration.
+- Linux installation is user-scoped, rootless and transactional: the
+  AppImage, source receipt, launcher, desktop entry and hicolor icon are
+  staged in their destination directories, fsynced, renamed and read back.
+  A running old inode remains valid, the next launch resolves the new inode,
+  and any verification failure restores the prior files and handler.
+- Missing WebKitGTK/GTK/GLib/Soup/Rsvg build modules return
+  `DEVCTL_DEPENDENCY_MISSING` with exact `pkg-config` evidence and package
+  hints. No adapter invokes an OS package manager or silently substitutes a
+  bare debug binary.

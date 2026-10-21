@@ -50,6 +50,8 @@ services:
       context: ../..
       dockerfile: tooling/docker/station.Dockerfile
       args:
+        BUILDER_IMAGE: ${PEERS_STATION_BUILDER_IMAGE:-golang:1.24.6}
+        BASE_IMAGE: ${PEERS_STATION_BASE_IMAGE:-ubuntu:22.04}
         BUILD_COMMIT: ${PEERS_TOUCH_BUILD_COMMIT:-unknown}
         BUILD_LABEL: ${PEERS_TOUCH_BUILD_LABEL:-dev}
         BUILD_TIME: ${PEERS_TOUCH_BUILD_TIME:-unknown}

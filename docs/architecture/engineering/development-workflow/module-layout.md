@@ -1,7 +1,7 @@
 # 现有模块如何调整
 
 > **Status**: active
-> **Created**: 2026-09-16 | **Updated**: 2026-10-14
+> **Created**: 2026-09-16 | **Updated**: 2026-10-17
 > **Owner**: Platform Team
 
 本文列出[重构设计](./design.md)涉及的现有模块，供实施与检查使用。不能按目录名把 `local-dev/` 全删；其中有实际运行入口、资源锁和正式验证依赖。
@@ -14,6 +14,8 @@
 - `integration.md`：调用方清单、切换范围和具体保留检查。
 - `decisions.md`：目标设计决定及其理由，旧决定按状态区分。
 - `execution-plans/20261013-development-flow-rebuild-accepted/plan.md`：这次改造的冻结实施顺序与验收。
+- `<plan>/outcome-comparison.md`：复杂 Plan 的冻结效果合同与执行后实际结果；计划区
+  进入 Plan digest，结果区由 current-source evidence 回填。
 - `local-dev/`：运行资源的独占、权限、Profile 与清理实现；实施时同步删除任务准入耦合。
 - `toolchain/`：跨平台运行入口和依赖约定，已有 `devctl` 继续使用。
 
@@ -36,7 +38,11 @@
 
 ## 3. 计划与评审
 
-**改 `plan-package.mjs`、`planctl.mjs`。** 保留文档解析、依赖检查和显式计划选择；计划是需求实施安排，不占用整个 worktree。进度归可选任务记录；命令结果不能推导执行授权。
+**改 `plan-package.mjs`、`planctl.mjs`。** 保留文档解析、依赖检查和显式计划选择；
+当前未版本化合同同时校验 `outcome-comparison.md` 的计划区摘要、效果维度、
+Task/Gate crosswalk 和结果状态，并拒绝 `schemaVersion`。计划是需求实施安排，
+不占用整个 worktree；Outcome report 不是进度或证据真源。进度归可选任务记录；
+命令结果不能推导执行授权。
 
 **删除 `plan-mount.mjs` 的机器占用职责。** 所有消费者改用明确计划引用与任务选择；不留隐式 mount 兼容读取。已存在的机器历史不在源码删除中顺手清理。
 

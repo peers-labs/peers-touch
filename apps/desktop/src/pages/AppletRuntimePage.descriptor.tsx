@@ -1,18 +1,10 @@
 import { registerPage } from '../kernel/page';
-import { usePageContext } from '../kernel/usePageContext';
 import { AppletRuntimePage } from './AppletRuntimePage';
 
 function AppletRuntimeRoute({ pageId }: { pageId: string }) {
-  const { appletPins } = usePageContext();
   const appletId = pageId.slice('applet:'.length);
 
-  return (
-    <AppletRuntimePage
-      appletId={appletId}
-      onPin={() => appletPins.togglePin(appletId)}
-      pinned={appletPins.pinnedApplets.includes(appletId)}
-    />
-  );
+  return <AppletRuntimePage appletId={appletId} />;
 }
 
 export function registerAppletRuntimePage(): void {

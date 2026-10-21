@@ -1,0 +1,52 @@
+{
+  "id": "unified-client-secure-content-runtime",
+  "status": "active",
+  "product_area": "mobile",
+  "owners": [
+    "apps/desktop/src-tauri/src/secure_content/**",
+    "apps/desktop/src-tauri/src/social/private_*.rs",
+    "apps/mobile/src-tauri/src/secure_content/**",
+    "apps/mobile/src-tauri/src/social/**",
+    "tooling/acceptance/gates/unified_client/secure_content_owner_zero.py",
+    "tooling/acceptance/gates/mobile/unified_secure_content_suite.py"
+  ],
+  "truth_sources": [
+    "SC-D30 portable Native client-operation ownership",
+    "UCA-05 Secure Content hard-cut owner inventory",
+    "source-bound Desktop, signed iOS and physical Android Suite evidence"
+  ],
+  "visible_surfaces": [
+    {
+      "type": "native-runtime",
+      "states": [
+        "READY_PRIVATE",
+        "PUBLISHING",
+        "UNKNOWN_OUTCOME",
+        "PUBLISHED",
+        "RECOVERY_REQUIRED",
+        "REVOKED"
+      ]
+    }
+  ],
+  "required_gates": [
+    "secure-content-owner-hard-cut-zero",
+    "unified-client-secure-content-e2e"
+  ],
+  "acceptance": {
+    "architecture_assertions": [
+      "Desktop and Mobile durable submissions use core operation leases and readback decisions",
+      "Mobile private object upload uses ObjectTransferWorker with a durable Host repository",
+      "legacy Desktop and Mobile workers and duplicated operation symbols are absent"
+    ],
+    "runtime_assertions": [
+      "private publish and receiver-visible decryption converge on all release targets",
+      "Station never receives plaintext",
+      "restart recovery, revocation and object-transfer resume remain source-bound"
+    ]
+  },
+  "negative": [
+    "source checks do not replace signed iOS or physical Android evidence",
+    "missing runtime evidence remains UNPROVEN per runtime cell",
+    "Social audience, authorization and product projection stay outside secure-content-core"
+  ]
+}

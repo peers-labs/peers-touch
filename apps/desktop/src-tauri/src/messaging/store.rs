@@ -17,38 +17,56 @@ use messaging_core::attachment::{
     validate_chat_attachment_transfer_record, validate_chat_encrypted_object_descriptor,
     AttachmentTransferRepository,
 };
-pub use messaging_core::contracts::{
-    CommandResultDisposition, CommandResultReceiveCommit, CommandStatusProjection,
-    ConversationMessageProjection,
-};
 use messaging_core::contracts::{
-    CryptoEndpoint as CoreCryptoEndpoint, InteractionMutation as CoreInteractionMutation,
-    InteractionReceiveCommit as CoreInteractionReceiveCommit, MlsApplicationReceiveCommit,
+    ActorReadReceiveCommit as CoreActorReadReceiveCommit,
+    ConversationMutation as CoreConversationMutation,
+    ConversationMutationReceiveCommit as CoreConversationMutationReceiveCommit,
+    ConversationProjection as CoreConversationProjection,
+    ConversationStateReceiveCommit as CoreConversationStateReceiveCommit,
+    CryptoEndpoint as CoreCryptoEndpoint,
+    DeliveryReceiptReceiveCommit as CoreDeliveryReceiptReceiveCommit,
+    DirectEditCommit as CoreDirectEditCommit, DirectReceiveCommit as CoreDirectReceiveCommit,
+    InteractionMutation as CoreInteractionMutation,
+    InteractionReceiveCommit as CoreInteractionReceiveCommit,
+    MemberAuthorityReceiveCommit as CoreMemberAuthorityReceiveCommit, MlsApplicationReceiveCommit,
     MlsConversationProjection, MlsRetirementReceiveCommit as CoreMlsRetirementReceiveCommit,
     MlsSenderTransitionReceiveCommit as CoreMlsSenderTransitionReceiveCommit,
     MlsTransitionReceiveCommit as CoreMlsTransitionReceiveCommit,
     PendingMlsKeyPackage as CorePendingMlsKeyPackage,
     PendingMlsTransitionState as CorePendingMlsTransitionState,
+    PublicEventReceiveCommit as CorePublicEventReceiveCommit,
     ReceiveCommitResult as CoreReceiveCommitResult,
+    ServicePlaintextReceiveCommit as CoreServicePlaintextReceiveCommit,
+    SkippedEndpointReceiveCommit as CoreSkippedEndpointReceiveCommit,
+};
+pub use messaging_core::contracts::{
+    CommandResultDisposition, CommandResultReceiveCommit, CommandStatusProjection,
+    ConversationMessageProjection,
 };
 use messaging_core::crypto::prekeys::{
     PendingPreKeyBundle, PreKeyInventoryRepository, PreKeyRepository,
+};
+use messaging_core::engine::{
+    CommandReconciliation, CommandReconciliationDisposition, SubmittedCommand,
+    COMMAND_RECONCILIATION_BATCH_LIMIT,
 };
 use messaging_core::identity::{
     DeviceEnrollmentRepository, FreshDeviceEnrollment, FreshDeviceIdentityState,
     MESSAGING_DEVICE_CERTIFICATE_FORMAT_VERSION,
 };
 use messaging_core::inbox::CommandResultRepository;
-use messaging_core::outbox::{MetadataInteractionCommit, MetadataInteractionRepository};
+use messaging_core::outbox::{
+    CommandOutboxEntry, DeliveryReceiptOutboxEntry, DeliveryReceiptRepository,
+    MetadataInteractionCommit, MetadataInteractionRepository,
+};
 use messaging_core::proto::chat::{
     ChatRetentionPreset, ChatStorageOperationState, ChatStoragePolicy, ChatStorageScope,
 };
 use messaging_core::proto::{actor_device_ptid, actor_device_ref};
 use messaging_core::storage_governance::cache::{
-    cleanup_file_physical_identity, failed_file_cleanup_item, immutable_file_cleanup_item,
-    parse_storage_operation_state, storage_error_code_name, storage_operation_state_name,
-    CacheCleanupItem, CacheCleanupItemState, CacheCleanupJournalRepository, CacheCleanupOperation,
-    CACHE_SCOPE_KIND,
+    failed_file_cleanup_item, parse_storage_operation_state, storage_error_code_name,
+    storage_operation_state_name, CacheCleanupItem, CacheCleanupItemState,
+    CacheCleanupJournalRepository, CacheCleanupOperation, CACHE_SCOPE_KIND,
 };
 use messaging_core::storage_governance::conversation_clear::{
     ConversationClearCommit, ConversationClearPlan, ConversationClearRepository,
@@ -65,10 +83,15 @@ use messaging_core::storage_governance::retention::{
 use messaging_core::store::{migrate_messaging_schema, MessagingSchemaBackend};
 use messaging_core::store::{
     DirectOutboundEditCommit, DirectOutboundRepository, DirectOutboundSendCommit,
-    DirectOutboundSession, DirectSessionAdvance, MlsInboundRepository, MlsKeyPackageRepository,
-    MlsOutboundEditCommit, MlsOutboundRepository, MlsOutboundSendCommit, MlsStartupRepository,
-    MlsTransitionRepository, MlsTransitionSendCommit,
+    DirectOutboundSession, DirectSessionAdvance, MessagingRepository, MlsInboundRepository,
+    MlsKeyPackageRepository, MlsOutboundEditCommit, MlsOutboundRepository, MlsOutboundSendCommit,
+    MlsStartupRepository, MlsTransitionRepository, MlsTransitionSendCommit,
     PendingSenderProjection as CorePendingSenderProjection,
+};
+#[cfg(test)]
+use messaging_native_filesystem::NativeMessagingFilesystem;
+use messaging_native_filesystem::{
+    cleanup_file_physical_identity, immutable_file_cleanup_item, path_ref,
 };
 use prost::Message;
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
@@ -78,25 +101,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 use zeroize::Zeroizing;
-
-pub const COMMAND_RECONCILIATION_BATCH_LIMIT: usize = 64;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CommandOutboxEntry {
-    pub command_id: String,
-    pub conversation_id: String,
-    pub command_bytes: Vec<u8>,
-    pub attempt_count: u32,
-    pub next_attempt_at_unix_ms: i64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SubmittedCommand {
-    pub command_id: String,
-    pub conversation_id: String,
-    pub command_bytes: Vec<u8>,
-    pub command_sha256: Vec<u8>,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SupersededInteractionIntent {
@@ -108,30 +112,6 @@ pub struct SupersededInteractionIntent {
     pub edited_text: Option<String>,
     pub command_bytes: Vec<u8>,
     pub created_at_unix_ms: i64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CommandReconciliationDisposition {
-    HomePending,
-    Accepted,
-    Failed(String),
-    Superseded(String),
-    NotFound,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CommandReconciliation {
-    pub command_id: String,
-    pub conversation_id: String,
-    pub command_bytes: Vec<u8>,
-    pub command_sha256: Vec<u8>,
-    pub disposition: CommandReconciliationDisposition,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DeliveryReceiptOutboxEntry {
-    pub receipt_id: String,
-    pub receipt_bytes: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1134,7 +1114,7 @@ impl MessagingStore {
                         Ok(identity) => (item, identity),
                         Err(error) => (
                             Some(failed_file_cleanup_item(
-                                &path,
+                                &path_ref(&path),
                                 storage_error_code_name(error.code()),
                             )),
                             None,
@@ -1142,7 +1122,7 @@ impl MessagingStore {
                     },
                     Err(error) => (
                         Some(failed_file_cleanup_item(
-                            &path,
+                            &path_ref(&path),
                             storage_error_code_name(error.code()),
                         )),
                         None,
@@ -1719,8 +1699,7 @@ impl MessagingStore {
     pub fn next_command(&self, now_unix_ms: i64) -> Result<Option<CommandOutboxEntry>, String> {
         self.connection()?
             .query_row(
-                "SELECT command_id, conversation_id, command_bytes,
-                        attempt_count, next_attempt_at_unix_ms
+                "SELECT command_id, command_bytes, attempt_count
                  FROM messaging_command_outbox
                  WHERE state IN ('pending', 'retry_wait')
                    AND next_attempt_at_unix_ms <= ?1
@@ -1730,10 +1709,8 @@ impl MessagingStore {
                 |row| {
                     Ok(CommandOutboxEntry {
                         command_id: row.get(0)?,
-                        conversation_id: row.get(1)?,
-                        command_bytes: row.get(2)?,
-                        attempt_count: row.get(3)?,
-                        next_attempt_at_unix_ms: row.get(4)?,
+                        command_bytes: row.get(1)?,
+                        attempt_count: row.get(2)?,
                     })
                 },
             )
@@ -10301,6 +10278,528 @@ impl MessagingStore {
     }
 }
 
+impl MessagingRepository for MessagingStore {
+    fn persist_claimed_item(
+        &self,
+        item_id: &str,
+        event_id: &str,
+        conversation_id: &str,
+        lane_sequence: i64,
+        consumer_epoch: u64,
+        payload_sha256: &[u8],
+        opaque_payload: &[u8],
+        now_unix_ms: i64,
+    ) -> Result<(), String> {
+        MessagingStore::persist_claimed_item(
+            self,
+            item_id,
+            event_id,
+            conversation_id,
+            lane_sequence,
+            consumer_epoch,
+            payload_sha256,
+            opaque_payload,
+            now_unix_ms,
+        )
+    }
+
+    fn consumption_marker_matches(
+        &self,
+        item_id: &str,
+        payload_sha256: &[u8],
+    ) -> Result<bool, String> {
+        MessagingStore::consumption_marker_matches(self, item_id, payload_sha256)
+    }
+
+    fn lane_checkpoint(&self) -> Result<(i64, u64), String> {
+        MessagingStore::lane_checkpoint(self)
+    }
+
+    fn commit_conversation_state(
+        &self,
+        commit: &CoreConversationStateReceiveCommit<'_>,
+    ) -> Result<CoreReceiveCommitResult, String> {
+        let projection = desktop_core_conversation_projection(commit.projection);
+        map_receive_result(MessagingStore::commit_conversation_state(
+            self,
+            &ConversationStateReceiveCommit {
+                item_id: commit.item_id,
+                event_id: commit.event_id,
+                conversation_id: commit.conversation_id,
+                event_sequence: commit.event_sequence,
+                lane_sequence: commit.lane_sequence,
+                consumer_epoch: commit.consumer_epoch,
+                payload_sha256: commit.payload_sha256,
+                event_hash: commit.event_hash,
+                previous_event_hash: commit.previous_event_hash,
+                projection: &projection,
+                receipt_id: commit.receipt_id,
+                receipt_bytes: commit.receipt_bytes,
+                consumed_at_unix_ms: commit.consumed_at_unix_ms,
+            },
+        )?)
+    }
+
+    fn commit_member_authority_state(
+        &self,
+        commit: &CoreMemberAuthorityReceiveCommit<'_>,
+    ) -> Result<CoreReceiveCommitResult, String> {
+        let projection = desktop_core_conversation_projection(commit.state.projection);
+        map_receive_result(MessagingStore::commit_member_authority_state(
+            self,
+            &MemberAuthorityReceiveCommit {
+                state: ConversationStateReceiveCommit {
+                    item_id: commit.state.item_id,
+                    event_id: commit.state.event_id,
+                    conversation_id: commit.state.conversation_id,
+                    event_sequence: commit.state.event_sequence,
+                    lane_sequence: commit.state.lane_sequence,
+                    consumer_epoch: commit.state.consumer_epoch,
+                    payload_sha256: commit.state.payload_sha256,
+                    event_hash: commit.state.event_hash,
+                    previous_event_hash: commit.state.previous_event_hash,
+                    projection: &projection,
+                    receipt_id: commit.state.receipt_id,
+                    receipt_bytes: commit.state.receipt_bytes,
+                    consumed_at_unix_ms: commit.state.consumed_at_unix_ms,
+                },
+                command_id: commit.command_id,
+                operator_ptid: commit.operator_ptid,
+                operator_device_id: commit.operator_device_id,
+                action: commit.action,
+                target_ptid: commit.target_ptid,
+            },
+        )?)
+    }
+
+    fn commit_conversation_mutation_event(
+        &self,
+        commit: &CoreConversationMutationReceiveCommit<'_>,
+    ) -> Result<CoreReceiveCommitResult, String> {
+        let mutation = match &commit.mutation {
+            CoreConversationMutation::Update {
+                name,
+                description,
+                avatar_object_id,
+            } => ConversationMutation::Update {
+                name: *name,
+                description: *description,
+                avatar_object_id: *avatar_object_id,
+            },
+            CoreConversationMutation::Dissolve => ConversationMutation::Dissolve,
+        };
+        map_receive_result(MessagingStore::commit_conversation_mutation_event(
+            self,
+            &ConversationMutationReceiveCommit {
+                item_id: commit.item_id,
+                event_id: commit.event_id,
+                conversation_id: commit.conversation_id,
+                command_id: commit.command_id,
+                event_sequence: commit.event_sequence,
+                lane_sequence: commit.lane_sequence,
+                consumer_epoch: commit.consumer_epoch,
+                payload_sha256: commit.payload_sha256,
+                event_hash: commit.event_hash,
+                previous_event_hash: commit.previous_event_hash,
+                membership_epoch: commit.membership_epoch,
+                mls_epoch: commit.mls_epoch,
+                mutation,
+                receipt_id: commit.receipt_id,
+                receipt_bytes: commit.receipt_bytes,
+                consumed_at_unix_ms: commit.consumed_at_unix_ms,
+            },
+        )?)
+    }
+
+    fn conversation_projections(&self) -> Result<Vec<CoreConversationProjection>, String> {
+        MessagingStore::conversation_projections(self).map(|projections| {
+            projections
+                .into_iter()
+                .map(core_conversation_projection)
+                .collect()
+        })
+    }
+
+    fn commit_public_event(
+        &self,
+        commit: &CorePublicEventReceiveCommit<'_>,
+    ) -> Result<CoreReceiveCommitResult, String> {
+        map_receive_result(MessagingStore::commit_public_event(
+            self,
+            &PublicEventReceiveCommit {
+                item_id: commit.item_id,
+                event_id: commit.event_id,
+                conversation_id: commit.conversation_id,
+                command_id: commit.command_id,
+                message_id: commit.message_id,
+                event_sequence: commit.event_sequence,
+                lane_sequence: commit.lane_sequence,
+                consumer_epoch: commit.consumer_epoch,
+                payload_sha256: commit.payload_sha256,
+                event_hash: commit.event_hash,
+                previous_event_hash: commit.previous_event_hash,
+                sender_ptid: commit.sender_ptid,
+                sender_device_id: commit.sender_device_id,
+                attachments: commit.attachments,
+                reply_to_message_id: commit.reply_to_message_id,
+                thread_root_message_id: commit.thread_root_message_id,
+                committed_at_unix_ms: commit.committed_at_unix_ms,
+                receipt_id: commit.receipt_id,
+                receipt_bytes: commit.receipt_bytes,
+                consumed_at_unix_ms: commit.consumed_at_unix_ms,
+            },
+        )?)
+    }
+
+    fn commit_interaction_event(
+        &self,
+        commit: &CoreInteractionReceiveCommit<'_>,
+    ) -> Result<CoreReceiveCommitResult, String> {
+        let mutation = match &commit.mutation {
+            CoreInteractionMutation::ObserveOnly => InteractionMutation::ObserveOnly,
+            CoreInteractionMutation::Edit {
+                edited_text,
+                edited_at_unix_ms,
+            } => InteractionMutation::Edit {
+                edited_text,
+                edited_at_unix_ms: *edited_at_unix_ms,
+            },
+            CoreInteractionMutation::Retract => InteractionMutation::Retract,
+            CoreInteractionMutation::HideForActor => InteractionMutation::HideForActor,
+            CoreInteractionMutation::Moderate {
+                moderator_ptid,
+                reason_code,
+                moderated_at_unix_ms,
+            } => InteractionMutation::Moderate {
+                moderator_ptid,
+                reason_code,
+                moderated_at_unix_ms: *moderated_at_unix_ms,
+            },
+            CoreInteractionMutation::Reaction {
+                actor_ptid,
+                reaction,
+                removed,
+                created_at_unix_ms,
+            } => InteractionMutation::Reaction {
+                actor_ptid,
+                reaction,
+                removed: *removed,
+                created_at_unix_ms: *created_at_unix_ms,
+            },
+            CoreInteractionMutation::Pin {
+                actor_ptid,
+                removed,
+                pinned_at_unix_ms,
+            } => InteractionMutation::Pin {
+                actor_ptid,
+                removed: *removed,
+                pinned_at_unix_ms: *pinned_at_unix_ms,
+            },
+        };
+        map_receive_result(MessagingStore::commit_interaction_event(
+            self,
+            &InteractionReceiveCommit {
+                item_id: commit.item_id,
+                event_id: commit.event_id,
+                command_id: commit.command_id,
+                conversation_id: commit.conversation_id,
+                event_sequence: commit.event_sequence,
+                lane_sequence: commit.lane_sequence,
+                consumer_epoch: commit.consumer_epoch,
+                payload_sha256: commit.payload_sha256,
+                event_hash: commit.event_hash,
+                previous_event_hash: commit.previous_event_hash,
+                message_id: commit.message_id,
+                mutation,
+                mls_session_state: commit.mls_session_state,
+                membership_epoch: commit.membership_epoch,
+                mls_epoch: commit.mls_epoch,
+                receipt_id: commit.receipt_id,
+                receipt_bytes: commit.receipt_bytes,
+                consumed_at_unix_ms: commit.consumed_at_unix_ms,
+            },
+        )?)
+    }
+
+    fn commit_delivery_receipt(
+        &self,
+        commit: &CoreDeliveryReceiptReceiveCommit<'_>,
+    ) -> Result<(), String> {
+        MessagingStore::commit_delivery_receipt(
+            self,
+            &DeliveryReceiptReceiveCommit {
+                item_id: commit.item_id,
+                message_id: commit.message_id,
+                conversation_id: commit.conversation_id,
+                lane_sequence: commit.lane_sequence,
+                consumer_epoch: commit.consumer_epoch,
+                payload_sha256: commit.payload_sha256,
+                delivery_state: commit.delivery_state,
+                consumed_at_unix_ms: commit.consumed_at_unix_ms,
+            },
+        )
+        .map(|_| ())
+    }
+
+    fn commit_actor_read_cursor(
+        &self,
+        commit: &CoreActorReadReceiveCommit<'_>,
+    ) -> Result<(), String> {
+        MessagingStore::commit_actor_read_cursor(
+            self,
+            &ActorReadReceiveCommit {
+                item_id: commit.item_id,
+                event_id: commit.event_id,
+                conversation_id: commit.conversation_id,
+                reader_ptid: commit.reader_ptid,
+                last_read_sequence: commit.last_read_sequence,
+                lane_sequence: commit.lane_sequence,
+                consumer_epoch: commit.consumer_epoch,
+                payload_sha256: commit.payload_sha256,
+                consumed_at_unix_ms: commit.consumed_at_unix_ms,
+            },
+        )
+        .map(|_| ())
+    }
+
+    fn next_command(&self, now_unix_ms: i64) -> Result<Option<CommandOutboxEntry>, String> {
+        MessagingStore::next_command(self, now_unix_ms)
+    }
+
+    fn mark_command_submitted(
+        &self,
+        command_id: &str,
+        command_bytes: &[u8],
+        attempt_count: u32,
+    ) -> Result<(), String> {
+        MessagingStore::mark_command_submitted(self, command_id, command_bytes, attempt_count)
+    }
+
+    fn mark_command_retry(
+        &self,
+        command_id: &str,
+        command_bytes: &[u8],
+        attempt_count: u32,
+        next_attempt_at_unix_ms: i64,
+        error_code: &str,
+    ) -> Result<(), String> {
+        MessagingStore::mark_command_retry(
+            self,
+            command_id,
+            command_bytes,
+            attempt_count,
+            next_attempt_at_unix_ms,
+            error_code,
+        )
+    }
+
+    fn mark_command_failed(
+        &self,
+        command_id: &str,
+        command_bytes: &[u8],
+        attempt_count: u32,
+        error_code: &str,
+    ) -> Result<(), String> {
+        MessagingStore::mark_command_failed(
+            self,
+            command_id,
+            command_bytes,
+            attempt_count,
+            error_code,
+        )
+    }
+
+    fn mark_command_superseded(
+        &self,
+        command_id: &str,
+        command_bytes: &[u8],
+        attempt_count: u32,
+    ) -> Result<(), String> {
+        MessagingStore::mark_command_superseded(self, command_id, command_bytes, attempt_count)
+    }
+
+    fn submitted_commands(&self) -> Result<Vec<SubmittedCommand>, String> {
+        MessagingStore::submitted_commands(self)
+    }
+
+    fn apply_command_reconciliations(
+        &self,
+        reconciliations: &[CommandReconciliation],
+        retry_at_unix_ms: i64,
+    ) -> Result<(), String> {
+        MessagingStore::apply_command_reconciliations(self, reconciliations, retry_at_unix_ms)
+    }
+
+    fn authority_head(&self, conversation_id: &str) -> Result<(i64, Vec<u8>), String> {
+        MessagingStore::authority_head(self, conversation_id)
+    }
+
+    fn load_direct_session(&self, session_id: &str) -> Result<Option<DirectSession>, String> {
+        MessagingStore::load_direct_session(self, session_id)
+    }
+
+    fn load_direct_skipped_keys(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<DrSkippedMessageKey>, String> {
+        MessagingStore::load_direct_skipped_keys(self, session_id)
+    }
+
+    fn commit_direct_receive(
+        &self,
+        commit: &CoreDirectReceiveCommit<'_>,
+    ) -> Result<CoreReceiveCommitResult, String> {
+        let projection = MessageProjection {
+            conversation_id: commit.projection.conversation_id.clone(),
+            event_id: commit.projection.event_id.clone(),
+            event_sequence: commit.projection.event_sequence,
+            message_id: commit.projection.message_id.clone(),
+            sender_ptid: commit.projection.sender_ptid.clone(),
+            sender_device_id: commit.projection.sender_device_id.clone(),
+            plaintext: commit.projection.plaintext.clone(),
+            attachments: commit.projection.attachments.clone(),
+            committed_at_unix_ms: commit.projection.committed_at_unix_ms,
+            reply_to_message_id: commit.projection.reply_to_message_id.clone(),
+            thread_root_message_id: commit.projection.thread_root_message_id.clone(),
+            edited_text: None,
+            edited_at_unix_ms: None,
+            retracted: false,
+        };
+        map_receive_result(MessagingStore::commit_direct_receive(
+            self,
+            &DirectReceiveCommit {
+                item_id: commit.item_id,
+                event_id: commit.event_id,
+                conversation_id: commit.conversation_id,
+                lane_sequence: commit.lane_sequence,
+                consumer_epoch: commit.consumer_epoch,
+                payload_sha256: commit.payload_sha256,
+                event_hash: commit.event_hash,
+                previous_event_hash: commit.previous_event_hash,
+                session: commit.session,
+                new_skipped: commit.new_skipped,
+                consumed_skipped: commit.consumed_skipped,
+                consumed_one_time_prekey_id: commit.consumed_one_time_prekey_id,
+                projection: &projection,
+                reply_to_message_id: projection.reply_to_message_id.as_deref(),
+                thread_root_message_id: projection.thread_root_message_id.as_deref(),
+                receipt_id: commit.receipt_id,
+                receipt_bytes: commit.receipt_bytes,
+                consumed_at_unix_ms: commit.consumed_at_unix_ms,
+            },
+        )?)
+    }
+
+    fn commit_direct_edit(
+        &self,
+        commit: &CoreDirectEditCommit<'_>,
+    ) -> Result<CoreReceiveCommitResult, String> {
+        map_receive_result(MessagingStore::commit_direct_edit(
+            self,
+            &DirectEditCommit {
+                item_id: commit.item_id,
+                event_id: commit.event_id,
+                conversation_id: commit.conversation_id,
+                lane_sequence: commit.lane_sequence,
+                consumer_epoch: commit.consumer_epoch,
+                payload_sha256: commit.payload_sha256,
+                event_hash: commit.event_hash,
+                previous_event_hash: commit.previous_event_hash,
+                event_sequence: commit.event_sequence,
+                session: commit.session,
+                new_skipped: commit.new_skipped,
+                consumed_skipped: commit.consumed_skipped,
+                consumed_one_time_prekey_id: commit.consumed_one_time_prekey_id,
+                message_id: commit.message_id,
+                edited_text: commit.edited_text,
+                edited_at_unix_ms: commit.edited_at_unix_ms,
+                receipt_id: commit.receipt_id,
+                receipt_bytes: commit.receipt_bytes,
+                consumed_at_unix_ms: commit.consumed_at_unix_ms,
+            },
+        )?)
+    }
+
+    fn commit_service_plaintext_receive(
+        &self,
+        commit: &CoreServicePlaintextReceiveCommit<'_>,
+    ) -> Result<CoreReceiveCommitResult, String> {
+        let content_bytes = commit.projection.content.encode_to_vec();
+        let source_context_bytes = commit
+            .projection
+            .source_context
+            .as_ref()
+            .map(Message::encode_to_vec)
+            .unwrap_or_default();
+        map_receive_result(MessagingStore::commit_service_plaintext_receive(
+            self,
+            &ServicePlaintextReceiveCommit {
+                item_id: commit.item_id,
+                event_id: commit.event_id,
+                conversation_id: commit.conversation_id,
+                event_sequence: commit.event_sequence,
+                lane_sequence: commit.lane_sequence,
+                consumer_epoch: commit.consumer_epoch,
+                payload_sha256: commit.payload_sha256,
+                event_hash: commit.event_hash,
+                previous_event_hash: commit.previous_event_hash,
+                message_id: &commit.projection.message_id,
+                sender_ptid: &commit.projection.sender_ptid,
+                sender_device_id: &commit.projection.sender_device_id,
+                fallback_text: &commit.projection.fallback_text,
+                service_message: ServiceMessageCommit {
+                    source_namespace: &commit.projection.source_namespace,
+                    content_bytes: &content_bytes,
+                    source_context_bytes: &source_context_bytes,
+                },
+                committed_at_unix_ms: commit.projection.committed_at_unix_ms,
+                receipt_id: commit.receipt_id,
+                receipt_bytes: commit.receipt_bytes,
+                consumed_at_unix_ms: commit.consumed_at_unix_ms,
+            },
+        )?)
+    }
+
+    fn commit_skipped_endpoint_payload(
+        &self,
+        commit: &CoreSkippedEndpointReceiveCommit<'_>,
+    ) -> Result<CoreReceiveCommitResult, String> {
+        map_receive_result(MessagingStore::commit_skipped_endpoint_payload(
+            self,
+            &SkippedEndpointReceiveCommit {
+                item_id: commit.item_id,
+                event_id: commit.event_id,
+                conversation_id: commit.conversation_id,
+                event_sequence: commit.event_sequence,
+                lane_sequence: commit.lane_sequence,
+                consumer_epoch: commit.consumer_epoch,
+                payload_sha256: commit.payload_sha256,
+                event_hash: commit.event_hash,
+                previous_event_hash: commit.previous_event_hash,
+                receipt_id: commit.receipt_id,
+                receipt_bytes: commit.receipt_bytes,
+                consumed_at_unix_ms: commit.consumed_at_unix_ms,
+            },
+        )?)
+    }
+
+    fn load_signed_prekey(&self, id: i32) -> Result<[u8; 32], String> {
+        MessagingStore::load_signed_prekey(self, id)
+    }
+
+    fn load_one_time_prekey(&self, id: i32) -> Result<[u8; 32], String> {
+        MessagingStore::load_one_time_prekey(self, id)
+    }
+
+    fn validate_integrity(&self) -> Result<(), String> {
+        MessagingStore::validate_integrity(self)
+    }
+
+    fn prepare_for_atomic_replace(&self) -> Result<(), String> {
+        MessagingStore::prepare_for_atomic_replace(self)
+    }
+}
+
 impl CommandResultRepository for MessagingStore {
     fn persist_claimed_item(
         &self,
@@ -10422,6 +10921,29 @@ impl PreKeyInventoryRepository for MessagingStore {
 
     fn complete_prekey_replenishment(&self, one_time_prekey_ids: &[i32]) -> Result<(), String> {
         MessagingStore::complete_prekey_replenishment(self, one_time_prekey_ids)
+    }
+}
+
+impl DeliveryReceiptRepository for MessagingStore {
+    fn next_delivery_receipt(&self) -> Result<Option<DeliveryReceiptOutboxEntry>, String> {
+        MessagingStore::next_delivery_receipt(self)
+    }
+
+    fn mark_delivery_receipt_submitted(
+        &self,
+        receipt_id: &str,
+        receipt_bytes: &[u8],
+    ) -> Result<(), String> {
+        MessagingStore::mark_delivery_receipt_submitted(self, receipt_id, receipt_bytes)
+    }
+
+    fn mark_delivery_receipt_rejected(
+        &self,
+        receipt_id: &str,
+        receipt_bytes: &[u8],
+        error_code: &str,
+    ) -> Result<(), String> {
+        MessagingStore::mark_delivery_receipt_rejected(self, receipt_id, receipt_bytes, error_code)
     }
 }
 
@@ -11036,6 +11558,66 @@ pub(super) fn desktop_conversation_projection(
                 muted: member.muted,
                 muted_until_unix_ms: member.muted_until_unix_ms,
             })
+            .collect(),
+        membership_epoch: projection.membership_epoch,
+        mls_epoch: projection.mls_epoch,
+        active: projection.active,
+        updated_at_unix_ms: projection.updated_at_unix_ms,
+    }
+}
+
+fn desktop_core_conversation_projection(
+    projection: &CoreConversationProjection,
+) -> ConversationProjection {
+    ConversationProjection {
+        conversation_id: projection.conversation_id.clone(),
+        authority_station_id: projection.authority_station_id.clone(),
+        federation_id: projection.federation_id.clone(),
+        kind: projection.kind,
+        name: projection.name.clone(),
+        description: projection.description.clone(),
+        avatar_object_id: projection.avatar_object_id.clone(),
+        owner_ptid: projection.owner_ptid.clone(),
+        members: projection
+            .members
+            .iter()
+            .map(|member| ConversationMemberProjection {
+                ptid: member.ptid.clone(),
+                role: member.role,
+                home_station_peer_id: member.home_station_peer_id.clone(),
+                muted: member.muted,
+                muted_until_unix_ms: member.muted_until_unix_ms,
+            })
+            .collect(),
+        membership_epoch: projection.membership_epoch,
+        mls_epoch: projection.mls_epoch,
+        active: projection.active,
+        updated_at_unix_ms: projection.updated_at_unix_ms,
+    }
+}
+
+fn core_conversation_projection(projection: ConversationProjection) -> CoreConversationProjection {
+    CoreConversationProjection {
+        conversation_id: projection.conversation_id,
+        authority_station_id: projection.authority_station_id,
+        federation_id: projection.federation_id,
+        kind: projection.kind,
+        name: projection.name,
+        description: projection.description,
+        avatar_object_id: projection.avatar_object_id,
+        owner_ptid: projection.owner_ptid,
+        members: projection
+            .members
+            .into_iter()
+            .map(
+                |member| messaging_core::contracts::ConversationAuthorityMemberProjection {
+                    ptid: member.ptid,
+                    role: member.role,
+                    home_station_peer_id: member.home_station_peer_id,
+                    muted: member.muted,
+                    muted_until_unix_ms: member.muted_until_unix_ms,
+                },
+            )
             .collect(),
         membership_epoch: projection.membership_epoch,
         mls_epoch: projection.mls_epoch,
@@ -13387,7 +13969,7 @@ fn apply_message_redaction(
     }
     if prepared_cleanup.measurement_failed {
         cleanup_items.push(failed_file_cleanup_item(
-            Path::new("chat-storage-physical-measurement"),
+            "chat-storage-physical-measurement",
             "CHAT_STORAGE_ERROR_CODE_IO_FAILED",
         ));
     }
@@ -17454,8 +18036,9 @@ mod tests {
         std::fs::write(&path, b"replacement").unwrap();
         let changed = messaging_core::storage_governance::cache::execute_cache_cleanup(
             &store,
+            &NativeMessagingFilesystem,
             &operations[0],
-            std::slice::from_ref(&root),
+            &[path_ref(&root)],
             &[],
             21,
         )
@@ -17487,8 +18070,9 @@ mod tests {
             .unwrap();
         let progress = messaging_core::storage_governance::cache::execute_cache_cleanup(
             &store,
+            &NativeMessagingFilesystem,
             &retry,
-            std::slice::from_ref(&root),
+            &[path_ref(&root)],
             &[],
             23,
         )
@@ -17841,6 +18425,7 @@ mod tests {
                         action: crate::model::chat::ConversationMemberAuthorityAction::UpdateMember
                             as i32,
                         authority_station_peer_id: "station-local".to_string(),
+                        federation_id: "federation-1".to_string(),
                         authority_sequence: 1,
                         authority_hash: vec![7; 32],
                         client_timestamp: Some(prost_types::Timestamp {
@@ -17876,6 +18461,100 @@ mod tests {
                 .unwrap();
         }
         command_id
+    }
+
+    #[test]
+    fn core_member_authority_adapter_commits_the_exact_local_intent() {
+        let store = MessagingStore::in_memory().unwrap();
+        let command_id = prepare_non_message_test_command(&store, true);
+        let command = store.next_command(1_000).unwrap().unwrap();
+        store
+            .mark_command_submitted(command_id, &command.command_bytes, 0)
+            .unwrap();
+        <MessagingStore as MessagingRepository>::persist_claimed_item(
+            &store,
+            "member-item",
+            "member-event",
+            "conversation-1",
+            1,
+            1,
+            &[3; 32],
+            b"verified-member-delivery",
+            1_000,
+        )
+        .unwrap();
+        let projection = core_conversation_projection(ConversationProjection {
+            conversation_id: "conversation-1".to_string(),
+            authority_station_id: "station-local".to_string(),
+            federation_id: "federation-1".to_string(),
+            kind: ConversationKind::Group as i32,
+            name: "Group".to_string(),
+            description: String::new(),
+            avatar_object_id: String::new(),
+            owner_ptid: "ptid:alice".to_string(),
+            members: vec![
+                ConversationMemberProjection {
+                    ptid: "ptid:alice".to_string(),
+                    role: MemberRole::Owner as i32,
+                    home_station_peer_id: "station-local".to_string(),
+                    muted: false,
+                    muted_until_unix_ms: None,
+                },
+                ConversationMemberProjection {
+                    ptid: "ptid:bob".to_string(),
+                    role: MemberRole::Member as i32,
+                    home_station_peer_id: "station-local".to_string(),
+                    muted: false,
+                    muted_until_unix_ms: None,
+                },
+            ],
+            membership_epoch: 1,
+            mls_epoch: 0,
+            active: true,
+            updated_at_unix_ms: 1_000,
+        });
+        let commit = CoreMemberAuthorityReceiveCommit {
+            state: CoreConversationStateReceiveCommit {
+                item_id: "member-item",
+                event_id: "member-event",
+                conversation_id: "conversation-1",
+                event_sequence: 2,
+                lane_sequence: 1,
+                consumer_epoch: 1,
+                payload_sha256: &[3; 32],
+                event_hash: &[8; 32],
+                previous_event_hash: &[7; 32],
+                projection: &projection,
+                receipt_id: "member-receipt",
+                receipt_bytes: b"member-receipt",
+                consumed_at_unix_ms: 1_000,
+            },
+            command_id,
+            operator_ptid: "ptid:alice",
+            operator_device_id: "alice-device",
+            action: crate::model::chat::ConversationMemberAuthorityAction::UpdateMember as i32,
+            target_ptid: "ptid:bob",
+        };
+
+        assert_eq!(
+            <MessagingStore as MessagingRepository>::commit_member_authority_state(
+                &store, &commit,
+            )
+            .unwrap(),
+            CoreReceiveCommitResult::Committed,
+        );
+        let state: String = store
+            .connection()
+            .unwrap()
+            .query_row(
+                "SELECT state FROM messaging_member_authority_intents
+                 WHERE command_id = ?1",
+                params![command_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(state, "committed");
+        assert_eq!(store.lane_checkpoint().unwrap(), (1, 1));
     }
 
     #[test]

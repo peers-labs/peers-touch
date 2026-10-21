@@ -6390,6 +6390,42 @@ class MobileNativeInputPreflightTests(unittest.TestCase):
             ):
                 self._preflight()
 
+    def test_host_preflight_requires_only_its_physical_platform(self) -> None:
+        for platform in ("ios", "android"):
+            with self.subTest(platform=platform):
+                scenario_spec = load_mobile_native_preflight_spec(
+                    ENVIRONMENTS_DIR / "mobile-native.yaml",
+                    gate_id=f"unified-client-{platform}-host-e2e",
+                )
+                self.spec = dataclasses.replace(
+                    scenario_spec, chromedriver=self.spec.chromedriver,
+                )
+                self.executor.driver_versions = {
+                    "xcuitest": "9.10.5"
+                } if platform == "ios" else {"uiautomator2": "4.2.9"}
+                self.executor.ios_devices = {
+                    "00008030-001A2B3C4D5E601E"
+                } if platform == "ios" else set()
+                self.executor.android_devices = {
+                    "android-alice"
+                } if platform == "android" else set()
+                self._install_harness_actions()
+                with patch.dict(os.environ, self.environment, clear=True), patch(
+                    "tooling.acceptance.provisioners.mobile_native._appium_server_version",
+                    return_value="2.19.0",
+                ):
+                    result = self._preflight()
+                self.assertEqual(set(result["physicalDevices"]), {f"alice-{platform}"})
+                self.assertEqual(
+                    set(result["driverVersions"]), {platform},
+                )
+                if platform == "ios":
+                    self.assertEqual(result["chromedriver"], {})
+                    self.assertEqual(result["androidBrowsers"], {})
+                else:
+                    self.assertEqual(result["chromedriver"]["browserMajor"], 124)
+                    self.assertEqual(set(result["androidBrowsers"]), {"alice-android"})
+
     def test_resource_lease_key_is_stable_across_preflight_runs(self) -> None:
         self._install_harness_actions()
         with patch.dict(os.environ, self.environment, clear=True), patch(

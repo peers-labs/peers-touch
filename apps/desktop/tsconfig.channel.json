@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": [
+    "src/vite-env.d.ts",
+    "src/components/settings/channels/**/*.ts",
+    "src/components/settings/channels/**/*.tsx",
+    "src/runtimes/channelRuntime.ts",
+    "src/services/channelActions.ts",
+    "src/store/channel.ts",
+    "src/modules/channels.ts"
+  ]
+}

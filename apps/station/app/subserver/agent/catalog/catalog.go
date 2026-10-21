@@ -2,6 +2,8 @@ package catalog
 
 import (
 	_ "embed"
+	"strconv"
+	"strings"
 	"sync"
 
 	"gopkg.in/yaml.v2"
@@ -11,13 +13,16 @@ import (
 var defaultCatalogYAML []byte
 
 type CatalogModel struct {
-	ID              string   `yaml:"id"`
-	DisplayName     string   `yaml:"display_name"`
-	Type            string   `yaml:"type"`
-	Enabled         bool     `yaml:"enabled"`
-	ContextWindow   int      `yaml:"context_window"`
-	ThinkingControl string   `yaml:"thinking_control"`
-	Capabilities    []string `yaml:"capabilities"`
+	ID                       string   `yaml:"id"`
+	DisplayName              string   `yaml:"display_name"`
+	Description              string   `yaml:"description"`
+	Type                     string   `yaml:"type"`
+	Enabled                  bool     `yaml:"enabled"`
+	ContextWindow            int      `yaml:"context_window"`
+	ThinkingControl          string   `yaml:"thinking_control"`
+	Capabilities             []string `yaml:"capabilities"`
+	DefaultReasoningLevel    string   `yaml:"default_reasoning_level"`
+	SupportedReasoningLevels []string `yaml:"supported_reasoning_levels"`
 }
 
 type CatalogProvider struct {
@@ -35,8 +40,13 @@ type CatalogProvider struct {
 	DefaultBaseURL   string         `yaml:"default_base_url"`
 	RuntimeKind      string         `yaml:"runtime_kind"`
 	CredentialEnvKey string         `yaml:"credential_env_key"`
-	CliCommand       string         `yaml:"cli_command"`
-	ModelsCommand    string         `yaml:"models_command"`
+	CLIArgv          []string       `yaml:"cli_argv"`
+	ModelCatalogArgv []string       `yaml:"model_catalog_argv"`
+	DefaultModel     string         `yaml:"default_model"`
+	DefaultTimeout   int            `yaml:"default_timeout_seconds"`
+	WorkspacePolicy  string         `yaml:"workspace_policy"`
+	Configurable     []string       `yaml:"configurable"`
+	Capabilities     []string       `yaml:"adapter_capabilities"`
 	Models           []CatalogModel `yaml:"models"`
 }
 
@@ -70,6 +80,27 @@ func Find(id string) *CatalogProvider {
 		}
 	}
 	return nil
+}
+
+func FormatArgv(argv []string) string {
+	formatted := make([]string, 0, len(argv))
+	for _, value := range argv {
+		if strings.ContainsAny(value, " \t\"'") {
+			formatted = append(formatted, strconv.Quote(value))
+			continue
+		}
+		formatted = append(formatted, value)
+	}
+	return strings.Join(formatted, " ")
+}
+
+func (p CatalogProvider) SupportsConfiguration(field string) bool {
+	for _, candidate := range p.Configurable {
+		if candidate == field {
+			return true
+		}
+	}
+	return false
 }
 
 // SetForTesting replaces the catalog registry with the given providers.

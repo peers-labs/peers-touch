@@ -6,6 +6,8 @@
     "model/domain/mobile/reliability.proto",
     "model/domain/social/relationship.proto",
     "apps/station/app/subserver/social/**",
+    "apps/mobile/src/acceptance/contracts.ts",
+    "apps/mobile/src/acceptance/projection.ts",
     "apps/mobile/src/runtimes/commandRuntime.ts",
     "apps/mobile/src/features/chat/chatCommands.ts",
     "apps/mobile/src/features/social/contactCommands.ts",
@@ -26,7 +28,11 @@
   ],
   "acceptance": {
     "product_assertions": ["MS-PA07", "MS-PA08", "MS-PA23", "MS-PA26"],
-    "visible": ["same-Station uncertain writes converge before retry and exact-scope drafts survive restart"]
+    "visible": [
+      "same-Station uncertain writes converge before retry",
+      "a real Chat composer draft and committed history survive normal iOS Simulator process restart and SIGKILL",
+      "after a source-bound Station process outage, route Retry restores the preserved draft and history and a new message becomes receiver-visible"
+    ]
   },
   "negative": [
     "non-idempotent writes must not replay blindly",

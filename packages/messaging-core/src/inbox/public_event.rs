@@ -1,8 +1,8 @@
 use crate::codec::verification::verify_device_event_delivery;
 use crate::contracts::{
-    ConversationProjection, ConversationStateReceiveCommit, CryptoEndpoint, InteractionMutation,
-    InteractionReceiveCommit, MemberAuthorityReceiveCommit, PublicEventReceiveCommit,
-    ReceiveCommitResult,
+    ConversationMutation, ConversationMutationReceiveCommit, ConversationProjection,
+    ConversationStateReceiveCommit, CryptoEndpoint, InteractionMutation, InteractionReceiveCommit,
+    MemberAuthorityReceiveCommit, PublicEventReceiveCommit, ReceiveCommitResult,
 };
 use crate::mls::inbound::authority_snapshot_projection;
 use crate::proto::chat::{
@@ -139,6 +139,10 @@ impl<R: MessagingRepository> PublicEventProcessor<R> {
             }
             Some(conversation_event::Payload::MessagePinCommitted(fact)) => {
                 self.process_pin(item, event, fact, consumer_epoch, now, committed_at_unix_ms)
+            }
+            Some(conversation_event::Payload::ConversationUpdated(_))
+            | Some(conversation_event::Payload::ConversationDissolved(_)) => {
+                self.process_conversation_mutation(item, event, &delivery, consumer_epoch, now)
             }
             Some(conversation_event::Payload::MemberAuthorityCommitted(fact)) => {
                 self.process_member_authority(item, event, fact, &delivery, consumer_epoch, now)
@@ -393,6 +397,54 @@ impl<R: MessagingRepository> PublicEventProcessor<R> {
             },
             now,
         )?;
+        Ok(())
+    }
+
+    fn process_conversation_mutation(
+        &self,
+        item: &DurableDeviceInboxItem,
+        event: &ConversationEvent,
+        delivery: &crate::proto::chat::DeviceEventDelivery,
+        consumer_epoch: u64,
+        now: i64,
+    ) -> Result<(), String> {
+        let marker = PublicEventMarker::decode(delivery.endpoint_payload.as_slice())
+            .map_err(|_| "messaging Conversation mutation marker is invalid".to_string())?;
+        validate_authority_marker_bindings(event, &marker)?;
+        let mutation = match event.payload.as_ref() {
+            Some(conversation_event::Payload::ConversationUpdated(update)) => {
+                ConversationMutation::Update {
+                    name: update.name.as_deref(),
+                    description: update.description.as_deref(),
+                    avatar_object_id: update.avatar_object_id.as_deref(),
+                }
+            }
+            Some(conversation_event::Payload::ConversationDissolved(_)) => {
+                ConversationMutation::Dissolve
+            }
+            _ => return Err("messaging Conversation mutation is unsupported".to_string()),
+        };
+        let receipt = self.build_receipt(item, event, now);
+        let receipt_bytes = receipt.encode_to_vec();
+        self.store
+            .commit_conversation_mutation_event(&ConversationMutationReceiveCommit {
+                item_id: &item.item_id,
+                event_id: &event.event_id,
+                conversation_id: &event.conversation_id,
+                command_id: &event.command_id,
+                event_sequence: event.sequence,
+                lane_sequence: item.lane_sequence,
+                consumer_epoch,
+                payload_sha256: &item.payload_sha256,
+                event_hash: &event.event_hash,
+                previous_event_hash: &event.previous_hash,
+                membership_epoch: event.membership_epoch,
+                mls_epoch: event.mls_epoch,
+                mutation,
+                receipt_id: &receipt.receipt_id,
+                receipt_bytes: &receipt_bytes,
+                consumed_at_unix_ms: now,
+            })?;
         Ok(())
     }
 

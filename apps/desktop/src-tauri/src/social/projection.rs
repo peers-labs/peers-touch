@@ -2777,7 +2777,8 @@ mod tests {
 
     #[test]
     fn federated_private_text_decrypts_exact_receiver_projection() {
-        use crate::secure_content::store::{PublicationState, StoredPublication};
+        use crate::secure_content::store::StoredPublication;
+        use secure_content_core::operation::OperationState;
 
         let response_bytes = hex::decode(
             include_str!(
@@ -2864,9 +2865,12 @@ mod tests {
                     pool_epoch: envelope.principal_epoch,
                     request_sha256: Sha256::digest(&publication_bytes).into(),
                     request_bytes: publication_bytes,
-                    state: PublicationState::PendingPublication,
+                    state: OperationState::Pending,
                     lease_generation: 0,
                     session_generation: 0,
+                    attempt_count: 0,
+                    next_attempt_at_unix_ms: 0,
+                    updated_at_unix_ms: 1,
                 },
                 &[(
                     binding.recipient_key_id.clone(),

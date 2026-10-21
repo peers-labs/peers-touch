@@ -2,18 +2,27 @@ package com.peers.touch.mobile.platformpermissions
 
 import android.Manifest
 import android.app.Activity
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
+import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
+import android.provider.Settings
 import android.util.Base64
+import android.webkit.WebView
 import androidx.activity.result.ActivityResult
 import androidx.core.app.ActivityCompat
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.FileProvider
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType as WorkNetworkType
@@ -32,10 +41,13 @@ import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSArray
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.CountDownLatch
+import com.google.firebase.FirebaseApp
+import com.google.firebase.messaging.FirebaseMessaging
+import com.google.firebase.messaging.FirebaseMessagingService
+import com.google.firebase.messaging.RemoteMessage
+import org.json.JSONArray
+import org.json.JSONObject
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.io.File
 import java.io.FileOutputStream
@@ -46,6 +58,16 @@ private const val ERROR_INVALID_KIND = "PLATFORM_PERMISSION_INVALID_KIND"
 private const val ERROR_REQUEST_IN_PROGRESS = "PLATFORM_PERMISSION_REQUEST_IN_PROGRESS"
 private const val LIFECYCLE_EVENT = "lifecycle"
 private const val NETWORK_EVENT = "network"
+private const val PUSH_INTENT_MARKER = "peers_push_tap"
+private const val PUSH_NOTIFICATION_ID = "notification_id"
+private const val PUSH_CATEGORY = "category"
+private const val PUSH_TARGET_HINT = "target_hint"
+private const val PUSH_ISSUED_AT_MS = "issued_at_ms"
+private const val PUSH_EXPIRES_AT_MS = "expires_at_ms"
+private const val PUSH_NOTIFICATION_CHANNEL = "peers-touch-activity"
+
+private fun validScopeToken(value: String): Boolean =
+    value.length == 64 && value.all { it in '0'..'9' || it in 'a'..'f' }
 
 @InvokeArg
 class PermissionArgs {
@@ -53,9 +75,22 @@ class PermissionArgs {
 }
 
 @InvokeArg
+class CapabilityObservationArgs {
+    lateinit var capability: String
+}
+
+@InvokeArg
+class SystemActionArgs {
+    lateinit var kind: String
+    var text: String? = null
+    var url: String? = null
+}
+
+@InvokeArg
 class PushArmArgs {
     var lifecycleGeneration: Long = 0
     lateinit var environment: String
+    lateinit var scopeToken: String
 }
 
 @InvokeArg
@@ -75,6 +110,13 @@ class MediaPickArgs {
     var maxItemCount: Int = 0
     var maxTotalBytes: Long = 0
 }
+
+private data class ActiveMediaPick(
+    val args: MediaPickArgs,
+    val invoke: Invoke,
+    val captureUri: Uri? = null,
+    val captureFile: File? = null,
+)
 
 @TauriPlugin(
     permissions = [
@@ -105,14 +147,20 @@ class PlatformPermissionsPlugin(private val activity: Activity) : Plugin(activit
     private var permissionRequestInProgress = false
     private var pushLifecycleGeneration: Long? = null
     private var pushEnvironment: String? = null
-    private val pushSequence = AtomicLong(0)
-    private val pendingPushCallbacks = mutableListOf<JSObject>()
-    private val pendingScheduledCallbacks = mutableListOf<JSObject>()
-    private var activeMediaPick: Pair<MediaPickArgs, Invoke>? = null
+    private var activeMediaPick: ActiveMediaPick? = null
 
     init {
         activeInstance = this
         File(activity.cacheDir, "peers-touch-native-picker").deleteRecursively()
+    }
+
+    override fun load(webView: WebView) {
+        super.load(webView)
+        ingestNotificationTap(activity.intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        ingestNotificationTap(intent)
     }
 
     @Command
@@ -165,6 +213,98 @@ class PlatformPermissionsPlugin(private val activity: Activity) : Plugin(activit
     }
 
     @Command
+    fun observeCapability(invoke: Invoke) {
+        execute(invoke, "observe-capability") {
+            val capability = invoke.parseArgs(
+                CapabilityObservationArgs::class.java,
+            ).capability
+            val (state, source, detail) = capabilityObservation(capability)
+            val response = JSObject()
+            response.put("state", state)
+            response.put("source", source)
+            response.put("detail", detail)
+            response.put("timestampMs", System.currentTimeMillis())
+            invoke.resolve(response)
+        }
+    }
+
+    @Command
+    fun executeSystemAction(invoke: Invoke) {
+        execute(invoke, "execute-system-action") {
+            val args = invoke.parseArgs(SystemActionArgs::class.java)
+            activity.runOnUiThread {
+                try {
+                    when (args.kind) {
+                        "open_app_settings" -> {
+                            val intent = Intent(
+                                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                Uri.parse("package:${activity.packageName}"),
+                            )
+                            resolveActivityAction(invoke, intent)
+                        }
+                        "open_external_url" -> {
+                            val uri = args.url?.let(Uri::parse)
+                            if (uri == null || uri.scheme !in setOf("http", "https")) {
+                                resolveSystemAction(
+                                    invoke,
+                                    "failed",
+                                    "invalid_external_url",
+                                )
+                            } else {
+                                resolveActivityAction(
+                                    invoke,
+                                    Intent(Intent.ACTION_VIEW, uri),
+                                )
+                            }
+                        }
+                        "share" -> {
+                            val text = args.text?.takeIf { it.isNotBlank() }
+                            if (text == null) {
+                                resolveSystemAction(
+                                    invoke,
+                                    "failed",
+                                    "share_text_missing",
+                                )
+                            } else {
+                                val body = buildString {
+                                    append(text)
+                                    args.url?.takeIf { it.isNotBlank() }?.let {
+                                        append('\n')
+                                        append(it)
+                                    }
+                                }
+                                val share = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_TEXT, body)
+                                }
+                                resolveActivityAction(
+                                    invoke,
+                                    Intent.createChooser(share, null),
+                                )
+                            }
+                        }
+                        "return_to_system" -> {
+                            activity.finishAfterTransition()
+                            resolveSystemAction(invoke, "completed", null)
+                        }
+                        else -> resolveSystemAction(
+                            invoke,
+                            "unavailable",
+                            "unsupported_system_action",
+                        )
+                    }
+                } catch (_: Exception) {
+                    resolveSystemAction(
+                        invoke,
+                        "failed",
+                        "system_action_failed",
+                    )
+                }
+            }
+        }
+    }
+
+    @Command
     fun startNetworkObservation(invoke: Invoke) {
         execute(invoke, "start-network-observation") {
             synchronized(this) {
@@ -209,6 +349,7 @@ class PlatformPermissionsPlugin(private val activity: Activity) : Plugin(activit
             if (
                 args.lifecycleGeneration <= 0
                 || (args.environment != "development" && args.environment != "production")
+                || !validScopeToken(args.scopeToken)
             ) {
                 invoke.reject("invalid push arm request", "PLATFORM_PUSH_INVALID_ARM")
                 return@execute
@@ -216,10 +357,34 @@ class PlatformPermissionsPlugin(private val activity: Activity) : Plugin(activit
             synchronized(this) {
                 pushLifecycleGeneration = args.lifecycleGeneration
                 pushEnvironment = args.environment
-                pendingPushCallbacks.clear()
+            }
+            AndroidHostHandoff.arm(
+                activity,
+                args.lifecycleGeneration,
+                args.environment,
+                args.scopeToken,
+            )
+            val providerAvailable = FirebaseApp.getApps(activity).isNotEmpty()
+            if (providerAvailable) {
+                FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+                    if (task.isSuccessful && !task.result.isNullOrBlank()) {
+                        ingestFcmToken(activity, task.result)
+                    } else {
+                        ingestPushRegistrationFailure(
+                            activity,
+                            "fcm_token_unavailable",
+                        )
+                    }
+                }
+            } else {
+                synchronized(this) {
+                    pushLifecycleGeneration = null
+                    pushEnvironment = null
+                }
+                AndroidHostHandoff.disarm(activity)
             }
             val response = JSObject()
-            response.put("armed", true)
+            response.put("armed", providerAvailable)
             invoke.resolve(response)
         }
     }
@@ -228,10 +393,7 @@ class PlatformPermissionsPlugin(private val activity: Activity) : Plugin(activit
     fun drainPushCallbacks(invoke: Invoke) {
         execute(invoke, "drain-push-callbacks") {
             val callbacks = JSArray()
-            synchronized(this) {
-                pendingPushCallbacks.forEach(callbacks::put)
-                pendingPushCallbacks.clear()
-            }
+            AndroidHostHandoff.drainPush(activity).forEach(callbacks::put)
             val response = JSObject()
             response.put("callbacks", callbacks)
             invoke.resolve(response)
@@ -244,10 +406,8 @@ class PlatformPermissionsPlugin(private val activity: Activity) : Plugin(activit
             synchronized(this) {
                 pushLifecycleGeneration = null
                 pushEnvironment = null
-                pendingPushCallbacks.clear()
-                pendingScheduledCallbacks.clear()
             }
-            expireAllScheduled()
+            AndroidHostHandoff.disarm(activity)
             WorkManager.getInstance(activity).apply {
                 cancelUniqueWork(SCHEDULE_DEVELOPMENT_IDENTIFIER)
                 cancelUniqueWork(SCHEDULE_PRODUCTION_IDENTIFIER)
@@ -261,16 +421,24 @@ class PlatformPermissionsPlugin(private val activity: Activity) : Plugin(activit
         execute(invoke, "schedule-reconcile") {
             val args = invoke.parseArgs(PushArmArgs::class.java)
             val identifier = scheduledIdentifier(args.environment)
-            if (args.lifecycleGeneration <= 0 || identifier == null) {
+            if (
+                args.lifecycleGeneration <= 0
+                || identifier == null
+                || !validScopeToken(args.scopeToken)
+            ) {
                 invoke.reject("invalid scheduled reconcile request", "PLATFORM_SCHEDULE_INVALID")
                 return@execute
             }
             synchronized(this) {
                 pushLifecycleGeneration = args.lifecycleGeneration
                 pushEnvironment = args.environment
-                pendingScheduledCallbacks.clear()
             }
-            expireAllScheduled()
+            AndroidHostHandoff.arm(
+                activity,
+                args.lifecycleGeneration,
+                args.environment,
+                args.scopeToken,
+            )
             val request = PeriodicWorkRequestBuilder<ReconcileWorker>(
                 15,
                 TimeUnit.MINUTES,
@@ -284,6 +452,7 @@ class PlatformPermissionsPlugin(private val activity: Activity) : Plugin(activit
                     androidx.work.workDataOf(
                         SCHEDULE_IDENTIFIER_KEY to identifier,
                         SCHEDULE_GENERATION_KEY to args.lifecycleGeneration,
+                        SCHEDULE_SCOPE_TOKEN_KEY to args.scopeToken,
                     ),
                 )
                 .build()
@@ -303,6 +472,16 @@ class PlatformPermissionsPlugin(private val activity: Activity) : Plugin(activit
             response.put("identifier", identifier)
             response.put("registered", true)
             invoke.resolve(response)
+            if (
+                AndroidHostHandoff.materializeScheduledWake(
+                    activity,
+                    identifier,
+                    args.lifecycleGeneration,
+                    args.scopeToken,
+                )
+            ) {
+                emitScheduledAvailable(args.lifecycleGeneration)
+            }
         }
     }
 
@@ -310,10 +489,7 @@ class PlatformPermissionsPlugin(private val activity: Activity) : Plugin(activit
     fun drainScheduledCallbacks(invoke: Invoke) {
         execute(invoke, "drain-scheduled-callbacks") {
             val callbacks = JSArray()
-            synchronized(this) {
-                pendingScheduledCallbacks.forEach { callbacks.put(it) }
-                pendingScheduledCallbacks.clear()
-            }
+            AndroidHostHandoff.drainScheduled(activity).forEach(callbacks::put)
             val response = JSObject()
             response.put("callbacks", callbacks)
             invoke.resolve(response)
@@ -324,7 +500,13 @@ class PlatformPermissionsPlugin(private val activity: Activity) : Plugin(activit
     fun completeScheduledCallback(invoke: Invoke) {
         execute(invoke, "complete-scheduled-callback") {
             val args = invoke.parseArgs(ScheduledCompletionArgs::class.java)
-            completeScheduled(args.completionId, args.success)
+            if (args.completionId.isBlank()) {
+                invoke.reject(
+                    "invalid scheduled completion",
+                    "PLATFORM_SCHEDULE_INVALID_COMPLETION",
+                )
+                return@execute
+            }
             invoke.resolve()
         }
     }
@@ -342,13 +524,9 @@ class PlatformPermissionsPlugin(private val activity: Activity) : Plugin(activit
                     resolveMediaPick(invoke, args, "failed", JSArray(), "picker_busy")
                     return@execute
                 }
-                activeMediaPick = Pair(args, invoke)
             }
-            val intent = if (args.capability == "camera") {
+            val capture = if (args.capability == "camera") {
                 if (!isGranted(Manifest.permission.CAMERA)) {
-                    synchronized(this) {
-                        activeMediaPick = null
-                    }
                     resolveMediaPick(
                         invoke,
                         args,
@@ -358,32 +536,48 @@ class PlatformPermissionsPlugin(private val activity: Activity) : Plugin(activit
                     )
                     return@execute
                 }
-                Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+                createCameraCapture(args)
             } else {
-                Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                    addCategory(Intent.CATEGORY_OPENABLE)
-                    type = "*/*"
-                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, args.maxItemCount > 1)
-                    putExtra(Intent.EXTRA_MIME_TYPES, acceptedMimeTypes(args).toTypedArray())
-                }
+                Triple(
+                    Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = "*/*"
+                        putExtra(Intent.EXTRA_ALLOW_MULTIPLE, args.maxItemCount > 1)
+                        putExtra(
+                            Intent.EXTRA_MIME_TYPES,
+                            acceptedMimeTypes(args).toTypedArray(),
+                        )
+                    },
+                    null,
+                    null,
+                )
+            }
+            synchronized(this) {
+                activeMediaPick = ActiveMediaPick(
+                    args = args,
+                    invoke = invoke,
+                    captureUri = capture.second,
+                    captureFile = capture.third,
+                )
             }
             try {
-                startActivityForResult(invoke, intent, "mediaPickCompleted")
+                startActivityForResult(invoke, capture.first, "mediaPickCompleted")
                 activity.window.decorView.postDelayed(
                     {
                         val expired = synchronized(this) {
                             val active = activeMediaPick
-                            if (active?.first?.requestId == args.requestId) {
+                            if (active?.args?.requestId == args.requestId) {
                                 activeMediaPick = null
                                 active
                             } else {
                                 null
                             }
                         }
-                        expired?.let { (expiredArgs, expiredInvoke) ->
+                        expired?.let { active ->
+                            active.captureFile?.delete()
                             resolveMediaPick(
-                                expiredInvoke,
-                                expiredArgs,
+                                active.invoke,
+                                active.args,
                                 "expired",
                                 JSArray(),
                                 null,
@@ -409,40 +603,43 @@ class PlatformPermissionsPlugin(private val activity: Activity) : Plugin(activit
 
     @ActivityCallback
     fun mediaPickCompleted(invoke: Invoke, result: ActivityResult) {
-        val args = invoke.parseArgs(MediaPickArgs::class.java)
-        val claimed = synchronized(this) {
-            if (activeMediaPick?.first?.requestId != args.requestId) {
-                false
-            } else {
-                activeMediaPick = null
-                true
-            }
-        }
-        if (!claimed) {
-            return
-        }
+        val active = synchronized(this) {
+            val current = activeMediaPick
+            activeMediaPick = null
+            current
+        } ?: return
+        val args = active.args
         try {
             if (System.currentTimeMillis() > args.deadlineMs) {
+                active.captureFile?.delete()
                 resolveMediaPick(invoke, args, "expired", JSArray(), null)
                 return
             }
-            if (result.resultCode != Activity.RESULT_OK || result.data == null) {
+            if (result.resultCode != Activity.RESULT_OK) {
+                active.captureFile?.delete()
                 resolveMediaPick(invoke, args, "cancelled", JSArray(), null)
                 return
             }
             if (args.capability == "camera") {
-                val bitmap = result.data?.extras?.get("data") as? Bitmap
-                if (bitmap == null) {
+                val captureUri = active.captureUri
+                if (captureUri == null) {
+                    active.captureFile?.delete()
                     resolveMediaPick(invoke, args, "failed", JSArray(), "camera_result_missing")
                     return
                 }
+                val items = copyPickedUris(args, listOf(captureUri))
+                active.captureFile?.delete()
                 resolveMediaPick(
                     invoke,
                     args,
                     "selected",
-                    copyCameraBitmap(args, bitmap),
+                    items,
                     null,
                 )
+                return
+            }
+            if (result.data == null) {
+                resolveMediaPick(invoke, args, "cancelled", JSArray(), null)
                 return
             }
             val uris = mutableListOf<android.net.Uri>()
@@ -463,6 +660,7 @@ class PlatformPermissionsPlugin(private val activity: Activity) : Plugin(activit
             val items = copyPickedUris(args, uris)
             resolveMediaPick(invoke, args, "selected", items, null)
         } catch (_: Exception) {
+            active.captureFile?.delete()
             resolveMediaPick(invoke, args, "failed", JSArray(), "native_copy_failed")
         }
     }
@@ -501,12 +699,11 @@ class PlatformPermissionsPlugin(private val activity: Activity) : Plugin(activit
             networkObservationStarted = false
             pushLifecycleGeneration = null
             pushEnvironment = null
-            pendingPushCallbacks.clear()
-            pendingScheduledCallbacks.clear()
-            activeMediaPick?.let { (args, invoke) ->
+            activeMediaPick?.let { active ->
+                active.captureFile?.delete()
                 resolveMediaPick(
-                    invoke,
-                    args,
+                    active.invoke,
+                    active.args,
                     "failed",
                     JSArray(),
                     "picker_teardown",
@@ -520,95 +717,177 @@ class PlatformPermissionsPlugin(private val activity: Activity) : Plugin(activit
         super.onDestroy()
     }
 
-    private fun enqueuePushToken(
-        fcmToken: String? = null,
-        unifiedEndpoint: String? = null,
-        unifiedP256dhBase64: String? = null,
-        unifiedAuthBase64: String? = null,
-    ) {
-        val generation: Long
-        val environment: String
-        val callback: JSObject
-        synchronized(this) {
-            generation = pushLifecycleGeneration ?: return
-            environment = pushEnvironment ?: return
-            callback = JSObject()
-            callback.put("kind", "token")
-            callback.put("platform", "android")
-            callback.put("sequence", pushSequence.incrementAndGet())
-            callback.put("lifecycleGeneration", generation)
-            callback.put("environment", environment)
-            fcmToken?.let { callback.put("fcmToken", it) }
-            unifiedEndpoint?.let { callback.put("unifiedEndpoint", it) }
-            unifiedP256dhBase64?.let { callback.put("unifiedP256dhBase64", it) }
-            unifiedAuthBase64?.let { callback.put("unifiedAuthBase64", it) }
-            pendingPushCallbacks.add(callback)
-        }
-        emitPushAvailable(generation)
-    }
-
-    private fun enqueuePushWakeup(
-        kind: String,
-        notificationId: String,
-        category: Int,
-        targetHint: String,
-        issuedAtMs: Long,
-        expiresAtMs: Long,
-    ) {
-        val generation: Long
-        synchronized(this) {
-            generation = pushLifecycleGeneration ?: return
-            val callback = JSObject()
-            callback.put("kind", kind)
-            callback.put("platform", "android")
-            callback.put("sequence", pushSequence.incrementAndGet())
-            callback.put("lifecycleGeneration", generation)
-            callback.put("notificationId", notificationId)
-            callback.put("category", category)
-            callback.put("targetHint", targetHint)
-            callback.put("issuedAtMs", issuedAtMs)
-            callback.put("expiresAtMs", expiresAtMs)
-            pendingPushCallbacks.add(callback)
-        }
-        emitPushAvailable(generation)
-    }
-
     private fun emitPushAvailable(generation: Long) {
         activity.runOnUiThread {
             val payload = JSObject()
             payload.put("lifecycleGeneration", generation)
-            synchronized(this) {
-                payload.put("pendingCount", pendingPushCallbacks.size)
-            }
+            payload.put(
+                "pendingCount",
+                AndroidHostHandoff.pushCount(activity),
+            )
             trigger(PUSH_AVAILABLE_EVENT, payload)
         }
     }
 
-    private fun enqueueScheduledCallback(
-        completionId: String,
-        identifier: String,
-        sequence: Long,
-        generation: Long,
-        deadlineMs: Long,
-    ) {
-        synchronized(this) {
-            val callback = JSObject()
-            callback.put("completionId", completionId)
-            callback.put("identifier", identifier)
-            callback.put("platform", "android")
-            callback.put("sequence", sequence)
-            callback.put("lifecycleGeneration", generation)
-            callback.put("deadlineMs", deadlineMs)
-            pendingScheduledCallbacks.add(callback)
-        }
+    private fun emitScheduledAvailable(generation: Long) {
         activity.runOnUiThread {
             val payload = JSObject()
             payload.put("lifecycleGeneration", generation)
-            synchronized(this) {
-                payload.put("pendingCount", pendingScheduledCallbacks.size)
-            }
+            payload.put(
+                "pendingCount",
+                AndroidHostHandoff.scheduledCount(activity),
+            )
             trigger(SCHEDULED_AVAILABLE_EVENT, payload)
         }
+    }
+
+    private fun ingestNotificationTap(intent: Intent?) {
+        if (intent?.getBooleanExtra(PUSH_INTENT_MARKER, false) != true) {
+            return
+        }
+        intent.removeExtra(PUSH_INTENT_MARKER)
+        ingestPushReceipt(
+            activity,
+            notificationId = intent.getStringExtra(PUSH_NOTIFICATION_ID).orEmpty(),
+            category = intent.getIntExtra(PUSH_CATEGORY, 0),
+            targetHint = intent.getStringExtra(PUSH_TARGET_HINT).orEmpty(),
+            issuedAtMs = intent.getLongExtra(PUSH_ISSUED_AT_MS, 0),
+            expiresAtMs = intent.getLongExtra(PUSH_EXPIRES_AT_MS, 0),
+            tapped = true,
+        )
+    }
+
+    private fun capabilityObservation(
+        capability: String,
+    ): Triple<String, String, String?> {
+        return when (capability) {
+            "camera" -> {
+                if (!activity.packageManager.hasSystemFeature(
+                        PackageManager.FEATURE_CAMERA_ANY,
+                    )
+                ) {
+                    Triple("unavailable", "android.package-manager", "camera-hardware-missing")
+                } else {
+                    permissionCapability(
+                        permissionSnapshot(PermissionKind.Camera),
+                        "android.permission.camera",
+                    )
+                }
+            }
+            "microphone" -> permissionCapability(
+                permissionSnapshot(PermissionKind.Microphone),
+                "android.permission.microphone",
+            )
+            "photo-library" -> activityCapability(
+                Intent(Intent.ACTION_OPEN_DOCUMENT).apply { type = "image/*" },
+                "android.storage-access-framework",
+            )
+            "document-picker" -> activityCapability(
+                Intent(Intent.ACTION_OPEN_DOCUMENT).apply { type = "application/pdf" },
+                "android.storage-access-framework",
+            )
+            "notifications" -> {
+                if (!NotificationManagerCompat.from(activity).areNotificationsEnabled()) {
+                    Triple("denied", "android.notification-manager", "notifications-disabled")
+                } else {
+                    permissionCapability(
+                        permissionSnapshot(PermissionKind.Notifications),
+                        "android.permission.notifications",
+                    )
+                }
+            }
+            "push" -> {
+                when {
+                    FirebaseApp.getApps(activity).isEmpty() -> Triple(
+                        "unavailable",
+                        "android.firebase",
+                        "provider-config-missing",
+                    )
+                    !NotificationManagerCompat.from(activity).areNotificationsEnabled() -> Triple(
+                        "denied",
+                        "android.firebase",
+                        "notifications-disabled",
+                    )
+                    else -> Triple("available", "android.firebase", null)
+                }
+            }
+            "background-execution" -> {
+                try {
+                    WorkManager.getInstance(activity)
+                    Triple("available", "android.work-manager", null)
+                } catch (_: Exception) {
+                    Triple("unavailable", "android.work-manager", "work-manager-unavailable")
+                }
+            }
+            "system-settings" -> activityCapability(
+                Intent(
+                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.parse("package:${activity.packageName}"),
+                ),
+                "android.settings",
+            )
+            "share" -> activityCapability(
+                Intent(Intent.ACTION_SEND).apply { type = "text/plain" },
+                "android.intent",
+            )
+            else -> Triple("unsupported", "android.platform-host", "unknown-capability")
+        }
+    }
+
+    private fun permissionCapability(
+        snapshot: PermissionSnapshot,
+        source: String,
+    ): Triple<String, String, String?> {
+        return when (snapshot.status) {
+            PermissionStatus.Granted -> Triple("available", source, null)
+            PermissionStatus.NotDetermined -> Triple(
+                "unknown",
+                source,
+                "permission-not-determined",
+            )
+            PermissionStatus.Denied -> Triple("denied", source, "permission-denied")
+            PermissionStatus.Restricted -> Triple(
+                "restricted",
+                source,
+                "permission-restricted",
+            )
+            PermissionStatus.Unsupported -> Triple(
+                "unsupported",
+                source,
+                "permission-unsupported",
+            )
+        }
+    }
+
+    private fun activityCapability(
+        intent: Intent,
+        source: String,
+    ): Triple<String, String, String?> {
+        return if (intent.resolveActivity(activity.packageManager) == null) {
+            Triple("unavailable", source, "activity-handler-missing")
+        } else {
+            Triple("available", source, null)
+        }
+    }
+
+    private fun resolveActivityAction(invoke: Invoke, intent: Intent) {
+        if (intent.resolveActivity(activity.packageManager) == null) {
+            resolveSystemAction(invoke, "unavailable", "activity-handler-missing")
+            return
+        }
+        activity.startActivity(intent)
+        resolveSystemAction(invoke, "completed", null)
+    }
+
+    private fun resolveSystemAction(
+        invoke: Invoke,
+        state: String,
+        reason: String?,
+    ) {
+        val response = JSObject()
+        response.put("state", state)
+        reason?.let { response.put("reason", it) }
+        invoke.resolve(response)
     }
 
     private fun permissionSnapshot(kind: PermissionKind): PermissionSnapshot {
@@ -795,8 +1074,51 @@ class PlatformPermissionsPlugin(private val activity: Activity) : Plugin(activit
         val result = mutableListOf<String>()
         if ("image" in args.acceptedMediaKinds) result.add("image/*")
         if ("video" in args.acceptedMediaKinds) result.add("video/*")
-        if ("file" in args.acceptedMediaKinds) result.add("application/*")
+        if ("file" in args.acceptedMediaKinds) {
+            result.addAll(
+                listOf(
+                    "application/pdf",
+                    "application/msword",
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    "text/plain",
+                ),
+            )
+        }
         return result
+    }
+
+    private fun createCameraCapture(args: MediaPickArgs): Triple<Intent, Uri, File> {
+        val captureVideo =
+            "video" in args.acceptedMediaKinds && "image" !in args.acceptedMediaKinds
+        val root = File(
+            activity.cacheDir,
+            "peers-touch-native-picker/${args.requestId}",
+        )
+        if (!root.mkdirs() && !root.isDirectory) {
+            throw IllegalStateException("native picker cache is unavailable")
+        }
+        val destination = File(
+            root,
+            if (captureVideo) "capture-${UUID.randomUUID()}.mp4"
+            else "capture-${UUID.randomUUID()}.jpg",
+        )
+        val uri = FileProvider.getUriForFile(
+            activity,
+            "${activity.packageName}.fileprovider",
+            destination,
+        )
+        val intent = Intent(
+            if (captureVideo) MediaStore.ACTION_VIDEO_CAPTURE
+            else MediaStore.ACTION_IMAGE_CAPTURE,
+        ).apply {
+            putExtra(MediaStore.EXTRA_OUTPUT, uri)
+            clipData = ClipData.newRawUri("peers-touch-capture", uri)
+            addFlags(
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+            )
+        }
+        return Triple(intent, uri, destination)
     }
 
     private fun copyPickedUris(
@@ -867,44 +1189,6 @@ class PlatformPermissionsPlugin(private val activity: Activity) : Plugin(activit
         }
     }
 
-    private fun copyCameraBitmap(args: MediaPickArgs, bitmap: Bitmap): JSArray {
-        if ("image" !in args.acceptedMediaKinds) {
-            throw IllegalArgumentException("camera image is not accepted")
-        }
-        val root = File(
-            activity.cacheDir,
-            "peers-touch-native-picker/${args.requestId}",
-        )
-        if (!root.mkdirs() && !root.isDirectory) {
-            throw IllegalStateException("native picker cache is unavailable")
-        }
-        val destination = File(root, "${UUID.randomUUID()}.stage")
-        FileOutputStream(destination).use { output ->
-            if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 95, output)) {
-                throw IllegalStateException("camera image encoding failed")
-            }
-            output.fd.sync()
-        }
-        val bytes = destination.readBytes()
-        if (bytes.isEmpty() || bytes.size.toLong() > args.maxTotalBytes) {
-            destination.delete()
-            throw IllegalArgumentException("camera image exceeds size limit")
-        }
-        val item = JSObject()
-        item.put("localPath", destination.absolutePath)
-        item.put("mediaKind", "image")
-        item.put("mimeType", "image/jpeg")
-        item.put("byteLength", bytes.size.toLong())
-        item.put(
-            "sha256Base64",
-            Base64.encodeToString(
-                MessageDigest.getInstance("SHA-256").digest(bytes),
-                Base64.NO_WRAP,
-            ),
-        )
-        return JSArray().apply { put(item) }
-    }
-
     private fun resolveMediaPick(
         invoke: Invoke,
         args: MediaPickArgs,
@@ -930,34 +1214,57 @@ class PlatformPermissionsPlugin(private val activity: Activity) : Plugin(activit
             "com.peers.touch.mobile.reconcile.v1.production"
         internal const val SCHEDULE_IDENTIFIER_KEY = "peers_schedule_identifier"
         internal const val SCHEDULE_GENERATION_KEY = "peers_schedule_generation"
-        private val scheduledSequence = AtomicLong(0)
-        private val scheduledCompletions =
-            ConcurrentHashMap<String, ScheduledCompletion>()
+        internal const val SCHEDULE_SCOPE_TOKEN_KEY = "peers_schedule_scope_token"
 
         @Volatile
         private var activeInstance: PlatformPermissionsPlugin? = null
 
-        fun ingestFcmToken(token: String) {
-            if (token.isNotBlank()) {
-                activeInstance?.enqueuePushToken(fcmToken = token)
-            }
+        fun ingestFcmToken(context: Context, token: String) {
+            if (token.isBlank()) return
+            val generation = AndroidHostHandoff.enqueuePush(
+                context,
+                "token",
+            ) { callback, scope ->
+                callback.put("environment", scope.environment)
+                callback.put("fcmToken", token)
+            } ?: return
+            activeInstance?.emitPushAvailable(generation)
         }
 
         fun ingestUnifiedPushEndpoint(
+            context: Context,
             endpoint: String,
             p256dhBase64: String,
             authBase64: String,
         ) {
             if (endpoint.isNotBlank() && p256dhBase64.isNotBlank() && authBase64.isNotBlank()) {
-                activeInstance?.enqueuePushToken(
-                    unifiedEndpoint = endpoint,
-                    unifiedP256dhBase64 = p256dhBase64,
-                    unifiedAuthBase64 = authBase64,
-                )
+                val generation = AndroidHostHandoff.enqueuePush(
+                    context,
+                    "token",
+                ) { callback, scope ->
+                    callback.put("environment", scope.environment)
+                    callback.put("unifiedEndpoint", endpoint)
+                    callback.put("unifiedP256dhBase64", p256dhBase64)
+                    callback.put("unifiedAuthBase64", authBase64)
+                } ?: return
+                activeInstance?.emitPushAvailable(generation)
             }
         }
 
+        fun ingestPushRegistrationFailure(context: Context, errorCode: String) {
+            if (errorCode.isBlank()) return
+            val generation = AndroidHostHandoff.enqueuePush(
+                context,
+                "registration_failed",
+            ) { callback, scope ->
+                callback.put("environment", scope.environment)
+                callback.put("errorCode", errorCode)
+            } ?: return
+            activeInstance?.emitPushAvailable(generation)
+        }
+
         fun ingestPushReceipt(
+            context: Context,
             notificationId: String,
             category: Int,
             targetHint: String,
@@ -965,61 +1272,56 @@ class PlatformPermissionsPlugin(private val activity: Activity) : Plugin(activit
             expiresAtMs: Long,
             tapped: Boolean,
         ) {
-            activeInstance?.enqueuePushWakeup(
-                kind = if (tapped) "tap" else "receipt",
-                notificationId = notificationId,
-                category = category,
-                targetHint = targetHint,
-                issuedAtMs = issuedAtMs,
-                expiresAtMs = expiresAtMs,
-            )
+            if (
+                notificationId.isBlank()
+                || category !in 1..4
+                || targetHint.isBlank()
+                || issuedAtMs <= 0
+                || expiresAtMs <= issuedAtMs
+            ) {
+                return
+            }
+            val generation = AndroidHostHandoff.enqueuePush(
+                context,
+                if (tapped) "tap" else "receipt",
+            ) { callback, _ ->
+                callback.put("notificationId", notificationId)
+                callback.put("category", category)
+                callback.put("targetHint", targetHint)
+                callback.put("issuedAtMs", issuedAtMs)
+                callback.put("expiresAtMs", expiresAtMs)
+            } ?: return
+            activeInstance?.emitPushAvailable(generation)
         }
 
         internal fun ingestScheduledCallback(
+            context: Context,
             identifier: String,
             generation: Long,
-        ): ScheduledCallbackHandle? {
-            val plugin = activeInstance ?: return null
-            val acceptsCallback = synchronized(plugin) {
-                val environment = plugin.pushEnvironment
-                plugin.pushLifecycleGeneration == generation
-                    && environment != null
-                    && scheduledIdentifier(environment) == identifier
-            }
-            if (!acceptsCallback) {
-                return null
-            }
-            val sequence = scheduledSequence.incrementAndGet()
-            val completionId = "$identifier:$sequence"
-            val completion = ScheduledCompletion()
-            scheduledCompletions[completionId] = completion
-            plugin.enqueueScheduledCallback(
-                completionId = completionId,
+            scopeToken: String,
+        ): Boolean {
+            val accepted = AndroidHostHandoff.enqueueScheduled(
+                context = context,
                 identifier = identifier,
-                sequence = sequence,
                 generation = generation,
-                deadlineMs = System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(25),
+                scopeToken = scopeToken,
             )
-            return ScheduledCallbackHandle(completionId, completion)
-        }
-
-        private fun completeScheduled(completionId: String, success: Boolean) {
-            scheduledCompletions.remove(completionId)?.complete(success)
-        }
-
-        internal fun expireScheduled(completionId: String) {
-            scheduledCompletions.remove(completionId)?.complete(false)
-        }
-
-        private fun expireAllScheduled() {
-            for ((completionId, completion) in scheduledCompletions.entries) {
-                if (scheduledCompletions.remove(completionId, completion)) {
-                    completion.complete(false)
-                }
+            if (
+                accepted
+                && activeInstance != null
+                && AndroidHostHandoff.materializeScheduledWake(
+                    context,
+                    identifier,
+                    generation,
+                    scopeToken,
+                )
+            ) {
+                activeInstance?.emitScheduledAvailable(generation)
             }
+            return accepted
         }
 
-        private fun scheduledIdentifier(environment: String): String? {
+        internal fun scheduledIdentifier(environment: String): String? {
             return when (environment) {
                 "development" -> SCHEDULE_DEVELOPMENT_IDENTIFIER
                 "production" -> SCHEDULE_PRODUCTION_IDENTIFIER
@@ -1029,28 +1331,338 @@ class PlatformPermissionsPlugin(private val activity: Activity) : Plugin(activit
     }
 }
 
-internal data class ScheduledCallbackHandle(
-    val completionId: String,
-    val completion: ScheduledCompletion,
+private data class AndroidPushScope(
+    val generation: Long,
+    val environment: String,
+    val scopeToken: String,
 )
 
-internal class ScheduledCompletion {
-    private val latch = CountDownLatch(1)
-    private val completed = AtomicBoolean(false)
+private object AndroidHostHandoff {
+    private const val STORE = "peers-touch-platform-host-v1"
+    private const val GENERATION = "push_generation"
+    private const val ENVIRONMENT = "push_environment"
+    private const val SCOPE_TOKEN = "push_scope_token"
+    private const val PUSH_SEQUENCE = "push_sequence"
+    private const val SCHEDULE_SEQUENCE = "schedule_sequence"
+    private const val PUSH_CALLBACKS = "push_callbacks"
+    private const val SCHEDULED_CALLBACKS = "scheduled_callbacks"
+    private const val PENDING_SCHEDULED_WAKE = "pending_scheduled_wake"
+    private const val MAX_CALLBACKS = 64
+    private val lock = Any()
 
-    @Volatile
-    private var success = false
-
-    fun complete(value: Boolean) {
-        if (!completed.compareAndSet(false, true)) {
-            return
+    fun arm(
+        context: Context,
+        generation: Long,
+        environment: String,
+        scopeToken: String,
+    ) {
+        synchronized(lock) {
+            val preferences = preferences(context)
+            val sameScope =
+                preferences.getString(SCOPE_TOKEN, null) == scopeToken
+                    && preferences.getString(ENVIRONMENT, null) == environment
+            val pushCallbacks = if (sameScope) {
+                rebindGeneration(readArray(preferences, PUSH_CALLBACKS), generation)
+            } else {
+                JSONArray()
+            }
+            val scheduledCallbacks = if (sameScope) {
+                rebindGeneration(
+                    readArray(preferences, SCHEDULED_CALLBACKS),
+                    generation,
+                )
+            } else {
+                JSONArray()
+            }
+            preferences.edit().apply {
+                putLong(GENERATION, generation)
+                putString(ENVIRONMENT, environment)
+                putString(SCOPE_TOKEN, scopeToken)
+                putString(PUSH_CALLBACKS, pushCallbacks.toString())
+                putString(SCHEDULED_CALLBACKS, scheduledCallbacks.toString())
+                if (!sameScope) {
+                    putLong(PUSH_SEQUENCE, 0)
+                    putLong(SCHEDULE_SEQUENCE, 0)
+                    putBoolean(PENDING_SCHEDULED_WAKE, false)
+                }
+            }.commit()
         }
-        success = value
-        latch.countDown()
     }
 
-    fun await(): Boolean? {
-        return if (latch.await(25, TimeUnit.SECONDS)) success else null
+    fun disarm(context: Context) {
+        synchronized(lock) {
+            preferences(context).edit()
+                .remove(GENERATION)
+                .remove(ENVIRONMENT)
+                .remove(SCOPE_TOKEN)
+                .remove(PUSH_SEQUENCE)
+                .remove(SCHEDULE_SEQUENCE)
+                .remove(PUSH_CALLBACKS)
+                .remove(SCHEDULED_CALLBACKS)
+                .remove(PENDING_SCHEDULED_WAKE)
+                .commit()
+        }
+    }
+
+    fun enqueuePush(
+        context: Context,
+        kind: String,
+        configure: (JSObject, AndroidPushScope) -> Unit,
+    ): Long? {
+        synchronized(lock) {
+            val preferences = preferences(context)
+            val scope = scope(preferences) ?: return null
+            val sequence = preferences.getLong(PUSH_SEQUENCE, 0) + 1
+            val callback = JSObject()
+            callback.put("kind", kind)
+            callback.put("platform", "android")
+            callback.put("sequence", sequence)
+            callback.put("lifecycleGeneration", scope.generation)
+            configure(callback, scope)
+            val callbacks = readArray(preferences, PUSH_CALLBACKS)
+            appendBounded(callbacks, JSONObject(callback.toString()))
+            preferences.edit()
+                .putLong(PUSH_SEQUENCE, sequence)
+                .putString(PUSH_CALLBACKS, callbacks.toString())
+                .commit()
+            return scope.generation
+        }
+    }
+
+    fun enqueueScheduled(
+        context: Context,
+        identifier: String,
+        generation: Long,
+        scopeToken: String,
+    ): Boolean {
+        synchronized(lock) {
+            val preferences = preferences(context)
+            val scope = scope(preferences) ?: return false
+            if (
+                scope.generation != generation
+                || scope.scopeToken != scopeToken
+                || PlatformPermissionsPlugin.scheduledIdentifier(scope.environment) != identifier
+            ) {
+                return false
+            }
+            preferences.edit().putBoolean(PENDING_SCHEDULED_WAKE, true).commit()
+            return true
+        }
+    }
+
+    fun materializeScheduledWake(
+        context: Context,
+        identifier: String,
+        generation: Long,
+        scopeToken: String,
+    ): Boolean {
+        synchronized(lock) {
+            val preferences = preferences(context)
+            val scope = scope(preferences) ?: return false
+            if (
+                !preferences.getBoolean(PENDING_SCHEDULED_WAKE, false)
+                || scope.generation != generation
+                || scope.scopeToken != scopeToken
+                || PlatformPermissionsPlugin.scheduledIdentifier(scope.environment) != identifier
+            ) {
+                return false
+            }
+            val sequence = preferences.getLong(SCHEDULE_SEQUENCE, 0) + 1
+            val callback = JSONObject()
+                .put("completionId", "$identifier:$sequence")
+                .put("identifier", identifier)
+                .put("platform", "android")
+                .put("sequence", sequence)
+                .put("lifecycleGeneration", generation)
+                .put(
+                    "deadlineMs",
+                    System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(25),
+                )
+            val callbacks = readArray(preferences, SCHEDULED_CALLBACKS)
+            appendBounded(callbacks, callback)
+            preferences.edit()
+                .putBoolean(PENDING_SCHEDULED_WAKE, false)
+                .putLong(SCHEDULE_SEQUENCE, sequence)
+                .putString(SCHEDULED_CALLBACKS, callbacks.toString())
+                .commit()
+            return true
+        }
+    }
+
+    fun drainPush(context: Context): List<JSObject> =
+        drain(context, PUSH_CALLBACKS)
+
+    fun drainScheduled(context: Context): List<JSObject> =
+        drain(context, SCHEDULED_CALLBACKS)
+
+    fun pushCount(context: Context): Int = count(context, PUSH_CALLBACKS)
+
+    fun scheduledCount(context: Context): Int =
+        count(context, SCHEDULED_CALLBACKS)
+
+    private fun drain(context: Context, key: String): List<JSObject> {
+        synchronized(lock) {
+            val preferences = preferences(context)
+            val callbacks = readArray(preferences, key)
+            preferences.edit().putString(key, "[]").commit()
+            return (0 until callbacks.length()).mapNotNull { index ->
+                callbacks.optJSONObject(index)?.let {
+                    JSObject(it.toString())
+                }
+            }
+        }
+    }
+
+    private fun count(context: Context, key: String): Int {
+        synchronized(lock) {
+            return readArray(preferences(context), key).length()
+        }
+    }
+
+    private fun scope(
+        preferences: android.content.SharedPreferences,
+    ): AndroidPushScope? {
+        val generation = preferences.getLong(GENERATION, 0)
+        val environment = preferences.getString(ENVIRONMENT, null)
+            ?: return null
+        val scopeToken = preferences.getString(SCOPE_TOKEN, null)
+            ?: return null
+        if (
+            generation <= 0
+            || environment !in setOf("development", "production")
+            || !validScopeToken(scopeToken)
+        ) {
+            return null
+        }
+        return AndroidPushScope(generation, environment, scopeToken)
+    }
+
+    private fun readArray(
+        preferences: android.content.SharedPreferences,
+        key: String,
+    ): JSONArray {
+        return try {
+            JSONArray(preferences.getString(key, "[]"))
+        } catch (_: Exception) {
+            JSONArray()
+        }
+    }
+
+    private fun appendBounded(array: JSONArray, value: JSONObject) {
+        if (array.length() >= MAX_CALLBACKS) {
+            array.remove(0)
+        }
+        array.put(value)
+    }
+
+    private fun rebindGeneration(
+        callbacks: JSONArray,
+        generation: Long,
+    ): JSONArray {
+        for (index in 0 until callbacks.length()) {
+            callbacks.optJSONObject(index)?.put(
+                "lifecycleGeneration",
+                generation,
+            )
+        }
+        return callbacks
+    }
+
+    private fun preferences(context: Context) =
+        context.applicationContext.getSharedPreferences(
+            STORE,
+            Context.MODE_PRIVATE,
+        )
+}
+
+class PeersFirebaseMessagingService : FirebaseMessagingService() {
+    override fun onNewToken(token: String) {
+        PlatformPermissionsPlugin.ingestFcmToken(applicationContext, token)
+    }
+
+    override fun onMessageReceived(message: RemoteMessage) {
+        val data = message.data
+        val notificationId = data[PUSH_NOTIFICATION_ID].orEmpty()
+        val category = data[PUSH_CATEGORY]?.toIntOrNull() ?: 0
+        val targetHint = data[PUSH_TARGET_HINT].orEmpty()
+        val issuedAtMs = data[PUSH_ISSUED_AT_MS]?.toLongOrNull() ?: 0
+        val expiresAtMs = data[PUSH_EXPIRES_AT_MS]?.toLongOrNull() ?: 0
+        PlatformPermissionsPlugin.ingestPushReceipt(
+            applicationContext,
+            notificationId,
+            category,
+            targetHint,
+            issuedAtMs,
+            expiresAtMs,
+            tapped = false,
+        )
+        showNotification(
+            notificationId,
+            category,
+            targetHint,
+            issuedAtMs,
+            expiresAtMs,
+        )
+    }
+
+    private fun showNotification(
+        notificationId: String,
+        category: Int,
+        targetHint: String,
+        issuedAtMs: Long,
+        expiresAtMs: Long,
+    ) {
+        if (
+            notificationId.isBlank()
+            || category !in 1..4
+            || targetHint.isBlank()
+            || issuedAtMs <= 0
+            || expiresAtMs <= System.currentTimeMillis()
+            || !NotificationManagerCompat.from(this).areNotificationsEnabled()
+        ) {
+            return
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val manager = getSystemService(NotificationManager::class.java)
+            manager.createNotificationChannel(
+                NotificationChannel(
+                    PUSH_NOTIFICATION_CHANNEL,
+                    "Peers activity",
+                    NotificationManager.IMPORTANCE_DEFAULT,
+                ),
+            )
+        }
+        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+            ?: return
+        launchIntent.apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(PUSH_INTENT_MARKER, true)
+            putExtra(PUSH_NOTIFICATION_ID, notificationId)
+            putExtra(PUSH_CATEGORY, category)
+            putExtra(PUSH_TARGET_HINT, targetHint)
+            putExtra(PUSH_ISSUED_AT_MS, issuedAtMs)
+            putExtra(PUSH_EXPIRES_AT_MS, expiresAtMs)
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            this,
+            notificationId.hashCode(),
+            launchIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val icon = applicationInfo.icon.takeIf { it != 0 }
+            ?: android.R.drawable.ic_dialog_info
+        val notification = NotificationCompat.Builder(
+            this,
+            PUSH_NOTIFICATION_CHANNEL,
+        )
+            .setSmallIcon(icon)
+            .setContentTitle("Peers")
+            .setContentText("New activity")
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+            .build()
+        NotificationManagerCompat.from(this)
+            .notify(notificationId.hashCode(), notification)
     }
 }
 
@@ -1066,19 +1678,19 @@ class ReconcileWorker(
             PlatformPermissionsPlugin.SCHEDULE_GENERATION_KEY,
             0,
         )
-        if (generation <= 0) {
+        val scopeToken = inputData.getString(
+            PlatformPermissionsPlugin.SCHEDULE_SCOPE_TOKEN_KEY,
+        ).orEmpty()
+        if (generation <= 0 || !validScopeToken(scopeToken)) {
             return Result.failure()
         }
-        val handle = PlatformPermissionsPlugin.ingestScheduledCallback(
+        PlatformPermissionsPlugin.ingestScheduledCallback(
+            applicationContext,
             identifier,
             generation,
-        ) ?: return Result.success()
-        val completed = handle.completion.await()
-        PlatformPermissionsPlugin.expireScheduled(handle.completionId)
-        return when (completed) {
-            true -> Result.success()
-            false, null -> Result.retry()
-        }
+            scopeToken,
+        )
+        return Result.success()
     }
 }
 

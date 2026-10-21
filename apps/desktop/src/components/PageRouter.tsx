@@ -1,8 +1,7 @@
 import { lazy, Suspense } from 'react';
 
-import { getModule } from '../modules/registry';
 import { getPage } from '../kernel/page';
-import type { Page, Navigation, AppletPins, HashRouter } from '../types/navigation';
+import type { Page, Navigation, HashRouter } from '../types/navigation';
 
 const AgentCanvasPage = lazy(() => import('../pages/AgentCanvasPage').then((m) => ({ default: m.AgentCanvasPage })));
 const AgentProfilePage = lazy(() => import('../pages/AgentProfilePage').then((m) => ({ default: m.AgentProfilePage })));
@@ -11,7 +10,6 @@ interface PageRouterProps {
   page: Page;
   router: HashRouter;
   navigation: Navigation;
-  appletPins: AppletPins;
 }
 
 export function PageRouter({ page, router, navigation }: PageRouterProps) {
@@ -35,7 +33,6 @@ function EphemeralPage({ page, router, navigation }: Pick<PageRouterProps, 'page
         <AgentProfilePage
           agentName={router.profileAgentName}
           onBack={() => navigation.navigateToAgentSurface(router.profileAgentName, 'chat')}
-          onOpenOrchestration={() => navigation.navigateTo('agent-orchestration')}
         />
       );
 
@@ -48,14 +45,7 @@ function EphemeralPage({ page, router, navigation }: Pick<PageRouterProps, 'page
       );
     }
 
-    default: {
-      const mod = getModule(page);
-      if (mod?.page) {
-        const PageComp = mod.page;
-        return <PageComp onNavigate={(p: string) => navigation.navigateTo(p)} />;
-      }
-
+    default:
       return null;
-    }
   }
 }

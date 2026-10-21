@@ -193,6 +193,42 @@ class MobileMessagingJourney:
             "totalElapsedMs": total_elapsed_ms,
         }
 
+    def wait_for_authenticated_runtime(
+        self,
+        session: MessagingJourneySession,
+        actor: MessagingActor,
+    ) -> int:
+        return self._await_authenticated_runtime_scope(session, actor)
+
+    def wait_for_conversation(
+        self,
+        session: MessagingJourneySession,
+        conversation_id: str,
+        *,
+        kind: int,
+    ) -> int:
+        return self._await_conversation(
+            session,
+            conversation_id,
+            kind=kind,
+        )
+
+    def wait_for_message(
+        self,
+        session: MessagingJourneySession,
+        conversation_id: str,
+        message_id: str,
+        predicate: Callable[[Mapping[str, Any]], bool],
+        label: str,
+    ) -> tuple[dict[str, Any], int]:
+        return self._await_message(
+            session,
+            conversation_id,
+            message_id,
+            predicate,
+            label,
+        )
+
     def run_chat_contacts(
         self,
         *,

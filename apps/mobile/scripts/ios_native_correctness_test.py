@@ -139,12 +139,10 @@ class IOSOAuthCallbackRegistrationTest(unittest.TestCase):
 
 class IOSProjectGenerationTest(unittest.TestCase):
     def test_system_configuration_framework_is_linked(self) -> None:
-        project_spec = yaml.safe_load(
-            PROJECT_SPEC_PATH.read_text(encoding="utf-8")
-        )
-        dependencies = project_spec["targets"][
-            "peers-touch-mobile_iOS"
-        ]["dependencies"]
+        project = yaml.safe_load(PROJECT_SPEC_PATH.read_text(encoding="utf-8"))
+        dependencies = project["targets"]["peers-touch-mobile_iOS"][
+            "dependencies"
+        ]
         self.assertIn(
             {"sdk": "SystemConfiguration.framework"},
             dependencies,
@@ -395,7 +393,14 @@ class NativePushSchedulerAndPickerSourceContractTest(unittest.TestCase):
             self.assertIn(identifier, android)
             self.assertIn(identifier, rust)
         self.assertIn("setTaskCompleted(success:", swift)
-        self.assertIn("compareAndSet(false, true)", android)
+        worker = android.split("class ReconcileWorker", maxsplit=1)[1].split(
+            "private enum class PermissionKind",
+            maxsplit=1,
+        )[0]
+        self.assertIn("ingestScheduledCallback", worker)
+        self.assertNotIn("activeInstance", worker)
+        self.assertIn("PENDING_SCHEDULED_WAKE", android)
+        self.assertIn("SCHEDULE_SCOPE_TOKEN_KEY", android)
         self.assertIn("complete_scheduled_callback", rust)
         self.assertNotIn("dispatchBusinessCommand", swift)
         self.assertNotIn("dispatchBusinessCommand", android)

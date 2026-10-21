@@ -160,6 +160,13 @@ pub struct StationRouteBindingProjection {
     pub transport_origin: String,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StationRouteRefreshProjection {
+    binding: StationRouteBindingProjection,
+    route: StationRouteCandidate,
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VerifiedStationIdentity {
@@ -187,6 +194,55 @@ struct StandardTransportRuntime {
 }
 
 impl RouteRuntime {
+    fn commit_refresh(
+        &self,
+        previous: &ActiveRoute,
+        discovery: &VerifiedDiscovery,
+    ) -> MobileResult<ActiveRoute> {
+        let candidate = discovery
+            .projection
+            .routes
+            .iter()
+            .find(|candidate| {
+                candidate.station_peer_id == previous.candidate.station_peer_id
+                    && candidate.route_id == previous.candidate.route_id
+            })
+            .ok_or_else(|| route_error("routeGenerationRevoked"))?;
+        let route_revision = refreshed_revision(previous, candidate, previous.route_revision)?;
+        let mut active = self
+            .active
+            .write()
+            .map_err(|_| route_error("runtimeLock"))?;
+        if active.as_ref().is_none_or(|current| {
+            current.candidate != previous.candidate
+                || current.route_revision != previous.route_revision
+        }) {
+            return Err(route_error("routeChanged"));
+        }
+        if candidate == &previous.candidate {
+            return Ok(previous.clone());
+        }
+        let refreshed = ActiveRoute {
+            candidate: candidate.clone(),
+            route_revision,
+        };
+        self.discovered
+            .write()
+            .map_err(|_| route_error("runtimeLock"))?
+            .insert(
+                (
+                    candidate.station_peer_id.clone(),
+                    candidate.route_id.clone(),
+                ),
+                CachedRoute {
+                    candidate: candidate.clone(),
+                    source_input: discovery.source_input.clone(),
+                },
+            );
+        *active = Some(refreshed.clone());
+        Ok(refreshed)
+    }
+
     fn register(&self, discovery: &VerifiedDiscovery) -> MobileResult<()> {
         let mut routes = self
             .discovered
@@ -473,9 +529,17 @@ pub fn station_route_activate(
 pub async fn station_route_restore(
     storage: State<'_, SecureStorage>,
     input: StationRouteRestoreInput,
-) -> MobileResult<StationRouteBindingProjection> {
+) -> MobileResult<StationRouteRefreshProjection> {
     let station_peer_id = clean_identifier(&input.station_peer_id, "stationPeerId")?;
     let route_id = clean_identifier(&input.route_id, "routeId")?;
+    if input.route_revision == 0 {
+        return Err(route_error("routeRevisionInvalid"));
+    }
+    let previous = ROUTES
+        .active
+        .read()
+        .map_err(|_| route_error("runtimeLock"))?
+        .clone();
     let source = if input.source_ref.trim().is_empty() {
         normalize_origin(&input.endpoint_origin)?
     } else {
@@ -487,16 +551,76 @@ pub async fn station_route_restore(
     let discovery = tauri::async_runtime::spawn_blocking(move || discover_station_input(&source))
         .await
         .map_err(|_| discovery_error("runtimeUnavailable"))??;
-    let exact = discovery.projection.routes.iter().any(|route| {
-        route.station_peer_id == station_peer_id
-            && route.route_id == route_id
-            && route.route_generation == input.route_generation
-    });
-    if !exact {
+    let candidate = discovery
+        .projection
+        .routes
+        .iter()
+        .find(|route| {
+            route.station_peer_id == station_peer_id
+                && route.route_id == route_id
+                && route.route_generation == input.route_generation
+        })
+        .ok_or_else(|| route_error("routeGenerationRevoked"))?;
+    ensure_route_current(candidate)?;
+    let transport_origin = ROUTES.ensure_proxy()?;
+    let mut active = ROUTES
+        .active
+        .write()
+        .map_err(|_| route_error("runtimeLock"))?;
+    let unchanged = match (active.as_ref(), previous.as_ref()) {
+        (None, None) => true,
+        (Some(current), Some(previous)) => {
+            current.candidate == previous.candidate
+                && current.route_revision == previous.route_revision
+        }
+        _ => false,
+    };
+    if !unchanged {
+        return Err(route_error("routeChanged"));
+    }
+    let mut revision = input.route_revision;
+    if let Some(previous) = previous.as_ref().filter(|previous| {
+        previous.candidate.station_peer_id == station_peer_id
+            && previous.candidate.route_id == route_id
+    }) {
+        revision = refreshed_revision(previous, candidate, revision)?;
+    }
+    let restored = ActiveRoute {
+        candidate: candidate.clone(),
+        route_revision: revision,
+    };
+    ROUTES.register(&discovery)?;
+    *active = Some(restored.clone());
+    Ok(StationRouteRefreshProjection {
+        binding: binding_projection(&restored, transport_origin),
+        route: restored.candidate,
+    })
+}
+
+fn refreshed_revision(
+    previous: &ActiveRoute,
+    candidate: &StationRouteCandidate,
+    revision_floor: u64,
+) -> MobileResult<u64> {
+    if candidate.station_root_public_key != previous.candidate.station_root_public_key
+        || candidate.node_peer_id != previous.candidate.node_peer_id
+        || candidate.authorization_epoch != previous.candidate.authorization_epoch
+        || candidate.route_generation != previous.candidate.route_generation
+    {
         return Err(route_error("routeGenerationRevoked"));
     }
-    ROUTES.register(&discovery)?;
-    ROUTES.activate(&station_peer_id, &route_id, input.route_revision)
+    ensure_route_current(candidate)?;
+    let revision = revision_floor.max(previous.route_revision);
+    if candidate == &previous.candidate {
+        return Ok(revision);
+    }
+    if candidate.attestation_expires_at_unix_ms <= previous.candidate.attestation_expires_at_unix_ms
+    {
+        return Err(route_error("refreshNotNewer"));
+    }
+    revision
+        .checked_add(1)
+        .ok_or_else(|| route_error("routeRevisionInvalid"))
 }
 
 #[tauri::command]
@@ -525,6 +649,33 @@ pub fn station_route_snapshot() -> MobileResult<Option<StationRouteBindingProjec
     };
     let origin = ROUTES.ensure_proxy()?;
     Ok(Some(binding_projection(&active, origin)))
+}
+
+#[tauri::command]
+pub async fn station_route_refresh(
+    input: StationRouteSelectionInput,
+) -> MobileResult<StationRouteRefreshProjection> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let previous = ROUTES.active_snapshot()?;
+        if previous.candidate.station_peer_id != input.station_peer_id
+            || previous.candidate.route_id != input.route_id
+            || previous.route_revision != input.route_revision
+        {
+            return Err(route_error("routeChanged"));
+        }
+        let cached = ROUTES.cached(
+            &previous.candidate.station_peer_id,
+            &previous.candidate.route_id,
+        )?;
+        let discovery = discover_station_input(&cached.source_input)?;
+        let refreshed = ROUTES.commit_refresh(&previous, &discovery)?;
+        Ok(StationRouteRefreshProjection {
+            binding: binding_projection(&refreshed, ROUTES.ensure_proxy()?),
+            route: refreshed.candidate,
+        })
+    })
+    .await
+    .map_err(|_| route_error("runtimeUnavailable"))?
 }
 
 #[tauri::command]

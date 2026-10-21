@@ -7,6 +7,12 @@ use secure_content_core::object::{
     ObjectDescriptor, ObjectTransferDirection, ObjectTransferErrorCode, ObjectTransferFailure,
     ObjectTransferRecord, ObjectTransferState,
 };
+use secure_content_core::operation::{
+    acquire_operation, apply_readback_decision, complete_operation, recover_interrupted_operation,
+    ContentPreKeyPoolKind, DispatchCause, OperationCompletion, OperationFence, OperationKind,
+    OperationLease, OperationRecord, OperationState, PreparedContentPreKeyPublication,
+    ReadbackDecision,
+};
 use secure_content_core::ports::ObjectTransferRepository;
 use sha2::{Digest, Sha256};
 
@@ -15,33 +21,6 @@ use crate::infrastructure::local_scope;
 use crate::infrastructure::storage::{self, key_provider::PlatformKeyProvider};
 
 const MAX_REACTION_RETRY_AFTER_SECONDS: u64 = 300;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(i64)]
-pub enum PublicationState {
-    PendingPublication = 1,
-    InFlight = 2,
-    UnknownCommit = 3,
-    Published = 4,
-    Terminal = 5,
-    CommittedPendingReadback = 6,
-}
-
-impl TryFrom<i64> for PublicationState {
-    type Error = String;
-
-    fn try_from(value: i64) -> Result<Self, Self::Error> {
-        match value {
-            1 => Ok(Self::PendingPublication),
-            2 => Ok(Self::InFlight),
-            3 => Ok(Self::UnknownCommit),
-            4 => Ok(Self::Published),
-            5 => Ok(Self::Terminal),
-            6 => Ok(Self::CommittedPendingReadback),
-            _ => Err("secure content publication state is invalid".to_string()),
-        }
-    }
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(i64)]
@@ -139,15 +118,39 @@ pub struct StoredPublication {
     pub pool_epoch: u64,
     pub request_bytes: Vec<u8>,
     pub request_sha256: [u8; 32],
-    pub state: PublicationState,
+    pub state: OperationState,
     pub lease_generation: u64,
     pub session_generation: u64,
+    pub attempt_count: u32,
+    pub next_attempt_at_unix_ms: i64,
+    pub updated_at_unix_ms: i64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AcquiredPublication {
     pub command: StoredPublication,
-    pub reconciles_unknown_commit: bool,
+    pub lease: OperationLease,
+}
+
+impl StoredPublication {
+    fn operation_record(&self) -> Result<OperationRecord, String> {
+        let record = OperationRecord {
+            operation_id: self.command_id.clone(),
+            command_id: self.command_id.clone(),
+            kind: OperationKind::ContentPreKeyPublication,
+            state: self.state,
+            command_sha256: self.request_sha256,
+            session_generation: self.session_generation,
+            lease_generation: self.lease_generation,
+            attempt_count: self.attempt_count,
+            next_attempt_at_unix_ms: self.next_attempt_at_unix_ms,
+            updated_at_unix_ms: self.updated_at_unix_ms,
+        };
+        record
+            .validate_command_bytes(&self.request_bytes)
+            .map_err(|error| error.to_string())?;
+        Ok(record)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -169,9 +172,40 @@ pub struct StoredMomentCommand {
     pub request_bytes: Vec<u8>,
     pub request_sha256: [u8; 32],
     pub root_key: [u8; 32],
-    pub state: PublicationState,
+    pub state: OperationState,
+    pub lease_generation: u64,
     pub session_generation: u64,
+    pub attempt_count: u32,
+    pub next_attempt_at_unix_ms: i64,
+    pub updated_at_unix_ms: i64,
     pub post_id: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AcquiredMomentCommand {
+    pub command: StoredMomentCommand,
+    pub lease: OperationLease,
+}
+
+impl StoredMomentCommand {
+    pub(crate) fn operation_record(&self) -> Result<OperationRecord, String> {
+        let record = OperationRecord {
+            operation_id: self.submit_command_id.clone(),
+            command_id: self.submit_command_id.clone(),
+            kind: OperationKind::OwnerSubmission,
+            state: self.state,
+            command_sha256: self.request_sha256,
+            session_generation: self.session_generation,
+            lease_generation: self.lease_generation,
+            attempt_count: self.attempt_count,
+            next_attempt_at_unix_ms: self.next_attempt_at_unix_ms,
+            updated_at_unix_ms: self.updated_at_unix_ms,
+        };
+        record
+            .validate_command_bytes(&self.request_bytes)
+            .map_err(|error| error.to_string())?;
+        Ok(record)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -203,13 +237,58 @@ pub struct StoredCommentDraft {
     pub request_bytes: Option<Vec<u8>>,
     pub request_sha256: Option<[u8; 32]>,
     pub root_key: Option<[u8; 32]>,
-    pub publication_state: Option<PublicationState>,
+    pub publication_state: Option<OperationState>,
+    pub lease_generation: u64,
     pub session_generation: u64,
+    pub attempt_count: u32,
+    pub next_attempt_at_unix_ms: i64,
+    pub updated_at_unix_ms: i64,
     pub comment_id: Option<String>,
     pub state: CommentState,
     pub error_code: Option<String>,
     pub retry_after_seconds: Option<u64>,
     pub retry_not_before_unix_ms: Option<i64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AcquiredCommentSubmission {
+    pub draft: StoredCommentDraft,
+    pub lease: OperationLease,
+}
+
+impl StoredCommentDraft {
+    pub(crate) fn operation_record(&self) -> Result<OperationRecord, String> {
+        let command_id = self
+            .submit_command_id
+            .as_ref()
+            .ok_or_else(|| "secure content Comment command ID is unavailable".to_string())?;
+        let command_bytes = self
+            .request_bytes
+            .as_deref()
+            .ok_or_else(|| "secure content Comment command bytes are unavailable".to_string())?;
+        let command_sha256 = self
+            .request_sha256
+            .ok_or_else(|| "secure content Comment command hash is unavailable".to_string())?;
+        let state = self
+            .publication_state
+            .ok_or_else(|| "secure content Comment operation state is unavailable".to_string())?;
+        let record = OperationRecord {
+            operation_id: command_id.clone(),
+            command_id: command_id.clone(),
+            kind: OperationKind::OwnerSubmission,
+            state,
+            command_sha256,
+            session_generation: self.session_generation,
+            lease_generation: self.lease_generation,
+            attempt_count: self.attempt_count,
+            next_attempt_at_unix_ms: self.next_attempt_at_unix_ms,
+            updated_at_unix_ms: self.updated_at_unix_ms,
+        };
+        record
+            .validate_command_bytes(command_bytes)
+            .map_err(|error| error.to_string())?;
+        Ok(record)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -362,42 +441,9 @@ impl SecureContentStore {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|error| error.to_string())?;
-        let publications = transaction
-            .execute(
-                "UPDATE secure_content_prekey_commands
-                 SET state = ?1, updated_at_unix_ms = unixepoch('subsec') * 1000
-                 WHERE state = ?2",
-                params![
-                    PublicationState::UnknownCommit as i64,
-                    PublicationState::InFlight as i64
-                ],
-            )
-            .map_err(|error| error.to_string())?;
-        let moments = transaction
-            .execute(
-                "UPDATE secure_content_moment_commands
-                 SET state = ?1, updated_at_unix_ms = unixepoch('subsec') * 1000
-                 WHERE state = ?2",
-                params![
-                    PublicationState::UnknownCommit as i64,
-                    PublicationState::InFlight as i64
-                ],
-            )
-            .map_err(|error| error.to_string())?;
-        let comments = transaction
-            .execute(
-                "UPDATE secure_content_comment_drafts
-                 SET publication_state = ?1, state = ?2,
-                     error_code = 'COMMENT_SUBMIT_RESULT_UNKNOWN',
-                     updated_at_unix_ms = unixepoch('subsec') * 1000
-                 WHERE publication_state = ?3",
-                params![
-                    PublicationState::UnknownCommit as i64,
-                    CommentState::Failed as i64,
-                    PublicationState::InFlight as i64,
-                ],
-            )
-            .map_err(|error| error.to_string())?;
+        let publications = recover_prekey_publications(&transaction, None)?;
+        let moments = recover_moment_commands(&transaction, None)?;
+        let comments = recover_comment_submissions(&transaction, None)?;
         let reactions = transaction
             .execute(
                 "UPDATE secure_content_reaction_commands
@@ -430,45 +476,9 @@ impl SecureContentStore {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|error| error.to_string())?;
         let session_generation = to_i64(session_generation, "session generation")?;
-        let publications = transaction
-            .execute(
-                "UPDATE secure_content_prekey_commands
-                 SET state = ?1, updated_at_unix_ms = unixepoch('subsec') * 1000
-                 WHERE state = ?2 AND session_generation = ?3",
-                params![
-                    PublicationState::UnknownCommit as i64,
-                    PublicationState::InFlight as i64,
-                    session_generation,
-                ],
-            )
-            .map_err(|error| error.to_string())?;
-        let moments = transaction
-            .execute(
-                "UPDATE secure_content_moment_commands
-                 SET state = ?1, updated_at_unix_ms = unixepoch('subsec') * 1000
-                 WHERE state = ?2 AND session_generation = ?3",
-                params![
-                    PublicationState::UnknownCommit as i64,
-                    PublicationState::InFlight as i64,
-                    session_generation,
-                ],
-            )
-            .map_err(|error| error.to_string())?;
-        let comments = transaction
-            .execute(
-                "UPDATE secure_content_comment_drafts
-                 SET publication_state = ?1, state = ?2,
-                     error_code = 'COMMENT_SUBMIT_RESULT_UNKNOWN',
-                     updated_at_unix_ms = unixepoch('subsec') * 1000
-                 WHERE publication_state = ?3 AND session_generation = ?4",
-                params![
-                    PublicationState::UnknownCommit as i64,
-                    CommentState::Failed as i64,
-                    PublicationState::InFlight as i64,
-                    session_generation,
-                ],
-            )
-            .map_err(|error| error.to_string())?;
+        let publications = recover_prekey_publications(&transaction, Some(session_generation))?;
+        let moments = recover_moment_commands(&transaction, Some(session_generation))?;
+        let comments = recover_comment_submissions(&transaction, Some(session_generation))?;
         let reactions = transaction
             .execute(
                 "UPDATE secure_content_reaction_commands
@@ -492,10 +502,15 @@ impl SecureContentStore {
         command: &StoredPublication,
         keys: &[(String, Option<[u8; 32]>, [u8; 32])],
     ) -> Result<(), String> {
+        let key_material_matches_kind = match command.key_kind {
+            1 => !keys.is_empty(),
+            2 => keys.is_empty(),
+            _ => false,
+        };
         if command.command_id.trim().is_empty()
             || command.request_bytes.is_empty()
-            || keys.is_empty()
             || keys.len() > 100
+            || !key_material_matches_kind
             || Sha256::digest(&command.request_bytes).as_slice() != command.request_sha256
         {
             return Err("secure content publication journal input is invalid".to_string());
@@ -508,8 +523,9 @@ impl SecureContentStore {
             .execute(
                 "INSERT INTO secure_content_prekey_commands(
                     command_id, key_kind, pool_epoch, request_bytes, request_sha256,
-                    state, lease_generation, session_generation, updated_at_unix_ms
-                 ) VALUES(?1, ?2, ?3, ?4, ?5, ?6, 0, 0, ?7)
+                    state, lease_generation, session_generation, attempt_count,
+                    next_attempt_at_unix_ms, updated_at_unix_ms
+                 ) VALUES(?1, ?2, ?3, ?4, ?5, ?6, 0, 0, 0, 0, ?7)
                  ON CONFLICT(command_id) DO NOTHING",
                 params![
                     command.command_id,
@@ -517,7 +533,7 @@ impl SecureContentStore {
                     to_i64(command.pool_epoch, "pool epoch")?,
                     command.request_bytes,
                     command.request_sha256.as_slice(),
-                    PublicationState::PendingPublication as i64,
+                    OperationState::Pending as i64,
                     now_unix_ms(),
                 ],
             )
@@ -567,23 +583,60 @@ impl SecureContentStore {
         transaction.commit().map_err(|error| error.to_string())
     }
 
+    pub fn persist_prepared_prekey_publication(
+        &self,
+        prepared: &PreparedContentPreKeyPublication,
+    ) -> Result<(), String> {
+        prepared
+            .operation
+            .validate_command_bytes(&prepared.proof_free_request_bytes)
+            .map_err(|error| error.to_string())?;
+        let command = StoredPublication {
+            command_id: prepared.operation.command_id.clone(),
+            key_kind: match prepared.kind {
+                ContentPreKeyPoolKind::Endpoint => 1,
+                ContentPreKeyPoolKind::ActorRecovery => 2,
+            },
+            pool_epoch: prepared.pool_epoch,
+            request_bytes: prepared.proof_free_request_bytes.clone(),
+            request_sha256: prepared.operation.command_sha256,
+            state: prepared.operation.state,
+            lease_generation: prepared.operation.lease_generation,
+            session_generation: prepared.operation.session_generation,
+            attempt_count: prepared.operation.attempt_count,
+            next_attempt_at_unix_ms: prepared.operation.next_attempt_at_unix_ms,
+            updated_at_unix_ms: prepared.operation.updated_at_unix_ms,
+        };
+        let keys = zeroize::Zeroizing::new(
+            prepared
+                .endpoint_keys
+                .iter()
+                .map(|key| (key.key_id.clone(), Some(key.private_key), key.public_key))
+                .collect::<Vec<_>>(),
+        );
+        self.persist_prekey_publication(&command, keys.as_slice())
+    }
+
     pub fn publications_requiring_reconciliation(&self) -> Result<Vec<StoredPublication>, String> {
         let connection = self.connection()?;
         let mut statement = connection
             .prepare(
                 "SELECT command_id, key_kind, pool_epoch, request_bytes,
-                        request_sha256, state, lease_generation, session_generation
+                        request_sha256, state, lease_generation, session_generation,
+                        attempt_count, next_attempt_at_unix_ms, updated_at_unix_ms
                  FROM secure_content_prekey_commands
-                 WHERE state IN (?1, ?2, ?3)
+                 WHERE state IN (?1, ?2)
+                    OR (state = ?3 AND next_attempt_at_unix_ms <= ?4)
                  ORDER BY updated_at_unix_ms, command_id",
             )
             .map_err(|error| error.to_string())?;
         let rows = statement
             .query_map(
                 params![
-                    PublicationState::PendingPublication as i64,
-                    PublicationState::InFlight as i64,
-                    PublicationState::UnknownCommit as i64
+                    OperationState::Pending as i64,
+                    OperationState::UnknownOutcome as i64,
+                    OperationState::RetryWait as i64,
+                    now_unix_ms(),
                 ],
                 publication_from_row,
             )
@@ -602,138 +655,122 @@ impl SecureContentStore {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|error| error.to_string())?;
-        let prior_state = transaction
-            .query_row(
-                "SELECT state FROM secure_content_prekey_commands WHERE command_id = ?1",
-                params![command_id],
-                |row| PublicationState::try_from(row.get::<_, i64>(0)?).map_err(conversion_error),
-            )
-            .map_err(|error| error.to_string())?;
-        let changed = transaction
-            .execute(
-                "UPDATE secure_content_prekey_commands
-                 SET state = ?1,
-                     lease_generation = lease_generation + 1,
-                     session_generation = ?2,
-                     updated_at_unix_ms = ?3
-                 WHERE command_id = ?4 AND state IN (?5, ?6, ?7)",
-                params![
-                    PublicationState::InFlight as i64,
-                    to_i64(session_generation, "session generation")?,
-                    now_unix_ms(),
-                    command_id,
-                    PublicationState::PendingPublication as i64,
-                    PublicationState::UnknownCommit as i64,
-                    PublicationState::InFlight as i64,
-                ],
-            )
-            .map_err(|error| error.to_string())?;
-        if changed != 1 {
-            return Err("secure content publication is not retryable".to_string());
-        }
         let command = transaction
             .query_row(
                 "SELECT command_id, key_kind, pool_epoch, request_bytes,
-                        request_sha256, state, lease_generation, session_generation
+                        request_sha256, state, lease_generation, session_generation,
+                        attempt_count, next_attempt_at_unix_ms, updated_at_unix_ms
                  FROM secure_content_prekey_commands WHERE command_id = ?1",
                 params![command_id],
                 publication_from_row,
             )
             .map_err(|error| error.to_string())?;
+        let current = command.operation_record()?;
+        let cause = match current.state {
+            OperationState::Pending => DispatchCause::InitialReconciliation,
+            OperationState::UnknownOutcome => DispatchCause::ReadbackAuthorizedRetry,
+            OperationState::RetryWait => DispatchCause::RetryDeadlineReached,
+            _ => {
+                return Err("secure content publication is not dispatchable".to_string());
+            }
+        };
+        let now = now_unix_ms();
+        let lease = acquire_operation(&current, session_generation, cause, now)
+            .map_err(|error| error.to_string())?;
+        let changed = transaction
+            .execute(
+                "UPDATE secure_content_prekey_commands
+                 SET state = ?1, lease_generation = ?2, session_generation = ?3,
+                     attempt_count = ?4, next_attempt_at_unix_ms = ?5,
+                     updated_at_unix_ms = ?6
+                 WHERE command_id = ?7 AND state = ?8
+                   AND lease_generation = ?9 AND session_generation = ?10",
+                params![
+                    lease.record.state as i64,
+                    to_i64(lease.record.lease_generation, "lease generation")?,
+                    to_i64(lease.record.session_generation, "session generation")?,
+                    i64::from(lease.record.attempt_count),
+                    lease.record.next_attempt_at_unix_ms,
+                    lease.record.updated_at_unix_ms,
+                    command_id,
+                    current.state as i64,
+                    to_i64(current.lease_generation, "lease generation")?,
+                    to_i64(current.session_generation, "session generation")?,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed != 1 {
+            return Err("secure content publication lost its operation fence".to_string());
+        }
         transaction.commit().map_err(|error| error.to_string())?;
-        Ok(AcquiredPublication {
-            command,
-            reconciles_unknown_commit: prior_state == PublicationState::UnknownCommit,
-        })
+        let mut command = command;
+        command.state = lease.record.state;
+        command.lease_generation = lease.record.lease_generation;
+        command.session_generation = lease.record.session_generation;
+        command.attempt_count = lease.record.attempt_count;
+        command.next_attempt_at_unix_ms = lease.record.next_attempt_at_unix_ms;
+        command.updated_at_unix_ms = lease.record.updated_at_unix_ms;
+        Ok(AcquiredPublication { command, lease })
     }
 
-    pub fn mark_publication_unknown(
+    pub fn complete_publication(
         &self,
-        command_id: &str,
-        lease_generation: u64,
-        session_generation: u64,
-    ) -> Result<bool, String> {
-        self.transition_publication(
-            command_id,
-            lease_generation,
-            session_generation,
-            PublicationState::UnknownCommit,
-        )
-    }
-
-    pub fn mark_publication_terminal(
-        &self,
-        command_id: &str,
-        lease_generation: u64,
-        session_generation: u64,
+        acquired: &AcquiredPublication,
+        completion: OperationCompletion,
     ) -> Result<bool, String> {
         let mut connection = self.connection()?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|error| error.to_string())?;
+        let current = acquired.command.operation_record()?;
+        let completed = complete_operation(
+            &current,
+            OperationFence {
+                operation_id: &acquired.lease.record.operation_id,
+                session_generation: acquired.lease.record.session_generation,
+                lease_generation: acquired.lease.record.lease_generation,
+            },
+            completion,
+            now_unix_ms(),
+        )
+        .map_err(|error| error.to_string())?;
         let changed = transaction
             .execute(
                 "UPDATE secure_content_prekey_commands
-                 SET state = ?1, updated_at_unix_ms = ?2
-                 WHERE command_id = ?3 AND state = ?4
-                   AND lease_generation = ?5 AND session_generation = ?6",
+                 SET state = ?1, next_attempt_at_unix_ms = ?2,
+                     updated_at_unix_ms = ?3
+                 WHERE command_id = ?4 AND state = ?5
+                   AND lease_generation = ?6 AND session_generation = ?7",
                 params![
-                    PublicationState::Terminal as i64,
-                    now_unix_ms(),
-                    command_id,
-                    PublicationState::InFlight as i64,
-                    to_i64(lease_generation, "lease generation")?,
-                    to_i64(session_generation, "session generation")?,
+                    completed.state as i64,
+                    completed.next_attempt_at_unix_ms,
+                    completed.updated_at_unix_ms,
+                    acquired.command.command_id,
+                    OperationState::InFlight as i64,
+                    to_i64(acquired.command.lease_generation, "lease generation")?,
+                    to_i64(acquired.command.session_generation, "session generation")?,
                 ],
             )
             .map_err(|error| error.to_string())?;
-        if changed == 1 {
+        if changed == 1 && completed.state == OperationState::Terminal {
             transaction
                 .execute(
                     "DELETE FROM secure_content_prekeys
                      WHERE command_id = ?1 AND state = ?2",
-                    params![command_id, LocalPreKeyState::PendingPublication as i64],
+                    params![
+                        acquired.command.command_id,
+                        LocalPreKeyState::PendingPublication as i64
+                    ],
                 )
                 .map_err(|error| error.to_string())?;
-        }
-        transaction.commit().map_err(|error| error.to_string())?;
-        Ok(changed == 1)
-    }
-
-    pub fn mark_publication_published(
-        &self,
-        command_id: &str,
-        lease_generation: u64,
-        session_generation: u64,
-    ) -> Result<bool, String> {
-        let mut connection = self.connection()?;
-        let transaction = connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(|error| error.to_string())?;
-        let changed = transaction
-            .execute(
-                "UPDATE secure_content_prekey_commands
-                 SET state = ?1, updated_at_unix_ms = ?2
-                 WHERE command_id = ?3 AND state = ?4
-                   AND lease_generation = ?5 AND session_generation = ?6",
-                params![
-                    PublicationState::Published as i64,
-                    now_unix_ms(),
-                    command_id,
-                    PublicationState::InFlight as i64,
-                    to_i64(lease_generation, "lease generation")?,
-                    to_i64(session_generation, "session generation")?,
-                ],
-            )
-            .map_err(|error| error.to_string())?;
-        if changed == 1 {
+        } else if changed == 1 && completed.state == OperationState::Committed {
             transaction
                 .execute(
                     "UPDATE secure_content_prekeys SET state = ?1
                      WHERE command_id = ?2 AND state = ?3",
                     params![
                         LocalPreKeyState::Published as i64,
-                        command_id,
+                        acquired.command.command_id,
                         LocalPreKeyState::PendingPublication as i64
                     ],
                 )
@@ -741,33 +778,6 @@ impl SecureContentStore {
         }
         transaction.commit().map_err(|error| error.to_string())?;
         Ok(changed == 1)
-    }
-
-    fn transition_publication(
-        &self,
-        command_id: &str,
-        lease_generation: u64,
-        session_generation: u64,
-        target: PublicationState,
-    ) -> Result<bool, String> {
-        let connection = self.connection()?;
-        connection
-            .execute(
-                "UPDATE secure_content_prekey_commands
-                 SET state = ?1, updated_at_unix_ms = ?2
-                 WHERE command_id = ?3 AND state = ?4
-                   AND lease_generation = ?5 AND session_generation = ?6",
-                params![
-                    target as i64,
-                    now_unix_ms(),
-                    command_id,
-                    PublicationState::InFlight as i64,
-                    to_i64(lease_generation, "lease generation")?,
-                    to_i64(session_generation, "session generation")?,
-                ],
-            )
-            .map(|changed| changed == 1)
-            .map_err(|error| error.to_string())
     }
 
     pub fn endpoint_prekey(&self, key_id: &str) -> Result<Option<StoredEndpointPreKey>, String> {
@@ -878,14 +888,19 @@ impl SecureContentStore {
         {
             return Err("secure content Moment command is invalid".to_string());
         }
+        command.operation_record()?;
         let connection = self.connection()?;
         connection
             .execute(
                 "INSERT INTO secure_content_moment_commands(
                     draft_id, draft_revision, content_id, generation,
                     submit_command_id, plan_bytes, request_bytes, request_sha256,
-                    root_key, state, session_generation, post_id, updated_at_unix_ms
-                 ) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+                    root_key, state, lease_generation, session_generation,
+                    attempt_count, next_attempt_at_unix_ms, post_id, updated_at_unix_ms
+                 ) VALUES(
+                    ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
+                    ?13, ?14, ?15, ?16
+                 )
                  ON CONFLICT(draft_id, draft_revision) DO NOTHING",
                 params![
                     command.draft_id,
@@ -898,9 +913,12 @@ impl SecureContentStore {
                     command.request_sha256.as_slice(),
                     command.root_key.as_slice(),
                     command.state as i64,
+                    to_i64(command.lease_generation, "lease generation")?,
                     to_i64(command.session_generation, "session generation")?,
+                    i64::from(command.attempt_count),
+                    command.next_attempt_at_unix_ms,
                     command.post_id,
-                    now_unix_ms(),
+                    command.updated_at_unix_ms,
                 ],
             )
             .map_err(|error| error.to_string())?;
@@ -1006,7 +1024,8 @@ impl SecureContentStore {
             .query_row(
                 "SELECT draft_id, draft_revision, content_id, generation,
                         submit_command_id, plan_bytes, request_bytes, request_sha256,
-                        root_key, state, session_generation, post_id
+                        root_key, state, lease_generation, session_generation,
+                        attempt_count, next_attempt_at_unix_ms, updated_at_unix_ms, post_id
                  FROM secure_content_moment_commands
                  WHERE draft_id = ?1 AND draft_revision = ?2",
                 params![draft_id, to_i64(draft_revision, "draft revision")?],
@@ -1021,44 +1040,57 @@ impl SecureContentStore {
         draft_id: &str,
         draft_revision: u64,
         session_generation: u64,
-    ) -> Result<StoredMomentCommand, String> {
+        cause: DispatchCause,
+    ) -> Result<AcquiredMomentCommand, String> {
         let mut connection = self.connection()?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|error| error.to_string())?;
-        let changed = transaction
-            .execute(
-                "UPDATE secure_content_moment_commands
-                 SET state = ?1, session_generation = ?2, updated_at_unix_ms = ?3
-                 WHERE draft_id = ?4 AND draft_revision = ?5
-                   AND state IN (?6, ?7)",
-                params![
-                    PublicationState::InFlight as i64,
-                    to_i64(session_generation, "session generation")?,
-                    now_unix_ms(),
-                    draft_id,
-                    to_i64(draft_revision, "draft revision")?,
-                    PublicationState::PendingPublication as i64,
-                    PublicationState::UnknownCommit as i64,
-                ],
-            )
-            .map_err(|error| error.to_string())?;
-        if changed != 1 {
-            return Err("secure content Moment command is not retryable".to_string());
-        }
-        let command = transaction
+        let mut command = transaction
             .query_row(
                 "SELECT draft_id, draft_revision, content_id, generation,
                         submit_command_id, plan_bytes, request_bytes, request_sha256,
-                        root_key, state, session_generation, post_id
+                        root_key, state, lease_generation, session_generation,
+                        attempt_count, next_attempt_at_unix_ms, updated_at_unix_ms, post_id
                  FROM secure_content_moment_commands
                  WHERE draft_id = ?1 AND draft_revision = ?2",
                 params![draft_id, to_i64(draft_revision, "draft revision")?],
                 moment_from_row,
             )
             .map_err(|error| error.to_string())?;
+        let current = command.operation_record()?;
+        let lease = acquire_operation(&current, session_generation, cause, now_unix_ms())
+            .map_err(|error| error.to_string())?;
+        let changed = transaction
+            .execute(
+                "UPDATE secure_content_moment_commands
+                 SET state = ?1, lease_generation = ?2, session_generation = ?3,
+                     attempt_count = ?4, next_attempt_at_unix_ms = ?5,
+                     updated_at_unix_ms = ?6
+                 WHERE draft_id = ?7 AND draft_revision = ?8
+                   AND state = ?9 AND lease_generation = ?10
+                   AND session_generation = ?11",
+                params![
+                    lease.record.state as i64,
+                    to_i64(lease.record.lease_generation, "lease generation")?,
+                    to_i64(lease.record.session_generation, "session generation")?,
+                    i64::from(lease.record.attempt_count),
+                    lease.record.next_attempt_at_unix_ms,
+                    lease.record.updated_at_unix_ms,
+                    draft_id,
+                    to_i64(draft_revision, "draft revision")?,
+                    current.state as i64,
+                    to_i64(current.lease_generation, "lease generation")?,
+                    to_i64(current.session_generation, "session generation")?,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed != 1 {
+            return Err("secure content Moment command lost its operation fence".to_string());
+        }
+        apply_operation_record_to_moment(&mut command, &lease.record);
         transaction.commit().map_err(|error| error.to_string())?;
-        Ok(command)
+        Ok(AcquiredMomentCommand { command, lease })
     }
 
     pub fn reconcilable_moment_commands(&self) -> Result<Vec<StoredMomentCommand>, String> {
@@ -1067,16 +1099,22 @@ impl SecureContentStore {
             .prepare(
                 "SELECT draft_id, draft_revision, content_id, generation,
                         submit_command_id, plan_bytes, request_bytes, request_sha256,
-                        root_key, state, session_generation, post_id
+                        root_key, state, lease_generation, session_generation,
+                        attempt_count, next_attempt_at_unix_ms, updated_at_unix_ms, post_id
                  FROM secure_content_moment_commands
-                 WHERE state IN (?1, ?2) ORDER BY updated_at_unix_ms, draft_id",
+                 WHERE state IN (?1, ?2, ?3)
+                    OR (state = ?4 AND next_attempt_at_unix_ms <= ?5)
+                 ORDER BY updated_at_unix_ms, draft_id",
             )
             .map_err(|error| error.to_string())?;
         let rows = statement
             .query_map(
                 params![
-                    PublicationState::PendingPublication as i64,
-                    PublicationState::UnknownCommit as i64
+                    OperationState::Pending as i64,
+                    OperationState::UnknownOutcome as i64,
+                    OperationState::CommittedPendingReadback as i64,
+                    OperationState::RetryWait as i64,
+                    now_unix_ms(),
                 ],
                 moment_from_row,
             )
@@ -1099,28 +1137,53 @@ impl SecureContentStore {
             .map_err(|error| error.to_string())
     }
 
-    pub fn mark_moment_unknown(
+    pub fn complete_moment_command(
         &self,
-        draft_id: &str,
-        draft_revision: u64,
-        session_generation: u64,
+        acquired: &AcquiredMomentCommand,
+        completion: OperationCompletion,
+        post_id: Option<&str>,
     ) -> Result<bool, String> {
-        self.transition_moment(
-            draft_id,
-            draft_revision,
-            session_generation,
-            PublicationState::UnknownCommit,
-            None,
+        let current = acquired.command.operation_record()?;
+        let completed = complete_operation(
+            &current,
+            acquired.lease.record.fence(),
+            completion,
+            now_unix_ms(),
         )
+        .map_err(|error| error.to_string())?;
+        self.connection()?
+            .execute(
+                "UPDATE secure_content_moment_commands
+                 SET state = ?1, post_id = COALESCE(?2, post_id),
+                     next_attempt_at_unix_ms = ?3, updated_at_unix_ms = ?4
+                 WHERE draft_id = ?5 AND draft_revision = ?6
+                   AND state = ?7 AND lease_generation = ?8
+                   AND session_generation = ?9",
+                params![
+                    completed.state as i64,
+                    post_id,
+                    completed.next_attempt_at_unix_ms,
+                    completed.updated_at_unix_ms,
+                    acquired.command.draft_id,
+                    to_i64(acquired.command.draft_revision, "draft revision")?,
+                    OperationState::InFlight as i64,
+                    to_i64(acquired.command.lease_generation, "lease generation")?,
+                    to_i64(acquired.command.session_generation, "session generation")?,
+                ],
+            )
+            .map(|changed| changed == 1)
+            .map_err(|error| error.to_string())
     }
 
-    pub fn mark_moment_published(
+    pub fn apply_moment_readback(
         &self,
-        draft_id: &str,
-        draft_revision: u64,
-        session_generation: u64,
-        post_id: &str,
+        command: &StoredMomentCommand,
+        decision: &ReadbackDecision,
+        post_id: Option<&str>,
     ) -> Result<bool, String> {
+        let current = command.operation_record()?;
+        let advanced = apply_readback_decision(&current, current.fence(), decision, now_unix_ms())
+            .map_err(|error| error.to_string())?;
         let mut connection = self.connection()?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -1128,90 +1191,45 @@ impl SecureContentStore {
         let changed = transaction
             .execute(
                 "UPDATE secure_content_moment_commands
-                 SET state = ?1, post_id = ?2, updated_at_unix_ms = ?3
-                 WHERE draft_id = ?4 AND draft_revision = ?5
-                   AND state = ?6 AND session_generation = ?7",
+                 SET state = ?1, post_id = COALESCE(?2, post_id),
+                     next_attempt_at_unix_ms = ?3, updated_at_unix_ms = ?4
+                 WHERE draft_id = ?5 AND draft_revision = ?6
+                   AND state = ?7 AND lease_generation = ?8
+                   AND session_generation = ?9",
                 params![
-                    PublicationState::Published as i64,
+                    advanced.state as i64,
                     post_id,
-                    now_unix_ms(),
-                    draft_id,
-                    to_i64(draft_revision, "draft revision")?,
-                    PublicationState::InFlight as i64,
-                    to_i64(session_generation, "session generation")?,
+                    advanced.next_attempt_at_unix_ms,
+                    advanced.updated_at_unix_ms,
+                    command.draft_id,
+                    to_i64(command.draft_revision, "draft revision")?,
+                    current.state as i64,
+                    to_i64(current.lease_generation, "lease generation")?,
+                    to_i64(current.session_generation, "session generation")?,
                 ],
             )
             .map_err(|error| error.to_string())?;
-        if changed == 1 {
+        if changed == 1 && advanced.state == OperationState::Committed {
             transaction
                 .execute(
                     "DELETE FROM secure_content_object_transfers
-                     WHERE direction = ?1 AND owner_scope_id IN (
-                       SELECT content_id FROM secure_content_moment_commands
-                       WHERE draft_id = ?2 AND draft_revision = ?3
-                     ) AND session_generation = ?4",
-                    params![
-                        ObjectTransferDirection::Upload as i32,
-                        draft_id,
-                        to_i64(draft_revision, "draft revision")?,
-                        to_i64(session_generation, "session generation")?,
-                    ],
+                     WHERE direction = ?1 AND owner_scope_id = ?2",
+                    params![ObjectTransferDirection::Upload as i32, command.content_id],
                 )
                 .map_err(|error| error.to_string())?;
             transaction
                 .execute(
                     "DELETE FROM secure_content_moment_drafts
                      WHERE draft_id = ?1 AND draft_revision = ?2",
-                    params![draft_id, to_i64(draft_revision, "draft revision")?],
+                    params![
+                        command.draft_id,
+                        to_i64(command.draft_revision, "draft revision")?
+                    ],
                 )
                 .map_err(|error| error.to_string())?;
         }
         transaction.commit().map_err(|error| error.to_string())?;
         Ok(changed == 1)
-    }
-
-    pub fn mark_moment_terminal(
-        &self,
-        draft_id: &str,
-        draft_revision: u64,
-        session_generation: u64,
-    ) -> Result<bool, String> {
-        self.transition_moment(
-            draft_id,
-            draft_revision,
-            session_generation,
-            PublicationState::Terminal,
-            None,
-        )
-    }
-
-    fn transition_moment(
-        &self,
-        draft_id: &str,
-        draft_revision: u64,
-        session_generation: u64,
-        target: PublicationState,
-        post_id: Option<&str>,
-    ) -> Result<bool, String> {
-        let connection = self.connection()?;
-        connection
-            .execute(
-                "UPDATE secure_content_moment_commands
-                 SET state = ?1, post_id = COALESCE(?2, post_id), updated_at_unix_ms = ?3
-                 WHERE draft_id = ?4 AND draft_revision = ?5
-                   AND state = ?6 AND session_generation = ?7",
-                params![
-                    target as i64,
-                    post_id,
-                    now_unix_ms(),
-                    draft_id,
-                    to_i64(draft_revision, "draft revision")?,
-                    PublicationState::InFlight as i64,
-                    to_i64(session_generation, "session generation")?,
-                ],
-            )
-            .map(|changed| changed == 1)
-            .map_err(|error| error.to_string())
     }
 
     pub fn reserve_comment_draft(
@@ -1284,8 +1302,10 @@ impl SecureContentStore {
                         reply_to_comment_id, plaintext_text, mention_intent_json,
                         mention_commitment_salt, intent_sha256, prepare_command_id,
                         submit_command_id, plan_bytes, request_bytes, request_sha256,
-                        root_key, publication_state, session_generation, comment_id,
-                        state, error_code, retry_after_seconds, retry_not_before_unix_ms
+                        root_key, publication_state, lease_generation, session_generation,
+                        attempt_count, next_attempt_at_unix_ms, updated_at_unix_ms,
+                        comment_id, state, error_code, retry_after_seconds,
+                        retry_not_before_unix_ms
                  FROM secure_content_comment_drafts
                  WHERE draft_id = ?1 AND draft_revision = ?2",
                 params![draft_id, to_i64(draft_revision, "Comment draft revision")?],
@@ -1303,8 +1323,10 @@ impl SecureContentStore {
                         reply_to_comment_id, plaintext_text, mention_intent_json,
                         mention_commitment_salt, intent_sha256, prepare_command_id,
                         submit_command_id, plan_bytes, request_bytes, request_sha256,
-                        root_key, publication_state, session_generation, comment_id,
-                        state, error_code, retry_after_seconds, retry_not_before_unix_ms
+                        root_key, publication_state, lease_generation, session_generation,
+                        attempt_count, next_attempt_at_unix_ms, updated_at_unix_ms,
+                        comment_id, state, error_code, retry_after_seconds,
+                        retry_not_before_unix_ms
                  FROM secure_content_comment_drafts
                  ORDER BY updated_at_unix_ms DESC, draft_id",
             )
@@ -1367,13 +1389,15 @@ impl SecureContentStore {
                  SET content_id = ?1, generation = 0, prepare_command_id = ?2,
                      submit_command_id = NULL, plan_bytes = NULL,
                      request_bytes = NULL, request_sha256 = NULL, root_key = NULL,
-                     publication_state = NULL, session_generation = ?3,
+                     publication_state = NULL, lease_generation = 0,
+                     session_generation = ?3, attempt_count = 0,
+                     next_attempt_at_unix_ms = 0,
                      comment_id = NULL, state = ?4, error_code = NULL,
                      retry_after_seconds = NULL, retry_not_before_unix_ms = NULL,
                      updated_at_unix_ms = ?5
                  WHERE draft_id = ?6 AND draft_revision = ?7
-                   AND publication_state = ?8
-                   AND state IN (?9, ?10, ?11)
+                   AND publication_state IN (?8, ?9)
+                   AND state IN (?10, ?11, ?12)
                    AND plaintext_text != ''
                    AND (
                      retry_not_before_unix_ms IS NULL
@@ -1387,7 +1411,8 @@ impl SecureContentStore {
                     now,
                     draft_id,
                     to_i64(draft_revision, "Comment draft revision")?,
-                    PublicationState::PendingPublication as i64,
+                    OperationState::Pending as i64,
+                    OperationState::Terminal as i64,
                     CommentState::Failed as i64,
                     CommentState::RateLimited as i64,
                     CommentState::Submitting as i64,
@@ -1423,8 +1448,10 @@ impl SecureContentStore {
                     "UPDATE secure_content_comment_drafts
                  SET generation = ?1, submit_command_id = ?2, plan_bytes = ?3,
                      request_bytes = ?4, request_sha256 = ?5, root_key = ?6,
-                     publication_state = ?7, session_generation = ?8,
-                     state = ?9, error_code = NULL, retry_after_seconds = NULL,
+                     publication_state = ?7, lease_generation = 0,
+                     session_generation = ?8, attempt_count = 0,
+                     next_attempt_at_unix_ms = 0, state = ?9,
+                     error_code = NULL, retry_after_seconds = NULL,
                      retry_not_before_unix_ms = NULL,
                      updated_at_unix_ms = ?10
                  WHERE draft_id = ?11 AND draft_revision = ?12
@@ -1436,7 +1463,7 @@ impl SecureContentStore {
                         request_bytes,
                         request_sha256.as_slice(),
                         root_key.as_slice(),
-                        PublicationState::PendingPublication as i64,
+                        OperationState::Pending as i64,
                         to_i64(session_generation, "session generation")?,
                         CommentState::Submitting as i64,
                         now_unix_ms(),
@@ -1462,237 +1489,186 @@ impl SecureContentStore {
         draft_id: &str,
         draft_revision: u64,
         session_generation: u64,
-    ) -> Result<StoredCommentDraft, String> {
-        let acquired_at_unix_ms = now_unix_ms();
+        cause: DispatchCause,
+    ) -> Result<AcquiredCommentSubmission, String> {
         let mut connection = self.connection()?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|error| error.to_string())?;
-        let changed = transaction
-            .execute(
-                "UPDATE secure_content_comment_drafts
-                 SET publication_state = ?1, session_generation = ?2,
-                     state = ?3, error_code = NULL, retry_after_seconds = NULL,
-                     retry_not_before_unix_ms = NULL,
-                     updated_at_unix_ms = ?4
-                 WHERE draft_id = ?5 AND draft_revision = ?6
-                   AND publication_state IN (?7, ?8)
-                   AND (
-                     retry_not_before_unix_ms IS NULL
-                     OR retry_not_before_unix_ms <= ?9
-                   )",
-                params![
-                    PublicationState::InFlight as i64,
-                    to_i64(session_generation, "session generation")?,
-                    CommentState::Submitting as i64,
-                    acquired_at_unix_ms,
-                    draft_id,
-                    to_i64(draft_revision, "Comment draft revision")?,
-                    PublicationState::PendingPublication as i64,
-                    PublicationState::UnknownCommit as i64,
-                    acquired_at_unix_ms,
-                ],
-            )
-            .map_err(|error| error.to_string())?;
-        if changed != 1 {
-            return Err("secure content Comment submission is not retryable".to_string());
-        }
-        let draft = transaction
+        let mut draft = transaction
             .query_row(
                 "SELECT draft_id, draft_revision, post_id, content_id, generation,
                         reply_to_comment_id, plaintext_text, mention_intent_json,
                         mention_commitment_salt, intent_sha256, prepare_command_id,
                         submit_command_id, plan_bytes, request_bytes, request_sha256,
-                        root_key, publication_state, session_generation, comment_id,
-                        state, error_code, retry_after_seconds, retry_not_before_unix_ms
+                        root_key, publication_state, lease_generation, session_generation,
+                        attempt_count, next_attempt_at_unix_ms, updated_at_unix_ms,
+                        comment_id, state, error_code, retry_after_seconds,
+                        retry_not_before_unix_ms
                  FROM secure_content_comment_drafts
                  WHERE draft_id = ?1 AND draft_revision = ?2",
                 params![draft_id, to_i64(draft_revision, "Comment draft revision")?],
                 comment_draft_from_row,
             )
             .map_err(|error| error.to_string())?;
+        let current = draft.operation_record()?;
+        let lease = acquire_operation(&current, session_generation, cause, now_unix_ms())
+            .map_err(|error| error.to_string())?;
+        let changed = transaction
+            .execute(
+                "UPDATE secure_content_comment_drafts
+                 SET publication_state = ?1, lease_generation = ?2,
+                     session_generation = ?3, attempt_count = ?4,
+                     next_attempt_at_unix_ms = ?5, state = ?6,
+                     error_code = NULL, retry_after_seconds = NULL,
+                     retry_not_before_unix_ms = NULL, updated_at_unix_ms = ?7
+                 WHERE draft_id = ?8 AND draft_revision = ?9
+                   AND publication_state = ?10
+                   AND lease_generation = ?11 AND session_generation = ?12",
+                params![
+                    lease.record.state as i64,
+                    to_i64(lease.record.lease_generation, "lease generation")?,
+                    to_i64(lease.record.session_generation, "session generation")?,
+                    i64::from(lease.record.attempt_count),
+                    lease.record.next_attempt_at_unix_ms,
+                    CommentState::Submitting as i64,
+                    lease.record.updated_at_unix_ms,
+                    draft_id,
+                    to_i64(draft_revision, "Comment draft revision")?,
+                    current.state as i64,
+                    to_i64(current.lease_generation, "lease generation")?,
+                    to_i64(current.session_generation, "session generation")?,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed != 1 {
+            return Err("secure content Comment submission lost its operation fence".to_string());
+        }
+        apply_operation_record_to_comment(&mut draft, &lease.record);
+        draft.state = CommentState::Submitting;
+        draft.error_code = None;
+        draft.retry_after_seconds = None;
+        draft.retry_not_before_unix_ms = None;
         transaction.commit().map_err(|error| error.to_string())?;
-        Ok(draft)
+        Ok(AcquiredCommentSubmission { draft, lease })
     }
 
-    pub fn mark_comment_retryable(
+    #[allow(clippy::too_many_arguments)]
+    pub fn complete_comment_submission(
         &self,
-        draft_id: &str,
-        draft_revision: u64,
-        session_generation: u64,
-        publication_state: PublicationState,
+        acquired: &AcquiredCommentSubmission,
+        completion: OperationCompletion,
         state: CommentState,
         error_code: &str,
         retry_after_seconds: Option<u64>,
+        comment_id: Option<&str>,
     ) -> Result<bool, String> {
-        if !matches!(
-            publication_state,
-            PublicationState::PendingPublication | PublicationState::UnknownCommit
-        ) || !matches!(state, CommentState::Failed | CommentState::RateLimited)
-        {
-            return Err("secure content Comment retry state is invalid".to_string());
-        }
         let updated_at_unix_ms = now_unix_ms();
-        let retry_not_before_unix_ms = retry_deadline(updated_at_unix_ms, retry_after_seconds)?;
+        let current = acquired.draft.operation_record()?;
+        let completed = complete_operation(
+            &current,
+            acquired.lease.record.fence(),
+            completion,
+            updated_at_unix_ms,
+        )
+        .map_err(|error| error.to_string())?;
+        let clears_plaintext = completed.state == OperationState::CommittedPendingReadback
+            || completed.state == OperationState::Committed;
+        let retry_not_before_unix_ms = if completed.state == OperationState::RetryWait {
+            Some(completed.next_attempt_at_unix_ms)
+        } else {
+            None
+        };
         self.connection()?
             .execute(
                 "UPDATE secure_content_comment_drafts
-                 SET publication_state = ?1, state = ?2, error_code = ?3,
-                     retry_after_seconds = ?4, retry_not_before_unix_ms = ?5,
-                     updated_at_unix_ms = ?6
-                 WHERE draft_id = ?7 AND draft_revision = ?8
-                   AND publication_state = ?9 AND session_generation = ?10",
+                 SET publication_state = ?1,
+                     comment_id = COALESCE(?2, comment_id),
+                     plaintext_text = CASE WHEN ?3 THEN '' ELSE plaintext_text END,
+                     mention_intent_json = CASE WHEN ?3 THEN '[]' ELSE mention_intent_json END,
+                     mention_commitment_salt = CASE
+                       WHEN ?3 THEN NULL ELSE mention_commitment_salt
+                     END,
+                     state = ?4, error_code = NULLIF(?5, ''),
+                     retry_after_seconds = ?6, retry_not_before_unix_ms = ?7,
+                     next_attempt_at_unix_ms = ?8, updated_at_unix_ms = ?9
+                 WHERE draft_id = ?10 AND draft_revision = ?11
+                   AND publication_state = ?12 AND lease_generation = ?13
+                   AND session_generation = ?14",
                 params![
-                    publication_state as i64,
+                    completed.state as i64,
+                    comment_id,
+                    clears_plaintext,
                     state as i64,
                     error_code,
                     retry_after_seconds
                         .map(|value| to_i64(value, "Comment retry after"))
                         .transpose()?,
                     retry_not_before_unix_ms,
+                    completed.next_attempt_at_unix_ms,
                     updated_at_unix_ms,
-                    draft_id,
-                    to_i64(draft_revision, "Comment draft revision")?,
-                    PublicationState::InFlight as i64,
-                    to_i64(session_generation, "session generation")?,
+                    acquired.draft.draft_id,
+                    to_i64(acquired.draft.draft_revision, "Comment draft revision")?,
+                    OperationState::InFlight as i64,
+                    to_i64(acquired.draft.lease_generation, "lease generation")?,
+                    to_i64(acquired.draft.session_generation, "session generation")?,
                 ],
             )
             .map(|changed| changed == 1)
             .map_err(|error| error.to_string())
     }
 
-    pub fn mark_comment_terminal(
+    #[allow(clippy::too_many_arguments)]
+    pub fn apply_comment_readback(
         &self,
-        draft_id: &str,
-        draft_revision: u64,
-        session_generation: u64,
+        draft: &StoredCommentDraft,
+        decision: &ReadbackDecision,
         state: CommentState,
         error_code: &str,
-    ) -> Result<bool, String> {
-        self.connection()?
-            .execute(
-                "UPDATE secure_content_comment_drafts
-                 SET publication_state = ?1, state = ?2, error_code = ?3,
-                     retry_after_seconds = NULL,
-                     retry_not_before_unix_ms = NULL,
-                     updated_at_unix_ms = ?4
-                 WHERE draft_id = ?5 AND draft_revision = ?6
-                   AND publication_state IN (?7, ?8)
-                   AND session_generation = ?9",
-                params![
-                    PublicationState::Terminal as i64,
-                    state as i64,
-                    error_code,
-                    now_unix_ms(),
-                    draft_id,
-                    to_i64(draft_revision, "Comment draft revision")?,
-                    PublicationState::InFlight as i64,
-                    PublicationState::CommittedPendingReadback as i64,
-                    to_i64(session_generation, "session generation")?,
-                ],
-            )
-            .map(|changed| changed == 1)
-            .map_err(|error| error.to_string())
-    }
-
-    pub fn mark_comment_committed_pending_readback(
-        &self,
-        draft_id: &str,
-        draft_revision: u64,
-        session_generation: u64,
-        comment_id: &str,
-    ) -> Result<bool, String> {
-        if comment_id.trim().is_empty() {
-            return Err("secure content committed Comment ID is invalid".to_string());
-        }
-        self.connection()?
-            .execute(
-                "UPDATE secure_content_comment_drafts
-                 SET publication_state = ?1, comment_id = ?2, plaintext_text = '',
-                     mention_intent_json = '[]', mention_commitment_salt = NULL,
-                     state = ?3, error_code = 'COMMENT_READBACK_PENDING',
-                     retry_after_seconds = NULL,
-                     retry_not_before_unix_ms = NULL,
-                     updated_at_unix_ms = ?4
-                 WHERE draft_id = ?5 AND draft_revision = ?6
-                   AND publication_state = ?7 AND session_generation = ?8",
-                params![
-                    PublicationState::CommittedPendingReadback as i64,
-                    comment_id,
-                    CommentState::Failed as i64,
-                    now_unix_ms(),
-                    draft_id,
-                    to_i64(draft_revision, "Comment draft revision")?,
-                    PublicationState::InFlight as i64,
-                    to_i64(session_generation, "session generation")?,
-                ],
-            )
-            .map(|changed| changed == 1)
-            .map_err(|error| error.to_string())
-    }
-
-    pub fn mark_comment_readback_failed(
-        &self,
-        draft_id: &str,
-        draft_revision: u64,
-        session_generation: u64,
-        error_code: &str,
         retry_after_seconds: Option<u64>,
+        comment_id: Option<&str>,
     ) -> Result<bool, String> {
+        let current = draft.operation_record()?;
         let updated_at_unix_ms = now_unix_ms();
-        let retry_not_before_unix_ms = retry_deadline(updated_at_unix_ms, retry_after_seconds)?;
+        let advanced =
+            apply_readback_decision(&current, current.fence(), decision, updated_at_unix_ms)
+                .map_err(|error| error.to_string())?;
+        let clears_plaintext = advanced.state == OperationState::Committed;
+        let retry_not_before_unix_ms =
+            (advanced.next_attempt_at_unix_ms > 0).then_some(advanced.next_attempt_at_unix_ms);
         self.connection()?
             .execute(
                 "UPDATE secure_content_comment_drafts
-                 SET state = ?1, error_code = ?2, retry_after_seconds = ?3,
-                     retry_not_before_unix_ms = ?4, updated_at_unix_ms = ?5
-                 WHERE draft_id = ?6 AND draft_revision = ?7
-                   AND publication_state = ?8 AND session_generation = ?9",
+                 SET publication_state = ?1,
+                     comment_id = COALESCE(?2, comment_id),
+                     plaintext_text = CASE WHEN ?3 THEN '' ELSE plaintext_text END,
+                     mention_intent_json = CASE WHEN ?3 THEN '[]' ELSE mention_intent_json END,
+                     mention_commitment_salt = CASE
+                       WHEN ?3 THEN NULL ELSE mention_commitment_salt
+                     END,
+                     state = ?4, error_code = NULLIF(?5, ''),
+                     retry_after_seconds = ?6, retry_not_before_unix_ms = ?7,
+                     next_attempt_at_unix_ms = ?8, updated_at_unix_ms = ?9
+                 WHERE draft_id = ?10 AND draft_revision = ?11
+                   AND publication_state = ?12 AND lease_generation = ?13
+                   AND session_generation = ?14",
                 params![
-                    CommentState::Failed as i64,
+                    advanced.state as i64,
+                    comment_id,
+                    clears_plaintext,
+                    state as i64,
                     error_code,
                     retry_after_seconds
                         .map(|value| to_i64(value, "Comment retry after"))
                         .transpose()?,
                     retry_not_before_unix_ms,
+                    advanced.next_attempt_at_unix_ms,
                     updated_at_unix_ms,
-                    draft_id,
-                    to_i64(draft_revision, "Comment draft revision")?,
-                    PublicationState::CommittedPendingReadback as i64,
-                    to_i64(session_generation, "session generation")?,
-                ],
-            )
-            .map(|changed| changed == 1)
-            .map_err(|error| error.to_string())
-    }
-
-    pub fn mark_comment_posted(
-        &self,
-        draft_id: &str,
-        draft_revision: u64,
-        session_generation: u64,
-        comment_id: &str,
-    ) -> Result<bool, String> {
-        let connection = self.connection()?;
-        connection
-            .execute(
-                "UPDATE secure_content_comment_drafts
-                 SET publication_state = ?1, comment_id = ?2, plaintext_text = '',
-                     mention_intent_json = '[]', mention_commitment_salt = NULL,
-                     state = ?3, error_code = NULL, retry_after_seconds = NULL,
-                     retry_not_before_unix_ms = NULL,
-                     updated_at_unix_ms = ?4
-                 WHERE draft_id = ?5 AND draft_revision = ?6
-                   AND publication_state = ?7 AND session_generation = ?8",
-                params![
-                    PublicationState::Published as i64,
-                    comment_id,
-                    CommentState::Posted as i64,
-                    now_unix_ms(),
-                    draft_id,
-                    to_i64(draft_revision, "Comment draft revision")?,
-                    PublicationState::CommittedPendingReadback as i64,
-                    to_i64(session_generation, "session generation")?,
+                    draft.draft_id,
+                    to_i64(draft.draft_revision, "Comment draft revision")?,
+                    current.state as i64,
+                    to_i64(current.lease_generation, "lease generation")?,
+                    to_i64(current.session_generation, "session generation")?,
                 ],
             )
             .map(|changed| changed == 1)
@@ -2341,10 +2317,10 @@ impl SecureContentStore {
             .query_map(
                 params![
                     ObjectTransferDirection::Upload as i32,
-                    PublicationState::PendingPublication as i64,
-                    PublicationState::InFlight as i64,
-                    PublicationState::UnknownCommit as i64,
-                    PublicationState::Published as i64,
+                    OperationState::Pending as i64,
+                    OperationState::InFlight as i64,
+                    OperationState::UnknownOutcome as i64,
+                    OperationState::Committed as i64,
                 ],
                 |row| row.get(0),
             )
@@ -2959,10 +2935,252 @@ fn publication_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredPubli
         pool_epoch: from_i64(row.get(2)?, "pool epoch")?,
         request_bytes: row.get(3)?,
         request_sha256: fixed_32(request_sha256, "publication request hash")?,
-        state: PublicationState::try_from(row.get::<_, i64>(5)?).map_err(conversion_error)?,
+        state: operation_state_from_i64(row.get::<_, i64>(5)?).map_err(conversion_error)?,
         lease_generation: from_i64(row.get(6)?, "lease generation")?,
         session_generation: from_i64(row.get(7)?, "session generation")?,
+        attempt_count: u32::try_from(row.get::<_, i64>(8)?)
+            .map_err(|_| conversion_error("publication attempt count is invalid"))?,
+        next_attempt_at_unix_ms: row.get(9)?,
+        updated_at_unix_ms: row.get(10)?,
     })
+}
+
+fn recover_prekey_publications(
+    transaction: &rusqlite::Transaction<'_>,
+    session_generation: Option<i64>,
+) -> Result<usize, String> {
+    let sql = match session_generation {
+        Some(_) => {
+            "SELECT command_id, key_kind, pool_epoch, request_bytes,
+                    request_sha256, state, lease_generation, session_generation,
+                    attempt_count, next_attempt_at_unix_ms, updated_at_unix_ms
+             FROM secure_content_prekey_commands
+             WHERE state = ?1 AND session_generation = ?2
+             ORDER BY command_id"
+        }
+        None => {
+            "SELECT command_id, key_kind, pool_epoch, request_bytes,
+                    request_sha256, state, lease_generation, session_generation,
+                    attempt_count, next_attempt_at_unix_ms, updated_at_unix_ms
+             FROM secure_content_prekey_commands
+             WHERE state = ?1
+             ORDER BY command_id"
+        }
+    };
+    let commands = {
+        let mut statement = transaction
+            .prepare(sql)
+            .map_err(|error| error.to_string())?;
+        match session_generation {
+            Some(generation) => statement
+                .query_map(
+                    params![OperationState::InFlight as i64, generation],
+                    publication_from_row,
+                )
+                .map_err(|error| error.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| error.to_string())?,
+            None => statement
+                .query_map(
+                    params![OperationState::InFlight as i64],
+                    publication_from_row,
+                )
+                .map_err(|error| error.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| error.to_string())?,
+        }
+    };
+    let now = now_unix_ms();
+    let mut recovered_count = 0;
+    for command in commands {
+        let current = command.operation_record()?;
+        let recovered =
+            recover_interrupted_operation(&current, now).map_err(|error| error.to_string())?;
+        let changed = transaction
+            .execute(
+                "UPDATE secure_content_prekey_commands
+                 SET state = ?1, next_attempt_at_unix_ms = ?2,
+                     updated_at_unix_ms = ?3
+                 WHERE command_id = ?4 AND state = ?5
+                   AND lease_generation = ?6 AND session_generation = ?7",
+                params![
+                    recovered.state as i64,
+                    recovered.next_attempt_at_unix_ms,
+                    recovered.updated_at_unix_ms,
+                    recovered.command_id,
+                    current.state as i64,
+                    to_i64(current.lease_generation, "lease generation")?,
+                    to_i64(current.session_generation, "session generation")?,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed != 1 {
+            return Err("secure content interrupted publication lost its fence".to_string());
+        }
+        recovered_count += 1;
+    }
+    Ok(recovered_count)
+}
+
+fn recover_moment_commands(
+    transaction: &rusqlite::Transaction<'_>,
+    session_generation: Option<i64>,
+) -> Result<usize, String> {
+    let sql = if session_generation.is_some() {
+        "SELECT draft_id, draft_revision, content_id, generation,
+                submit_command_id, plan_bytes, request_bytes, request_sha256,
+                root_key, state, lease_generation, session_generation,
+                attempt_count, next_attempt_at_unix_ms, updated_at_unix_ms, post_id
+         FROM secure_content_moment_commands
+         WHERE state = ?1 AND session_generation = ?2
+         ORDER BY submit_command_id"
+    } else {
+        "SELECT draft_id, draft_revision, content_id, generation,
+                submit_command_id, plan_bytes, request_bytes, request_sha256,
+                root_key, state, lease_generation, session_generation,
+                attempt_count, next_attempt_at_unix_ms, updated_at_unix_ms, post_id
+         FROM secure_content_moment_commands
+         WHERE state = ?1
+         ORDER BY submit_command_id"
+    };
+    let commands = {
+        let mut statement = transaction
+            .prepare(sql)
+            .map_err(|error| error.to_string())?;
+        match session_generation {
+            Some(generation) => statement
+                .query_map(
+                    params![OperationState::InFlight as i64, generation],
+                    moment_from_row,
+                )
+                .map_err(|error| error.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| error.to_string())?,
+            None => statement
+                .query_map(params![OperationState::InFlight as i64], moment_from_row)
+                .map_err(|error| error.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| error.to_string())?,
+        }
+    };
+    let now = now_unix_ms();
+    let mut recovered_count = 0;
+    for command in commands {
+        let current = command.operation_record()?;
+        let recovered =
+            recover_interrupted_operation(&current, now).map_err(|error| error.to_string())?;
+        let changed = transaction
+            .execute(
+                "UPDATE secure_content_moment_commands
+                 SET state = ?1, next_attempt_at_unix_ms = ?2,
+                     updated_at_unix_ms = ?3
+                 WHERE submit_command_id = ?4 AND state = ?5
+                   AND lease_generation = ?6 AND session_generation = ?7",
+                params![
+                    recovered.state as i64,
+                    recovered.next_attempt_at_unix_ms,
+                    recovered.updated_at_unix_ms,
+                    command.submit_command_id,
+                    current.state as i64,
+                    to_i64(current.lease_generation, "lease generation")?,
+                    to_i64(current.session_generation, "session generation")?,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed != 1 {
+            return Err("secure content interrupted Moment lost its fence".to_string());
+        }
+        recovered_count += 1;
+    }
+    Ok(recovered_count)
+}
+
+fn recover_comment_submissions(
+    transaction: &rusqlite::Transaction<'_>,
+    session_generation: Option<i64>,
+) -> Result<usize, String> {
+    let sql = if session_generation.is_some() {
+        "SELECT draft_id, draft_revision, post_id, content_id, generation,
+                reply_to_comment_id, plaintext_text, mention_intent_json,
+                mention_commitment_salt, intent_sha256, prepare_command_id,
+                submit_command_id, plan_bytes, request_bytes, request_sha256,
+                root_key, publication_state, lease_generation, session_generation,
+                attempt_count, next_attempt_at_unix_ms, updated_at_unix_ms,
+                comment_id, state, error_code, retry_after_seconds,
+                retry_not_before_unix_ms
+         FROM secure_content_comment_drafts
+         WHERE publication_state = ?1 AND session_generation = ?2
+         ORDER BY submit_command_id"
+    } else {
+        "SELECT draft_id, draft_revision, post_id, content_id, generation,
+                reply_to_comment_id, plaintext_text, mention_intent_json,
+                mention_commitment_salt, intent_sha256, prepare_command_id,
+                submit_command_id, plan_bytes, request_bytes, request_sha256,
+                root_key, publication_state, lease_generation, session_generation,
+                attempt_count, next_attempt_at_unix_ms, updated_at_unix_ms,
+                comment_id, state, error_code, retry_after_seconds,
+                retry_not_before_unix_ms
+         FROM secure_content_comment_drafts
+         WHERE publication_state = ?1
+         ORDER BY submit_command_id"
+    };
+    let drafts = {
+        let mut statement = transaction
+            .prepare(sql)
+            .map_err(|error| error.to_string())?;
+        match session_generation {
+            Some(generation) => statement
+                .query_map(
+                    params![OperationState::InFlight as i64, generation],
+                    comment_draft_from_row,
+                )
+                .map_err(|error| error.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| error.to_string())?,
+            None => statement
+                .query_map(
+                    params![OperationState::InFlight as i64],
+                    comment_draft_from_row,
+                )
+                .map_err(|error| error.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| error.to_string())?,
+        }
+    };
+    let now = now_unix_ms();
+    let mut recovered_count = 0;
+    for draft in drafts {
+        let current = draft.operation_record()?;
+        let recovered =
+            recover_interrupted_operation(&current, now).map_err(|error| error.to_string())?;
+        let changed = transaction
+            .execute(
+                "UPDATE secure_content_comment_drafts
+                 SET publication_state = ?1, state = ?2,
+                     error_code = 'COMMENT_SUBMIT_RESULT_UNKNOWN',
+                     next_attempt_at_unix_ms = ?3, updated_at_unix_ms = ?4
+                 WHERE draft_id = ?5 AND draft_revision = ?6
+                   AND publication_state = ?7 AND lease_generation = ?8
+                   AND session_generation = ?9",
+                params![
+                    recovered.state as i64,
+                    CommentState::Failed as i64,
+                    recovered.next_attempt_at_unix_ms,
+                    recovered.updated_at_unix_ms,
+                    draft.draft_id,
+                    to_i64(draft.draft_revision, "Comment draft revision")?,
+                    current.state as i64,
+                    to_i64(current.lease_generation, "lease generation")?,
+                    to_i64(current.session_generation, "session generation")?,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed != 1 {
+            return Err("secure content interrupted Comment lost its fence".to_string());
+        }
+        recovered_count += 1;
+    }
+    Ok(recovered_count)
 }
 
 fn reaction_command_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredReactionCommand> {
@@ -3006,10 +3224,24 @@ fn moment_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredMomentComm
         request_bytes: row.get(6)?,
         request_sha256: fixed_32(row.get(7)?, "Moment request hash")?,
         root_key: fixed_32(row.get(8)?, "content root key")?,
-        state: PublicationState::try_from(row.get::<_, i64>(9)?).map_err(conversion_error)?,
-        session_generation: from_i64(row.get(10)?, "session generation")?,
-        post_id: row.get(11)?,
+        state: operation_state_from_i64(row.get::<_, i64>(9)?).map_err(conversion_error)?,
+        lease_generation: from_i64(row.get(10)?, "lease generation")?,
+        session_generation: from_i64(row.get(11)?, "session generation")?,
+        attempt_count: u32::try_from(row.get::<_, i64>(12)?)
+            .map_err(|_| conversion_error("Moment attempt count is invalid"))?,
+        next_attempt_at_unix_ms: row.get(13)?,
+        updated_at_unix_ms: row.get(14)?,
+        post_id: row.get(15)?,
     })
+}
+
+fn apply_operation_record_to_moment(command: &mut StoredMomentCommand, record: &OperationRecord) {
+    command.state = record.state;
+    command.lease_generation = record.lease_generation;
+    command.session_generation = record.session_generation;
+    command.attempt_count = record.attempt_count;
+    command.next_attempt_at_unix_ms = record.next_attempt_at_unix_ms;
+    command.updated_at_unix_ms = record.updated_at_unix_ms;
 }
 
 fn comment_draft_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredCommentDraft> {
@@ -3027,14 +3259,14 @@ fn comment_draft_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredCom
         .transpose()?;
     let publication_state = row
         .get::<_, Option<i64>>(16)?
-        .map(PublicationState::try_from)
+        .map(operation_state_from_i64)
         .transpose()
         .map_err(conversion_error)?;
     let retry_after_seconds = row
-        .get::<_, Option<i64>>(21)?
+        .get::<_, Option<i64>>(25)?
         .map(|value| from_i64(value, "Comment retry after"))
         .transpose()?;
-    let retry_not_before_unix_ms = row.get::<_, Option<i64>>(22)?;
+    let retry_not_before_unix_ms = row.get::<_, Option<i64>>(26)?;
     Ok(StoredCommentDraft {
         draft_id: row.get(0)?,
         draft_revision: from_i64(row.get(1)?, "Comment draft revision")?,
@@ -3053,13 +3285,27 @@ fn comment_draft_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredCom
         request_sha256,
         root_key,
         publication_state,
-        session_generation: from_i64(row.get(17)?, "session generation")?,
-        comment_id: row.get(18)?,
-        state: CommentState::try_from(row.get::<_, i64>(19)?).map_err(conversion_error)?,
-        error_code: row.get(20)?,
+        lease_generation: from_i64(row.get(17)?, "lease generation")?,
+        session_generation: from_i64(row.get(18)?, "session generation")?,
+        attempt_count: u32::try_from(row.get::<_, i64>(19)?)
+            .map_err(|_| conversion_error("Comment attempt count is invalid"))?,
+        next_attempt_at_unix_ms: row.get(20)?,
+        updated_at_unix_ms: row.get(21)?,
+        comment_id: row.get(22)?,
+        state: CommentState::try_from(row.get::<_, i64>(23)?).map_err(conversion_error)?,
+        error_code: row.get(24)?,
         retry_after_seconds,
         retry_not_before_unix_ms,
     })
+}
+
+fn apply_operation_record_to_comment(draft: &mut StoredCommentDraft, record: &OperationRecord) {
+    draft.publication_state = Some(record.state);
+    draft.lease_generation = record.lease_generation;
+    draft.session_generation = record.session_generation;
+    draft.attempt_count = record.attempt_count;
+    draft.next_attempt_at_unix_ms = record.next_attempt_at_unix_ms;
+    draft.updated_at_unix_ms = record.updated_at_unix_ms;
 }
 
 fn object_transfer_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ObjectTransferRecord> {
@@ -3099,7 +3345,9 @@ fn migrate(connection: &Connection) -> Result<(), String> {
             "PRAGMA foreign_keys = ON;
              CREATE TABLE IF NOT EXISTS secure_content_runtime_state (
                 singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
-                session_generation INTEGER NOT NULL CHECK(session_generation >= 0)
+                session_generation INTEGER NOT NULL CHECK(session_generation >= 0),
+                operation_schema TEXT NOT NULL
+                    DEFAULT 'secure-content-operation-v1'
              );
              INSERT OR IGNORE INTO secure_content_runtime_state (
                 singleton, session_generation
@@ -3113,6 +3361,8 @@ fn migrate(connection: &Connection) -> Result<(), String> {
                 state INTEGER NOT NULL,
                 lease_generation INTEGER NOT NULL DEFAULT 0,
                 session_generation INTEGER NOT NULL DEFAULT 0,
+                attempt_count INTEGER NOT NULL DEFAULT 0,
+                next_attempt_at_unix_ms INTEGER NOT NULL DEFAULT 0,
                 updated_at_unix_ms INTEGER NOT NULL
              );
              CREATE TABLE IF NOT EXISTS secure_content_prekeys (
@@ -3155,7 +3405,10 @@ fn migrate(connection: &Connection) -> Result<(), String> {
                 request_sha256 BLOB NOT NULL CHECK(length(request_sha256) = 32),
                 root_key BLOB NOT NULL CHECK(length(root_key) = 32),
                 state INTEGER NOT NULL,
+                lease_generation INTEGER NOT NULL DEFAULT 0,
                 session_generation INTEGER NOT NULL,
+                attempt_count INTEGER NOT NULL DEFAULT 0,
+                next_attempt_at_unix_ms INTEGER NOT NULL DEFAULT 0,
                 post_id TEXT,
                 updated_at_unix_ms INTEGER NOT NULL,
                 PRIMARY KEY(draft_id, draft_revision)
@@ -3226,7 +3479,10 @@ fn migrate(connection: &Connection) -> Result<(), String> {
                 root_key BLOB CHECK(root_key IS NULL OR length(root_key) = 32),
                 publication_state INTEGER,
                 generation INTEGER NOT NULL DEFAULT 0,
+                lease_generation INTEGER NOT NULL DEFAULT 0,
                 session_generation INTEGER NOT NULL,
+                attempt_count INTEGER NOT NULL DEFAULT 0,
+                next_attempt_at_unix_ms INTEGER NOT NULL DEFAULT 0,
                 comment_id TEXT,
                 state INTEGER NOT NULL,
                 error_code TEXT,
@@ -3410,7 +3666,213 @@ fn migrate(connection: &Connection) -> Result<(), String> {
             )
             .map_err(|error| error.to_string())?;
     }
+    migrate_operation_schema(connection)?;
     Ok(())
+}
+
+fn migrate_operation_schema(connection: &Connection) -> Result<(), String> {
+    let runtime_columns = {
+        let mut statement = connection
+            .prepare("PRAGMA table_info(secure_content_runtime_state)")
+            .map_err(|error| error.to_string())?;
+        let columns = statement
+            .query_map([], |row| row.get::<_, String>(1))
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        columns
+    };
+    if !runtime_columns
+        .iter()
+        .any(|column| column == "operation_schema")
+    {
+        connection
+            .execute(
+                "ALTER TABLE secure_content_runtime_state
+                 ADD COLUMN operation_schema TEXT NOT NULL
+                 DEFAULT 'desktop-secure-content-legacy'",
+                [],
+            )
+            .map_err(|error| error.to_string())?;
+    }
+    let prekey_columns = {
+        let mut statement = connection
+            .prepare("PRAGMA table_info(secure_content_prekey_commands)")
+            .map_err(|error| error.to_string())?;
+        let columns = statement
+            .query_map([], |row| row.get::<_, String>(1))
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        columns
+    };
+    for (column, declaration) in [
+        ("attempt_count", "INTEGER NOT NULL DEFAULT 0"),
+        ("next_attempt_at_unix_ms", "INTEGER NOT NULL DEFAULT 0"),
+    ] {
+        if !prekey_columns.iter().any(|candidate| candidate == column) {
+            connection
+                .execute(
+                    &format!(
+                        "ALTER TABLE secure_content_prekey_commands
+                         ADD COLUMN {column} {declaration}"
+                    ),
+                    [],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+    }
+    for (table, columns) in [
+        (
+            "secure_content_moment_commands",
+            [
+                ("lease_generation", "INTEGER NOT NULL DEFAULT 0"),
+                ("attempt_count", "INTEGER NOT NULL DEFAULT 0"),
+                ("next_attempt_at_unix_ms", "INTEGER NOT NULL DEFAULT 0"),
+            ],
+        ),
+        (
+            "secure_content_comment_drafts",
+            [
+                ("lease_generation", "INTEGER NOT NULL DEFAULT 0"),
+                ("attempt_count", "INTEGER NOT NULL DEFAULT 0"),
+                ("next_attempt_at_unix_ms", "INTEGER NOT NULL DEFAULT 0"),
+            ],
+        ),
+    ] {
+        let existing = {
+            let mut statement = connection
+                .prepare(&format!("PRAGMA table_info({table})"))
+                .map_err(|error| error.to_string())?;
+            let columns = statement
+                .query_map([], |row| row.get::<_, String>(1))
+                .map_err(|error| error.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| error.to_string())?;
+            columns
+        };
+        for (column, declaration) in columns {
+            if !existing.iter().any(|candidate| candidate == column) {
+                connection
+                    .execute(
+                        &format!("ALTER TABLE {table} ADD COLUMN {column} {declaration}"),
+                        [],
+                    )
+                    .map_err(|error| error.to_string())?;
+            }
+        }
+    }
+    connection
+        .execute(
+            "UPDATE secure_content_moment_commands
+             SET lease_generation = 1, attempt_count = MAX(attempt_count, 1)
+             WHERE state IN (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+               AND lease_generation = 0",
+            params![
+                OperationState::InFlight as i64,
+                OperationState::UnknownOutcome as i64,
+                OperationState::CommittedPendingReadback as i64,
+                OperationState::Committed as i64,
+                OperationState::RetryWait as i64,
+                OperationState::Terminal as i64,
+                OperationState::Cancelled as i64,
+            ],
+        )
+        .map_err(|error| error.to_string())?;
+    connection
+        .execute(
+            "UPDATE secure_content_comment_drafts
+             SET lease_generation = 1, attempt_count = MAX(attempt_count, 1)
+             WHERE publication_state IN (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+               AND lease_generation = 0",
+            params![
+                OperationState::InFlight as i64,
+                OperationState::UnknownOutcome as i64,
+                OperationState::CommittedPendingReadback as i64,
+                OperationState::Committed as i64,
+                OperationState::RetryWait as i64,
+                OperationState::Terminal as i64,
+                OperationState::Cancelled as i64,
+            ],
+        )
+        .map_err(|error| error.to_string())?;
+    let schema = connection
+        .query_row(
+            "SELECT operation_schema
+             FROM secure_content_runtime_state
+             WHERE singleton = 1",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(|error| error.to_string())?;
+    if schema == "secure-content-operation-v1" {
+        return Ok(());
+    }
+    if schema != "desktop-secure-content-legacy" {
+        return Err("secure content operation schema is unsupported".to_string());
+    }
+
+    let transaction = connection
+        .unchecked_transaction()
+        .map_err(|error| error.to_string())?;
+    for (table, column) in [
+        ("secure_content_prekey_commands", "state"),
+        ("secure_content_moment_commands", "state"),
+        ("secure_content_comment_drafts", "publication_state"),
+    ] {
+        transaction
+            .execute(
+                &format!(
+                    "UPDATE {table}
+                     SET {column} = CASE {column}
+                       WHEN 1 THEN 2
+                       WHEN 2 THEN 3
+                       WHEN 3 THEN 4
+                       WHEN 4 THEN 6
+                       WHEN 5 THEN 8
+                       WHEN 6 THEN 5
+                       ELSE {column}
+                     END
+                     WHERE {column} IS NOT NULL"
+                ),
+                [],
+            )
+            .map_err(|error| error.to_string())?;
+    }
+    for (table, column) in [
+        ("secure_content_moment_commands", "state"),
+        ("secure_content_comment_drafts", "publication_state"),
+    ] {
+        transaction
+            .execute(
+                &format!(
+                    "UPDATE {table}
+                     SET lease_generation = 1, attempt_count = MAX(attempt_count, 1)
+                     WHERE {column} IN (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                       AND lease_generation = 0"
+                ),
+                params![
+                    OperationState::InFlight as i64,
+                    OperationState::UnknownOutcome as i64,
+                    OperationState::CommittedPendingReadback as i64,
+                    OperationState::Committed as i64,
+                    OperationState::RetryWait as i64,
+                    OperationState::Terminal as i64,
+                    OperationState::Cancelled as i64,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+    }
+    transaction
+        .execute(
+            "UPDATE secure_content_runtime_state
+             SET operation_schema = 'secure-content-operation-v1'
+             WHERE singleton = 1
+               AND operation_schema = 'desktop-secure-content-legacy'",
+            [],
+        )
+        .map_err(|error| error.to_string())?;
+    transaction.commit().map_err(|error| error.to_string())
 }
 
 fn now_unix_ms() -> i64 {
@@ -3442,6 +3904,13 @@ fn to_i64(value: u64, field: &str) -> Result<i64, String> {
 
 fn from_i64(value: i64, field: &str) -> rusqlite::Result<u64> {
     u64::try_from(value).map_err(|_| conversion_error(format!("{field} is negative")))
+}
+
+fn operation_state_from_i64(value: i64) -> Result<OperationState, String> {
+    i32::try_from(value)
+        .map_err(|_| "secure content operation state exceeds i32".to_string())?
+        .try_into()
+        .map_err(|error: secure_content_core::operation::OperationFailure| error.to_string())
 }
 
 fn fixed_32(value: Vec<u8>, field: &str) -> rusqlite::Result<[u8; 32]> {
@@ -3496,9 +3965,12 @@ mod tests {
             pool_epoch: 7,
             request_sha256: Sha256::digest(&request_bytes).into(),
             request_bytes,
-            state: PublicationState::PendingPublication,
+            state: OperationState::Pending,
             lease_generation: 0,
             session_generation: 0,
+            attempt_count: 0,
+            next_attempt_at_unix_ms: 0,
+            updated_at_unix_ms: 1,
         }
     }
 
@@ -3548,7 +4020,8 @@ mod tests {
         }
     }
 
-    fn moment_command(state: PublicationState) -> StoredMomentCommand {
+    fn moment_command(state: OperationState) -> StoredMomentCommand {
+        let dispatched = !matches!(state, OperationState::Prepared | OperationState::Pending);
         StoredMomentCommand {
             draft_id: "draft-1".to_string(),
             draft_revision: 1,
@@ -3560,7 +4033,11 @@ mod tests {
             request_sha256: Sha256::digest([2]).into(),
             root_key: [4; 32],
             state,
+            lease_generation: if dispatched { 1 } else { 0 },
             session_generation: 1,
+            attempt_count: if dispatched { 1 } else { 0 },
+            next_attempt_at_unix_ms: 0,
+            updated_at_unix_ms: 1,
             post_id: None,
         }
     }
@@ -3584,7 +4061,11 @@ mod tests {
             request_sha256: None,
             root_key: None,
             publication_state: None,
+            lease_generation: 0,
             session_generation: 7,
+            attempt_count: 0,
+            next_attempt_at_unix_ms: 0,
+            updated_at_unix_ms: 1,
             comment_id: None,
             state: CommentState::Editing,
             error_code: None,
@@ -3601,19 +4082,19 @@ mod tests {
             .persist_prekey_publication(&command, &[("key-1".to_string(), Some([7; 32]), [8; 32])])
             .unwrap();
         let leased = store.acquire_publication(&command.command_id, 11).unwrap();
-        assert!(!leased.reconciles_unknown_commit);
-        assert_eq!(leased.command.state, PublicationState::InFlight);
+        assert!(!leased.lease.reconciles_unknown_outcome);
+        assert_eq!(leased.command.state, OperationState::InFlight);
         assert_eq!(leased.command.lease_generation, 1);
 
         assert_eq!(store.recover_orphaned_leases().unwrap(), 1);
         let replay = store.acquire_publication(&command.command_id, 12).unwrap();
-        assert!(replay.reconciles_unknown_commit);
+        assert!(replay.lease.reconciles_unknown_outcome);
         assert_eq!(replay.command.lease_generation, 2);
         assert!(!store
-            .mark_publication_published(&command.command_id, 1, 11)
+            .complete_publication(&leased, OperationCompletion::Committed)
             .unwrap());
         assert!(store
-            .mark_publication_published(&command.command_id, 2, 12)
+            .complete_publication(&replay, OperationCompletion::Committed)
             .unwrap());
     }
 
@@ -3645,14 +4126,20 @@ mod tests {
                 .iter()
                 .find(|command| command.command_id == first.command_id)
                 .map(|command| command.state),
-            Some(PublicationState::UnknownCommit),
+            Some(OperationState::UnknownOutcome),
         );
+        let connection = store.connection().unwrap();
+        let second_state = connection
+            .query_row(
+                "SELECT state FROM secure_content_prekey_commands WHERE command_id = ?1",
+                params![second.command_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap();
+        drop(connection);
         assert_eq!(
-            pending
-                .iter()
-                .find(|command| command.command_id == second.command_id)
-                .map(|command| command.state),
-            Some(PublicationState::InFlight),
+            operation_state_from_i64(second_state).unwrap(),
+            OperationState::InFlight,
         );
         assert!(store.endpoint_prekey("key-old").unwrap().is_some());
         assert!(store.endpoint_prekey("key-new").unwrap().is_some());
@@ -3673,7 +4160,7 @@ mod tests {
             .unwrap();
         let leased = store.acquire_publication(&command.command_id, 1).unwrap();
         store
-            .mark_publication_published(&command.command_id, leased.command.lease_generation, 1)
+            .complete_publication(&leased, OperationCompletion::Committed)
             .unwrap();
         store
             .commit_content_root("content-1", 1, "post-1", &[4; 32], Some("key-1"), b"{}")
@@ -3777,7 +4264,7 @@ mod tests {
             .unwrap();
         assert!(store.abandoned_upload_transfer_ids().unwrap().is_empty());
 
-        let command = moment_command(PublicationState::PendingPublication);
+        let command = moment_command(OperationState::Pending);
         store.persist_moment_command(&command).unwrap();
         assert_eq!(
             store.reconcilable_moment_commands().unwrap(),
@@ -3786,17 +4273,23 @@ mod tests {
         assert!(store.abandoned_upload_transfer_ids().unwrap().is_empty());
 
         let acquired = store
-            .acquire_moment_command(&command.draft_id, command.draft_revision, 2)
+            .acquire_moment_command(
+                &command.draft_id,
+                command.draft_revision,
+                2,
+                DispatchCause::InitialReconciliation,
+            )
             .unwrap();
         assert!(store
-            .acquire_moment_command(&command.draft_id, command.draft_revision, 2)
+            .acquire_moment_command(
+                &command.draft_id,
+                command.draft_revision,
+                2,
+                DispatchCause::InitialReconciliation,
+            )
             .is_err());
         assert!(store
-            .mark_moment_terminal(
-                &acquired.draft_id,
-                acquired.draft_revision,
-                acquired.session_generation,
-            )
+            .complete_moment_command(&acquired, OperationCompletion::Terminal, None)
             .unwrap());
         store.delete_moment_draft("content-1").unwrap();
         assert_eq!(
@@ -3812,18 +4305,35 @@ mod tests {
         store
             .ensure_object_upload_transfer(&upload, "image/jpeg")
             .unwrap();
-        let command = moment_command(PublicationState::PendingPublication);
+        let command = moment_command(OperationState::Pending);
         store.persist_moment_command(&command).unwrap();
         let acquired = store
-            .acquire_moment_command(&command.draft_id, command.draft_revision, 1)
+            .acquire_moment_command(
+                &command.draft_id,
+                command.draft_revision,
+                1,
+                DispatchCause::InitialReconciliation,
+            )
             .unwrap();
 
         assert!(store
-            .mark_moment_published(
-                &acquired.draft_id,
-                acquired.draft_revision,
-                acquired.session_generation,
-                "post-1",
+            .complete_moment_command(
+                &acquired,
+                OperationCompletion::CommittedPendingReadback,
+                Some("post-1"),
+            )
+            .unwrap());
+        let committed = store
+            .moment_command(&command.draft_id, command.draft_revision)
+            .unwrap()
+            .unwrap();
+        assert!(store
+            .apply_moment_readback(
+                &committed,
+                &ReadbackDecision::CommitFromReadback {
+                    receipt_sha256: [9; 32],
+                },
+                Some("post-1"),
             )
             .unwrap());
         assert!(store
@@ -4165,7 +4675,7 @@ mod tests {
         store
             .ensure_object_upload_transfer(&upload, "image/jpeg")
             .unwrap();
-        let command = moment_command(PublicationState::UnknownCommit);
+        let command = moment_command(OperationState::UnknownOutcome);
         store.persist_moment_command(&command).unwrap();
 
         let downloads = store.object_transfers_for_resource("post-1").unwrap();
@@ -4285,23 +4795,27 @@ mod tests {
             )
             .unwrap();
         let acquired = store
-            .acquire_comment_submission(&draft.draft_id, draft.draft_revision, 7)
+            .acquire_comment_submission(
+                &draft.draft_id,
+                draft.draft_revision,
+                7,
+                DispatchCause::ExplicitUserAction,
+            )
             .unwrap();
-        assert_eq!(acquired.state, CommentState::Submitting);
+        assert_eq!(acquired.draft.state, CommentState::Submitting);
         assert_eq!(
-            acquired.submit_command_id.as_deref(),
+            acquired.draft.submit_command_id.as_deref(),
             Some("comment-submit-1")
         );
 
         assert!(store
-            .mark_comment_retryable(
-                &draft.draft_id,
-                draft.draft_revision,
-                7,
-                PublicationState::PendingPublication,
+            .complete_comment_submission(
+                &acquired,
+                OperationCompletion::RetryAt(now_unix_ms() + 17_000),
                 CommentState::RateLimited,
                 "COMMENT_RATE_LIMITED",
                 Some(17),
+                None,
             )
             .unwrap());
         let retained = store
@@ -4317,18 +4831,27 @@ mod tests {
             .retry_not_before_unix_ms
             .is_some_and(|deadline| deadline > now_unix_ms()));
         assert_eq!(retained.request_sha256, Some(request_sha256));
+        assert_eq!(retained.publication_state, Some(OperationState::RetryWait));
 
         assert!(store
-            .acquire_comment_submission(&draft.draft_id, draft.draft_revision, 7)
+            .acquire_comment_submission(
+                &draft.draft_id,
+                draft.draft_revision,
+                7,
+                DispatchCause::RetryDeadlineReached,
+            )
             .is_err());
         store
             .connection()
             .unwrap()
             .execute(
                 "UPDATE secure_content_comment_drafts
-                 SET retry_not_before_unix_ms = ?1
-                 WHERE draft_id = ?2 AND draft_revision = ?3",
+                 SET publication_state = ?1,
+                     error_code = 'SOCIAL_PRIVATE_EXPIRED_PLAN',
+                     retry_not_before_unix_ms = ?2
+                 WHERE draft_id = ?3 AND draft_revision = ?4",
                 params![
+                    OperationState::Terminal as i64,
                     now_unix_ms() - 1,
                     draft.draft_id,
                     to_i64(draft.draft_revision, "Comment draft revision").unwrap(),
@@ -4373,26 +4896,37 @@ mod tests {
             )
             .unwrap();
         let retried = store
-            .acquire_comment_submission(&draft.draft_id, draft.draft_revision, 7)
-            .unwrap();
-        assert_eq!(
-            retried.submit_command_id.as_deref(),
-            Some("comment-submit-2")
-        );
-        assert!(!store
-            .mark_comment_committed_pending_readback(
-                &draft.draft_id,
-                draft.draft_revision,
-                8,
-                "comment-1",
-            )
-            .unwrap());
-        assert!(store
-            .mark_comment_committed_pending_readback(
+            .acquire_comment_submission(
                 &draft.draft_id,
                 draft.draft_revision,
                 7,
-                "comment-1",
+                DispatchCause::ExplicitUserAction,
+            )
+            .unwrap();
+        assert_eq!(
+            retried.draft.submit_command_id.as_deref(),
+            Some("comment-submit-2")
+        );
+        let mut stale = retried.clone();
+        stale.draft.session_generation = 8;
+        assert!(store
+            .complete_comment_submission(
+                &stale,
+                OperationCompletion::CommittedPendingReadback,
+                CommentState::Failed,
+                "COMMENT_READBACK_PENDING",
+                None,
+                Some("comment-1"),
+            )
+            .is_err());
+        assert!(store
+            .complete_comment_submission(
+                &retried,
+                OperationCompletion::CommittedPendingReadback,
+                CommentState::Failed,
+                "COMMENT_READBACK_PENDING",
+                None,
+                Some("comment-1"),
             )
             .unwrap());
         let committed = store
@@ -4401,19 +4935,27 @@ mod tests {
             .unwrap();
         assert_eq!(
             committed.publication_state,
-            Some(PublicationState::CommittedPendingReadback)
+            Some(OperationState::CommittedPendingReadback)
         );
         assert!(committed.text.is_empty());
         assert!(store
-            .acquire_comment_submission(&draft.draft_id, draft.draft_revision, 7)
-            .is_err());
-        assert!(store
-            .mark_comment_readback_failed(
+            .acquire_comment_submission(
                 &draft.draft_id,
                 draft.draft_revision,
                 7,
+                DispatchCause::ReadbackAuthorizedRetry,
+            )
+            .is_err());
+        assert!(store
+            .apply_comment_readback(
+                &committed,
+                &ReadbackDecision::KeepCommittedPendingReadback {
+                    retry_after_unix_ms: Some(now_unix_ms() + 2_000),
+                },
+                CommentState::Failed,
                 "COMMENT_READBACK_FAILED",
                 Some(2),
+                Some("comment-1"),
             )
             .unwrap());
         let pending_readback = store
@@ -4422,14 +4964,23 @@ mod tests {
             .unwrap();
         assert_eq!(
             pending_readback.publication_state,
-            Some(PublicationState::CommittedPendingReadback)
+            Some(OperationState::CommittedPendingReadback)
         );
         assert_eq!(
             pending_readback.error_code.as_deref(),
             Some("COMMENT_READBACK_FAILED")
         );
         assert!(store
-            .mark_comment_posted(&draft.draft_id, draft.draft_revision, 7, "comment-1",)
+            .apply_comment_readback(
+                &pending_readback,
+                &ReadbackDecision::CommitFromReadback {
+                    receipt_sha256: [8; 32],
+                },
+                CommentState::Posted,
+                "",
+                None,
+                Some("comment-1"),
+            )
             .unwrap());
         let posted = store
             .comment_draft(&draft.draft_id, draft.draft_revision)

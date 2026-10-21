@@ -1,15 +1,18 @@
 use crate::contracts::{
-    ActorReadReceiveCommit, ConversationProjection, ConversationStateReceiveCommit,
-    DeliveryReceiptReceiveCommit, DirectEditCommit, DirectReceiveCommit, InteractionReceiveCommit,
-    MemberAuthorityReceiveCommit, MlsApplicationReceiveCommit, MlsRetirementReceiveCommit,
-    MlsSenderTransitionReceiveCommit, MlsTransitionReceiveCommit, PendingMlsKeyPackage,
-    PendingMlsTransitionState, PublicEventReceiveCommit, ReceiveCommitResult,
-    ServicePlaintextReceiveCommit, SkippedEndpointReceiveCommit,
+    ActorReadReceiveCommit, ConversationMutationReceiveCommit, ConversationProjection,
+    ConversationStateReceiveCommit, DeliveryReceiptReceiveCommit, DirectEditCommit,
+    DirectReceiveCommit, InteractionReceiveCommit, MemberAuthorityReceiveCommit,
+    MlsApplicationReceiveCommit, MlsRetirementReceiveCommit, MlsSenderTransitionReceiveCommit,
+    MlsTransitionReceiveCommit, PendingMlsKeyPackage, PendingMlsTransitionState,
+    PublicEventReceiveCommit, ReceiveCommitResult, ServicePlaintextReceiveCommit,
+    SkippedEndpointReceiveCommit,
 };
 use crate::crypto::double_ratchet::DrSkippedMessageKey;
 use crate::crypto::session::DirectSession;
-use crate::outbox::CommandOutboxEntry;
+use crate::engine::{CommandReconciliation, SubmittedCommand};
+use crate::outbox::{CommandOutboxEntry, OutboxStore};
 use crate::proto::chat::AttachmentPlaintextMetadata;
+use std::sync::Arc;
 
 pub struct PendingSenderProjection<'a> {
     pub command_id: &'a str,
@@ -273,6 +276,11 @@ pub trait MessagingRepository: Send + Sync {
         self.commit_conversation_state(&commit.state)
     }
 
+    fn commit_conversation_mutation_event(
+        &self,
+        commit: &ConversationMutationReceiveCommit,
+    ) -> Result<ReceiveCommitResult, String>;
+
     fn conversation_projections(&self) -> Result<Vec<ConversationProjection>, String>;
 
     // --- Public events ---
@@ -328,6 +336,18 @@ pub trait MessagingRepository: Send + Sync {
         attempt_count: u32,
     ) -> Result<(), String>;
 
+    fn submitted_commands(&self) -> Result<Vec<SubmittedCommand>, String> {
+        Err("messaging repository does not expose submitted commands".to_string())
+    }
+
+    fn apply_command_reconciliations(
+        &self,
+        _reconciliations: &[CommandReconciliation],
+        _retry_at_unix_ms: i64,
+    ) -> Result<(), String> {
+        Err("messaging repository does not apply command reconciliations".to_string())
+    }
+
     // --- Authority state ---
 
     fn authority_head(&self, conversation_id: &str) -> Result<(i64, Vec<u8>), String>;
@@ -373,4 +393,72 @@ pub trait MessagingRepository: Send + Sync {
     fn validate_integrity(&self) -> Result<(), String>;
 
     fn prepare_for_atomic_replace(&self) -> Result<(), String>;
+}
+
+impl<R: MessagingRepository> OutboxStore for Arc<R> {
+    fn next_command(&self, now_unix_ms: i64) -> Result<Option<CommandOutboxEntry>, String> {
+        MessagingRepository::next_command(self.as_ref(), now_unix_ms)
+    }
+
+    fn mark_command_submitted(
+        &self,
+        command_id: &str,
+        command_bytes: &[u8],
+        attempt_count: u32,
+    ) -> Result<(), String> {
+        MessagingRepository::mark_command_submitted(
+            self.as_ref(),
+            command_id,
+            command_bytes,
+            attempt_count,
+        )
+    }
+
+    fn mark_command_retry(
+        &self,
+        command_id: &str,
+        command_bytes: &[u8],
+        attempt_count: u32,
+        next_attempt_at_unix_ms: i64,
+        error_code: &str,
+    ) -> Result<(), String> {
+        MessagingRepository::mark_command_retry(
+            self.as_ref(),
+            command_id,
+            command_bytes,
+            attempt_count,
+            next_attempt_at_unix_ms,
+            error_code,
+        )
+    }
+
+    fn mark_command_failed(
+        &self,
+        command_id: &str,
+        command_bytes: &[u8],
+        attempt_count: u32,
+        error_code: &str,
+    ) -> Result<(), String> {
+        MessagingRepository::mark_command_failed(
+            self.as_ref(),
+            command_id,
+            command_bytes,
+            attempt_count,
+            error_code,
+        )
+    }
+
+    fn mark_command_superseded(
+        &self,
+        command_id: &str,
+        command_bytes: &[u8],
+        attempt_count: u32,
+    ) -> Result<(), String> {
+        MessagingRepository::mark_command_superseded(
+            self.as_ref(),
+            command_id,
+            command_bytes,
+            attempt_count,
+        )
+    }
 }

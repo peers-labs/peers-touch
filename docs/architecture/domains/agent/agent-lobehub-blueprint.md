@@ -1,8 +1,8 @@
 # Agent LobeHub Blueprint Rebuild
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-06-16 | **Updated**: 2026-06-16
+> **Version**: v1.1
+> **Created**: 2026-06-16 | **Updated**: 2026-10-20
 > **Owner**: Peers-Touch Agent Team
 > **Module**: `apps/desktop/`, `apps/desktop/src-tauri/src/application/{agent_turn,mcp,skills,tools,agents}/`, `apps/station/app/subserver/agent/`
 
@@ -51,7 +51,9 @@ The target is not “clone LobeHub”. The target is:
 2. **Desktop Rust owns local capability execution.** MCP process management, local file access, local tool execution, OS integration, and secure local persistence belong in Desktop Rust.
 3. **Desktop Web owns interaction and projection.** UI renders runtime state, approvals, progress, configuration, and diagnostics. It must not become the hidden runtime owner.
 4. **Every powerful action is observable.** Tool calls, MCP calls, approvals, errors, retries, and fallbacks must project into trace and UI.
-5. **LobeHub is the benchmark, Peers-Touch is the product.** We borrow capability shape and UX maturity while preserving Client -> Model -> Station boundaries.
+5. **LobeHub is the benchmark, Peers-Touch is the product.** We borrow
+   capability shape and UX maturity while preserving the Client ↔ Station
+   runtime boundary and shared Model contract semantics.
 
 ---
 

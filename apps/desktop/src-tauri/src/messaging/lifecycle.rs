@@ -1,11 +1,17 @@
-use super::{
-    CommandRetryPolicy, ConversationMemberProjection, ConversationProjection, MessagingEngine,
-};
+use super::{ConversationMemberProjection, ConversationProjection, MessagingEngine};
 use crate::model::chat::{
     GetConversationMembersRequest, GetConversationMembersResponse, ListConversationsRequest,
     ListConversationsResponse, MemberStatus,
 };
+use messaging_core::contracts::CryptoEndpoint;
+use messaging_core::engine::{
+    activate_engine, begin_engine_stop, complete_engine_start, complete_engine_stop,
+    validate_active_engine, EngineFence, EngineLifecycleRecord, EnginePhase,
+};
+use messaging_core::outbox::CommandRetryPolicy;
+use messaging_core::ports::LifecycleCancellation;
 use reqwest::Method;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -14,13 +20,23 @@ const LIFECYCLE_INTERVAL: Duration = Duration::from_secs(2);
 const DRAIN_BATCH_LIMIT: u32 = 100;
 
 struct LifecycleState {
-    stopped: bool,
     token: String,
     last_error: Option<String>,
+    lifecycle: EngineLifecycleRecord,
+}
+
+struct WorkerCancellation(AtomicBool);
+
+impl LifecycleCancellation for WorkerCancellation {
+    fn is_cancelled(&self) -> bool {
+        self.0.load(Ordering::Acquire)
+    }
 }
 
 pub struct MessagingLifecycleWorker {
     state: Arc<(Mutex<LifecycleState>, Condvar)>,
+    cancellation: Arc<WorkerCancellation>,
+    fence: EngineFence,
     handle: Option<JoinHandle<()>>,
 }
 
@@ -29,26 +45,64 @@ impl MessagingLifecycleWorker {
         if token.trim().is_empty() {
             return Err("messaging lifecycle worker requires token".to_string());
         }
+        let station_peer_id = lifecycle_station_peer_id(engine.as_ref())?;
+        let cancellation = Arc::new(WorkerCancellation(AtomicBool::new(false)));
+        let inactive = EngineLifecycleRecord::inactive(
+            CryptoEndpoint::new(
+                engine.endpoint().ptid.clone(),
+                engine.endpoint().device_id.clone(),
+            )?,
+            station_peer_id,
+            super::engine::now_unix_ms(),
+        )
+        .map_err(|error| error.to_string())?;
+        let starting = activate_engine(
+            &inactive,
+            cancellation.as_ref(),
+            next_lifecycle_time(&inactive),
+        )
+        .map_err(|error| error.to_string())?;
+        let active = complete_engine_start(
+            &starting,
+            starting.fence(),
+            engine.runtime_consumer_epoch(),
+            next_lifecycle_time(&starting),
+        )
+        .map_err(|error| error.to_string())?;
+        let fence = active.fence();
         let state = Arc::new((
             Mutex::new(LifecycleState {
-                stopped: false,
                 token,
                 last_error: None,
+                lifecycle: active,
             }),
             Condvar::new(),
         ));
         let thread_state = state.clone();
         let cycle_state = state.clone();
+        let thread_cancellation = cancellation.clone();
+        let cycle_cancellation = cancellation.clone();
         let handle = thread::Builder::new()
             .name(format!("messaging:{}", engine.profile_id()))
             .spawn(move || {
-                lifecycle_loop(thread_state, move |token| {
-                    run_cycle(&engine, token, &cycle_state)
+                lifecycle_loop(thread_state, fence, thread_cancellation, move |token| {
+                    run_cycle(
+                        &engine,
+                        token,
+                        &cycle_state,
+                        fence,
+                        cycle_cancellation.as_ref(),
+                    )
                 });
             })
-            .map_err(|error| format!("start messaging lifecycle worker: {error}"))?;
+            .map_err(|error| {
+                cancellation.0.store(true, Ordering::Release);
+                format!("start messaging lifecycle worker: {error}")
+            })?;
         Ok(Self {
             state,
+            cancellation,
+            fence,
             handle: Some(handle),
         })
     }
@@ -61,9 +115,8 @@ impl MessagingLifecycleWorker {
         let mut state = state
             .lock()
             .map_err(|_| "messaging lifecycle state lock poisoned".to_string())?;
-        if state.stopped {
-            return Err("messaging lifecycle worker is stopped".to_string());
-        }
+        validate_active_engine(&state.lifecycle, self.fence, self.cancellation.as_ref())
+            .map_err(|error| error.to_string())?;
         state.token = token;
         wake.notify_one();
         Ok(())
@@ -75,9 +128,8 @@ impl MessagingLifecycleWorker {
             .0
             .lock()
             .map_err(|_| "messaging lifecycle state lock poisoned".to_string())?;
-        if state.stopped {
-            return Err("messaging lifecycle worker is stopped".to_string());
-        }
+        validate_active_engine(&state.lifecycle, self.fence, self.cancellation.as_ref())
+            .map_err(|error| error.to_string())?;
         Ok(state.token.clone())
     }
 
@@ -90,11 +142,15 @@ impl MessagingLifecycleWorker {
         if !handle_running {
             return Ok(false);
         }
-        self.state
+        let state = self
+            .state
             .0
             .lock()
-            .map(|state| !state.stopped)
-            .map_err(|_| "messaging lifecycle state lock poisoned".to_string())
+            .map_err(|_| "messaging lifecycle state lock poisoned".to_string())?;
+        Ok(
+            validate_active_engine(&state.lifecycle, self.fence, self.cancellation.as_ref())
+                .is_ok(),
+        )
     }
 
     pub fn wake(&self) -> Result<(), String> {
@@ -102,9 +158,8 @@ impl MessagingLifecycleWorker {
         let state = state
             .lock()
             .map_err(|_| "messaging lifecycle state lock poisoned".to_string())?;
-        if state.stopped {
-            return Err("messaging lifecycle worker is stopped".to_string());
-        }
+        validate_active_engine(&state.lifecycle, self.fence, self.cancellation.as_ref())
+            .map_err(|error| error.to_string())?;
         wake.notify_one();
         Ok(())
     }
@@ -124,22 +179,46 @@ impl MessagingLifecycleWorker {
     }
 
     fn request_stop(&self) -> Result<(), String> {
+        self.cancellation.0.store(true, Ordering::Release);
         let (state, wake) = self.state.as_ref();
         let mut state = state
             .lock()
             .map_err(|_| "messaging lifecycle state lock poisoned".to_string())?;
-        state.stopped = true;
+        if !matches!(
+            state.lifecycle.phase,
+            EnginePhase::Inactive | EnginePhase::Stopping
+        ) {
+            state.lifecycle = begin_engine_stop(
+                &state.lifecycle,
+                self.fence,
+                next_lifecycle_time(&state.lifecycle),
+            )
+            .map_err(|error| error.to_string())?;
+        }
         wake.notify_one();
         Ok(())
     }
 
     fn join(&mut self) -> Result<(), String> {
-        let Some(handle) = self.handle.take() else {
-            return Ok(());
-        };
-        handle
-            .join()
-            .map_err(|_| "messaging lifecycle worker panicked".to_string())
+        if let Some(handle) = self.handle.take() {
+            handle
+                .join()
+                .map_err(|_| "messaging lifecycle worker panicked".to_string())?;
+        }
+        let mut state = self
+            .state
+            .0
+            .lock()
+            .map_err(|_| "messaging lifecycle state lock poisoned".to_string())?;
+        if state.lifecycle.phase != EnginePhase::Inactive {
+            state.lifecycle = complete_engine_stop(
+                &state.lifecycle,
+                self.fence,
+                next_lifecycle_time(&state.lifecycle),
+            )
+            .map_err(|error| error.to_string())?;
+        }
+        Ok(())
     }
 
     #[cfg(test)]
@@ -156,8 +235,12 @@ impl Drop for MessagingLifecycleWorker {
     }
 }
 
-fn lifecycle_loop<F>(state: Arc<(Mutex<LifecycleState>, Condvar)>, mut run: F)
-where
+fn lifecycle_loop<F>(
+    state: Arc<(Mutex<LifecycleState>, Condvar)>,
+    fence: EngineFence,
+    cancellation: Arc<WorkerCancellation>,
+    mut run: F,
+) where
     F: FnMut(&str) -> Result<(), String>,
 {
     loop {
@@ -166,7 +249,7 @@ where
                 Ok(guard) => guard,
                 Err(_) => return,
             };
-            if guard.stopped {
+            if validate_active_engine(&guard.lifecycle, fence, cancellation.as_ref()).is_err() {
                 return;
             }
             guard.token.clone()
@@ -176,6 +259,9 @@ where
             Ok(guard) => guard,
             Err(_) => return,
         };
+        if validate_active_engine(&guard.lifecycle, fence, cancellation.as_ref()).is_err() {
+            return;
+        }
         let next_error = result.err();
         if next_error != guard.last_error {
             match next_error.as_deref() {
@@ -184,12 +270,14 @@ where
             }
         }
         guard.last_error = next_error;
-        if guard.stopped {
-            return;
-        }
         let waited = state.1.wait_timeout(guard, LIFECYCLE_INTERVAL);
         match waited {
-            Ok((next, _)) if next.stopped => return,
+            Ok((next, _))
+                if validate_active_engine(&next.lifecycle, fence, cancellation.as_ref())
+                    .is_err() =>
+            {
+                return;
+            }
             Ok(_) => {}
             Err(_) => return,
         }
@@ -200,15 +288,17 @@ fn run_cycle(
     engine: &MessagingEngine,
     token: &str,
     lifecycle_state: &Arc<(Mutex<LifecycleState>, Condvar)>,
+    fence: EngineFence,
+    cancellation: &dyn LifecycleCancellation,
 ) -> Result<(), String> {
     let mut failures = Vec::new();
     macro_rules! run_step {
         ($label:literal, $operation:expr) => {{
-            ensure_cycle_active(lifecycle_state)?;
+            ensure_cycle_active(lifecycle_state, fence, cancellation)?;
             if let Err(error) = $operation {
                 failures.push(format!("{}: {error}", $label));
             }
-            ensure_cycle_active(lifecycle_state)?;
+            ensure_cycle_active(lifecycle_state, fence, cancellation)?;
         }};
     }
 
@@ -283,15 +373,31 @@ fn run_cycle(
 
 fn ensure_cycle_active(
     lifecycle_state: &Arc<(Mutex<LifecycleState>, Condvar)>,
+    fence: EngineFence,
+    cancellation: &dyn LifecycleCancellation,
 ) -> Result<(), String> {
     let state = lifecycle_state
         .0
         .lock()
         .map_err(|_| "messaging lifecycle state lock poisoned".to_string())?;
-    if state.stopped {
-        Err("messaging lifecycle cycle cancelled".to_string())
-    } else {
-        Ok(())
+    validate_active_engine(&state.lifecycle, fence, cancellation).map_err(|error| error.to_string())
+}
+
+fn next_lifecycle_time(record: &EngineLifecycleRecord) -> i64 {
+    super::engine::now_unix_ms().max(record.updated_at_unix_ms.saturating_add(1))
+}
+
+fn lifecycle_station_peer_id(engine: &MessagingEngine) -> Result<String, String> {
+    if let Some(station_peer_id) = engine.station_client().active_station_peer_id() {
+        return Ok(station_peer_id);
+    }
+    #[cfg(test)]
+    {
+        return Ok(format!("test-station:{}", engine.profile_id()));
+    }
+    #[cfg(not(test))]
+    {
+        Err("messaging lifecycle Station identity is unavailable".to_string())
     }
 }
 
@@ -398,23 +504,34 @@ pub(crate) fn hydrate_projections_from_station(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::atomic::AtomicUsize;
 
     #[test]
     fn lifecycle_loop_runs_immediately_and_stops_on_wake() {
+        let cancellation = Arc::new(WorkerCancellation(AtomicBool::new(false)));
+        let inactive = EngineLifecycleRecord::inactive(
+            CryptoEndpoint::new("ptid:alice", "desktop-1").unwrap(),
+            "station-1",
+            1,
+        )
+        .unwrap();
+        let starting = activate_engine(&inactive, cancellation.as_ref(), 2).unwrap();
+        let active = complete_engine_start(&starting, starting.fence(), 0, 3).unwrap();
+        let fence = active.fence();
         let state = Arc::new((
             Mutex::new(LifecycleState {
-                stopped: false,
                 token: "token-a".to_string(),
                 last_error: None,
+                lifecycle: active,
             }),
             Condvar::new(),
         ));
         let calls = Arc::new(AtomicUsize::new(0));
         let thread_state = state.clone();
         let thread_calls = calls.clone();
+        let thread_cancellation = cancellation.clone();
         let handle = thread::spawn(move || {
-            lifecycle_loop(thread_state, |token| {
+            lifecycle_loop(thread_state, fence, thread_cancellation, |token| {
                 assert_eq!(token, "token-a");
                 thread_calls.fetch_add(1, Ordering::SeqCst);
                 Ok(())
@@ -423,9 +540,15 @@ mod tests {
         while calls.load(Ordering::SeqCst) == 0 {
             thread::yield_now();
         }
+        cancellation.0.store(true, Ordering::Release);
         {
             let mut guard = state.0.lock().unwrap();
-            guard.stopped = true;
+            guard.lifecycle = begin_engine_stop(
+                &guard.lifecycle,
+                fence,
+                next_lifecycle_time(&guard.lifecycle),
+            )
+            .unwrap();
             state.1.notify_one();
         }
         handle.join().unwrap();

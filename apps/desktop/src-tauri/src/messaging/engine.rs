@@ -9,13 +9,10 @@ use super::store::{
 use super::{
     verify_device_event_delivery, AttachmentDownloadProjection, AttachmentRetryPolicy,
     AttachmentTransferControl, AttachmentTransferProgress, AttachmentTransferRecord,
-    AttachmentTransferWorker, CommandDispatchProgress, CommandOutboxWorker,
-    CommandReconciliationProgress, CommandReconciliationWorker, CommandRetryPolicy,
-    ConversationMemberProjection, ConversationMessagePage, ConversationMessageProjection,
-    ConversationProjection, ConversationSummaryProjection, DirectSessionBootstrapper,
-    DrainProgress, EditTextIntent, MessageRetryDisposition, MessagingItemConsumer,
-    MessagingLifecycleWorker, MessagingStore, PendingAttachmentUpload, PendingMembershipIntent,
-    PendingMessageDraft, PreKeyPublisher, QueueDrain, SendPreparer, SendTextIntent,
+    AttachmentTransferWorker, ConversationMemberProjection, ConversationMessagePage,
+    ConversationMessageProjection, ConversationProjection, ConversationSummaryProjection,
+    DirectSessionBootstrapper, MessageRetryDisposition, MessagingLifecycleWorker, MessagingStore,
+    PendingAttachmentUpload, PendingMembershipIntent, PendingMessageDraft, PreKeyPublisher,
     StationAttachmentTransferTransport, StationCommandTransport, StationDeliveryReceiptTransport,
     StationDeviceTransport, StationGroupGenesisTransport, StationKeyBundleTransport,
     StationMembershipTransitionTransport, StationMlsKeyPackageTransport,
@@ -31,23 +28,32 @@ use crate::model::chat::{
     Conversation, ConversationCommandKind, ConversationEvent, ConversationKind,
     ConversationMemberAuthorityAction, ConversationMemberAuthorityCommand,
     ConversationPublicHeadSource, CreateDirectConversationRequest,
-    CreateDirectConversationResponse, CryptoEndpoint, DeviceConsumptionReceipt,
-    DeviceEventDelivery, DeviceInboxPayloadType, DissolveConversationIntent,
-    DurableDeviceInboxItem, GetConversationPublicHeadRequest, GetConversationPublicHeadResponse,
-    GetConversationRequest, GetConversationResponse, ListConversationEventsRequest,
-    ListConversationEventsResponse, MemberRole, MessagingMembershipAction, MessagingProjectionKind,
-    MlsLeaveIntent, PrepareConversationCommandRequest, PrepareConversationCommandResponse,
+    CreateDirectConversationResponse, CryptoEndpoint, DeviceEventDelivery, DeviceInboxPayloadType,
+    DissolveConversationIntent, DurableDeviceInboxItem, GetConversationPublicHeadRequest,
+    GetConversationPublicHeadResponse, GetConversationRequest, GetConversationResponse,
+    ListConversationEventsRequest, ListConversationEventsResponse, MemberRole,
+    MessagingMembershipAction, MessagingProjectionKind, MlsLeaveIntent,
+    PrepareConversationCommandRequest, PrepareConversationCommandResponse,
     PreparedEndpointPayloadKind, SubmitConversationReadCursorRequest,
     SubmitConversationReadCursorResponse, SubmitConversationTypingRequest,
     UpdateConversationIntent,
 };
 use messaging_core::codec::verification::{verify_authority_event, verify_direct_genesis_event};
 use messaging_core::contracts::CryptoEndpoint as CoreCryptoEndpoint;
-use messaging_core::identity::enrollment::generate_device_identity_for_device_from_parts;
+use messaging_core::engine::{reconcile_submitted_commands, CommandReconciliationProgress};
+use messaging_core::identity::enrollment::{
+    generate_device_identity_for_device_from_parts, generate_fresh_device_identity_from_seed,
+    load_or_create_device_identity_from_seed,
+};
 use messaging_core::identity::{
     generate_fresh_device_identity_for_device, is_stale_endpoint_error,
     load_or_create_device_identity_for_device, DeviceEnrollmentManager, FreshDeviceEnrollment,
     FreshDeviceIdentityState,
+};
+use messaging_core::inbox::{
+    CommandResultProcessor, ConversationStateProcessor, DeliveryReceiptProcessor,
+    DirectMessageProcessor, DrainProgress, MessagingItemConsumer, PublicEventProcessor, QueueDrain,
+    ServicePlaintextProcessor, SkippedPayloadProcessor,
 };
 use messaging_core::mls::actor_device_identity::ActorDeviceIdentity;
 use messaging_core::mls::group::MlsGroupManager;
@@ -59,9 +65,16 @@ use messaging_core::mls::leave_intent::{
 use messaging_core::mls::membership_transition::{
     MembershipTransitionIntentInput, MembershipTransitionPreparer,
 };
+use messaging_core::mls::outbound::{
+    GroupEditTextIntent, GroupSendTextIntent, MlsOutboundPreparer,
+};
 use messaging_core::mls::startup::restore_persisted_mls_state;
+use messaging_core::mls::MlsItemProcessor;
 pub use messaging_core::outbox::MetadataInteraction;
-use messaging_core::outbox::MetadataInteractionPreparer;
+use messaging_core::outbox::{
+    CommandDispatchProgress, CommandOutboxWorker, CommandRetryPolicy, DeliveryReceiptDispatcher,
+    DirectEditIntent, DirectOutboundPreparer, DirectSendIntent, MetadataInteractionPreparer,
+};
 use messaging_core::proto::actor::ActorDevice;
 use messaging_core::proto::actor_device_ref;
 use messaging_core::proto::chat::{
@@ -84,6 +97,7 @@ use messaging_core::storage_governance::retention::{
 use messaging_core::storage_governance::{
     measure_storage, PhysicalStorageClass, PhysicalStoragePath, StorageAccountingInput,
 };
+use messaging_native_filesystem::{path_ref, path_refs, NativeMessagingFilesystem};
 use prost::Message;
 use reqwest::Method;
 use secure_content_core::object::{
@@ -482,6 +496,8 @@ where
     }
 }
 
+type CoreItemConsumer = MessagingItemConsumer<MessagingStore, MlsItemProcessor<MessagingStore>>;
+
 pub struct MessagingEngine {
     station_client: StationClient,
     profile_id: String,
@@ -490,7 +506,7 @@ pub struct MessagingEngine {
     store: Arc<MessagingStore>,
     actor_identity: Option<Arc<IdentityKeyPair>>,
     mls_manager: Arc<MlsGroupManager>,
-    consumer: Arc<MessagingItemConsumer>,
+    consumer: Arc<CoreItemConsumer>,
     drain_lock: Mutex<()>,
     dispatch_lock: Mutex<()>,
     send_intent_lock: Mutex<()>,
@@ -701,13 +717,39 @@ impl MessagingEngine {
         }
         let mls_manager = Arc::new(MlsGroupManager::with_actor_identity(mls_actor_identity));
         restore_persisted_mls_state(mls_manager.as_ref(), store.as_ref())?;
-        let consumer = Arc::new(MessagingItemConsumer::new(
-            store.clone(),
+        let core_endpoint =
+            CoreCryptoEndpoint::new(endpoint.ptid.clone(), endpoint.device_id.clone())?;
+        let direct = match profile_actor_identity.clone() {
+            Some(identity) => DirectMessageProcessor::with_actor_identity(
+                store.clone(),
+                core_endpoint.clone(),
+                identity,
+                now_unix_ms,
+            )?,
+            None => DirectMessageProcessor::new(store.clone(), core_endpoint.clone(), now_unix_ms)?,
+        };
+        let mls = Arc::new(MlsItemProcessor::new(
             mls_manager.clone(),
-            endpoint.clone(),
-            profile_actor_identity.clone(),
+            store.clone(),
+            core_endpoint.clone(),
             now_unix_ms,
         )?);
+        let command_result = CommandResultProcessor::new(
+            store.clone(),
+            mls.clone(),
+            core_endpoint.clone(),
+            now_unix_ms,
+        )?;
+        let consumer = Arc::new(MessagingItemConsumer::new(
+            direct,
+            mls,
+            PublicEventProcessor::new(store.clone(), core_endpoint.clone(), now_unix_ms)?,
+            ConversationStateProcessor::new(store.clone(), core_endpoint.clone(), now_unix_ms)?,
+            command_result,
+            DeliveryReceiptProcessor::new(store.clone(), core_endpoint.clone(), now_unix_ms)?,
+            ServicePlaintextProcessor::new(store.clone(), core_endpoint.clone(), now_unix_ms)?,
+            SkippedPayloadProcessor::new(store.clone(), core_endpoint, now_unix_ms)?,
+        ));
         Ok(Self {
             station_client,
             profile_id,
@@ -744,17 +786,17 @@ impl MessagingEngine {
         }
         let database_path = self.store.storage_database_path()?;
         let mut physical_paths = vec![
-            PhysicalStoragePath::required(database_path.clone(), PhysicalStorageClass::System),
+            PhysicalStoragePath::required(path_ref(&database_path), PhysicalStorageClass::System),
             PhysicalStoragePath::optional(
-                sqlite_sidecar_path(&database_path, "-wal"),
+                path_ref(sqlite_sidecar_path(&database_path, "-wal")),
                 PhysicalStorageClass::System,
             ),
             PhysicalStoragePath::optional(
-                sqlite_sidecar_path(&database_path, "-shm"),
+                path_ref(sqlite_sidecar_path(&database_path, "-shm")),
                 PhysicalStorageClass::System,
             ),
             PhysicalStoragePath::optional(
-                attachment_source_root(&self.profile_id)?,
+                path_ref(attachment_source_root(&self.profile_id)?),
                 PhysicalStorageClass::Protected,
             ),
         ];
@@ -763,28 +805,28 @@ impl MessagingEngine {
             .ok_or_else(|| "messaging attachment cache root is unavailable".to_string())?
             .to_path_buf();
         physical_paths.push(PhysicalStoragePath::optional(
-            cache_root,
+            path_ref(cache_root),
             PhysicalStorageClass::Cache,
         ));
-        physical_paths.extend(
-            self.store
-                .storage_media_paths()?
-                .into_iter()
-                .map(|path| PhysicalStoragePath::required(path, PhysicalStorageClass::Media)),
-        );
+        physical_paths.extend(self.store.storage_media_paths()?.into_iter().map(|path| {
+            PhysicalStoragePath::required(path_ref(path), PhysicalStorageClass::Media)
+        }));
 
         let scope = ChatStorageScope {
             station_peer_id: station_peer_id.to_string(),
             actor_ptid: self.endpoint.ptid.clone(),
             device_id: self.endpoint.device_id.clone(),
         };
-        let mut snapshot = measure_storage(StorageAccountingInput {
-            scope: scope.clone(),
-            revision: scope_revision.to_string(),
-            measured_at_unix_ms: now_unix_ms(),
-            physical_paths,
-            conversations: self.store.storage_logical_usage()?,
-        })
+        let mut snapshot = measure_storage(
+            StorageAccountingInput {
+                scope: scope.clone(),
+                revision: scope_revision.to_string(),
+                measured_at_unix_ms: now_unix_ms(),
+                physical_paths,
+                conversations: self.store.storage_logical_usage()?,
+            },
+            &NativeMessagingFilesystem,
+        )
         .map_err(|error| error.to_string())?;
         snapshot.retention_policy =
             Some(load_storage_retention_policy(self.store.as_ref(), &scope)?);
@@ -808,10 +850,11 @@ impl MessagingEngine {
         let protected_paths = self.store.storage_cache_protected_paths()?;
         let operation = prepare_cache_cleanup(
             self.store.as_ref(),
+            &NativeMessagingFilesystem,
             CacheCleanupPlanInput {
                 scope_revision: scope_revision.to_string(),
-                cache_roots: vec![cache_root.clone()],
-                protected_paths: protected_paths.clone(),
+                cache_roots: vec![path_ref(&cache_root)],
+                protected_paths: path_refs(&protected_paths),
                 physical_bytes_before: before.physical_total_bytes,
                 now_unix_ms: now_unix_ms(),
             },
@@ -819,9 +862,10 @@ impl MessagingEngine {
         .map_err(|error| error.to_string())?;
         let mut progress = execute_cache_cleanup(
             self.store.as_ref(),
+            &NativeMessagingFilesystem,
             &operation,
-            std::slice::from_ref(&cache_root),
-            &protected_paths,
+            &[path_ref(&cache_root)],
+            &path_refs(&protected_paths),
             now_unix_ms(),
         )
         .map_err(|error| error.to_string())?;
@@ -1006,9 +1050,10 @@ impl MessagingEngine {
         ) {
             let progress = execute_cache_cleanup(
                 self.store.as_ref(),
+                &NativeMessagingFilesystem,
                 &operation,
-                std::slice::from_ref(cache_root),
-                &protected_paths,
+                &[path_ref(cache_root)],
+                &path_refs(&protected_paths),
                 now_unix_ms(),
             )
             .map_err(|error| error.to_string())?;
@@ -1072,9 +1117,10 @@ impl MessagingEngine {
         ) {
             let progress = execute_cache_cleanup(
                 self.store.as_ref(),
+                &NativeMessagingFilesystem,
                 &operation,
-                std::slice::from_ref(cache_root),
-                &protected_paths,
+                &[path_ref(cache_root)],
+                &path_refs(&protected_paths),
                 now_unix_ms(),
             )
             .map_err(|error| error.to_string())?;
@@ -1150,6 +1196,10 @@ impl MessagingEngine {
 
     pub fn endpoint(&self) -> &EngineEndpoint {
         &self.endpoint
+    }
+
+    pub(crate) fn runtime_consumer_epoch(&self) -> u64 {
+        self.runtime_consumer_epoch.load(Ordering::Acquire)
     }
 
     pub fn actor_device_identity(&self) -> Arc<ActorDeviceIdentity> {
@@ -1655,7 +1705,7 @@ impl MessagingEngine {
         self.mls_manager.clone()
     }
 
-    pub fn consumer(&self) -> Arc<MessagingItemConsumer> {
+    pub fn consumer(&self) -> Arc<CoreItemConsumer> {
         self.consumer.clone()
     }
 
@@ -1758,9 +1808,10 @@ impl MessagingEngine {
             }
             let progress = execute_cache_cleanup(
                 self.store.as_ref(),
+                &NativeMessagingFilesystem,
                 &operation,
-                &roots,
-                &protected_paths,
+                &path_refs(&roots),
+                &path_refs(&protected_paths),
                 now_unix_ms(),
             )
             .map_err(|error| error.to_string())?;
@@ -1814,74 +1865,19 @@ impl MessagingEngine {
     }
 
     pub fn dispatch_delivery_receipt_once(&self, token: &str) -> Result<bool, String> {
-        let Some(entry) = self.store.next_delivery_receipt()? else {
-            return Ok(false);
-        };
-        let receipt = DeviceConsumptionReceipt::decode(entry.receipt_bytes.as_slice())
-            .map_err(|error| format!("decode messaging device consumption receipt: {error}"))?;
-        let consumer = receipt
-            .consumer
-            .as_ref()
-            .ok_or_else(|| "messaging delivery receipt has no consumer".to_string())?;
-        if consumer.ptid != self.endpoint.ptid || consumer.device_id != self.endpoint.device_id {
-            return Err("messaging delivery receipt endpoint mismatch".to_string());
-        }
         let transport = StationDeliveryReceiptTransport::new(
             self.station_client.clone(),
             token.to_string(),
             self.endpoint.device_id.clone(),
         )?;
-        match transport.submit(&receipt) {
-            Ok(()) => {
-                self.store
-                    .mark_delivery_receipt_submitted(&entry.receipt_id, &entry.receipt_bytes)?;
-                Ok(true)
-            }
-            // The Authority has permanently rejected this receipt (malformed,
-            // unknown, or an integrity/idempotency conflict). Retrying cannot
-            // change the verdict and — because the outbox dispatches a single
-            // oldest pending row — would wedge every later receipt behind it
-            // forever. Dead-letter the row so the head advances.
-            Err(error) if Self::is_terminal_receipt_rejection(&error) => {
-                tracing::warn!(
-                    receipt_id = %entry.receipt_id,
-                    error = %error,
-                    "delivery receipt permanently rejected by Station; moving outbox row to rejected"
-                );
-                self.store.mark_delivery_receipt_rejected(
-                    &entry.receipt_id,
-                    &entry.receipt_bytes,
-                    &Self::receipt_rejection_code(&error),
-                )?;
-                Ok(true)
-            }
-            Err(error) => Err(error.to_string()),
-        }
-    }
-
-    /// Whether a receipt submit failure can never succeed on retry.
-    fn is_terminal_receipt_rejection(error: &station_client::StationClientError) -> bool {
-        use station_client::StationClientErrorKind::*;
-        match error.kind {
-            // A locally malformed receipt cannot be repaired by waiting.
-            InvalidResponse | Decode => true,
-            // Authoritative permanent verdicts on the receipt itself:
-            // malformed, unknown/gone, or integrity/idempotency conflict.
-            // 401/403 are excluded — they can succeed again after re-login.
-            HttpStatus(status) => matches!(status, 400 | 404 | 409 | 410 | 422),
-            // Network/server outages and session revocations may resolve.
-            Network | Unavailable | SessionRevoked | Overloaded | AmbiguousOutcome | Cancelled
-            | StaleRoute | NoRoute | RoutePolicyConflict => false,
-        }
-    }
-
-    fn receipt_rejection_code(error: &station_client::StationClientError) -> String {
-        match &error.kind {
-            station_client::StationClientErrorKind::HttpStatus(status) => {
-                format!("http_{status}")
-            }
-            other => format!("{other:?}").to_lowercase(),
-        }
+        DeliveryReceiptDispatcher::new(
+            self.store.clone(),
+            CoreCryptoEndpoint {
+                ptid: self.endpoint.ptid.clone(),
+                device_id: self.endpoint.device_id.clone(),
+            },
+        )?
+        .dispatch_once(&transport)
     }
 
     pub fn set_projection_notifier(
@@ -1904,17 +1900,29 @@ impl MessagingEngine {
             .dispatch_lock
             .lock()
             .map_err(|_| "messaging command dispatch lock poisoned".to_string())?;
-        CommandReconciliationWorker::new(
-            self.store.clone(),
-            self.mls_manager.clone(),
-            self.endpoint.clone(),
-            StationCommandTransport::new(
+        let progress = reconcile_submitted_commands(
+            self.store.as_ref(),
+            &StationCommandTransport::new(
                 self.station_client.clone(),
                 token.to_string(),
                 self.endpoint.device_id.clone(),
             )?,
-        )?
-        .reconcile_once(now_unix_ms)
+            &CoreCryptoEndpoint {
+                ptid: self.endpoint.ptid.clone(),
+                device_id: self.endpoint.device_id.clone(),
+            },
+            now_unix_ms,
+        )?;
+        if let CommandReconciliationProgress::Reconciled {
+            terminal_membership_conversations,
+            ..
+        } = &progress
+        {
+            for conversation_id in terminal_membership_conversations {
+                self.mls_manager.discard_pending_transition(conversation_id);
+            }
+        }
+        Ok(progress)
     }
 
     pub fn dispatch_command_once(
@@ -2034,47 +2042,6 @@ impl MessagingEngine {
             );
         }
     }
-
-    pub fn prepare_direct_text(
-        &self,
-        plan: &PrepareConversationCommandResponse,
-        intent: &SendTextIntent<'_>,
-    ) -> Result<ChatCommand, String> {
-        SendPreparer::new(
-            self.store.clone(),
-            self.endpoint.clone(),
-            self.mls_manager.clone(),
-        )?
-        .prepare_direct_text(plan, intent)
-    }
-
-    pub fn prepare_direct_text_with_bootstraps(
-        &self,
-        plan: &PrepareConversationCommandResponse,
-        intent: &SendTextIntent<'_>,
-        bootstraps: &[super::DirectSessionBootstrap],
-    ) -> Result<ChatCommand, String> {
-        SendPreparer::new(
-            self.store.clone(),
-            self.endpoint.clone(),
-            self.mls_manager.clone(),
-        )?
-        .prepare_direct_text_with_bootstraps(plan, intent, bootstraps)
-    }
-
-    pub fn prepare_group_text(
-        &self,
-        plan: &PrepareConversationCommandResponse,
-        intent: &SendTextIntent<'_>,
-    ) -> Result<ChatCommand, String> {
-        SendPreparer::new(
-            self.store.clone(),
-            self.endpoint.clone(),
-            self.mls_manager.clone(),
-        )?
-        .prepare_group_text(plan, intent)
-    }
-
     pub fn submit_message(
         &self,
         token: &str,
@@ -2285,56 +2252,74 @@ impl MessagingEngine {
             .map_err(|_| "messaging interaction conversation kind is invalid".to_string())?;
         let command_id = Ulid::new().to_string();
         match interaction {
-            DurableInteraction::Edit(plaintext) => {
-                let intent = EditTextIntent {
-                    logical_intent_id: &pending.intent_id,
-                    replaces_command_id: Some(&pending.command_id),
-                    command_id: &command_id,
-                    message_id: &pending.target_message_id,
-                    conversation_id: &pending.conversation_id,
-                    plaintext: &plaintext,
-                    client_timestamp_unix_ms: now_unix_ms,
-                };
-                let preparer = SendPreparer::new(
-                    self.store.clone(),
-                    self.endpoint.clone(),
-                    self.mls_manager.clone(),
-                )?;
-                match conversation_kind {
-                    ConversationKind::Direct => {
-                        let actor_identity = self.actor_identity.clone().ok_or_else(|| {
-                            "messaging Direct bootstrap requires profile actor identity".to_string()
-                        })?;
-                        let bootstraps = DirectSessionBootstrapper::new(
-                            self.store.clone(),
-                            CoreCryptoEndpoint {
-                                ptid: self.endpoint.ptid.clone(),
-                                device_id: self.endpoint.device_id.clone(),
-                            },
-                            actor_identity,
-                        )?
-                        .prepare_missing(
-                            &pending.conversation_id,
-                            &plan.required_endpoints,
-                            now_unix_ms,
-                            &StationKeyBundleTransport::new(
-                                self.station_client.clone(),
-                                token.to_string(),
-                                self.endpoint.device_id.clone(),
-                            )?,
-                        )?;
-                        preparer.prepare_direct_edit_with_bootstraps(
-                            &plan,
-                            &intent,
-                            &bootstraps,
-                        )?;
-                    }
-                    ConversationKind::Group => {
-                        preparer.prepare_group_edit(&plan, &intent)?;
-                    }
-                    ConversationKind::Unspecified => unreachable!(),
+            DurableInteraction::Edit(plaintext) => match conversation_kind {
+                ConversationKind::Direct => {
+                    let actor_identity = self.actor_identity.clone().ok_or_else(|| {
+                        "messaging Direct bootstrap requires profile actor identity".to_string()
+                    })?;
+                    let bootstraps = DirectSessionBootstrapper::new(
+                        self.store.clone(),
+                        CoreCryptoEndpoint {
+                            ptid: self.endpoint.ptid.clone(),
+                            device_id: self.endpoint.device_id.clone(),
+                        },
+                        actor_identity,
+                    )?
+                    .prepare_missing(
+                        &pending.conversation_id,
+                        &plan.required_endpoints,
+                        now_unix_ms,
+                        &StationKeyBundleTransport::new(
+                            self.station_client.clone(),
+                            token.to_string(),
+                            self.endpoint.device_id.clone(),
+                        )?,
+                    )?;
+                    DirectOutboundPreparer::new(
+                        self.store.clone(),
+                        CryptoEndpoint {
+                            ptid: self.endpoint.ptid.clone(),
+                            device_id: self.endpoint.device_id.clone(),
+                        },
+                    )?
+                    .prepare_edit(
+                        &plan,
+                        &DirectEditIntent {
+                            logical_intent_id: &pending.intent_id,
+                            replaces_command_id: Some(&pending.command_id),
+                            command_id: &command_id,
+                            message_id: &pending.target_message_id,
+                            conversation_id: &pending.conversation_id,
+                            plaintext: &plaintext,
+                            client_timestamp_unix_ms: now_unix_ms,
+                        },
+                        &bootstraps,
+                    )?;
                 }
-            }
+                ConversationKind::Group => {
+                    MlsOutboundPreparer::new(
+                        self.store.clone(),
+                        self.mls_manager.clone(),
+                        CryptoEndpoint {
+                            ptid: self.endpoint.ptid.clone(),
+                            device_id: self.endpoint.device_id.clone(),
+                        },
+                    )?
+                    .prepare_edit(
+                        &plan,
+                        &GroupEditTextIntent {
+                            logical_intent_id: &pending.intent_id,
+                            replaces_command_id: Some(&pending.command_id),
+                            command_id: &command_id,
+                            message_id: &pending.target_message_id,
+                            conversation_id: &pending.conversation_id,
+                            plaintext: &plaintext,
+                            client_timestamp_unix_ms: now_unix_ms,
+                        },
+                    )?;
+                }
+                ConversationKind::Unspecified => unreachable!(),
+            },
             DurableInteraction::Retract => {
                 self.prepare_replacement_metadata_interaction(
                     &plan,
@@ -2417,16 +2402,6 @@ impl MessagingEngine {
             return Err("messaging conversation kind does not match Station plan".to_string());
         }
         let command_id = Ulid::new().to_string();
-        let intent = SendTextIntent {
-            command_id: &command_id,
-            message_id: &draft.message_id,
-            conversation_id: &draft.conversation_id,
-            plaintext: &draft.plaintext,
-            reply_to_message_id: &draft.reply_to_message_id,
-            thread_root_message_id: &draft.thread_root_message_id,
-            attachments: &draft.attachments,
-            client_timestamp_unix_ms: draft.created_at_unix_ms,
-        };
         match conversation_kind {
             ConversationKind::Direct => {
                 let actor_identity = self.actor_identity.clone().ok_or_else(|| {
@@ -2443,16 +2418,56 @@ impl MessagingEngine {
                 .prepare_missing(
                     &draft.conversation_id,
                     &plan.required_endpoints,
-                    intent.client_timestamp_unix_ms,
+                    draft.created_at_unix_ms,
                     &StationKeyBundleTransport::new(
                         self.station_client.clone(),
                         token.to_string(),
                         self.endpoint.device_id.clone(),
                     )?,
                 )?;
-                self.prepare_direct_text_with_bootstraps(&plan, &intent, &bootstraps)?
+                DirectOutboundPreparer::new(
+                    self.store.clone(),
+                    CryptoEndpoint {
+                        ptid: self.endpoint.ptid.clone(),
+                        device_id: self.endpoint.device_id.clone(),
+                    },
+                )?
+                .prepare_send(
+                    &plan,
+                    &DirectSendIntent {
+                        command_id: &command_id,
+                        message_id: &draft.message_id,
+                        conversation_id: &draft.conversation_id,
+                        plaintext: &draft.plaintext,
+                        reply_to_message_id: &draft.reply_to_message_id,
+                        thread_root_message_id: &draft.thread_root_message_id,
+                        attachments: &draft.attachments,
+                        client_timestamp_unix_ms: draft.created_at_unix_ms,
+                    },
+                    &bootstraps,
+                )?
             }
-            ConversationKind::Group => self.prepare_group_text(&plan, &intent)?,
+            ConversationKind::Group => MlsOutboundPreparer::new(
+                self.store.clone(),
+                self.mls_manager.clone(),
+                CryptoEndpoint {
+                    ptid: self.endpoint.ptid.clone(),
+                    device_id: self.endpoint.device_id.clone(),
+                },
+            )?
+            .prepare_send(
+                &plan,
+                &GroupSendTextIntent {
+                    command_id: &command_id,
+                    message_id: &draft.message_id,
+                    conversation_id: &draft.conversation_id,
+                    plaintext: &draft.plaintext,
+                    reply_to_message_id: &draft.reply_to_message_id,
+                    thread_root_message_id: &draft.thread_root_message_id,
+                    attachments: &draft.attachments,
+                    client_timestamp_unix_ms: draft.created_at_unix_ms,
+                },
+            )?,
             ConversationKind::Unspecified => {
                 return Err("messaging conversation kind is required".to_string());
             }
@@ -2740,20 +2755,6 @@ impl MessagingEngine {
             .map_err(|_| "messaging edit conversation kind is invalid".to_string())?;
         let command_id = Ulid::new().to_string();
         let now = now_unix_ms();
-        let intent = EditTextIntent {
-            logical_intent_id: &command_id,
-            replaces_command_id: None,
-            command_id: &command_id,
-            message_id,
-            conversation_id,
-            plaintext: plaintext.trim(),
-            client_timestamp_unix_ms: now,
-        };
-        let preparer = SendPreparer::new(
-            self.store.clone(),
-            self.endpoint.clone(),
-            self.mls_manager.clone(),
-        )?;
         match conversation_kind {
             ConversationKind::Direct => {
                 let actor_identity = self.actor_identity.clone().ok_or_else(|| {
@@ -2777,10 +2778,48 @@ impl MessagingEngine {
                         self.endpoint.device_id.clone(),
                     )?,
                 )?;
-                preparer.prepare_direct_edit_with_bootstraps(&plan, &intent, &bootstraps)?;
+                DirectOutboundPreparer::new(
+                    self.store.clone(),
+                    CryptoEndpoint {
+                        ptid: self.endpoint.ptid.clone(),
+                        device_id: self.endpoint.device_id.clone(),
+                    },
+                )?
+                .prepare_edit(
+                    &plan,
+                    &DirectEditIntent {
+                        logical_intent_id: &command_id,
+                        replaces_command_id: None,
+                        command_id: &command_id,
+                        message_id,
+                        conversation_id,
+                        plaintext: plaintext.trim(),
+                        client_timestamp_unix_ms: now,
+                    },
+                    &bootstraps,
+                )?;
             }
             ConversationKind::Group => {
-                preparer.prepare_group_edit(&plan, &intent)?;
+                MlsOutboundPreparer::new(
+                    self.store.clone(),
+                    self.mls_manager.clone(),
+                    CryptoEndpoint {
+                        ptid: self.endpoint.ptid.clone(),
+                        device_id: self.endpoint.device_id.clone(),
+                    },
+                )?
+                .prepare_edit(
+                    &plan,
+                    &GroupEditTextIntent {
+                        logical_intent_id: &command_id,
+                        replaces_command_id: None,
+                        command_id: &command_id,
+                        message_id,
+                        conversation_id,
+                        plaintext: plaintext.trim(),
+                        client_timestamp_unix_ms: now,
+                    },
+                )?;
             }
             ConversationKind::Unspecified => {
                 return Err("messaging edit conversation kind is required".to_string());
@@ -4675,10 +4714,12 @@ mod tests {
     use super::*;
     use crate::model::chat::{
         conversation_event, ConversationAuthorityEndpoint, ConversationAuthorityMember,
-        ConversationAuthoritySnapshot, ConversationCreatedFact, DeviceEventDelivery,
-        DeviceInboxPayloadType, DurableDeviceInboxItem, MessageCommittedFact,
-        MessageHiddenForActorFact, MessagingContentKind, PreparedEndpointPayloadKind,
+        ConversationAuthoritySnapshot, ConversationCreatedFact, ConversationDissolvedFact,
+        ConversationUpdatedFact, DeviceEventDelivery, DeviceInboxPayloadType,
+        DurableDeviceInboxItem, MessageCommittedFact, MessageHiddenForActorFact,
+        MessagingContentKind, PreparedEndpointPayloadKind, PublicEventMarker,
     };
+    use messaging_core::inbox::ClaimedItemConsumer;
     use messaging_core::mls::group::MlsMemberKeyPackage;
     use messaging_core::proto::actor_device_ptid;
     use std::collections::VecDeque;
@@ -4851,6 +4892,172 @@ mod tests {
             payload_sha256: Sha256::digest(&opaque_payload).to_vec(),
             ..Default::default()
         }
+    }
+
+    fn group_lifecycle_item(
+        sequence: i64,
+        previous_hash: Vec<u8>,
+        payload: conversation_event::Payload,
+    ) -> DurableDeviceInboxItem {
+        let endpoint = CryptoEndpoint {
+            ptid: "ptid:alice".to_string(),
+            device_id: "alice-device".to_string(),
+        };
+        let mut event = ConversationEvent {
+            event_id: format!("lifecycle-event-{sequence}"),
+            conversation_id: "conversation-1".to_string(),
+            sequence,
+            command_id: format!("lifecycle-command-{sequence}"),
+            actor: Some(endpoint.clone()),
+            previous_hash,
+            committed_at: Some(prost_types::Timestamp {
+                seconds: sequence,
+                nanos: 0,
+            }),
+            membership_epoch: 1,
+            mls_epoch: 0,
+            authority_station_peer_id: "station-local".to_string(),
+            payload: Some(payload),
+            ..Default::default()
+        };
+        let endpoint_payload = PublicEventMarker {
+            conversation_id: event.conversation_id.clone(),
+            event_id: event.event_id.clone(),
+            command_id: event.command_id.clone(),
+            sending_endpoint: event.actor.clone(),
+        }
+        .encode_to_vec();
+        let endpoint_payload_sha256 = Sha256::digest(&endpoint_payload).to_vec();
+        let commitment = messaging_core::codec::verification::delivery_commitment(
+            &event.conversation_id,
+            &event.event_id,
+            &endpoint.ptid,
+            &endpoint.device_id,
+            PreparedEndpointPayloadKind::PublicEvent,
+            &endpoint_payload_sha256,
+        );
+        event.delivery_commitments = vec![commitment.to_vec()];
+        event.event_hash = Sha256::digest(event.encode_to_vec()).to_vec();
+        let delivery = DeviceEventDelivery {
+            event: Some(event.clone()),
+            recipient: Some(endpoint.clone()),
+            payload_kind: PreparedEndpointPayloadKind::PublicEvent as i32,
+            endpoint_payload,
+            endpoint_payload_sha256,
+            delivery_commitment: commitment.to_vec(),
+            sender_actor_identity_public_key: Vec::new(),
+        };
+        let opaque_payload = delivery.encode_to_vec();
+        DurableDeviceInboxItem {
+            item_id: format!("lifecycle-item-{sequence}"),
+            recipient: Some(actor_device_ref(&endpoint.ptid, &endpoint.device_id)),
+            lane_sequence: sequence,
+            event_id: event.event_id,
+            conversation_id: event.conversation_id,
+            idempotency_key: format!("lifecycle-{sequence}"),
+            payload_type: DeviceInboxPayloadType::ConversationEvent as i32,
+            opaque_payload: opaque_payload.clone(),
+            payload_sha256: Sha256::digest(&opaque_payload).to_vec(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn portable_public_event_processor_commits_group_update_and_dissolve() {
+        let store = Arc::new(MessagingStore::in_memory().unwrap());
+        store
+            .bootstrap_conversation_projection(&ConversationProjection {
+                conversation_id: "conversation-1".to_string(),
+                authority_station_id: "station-local".to_string(),
+                federation_id: "federation-1".to_string(),
+                kind: ConversationKind::Group as i32,
+                name: "original".to_string(),
+                description: "description".to_string(),
+                avatar_object_id: "avatar-old".to_string(),
+                owner_ptid: "ptid:alice".to_string(),
+                members: vec![ConversationMemberProjection {
+                    ptid: "ptid:alice".to_string(),
+                    role: MemberRole::Owner as i32,
+                    home_station_peer_id: "station-local".to_string(),
+                    ..Default::default()
+                }],
+                membership_epoch: 1,
+                mls_epoch: 0,
+                active: true,
+                updated_at_unix_ms: 1,
+            })
+            .unwrap();
+        let update_command = ChatCommand {
+            command_id: "lifecycle-command-1".to_string(),
+            conversation_id: "conversation-1".to_string(),
+            sender: Some(CryptoEndpoint {
+                ptid: "ptid:alice".to_string(),
+                device_id: "alice-device".to_string(),
+            }),
+            delivery_plan_sha256: vec![7; 32],
+            authority_station_peer_id: "station-local".to_string(),
+            payload: Some(chat_command::Payload::UpdateConversation(
+                UpdateConversationIntent {
+                    name: Some("renamed".to_string()),
+                    avatar_object_id: Some("avatar-new".to_string()),
+                    ..Default::default()
+                },
+            )),
+            ..Default::default()
+        };
+        store
+            .persist_conversation_command(&ConversationCommandCommit {
+                command: &update_command,
+                expected_authority_sequence: 0,
+                expected_authority_hash: &[],
+                created_at_unix_ms: 1,
+            })
+            .unwrap();
+        store
+            .mark_command_submitted(
+                &update_command.command_id,
+                &update_command.encode_to_vec(),
+                0,
+            )
+            .unwrap();
+        let processor = PublicEventProcessor::new(
+            store.clone(),
+            CoreCryptoEndpoint::new("ptid:alice", "alice-device").unwrap(),
+            now_unix_ms,
+        )
+        .unwrap();
+        let update = group_lifecycle_item(
+            1,
+            Vec::new(),
+            conversation_event::Payload::ConversationUpdated(ConversationUpdatedFact {
+                name: Some("renamed".to_string()),
+                avatar_object_id: Some("avatar-new".to_string()),
+                ..Default::default()
+            }),
+        );
+        processor.consume(&update, 1).unwrap();
+        let projection = store.conversation_projections().unwrap().remove(0);
+        assert_eq!(projection.name, "renamed");
+        assert_eq!(projection.avatar_object_id, "avatar-new");
+        assert_eq!(
+            store
+                .command_status(&update_command.command_id)
+                .unwrap()
+                .unwrap()
+                .state,
+            "committed"
+        );
+
+        let dissolve = group_lifecycle_item(
+            2,
+            store.authority_head("conversation-1").unwrap().1,
+            conversation_event::Payload::ConversationDissolved(ConversationDissolvedFact {
+                dissolved_by_ptid: "ptid:alice".to_string(),
+            }),
+        );
+        processor.consume(&dissolve, 2).unwrap();
+        assert!(!store.conversation_projections().unwrap()[0].active);
+        assert_eq!(store.lane_checkpoint().unwrap(), (2, 2));
     }
 
     #[test]

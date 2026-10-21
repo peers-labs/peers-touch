@@ -65,6 +65,13 @@ type SkillBodyContext struct {
 	Content string
 }
 
+type AgentPromptDefinition struct {
+	AgentID           string
+	Version           uint64
+	IdentityPrompt    string
+	AgentConfigPrompt string
+}
+
 // PromptAssemblyContext carries immutable turn inputs owned by TurnService.
 type PromptAssemblyContext struct {
 	TurnID             string
@@ -90,6 +97,7 @@ type PromptAssemblyResult struct {
 type promptBuildInput struct {
 	ctx               context.Context
 	agentID           string
+	agentVersion      uint64
 	identity          string
 	agentConfigPrompt string
 	availableTools    []string
@@ -118,7 +126,7 @@ func (identityProcessor) process(in *promptBuildInput) ([]ContextSegment, error)
 		ContentHash:           sha256Hex(in.identity),
 		EstimatedTokens:       estimateTokens(in.identity),
 		Decision:              model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_INCLUDED,
-		SourceRefs:            []string{"agent:" + in.agentID + ":identity"},
+		SourceRefs:            []string{agentDefinitionSourceRef(in, "identity")},
 		IncludeInSystemPrompt: true,
 	}}, nil
 }
@@ -329,12 +337,21 @@ func (configPromptProcessor) process(in *promptBuildInput) ([]ContextSegment, er
 	return []ContextSegment{{
 		Type:                  model.ContextSegmentType_CONTEXT_SEGMENT_TYPE_MODEL_FACTS,
 		Content:               in.agentConfigPrompt,
-		SourceRefs:            []string{"agent:" + in.agentID + ":config"},
+		SourceRefs:            []string{agentDefinitionSourceRef(in, "config")},
 		ContentHash:           sha256Hex(in.agentConfigPrompt),
 		EstimatedTokens:       estimateTokens(in.agentConfigPrompt),
 		Decision:              model.ContextSegmentDecision_CONTEXT_SEGMENT_DECISION_INCLUDED,
 		IncludeInSystemPrompt: true,
 	}}, nil
+}
+
+func agentDefinitionSourceRef(in *promptBuildInput, field string) string {
+	return fmt.Sprintf(
+		"agent:%s:version=%d:%s",
+		in.agentID,
+		in.agentVersion,
+		field,
+	)
 }
 
 // knowledgeProcessor emits L6 Agent Knowledge Resources.
@@ -358,7 +375,21 @@ func (p knowledgeProcessor) process(in *promptBuildInput) ([]ContextSegment, err
 
 	refs := make([]string, 0, len(result.Chunks))
 	for _, c := range result.Chunks {
-		refs = append(refs, fmt.Sprintf("knowledge:%s", c.ResourceID))
+		capability, ok := in.authorized.Source(
+			model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_KNOWLEDGE,
+			c.ResourceID,
+		)
+		if !ok {
+			return nil, capabilityStateError(
+				"retrieved Knowledge is outside the pinned capability set",
+				nil,
+			)
+		}
+		refs = append(refs, fmt.Sprintf(
+			"knowledge:%s:version=%s",
+			c.ResourceID,
+			capability.Manifest.GetVersion(),
+		))
 	}
 
 	return []ContextSegment{{
@@ -456,9 +487,7 @@ func NewPromptAssemblyService(memSvc *MemoryService, skillSvc *SkillService) *Pr
 // final system prompt. Each segment carries provenance for the ContextLedger.
 func (s *PromptAssemblyService) Assemble(
 	ctx context.Context,
-	agentID string,
-	identity string,
-	agentConfigPrompt string,
+	definition AgentPromptDefinition,
 	availableTools []string,
 	userInput string,
 	db *gorm.DB,
@@ -467,9 +496,7 @@ func (s *PromptAssemblyService) Assemble(
 ) (*PromptAssemblyResult, error) {
 	return s.AssembleTurnContext(
 		ctx,
-		agentID,
-		identity,
-		agentConfigPrompt,
+		definition,
 		availableTools,
 		userInput,
 		db,
@@ -482,9 +509,7 @@ func (s *PromptAssemblyService) Assemble(
 // AssembleTurnContext assembles the complete typed context for one attempt.
 func (s *PromptAssemblyService) AssembleTurnContext(
 	ctx context.Context,
-	agentID string,
-	identity string,
-	agentConfigPrompt string,
+	definition AgentPromptDefinition,
 	availableTools []string,
 	userInput string,
 	db *gorm.DB,
@@ -495,9 +520,10 @@ func (s *PromptAssemblyService) AssembleTurnContext(
 
 	input := &promptBuildInput{
 		ctx:               ctx,
-		agentID:           agentID,
-		identity:          identity,
-		agentConfigPrompt: agentConfigPrompt,
+		agentID:           definition.AgentID,
+		agentVersion:      definition.Version,
+		identity:          definition.IdentityPrompt,
+		agentConfigPrompt: definition.AgentConfigPrompt,
 		availableTools:    availableTools,
 		userInput:         userInput,
 		db:                db,
@@ -541,7 +567,7 @@ func (s *PromptAssemblyService) AssembleTurnContext(
 	systemPrompt := strings.Join(layers, "\n\n")
 
 	logger.Infof(ctx, "prompt assembly: assembled %d segments (%d included) for agent %s, skill_count=%d",
-		len(segments), len(layers), agentID, skillCount)
+		len(segments), len(layers), definition.AgentID, skillCount)
 
 	return &PromptAssemblyResult{
 		SystemPrompt:       systemPrompt,

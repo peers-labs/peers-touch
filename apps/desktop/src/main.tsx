@@ -9,7 +9,7 @@ import { initializeDesktopHostPolicy } from './kernel/hostPolicy';
 import { markPhaseEnd, markPhaseStart } from './kernel/boot';
 import { purgeRetiredStorage } from './kernel/retiredStorage';
 import { registerAppletElements } from './applet/register-elements';
-import { registerModulesForHost } from './modules';
+import './modules';
 import {
   installFrontendRuntimeProfiler,
   teardownFrontendRuntimeProfiler,
@@ -33,7 +33,6 @@ declare global {
 
 purgeRetiredStorage();
 initializeDesktopHostPolicy();
-registerModulesForHost();
 registerAppletElements();
 installFrontendRuntimeProfiler();
 configureFrontendTelemetryUploader(uploadFrontendTelemetryEvents);

@@ -1,8 +1,8 @@
 # Secure Content - Architecture Decisions
 
 > **Status**: active
-> **Version**: v2.1
-> **Created**: 2026-09-13 | **Updated**: 2026-10-03
+> **Version**: v2.2
+> **Created**: 2026-09-13 | **Updated**: 2026-10-17
 > **Owner**: Architecture Team
 
 ---
@@ -40,6 +40,7 @@
 | SC-D27 | Recovery replacement separates admission proof from append-only execution provenance | accepted |
 | SC-D28 | Runtime services separate canonical schema identity from live connection routing | accepted |
 | SC-D29 | Audience targets are typed and v1 private expansion remains locally enumerable | accepted |
+| SC-D30 | Portable Native client operations share one host-neutral mechanism owner | accepted |
 
 ---
 
@@ -864,6 +865,82 @@ prove wrong actor/epoch/key ID divergence, and open a real HPKE envelope with a
 derived recovery key. Any future transcript change requires a new version and
 cannot silently reinterpret existing recovery PreKey IDs.
 The Owner accepted this decision on 2026-09-14.
+
+---
+
+## SC-D30: One Portable Native Client Operation Mechanism
+
+**Status**: accepted
+**Date**: 2026-10-17
+
+### Context
+
+Before UCA-05, Desktop and Mobile consumed `secure-content-core` crypto while
+each still owned a parallel Native worker, operation transition policy, PreKey
+maintenance loop, unknown-outcome reconciliation path, and recovery
+continuation. Shared crypto did not prevent operation-state and failure
+semantics from diverging. UCA-05 removed those parallel owners.
+
+### Decision
+
+`packages/secure-content-core` also owns the host-neutral Native client
+operation mechanism:
+
+- Content PreKey publication planning and canonical command identity;
+- durable operation states and generation/lease transition validation;
+- readback-before-retry reconciliation decisions;
+- recovery-envelope continuation and key-material zeroization;
+- opaque-object transfer checkpoint decisions;
+- typed operation outcomes and port contracts.
+
+The core receives capability-shaped ports for encrypted operation storage,
+transport, clock, key material, opaque files, and lifecycle cancellation. It
+does not implement HTTP, SQLCipher, filesystem paths, native secret input,
+Tauri state, UI projection, or OS lifecycle callbacks.
+
+Social and Conversation retain every business decision: audience, recipient
+resolution, authorization, outer prepare/submit transaction, resource and
+object grant, revocation truth, routes, audit, GC, and user-visible product
+policy. The core may reconcile an owner-supplied resource readback; it cannot
+create, grant, revoke, attach, or authorize that resource.
+
+Desktop and Mobile bind independent core instances and device-local stores.
+Their adapters may differ by transport, storage backend, file access, key
+material, event loop, and lifecycle source, but cannot redefine operation
+states, command identity, retry order, or typed outcomes.
+
+### Rationale
+
+The operation mechanism is stateful, security-sensitive, host-neutral, and
+already duplicated. Moving only that mechanism preserves domain authority while
+making failure and recovery behavior identical across Native clients.
+
+### Alternatives Considered
+
+- Keep only crypto shared: rejected because prior Mobile failures came from
+  duplicated readiness, command identity, content negotiation, and retry order.
+- Move Social prepare/submit into the core: rejected because the core would
+  become a business authority and duplicate Social transactions and grants.
+- Introduce a second `secure-content-client` crate: rejected because the
+  mechanism extends the existing Secure Content semantic owner and does not
+  justify another package boundary.
+- Preserve Desktop/Mobile workers behind a common facade: rejected because it
+  retains two operation owners.
+
+### Consequences
+
+- `secure-content-core` gains port traits and device-local operation models but
+  remains free of platform and business dependencies.
+- Desktop/Mobile stores, transports, key material and files are thin Host
+  adapters; both legacy workers are deleted.
+- Existing domain routes, grants, transactions, wire contracts, and Station
+  persistence remain unchanged.
+- Internal cutover permits no dual write or compatibility facade. Persisted
+  device-local operations require an explicit one-owner schema migration.
+- Native Desktop, iOS, and physical Android each require current-source
+  publish, readback, restart/recovery, and cleanup evidence.
+- Source closure is enforced by `secure-content-owner-hard-cut-zero`; missing
+  signed iOS or physical Android evidence remains per-cell `UNPROVEN`.
 
 ---
 

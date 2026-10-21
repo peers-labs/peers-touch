@@ -487,6 +487,9 @@ class BehaviorRuleTests(unittest.TestCase):
                 "messaging-platform-contract",
                 "desktop-check",
                 "chat-message-publishing-native-e2e",
+                "unified-client-messaging-core-contract",
+                "messaging-owner-hard-cut-zero",
+                "unified-client-messaging-e2e",
             },
         )
 
@@ -549,9 +552,9 @@ class BehaviorRuleTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, "duplicate key"):
                         MODULE.load_behavior_rules(root)
 
-    def test_direct_receipt_owner_selects_native_two_client(self) -> None:
+    def test_portable_direct_receipt_owner_selects_native_two_client(self) -> None:
         selected = self.selected_ids(
-            "apps/desktop/src-tauri/src/messaging/direct.rs"
+            "packages/messaging-core/src/inbox/direct.rs"
         )
         self.assertIn("chat-native-two-client-e2e", selected)
 

@@ -9,7 +9,7 @@
         "tooling/acceptance/gates/mobile/cleanup_evidence_roles.py",
         "tooling/acceptance/gates/mobile/proof-contract.schema.json"
       ],
-      "sourceDigest": "4ba7ec6e9226d584b21804f40c82cdc35994d5d7f72b6ca4fbefe05898f8209a",
+      "sourceDigest": "dd9ade9c94d7d5484c8c8e726a784332a8950f287d72a61808d7e61d6a1daafc",
       "contractRoleProjectionDigest": "e9d9890036e11d2da7cb7998c5afbce12296c62a6e8b545f098d0b05d7da42cf",
       "evidenceRoleNames": [
         "mobile-lease-outcome",

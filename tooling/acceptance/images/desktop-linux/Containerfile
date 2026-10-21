@@ -62,6 +62,7 @@ RUN apt-get update \
         x11vnc \
         xclip \
         xdotool \
+        xdg-utils \
         xserver-xorg-core \
         xserver-xorg-video-dummy \
         zenity \
@@ -98,14 +99,18 @@ RUN groupadd --gid "${USER_GROUP_ID}" ptacceptance \
 
 COPY xorg-dummy.conf /etc/X11/xorg-dummy.conf
 COPY entrypoint.sh /usr/local/bin/peers-touch-linux-cell
+COPY wget /usr/local/bin/wget
 
 RUN chmod 0755 /usr/local/bin/peers-touch-linux-cell \
+    /usr/local/bin/wget \
     && pkg-config --exists webkit2gtk-4.1 \
     && node --version \
     && pnpm --version \
     && rustc --version \
     && cargo --version \
     && command -v setsid \
+    && command -v xdg-mime \
+    && test "$(command -v wget)" = /usr/local/bin/wget \
     && command -v zenity
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/peers-touch-linux-cell"]

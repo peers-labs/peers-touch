@@ -114,6 +114,7 @@ fn compile_protos() {
         "domain/ai_chat/message_messages.proto",
         "domain/ai_chat/access_control.proto",
         "domain/bot/bot.proto",
+        "domain/channel/channel.proto",
         "domain/social/post.proto",
         "domain/social/comment.proto",
         "domain/social/media.proto",

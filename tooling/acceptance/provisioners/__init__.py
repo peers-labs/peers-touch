@@ -234,7 +234,13 @@ def get_provisioner(
     return provisioner_class(contract)
 
 
-def get_runtime_cell_lifecycle(cell_id: str) -> RuntimeCellLifecycle:
+def get_runtime_cell_lifecycle(
+    cell_id: str, *, provisioner: EnvironmentProvisioner | None = None,
+) -> RuntimeCellLifecycle:
+    if cell_id in ("mobile-ios-native", "mobile-android-native"):
+        from .mobile_runtime_cell import MobileRuntimeCellLifecycle
+
+        return MobileRuntimeCellLifecycle(cell_id, provisioner=provisioner)
     lifecycle_class = _RUNTIME_CELL_LIFECYCLES.get(cell_id)
     if lifecycle_class is None:
         raise ProvisioningError(

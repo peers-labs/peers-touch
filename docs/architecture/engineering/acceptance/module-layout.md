@@ -39,6 +39,7 @@ tooling/acceptance/
 │   ├── finalizer_worker.py         # [D-19 ACCEPTED TARGET] isolated Python worker bootstrap
 │   ├── finalization_supervisor.c   # [D-19 ACCEPTED TARGET] POSIX hard-deadline worker supervisor
 │   ├── runtime_cell.py              # [D-13] Cell contract/manifest/matrix/lease schema
+│   ├── source_sync.py               # Reviewed central transport resolver and exact Git sync
 │   ├── suite_runtime.py             # [D-21] Suite lifecycle/reuse ledger and report validation
 │   ├── attestation.py              # Station deployment/runtime attestation producer
 │   ├── drivers/
@@ -167,6 +168,8 @@ tooling/acceptance/
 | `core/finalizer_worker.py` | **D-19 accepted target**：`-I -S -E -B` isolated worker bootstrap，验证request/runtime/bundle/FD identity后分派fixed worker kind，包括authority-runtime persistence；不得持有Evidence Store API |
 | `core/finalization_supervisor.c` | **D-19 accepted target**：在spawn Python worker前解除signal mask、安装default-action real-time timer，并在runner EOF/timeout时kill/reap worker group |
 | `core/runtime_cell.py` | Runtime Cell manifest、lease state与typed validation；只消费并验证从`core/result_contracts.py`导入的canonical matrix contract，不定义或拥有第二份matrix result |
+| `provisioners/mobile_runtime_cell.py` | Mobile-owned attach-only projection of existing physical Provisioner build/device authority; no additional device lease or cleanup owner |
+| `core/source_sync.py::resolve_central_environment` | Single reviewed env-repository central transport selection shared by deploy CLI and remote Desktop cells; no `.local/deploy/git-server.env` fallback |
 | `core/suite_runtime.py` | **D-21** domain-neutral `runtimeReuse` contract、Suite lifecycle ledger、reuse metrics、report digest与fail-closed validation；不启动资源、不包含业务Scenario或断言 |
 | `core/attestation.py` | 从 live Station 和 deployment worktree 生产 commit/workspace/proto attestation |
 | `core/drivers/base.py` | BaseDriver 定义生命周期；DomDriver 定义 DOM/JS/截图能力 |
@@ -198,6 +201,16 @@ tooling/acceptance/
 | `gates/<domain>/*.py` | 各域验收场景实现，继承 AcceptanceGate，只包含业务编排逻辑 |
 | `tooling/scripts/acceptance-run.py` | **D-19/D-21 owner**：调用时序owner；验证required declaration、seal artifact、bounded启动detached finalizer并把typed outcome提交给Evidence Store；以显式policy区分non-publishing Development与formal Acceptance，并支持single-Gate preallocated run ID |
 | `tooling/scripts/execution-plan.py` | 校验当前worktree唯一active plan及merge前closure完成状态 |
+
+`power_controller.py`当前提供controller store/journal/lifecycle的source-check
+实现和qualification-only P-256 witness signer/verifier。Pure witness
+authorization/identity contracts由`finalization_contracts.py`拥有；P-256
+on-curve schema validation不引入I/O或runtime SDK依赖。Production Ed25519
+strict point/scalar admission复用pinned PyNaCl/libsodium，signature verification
+复用现有cryptography；P-256 verification复用cryptography。Pinned dependencies
+位于`tooling/acceptance/requirements.txt`。完整qualified host/store/lease、
+receipt/recovery closure和authority CLI尚未完成，source-check结果不授予实际
+power action资格。
 
 ## 依赖关系
 

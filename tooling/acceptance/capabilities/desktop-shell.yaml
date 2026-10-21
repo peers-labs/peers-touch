@@ -39,6 +39,50 @@
           "Template rendering across every macOS theme and display arrangement"
         ]
       }
+    },
+    {
+      "id": "desktop-linux-install-lifecycle",
+      "domain": "desktop-shell",
+      "direction": "acceptance_validates_product",
+      "features": [
+        "desktop-linux-install"
+      ],
+      "required_gates": [
+        "desktop-linux-install-native-e2e"
+      ],
+      "synthetic_paths": [
+        "tooling/devctl/desktop-install.mjs",
+        "tooling/devctl/desktop.mjs",
+        "tooling/devctl/test/desktop.test.mjs"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "devctl Desktop install orchestrator and platform adapter",
+          "installed AppImage source receipt",
+          "Linux XDG desktop entry and protocol association",
+          "running installed Native Desktop process"
+        ],
+        "surfaces": [
+          "Linux application launcher",
+          "peers-touch-dev protocol handler",
+          "Native Desktop window"
+        ],
+        "proven_by": [
+          "desktop-linux-install-native-e2e"
+        ],
+        "proven_scope": [
+          "exact-source Linux AppImage build and user-scoped XDG installation",
+          "atomic AppImage replacement while the prior process remains alive",
+          "launcher, icon, desktop entry and peers-touch-dev handler readback",
+          "installed process launch, deep-link dispatch and reverse cleanup"
+        ],
+        "unproven_scope": [
+          "Linux distribution families outside the declared Tauri prerequisites",
+          "system-wide or root-owned installation",
+          "package-manager publication",
+          "Windows persistent installation"
+        ]
+      }
     }
   ]
 }

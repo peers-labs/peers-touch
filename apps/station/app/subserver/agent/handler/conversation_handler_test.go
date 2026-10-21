@@ -44,6 +44,21 @@ func TestMessagesToJSONIncludesPersistedAttachments(t *testing.T) {
 	}
 }
 
+func TestConversationToJSONIncludesPersistedMeta(t *testing.T) {
+	projected := conversationToJSON(&domain.Conversation{
+		ConversationID: "conversation-1",
+		Meta: map[string]string{
+			"favorite": "false",
+			"pinned":   "true",
+		},
+	})
+
+	meta, ok := projected["meta"].(map[string]string)
+	if !ok || meta["pinned"] != "true" || meta["favorite"] != "false" {
+		t.Fatalf("conversation metadata missing from response: %+v", projected)
+	}
+}
+
 func TestMessagesToJSONIncludesPersistedLineage(t *testing.T) {
 	items, err := messagesToJSON([]*domain.Message{{
 		MessageID:         "message-1",

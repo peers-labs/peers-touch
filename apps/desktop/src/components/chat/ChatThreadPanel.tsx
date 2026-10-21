@@ -9,7 +9,6 @@ import { Button, Tooltip, toast } from '@lobehub/ui';
 import { Alert, Empty, Spin, theme, Typography } from 'antd';
 import { LocateFixed, MessageSquareReply, MessagesSquare, RotateCcw, Trash2, X } from 'lucide-react';
 import {
-  CHAT_COMPOSER_CAPABILITIES_DESKTOP_THREAD,
   buildChatThreadSurface,
   chatThreadReplyTargetUlid,
 } from '@peers-touch/client-chat-core';
@@ -27,6 +26,9 @@ import { actorDisplayName } from '../../store/socialProfileProjection';
 import { log } from '../../utils/logger';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { ChatComposer, type ChatComposerDraft } from './ChatComposer';
+import {
+  DESKTOP_CHAT_COMPOSER_CAPABILITIES_THREAD,
+} from './chatPresentationPolicy';
 import { ChatDeleteConfirmOverlay } from './ChatDeleteConfirmOverlay';
 import { ChatMessageContent } from './message/ChatMessageContent';
 import {
@@ -625,7 +627,7 @@ export function ChatThreadPanel() {
             replyPreview={replyPreview}
             replyPreviewKey={replyTarget?.ulid ?? null}
             sending={sending}
-            capabilities={CHAT_COMPOSER_CAPABILITIES_DESKTOP_THREAD}
+            capabilities={DESKTOP_CHAT_COMPOSER_CAPABILITIES_THREAD}
             visualSurface="desktop-thread"
           />
         </>

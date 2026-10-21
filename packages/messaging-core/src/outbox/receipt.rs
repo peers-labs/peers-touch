@@ -3,12 +3,38 @@ use std::sync::Arc;
 use prost::Message;
 
 use crate::contracts::CryptoEndpoint;
-use crate::proto::chat::{MessageReceipt, ReceiptType};
+use crate::proto::chat::DeviceConsumptionReceipt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeliveryReceiptOutboxEntry {
     pub receipt_id: String,
     pub receipt_bytes: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("{code}: {detail}")]
+pub struct DeliveryReceiptSubmitFailure {
+    pub code: String,
+    pub detail: String,
+    pub retryable: bool,
+}
+
+impl DeliveryReceiptSubmitFailure {
+    pub fn retryable(code: impl Into<String>, detail: impl Into<String>) -> Self {
+        Self {
+            code: code.into(),
+            detail: detail.into(),
+            retryable: true,
+        }
+    }
+
+    pub fn terminal(code: impl Into<String>, detail: impl Into<String>) -> Self {
+        Self {
+            code: code.into(),
+            detail: detail.into(),
+            retryable: false,
+        }
+    }
 }
 
 pub trait DeliveryReceiptRepository: Send + Sync {
@@ -19,10 +45,20 @@ pub trait DeliveryReceiptRepository: Send + Sync {
         receipt_id: &str,
         receipt_bytes: &[u8],
     ) -> Result<(), String>;
+
+    fn mark_delivery_receipt_rejected(
+        &self,
+        receipt_id: &str,
+        receipt_bytes: &[u8],
+        error_code: &str,
+    ) -> Result<(), String>;
 }
 
 pub trait DeliveryReceiptTransport: Send + Sync {
-    fn submit(&self, receipt: &MessageReceipt) -> Result<(), String>;
+    fn submit(
+        &self,
+        receipt: &DeviceConsumptionReceipt,
+    ) -> Result<(), DeliveryReceiptSubmitFailure>;
 }
 
 pub struct DeliveryReceiptDispatcher<R> {
@@ -46,30 +82,61 @@ impl<R: DeliveryReceiptRepository> DeliveryReceiptDispatcher<R> {
         let Some(entry) = self.repository.next_delivery_receipt()? else {
             return Ok(false);
         };
-        let receipt = MessageReceipt::decode(entry.receipt_bytes.as_slice())
-            .map_err(|error| format!("decode messaging delivery receipt: {error}"))?;
-        if receipt.receipt_type != ReceiptType::Delivered as i32
-            || receipt.ptid != self.endpoint.ptid
-            || receipt.device_id != self.endpoint.device_id
-        {
-            return Err("messaging delivery receipt endpoint mismatch".to_string());
+        let receipt = DeviceConsumptionReceipt::decode(entry.receipt_bytes.as_slice())
+            .map_err(|error| format!("decode messaging device consumption receipt: {error}"))?;
+        validate_receipt(&receipt, &entry.receipt_id, &self.endpoint)?;
+        match transport.submit(&receipt) {
+            Ok(()) => self
+                .repository
+                .mark_delivery_receipt_submitted(&entry.receipt_id, &entry.receipt_bytes)?,
+            Err(error) if error.retryable => return Err(error.to_string()),
+            Err(error) => self.repository.mark_delivery_receipt_rejected(
+                &entry.receipt_id,
+                &entry.receipt_bytes,
+                &error.code,
+            )?,
         }
-        transport.submit(&receipt)?;
-        self.repository
-            .mark_delivery_receipt_submitted(&entry.receipt_id, &entry.receipt_bytes)?;
         Ok(true)
     }
+}
+
+fn validate_receipt(
+    receipt: &DeviceConsumptionReceipt,
+    receipt_id: &str,
+    endpoint: &CryptoEndpoint,
+) -> Result<(), String> {
+    let consumer = receipt
+        .consumer
+        .as_ref()
+        .ok_or_else(|| "messaging delivery receipt has no consumer".to_string())?;
+    if receipt_id.trim().is_empty()
+        || receipt.receipt_id != receipt_id
+        || receipt.conversation_id.trim().is_empty()
+        || receipt.event_id.trim().is_empty()
+        || receipt.event_sequence <= 0
+        || receipt.lane_sequence <= 0
+        || receipt.payload_sha256.len() != 32
+        || receipt.consumed_at.is_none()
+        || consumer.ptid != endpoint.ptid
+        || consumer.device_id != endpoint.device_id
+    {
+        return Err("messaging delivery receipt endpoint mismatch".to_string());
+    }
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use std::sync::Mutex;
 
+    use prost_types::Timestamp;
+
     use super::*;
+    use crate::proto::chat::CryptoEndpoint as ProtoCryptoEndpoint;
 
     struct TestRepository {
         entry: Mutex<Option<DeliveryReceiptOutboxEntry>>,
-        submitted: Mutex<bool>,
+        state: Mutex<String>,
     }
 
     impl DeliveryReceiptRepository for TestRepository {
@@ -82,6 +149,29 @@ mod tests {
             receipt_id: &str,
             receipt_bytes: &[u8],
         ) -> Result<(), String> {
+            self.validate_transition(receipt_id, receipt_bytes)?;
+            *self.state.lock().unwrap() = "submitted".to_string();
+            Ok(())
+        }
+
+        fn mark_delivery_receipt_rejected(
+            &self,
+            receipt_id: &str,
+            receipt_bytes: &[u8],
+            error_code: &str,
+        ) -> Result<(), String> {
+            self.validate_transition(receipt_id, receipt_bytes)?;
+            *self.state.lock().unwrap() = format!("rejected:{error_code}");
+            Ok(())
+        }
+    }
+
+    impl TestRepository {
+        fn validate_transition(
+            &self,
+            receipt_id: &str,
+            receipt_bytes: &[u8],
+        ) -> Result<(), String> {
             let entry = self.entry.lock().unwrap();
             let Some(entry) = entry.as_ref() else {
                 return Err("missing receipt".to_string());
@@ -89,75 +179,99 @@ mod tests {
             if entry.receipt_id != receipt_id || entry.receipt_bytes != receipt_bytes {
                 return Err("receipt transition mismatch".to_string());
             }
-            *self.submitted.lock().unwrap() = true;
             Ok(())
         }
     }
 
-    #[derive(Default)]
-    struct RecordingTransport {
-        receipts: Mutex<Vec<MessageReceipt>>,
+    enum Outcome {
+        Success,
+        Retryable,
+        Terminal,
     }
 
-    impl DeliveryReceiptTransport for RecordingTransport {
-        fn submit(&self, receipt: &MessageReceipt) -> Result<(), String> {
-            self.receipts.lock().unwrap().push(receipt.clone());
-            Ok(())
+    struct Transport(Outcome);
+
+    impl DeliveryReceiptTransport for Transport {
+        fn submit(
+            &self,
+            _receipt: &DeviceConsumptionReceipt,
+        ) -> Result<(), DeliveryReceiptSubmitFailure> {
+            match self.0 {
+                Outcome::Success => Ok(()),
+                Outcome::Retryable => Err(DeliveryReceiptSubmitFailure::retryable(
+                    "network", "offline",
+                )),
+                Outcome::Terminal => Err(DeliveryReceiptSubmitFailure::terminal(
+                    "http_409", "conflict",
+                )),
+            }
         }
     }
 
     fn endpoint() -> CryptoEndpoint {
-        CryptoEndpoint {
-            ptid: "ptid:alice".to_string(),
-            device_id: "device-1".to_string(),
-        }
+        CryptoEndpoint::new("ptid:alice", "device-1").unwrap()
     }
 
-    fn entry(receipt_type: ReceiptType, device_id: &str) -> DeliveryReceiptOutboxEntry {
-        let receipt = MessageReceipt {
+    fn entry() -> DeliveryReceiptOutboxEntry {
+        let receipt = DeviceConsumptionReceipt {
+            receipt_id: "receipt-1".to_string(),
             conversation_id: "conversation-1".to_string(),
-            message_id: "message-1".to_string(),
-            ptid: "ptid:alice".to_string(),
-            device_id: device_id.to_string(),
-            receipt_type: receipt_type as i32,
-            ts: None,
+            event_id: "event-1".to_string(),
+            event_sequence: 1,
+            lane_sequence: 1,
+            consumer: Some(ProtoCryptoEndpoint {
+                ptid: "ptid:alice".to_string(),
+                device_id: "device-1".to_string(),
+            }),
+            payload_sha256: vec![7; 32],
+            consumed_at: Some(Timestamp {
+                seconds: 1,
+                nanos: 0,
+            }),
         };
         DeliveryReceiptOutboxEntry {
-            receipt_id: "receipt-1".to_string(),
+            receipt_id: receipt.receipt_id.clone(),
             receipt_bytes: receipt.encode_to_vec(),
         }
     }
 
-    #[test]
-    fn dispatch_marks_the_exact_receipt_after_transport_success() {
-        let repository = Arc::new(TestRepository {
-            entry: Mutex::new(Some(entry(ReceiptType::Delivered, "device-1"))),
-            submitted: Mutex::new(false),
-        });
-        let transport = RecordingTransport::default();
-        let dispatcher = DeliveryReceiptDispatcher::new(repository.clone(), endpoint()).unwrap();
-
-        assert!(dispatcher.dispatch_once(&transport).unwrap());
-        assert!(*repository.submitted.lock().unwrap());
-        assert_eq!(transport.receipts.lock().unwrap().len(), 1);
+    fn repository() -> Arc<TestRepository> {
+        Arc::new(TestRepository {
+            entry: Mutex::new(Some(entry())),
+            state: Mutex::new("pending".to_string()),
+        })
     }
 
     #[test]
-    fn dispatch_rejects_non_delivery_or_cross_device_receipts() {
-        for receipt in [
-            entry(ReceiptType::Read, "device-1"),
-            entry(ReceiptType::Delivered, "device-2"),
-        ] {
-            let repository = Arc::new(TestRepository {
-                entry: Mutex::new(Some(receipt)),
-                submitted: Mutex::new(false),
-            });
-            let dispatcher =
-                DeliveryReceiptDispatcher::new(repository.clone(), endpoint()).unwrap();
-            assert!(dispatcher
-                .dispatch_once(&RecordingTransport::default())
-                .is_err());
-            assert!(!*repository.submitted.lock().unwrap());
-        }
+    fn success_marks_the_exact_receipt_submitted() {
+        let repository = repository();
+        let dispatcher = DeliveryReceiptDispatcher::new(repository.clone(), endpoint()).unwrap();
+
+        assert!(dispatcher
+            .dispatch_once(&Transport(Outcome::Success))
+            .unwrap());
+        assert_eq!(*repository.state.lock().unwrap(), "submitted");
+    }
+
+    #[test]
+    fn terminal_failure_dead_letters_without_blocking_the_queue() {
+        let repository = repository();
+        let dispatcher = DeliveryReceiptDispatcher::new(repository.clone(), endpoint()).unwrap();
+
+        assert!(dispatcher
+            .dispatch_once(&Transport(Outcome::Terminal))
+            .unwrap());
+        assert_eq!(*repository.state.lock().unwrap(), "rejected:http_409");
+    }
+
+    #[test]
+    fn retryable_failure_preserves_the_pending_receipt() {
+        let repository = repository();
+        let dispatcher = DeliveryReceiptDispatcher::new(repository.clone(), endpoint()).unwrap();
+
+        assert!(dispatcher
+            .dispatch_once(&Transport(Outcome::Retryable))
+            .is_err());
+        assert_eq!(*repository.state.lock().unwrap(), "pending");
     }
 }

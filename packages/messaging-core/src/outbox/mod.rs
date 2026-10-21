@@ -15,7 +15,7 @@ pub use interaction::{
 };
 pub use receipt::{
     DeliveryReceiptDispatcher, DeliveryReceiptOutboxEntry, DeliveryReceiptRepository,
-    DeliveryReceiptTransport,
+    DeliveryReceiptSubmitFailure, DeliveryReceiptTransport,
 };
 pub use send::{
     encrypt_direct_fan_out, DirectEditIntent, DirectFanOutResult, DirectForwardIntent,

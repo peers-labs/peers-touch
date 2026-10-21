@@ -1,12 +1,13 @@
 pub mod adapter;
+pub(crate) mod object_runtime;
 pub mod private_comment;
 pub mod private_mention;
 pub mod proto;
 pub mod receiver;
 pub mod recovery;
+pub mod runtime;
 pub mod store;
 pub mod transport;
-pub mod worker;
 
 use ed25519_dalek::VerifyingKey;
 use messaging_core::identity::DeviceSigningKey;

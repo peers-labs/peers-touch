@@ -198,8 +198,8 @@ mindmap
 
 | # | 对齐 | 操作节点 | Peers 状态 | Peers 源码锚点 | Lobe 状态 | Lobe 源码锚点 | 范围决策 |
 |---|---|---|---|---|---|---|---|
-| E1 | 🟨  Evaluation Lab（MCA-V2-E01） | 部分闭环 | 用户入口与 UI 已存在：`EvaluationPage.tsx` + descriptor；`store/evaluation.ts` 有 dataset CRUD、真实 `quickCompletion` loop 与 cancel，但 dataset 仍在 localStorage、run/result 非 Station truth；Station 已有 `EcosystemEvalDataset`、proto 与 CRUD API；V2 execution `Phase 7` 负责产品闭环 | 已闭环 | `routes/(main)/eval/*` + `store/eval/*` + `services/agentEval.ts`；benchmark/dataset/test-case/run/experiment 全链，支持 `abortRun`/`retryRunCase`/`resumeRunCase` | 当前阶段必做 |
-| E2 | ✅  User Memory | 已闭环 | `store/memory.ts#L93`（`deleteMemory`→`api.deleteMemory`）/`#L106`（`updateMemory` impl）/`#L60`（`api.listMemories`），Station-backed；UI `pages/MemoryPage.tsx#L280`（`api.listMemories`）/`#L297`（`api.deleteMemory`）/`#L152`（`api.getMemoryStats`） | 已闭环 | `store/userMemory/slices/*`（base/identity/activity/context/experience/preference） | 当前闭环 |
+| E1 | 🟨  Evaluation Lab（MCA-V2-E01） | 部分闭环 / deferred | `EvaluationPage.tsx`、descriptor 与 `store/evaluation.ts` 保留为内部/Acceptance 能力，不提供 Rail、Command Palette 或 Agent 子导航入口；现有 dataset CRUD、真实 `quickCompletion` loop 与 cancel 仍在，但 dataset 仍在 localStorage、run/result 非 Station truth；Station 已有 `EcosystemEvalDataset`、proto 与 CRUD API | 已闭环 | `routes/(main)/eval/*` + `store/eval/*` + `services/agentEval.ts`；benchmark/dataset/test-case/run/experiment 全链，支持 `abortRun`/`retryRunCase`/`resumeRunCase` | deferred，无用户入口 |
+| E2 | ✅  User Memory | 已闭环 | `store/memory.ts` 的 list/update/delete 为 Station-backed；UI 由 `modules/memory.ts` 注册到 Settings > AI > Memory，`components/settings/MemorySettingsSection.tsx` 承载 browse/search/persona/events/configuration | 已闭环 | `store/userMemory/slices/*`（base/identity/activity/context/experience/preference） | 当前闭环 |
 | E3 | ✅  Session/Topic 增删改 | 已闭环 | `store/agentTopics.ts`：`deleteTopic#L231`/`renameTopic#L242`（Station-backed） | 已闭环 | `store/chat/slices/topic` + `store/session/slices/session` | 当前闭环 |
 
 ### 2.7 能力域：生成能力
@@ -217,7 +217,7 @@ mindmap
 |---|---|---|---|---|---|---|---|
 | X1 | ✅  MCP Server 管理 | 已闭环 | `store/mcp.ts`：`createServer#L36`/`toggleServer#L91`（经 `mcpService`，Station-backed） | 已闭环 | `store/tool/slices/mcpStore`（`installMCPPlugin`）+ `features/MCP/*` | 能力对齐/拓扑不同 |
 | X2 | ⛔  Custom Plugins | 代码存在未接线 | `store/customPlugins.ts`：`localStorage#L54`，凭证存 localStorage `#L19`；未注册到 ToolRegistry | 已闭环 | `store/tool/slices/customPlugin`（`installCustomPlugin`/`updateCustomPlugin`） | 合并能力（并入 connector 体系） |
-| X3 | 🟨 Marketplace / Discover | 部分闭环 | 当前已实现 Desktop 本地多来源 package discover：`MarketplacePage.descriptor.tsx`→`MarketplacePage.tsx` 聚合 Desktop Rust market store 中已登记且同步成功的 JSON index source，并按 `packageType` 提供 Agent/Skill/MCP+merged Plugin tab、搜索、详情、install/uninstall。当前没有预置官方可信 source，source sync 直接读取 URL JSON，`branch` 尚未参与 Git 仓库解析；首次使用可能得到空目录。未来工作必须补齐默认可信 source、官方或联邦 catalog、来源签名/信任治理、分页与开箱数据，并增加真实 source→浏览→安装→权威 readback Acceptance。现阶段不得表述为与 LobeHub hosted market 完整对齐。 | 已闭环 | `store/discover/*`（assistant/mcp/plugin/model/provider/skill 各子域，数据来自 LobeHub Market 服务） | 后续阶段 |
+| X3 | 🟨 Marketplace / Discover | 部分闭环 | 当前已实现 Settings > AI > Discover 多来源 package catalog：`modules/discover.ts`→`components/settings/DiscoverSettings.tsx` 聚合 Desktop Rust market store 中已登记且同步成功的 JSON index source，并按 `packageType` 提供 Agent/Skill/MCP+merged Plugin tab、搜索、详情、install/uninstall。当前没有预置官方可信 source，source sync 直接读取 URL JSON，`branch` 尚未参与 Git 仓库解析；首次使用可能得到空目录。未来工作必须补齐默认可信 source、官方或联邦 catalog、来源签名/信任治理、分页与开箱数据，并增加真实 source→浏览→安装→权威 readback Acceptance。现阶段不得表述为与 LobeHub hosted market 完整对齐。 | 已闭环 | `store/discover/*`（assistant/mcp/plugin/model/provider/skill 各子域，数据来自 LobeHub Market 服务） | 后续阶段 |
 | X4 | ✅  Topic Comments | 已闭环 | Station 落库全链：Go 端 M11 已建（`persistence/ecosystem.go#L24` 表 `ecosystem_topic_comments`、`ecosystem_service.go#L74/L85/L93`、`ecosystem_handler.go#L119/L146/L167`、路由 `agent.go#L375-377` create/delete/list，无 update=评论不可编辑，自洽）；BFF `agent_turn/mod.rs`（`topic_comment_create/delete/list`）+ 命令注册 `main.rs#L296-298`；前端 `store/topicComments.ts` 由 localStorage 改为 `api.createTopicCommentRemote/deleteTopicCommentRemote/listTopicCommentsRemote`（localStorage 清零），UI `TopicCommentsView.tsx`（mount 拉取 + 发/删）；验收 `cargo build --lib`+`tsc`+`pnpm run check` 全绿（2026-08-16） | 已闭环 | `store/topicComment`（`setDraft`/`upsertOptimisticComment`）+ service `topicComment.ts` | 当前闭环 |
 | X5 | ✅  Skill 管理（list/toggle/delete/import） | 已闭环 | `store/skill.ts#L53`（`toggleSkill` impl→`skillService.toggle`）/`#L74`（`deleteSkill`）/`#L30`（`skillService.list`）；service `services/skill-service.ts#L44`（`toggle`→`api.toggleSkill`），另 `list/create/delete/importFromGitHub/importFromAddress`，Station-backed；UI `components/SkillsTab.tsx`/`SkillAppletSelector.tsx`/`pages/AgentProfilePage.tsx`；运行时 `runtimes/agentCapabilityRuntime.ts` | 已闭环 | `store/tool/slices/agentSkills`（`createAgentSkill`/`importAgentSkillFromGitHub`/`refreshAgentSkills`）+ `features/SkillStore/*` | 能力对齐/拓扑不同 |
 
@@ -321,7 +321,7 @@ from `UNPROVEN`.
 | 项 | 修正前 | 修正后 | 依据 |
 |---|---|---|---|
 | X5 Skill | （遗漏） | 新增，已闭环 | `store/skill.ts#L53/L74` + `skill-service.ts#L44` + `SkillsTab.tsx`，Station-backed |
-| E2 User Memory | 未证实 | 已闭环 | `store/memory.ts#L93/L60/L106` + `MemoryPage.tsx#L280/L297`，Station-backed |
+| E2 User Memory | 未证实 | 已闭环 | `store/memory.ts` + `components/settings/MemorySettingsSection.tsx`，Station-backed |
 | X4 Topic Comments | 未证实 | 部分闭环 | `store/topicComments.ts#L18/L26` + `TopicCommentsView.tsx`，仅 localStorage |
 | I4 虚拟化列表 | 未证实 | 已闭环 | `MessageList.tsx#L25` `useVirtualizer`（@tanstack/react-virtual） |
 | I1 @Mention | 已闭环 | 代码存在未接线 | 活体 `components/ChatInput.tsx` 未引用 mention 系统，零活体消费者 |

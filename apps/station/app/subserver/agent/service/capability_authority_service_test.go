@@ -373,7 +373,6 @@ func TestCapabilityBackfillReconcilesAllAcceptedSourcesDeterministically(t *test
 		Description: "Research skill",
 		Content:     "# Research",
 		TrustLevel:  "community",
-		Enabled:     true,
 		Version:     3,
 	}).Error; err != nil {
 		t.Fatalf("seed skill: %v", err)

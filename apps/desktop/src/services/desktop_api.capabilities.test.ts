@@ -6,12 +6,14 @@ import {
   AdvanceCapabilityAcceptanceScenarioClockRequestSchema,
   AdvanceCapabilityAcceptanceScenarioClockResponseSchema,
   AgentCapabilityBindingSchema,
+  AgentCommandCapabilitySnapshotSchema,
   CapabilityReadinessState,
   CapabilityReadinessSnapshotSchema,
   CreateKnowledgeResourceDescriptorRequestSchema,
   CreateKnowledgeResourceDescriptorResponseSchema,
   DeleteAgentCapabilityBindingResponseSchema,
   GetCapabilityReadinessResponseSchema,
+  GetAgentCommandCapabilitySnapshotResponseSchema,
   KnowledgeResourceDescriptorSchema,
   KnowledgeResourceKind,
   ListAgentCapabilityBindingsResponseSchema,
@@ -53,7 +55,7 @@ describe('Desktop capability authority API', () => {
     vi.mocked(invoke).mockReset();
   });
 
-  it('decodes catalog, binding, and readiness protobuf responses', async () => {
+  it('decodes catalog, binding, readiness, and command snapshot responses', async () => {
     resolveProto(toBinary(
       ListCapabilityManifestsResponseSchema,
       create(ListCapabilityManifestsResponseSchema, {
@@ -81,16 +83,30 @@ describe('Desktop capability authority API', () => {
         }),
       }),
     ));
+    resolveProto(toBinary(
+      GetAgentCommandCapabilitySnapshotResponseSchema,
+      create(GetAgentCommandCapabilitySnapshotResponseSchema, {
+        snapshot: create(AgentCommandCapabilitySnapshotSchema, {
+          snapshotId: 'command-snapshot-1',
+          agentId: 'agent-1',
+          agentVersion: 3n,
+        }),
+      }),
+    ));
 
     const manifests = await api.listCapabilityManifests();
     const bindings = await api.listAgentCapabilityBindings('agent-1');
     const readiness = await api.readAgentCapabilityReadiness({
       agent_id: 'agent-1',
     });
+    const commandSnapshot = await api.readAgentCommandCapabilitySnapshot({
+      agent_id: 'agent-1',
+    });
 
     expect(manifests[0]?.capabilityId).toBe('filesystem.read');
     expect(bindings[0]?.revision).toBe(3n);
     expect(readiness.snapshotId).toBe('snapshot-1');
+    expect(commandSnapshot.snapshotId).toBe('command-snapshot-1');
     expect(invoke).toHaveBeenNthCalledWith(1, 'agent_capability_manifest_list', {
       input: { sourceKinds: [] },
     });
@@ -100,6 +116,11 @@ describe('Desktop capability authority API', () => {
     expect(invoke).toHaveBeenNthCalledWith(3, 'agent_capability_readiness', {
       input: { agent_id: 'agent-1' },
     });
+    expect(invoke).toHaveBeenNthCalledWith(
+      4,
+      'agent_command_capability_snapshot',
+      { input: { agent_id: 'agent-1' } },
+    );
   });
 
   it('preserves protobuf JSON readiness enum names', async () => {

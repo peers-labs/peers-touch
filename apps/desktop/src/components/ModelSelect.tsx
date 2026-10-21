@@ -2,13 +2,20 @@ import { useMemo } from 'react';
 import { Select, theme } from 'antd';
 import { Flexbox } from 'react-layout-kit';
 import { ProviderIcon } from './settings/ProviderIcon';
-import type { AvailableModel } from '../services/desktop_api';
+import type { AvailableModel, ModelRef } from '../services/desktop_api';
 import { useTranslation } from 'react-i18next';
+import {
+  availableModelIdentityKey,
+  findAvailableModel,
+  modelIdentityKey,
+  parseModelIdentityKey,
+} from '../utils/modelIdentity';
 
 interface ModelSelectProps {
   models: AvailableModel[];
-  value?: string;
-  onChange?: (modelId: string) => void;
+  value?: ModelRef;
+  onChange?: (model?: ModelRef) => void;
+  className?: string;
   placeholder?: string;
   style?: React.CSSProperties;
   size?: 'small' | 'middle' | 'large';
@@ -21,6 +28,7 @@ export function ModelSelect({
   models,
   value,
   onChange,
+  className,
   placeholder,
   style,
   size = 'middle',
@@ -43,7 +51,10 @@ export function ModelSelect({
     return Array.from(groups.entries()).map(([provider, items]) => ({
       label: provider,
       options: items.map((m) => ({
-        value: m.id,
+        value: availableModelIdentityKey(m),
+        className: 'pt-model-select-option',
+        'data-pt-model-provider': m.provider_id,
+        'data-pt-model-id': m.id,
         label: (
           <Flexbox horizontal align="center" gap={8}>
             <ProviderIcon providerId={m.provider_id || ''} providerName={m.provider_name} size={16} />
@@ -57,23 +68,38 @@ export function ModelSelect({
         ),
       })),
     }));
-  }, [models, token]);
+  }, [models, t, token]);
 
-  const selectedModel = models.find((m) => m.id === value);
+  const selectedModel = findAvailableModel(models, value);
+  const selectedKey = value?.provider && value.model
+    ? modelIdentityKey(value.provider, value.model)
+    : undefined;
 
   return (
     <Select
-      value={value || undefined}
-      onChange={onChange}
+      className={className}
+      value={selectedKey}
+      onChange={(next) => onChange?.(parseModelIdentityKey(next))}
+      onClear={() => onChange?.(undefined)}
       placeholder={effectivePlaceholder}
       style={{ minWidth: 200, ...style }}
       size={size}
       allowClear={allowClear}
       disabled={disabled}
       showSearch
-      filterOption={(input, option) =>
-        ((option as Record<string, unknown>)?.value as string)?.toLowerCase().includes(input.toLowerCase()) ?? false
-      }
+      filterOption={(input, option) => {
+        const ref = parseModelIdentityKey(
+          String((option as Record<string, unknown>)?.value ?? ''),
+        );
+        const model = findAvailableModel(models, ref);
+        const query = input.toLowerCase();
+        return Boolean(model && [
+          model.id,
+          model.display_name,
+          model.provider_id,
+          model.provider_name,
+        ].some((entry) => entry?.toLowerCase().includes(query)));
+      }}
       options={groupedOptions}
       labelRender={() =>
         selectedModel ? (

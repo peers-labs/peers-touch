@@ -1,14 +1,27 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type KeyboardEvent,
+  type SetStateAction,
+} from 'react';
 import type { InputRef } from 'antd';
 import { Flexbox } from 'react-layout-kit';
-import { ActionIcon, Tag } from '@lobehub/ui';
+import { ActionIcon, Tag, toast } from '@lobehub/ui';
 import { Dropdown, Input, theme } from 'antd';
 import type { MenuProps } from 'antd';
 import { AlertTriangle, ArrowUp, ChevronDown, ChevronUp, Image as ImageIcon, RefreshCw, Search, ServerCog, Slash, Square } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useChatStore, type ChatComposerAttachment } from '../store/chat';
 import { useAgentStore } from '../store/agent';
-import { useAgentCapabilityStore } from '../store/agentCapabilities';
+import { useTopicModel } from '../hooks/useTopicModel';
+import {
+  selectAgentCommandCapabilityProjectionState,
+  useAgentCapabilityStore,
+} from '../store/agentCapabilities';
 import {
   projectAgentComposerReadiness,
   type AgentComposerReadinessState,
@@ -38,6 +51,9 @@ import { selectAgentCapabilityWarning } from './composer/agentCapabilityWarning'
 import { removeRejectedInlineReferences } from './composer/invalidReferenceRecovery';
 import { log } from '../utils/logger';
 import type { AgentCapabilityBinding } from '../gen/proto/domain/agent/capability_pb';
+import { AgentCommandPalette } from './agent/AgentCommandPalette';
+import { createStationAgentTopic } from '../services/openAgentChatSession';
+import { EVENT, eventBus } from '../kernel/events';
 
 const COMPOSER_COLORS = {
   border: '#d1d1d1',
@@ -106,15 +122,15 @@ function modelMenuKey(model: AvailableModel): string {
 }
 
 export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: ChatInputProps) {
-  const [input, setInput] = useState('');
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const [modelSearch, setModelSearch] = useState('');
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [creatingTopic, setCreatingTopic] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const commandTriggerRef = useRef<HTMLButtonElement>(null);
   const searchInputRef = useRef<InputRef>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isComposingRef = useRef(false);
-  const topicDraftRef = useRef<Record<string, string>>({});
-  const prevSessionKeyRef = useRef('');
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
 
@@ -122,9 +138,13 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
   const stopStreaming = useChatStore(s => s.stopStreaming);
   const isStreaming = useChatStore(s => s.isStreaming);
   const currentSessionKey = useChatStore(s => s.currentSessionKey);
+  const input = useChatStore(
+    (state) => state.composerDrafts[state.currentSessionKey] ?? '',
+  );
   const readinessErrorKey = useChatStore(s => s.readinessErrorKey);
   const composerFill = useChatStore(s => s.composerFill);
   const composerReferenceRemoval = useChatStore(s => s.composerReferenceRemoval);
+  const consumeComposerModelSelection = useChatStore(s => s.consumeComposerModelSelection);
   const composerFocusNonce = useChatStore(s => s.composerFocusNonce);
   const consumeComposerFill = useChatStore(s => s.consumeComposerFill);
   const consumeComposerReferenceRemoval = useChatStore(
@@ -134,13 +154,20 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
     s => s.consumeComposerResourceSelection,
   );
   const consumeComposerFocus = useChatStore(s => s.consumeComposerFocus);
-  const selectedModel = useAgentStore(s => s.selectedModel);
-  const selectedProviderId = useAgentStore(s => s.selectedProviderId);
+  const setInput = useCallback((next: SetStateAction<string>) => {
+    const state = useChatStore.getState();
+    const current = state.composerDrafts[state.currentSessionKey] ?? '';
+    state.setComposerDraft(
+      state.currentSessionKey,
+      typeof next === 'function' ? next(current) : next,
+    );
+  }, []);
+  const { selectedModel, selectedProviderId, setSelectedModel } = useTopicModel();
   const selectedAgentName = useAgentStore(s => s.selectedAgent);
   const agents = useAgentStore(s => s.agents);
   const defaultModel = useAgentStore(s => s.defaultModel);
+  const defaultProviderId = useAgentStore(s => s.defaultProviderId);
   const availableModels = useAgentStore(s => s.availableModels);
-  const setSelectedModel = useAgentStore(s => s.setSelectedModel);
   const selectedAgentData = useMemo(
     () => agents.find((agent) => agent.name === selectedAgentName),
     [agents, selectedAgentName],
@@ -168,6 +195,19 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
   const refreshCapabilityReadiness = useAgentCapabilityStore(
     (state) => state.loadAgent,
   );
+  const commandSnapshot = useAgentCapabilityStore((state) => (
+    selectedAgentData
+      ? state.commandSnapshotsByAgentId[selectedAgentData.id]
+      : undefined
+  ));
+  const commandProjectionState = useAgentCapabilityStore((state) => (
+    selectedAgentData
+      ? selectAgentCommandCapabilityProjectionState(
+          state,
+          selectedAgentData.id,
+        )
+      : 'unavailable'
+  ));
 
   // Mention (@) system — wires the standalone mention store/popup/trigger into
   // the live agent composer. Aligns Peers @mention with LobeHub composer-level
@@ -192,9 +232,12 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
     fallbackName: t('chat.input.attachmentFallbackName'),
   });
   const currentModelId = selectedModel || defaultModel;
-  const modelInfo =
-    availableModels.find((model) => model.id === currentModelId && (!selectedProviderId || model.provider_id === selectedProviderId)) ||
-    availableModels.find((model) => model.id === currentModelId);
+  const currentProviderId = selectedProviderId || defaultProviderId;
+  const modelInfo = availableModels.find(
+    (model) =>
+      model.id === currentModelId
+      && model.provider_id === currentProviderId,
+  );
   const composerReadiness = useMemo(
     () => projectAgentComposerReadiness(
       selectedAgentData?.id ?? '',
@@ -222,33 +265,8 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
   );
 
   useEffect(() => {
-    const previousKey = prevSessionKeyRef.current;
-    if (previousKey) topicDraftRef.current[previousKey] = input;
-    const restoredDraft = topicDraftRef.current[currentSessionKey] || '';
-    // #region debug-point O:context-overflow-session-draft
-    void reportContextOverflowComposerDebug('O', 'session-draft-restore', {
-      previousSessionPresent: previousKey.length > 0,
-      currentSessionPresent: currentSessionKey.length > 0,
-      sessionChanged: previousKey !== currentSessionKey,
-      restoredDraftLength: restoredDraft.length,
-    });
-    // #endregion
-    setInput(restoredDraft);
-    prevSessionKeyRef.current = currentSessionKey;
-  }, [currentSessionKey]);
-
-  useEffect(() => {
-    if (currentSessionKey) topicDraftRef.current[currentSessionKey] = input;
-    // #region debug-point N-P:context-overflow-input-state
-    void reportContextOverflowComposerDebug('N-P', 'input-state-committed', {
-      currentSessionPresent: currentSessionKey.length > 0,
-      inputEmpty: input.length === 0,
-      inputLength: input.length,
-      storedDraftLength:
-        (topicDraftRef.current[currentSessionKey] || '').length,
-    });
-    // #endregion
-  }, [currentSessionKey, input]);
+    setCommandPaletteOpen(false);
+  }, [selectedAgentData?.id]);
 
   // I2 follow-up: consume a pending composer-fill request (fill-not-send), aligning
   // with LobeHub `fillInputMessage`. Populate the draft, focus, then clear the request.
@@ -261,13 +279,22 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
       requestedLength: composerFill.text.length,
     });
     // #endregion
-    setInput(composerFill.text);
-    consumeComposerFill();
-    requestAnimationFrame(() => {
+    if (composerFill.sessionKey !== currentSessionKey) {
+      consumeComposerFill();
+      return;
+    }
+    const frame = requestAnimationFrame(() => {
+      if (useChatStore.getState().currentSessionKey !== composerFill.sessionKey) return;
+      setInput((current) => composerFill.append
+        ? `${current}${current && !/\s$/.test(current) ? '\n' : ''}${composerFill.text}`
+        : composerFill.text);
+      consumeComposerFill();
       const el = textareaRef.current;
       if (el) {
         el.focus();
-        const end = composerFill.text.length;
+        const end = composerFill.append
+          ? el.value.length + composerFill.text.length + 1
+          : composerFill.text.length;
         el.setSelectionRange(end, end);
         // #region debug-point N-P:context-overflow-composer-fill-frame
         void reportContextOverflowComposerDebug(
@@ -285,7 +312,8 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
         // #endregion
       }
     });
-  }, [composerFill, consumeComposerFill]);
+    return () => cancelAnimationFrame(frame);
+  }, [composerFill, consumeComposerFill, currentSessionKey]);
 
   // Invalid references remain composer-owned: remove only the Station-selected
   // inline token after the user invokes recovery, without touching attachments.
@@ -349,6 +377,14 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
     consumeComposerFocus,
     consumeComposerResourceSelection,
   ]);
+
+  useEffect(() => useChatStore.subscribe((state) => {
+    const request = state.composerModelSelection;
+    if (!request || request.sessionKey !== state.currentSessionKey) return;
+    consumeComposerModelSelection(request.nonce);
+    setModelSearch('');
+    setModelDropdownOpen(true);
+  }), [consumeComposerModelSelection]);
 
   const resizeTextarea = useCallback(() => {
     const el = textareaRef.current;
@@ -425,6 +461,15 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
       nextLength: value.length,
     });
     // #endregion
+    const lineStart = value.lastIndexOf('\n') + 1;
+    if (value.slice(lineStart) === '/') {
+      const next = value.slice(0, -1);
+      setInput(next);
+      setModelDropdownOpen(false);
+      setCommandPaletteOpen(true);
+      mentionScan(next, next.length);
+      return;
+    }
     setInput(value);
     mentionScan(value, event.target.selectionStart ?? value.length);
   }, [mentionScan]);
@@ -448,22 +493,79 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
   const handleKeyDown = useCallback((event: KeyboardEvent<HTMLTextAreaElement>) => {
     // Let the mention popup consume navigation keys while it is open.
     if (mentionKeyDown(event)) return;
-    if (event.key !== 'Enter' || event.shiftKey) return;
+    if (event.key !== 'Enter') return;
     const native = event.nativeEvent as unknown as { isComposing?: boolean; keyCode?: number };
     if (isComposingRef.current || native.isComposing || native.keyCode === 229) return;
+    if (event.shiftKey) return;
+    if (event.ctrlKey || event.metaKey) {
+      event.preventDefault();
+      const textarea = event.currentTarget;
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      setInput((previous) => `${previous.slice(0, start)}\n${previous.slice(end)}`);
+      requestAnimationFrame(() => {
+        textarea.setSelectionRange(start + 1, start + 1);
+        textarea.style.height = 'auto';
+        textarea.style.height = `${Math.min(textarea.scrollHeight, 190)}px`;
+      });
+      return;
+    }
     event.preventDefault();
     handleSend();
   }, [handleSend, mentionKeyDown]);
 
-  const insertSlash = useCallback(() => {
-    const el = textareaRef.current;
-    if (!el) {
-      setInput((prev) => `${prev}/`);
-      return;
-    }
-    el.focus();
-    setInput((prev) => `${prev}/`);
+  const toggleCommandPalette = useCallback(() => {
+    setModelDropdownOpen(false);
+    setCommandPaletteOpen((open) => !open);
   }, []);
+
+  const insertCapabilityToken = useCallback((token: string) => {
+    setInput((previous) => {
+      const needsSpace =
+        previous.length > 0
+        && previous[previous.length - 1] !== ' '
+        && previous[previous.length - 1] !== '\n';
+      return `${previous}${needsSpace ? ' ' : ''}/${token} `;
+    });
+    setCommandPaletteOpen(false);
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }, []);
+
+  const clearToStationTopic = useCallback(async () => {
+    if (!selectedAgentData || creatingTopic) return;
+    setCreatingTopic(true);
+    try {
+      await createStationAgentTopic(
+        selectedAgentData,
+        t('chat.input.commands.newTopicTitle'),
+      );
+      setInput('');
+      clearDrafts(false);
+      clearMentions();
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    } catch (error) {
+      log.error('chat', 'Failed to create Station topic from /clear', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      toast.error(t('chat.input.commands.clearFailed'));
+      requestAnimationFrame(() => commandTriggerRef.current?.focus());
+    } finally {
+      setCreatingTopic(false);
+    }
+  }, [
+    clearDrafts,
+    clearMentions,
+    creatingTopic,
+    selectedAgentData,
+    t,
+  ]);
+
+  const openAgentExtensions = useCallback(() => {
+    if (!selectedAgentData) return;
+    useAgentStore.getState().setAgentSurface(selectedAgentData.name, 'profile');
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+    setCommandPaletteOpen(false);
+  }, [selectedAgentData]);
 
   const handlePickImages = useCallback(() => {
     fileInputRef.current?.click();
@@ -490,10 +592,9 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
     ? modelDisplayName
     : currentModelId || t('chat.model.select');
   const providerLabel =
-    selectedAgentData?.provider
-    || selectedProviderId
-    || modelInfo?.provider_name
+    modelInfo?.provider_name
     || modelInfo?.provider_id
+    || selectedProviderId
     || t('chat.input.runtimeSnapshot.unknown');
   const runtimeSnapshotLabel = shortSnapshotId(
     composerReadiness.runtimeSnapshotId,
@@ -538,7 +639,14 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
           key: modelMenuKey(model),
           style: modelMenuItemStyle,
           label: (
-            <Flexbox horizontal align="center" gap={8} style={modelMenuLabelStyle}>
+            <Flexbox
+              data-pt-agent-model-provider={model.provider_id}
+              data-pt-agent-model-id={model.id}
+              horizontal
+              align="center"
+              gap={8}
+              style={modelMenuLabelStyle}
+            >
               <span style={modelMenuIconStyle}>
                 <ProviderIcon
                   providerId={model.provider_id || ''}
@@ -620,8 +728,8 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
         }
         data-pt-agent-readiness-state={readinessDisplayState}
         data-pt-agent-model-compatibility={composerReadiness.compatibility}
-        data-pt-agent-selected-provider={selectedAgentData?.provider || 'unknown'}
-        data-pt-agent-selected-model={selectedAgentData?.model || 'unknown'}
+        data-pt-agent-selected-provider={currentProviderId || 'unknown'}
+        data-pt-agent-selected-model={currentModelId || 'unknown'}
         data-pt-agent-readiness-authority={composerReadiness.authority}
         data-pt-agent-readiness-reason={composerReadiness.reasonCode}
         horizontal
@@ -772,20 +880,52 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
 
       <Flexbox horizontal align="center" gap={8}>
         <Flexbox horizontal align="center" gap={8}>
+          <div style={{ position: 'relative' }}>
+            <button
+              ref={commandTriggerRef}
+              data-pt-agent-composer-slash
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={commandPaletteOpen}
+              aria-label={t('chat.input.commands.title')}
+              title={t('chat.input.commands.title')}
+              onClick={toggleCommandPalette}
+              style={{
+                width: 28,
+                height: 28,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: 8,
+                border: `1px solid ${COMPOSER_COLORS.borderSoft}`,
+                background: '#ffffff',
+                color: token.colorText,
+                boxShadow: COMPOSER_COLORS.toolButtonShadow,
+                cursor: 'pointer',
+              }}
+            >
+              <Slash size={13} />
+            </button>
+            <AgentCommandPalette
+              agentName={
+                selectedAgentData?.title
+                || selectedAgentData?.name
+                || selectedAgentName
+              }
+              onClear={() => {
+                void clearToStationTopic();
+              }}
+              onClose={() => setCommandPaletteOpen(false)}
+              onInsertCapability={insertCapabilityToken}
+              onOpenExtensions={openAgentExtensions}
+              open={commandPaletteOpen}
+              projectionState={commandProjectionState}
+              snapshot={commandSnapshot}
+              triggerRef={commandTriggerRef}
+            />
+          </div>
           <ActionIcon
-            icon={Slash}
-            onClick={insertSlash}
-            title={t('chat.input.slashCommand')}
-            size={{ blockSize: 28, size: 13 }}
-            style={{
-              borderRadius: 8,
-              border: `1px solid ${COMPOSER_COLORS.borderSoft}`,
-              background: '#ffffff',
-              color: token.colorText,
-              boxShadow: COMPOSER_COLORS.toolButtonShadow,
-            }}
-          />
-          <ActionIcon
+            data-pt-agent-composer-attachment-choose
             icon={ImageIcon}
             onClick={handlePickImages}
             title={t('chat.input.uploadFile')}
@@ -811,6 +951,7 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
             open={modelDropdownOpen}
             onOpenChange={(open) => {
               setModelDropdownOpen(open);
+              if (open) setCommandPaletteOpen(false);
               if (!open) setModelSearch('');
               if (open) setTimeout(() => searchInputRef.current?.focus(), 50);
             }}
@@ -818,6 +959,7 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
             overlayStyle={{ padding: 0, border: 'none', borderRadius: 12, boxShadow: 'none' }}
           >
             <button
+              data-pt-agent-model-picker
               type="button"
               style={{
                 height: 28,

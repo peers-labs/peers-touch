@@ -1,0 +1,45 @@
+{
+  "id": "unified-client-messaging-runtime",
+  "status": "active",
+  "product_area": "chat",
+  "owners": [
+    "packages/messaging-core/**",
+    "packages/messaging-native-filesystem/**",
+    "apps/desktop/src-tauri/src/messaging/**",
+    "apps/mobile/src-tauri/src/messaging/**",
+    "tooling/acceptance/gates/unified_client/messaging_owner_zero.py",
+    "tooling/acceptance/gates/chat/unified_client_core_suite.py"
+  ],
+  "truth_sources": [
+    "MP-D16 portable Device Messaging Engine ownership",
+    "UCA-04 exact owner inventory",
+    "Desktop/iOS/physical-Android receiver-visible Messaging Suite"
+  ],
+  "visible_surfaces": [
+    {
+      "type": "native-runtime",
+      "state": "desktop-ios-android"
+    }
+  ],
+  "required_gates": [
+    "messaging-owner-hard-cut-zero",
+    "unified-client-messaging-e2e"
+  ],
+  "acceptance": {
+    "architecture_assertions": [
+      "messaging-core is the sole host-neutral engine, outbox, inbox, receipt, recovery and attachment mechanism owner",
+      "Desktop and Mobile retain only typed transport, encrypted-store, key, file, event-loop and OS lifecycle adapters",
+      "portable core imports no filesystem, environment-path or application implementation",
+      "Desktop and Mobile use the same messaging-native-filesystem adapter"
+    ],
+    "runtime_assertions": [
+      "Desktop, iOS and physical Android converge on exact sender and receiver projections",
+      "same-Station, cross-Station and multi-device scenarios reuse one source-bound Suite Runtime",
+      "restart, receipt, attachment and recovery results are receiver visible"
+    ]
+  },
+  "negative": [
+    "source closure does not substitute for physical Android or signed iOS runtime proof",
+    "missing runtime cells remain UNPROVEN"
+  ]
+}

@@ -22,6 +22,7 @@ func openConversationAuthorityDB(t *testing.T, name string) *gorm.DB {
 		t.Fatalf("open conversation authority database: %v", err)
 	}
 	if err := db.AutoMigrate(
+		&persistence.Agent{},
 		&persistence.Conversation{},
 		&persistence.AgentMessage{},
 		&persistence.AgentTurn{},
@@ -947,6 +948,7 @@ func TestGetConversationPreflightsOwnershipWithoutForeignContentRead(t *testing.
 
 func TestConversationArchiveRestoreAndDeleteDependencyGuard(t *testing.T) {
 	db := openConversationAuthorityDB(t, "conversation_lifecycle")
+	seedAgentServiceTestAgent(t, db)
 	ctx := context.Background()
 	service := NewConversationService()
 	owner := "ptid:person:owner"
@@ -1067,8 +1069,53 @@ func TestConversationArchiveRestoreAndDeleteDependencyGuard(t *testing.T) {
 	}
 }
 
+func TestConversationModelOverrideIsCompositeVersionedAndClearable(t *testing.T) {
+	db := openConversationAuthorityDB(t, "conversation_model_override")
+	agent := seedAgentServiceTestAgent(t, db)
+	if err := db.Model(&agent).Update("owner_actor_ptid", "ptid:person:model-owner").Error; err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	service := NewConversationService()
+	owner := "ptid:person:model-owner"
+	conversation, err := service.CreateConversation(ctx, "agent-1", owner, "Models", "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	model, provider := "default", "cli-one"
+	if _, err := service.UpdateConversation(ctx, owner, conversation.ConversationID,
+		conversation.Version, "", "", &model, nil, nil, nil); err == nil {
+		t.Fatal("incomplete model identity accepted")
+	}
+	updated, err := service.UpdateConversation(ctx, owner, conversation.ConversationID,
+		conversation.Version, "", "", &model, &provider, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.ModelName != model || updated.ProviderID != provider {
+		t.Fatalf("composite identity lost: %+v", updated)
+	}
+	provider = "cli-two"
+	if _, err := service.UpdateConversation(ctx, owner, conversation.ConversationID,
+		conversation.Version, "", "", &model, &provider, nil, nil); err == nil {
+		t.Fatal("stale model update accepted")
+	}
+	updated, err = service.UpdateConversation(ctx, owner, conversation.ConversationID,
+		updated.Version, "", "", &model, &provider, nil, nil)
+	if err != nil || updated.ProviderID != provider {
+		t.Fatalf("same model on another Provider failed: %+v %v", updated, err)
+	}
+	empty := ""
+	updated, err = service.UpdateConversation(ctx, owner, conversation.ConversationID,
+		updated.Version, "", "", &empty, &empty, nil, nil)
+	if err != nil || updated.ProviderID != "" || updated.ModelName != "" {
+		t.Fatalf("default inheritance was not restored: %+v %v", updated, err)
+	}
+}
+
 func TestConversationAuthorityIsActorScopedAndVersioned(t *testing.T) {
 	db := openConversationAuthorityDB(t, "conversation_authority")
+	seedAgentServiceTestAgent(t, db)
 	ctx := context.Background()
 	service := NewConversationService()
 	owner := "ptid:person:owner"
@@ -1114,7 +1161,8 @@ func TestConversationAuthorityIsActorScopedAndVersioned(t *testing.T) {
 		1,
 		"Renamed topic",
 		"",
-		"",
+		nil,
+		nil,
 		map[string]string{"pinned": "true"},
 		&activeBranch,
 	)
@@ -1134,7 +1182,8 @@ func TestConversationAuthorityIsActorScopedAndVersioned(t *testing.T) {
 		1,
 		"Stale overwrite",
 		"",
-		"",
+		nil,
+		nil,
 		nil,
 		nil,
 	); err == nil {
@@ -1287,7 +1336,8 @@ func TestConversationMetadataUpdatesMergeAndBranchProjectionHidesTombstones(t *t
 		1,
 		"",
 		"",
-		"",
+		nil,
+		nil,
 		map[string]string{"pinned": "true"},
 		nil,
 	)
@@ -1301,7 +1351,8 @@ func TestConversationMetadataUpdatesMergeAndBranchProjectionHidesTombstones(t *t
 		updated.Version,
 		"",
 		"",
-		"",
+		nil,
+		nil,
 		map[string]string{"favorite": "true"},
 		nil,
 	)

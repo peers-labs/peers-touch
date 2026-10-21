@@ -7,6 +7,8 @@
 //     click). Refreshed on bootstrap and when the session changes.
 //   • agents list (used by the General tab; small payload, mirrors the
 //     existing `loadAgents` action on `useSettingsStore`).
+//   • small cross-section presentation preferences such as Provider list
+//     filtering, loaded before the Settings page becomes visible.
 //
 // Heavier per-section data (statistics, tools, search providers) is
 // loaded lazily by individual sections via `kernel/usePrefetch`,
@@ -46,6 +48,7 @@ export const settingsRuntime: RuntimeDescriptor = {
       store.refreshActiveAccount(),
       store.loadAgents(),
       store.loadChatPreferences(),
+      store.loadProviderPreferences(),
     ]);
   },
   async reconcile(): Promise<void> {
@@ -54,6 +57,7 @@ export const settingsRuntime: RuntimeDescriptor = {
       store.refreshActiveAccount(),
       store.loadAgents(),
       store.loadChatPreferences(),
+      store.loadProviderPreferences(),
     ]);
   },
 };

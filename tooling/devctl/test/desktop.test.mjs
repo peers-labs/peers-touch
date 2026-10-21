@@ -5,8 +5,12 @@ import path from 'node:path';
 import test from 'node:test';
 
 import {
+  assertLinuxDesktopDependencies,
+  atomicReplaceDesktopFiles,
   desktopFrontendLogState,
+  desktopInstallAdapter,
   desktopInstallSettings,
+  desktopInstallSettingsForPlatform,
   desktopInstallTauriArguments,
   desktopInstallTauriConfig,
   desktopRuntimeIdentity,
@@ -15,6 +19,8 @@ import {
   desktopViteReadinessUrl,
   ensureDesktopDependencies,
   ensureDesktopGeneratedSources,
+  linuxDesktopEntry,
+  linuxDesktopLauncher,
   reconcileDesktopRuntime,
   replaceDesktopApplication,
   signDesktopApplication,
@@ -139,6 +145,287 @@ test('desktop install builds only the macOS app bundle with dev overrides', () =
       '/tmp/desktop-install.conf.json',
     ],
   );
+});
+
+test('desktop install resolves Linux XDG paths without root', () => {
+  assert.deepEqual(
+    desktopInstallSettingsForPlatform(
+      'linux',
+      {},
+      '/home/example',
+    ),
+    {
+      platform: 'linux',
+      appId: 'com.peers.touch.desktop.dev',
+      productName: 'Peers Dev',
+      deepLinkScheme: 'peers-touch-dev',
+      dataHome: '/home/example/.local/share',
+      installDirectory: '/home/example/.local/share/peers-touch/apps',
+      installPath:
+        '/home/example/.local/share/peers-touch/apps/peers-dev.AppImage',
+      sourceReceiptPath:
+        '/home/example/.local/share/peers-touch/apps/peers-dev.source.json',
+      binDirectory: '/home/example/.local/bin',
+      launcherPath: '/home/example/.local/bin/peers-dev',
+      desktopEntryPath:
+        '/home/example/.local/share/applications/com.peers.touch.desktop.dev.desktop',
+      desktopFileName: 'com.peers.touch.desktop.dev.desktop',
+      iconPath:
+        '/home/example/.local/share/icons/hicolor/256x256/apps/com.peers.touch.desktop.dev.png',
+    },
+  );
+
+  const overridden = desktopInstallSettingsForPlatform(
+    'linux',
+    {
+      XDG_DATA_HOME: '/tmp/xdg-data',
+      PT_DESKTOP_INSTALL_DIR: '/tmp/apps',
+      PT_DESKTOP_INSTALL_BIN_DIR: '/tmp/bin',
+    },
+    '/home/example',
+  );
+  assert.equal(overridden.installPath, '/tmp/apps/peers-dev.AppImage');
+  assert.equal(overridden.launcherPath, '/tmp/bin/peers-dev');
+  assert.equal(
+    overridden.desktopEntryPath,
+    '/tmp/xdg-data/applications/com.peers.touch.desktop.dev.desktop',
+  );
+});
+
+test('desktop install adapter registry preserves macOS and selects AppImage on Linux', () => {
+  assert.equal(desktopInstallAdapter('darwin').bundle, 'app');
+  assert.equal(desktopInstallAdapter('linux').bundle, 'appimage');
+  assert.throws(
+    () => desktopInstallAdapter('win32'),
+    (error) => error.code === ERROR_CODES.UNSUPPORTED_MODE,
+  );
+  assert.deepEqual(
+    desktopInstallTauriArguments('/tmp/desktop-install.conf.json', 'appimage'),
+    [
+      'build',
+      '--bundles',
+      'appimage',
+      '--config',
+      '/tmp/desktop-install.conf.json',
+    ],
+  );
+  assert.deepEqual(
+    desktopInstallTauriArguments(
+      '/tmp/desktop-install.conf.json',
+      'appimage',
+      { PT_DESKTOP_E2E: 'true' },
+    ),
+    [
+      'build',
+      '--bundles',
+      'appimage',
+      '--features',
+      'e2e-testing',
+      '--config',
+      '/tmp/desktop-install.conf.json',
+    ],
+  );
+});
+
+test('Linux install reports exact missing build packages without installing them', () => {
+  const calls = [];
+  assert.throws(
+    () =>
+      assertLinuxDesktopDependencies(
+        { PATH: '/tools' },
+        (name) => `/tools/${name}`,
+        (command, args) => {
+          calls.push({ command, args });
+          return {
+            status:
+              args[1] === 'webkit2gtk-4.1'
+              || args[1] === 'javascriptcoregtk-4.1'
+              || args[1] === 'libsoup-3.0'
+                ? 1
+                : 0,
+            stdout: '',
+            stderr: '',
+          };
+        },
+      ),
+    (error) => {
+      assert.equal(error.code, ERROR_CODES.DEPENDENCY_MISSING);
+      assert.deepEqual(
+        error.details.missingModules.map(({ module }) => module),
+        ['webkit2gtk-4.1', 'javascriptcoregtk-4.1', 'libsoup-3.0'],
+      );
+      assert.match(
+        error.details.missingModules[0].packages[0],
+        /libwebkit2gtk-4\.1-dev/u,
+      );
+      return true;
+    },
+  );
+  assert.equal(calls.length, 8);
+});
+
+test('Linux launcher and desktop entry bind the AppImage and deep link', () => {
+  const settings = desktopInstallSettingsForPlatform(
+    'linux',
+    {},
+    '/home/example',
+  );
+  assert.equal(
+    linuxDesktopLauncher(settings),
+    [
+      '#!/bin/sh',
+      "exec '/home/example/.local/share/peers-touch/apps/peers-dev.AppImage' \"$@\"",
+      '',
+    ].join('\n'),
+  );
+  const entry = linuxDesktopEntry(settings, 'a'.repeat(40));
+  assert.match(entry, /^Exec="\/home\/example\/\.local\/bin\/peers-dev" %U$/mu);
+  assert.match(
+    entry,
+    /^MimeType=x-scheme-handler\/peers-touch-dev;$/mu,
+  );
+  assert.match(
+    entry,
+    new RegExp(`^X-Peers-Touch-Source-Commit=${'a'.repeat(40)}$`, 'mu'),
+  );
+});
+
+test('Linux atomic install keeps the running inode and replaces the next launch', {
+  skip: process.platform === 'win32',
+}, (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'desktop-linux-inode-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const sourcePath = path.join(root, 'new.AppImage');
+  const targetPath = path.join(root, 'apps', 'peers-dev.AppImage');
+  fs.writeFileSync(sourcePath, 'new');
+  fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+  fs.writeFileSync(targetPath, 'old');
+  const runningDescriptor = fs.openSync(targetPath, 'r');
+  t.after(() => fs.closeSync(runningDescriptor));
+
+  atomicReplaceDesktopFiles([
+    { sourcePath, targetPath, mode: 0o755 },
+  ]);
+
+  assert.equal(fs.readFileSync(runningDescriptor, 'utf8'), 'old');
+  assert.equal(fs.readFileSync(targetPath, 'utf8'), 'new');
+  assert.equal(fs.statSync(targetPath).mode & 0o777, 0o755);
+});
+
+test('Linux atomic install rolls every file back when verification fails', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'desktop-linux-rollback-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const sourcePath = path.join(root, 'new.AppImage');
+  const appPath = path.join(root, 'apps', 'peers-dev.AppImage');
+  const entryPath = path.join(root, 'applications', 'peers.desktop');
+  fs.writeFileSync(sourcePath, 'new');
+  fs.mkdirSync(path.dirname(appPath), { recursive: true });
+  fs.mkdirSync(path.dirname(entryPath), { recursive: true });
+  fs.writeFileSync(appPath, 'old-app');
+  fs.writeFileSync(entryPath, 'old-entry');
+
+  assert.throws(
+    () =>
+      atomicReplaceDesktopFiles(
+        [
+          { sourcePath, targetPath: appPath, mode: 0o755 },
+          { content: 'new-entry', targetPath: entryPath, mode: 0o644 },
+        ],
+        () => {
+          throw new Error('verify failed');
+        },
+      ),
+    (error) =>
+      error.code === ERROR_CODES.CHECK_FAILED
+      && error.message.includes('atomically install'),
+  );
+
+  assert.equal(fs.readFileSync(appPath, 'utf8'), 'old-app');
+  assert.equal(fs.readFileSync(entryPath, 'utf8'), 'old-entry');
+  assert.equal(
+    fs.readdirSync(path.dirname(appPath)).some(
+      (entry) => entry.includes('.installing-') || entry.includes('.previous-'),
+    ),
+    false,
+  );
+});
+
+test('Linux adapter installs AppImage, launcher, entry, icon and protocol handler', {
+  skip: process.platform === 'win32',
+}, (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'desktop-linux-adapter-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const settings = desktopInstallSettingsForPlatform(
+    'linux',
+    {
+      XDG_DATA_HOME: path.join(root, 'share'),
+      PT_DESKTOP_INSTALL_BIN_DIR: path.join(root, 'bin'),
+    },
+    root,
+  );
+  const sourcePath = path.join(root, 'Peers.AppImage');
+  const iconSourcePath = path.join(root, 'icon.png');
+  fs.writeFileSync(sourcePath, 'appimage');
+  fs.writeFileSync(iconSourcePath, 'icon');
+  let queryCount = 0;
+  const calls = [];
+  const runCommand = (command, args) => {
+    calls.push({ command, args });
+    if (args[0] === 'query') {
+      queryCount += 1;
+      return {
+        status: 0,
+        stdout:
+          queryCount === 1
+            ? 'previous.desktop\n'
+            : `${settings.desktopFileName}\n`,
+        stderr: '',
+      };
+    }
+    return { status: 0, stdout: '', stderr: '' };
+  };
+
+  const installed = desktopInstallAdapter('linux').install({
+    environment: {},
+    findProgram: () => '/usr/bin/xdg-mime',
+    iconSourcePath,
+    runCommand,
+    settings,
+    sourceCommit: 'b'.repeat(40),
+    sourcePath,
+  });
+
+  assert.equal(fs.readFileSync(settings.installPath, 'utf8'), 'appimage');
+  assert.match(
+    fs.readFileSync(settings.launcherPath, 'utf8'),
+    /exec '.+peers-dev\.AppImage' "\$@"/u,
+  );
+  assert.match(
+    fs.readFileSync(settings.desktopEntryPath, 'utf8'),
+    /x-scheme-handler\/peers-touch-dev/u,
+  );
+  assert.equal(fs.readFileSync(settings.iconPath, 'utf8'), 'icon');
+  assert.equal(
+    JSON.parse(fs.readFileSync(settings.sourceReceiptPath, 'utf8')).sourceCommit,
+    'b'.repeat(40),
+  );
+  assert.deepEqual(installed, {
+    installPath: settings.installPath,
+    launcherPath: settings.launcherPath,
+    desktopEntryPath: settings.desktopEntryPath,
+    iconPath: settings.iconPath,
+    sourceReceiptPath: settings.sourceReceiptPath,
+  });
+  assert.deepEqual(calls.at(-2).args, [
+    'default',
+    settings.desktopFileName,
+    'x-scheme-handler/peers-touch-dev',
+  ]);
+  assert.deepEqual(calls.at(-1).args, [
+    'query',
+    'default',
+    'x-scheme-handler/peers-touch-dev',
+  ]);
 });
 
 test('desktop install signs and verifies the staged macOS application', (t) => {

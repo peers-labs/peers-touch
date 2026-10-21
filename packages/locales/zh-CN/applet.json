@@ -95,8 +95,6 @@
   "applet.runtime.title": "应用",
   "applet.runtime.notFound": "未找到应用「{{id}}」，请先构建 packages/applets。",
   "applet.runtime.diagnostic": "诊断 {{index}}：{{issue}}",
-  "applet.runtime.unpin": "取消固定",
-  "applet.runtime.pin": "固定",
   "applet.runtime.source": "来源：/applets-dist/{{id}}",
   "applet.runtime.running": "运行中",
   "applet.runtime.close": "关闭",

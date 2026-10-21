@@ -5,12 +5,11 @@
 
 import { createContext } from 'react';
 
-import type { AppletPins, HashRouter, Navigation } from '../types/navigation';
+import type { HashRouter, Navigation } from '../types/navigation';
 
 export interface PageContextValue {
   router: HashRouter;
   navigation: Navigation;
-  appletPins: AppletPins;
 }
 
 export const PageContextRef = createContext<PageContextValue | null>(null);

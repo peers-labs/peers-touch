@@ -9,7 +9,8 @@
     "apps/station/app/subserver/bot/application/registry/**",
     "apps/station/app/subserver/bot/infrastructure/publishing_manager.go",
     "packages/messaging-core/src/inbox/service_plaintext.rs",
-    "apps/desktop/src-tauri/src/messaging/service_plaintext.rs",
+    "apps/desktop/src-tauri/src/messaging/engine.rs",
+    "apps/desktop/src-tauri/src/messaging/store.rs",
     "apps/desktop/src/components/chat/message/serviceEventAggregation.ts",
     "apps/desktop/src/acceptance/message_publishing/**",
     "tooling/acceptance/gates/chat/message_publishing_*.py"

@@ -1,8 +1,8 @@
 # Desktop Platform Architecture
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-10-05 | **Updated**: 2026-10-05
+> **Version**: v1.1
+> **Created**: 2026-10-05 | **Updated**: 2026-10-16
 > **Owner**: Client Platform Team
 > **Module**: `apps/desktop/`
 
@@ -12,7 +12,9 @@
 
 This index owns Desktop cross-layer runtime relationships. Detailed Desktop
 implementation contracts remain under `docs/client/desktop/`; product-domain
-behavior remains under `domains/`.
+behavior remains under `domains/`. Client forms, portable Rust cores, hosts,
+and runtime ports are defined by
+[Cross-Client Runtime](../cross-client-runtime/README.md).
 
 ## 2. Documents
 

@@ -67,6 +67,16 @@ func openTurnHandlerTestDB(t *testing.T, name string) *gorm.DB {
 	); err != nil {
 		t.Fatalf("migrate turn handler database: %v", err)
 	}
+	if err := db.Create(&persistence.Agent{
+		ID:             "agent-1",
+		Name:           "Test Agent",
+		ThinkingMode:   string(domain.ThinkingModeAuto),
+		Visibility:     string(domain.AgentVisibilityPrivate),
+		OwnerActorPTID: "ptid:person:owner",
+		Version:        1,
+	}).Error; err != nil {
+		t.Fatalf("seed typed AgentDefinition: %v", err)
+	}
 	turnHandlerTestDB = db
 	var injectErr error
 	turnHandlerTestStoreOnce.Do(func() {

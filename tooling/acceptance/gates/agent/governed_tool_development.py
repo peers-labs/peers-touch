@@ -10,6 +10,7 @@ import os
 import secrets
 import shlex
 import shutil
+import socket
 import subprocess
 import sys
 import threading
@@ -31,7 +32,7 @@ from tooling.acceptance.core.evidence_store import (
     source_identity,
     workspace_id,
 )
-from tooling.acceptance.core.provisioner import load_env_file
+from tooling.acceptance.core.provisioner import load_env_file, resolve_deployment_environment_path
 from tooling.acceptance.gates.agent.capability_binding_development import (
     OPERATION_SCENARIO_ACTOR_ACCOUNT,
     OPERATION_SCENARIO_IDENTITY_FIXTURE,
@@ -138,6 +139,8 @@ class _ProviderFixtureServer(ThreadingHTTPServer):
         api_key: str,
         terminal_content: str,
         tool_name_prefix: str = "",
+        terminal_only: bool = False,
+        expected_system_documents: Mapping[str, str] | None = None,
     ) -> None:
         super().__init__(("127.0.0.1", 0), _ProviderFixtureHandler)
         self.tool_name = tool_name
@@ -146,6 +149,12 @@ class _ProviderFixtureServer(ThreadingHTTPServer):
         self.api_key = api_key
         self.terminal_content = terminal_content
         self.tool_name_prefix = tool_name_prefix
+        self.terminal_only = terminal_only
+        self.follow_up_suggestions: list[str] = []
+        self.response_gate: threading.Event | None = None
+        self.failure_status: int | None = None
+        self.disconnect_requests = False
+        self.expected_system_documents = dict(expected_system_documents or {})
         self.selected_tool_name = ""
         self.request_lock = threading.Lock()
         self.requests: list[dict[str, Any]] = []
@@ -263,6 +272,13 @@ class _ProviderFixtureHandler(BaseHTTPRequestHandler):
             tool_names,
             user_prompt,
         )
+        follow_up = any(
+            isinstance(message, Mapping) and message.get("role") == "system"
+            and str(message.get("content") or "").startswith(
+                "Generate exactly three brief follow-up questions"
+            )
+            for message in (messages if isinstance(messages, list) else [])
+        )
         request_number = self.fixture.record_request(
             {
                 "path": self.path,
@@ -278,32 +294,58 @@ class _ProviderFixtureHandler(BaseHTTPRequestHandler):
                     for message in tool_result_messages
                 ),
                 "repeatUntilStopped": repeat_until_stopped,
+                "followUpRequest": follow_up,
                 "authorizationPresent": (
                     self.headers.get("Authorization")
                     == f"Bearer {self.fixture.api_key}"
                 ),
+                "systemDocuments": {
+                    name: bool(content) and any(
+                        isinstance(message, Mapping)
+                        and message.get("role") in {"system", "developer"}
+                        and content in str(message.get("content") or "")
+                        for message in (messages if isinstance(messages, list) else [])
+                    )
+                    for name, content in self.fixture.expected_system_documents.items()
+                },
             }
         )
         if (
             payload.get("stream") is not True
-            or not selected_tool_name
-            or selected_tool_name not in tool_names
+            or (
+                not self.fixture.terminal_only
+                and not follow_up
+                and (not selected_tool_name or selected_tool_name not in tool_names)
+            )
             or self.headers.get("Authorization")
             != f"Bearer {self.fixture.api_key}"
         ):
             self.send_error(422)
             return
+        if self.fixture.response_gate is not None and not follow_up:
+            if not self.fixture.response_gate.wait(timeout=30):
+                self.send_error(504)
+                return
+        if self.fixture.disconnect_requests and not follow_up:
+            self.connection.shutdown(socket.SHUT_RDWR)
+            self.connection.close()
+            self.close_connection = True
+            return
+        if self.fixture.failure_status is not None and not follow_up:
+            self.send_error(self.fixture.failure_status)
+            return
 
         model = str(payload.get("model") or "mca-j03-model")
         has_tool_result = "tool" in message_roles
-        if has_tool_result and not repeat_until_stopped:
+        if follow_up or self.fixture.terminal_only or (has_tool_result and not repeat_until_stopped):
             chunks = [
                 {
                     "model": model,
                     "choices": [{
                         "index": 0,
                         "delta": {
-                            "content": self.fixture.terminal_content,
+                            "content": json.dumps(self.fixture.follow_up_suggestions)
+                            if follow_up else self.fixture.terminal_content,
                         },
                         "finish_reason": None,
                     }],
@@ -367,6 +409,8 @@ class OpenAIProviderFixture:
         terminal_content: str = "Governed tool execution completed.",
         thread_name: str = "mca-j03-provider-fixture",
         tool_name_prefix: str = "",
+        terminal_only: bool = False,
+        expected_system_documents: Mapping[str, str] | None = None,
     ) -> None:
         self.api_key = api_key or secrets.token_urlsafe(32)
         self.server = _ProviderFixtureServer(
@@ -376,6 +420,8 @@ class OpenAIProviderFixture:
             api_key=self.api_key,
             terminal_content=terminal_content,
             tool_name_prefix=tool_name_prefix,
+            terminal_only=terminal_only,
+            expected_system_documents=expected_system_documents,
         )
         self.started = False
         self.thread = threading.Thread(
@@ -419,17 +465,9 @@ class RemoteProviderBridge:
         *,
         artifact_prefix: str = "mca-j03-provider",
     ) -> None:
-        environment_path = (
-            ROOT
-            / ".local"
-            / "deploy"
-            / "envs"
-            / f"{deployment_environment}.env"
+        environment_path = resolve_deployment_environment_path(
+            deployment_environment,
         )
-        if not environment_path.is_file():
-            raise GovernedToolDevelopmentError(
-                f"deployment environment is missing: {environment_path}"
-            )
         self.environment = load_env_file(environment_path)
         self.host = self.environment.get("PT_DEPLOY_HOST", "").strip()
         user = self.environment.get("PT_DEPLOY_USER", "").strip()
@@ -633,6 +671,8 @@ def evaluate_governed_tool(
     journey: Mapping[str, Any],
     provider_requests: list[dict[str, Any]],
 ) -> dict[str, bool]:
+    auxiliary_requests = [row for row in provider_requests if row.get("followUpRequest")]
+    provider_requests = [row for row in provider_requests if not row.get("followUpRequest")]
     harness_assertions = require_mapping(
         journey.get("assertions"),
         "Harness assertions",
@@ -649,6 +689,10 @@ def evaluate_governed_tool(
     first = provider_requests[0] if len(provider_requests) > 0 else {}
     continuation = provider_requests[1] if len(provider_requests) > 1 else {}
     assertions = {
+        "auxiliaryProviderAuthority": all(
+            row.get("authorizationPresent") is True and row.get("stream") is True
+            and not row.get("toolNames") for row in auxiliary_requests
+        ),
         "harnessAssertionsPass": (
             bool(harness_assertions)
             and all(value is True for value in harness_assertions.values())

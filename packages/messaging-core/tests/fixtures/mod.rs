@@ -1,8 +1,8 @@
 use messaging_core::contracts::{
-    ActorReadReceiveCommit, ConversationProjection, ConversationStateReceiveCommit,
-    DeliveryReceiptReceiveCommit, DirectEditCommit, DirectReceiveCommit, InteractionReceiveCommit,
-    PublicEventReceiveCommit, ReceiveCommitResult, ServicePlaintextMessageContent,
-    ServicePlaintextReceiveCommit, SkippedEndpointReceiveCommit,
+    ActorReadReceiveCommit, ConversationMutationReceiveCommit, ConversationProjection,
+    ConversationStateReceiveCommit, DeliveryReceiptReceiveCommit, DirectEditCommit,
+    DirectReceiveCommit, InteractionReceiveCommit, PublicEventReceiveCommit, ReceiveCommitResult,
+    ServicePlaintextMessageContent, ServicePlaintextReceiveCommit, SkippedEndpointReceiveCommit,
 };
 use messaging_core::crypto::double_ratchet::DrSkippedMessageKey;
 use messaging_core::crypto::session::DirectSession;
@@ -77,6 +77,13 @@ impl MessagingRepository for TestRepo {
     fn commit_conversation_state(
         &self,
         _commit: &ConversationStateReceiveCommit,
+    ) -> Result<ReceiveCommitResult, String> {
+        Ok(ReceiveCommitResult::Committed)
+    }
+
+    fn commit_conversation_mutation_event(
+        &self,
+        _commit: &ConversationMutationReceiveCommit,
     ) -> Result<ReceiveCommitResult, String> {
         Ok(ReceiveCommitResult::Committed)
     }

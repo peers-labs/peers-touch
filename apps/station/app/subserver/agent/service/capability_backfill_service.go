@@ -321,8 +321,10 @@ func (s *CapabilityBackfillService) scanSkills(
 		return nil, nil, nil, err
 	}
 	var legacyBindings []persistence.AgentSkillBinding
-	if err := s.db.WithContext(ctx).Order("id").Find(&legacyBindings).Error; err != nil {
-		return nil, nil, nil, err
+	if s.db.Migrator().HasTable(&persistence.AgentSkillBinding{}) {
+		if err := s.db.WithContext(ctx).Order("id").Find(&legacyBindings).Error; err != nil {
+			return nil, nil, nil, err
+		}
 	}
 	byID := make(map[string]persistence.Skill, len(skills))
 	var manifests []capabilityManifestSeed
@@ -810,10 +812,21 @@ func capabilityToolManifestSeed(definition *domain.ToolDefinition) capabilityMan
 	availability := model.CapabilityAvailability_CAPABILITY_AVAILABILITY_AVAILABLE
 	approval := model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_AUTO
 	secretBoundary := "station"
+	riskClass := "tool"
 	capabilityID := "tool:" + definition.Name
 	requiredRuntimeCapabilities := []string{"native-tools"}
 	version := ""
 	switch {
+	case definition.Name == clarificationToolName:
+		approval = model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_MANUAL
+	case definition.Name == "lark_workspace_write" ||
+		definition.Name == "lark_api_write":
+		approval = model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_MANUAL
+		secretBoundary = "channel-requester"
+		riskClass = "external-write"
+	case strings.HasPrefix(definition.Name, "lark_"):
+		secretBoundary = "channel-requester"
+		riskClass = "external-read"
 	case strings.HasPrefix(definition.Name, "local_"):
 		sourceKind = model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_CLIENT_NATIVE
 		owner = model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_CLIENT_CAPABILITY
@@ -851,7 +864,7 @@ func capabilityToolManifestSeed(definition *domain.ToolDefinition) capabilityMan
 			OutputSchemaRef:             "schema://agent/tool-result/text",
 			ExecutionOwner:              owner,
 			RequiredRuntimeCapabilities: requiredRuntimeCapabilities,
-			RiskClass:                   "tool",
+			RiskClass:                   riskClass,
 			DefaultApprovalPolicy:       approval,
 			SecretBoundary:              secretBoundary,
 			Availability:                availability,
@@ -860,10 +873,6 @@ func capabilityToolManifestSeed(definition *domain.ToolDefinition) capabilityMan
 }
 
 func capabilitySkillManifestSeed(skill persistence.Skill) capabilityManifestSeed {
-	availability := model.CapabilityAvailability_CAPABILITY_AVAILABILITY_BLOCKED
-	if skill.Enabled {
-		availability = model.CapabilityAvailability_CAPABILITY_AVAILABILITY_AVAILABLE
-	}
 	return capabilityManifestSeed{
 		source:   "skill",
 		sourceID: skill.ID,
@@ -879,7 +888,7 @@ func capabilitySkillManifestSeed(skill persistence.Skill) capabilityManifestSeed
 			RiskClass:             "context",
 			DefaultApprovalPolicy: model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_AUTO,
 			SecretBoundary:        "station",
-			Availability:          availability,
+			Availability:          model.CapabilityAvailability_CAPABILITY_AVAILABILITY_AVAILABLE,
 		},
 	}
 }

@@ -51,6 +51,31 @@ class TcpFaultProxyError(RuntimeError):
     """The target URL cannot be represented by the TCP fault proxy."""
 
 
+def _parse_tcp_multiaddr(value: str) -> tuple[str, int, str]:
+    parts = value.strip().split("/")
+    if (
+        len(parts) != 7
+        or parts[0] != ""
+        or parts[1] not in {"ip4", "ip6", "dns4", "dns6"}
+        or parts[3] != "tcp"
+        or parts[5] != "p2p"
+        or not parts[2]
+        or not parts[6]
+    ):
+        raise TcpFaultProxyError(
+            "TCP fault proxy requires one Direct TCP multiaddr"
+        )
+    try:
+        port = int(parts[4])
+    except ValueError as error:
+        raise TcpFaultProxyError(
+            "Direct TCP multiaddr port is invalid"
+        ) from error
+    if port < 1 or port > 65535:
+        raise TcpFaultProxyError("Direct TCP multiaddr port is invalid")
+    return parts[2], port, parts[6]
+
+
 class TcpFaultProxy:
     """Transparent TCP proxy whose active connections can be cut deterministically."""
 
@@ -59,11 +84,13 @@ class TcpFaultProxy:
         upstream_host: str,
         upstream_port: int,
         *,
-        scheme: str,
+        scheme: str | None = None,
+        peer_id: str | None = None,
     ) -> None:
         self.upstream_host = upstream_host
         self.upstream_port = upstream_port
         self.scheme = scheme
+        self.peer_id = peer_id
         self.listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.listener.bind(("127.0.0.1", 0))
@@ -99,9 +126,26 @@ class TcpFaultProxy:
             scheme=parsed.scheme,
         )
 
+    @classmethod
+    def from_multiaddr(cls, direct_multiaddr: str) -> TcpFaultProxy:
+        host, port, peer_id = _parse_tcp_multiaddr(direct_multiaddr)
+        return cls(host, port, peer_id=peer_id)
+
     @property
     def url(self) -> str:
+        if self.scheme is None:
+            raise TcpFaultProxyError(
+                "Direct TCP fault proxy has no HTTP URL"
+            )
         return f"{self.scheme}://127.0.0.1:{self.port}"
+
+    @property
+    def multiaddr(self) -> str:
+        if self.peer_id is None:
+            raise TcpFaultProxyError(
+                "HTTP TCP fault proxy has no Direct multiaddr"
+            )
+        return f"/ip4/127.0.0.1/tcp/{self.port}/p2p/{self.peer_id}"
 
     @property
     def is_alive(self) -> bool:

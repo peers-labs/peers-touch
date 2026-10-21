@@ -30,8 +30,8 @@
       "comment CRUD allows users to leave feedback on shared agents"
     ],
     "visible": [
-      "Marketplace page is reachable from the primary sidebar navigation without keyboard shortcuts",
-      "Desktop Marketplace shows ecosystem groups",
+      "Discover is reachable from Settings > AI without a primary-rail entry",
+      "Desktop Discover shows ecosystem groups",
       "comments appear under shared agent profiles"
     ]
   },

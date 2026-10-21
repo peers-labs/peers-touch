@@ -8,9 +8,14 @@ import {
   type AgentCapabilityPermissionKind,
   type AgentCreate,
   type AppletInfo,
+  type ModelServiceConfig,
 } from '../services/desktop_api';
 import { useAgentCapabilityStore } from './agentCapabilities';
 import { beginMutation, endMutation, toStoreError, type RevalidationState } from './revalidation';
+import {
+  findAvailableModel,
+  findUniqueAvailableModelById,
+} from '../utils/modelIdentity';
 
 type AgentSurface = 'chat' | 'profile';
 export type AgentSaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'failed' | 'conflict';
@@ -21,12 +26,11 @@ export interface AgentCapabilityFocus {
 }
 
 interface AgentState extends RevalidationState {
-  selectedModel: string;
-  selectedProviderId: string;
   selectedAgent: string;
   defaultAgent: string;
   availableModels: AvailableModel[];
   defaultModel: string;
+  defaultProviderId: string;
   agents: Agent[];
   applets: AppletInfo[];
   enabledAppletIds: string[];
@@ -34,8 +38,9 @@ interface AgentState extends RevalidationState {
   capabilityFocusByAgent: Record<string, AgentCapabilityFocus>;
   agentRosterOpen: boolean;
   saveStateByAgentId: Record<string, AgentSaveState>;
+  profileDraftsByAgentId: Record<string, Partial<AgentCreate>>;
+  setProfileDraft: (agentId: string, updates: Partial<AgentCreate>) => void;
 
-  setSelectedModel: (model: string, providerId?: string) => void;
   setSelectedAgent: (agent: string) => void;
   setAgentSurface: (agent: string, surface: AgentSurface) => void;
   focusAgentCapability: (
@@ -45,13 +50,11 @@ interface AgentState extends RevalidationState {
   ) => void;
   getAgentSurface: (agent: string) => AgentSurface;
   setAgentRosterOpen: (open: boolean) => void;
-  setDefaultAgent: (agentId: string) => Promise<void>;
   loadModels: () => Promise<void>;
   loadAgents: () => Promise<void>;
   loadApplets: () => Promise<void>;
   toggleApplet: (id: string) => Promise<void>;
   createAgent: (input: AgentCreate) => Promise<Agent>;
-  duplicateAgent: (agentId: string) => Promise<Agent>;
   deleteAgent: (agentId: string) => Promise<void>;
   updateAgentProfile: (agentId: string, updates: Partial<AgentCreate>) => Promise<Agent>;
   reloadAgentProfile: (agentId: string) => Promise<Agent>;
@@ -84,6 +87,35 @@ function firstExistingAgentName(agents: Agent[], candidates: Array<string | unde
   ) || '';
 }
 
+export function resolveAvailableModelSelection(
+  models: AvailableModel[],
+  selectedModel: string,
+  selectedProviderId: string,
+  defaultModel: string,
+  defaultProviderId = '',
+): { modelId: string; providerId: string } {
+  const enabledModels = models.filter((model) => model.enabled);
+  const selected = findAvailableModel(enabledModels, {
+    provider: selectedProviderId,
+    model: selectedModel,
+  }) ?? (!selectedProviderId
+    ? findUniqueAvailableModelById(enabledModels, selectedModel)
+    : undefined);
+  const fallback = selected
+    ?? findAvailableModel(enabledModels, {
+      provider: defaultProviderId,
+      model: defaultModel,
+    })
+    ?? (!defaultProviderId
+      ? findUniqueAvailableModelById(enabledModels, defaultModel)
+      : undefined)
+    ?? enabledModels[0];
+  return {
+    modelId: fallback?.id || '',
+    providerId: fallback?.provider_id || '',
+  };
+}
+
 function reconcileAgentRoster(
   agents: Agent[],
   selectedCandidates: Array<string | undefined>,
@@ -102,27 +134,11 @@ function reconcileAgentRoster(
     ...agent,
     isDefault: agent.name === defaultAgent,
   }));
-  const selected = reconciledAgents.find((agent) => agent.name === selectedAgent);
-
   return {
     agents: reconciledAgents,
     selectedAgent,
     defaultAgent,
-    selectedModel: selected?.model?.trim() || '',
-    selectedProviderId: selected?.provider?.trim() || '',
   };
-}
-
-function nextAgentCopyName(sourceName: string, agents: Agent[]): string {
-  const baseName = `${sourceName.trim()}-copy`;
-  const existingNames = new Set(agents.map((agent) => agent.name));
-  if (!existingNames.has(baseName)) return baseName;
-
-  let copyNumber = 2;
-  while (existingNames.has(`${baseName}-${copyNumber}`)) {
-    copyNumber += 1;
-  }
-  return `${baseName}-${copyNumber}`;
 }
 
 function withoutRecordKey<T>(record: Record<string, T>, key: string): Record<string, T> {
@@ -131,13 +147,14 @@ function withoutRecordKey<T>(record: Record<string, T>, key: string): Record<str
   return next;
 }
 
+let selectionIntentRevision = 0;
+
 export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) => ({
-  selectedModel: '',
-  selectedProviderId: '',
   selectedAgent: 'assistant',
   defaultAgent: 'assistant',
   availableModels: [],
   defaultModel: '',
+  defaultProviderId: '',
   agents: [],
   applets: [],
   enabledAppletIds: [],
@@ -145,32 +162,26 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
   capabilityFocusByAgent: {},
   agentRosterOpen: true,
   saveStateByAgentId: {},
+  profileDraftsByAgentId: {},
   loading: false,
   error: null,
   lastLoadedAt: null,
   pendingMutations: {},
 
-  setSelectedModel: (model: string, providerId?: string) => {
-    const state = get();
-    const agent = state.agents.find((item) => item.name === state.selectedAgent);
-    if (!agent) return;
-    const previousModel = agent.model;
-    const previousProvider = agent.provider;
-    set({ selectedModel: model, selectedProviderId: providerId || '' });
-    void state.updateAgentProfile(agent.id, {
-      model,
-      provider: providerId || '',
-    }).catch(() => {
-      set({ selectedModel: previousModel, selectedProviderId: previousProvider });
-    });
+  setProfileDraft: (agentId, updates) => {
+    set((state) => ({
+      profileDraftsByAgentId: {
+        ...state.profileDraftsByAgentId,
+        [agentId]: { ...state.profileDraftsByAgentId[agentId], ...updates },
+      },
+      saveStateByAgentId: { ...state.saveStateByAgentId, [agentId]: 'dirty' },
+    }));
   },
 
   setSelectedAgent: (agent: string) => {
-    const selected = get().agents.find((item) => item.name === agent);
+    selectionIntentRevision += 1;
     set({
       selectedAgent: agent,
-      selectedModel: selected?.model || '',
-      selectedProviderId: selected?.provider || '',
     });
     void api.setSelectedAgent(agent).catch((error) => {
       log.error('agent', 'Failed to persist selected agent', { agent, error: toStoreError(error) });
@@ -207,52 +218,32 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
     set({ agentRosterOpen: open });
   },
 
-  setDefaultAgent: async (agentId: string) => {
-    const { agents } = get();
-    const nextDefault = agents.find((agent) => agent.id === agentId);
-    if (!nextDefault) return;
-    const previousAgents = agents;
-    const previousDefault = get().defaultAgent;
-    const mutationKey = `agent-default:${agentId}`;
-    set((state) => ({
-      defaultAgent: nextDefault.name,
-      agents: state.agents.map((agent) => ({
-        ...agent,
-        isDefault: agent.id === agentId,
-      })),
-      error: null,
-      pendingMutations: beginMutation(state.pendingMutations, mutationKey),
-    }));
-    try {
-      const result = await api.setDefaultAgent(agentId);
-      set((state) => ({
-        defaultAgent: result.defaultAgent,
-        agents: state.agents.map((agent) => ({
-          ...agent,
-          isDefault: agent.name === result.defaultAgent,
-        })),
-        lastLoadedAt: Date.now(),
-      }));
-    } catch (error) {
-      const message = toStoreError(error);
-      log.error('agent', 'Failed to persist default agent', { agentId, error: message });
-      set({ agents: previousAgents, defaultAgent: previousDefault, error: message });
-      throw error;
-    } finally {
-      set((state) => ({ pendingMutations: endMutation(state.pendingMutations, mutationKey) }));
-    }
-  },
-
   loadModels: async () => {
     set({ loading: true, error: null });
     try {
-      const res = await api.listAvailableModels();
+      const [res, modelConfig] = await Promise.all([
+        api.listAvailableModels(),
+        api.listModelConfig().catch((error) => {
+          log.warn('agent', 'Failed to load default model config', { error: toStoreError(error) });
+          return {} as ModelServiceConfig;
+        }),
+      ]);
       const models = res.models || [];
       log.info('agent', 'Models loaded', { count: models.length });
       const enabledModels = models.filter((m) => m.enabled);
+      const configuredDefault = modelConfig.default?.model || res.default;
+      const configuredDefaultProvider = modelConfig.default?.provider || '';
+      const defaultSelection = resolveAvailableModelSelection(
+        enabledModels,
+        '',
+        '',
+        configuredDefault,
+        configuredDefaultProvider,
+      );
       set({
-        availableModels: models,
-        defaultModel: res.default || enabledModels[0]?.id || '',
+        availableModels: enabledModels,
+        defaultModel: defaultSelection.modelId,
+        defaultProviderId: defaultSelection.providerId,
         lastLoadedAt: Date.now(),
       });
     } catch (error) {
@@ -265,6 +256,7 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
   },
 
   loadAgents: async () => {
+    const loadSelectionRevision = selectionIntentRevision;
     set({ loading: true, error: null });
     try {
       const [result, persistedSelected] = await Promise.all([
@@ -275,10 +267,13 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
         }),
       ]);
       let agents = (result.agents || []).map(reconcileAgent);
+      const selectionChangedDuringLoad =
+        selectionIntentRevision !== loadSelectionRevision;
       let selectedCandidates = [
+        ...(selectionChangedDuringLoad ? [get().selectedAgent] : []),
         persistedSelected,
         result.selectedAgent,
-        get().selectedAgent,
+        ...(!selectionChangedDuringLoad ? [get().selectedAgent] : []),
       ];
       let defaultCandidate = result.defaultAgent;
       if (agents.length === 0) {
@@ -294,7 +289,11 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
         }
       }
       log.info('agent', 'Agents loaded', { count: agents.length });
-      const roster = reconcileAgentRoster(agents, selectedCandidates, defaultCandidate);
+      const roster = reconcileAgentRoster(
+        agents,
+        selectedCandidates,
+        defaultCandidate,
+      );
       set({ ...roster, lastLoadedAt: Date.now() });
       const nextSelected = roster.selectedAgent;
       if (nextSelected && nextSelected !== persistedSelected) {
@@ -387,6 +386,7 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
           lastLoadedAt: Date.now(),
         };
       });
+      selectionIntentRevision += 1;
       void api.setSelectedAgent(reconciled.name).catch(() => { /* selection best-effort */ });
       return reconciled;
     } catch (error) {
@@ -396,50 +396,6 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
       throw error;
     } finally {
       set((state) => ({ pendingMutations: endMutation(state.pendingMutations, mutationKey) }));
-    }
-  },
-
-  duplicateAgent: async (agentId) => {
-    const source = get().agents.find((agent) => agent.id === agentId);
-    if (!source) {
-      throw new Error(`Agent not found: ${agentId}`);
-    }
-
-    const cloneName = nextAgentCopyName(source.name, get().agents);
-    const mutationKey = `agent-duplicate:${agentId}`;
-    set((state) => ({
-      error: null,
-      pendingMutations: beginMutation(state.pendingMutations, mutationKey),
-    }));
-    try {
-      const cloned = reconcileAgent(await api.duplicateAgent(agentId, cloneName));
-      set((state) => {
-        const others = state.agents.filter((agent) => agent.id !== cloned.id);
-        return {
-          ...reconcileAgentRoster(
-            [...others, cloned],
-            [cloned.name],
-            state.defaultAgent,
-          ),
-          lastLoadedAt: Date.now(),
-        };
-      });
-      await api.setSelectedAgent(cloned.name).catch((error) => {
-        log.error('agent', 'Failed to persist cloned Agent selection', {
-          agentId: cloned.id,
-          error: toStoreError(error),
-        });
-      });
-      return cloned;
-    } catch (error) {
-      const message = toStoreError(error);
-      log.error('agent', 'Failed to duplicate agent', { agentId, error: message });
-      set({ error: message });
-      throw error;
-    } finally {
-      set((state) => ({
-        pendingMutations: endMutation(state.pendingMutations, mutationKey),
-      }));
     }
   },
 
@@ -470,6 +426,7 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
             deleted.name,
           ),
           saveStateByAgentId: withoutRecordKey(state.saveStateByAgentId, agentId),
+          profileDraftsByAgentId: withoutRecordKey(state.profileDraftsByAgentId, agentId),
           lastLoadedAt: Date.now(),
         };
       });
@@ -487,14 +444,16 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
   },
 
   updateAgentProfile: async (agentId, updates) => {
+    const mutationKey = `agent-profile:${agentId}`;
+    if (get().pendingMutations[mutationKey]) {
+      throw new Error('Agent profile is already being saved');
+    }
     const { agents } = get();
     const agent = agents.find((a) => a.id === agentId);
     if (!agent) {
       throw new Error(`Agent not found: ${agentId}`);
     }
 
-    const previousAgents = agents;
-    const mutationKey = `agent-profile:${agentId}`;
     const optimisticAgent: Agent = { ...agent, ...updates };
 
     set((state) => ({
@@ -507,11 +466,22 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
     try {
       const updated = await api.updateAgent(agentId, { ...updates, version: agent.version });
       const reconciled = reconcileAgent(updated);
-      set((state) => ({
-        agents: state.agents.map((item) => (item.id === reconciled.id ? reconciled : item)),
-        saveStateByAgentId: { ...state.saveStateByAgentId, [agentId]: 'saved' },
-        lastLoadedAt: Date.now(),
-      }));
+      set((state) => {
+        const draft = { ...state.profileDraftsByAgentId[agentId] };
+        for (const key of Object.keys(updates) as Array<keyof AgentCreate>) {
+          if (draft[key] === updates[key]) delete draft[key];
+        }
+        return {
+          agents: state.agents.map((item) => (item.id === reconciled.id ? reconciled : item)),
+          profileDraftsByAgentId: Object.keys(draft).length
+            ? { ...state.profileDraftsByAgentId, [agentId]: draft }
+            : withoutRecordKey(state.profileDraftsByAgentId, agentId),
+          saveStateByAgentId: {
+            ...state.saveStateByAgentId, [agentId]: Object.keys(draft).length ? 'dirty' : 'saved',
+          },
+          lastLoadedAt: Date.now(),
+        };
+      });
       try {
         await useAgentCapabilityStore.getState().loadAgent(agentId);
       } catch (error) {
@@ -528,7 +498,9 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
       const conflict = isActiveMutationConflict(error);
       log.error('agent', 'Failed to update agent profile', { agentId, error: message });
       set((state) => ({
-        agents: previousAgents,
+        agents: state.agents.map((item) => (
+          item.id === agentId && item === optimisticAgent ? agent : item
+        )),
         error: message,
         saveStateByAgentId: {
           ...state.saveStateByAgentId,
@@ -549,7 +521,6 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
     try {
       const reloaded = reconcileAgent(await api.getAgent(agentId));
       set((state) => {
-        const selectedAgent = state.selectedAgent === reloaded.name;
         return {
           agents: state.agents.map((item) => (item.id === reloaded.id ? reloaded : item)),
           error: null,
@@ -557,8 +528,6 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
             ...state.saveStateByAgentId,
             [agentId]: 'idle',
           },
-          selectedModel: selectedAgent ? reloaded.model : state.selectedModel,
-          selectedProviderId: selectedAgent ? reloaded.provider : state.selectedProviderId,
           lastLoadedAt: Date.now(),
         };
       });

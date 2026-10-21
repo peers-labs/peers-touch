@@ -81,6 +81,52 @@ _LOCAL_TUNNEL_SUPERVISOR = (
     / "local_tunnel_supervisor.py"
 )
 _BINARY_RELATIVE_PATH = "bin/peers-touch-desktop"
+_SUPPORTED_ARTIFACT_KINDS = (
+    "acceptance-binary",
+    "installed-appimage",
+)
+_INSTALLED_DESKTOP_ROOT = "installed-desktop"
+_INSTALLED_APPIMAGE_PATH = (
+    f"{_INSTALLED_DESKTOP_ROOT}/home/.local/share/"
+    "peers-touch/apps/peers-dev.AppImage"
+)
+_INSTALLED_RECEIPT_PATH = (
+    f"{_INSTALLED_DESKTOP_ROOT}/home/.local/share/"
+    "peers-touch/apps/peers-dev.source.json"
+)
+_INSTALLED_LOG_PATH = f"{_INSTALLED_DESKTOP_ROOT}/desktop-install.log"
+_INSTALLED_ARTIFACT_INSPECTION_SCRIPT = textwrap.dedent(
+    """
+    import base64
+    import hashlib
+    import json
+    import pathlib
+    import sys
+
+    artifact = pathlib.Path(sys.argv[1])
+    receipt_path = pathlib.Path(sys.argv[2])
+    log_path = pathlib.Path(sys.argv[3])
+    launched = pathlib.Path(sys.argv[4])
+    for path in (artifact, receipt_path, log_path, launched):
+        if not path.is_file():
+            raise SystemExit(f"installed Desktop artifact is missing: {path}")
+
+    def digest(path):
+        value = hashlib.sha256()
+        with path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                value.update(chunk)
+        return value.hexdigest()
+
+    print(json.dumps({
+        "artifactPath": str(artifact),
+        "artifactSha256": digest(artifact),
+        "launchedSha256": digest(launched),
+        "receipt": json.loads(receipt_path.read_text(encoding="utf-8")),
+        "installLogBase64": base64.b64encode(log_path.read_bytes()).decode("ascii"),
+    }, sort_keys=True))
+    """
+).strip()
 _REMOTE_CLEANUP_AUDIT_SCRIPT = textwrap.dedent(
     """
     import json
@@ -552,7 +598,16 @@ class NativeDesktopLinuxProvisioner:
         self._tunnel_failures: list[dict[str, object]] = []
         self._source_lease: RemoteGitSourceLease | None = None
 
-    def ready(self, gate_id: str = "runtime-cell-preflight") -> RuntimeCellManifest:
+    def ready(
+        self,
+        gate_id: str = "runtime-cell-preflight",
+        *,
+        artifact_kind: str = "acceptance-binary",
+    ) -> RuntimeCellManifest:
+        if artifact_kind not in _SUPPORTED_ARTIFACT_KINDS:
+            raise ProvisioningError(
+                f"Linux runtime-cell artifact kind {artifact_kind!r} is invalid"
+            )
         if self.state_path.exists():
             current = self._read_state()
             current_state = str(current.get("state") or "UNKNOWN")
@@ -587,9 +642,6 @@ class NativeDesktopLinuxProvisioner:
             self.profile.deploy_environment,
             source_root=self.source_root,
             environments_dir=self.deploy_root,
-            central_environment_path=(
-                REPO_ROOT / ".local" / "deploy" / "git-server.env"
-            ),
             require_clean=self.contract.source.clean_commit_required_for_proof,
         )
         source_lease_owner = (
@@ -619,6 +671,7 @@ class NativeDesktopLinuxProvisioner:
                     "containerName": container_name,
                     "buildContainerName": build_container_name,
                     "sourceLeaseOwner": source_lease_owner,
+                    "artifactKind": artifact_kind,
                 }
             )
             source = RemoteSourceSynchronizer(
@@ -670,6 +723,7 @@ class NativeDesktopLinuxProvisioner:
                     "remoteSource": str(remote_source),
                     "sourceCommit": source.commit,
                     "sourceLeaseOwner": source_lease_owner,
+                    "artifactKind": artifact_kind,
                 }
             )
 
@@ -680,6 +734,7 @@ class NativeDesktopLinuxProvisioner:
                 remote_source=remote_source,
                 run_root=run_root,
                 build_container_name=build_container_name,
+                artifact_kind=artifact_kind,
             )
             self._assert_remote_source_clean(
                 remote_source,
@@ -728,6 +783,7 @@ class NativeDesktopLinuxProvisioner:
                 source=source,
                 image_digest=image_digest,
                 binary_sha256=binary_sha256,
+                artifact_kind=artifact_kind,
                 ready=ready,
                 adapter=adapter,
                 webdriver_local_port=int(
@@ -746,6 +802,7 @@ class NativeDesktopLinuxProvisioner:
                     "remoteSource": str(remote_source),
                     "sourceCommit": source.commit,
                     "sourceLeaseOwner": source_lease_owner,
+                    "artifactKind": artifact_kind,
                     "tunnelSupervisorPid": int(
                         tunnels["supervisorPid"]
                     ),
@@ -1037,16 +1094,21 @@ class NativeDesktopLinuxProvisioner:
             )
         endpoint = parse_orchestrator_endpoint(url)
         local_port = endpoint.local_port
+        remote_port = self.transport.available_remote_port()
+        if remote_port == local_port:
+            raise ProvisioningError(
+                "Linux runtime-cell endpoint allocation collided with the local listener"
+            )
         tunnel = self.transport.start_reverse_forward(
             local_port=local_port,
-            remote_port=local_port,
+            remote_port=remote_port,
         )
         runtime = _EndpointRuntime(
             endpoint_id=normalized_id,
             tunnel=tunnel,
             tunnel_pid=tunnel.process_id,
             local_port=local_port,
-            remote_port=local_port,
+            remote_port=remote_port,
         )
         self._endpoints[normalized_id] = runtime
         return {
@@ -1261,6 +1323,64 @@ class NativeDesktopLinuxProvisioner:
             "sourceCommit": str(source.get("commit") or ""),
         }
 
+    def installed_desktop_artifact(self) -> dict[str, Any]:
+        state = self._require_state()
+        manifest = state.get("manifest")
+        source = manifest.get("source") if isinstance(manifest, dict) else None
+        if (
+            state.get("artifactKind") != "installed-appimage"
+            or not isinstance(source, dict)
+            or source.get("artifactKind") != "installed-appimage"
+        ):
+            raise ProvisioningError(
+                "Linux runtime cell does not own an installed AppImage"
+            )
+        completed = self.transport.run_argv(
+            (
+                "docker",
+                "exec",
+                str(state["containerName"]),
+                "python3",
+                "-c",
+                _INSTALLED_ARTIFACT_INSPECTION_SCRIPT,
+                f"/workspace/run/{_INSTALLED_APPIMAGE_PATH}",
+                f"/workspace/run/{_INSTALLED_RECEIPT_PATH}",
+                f"/workspace/run/{_INSTALLED_LOG_PATH}",
+                f"/workspace/run/{_BINARY_RELATIVE_PATH}",
+            ),
+            timeout=60,
+            check=False,
+        )
+        inspected = _json_output(
+            completed,
+            "installed Desktop artifact inspection",
+        )
+        binary_sha256 = _digest(
+            str(source.get("binarySha256") or ""),
+            "runtime-cell manifest binary digest",
+        )
+        if (
+            inspected.get("artifactSha256") != binary_sha256
+            or inspected.get("launchedSha256") != binary_sha256
+        ):
+            raise ProvisioningError(
+                "installed AppImage identity differs from the launched binary"
+            )
+        receipt = inspected.get("receipt")
+        source_commit = str(source.get("commit") or "")
+        if (
+            not isinstance(receipt, dict)
+            or receipt.get("sourceCommit") != source_commit
+            or receipt.get("platform") != "linux"
+        ):
+            raise ProvisioningError(
+                "installed AppImage receipt does not match runtime-cell source"
+            )
+        return {
+            **inspected,
+            "sourceCommit": source_commit,
+        }
+
     def runtime_identity(self) -> dict[str, Any]:
         state = self._require_state()
         manifest = state.get("manifest")
@@ -1269,6 +1389,47 @@ class NativeDesktopLinuxProvisioner:
                 "Linux runtime-cell manifest is missing"
             )
         return dict(manifest)
+
+    def import_actor_storage_file(
+        self, actor: str, source: Path, relative_path: str, sha256: str,
+    ) -> None:
+        state = self._require_state()
+        if not _ENDPOINT_ID.fullmatch(actor):
+            raise ProvisioningError("Linux storage fixture actor is invalid")
+        runtime = self._actors.get(actor)
+        if runtime is not None:
+            raise ProvisioningError("Linux storage import requires an unlaunched actor")
+        relative = PurePosixPath(relative_path)
+        if (
+            not relative_path or relative.is_absolute()
+            or "\\" in relative_path
+            or any(part in {"", ".", ".."} for part in relative_path.split("/"))
+        ):
+            raise ProvisioningError("Linux storage fixture path is invalid")
+        if source.is_symlink() or not source.is_file() or _file_digest(source) != sha256:
+            raise ProvisioningError("Linux storage fixture digest mismatch")
+        target = Path("/workspace/run/actors") / actor / "storage" / relative_path
+        container = str(state["containerName"])
+        self.transport.run_argv(
+            (
+                "docker", "exec", container, "python3", "-c",
+                "import pathlib,sys; p=pathlib.Path(sys.argv[1]); "
+                "assert not any(x.is_symlink() for x in (p,*p.parents)); "
+                "assert not p.exists(); p.parent.mkdir(parents=True,exist_ok=True); "
+                "p.parent.chmod(0o700)",
+                str(target),
+            ),
+            timeout=15, check=True,
+        )
+        self._copy_actor_file(
+            actor, source, target,
+            target.with_name(f".{target.name}.{secrets.token_hex(8)}.incoming"),
+            sha256,
+        )
+        self.transport.run_argv(
+            ("docker", "exec", container, "chmod", "600", str(target)),
+            timeout=15, check=True,
+        )
 
     def stage_actor_file(
         self,
@@ -1730,9 +1891,6 @@ class NativeDesktopLinuxProvisioner:
                     self.profile.deploy_environment,
                     source_root=self.source_root,
                     environments_dir=self.deploy_root,
-                    central_environment_path=(
-                        REPO_ROOT / ".local" / "deploy" / "git-server.env"
-                    ),
                     require_clean=(
                         self.contract.source.clean_commit_required_for_proof
                     ),
@@ -2112,6 +2270,7 @@ class NativeDesktopLinuxProvisioner:
         remote_source: Path,
         run_root: Path,
         build_container_name: str,
+        artifact_kind: str,
     ) -> str:
         uid = self.transport.run_argv(("id", "-u"), timeout=10, check=True).stdout.strip()
         gid = self.transport.run_argv(("id", "-g"), timeout=10, check=True).stdout.strip()
@@ -2123,7 +2282,7 @@ class NativeDesktopLinuxProvisioner:
             uid=uid,
             gid=gid,
         )
-        command = (
+        common = (
             "set -euo pipefail; "
             "mkdir -p /workspace/cache/home /workspace/cache/cargo/home "
             "/workspace/cache/cargo/target /workspace/cache/pnpm/store "
@@ -2138,7 +2297,14 @@ class NativeDesktopLinuxProvisioner:
             "'registry = \"'\"$CARGO_REGISTRIES_CRATES_IO_INDEX\"'\"' "
             "> \"$CARGO_HOME/config.toml\"; "
             "else rm -f \"$CARGO_HOME/config.toml\"; fi; "
-            "pnpm install --frozen-lockfile --store-dir /workspace/cache/pnpm/store; "
+            "pnpm install --frozen-lockfile "
+            "--store-dir /workspace/cache/pnpm/store; "
+        )
+        if artifact_kind == "acceptance-binary":
+            command = (
+                common
+                +
+            "bash model/build.sh --typescript-only; "
             "VITE_ACCEPTANCE_HARNESS=1 pnpm --dir apps/desktop run build; "
             "cd apps/desktop/src-tauri; "
             "TAURI_CONFIG='{\"app\":{\"withGlobalTauri\":true}}' "
@@ -2147,7 +2313,43 @@ class NativeDesktopLinuxProvisioner:
             "/workspace/run/bin/peers-touch-desktop; "
             "chmod 0755 /workspace/run/bin/peers-touch-desktop; "
             "sha256sum /workspace/run/bin/peers-touch-desktop"
-        )
+            )
+            build_timeout = 3600
+        else:
+            command = (
+                common
+                + "source_commit=\"$(git rev-parse HEAD)\"; "
+                f"install_root=/workspace/run/{_INSTALLED_DESKTOP_ROOT}; "
+                f"install_log=/workspace/run/{_INSTALLED_LOG_PATH}; "
+                "rm -rf \"$install_root\"; "
+                "mkdir -p \"$install_root/home\" /workspace/run/bin; "
+                "rm -rf apps/desktop/src-tauri/target; "
+                "ln -s /workspace/cache/cargo/target "
+                "apps/desktop/src-tauri/target; "
+                "export HOME=\"$install_root/home\"; "
+                "export XDG_DATA_HOME=\"$HOME/.local/share\"; "
+                "export XDG_CONFIG_HOME=\"$HOME/.config\"; "
+                "export PT_DESKTOP_INSTALL_DIR="
+                "\"$XDG_DATA_HOME/peers-touch/apps\"; "
+                "export PT_DESKTOP_INSTALL_BIN_DIR=\"$HOME/.local/bin\"; "
+                "export PT_BUILD_SOURCE_COMMIT=\"$source_commit\"; "
+                "export PT_DESKTOP_E2E=true; "
+                "export VITE_ACCEPTANCE_HARNESS=1; "
+                "export APPIMAGE_EXTRACT_AND_RUN=1; "
+                "git config --global --add safe.directory /workspace/source; "
+                "if ! make desktop-install >\"$install_log\" 2>&1; then "
+                "tail -n 200 \"$install_log\" >&2 || true; exit 1; fi; "
+                f"appimage=/workspace/run/{_INSTALLED_APPIMAGE_PATH}; "
+                f"receipt=/workspace/run/{_INSTALLED_RECEIPT_PATH}; "
+                "test -s \"$appimage\"; test -s \"$receipt\"; "
+                "cp \"$appimage\" /workspace/run/bin/peers-touch-desktop; "
+                "chmod 0755 /workspace/run/bin/peers-touch-desktop; "
+                "test \"$(sha256sum \"$appimage\" | cut -d' ' -f1)\" = "
+                "\"$(sha256sum /workspace/run/bin/peers-touch-desktop "
+                "| cut -d' ' -f1)\"; "
+                "sha256sum /workspace/run/bin/peers-touch-desktop"
+            )
+            build_timeout = 7200
         completed = self.transport.run_argv(
             (
                 "docker",
@@ -2196,7 +2398,7 @@ class NativeDesktopLinuxProvisioner:
                 "-lc",
                 command,
             ),
-            timeout=3600,
+            timeout=build_timeout,
             check=False,
         )
         if completed.returncode != 0:
@@ -2303,6 +2505,8 @@ class NativeDesktopLinuxProvisioner:
                 f"PT_CELL_RUN_ROOT=/workspace/run",
                 "--env",
                 f"PT_CELL_APP_BINARY=/workspace/run/{_BINARY_RELATIVE_PATH}",
+                "--env",
+                "APPIMAGE_EXTRACT_AND_RUN=1",
                 "--env",
                 f"PT_CELL_RUN_ID={run_id}",
                 "--env",
@@ -2532,6 +2736,7 @@ class NativeDesktopLinuxProvisioner:
         source: Any,
         image_digest: str,
         binary_sha256: str,
+        artifact_kind: str,
         ready: dict[str, Any],
         adapter: dict[str, Any],
         webdriver_local_port: int,
@@ -2635,6 +2840,7 @@ class NativeDesktopLinuxProvisioner:
                 ),
                 remote_checkout_clean=source.remote_checkout_clean,
                 binary_sha256=binary_sha256,
+                artifact_kind=artifact_kind,
             ),
             native_adapter=CellAdapterIdentity(
                 input_backend="x11-xtest",
@@ -2664,9 +2870,6 @@ class NativeDesktopLinuxProvisioner:
                 self.profile.deploy_environment,
                 source_root=self.source_root,
                 environments_dir=self.deploy_root,
-                central_environment_path=(
-                    REPO_ROOT / ".local" / "deploy" / "git-server.env"
-                ),
             )
             control = self._remote_home() / request.deploy_path / _REMOTE_CONTROL
         completed = self._remote_control(

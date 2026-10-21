@@ -583,13 +583,18 @@ def provision_runtime_cell(
     cell_id: str,
     gate_id: str,
     gate_run: Any,
+    provisioner: Any = None,
+    artifact_kind: str = "acceptance-binary",
 ) -> tuple[Any, dict[str, Any], Path]:
     from tooling.acceptance.provisioners import get_runtime_cell_lifecycle
 
-    lifecycle = get_runtime_cell_lifecycle(cell_id)
+    lifecycle = get_runtime_cell_lifecycle(cell_id, provisioner=provisioner)
     acquired = False
     try:
-        manifest = lifecycle.ready(gate_id)
+        manifest = lifecycle.ready(
+            gate_id,
+            artifact_kind=artifact_kind,
+        )
         acquired = True
         payload = manifest.to_dict()
         manifest_ref = gate_run.write_json(
@@ -917,7 +922,7 @@ def is_supported_context_argv(argv: list[str]) -> bool:
 
 
 def gate_from_definition(gate_id: str, definition: dict[str, Any]) -> dict[str, Any]:
-    return {
+    gate = {
         "id": gate_id,
         **gate_launch_fields(gate_id, definition),
         "timeout_seconds": definition.get("timeout_seconds", 600),
@@ -928,6 +933,19 @@ def gate_from_definition(gate_id: str, definition: dict[str, Any]) -> dict[str, 
         "description": definition.get("description", ""),
         "required_by": ["manual"],
     }
+    artifact_kind = definition.get("runtimeCellArtifact")
+    if artifact_kind is not None:
+        if artifact_kind not in ("acceptance-binary", "installed-appimage"):
+            raise SystemExit(
+                f"{gate_id}: runtimeCellArtifact must be acceptance-binary "
+                "or installed-appimage"
+            )
+        if not gate["requiredRuntimeCells"]:
+            raise SystemExit(
+                f"{gate_id}: runtimeCellArtifact requires requiredRuntimeCells"
+            )
+        gate["runtimeCellArtifact"] = artifact_kind
+    return gate
 
 
 def gate_launch_display(gate: dict[str, Any]) -> str:
@@ -1007,6 +1025,7 @@ def plan_gate_from_entry(entry: Any, definitions: dict[str, Any]) -> dict[str, A
         "command",
         "argv",
         "ephemeralCapabilities",
+        "runtimeCellArtifact",
     ):
         if field in entry and entry[field] != gate.get(field):
             raise SystemExit(
@@ -2372,6 +2391,11 @@ def main() -> int:
                                 cell_id=runtime_cell,
                                 gate_id=gate_id,
                                 gate_run=gate_run,
+                                provisioner=provisioner,
+                                artifact_kind=str(
+                                    gate.get("runtimeCellArtifact")
+                                    or "acceptance-binary"
+                                ),
                             )
                     except EvidenceError:
                         raise

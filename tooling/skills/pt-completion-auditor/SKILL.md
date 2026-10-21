@@ -85,6 +85,11 @@ List each requested outcome as:
 Trace product-facing outcomes to accepted capability/Journey/state sources.
 Separate conversation progress from durable owner state.
 
+For a Plan that declares `outcome-comparison.md`, use it as the human-readable
+criterion inventory. Verify all five dimensions and all Task/Gate mappings.
+The report summarizes obligations; it never replaces the underlying product,
+architecture, code, or evidence review.
+
 ### Architecture
 
 Verify ownership and dependency direction across every changed layer:
@@ -134,6 +139,14 @@ Use `pt-acceptance-gap-detector` only when the audited claim includes formal
 product/runtime proof. Carry every detected gap as `UNPROVEN`; do not invoke it
 for source-only standalone work with no proof claim.
 
+For every outcome result:
+
+- `PASS/PARTIAL` requires current source identity and concrete evidence refs;
+- the actual effect must match what the evidence observed;
+- deviation must state what differs from the frozen target;
+- the full report digest in completion/aggregate evidence must match the
+  reviewed file.
+
 ## Input Rules
 
 - Do not require or manufacture OWNER, PlanMount, declaration, Session,
@@ -153,8 +166,9 @@ for source-only standalone work with no proof claim.
    cross-layer counterparts.
 4. Run the applicable structure, quality, security, and Acceptance owners.
 5. Build the completion matrix and report findings ordered by severity.
-6. Remediate source-backed findings inside the Development Run and re-audit.
-7. End with the strongest claim fully supported by current evidence.
+6. Reconcile the outcome comparison without changing its planned section.
+7. Remediate source-backed findings inside the Development Run and re-audit.
+8. End with the strongest claim fully supported by current evidence.
 
 ## Output
 
@@ -209,6 +223,8 @@ Never:
 - require released resources before a delivery-ready audit;
 - claim close-ready while selected task resources are unsettled;
 - infer product readiness from static checks, Gate count, docs, or mocks;
+- infer outcome status from Task/Gate completion without reviewing the actual
+  user, product, architecture, technology, and operations effects;
 - let the lifecycle script replace architecture/security/code judgment;
 - send source-backed findings to the user instead of remediating them inside
   the authorized Development Run.

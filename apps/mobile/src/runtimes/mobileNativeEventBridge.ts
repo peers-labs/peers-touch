@@ -174,7 +174,11 @@ export function installMobileNativeEventBridge(): MobileNativeEventBridgeInstall
     oauthListenerReady,
     errorListenerReady,
   ]).then(async () => {
-    await ensureNativePushActive();
+    try {
+      await ensureNativePushActive();
+    } catch (error) {
+      reportBridgeError('native-push-startup', error);
+    }
     if (disposed || nativeNetworkCallbacksAvailable) return;
     if (
       typeof navigator === 'undefined'

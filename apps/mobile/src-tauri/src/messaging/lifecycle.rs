@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -8,13 +8,20 @@ use std::time::{Duration, Instant};
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine as _;
 use messaging_core::attachment::AttachmentTransferControl;
-use messaging_core::contracts::ConversationProjection;
+use messaging_core::contracts::{ConversationProjection, CryptoEndpoint};
+use messaging_core::crypto::prekeys::{PendingPreKeyBundle, PreKeyBundleBackup};
+use messaging_core::engine::{
+    activate_engine, advance_engine_consumer_epoch, begin_engine_stop, complete_engine_start,
+    complete_engine_stop, recover_interrupted_engine, resume_engine, suspend_engine,
+    validate_active_engine, validate_engine_fence, CommandReconciliationProgress, EngineFence,
+    EngineLifecycleRecord, EnginePhase,
+};
 use messaging_core::identity::{
     generate_fresh_device_identity_for_device, DeviceEnrollmentRepository,
 };
-use messaging_core::crypto::prekeys::{PendingPreKeyBundle, PreKeyBundleBackup};
 use messaging_core::inbox::DrainProgress;
 use messaging_core::outbox::CommandDispatchProgress;
+use messaging_core::ports::LifecycleCancellation;
 use messaging_core::store::MessagingRepository;
 use rand::rngs::OsRng;
 use rand::RngCore;
@@ -93,7 +100,6 @@ impl DeviceSigningSeedBackup for StorageDeviceSeedBackup<'_> {
     }
 }
 
-
 const PREKEY_BUNDLE_PREFIX: &str = "messaging.v1.prekey-bundle";
 
 /// Backs the published Direct prekey bundle into native secure storage so a
@@ -153,8 +159,7 @@ impl PreKeyBundleBackup for StoragePreKeyBundleBackup {
             merged.signed_prekey_id = bundle.signed_prekey_id;
             merged.signed_prekey_private = bundle.signed_prekey_private;
         }
-        let mut by_id: BTreeMap<i32, [u8; 32]> =
-            merged.one_time_prekeys.into_iter().collect();
+        let mut by_id: BTreeMap<i32, [u8; 32]> = merged.one_time_prekeys.into_iter().collect();
         for (id, key) in &bundle.one_time_prekeys {
             by_id.insert(*id, *key);
         }
@@ -167,7 +172,6 @@ impl PreKeyBundleBackup for StoragePreKeyBundleBackup {
             .map_err(|e| format!("write prekey bundle backup: {e}"))
     }
 }
-
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -198,6 +202,7 @@ pub struct MessagingWorkerCycleResult {
     pub device_enrolled: bool,
     pub drain: DrainProgress,
     pub delivery_receipt_submitted: bool,
+    pub reconciliation: CommandReconciliationProgress,
     pub command: CommandDispatchProgress,
 }
 
@@ -245,13 +250,12 @@ impl MessagingRuntimeStatus {
 struct ActiveMessagingRuntime {
     engine: Arc<MobileMessagingEngine>,
     worker: MobileMessagingWorker,
-    activation_generation: u64,
 }
 
 #[derive(Default)]
 pub struct MobileMessagingRuntime {
     active: Mutex<Option<ActiveMessagingRuntime>>,
-    next_activation_generation: AtomicU64,
+    last_lifecycle: Mutex<Option<EngineLifecycleRecord>>,
 }
 
 impl MobileMessagingRuntime {
@@ -292,12 +296,8 @@ impl MobileMessagingRuntime {
         });
         let wake_station_peer_id = station_peer_id.clone();
         let wake_actor_ptid = actor_ptid.clone();
-        let seed_backup = StorageDeviceSeedBackup::new(
-            storage,
-            &station_peer_id,
-            &actor_ptid,
-            &device_id,
-        );
+        let seed_backup =
+            StorageDeviceSeedBackup::new(storage, &station_peer_id, &actor_ptid, &device_id);
         let prekey_backup: Arc<dyn PreKeyBundleBackup> = StoragePreKeyBundleBackup::new(
             storage.clone(),
             &station_peer_id,
@@ -360,15 +360,24 @@ impl MobileMessagingRuntime {
                 && runtime.worker.is_active()?
             {
                 runtime.engine.refresh_access_token(access_token)?;
-                runtime.worker.resume()?;
+                if runtime.worker.phase()? == MessagingWorkerPhase::Suspended {
+                    runtime.worker.resume()?;
+                }
                 return status_for_active(runtime);
             }
         }
-        if let Some(ActiveMessagingRuntime { engine, worker, .. }) = active.take() {
-            worker.stop()?;
-            drop(engine);
-        }
-        let engine = Arc::new(MobileMessagingEngine::open(
+        let previous_lifecycle =
+            if let Some(ActiveMessagingRuntime { engine, worker }) = active.take() {
+                let lifecycle = worker.stop()?;
+                drop(engine);
+                Some(lifecycle)
+            } else {
+                self.last_lifecycle
+                    .lock()
+                    .map_err(|_| "mobile messaging lifecycle history lock poisoned".to_string())?
+                    .take()
+            };
+        let engine = match MobileMessagingEngine::open(
             database_path,
             profile_id,
             station_peer_id,
@@ -381,23 +390,29 @@ impl MobileMessagingRuntime {
             access_token,
             seed_backup,
             prekey_backup,
-        )?);
-        let activation_generation = self
-            .next_activation_generation
-            .load(Ordering::Acquire)
-            .checked_add(1)
-            .ok_or_else(|| "mobile messaging activation generation overflow".to_string())?;
-        let worker =
-            MobileMessagingWorker::start(engine.clone(), activation_generation, event_sink)?;
-        let runtime = ActiveMessagingRuntime {
-            engine,
-            worker,
-            activation_generation,
+        ) {
+            Ok(engine) => Arc::new(engine),
+            Err(error) => {
+                *self.last_lifecycle.lock().map_err(|_| {
+                    "mobile messaging lifecycle history lock poisoned".to_string()
+                })? = previous_lifecycle;
+                return Err(error);
+            }
         };
+        let lifecycle_fallback = previous_lifecycle.clone();
+        let worker =
+            match MobileMessagingWorker::start(engine.clone(), previous_lifecycle, event_sink) {
+                Ok(worker) => worker,
+                Err(error) => {
+                    *self.last_lifecycle.lock().map_err(|_| {
+                        "mobile messaging lifecycle history lock poisoned".to_string()
+                    })? = lifecycle_fallback;
+                    return Err(error);
+                }
+            };
+        let runtime = ActiveMessagingRuntime { engine, worker };
         let status = status_for_active(&runtime)?;
         *active = Some(runtime);
-        self.next_activation_generation
-            .store(activation_generation, Ordering::Release);
         Ok(status)
     }
 
@@ -458,7 +473,10 @@ impl MobileMessagingRuntime {
             .take()
             .ok_or_else(|| MobileError::messaging("mobile messaging runtime is not active"))?;
         drop(active);
-        current.worker.stop().map_err(MobileError::messaging)?;
+        let lifecycle = current.worker.stop().map_err(MobileError::messaging)?;
+        *self.last_lifecycle.lock().map_err(|_| {
+            MobileError::messaging("mobile messaging lifecycle history lock poisoned")
+        })? = Some(lifecycle);
 
         let user_scope = format!("{station_peer_id}|{actor_ptid}");
         let previous_seed = identity_keys::replace_identity_seed(
@@ -537,10 +555,13 @@ impl MobileMessagingRuntime {
             .take()
             .ok_or_else(|| MobileError::messaging("mobile messaging runtime disappeared"))?;
         drop(active);
-        active_runtime
+        let lifecycle = active_runtime
             .worker
             .stop()
             .map_err(MobileError::messaging)?;
+        *self.last_lifecycle.lock().map_err(|_| {
+            MobileError::messaging("mobile messaging lifecycle history lock poisoned")
+        })? = Some(lifecycle);
         Ok(MessagingRuntimeStatus::inactive())
     }
 
@@ -642,7 +663,7 @@ impl MobileMessagingRuntime {
 }
 
 struct WorkerState {
-    phase: MessagingWorkerPhase,
+    lifecycle: EngineLifecycleRecord,
     cycle_running: bool,
     wake_pending: bool,
     completed_cycle_id: u64,
@@ -650,9 +671,19 @@ struct WorkerState {
     retry_deadline: Option<Instant>,
 }
 
+struct WorkerCancellation(AtomicBool);
+
+impl LifecycleCancellation for WorkerCancellation {
+    fn is_cancelled(&self) -> bool {
+        self.0.load(Ordering::Acquire)
+    }
+}
+
 struct MobileMessagingWorker {
     state: Arc<(Mutex<WorkerState>, Condvar)>,
     attachment_transfer_control: Arc<AttachmentTransferControl>,
+    cancellation: Arc<WorkerCancellation>,
+    fence: EngineFence,
     handle: Option<JoinHandle<()>>,
 }
 
@@ -664,12 +695,51 @@ pub struct MessagingCycleWaiter {
 impl MobileMessagingWorker {
     fn start(
         engine: Arc<MobileMessagingEngine>,
-        activation_generation: u64,
+        previous_lifecycle: Option<EngineLifecycleRecord>,
         event_sink: ProjectionEventSink,
     ) -> Result<Self, String> {
+        let cancellation = Arc::new(WorkerCancellation(AtomicBool::new(false)));
+        let endpoint = CryptoEndpoint::new(
+            engine.scope().actor_ptid.clone(),
+            engine.scope().device_id.clone(),
+        )?;
+        let baseline = match previous_lifecycle {
+            Some(previous)
+                if previous.endpoint == endpoint
+                    && previous.station_peer_id == engine.scope().station_peer_id =>
+            {
+                if matches!(previous.phase, EnginePhase::Inactive | EnginePhase::Failed) {
+                    previous
+                } else {
+                    recover_interrupted_engine(&previous, next_lifecycle_time(&previous))
+                        .map_err(|error| error.to_string())?
+                }
+            }
+            _ => EngineLifecycleRecord::inactive(
+                endpoint,
+                engine.scope().station_peer_id.clone(),
+                now_unix_ms(),
+            )
+            .map_err(|error| error.to_string())?,
+        };
+        let starting = activate_engine(
+            &baseline,
+            cancellation.as_ref(),
+            next_lifecycle_time(&baseline),
+        )
+        .map_err(|error| error.to_string())?;
+        let (_, consumer_epoch) = MessagingRepository::lane_checkpoint(engine.store())?;
+        let active = complete_engine_start(
+            &starting,
+            starting.fence(),
+            consumer_epoch,
+            next_lifecycle_time(&starting),
+        )
+        .map_err(|error| error.to_string())?;
+        let fence = active.fence();
         let state = Arc::new((
             Mutex::new(WorkerState {
-                phase: MessagingWorkerPhase::Running,
+                lifecycle: active,
                 cycle_running: false,
                 wake_pending: false,
                 completed_cycle_id: 0,
@@ -681,29 +751,47 @@ impl MobileMessagingWorker {
         let thread_state = state.clone();
         let attachment_transfer_control = engine.attachment_transfer_control();
         let thread_engine = engine.clone();
+        let thread_cancellation = cancellation.clone();
         let handle = thread::Builder::new()
             .name(format!("mobile-messaging:{}", engine.profile_id()))
             .spawn(move || {
                 worker_loop(
                     thread_state,
                     thread_engine,
-                    activation_generation,
+                    fence,
+                    thread_cancellation,
                     event_sink,
                 );
             })
-            .map_err(|error| format!("start mobile messaging worker: {error}"))?;
+            .map_err(|error| {
+                cancellation.0.store(true, Ordering::Release);
+                format!("start mobile messaging worker: {error}")
+            })?;
         Ok(Self {
             state,
             attachment_transfer_control,
+            cancellation,
+            fence,
             handle: Some(handle),
         })
     }
 
     fn phase(&self) -> Result<MessagingWorkerPhase, String> {
+        let lifecycle = self
+            .state
+            .0
+            .lock()
+            .map_err(|_| "mobile messaging worker state lock poisoned".to_string())?
+            .lifecycle
+            .clone();
+        Ok(presentation_phase(lifecycle.phase))
+    }
+
+    fn lifecycle_generation(&self) -> Result<u64, String> {
         self.state
             .0
             .lock()
-            .map(|state| state.phase)
+            .map(|state| state.lifecycle.lifecycle_generation)
             .map_err(|_| "mobile messaging worker state lock poisoned".to_string())
     }
 
@@ -715,11 +803,17 @@ impl MobileMessagingWorker {
         if !handle_running {
             return Ok(false);
         }
-        self.state
+        let state = self
+            .state
             .0
             .lock()
-            .map(|state| state.phase != MessagingWorkerPhase::Stopping)
-            .map_err(|_| "mobile messaging worker state lock poisoned".to_string())
+            .map_err(|_| "mobile messaging worker state lock poisoned".to_string())?;
+        validate_engine_fence(&state.lifecycle, self.fence).map_err(|error| error.to_string())?;
+        Ok(!self.cancellation.is_cancelled()
+            && matches!(
+                state.lifecycle.phase,
+                EnginePhase::Active | EnginePhase::Suspended
+            ))
     }
 
     fn wake(&self) -> Result<u64, String> {
@@ -727,9 +821,8 @@ impl MobileMessagingWorker {
         let mut state = state
             .lock()
             .map_err(|_| "mobile messaging worker state lock poisoned".to_string())?;
-        if state.phase == MessagingWorkerPhase::Stopping {
-            return Err("mobile messaging worker is stopping".to_string());
-        }
+        validate_active_engine(&state.lifecycle, self.fence, self.cancellation.as_ref())
+            .map_err(|error| error.to_string())?;
         let target_cycle = if state.cycle_running {
             state.completed_cycle_id + 2
         } else {
@@ -748,10 +841,16 @@ impl MobileMessagingWorker {
         let mut state = state
             .lock()
             .map_err(|_| "mobile messaging worker state lock poisoned".to_string())?;
-        if state.phase == MessagingWorkerPhase::Stopping {
-            return Err("mobile messaging worker is stopping".to_string());
-        }
-        state.phase = MessagingWorkerPhase::Suspended;
+        validate_active_engine(&state.lifecycle, self.fence, self.cancellation.as_ref())
+            .map_err(|error| error.to_string())?;
+        let consumer_epoch = state.lifecycle.consumer_epoch;
+        state.lifecycle = suspend_engine(
+            &state.lifecycle,
+            self.fence,
+            consumer_epoch,
+            next_lifecycle_time(&state.lifecycle),
+        )
+        .map_err(|error| error.to_string())?;
         wake.notify_all();
         while state.cycle_running {
             state = wake
@@ -766,10 +865,13 @@ impl MobileMessagingWorker {
         let mut state = state
             .lock()
             .map_err(|_| "mobile messaging worker state lock poisoned".to_string())?;
-        if state.phase == MessagingWorkerPhase::Stopping {
-            return Err("mobile messaging worker is stopping".to_string());
-        }
-        state.phase = MessagingWorkerPhase::Running;
+        state.lifecycle = resume_engine(
+            &state.lifecycle,
+            self.fence,
+            self.cancellation.as_ref(),
+            next_lifecycle_time(&state.lifecycle),
+        )
+        .map_err(|error| error.to_string())?;
         state.wake_pending = true;
         state.retry_deadline = None;
         wake.notify_all();
@@ -782,24 +884,55 @@ impl MobileMessagingWorker {
         }
     }
 
-    fn stop(mut self) -> Result<(), String> {
+    fn stop(mut self) -> Result<EngineLifecycleRecord, String> {
+        self.request_stop()?;
+        self.join_and_complete()
+    }
+
+    fn request_stop(&self) -> Result<(), String> {
         self.attachment_transfer_control.request_shutdown();
-        {
-            let (state, wake) = self.state.as_ref();
-            let mut state = state
-                .lock()
-                .map_err(|_| "mobile messaging worker state lock poisoned".to_string())?;
-            state.phase = MessagingWorkerPhase::Stopping;
-            state.wake_pending = false;
-            state.retry_deadline = None;
-            wake.notify_all();
+        self.cancellation.0.store(true, Ordering::Release);
+        let (state, wake) = self.state.as_ref();
+        let mut state = state
+            .lock()
+            .map_err(|_| "mobile messaging worker state lock poisoned".to_string())?;
+        if !matches!(
+            state.lifecycle.phase,
+            EnginePhase::Inactive | EnginePhase::Stopping
+        ) {
+            state.lifecycle = begin_engine_stop(
+                &state.lifecycle,
+                self.fence,
+                next_lifecycle_time(&state.lifecycle),
+            )
+            .map_err(|error| error.to_string())?;
         }
+        state.wake_pending = false;
+        state.retry_deadline = None;
+        wake.notify_all();
+        Ok(())
+    }
+
+    fn join_and_complete(&mut self) -> Result<EngineLifecycleRecord, String> {
         if let Some(handle) = self.handle.take() {
             handle
                 .join()
                 .map_err(|_| "mobile messaging worker panicked".to_string())?;
         }
-        Ok(())
+        let mut state = self
+            .state
+            .0
+            .lock()
+            .map_err(|_| "mobile messaging worker state lock poisoned".to_string())?;
+        if state.lifecycle.phase != EnginePhase::Inactive {
+            state.lifecycle = complete_engine_stop(
+                &state.lifecycle,
+                self.fence,
+                next_lifecycle_time(&state.lifecycle),
+            )
+            .map_err(|error| error.to_string())?;
+        }
+        Ok(state.lifecycle.clone())
     }
 }
 
@@ -810,7 +943,10 @@ impl MessagingCycleWaiter {
             .lock()
             .map_err(|_| "mobile messaging worker state lock poisoned".to_string())?;
         while state.completed_cycle_id < cycle_id {
-            if state.phase == MessagingWorkerPhase::Stopping {
+            if matches!(
+                state.lifecycle.phase,
+                EnginePhase::Inactive | EnginePhase::Stopping | EnginePhase::Failed
+            ) {
                 return Err("mobile messaging worker stopped before reconcile".to_string());
             }
             state = wake
@@ -829,21 +965,16 @@ impl Drop for MobileMessagingWorker {
         if self.handle.is_none() {
             return;
         }
-        self.attachment_transfer_control.request_shutdown();
-        if let Ok(mut state) = self.state.0.lock() {
-            state.phase = MessagingWorkerPhase::Stopping;
-            self.state.1.notify_all();
-        }
-        if let Some(handle) = self.handle.take() {
-            let _ = handle.join();
-        }
+        let _ = self.request_stop();
+        let _ = self.join_and_complete();
     }
 }
 
 fn worker_loop(
     state: Arc<(Mutex<WorkerState>, Condvar)>,
     engine: Arc<MobileMessagingEngine>,
-    activation_generation: u64,
+    fence: EngineFence,
+    cancellation: Arc<WorkerCancellation>,
     event_sink: ProjectionEventSink,
 ) {
     loop {
@@ -853,13 +984,18 @@ fn worker_loop(
                 Err(_) => return,
             };
             loop {
-                if guard.phase == MessagingWorkerPhase::Stopping {
+                if cancellation.is_cancelled()
+                    || matches!(
+                        guard.lifecycle.phase,
+                        EnginePhase::Inactive | EnginePhase::Stopping | EnginePhase::Failed
+                    )
+                {
                     return;
                 }
                 let retry_due = guard
                     .retry_deadline
                     .is_some_and(|deadline| deadline <= Instant::now());
-                if guard.phase == MessagingWorkerPhase::Running && (guard.wake_pending || retry_due)
+                if guard.lifecycle.phase == EnginePhase::Active && (guard.wake_pending || retry_due)
                 {
                     guard.wake_pending = false;
                     guard.retry_deadline = None;
@@ -867,7 +1003,7 @@ fn worker_loop(
                     break guard.completed_cycle_id + 1;
                 }
                 guard = match guard.retry_deadline {
-                    Some(deadline) if guard.phase == MessagingWorkerPhase::Running => {
+                    Some(deadline) if guard.lifecycle.phase == EnginePhase::Active => {
                         let timeout = deadline.saturating_duration_since(Instant::now());
                         match state.1.wait_timeout(guard, timeout) {
                             Ok((next, _)) => next,
@@ -882,10 +1018,11 @@ fn worker_loop(
             }
         };
 
-        let (result, backlog, retry_deadline) = run_worker_batch(
+        let (mut result, backlog, retry_deadline) = run_worker_batch(
             &state,
             engine.as_ref(),
-            activation_generation,
+            fence,
+            cancellation.as_ref(),
             cycle_id,
             &event_sink,
         );
@@ -896,10 +1033,17 @@ fn worker_loop(
             Ok(guard) => guard,
             Err(_) => return,
         };
+        if let Ok(cycle) = &result {
+            match advance_engine_consumer_epoch(&guard.lifecycle, fence, cycle.drain.consumer_epoch)
+            {
+                Ok(lifecycle) => guard.lifecycle = lifecycle,
+                Err(error) => result = Err(error.to_string()),
+            }
+        }
         guard.cycle_running = false;
         guard.completed_cycle_id = cycle_id;
         guard.last_result = Some(result);
-        if guard.phase == MessagingWorkerPhase::Running {
+        if validate_active_engine(&guard.lifecycle, fence, cancellation.as_ref()).is_ok() {
             guard.wake_pending |= backlog;
             guard.retry_deadline = retry_deadline;
         }
@@ -910,7 +1054,8 @@ fn worker_loop(
 fn run_worker_batch(
     state: &Arc<(Mutex<WorkerState>, Condvar)>,
     engine: &MobileMessagingEngine,
-    activation_generation: u64,
+    fence: EngineFence,
+    cancellation: &dyn LifecycleCancellation,
     cycle_id: u64,
     event_sink: &ProjectionEventSink,
 ) -> (
@@ -921,10 +1066,10 @@ fn run_worker_batch(
     let mut last_result = None;
     let mut retry_deadline = None;
     for _ in 0..MAX_CONTINUATION_CYCLES {
-        if !worker_is_running(state) {
+        if !worker_is_running(state, fence, cancellation) {
             break;
         }
-        match run_engine_cycle(state, engine, activation_generation, cycle_id, event_sink) {
+        match run_engine_cycle(state, engine, fence, cancellation, cycle_id, event_sink) {
             Ok(Some((result, has_backlog, next_retry))) => {
                 retry_deadline = earlier_deadline(retry_deadline, next_retry);
                 last_result = Some(Ok(result));
@@ -958,13 +1103,14 @@ fn run_worker_batch(
 fn run_engine_cycle(
     state: &Arc<(Mutex<WorkerState>, Condvar)>,
     engine: &MobileMessagingEngine,
-    activation_generation: u64,
+    fence: EngineFence,
+    cancellation: &dyn LifecycleCancellation,
     cycle_id: u64,
     event_sink: &ProjectionEventSink,
 ) -> Result<Option<(MessagingWorkerCycleResult, bool, Option<Instant>)>, String> {
     let enrollment = engine.enroll_pending_device();
     let enrolled_now = enrollment?.is_some();
-    if !worker_is_running(state) {
+    if !worker_is_running(state, fence, cancellation) {
         return Ok(None);
     }
     let repaired_projection_scopes = engine.hydrate_conversation_authority_scopes()?;
@@ -973,44 +1119,48 @@ fn run_engine_cycle(
             "mobile messaging repaired {repaired_projection_scopes} Conversation authority scopes"
         );
     }
-    if !worker_is_running(state) {
+    if !worker_is_running(state, fence, cancellation) {
         return Ok(None);
     }
     engine.publish_prekeys()?;
-    if !worker_is_running(state) {
+    if !worker_is_running(state, fence, cancellation) {
         return Ok(None);
     }
     engine.publish_mls_key_packages()?;
-    if !worker_is_running(state) {
+    if !worker_is_running(state, fence, cancellation) {
         return Ok(None);
     }
     let membership_reprepared = engine.resume_membership_intent_once()?;
-    if !worker_is_running(state) {
+    if !worker_is_running(state, fence, cancellation) {
         return Ok(None);
     }
 
     let now = now_unix_ms();
     let attachment_upload_result = engine.resume_attachment_upload_once(now);
     let attachment_upload_progressed = attachment_upload_result?;
-    if !worker_is_running(state) {
+    if !worker_is_running(state, fence, cancellation) {
         return Ok(None);
     }
     let attachment_download_progressed = engine.resume_attachment_download_once(now)?;
-    if !worker_is_running(state) {
+    if !worker_is_running(state, fence, cancellation) {
         return Ok(None);
     }
     let draft_result = engine.resume_message_draft_once(now);
     let draft = draft_result?;
-    if !worker_is_running(state) {
+    if !worker_is_running(state, fence, cancellation) {
+        return Ok(None);
+    }
+    let reconciliation = engine.reconcile_submitted_commands_once()?;
+    if !worker_is_running(state, fence, cancellation) {
         return Ok(None);
     }
     let interaction_reprepared = engine.resume_superseded_interaction_once()?;
-    if !worker_is_running(state) {
+    if !worker_is_running(state, fence, cancellation) {
         return Ok(None);
     }
     let command_result = engine.dispatch_command_once();
     let command = command_result?;
-    if !worker_is_running(state) {
+    if !worker_is_running(state, fence, cancellation) {
         return Ok(None);
     }
     let station_peer_id = engine.scope().station_peer_id.clone();
@@ -1022,7 +1172,7 @@ fn run_engine_cycle(
             station_peer_id: station_peer_id.clone(),
             actor_ptid: actor_ptid.clone(),
             profile_id: profile_id.clone(),
-            activation_generation,
+            activation_generation: fence.lifecycle_generation,
             cycle_id,
             conversation_id: item.conversation_id.clone(),
             event_id: item.event_id.clone(),
@@ -1031,7 +1181,7 @@ fn run_engine_cycle(
             log::warn!("mobile messaging projection event delivery failed: {error}");
         }
     })))?;
-    if !worker_is_running(state) {
+    if !worker_is_running(state, fence, cancellation) {
         return Ok(None);
     }
     let attachment_sources_cleaned = engine.cleanup_completed_attachment_sources()?;
@@ -1047,6 +1197,10 @@ fn run_engine_cycle(
             .next_scheduled_work_at()?
             .map(|next| unix_retry_deadline(next, now)),
     );
+    let retry_deadline = earlier_deadline(
+        retry_deadline,
+        reconciliation_retry_deadline(&reconciliation, now),
+    );
     let has_backlog = enrolled_now
         || attachment_upload_progressed
         || attachment_download_progressed
@@ -1054,6 +1208,7 @@ fn run_engine_cycle(
         || matches!(draft, MessageDraftResumeProgress::Prepared)
         || membership_reprepared
         || interaction_reprepared
+        || reconciliation.has_immediate_follow_up()
         || !matches!(
             command,
             CommandDispatchProgress::Idle | CommandDispatchProgress::RetryScheduled { .. }
@@ -1065,6 +1220,7 @@ fn run_engine_cycle(
             device_enrolled,
             drain,
             delivery_receipt_submitted,
+            reconciliation,
             command,
         },
         has_backlog,
@@ -1072,11 +1228,15 @@ fn run_engine_cycle(
     )))
 }
 
-fn worker_is_running(state: &Arc<(Mutex<WorkerState>, Condvar)>) -> bool {
+fn worker_is_running(
+    state: &Arc<(Mutex<WorkerState>, Condvar)>,
+    fence: EngineFence,
+    cancellation: &dyn LifecycleCancellation,
+) -> bool {
     state
         .0
         .lock()
-        .map(|state| state.phase == MessagingWorkerPhase::Running)
+        .map(|state| validate_active_engine(&state.lifecycle, fence, cancellation).is_ok())
         .unwrap_or(false)
 }
 
@@ -1100,6 +1260,15 @@ fn command_retry_deadline(progress: &CommandDispatchProgress, now_unix_ms: i64) 
         } => Some(unix_retry_deadline(*next_attempt_at_unix_ms, now_unix_ms)),
         _ => None,
     }
+}
+
+fn reconciliation_retry_deadline(
+    progress: &CommandReconciliationProgress,
+    now_unix_ms: i64,
+) -> Option<Instant> {
+    progress
+        .next_reconciliation_at_unix_ms()
+        .map(|next| unix_retry_deadline(next, now_unix_ms))
 }
 
 fn unix_retry_deadline(next_attempt_at_unix_ms: i64, now_unix_ms: i64) -> Instant {
@@ -1147,9 +1316,23 @@ fn status_for_active(runtime: &ActiveMessagingRuntime) -> Result<MessagingRuntim
         lane_sequence,
         consumer_epoch,
         conversation_count: engine.conversations()?.len(),
-        activation_generation: runtime.activation_generation,
+        activation_generation: runtime.worker.lifecycle_generation()?,
         worker_phase: runtime.worker.phase()?,
     })
+}
+
+fn presentation_phase(phase: EnginePhase) -> MessagingWorkerPhase {
+    match phase {
+        EnginePhase::Starting | EnginePhase::Active => MessagingWorkerPhase::Running,
+        EnginePhase::Suspended => MessagingWorkerPhase::Suspended,
+        EnginePhase::Inactive | EnginePhase::Stopping | EnginePhase::Failed => {
+            MessagingWorkerPhase::Stopping
+        }
+    }
+}
+
+fn next_lifecycle_time(record: &EngineLifecycleRecord) -> i64 {
+    now_unix_ms().max(record.updated_at_unix_ms.saturating_add(1))
 }
 
 fn now_unix_ms() -> i64 {
@@ -1228,10 +1411,20 @@ mod tests {
     }
 
     fn idle_worker() -> MobileMessagingWorker {
+        let cancellation = Arc::new(WorkerCancellation(AtomicBool::new(false)));
+        let inactive = EngineLifecycleRecord::inactive(
+            CryptoEndpoint::new("ptid:alice", "mobile-device-1").unwrap(),
+            "station-1",
+            1,
+        )
+        .unwrap();
+        let starting = activate_engine(&inactive, cancellation.as_ref(), 2).unwrap();
+        let active = complete_engine_start(&starting, starting.fence(), 0, 3).unwrap();
+        let fence = active.fence();
         MobileMessagingWorker {
             state: Arc::new((
                 Mutex::new(WorkerState {
-                    phase: MessagingWorkerPhase::Running,
+                    lifecycle: active,
                     cycle_running: false,
                     wake_pending: false,
                     completed_cycle_id: 4,
@@ -1241,6 +1434,8 @@ mod tests {
                 Condvar::new(),
             )),
             attachment_transfer_control: Arc::new(AttachmentTransferControl::new()),
+            cancellation,
+            fence,
             handle: None,
         }
     }
@@ -1288,6 +1483,21 @@ mod tests {
         )
         .unwrap();
         assert_eq!(earlier_deadline(Some(draft), Some(command)), Some(draft));
+    }
+
+    #[test]
+    fn home_pending_reconciliation_waits_for_its_bounded_deadline() {
+        let now = now_unix_ms();
+        let reconciliation = CommandReconciliationProgress::Reconciled {
+            command_count: 1,
+            transition_count: 0,
+            retry_count: 0,
+            next_reconciliation_at_unix_ms: Some(now + 1_000),
+            terminal_membership_conversations: Vec::new(),
+        };
+
+        assert!(!reconciliation.has_immediate_follow_up());
+        assert!(reconciliation_retry_deadline(&reconciliation, now).is_some());
     }
 
     #[test]

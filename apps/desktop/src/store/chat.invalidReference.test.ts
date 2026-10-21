@@ -26,6 +26,7 @@ describe('chat composer invalid-reference intent', () => {
     expect(useChatStore.getState().composerFill).toEqual({
       text: 'preserved draft',
       nonce: expect.any(Number),
+      sessionKey: 'main',
     });
     expect(useChatStore.getState().composerFocusNonce).toBe(focusNonce);
   });

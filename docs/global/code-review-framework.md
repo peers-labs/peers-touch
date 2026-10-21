@@ -51,7 +51,7 @@ Review comments must lead with the finding, cite a file and line where possible,
 
 When a review needs authority, use this order:
 
-1. `docs/architecture/**` and `docs/global/architecture.md`
+1. `docs/architecture/**` and `docs/architecture/architecture.md`
 2. platform sources: `docs/client/**`, `docs/station/**`
 3. coding guides: `docs/global/coding-guide/**`
 4. operational knowledge: `docs/knowledge/**`

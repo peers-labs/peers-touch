@@ -40,7 +40,7 @@
 | Station Embedding | Pluggable (OpenAI-compat, Ollama, hash fallback) + pgvector | ✅ |
 | Desktop Rust | 12 Tauri commands (list/get/delete/search/persona/stats/events/export/import/embedding-status/reembed) | ✅ |
 | Desktop API | Typed wrappers for all commands | ✅ |
-| Desktop UI | MemoryPage (browse/search/persona/events) + MemorySettingsTab | ✅ |
+| Desktop UI | Settings > AI > Memory via `MemorySettingsSection` + `MemorySettingsTab` configuration | ✅ |
 | Prompt Injection | BuildRelevantSnapshot → L3 layer | ✅ |
 | Memory Tool | `memory` in ToolRegistryService (LLM save/query) | ✅ |
 | Auto-extraction | ExtractFromTurn + FlushMemories | ✅ |
