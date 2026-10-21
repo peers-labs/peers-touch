@@ -8,7 +8,7 @@
 
 ## 1. 从用户需求到实际操作
 
-用户提出需求后，Agent 按[规范研发流程](../../../global/workflow.md)明确目标、读取标准、形成必要方案，再操作指定 worktree。
+用户提出需求后，Agent 按[规范研发流程](../../../development/workflow.md)明确目标、读取标准、形成必要方案，再操作指定 worktree。
 
 普通修改不调用 `dev-start` 来获得写权限。小改动直接使用编码与小修 Skill，验证范围按实际变化决定。
 

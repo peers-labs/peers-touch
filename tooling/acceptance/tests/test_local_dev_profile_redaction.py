@@ -36,7 +36,6 @@ class LocalDevProfileRedactionTests(unittest.TestCase):
             "machine-dev.mjs",
             "machine-dev-registry.mjs",
             "machine-dev-lease.py",
-            "profile.sh",
             "redact-env.sh",
             "workspace-lifecycle-lock.mjs",
         ):
@@ -249,7 +248,25 @@ class LocalDevProfileRedactionTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
 
     def test_profile_list_does_not_expose_sensitive_profile_values(self) -> None:
-        completed = self.run_script("profile.sh", "list")
+        environment = os.environ.copy()
+        environment["HOME"] = str(Path(self.temporary_directory.name) / "home")
+        environment["PT_MACHINE_DEV_ROOT"] = str(self.machine_dev_root)
+        environment["PT_ENV_REPO"] = str(self.env_root)
+        completed = subprocess.run(
+            [
+                "node",
+                str(REPO_ROOT / "tooling" / "devctl" / "index.mjs"),
+                "--root",
+                str(self.project_root),
+                "profile",
+                "list",
+            ],
+            cwd=self.project_root,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertNotIn(SECRET_CANARY, completed.stdout)

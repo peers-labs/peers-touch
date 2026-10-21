@@ -66,7 +66,7 @@ export const HISTORICAL_EXCLUSIONS = [
 ];
 
 export const ALLOWED_NEGATIVE_REFERENCES = [
-  'docs/global/workflow.md',
+  'docs/development/workflow.md',
   'docs/architecture/engineering/development-workflow/data-model.md',
   'docs/architecture/engineering/development-workflow/design.md',
   'docs/architecture/engineering/development-workflow/module-layout.md',

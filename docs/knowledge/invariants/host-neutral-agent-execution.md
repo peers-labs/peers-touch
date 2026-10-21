@@ -4,7 +4,7 @@ title: Project execution semantics are independent of the agent host
 status: active
 owns:
   - AGENTS.md
-  - docs/global/workflow.md
+  - docs/development/workflow.md
   - docs/architecture/engineering/development-workflow/
   - tooling/skills/pt-goal-orchestrator/
   - tooling/skills/pt-dev-runtime-handoff/

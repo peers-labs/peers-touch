@@ -1,6 +1,6 @@
 ---
 kind: pitfall
-title: Review skill ignores code structure decay (AGENTS.md §7)
+title: Review skill ignores code structure decay
 status: active
 owns:
   - apps/desktop/src/
@@ -10,7 +10,7 @@ related:
 detected: 2026-07-23
 ---
 
-# Review skill ignores code structure decay (AGENTS.md §7)
+# Review skill ignores code structure decay
 
 ## Symptom
 
@@ -20,7 +20,10 @@ This is not limited to shell files — any file touched by multiple PRs with sma
 
 ## Root cause
 
-The review skill (`pt-github-review`) classifies structural/readability concerns as "style preferences" and explicitly lists "blocking on style preferences" as an anti-pattern. This directly contradicts AGENTS.md §7 which mandates:
+The review skill (`pt-github-review`) classified structural and readability
+concerns as style preferences. This contradicted the
+[Structure and Readability](../../../AGENTS.md#6-structure-and-readability)
+contract, which requires:
 
 1. **Single Responsibility** at every level: file, function, class, module
 2. **No circular dependencies**
@@ -60,6 +63,7 @@ done
 
 ## Crosswalks
 
-- Skill update: `pt-github-review` needs to treat §7 structural violations as `convention` severity (blocks merge), not style preference
+- Skill update: `pt-github-review` treats structural violations as
+  `convention` severity rather than style preference.
 - Hard rule candidate: `duplicate-side-effect-import`
 - Hard rule candidate: `inline-class-in-non-component-file`

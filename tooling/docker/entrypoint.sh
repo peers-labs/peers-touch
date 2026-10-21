@@ -12,6 +12,8 @@
 #   conf/store.docker.yml         — only when PEERS_DB_DSN is set
 #   conf/paths.docker.yml         — always (binds TCP 4001 and redirects keys
 #                                   into /app/data)
+#   conf/dashboard.docker.yml     — Station role only, when all Dashboard
+#                                   bootstrap credentials are supplied
 #   conf/federation.docker.yml    — emitted whenever any node-level libp2p
 #                                   federation env var is set. Single overlay
 #                                   for ALL libp2p hosts in the process
@@ -135,6 +137,47 @@ if command -v envsubst >/dev/null 2>&1; then
 fi
 
 OVERLAYS=""
+
+# ── dashboard.docker.yml (per-installation operator credentials) ───────────
+# The baked development configuration intentionally remains useful for source
+# profiles. Public installations provide all three values and receive a final
+# hierarchy overlay, so no distributed Station can inherit the development
+# super-user password or an ephemeral Dashboard JWT secret.
+if [ "$PEERS_NODE_ROLE" = "station" ] &&
+  { [ -n "${PEERS_DASHBOARD_USERNAME:-}" ] ||
+    [ -n "${PEERS_DASHBOARD_PASSWORD:-}" ] ||
+    [ -n "${PEERS_DASHBOARD_JWT_SECRET:-}" ]; }; then
+  : "${PEERS_DASHBOARD_USERNAME:?PEERS_DASHBOARD_USERNAME is required with Dashboard credentials}"
+  : "${PEERS_DASHBOARD_PASSWORD:?PEERS_DASHBOARD_PASSWORD is required with Dashboard credentials}"
+  : "${PEERS_DASHBOARD_JWT_SECRET:?PEERS_DASHBOARD_JWT_SECRET is required with Dashboard credentials}"
+  case "$PEERS_DASHBOARD_USERNAME" in
+    *[!A-Za-z0-9._-]*)
+      echo "[entrypoint] PEERS_DASHBOARD_USERNAME contains unsupported characters" >&2
+      exit 1
+      ;;
+  esac
+  for dashboard_secret in "$PEERS_DASHBOARD_PASSWORD" "$PEERS_DASHBOARD_JWT_SECRET"; do
+    case "$dashboard_secret" in
+      *[!A-Fa-f0-9]*)
+        echo "[entrypoint] Dashboard secrets must be 64 hexadecimal characters" >&2
+        exit 1
+        ;;
+    esac
+    if [ "${#dashboard_secret}" -ne 64 ]; then
+      echo "[entrypoint] Dashboard secrets must be 64 hexadecimal characters" >&2
+      exit 1
+    fi
+  done
+  cat > /app/conf/dashboard.docker.yml <<EOF
+peers:
+  dashboard:
+    jwt_secret: ${PEERS_DASHBOARD_JWT_SECRET}
+    super_user:
+      username: "${PEERS_DASHBOARD_USERNAME}"
+      password: ${PEERS_DASHBOARD_PASSWORD}
+EOF
+  OVERLAYS="${OVERLAYS}, dashboard.docker.yml"
+fi
 
 # ── store.docker.yml (PG DSN) ────────────────────────────────────────────────
 if [ -n "$PEERS_DB_DSN" ]; then
@@ -325,7 +368,7 @@ fi
 # We only append entries the file does not yet mention. Newly emitted overlays
 # are added to the end so hierarchy-merge applies them last.
 if [ -n "$OVERLAYS" ]; then
-  for overlay in store.docker.yml oss_backend.docker.yml paths.docker.yml federation.docker.yml relay.docker.yml relay_pool.docker.yml server_host.docker.yml; do
+  for overlay in dashboard.docker.yml store.docker.yml oss_backend.docker.yml paths.docker.yml federation.docker.yml relay.docker.yml relay_pool.docker.yml server_host.docker.yml; do
     case ",$OVERLAYS," in
       *",$overlay,"*|*", $overlay,"*)
         if ! grep -q "$overlay" /app/conf/peers.yml; then

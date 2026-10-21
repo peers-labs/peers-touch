@@ -50,6 +50,11 @@ services:
       context: ../..
       dockerfile: tooling/docker/station.Dockerfile
       args:
+        APT_MIRROR: ${APT_MIRROR:-}
+        GO_TARBALL_MIRROR: ${GO_TARBALL_MIRROR:-https://go.dev/dl}
+        GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
+        GOSUMDB: ${GOSUMDB:-sum.golang.org}
+        GONOSUMCHECK: ${GONOSUMCHECK:-}
         BUILD_COMMIT: ${PEERS_TOUCH_BUILD_COMMIT:-unknown}
         BUILD_LABEL: ${PEERS_TOUCH_BUILD_LABEL:-dev}
         BUILD_TIME: ${PEERS_TOUCH_BUILD_TIME:-unknown}
@@ -177,6 +182,11 @@ services:
       context: ../..
       dockerfile: tooling/docker/station.Dockerfile
       args:
+        APT_MIRROR: ${APT_MIRROR:-}
+        GO_TARBALL_MIRROR: ${GO_TARBALL_MIRROR:-https://go.dev/dl}
+        GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
+        GOSUMDB: ${GOSUMDB:-sum.golang.org}
+        GONOSUMCHECK: ${GONOSUMCHECK:-}
         BUILD_COMMIT: ${PEERS_TOUCH_BUILD_COMMIT:-unknown}
         BUILD_LABEL: ${PEERS_TOUCH_BUILD_LABEL:-dev}
         BUILD_TIME: ${PEERS_TOUCH_BUILD_TIME:-unknown}

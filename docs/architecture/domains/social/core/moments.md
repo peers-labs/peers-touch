@@ -7,7 +7,8 @@
 > v1 的目标是**基础通用能力**——发动态、看动态、点赞、评论、@、转发，
 > 加上一套清晰的可见性模型和**隐私/公开物理分离**的存储底座。
 >
-> 本文档是 architecture-layer source（见 `AGENTS.md §3`），
+> 本文档是 architecture-layer source（见
+> [`docs/README.md`](../../../../README.md#source-hierarchy)），
 > 描述边界与约束；具体 proto 字段、表 DDL、handler 路由由实施 PR
 > 落地，不在本文锁定。
 >
@@ -23,7 +24,7 @@
 >
 > **Cross-Station ownership amendment (2026-10-03)**: private cross-Station
 > delivery, interaction, recovery, and revocation are governed by
-> [`../cross-station-social/`](../cross-station-social/README.md). Historical
+> [`../cross-station/`](../cross-station/README.md). Historical
 > private fan-out and remote object URL sketches are superseded; Social now
 > uses the shared durable Federation transport.
 
@@ -391,7 +392,7 @@ Hydrate(attachments + reactions(grouped) + comment_count + link_preview)
 ### 7.3 跨站输入边界
 
 跨站私密资源只能通过
-[`../cross-station-social/`](../cross-station-social/README.md) 定义的
+[`../cross-station/`](../cross-station/README.md) 定义的
 viewer-scoped 密文投影进入接收 Station。接收端不得把远端资源伪装成
 本站作者数据，也不得直接写入本站 canonical `social_private` authority。
 
@@ -529,7 +530,7 @@ Flexbox`，与 chat 视觉完全一致。
 - **审计/操作日志**：dashboard 视角下的"我的动态历史"——参考
   `oss_audit` 的 append-only 设计。
 - **跨 Station 私密分享**：由
-  [`../cross-station-social/`](../cross-station-social/README.md)
+  [`../cross-station/`](../cross-station/README.md)
   统一定义 authority、密文投递、互动、恢复和撤销。
 - **媒体 GC**：动态删除时附件何时回收？参考 `oss/file-storage.md`
   的 LRU 思路，触发点放在 `MomentDeleted` 域事件。

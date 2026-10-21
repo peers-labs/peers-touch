@@ -15,7 +15,7 @@ require_file() {
 
 required_files=(
   AGENTS.md
-  docs/global/workflow.md
+  docs/development/workflow.md
   docs/knowledge/invariants/acceptance-scope-is-runner-owned.md
   tooling/scripts/local-dev/task-progress-store.mjs
   tooling/scripts/local-dev/dev-work.mjs

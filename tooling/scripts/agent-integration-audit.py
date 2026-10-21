@@ -283,14 +283,14 @@ def callback_probe(
             not isinstance(output, dict)
             or output.get("permissionDecision") != "allow"
             or output.get("hookEventName") != "PreToolUse"
-            or "docs/global/workflow.md"
+            or "docs/development/workflow.md"
             not in str(output.get("additionalContext") or "")
         ):
             raise RuntimeError("HOOK_CALLBACK_CONTEXT_MISSING")
         return {
             "status": "PASS",
             "permissionDecision": "allow",
-            "context": "docs/global/workflow.md",
+            "context": "docs/development/workflow.md",
         }
     except Exception as error:
         return {"status": "INVALID", "code": str(error)}

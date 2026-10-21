@@ -37,8 +37,8 @@ constraints only; do not answer by saying they were read.
 
 Accept a PR number, PR URL, commit, explicit git range, or supplied diff.
 
-For a local target, first verify the persisted Worktree Binding under
-`AGENTS.md §13.5.1` from the bound root. Review must stop on
+For a local target, first verify the selected canonical root and its Worktree
+Binding as required by `AGENTS.md §2`. Review must stop on
 `WORKTREE_IDENTITY_UNAVAILABLE` or `WORKTREE_IDENTITY_MISMATCH`; it must not
 repair identity by switching branches or creating/selecting another worktree.
 

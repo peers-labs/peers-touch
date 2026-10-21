@@ -7,7 +7,7 @@ description: Prepare worktree-isolated Peers-Touch development runtimes. Use for
 
 Use the canonical Make and Machine Dev entrypoints. Detailed Profile fields,
 mode behavior, port formulas, and command reference live in
-[`docs/global/local-dev-environment.md`](../../../docs/global/local-dev-environment.md).
+[`docs/development/environment.md`](../../../docs/development/environment.md).
 
 ## Invoke When
 

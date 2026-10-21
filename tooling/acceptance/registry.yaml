@@ -2438,7 +2438,7 @@
       "when": {
         "paths": [
           "AGENTS.md",
-          "docs/global/workflow.md",
+          "docs/development/workflow.md",
           "docs/architecture/engineering/development-workflow/**",
           "tooling/scripts/lib/machine-dev-paths.mjs",
           "tooling/scripts/local-dev/dev-work*.mjs",
@@ -2524,7 +2524,7 @@
           "tooling/scripts/_ensure-desktop-vite.sh",
           "tooling/scripts/local-dev/desktop-dev.sh",
           "tooling/scripts/local-dev/env.sh",
-          "tooling/scripts/local-dev/profile.sh",
+          "tooling/devctl/profile.mjs",
           "tooling/acceptance/gates/desktop/dev_runtime_multi_instance.py",
           "tooling/acceptance/gates/desktop/dev_runtime_multi_instance_static_test.py"
         ]

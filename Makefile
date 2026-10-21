@@ -37,6 +37,7 @@ help:
 	@echo "  make profile-init <name> [SLOT=0]  Create a worktree-local development profile"
 	@echo "  make profiles                  List approved and unapproved profile observations"
 	@echo "  make config                    Show active profile config"
+	@echo "  make doctor                    Check dependencies and the selected profile"
 	@echo "  make dev-start TASK=x ...      Optionally create task-local recovery state"
 	@echo "  make dev-update TASK=x ...     Update task-local state with revision/CAS"
 	@echo "  make dev-status TASK=x         Show one explicitly selected task"

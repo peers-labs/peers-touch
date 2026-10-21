@@ -8,7 +8,7 @@ owns:
   - apps/mobile/src-tauri/Cargo.toml
   - tooling/scripts/cargo-cache.sh
 related:
-  - docs/global/local-dev-environment.md
+  - docs/development/environment.md
 detected: 2026-10-16
 ---
 

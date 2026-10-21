@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-10-16
-covered_docs_hash: b4d5981623d5b6ba15e72d6c0eeeb0aaa0c790c8f43f40aa69639d8f6ebc18ea
+last_verified_at: 2026-10-21
+covered_docs_hash: ef7306360cd17f5237290055dab619db35b55b75dea52bac1874fab650197967
 
 covered_docs:
   - AGENTS.md
@@ -13,7 +13,8 @@ covered_docs:
   - docs/architecture/engineering/acceptance
   - docs/architecture/engineering/development-workflow
   - docs/architecture/engineering/local-dev
-  - docs/global/local-dev-environment.md
+  - docs/architecture/engineering/toolchain
+  - docs/development
   - docs/global/architecture.md
   - docs/client/desktop/base.md
   - docs/client/desktop/runtime-projections.md
@@ -30,6 +31,24 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-10-21 Shared Development Knowledge Review
+
+The shared `docs/development/` knowledge base now owns the human and Agent
+entrypoint, workflow, environment, verification, automation, and platform
+navigation. `AGENTS.md` and Skills remain adapters. Developer Toolchain is now
+a registered architecture module, while Local Dev owns only machine binding,
+allocation, capabilities, and leases.
+
+Review target establishment now points to the selected canonical-root contract
+instead of a removed `AGENTS.md` section. Existing single-source,
+documentation, architecture-module, process-identity, Profile, and evidence
+rules already cover the refactor; no new generic fixture is required.
+The final prose review removed duplicate navigation and procedure summaries
+without changing review semantics or requiring a `SKILL.md` update. The pin
+also moves with the current regeneration of the tracked, auto-generated
+`docs/architecture/engineering/acceptance/coverage-report.md`, whose only
+content delta is its generation date; review rules and fixtures are unchanged.
 
 ## 2026-10-16 Acceptance Scheduling Review
 

@@ -1,104 +1,294 @@
-# Automated release workflow for Peers-Touch
-# Triggers on push to main with version tags
 name: Release
 
 on:
   push:
-    tags:
-      - 'v*.*.*'
+    tags: ['v*.*.*']
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: peers-release
+  cancel-in-progress: false
+
+env:
+  PT_RD_FROM_TAG: ${{ vars.PT_RD_FROM_TAG }}
 
 jobs:
-  release:
-    runs-on: ubuntu-latest
+  release-notes:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    outputs:
+      release_id: ${{ steps.draft.outputs.release_id }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Get previous tag
-        id: prev_tag
-        run: |
-          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-          echo "tag=$PREV_TAG" >> $GITHUB_OUTPUT
-
-      - name: Generate changelog
-        id: changelog
-        uses: actions/github-script@v7
+      - uses: actions/setup-node@v4
         with:
-          script: |
-            const prevTag = '${{ steps.prev_tag.outputs.tag }}';
-            const currentTag = context.ref.replace('refs/tags/', '');
-
-            // Get commits between tags
-            const range = prevTag ? `${prevTag}..${currentTag}` : currentTag;
-            const { execSync } = require('child_process');
-            const log = execSync(`git log ${range} --pretty=format:"%s (%h)" --reverse`).toString();
-
-            const types = {
-              feat:     { en: 'New Features', cn: '新功能', items: [] },
-              fix:      { en: 'Bug Fixes', cn: '缺陷修复', items: [] },
-              perf:     { en: 'Performance', cn: '性能优化', items: [] },
-              refactor: { en: 'Refactoring', cn: '重构', items: [] },
-              docs:     { en: 'Documentation', cn: '文档', items: [] },
-              ci:       { en: 'CI/CD', cn: 'CI/CD', items: [] },
-              test:     { en: 'Tests', cn: '测试', items: [] },
-              chore:    { en: 'Maintenance', cn: '维护', items: [] },
-              build:    { en: 'Build', cn: '构建', items: [] },
-              style:    { en: 'Style', cn: '代码风格', items: [] },
-              revert:   { en: 'Reverts', cn: '回退', items: [] },
-            };
-            const breaking = [];
-            const other = [];
-
-            for (const line of log.split('\n').filter(Boolean)) {
-              const match = line.match(/^(\w+)(?:\(([^)]*)\))?: (.+)$/);
-              if (match) {
-                const [, type, scope, rest] = match;
-                const entry = scope ? `**${scope}**: ${rest}` : rest;
-                if (types[type]) {
-                  types[type].items.push(entry);
-                } else {
-                  other.push(entry);
-                }
-                if (line.includes('BREAKING CHANGE') || line.startsWith('!')) {
-                  breaking.push(entry);
-                }
-              } else {
-                other.push(line);
-              }
-            }
-
-            let notes = `# ${currentTag}\n\n`;
-
-            if (breaking.length) {
-              notes += `## ⚠ Breaking Changes / 破坏性变更\n\n`;
-              breaking.forEach(b => notes += `- ${b}\n`);
-              notes += '\n';
-            }
-
-            for (const [, val] of Object.entries(types)) {
-              if (val.items.length) {
-                notes += `### ${val.en} / ${val.cn}\n\n`;
-                val.items.forEach(i => notes += `- ${i}\n`);
-                notes += '\n';
-              }
-            }
-
-            if (other.length) {
-              notes += `### Other / 其它\n\n`;
-              other.forEach(o => notes += `- ${o}\n`);
-              notes += '\n';
-            }
-
-            core.setOutput('notes', notes);
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          body: ${{ steps.changelog.outputs.notes }}
-          generate_release_notes: false
+          node-version: '22'
+      - name: Check package version and signing trust root
+        id: version
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_PUBLIC_KEY: ${{ vars.TAURI_SIGNING_PUBLIC_KEY }}
+        run: |
+          set -euo pipefail
+          node tooling/distribution/release-version-check.mjs "$GITHUB_REF_NAME" > "$RUNNER_TEMP/version.json"
+          node --input-type=module - <<'JS'
+          import fs from 'node:fs';
+          const config = JSON.parse(fs.readFileSync('apps/desktop/src-tauri/tauri.conf.json'));
+          const key = process.env.TAURI_PUBLIC_KEY;
+          if (!key || config.plugins.updater.pubkey !== key || !Buffer.from(key, 'base64').toString().includes('untrusted comment:')) {
+            throw new Error('RD_SIGNING_TRUST_ROOT_REQUIRED');
+          }
+          const version = JSON.parse(fs.readFileSync(`${process.env.RUNNER_TEMP}/version.json`));
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `prerelease=${version.prerelease}\n`);
+          JS
+      - name: Create immutable draft
+        id: draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          node tooling/distribution/release-lifecycle.mjs draft
+
+  station-image:
+    needs: release-notes
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      packages: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Resolve build timestamp
+        id: timestamp
+        run: echo "value=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+      - name: Build immutable candidate index
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: tooling/docker/station.Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/peers-labs/peers-touch-station:candidate-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          build-args: |
+            BUILD_COMMIT=${{ github.sha }}
+            BUILD_LABEL=${{ github.ref_name }}
+            BUILD_TIME=${{ steps.timestamp.outputs.value }}
+          cache-from: type=gha,scope=station-release
+          cache-to: type=gha,scope=station-release,mode=max
+      - name: Render and scan Station assets
+        env:
+          PT_RD_IMAGE: ghcr.io/peers-labs/peers-touch-station@${{ steps.build.outputs.digest }}
+          PT_RD_IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: node tooling/distribution/release-assets.mjs "$RUNNER_TEMP/station-assets"
+      - name: Attach verified bytes to draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tooling/distribution/release-lifecycle.mjs upload "$RUNNER_TEMP/station-assets"
+
+  desktop-bundle:
+    needs: release-notes
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      # tauri-action incrementally merges latest.json with the manifest already
+      # attached to the draft. Serialize writers so no matrix leg can delete a
+      # manifest another leg has just read.
+      max-parallel: 1
+      matrix:
+        include:
+          - os: macos-14
+            target: universal-apple-darwin
+            bundles: dmg,app
+          - os: windows-2022
+            target: x86_64-pc-windows-msvc
+            bundles: nsis
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            bundles: appimage,deb
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target == 'universal-apple-darwin' && 'aarch64-apple-darwin,x86_64-apple-darwin' || matrix.target }}
+      - name: Install Linux bundle prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libfuse2 protobuf-compiler
+      - name: Install macOS protocol compiler
+        if: runner.os == 'macOS'
+        run: brew install protobuf
+      - name: Install Windows protocol compiler
+        if: runner.os == 'Windows'
+        run: choco install protoc --no-progress -y
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Require updater signing key
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: test -n "$TAURI_SIGNING_PRIVATE_KEY"
+      - name: Build signed updater packages
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: apps/desktop
+          releaseId: ${{ needs.release-notes.outputs.release_id }}
+          tagName: ${{ github.ref_name }}
+          releaseDraft: true
+          uploadUpdaterJson: true
+          updaterJsonPreferNsis: true
+          retryAttempts: 3
+          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} --locked
+
+  desktop-manifest:
+    needs: [release-notes, desktop-bundle]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Canonicalize updater package URLs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tooling/distribution/release-lifecycle.mjs canonicalize-manifest
+
+  verify-candidate-station:
+    needs: [release-notes, station-image, desktop-manifest]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Run release Suite
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PT_RD_RELEASE_ID: ${{ needs.release-notes.outputs.release_id }}
+        run: node tooling/distribution/release-suite.mjs candidate "$RUNNER_TEMP/release-evidence"
+      - name: Upload release evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rd-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release-evidence
+          if-no-files-found: error
+
+  verify-candidate-native:
+    needs: desktop-manifest
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require native updater runtime evidence
+        run: |
+          echo "RD_NATIVE_UPDATER_RUNTIME_UNPROVEN: cross-platform install, signature rejection, apply and restart are not implemented" >&2
+          exit 1
+
+  finalize:
+    needs: [release-notes, station-image, verify-candidate-station, verify-candidate-native]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Publish complete verified candidate without latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PT_RD_IMAGE_DIGEST: ${{ needs.station-image.outputs.digest }}
+        run: node tooling/distribution/release-lifecycle.mjs finalize
+
+  verify-public-station:
+    needs: finalize
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run release Suite
+        run: node tooling/distribution/release-suite.mjs public "$RUNNER_TEMP/release-evidence"
+      - name: Upload release evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rd-public-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release-evidence
+          if-no-files-found: error
+
+  verify-public-native:
+    needs: finalize
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - name: Require anonymous native updater runtime evidence
+        run: |
+          echo "RD_NATIVE_UPDATER_RUNTIME_UNPROVEN: anonymous stable-channel discovery and apply are not implemented" >&2
+          exit 1
+
+  promote-stable:
+    needs: [release-notes, verify-public-station, verify-public-native]
+    if: needs.release-notes.outputs.prerelease == 'false'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Advance stable discovery monotonically
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tooling/distribution/release-lifecycle.mjs promote

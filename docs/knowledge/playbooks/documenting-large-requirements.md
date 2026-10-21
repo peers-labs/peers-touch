@@ -32,7 +32,7 @@ Do not use this playbook for small bug fixes, local copy changes, or narrow comp
 
 - [ ] Identify the affected domain and platforms.
 - [ ] Read `docs/README.md` to find the formal documentation layer.
-- [ ] If the work touches Desktop, read `docs/.agent/desktop.md` and its linked source documents.
+- [ ] If the work touches Desktop, read `docs/development/platforms/desktop.md` and its linked source documents.
 - [ ] If the work is architecture landing, migration, or domain decomposition, use the architecture execution methodology.
 
 ## Steps

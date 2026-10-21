@@ -15,7 +15,8 @@ The **operational knowledge layer** captures the kind of project knowledge that 
 - Things that **describe how to do recurring work** without prescribing implementation.
 - Project-specific **terminology** that isn't in any standard glossary.
 
-This sits **below** architecture / design and **above** code comments in the documentation source hierarchy (see `AGENTS.md §3`):
+This sits **below** architecture and platform contracts and **above** code
+comments in the [documentation source hierarchy](../README.md#source-hierarchy):
 
 ```
 Architecture        — what / why at the system level     (docs/architecture/)
@@ -143,6 +144,16 @@ Pick one based on intent:
 - **"I want to do task class Y"** → check `playbooks/` first.
 - **"I'm reviewing a PR that touches federation"** → start with `invariants/relay-readloop-discipline.md` and `invariants/locator-publisher-symmetry.md`.
 - **"What does term Z mean in this project?"** → `glossary.md`.
+
+Always check frontmatter before reading the body:
+
+- `status: active` is current operational knowledge.
+- `status: superseded-by:...` is history only, has an empty `owns:` list, and
+  must not constrain current work even when its retained body uses words such
+  as MUST.
+
+Agents load entries through `owns:` matching. Humans should use the active
+index below rather than browsing filenames as if every file were current.
 
 ---
 

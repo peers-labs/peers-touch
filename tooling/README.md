@@ -1,29 +1,30 @@
 # Tooling
 
-统一的工程入口目录，负责管理 station、desktop、mobile 三个领域的公共任务编排。
+Repository-owned development, verification, build, release, and agent
+automation lives here.
 
-## 目标
+This directory is not the developer entrypoint. Start from
+[Develop Peers-Touch](../docs/development/README.md) and discover public
+commands with `make help` or `tooling/dev.ps1 help`.
 
-- 统一命令语义：lint / test / build / gen / doctor
-- 本地与 CI 保持同构
-- 通过领域路由减少跨栈心智成本
+## Owners
 
-## 使用
+- `devctl/`: cross-platform Profile, diagnostics, Station, and Desktop
+  lifecycle.
+- `make/`: thin Make adapters and command help.
+- `scripts/local-dev/`: machine registry, leases, optional task state, and
+  remaining platform-specific runtime helpers.
+- `acceptance/`: formal product evidence framework.
+- `distribution/`: Station and Desktop release assets and lifecycle.
+- `docker/`: shared development and Acceptance container definitions.
+- `scripts/review/`: deterministic review routing and checks.
+- `skills/`: canonical project Agent Skills.
 
-PowerShell:
+## Rules
 
-```powershell
-.\tooling\scripts\pt.ps1 list
-.\tooling\scripts\pt.ps1 doctor
-.\tooling\scripts\pt.ps1 test station
-.\tooling\scripts\pt.ps1 build desktop
-```
-
-Bash:
-
-```bash
-./tooling/scripts/pt.sh list
-./tooling/scripts/pt.sh doctor
-./tooling/scripts/pt.sh test station
-./tooling/scripts/pt.sh build desktop
-```
+- Public command semantics have one owner.
+- Make, PowerShell, package scripts, and CI forward to that owner.
+- Component scripts do not become alternative project-wide workflows.
+- Runtime artifacts and evidence stay outside the source tree.
+- Component READMEs describe internals; shared setup and workflow remain under
+  `docs/development/`.

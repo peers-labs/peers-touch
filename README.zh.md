@@ -1,74 +1,54 @@
-# [WIP] Peers-Touch
+# Peers-Touch
 
-Peers-Touch 专注于构建去中心化社交网络与 AI 服务框架。在 PT（Peers-Touch）网络中，用户可创建独立账号、发布内容、与他人互动，而所有数据流转不经过中心化服务器；更能通过低代码工具像搭积木一样构建个性化移动应用，直接部署到自己的设备，并无缝集成自定义 AI 能力。核心价值在于：在不牺牲现代互联网便利性的前提下，让用户彻底掌控自己的社交数据与 AI 交互隐私，拒绝大厂对个人数据的强制分析与滥用。
+Peers-Touch 是一个由用户自己掌控身份、关系、消息与内容的联邦社交产品。每个用户
+运行或加入一台 Home Station；不同 Station 通过开放协议互联，Desktop 与 Mobile
+作为原生客户端访问自己的数据和社交网络。
 
-## Monorepo 领域划分
+## 当前状态
 
-- `station`：后端领域（Go）
-- `desktop`：桌面端领域（Tauri + TypeScript + CSS）
-- `mobile`：移动端领域根目录，当前 Flutter 主实现位于 `client/mobile`
-- `model`：跨端共享协议与模型
-- `tooling`：统一任务编排与工程工具
+Peers-Touch 仍在开发中，目前没有经过验证的公开稳定版、可直接下载的 Desktop
+安装包或托管 Station。普通用户安装路径将在首个稳定 Release 发布后开放。
 
-## 统一命令入口
+`AGENTS.md` 和 `tooling/skills/` 仅服务于源码开发，不是用户安装 Peers-Touch 的
+前置条件。
 
-```powershell
-make list
-make station-test
-make desktop-build
-make desktop-tauri-dev
-make mobile-lint
+## 从源码开发
+
+macOS/Linux 的本地路径会启动一套私有 Compose Station 和原生 Desktop：
+
+```bash
+corepack enable
+corepack prepare pnpm@9.12.0 --activate
+make profile-init local
+make profile local
+make doctor
+make desktop
 ```
 
-## 为什么需要这个项目
+环境要求：
 
-我们生活在一个被大型科技公司主导的世界中，个人信息往往成为强制提交的内容。比如我们的社交平台浏览记录、聊天记录、兴趣数据等，都会被用于 AI 数据分析，进而吸引我们持续投入时间，或者向我们推送广告。
+- Node.js 22 与 pnpm 9.12.0；
+- Rust、Cargo、`protoc` 和当前系统的 Tauri 前置依赖；
+- Docker 与 Docker Compose v2；
+- Station 源码开发额外需要 Go 1.24.10。
 
-我们的愿景是建立一个没有强制性、霸权性 AI 和大数据的世界——一个以人为本、隐私至上的地方。
+Windows 使用同一 `devctl` 实现的 PowerShell 入口：
 
-在这个理想的世界中，每个人都尊重他人的个人信息，没有隐藏的实体分析我们的数据，没有人侵犯我们的个人生活或追踪我们的私人活动。
+```powershell
+.\tooling\dev.ps1 profile init local --slot 0
+.\tooling\dev.ps1 profile activate local
+.\tooling\dev.ps1 doctor
+.\tooling\dev.ps1 desktop start
+```
 
-这是对隐私回归的呼唤，强调个人边界应该被尊重和守护，倡导以自愿、非强制的方式使用 AI 与社交软件。
+完整开发提纲见 [Develop Peers-Touch](docs/development/README.md)，其中包含环境、
+平台阅读顺序、统一研发流程、验证和 Agent 协作。当前命令使用 `make help` 查询。
 
-## 愿景
+## 架构入口
 
-在构建一个免受侵入性、普遍性 AI 和大数据侵扰的世界时，我们的主要目标是满足人类的基本需求，特别是在个人隐私和个人自由方面。这个世界将致力于维护以下核心价值观：
-
-* **自由**：确保每个人都可以自由表达和行动，而不被监控或分析
-* **尊重**：在这个网络中，每个人的个人信息都得到尊重，未经许可不得访问或使用
-* **安全**：保护个人免受数据泄露和隐私侵犯的威胁，确保个人信息的安全
-* **归属感**：通过保护个人隐私和鼓励相互尊重，促进更健康、更有凝聚力的社交关系
-* **目标**：让每个人在免受外部监控约束的环境中，自由追求个人意义和目标
-* **成就**：在保障隐私和自由的环境中，支持个人追求成就和实现潜能
-* **先进**：不失现代互联网便利性，提供去中心化的个性化功能扩展，不依靠大企业，也能实现个人app平台
-
-通过这样一个注重隐私的网络，我们旨在创建一个尊重和保护个人权利的社会，让每个人都能在没有不必要的外部干扰下安全地实现潜能。这是对当前技术侵犯隐私的直接回应，也是对更加人性化社会的追求。
-
-## 设计
-
-### ActivityPub 协议
-
-Peers 基于 ActivityPub 协议构建，这是一个去中心化的社交协议，允许用户在不同的社交网络之间进行互动。
-
-### 记忆
-
-Peers Touch 拥有多样化的数据存储能力，将AI使用的多模态数据保存起来，随时转化为AI Prompt，形成个人的AI智能体记忆。
-
-### MVP Flow
-
-## Features
-
-## References
-
-Thanks for those friend projects:  <br />
-* [go-fed](https://github.com/go-fed/activity): I learn some implementation ideas from this project. <br />
-  * [apcore](https://github.com/go-fed/apcore) 
-* [go-ap](https://github.com/go-ap/activitypub): This has truly inspired me to design innovative models and has significantly streamlined my workflow, saving me an immense amount of time. <br />
-* [go-micro](https://github.com/micro/go-micro): An excellent framework with powerful design. And earlier years, I was a maintainer of it. Reference to this design saves us a lot of time on How I Should Design The Network Interface. Actually, distributed terminals that running in cloud are also parts of a Cloud-Microservice system.  <br />
-* [hertz](https://github.com/cloudwego/hertz) : A high-performance HTTP framework serves as our default federation HTTP server, optimized for efficient and robust handling of network traffic. <br />
-* [taipei-torrent](https://github.com/jackpal/Taipei-Torrent): A Torrent client in golang. <br />
-* [libp2p](https://github.com/libp2p/go-libp2p): A famous peer-to-peer networking stack. <br />
-* [some-papers-docs](https://xorro-p2p.github.io/resources/): Some papers and docs. <br />
-
-## Acknowledgements
-
+- [项目身份](docs/global/project-identity.md)
+- [系统架构](docs/global/architecture.md)
+- [领域模型](docs/global/domain-model.md)
+- [架构总览](docs/architecture/README.md)
+- [开发知识库](docs/development/README.md)
+- [操作知识](docs/knowledge/README.md)

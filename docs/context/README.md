@@ -150,7 +150,7 @@ When moving documents here, add metadata at the top:
 - [Project Identity](../global/project-identity.md) - What is Peers-Touch?
 - [Architecture Overview](../global/architecture.md) - System architecture
 - [Docs Entry](../README.md) - Start here for document layering and navigation
-- [Extended Index](../meta/INDEX.md) - Complete directory index
+- [Development Entry](../development/README.md) - Shared development knowledge
 
 ---
 

@@ -38,7 +38,7 @@ function contextHeader(root) {
   return [
     'Peers-Touch project guidance',
     `workspace=${path.basename(root)}`,
-    'workflow=docs/global/workflow.md',
+    'workflow=docs/development/workflow.md',
     'knowledge=docs/knowledge/README.md',
     'skills=tooling/skills',
     'Hook context is advisory; operation permissions remain at concrete runtime and delivery entrypoints.',

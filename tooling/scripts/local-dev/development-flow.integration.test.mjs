@@ -82,7 +82,7 @@ function taskInput(scope, taskId, overrides = {}) {
   return {
     workspaceRoot: scope.root,
     taskId,
-    northStarRef: 'docs/global/workflow.md',
+    northStarRef: 'docs/development/workflow.md',
     contribution: `Observable contribution for ${taskId}.`,
     goal: `Complete ${taskId}.`,
     ...overrides,
@@ -495,12 +495,12 @@ test('FLOW-A19 consumers preserve north-star outcome and zero retired references
   try {
     const task = createTaskProgress(
       taskInput(scope, 'NORTH-STAR', {
-        northStarRef: 'docs/global/workflow.md',
+        northStarRef: 'docs/development/workflow.md',
         contribution: 'Deliver a current-source observable result.',
       }),
     );
     const residue = inspectDevelopmentFlowResidue({ repoRoot: REPO_ROOT });
-    assert.equal(task.northStarRef, 'docs/global/workflow.md');
+    assert.equal(task.northStarRef, 'docs/development/workflow.md');
     assert.equal(
       task.contribution,
       'Deliver a current-source observable result.',

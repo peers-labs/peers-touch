@@ -45,7 +45,7 @@ skill-help:
 	@echo "Project Skills and the optional advisory Hook are installed with 'make skills IDE=<host>'."
 	@echo "Remove only the project Hook with 'make skills-remove-hook IDE=<host>'."
 	@echo "User overlays: make skill-overlay-install SOURCE=<directory>."
-	@echo "See AGENTS.md §13 for details."
+	@echo "See docs/development/automation.md for details."
 	@echo ""
 
 # ─── Skills And Advisory Hooks ───────────────────────────────────

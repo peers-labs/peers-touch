@@ -1,55 +1,67 @@
 # Developer Toolchain
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-09-12 | **Updated**: 2026-09-12
+> **Version**: v2.0
+> **Updated**: 2026-10-21
 > **Owner**: Developer Infrastructure
 > **Module**: `tooling/devctl/`
 
----
+## Scope
 
-## 1. Document Scope
+This module defines the cross-platform implementation behind the public local
+development commands:
 
-This module defines:
+- Profile discovery, initialization, selection, and redacted configuration;
+- dependency diagnostics;
+- local/Compose/remote Station readiness;
+- native Desktop lifecycle;
+- owned process state and status;
+- Make, PowerShell, package, and CI adapters.
 
-- the cross-platform control plane for local Peers-Touch development;
-- ownership of profile resolution, dependency checks, process lifecycle, and
-  runtime status;
-- the relationship between `devctl`, package scripts, Make, PowerShell, and
-  legacy shell entrypoints;
-- failure and evidence contracts for Windows, macOS, and Linux development.
+It does not define:
 
-This module does not define:
+- machine-wide worktree allocation and leases, owned by
+  [Local Dev](../local-dev/README.md);
+- the end-to-end development procedure, owned by
+  [Development Workflow](../../../development/workflow.md);
+- Acceptance scheduling or evidence;
+- product behavior;
+- public release installation.
 
-- Station or Desktop product behavior;
-- Acceptance Runtime Cell provisioning;
-- remote deployment topology or credentials;
-- release packaging and signing.
+## Public Contract
 
-## 2. Implementation
+macOS/Linux uses Make:
 
-The daily profile, diagnostic, check, Station, and Desktop lifecycle is
-implemented once in `tooling/devctl/` as dependency-light Node ESM. Windows
-uses `tooling/dev.ps1`; Make and package scripts forward to the same command
-contract. Legacy shell workflows remain only for explicitly out-of-scope
-Relay, Mobile iOS, remote deployment, and log-tail operations.
+```bash
+make profile-init local
+make profile local
+make doctor
+make station
+make desktop
+```
 
-## 3. Design Goals
+Windows uses `tooling/dev.ps1` with the same `devctl` command model. Wrappers
+forward arguments and exit status; they do not own lifecycle policy.
 
-1. Provide one platform-neutral command contract for local development.
-2. Preserve profile isolation and fail closed on ambiguous configuration.
-3. Make process ownership and cleanup explicit and inspectable.
-4. Keep Make and PowerShell as thin adapters, not competing implementations.
-5. Prove Windows behavior in CI and preserve equivalent Unix behavior.
-6. Remove legacy shell ownership after all consumers migrate.
+## Design Goals
 
-## 4. Document Navigation
+1. One cross-platform implementation per command.
+2. Explicit Profile and machine binding; no ambient fallback.
+3. Private, non-overwriting local bootstrap.
+4. Owned-process-only stop and restart.
+5. Native Desktop as the only Desktop development runtime.
+6. Typed, actionable failures and redacted diagnostics.
+7. Exact-source readiness for remote Station reuse.
 
-| Document | Purpose |
-|---|---|
-| [design.md](./design.md) | Architecture, boundaries, contracts, and quality gates |
-| [decisions.md](./decisions.md) | Accepted architecture decisions |
-| [data-model.md](./data-model.md) | Profile and runtime-state schemas |
-| [module-layout.md](./module-layout.md) | Target source layout and ownership |
-| [integration.md](./integration.md) | Existing-system mapping and migration |
-| [execution plan](./execution-plans/20260912-cross-platform-devctl.md) | Ordered delivery closures and acceptance scenarios |
+## Documents
+
+- [design.md](./design.md): ownership, command flow, and failure semantics.
+- [decisions.md](./decisions.md): current decisions and superseded workflow
+  coupling.
+- [data-model.md](./data-model.md): Profile and managed-process records.
+- [module-layout.md](./module-layout.md): source ownership.
+- [integration.md](./integration.md): wrappers, Local Dev, and migration
+  boundaries.
+
+The old execution plan under `execution-plans/` is historical delivery input.
+It does not override this active module.

@@ -249,7 +249,7 @@ Provisioner prepares durable resources
 | `apps/desktop/src/main.tsx` | 小改 | 改为动态 import registry 而非硬编码 chat harness |
 | `tooling/scripts/applet-*.mjs` | 小改 | 增加 `--json` 输出 flag，核心逻辑不变 |
 | `tooling/scripts/acceptance-run.py` | 架构扩展 | 按 environment contract 调用 Provisioner，区分 blocked 与 product failure |
-| `tooling/scripts/local-dev/profile.sh` | 小改 | 激活前校验文件名与 `PT_DEV_PROFILE`，输出 resolved identity |
+| `tooling/devctl/profile.mjs` | 小改 | 选择前校验文件名与 `PT_DEV_PROFILE`，输出 resolved identity |
 | `tooling/scripts/local-dev/station-status.sh` / deployment tooling | 架构扩展 | 由实际运行时生产 Station attestation |
 | `tooling/acceptance/fixtures/chat_native_reset.py` | 重构 | 产出 actor manifest，声明 reset target、初始状态和 teardown |
 | `tooling/acceptance/registry.yaml` | 契约修正 | receipt 等 receiver-visible 路径选择 Native two-client Gate |

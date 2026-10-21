@@ -244,25 +244,24 @@ class DevRuntimeProfileResolutionTest(unittest.TestCase):
 
     def test_profile_selection_updates_machine_binding_without_symlink(self) -> None:
         make_src = self.source("tooling/make/local-dev.mk")
-        profile_src = self.source("tooling/scripts/local-dev/profile.sh")
         self.assertIn(
             "@node $(MACHINE_DEV_SCRIPT) select \\",
             make_src,
         )
         self.assertIn('--profile "$(PROFILE_ARG)" \\', make_src)
         self.assertIn('--owner "$(ENV_OWNER_ARG)"', make_src)
-        self.assertIn("profile.sh {init|list}", profile_src)
-        self.assertNotIn("activate)", profile_src)
-        self.assertNotIn("ln -sfn", profile_src)
+        self.assertIn(
+            '@$(DEVCTL) profile init "$(PROFILE_ARG)" --slot "$(SLOT_ARG)"',
+            make_src,
+        )
+        self.assertNotIn("ln -sfn", make_src)
 
     def test_profile_init_directly_creates_non_overwriting_local_profile(self) -> None:
-        src = self.source("tooling/scripts/local-dev/profile.sh")
+        src = self.source("tooling/devctl/profile.mjs")
         self.assertNotIn("AUTHORIZATION_SCRIPT", src)
-        self.assertIn(
-            "profile-init never overwrites an existing environment",
-            src,
-            "profile-init must not overwrite an existing local Profile",
-        )
+        self.assertIn("Profile already exists", src)
+        self.assertIn("PEERS_AUTH_SECRET", src)
+        self.assertIn("PEERS_DB_PASSWORD", src)
 
     def test_remote_deploy_resolves_reviewed_env_repository_definition(self) -> None:
         src = self.source("tooling/scripts/deploy/deploy.sh")
