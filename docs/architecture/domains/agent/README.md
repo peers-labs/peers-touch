@@ -59,7 +59,7 @@ WebView renderer、Desktop Rust、Station 的 Agent 能力边界、设计目标�
 
 当前执行入口为
 [Linux Desktop 与 Agent 深度闭环](./execution-plans/20261020-agent-depth-linux-desktop/plan.md)：
-在不增加 AgentBox CUT 能力的前提下，完成 Linux 用户态 Native 安装、
+在不增加基准客户端 CUT 能力的前提下，完成 Linux 用户态 Native 安装、
 类型化 AgentDefinition、Station-backed Commands & Skills 和 Turn Attribution。
 
 [Agent Chat Production Acceptance](./execution-plans/20261018-agent-chat-acceptance/plan.md)

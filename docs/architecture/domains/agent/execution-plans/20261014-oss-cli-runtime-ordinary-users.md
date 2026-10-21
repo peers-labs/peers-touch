@@ -5,12 +5,12 @@
 > `../provider-runtime-strategy.md` 与 `../modules/provider-model/peers-design.md`；
 > CLI 检查、发现、执行和目录均由 Station 持有，Desktop 不执行本地 Provider 子进程。
 > 取代/收敛方向：`../provider-runtime-strategy.md`（2026-07-29，开发者视角的 direct/cli 双通道）中面向普通用户的部分；其 CLI 子进程管道与 actor 隔离实现保留复用。
-> Benchmark：AgentBox（`gdpa-agent-box-workspace`），源码取证于本文第 3 节。
+> Benchmark：基准客户端（参考工作区 `reference-client-workspace`），源码取证于本文第 3 节。
 
 ## 1. 决策背景（Owner 2026-10-14）
 
 - 自研模型接入/执行层成本高、出活慢；**底层依赖 codex 等开源 CLI agent**，我们做产品层（Agent、会话、编排、渠道、凭据托管）。
-- Provider 重新设计，**以 AgentBox 的 runtime 模型为准**。
+- Provider 重新设计，**以基准客户端的 runtime 模型为准**。
 - 去掉「较高级的使用方式」：普通用户不接触 provider、API key、executor、effort、fallback 这些概念。
 
 ## 2. 目标与非目标
@@ -28,7 +28,7 @@
 - 不做 CLI 二进制的版本市场/沙箱容器化（沿用现有「整机共享一份已装 CLI」约束）。
 - 普通界面不暴露多 provider 账号切换、temperature、自定义 base_url。
 
-## 3. AgentBox 事实（源码取证，作为重设计基准）
+## 3. 基准客户端事实（源码取证，作为重设计基准）
 
 | 事实 | 证据 |
 |---|---|
@@ -79,7 +79,7 @@ executors:
 
 ### 4.3 Bootstrap 状态机（新增，普通用户的核心体验）
 
-对齐 AgentBox 四态，并定义用户看到的语言与动作：
+对齐基准客户端四态，并定义用户看到的语言与动作：
 
 | 状态 | 用户看到 | 唯一主动作 |
 |---|---|---|
@@ -95,7 +95,7 @@ executors:
 ### 4.4 配置归属
 
 - **Agent 级默认**（Agent Profile → Runtime，简化版）：默认只露「回答质量：自动/更强」；executor/model/fallback 折叠进「高级（开发者）」。
-- **会话级覆盖**：composer runtime pill 改的是当前 session（与 AgentBox 一致）；新会话回到 Agent 默认。
+- **会话级覆盖**：composer runtime pill 改的是当前 session（与基准客户端一致）；新会话回到 Agent 默认。
 - **凭据**：优先 CLI 自身登录态；需要 key 的执行器走 Station 凭据池（沿用 `agent_credential_pool` 与 actor 隔离），未来提供「Peers 托管凭据」通道；普通用户界面永远不出现 key 输入框（首次通过引导流完成）。
 
 ### 4.5 与现有 `provider-runtime-strategy.md` 的关系

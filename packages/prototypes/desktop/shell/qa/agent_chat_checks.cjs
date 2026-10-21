@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Browser proof for the approved Peers Agent Chat scope and AgentBox interaction benchmark.
+// Browser proof for the approved Peers Agent Chat scope and reference-client interaction benchmark.
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
@@ -50,7 +50,7 @@ const source = {
 const results = [];
 const errors = [];
 const operationCoverageByCheck = {
-  'Agent roster keeps stable ownership and AgentBox-style row actions': [
+  'Agent roster keeps stable ownership and reference-client-style row actions': [
     'agent.roster.persistent',
     'agent.search',
     'agent.row.switches-to-chat',
@@ -182,7 +182,7 @@ const operationCoverageByCheck = {
     'topic.switch',
     'draft.topic-restore',
   ],
-  'Wide, compact and mobile topology matches observed AgentBox behavior': [
+  'Wide, compact and mobile topology matches observed reference-client behavior': [
     'layout.wide-roster-topic-chat',
     'layout.compact-rails',
     'layout.mobile-chat',
@@ -276,7 +276,7 @@ async function main() {
       exact: true,
     });
 
-    await check('Agent roster keeps stable ownership and AgentBox-style row actions', async () => {
+    await check('Agent roster keeps stable ownership and reference-client-style row actions', async () => {
       assert.equal(Math.round((await roster().boundingBox()).width), 230);
       assert.equal(Math.round((await topics().boundingBox()).width), 238);
       await roster().getByRole('textbox', { name: 'Search agents' }).fill('Second');
@@ -946,7 +946,7 @@ async function main() {
       assert.equal(await composer().inputValue(), 'Topic-owned draft');
     });
 
-    await check('Wide, compact and mobile topology matches observed AgentBox behavior', async () => {
+    await check('Wide, compact and mobile topology matches observed reference-client behavior', async () => {
       await page.setViewportSize({ width: 1600, height: 1000 });
       await page.waitForFunction(() => document.querySelector('[data-testid="desktop-shell-agent-chat"]')?.clientWidth > 1040);
       let geometry = await root.evaluate((element) => ({
@@ -1039,16 +1039,16 @@ async function main() {
 main().then(() => {
   const operations = operationCoverage();
   fs.writeFileSync(path.join(evidence, 'results.json'), JSON.stringify({
-    classification: 'PROTOTYPE_AGENT_CHAT_SCOPE_AND_AGENTBOX_PARITY_CHECK',
+    classification: 'PROTOTYPE_AGENT_CHAT_SCOPE_AND_REFERENCE_CLIENT_PARITY_CHECK',
     benchmark: {
-      runtime: 'AgentBox #6 at http://127.0.0.1:8436',
+      runtime: 'reference client #6 at http://127.0.0.1:8436',
       evidence: [
-        '/tmp/agentbox-1440-chat.png',
-        '/tmp/agentbox-roster-expanded.png',
-        '/tmp/agentbox-430-topics-ready.png',
-        '/tmp/agentbox-430-agent-picker-ready.png',
-        '/tmp/agentbox-430-agent-menu.png',
-        '/tmp/agentbox-430-agent-profile.png',
+        '/tmp/reference-client-1440-chat.png',
+        '/tmp/reference-client-roster-expanded.png',
+        '/tmp/reference-client-430-topics-ready.png',
+        '/tmp/reference-client-430-agent-picker-ready.png',
+        '/tmp/reference-client-430-agent-menu.png',
+        '/tmp/reference-client-430-agent-profile.png',
       ],
     },
     source,

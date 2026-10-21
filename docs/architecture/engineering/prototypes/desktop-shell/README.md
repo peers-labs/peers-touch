@@ -39,7 +39,7 @@ pnpm dev            # Vite，浏览器打开 localhost:3105
 
 ## Agent 模块集成
 
-- 操作生命周期对齐清单（AgentBox 双侧走查 + 处置 + 证据）：[agent-chat-coverage.md](agent-chat-coverage.md)，逐行更新，是本轮设计完成度的唯一核对表。
+- 操作生命周期对齐清单（基准客户端双侧走查 + 处置 + 证据）：[agent-chat-coverage.md](agent-chat-coverage.md)，逐行更新，是本轮设计完成度的唯一核对表。
 - Shell 的 `agent` / `agent-profile` 路由挂载 `src/AgentChatPage.tsx`（多 Agent 名册 + 会话工作台，Profile 为页内 surface）。
 - Modern Chat 产品评审原型位于 `packages/prototypes/desktop/features/modern-chat-agent/`，由 Shell 评审态挂载；历史 benchmark 原型不参与产品身份。
 
@@ -48,7 +48,7 @@ pnpm dev            # Vite，浏览器打开 localhost:3105
 按 live walkthrough（`http://127.0.0.1:8436` 参考实例）+ Quiet Protocol Minimalism 重设。
 内置一个普通 Agent（显示名即 **Agent**，assistant 只是消息角色、不再作为产品名；
 旧 localStorage 中未改名的 `Assistant` 种子读时自动归一，用户自改名保留），不预置专家 Agent；
-用户可 **Create Local** 自建普通 Agent（对齐 AgentBox）。
+用户可 **Create Local** 自建普通 Agent（对齐基准客户端）。
 结构为「常驻 Agent 名册 + Chat 专属 Topic rail + 连续对话」：
 
 - 展开 rail 默认就是 **My Agents**，不再先显示“当前 Agent 卡片 + Search chats”：头部只有标题与一个 `+`
@@ -78,7 +78,7 @@ pnpm dev            # Vite，浏览器打开 localhost:3105
   图片限制 PNG/JPEG/WebP/GIF、2 MB；Upload 必须经过预览后 Save，Cancel 不改动已保存头像。
   对话标题栏不再重复 Agent 头像和描述；左侧只显示当前 Topic 标题，右侧是会话正文搜索。
   搜索匹配消息正文、附件名、提问和产物标题，可上/下一处定位并高亮当前命中；AI/Skill 标题栏快捷按钮暂不展示。
-- Create Local（**瞬时创建，无阻塞表单，批次 17 对齐 AgentBox**）：My Agents 头部 `+`
+- Create Local（**瞬时创建，无阻塞表单，批次 17 对齐基准客户端**）：My Agents 头部 `+`
   打开 **Create Local / Create Orchestrator** 菜单（Import×2/From Hub 无合同 CUT）。Create Local
   立即写名册（自动唯一名 `New Agent` / `New Agent N`）、激活该 Agent 并打开其 **Profile Builder 工作区**；
   名称/描述/SOUL/AGENTS/头像/Extensions 自动保存，成功或失败使用 Shell 通用 Toast 通知，
@@ -89,7 +89,7 @@ pnpm dev            # Vite，浏览器打开 localhost:3105
   的内存线程/草稿/定时器全部清除，活动面回落内置 Agent；内置 Agent 不可删。置顶/排序/Hub/Import/Duplicate
   无后端合同，CUT，不放假入口。
   正在编辑的 Agent 被删除后，Profile 的最后一次保存遵守名册实体生命周期，不重新创建已删除的草稿键。
-- Profile Builder 分 **Identity / Extensions** 两个 Tab：Identity 使用 AgentBox 同轴布局：
+- Profile Builder 分 **Identity / Extensions** 两个 Tab：Identity 使用基准客户端同轴布局：
   左轴固定 64px；Back 为 36×36、头像本体为 64×64 且无二层按钮框，两者左边界一致；
   头像与 64px 描述框顶边一致，名称/描述占同一右轴，SOUL/AGENTS 双栏填满剩余高度。
   头像点击打开 Emoji/Upload 锚定选择器；Identity 不承担模型配置。
@@ -114,7 +114,7 @@ pnpm dev            # Vite，浏览器打开 localhost:3105
   - **Tool approval**：展示 tool/category/参数预览与 Pending/Executed/Cancelled；
     Cancel/Run tool 均保留终态卡，写入 Agent system receipt，再由 Agent 自动续跑。
 - 阅读位置合同：流式/门控决议/续答时仅在用户钉底（距底 <48px）时自动滚到底，用户上滚读历史不被拽回。
-- Composer 遵循 grounded chat composer 合同，且与 AgentBox `ChatInput` 同构（源码事实
+- Composer 遵循 grounded chat composer 合同，且与基准客户端 `ChatInput` 同构（源码事实
   `DEFAULT_LEFT_ACTIONS=["slash","upload"]`）：左侧 **`/` 命令**（列出该 Agent 已启用的 skill/MCP，
   点击插入 `/token`，无启用项的按钮直达 Profile→Extensions）+ **回形针附件**（原生文件选择、可删除 chip；
   切换后按会话恢复，发送后作为消息元数据回显）；
@@ -139,7 +139,7 @@ pnpm dev            # Vite，浏览器打开 localhost:3105
   Esc 还焦；改名 Enter 提交/Esc 丢弃（Esc 不被 blur-commit 反提交）后还焦；
   审批卡出现焦点落 Deny（安全默认）；Copy/Regenerate 经 :focus-within 显形；
   统一 :focus-visible 品牌焦点环。证据 `cdp-24~28`。
-- 长内容（对齐 AgentBox 同源机制）：正文/气泡/门控文本 `overflow-wrap:anywhere`；长 URL、inline code、
+- 长内容（对齐基准客户端同源机制）：正文/气泡/门控文本 `overflow-wrap:anywhere`；长 URL、inline code、
   长命令 `pre-wrap + break-all` 全文换行不裁切（待批准命令与审计记录必须完整可读）；产物卡 title/meta
   单行 ellipsis；长答案纵向滚动，六阶段横向溢出扫描零命中。`?agentStress=1`（配合 review=1）注入单 turn
   压力内容（生产复制剔除）；证据 `cdp-29~34`。
@@ -157,7 +157,7 @@ pnpm dev            # Vite，浏览器打开 localhost:3105
   composer placeholder/aria。Configure/Activity 模式（Tasks/Memories/Diagnostics）与
   Capabilities/Workspace tab 全部 CUT——无真实数据，旧内容为硬编码 mock，且绑定/文件系统是
   Station 开发者面；死控件 AI Rewrite 同步移除。
-- 全部为原型本地状态机；L1/L2/L3 当前证据、AgentBox disposition、截图清单、
+- 全部为原型本地状态机；L1/L2/L3 当前证据、基准客户端 disposition、截图清单、
   121 个操作合同与未证明边界统一记录在
   [agent-chat-coverage.md](agent-chat-coverage.md)，不再维护第二套历史 cdp 结论。
 
@@ -166,7 +166,7 @@ pnpm dev            # Vite，浏览器打开 localhost:3105
 Pinned / All Agents，旧 Search chats 默认面不存在。Profile 保留名册且不挂载 Topic rail。
 compact 根容器为 48px Agent rail + 48px Topic rail + 主对话；ultra-narrow 为 chat-only，
 Back → Topic list → Switch Agent 左侧全高抽屉。全部视口横向溢出为 0。
-source-bound AgentBox parity 结果位于 `/tmp/pt-provider-usable-filter/`。
+source-bound reference-client parity 结果位于 `/tmp/pt-provider-usable-filter/`。
 
 可重复执行的 Agent 回归入口：`node packages/prototypes/desktop/shell/qa/agent_chat_checks.cjs`。
 依赖 Playwright 和 Chromium，允许 `CHROMIUM_PATH`、`AGENT_CHAT_URL`、`AGENT_CHAT_EVIDENCE` 覆盖环境。
@@ -175,7 +175,7 @@ Topic 新建/切换/Pin/同栏标题搜索/Edit/单删/批量删除、Direct/CLI
 会话正文搜索定位、request-user-input、tool approval 两种决议与续跑、Stop/typed error、基础 artifact、
 跨 Agent/Topic 草稿、wide/compact/mobile 左抽屉与 reduced-motion；
 输出包含 Git commit、源码文件 SHA-256、结果及截图，
-归类为 `PROTOTYPE_AGENT_CHAT_SCOPE_AND_AGENTBOX_PARITY_CHECK`，不代表 Station/native Acceptance。
+归类为 `PROTOTYPE_AGENT_CHAT_SCOPE_AND_REFERENCE_CLIENT_PARITY_CHECK`，不代表 Station/native Acceptance。
 
 2026-10-14 当前操作复核见 [覆盖清单](agent-chat-coverage.md#当前操作复核)：
 删除运行中会话后可继续发送、编辑重发保留独立草稿、产物查看和真实键盘焦点闭环均已复测。

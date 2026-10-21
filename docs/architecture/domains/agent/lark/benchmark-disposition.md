@@ -7,7 +7,7 @@
 
 ## 可核对来源
 
-AgentBox 参考仓库 `gdpa-agent-box-workspace`：
+基准客户端参考仓库 `reference-client-workspace`：
 
 - `internal/domain/larkagent/service.go`：scope 分类、用户 profile、
   `RunAsRequester`、文档预览、OAuth 与运行资产。

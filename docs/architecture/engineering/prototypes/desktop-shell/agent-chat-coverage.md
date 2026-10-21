@@ -1,4 +1,4 @@
-# Agent Chat 范围总账与 AgentBox 体验基准
+# Agent Chat 范围总账与基准客户端体验基准
 
 > 阶段：PRODUCT 原型对齐
 > 状态：confirmed
@@ -11,9 +11,9 @@
 本文件冻结 Agent Chat 原型的功能边界。
 
 - **功能范围**只来自 Peers 已确认清单。
-- **AgentBox**只作为信息架构、空间归属、交互反馈和返回路径基准。
-- AgentBox 有而清单没有的功能不得因“对齐”进入原型。
-- 清单有而 AgentBox 放在其他位置的能力，采用 AgentBox 的空间归属，不机械保留旧入口。
+- **基准客户端**只作为信息架构、空间归属、交互反馈和返回路径基准。
+- 基准客户端有而清单没有的功能不得因“对齐”进入原型。
+- 清单有而基准客户端放在其他位置的能力，采用基准客户端的空间归属，不机械保留旧入口。
 
 ## 产品论点
 
@@ -24,7 +24,7 @@ Agent 名册、Topic、对话和 Profile 必须保持清晰所有权，不能靠
 - Main subject：当前 Agent 的当前 Topic。
 - 主动作：composer 发送或停止。
 - Signature：常驻 Agent 名册与 Topic/Chat 连续工作面。
-- Positive calibration：采用 AgentBox 的栏位关系、行菜单锚定、移动端页面层级和局部反馈。
+- Positive calibration：采用基准客户端的栏位关系、行菜单锚定、移动端页面层级和局部反馈。
 - Negative calibration：拒绝底部 Agent 面板、菜单驱动的隐式跨面跳转、功能越界和开发者控制面。
 
 ## IN：确认范围
@@ -36,7 +36,7 @@ Agent 名册、Topic、对话和 Profile 必须保持清晰所有权，不能靠
 - 行点击进入该 Agent 的 Chat。
 - 行菜单仅保留 Agent 级动作：Agent Profile；非内置 Agent 额外提供 Delete。
 - 创建 Agent 后立即进入 Profile，Profile 自动保存。
-- Profile 使用 AgentBox 实测的 `64px 身份轴 + 12px 间距 + 内容轴`：Back `36×36` 与头像 `64×64` 左边界相同；头像无二层按钮框，头像顶边与 `64px` 描述框顶边相同；名称/描述左边界相同，SOUL/AGENTS 编辑器填满剩余高度。
+- Profile 使用基准客户端实测的 `64px 身份轴 + 12px 间距 + 内容轴`：Back `36×36` 与头像 `64×64` 左边界相同；头像无二层按钮框，头像顶边与 `64px` 描述框顶边相同；名称/描述左边界相同，SOUL/AGENTS 编辑器填满剩余高度。
 - 自动保存不常驻显示说明文字；名称、描述、SOUL/AGENTS、头像及扩展保存后统一通过 Shell `ToastHost` 通知，失败使用同一组件的错误态；Toast 复用 Chat 所用 LobeUI owner，并固定从右下角出现。
 - 头像支持 Emoji 与本地图片；图片仅接受 PNG/JPEG/WebP/GIF 且不超过 2 MB。头像持久化到 Agent，并同步投影到名册与 Profile。
 - Profile 的 Extensions 只显示已绑定项；Add skill / Add MCP tool 打开有搜索和分页上限的目录。
@@ -109,9 +109,9 @@ Agent 名册、Topic、对话和 Profile 必须保持清晰所有权，不能靠
 - Agent Hub、Import、Duplicate、Export bundle、Share Agent、Set default、Pin Agent。
 - executor/provider/fallback 等普通用户不应直接操作的开发者配置。
 
-## AgentBox 现场事实
+## 基准客户端现场事实
 
-真实运行时：`http://127.0.0.1:8436`，AgentBox #6。
+真实运行时：`http://127.0.0.1:8436`，基准客户端实例 #6。
 
 本轮重新实测，不使用旧推断：
 
@@ -125,16 +125,16 @@ Agent 名册、Topic、对话和 Profile 必须保持清晰所有权，不能靠
 
 现场截图：
 
-- `/tmp/agentbox-1440-chat.png`
-- `/tmp/agentbox-roster-expanded.png`
-- `/tmp/agentbox-agent-profile-route.png`
-- `/tmp/agentbox-430-topics-ready.png`
-- `/tmp/agentbox-430-agent-picker-ready.png`
-- `/tmp/agentbox-430-agent-menu.png`
-- `/tmp/agentbox-430-agent-profile.png`
-- `/tmp/agentbox-profile-1440-before.png`
-- `/tmp/agentbox-profile-avatar-picker-1100.png`
-- `/tmp/agentbox-avatar-upload.png`
+- `/tmp/reference-client-1440-chat.png`
+- `/tmp/reference-client-roster-expanded.png`
+- `/tmp/reference-client-agent-profile-route.png`
+- `/tmp/reference-client-430-topics-ready.png`
+- `/tmp/reference-client-430-agent-picker-ready.png`
+- `/tmp/reference-client-430-agent-menu.png`
+- `/tmp/reference-client-430-agent-profile.png`
+- `/tmp/reference-client-profile-1440-before.png`
+- `/tmp/reference-client-profile-avatar-picker-1100.png`
+- `/tmp/reference-client-avatar-upload.png`
 
 ## 状态所有权
 

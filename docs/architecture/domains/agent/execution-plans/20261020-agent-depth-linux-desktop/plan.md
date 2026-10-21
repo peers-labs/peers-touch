@@ -81,7 +81,7 @@ Desktop，并在同一个真实 Agent 工作面查看权威 Agent 元数据、Sk
       {"pathPrefix": "pnpm-lock.yaml", "mode": "shared-read"}
     ],
     "nonGoals": [
-      "Add AgentBox Project, Hub, Share, Duplicate, Export, Notebook or Debug surfaces",
+      "Add reference-client Project, Hub, Share, Duplicate, Export, Notebook or Debug surfaces",
       "Inject Agent display metadata into the Provider prompt",
       "Delete immutable Topic or Turn evidence through /clear",
       "Auto-install Linux system packages or require root",

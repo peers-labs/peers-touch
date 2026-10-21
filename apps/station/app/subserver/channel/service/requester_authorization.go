@@ -62,7 +62,6 @@ var requesterDomains = map[string]struct{}{
 }
 
 var managedLarkCLIIdentityEnv = map[string]struct{}{
-	"AGENT_BOX_LARK_PROFILE":            {},
 	"FEISHU_APP_ID":                     {},
 	"FEISHU_APP_SECRET":                 {},
 	"HERMES_HOME":                       {},
