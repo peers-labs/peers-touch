@@ -72,6 +72,62 @@
       }
     },
     {
+      "id": "federation-two-station-lifecycle",
+      "domain": "federation",
+      "direction": "acceptance_validates_product",
+      "features": ["federation-full-lifecycle"],
+      "required_gates": [
+        "station-federation-unit",
+        "station-access-federation-boundary-e2e",
+        "federation-two-station-lifecycle-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/station/app/subserver/federation/handler.go",
+        "apps/station/app/subserver/federation/handler_governance.go",
+        "apps/station/app/subserver/federation/application/federation_service.go",
+        "apps/station/app/subserver/federation/application/ledger_service.go",
+        "apps/station/app/subserver/federation/handler_governance.go",
+        "apps/station/app/subserver/federation/remote_fetcher.go",
+        "apps/station/app/subserver/federation/subserver.go",
+        "apps/station/app/subserver/federation/sync_manager.go",
+        "apps/desktop/src/components/settings/FederationTab.tsx",
+        "apps/desktop/src/runtimes/federationRuntime.ts",
+        "tooling/acceptance/gates/federation/two_station_lifecycle_e2e.py"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "federation_ledger_events",
+          "federation_station_membership",
+          "federation_actor_role",
+          "station_role_assignment"
+        ],
+        "surfaces": [
+          "station-four governance API",
+          "station-five-arm governance API",
+          "macOS Native Federation context"
+        ],
+        "proven_by": [
+          "station-federation-unit",
+          "station-access-federation-boundary-e2e",
+          "federation-two-station-lifecycle-e2e"
+        ],
+        "proven_scope": [
+          "create and cross-Station join",
+          "bilateral ledger and member convergence",
+          "non-owner leave and rejoin",
+          "restart replay",
+          "owner-only archive and ordinary-client context removal"
+        ],
+        "unproven_scope": [
+          "quorum policy",
+          "migration of Federation ledgers created before Station-key genesis binding",
+          "Station signing-key rotation and STATION_KEY_ROTATED replay",
+          "Mobile two-Station visual lifecycle journey",
+          "physical-device and non-macOS Desktop behavior"
+        ]
+      }
+    },
+    {
       "id": "desktop-federation-context-surface",
       "domain": "federation",
       "direction": "acceptance_validates_product",

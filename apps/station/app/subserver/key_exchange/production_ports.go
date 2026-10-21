@@ -304,6 +304,10 @@ func newCanonicalFederationPort(
 	clock systemClock,
 	localStationID string,
 ) (*canonicalFederationPort, error) {
+	resolver, err := canonicalFederationStationURLResolver()
+	if err != nil {
+		return nil, err
+	}
 	outbox, err := federationdelivery.NewGORMRepository(db, clock)
 	if err != nil {
 		return nil, err
@@ -316,10 +320,29 @@ func newCanonicalFederationPort(
 		outbox:         outbox,
 		keys:           keys,
 		client:         &http.Client{Timeout: keyExchangeFederationRequestTimeout},
+		resolver:       resolver,
 		relay:          federationruntime.LiveRelayAccess{},
 		clock:          clock,
 		localStationID: localStationID,
 	}, nil
+}
+
+func canonicalFederationStationURLResolver() (
+	federationruntime.StationURLResolver,
+	error,
+) {
+	instance := server.GetOptions().SubserverInstances["federation"]
+	resolver, ok := instance.(federationruntime.StationURLResolver)
+	if !ok || resolver == nil {
+		return nil, domain.NewError(
+			domain.ErrorCodeDependency,
+			"key_exchange.federation.resolve_station_url",
+			"federation",
+			"canonical Station URL resolver is unavailable",
+		)
+	}
+
+	return resolver, nil
 }
 
 func (p *canonicalFederationPort) EnqueueDirectKeyExchange(

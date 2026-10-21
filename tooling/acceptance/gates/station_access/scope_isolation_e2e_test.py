@@ -129,6 +129,12 @@ class _FakeRuntime:
 
 
 class StationAccessScopeIsolationGateTest(unittest.TestCase):
+    def test_uses_current_evidence_store_run_for_all_artifacts(self) -> None:
+        gate = StationAccessScopeIsolationGate(runtime=_FakeRuntime())
+
+        self.assertIsNone(gate.report_path)
+        self.assertIsNone(gate.evidence_dir)
+
     def test_projects_station_access_identity(self) -> None:
         gate = StationAccessScopeIsolationGate(runtime=_FakeRuntime())
         self.assertEqual(gate.gate_id, GATE_ID)

@@ -138,6 +138,22 @@ class IOSOAuthCallbackRegistrationTest(unittest.TestCase):
 
 
 class IOSProjectGenerationTest(unittest.TestCase):
+    def test_system_configuration_framework_is_linked(self) -> None:
+        project_spec = yaml.safe_load(
+            PROJECT_SPEC_PATH.read_text(encoding="utf-8")
+        )
+        dependencies = project_spec["targets"][
+            "peers-touch-mobile_iOS"
+        ]["dependencies"]
+        self.assertIn(
+            {"sdk": "SystemConfiguration.framework"},
+            dependencies,
+        )
+        self.assertIn(
+            "SystemConfiguration.framework in Frameworks",
+            PBX_PROJECT_PATH.read_text(encoding="utf-8"),
+        )
+
     def test_committed_xcode_project_matches_current_inputs(self) -> None:
         xcodegen = shutil.which("xcodegen")
         self.assertIsNotNone(xcodegen, "xcodegen is required for iOS project checks")

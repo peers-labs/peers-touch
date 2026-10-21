@@ -45,6 +45,14 @@ from tooling.acceptance.gates.mobile.simulator_runtime_binding import (
 ENVIRONMENT_ID = "chat-mixed-native"
 STATION_ACCESS_ENVIRONMENT_ID = "station-access-native"
 STATION_ACCESS_GATE_IDS = STATION_ACCESS_NATIVE_GATE_IDS
+FEDERATION_LIFECYCLE_GATE_ID = "federation-two-station-lifecycle-e2e"
+FEDERATION_LIFECYCLE_ENVIRONMENT_ID = "cross-station-social-native"
+SOCIAL_CROSS_STATION_MIXED_GATE_ID = (
+    "social-cross-station-mobile-desktop-e2e"
+)
+SOCIAL_CROSS_STATION_MIXED_ENVIRONMENT_ID = (
+    "social-cross-station-mobile-desktop"
+)
 DESKTOP_RUNTIME = "native-tauri"
 MOBILE_RUNTIME = "tauri-ios-simulator"
 POLL_INTERVAL_SECONDS = 0.25
@@ -80,11 +88,7 @@ def load_mixed_runtime_manifest(
     if not raw_path:
         raise GateError("PT_ACCEPTANCE_RUNTIME_MANIFEST is required")
     manifest = load_runtime_manifest(Path(raw_path), gate_id)
-    environment_id = (
-        STATION_ACCESS_ENVIRONMENT_ID
-        if gate_id in STATION_ACCESS_GATE_IDS
-        else ENVIRONMENT_ID
-    )
+    environment_id = _environment_id_for_gate(gate_id)
     if manifest.get("environmentId") != environment_id:
         raise GateError(
             f"Mixed native Gate requires the {environment_id} environment"
@@ -96,11 +100,17 @@ def load_mixed_runtime_manifest(
         repo_root=REPO_ROOT,
         worktree=REPO_ROOT,
     ).read_json(ArtifactRef.from_dict(actor_ref))
-    actor_manifest_kind = (
-        "station-access-native-actor-manifest"
-        if gate_id in STATION_ACCESS_GATE_IDS
-        else "chat-mixed-native-actor-manifest"
-    )
+    actor_manifest_kind = {
+        STATION_ACCESS_ENVIRONMENT_ID: (
+            "station-access-native-actor-manifest"
+        ),
+        FEDERATION_LIFECYCLE_ENVIRONMENT_ID: (
+            "cross-station-federation-actor-manifest"
+        ),
+        SOCIAL_CROSS_STATION_MIXED_ENVIRONMENT_ID: (
+            "social-cross-station-mobile-desktop-actor-manifest"
+        ),
+    }.get(environment_id, "chat-mixed-native-actor-manifest")
     if actor_manifest.get("artifactKind") != actor_manifest_kind:
         raise GateError("Mixed Chat actor manifest has an invalid artifact kind")
     if gate_id in STATION_ACCESS_GATE_IDS:
@@ -127,6 +137,16 @@ def load_mixed_runtime_manifest(
     return manifest, actor_manifest
 
 
+def _environment_id_for_gate(gate_id: str) -> str:
+    if gate_id in STATION_ACCESS_GATE_IDS:
+        return STATION_ACCESS_ENVIRONMENT_ID
+    if gate_id == FEDERATION_LIFECYCLE_GATE_ID:
+        return FEDERATION_LIFECYCLE_ENVIRONMENT_ID
+    if gate_id == SOCIAL_CROSS_STATION_MIXED_GATE_ID:
+        return SOCIAL_CROSS_STATION_MIXED_ENVIRONMENT_ID
+    return ENVIRONMENT_ID
+
+
 class MixedNativeRuntime:
     def __init__(
         self,
@@ -137,11 +157,7 @@ class MixedNativeRuntime:
         desktop_binding: LocalMacOSRuntimeBinding | None = None,
         mobile_binding: MobileSimulatorRuntimeBinding | None = None,
     ) -> None:
-        expected_environment = (
-            STATION_ACCESS_ENVIRONMENT_ID
-            if gate_id in STATION_ACCESS_GATE_IDS
-            else ENVIRONMENT_ID
-        )
+        expected_environment = _environment_id_for_gate(gate_id)
         if manifest.get("environmentId") != expected_environment:
             raise GateError("Mixed runtime manifest has the wrong environment")
         self.gate_id = gate_id
@@ -149,20 +165,37 @@ class MixedNativeRuntime:
         self.actor_manifest = actor_manifest
         self.desktop_binding = desktop_binding or LocalMacOSRuntimeBinding()
         self.desktop_binding.set_runtime_manifest(manifest)
-        self.mobile_binding = mobile_binding or (
-            MobileSimulatorRuntimeBinding.from_environment(gate_id=gate_id)
-        )
         self.client_specs = {
             str(client.get("id")): dict(client)
             for client in manifest.get("clients", [])
             if isinstance(client, Mapping)
         }
+        has_mobile_client = any(
+            client.get("runtime") == MOBILE_RUNTIME
+            for client in self.client_specs.values()
+        )
+        self.mobile_binding = (
+            mobile_binding
+            if mobile_binding is not None
+            else (
+                MobileSimulatorRuntimeBinding.from_environment(
+                    gate_id=gate_id
+                )
+                if has_mobile_client
+                else None
+            )
+        )
         self.desktop_sessions: dict[str, TauriSession] = {}
         self.desktop_instances: list[TauriSession] = []
         self.desktop_lifecycles = NativeClientLifecycleLedger()
         self.mobile_clients: list[str] = []
         self.identities: dict[str, MixedClientIdentity] = {}
         self.access_evidence: dict[str, dict[str, Any]] = {}
+
+    def _required_mobile_binding(self) -> MobileSimulatorRuntimeBinding:
+        if self.mobile_binding is None:
+            raise GateError("Mixed runtime has no Mobile client binding")
+        return self.mobile_binding
 
     @classmethod
     def from_environment(cls, gate_id: str) -> "MixedNativeRuntime":
@@ -244,6 +277,7 @@ class MixedNativeRuntime:
         elif spec.get("runtime") == MOBILE_RUNTIME:
             if client_id not in self.mobile_clients:
                 raise GateError(f"Mobile client {client_id!r} is not active")
+            mobile_binding = self._required_mobile_binding()
             action_payload = dict(payload or {})
             if action in MOBILE_WRITE_ACTIONS:
                 self._wait_for_mobile_write_admission(
@@ -251,7 +285,7 @@ class MixedNativeRuntime:
                     timeout_seconds=timeout,
                 )
             try:
-                value = self.mobile_binding.call_action(
+                value = mobile_binding.call_action(
                     client_id,
                     action,
                     action_payload,
@@ -267,7 +301,7 @@ class MixedNativeRuntime:
                     timeout_seconds=timeout,
                     force_reconcile=True,
                 )
-                value = self.mobile_binding.call_action(
+                value = mobile_binding.call_action(
                     client_id,
                     action,
                     action_payload,
@@ -283,8 +317,9 @@ class MixedNativeRuntime:
         timeout_seconds: float,
         force_reconcile: bool = False,
     ) -> Mapping[str, Any]:
+        mobile_binding = self._required_mobile_binding()
         initial = self._mapping(
-            self.mobile_binding.call_action(
+            mobile_binding.call_action(
                 client_id,
                 "recovery.snapshot",
                 {},
@@ -294,7 +329,7 @@ class MixedNativeRuntime:
         if self._mobile_write_admission_open(initial) and not force_reconcile:
             return initial
 
-        self.mobile_binding.call_action(
+        mobile_binding.call_action(
             client_id,
             "social.reconcile",
             {},
@@ -304,7 +339,7 @@ class MixedNativeRuntime:
 
         def settled_admission() -> Mapping[str, Any] | None:
             nonlocal stable_since
-            snapshot = self.mobile_binding.call_action(
+            snapshot = mobile_binding.call_action(
                 client_id,
                 "recovery.snapshot",
                 {},
@@ -372,19 +407,6 @@ class MixedNativeRuntime:
 
     def actor_fixture(self, client_id: str) -> dict[str, Any]:
         return self._actor_for_client(client_id)
-
-    def prepare_desktop_actor_identity(
-        self,
-        source_client_id: str,
-        target_client_id: str,
-    ) -> None:
-        self.desktop_binding.clone_actor_storage(
-            source_client_id,
-            self._client_spec(source_client_id),
-            target_client_id,
-            self._client_spec(target_client_id),
-            "peers-touch/desktop/data/secure-store/identity-keys",
-        )
 
     def mark_desktop_auth_revoked(self, client_id: str) -> None:
         session = self.desktop_sessions.get(client_id)
@@ -640,7 +662,7 @@ class MixedNativeRuntime:
             "runtimeStationPeerId": scope.get("runtimeStationPeerId"),
             "actorPtid": scope.get("activeActorPtid"),
             "deviceIdentityDigest": (
-                self._identity_digest(scope.get("deviceId"))
+                str(scope.get("deviceIdentityDigest") or "")
                 if self.gate_id in STATION_ACCESS_GATE_IDS
                 else device.get("deviceIdentityDigest")
             ),
@@ -1327,15 +1349,16 @@ class MixedNativeRuntime:
                         "error": str(error),
                     }
                 )
-        try:
-            self.mobile_binding.close()
-        except Exception as error:
-            errors.append(
-                {
-                    "resource": "mobile-runtime-binding",
-                    "error": str(error),
-                }
-            )
+        if self.mobile_binding is not None:
+            try:
+                self.mobile_binding.close()
+            except Exception as error:
+                errors.append(
+                    {
+                        "resource": "mobile-runtime-binding",
+                        "error": str(error),
+                    }
+                )
         self.mobile_clients.clear()
 
         for client_id, session in reversed(
@@ -1422,6 +1445,8 @@ class MixedNativeRuntime:
                 window_count=window_count,
             ),
         )
+        if not is_native_tauri_url(session.get_current_url()):
+            raise GateError(f"{client_id} is not a native Tauri client")
         _, station_service = require_runtime_client_service(
             self.manifest,
             client_id,
@@ -1491,12 +1516,28 @@ class MixedNativeRuntime:
         if not isinstance(login, Mapping) or login.get("authenticated") is not True:
             raise GateError(f"{client_id} login did not authenticate")
         bound_station = self._mapping(
-            call_async_harness(
-                session,
-                "bindingState",
-                {},
-                namespace="stationAccess",
-                script_timeout=10,
+            self.wait_until(
+                lambda: (
+                    candidate
+                    if (
+                        isinstance(
+                            candidate := call_async_harness(
+                                session,
+                                "bindingState",
+                                {},
+                                namespace="stationAccess",
+                                script_timeout=5,
+                            ),
+                            Mapping,
+                        )
+                        and candidate.get("phase") == "bound"
+                        and str(candidate.get("activeUrl") or "").rstrip("/")
+                        == station_url
+                    )
+                    else None
+                ),
+                f"{client_id} authenticated Station binding",
+                timeout_seconds=60,
             ),
             "Desktop authenticated Station binding",
         )
@@ -1528,8 +1569,6 @@ class MixedNativeRuntime:
             raise GateError(
                 f"{client_id} actor mismatch: expected={expected_ptid} actual={ptid}"
             )
-        if not is_native_tauri_url(session.get_current_url()):
-            raise GateError(f"{client_id} is not a native Tauri client")
         self.desktop_sessions[client_id] = session
         return self.wait_until(
             lambda: self._pending_identity_with_device(
@@ -1546,8 +1585,9 @@ class MixedNativeRuntime:
         client_id: str,
         expected: Mapping[str, Any],
     ) -> MixedClientIdentity:
-        activation = self.mobile_binding.create_bound_session(client_id)
-        authentication = self.mobile_binding.authenticate_fixture_actor(
+        mobile_binding = self._required_mobile_binding()
+        activation = mobile_binding.create_bound_session(client_id)
+        authentication = mobile_binding.authenticate_fixture_actor(
             client_id
         )
         raw_pre_authentication = authentication.get(

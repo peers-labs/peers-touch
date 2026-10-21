@@ -29,6 +29,7 @@ import {
   X,
 } from 'lucide-react';
 import { groupAvatarRemoteUrl } from '../../store/socialChat';
+import { actorDisplayName } from '../../store/socialProfileProjection';
 import { GroupSquareAvatar } from '../common/GroupSquareAvatar';
 import {
   CHAT_BACKGROUND_OPTIONS,
@@ -62,6 +63,7 @@ import { resolveFederationStationName } from '../../store/federation';
 import {
   chatStorageProjectionRuntime,
   chatStorageReleasedBytes,
+  isConversationClearProjectionCommitted,
 } from '../../runtimes/chatStorageRuntime';
 
 const { Text } = Typography;
@@ -566,11 +568,12 @@ function getFriendPeerName(session: FriendChatSession | undefined, currentUserPt
   if (!session) return '';
   if (currentUserPtid) {
     if (session.participantAPtid === currentUserPtid)
-      return session.participantBDisplayName || session.participantBPtid || '';
+      return actorDisplayName(session.participantBDisplayName);
     if (session.participantBPtid === currentUserPtid)
-      return session.participantADisplayName || session.participantAPtid || '';
+      return actorDisplayName(session.participantADisplayName);
   }
-  return session.participantBDisplayName || session.participantBPtid || '';
+  return actorDisplayName(session.participantBDisplayName)
+    || actorDisplayName(session.participantADisplayName);
 }
 
 function getFriendPeerAvatar(session: FriendChatSession | undefined, currentUserPtid: string | null): string {
@@ -589,20 +592,21 @@ function getFriendPeerDisplayProfile(
   if (currentUserPtid && session.participantAPtid === currentUserPtid) {
     return {
       did: session.participantBPtid || '',
-      name: session.participantBDisplayName?.trim() || '',
+    name: actorDisplayName(session.participantBDisplayName),
       avatar: session.participantBAvatar || '',
     };
   }
   if (currentUserPtid && session.participantBPtid === currentUserPtid) {
     return {
       did: session.participantAPtid || '',
-      name: session.participantADisplayName?.trim() || '',
+      name: actorDisplayName(session.participantADisplayName),
       avatar: session.participantAAvatar || '',
     };
   }
   return {
     did: session.participantBPtid || session.participantAPtid || '',
-    name: session.participantBDisplayName?.trim() || session.participantADisplayName?.trim() || '',
+    name: actorDisplayName(session.participantBDisplayName)
+      || actorDisplayName(session.participantADisplayName),
     avatar: session.participantBAvatar || session.participantAAvatar || '',
   };
 }
@@ -614,7 +618,7 @@ export function ChatDetailPanel() {
     activeTab, activeSessionUlid, activeGroupUlid,
     sessions, groups, groupMembers,
     setShowDetail, selectGroup, loadSessions, loadGroupMembers, loadMessages,
-    loadConversationPreviews,
+    loadConversationPreviews, clearConversationProjection,
     conversationLocalState, updateConversationLocalState,
     setConversationBackgroundPreview,
     getIMConversations,
@@ -640,6 +644,7 @@ export function ChatDetailPanel() {
     loadGroupMembers: s.loadGroupMembers,
     loadMessages: s.loadMessages,
     loadConversationPreviews: s.loadConversationPreviews,
+    clearConversationProjection: s.clearConversationProjection,
     conversationLocalState: s.conversationLocalState,
     updateConversationLocalState: s.updateConversationLocalState,
     setConversationBackgroundPreview: s.setConversationBackgroundPreview,
@@ -764,12 +769,13 @@ export function ChatDetailPanel() {
     () => sessions
       .map((session) => ({
         did: getFriendPeerDid(session, currentUserPtid),
-        name: getFriendPeerName(session, currentUserPtid),
+        name: getFriendPeerName(session, currentUserPtid)
+          || t('chat.social.detail.unknownMember'),
       }))
       .filter((candidate): candidate is { did: string; name: string } =>
         Boolean(candidate.did && !memberPtidSet.has(candidate.did)),
       ),
-    [currentUserPtid, memberPtidSet, sessions],
+    [currentUserPtid, memberPtidSet, sessions, t],
   );
   const groupMemberCount = isGroup ? (activeConversation?.memberCount || activeGroup?.memberCount || members.length) : 0;
   const myMemberRole = activeGroup?.ownerPtid === currentUserPtid ? MemberRole.OWNER : Number(myGroupMember?.role ?? 0);
@@ -845,22 +851,27 @@ export function ChatDetailPanel() {
     setHistoryActionPending(true);
     try {
       const result = await chatStorageProjectionRuntime.clearConversation(activeUlid);
+      const projectionCommitted = isConversationClearProjectionCommitted(result);
+      if (projectionCommitted) {
+        clearConversationProjection(activeUlid);
+        const refreshResults = await Promise.allSettled([
+          loadMessages(activeUlid, activeTab),
+          loadConversationPreviews(),
+        ]);
+        if (refreshResults.some((result) => result.status === 'rejected')) {
+          log.warn('chat', 'conversation history committed; projection refresh deferred', {
+            kind: activeTab,
+            ulid: activeUlid,
+          });
+        }
+      }
       if (
         !result
+        || !projectionCommitted
         || result.error
         || result.operation?.state !== ChatStorageOperationState.SUCCEEDED
       ) {
         throw new Error(result?.error?.message || 'chat conversation cleanup did not complete');
-      }
-      const refreshResults = await Promise.allSettled([
-        loadMessages(activeUlid, activeTab),
-        loadConversationPreviews(),
-      ]);
-      if (refreshResults.some((result) => result.status === 'rejected')) {
-        log.warn('chat', 'conversation history committed; projection refresh deferred', {
-          kind: activeTab,
-          ulid: activeUlid,
-        });
       }
       toast.success(t('chat.social.detail.clearHistorySuccess', {
         bytes: formatReleasedBytes(chatStorageReleasedBytes(result) ?? 0n),
@@ -875,7 +886,6 @@ export function ChatDetailPanel() {
         mapper: mapChatError,
         context: { operation: 'conversationAction' },
       });
-      throw error;
     } finally {
       setHistoryActionPending(false);
     }

@@ -189,6 +189,23 @@ class NativeDesktopAdapterInputTest(unittest.TestCase):
             NativeInputMode.SEMANTIC_NON_INTRUSIVE,
         )
 
+    def test_local_macos_acceptance_binding_defaults_to_semantic_input(
+        self,
+    ) -> None:
+        with patch.dict(os.environ, {}, clear=True), patch(
+            "tooling.acceptance.drivers.native.runtime.sys.platform",
+            "darwin",
+        ), patch(
+            "tooling.acceptance.drivers.native.runtime.find_app_binary",
+            return_value="/tmp/peers-touch-desktop",
+        ):
+            binding = LocalMacOSRuntimeBinding()
+
+        self.assertEqual(
+            binding.input_mode,
+            NativeInputMode.SEMANTIC_NON_INTRUSIVE,
+        )
+
     def test_local_exclusive_input_requires_isolated_gui_session(self) -> None:
         with self.assertRaisesRegex(
             RuntimeError,

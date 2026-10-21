@@ -10,6 +10,7 @@ from tooling.acceptance.core import (
 from tooling.acceptance.gates.station_access.mobile_relay_native_e2e import (
     CLIENT_ID,
     MobileRelayNativeGate,
+    REQUIRED_BUSINESS_RUNTIMES,
 )
 
 
@@ -106,11 +107,14 @@ class FakeBinding:
                         ),
                     }
                     for runtime_id in (
+                        "station",
+                        "auth",
+                        "access",
+                        "session",
                         "messaging",
                         "chat-storage",
                         "command",
                         "social",
-                        "group",
                     )
                 ],
             }
@@ -133,6 +137,21 @@ class FakeBinding:
 
 
 class MobileRelayNativeGateTests(unittest.TestCase):
+    def test_group_continuity_uses_the_unified_messaging_runtime(self) -> None:
+        self.assertEqual(
+            REQUIRED_BUSINESS_RUNTIMES,
+            {
+                "station",
+                "auth",
+                "access",
+                "session",
+                "messaging",
+                "chat-storage",
+                "command",
+                "social",
+            },
+        )
+
     def test_mobile_relay_uses_the_injected_ca_without_disabling_tls(self) -> None:
         source = (
             Path(REPO_ROOT)
@@ -140,9 +159,8 @@ class MobileRelayNativeGateTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn("PT_ACCEPTANCE_RELAY_CA_DER_B64", source)
-        self.assertIn("RootCertStore::empty()", source)
+        self.assertIn("Client::builder()", source)
         self.assertIn("add_root_certificate", source)
-        self.assertIn("client_tls_with_config", source)
         self.assertNotIn("danger_accept_invalid_certs", source)
 
     def test_route_switch_preserves_station_and_actor_scope(self) -> None:

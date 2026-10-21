@@ -101,6 +101,9 @@ def _required(values: Mapping[str, str], key: str) -> str:
 
 def _station_runtime_config(
     deployment_environment: str,
+    *,
+    station_url: str = "",
+    allow_profile_managed: bool = False,
 ) -> PosixServiceRuntimeConfig:
     try:
         return PosixServiceRuntimeConfig.load(
@@ -112,15 +115,29 @@ def _station_runtime_config(
             deployment_environment
         )
         values = load_env_file(source)
-        station_url = str(
+        resolved_station_url = str(
             values.get("PT_ACCEPTANCE_STATION_URL")
             or values.get("PT_DEPLOY_PUBLIC_BASE_URL")
+            or station_url
             or ""
         ).rstrip("/")
-        parsed = urlparse(station_url)
+        parsed = urlparse(resolved_station_url)
         project = str(
             values.get("PT_ACCEPTANCE_COMPOSE_PROJECT") or ""
         ).strip()
+        restart_command = str(
+            values.get("PT_DEPLOY_RESTART_CMD") or ""
+        )
+        if not project:
+            matched_project = re.search(
+                r"(?:^|\s)-p\s+([A-Za-z0-9._-]+)(?:\s|$)",
+                restart_command,
+            )
+            project = (
+                matched_project.group(1)
+                if matched_project is not None
+                else ""
+            )
         service = str(
             values.get("PT_ACCEPTANCE_STATION_CONTAINER") or ""
         ).strip()
@@ -129,8 +146,11 @@ def _station_runtime_config(
             if project
             else ""
         )
+        if allow_profile_managed and not service:
+            service = expected_container
+        disposable = values.get("PT_ACCEPTANCE_DISPOSABLE") == "1"
         if (
-            values.get("PT_ACCEPTANCE_DISPOSABLE") != "1"
+            not (disposable or allow_profile_managed)
             or values.get("PT_DEPLOY_ROLE") != "station"
             or values.get("PT_DEPLOY_PLATFORM", "posix") != "posix"
             or parsed.scheme != "http"
@@ -161,7 +181,7 @@ def _station_runtime_config(
             http_port=parsed.port,
             public_port=parsed.port,
             libp2p_port=None,
-            public_base_url=station_url,
+            public_base_url=resolved_station_url,
             compose_project=project,
             compose_service="station",
             data_volume=f"{project}_peers_data",
@@ -1080,14 +1100,22 @@ server {
         self,
         config: PosixServiceRuntimeConfig,
         trust_anchor: bytes,
+        *,
+        run_id: str | None = None,
     ) -> None:
+        resolved_run_id = run_id or getattr(self._manifest, "run_id", "")
+        if not resolved_run_id:
+            raise BlockedError(
+                reason="Station Relay CA installation requires a run identity",
+                resource="relay-attachment-fixture",
+            )
         status = self._wait_posix_runtime(config)
         container = str(status["containerId"])
         transport = config.transport()
         home = self._remote_home(config)
         remote_root = f"{home}/.peers-touch/runtime"
         remote_certificate = (
-            f"{remote_root}/ncp-relay-ca-{self._manifest.run_id}.crt"
+            f"{remote_root}/ncp-relay-ca-{resolved_run_id}.crt"
         )
         container_certificate = (
             "/usr/local/share/ca-certificates/"
@@ -1308,6 +1336,28 @@ server {
             present=False,
         )
 
+    def _disable_fixture_relay_for_replacement(
+        self,
+        station_url: str,
+        relay_peer_id: str,
+    ) -> None:
+        dashboard_token = self._dashboard_token(station_url)
+        encoded = urllib.parse.quote(relay_peer_id, safe="")
+        status, result = _json_request(
+            station_url.rstrip("/")
+            + f"/dashboard/api/relay/attachments/{encoded}",
+            method="DELETE",
+            token=dashboard_token,
+        )
+        if status != 200:
+            raise BlockedError(
+                reason=(
+                    "Station Relay attachment could not be disabled for "
+                    f"replacement: HTTP {status} {result}"
+                ),
+                resource="relay-attachment-fixture",
+            )
+
     def _ensure_fixture_relay(
         self,
         *,
@@ -1331,22 +1381,15 @@ server {
             None,
         )
         if current is not None:
-            if current.get("state") != "active":
-                encoded = urllib.parse.quote(relay_peer_id, safe="")
-                _json_request(
-                    station_url.rstrip("/")
-                    + f"/dashboard/api/relay/attachments/{encoded}/retry",
-                    method="POST",
-                    body={},
-                    token=dashboard_token,
-                )
-                self._wait_attachment_state(
-                    station_url,
-                    dashboard_token,
-                    relay_peer_id,
-                    present=True,
-                )
-            return
+            if (
+                current.get("state") == "active"
+                and current.get("enabled") is True
+            ):
+                return
+            self._disable_fixture_relay_for_replacement(
+                station_url,
+                relay_peer_id,
+            )
 
         operator_token = mint_posix_relay_operator_token(relay_config)
         station_peer_id = read_service_runtime_identity(station_url)
@@ -1416,6 +1459,7 @@ server {
         self._install_station_relay_ca(
             station_config,
             trust_anchor,
+            run_id=manifest.run_id,
         )
         self._wait_station_origin(station_url)
         self._ensure_fixture_relay(

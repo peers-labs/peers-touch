@@ -40,7 +40,9 @@ import {
   deleteMomentCommentAndReload,
   MomentCommentsSection,
   readAuthoritativeMomentDetail,
+  resolvePrivateCommentDraftId,
   retryMomentDetailRuntime,
+  shouldExpandCommentsAfterSubmission,
 } from './MomentCommentsSection';
 
 describe('Moment detail', () => {
@@ -108,6 +110,24 @@ describe('Moment detail', () => {
     expect(source).not.toContain('moments-comments-reply-indicator');
     expect(source).toContain('className="moments-comment-input-field"');
     expect(source).toContain('className="moments-comment-reply-clear"');
+  });
+
+  it('reuses one private Comment draft identity across retry', () => {
+    const createDraftId = vi.fn(() => 'draft-created-once');
+
+    expect(resolvePrivateCommentDraftId(null, createDraftId)).toBe(
+      'draft-created-once',
+    );
+    expect(
+      resolvePrivateCommentDraftId('draft-created-once', createDraftId),
+    ).toBe('draft-created-once');
+    expect(createDraftId).toHaveBeenCalledOnce();
+
+    const source = readFileSync(
+      new URL('./MomentCommentsSection.tsx', import.meta.url),
+      'utf8',
+    );
+    expect(source).toContain('data-acceptance-id="social-comment-retry"');
   });
 
   it('detects when a selected reply target disappears from the thread', () => {
@@ -184,6 +204,12 @@ describe('Moment detail', () => {
     expect(markup).toContain('data-scroll-anchor-id="comment-9"');
     expect(markup).not.toContain('data-scroll-anchor-id="comment-10"');
     expect(markup).toContain('mobile.moments.comment.showMore');
+  });
+
+  it('reveals a successful comment when the collapsed window is full', () => {
+    expect(shouldExpandCommentsAfterSubmission(false, 9)).toBe(false);
+    expect(shouldExpandCommentsAfterSubmission(false, 10)).toBe(true);
+    expect(shouldExpandCommentsAfterSubmission(true, 150)).toBe(true);
   });
 
   it('reuses the post identity when its author writes a degraded comment', () => {

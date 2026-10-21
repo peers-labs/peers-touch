@@ -304,18 +304,14 @@ try {
                   railScrollWidth: momentReactionRail.scrollWidth,
                   railOverflowX:
                     getComputedStyle(momentReactionRail).overflowX,
+                  railActionGap:
+                    momentActionRowRect.top - momentReactionRailRect.bottom,
                   actionButtonCount: momentActionGroup.children.length,
                   actionButtonWidths: [...momentActionGroup.children].map(
                     (action) => action.getBoundingClientRect().width,
                   ),
                   actionButtonHeights: [...momentActionGroup.children].map(
                     (action) => action.getBoundingClientRect().height,
-                  ),
-                  railGroupCenterDelta: Math.abs(
-                    momentReactionRailRect.top +
-                      momentReactionRailRect.height / 2 -
-                      (momentActionGroupRect.top +
-                        momentActionGroupRect.height / 2),
                   ),
                   moreAuthorCenterDelta: Math.abs(
                     momentMoreActionRect.top +
@@ -327,14 +323,20 @@ try {
                   ),
                   moreIsLast:
                     momentAuthorRow.lastElementChild === momentMoreAction,
-                  actionTopSpread: Math.max(
+                  actionCenterSpread: Math.max(
                     ...[...momentActionGroup.children].map(
-                      (action) => action.getBoundingClientRect().top,
+                      (action) => {
+                        const bounds = action.getBoundingClientRect();
+                        return bounds.top + bounds.height / 2;
+                      },
                     ),
                   ) -
                     Math.min(
                       ...[...momentActionGroup.children].map(
-                        (action) => action.getBoundingClientRect().top,
+                        (action) => {
+                          const bounds = action.getBoundingClientRect();
+                          return bounds.top + bounds.height / 2;
+                        },
                       ),
                     ),
                 }
@@ -550,42 +552,69 @@ try {
     await open('social-parity');
     await device.getByRole('button', { name: 'Moments', exact: true }).click();
     const firstMoment = device.locator('.mp-social-moment').first();
-    const heartButton = firstMoment.getByRole('button', {
-      name: 'Follow this Moment',
+    const reactionButton = firstMoment.getByRole('button', {
+      name: 'Add reaction',
       exact: true,
     });
-    await heartButton.click();
+    await reactionButton.click();
+    const reactionPicker = firstMoment.locator('[data-reaction-picker]');
+    const reactionChoices = reactionPicker.locator(
+      '[data-reaction-picker-item]',
+    );
+    assert.equal(await reactionPicker.count(), 1);
+    assert.equal(await reactionChoices.count(), 5);
+    assert.deepEqual(
+      await reactionChoices.evaluateAll((items) =>
+        items.map((item) => {
+          const bounds = item.getBoundingClientRect();
+          return [bounds.width, bounds.height];
+        }),
+      ),
+      Array.from({ length: 5 }, () => [44, 44]),
+    );
+    for (let index = 0; index < 5; index += 1) {
+      await reactionChoices.nth(index).click();
+      assert.equal(await reactionPicker.count(), 1);
+    }
     assert.equal(
-      await firstMoment.locator('.mp-moment-reaction-picker').count(),
-      0,
+      await firstMoment.locator('[data-moment-reaction]').count(),
+      5,
     );
     assert.equal(
-      await firstMoment.locator('.mp-moment-reaction-tag').count(),
-      1,
+      await firstMoment
+        .locator('[data-moment-reaction="love"]')
+        .getAttribute('aria-pressed'),
+      'false',
     );
-    await capture('social-heart-reaction');
+    assert.equal(
+      await firstMoment
+        .locator('[data-moment-reaction="celebrate"]')
+        .getAttribute('aria-pressed'),
+      'true',
+    );
+    await capture('social-five-reactions');
     const momentAction = captures.at(-1).geometry.momentAction;
     assert(momentAction, 'Moment action geometry');
-    assert(momentAction.railRatio <= 0.8 + 0.01, JSON.stringify(momentAction));
-    assert.equal(momentAction.railOverflowX, 'hidden');
+    assert(
+      momentAction.railRatio >= 0.95 && momentAction.railRatio <= 1.01,
+      JSON.stringify(momentAction),
+    );
+    assert.equal(momentAction.railOverflowX, 'visible');
+    assert(
+      momentAction.railActionGap >= 0 && momentAction.railActionGap <= 12,
+      JSON.stringify(momentAction),
+    );
     assert(
       momentAction.railScrollWidth <= momentAction.railClientWidth + 1,
       JSON.stringify(momentAction),
     );
-    assert(momentAction.railGroupCenterDelta <= 1, JSON.stringify(momentAction));
     assert.equal(momentAction.actionButtonCount, 3);
-    assert(
-      momentAction.actionButtonWidths.every((width) => width === 36),
-      JSON.stringify(momentAction),
-    );
-    assert(
-      momentAction.actionButtonHeights.every((height) => height === 36),
-      JSON.stringify(momentAction),
-    );
+    assert.deepEqual(momentAction.actionButtonWidths, [44, 44, 44]);
+    assert.deepEqual(momentAction.actionButtonHeights, [44, 44, 44]);
     assert(momentAction.moreAuthorCenterDelta <= 1, JSON.stringify(momentAction));
     assert(momentAction.moreActionRightDelta <= 1, JSON.stringify(momentAction));
     assert.equal(momentAction.moreIsLast, true);
-    assert(momentAction.actionTopSpread <= 1, JSON.stringify(momentAction));
+    assert(momentAction.actionCenterSpread <= 1, JSON.stringify(momentAction));
     await device
       .getByRole('button', { name: 'Add comment', exact: true })
       .first()
@@ -732,19 +761,19 @@ try {
           geometry.inlineCommentComposer.sendHeight !== 38 ||
           geometry.inlineCommentComposer.sendRadius !== 10)) ||
       (geometry.momentAction &&
-        (geometry.momentAction.railRatio > 0.8 + 0.01 ||
-          geometry.momentAction.railGroupCenterDelta > 1 ||
+        (geometry.momentAction.railRatio < 0.95 ||
+          geometry.momentAction.railRatio > 1.01 ||
+          geometry.momentAction.railActionGap < 0 ||
+          geometry.momentAction.railActionGap > 12 ||
           geometry.momentAction.actionButtonCount !== 3 ||
-          geometry.momentAction.actionButtonWidths.some(
-            (width) => width !== 36,
-          ) ||
-          geometry.momentAction.actionButtonHeights.some(
-            (height) => height !== 36,
-          ) ||
+          geometry.momentAction.actionButtonWidths
+            .some((width) => width !== 44) ||
+          geometry.momentAction.actionButtonHeights
+            .some((height) => height !== 44) ||
           geometry.momentAction.moreAuthorCenterDelta > 1 ||
           geometry.momentAction.moreActionRightDelta > 1 ||
           !geometry.momentAction.moreIsLast ||
-          geometry.momentAction.actionTopSpread > 1 ||
+          geometry.momentAction.actionCenterSpread > 1 ||
           (geometry.momentAction.expanded &&
             (geometry.momentAction.railOverflowX !== 'auto' ||
               geometry.momentAction.railScrollWidth <=

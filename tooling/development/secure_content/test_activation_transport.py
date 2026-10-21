@@ -44,6 +44,7 @@ class ReviewedSchemaActivationTransportTest(unittest.TestCase):
             "source_commit": COMMIT,
             "workspace_id": "workspace-four",
             "profile_id": "four",
+            "station_service_id": "station-four",
             "deployment_environment": "station-four",
             "destructive_scope": "station-four-social-private",
             "declaration_digest": DIGEST,
@@ -51,7 +52,15 @@ class ReviewedSchemaActivationTransportTest(unittest.TestCase):
         with mock.patch(
             "tooling.development.secure_content.activation_transport."
             "reviewed_remote_transport",
-            return_value=(remote, {"PT_DEPLOY_PATH": "peers-touch/repo"}),
+            return_value=(
+                remote,
+                {
+                    "PT_DEPLOY_PATH": "peers-touch/repo",
+                    "PT_DEPLOY_HEALTH_URL": (
+                        "http://station.example:18080/sub-oss/healthz"
+                    ),
+                },
+            ),
         ):
             command = owner.maintenance_command(
                 request,
@@ -62,6 +71,7 @@ class ReviewedSchemaActivationTransportTest(unittest.TestCase):
         self.assertIn("acceptance@station.example", command)
         self.assertIn("remote-session", command[-1])
         self.assertIn("station-four-social-private", command[-1])
+        self.assertIn("--station-port 18080", command[-1])
 
     def test_resume_command_can_preserve_an_already_deployed_station(self) -> None:
         remote = FakeRemoteTransport()
@@ -70,6 +80,7 @@ class ReviewedSchemaActivationTransportTest(unittest.TestCase):
             "source_commit": COMMIT,
             "workspace_id": "workspace-four",
             "profile_id": "four",
+            "station_service_id": "station-four",
             "deployment_environment": "station-four",
             "destructive_scope": "station-four-social-private",
             "declaration_digest": DIGEST,
@@ -78,7 +89,15 @@ class ReviewedSchemaActivationTransportTest(unittest.TestCase):
         with mock.patch(
             "tooling.development.secure_content.activation_transport."
             "reviewed_remote_transport",
-            return_value=(remote, {"PT_DEPLOY_PATH": "peers-touch/repo"}),
+            return_value=(
+                remote,
+                {
+                    "PT_DEPLOY_PATH": "peers-touch/repo",
+                    "PT_DEPLOY_HEALTH_URL": (
+                        "http://station.example:18080/sub-oss/healthz"
+                    ),
+                },
+            ),
         ):
             command = owner.maintenance_command(
                 request,
@@ -94,13 +113,22 @@ class ReviewedSchemaActivationTransportTest(unittest.TestCase):
             "source_commit": COMMIT,
             "workspace_id": "workspace-four",
             "profile_id": "four",
+            "station_service_id": "station-four",
             "deployment_environment": "station-four",
             "destructive_scope": "station-four-social-private",
         }
         with mock.patch(
             "tooling.development.secure_content.activation_transport."
             "reviewed_remote_transport",
-            return_value=(remote, {"PT_DEPLOY_PATH": "peers-touch/repo"}),
+            return_value=(
+                remote,
+                {
+                    "PT_DEPLOY_PATH": "peers-touch/repo",
+                    "PT_DEPLOY_HEALTH_URL": (
+                        "http://station.example:18080/sub-oss/healthz"
+                    ),
+                },
+            ),
         ):
             command = owner.schema_verify_command(
                 request,
@@ -174,6 +202,7 @@ class ReviewedSchemaActivationTransportTest(unittest.TestCase):
                     {
                         "source_commit": COMMIT,
                         "profile_id": "four",
+                        "station_service_id": "station-four",
                         "deployment_environment": "station-four",
                     },
                     budget_seconds=3600,
@@ -255,6 +284,7 @@ class ReviewedSchemaActivationTransportTest(unittest.TestCase):
                     {
                         "source_commit": COMMIT,
                         "profile_id": "four",
+                        "station_service_id": "station-four",
                         "deployment_environment": "station-four",
                     },
                     budget_seconds=3600,
@@ -304,6 +334,7 @@ class ReviewedSchemaActivationTransportTest(unittest.TestCase):
                     {
                         "source_commit": COMMIT,
                         "profile_id": "fiveArm",
+                        "station_service_id": "station-five-arm",
                         "deployment_environment": "station-five-arm",
                     },
                     budget_seconds=3600,
@@ -334,32 +365,33 @@ class ReviewedSchemaActivationTransportTest(unittest.TestCase):
     def test_quiesce_stops_only_station_service_and_verifies_state(self) -> None:
         completed = [
             SimpleNamespace(returncode=0, stdout="", stderr=""),
-            SimpleNamespace(returncode=0, stdout="", stderr=""),
+            SimpleNamespace(returncode=0, stdout="false\n", stderr=""),
         ]
         with mock.patch(
             "tooling.development.secure_content.activation_transport."
-            "_compose_command",
-            return_value=["docker", "compose"],
+            "_station_container_for_port",
+            return_value=("station-container", {}),
         ), mock.patch(
             "tooling.development.secure_content.activation_transport."
             "_run_checked",
             side_effect=completed,
         ) as run:
-            _quiesce(Path("/repo"))
+            _quiesce(
+                Path("/repo"),
+                station_port=18080,
+            )
 
         self.assertEqual(
-            ["docker", "compose", "stop", "-t", "30", "station"],
+            ["docker", "stop", "-t", "30", "station-container"],
             run.call_args_list[0].args[0],
         )
         self.assertEqual(
             [
                 "docker",
-                "compose",
-                "ps",
-                "-q",
-                "--status",
-                "running",
-                "station",
+                "inspect",
+                "--format",
+                "{{.State.Running}}",
+                "station-container",
             ],
             run.call_args_list[1].args[0],
         )

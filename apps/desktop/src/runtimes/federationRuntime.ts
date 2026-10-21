@@ -30,7 +30,7 @@ export const federationRuntime: RuntimeDescriptor = {
   async reconcile(reason: string): Promise<void> {
     log.debug('federation', 'reconcile', { reason });
     const store = useFederationStore.getState();
-    await Promise.allSettled([
+    await Promise.all([
       store.refreshSelf(),
       store.refreshFederationContexts(),
     ]);

@@ -142,6 +142,29 @@ describe('commandRuntime draft recovery', () => {
     expect(draftsRequiringRestoreDecision([candidate])).toEqual([]);
   });
 
+  it('lists a persisted draft without claiming its restoration consumer', async () => {
+    const draft = momentDraft('acceptance-write-readback');
+    invokeMock.mockResolvedValue([
+      Array.from(toBinary(MobileDraftEnvelopeV2Schema, draft)),
+    ]);
+
+    const listed = await getDraftRestorationPort().list(
+      draft.stationPeerId,
+      draft.actorPtid,
+      draft.surfaceKind,
+    );
+
+    expect(listed).toEqual([projection(draft)]);
+    expect(draftsRequiringRestoreDecision(listed)).toEqual(listed);
+    expect(invokeMock).toHaveBeenCalledWith('draft_list', {
+      input: {
+        stationPeerId: draft.stationPeerId,
+        actorPtid: draft.actorPtid,
+        surfaceKind: draft.surfaceKind,
+      },
+    });
+  });
+
   it('keeps a claimed draft out of crash recovery after the editor closes', async () => {
     const draft = momentDraft('mounted-composer');
     const candidate = projection(draft);

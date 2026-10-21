@@ -103,7 +103,9 @@
       "settings.notifications.read",
       "settings.notifications.update",
       "settings.device.read",
-      "settings.device.update"
+      "settings.device.update",
+      "recovery.snapshot",
+      "social.reconcile"
     ],
     "policy": "production actions only; Station endpoints and Appium authority remain parent-owned"
   },

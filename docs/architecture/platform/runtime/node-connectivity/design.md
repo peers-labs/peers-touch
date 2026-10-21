@@ -38,7 +38,7 @@ source; neither an accepted design nor a source check proves runtime delivery.
 | Some handlers require Hertz RequestContext | verified_fact | `frame/core/server/handler.go:HertzHandlerFunc`; `touch/actor_router.go`; `oauth/oauth.go` | streaming ingress parity |
 | Circuit library defaults reset at 2 min / 128 KiB per direction | verified_fact | pinned `go-libp2p v0.45.0`, `circuitv2/relay/resources.go` | reviewed workload limits |
 | Desktop `AppState` owns one `StationRuntime`; Direct and Circuit routes use scoped standard libp2p drivers with bounded shutdown | verified_fact | `apps/desktop/src-tauri/src/application/station_runtime`; `infrastructure/station/transport` | current-source native lifecycle proof |
-| Direct discovery now requires a node-signed Direct route with exact Node PeerID, multiaddr and TLS SPKI; Direct and Circuit use the same pooled TLS/HTTP2 transport | verified_fact | `subserver/bootstrap/access_endpoint.go`; `station_discovery.rs`; `packages/station-libp2p-http` | current-source native pre-credential rejection proof |
+| Direct discovery accepts the user's canonical HTTP(S) origin and requires a node-signed Direct route with exact Node PeerID, multiaddr and inner TLS SPKI; Direct and Circuit use the same pooled TLS/HTTP2 transport | verified_fact | `subserver/bootstrap/access_endpoint.go`; `station_discovery.rs`; `packages/station-libp2p-http` | current-source native route and pre-credential rejection proof |
 | Standard transport reduces custom protocol ownership | inference | constructor/framing inventory above | runtime suitability; no speed claim |
 | Shared state and fenced domain workers permit multiple nodes | accepted_decision | NCP-D12..NCP-D15 | all cluster Gates |
 

@@ -18,7 +18,7 @@ import {
   dispatchUnblockUser,
 } from '../../features/chat/chatCommands';
 import { dispatchOpenContactChat } from '../../features/social/contactCommands';
-import { projectAcceptedContacts } from '../../features/social/socialProjection';
+import { actorDisplayName, projectAcceptedContacts } from '../../features/social/socialProjection';
 import {
   dispatchFollowUser,
   dispatchUnfollowUser,
@@ -75,6 +75,9 @@ export function SocialProfilePage({
   const [actionError, setActionError] = useState('');
   const [actionSheetOpen, setActionSheetOpen] = useState(false);
   const [confirmBlockOpen, setConfirmBlockOpen] = useState(false);
+  const [reactionPickerPostId, setReactionPickerPostId] = useState<
+    string | null
+  >(null);
   const profile =
     actorPtid === currentUserPtid
       ? currentUserProfile
@@ -87,8 +90,8 @@ export function SocialProfilePage({
   const relationship = friendshipStatus[actorPtid];
   const isSelf = actorPtid === currentUserPtid;
   const contacts = useMemo(
-    () => projectAcceptedContacts(friendRequests, currentUserPtid, peerOnline),
-    [currentUserPtid, friendRequests, peerOnline],
+    () => projectAcceptedContacts(friendRequests, currentUserPtid, peerOnline, peerProfiles),
+    [currentUserPtid, friendRequests, peerOnline, peerProfiles],
   );
   const contact = contacts.find((item) => item.peerPtid === actorPtid);
   const directFederationId = contact?.federationIds.includes(federationId)
@@ -98,12 +101,21 @@ export function SocialProfilePage({
       : '';
 
   useEffect(() => {
+    setReactionPickerPostId(null);
     void requestSocialPeerProfile(actorPtid);
     if (!isSelf) {
       void requestSocialFriendshipStatus(actorPtid).catch(() => undefined);
     }
     void loadAuthoredPosts(actorPtid);
   }, [actorPtid, isSelf, loadAuthoredPosts]);
+
+  useEffect(() => {
+    setReactionPickerPostId((current) =>
+      current && authoredFeed?.posts.some((post) => post.id === current)
+        ? current
+        : null,
+    );
+  }, [authoredFeed?.posts]);
 
   const invalidateProfileAndFeeds = useCallback(async () => {
     await Promise.allSettled([
@@ -200,7 +212,8 @@ export function SocialProfilePage({
           </Spin>
           <div className="contact-profile-copy">
             <Text strong className="contact-profile-name">
-              {profile?.displayName || actorPtid}
+              {actorDisplayName(profile?.displayName || profile?.username, actorPtid)
+                || t('mobile.contacts.unknownUser')}
             </Text>
             {profile?.federatedHandle || profile?.acct ? (
               <Text type="secondary">
@@ -306,7 +319,16 @@ export function SocialProfilePage({
                 onReact={(postId, kind) =>
                   void facade?.intents.react(postId, kind)
                 }
-                onOpenComments={onOpenMoment}
+                onOpenComments={(postId) => {
+                  setReactionPickerPostId(null);
+                  onOpenMoment(postId);
+                }}
+                reactionPickerOpen={reactionPickerPostId === post.id}
+                onReactionPickerOpenChange={(open) =>
+                  setReactionPickerPostId((current) =>
+                    open ? post.id : current === post.id ? null : current,
+                  )
+                }
               />
             </div>
           ))}

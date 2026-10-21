@@ -14,7 +14,10 @@ from tooling.acceptance.core import AcceptanceGate, GateError, REPO_ROOT
 from tooling.acceptance.drivers.native import NativeDesktopRuntimeBinding
 from tooling.acceptance.drivers.native.runtime import NativeLaunchOptions
 from tooling.acceptance.drivers.tauri import TauriSession
-from tooling.acceptance.gates.chat.native_file_picker import select_native_file
+from tooling.acceptance.gates.chat.native_file_picker import (
+    select_native_file,
+    wait_for_actionable_file_trigger,
+)
 from tooling.acceptance.gates.chat.native_support import (
     async_harness,
     enter_chat_page,
@@ -84,7 +87,6 @@ class LifecycleDirectGate(NativeTwoClientGate):
             actor_manifest=actor_manifest,
             runtime_binding=runtime_binding,
             gate_id=GATE_ID,
-            allow_existing_fixture=True,
         )
 
     @staticmethod
@@ -104,11 +106,12 @@ class LifecycleDirectGate(NativeTwoClientGate):
         source_path: Path,
     ) -> None:
         client = self.clients[actor]
-        trigger = client.find_element(trigger_selector, STEP_TIMEOUT)
-        if not trigger.is_displayed() or not trigger.is_enabled():
-            raise GateError(
-                f"{actor} Native file chooser trigger is not actionable"
-            )
+        trigger = wait_for_actionable_file_trigger(
+            actor=actor,
+            client=client,
+            selector=trigger_selector,
+            timeout_seconds=STEP_TIMEOUT,
+        )
         select_native_file(
             actor=actor,
             client=client,

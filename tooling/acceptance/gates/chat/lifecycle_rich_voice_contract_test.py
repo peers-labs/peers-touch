@@ -75,7 +75,7 @@ class LifecycleRichVoiceContractTest(unittest.TestCase):
         proto = self.source("model/domain/chat/attachment.proto")
         descriptor = proto[
             proto.index("message EncryptedObjectDescriptor"):
-            proto.index("message AttachmentPlaintextMetadata")
+            proto.index("message VoiceNoteMetadata")
         ]
         private_metadata = proto[
             proto.index("message AttachmentPlaintextMetadata"):
@@ -88,7 +88,7 @@ class LifecycleRichVoiceContractTest(unittest.TestCase):
         self.assertIn("uint32 duration_ms = 10;", private_metadata)
 
     def test_native_journey_requires_transport_loss_and_terminal_playback(self) -> None:
-        self.assertTrue(is_current_profile_gate(GATE_ID))
+        self.assertFalse(is_current_profile_gate(GATE_ID))
         self.assertEqual(journey_for_gate(GATE_ID), "rich-media-recorded-voice")
         for assertion in (
             "rich_attachment_upload_retry_identity",
@@ -105,17 +105,18 @@ class LifecycleRichVoiceContractTest(unittest.TestCase):
         )
         contract_source = runner + native_file_picker
         for contract in (
-            "AcceptanceStationAttachmentFaultProxy",
+            "DirectRouteFaultProxy",
+            "active_direct_route_multiaddr(",
             "create_transport_override(",
-            "apply_transport_override(",
-            "clear_transport_override(",
+            "apply_verified_direct_route_override(",
+            "clear_verified_direct_route_override(",
             'data-chat-voice-playback-state',
-            "proxy_started = False",
+            "proxies_started = False",
             "upload_override = None",
             "download_override = None",
             "if upload_override is not None:",
             "if download_override is not None:",
-            "if proxy_started:",
+            "if proxies_started:",
             "if cooperative_activation:",
             "adapter.select_file_chooser_path_to_process(",
             ".accept_media_capture_permission_to_process(",
@@ -135,6 +136,30 @@ class LifecycleRichVoiceContractTest(unittest.TestCase):
             "after bounded target-owned retries",
         ):
             self.assertIn(contract, contract_source)
+        gate = json.loads(
+            self.source("tooling/acceptance/gates.yaml")
+        )["gates"][GATE_ID]
+        self.assertEqual(
+            gate["environment"],
+            "native-tauri-embedded-webdriver",
+        )
+        self.assertEqual(
+            gate["requiredRuntimeCells"],
+            ["desktop-macos-native"],
+        )
+
+    def test_interrupted_upload_retains_pending_message_identity(self) -> None:
+        runner = self.source(
+            "tooling/acceptance/gates/chat/lifecycle_rich_voice.py"
+        )
+        proof = runner[
+            runner.index("    def _prove_file_attachment("):
+            runner.index("    def _record_until_preview(")
+        ]
+
+        self.assertIn('outcome["state"] != "pending"', proof)
+        self.assertNotIn('outcome["state"] != "draft"', proof)
+        self.assertIn('f"pending identity: {outcome}"', proof)
 
     def test_voice_surface_serializes_boolean_data_contract(self) -> None:
         attachment_item = self.source(

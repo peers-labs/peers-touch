@@ -26,6 +26,7 @@ import type {
   SocialMessageAttachment,
   PeerProfile,
 } from '../../features/social/socialTypes';
+import { actorDisplayName } from '../../features/social/socialProjection';
 import { MessageAvatar } from './ChatMessagePresentation';
 
 const { Text } = Typography;
@@ -107,6 +108,10 @@ export function ChatMessageSectionBoundary({
         >
           {(windowedMessages) => windowedMessages.map((message) => {
             const mine = isOwnChatMessage(message, currentUserPtid);
+            const senderProfile = peerProfiles[message.senderPtid];
+            const senderName = actorDisplayName(
+              senderProfile?.displayName || senderProfile?.username, message.senderPtid,
+            ) || actorDisplayName(peerName, '') || t('mobile.contacts.unknownUser');
             const recalled = isRecalledChatMessage(message);
             const metadata = messageProjectionMetadata(message);
             const moderated = metadata.moderated;
@@ -145,10 +150,13 @@ export function ChatMessageSectionBoundary({
                 {!mine ? (
                   <MessageAvatar
                     src={messageAvatarUrl(message, peerProfiles, peerMessageAvatar)}
-                    fallback={(peerName || title || message.senderPtid || '').slice(0, 1).toUpperCase()}
+                    fallback={senderName}
                   />
                 ) : null}
                 <div className="message-bubble">
+                  {!mine && !peerName ? (
+                    <Text className="message-sender-name">{senderName}</Text>
+                  ) : null}
                   {metadata.pinnedByPtid ? (
                     <span className="message-pin-indicator">
                       <Pin size={11} />

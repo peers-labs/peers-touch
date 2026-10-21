@@ -2,11 +2,22 @@ import assert from 'node:assert/strict';
 
 import {
   chatMediaKindFromMimeFilename,
+  createCallId,
   createAgentChatCache,
   mergeAgentMessages,
   projectIMConversations,
   projectIMMessages,
 } from '../dist/index.js';
+
+const callIdAlphabet = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+const callIdNow = Date.now();
+const callId = createCallId(callIdNow);
+assert.match(callId, /^[0-7][0-9A-HJKMNP-TV-Z]{25}$/);
+let callIdTimestamp = 0n;
+for (const char of callId.slice(0, 10)) {
+  callIdTimestamp = (callIdTimestamp << 5n) | BigInt(callIdAlphabet.indexOf(char));
+}
+assert.equal(Number(callIdTimestamp), callIdNow);
 
 assert.equal(
   chatMediaKindFromMimeFilename('audio/mp4; codecs=mp4a.40.2', 'voice.webm'),

@@ -613,6 +613,30 @@ def provision_runtime_cell(
         raise
 
 
+def runtime_cell_subprocess_environment(
+    manifest: dict[str, Any] | None,
+) -> dict[str, str]:
+    if manifest is None:
+        return {}
+    adapter = manifest.get("nativeAdapter")
+    if not isinstance(adapter, dict):
+        raise RuntimeError("runtime cell manifest has no native adapter")
+    input_mode = str(adapter.get("inputMode") or "").strip()
+    isolation_by_mode = {
+        "semantic-nonintrusive": "shared-user-session",
+        "exclusive-native-input": "isolated-gui-session",
+    }
+    isolation = isolation_by_mode.get(input_mode)
+    if isolation is None:
+        raise RuntimeError(
+            f"runtime cell manifest has invalid input mode {input_mode!r}"
+        )
+    return {
+        "PT_ACCEPTANCE_DESKTOP_INPUT_MODE": input_mode,
+        "PT_ACCEPTANCE_DESKTOP_INPUT_ISOLATION": isolation,
+    }
+
+
 def provisioning_failure_result(
     *,
     gate_id: str,
@@ -2435,6 +2459,11 @@ def main() -> int:
                         gate_env["PT_ACCEPTANCE_RUNTIME_CELL_MANIFEST"] = str(
                             runtime_cell_manifest_path
                         )
+                    gate_env.update(
+                        runtime_cell_subprocess_environment(
+                            runtime_cell_manifest
+                        )
+                    )
                     try:
                         if "argv" in gate:
                             from tooling.acceptance.core import (

@@ -17,6 +17,7 @@ type FederationService struct {
 	actorRoleRepo  domain.ActorRoleRepository
 	ledgerSvc      *LedgerService
 	actorKeySvc    *domain.ActorKeyService
+	stationKeys    domain.StationSigningKeyProvider
 	replaySvc      *domain.ReplayService
 }
 
@@ -26,6 +27,7 @@ func NewFederationService(
 	actorRoleRepo domain.ActorRoleRepository,
 	ledgerSvc *LedgerService,
 	actorKeySvc *domain.ActorKeyService,
+	stationKeys domain.StationSigningKeyProvider,
 	replaySvc *domain.ReplayService,
 ) *FederationService {
 	return &FederationService{
@@ -34,6 +36,7 @@ func NewFederationService(
 		actorRoleRepo:  actorRoleRepo,
 		ledgerSvc:      ledgerSvc,
 		actorKeySvc:    actorKeySvc,
+		stationKeys:    stationKeys,
 		replaySvc:      replaySvc,
 	}
 }
@@ -64,6 +67,18 @@ func (s *FederationService) CreateFederation(ctx context.Context, input *CreateF
 			return nil, err
 		}
 	}
+	if s.stationKeys == nil {
+		return nil, fmt.Errorf("Station signing key provider is unavailable")
+	}
+	stationKey, err := s.stationKeys.Current(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load Station signing key: %w", err)
+	}
+	if stationKey == nil ||
+		len(stationKey.PublicKey) != ed25519.PublicKeySize ||
+		len(stationKey.PrivateKey) != ed25519.PrivateKeySize {
+		return nil, fmt.Errorf("Station signing key is incomplete")
+	}
 
 	payload := &pb.FederationCreatedPayload{
 		FederationId:                 federationID,
@@ -74,6 +89,7 @@ func (s *FederationService) CreateFederation(ctx context.Context, input *CreateF
 		CreatorActorPtid:             input.ActorPTID,
 		CreatorActorFederatedHandle:  input.ActorFederatedHandle,
 		CreatorStationPeerId:         input.StationPeerID,
+		CreatorStationPublicKey:      stationKey.PublicKey,
 		CreatorStationName:           input.StationName,
 		CreatorStationUrl:            input.StationURL,
 		CreatorActorSigningPublicKey: actorPub,
@@ -125,9 +141,6 @@ func (s *FederationService) CreateFederation(ctx context.Context, input *CreateF
 		return nil, err
 	}
 
-	// Use a stub station private key for genesis (sequencer = self)
-	stationPriv := actorPriv // v1: same station creates genesis
-
 	_, err = s.ledgerSvc.AppendEvent(ctx, &AppendEventInput{
 		FederationID:         federationID,
 		EventType:            pb.EventType_FEDERATION_CREATED,
@@ -136,7 +149,6 @@ func (s *FederationService) CreateFederation(ctx context.Context, input *CreateF
 		ActorFederatedHandle: input.ActorFederatedHandle,
 		StationPeerID:        input.StationPeerID,
 		ActorPrivateKey:      actorPriv,
-		StationPrivateKey:    stationPriv,
 	})
 	if err != nil {
 		return nil, err
@@ -158,10 +170,12 @@ func (s *FederationService) GetFederation(ctx context.Context, federationID stri
 }
 
 type BootstrapFederationReplicaInput struct {
-	FederationID       string
-	LocalActorPTID     string
-	LocalStationPeerID string
-	Events             []*pb.LedgerEvent
+	FederationID                      string
+	LocalActorPTID                    string
+	LocalStationPeerID                string
+	ExpectedSequencerStationPeerID    string
+	ExpectedSequencerStationPublicKey []byte
+	Events                            []*pb.LedgerEvent
 }
 
 func (s *FederationService) BootstrapReplica(
@@ -172,11 +186,15 @@ func (s *FederationService) BootstrapReplica(
 		input.FederationID == "" ||
 		input.LocalActorPTID == "" ||
 		input.LocalStationPeerID == "" ||
+		input.ExpectedSequencerStationPeerID == "" ||
+		len(input.ExpectedSequencerStationPublicKey) !=
+			ed25519.PublicKeySize ||
 		len(input.Events) == 0 {
 		return fmt.Errorf("federation bootstrap input is incomplete")
 	}
-	if err := s.ledgerSvc.ValidateBootstrapEvents(
+	if err := s.ledgerSvc.ValidateBootstrapEventsFromSequencer(
 		input.FederationID,
+		input.ExpectedSequencerStationPublicKey,
 		input.Events,
 	); err != nil {
 		return err
@@ -193,47 +211,78 @@ func (s *FederationService) BootstrapReplica(
 	}
 	if genesis.FederationId != input.FederationID ||
 		genesis.SequencerStationPeerId == "" ||
+		genesis.SequencerStationPeerId !=
+			input.ExpectedSequencerStationPeerID ||
 		genesis.CreatorStationPeerId == "" ||
 		genesis.CreatorStationUrl == "" {
 		return fmt.Errorf("federation genesis routing is incomplete")
 	}
 
-	memberships := []*domain.MembershipRecord{{
-		FederationID:  input.FederationID,
-		StationPeerID: genesis.CreatorStationPeerId,
-		StationName:   genesis.CreatorStationName,
-		StationURL:    genesis.CreatorStationUrl,
-		Role:          "founder",
-		Status:        "active",
-	}}
-	localApproved := genesis.CreatorStationPeerId == input.LocalStationPeerID
+	memberships := map[string]*domain.MembershipRecord{
+		genesis.CreatorStationPeerId: {
+			FederationID:  input.FederationID,
+			StationPeerID: genesis.CreatorStationPeerId,
+			StationName:   genesis.CreatorStationName,
+			StationURL:    genesis.CreatorStationUrl,
+			Role:          "founder",
+			Status:        "active",
+		},
+	}
 	for _, event := range input.Events[1:] {
-		if event.EventType != pb.EventType_STATION_JOIN_APPROVED {
-			continue
-		}
-		joined := &pb.StationJoinApprovedPayload{}
-		if err := proto.Unmarshal(event.PayloadBytes, joined); err != nil {
-			return fmt.Errorf("decode Federation join event: %w", err)
-		}
-		if joined.ApprovedStationPeerId == "" ||
-			joined.ApprovedStationUrl == "" ||
-			joined.ApprovedStationName == "" {
-			return fmt.Errorf("Federation join event routing is incomplete")
-		}
-		memberships = append(memberships, &domain.MembershipRecord{
-			FederationID:      input.FederationID,
-			StationPeerID:     joined.ApprovedStationPeerId,
-			StationName:       joined.ApprovedStationName,
-			StationURL:        joined.ApprovedStationUrl,
-			Role:              joined.Role,
-			Status:            "active",
-			ApprovedByEventID: event.EventId,
-		})
-		if joined.ApprovedStationPeerId == input.LocalStationPeerID {
-			localApproved = true
+		switch event.EventType {
+		case pb.EventType_STATION_JOIN_APPROVED:
+			joined := &pb.StationJoinApprovedPayload{}
+			if err := proto.Unmarshal(event.PayloadBytes, joined); err != nil {
+				return fmt.Errorf("decode Federation join event: %w", err)
+			}
+			if joined.ApprovedStationPeerId == "" ||
+				joined.ApprovedStationUrl == "" ||
+				joined.ApprovedStationName == "" {
+				return fmt.Errorf("Federation join event routing is incomplete")
+			}
+			memberships[joined.ApprovedStationPeerId] = &domain.MembershipRecord{
+				FederationID:      input.FederationID,
+				StationPeerID:     joined.ApprovedStationPeerId,
+				StationName:       joined.ApprovedStationName,
+				StationURL:        joined.ApprovedStationUrl,
+				Role:              joined.Role,
+				Status:            "active",
+				ApprovedByEventID: event.EventId,
+			}
+		case pb.EventType_STATION_LEFT:
+			left := &pb.StationLeftPayload{}
+			if err := proto.Unmarshal(event.PayloadBytes, left); err != nil {
+				return fmt.Errorf("decode Federation leave event: %w", err)
+			}
+			member := memberships[left.LeavingStationPeerId]
+			if member == nil {
+				return fmt.Errorf("Federation leave targets an unknown Station")
+			}
+			member.Status = "left"
+		case pb.EventType_STATION_SUSPENDED:
+			suspended := &pb.StationSuspendedPayload{}
+			if err := proto.Unmarshal(event.PayloadBytes, suspended); err != nil {
+				return fmt.Errorf("decode Federation suspension event: %w", err)
+			}
+			member := memberships[suspended.TargetStationPeerId]
+			if member == nil {
+				return fmt.Errorf("Federation suspension targets an unknown Station")
+			}
+			member.Status = "suspended"
+		case pb.EventType_STATION_REMOVED:
+			removed := &pb.StationRemovedPayload{}
+			if err := proto.Unmarshal(event.PayloadBytes, removed); err != nil {
+				return fmt.Errorf("decode Federation removal event: %w", err)
+			}
+			member := memberships[removed.TargetStationPeerId]
+			if member == nil {
+				return fmt.Errorf("Federation removal targets an unknown Station")
+			}
+			member.Status = "removed"
 		}
 	}
-	if !localApproved {
+	localMembership := memberships[input.LocalStationPeerID]
+	if localMembership == nil || localMembership.Status != "active" {
 		return fmt.Errorf("local Station is not approved by the bootstrap ledger")
 	}
 
@@ -290,7 +339,37 @@ type ApproveJoinInput struct {
 	ApproverActorFederatedHandle string
 	ApproverStationPeerID        string
 	ActorPrivateKey              ed25519.PrivateKey
-	StationPrivateKey            ed25519.PrivateKey
+}
+
+func (s *FederationService) ApproveJoinAsSequencer(
+	ctx context.Context,
+	federationID string,
+	joiningStationPeerID string,
+	joiningStationName string,
+	joiningStationURL string,
+) (*domain.MembershipRecord, error) {
+	federation, err := s.federationRepo.GetByID(ctx, federationID)
+	if err != nil {
+		return nil, err
+	}
+	if federation == nil {
+		return nil, fmt.Errorf("federation not found")
+	}
+	actorPTID := federation.CreatedByActorPTID
+	privateKey, err := s.actorKeySvc.GetPrivateKey(ctx, actorPTID)
+	if err != nil {
+		return nil, err
+	}
+	return s.ApproveJoin(ctx, &ApproveJoinInput{
+		FederationID:                 federationID,
+		JoiningStationPeerID:         joiningStationPeerID,
+		JoiningStationName:           joiningStationName,
+		JoiningStationURL:            joiningStationURL,
+		ApproverActorPTID:            actorPTID,
+		ApproverActorFederatedHandle: actorPTID,
+		ApproverStationPeerID:        federation.SequencerStationPeerID,
+		ActorPrivateKey:              privateKey,
+	})
 }
 
 func (s *FederationService) ApproveJoin(ctx context.Context, input *ApproveJoinInput) (*domain.MembershipRecord, error) {
@@ -307,33 +386,31 @@ func (s *FederationService) ApproveJoin(ctx context.Context, input *ApproveJoinI
 		return nil, err
 	}
 
-	event, err := s.ledgerSvc.AppendEvent(ctx, &AppendEventInput{
-		FederationID:         input.FederationID,
-		EventType:            pb.EventType_STATION_JOIN_APPROVED,
-		PayloadBytes:         payloadBytes,
-		ActorPTID:            input.ApproverActorPTID,
-		ActorFederatedHandle: input.ApproverActorFederatedHandle,
-		StationPeerID:        input.ApproverStationPeerID,
-		ActorPrivateKey:      input.ActorPrivateKey,
-		StationPrivateKey:    input.StationPrivateKey,
-	})
+	membership := &domain.MembershipRecord{
+		FederationID:  input.FederationID,
+		StationPeerID: input.JoiningStationPeerID,
+		StationName:   input.JoiningStationName,
+		StationURL:    input.JoiningStationURL,
+		Role:          "member_station",
+		Status:        "active",
+	}
+	event, err := s.ledgerSvc.AppendEventWithProjection(
+		ctx,
+		&AppendEventInput{
+			FederationID:         input.FederationID,
+			EventType:            pb.EventType_STATION_JOIN_APPROVED,
+			PayloadBytes:         payloadBytes,
+			ActorPTID:            input.ApproverActorPTID,
+			ActorFederatedHandle: input.ApproverActorFederatedHandle,
+			StationPeerID:        input.ApproverStationPeerID,
+			ActorPrivateKey:      input.ActorPrivateKey,
+		},
+		domain.LedgerProjectionMutation{Membership: membership},
+	)
 	if err != nil {
 		return nil, err
 	}
-
-	membership := &domain.MembershipRecord{
-		FederationID:      input.FederationID,
-		StationPeerID:     input.JoiningStationPeerID,
-		StationName:       input.JoiningStationName,
-		StationURL:        input.JoiningStationURL,
-		Role:              "member_station",
-		Status:            "active",
-		ApprovedByEventID: event.EventId,
-	}
-	if err := s.membershipRepo.Upsert(ctx, membership); err != nil {
-		return nil, err
-	}
-
+	membership.ApprovedByEventID = event.EventId
 	return membership, nil
 }
 
@@ -344,10 +421,22 @@ type LeaveFederationInput struct {
 	StationPeerID        string
 	Reason               string
 	ActorPrivateKey      ed25519.PrivateKey
-	StationPrivateKey    ed25519.PrivateKey
 }
 
 func (s *FederationService) LeaveFederation(ctx context.Context, input *LeaveFederationInput) error {
+	federation, err := s.federationRepo.GetByID(ctx, input.FederationID)
+	if err != nil {
+		return err
+	}
+	if federation == nil {
+		return fmt.Errorf("federation not found")
+	}
+	if federation.SequencerStationPeerID == input.StationPeerID {
+		return fmt.Errorf(
+			"sequencer Station must hand over before leaving the Federation",
+		)
+	}
+
 	payload := &pb.StationLeftPayload{
 		LeavingStationPeerId:        input.StationPeerID,
 		LeavingActorPtid:            input.ActorPTID,
@@ -367,7 +456,6 @@ func (s *FederationService) LeaveFederation(ctx context.Context, input *LeaveFed
 		ActorFederatedHandle: input.ActorFederatedHandle,
 		StationPeerID:        input.StationPeerID,
 		ActorPrivateKey:      input.ActorPrivateKey,
-		StationPrivateKey:    input.StationPrivateKey,
 	})
 	if err != nil {
 		return err
@@ -384,13 +472,116 @@ func (s *FederationService) LeaveFederation(ctx context.Context, input *LeaveFed
 	return nil
 }
 
+type ApproveLeaveInput struct {
+	FederationID                 string
+	LeavingActorPTID             string
+	LeavingActorFederatedHandle  string
+	LeavingStationPeerID         string
+	Reason                       string
+	ApproverActorPTID            string
+	ApproverActorFederatedHandle string
+	ApproverStationPeerID        string
+	ApproverActorPrivateKey      ed25519.PrivateKey
+}
+
+func (s *FederationService) ApproveLeaveAsSequencer(
+	ctx context.Context,
+	federationID string,
+	leavingActorPTID string,
+	leavingActorFederatedHandle string,
+	leavingStationPeerID string,
+	reason string,
+) (*pb.LedgerEvent, error) {
+	federation, err := s.federationRepo.GetByID(ctx, federationID)
+	if err != nil {
+		return nil, err
+	}
+	if federation == nil {
+		return nil, fmt.Errorf("federation not found")
+	}
+	actorPTID := federation.CreatedByActorPTID
+	privateKey, err := s.actorKeySvc.GetPrivateKey(ctx, actorPTID)
+	if err != nil {
+		return nil, err
+	}
+	return s.ApproveLeave(ctx, &ApproveLeaveInput{
+		FederationID:                 federationID,
+		LeavingActorPTID:             leavingActorPTID,
+		LeavingActorFederatedHandle:  leavingActorFederatedHandle,
+		LeavingStationPeerID:         leavingStationPeerID,
+		Reason:                       reason,
+		ApproverActorPTID:            actorPTID,
+		ApproverActorFederatedHandle: actorPTID,
+		ApproverStationPeerID:        federation.SequencerStationPeerID,
+		ApproverActorPrivateKey:      privateKey,
+	})
+}
+
+func (s *FederationService) ApproveLeave(
+	ctx context.Context,
+	input *ApproveLeaveInput,
+) (*pb.LedgerEvent, error) {
+	federation, err := s.federationRepo.GetByID(ctx, input.FederationID)
+	if err != nil {
+		return nil, err
+	}
+	if federation == nil {
+		return nil, fmt.Errorf("federation not found")
+	}
+	if input.LeavingStationPeerID == federation.SequencerStationPeerID {
+		return nil, fmt.Errorf(
+			"sequencer Station must hand over before leaving the Federation",
+		)
+	}
+	membership, err := s.membershipRepo.GetByStation(
+		ctx,
+		input.FederationID,
+		input.LeavingStationPeerID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if membership == nil || membership.Status != "active" {
+		return nil, fmt.Errorf("leaving Station is not an active member")
+	}
+	payload := &pb.StationLeftPayload{
+		LeavingStationPeerId:        input.LeavingStationPeerID,
+		LeavingActorPtid:            input.LeavingActorPTID,
+		LeavingActorFederatedHandle: input.LeavingActorFederatedHandle,
+		Reason:                      input.Reason,
+	}
+	payloadBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	event, err := s.ledgerSvc.AppendEventWithProjection(
+		ctx,
+		&AppendEventInput{
+			FederationID:         input.FederationID,
+			EventType:            pb.EventType_STATION_LEFT,
+			PayloadBytes:         payloadBytes,
+			ActorPTID:            input.ApproverActorPTID,
+			ActorFederatedHandle: input.ApproverActorFederatedHandle,
+			StationPeerID:        input.ApproverStationPeerID,
+			ActorPrivateKey:      input.ApproverActorPrivateKey,
+		},
+		domain.LedgerProjectionMutation{
+			MembershipStationPeerID: input.LeavingStationPeerID,
+			MembershipStatus:        "left",
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	return event, nil
+}
+
 type DeleteFederationInput struct {
 	FederationID         string
 	ActorPTID            string
 	ActorFederatedHandle string
 	StationPeerID        string
 	ActorPrivateKey      ed25519.PrivateKey
-	StationPrivateKey    ed25519.PrivateKey
 }
 
 func (s *FederationService) DeleteFederation(ctx context.Context, input *DeleteFederationInput) error {
@@ -403,21 +594,22 @@ func (s *FederationService) DeleteFederation(ctx context.Context, input *DeleteF
 		return err
 	}
 
-	_, err = s.ledgerSvc.AppendEvent(ctx, &AppendEventInput{
-		FederationID:         input.FederationID,
-		EventType:            pb.EventType_FEDERATION_ARCHIVED,
-		PayloadBytes:         payloadBytes,
-		ActorPTID:            input.ActorPTID,
-		ActorFederatedHandle: input.ActorFederatedHandle,
-		StationPeerID:        input.StationPeerID,
-		ActorPrivateKey:      input.ActorPrivateKey,
-		StationPrivateKey:    input.StationPrivateKey,
-	})
-	if err != nil {
-		return err
-	}
-
-	return s.federationRepo.UpdateStatus(ctx, input.FederationID, "archived")
+	_, err = s.ledgerSvc.AppendEventWithProjection(
+		ctx,
+		&AppendEventInput{
+			FederationID:         input.FederationID,
+			EventType:            pb.EventType_FEDERATION_ARCHIVED,
+			PayloadBytes:         payloadBytes,
+			ActorPTID:            input.ActorPTID,
+			ActorFederatedHandle: input.ActorFederatedHandle,
+			StationPeerID:        input.StationPeerID,
+			ActorPrivateKey:      input.ActorPrivateKey,
+		},
+		domain.LedgerProjectionMutation{
+			FederationStatus: "archived",
+		},
+	)
+	return err
 }
 
 var _ = ulid.Make

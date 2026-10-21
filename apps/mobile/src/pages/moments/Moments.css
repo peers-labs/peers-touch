@@ -389,30 +389,11 @@
 .moments-reaction-summary {
   display: flex;
   min-width: 0;
-  max-width: 80%;
-  min-height: 36px;
-  flex: 1 1 auto;
+  min-height: 44px;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
-  overflow: hidden;
-}
-
-.moments-reaction-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--moments-gray-100);
-  color: var(--moments-gray-600);
-  font-size: 11px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.moments-reaction-tag.mine {
-  background: var(--moments-primary-light);
-  color: var(--moments-primary);
+  margin-top: 8px;
 }
 
 .moments-actions {
@@ -1237,11 +1218,15 @@
 }
 
 .moments-fixture-sheet-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
   min-height: 44px;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  background: #fff;
 }
 
 .moments-fixture-sheet-header h2 {

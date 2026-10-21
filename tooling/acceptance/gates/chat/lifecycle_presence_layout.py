@@ -10,10 +10,8 @@ from typing import Any
 from tooling.acceptance.core import AcceptanceGate, GateError
 from tooling.acceptance.drivers.native import NativeDesktopRuntimeBinding
 from tooling.acceptance.drivers.tauri import TauriSession
-from tooling.acceptance.fixtures.chat_presence_fault_proxy import (
-    AcceptanceStationPresenceFaultProxy,
-)
 from tooling.acceptance.gates.chat.native_support import (
+    active_direct_route_multiaddr,
     async_harness,
     runtime_station_service,
     selected_native_runtime,
@@ -23,6 +21,9 @@ from tooling.acceptance.gates.chat.native_two_client_runner import (
     PRESENCE_LAYOUT_GATE_ID,
     NativeTwoClientGate,
     message_snapshot,
+)
+from tooling.acceptance.node_connectivity_native_support import (
+    DirectRouteFaultProxy,
 )
 
 
@@ -429,10 +430,8 @@ class LifecyclePresenceLayoutGate(NativeTwoClientGate):
     def _prove_unknown_and_recovery(self) -> dict[str, Any]:
         actor = "alice"
         peer = "bob"
-        station = runtime_station_service(self.manifest, actor)
-        proxy = AcceptanceStationPresenceFaultProxy(
-            str(station.get("endpoint") or ""),
-            str(station.get("deploymentEnvironment") or "") or None,
+        proxy = DirectRouteFaultProxy(
+            active_direct_route_multiaddr(self.clients[actor]),
         )
         handle = None
         failure = ""
@@ -441,14 +440,14 @@ class LifecyclePresenceLayoutGate(NativeTwoClientGate):
             handle = self.runtime_binding.create_transport_override(
                 actor,
                 "station",
-                proxy.url,
+                proxy.multiaddr,
             )
-            self.runtime_binding.apply_transport_override(
+            self.runtime_binding.apply_verified_direct_route_override(
                 actor,
                 "station",
                 handle,
             )
-            proxy.arm_query_failure()
+            proxy.arm()
             try:
                 async_harness(
                     self.clients[actor],
@@ -482,7 +481,7 @@ class LifecyclePresenceLayoutGate(NativeTwoClientGate):
             proxy_evidence = proxy.evidence()
             self.assert_condition(
                 "presence_unknown_preserved",
-                proxy_evidence.get("interceptedCount", 0) >= 1
+                proxy_evidence.get("failureCount", 0) >= 1
                 and unknown.get("tag") == "unknown",
                 json.dumps(
                     {
@@ -496,7 +495,7 @@ class LifecyclePresenceLayoutGate(NativeTwoClientGate):
         finally:
             proxy.disarm()
             if handle is not None:
-                self.runtime_binding.clear_transport_override(
+                self.runtime_binding.clear_verified_direct_route_override(
                     actor,
                     "station",
                     handle,
@@ -757,11 +756,44 @@ class LifecyclePresenceLayoutGate(NativeTwoClientGate):
         )
         return evidence
 
-    def _prove_unread_geometry(self) -> dict[str, Any]:
+    def _prove_unread_geometry(
+        self,
+        required_message_ids: tuple[str, ...],
+    ) -> dict[str, Any]:
         receiver = "bob"
         sender = "alice"
         receiver_client = self.clients[receiver]
         last_observation: dict[str, Any] = {}
+
+        def required_messages_ready() -> dict[str, Any] | None:
+            snapshot = async_harness(
+                receiver_client,
+                "engineMessages",
+                {
+                    "actorPtid": self.ptids[receiver],
+                    "conversationId": self.conversation_id,
+                },
+            )
+            messages = (
+                snapshot.get("messages")
+                if isinstance(snapshot, dict)
+                else None
+            )
+            if not isinstance(messages, list):
+                return None
+            observed = {
+                str(message.get("messageId") or message.get("message_id") or "")
+                for message in messages
+                if isinstance(message, dict)
+            }
+            return (
+                {
+                    "requiredMessageIds": list(required_message_ids),
+                    "observedMessageIds": sorted(observed),
+                }
+                if set(required_message_ids).issubset(observed)
+                else None
+            )
 
         def wait_for_unread_projection(
             target: int,
@@ -824,6 +856,11 @@ class LifecyclePresenceLayoutGate(NativeTwoClientGate):
                     f"{error}; last={json.dumps(last_observation, sort_keys=True)}"
                 ) from error
 
+        prerequisite_messages = wait_until(
+            required_messages_ready,
+            "receiver prerequisite messages before unread baseline",
+            timeout=STEP_TIMEOUT,
+        )
         async_harness(
             receiver_client,
             "syncFriendSession",
@@ -839,14 +876,28 @@ class LifecyclePresenceLayoutGate(NativeTwoClientGate):
         )
 
         def zero_unread() -> dict[str, Any] | None:
+            summary = self._conversation_summary(
+                receiver,
+                self.conversation_id,
+            )
             geometry = self._conversation_geometry(
                 receiver_client,
                 self.conversation_id,
             )
+            authoritative_unread = int(
+                ((summary or {}).get("summary") or {}).get(
+                    "unreadCount",
+                    -1,
+                )
+            )
             return (
-                geometry
+                {
+                    "summary": summary,
+                    "geometry": geometry,
+                }
                 if isinstance(geometry, dict)
                 and int(geometry.get("unread") or 0) == 0
+                and authoritative_unread == 0
                 else None
             )
 
@@ -856,11 +907,12 @@ class LifecyclePresenceLayoutGate(NativeTwoClientGate):
             timeout=STEP_TIMEOUT,
         )
         async_harness(receiver_client, "parkConversation", {})
-        baseline = wait_until(
+        baseline_observation = wait_until(
             zero_unread,
             "parked zero unread conversation row",
             timeout=STEP_TIMEOUT,
         )
+        baseline = baseline_observation["geometry"]
 
         prefix = f"unread-geometry-{time.time_ns()}"
         first = async_harness(
@@ -931,6 +983,8 @@ class LifecyclePresenceLayoutGate(NativeTwoClientGate):
             next_index += count
         capped = overflow_batches[-1]["observation"]["geometry"]
         evidence = {
+            "prerequisiteMessages": prerequisite_messages,
+            "baselineAuthority": baseline_observation["summary"],
             "baseline": baseline,
             "single": single,
             "capped": capped,
@@ -1043,7 +1097,9 @@ class LifecyclePresenceLayoutGate(NativeTwoClientGate):
         )
         unread = self.step(
             "layout.unread",
-            self._prove_unread_geometry,
+            lambda: self._prove_unread_geometry(
+                tuple(str(value) for value in messages["messageIds"]),
+            ),
             "bob",
         )
         lease = self.step(

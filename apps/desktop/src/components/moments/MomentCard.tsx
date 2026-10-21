@@ -15,11 +15,12 @@ import type { Comment } from '../../gen/proto/domain/social/comment_pb';
 import { ImageGrid } from './ImageGrid';
 import { PrivateMediaGrid } from './PrivateMediaGrid';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
-import { FederatedHandle } from '../FederatedHandle';
+import { useActorIdentity } from '../common/useActorIdentity';
 import {
   useActiveMomentsFederationSlice,
   useActivePrivateMomentsSlice,
 } from './useActiveMomentsStore';
+import { actorDisplayName } from '../../store/socialProfileProjection';
 import {
   isReadablePrivateMomentProjection,
   privateDeliveryNoticeState,
@@ -217,6 +218,9 @@ export function MomentCard({
   const { t } = useTranslation('moments');
   const { token } = theme.useToken();
   const selfStationDomain = useActiveMomentsFederationSlice((s) => s.self?.home_station_domain);
+  const selfStationPeerId = useActiveMomentsFederationSlice(
+    (s) => s.self?.home_station_peer_id,
+  );
   const {
     privateProjection,
     privatePlatform,
@@ -238,6 +242,10 @@ export function MomentCard({
   const [reactionSubmitting, setReactionSubmitting] = useState(false);
 
   const author = post.author;
+  const authorPtid = post.authorPtid || author?.id || '';
+  const authorIdentity = useActorIdentity(authorPtid, {
+    requireCanonicalProfile: true,
+  });
   const audience = post.audience;
   const audienceKind =
     explanation?.audienceExplanation?.kind
@@ -284,9 +292,29 @@ export function MomentCard({
   const visibleBody = expanded || !longBody ? body : `${body.slice(0, 320)}…`;
   const commentsCount = Number(post.stats?.commentsCount ?? 0n);
   const visibleComments = (commentPreview ?? []).slice(0, 2);
-  const displayName = author?.displayName || author?.username || t('moments.author.unknown');
+  const displayName = actorDisplayName(
+    authorIdentity.displayName,
+    t('moments.author.unknown'),
+  );
   const stationDomain = explanation?.source?.stationDomain || author?.homeStationDomain || '';
-  const isSelf = Boolean(viewerActorPtid && author?.id === viewerActorPtid);
+  const isSelf = authorIdentity.isSelf
+    || Boolean(viewerActorPtid && authorPtid === viewerActorPtid);
+  const isLocalSource = isSelf
+    || Boolean(
+      authorIdentity.homeStationPeerId
+      && selfStationPeerId
+      && authorIdentity.homeStationPeerId === selfStationPeerId,
+    )
+    || Boolean(
+      stationDomain
+      && selfStationDomain
+      && stationDomain === selfStationDomain,
+    );
+  const sourceKind = isLocalSource
+    ? 'local'
+    : authorIdentity.homeStationPeerId || stationDomain
+      ? 'remote'
+      : 'unknown';
   const fallbackReason = reasonLabel({
     audienceKind,
     isSelf,
@@ -339,6 +367,8 @@ export function MomentCard({
 
   return (
     <div
+      data-acceptance-id="social-moment-card"
+      data-post-id={post.id}
       onClick={() => onOpen?.(post.id)}
       style={{
         background: embedded ? 'transparent' : token.colorBgContainer,
@@ -352,12 +382,12 @@ export function MomentCard({
         <div
           onClick={(e) => {
             e.stopPropagation();
-            if (author?.id) onAuthorClick?.(author.id);
+            if (authorPtid) onAuthorClick?.(authorPtid);
           }}
-          style={{ cursor: author?.id ? 'pointer' : 'default', flexShrink: 0 }}
+          style={{ cursor: authorPtid ? 'pointer' : 'default', flexShrink: 0 }}
         >
           <UserSquareAvatar
-            remoteUrl={author?.avatarUrl || undefined}
+            remoteUrl={authorIdentity.avatarUrl || undefined}
             name={displayName}
             size={44}
             radius={13}
@@ -368,6 +398,7 @@ export function MomentCard({
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flexWrap: 'wrap' }}>
               <Text
+                data-acceptance-id="social-moment-author"
                 strong
                 style={{
                   fontSize: 14.5,
@@ -375,13 +406,6 @@ export function MomentCard({
               >
                 {displayName}
               </Text>
-              {author?.username && (
-                <FederatedHandle
-                  localPart={author.username}
-                  home={author.homeStationDomain || undefined}
-                  fontSize={12}
-                />
-              )}
               {createdText && (
                 <Text type="secondary" style={{ fontSize: 12 }}>
                   · {createdText}
@@ -412,12 +436,8 @@ export function MomentCard({
 
           <SocialTrustMeta
             source={{
-              kind: stationDomain
-                ? stationDomain === selfStationDomain
-                  ? 'local'
-                  : 'remote'
-                : 'unknown',
-              stationDomain,
+              kind: sourceKind,
+              stationLabel: authorIdentity.homeStationName,
             }}
             reason={{ label: reason, kind: explanation?.relationshipReason?.kind }}
             audience={{ kind: audienceKind, label: audienceLabel(audienceKind, t) }}

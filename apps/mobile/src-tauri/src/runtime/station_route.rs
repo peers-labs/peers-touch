@@ -31,7 +31,7 @@ use crate::commands::station::{
 };
 use crate::error::{MobileError, MobileResult};
 use crate::platform::secure_storage::SecureStorage;
-use crate::station_origin::{normalize_station_origin, StationOriginPolicy};
+use crate::station_origin::normalize_station_origin;
 
 mod peer_proto {
     include!(concat!(env!("OUT_DIR"), "/peers_touch.model.peer.v1.rs"));
@@ -114,7 +114,7 @@ struct CachedRoute {
     source_input: String,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct ActiveRoute {
     candidate: StationRouteCandidate,
     route_revision: u64,
@@ -247,13 +247,89 @@ impl RouteRuntime {
             .ok_or_else(|| route_error("routeNotActive"))
     }
 
+    fn renew_expired_route_with(
+        &self,
+        discover: impl FnOnce(&str) -> MobileResult<VerifiedDiscovery>,
+    ) -> MobileResult<ActiveRoute> {
+        let snapshot = self.active_snapshot()?;
+        if ensure_route_current(&snapshot.candidate).is_ok() {
+            return Ok(snapshot);
+        }
+        let cached = self.cached(
+            &snapshot.candidate.station_peer_id,
+            &snapshot.candidate.route_id,
+        )?;
+        if cached.candidate != snapshot.candidate {
+            return Err(route_error("routeChanged"));
+        }
+        let discovery = discover(&cached.source_input)?;
+        let renewed = discovery
+            .projection
+            .routes
+            .iter()
+            .find(|candidate| {
+                candidate.station_peer_id == snapshot.candidate.station_peer_id
+                    && candidate.station_root_public_key
+                        == snapshot.candidate.station_root_public_key
+                    && candidate.node_peer_id == snapshot.candidate.node_peer_id
+                    && candidate.route_id == snapshot.candidate.route_id
+                    && candidate.route_type == snapshot.candidate.route_type
+                    && candidate.transport == snapshot.candidate.transport
+                    && candidate.route_generation >= snapshot.candidate.route_generation
+                    && candidate.endpoint_origin == snapshot.candidate.endpoint_origin
+                    && candidate.relay_peer_id == snapshot.candidate.relay_peer_id
+                    && candidate.source_ref == snapshot.candidate.source_ref
+                    && candidate.authorization_epoch >= snapshot.candidate.authorization_epoch
+            })
+            .ok_or_else(|| route_error("routeGenerationRevoked"))?;
+        ensure_route_current(renewed)?;
+        // Discovery performs trust verification outside locks. Commit only to
+        // the exact route snapshot that requested renewal.
+        let mut routes = self
+            .discovered
+            .write()
+            .map_err(|_| route_error("runtimeLock"))?;
+        let mut active = self
+            .active
+            .write()
+            .map_err(|_| route_error("runtimeLock"))?;
+        if active.as_ref() != Some(&snapshot) {
+            return Err(route_error("routeChanged"));
+        }
+        self.retire_standard_route(&snapshot)?;
+        let refreshed = ActiveRoute {
+            candidate: renewed.clone(),
+            route_revision: snapshot.route_revision,
+        };
+        routes.insert(
+            (renewed.station_peer_id.clone(), renewed.route_id.clone()),
+            CachedRoute {
+                candidate: renewed.clone(),
+                source_input: cached.source_input,
+            },
+        );
+        *active = Some(refreshed.clone());
+        Ok(refreshed)
+    }
+
+    fn retire_standard_route(&self, route: &ActiveRoute) -> MobileResult<()> {
+        let route = standard_route(route)?;
+        let transport = self
+            .standard_transport
+            .lock()
+            .map_err(|_| route_error("runtimeLock"))?;
+        if let Some(transport) = transport.as_ref() {
+            transport
+                .handle
+                .close_route(&route)
+                .map_err(|_| route_error("standardRouteClose"))?;
+        }
+        Ok(())
+    }
+
     fn assert_current(&self, snapshot: &ActiveRoute) -> MobileResult<()> {
         let current = self.active_snapshot()?;
-        if current.candidate.station_peer_id != snapshot.candidate.station_peer_id
-            || current.candidate.route_id != snapshot.candidate.route_id
-            || current.candidate.route_generation != snapshot.candidate.route_generation
-            || current.route_revision != snapshot.route_revision
-        {
+        if current != *snapshot {
             return Err(route_error("routeChanged"));
         }
         ensure_route_current(&current.candidate)
@@ -814,8 +890,7 @@ fn parse_input(input: &str) -> MobileResult<ParsedInput> {
 }
 
 fn normalize_origin(value: &str) -> MobileResult<String> {
-    normalize_station_origin(value, StationOriginPolicy::current_build())
-        .map_err(|_| discovery_error("originInvalid"))
+    normalize_station_origin(value).map_err(|_| discovery_error("originInvalid"))
 }
 
 fn route_source_ref(station_peer_id: &str, route_id: &str) -> String {
@@ -878,8 +953,7 @@ fn binding_projection(
 }
 
 fn fetch_station_identity() -> MobileResult<VerifiedStationIdentity> {
-    let route = ROUTES.active_snapshot()?;
-    ensure_route_current(&route.candidate)?;
+    let route = ROUTES.renew_expired_route_with(discover_station_input)?;
     let mut challenge = [0_u8; CHALLENGE_SIZE];
     rand::thread_rng().fill_bytes(&mut challenge);
     let request = StationIdentityRequest {
@@ -981,8 +1055,7 @@ fn serve_proxy(listener: TcpListener) {
 }
 
 fn serve_proxy_connection(mut connection: TcpStream) -> MobileResult<()> {
-    let route = ROUTES.active_snapshot()?;
-    ensure_route_current(&route.candidate)?;
+    let route = ROUTES.renew_expired_route_with(discover_station_input)?;
     let timeout = Duration::from_secs(305);
     connection
         .set_read_timeout(Some(timeout))
@@ -1380,6 +1453,133 @@ mod tests {
         route.candidate.addresses =
             vec!["/dns4/relay.example/tcp/4001/p2p/relay-a/p2p-circuit/p2p/node-a".to_string()];
         assert!(standard_route(&route).is_err());
+    }
+
+    #[test]
+    fn expired_route_renews_exact_binding_without_changing_revision() {
+        let (runtime, original) = expired_route_runtime();
+        let refreshed = runtime
+            .renew_expired_route_with(|source| {
+                assert_eq!(source, "https://station.example");
+                let mut candidate = original.candidate.clone();
+                candidate.attestation_expires_at_unix_ms = Some(i64::MAX);
+                candidate.attestation_bytes = Some(vec![8]);
+                Ok(route_discovery(candidate))
+            })
+            .unwrap();
+        assert_eq!(refreshed.route_revision, original.route_revision);
+        assert_eq!(refreshed.candidate.route_id, original.candidate.route_id);
+        assert_eq!(refreshed.candidate.attestation_bytes, Some(vec![8]));
+        assert_eq!(runtime.active_snapshot().unwrap(), refreshed);
+        assert!(runtime
+            .renew_expired_route_with(|_| panic!("fresh route rediscovered"))
+            .is_ok());
+    }
+
+    #[test]
+    fn expired_route_accepts_monotonic_authorization_rotation() {
+        let (runtime, original) = expired_route_runtime();
+        let refreshed = runtime
+            .renew_expired_route_with(|_| {
+                let mut candidate = original.candidate.clone();
+                candidate.authorization_epoch += 1;
+                candidate.route_generation += 1;
+                candidate.node_authorization_digest = vec![9; 32];
+                candidate.attestation_expires_at_unix_ms = Some(i64::MAX);
+                candidate.attestation_bytes = Some(vec![8]);
+                Ok(route_discovery(candidate))
+            })
+            .unwrap();
+        assert_eq!(
+            refreshed.candidate.authorization_epoch,
+            original.candidate.authorization_epoch + 1
+        );
+        assert_eq!(
+            refreshed.candidate.route_generation,
+            original.candidate.route_generation + 1
+        );
+        assert_eq!(refreshed.route_revision, original.route_revision);
+    }
+
+    #[test]
+    fn route_renewal_rejects_revocation_and_concurrent_selection() {
+        for mutation in 0..7 {
+            let (runtime, original) = expired_route_runtime();
+            let result = runtime.renew_expired_route_with(|_| {
+                let mut candidate = original.candidate.clone();
+                candidate.attestation_expires_at_unix_ms = Some(i64::MAX);
+                match mutation {
+                    0 => candidate.route_generation -= 1,
+                    1 => candidate.station_peer_id = "other-station".to_string(),
+                    2 => candidate.node_peer_id = "other-node".to_string(),
+                    3 => candidate.endpoint_origin = "https://other.example".to_string(),
+                    4 => candidate.authorization_epoch -= 1,
+                    5 => candidate.station_root_public_key = vec![9],
+                    _ => {
+                        runtime
+                            .active
+                            .write()
+                            .unwrap()
+                            .as_mut()
+                            .unwrap()
+                            .route_revision += 1
+                    }
+                }
+                Ok(route_discovery(candidate))
+            });
+            assert!(result.is_err(), "renewal accepted mutation {mutation}");
+            assert_eq!(
+                runtime
+                    .active_snapshot()
+                    .unwrap()
+                    .candidate
+                    .attestation_expires_at_unix_ms,
+                Some(1)
+            );
+        }
+    }
+
+    fn route_discovery(candidate: StationRouteCandidate) -> VerifiedDiscovery {
+        VerifiedDiscovery {
+            projection: StationEndpointDiscovery {
+                role: VerifiedEndpointRole::DirectStation,
+                endpoint_peer_id: candidate.station_peer_id.clone(),
+                canonical_origin: candidate.endpoint_origin.clone(),
+                routes: vec![candidate],
+            },
+            source_input: "https://station.example".to_string(),
+        }
+    }
+
+    fn expired_route_runtime() -> (RouteRuntime, ActiveRoute) {
+        let candidate = StationRouteCandidate {
+            station_peer_id: "station-a".to_string(),
+            node_peer_id: "node-a".to_string(),
+            station_root_public_key: vec![1],
+            node_authorization_digest: vec![2; 32],
+            authorization_epoch: 2,
+            route_id: "direct-a".to_string(),
+            route_type: StationRouteType::Direct,
+            transport: "libp2p_http_v1".to_string(),
+            endpoint_origin: "https://station.example".to_string(),
+            relay_peer_id: None,
+            route_generation: 2,
+            inner_tls_spki_sha256: Some(vec![3; 32]),
+            addresses: vec!["/dns4/station.example/tcp/4001/p2p/node-a".to_string()],
+            attestation_bytes: Some(vec![4]),
+            attestation_expires_at_unix_ms: Some(1),
+            source_ref: "source-a".to_string(),
+        };
+        let runtime = RouteRuntime::default();
+        runtime
+            .register(&route_discovery(candidate.clone()))
+            .unwrap();
+        let active = ActiveRoute {
+            candidate,
+            route_revision: 7,
+        };
+        *runtime.active.write().unwrap() = Some(active.clone());
+        (runtime, active)
     }
 
     #[test]

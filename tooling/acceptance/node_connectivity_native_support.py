@@ -30,25 +30,37 @@ ROUTE_PROBE_PATH = "/app-meta/version"
 class _DirectRouteFaultState:
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._armed = False
+        self._drop_remaining: int | None = 0
         self._failure_count = 0
         self._forwarded_connections = 0
 
     def arm(self) -> None:
         with self._lock:
-            self._armed = True
+            self._drop_remaining = None
+
+    def arm_once(self) -> None:
+        with self._lock:
+            self._drop_remaining = 1
 
     def disarm(self) -> None:
         with self._lock:
-            self._armed = False
+            self._drop_remaining = 0
 
     def record_active_drop(self) -> None:
         with self._lock:
+            if self._drop_remaining == 0:
+                return
             self._failure_count += 1
+            if self._drop_remaining is not None:
+                self._drop_remaining -= 1
 
     def should_drop_connection(self) -> bool:
         with self._lock:
-            if self._armed:
+            if self._drop_remaining is None:
+                self._failure_count += 1
+                return True
+            if self._drop_remaining > 0:
+                self._drop_remaining -= 1
                 self._failure_count += 1
                 return True
             self._forwarded_connections += 1
@@ -57,7 +69,9 @@ class _DirectRouteFaultState:
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
             return {
-                "armed": self._armed,
+                "armed": self._drop_remaining is None
+                or self._drop_remaining > 0,
+                "dropRemaining": self._drop_remaining,
                 "failureCount": self._failure_count,
                 "forwardedConnections": self._forwarded_connections,
             }
@@ -121,6 +135,13 @@ class DirectRouteFaultProxy:
 
     def arm(self) -> None:
         self._state.arm()
+        self._drop_active_connections()
+
+    def arm_once(self) -> None:
+        self._state.arm_once()
+        self._drop_active_connections()
+
+    def _drop_active_connections(self) -> None:
         with self._connections_lock:
             connections = list(self._connections)
         if connections:

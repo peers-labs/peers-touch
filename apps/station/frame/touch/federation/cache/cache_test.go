@@ -45,8 +45,9 @@ func remoteProfile(
 			HomeStationDomain: "remote.example",
 			ExpiresAtUnixMs:   time.Now().Add(time.Hour).UnixMilli(),
 			Profile: &modelpb.ActorProfile{
-				DisplayName: displayName,
-				Avatar:      avatar,
+				DisplayName:     displayName,
+				Avatar:          avatar,
+				Discoverability: modelpb.ActorVisibility_ACTOR_VISIBILITY_INDEXED,
 				PeersTouch: &modelpb.PeersTouchInfo{
 					NetworkId: ptid,
 				},
@@ -122,6 +123,9 @@ func TestUpsertRefreshesHistoricalRemoteRowByPTID(t *testing.T) {
 	}
 	if refreshed.HomeStationDomain != "remote.example" {
 		t.Fatalf("home Station domain = %q", refreshed.HomeStationDomain)
+	}
+	if refreshed.Visibility != int16(visibilityIndexed) {
+		t.Fatalf("visibility = %d, want indexed", refreshed.Visibility)
 	}
 }
 

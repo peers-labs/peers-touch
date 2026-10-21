@@ -1,5 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(all(target_os = "macos", feature = "custom-protocol"))]
+tauri::embed_plist::embed_info_plist!("../Info.plist");
+
 #[cfg(feature = "acceptance-webdriver")]
 mod acceptance;
 mod application;
@@ -810,6 +813,10 @@ fn main() {
             acceptance::federation_fixture::acceptance_federation_fixture_create,
             #[cfg(feature = "acceptance-webdriver")]
             acceptance::federation_fixture::acceptance_federation_fixture_join,
+            #[cfg(feature = "acceptance-webdriver")]
+            acceptance::federation_fixture::acceptance_federation_fixture_leave,
+            #[cfg(feature = "acceptance-webdriver")]
+            acceptance::federation_fixture::acceptance_federation_fixture_delete,
             profile::profile_get,
             profile::peer_profile_get,
             profile::profile_update,
@@ -1230,6 +1237,10 @@ fn main() {
             messaging_commands::messaging_acceptance_create_restorable_command,
             #[cfg(feature = "acceptance-webdriver")]
             messaging_commands::messaging_acceptance_prepare_submitted_command,
+            #[cfg(feature = "acceptance-webdriver")]
+            messaging_commands::messaging_acceptance_pause_lifecycle,
+            #[cfg(feature = "acceptance-webdriver")]
+            messaging_commands::messaging_acceptance_command_transport_fault,
             #[cfg(feature = "acceptance-webdriver")]
             messaging_commands::messaging_acceptance_resume_lifecycle,
             #[cfg(feature = "acceptance-webdriver")]

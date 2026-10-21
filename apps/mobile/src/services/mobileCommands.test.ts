@@ -286,6 +286,9 @@ describe('Mobile command mutation admission', () => {
       text: 'reply',
     });
     await privateSocialComments({ ...scope, postId: 'post-1', limit: 20 });
+    await privateSocialReact({ ...scope, postId: 'post-1', kind: 2 });
+    await privateSocialUnreact({ ...scope, postId: 'post-1', kind: 2 });
+    await privateSocialReactionRetry({ ...scope, commandId: 'reaction-1' });
 
     expect(invokeMock.mock.calls).toEqual([
       ['social_private_publish', { input: expect.objectContaining({ momentKind: 'POLL' }) }],
@@ -298,6 +301,32 @@ describe('Mobile command mutation admission', () => {
       }],
       ['social_private_comments', {
         input: { ...scope, postId: 'post-1', limit: 20 },
+      }],
+      ['social_private_react', {
+        input: {
+          stationPeerId: scope.stationPeerId,
+          actorPtid: scope.actorPtid,
+          activationGeneration: scope.activationGeneration,
+          postId: 'post-1',
+          kind: 2,
+        },
+      }],
+      ['social_private_unreact', {
+        input: {
+          stationPeerId: scope.stationPeerId,
+          actorPtid: scope.actorPtid,
+          activationGeneration: scope.activationGeneration,
+          postId: 'post-1',
+          kind: 2,
+        },
+      }],
+      ['social_private_reaction_retry', {
+        input: {
+          stationPeerId: scope.stationPeerId,
+          actorPtid: scope.actorPtid,
+          activationGeneration: scope.activationGeneration,
+          commandId: 'reaction-1',
+        },
       }],
     ]);
     expect(JSON.stringify(invokeMock.mock.calls)).not.toMatch(

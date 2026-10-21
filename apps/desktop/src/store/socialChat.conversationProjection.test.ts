@@ -233,6 +233,107 @@ describe('social chat conversation projection', () => {
     expect(state.openThreadRootUlid).toBeNull();
   });
 
+  it('drops a committed conversation clear from every cached message projection', () => {
+    const root = {
+      ulid: 'message-root',
+      senderPtid: 'ptid:peer:bob',
+      content: 'root',
+      type: MessageType.TEXT,
+      attachments: [],
+    } satisfies SocialMessage;
+    const reply = {
+      ulid: 'message-reply',
+      senderPtid: 'ptid:peer:bob',
+      content: 'reply',
+      type: MessageType.TEXT,
+      attachments: [],
+      threadRootUlid: root.ulid,
+    } satisfies SocialMessage;
+    const unrelated = {
+      ulid: 'message-unrelated',
+      senderPtid: 'ptid:peer:bob',
+      content: 'unrelated',
+      type: MessageType.TEXT,
+      attachments: [],
+    } satisfies SocialMessage;
+    const directThreadKey = `friend:direct-conversation:${root.ulid}`;
+    const unrelatedThreadKey = `group:group-conversation:${unrelated.ulid}`;
+    useSocialChatStore.setState({
+      activeTab: 'friend',
+      activeSessionUlid: 'direct-conversation',
+      messages: {
+        'direct-conversation': [root],
+        'group-conversation': [unrelated],
+      },
+      threadMessages: {
+        [directThreadKey]: [reply],
+        [unrelatedThreadKey]: [unrelated],
+      },
+      threadCounts: {
+        [directThreadKey]: {
+          rootUlid: root.ulid,
+          replyCount: 1,
+          latestReplyUlid: reply.ulid,
+          latestReplyAt: 10,
+          unreadCount: 0,
+        },
+        [unrelatedThreadKey]: {
+          rootUlid: unrelated.ulid,
+          replyCount: 1,
+          latestReplyUlid: unrelated.ulid,
+          latestReplyAt: 20,
+          unreadCount: 0,
+        },
+      },
+      reactions: {
+        [root.ulid]: [{ actorPtid: 'ptid:peer:alice', emoji: 'ok' }],
+        [reply.ulid]: [{ actorPtid: 'ptid:peer:alice', emoji: 'ok' }],
+        [unrelated.ulid]: [{ actorPtid: 'ptid:peer:alice', emoji: 'ok' }],
+      },
+      pinnedMessages: {
+        [root.ulid]: { actorPtid: 'ptid:peer:alice', pinnedAt: 10 },
+        [unrelated.ulid]: { actorPtid: 'ptid:peer:alice', pinnedAt: 20 },
+      },
+      lastPreviews: {
+        'direct-conversation': {
+          content: root.content,
+          type: root.type,
+          senderPtid: root.senderPtid,
+        },
+        'group-conversation': {
+          content: unrelated.content,
+          type: unrelated.type,
+          senderPtid: unrelated.senderPtid,
+        },
+      },
+      messageHasMore: { 'direct-conversation': true },
+      messageNextBeforeSequence: { 'direct-conversation': 7 },
+      messageLoadingMore: { 'direct-conversation': true },
+      openThreadRootUlid: root.ulid,
+    });
+
+    useSocialChatStore.getState().clearConversationProjection('direct-conversation');
+
+    const state = useSocialChatStore.getState();
+    expect(state.messages['direct-conversation']).toEqual([]);
+    expect(state.messages['group-conversation']).toEqual([unrelated]);
+    expect(state.threadMessages[directThreadKey]).toBeUndefined();
+    expect(state.threadMessages[unrelatedThreadKey]).toEqual([unrelated]);
+    expect(state.threadCounts[directThreadKey]).toBeUndefined();
+    expect(state.threadCounts[unrelatedThreadKey]).toBeDefined();
+    expect(state.reactions[root.ulid]).toBeUndefined();
+    expect(state.reactions[reply.ulid]).toBeUndefined();
+    expect(state.reactions[unrelated.ulid]).toBeDefined();
+    expect(state.pinnedMessages[root.ulid]).toBeUndefined();
+    expect(state.pinnedMessages[unrelated.ulid]).toBeDefined();
+    expect(state.lastPreviews['direct-conversation']).toBeUndefined();
+    expect(state.lastPreviews['group-conversation']).toBeDefined();
+    expect(state.messageHasMore['direct-conversation']).toBe(false);
+    expect(state.messageNextBeforeSequence['direct-conversation']).toBeNull();
+    expect(state.messageLoadingMore['direct-conversation']).toBe(false);
+    expect(state.openThreadRootUlid).toBeNull();
+  });
+
   it('preserves native service-message identity and typed rendering content', () => {
     const serviceMessage: DesktopServiceMessage = {
       eventId: 'event-service-1',

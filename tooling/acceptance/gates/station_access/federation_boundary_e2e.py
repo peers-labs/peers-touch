@@ -84,9 +84,7 @@ CLIENT_BOUNDARY_CONTRACTS = {
     "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs": {
         "pattern": r'^\s*"(federation_[a-z0-9_]+)"\s*=>',
         "allowed": {
-            "federation_resolve",
             "federation_catalog_search",
-            "federation_list_contexts",
         },
     },
     "apps/mobile/src/services/gateways/gatewayTypes.ts": {
@@ -131,6 +129,7 @@ CLIENT_FEDERATION_ROUTES = frozenset(
         "/actor/federation/resolve",
         "/sub-federation/catalog/search",
         "/sub-federation/contexts",
+        "/sub-federation/federations",
     }
 )
 COMMAND_LITERAL_PATTERN = re.compile(
@@ -238,14 +237,6 @@ class StationAccessFederationBoundaryGate(AcceptanceGate):
     phase = "SAL-02"
     bom = ("SAL-G03",)
     spec = ("SAL-J04", "SAL-J05", "SAL-C04", "SAL-C05")
-    report_path = (
-        REPO_ROOT
-        / "tooling"
-        / "acceptance"
-        / "reports"
-        / f"{GATE_ID}.json"
-    )
-    evidence_dir = report_path.parent / f"{GATE_ID}-evidence"
 
     def __init__(
         self,
@@ -377,18 +368,16 @@ class StationAccessFederationBoundaryGate(AcceptanceGate):
                 json.dumps(desktop_search, sort_keys=True),
             )
 
-            mobile_search = self._mapping(
-                self.runtime.call_action(
-                    mobile_id,
-                    "social.people.search",
-                    {
-                        "query": self._required_text(
-                            desktop_fixture.get("federatedHandle"),
-                            "Desktop federated handle",
-                        ),
-                        "federationId": expected_context,
-                    },
-                ),
+            mobile_search = self._wait_for_mapping_action(
+                mobile_id,
+                "social.people.search",
+                {
+                    "query": self._required_text(
+                        desktop_fixture.get("federatedHandle"),
+                        "Desktop federated handle",
+                    ),
+                    "federationId": expected_context,
+                },
                 "Mobile scoped Federation search",
             )
             mobile_resolve = self._sequence(
@@ -529,7 +518,14 @@ class StationAccessFederationBoundaryGate(AcceptanceGate):
                     payload,
                 )
             except Exception as error:
-                if "mobile.social.runtimeUnavailable" in str(error):
+                detail = str(error)
+                if (
+                    "mobile.social.runtimeUnavailable" in detail
+                    or (
+                        action == "social.people.search"
+                        and "/actor/federation/resolve HTTP 503" in detail
+                    )
+                ):
                     return None
                 raise
             return self._mapping(value, label)

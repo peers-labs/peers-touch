@@ -7,9 +7,13 @@ import {
   emptyStationRegistry,
   loadStationRegistry,
   persistStationRegistry,
+  type MobileStationEntry,
   type StoredStationRegistry,
 } from '../features/station/stationRegistry';
-import { verifyBoundStationRoute } from '../features/station/stationConnection';
+import {
+  verifyBoundStationRoute,
+  type StationIdentityResult,
+} from '../features/station/stationConnection';
 import { restoreStationRouteBinding } from '../services/mobileCommands';
 import { purgeLegacyMobileIdentityStorage } from '../storage/mobileClientStorage';
 
@@ -140,6 +144,22 @@ export function updateStationRegistryProjection(
   updater: (current: StoredStationRegistry) => StoredStationRegistry,
 ): Promise<StoredStationRegistry> {
   return stationRegistryRuntime.update(updater);
+}
+
+export function verifyStationEntryRuntime(
+  station: MobileStationEntry,
+  verifyRoute: typeof verifyBoundStationRoute = verifyBoundStationRoute,
+): Promise<StationIdentityResult> {
+  const route = activeStationRoute(station);
+  if (!route) throw new Error('mobile.launch.stationRouteUnavailable');
+  return verifyRoute({
+    stationPeerId: station.stationPeerId,
+    routeId: route.routeId,
+    routeGeneration: route.routeGeneration,
+    routeRevision: station.routeRevision ?? 1,
+    sourceRef: route.sourceRef,
+    endpointOrigin: route.endpointOrigin,
+  });
 }
 
 export async function selectStationRouteRuntime(

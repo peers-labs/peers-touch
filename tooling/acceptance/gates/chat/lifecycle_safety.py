@@ -21,7 +21,6 @@ COLLECTOR_URL_PATTERN = re.compile(
 )
 DEBUG_MARKER = "#region debug-point"
 SEARCH_ACTION_PATH = Path("apps/mobile/src/acceptance/actions.ts")
-SEARCH_CONTRACT_PATH = Path("apps/mobile/src/acceptance/contracts.ts")
 DESKTOP_HARNESS_PATH = Path("apps/desktop/src/acceptance/chat/harness.ts")
 
 
@@ -91,7 +90,6 @@ def _action_block(source: str, action: str, next_action: str) -> tuple[str, int]
 def _scan_identity_evidence(root: Path) -> list[SafetyFinding]:
     findings: list[SafetyFinding] = []
     action_path = root / SEARCH_ACTION_PATH
-    contract_path = root / SEARCH_CONTRACT_PATH
     if not action_path.is_file():
         return [
             SafetyFinding(
@@ -120,7 +118,16 @@ def _scan_identity_evidence(root: Path) -> list[SafetyFinding]:
         )
         return findings
 
-    if "input?.federationId" in block or "input.federationId" in block:
+    if "readFederationContexts()" not in block:
+        findings.append(
+            SafetyFinding(
+                path=str(SEARCH_ACTION_PATH),
+                line=start_line,
+                code="federation-context-readback-missing",
+                message="social.people.search must observe the active Federation context",
+            )
+        )
+    if re.search(r"federationId:\s*(?:contextId|federationId)\b", block):
         findings.append(
             SafetyFinding(
                 path=str(SEARCH_ACTION_PATH),
@@ -138,32 +145,6 @@ def _scan_identity_evidence(root: Path) -> list[SafetyFinding]:
                 message="social.people.search must project the observed result Federation identity",
             )
         )
-
-    if contract_path.is_file():
-        contract_source = contract_path.read_text(encoding="utf-8")
-        contract_match = re.search(
-            r"export interface SocialPeopleSearchActionInput\s*\{(?P<body>.*?)\}",
-            contract_source,
-            re.DOTALL,
-        )
-        if contract_match is None:
-            findings.append(
-                SafetyFinding(
-                    path=str(SEARCH_CONTRACT_PATH),
-                    line=1,
-                    code="search-contract-missing",
-                    message="SocialPeopleSearchActionInput contract is unavailable",
-                )
-            )
-        elif re.search(r"\bfederationId\s*:", contract_match.group("body")):
-            findings.append(
-                SafetyFinding(
-                    path=str(SEARCH_CONTRACT_PATH),
-                    line=_line_number(contract_source, contract_match.start()),
-                    code="request-identity-contract",
-                    message="search input must not accept Federation identity as evidence",
-                )
-            )
     return findings
 
 
@@ -185,7 +166,7 @@ def _scan_desktop_identity_evidence(root: Path) -> list[SafetyFinding]:
         ]
     block = source[start:end]
     findings: list[SafetyFinding] = []
-    if "api.federationListFederations()" not in block:
+    if "api.federationListContexts()" not in block:
         findings.append(
             SafetyFinding(
                 path=str(DESKTOP_HARNESS_PATH),

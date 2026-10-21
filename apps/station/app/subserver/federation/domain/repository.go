@@ -2,6 +2,7 @@ package domain
 
 import (
 	"context"
+	"crypto/ed25519"
 
 	pb "github.com/peers-labs/peers-touch/station/app/subserver/federation/pb"
 )
@@ -40,6 +41,11 @@ type ActorRoleRecord struct {
 	GrantedByEventID     string
 }
 
+const (
+	StationRoleOwner           = "station_owner"
+	StationRoleFederationAdmin = "federation_admin"
+)
+
 type SyncCursorRecord struct {
 	FederationID        string
 	RemoteStationPeerID string
@@ -65,10 +71,35 @@ type LedgerEventRepository interface {
 	GetHead(ctx context.Context, federationID string) (*pb.LedgerEvent, error)
 }
 
+type LedgerProjectionMutation struct {
+	Membership              *MembershipRecord
+	MembershipStationPeerID string
+	MembershipStatus        string
+	FederationStatus        string
+}
+
+type LedgerEventCommitter interface {
+	Commit(
+		ctx context.Context,
+		event *pb.LedgerEvent,
+		mutation LedgerProjectionMutation,
+	) error
+}
+
+type StationSigningKey struct {
+	PublicKey  ed25519.PublicKey
+	PrivateKey ed25519.PrivateKey
+}
+
+type StationSigningKeyProvider interface {
+	Current(ctx context.Context) (*StationSigningKey, error)
+}
+
 type MembershipRepository interface {
 	Upsert(ctx context.Context, record *MembershipRecord) error
 	GetByStation(ctx context.Context, federationID, stationPeerID string) (*MembershipRecord, error)
 	ListByFederation(ctx context.Context, federationID string) ([]*MembershipRecord, error)
+	ListByStation(ctx context.Context, stationPeerID string) ([]*MembershipRecord, error)
 	UpdateStatus(ctx context.Context, federationID, stationPeerID, status string) error
 }
 
@@ -77,6 +108,15 @@ type ActorRoleRepository interface {
 	GetByActor(ctx context.Context, federationID, actorPTID string) (*ActorRoleRecord, error)
 	ListByFederation(ctx context.Context, federationID string) ([]*ActorRoleRecord, error)
 	Revoke(ctx context.Context, federationID, actorPTID string) error
+}
+
+type StationRoleRepository interface {
+	EnsureInitialOwner(ctx context.Context) error
+	HasAnyRole(
+		ctx context.Context,
+		actorPTID string,
+		roles ...string,
+	) (bool, error)
 }
 
 type SyncCursorRepository interface {

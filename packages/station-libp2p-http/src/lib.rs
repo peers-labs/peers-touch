@@ -21,7 +21,7 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
 use tokio::sync::mpsc as tokio_mpsc;
-use tokio::sync::{Mutex as AsyncMutex, OnceCell, Semaphore};
+use tokio::sync::{OnceCell, Semaphore};
 use tokio::task::{JoinHandle as AsyncJoinHandle, JoinSet};
 use tokio_rustls::TlsConnector;
 use tokio_util::compat::FuturesAsyncReadCompatExt;
@@ -665,13 +665,16 @@ impl Driver {
                 });
             }
             DriverCommand::CloseRoute(route) => {
-                if let Ok(peer) = PeerId::from_str(&route.node_peer_id) {
+                let detached = if let Ok(peer) = PeerId::from_str(&route.node_peer_id) {
+                    let detached = self.sessions.detach_peer(&route.node_peer_id);
                     self.active.remove(&peer);
                     let _ = self.swarm.disconnect_peer_id(peer);
-                }
-                let sessions = self.sessions.clone();
+                    detached
+                } else {
+                    self.sessions.detach_route(&route)
+                };
                 self.requests.spawn(async move {
-                    sessions.close_route(&route).await;
+                    SessionPool::close_detached(detached).await;
                 });
             }
         }
@@ -683,8 +686,18 @@ impl Driver {
                 self.active.insert(peer_id);
                 self.finish_dial(peer_id, Ok(()));
             }
-            SwarmEvent::ConnectionClosed { peer_id, .. } => {
-                self.active.remove(&peer_id);
+            SwarmEvent::ConnectionClosed {
+                peer_id,
+                num_established,
+                ..
+            } => {
+                if num_established == 0 {
+                    self.active.remove(&peer_id);
+                    let detached = self.sessions.detach_peer(&peer_id.to_string());
+                    self.requests.spawn(async move {
+                        SessionPool::close_detached(detached).await;
+                    });
+                }
             }
             SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
                 if let Some(peer_id) = peer_id {
@@ -777,7 +790,7 @@ impl Session {
 
 #[derive(Default)]
 struct SessionPool {
-    sessions: AsyncMutex<HashMap<SessionKey, Arc<SessionSlot>>>,
+    sessions: Mutex<HashMap<SessionKey, Arc<SessionSlot>>>,
 }
 
 #[derive(Default)]
@@ -804,16 +817,23 @@ impl SessionPool {
         traffic_class: TrafficClass,
     ) -> Result<(SessionKey, Arc<Session>), TransportError> {
         let key = SessionKey::new(route, traffic_class);
-        let mut sessions = self.sessions.lock().await;
-        if !sessions.contains_key(&key) && sessions.len() >= MAX_ROUTE_SESSIONS {
-            return Err(TransportError::new(
-                TransportErrorKind::Overloaded,
-                FailurePhase::BeforeSubmission,
-                "Station HTTP/2 route-session capacity is exhausted",
-            ));
-        }
-        let slot = sessions.entry(key.clone()).or_default().clone();
-        drop(sessions);
+        let slot = {
+            let mut sessions = self.sessions.lock().map_err(|_| {
+                TransportError::new(
+                    TransportErrorKind::Unavailable,
+                    FailurePhase::BeforeSubmission,
+                    "Station route-session pool lock is unavailable",
+                )
+            })?;
+            if !sessions.contains_key(&key) && sessions.len() >= MAX_ROUTE_SESSIONS {
+                return Err(TransportError::new(
+                    TransportErrorKind::Overloaded,
+                    FailurePhase::BeforeSubmission,
+                    "Station HTTP/2 route-session capacity is exhausted",
+                ));
+            }
+            sessions.entry(key.clone()).or_default().clone()
+        };
         let session = slot.session.get_or_try_init(|| async {
             tokio::select! {
                 _ = slot.cancellation.cancelled() => Err(TransportError::new(
@@ -879,40 +899,47 @@ impl SessionPool {
     }
 
     async fn invalidate(&self, key: &SessionKey) {
-        let session = self.sessions.lock().await.remove(key);
+        let session = self
+            .sessions
+            .lock()
+            .ok()
+            .and_then(|mut sessions| sessions.remove(key));
         if let Some(session) = session {
             session.close().await;
         }
     }
 
-    async fn close_route(&self, route: &Route) {
-        let sessions = {
-            let mut current = self.sessions.lock().await;
-            let keys = current
-                .keys()
-                .filter(|key| key.belongs_to(route))
-                .cloned()
-                .collect::<Vec<_>>();
-            keys.into_iter()
-                .filter_map(|key| current.remove(&key))
-                .collect::<Vec<_>>()
+    fn detach_route(&self, route: &Route) -> Vec<Arc<SessionSlot>> {
+        self.detach_matching(|key| key.belongs_to(route))
+    }
+
+    fn detach_peer(&self, node_peer_id: &str) -> Vec<Arc<SessionSlot>> {
+        self.detach_matching(|key| key.node_peer_id == node_peer_id)
+    }
+
+    fn detach_matching(&self, predicate: impl Fn(&SessionKey) -> bool) -> Vec<Arc<SessionSlot>> {
+        let Ok(mut current) = self.sessions.lock() else {
+            return Vec::new();
         };
+        let keys = current
+            .keys()
+            .filter(|key| predicate(key))
+            .cloned()
+            .collect::<Vec<_>>();
+        keys.into_iter()
+            .filter_map(|key| current.remove(&key))
+            .collect()
+    }
+
+    async fn close_detached(sessions: Vec<Arc<SessionSlot>>) {
         for session in sessions {
             session.close().await;
         }
     }
 
     async fn shutdown(&self) {
-        let sessions = self
-            .sessions
-            .lock()
-            .await
-            .drain()
-            .map(|(_, session)| session)
-            .collect::<Vec<_>>();
-        for session in sessions {
-            session.close().await;
-        }
+        let sessions = self.detach_matching(|_| true);
+        Self::close_detached(sessions).await;
     }
 }
 
@@ -990,7 +1017,8 @@ async fn execute_request(
         },
     };
     if result.is_err() && submitted.load(Ordering::Acquire) {
-        sessions.close_route(&route).await;
+        let detached = sessions.detach_route(&route);
+        SessionPool::close_detached(detached).await;
     }
     match result {
         Ok((response, body)) => {
@@ -1459,6 +1487,43 @@ mod tests {
         assert_eq!(proof.peer_id, handle.client_peer_id().to_string());
         assert_eq!(public_key.to_peer_id().to_string(), proof.peer_id);
         assert!(public_key.verify(message, &proof.signature));
+    }
+
+    #[test]
+    fn route_sessions_are_detached_before_peer_reconnect() {
+        let pool = SessionPool::default();
+        let first_route = Route {
+            node_peer_id: "node-a".to_string(),
+            dial_multiaddr: "/ip4/127.0.0.1/tcp/4001/p2p/node-a".to_string(),
+            inner_tls_spki_sha256: [1; 32],
+            route_generation: 1,
+        };
+        let mut renewed_route = first_route.clone();
+        renewed_route.route_generation = 2;
+        let other_route = Route {
+            node_peer_id: "node-b".to_string(),
+            dial_multiaddr: "/ip4/127.0.0.1/tcp/4002/p2p/node-b".to_string(),
+            inner_tls_spki_sha256: [2; 32],
+            route_generation: 1,
+        };
+        for route in [&first_route, &renewed_route, &other_route] {
+            pool.sessions.lock().unwrap().insert(
+                SessionKey::new(route, TrafficClass::Interactive),
+                Arc::new(SessionSlot::default()),
+            );
+        }
+
+        let retired_route = pool.detach_route(&first_route);
+        assert_eq!(retired_route.len(), 1);
+        assert_eq!(pool.sessions.lock().unwrap().len(), 2);
+
+        let disconnected_peer = pool.detach_peer(&first_route.node_peer_id);
+        assert_eq!(disconnected_peer.len(), 1);
+        let remaining = pool.sessions.lock().unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert!(remaining
+            .keys()
+            .all(|key| key.node_peer_id == other_route.node_peer_id));
     }
 
     #[test]

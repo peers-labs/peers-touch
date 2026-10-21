@@ -188,6 +188,12 @@ Pick one based on intent:
 - [`pitfalls/native-chat-gates-require-federation-context.md`](pitfalls/native-chat-gates-require-federation-context.md) — Native Direct and Group creation must pass a Federation shared by every participating client.
 - [`pitfalls/public-api-owner-must-follow-resource-domain.md`](pitfalls/public-api-owner-must-follow-resource-domain.md) — public capabilities must be registered by their resource owner, never by an internal implementation namespace.
 - [`pitfalls/conversation-production-schema-migration-single-source.md`](pitfalls/conversation-production-schema-migration-single-source.md) — Conversation production migration must delegate to the persistence-owned canonical schema instead of copying its model list.
+- [`pitfalls/ios-simulator-uninstall-retains-keychain.md`](pitfalls/ios-simulator-uninstall-retains-keychain.md) — independent Mobile Acceptance runs must use fresh Simulators because application uninstall preserves Keychain state.
+- [`pitfalls/mobile-enrollment-must-use-profile-revision.md`](pitfalls/mobile-enrollment-must-use-profile-revision.md) — Mobile device certificates must bind the authenticated Actor's current canonical profile revision.
+- [`pitfalls/call-id-must-use-canonical-ulid.md`](pitfalls/call-id-must-use-canonical-ulid.md) — Desktop and Mobile call arbitration must use one canonical shared ULID generator.
+- [`pitfalls/runtime-owner-optional-workflow-state.md`](pitfalls/runtime-owner-optional-workflow-state.md) — runtime owners derive source-bound contract metadata without requiring optional task or declaration state.
+- [`pitfalls/fresh-recovery-cannot-require-active-engine.md`](pitfalls/fresh-recovery-cannot-require-active-engine.md) — fresh Actor recovery must establish the Messaging Engine instead of requiring one before archive restore.
+- [`pitfalls/json-fallback-decode-state.md`](pitfalls/json-fallback-decode-state.md) — fallback JSON parsers isolate destinations because failed decodes may leave partial state.
 
 ### Playbooks
 

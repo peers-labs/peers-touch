@@ -18,9 +18,11 @@ from pathlib import Path
 from unittest.mock import MagicMock, call, patch
 
 from tooling.acceptance.core import (
+    ActorManifest,
     ENVIRONMENTS_DIR,
     EnvironmentContract,
     ProvisioningError,
+    ServiceAttestation,
 )
 from tooling.acceptance.core.attestation import (
     PROTOCOL_SOURCE_PATHS,
@@ -34,10 +36,13 @@ from tooling.acceptance.core.evidence_store import ArtifactRef, EvidenceStore
 from tooling.acceptance.fixtures import chat_native_reset
 from tooling.acceptance.fixtures.chat_native_actors import (
     ACTOR_ACCOUNTS,
+    ResolvedActorIdentity,
     prepare_bound_friendships,
+    prepare_bound_federation_routing,
     produce_actor_manifest,
     produce_bound_actor_manifest,
     reset_fixture,
+    resolve_actor_identity,
     resolve_existing_actor_identity,
 )
 from tooling.acceptance.provisioners import (
@@ -782,7 +787,17 @@ class ActorFixtureOwnerTests(unittest.TestCase):
 
     @patch("tooling.acceptance.fixtures.chat_native_actors.os.killpg")
     @patch("tooling.acceptance.fixtures.chat_native_actors.subprocess.Popen")
-    def test_reset_fixture_uses_package_module(self, popen, killpg) -> None:
+    @patch(
+        "tooling.acceptance.fixtures.chat_native_actors."
+        "machine_lease_reset_profile",
+        return_value="four",
+    )
+    def test_reset_fixture_uses_package_module(
+        self,
+        _lease_profile,
+        popen,
+        killpg,
+    ) -> None:
         process = MagicMock()
         process.pid = 1234
         process.returncode = 0
@@ -818,10 +833,40 @@ class ActorFixtureOwnerTests(unittest.TestCase):
         self.assertFalse(options["shell"])
         self.assertTrue(options["close_fds"])
         self.assertEqual(options["env"]["CHAT_ACCEPTANCE_RESET"], "1")
+        self.assertEqual(
+            options["env"]["CHAT_ACCEPTANCE_RESET_PROFILE"],
+            "four",
+        )
+        for key in (
+            "PT_MACHINE_LEASE_KIND",
+            "PT_MACHINE_LEASE_RESOURCE_ID",
+            "PT_MACHINE_LEASE_RESET_SCOPE",
+            "PT_MACHINE_LEASE_FD",
+            "PT_MACHINE_LEASE_ID",
+        ):
+            self.assertNotIn(key, options["env"])
         self.assertLessEqual(
             process.communicate.call_args.kwargs["timeout"],
             0.05,
         )
+
+    @patch("tooling.acceptance.fixtures.chat_native_actors.subprocess.Popen")
+    @patch("tooling.acceptance.fixtures.chat_native_actors.os.killpg", side_effect=ProcessLookupError)
+    @patch.dict(os.environ, {"CHAT_ACCEPTANCE_RESET_ENVIRONMENTS": "station-four,station-five-arm"}, clear=True)
+    def test_reset_child_retains_dual_targets_without_inferred_profile(self, killpg, popen) -> None:
+        process = MagicMock()
+        process.pid = 1234
+        process.returncode = 0
+        process.communicate.return_value = ("", "")
+        popen.return_value = process
+        with patch(
+            "tooling.acceptance.fixtures.chat_native_actors.machine_lease_reset_profile",
+            side_effect=AssertionError("explicit target list must remain selected"),
+        ):
+            reset_fixture("station-five-arm", ("alice",), reset_authorized=True)
+        child = popen.call_args.kwargs["env"]
+        self.assertEqual(child["CHAT_ACCEPTANCE_RESET_ENVIRONMENTS"], "station-four,station-five-arm")
+        self.assertNotIn("CHAT_ACCEPTANCE_RESET_PROFILE", child)
 
     @patch("tooling.acceptance.fixtures.chat_native_actors.subprocess.Popen")
     def test_reset_fixture_rejects_cancelled_cleanup_before_spawn(
@@ -888,6 +933,7 @@ class ActorFixtureOwnerTests(unittest.TestCase):
                 "bob": "bob@p.t",
                 "charlie": "carol@p.t",
                 "eve": "carol@p.t",
+                "federation_secondary_owner": "alice@p.t",
             },
         )
 
@@ -912,6 +958,7 @@ class ActorFixtureOwnerTests(unittest.TestCase):
         response.__enter__.return_value.read.return_value = json.dumps(
             {
                 "username": "carol",
+                "display_name": "  Canonical Eve  ",
                 "ref": {"ptid": "ptid:eve"},
                 "federated_handle": "@carol@station.example",
                 "home_station_peer_id": "station-peer",
@@ -943,6 +990,28 @@ class ActorFixtureOwnerTests(unittest.TestCase):
             "@carol@station.example",
         )
         self.assertEqual(actor.home_station_peer_id, "station-peer")
+        self.assertEqual(actor.display_name, "Canonical Eve")
+
+    def test_reset_actor_resolution_preserves_canonical_display_name(
+        self,
+    ) -> None:
+        record = MagicMock()
+        record.ptid = "ptid:alice"
+        record.name = "  Acceptance Profile  "
+        record.federated_handle = "@alice@station.example"
+        record.home_station_peer_id = "station-peer"
+        with patch(
+            "tooling.acceptance.fixtures.chat_native_actors."
+            "read_fixture_actor",
+            return_value=record,
+        ):
+            actor = resolve_actor_identity(
+                "http://station.example:18080",
+                "station-four",
+                "alice",
+            )
+
+        self.assertEqual(actor.display_name, "Acceptance Profile")
 
     def test_existing_actor_resolution_uses_canonical_access_client(self) -> None:
         root = Path(__file__).resolve().parents[3]
@@ -1075,6 +1144,7 @@ class ActorFixtureOwnerTests(unittest.TestCase):
                     },
                     credential_ref="fixture:preset-users",
                     reset_authorized=True,
+                    fixture_id="cross-station-social-actors",
                 )
 
             self.assertEqual(verify.call_count, 2)
@@ -1105,6 +1175,10 @@ class ActorFixtureOwnerTests(unittest.TestCase):
             self.assertEqual(
                 [actor.ptid for actor in manifest.actors],
                 ["ptid:alice:four", "ptid:bob:five"],
+            )
+            self.assertEqual(
+                manifest.fixture_id,
+                "cross-station-social-actors",
             )
             run.close()
 
@@ -1157,10 +1231,14 @@ class ActorFixtureOwnerTests(unittest.TestCase):
             side_effect=lambda _station, _environment, account: by_account[account],
         ) as read_actor, patch(
             "tooling.acceptance.fixtures.chat_native_actors.seed_bound_contact"
-        ) as seed_contact:
+        ) as seed_contact, patch(
+            "tooling.acceptance.fixtures.chat_native_actors."
+            "prepare_bound_federation_routing"
+        ) as prepare_routing:
             prepare_bound_friendships(role_targets, actors)
 
         self.assertEqual(read_actor.call_count, 3)
+        prepare_routing.assert_called_once_with(role_targets, records)
         self.assertEqual(
             seed_contact.call_args_list,
             [
@@ -1209,6 +1287,90 @@ class ActorFixtureOwnerTests(unittest.TestCase):
             ],
         )
 
+    @patch(
+        "tooling.acceptance.fixtures.chat_native_actors._bootstrap_request"
+    )
+    def test_bound_federation_routing_connects_and_verifies_locators(
+        self,
+        request,
+    ) -> None:
+        records = {
+            "alice": chat_native_reset.FixtureActorRecord(
+                ptid="ptid:alice",
+                preferred_username="alice",
+                name="Alice",
+                summary="",
+                icon="",
+                image="",
+                url="https://four.example/actors/alice",
+                federated_handle="@alice@four.example",
+                home_station_peer_id="peer-four",
+                home_station_domain="four.example",
+                visibility=3,
+                locator_seq=4,
+            ),
+            "bob": chat_native_reset.FixtureActorRecord(
+                ptid="ptid:bob",
+                preferred_username="bob",
+                name="Bob",
+                summary="",
+                icon="",
+                image="",
+                url="https://five.example/actors/bob",
+                federated_handle="@bob@five.example",
+                home_station_peer_id="peer-five",
+                home_station_domain="five.example",
+                visibility=3,
+                locator_seq=7,
+            ),
+        }
+
+        def response(station_url: str, path: str, *, method: str = "GET"):
+            if path == "/sub-bootstrap/info":
+                peer = "node-four" if "four" in station_url else "node-five"
+                return {
+                    "dial_addrs": [
+                        f"/ip4/192.0.2.1/tcp/4002/p2p/{peer}"
+                    ],
+                }
+            if "/locator/lookup?" in path:
+                actor = records["bob"] if "four" in station_url else records["alice"]
+                return {
+                    "federated_handle": actor.federated_handle.lstrip("@"),
+                    "home_station_peer_id": actor.home_station_peer_id,
+                    "seq": actor.locator_seq + 1,
+                }
+            return {}
+
+        request.side_effect = response
+        role_targets = {
+            "alice": ("http://station-four", "station-four"),
+            "bob": ("http://station-five", "station-five"),
+        }
+
+        prepare_bound_federation_routing(role_targets, records)
+
+        calls = request.call_args_list
+        self.assertEqual(
+            sum("/sub-bootstrap/connect?" in item.args[1] for item in calls),
+            2,
+        )
+        self.assertEqual(
+            sum("/sub-bootstrap/locator/publish?" in item.args[1] for item in calls),
+            2,
+        )
+        self.assertEqual(
+            sum("/sub-bootstrap/locator/lookup?" in item.args[1] for item in calls),
+            2,
+        )
+        publish_calls = [
+            item for item in calls
+            if "/sub-bootstrap/locator/publish?" in item.args[1]
+        ]
+        self.assertTrue(
+            all(item.kwargs.get("method") == "POST" for item in publish_calls)
+        )
+
 
 class CrossStationSocialProvisioningOwnerTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -1232,6 +1394,56 @@ class CrossStationSocialProvisioningOwnerTests(unittest.TestCase):
             CrossStationSocialNativeProvisioner,
         )
         self.assertEqual(bindings, provisioner._required_station_profiles())
+
+    def test_federation_actor_manifest_rejects_home_station_mismatch(
+        self,
+    ) -> None:
+        manifest = ActorManifest(
+            fixture_id="cross-station-social-actors",
+            environment_id="cross-station-social-native",
+            run_id="run-1",
+            created_at="2026-10-17T00:00:00Z",
+            actors=(
+                ResolvedActorIdentity(
+                    role="federation_secondary_owner",
+                    account_ref="station-account:alice@p.t",
+                    ptid="ptid:alice",
+                    home_station_peer_id="peer-untrusted",
+                ),
+            ),
+            credential_refs=("fixture:preset-users",),
+            reset_authorized=True,
+            target_verified=True,
+        )
+        service = ServiceAttestation(
+            service_id="station-five-arm",
+            service_kind="station",
+            environment_id="cross-station-social-native",
+            deployment_environment="fiveArm",
+            endpoint="http://station-five",
+            live_commit="a" * 40,
+            workspace_digest="clean",
+            protocol_digest="b" * 64,
+            artifact_ref={},
+            produced_at="2026-10-17T00:00:00Z",
+            producer="test",
+            runtime_identity="peer-five",
+        )
+
+        with self.assertRaisesRegex(
+            BlockedError,
+            "Home Station identity does not match",
+        ):
+            CrossStationSocialNativeProvisioner._persist_station_keyed_actor_manifest(
+                manifest=manifest,
+                role_targets={
+                    "federation_secondary_owner": (
+                        service.endpoint,
+                        service.deployment_environment,
+                    ),
+                },
+                services={service.service_id: service},
+            )
 
     def test_conflicting_profile_binding_kinds_fail_closed(self) -> None:
         with self.assertRaisesRegex(

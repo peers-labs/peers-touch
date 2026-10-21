@@ -69,6 +69,7 @@ use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use sha2::{Digest, Sha256};
 #[cfg(any(test, feature = "acceptance-harness"))]
 use ulid::Ulid;
+use zeroize::Zeroizing;
 
 struct RusqliteMessagingSchema<'a>(&'a Connection);
 
@@ -472,15 +473,18 @@ impl ConversationClearRepository for MobileMessagingStore {
                             SELECT 1 FROM messaging_pending_messages pending
                             WHERE pending.conversation_id = message.conversation_id
                               AND pending.message_id = message.message_id
+                              AND pending.state <> 'accepted'
                             UNION ALL
                             SELECT 1 FROM messaging_command_attempts attempt
                             WHERE attempt.conversation_id = message.conversation_id
                               AND attempt.message_id = message.message_id
-                              AND attempt.state <> 'committed'
+                              AND attempt.state NOT IN (
+                                  'committed', 'failed', 'superseded'
+                              )
                             UNION ALL
                             SELECT 1 FROM messaging_receipt_outbox receipt
                             WHERE receipt.event_id = message.event_id
-                              AND receipt.state <> 'sent'
+                              AND receipt.state = 'pending'
                             UNION ALL
                             SELECT 1 FROM messaging_attachment_drafts draft
                             WHERE draft.conversation_id = message.conversation_id
@@ -618,15 +622,18 @@ impl ConversationClearRepository for MobileMessagingStore {
                             SELECT 1 FROM messaging_pending_messages pending
                             WHERE pending.conversation_id = message.conversation_id
                               AND pending.message_id = message.message_id
+                              AND pending.state <> 'accepted'
                             UNION ALL
                             SELECT 1 FROM messaging_command_attempts attempt
                             WHERE attempt.conversation_id = message.conversation_id
                               AND attempt.message_id = message.message_id
-                              AND attempt.state <> 'committed'
+                              AND attempt.state NOT IN (
+                                  'committed', 'failed', 'superseded'
+                              )
                             UNION ALL
                             SELECT 1 FROM messaging_receipt_outbox receipt
                             WHERE receipt.event_id = message.event_id
-                              AND receipt.state <> 'sent'
+                              AND receipt.state = 'pending'
                             UNION ALL
                             SELECT 1 FROM messaging_attachment_drafts draft
                             WHERE draft.conversation_id = message.conversation_id
@@ -770,6 +777,12 @@ impl ConversationClearRepository for MobileMessagingStore {
                         AttachmentTransferState::Cancelled as i32,
                         AttachmentTransferState::Terminal as i32,
                     ],
+                ),
+                (
+                    "DELETE FROM messaging_pending_messages
+                     WHERE conversation_id = ?1 AND message_id = ?2
+                       AND state = 'accepted'",
+                    params![plan.conversation_id, message_id],
                 ),
             ] {
                 transaction
@@ -1028,15 +1041,18 @@ impl RetentionRepository for MobileMessagingStore {
                             SELECT 1 FROM messaging_pending_messages pending
                             WHERE pending.conversation_id = message.conversation_id
                               AND pending.message_id = message.message_id
+                              AND pending.state <> 'accepted'
                             UNION ALL
                             SELECT 1 FROM messaging_command_attempts attempt
                             WHERE attempt.conversation_id = message.conversation_id
                               AND attempt.message_id = message.message_id
-                              AND attempt.state <> 'committed'
+                              AND attempt.state NOT IN (
+                                  'committed', 'failed', 'superseded'
+                              )
                             UNION ALL
                             SELECT 1 FROM messaging_receipt_outbox receipt
                             WHERE receipt.event_id = message.event_id
-                              AND receipt.state <> 'sent'
+                              AND receipt.state = 'pending'
                         ) AS reliability_protected,
                         EXISTS(
                             SELECT 1 FROM messaging_attachment_transfers transfer
@@ -1205,17 +1221,20 @@ impl RetentionRepository for MobileMessagingStore {
                                SELECT 1 FROM messaging_pending_messages pending
                                WHERE pending.conversation_id = message.conversation_id
                                  AND pending.message_id = message.message_id
+                                 AND pending.state <> 'accepted'
                            )
                            AND NOT EXISTS(
                                SELECT 1 FROM messaging_command_attempts attempt
                                WHERE attempt.conversation_id = message.conversation_id
                                  AND attempt.message_id = message.message_id
-                                 AND attempt.state <> 'committed'
+                                 AND attempt.state NOT IN (
+                                     'committed', 'failed', 'superseded'
+                                 )
                            )
                            AND NOT EXISTS(
                                SELECT 1 FROM messaging_receipt_outbox receipt
                                WHERE receipt.event_id = message.event_id
-                                 AND receipt.state <> 'sent'
+                                 AND receipt.state = 'pending'
                            )
                            AND NOT EXISTS(
                                SELECT 1 FROM messaging_attachment_transfers transfer
@@ -1295,6 +1314,14 @@ impl RetentionRepository for MobileMessagingStore {
                             AttachmentTransferState::Cancelled as i32,
                             AttachmentTransferState::Terminal as i32,
                         ],
+                    )
+                    .map_err(|error| error.to_string())?;
+                transaction
+                    .execute(
+                        "DELETE FROM messaging_pending_messages
+                         WHERE conversation_id = ?1 AND message_id = ?2
+                           AND state = 'accepted'",
+                        params![boundary.conversation_id, message_id],
                     )
                     .map_err(|error| error.to_string())?;
                 let deleted = transaction
@@ -5534,6 +5561,121 @@ impl MobileMessagingStore {
     }
 }
 
+impl MobileMessagingStore {
+    pub(crate) fn device_signing_seed(
+        &self,
+    ) -> Result<Option<(Zeroizing<[u8; 32]>, String)>, String> {
+        self.connection
+            .lock()
+            .map_err(|_| "mobile messaging store lock poisoned".to_string())?
+            .query_row(
+                "SELECT device_signing_seed, signing_key_id
+                 FROM messaging_device_identity WHERE id = 1",
+                [],
+                |row| {
+                    Ok((
+                        Zeroizing::new(row.get::<_, Vec<u8>>(0)?),
+                        row.get::<_, String>(1)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|error| error.to_string())?
+            .map(|(seed, key_id)| {
+                let mut seed_bytes = Zeroizing::new([0_u8; 32]);
+                if seed.len() != seed_bytes.len() {
+                    return Err("mobile messaging device signing seed is invalid".to_string());
+                }
+                seed_bytes.copy_from_slice(&seed);
+                Ok((seed_bytes, key_id))
+            })
+            .transpose()
+    }
+
+    pub(crate) fn refresh_device_identity_profile(
+        &self,
+        state: &FreshDeviceIdentityState,
+    ) -> Result<(), String> {
+        let enrollment = &state.enrollment;
+        let certificate = &enrollment.certificate;
+        let device = certificate
+            .device
+            .as_ref()
+            .ok_or_else(|| "refreshed mobile messaging identity has no endpoint".to_string())?;
+        let ptid = messaging_core::proto::actor_device_ptid(device)?;
+        let next_version = i64::try_from(certificate.observed_profile_version)
+            .map_err(|_| "refreshed mobile messaging profile version is invalid")?;
+        let mut connection = self
+            .connection
+            .lock()
+            .map_err(|_| "mobile messaging store lock poisoned".to_string())?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
+        let current = transaction
+            .query_row(
+                "SELECT ptid, device_id, actor_identity_public_key,
+                        actor_identity_key_fingerprint, profile_version
+                 FROM messaging_device_identity WHERE id = 1",
+                [],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Vec<u8>>(2)?,
+                        row.get::<_, Vec<u8>>(3)?,
+                        row.get::<_, i64>(4)?,
+                    ))
+                },
+            )
+            .map_err(|error| error.to_string())?;
+        if current.0 != ptid
+            || current.1 != device.device_id
+            || current.2 != certificate.actor_identity_public_key
+            || current.3 != certificate.actor_identity_key_fingerprint
+            || next_version < current.4
+        {
+            return Err("refreshed mobile messaging identity continuity mismatch".to_string());
+        }
+        if next_version == current.4 {
+            return Ok(());
+        }
+        let changed = transaction
+            .execute(
+                "UPDATE messaging_device_identity
+                 SET device_signing_seed = ?1,
+                     device_signing_public_key = ?2,
+                     actor_cross_signature = ?3,
+                     signing_key_id = ?4,
+                     profile_version = ?5
+                 WHERE id = 1 AND profile_version = ?6",
+                params![
+                    state.device_signing_seed.as_slice(),
+                    certificate.device_signing_public_key,
+                    enrollment.actor_cross_signature.as_slice(),
+                    certificate.signing_key_id,
+                    next_version,
+                    current.4,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed != 1 {
+            return Err(
+                "refreshed mobile messaging profile version changed concurrently".to_string(),
+            );
+        }
+        transaction
+            .execute(
+                "UPDATE messaging_recovery_state
+                 SET status = 'awaiting_device_enrollment'
+                 WHERE id = 1",
+                [],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction.commit().map_err(|error| error.to_string())
+    }
+}
+
 impl DeviceEnrollmentRepository for MobileMessagingStore {
     fn device_enrollment(&self) -> Result<Option<FreshDeviceEnrollment>, String> {
         let row = self
@@ -5894,6 +6036,41 @@ impl MobileMessagingStore {
                    AND receipt_bytes = ?2
                    AND state = 'pending'",
                 params![receipt_id, receipt_bytes],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed != 1 {
+            return Err(
+                "mobile messaging device consumption receipt transition mismatch".to_string(),
+            );
+        }
+        Ok(())
+    }
+
+    pub fn mark_device_consumption_receipt_rejected(
+        &self,
+        receipt_id: &str,
+        receipt_bytes: &[u8],
+        error_code: &str,
+        rejected_at_unix_ms: i64,
+    ) -> Result<(), String> {
+        let changed = self
+            .connection
+            .lock()
+            .map_err(|_| "mobile messaging store lock poisoned".to_string())?
+            .execute(
+                "UPDATE messaging_receipt_outbox
+                 SET state = 'rejected',
+                     last_error_code = ?3,
+                     updated_at_unix_ms = ?4
+                 WHERE receipt_id = ?1
+                   AND receipt_bytes = ?2
+                   AND state = 'pending'",
+                params![
+                    receipt_id,
+                    receipt_bytes,
+                    error_code,
+                    rejected_at_unix_ms,
+                ],
             )
             .map_err(|error| error.to_string())?;
         if changed != 1 {
@@ -14271,6 +14448,56 @@ mod tests {
             .mark_device_consumption_receipt_submitted(&receipt_id, &pending_bytes)
             .unwrap();
         assert!(store.next_device_consumption_receipt().unwrap().is_none());
+
+        let rejected_receipt = DeviceConsumptionReceipt {
+            receipt_id: "device-consumed:item-2".to_string(),
+            event_id: "event-2".to_string(),
+            ..receipt
+        };
+        let rejected_bytes = rejected_receipt.encode_to_vec();
+        store
+            .connection
+            .lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO messaging_receipt_outbox(
+                    receipt_id, event_id, receipt_bytes, state, created_at_unix_ms
+                 ) VALUES ('device-consumed:item-2', 'event-2', ?1, 'pending', 31)",
+                params![rejected_bytes],
+            )
+            .unwrap();
+        store
+            .mark_device_consumption_receipt_rejected(
+                "device-consumed:item-2",
+                &rejected_bytes,
+                "CONVERSATION_INTERACTION_UNAUTHORIZED",
+                32,
+            )
+            .unwrap();
+        assert!(store.next_device_consumption_receipt().unwrap().is_none());
+        assert_eq!(
+            store
+                .connection
+                .lock()
+                .unwrap()
+                .query_row(
+                    "SELECT state, last_error_code, updated_at_unix_ms
+                     FROM messaging_receipt_outbox
+                     WHERE receipt_id = 'device-consumed:item-2'",
+                    [],
+                    |row| Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, i64>(2)?,
+                    )),
+                )
+                .unwrap(),
+            (
+                "rejected".to_string(),
+                "CONVERSATION_INTERACTION_UNAUTHORIZED".to_string(),
+                32,
+            )
+        );
     }
 
     #[test]
@@ -14855,6 +15082,51 @@ mod tests {
             .unwrap();
         connection
             .execute(
+                "INSERT INTO messaging_pending_messages(
+                    conversation_id, conversation_kind, message_id,
+                    sender_ptid, sender_device_id, plaintext, state,
+                    attempt_count, next_attempt_at_unix_ms, last_error_code,
+                    created_at_unix_ms
+                 ) VALUES(
+                    'conversation-1', 1, 'message-1',
+                    'ptid:alice', 'alice-device', 'message-1',
+                    'accepted', 1, 0, '', 1
+                 )",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO messaging_receipt_outbox(
+                    receipt_id, event_id, receipt_bytes, state,
+                    created_at_unix_ms
+                 ) VALUES(
+                    'device-consumed:item-1', 'event-1', X'01',
+                    'submitted', 1
+                 )",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute_batch(
+                "INSERT INTO messaging_local_commands(
+                    command_id, conversation_id, command_bytes, state,
+                    created_at_unix_ms
+                 ) VALUES
+                    ('command-superseded', 'conversation-1', X'01', 'superseded', 1),
+                    ('command-failed', 'conversation-1', X'02', 'failed', 1);
+                 INSERT INTO messaging_command_attempts(
+                    command_id, conversation_id, message_id,
+                    delivery_plan_sha256, state, created_at_unix_ms
+                 ) VALUES
+                    ('command-superseded', 'conversation-1', 'message-1',
+                     zeroblob(32), 'superseded', 1),
+                    ('command-failed', 'conversation-1', 'message-1',
+                     zeroblob(32), 'failed', 1);",
+            )
+            .unwrap();
+        connection
+            .execute(
                 "INSERT INTO messaging_authority_heads(
                     conversation_id, event_sequence, event_hash, updated_at_unix_ms
                  ) VALUES('conversation-1', 3, ?1, ?2)",
@@ -14906,10 +15178,20 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
+        let accepted_shadow_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM messaging_pending_messages
+                 WHERE conversation_id = 'conversation-1'
+                   AND message_id = 'message-1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
         drop(connection);
         assert_eq!(old_count, 0);
         assert_eq!(recent_count, 2);
         assert_eq!(terminal_transfer_count, 0);
+        assert_eq!(accepted_shadow_count, 0);
         let resume = store
             .load_resumable_retention(&scope, "scope-1")
             .unwrap()

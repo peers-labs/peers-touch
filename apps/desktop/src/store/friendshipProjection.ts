@@ -5,6 +5,7 @@ import type {
 import type { AccountProfile } from '../services/desktop_api';
 import type { DesktopIMConversationProjection } from './socialProjection';
 import type { FriendRequestData } from './socialNormalizers';
+import { actorDisplayName, remoteProfileHandle } from './socialProfileProjection';
 
 export interface MutualFriendProjection {
   actorPtid: string;
@@ -138,7 +139,7 @@ export function projectChatFriendContacts({
     .map(([actorPtid, request]) => {
     const conversation = conversationsByPeer.get(actorPtid);
     const profile = peerProfiles[actorPtid];
-    const profileHandle = canonicalFederatedHandle(profile);
+    const profileHandle = profile ? remoteProfileHandle(profile) : '';
     const federatedHandle = profileHandle;
     const requestAvatar = request.senderPtid === actorPtid
       ? request.senderAvatar
@@ -146,11 +147,12 @@ export function projectChatFriendContacts({
     const requestDisplayName = request.senderPtid === actorPtid
       ? request.senderDisplayName
       : request.receiverDisplayName;
-    const homeStationDomain = homeStationDomainFromHandle(profileHandle)
+    const homeStationDomain = profile?.home_station_domain?.trim()
       || homeStationDomainFromHandle(federatedHandle);
-    const homeStationPeerId = request.senderPtid === actorPtid
-      ? request.senderHomeStationPeerId
-      : request.receiverHomeStationPeerId;
+    const homeStationPeerId = profile?.home_station_peer_id?.trim()
+      || (request.senderPtid === actorPtid
+        ? request.senderHomeStationPeerId
+        : request.receiverHomeStationPeerId);
     const federationId = conversation?.federationId
       || request.federationId
       || defaultFederationId;
@@ -161,10 +163,10 @@ export function projectChatFriendContacts({
       actorPtid,
       ...(conversation ? { conversationId: conversation.id } : {}),
       username,
-      displayName: profile?.display_name?.trim()
-        || requestDisplayName
-        || username
-        || conversation?.title
+      displayName: actorDisplayName(profile?.display_name)
+        || actorDisplayName(requestDisplayName)
+        || actorDisplayName(username)
+        || actorDisplayName(conversation?.title)
         || actorPtid,
       avatarUrl: profile?.avatar?.trim()
         || requestAvatar
@@ -290,17 +292,6 @@ export function chatActorIdentityMetadataParts(
     || homeStationDomainFromHandle(identity.federatedHandle)
     || '';
   return { federation, station };
-}
-
-function canonicalFederatedHandle(profile: AccountProfile | null | undefined): string {
-  if (!profile) return '';
-  for (const candidate of [profile.acct, profile.username]) {
-    const value = candidate.trim();
-    if (value.startsWith('@') && value.indexOf('@', 1) > 1) {
-      return value;
-    }
-  }
-  return '';
 }
 
 function homeStationDomainFromHandle(handle: string): string {

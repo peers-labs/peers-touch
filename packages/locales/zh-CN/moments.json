@@ -52,6 +52,7 @@
   "moments.filter.stationBoundary": "Station 边界",
 
   "moments.source.local": "本站",
+  "moments.source.remote": "远端",
   "moments.source.station": "来自 {{station}}",
   "moments.source.unresolved": "来源未解析",
   "moments.reason.self": "我发布",

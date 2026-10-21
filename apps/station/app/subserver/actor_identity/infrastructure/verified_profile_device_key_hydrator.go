@@ -13,6 +13,7 @@ import (
 
 	actoridentitydomain "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/domain"
 	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
+	corefederation "github.com/peers-labs/peers-touch/station/frame/core/federation"
 	fednode "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation/locator"
 	locatorpb "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation/locator/pb"
@@ -56,10 +57,15 @@ func (l dhtActorProfileLocator) Resolve(
 ) (*locatorpb.ActorLocatorRecord, error) {
 	health := fednode.GetRoutingHealth()
 	if !health.Ready {
-		return nil, fmt.Errorf(
-			"actor identity locator is not ready: peers=%d/%d",
-			health.PeersInRoutingTable,
-			health.MinDHTPeers,
+		return nil, actoridentitydomain.NewError(
+			actoridentitydomain.ErrorCodeIdentityUnavailable,
+			"actor_identity.resolve_profile_locator",
+			"dht_route",
+			fmt.Sprintf(
+				"is not ready: peers=%d/%d",
+				health.PeersInRoutingTable,
+				health.MinDHTPeers,
+			),
 		)
 	}
 	lookupCtx, cancel := context.WithTimeout(ctx, l.timeout)
@@ -67,34 +73,44 @@ func (l dhtActorProfileLocator) Resolve(
 	return l.lookup.GetByHandle(lookupCtx, canonicalHandle)
 }
 
-type relayActorProfileFetcher struct {
+type routedActorProfileFetcher struct {
+	db      *gorm.DB
+	client  *http.Client
 	timeout time.Duration
 }
 
-func (f relayActorProfileFetcher) Fetch(
+func (f routedActorProfileFetcher) Fetch(
 	ctx context.Context,
 	canonicalHandle string,
 	homeStationPeerID string,
 ) (*profilepb.ActorProfileEnvelope, error) {
 	const operation = "actor_identity.fetch_remote_profile"
 	relayClient := fednode.RelayAccessSnapshot()
-	if relayClient == nil || !relayClient.Available() {
-		return nil, actoridentitydomain.NewError(
-			actoridentitydomain.ErrorCodeIdentityUnavailable,
-			operation,
-			"relay",
-			"is not available yet",
-		)
-	}
-
-	target := (&url.URL{
-		Scheme:   "https",
-		Host:     "station.invalid",
-		Path:     "/actor/federation/profile",
-		RawQuery: url.Values{"handle": []string{canonicalHandle}}.Encode(),
-	}).String()
 	requestCtx, cancel := context.WithTimeout(ctx, f.timeout)
 	defer cancel()
+	target := ""
+	viaRelay := relayClient != nil && relayClient.Available()
+	if viaRelay {
+		target = (&url.URL{
+			Scheme:   "https",
+			Host:     "station.invalid",
+			Path:     "/actor/federation/profile",
+			RawQuery: url.Values{"handle": []string{canonicalHandle}}.Encode(),
+		}).String()
+	} else {
+		origin, err := resolveActiveStationOrigin(
+			requestCtx,
+			f.db,
+			homeStationPeerID,
+		)
+		if err != nil {
+			return nil, err
+		}
+		target, err = directActorProfileURL(origin, canonicalHandle)
+		if err != nil {
+			return nil, err
+		}
+	}
 	request, err := http.NewRequestWithContext(requestCtx, http.MethodGet, target, nil)
 	if err != nil {
 		return nil, actoridentitydomain.WrapError(
@@ -105,11 +121,16 @@ func (f relayActorProfileFetcher) Fetch(
 	}
 	request.Header.Set("Accept", "application/json")
 
-	response, err := relayClient.RoundTrip(
-		requestCtx,
-		homeStationPeerID,
-		request,
-	)
+	var response *http.Response
+	if viaRelay {
+		response, err = relayClient.RoundTrip(
+			requestCtx,
+			homeStationPeerID,
+			request,
+		)
+	} else {
+		response, err = f.client.Do(request)
+	}
 	if err != nil {
 		return nil, actoridentitydomain.WrapError(
 			actoridentitydomain.ErrorCodeIdentityUnavailable,
@@ -181,6 +202,89 @@ func (f relayActorProfileFetcher) Fetch(
 	return envelope, nil
 }
 
+func resolveActiveStationOrigin(
+	ctx context.Context,
+	db *gorm.DB,
+	homeStationPeerID string,
+) (string, error) {
+	const operation = "actor_identity.fetch_remote_profile"
+	if db == nil || !db.Migrator().HasTable("federation_station_membership") {
+		return "", actoridentitydomain.NewError(
+			actoridentitydomain.ErrorCodeIdentityUnavailable,
+			operation,
+			"home_station_route",
+			"is not available yet",
+		)
+	}
+	var memberships []struct {
+		StationURL string `gorm:"column:station_url"`
+	}
+	if err := db.WithContext(ctx).
+		Table("federation_station_membership").
+		Select("station_url").
+		Where(
+			"station_peer_id = ? AND status = ? AND station_url <> ''",
+			homeStationPeerID,
+			"active",
+		).
+		Find(&memberships).Error; err != nil {
+		return "", actoridentitydomain.WrapError(
+			actoridentitydomain.ErrorCodePersistence,
+			operation,
+			err,
+		)
+	}
+	origins := make(map[string]struct{})
+	for _, membership := range memberships {
+		origin, err := corefederation.CanonicalStationOrigin(
+			membership.StationURL,
+		)
+		if err != nil {
+			return "", actoridentitydomain.WrapError(
+				actoridentitydomain.ErrorCodeInvalidProof,
+				operation,
+				err,
+			)
+		}
+		origins[origin] = struct{}{}
+	}
+	if len(origins) == 0 {
+		return "", actoridentitydomain.NewError(
+			actoridentitydomain.ErrorCodeIdentityUnavailable,
+			operation,
+			"home_station_route",
+			"is not available yet",
+		)
+	}
+	if len(origins) != 1 {
+		return "", actoridentitydomain.NewError(
+			actoridentitydomain.ErrorCodeIdentityConflict,
+			operation,
+			"home_station_route",
+			"has conflicting active locations",
+		)
+	}
+	for origin := range origins {
+		return origin, nil
+	}
+	return "", actoridentitydomain.NewError(
+		actoridentitydomain.ErrorCodeIdentityUnavailable,
+		operation,
+		"home_station_route",
+		"is not available yet",
+	)
+}
+
+func directActorProfileURL(origin string, canonicalHandle string) (string, error) {
+	parsed, err := url.ParseRequestURI(origin)
+	if err != nil {
+		return "", err
+	}
+	parsed.Path = "/actor/federation/profile"
+	parsed.RawQuery = url.Values{"handle": []string{canonicalHandle}}.Encode()
+	return parsed.String(), nil
+}
+
 // VerifiedProfileDeviceKeyHydrator resolves remote device keys from PTID and
 // the authenticated Home Station. ActorRef.acct is display metadata and is
 // deliberately absent from this interface.
@@ -213,7 +317,9 @@ func NewVerifiedProfileDeviceKeyHydrator(
 			lookup:  locator.NewLookup(locator.LookupConfig{}),
 			timeout: timeout,
 		},
-		profiles: relayActorProfileFetcher{
+		profiles: routedActorProfileFetcher{
+			db:      db,
+			client:  &http.Client{Timeout: timeout},
 			timeout: timeout,
 		},
 		peerKeys: authfed.NewPeerKeyStoreGORMWithDB(db),
@@ -271,16 +377,20 @@ func (h *VerifiedProfileDeviceKeyHydrator) Hydrate(
 		return nil, err
 	}
 	locatorRecord, err := h.locator.Resolve(ctx, canonicalHandle)
-	if err != nil {
+	if err == nil {
+		if err := h.verifyLocator(
+			locatorRecord,
+			canonicalHandle,
+			claimedHomeStationPeerID,
+			pinnedPeerKey,
+		); err != nil {
+			return nil, err
+		}
+	} else if !actoridentitydomain.IsCode(
+		err,
+		actoridentitydomain.ErrorCodeIdentityUnavailable,
+	) {
 		return nil, classifyVerifiedProfileResolutionError(operation, err)
-	}
-	if err := h.verifyLocator(
-		locatorRecord,
-		canonicalHandle,
-		claimedHomeStationPeerID,
-		pinnedPeerKey,
-	); err != nil {
-		return nil, err
 	}
 
 	envelope, err := h.profiles.Fetch(

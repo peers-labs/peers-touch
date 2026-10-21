@@ -61,18 +61,18 @@ items:
         - { pathPrefix: docs/architecture/shared/security/secure-content, mode: shared-read }
         - { pathPrefix: tooling/development/secure_content, mode: shared-read }
       runtimeClaims:
-        - { kind: profile, resourceId: four, mode: shared }
-        - { kind: station.connect, resourceId: four, mode: shared }
-        - { kind: station.deploy, resourceId: station-four, mode: exclusive }
-        - { kind: station.reset, resourceId: station-four-social-private, mode: exclusive }
+        - { kind: profile, resourceId: chat-native-disposable, mode: shared }
+        - { kind: station.connect, resourceId: chat-native-disposable, mode: shared }
+        - { kind: station.deploy, resourceId: chat-native-disposable-station, mode: exclusive }
+        - { kind: station.reset, resourceId: chat-native-disposable-social-private, mode: exclusive }
         - { kind: fixture, resourceId: cross-station-social-schema-four, mode: exclusive }
         - { kind: local.slot, resourceId: "13", mode: exclusive }
     authorization:
       checkpoint: { localCommit: denied, amend: denied }
       delivery: { push: denied, pullRequest: denied }
       runtime:
-        deployProfiles: [four]
-        destructiveResetScopes: [station-four-social-private]
+        deployProfiles: [chat-native-disposable]
+        destructiveResetScopes: [chat-native-disposable-social-private]
       history: { rewrite: denied }
 
   - id: cross-station-social-schema-five-arm

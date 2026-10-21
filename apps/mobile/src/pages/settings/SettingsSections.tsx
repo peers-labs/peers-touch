@@ -1274,10 +1274,10 @@ export function BlockedUsersSection({
             key={item.targetPtid}
           >
             <Avatar src={item.avatar || undefined}>
-              {item.displayName.slice(0, 2).toUpperCase()}
+              {(item.displayName || t('mobile.contacts.unknownUser')).slice(0, 1).toUpperCase()}
             </Avatar>
             <div className="settings-station-copy settings-blocked-user-copy">
-              <Text>{item.displayName}</Text>
+              <Text>{item.displayName || t('mobile.contacts.unknownUser')}</Text>
               <Text copyable>{item.targetPtid}</Text>
               {item.homeStationPeerId ? (
                 <Text type="secondary">{item.homeStationPeerId}</Text>

@@ -104,7 +104,6 @@ export function installAcceptanceHarness(): void {
     },
 
     async openAccountIdentity() {
-      window.location.hash = '#/settings';
       eventBus.publish(EVENT.NAVIGATION_REQUESTED, {
         resource: 'settings',
         id: 'account',

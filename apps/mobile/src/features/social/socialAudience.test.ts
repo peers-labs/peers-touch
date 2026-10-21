@@ -6,6 +6,7 @@ import { Audience_Kind } from '../../gen/proto/domain/social/post_pb';
 import {
   SOCIAL_AUDIENCE_CHOICES,
   buildSocialAudience,
+  isPublicSocialAudience,
   normalizeSocialAudience,
   socialAudienceChoiceFromAudience,
   socialAudienceTargetFromAudience,
@@ -80,5 +81,25 @@ describe('canonical Mobile Social Audience', () => {
       baseKind: Audience_Kind.PUBLIC,
       target: { case: undefined },
     })).toThrow('mobile.moments.audience.customDenyBaseInvalid');
+  });
+
+  it('classifies read projections without requiring mutation targets', () => {
+    const incompleteCircle = {
+      kind: Audience_Kind.CIRCLE,
+      actorPtids: [],
+      baseKind: Audience_Kind.UNSPECIFIED,
+      target: { case: undefined },
+    };
+    const incompleteGroup = {
+      ...incompleteCircle,
+      kind: Audience_Kind.GROUP,
+    };
+
+    expect(isPublicSocialAudience(incompleteCircle)).toBe(false);
+    expect(isPublicSocialAudience(incompleteGroup)).toBe(false);
+    expect(() => normalizeSocialAudience(incompleteCircle))
+      .toThrow('mobile.moments.audience.circleRequired');
+    expect(() => toPrivateSocialAudience(incompleteGroup))
+      .toThrow('mobile.moments.audience.groupRequired');
   });
 });
