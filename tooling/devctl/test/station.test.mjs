@@ -8,7 +8,7 @@ import test from 'node:test';
 import { machineRegistryPath } from '../../scripts/lib/machine-dev-paths.mjs';
 import { registerWorkspace } from '../../scripts/local-dev/machine-dev-registry.mjs';
 import { DevctlError, ERROR_CODES } from '../errors.mjs';
-import { startStation } from '../station.mjs';
+import { composeRuntimeEnvironment, startStation } from '../station.mjs';
 
 function removeTemporaryTree(directory) {
   fs.rmSync(directory, {
@@ -18,6 +18,33 @@ function removeTemporaryTree(directory) {
     retryDelay: 50,
   });
 }
+
+test('compose build overrides come only from the reviewed profile or env-file', () => {
+  const resolved = {
+    profile: {},
+    reference: { workspaceRoot: '/workspace' },
+    paths: {
+      localDev: '/workspace/.local/dev',
+      profileData: '/tmp/profile-data',
+      profileLogs: '/tmp/profile-logs',
+      profilePids: '/tmp/profile-pids',
+    },
+  };
+  const ambient = composeRuntimeEnvironment(resolved, {
+    PATH: '/bin',
+    GOPROXY: 'https://ambient.invalid',
+    GOSUMDB: 'off',
+  });
+  assert.equal(ambient.GOPROXY, undefined);
+  assert.equal(ambient.GOSUMDB, undefined);
+
+  resolved.profile.GOPROXY = 'https://reviewed.example,direct';
+  const reviewed = composeRuntimeEnvironment(resolved, {
+    PATH: '/bin',
+    GOPROXY: 'https://ambient.invalid',
+  });
+  assert.equal(reviewed.GOPROXY, 'https://reviewed.example,direct');
+});
 
 function fixtureProfile({
   name,

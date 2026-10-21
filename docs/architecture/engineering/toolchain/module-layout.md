@@ -1,76 +1,81 @@
 # Developer Toolchain - Module Layout
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-09-12 | **Updated**: 2026-09-12
+> **Version**: v2.0
+> **Updated**: 2026-10-21
 > **Owner**: Developer Infrastructure
 > **Module**: `tooling/devctl/`
-
----
 
 ## Directory Tree
 
 ```text
-tooling/
-├── devctl/
-│   ├── index.mjs
-│   ├── errors.mjs
-│   ├── profile.mjs
-│   ├── runtime-state.mjs
-│   ├── process-adapter.mjs
-│   ├── health.mjs
-│   ├── doctor.mjs
-│   ├── checks.mjs
-│   ├── station.mjs
-│   ├── desktop.mjs
-│   └── test/
-│       ├── profile.test.mjs
-│       ├── runtime-state.test.mjs
-│       ├── process-adapter.test.mjs
-│       └── cli.test.mjs
-├── dev.ps1
-└── scripts/
-    └── local-dev/
-        └── *.sh
+tooling/devctl/
+├── index.mjs
+├── errors.mjs
+├── profile.mjs
+├── doctor.mjs
+├── checks.mjs
+├── runtime-state.mjs
+├── process-adapter.mjs
+├── health.mjs
+├── station.mjs
+├── desktop.mjs
+└── test/
+    ├── cli.test.mjs
+    ├── profile.test.mjs
+    ├── checks.test.mjs
+    ├── runtime-state.test.mjs
+    ├── process-adapter.test.mjs
+    ├── station.test.mjs
+    ├── desktop.test.mjs
+    └── wrapper-policy.test.mjs
 ```
 
-## File Responsibilities
+## Responsibilities
 
-| Path | Responsibility |
-|---|---|
-| `index.mjs` | Parse CLI arguments, route commands, format output, map typed failures to exit codes |
-| `errors.mjs` | Stable `DEVCTL_*` errors and serialization |
-| `profile.mjs` | Parse, validate, import, activate, and resolve profiles |
-| `runtime-state.mjs` | Atomic state records and ownership comparison |
-| `process-adapter.mjs` | OS-specific spawn, inspect, terminate-tree, and port observation |
-| `health.mjs` | Bounded HTTP and TCP readiness probes |
-| `doctor.mjs` | Dependency, SDK, profile, path, and port diagnostics |
-| `checks.mjs` | Cross-platform deterministic repository checks |
-| `station.mjs` | Local Station build/start/health lifecycle |
-| `desktop.mjs` | App/Web composition and isolated Desktop lifecycle |
-| `test/` | Unit and CLI integration tests without product mocks |
-| `dev.ps1` | Windows argument/exit-code forwarding only |
-| `scripts/local-dev/*.sh` | Temporary Unix forwarding adapters until consumer deletion |
+- `index.mjs`: parse the public CLI, route commands, format output, and map
+  typed failures to exit codes.
+- `errors.mjs`: define stable `DEVCTL_*` failures and serialization.
+- `profile.mjs`: parse Profiles, create local Compose bootstrap files, combine
+  Profile topology with the machine binding, and redact output.
+- `doctor.mjs`: check dependencies required by the selected topology.
+- `checks.mjs`: run deterministic cross-platform repository checks.
+- `runtime-state.mjs`: persist atomic managed-process records.
+- `process-adapter.mjs`: spawn, inspect, and stop owned process trees.
+- `health.mjs`: provide bounded HTTP and TCP readiness probes.
+- `station.mjs`: own local and Compose Station lifecycle and invoke the
+  reviewed remote deployment adapter.
+- `desktop.mjs`: prepare dependencies and generated assets, ready Station, and
+  run Vite plus native Tauri.
+- `test/`: verify command behavior, lifecycle, identity, and wrapper policy.
 
 ## Dependency Direction
 
 ```text
 index
-  -> profile
-  -> doctor
+  -> profile -> Local Dev machine binding
+  -> doctor -> profile
   -> checks
-  -> station -> health, runtime-state, process-adapter
-  -> desktop -> health, runtime-state, process-adapter
+  -> station -> profile, health, runtime-state, process-adapter
+  -> desktop -> profile, station, health, runtime-state, process-adapter
 
-runtime-state -> process-adapter
-doctor -> profile, process-adapter
+runtime-state <- process-adapter
 ```
 
-Lower-level adapters never import command modules. Station and Desktop modules
-do not import each other; the command router coordinates dependency order.
+Command modules do not import each other except for Desktop using Station's
+ready operation. Lower-level process and health modules never import command
+modules.
 
-## Wrapper Constraint
+## External Adapters
 
-`Makefile`, `tooling/make/local-dev.mk`, `tooling/dev.ps1`, and package scripts
-may contain only command forwarding, help text, and argument defaults. They do
-not parse profiles or own process lifecycle.
+- `tooling/scripts/local-dev/machine-dev-registry.mjs` owns worktree binding,
+  slot allocation, capabilities, and leases.
+- `tooling/scripts/local-dev/station-dev.sh` remains only as the reviewed
+  remote Station deployment bridge.
+- Relay and Mobile retain their own platform adapters until their command
+  families move behind `devctl`.
+- `Makefile`, `tooling/make/local-dev.mk`, `tooling/dev.ps1`, package scripts,
+  and CI only forward public commands and exit status.
+
+No wrapper parses Profiles, generates credentials, or owns managed-process
+lifecycle.

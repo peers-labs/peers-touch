@@ -56,7 +56,7 @@ record instead of preserving worktree isolation.
 - Two different canonical roots derive different workspace state paths.
 - Revision/CAS, digest, lock ownership, file permissions and malformed-record
   isolation tests pass.
-- `rg -n 'project_memory\\.md.*active_work|active_work.*project_memory\\.md' AGENTS.md tooling/skills docs/global/workflow.md`
+- `rg -n 'project_memory\\.md.*active_work|active_work.*project_memory\\.md' AGENTS.md tooling/skills docs/development/workflow.md`
   finds no normal runtime writer contract.
 - Workflow Snapshot reads `active-work.json` records through
   `readAllActiveWorkRecords`; it never writes them.

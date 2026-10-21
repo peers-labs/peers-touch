@@ -4,7 +4,7 @@ title: Authorized Development Runs continue across internal boundaries
 status: active
 owns:
   - AGENTS.md
-  - docs/global/workflow.md
+  - docs/development/workflow.md
   - docs/architecture/engineering/development-workflow/
   - tooling/skills/pt-dev-workflow/
   - tooling/skills/pt-goal-orchestrator/

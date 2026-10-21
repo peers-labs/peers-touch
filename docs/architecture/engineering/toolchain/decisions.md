@@ -1,242 +1,254 @@
-# Developer Toolchain - Design Decisions
+# Developer Toolchain Decisions
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-09-12 | **Updated**: 2026-09-12
+> **Version**: v2.0
+> **Updated**: 2026-10-21
 > **Owner**: Developer Infrastructure
-
----
 
 ## Decision Index
 
 | ID | Decision | Status |
 |---|---|---|
-| DTC-D01 | Node is the local-development control plane | accepted |
+| DTC-D01 | Node owns the cross-platform control plane | accepted |
 | DTC-D02 | Wrappers contain no lifecycle policy | accepted |
-| DTC-D03 | Profiles remain the configuration source of truth | accepted |
-| DTC-D04 | Managed process state is explicit and verified | accepted |
-| DTC-D05 | Migration is an atomic consumer cutover | accepted |
-| DTC-D06 | Remote deployment is bridged before it is ported | accepted |
-| DTC-D07 | Formal execution plan owns Acceptance scheduling | accepted |
-| DTC-D08 | Diff planning detects drift but does not schedule work | accepted |
-| DTC-D09 | Full and release verification require explicit invocation | accepted |
+| DTC-D03 | Machine binding selects Profile topology | accepted |
+| DTC-D04 | Managed process identity is re-observed | accepted |
+| DTC-D05 | Command-family cutovers are atomic | accepted |
+| DTC-D06 | Remote deployment remains a reviewed adapter | accepted |
+| DTC-D10 | Local bootstrap creates private Compose credentials | accepted |
+| DTC-D11 | Native Desktop is the sole Desktop development mode | accepted |
 
----
-
-## DTC-D01: Node Is The Local-Development Control Plane
+## DTC-D01: Node Owns The Cross-Platform Control Plane
 
 **Status**: accepted
 **Date**: 2026-09-12
 
 ### Context
 
-The workspace already requires Node and pnpm on every supported development
-platform. Bash is not a native Windows dependency, while PowerShell is not a
-native macOS/Linux dependency.
+The repository already requires Node through the pnpm workspace and needs one
+implementation on macOS, Linux, and Windows.
 
 ### Decision
 
-Implement local-development orchestration as dependency-light ESM under
-`tooling/devctl/`, using Node standard-library APIs by default.
+Profile parsing, diagnostics, process lifecycle, and deterministic checks live
+in dependency-light ESM under `tooling/devctl/`.
 
 ### Rationale
 
-This provides one implementation for filesystem, subprocess, network, hashing,
-and JSON behavior without adding another runtime prerequisite.
+Node is available before product builds and avoids parallel Bash and
+PowerShell behavior.
 
 ### Alternatives Considered
 
-- Keep Bash and require Git Bash on Windows: rejected because Bash remains the
-  platform contract.
-- Implement parallel Bash and PowerShell trees: rejected because behavior and
-  fixes would drift.
-- Implement in Go or Rust: rejected because build/bootstrap cost is too high
-  for the command that diagnoses missing build dependencies.
+Bash-only, duplicated PowerShell, and a compiled bootstrap binary were
+rejected because each adds a second contract or a build-before-diagnosis loop.
 
 ### Consequences
 
-Positive: one testable control plane and native Windows execution.
-
-Negative: Node becomes a bootstrap prerequisite for local development.
-`doctor` must report this clearly when invoked through a wrapper.
-
----
+Node is a declared bootstrap dependency with a machine-readable supported
+version.
 
 ## DTC-D02: Wrappers Contain No Lifecycle Policy
 
 **Status**: accepted
 **Date**: 2026-09-12
 
+### Context
+
+Make, PowerShell, package scripts, and CI had multiple opportunities to
+reimplement Profile and runtime behavior.
+
 ### Decision
 
-Make targets, `dev.ps1`, shell wrappers, and package scripts may forward
-arguments and exit codes only. They may not resolve profiles, calculate ports,
-probe health, or manage processes.
+Wrappers may translate arguments, provide help, and forward exit status. They
+do not parse Profiles, generate credentials, calculate ports, or manage
+processes.
+
+### Rationale
+
+One implementation keeps platform behavior and tests aligned.
 
 ### Alternatives Considered
 
-- Maintain feature-equivalent native scripts: rejected because parity cannot be
-  mechanically guaranteed.
+Platform-specific wrapper logic was rejected because it creates silent
+cross-platform drift.
 
 ### Consequences
 
-Existing shell helpers are deleted or reduced to forwarding adapters after
-their consumers migrate.
+Behavior changes land in `devctl`; wrapper-policy tests keep adapters thin.
 
----
-
-## DTC-D03: Profiles Remain The Configuration Source Of Truth
+## DTC-D03: Machine Binding Selects Profile Topology
 
 **Status**: accepted
 **Date**: 2026-09-12
 
+### Context
+
+Nearby Profile files and worktree-local pointers cannot coordinate multiple
+worktrees on one machine.
+
 ### Decision
 
-Retain the current canonical env-repository and worktree-active profile model.
-`devctl` parses and validates this model; it does not create a parallel JSON,
-registry, or Windows-only profile format.
+The Local Dev machine binding selects the Profile and slot for each canonical
+worktree. `devctl` reads only the Profile named by that binding.
+
+### Rationale
+
+Selection and allocation need one machine owner, while Profile files remain
+declarative topology.
 
 ### Alternatives Considered
 
-- Replace env files with JSON: rejected because it would force an unrelated
-  environment-repository migration.
-- Infer a default profile: rejected because it can silently target the wrong
-  Station.
+Profile pointers, branch inference, task state, and Profile-owned slots were
+rejected as ambiguous or split-brain authority.
 
 ### Consequences
 
-The env parser supports the repository's declarative assignment subset and
-rejects shell evaluation. Profiles that depend on executable shell expressions
-must be repaired rather than evaluated.
+Unregistered worktrees fail closed. Explicit Profile selection is the normal
+first-use registration path.
 
----
-
-## DTC-D04: Managed Process State Is Explicit And Verified
+## DTC-D04: Managed Process Identity Is Re-Observed
 
 **Status**: accepted
 **Date**: 2026-09-12
 
+### Context
+
+PID files and listening ports can outlive or be reused by the process that
+created them.
+
 ### Decision
 
-Persist structured runtime records under
-`.local/dev/state/<profile>/<service>.json`. Before reuse or termination,
-compare the record with the live PID, command identity, ports, profile, and
-worktree.
+Managed records store command, Profile, worktree, start identity, ports, and
+identity tokens. Reuse and stop re-observe the live process.
+
+### Rationale
+
+Process ownership must survive PID reuse and reject unrelated listeners.
 
 ### Alternatives Considered
 
-- PID files only: rejected because PIDs are reusable.
-- Kill all listeners on configured ports: rejected because the process may be
-  unrelated and user-owned.
+PID-only ownership and killing every listener on a configured port were
+rejected as unsafe.
 
 ### Consequences
 
-Unknown port occupants fail closed and require explicit operator action.
-Platform adapters must expose equivalent identity checks.
+Stale records may be removed. Foreign processes require explicit operator
+action and are never killed by `devctl`.
 
----
-
-## DTC-D05: Migration Is An Atomic Consumer Cutover
+## DTC-D05: Command-Family Cutovers Are Atomic
 
 **Status**: accepted
 **Date**: 2026-09-12
 
+### Context
+
+Keeping old and new implementations live makes the public command depend on
+which wrapper a caller happens to use.
+
 ### Decision
 
-Move each command family and all of its wrappers/tests to `devctl` in one
-closure. Do not maintain two independent implementations for the same command.
+When `devctl` takes a command family, all current wrappers, consumers, tests,
+and docs move together and the old implementation is deleted.
+
+### Rationale
+
+Atomic cutover preserves one owner and one failure contract.
 
 ### Alternatives Considered
 
-- Leave old shell behavior as fallback indefinitely: rejected because it
-  creates two truth owners.
+Compatibility aliases and indefinite dual-running were rejected.
 
 ### Consequences
 
-Temporary forwarding wrappers are allowed only while named external consumers
-still depend on their paths. Their removal condition is tracked in the
-execution plan.
+Rollback uses source control rather than a retained fallback.
 
----
-
-## DTC-D06: Remote Deployment Is Bridged Before It Is Ported
+## DTC-D06: Remote Deployment Remains A Reviewed Adapter
 
 **Status**: accepted
 **Date**: 2026-09-12
 
+### Context
+
+Remote Station deployment already has reviewed SSH and source-transfer
+semantics that are not yet cross-platform.
+
 ### Decision
 
-The first delivery supports native local Station and Desktop lifecycle.
-Remote Station/Relay operations remain owned by current deployment tooling and
-are invoked only through an explicit compatibility adapter on platforms where
-that tooling is available. Windows returns `DEVCTL_UNSUPPORTED_MODE` rather
-than silently changing deployment semantics.
+Local and Compose Station lifecycle is native `devctl`. Remote Station
+deployment calls the reviewed Unix adapter after machine binding and source
+checks.
+
+### Rationale
+
+This keeps local development cross-platform without casually rewriting remote
+security and deployment behavior.
 
 ### Alternatives Considered
 
-- Port remote deployment in the first closure: rejected because SSH source
-  transfer, remote service management, and credential behavior are a separate
-  risk boundary.
+Duplicating remote deployment in Node or silently changing targets on Windows
+was rejected.
 
 ### Consequences
 
-The first closure does not claim native Windows remote deployment support.
-A later plan may port that owner behind the same `devctl` contract.
+Windows reports remote deployment as unsupported. A future migration requires
+its own accepted design and atomic cutover.
 
----
-
-## DTC-D07: Formal Execution Plan Owns Acceptance Scheduling
+## DTC-D10: Local Bootstrap Creates Private Compose Credentials
 
 **Status**: accepted
-**Date**: 2026-09-12
+**Date**: 2026-10-21
+
+### Context
+
+A fresh checkout could create a local Profile but still fail later because its
+Compose credential file did not exist.
 
 ### Decision
 
-A tracked worktree has exactly one active formal execution plan. That plan's
-existing closure status and embedded Acceptance Execution contract determine
-what `acceptance run` executes. No Acceptance-specific iteration state,
-active-plan pointer, or workflow session is introduced.
+`devctl profile init` atomically creates a topology Profile and a separate
+private Compose env with random Station and PostgreSQL secrets.
+
+### Rationale
+
+Bootstrap should fail early, remain non-interactive, and keep credentials out
+of topology and source.
+
+### Alternatives Considered
+
+Copying the operator `.env.example`, committing defaults, sharing one repo env,
+and generating credentials only during start were rejected.
 
 ### Consequences
 
-`active_work` remains an Agent-facing index and Context Anchor remains a chat
-projection. The CLI discovers the formal plan by verified worktree metadata and
-fails when the match is absent or ambiguous.
+Initialization never overwrites either file. Lost credentials require explicit
+local repair rather than silent rotation.
 
----
-
-## DTC-D08: Diff Planning Detects Drift But Does Not Schedule Work
+## DTC-D11: Native Desktop Is The Sole Desktop Development Mode
 
 **Status**: accepted
-**Date**: 2026-09-12
+**Date**: 2026-10-21
+
+### Context
+
+Browser-only Desktop startup bypasses the WebView, Rust, Tauri command, local
+storage, and native lifecycle boundaries.
 
 ### Decision
 
-Registry path matching produces an impact projection. It validates that every
-candidate Gate is declared somewhere in the formal plan, but cannot add a Gate
-to the current closure or execute it.
+`devctl desktop start` always runs managed Vite plus native Tauri and waits for
+both dependency readiness and React mount.
+
+### Rationale
+
+Routine debugging must exercise the product boundary being claimed.
+
+### Alternatives Considered
+
+A browser-only Desktop product mode was rejected. Browser tooling remains
+valid for actual browser products such as the official site.
 
 ### Consequences
 
-Broad path rules remain conservative without turning every candidate into an
-immediate runtime test. Missing declarations fail with `DEVCTL_PLAN_DRIFT` and
-must be reconciled in the formal plan.
-
----
-
-## DTC-D09: Full And Release Verification Require Explicit Invocation
-
-**Status**: accepted
-**Date**: 2026-09-12
-
-### Decision
-
-Plain `acceptance run` executes only the current closure. Plan-completion
-verification requires `--completion`; the plan's full/release matrix requires
-`--full`. Agents may use `--full` only after an explicit user request to
-release or run full Acceptance.
-
-### Consequences
-
-Environment availability is not authorization. PR verification cannot silently
-escalate to full/release execution.
+Packaging is a separate install or release concern and does not replace the
+live native development runtime.

@@ -5,7 +5,7 @@ status: active
 owns:
   - AGENTS.md
   - docs/architecture/engineering/local-dev/
-  - docs/global/local-dev-environment.md
+  - docs/development/environment.md
   - tooling/devctl/
   - tooling/scripts/local-dev/
   - tooling/skills/pt-local-dev-env/
@@ -56,5 +56,6 @@ continuous Plan execution without adding a real safety boundary.
 
 ## Crosswalks
 
-- Architecture: `docs/architecture/engineering/local-dev/decisions.md#ldcp-d15-canonical-profile-id-reset-protection`.
-- Environment contract: `docs/global/local-dev-environment.md`.
+- Architecture:
+  `docs/architecture/engineering/local-dev/decisions.md#ldcp-d21-reviewed-profiles-authorize-bounded-operations`.
+- Environment contract: `docs/development/environment.md`.

@@ -8,7 +8,7 @@ produces: ["work classification", "owning-skill route", "route blocker when inte
 
 # God View
 
-Human operating standard: `docs/global/workflow.md`.
+Shared human and Agent standard: `docs/development/workflow.md`.
 
 `pt-god-view` is the methodology facade. It answers one question:
 

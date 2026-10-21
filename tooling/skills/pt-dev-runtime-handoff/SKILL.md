@@ -5,7 +5,7 @@ description: Owns host-neutral Peers-Touch runtime launch, interaction, exact-so
 
 # Dev Runtime Handoff
 
-> Environment source: `docs/global/local-dev-environment.md`
+> Environment source: `docs/development/environment.md`
 
 ## Goal
 

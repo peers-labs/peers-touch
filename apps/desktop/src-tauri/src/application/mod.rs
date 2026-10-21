@@ -48,4 +48,6 @@ pub mod system;
 pub mod tools;
 pub mod tray;
 pub mod tts;
+#[cfg(feature = "acceptance-webdriver")]
+pub mod updater_verification;
 pub mod window_lifecycle;

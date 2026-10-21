@@ -2,11 +2,51 @@
 
 > Status: Canonical. Owner: Architecture.
 > Audience: anyone reading or modifying this codebase, AI included.
-> Updated: 2026-05-19
+> Updated: 2026-10-21
 
 Domain terms specific to peers-touch. Standard CS terminology (DHT, mutex, RAG, PR, etc.) is NOT included; assume the reader has it.
 
 When introducing a new domain term in code, comments, or PRs, add it here in the same change.
+
+---
+
+## Project structure
+
+**Client**
+The user-facing Desktop or Mobile application. A Client owns device-local UI,
+runtime orchestration, and device capabilities; it does not own shared business
+truth.
+
+**Model**
+The shared contract layer rooted at `model/domain/`. Protobuf source owns
+cross-platform contract semantics; generated output is never the source.
+
+**Station**
+The shared business runtime under `apps/station/`. Station owns cross-client
+business state, policy, persistence, and federation behavior.
+
+**Profile**
+A reviewed or worktree-local development topology selected for one worktree.
+It describes Station mode and endpoints; the machine Dev Control Plane assigns
+the worktree's local port slot and runtime capabilities.
+
+**Runtime projection**
+A client-owned, continuously maintained view of authoritative state. Pages
+render projections; they do not keep business state fresh through mount-time
+fetches alone.
+
+**Journey**
+A real sequence of user or system actions with an observable outcome. A
+functional Journey proves behavior; source checks alone do not.
+
+**Acceptance**
+Formal, source-bound evidence for a declared product capability. Acceptance is
+stronger than framework self-tests and remains `UNPROVEN` when its required
+runtime or oracle was not executed.
+
+**Applet**
+A packaged capability that runs inside a Peers-Touch Host through the canonical
+manifest, SDK, Bridge, permission, and service contracts.
 
 ---
 

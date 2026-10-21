@@ -1,282 +1,176 @@
-# Developer Toolchain - Architecture Design
+# Developer Toolchain Design
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-09-12 | **Updated**: 2026-10-07
+> **Version**: v2.0
+> **Updated**: 2026-10-21
 > **Owner**: Developer Infrastructure
 > **Module**: `tooling/devctl/`
 
----
+## 1. Principles
 
-## 1. Core Principles
+1. `devctl` owns cross-platform command behavior.
+2. Make, PowerShell, package scripts, and CI are adapters.
+3. The machine Dev Control Plane owns worktree binding, slot, capability, and
+   lease authority.
+4. Profile files own topology, not machine allocation.
+5. Process records are ownership evidence; live probes determine readiness.
+6. Missing or conflicting state fails before mutation.
+7. Logs and diagnostics redact credentials.
 
-1. **One control plane**: lifecycle semantics live in `devctl`; wrappers only
-   translate invocation syntax.
-2. **Explicit configuration**: the selected profile is the only source for
-   ports, Station mode, runtime identity, and tool overrides.
-3. **Owned processes only**: stop and restart operations act only on processes
-   whose recorded identity still matches the live process.
-4. **Fail closed**: missing profiles, invalid values, occupied ports, missing
-   tools, and unsupported modes return typed non-zero failures before mutation.
-5. **Evidence over assumptions**: status and doctor report observed process,
-   port, dependency, and health state.
-6. **One worktree, one active plan**: a tracked worktree has exactly one active
-   formal execution plan; every runtime projection validates that plan instead
-   of creating another workflow state.
-7. **Plan-bound verification**: Acceptance execution is selected from the
-   current closure in the formal plan. Diff-based impact analysis detects plan
-   drift but never silently expands execution.
-
-## 2. Evidence Ledger
-
-| Claim | Class | Evidence | Confidence | Missing proof |
-|---|---|---|---|---|
-| Make is not a Windows compatibility layer in the current tree | `verified_fact` | Root `Makefile` fixes `SHELL := /bin/bash`; `gmake config` fails without `sh.exe` | high | none |
-| Daily local-development ownership is Bash-based | `verified_fact` | `tooling/make/local-dev.mk` and `tooling/scripts/local-dev/*.sh` | high | none |
-| Package checks are not shell-neutral | `verified_fact` | `apps/desktop/package.json` directly executes two `.sh` files | high | none |
-| Tauri development builds applets twice | `verified_fact` | `pretauri:dev` and `beforeDevCommand -> pnpm dev -> predev` | high | none |
-| Windows build support is not a complete lifecycle | `verified_fact` | `tooling/scripts/windows-desktop-build.ps1` has no profile/status/stop/restart contract | high | none |
-| A Node control plane can provide the required OS adapters without a new runtime dependency | `proposal` | Node is already required by the pnpm workspace and exposes filesystem, child-process, crypto, and networking APIs | high | Windows and Unix lifecycle gates |
-
-## 3. Scope And Non-Scope
-
-### In Scope
-
-- Profile list, initialization, activation, resolution, and redacted display.
-- Dependency and environment diagnostics.
-- Local Station health, start, status, stop, and restart.
-- Native Desktop start, status, stop, and restart.
-- Cross-platform source checks currently implemented in shell.
-- Make, package, and PowerShell adapters over the same command contract.
-- Structured runtime metadata and bounded cleanup.
-- Windows and Unix CI smoke coverage.
-- Worktree-bound execution-plan discovery and Acceptance scheduling.
-- Plan-completion and explicitly requested full/release verification.
-
-### Non-Scope
-
-- Changing Station, Desktop, Relay, or Mobile business semantics.
-- Replacing the remote deployment implementation in the first closure.
-- Changing Acceptance Station profile injection or Runtime Cell ownership.
-- Packaging, signing, installers, or release automation.
-- Adding a second profile or process source of truth.
-- Adding an Acceptance-specific task, iteration, or lifecycle state machine.
-
-## 4. System Architecture
+## 2. System
 
 ```text
-Developer / CI
-      |
-      +-- node tooling/devctl/index.mjs ...
-      +-- make <target> --------------------+
-      +-- tooling/dev.ps1 ------------------+
-      +-- package scripts ------------------+
-                                           |
-                                           v
-                              +-------------------------+
-                              | devctl command router   |
-                              +-----------+-------------+
-                                          |
-                   +----------------------+----------------------+
-                   |                      |                      |
-                   v                      v                      v
-          profile/config owner    lifecycle coordinator    doctor/check owner
-                   |                      |                      |
-                   v                      v                      v
-       .local/dev/profiles     OS process + port adapter   deterministic checks
-       .local/dev/active       runtime state records       structured results
-                   |                      |
-                   +----------+-----------+
-                              v
-              Station / desktop-rust / Vite / desktop-app
+Developer / Agent / CI
+  |
+  +-- make <command>
+  +-- tooling/dev.ps1 <command>
+  +-- package or workflow adapter
+  |
+  v
+tooling/devctl/index.mjs
+  |
+  +-- profile.mjs ---- machine registry + Profile definition
+  +-- doctor.mjs ----- executable and runtime preflight
+  +-- station.mjs ---- Station ready/status/stop/restart
+  +-- desktop.mjs ---- dependencies, Station closure, Vite, Tauri
+  +-- checks.mjs ----- deterministic cross-platform checks
+  |
+  v
+Station / Vite / native Tauri Desktop
 ```
 
-`devctl` is a control plane. It does not become a product runtime and does not
-own Station or Desktop data.
+`devctl` is development infrastructure. It never owns Station or client
+business data.
 
-The development workflow uses the existing formal plan as its only task-state
-owner:
+## 3. Sources Of Truth
 
-```text
-verified worktree
-  -> one active formal execution plan
-  -> one current closure from its Implementation Status table
-  -> closure Acceptance declaration
-  -> Acceptance runner
-```
+- Worktree identity, selected Profile, slot, and allowed capabilities:
+  `~/.peers-touch/dev/registry.json`, through the Local Dev owner.
+- Reviewed remote topology: sibling `env/peers-touch/<profile>/`.
+- Worktree-local topology: `.local/dev/profiles/<profile>.env`.
+- Local Compose credentials: `.local/dev/compose/<profile>.env`.
+- Runtime source identity: current Git branch and HEAD observed per operation.
+- Managed process identity: workspace-scoped runtime records plus live OS
+  identity.
+- Runtime readiness: Station health/build endpoint and Desktop dependency,
+  Vite, and WebView mount probes.
 
-`active_work`, Context Anchor, Goal queues, and Acceptance impact artifacts are
-indexes or projections. None may redefine plan scope, progress, or Gate timing.
+No `.local/dev/active` pointer, task record, Plan, Hook, or chat identity may
+select or authorize a runtime.
 
-## 5. Sources Of Truth And Ownership
+## 4. Profile Lifecycle
 
-| Concern | Source of truth | Mutation owner |
-|---|---|---|
-| Profile definition | canonical env repository when present; otherwise `.local/dev/profiles/<name>.env` | `devctl profile` |
-| Active profile | `.local/dev/active/<worktree>.env` | `devctl profile activate` |
-| Runtime configuration | resolved active profile | `devctl` command invocation |
-| Managed process identity | `.local/dev/state/<profile>/<service>.json` | lifecycle coordinator |
-| Runtime health | live health endpoint and listening port | status/doctor probes |
-| Product data | Station/Desktop storage roots | product runtimes, never `devctl` |
-| Work scope and progress | formal execution plan | planning/execution stage owner |
-| Plan lookup | stable PlanMount plus current immutable snapshot, or explicit CI input | Development Workflow mount/run |
-| Acceptance timing | plan Acceptance Execution contract | planning stage owner |
-| Diff impact | generated Acceptance projection | Acceptance planner |
+### Initialize
 
-The runtime-state record is evidence of ownership, not proof of liveness.
-Liveness is always re-observed.
+`devctl profile init <name> --slot <n>` creates:
 
-## 5.1 Plan-Bound Acceptance
+- one declarative Compose Profile;
+- one private Compose environment with random Station and PostgreSQL secrets.
 
-Every tracked plan declares its worktree identity and one machine-readable
-Acceptance Execution contract. The contract maps closure IDs to Gate IDs and
-defines plan-completion and explicit full/release Gate sets.
+Initialization validates the name and slot, creates both files atomically, and
+refuses to overwrite either file.
 
-The runner:
+### Select
 
-1. resolves the verified workspace's stable PlanMount and current snapshot;
-2. reads the current closure from the Execution Run;
-3. validates actual changed paths against the registry-derived impact
-   projection;
-4. rejects undeclared impact with `ACCEPTANCE_PLAN_DRIFT`;
-5. prints the selected Gates, environments, and timeout budget;
-6. executes only the current closure unless completion or full execution was
-   explicitly requested.
+Profile selection delegates to the machine Dev Control Plane. First selection
+registers the current worktree and allocates a free slot. The selected Profile
+name and declared `PT_DEV_PROFILE` must match.
 
-No tier, environment availability, latest evidence pointer, or Agent inference
-may broaden the selected execution set.
+### Resolve
 
-## 6. Command Contract
+Normal resolution requires an authoritative machine binding. The binding
+selects either:
 
-```text
-devctl profile list
-devctl profile init <name> [--slot <n>]
-devctl profile activate <name>
-devctl config [--json]
-devctl doctor [--json]
-devctl station start|check|status|stop|restart
-devctl desktop start [--mode app|web] [--foreground]
-devctl desktop status|stop|restart [--mode app|web]
-devctl status [--json]
-devctl stop [station|desktop|all]
-devctl restart [station|desktop|all]
-devctl check [desktop|all]
-```
+- a tracked-clean Profile from the sibling environment repository; or
+- a private worktree-local Profile.
 
-Commands return `0` only when their stated postcondition holds. JSON mode
-writes one machine-readable document to stdout; diagnostics go to stderr.
+Machine allocation overrides local client ports and local/Compose Station
+ports. Acceptance may supply a contained runtime-manifest Profile, but it still
+requires the real workspace binding.
 
-## 7. Runtime And Lifecycle Semantics
+## 5. Doctor
 
-### 7.1 Profile Resolution
+`doctor` resolves the selected Profile before checking dependencies.
 
-Resolution order remains:
+- every path: Node and pnpm;
+- Desktop: Cargo, Rust, and `protoc`;
+- local Station mode: Go;
+- Compose Station mode: Docker;
+- Windows Desktop: MSVC linker or reviewed Build Tools location.
 
-1. explicit `PT_DEV_PROFILE_FILE`;
-2. worktree-specific active profile pointer;
-3. canonical sibling env repository source for the selected profile;
-4. local profile cache when no canonical source exists.
+Diagnostics report the executable path and observed version. Credential-like
+configuration is redacted.
 
-The selected filename and declared `PT_DEV_PROFILE` must match.
+## 6. Station
 
-### 7.2 Start
+Station behavior depends on Profile mode:
 
-1. Resolve and validate the profile.
-2. Run dependency and port preflight.
-3. Reuse a healthy, identity-matching process.
-4. Reject an occupied port owned by an unknown process.
-5. Spawn one process group with explicit environment and log files.
-6. Persist runtime identity atomically.
-7. Wait for the declared readiness condition with a bounded timeout.
-8. On failure, stop only the newly created process group and retain logs.
+- `local`: build the Go Station, generate isolated runtime configuration, and
+  run an owned process;
+- `compose`: start the Profile's isolated PostgreSQL and Station services;
+- `remote`: reuse only a healthy build whose commit matches current source,
+  otherwise use the reviewed deployment adapter and verify build identity.
 
-### 7.3 Stop
+Start succeeds only after readiness. Stop or restart acts only on a proven
+owned process or the exact selected Compose project.
 
-1. Read the runtime-state record.
-2. Re-observe PID and command identity.
-3. Refuse to kill a mismatched or unowned process.
-4. Terminate the owned process tree with a bounded graceful period.
-5. Escalate to force termination only after timeout.
-6. Remove state only after the process is gone.
+## 7. Desktop
 
-On Windows, the adapter owns process-tree termination. A later implementation
-may replace the initial process-tree adapter with a Job Object without changing
-the command contract.
+Desktop startup:
 
-### 7.4 Desktop Composition
+1. resolves the Profile and runtime paths;
+2. installs locked packages when incomplete;
+3. prepares generated contracts and applet assets;
+4. readies Station;
+5. starts one managed Vite process and one native Tauri process;
+6. waits for the dependency canary and React mount signal.
 
-Desktop starts one Vite renderer and one windowed Tauri process. Each worktree
-uses an isolated profile, storage root, renderer port, and native runtime
-identity while connecting to the selected Station. No rendererless Web mode is
-supported.
+There is no Desktop Web mode. Packaged installation is a separate
+`desktop install` command and does not replace the live development runtime.
 
-Applet assets are built once before the Desktop process starts. Tauri's
-internal `beforeDevCommand` is disabled only for the externally coordinated
-development invocation.
-
-## 8. Allowed And Forbidden Relationships
+## 8. Allowed Relationships
 
 Allowed:
 
 - wrappers invoke `devctl`;
-- `devctl` reads profile files and starts toolchain processes;
-- lifecycle adapters use OS APIs or bounded platform commands;
-- legacy shell entrypoints invoke `devctl` during migration.
+- `devctl` consumes machine binding and Profile topology;
+- `devctl` starts owned product processes;
+- platform-specific helpers remain for capabilities not yet owned by `devctl`.
 
 Forbidden:
 
-- Make, PowerShell, shell, and package scripts each implementing lifecycle
-  semantics independently;
-- killing a process solely because it owns a configured port;
-- falling back to a default profile when no profile is selected;
-- embedding machine names or Station profiles in command definitions;
-- changing Acceptance runtime profile injection;
-- requiring Git Bash for a Windows-native command path.
-- a missing/mismatched Plan binding or any Plan rebind attempt;
-- an Acceptance artifact acting as a second execution plan;
-- default execution of completion, environment, nightly, or release Gates;
-- running full/release Acceptance without an explicit user request;
-- merging a tracked worktree while its formal plan remains active.
+- wrappers implementing Profile or lifecycle policy;
+- selecting a Profile from a symlink, branch, basename, or sibling worktree;
+- creating secrets in tracked source;
+- killing an unknown port owner;
+- browser-only Desktop startup;
+- workflow or Acceptance state controlling runtime admission;
+- a direct script becoming a second project-wide development entrypoint.
 
-## 9. Failure Contract
+## 9. Failure Semantics
 
-Stable CLI error codes:
+Failures are typed and occur before unsafe mutation where possible:
 
-| Code | Meaning |
-|---|---|
-| `DEVCTL_PROFILE_REQUIRED` | No explicit or active profile can be resolved |
-| `DEVCTL_PROFILE_INVALID` | Profile syntax or identity is invalid |
-| `DEVCTL_DEPENDENCY_MISSING` | Required executable or SDK is unavailable |
-| `DEVCTL_PORT_CONFLICT` | A required port is owned by an unmanaged process |
-| `DEVCTL_PROCESS_IDENTITY_MISMATCH` | Recorded PID no longer belongs to the managed command |
-| `DEVCTL_START_TIMEOUT` | Runtime did not become ready before the deadline |
-| `DEVCTL_UNSUPPORTED_MODE` | The selected operation is not implemented for the profile mode/platform |
-| `DEVCTL_CHECK_FAILED` | A deterministic source check failed |
-| `PLAN_MOUNT_REQUIRED` | The local workspace has no active PlanMount |
-| `PLAN_MOUNT_IDENTITY_MISMATCH` | The mounted Plan identity/path/workspace does not match |
-| `PLAN_MOUNT_CONFLICT` | A different Plan attempted to occupy the mounted workspace |
-| `PLAN_AMENDMENT_REQUIRED` | Stable Plan source changed without a recorded amendment |
-| `NORTH_STAR_APPROVAL_REQUIRED` | The Plan North Star has no approval or its approval digest is stale |
-| `NORTH_STAR_APPROVAL_IMMUTABLE` | An amendment tried to rewrite approval metadata without changing the North Star |
-| `PLAN_AMENDMENT_APPROVAL_MISMATCH` | A North Star amendment's decision reference does not match its explicit approval |
-| `OWNER_DECISION_REQUIRED` | An amendment changes the accepted North Star |
-| `WORKSPACE_PLAN_DECLARATION_REQUIRED` | A Plan-bound workspace attempted untracked mutation |
-| `EXECUTION_PLAN_INPUT_REQUIRED` | CI omitted its explicit Plan input |
-| `EXECUTION_PLAN_INVALID` | Plan metadata, status, or Acceptance contract is malformed |
-| `EXECUTION_PLAN_COMPLETE` | Plain run requested after all closures completed |
-| `ACCEPTANCE_PLAN_DRIFT` | Actual diff implies an undeclared Acceptance Gate |
+- missing or invalid Profile;
+- missing machine binding or capability;
+- missing dependency;
+- occupied port with unknown owner;
+- managed-process identity mismatch;
+- readiness timeout;
+- unsupported platform or mode;
+- remote source or target mismatch.
 
-Errors include operation and relevant profile/service context, but never secret
-values.
+Errors include operation and non-secret identity. They never include Profile
+credentials.
 
 ## 10. Quality Gates
 
-- Unit tests cover env parsing, profile identity, path normalization, state
-  validation, process ownership, and command routing.
-- Windows smoke proves `profile`, `config`, `doctor`, `check`, and a bounded
-  Desktop start/status/stop lifecycle without Bash.
-- Unix smoke proves wrappers resolve to the same command contract.
-- Tree scan rejects direct `.sh` execution from cross-platform package scripts.
-- Tree scan rejects lifecycle logic reappearing in Make or PowerShell wrappers.
-- Desktop checks, typecheck, tests, and build pass.
-- No Acceptance Gate or provisioner gains a hardcoded Station profile.
+- Profile parsing and bootstrap tests.
+- Machine binding and allocation tests.
+- Managed-process identity and lifecycle tests.
+- Station mode tests.
+- Desktop dependency/readiness/lifecycle tests.
+- Make and PowerShell adapter checks.
+- fresh-checkout Profile bootstrap and Compose rendering.
+- scans preventing Web mode, active-pointer authority, or wrapper policy from
+  returning.

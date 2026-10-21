@@ -25,3 +25,4 @@ end-user business truth.
 | Quality | [quality/](./quality/README.md) |
 | Developer toolchain | [toolchain/](./toolchain/README.md) |
 | Prototype registry | [prototypes/](./prototypes/README.md) |
+| Release distribution | [release-distribution/](./release-distribution/README.md) |

@@ -42,7 +42,7 @@
 | `acceptance-run.py` 在产品 Gate 前执行 Provisioner | `verified_fact` | `tooling/scripts/acceptance-run.py::main` | high | successful native runtime proof |
 | Native runner 只消费 Runtime Manifest 与 CredentialRef | `verified_fact` | `native_visible_runner.py::NativeVisibleJourney` | high | successful native runtime proof |
 | Chat Fixture 产出 source-bound actor manifest | `verified_fact` | `tooling/acceptance/fixtures/chat_native_actors.py` | high | authorized live Fixture run |
-| Profile activate 校验文件名与 `PT_DEV_PROFILE` | `verified_fact` | `tooling/scripts/local-dev/profile.sh::activate` | high | none |
+| Profile selection validates the selected name and `PT_DEV_PROFILE` | `verified_fact` | `tooling/devctl/profile.mjs::activateProfile` | high | none |
 | Direct receipt source path 自动选择 Native two-client Gate | `verified_fact` | `acceptance-plan-test.py::BehaviorRuleTests` | high | none |
 | 新 Agent 可从稳定 Make target 获得结构化 preflight | `verified_fact` | `tooling/acceptance/README.md` + runtime BLOCKED report | high | successful AS-02 live run |
 | 独立 Provisioner + immutable manifest 可关闭责任缺口 | `verified_fact` | `core/provisioning.py` + `core/provisioner.py` + runtime BLOCKED evidence | high | successful native runtime proof |

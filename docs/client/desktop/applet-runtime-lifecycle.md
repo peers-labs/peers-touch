@@ -177,6 +177,8 @@ Kernel 是权威：runtime 只按固定节奏喂 `now` / 采样级别，**由 Ke
 | Contract 单测 | `packages/applet-contract/tests/lifecycle.test.mjs` | 合法/非法转换、事件顺序 |
 | 平滑度门禁 | `tooling/scripts/applet-desktop-lifecycle-smoothness-gate.mjs` | 静态校验 explicit-close 延迟释放、close 先导航后释放、launcher 刷新不整屏 loading、A→B 切换 lease 语义，并跑 `pageRuntimeLease.test.ts` + `appletsRuntime.test.ts`，产出 `tooling/acceptance/evidence/applets/desktop/lifecycle-smoothness-gate/` 证据 |
 
-平台通用验证命令（`AGENTS.md §10`）：`cd apps/desktop && pnpm run check && pnpm run test && pnpm run build`。
+平台通用验证遵循
+[`Desktop Development`](../../development/platforms/desktop.md)：
+`cd apps/desktop && pnpm run check && pnpm run test && pnpm run build`。
 
 > 门禁的 `unprovenScope` 明确记录：这是本地 acceptance gate，**不等于**打包后的产品窗口浏览器 E2E；带两个 applet 卡片的完整 A→B 可视化切换仍需产品窗口 harness（`applet-desktop-lifecycle-smoothness-gate.mjs:104-108`）。

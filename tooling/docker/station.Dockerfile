@@ -9,18 +9,21 @@ ARG GO_VERSION=1.24.6
 FROM ${BUILDER_IMAGE} AS builder
 
 ARG GO_VERSION
+ARG APT_MIRROR=
+ARG GO_TARBALL_MIRROR=https://go.dev/dl
+ARG GOPROXY=https://proxy.golang.org,direct
+ARG GOSUMDB=sum.golang.org
+ARG GONOSUMCHECK=
+
+COPY tooling/docker/configure-apt-mirror.sh /tmp/configure-apt-mirror.sh
 
 RUN if ! command -v go >/dev/null 2>&1; then \
-      sed -i \
-        -e 's|http://archive.ubuntu.com|http://mirrors.tuna.tsinghua.edu.cn|g' \
-        -e 's|http://security.ubuntu.com|http://mirrors.tuna.tsinghua.edu.cn|g' \
-        -e 's|http://ports.ubuntu.com|http://mirrors.tuna.tsinghua.edu.cn|g' \
-        /etc/apt/sources.list && \
+      sh /tmp/configure-apt-mirror.sh "${APT_MIRROR}" && \
       apt-get update && \
       apt-get install -y --no-install-recommends ca-certificates curl gcc && \
       rm -rf /var/lib/apt/lists/* && \
       ARCH=$(dpkg --print-architecture) && \
-      curl -fsSL "https://mirrors.aliyun.com/golang/go${GO_VERSION}.linux-${ARCH}.tar.gz" \
+      curl -fsSL "${GO_TARBALL_MIRROR%/}/go${GO_VERSION}.linux-${ARCH}.tar.gz" \
         -o /tmp/go.tar.gz && \
       tar -C /usr/local -xzf /tmp/go.tar.gz && \
       rm /tmp/go.tar.gz; \
@@ -28,10 +31,9 @@ RUN if ! command -v go >/dev/null 2>&1; then \
 
 ENV PATH="/usr/local/go/bin:${PATH}"
 
-ARG GOPROXY=https://goproxy.cn,direct
 ENV GOPROXY=${GOPROXY}
-ENV GOSUMDB=off
-ENV GONOSUMCHECK=*
+ENV GOSUMDB=${GOSUMDB}
+ENV GONOSUMCHECK=${GONOSUMCHECK}
 ENV GOTOOLCHAIN=local
 
 WORKDIR /src
@@ -76,6 +78,7 @@ RUN CGO_ENABLED=0 go build -trimpath \
 # ─── Stage 2: Runtime ──────────────────────────────────────────────────────────
 FROM ${BASE_IMAGE}
 
+ARG APT_MIRROR=
 ARG BUILD_COMMIT=unknown
 ARG BUILD_LABEL=dev
 ARG BUILD_TIME=unknown
@@ -83,14 +86,11 @@ LABEL org.opencontainers.image.revision="${BUILD_COMMIT}" \
       org.opencontainers.image.version="${BUILD_LABEL}" \
       org.opencontainers.image.created="${BUILD_TIME}"
 
-RUN sed -i \
-      -e 's|http://archive.ubuntu.com|http://mirrors.tuna.tsinghua.edu.cn|g' \
-      -e 's|http://security.ubuntu.com|http://mirrors.tuna.tsinghua.edu.cn|g' \
-      -e 's|http://ports.ubuntu.com|http://mirrors.tuna.tsinghua.edu.cn|g' \
-      /etc/apt/sources.list && \
+COPY tooling/docker/configure-apt-mirror.sh /tmp/configure-apt-mirror.sh
+RUN sh /tmp/configure-apt-mirror.sh "${APT_MIRROR}" && \
     apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates tzdata wget gettext-base && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* /tmp/configure-apt-mirror.sh
 
 WORKDIR /app
 

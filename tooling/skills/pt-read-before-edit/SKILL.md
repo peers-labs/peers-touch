@@ -113,4 +113,5 @@ If `rg` returns no matches, that does NOT mean "no knowledge applies". It means 
 
 - Knowledge layer entry: `docs/knowledge/README.md`.
 - Frontmatter spec: `docs/knowledge/_TEMPLATE.md`.
-- Top-level integration: `AGENTS.md §3` Documentation Source Hierarchy lists the knowledge layer; agents reading this file already know to expect it.
+- Top-level integration: `AGENTS.md §1` routes agents through the shared Dev
+  knowledge base and path-owned operational knowledge.

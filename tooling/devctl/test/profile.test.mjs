@@ -389,9 +389,31 @@ test('initializes deterministic profile ports and refuses overwrite', (t) => {
   const root = temporaryRoot(t);
   const profilePath = initializeProfile(root, 'slot-two', 2);
   const content = fs.readFileSync(profilePath, 'utf8');
+  const composeEnvironment = path.join(
+    root,
+    '.local',
+    'dev',
+    'compose',
+    'slot-two.env',
+  );
+  const composeContent = fs.readFileSync(composeEnvironment, 'utf8');
 
   assert.match(content, /PT_STATION_PORT=18280/u);
   assert.match(content, /PT_DESKTOP_APP_GATEWAY_PORT=3230/u);
+  assert.match(
+    content,
+    /PT_STATION_COMPOSE_ENV_FILE=\.local[\\/]dev[\\/]compose[\\/]slot-two\.env/u,
+  );
+  assert.doesNotMatch(content, /PEERS_(?:AUTH_SECRET|DB_PASSWORD)=/u);
+  assert.match(composeContent, /COMPOSE_PROJECT_NAME=pt_slot_two/u);
+  assert.match(composeContent, /POSTGRES_DB=peers_touch_slot_two/u);
+  assert.match(composeContent, /STATION_PORT=18280/u);
+  assert.match(composeContent, /PEERS_AUTH_SECRET=[0-9a-f]{64}/u);
+  assert.match(composeContent, /PEERS_DB_PASSWORD=[0-9a-f]{64}/u);
+  if (process.platform !== 'win32') {
+    assert.equal(fs.statSync(profilePath).mode & 0o777, 0o600);
+    assert.equal(fs.statSync(composeEnvironment).mode & 0o777, 0o600);
+  }
   assert.throws(() => initializeProfile(root, 'slot-two', 2), DevctlError);
 });
 

@@ -45,56 +45,70 @@ Every user runs (or joins) a **Station** — a personal server on a NAS, Raspber
 
 <img src="apps/official-site/public/readme/network.svg" width="100%" alt="How the network works — Stations federate through open protocols" />
 
-## What's ready
+## Can I use it today?
 
-Desktop (macOS) and mobile (Android / iOS, in development) apps with chat, social feed, AI assistant, applets, and federation across Stations. Voice/video calls and end-to-end encryption are in development.
+**As a regular user: not yet.** Peers-Touch does not currently have a verified
+public Release, downloadable Desktop installer, or hosted Station. The product
+features exist in source, but the distribution and native-update checks are
+still being completed.
 
-## Try it
+**You will not need an AI agent or a development environment to install
+Peers-Touch.** Agent instructions under `AGENTS.md` and `tooling/skills/` are
+only for contributors working on this repository.
 
-> **Just want to use it?** Download links and hosted Stations are coming soon. Star the repo to get notified.
+## Install
 
-**Developers — run it locally:**
+The following user flow becomes available after the first verified stable
+Release is published:
+
+1. **Install your Station** on a Linux machine with Docker and Docker Compose
+   v2:
+
+   ```bash
+   curl -fL https://github.com/peers-labs/peers-touch/releases/latest/download/install.sh \
+     -o peers-install.sh
+   sh peers-install.sh install
+   ```
+
+   The installer downloads an immutable Station image, verifies release
+   checksums, generates private credentials locally, and stores the instance
+   under `~/.peers-touch/station`. By default it is available only on the same
+   machine at `http://127.0.0.1:18080`.
+
+2. **Install the Desktop app** from the
+   [latest GitHub Release](https://github.com/peers-labs/peers-touch/releases/latest):
+   macOS uses `.dmg`, Windows uses `-setup.exe`, and Linux uses `.AppImage` or
+   `.deb`.
+
+3. Open Peers, enter your Station address, and create or sign in to your
+   account.
+
+Until a stable Release appears at that link, these installation commands are
+expected to return 404 and there is no supported end-user installation path.
+See the [Station installation and maintenance guide](tooling/distribution/README.md)
+for backup, upgrade, rollback, remote access, and uninstall details.
+
+## Develop from source
+
+The supported local path runs a private Compose Station and the native Desktop
+app:
 
 ```bash
-make profile local     # Configure for local development
-make station           # Start your Station (Go + PostgreSQL via Docker)
-make desktop           # Open the desktop app
+corepack enable
+corepack prepare pnpm@9.12.0 --activate
+make profile-init local
+make profile local
+make doctor
+make desktop
 ```
 
-Sign in, add a friend, send a message. Test accounts: `alice@p.t`, `bob@p.t`, `coral@p.t` (password: `1`).
+Requires Node.js 22, pnpm 9.12.0, Rust, `protoc`, Docker with Compose v2,
+and the native Tauri prerequisites for your OS. Station source work also uses
+Go 1.24.10. Windows uses the equivalent
+[`tooling/dev.ps1`](tooling/dev.ps1) commands.
 
-Requires: pnpm 9+, Go 1.22+, Rust, Docker. [Full setup guide →](docs/global/local-dev-environment.md)
-
----
-
-<details>
-<summary><strong>For developers: repo layout and contributing</strong></summary>
-
-### Repository
-
-```
-apps/
-  station/         Go backend — Hertz + DDD subservers + PostgreSQL
-  desktop/         Tauri + React/TypeScript + Rust
-  mobile/          Tauri v2 Mobile + Rust kernel
-  applets/         Official applets
-  official-site/   Product website (Astro, i18n)
-  oauth2-client/   OAuth broker (Vercel)
-model/domain/      Protobuf contracts (single source of truth)
-packages/          Shared: chat-core, storage, applet-sdk, UI, locales
-docs/              Architecture and platform docs
-tooling/           Build scripts, agent skills
-```
-
-### Contributing
-
-- All data models in `model/domain/*.proto` — no hand-written models.
-- No mocking — real front-to-back integration, always.
-- Architecture docs before code for cross-layer changes.
-- `make dev-start` before non-trivial work.
-- Full guide: [AGENTS.md](AGENTS.md)
-
-</details>
+See [Develop Peers-Touch](docs/development/README.md) for setup, platform
+guides, workflow, verification, and Agent collaboration.
 
 ---
 
@@ -110,7 +124,3 @@ tooling/           Build scripts, agent skills
 | [libp2p](https://libp2p.io) | Peer identity for federation |
 | [SQLCipher](https://www.zetetic.net/sqlcipher/) | Encrypted on-device storage |
 | [React](https://react.dev) + [Ant Design](https://ant.design) | Frontend rendering and design |
-
-## License
-
-[MIT](LICENSE)

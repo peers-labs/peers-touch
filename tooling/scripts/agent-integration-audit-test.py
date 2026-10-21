@@ -223,7 +223,7 @@ class AgentIntegrationTests(unittest.TestCase):
         self.assertEqual(audit["callbackProbe"]["permissionDecision"], "allow")
         self.assertEqual(
             audit["callbackProbe"]["context"],
-            "docs/global/workflow.md",
+            "docs/development/workflow.md",
         )
 
     def test_existing_canonical_skill_root_symlink_is_accepted(self) -> None:

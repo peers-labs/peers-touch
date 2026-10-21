@@ -9,6 +9,11 @@ x-runtime-image: &runtime-image
       BUILD_TIME: ${PT_RAL_BUILD_TIME:?PT_RAL_BUILD_TIME is required}
       BUILDER_IMAGE: ${PT_RAL_BUILDER_IMAGE:-hub.byted.org/library/ubuntu:22.04}
       BASE_IMAGE: ${PT_RAL_BASE_IMAGE:-hub.byted.org/library/ubuntu:22.04}
+      APT_MIRROR: ${APT_MIRROR:-https://mirrors.aliyun.com}
+      GO_TARBALL_MIRROR: ${GO_TARBALL_MIRROR:-https://mirrors.aliyun.com/golang}
+      GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
+      GOSUMDB: ${GOSUMDB:-off}
+      GONOSUMCHECK: ${GONOSUMCHECK:-*}
 
 x-relay-environment: &relay-environment
   PEERS_NODE_ROLE: relay

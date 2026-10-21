@@ -128,7 +128,7 @@ As an accepted hard-cut requirement:
   authority and cross-Station delivery are linked to the federated social source;
 - `docs/README.md` lists one current Chat architecture source and this global ownership
   contract;
-- `docs/global/first-principles.md` no longer recommends compatibility shims without an
+- `AGENTS.md` no longer allows compatibility shims without an
   explicit accepted migration decision and removal trigger.
 
 ## 6. Required Consumer Reconciliation

@@ -79,7 +79,7 @@ workspace 隔离）所依附的 PlanMount/OWNER/active-work 准入链由同一�
 
 ### Decision
 
-以[规范研发流程](../../../global/workflow.md)为唯一操作正文：
+以[规范研发流程](../../../development/workflow.md)为唯一操作正文：
 
 - 产品或工程北极星是流程上游输入。每项工作说明本次贡献；Plan、Task、Gate、
   进度和关闭记录均不能成为北极星替代品。
@@ -1442,7 +1442,7 @@ Human workflow documentation described operational guarantees that could drift f
 
 ### Decision
 
-`docs/global/workflow.md` is the concise human operating guide. Every public
+`docs/development/workflow.md` is the concise shared operating guide. Every public
 operational promise maps to a `workflow-doctor` check or is explicitly marked
 as a non-machine policy.
 

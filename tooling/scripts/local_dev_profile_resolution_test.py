@@ -12,6 +12,7 @@ from pathlib import Path
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent / "local-dev"
+DEVCTL = SCRIPT_DIR.parent.parent / "devctl" / "index.mjs"
 
 
 class LocalDevProfileResolutionTest(unittest.TestCase):
@@ -28,7 +29,6 @@ class LocalDevProfileResolutionTest(unittest.TestCase):
             "machine-dev-lease.py",
             "machine-dev-registry.mjs",
             "machine-dev.mjs",
-            "profile.sh",
             "redact-env.sh",
             "workspace-lifecycle-lock.mjs",
         ):
@@ -40,7 +40,6 @@ class LocalDevProfileResolutionTest(unittest.TestCase):
             library / "machine-dev-paths.mjs",
         )
         self.config_script = scripts / "config.sh"
-        self.profile_script = scripts / "profile.sh"
         self.machine_script = scripts / "machine-dev.mjs"
         self.machine_dev_root = workspace / "machine-dev"
 
@@ -167,8 +166,20 @@ class LocalDevProfileResolutionTest(unittest.TestCase):
         profile: str,
         **environment: str,
     ) -> subprocess.CompletedProcess[str]:
+        self.assertEqual(command, "init")
+        slot = environment.pop("SLOT", "0")
         return subprocess.run(
-            ["/bin/bash", str(self.profile_script), command, profile],
+            [
+                "node",
+                str(DEVCTL),
+                "--root",
+                str(self.project_root),
+                "profile",
+                "init",
+                profile,
+                "--slot",
+                slot,
+            ],
             capture_output=True,
             env=self.process_environment(**environment),
             text=True,
@@ -278,24 +289,6 @@ class LocalDevProfileResolutionTest(unittest.TestCase):
             result.stderr + result.stdout,
         )
 
-    def test_legacy_activation_command_is_removed(self) -> None:
-        local_profile = (
-            self.project_root / ".local" / "dev" / "profiles" / "three.env"
-        )
-        before = local_profile.read_text(encoding="utf-8")
-        result = self.run_profile("activate", "three")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn(
-            "Usage: profile.sh {init|list}",
-            result.stderr + result.stdout,
-        )
-
-        self.assertEqual(local_profile.read_text(encoding="utf-8"), before)
-        active_profile = (
-            self.project_root / ".local" / "dev" / "active" / "project.env"
-        )
-        self.assertEqual(os.readlink(active_profile), "../profiles/three.env")
-
     def test_config_rejects_untracked_env_profile(self) -> None:
         untracked_dir = self.env_root / "peers-touch" / "untracked"
         untracked_dir.mkdir()
@@ -367,7 +360,7 @@ class LocalDevProfileResolutionTest(unittest.TestCase):
 
         repeated = self.run_profile("init", "local-one", SLOT="5")
         self.assertNotEqual(repeated.returncode, 0)
-        self.assertIn("never overwrites", repeated.stderr + repeated.stdout)
+        self.assertIn("Profile already exists", repeated.stderr + repeated.stdout)
 
     def test_local_profile_changes_are_read_directly(self) -> None:
         created = self.run_profile("init", "local-four", SLOT="9")
