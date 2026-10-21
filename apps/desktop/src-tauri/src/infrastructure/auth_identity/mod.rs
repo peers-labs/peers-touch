@@ -795,7 +795,7 @@ mod canonical_tests {
             provider: provider.to_string(),
             provider_user_id: id.to_string(),
             name: name.to_string(),
-            email: "printfcoder@gmail.com".to_string(),
+            email: "user@example.com".to_string(),
             created_at: created_at.to_string(),
             last_login_at: last_login_at.to_string(),
             has_session,
