@@ -118,3 +118,9 @@ tooling/scripts/__pycache__/
 # Generated third-party architecture diagram readers; architecture content is
 # maintained as repository source documents rather than large static HTML.
 apps/official-site/public/architecture-assets/
+
+# Local review / delivery artifacts — machine-local, never commit
+/.archify/
+/deliverables/
+/review-reports/
+/output/

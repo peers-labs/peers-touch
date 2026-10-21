@@ -105,7 +105,6 @@ tooling/           Build scripts, agent skills
 | [Tauri](https://tauri.app) | Native desktop and mobile — not Electron |
 | [Hertz](https://github.com/cloudwego/hertz) | Station's Go HTTP framework |
 | [LobeHub / Lobe UI](https://github.com/lobehub/lobe-ui) | Desktop UI components |
-| [SimpleX Chat](https://simplex.chat) | Privacy-first messaging inspiration |
 | [Protocol Buffers](https://protobuf.dev) + [prost](https://github.com/tokio-rs/prost) | Cross-platform contracts |
 | [libp2p](https://libp2p.io) | Peer identity for federation |
 | [SQLCipher](https://www.zetetic.net/sqlcipher/) | Encrypted on-device storage |
