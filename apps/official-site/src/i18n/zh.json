@@ -17,7 +17,6 @@
     "zh": "中文"
   },
   "home": {
-    "eyebrow": "你的关系 · 你的数据 · 你的 Station",
     "title": "你的社交世界，本就该握在你自己手里。",
     "subtitle": "你认识谁、发过什么，本该属于你自己，而不是躺在巨头的服务器上，任人挖掘。在 Peers-Touch，身份、关系和数据都存放在你自己的 Station 里；Station 之间通过开放协议相连，织成一张以个人和社区 Station 为自治中心、没有平台中心的联邦网络。",
     "ctaPrimary": "怎么运作",
@@ -77,11 +76,9 @@
     ]
   },
   "product": {
-    "eyebrow": "怎么运作",
     "title": "一张去中心化的网络，每个人都有自己的中心。",
     "subtitle": "Peers-Touch 不是又一个跑在别人服务器上的应用。你的 Station 是个人社交世界的最小中心，保存身份、关系和数据；一个个 Station 通过开放协议互联，再由原生应用和上层 AI 在你的设备上把网络真正用起来。",
     "network": {
-      "eyebrow": "网络",
       "title": "无数 Station，一张网络，没有房东。",
       "note": "自建 Station，或加入你信任的 Station——无论哪种，你都在同一张开放网络里。",
       "diagram": {
@@ -106,7 +103,6 @@
       ]
     },
     "layers": {
-      "eyebrow": "架构",
       "title": "三部分，都在为你服务。",
       "note": "在熟悉的设备上使用 Peers，换设备也能接着聊；身份、关系和内容始终留在你选择的 Station。",
       "items": [
@@ -128,7 +124,6 @@
       ]
     },
     "agents": {
-      "eyebrow": "AI 运行时",
       "title": "AI 跑在你的数据上，而不是别人的云上。",
       "note": "智能体运行时就在你的设备和 Station 里：基于你拥有的数据思考，调用工具，还能和别的智能体对话。",
       "diagram": {
@@ -193,7 +188,6 @@
     }
   },
   "roadmap": {
-    "eyebrow": "路线图",
     "title": "先把基础打牢，再一步步把体验做完整。",
     "subtitle": "每一步都交付能跑起来的软件，不画饼。先是账号和 Station，然后社交、隐私，最后 AI 和小程序。",
     "sectionTitle": "四个阶段",
@@ -241,7 +235,6 @@
     ]
   },
   "community": {
-    "eyebrow": "社区",
     "title": "这张属于用户的网络，欢迎一起把它做出来。",
     "subtitle": "Peers-Touch 是开源项目。你可以聊想法、运行自己的 Station，也可以直接参与代码、设计和后续规划。",
     "waysTitle": "你可以从这里开始",
