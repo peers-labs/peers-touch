@@ -430,6 +430,11 @@ owner；predicate observation 保留期望值、实际值或实际异常，以�
 Product closure 同样持久化全部外层 Step 及登录/device readiness 的实际
 开始、完成和失败边界，保留原始错误与运行身份。步骤观测不签发产品 PASS，
 不改变原生输入、接收者断言或等待预算。
+Transcript/thread 内部的发送、Reply、Thread 操作分别记录 UI 调用边界；
+消息可见性、Thread summary 和双端 exact transcript 轮询记录原始期望、
+实际投影或异常。未命中的可见消息检查仍保留实际消息行，不能只记 null。
+状态变化有界采样，成功立即记录；外层失败不能覆盖已记录的最内层首个
+失败步骤。原有消息集合、顺序、接收者和 Thread 断言保持原样。
 
 Chat product closure 与联系人 Message 故障场景使用已存在的 Direct TCP proxy。
 Runtime Binding 始终通过 canonical Station origin 完成签名发现和 binding proof，

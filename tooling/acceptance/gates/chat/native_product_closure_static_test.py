@@ -2214,6 +2214,82 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             self.source,
         )
 
+    def test_product_wait_preserves_rejected_projection_and_exact_result(self) -> None:
+        gate = object.__new__(NativeProductClosureGate)
+        gate.steps = []
+        gate.report = new_report(gate.gate_id)
+        gate._step_observation_sequence = 0
+        gate.manifest = {"source": {"commit": "test", "workspaceDigest": "clean"}}
+        projections = iter([
+            [{"id": "unexpected", "content": "visible extra row"}],
+            [{"id": "expected", "content": "required row"}],
+        ])
+
+        with patch(
+            "tooling.acceptance.gates.chat.native_product_closure_runner."
+            "write_current_artifact",
+        ) as write_observation:
+            result = gate.wait_step(
+                lambda: next(projections),
+                "alice.exact-transcript",
+                expected={"messageIds": ["expected"]},
+                ready=lambda value: [item["id"] for item in value] == ["expected"],
+                timeout=1,
+                interval=0,
+            )
+
+        observations = [
+            json.loads(call.args[1]) for call in write_observation.call_args_list
+        ]
+        predicates = [
+            item["predicate"] for item in observations if item["state"] == "PREDICATE"
+        ]
+        self.assertEqual(predicates[0]["observed"][0]["id"], "unexpected")
+        self.assertFalse(predicates[0]["accepted"])
+        self.assertTrue(predicates[-1]["accepted"])
+        self.assertEqual(result, [{"id": "expected", "content": "required row"}])
+        self.assertNotIn("firstFailedStep", gate.report.runtime)
+        self.assertEqual(
+            len({call.args[0] for call in write_observation.call_args_list}),
+            len(observations),
+        )
+        self.assertTrue(all(
+            item["proofStatus"] == "NOT_APPLICABLE" for item in observations
+        ))
+
+    def test_product_nested_wait_keeps_first_failure_and_actual_exception(self) -> None:
+        gate = object.__new__(NativeProductClosureGate)
+        gate.steps = []
+        gate.report = new_report(gate.gate_id)
+        gate._step_observation_sequence = 0
+        gate.manifest = {"source": {"commit": "test", "workspaceDigest": "clean"}}
+
+        with patch(
+            "tooling.acceptance.gates.chat.native_product_closure_runner."
+            "write_current_artifact",
+        ) as write_observation, self.assertRaisesRegex(GateError, "receiver unavailable"):
+            gate.step(
+                "transcript.thread.ui",
+                lambda: gate.wait_step(
+                    lambda: (_ for _ in ()).throw(GateError("receiver unavailable")),
+                    "bob.visible-message",
+                    expected={"messageIdPresent": True},
+                    timeout=0.01,
+                    interval=0,
+                ),
+            )
+
+        observations = [
+            json.loads(call.args[1]) for call in write_observation.call_args_list
+        ]
+        sample = next(
+            item["predicate"] for item in observations if item["state"] == "PREDICATE"
+        )
+        self.assertEqual(sample["errorType"], "GateError")
+        self.assertEqual(sample["error"], "receiver unavailable")
+        self.assertFalse(sample["accepted"])
+        self.assertEqual(gate.report.runtime["firstFailedStep"], "bob.visible-message")
+
     def test_product_failure_remains_primary_when_cleanup_also_fails(self) -> None:
         gate = object.__new__(NativeProductClosureGate)
         gate.steps = []

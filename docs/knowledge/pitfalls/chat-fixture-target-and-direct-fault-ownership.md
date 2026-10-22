@@ -74,3 +74,9 @@ container identity or volume. Actual three-actor timing must retain both
 independent read phases. Product closure records durable Step and login/device
 boundaries; already-hydrated login identity is checked without a second
 hydration. Neither timing nor intermediate observations establish product PASS.
+Transcript/thread diagnostics must also retain individual send, Reply and
+Thread UI boundaries, the raw rejected receiver rows, expected message IDs and
+actual summary/transcript projections. Nested failures preserve the innermost
+first failed boundary; an outer Step must not overwrite it. Sampling changes
+neither predicate nor polling budget, and a partial observation never proves
+the remaining product Journey.

@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-22
-covered_docs_hash: 174baee37e1a52d8e74b4c46312e5bf4bc8d1edd70fada9b8cfdb9c9f90e723e
+covered_docs_hash: 84ee05df950208f1433e434d882c4b0d538d0b71993cceb7d96b23dc31f31b5c
 
 covered_docs:
   - AGENTS.md
@@ -32,6 +32,13 @@ covered_docs:
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
 
 ## Batch Fixture And Native Diagnostic Review
+
+Product transcript/thread diagnostics now preserve individual UI call boundaries
+and raw rejected message, summary and transcript projections. Nested failures
+retain the innermost first failure. Exact acceptance predicates, polling budgets,
+receiver assertions and supporting-only evidence classification are unchanged.
+Existing ownership and evidence policy cover this diagnostic extension; the
+current semantic regressions exercise rejected-state retention and nested errors.
 
 The Fixture owner groups account reads by exact Station and checks both
 containers in one SSH operation. Identity completeness and per-account

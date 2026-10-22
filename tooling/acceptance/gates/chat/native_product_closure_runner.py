@@ -362,6 +362,7 @@ class NativeProductClosureGate(AcceptanceGate):
     def observe_step(
         self, name: str, state: str, started: float,
         *, error: Exception | None = None,
+        predicate: dict[str, Any] | None = None,
     ) -> None:
         self._step_observation_sequence += 1
         observation = {
@@ -379,6 +380,8 @@ class NativeProductClosureGate(AcceptanceGate):
         if error is not None:
             observation["errorType"] = type(error).__name__
             observation["error"] = str(error)
+        if predicate is not None:
+            observation["predicate"] = predicate
         write_current_artifact(
             f"observations/step-{self._step_observation_sequence:05d}.json",
             (json.dumps(observation, sort_keys=True) + "\n").encode("utf-8"),
@@ -394,12 +397,66 @@ class NativeProductClosureGate(AcceptanceGate):
         except Exception as error:
             self.steps.append({"step": name, "status": "fail", "error": str(error)})
             self.report.runtime["steps"] = list(self.steps)
-            self.report.runtime["firstFailedStep"] = name
+            self.report.runtime.setdefault("firstFailedStep", name)
             self.observe_step(name, "FAILED", started, error=error)
             raise
         self.steps.append({"step": name, "status": "pass"})
         self.observe_step(name, "COMPLETED", started)
         return value
+
+    def wait_step(
+        self,
+        probe: Callable[[], Any],
+        description: str,
+        *,
+        expected: Any,
+        ready: Callable[[Any], bool] = bool,
+        timeout: float = 120,
+        interval: float = 0.25,
+    ) -> Any:
+        started = time.monotonic()
+        last_serialized = ""
+        last_recorded = float("-inf")
+
+        def predicate() -> Any:
+            nonlocal last_serialized, last_recorded
+            failure: Exception | None = None
+            try:
+                value = probe()
+                accepted = ready(value)
+                sample = {
+                    "expected": expected,
+                    "observed": value,
+                    "accepted": accepted,
+                }
+            except Exception as error:
+                failure = error
+                value = None
+                accepted = False
+                sample = {
+                    "expected": expected,
+                    "errorType": type(error).__name__,
+                    "error": str(error),
+                    "accepted": False,
+                }
+            serialized = json.dumps(sample, sort_keys=True)
+            now = time.monotonic()
+            if serialized != last_serialized and (
+                accepted or now - last_recorded >= 1
+            ):
+                self.observe_step(
+                    description, "PREDICATE", started, predicate=sample,
+                )
+                last_serialized = serialized
+                last_recorded = now
+            if failure is not None:
+                raise failure
+            return value if accepted else None
+
+        return self.step(
+            description,
+            lambda: wait_until(predicate, description, timeout, interval),
+        )
 
     def write_json_evidence(self, key: str, value: Any) -> None:
         path = self.fixture_root / f"{key}.json"
@@ -1685,7 +1742,23 @@ class NativeProductClosureGate(AcceptanceGate):
                   const content = item.querySelector('[data-thread-preview-message-content]');
                   return (content?.innerText || '').includes(expected);
                 });
-                if (!preview) return null;
+                if (!preview) {
+                  return {
+                    id: '',
+                    visibleRows: Array.from(
+                      document.querySelectorAll('[data-message-ulid]'),
+                    ).map((item) => ({
+                      id: item.getAttribute('data-message-ulid') || '',
+                      sequence: Number(
+                        item.getAttribute('data-message-authority-sequence') || 0,
+                      ),
+                      content: item.querySelector('[data-message-content]')
+                        ?.innerText || '',
+                      threadRoot: item.getAttribute('data-message-thread-root') || '',
+                      replyTo: item.getAttribute('data-message-reply-to') || '',
+                    })),
+                  };
+                }
                 return {
                   id: preview.getAttribute('data-thread-preview-message-id') || '',
                   sequence: 0,
@@ -1695,9 +1768,15 @@ class NativeProductClosureGate(AcceptanceGate):
                 """,
                 text,
             )
-            return value if isinstance(value, dict) and value.get("id") else None
+            return value if isinstance(value, dict) else {}
 
-        return wait_until(snapshot, f"{actor} visible message {text!r}", timeout=120)
+        return self.wait_step(
+            snapshot,
+            f"{actor}.visible-message:{text}",
+            expected={"visibleMessageText": text, "messageIdPresent": True},
+            ready=lambda value: bool(value.get("id")),
+            timeout=120,
+        )
 
     def enter_chat_page(self, actor: str) -> None:
         client = self.clients[actor]
@@ -2413,19 +2492,31 @@ class NativeProductClosureGate(AcceptanceGate):
         bob_text = f"w13-bob-{os.getpid()}"
         reply_text = f"w13-reply-{os.getpid()}"
 
-        self.composer_send("alice", root_text)
+        self.step(
+            "transcript.alice.send-root.ui",
+            lambda: self.composer_send("alice", root_text),
+        )
         root = self.wait_message_text("alice", root_text)
         self.wait_message_text("bob", root_text)
-        self.composer_send("bob", bob_text)
+        self.step(
+            "transcript.bob.send-root.ui",
+            lambda: self.composer_send("bob", bob_text),
+        )
         bob_root = self.wait_message_text("bob", bob_text)
         self.wait_message_text("alice", bob_text)
 
-        self.click_message_action("alice", str(bob_root["id"]), "reply")
-        self.composer_send("alice", reply_text)
+        self.step(
+            "transcript.alice.reply.ui",
+            lambda: self.click_message_action("alice", str(bob_root["id"]), "reply"),
+        )
+        self.step(
+            "transcript.alice.send-reply.ui",
+            lambda: self.composer_send("alice", reply_text),
+        )
         reply = self.wait_message_text("alice", reply_text)
         self.wait_message_text("bob", reply_text)
 
-        def summary() -> dict[str, Any] | None:
+        def summary() -> dict[str, Any]:
             row = self.clients["alice"].find_element(
                 f'[data-message-ulid="{bob_root["id"]}"]',
                 10,
@@ -2438,10 +2529,19 @@ class NativeProductClosureGate(AcceptanceGate):
                 ).split(",")
                 if item
             ]
-            return {"count": count, "ids": ids} if count == 1 and ids else None
+            return {"count": count, "ids": ids}
 
-        thread_summary = wait_until(summary, "thread summary projection", timeout=120)
-        self.click_message_action("alice", str(bob_root["id"]), "thread")
+        thread_summary = self.wait_step(
+            summary,
+            "alice.thread-summary",
+            expected={"count": 1, "replyIdsPresent": True},
+            ready=lambda value: value["count"] == 1 and bool(value["ids"]),
+            timeout=120,
+        )
+        self.step(
+            "transcript.alice.thread.ui",
+            lambda: self.click_message_action("alice", str(bob_root["id"]), "thread"),
+        )
         panel = self.clients["alice"].find_element("[data-chat-thread-panel='open']", 30)
         panel_snapshot = self.clients["alice"].execute_script(
             """
@@ -2468,24 +2568,18 @@ class NativeProductClosureGate(AcceptanceGate):
 
         expected_top_level_ids = [str(root["id"]), str(bob_root["id"])]
         expected_top_level_content = [root_text, bob_text]
-        alice_transcript = wait_until(
-            lambda: (
-                value
-                if (value := self.transcript("alice"))
-                and [item["id"] for item in value] == expected_top_level_ids
-                else None
-            ),
-            "Alice exact top-level transcript",
+        alice_transcript = self.wait_step(
+            lambda: self.transcript("alice"),
+            "alice.exact-top-level-transcript",
+            expected={"messageIds": expected_top_level_ids},
+            ready=lambda value: [item["id"] for item in value] == expected_top_level_ids,
             timeout=120,
         )
-        bob_transcript = wait_until(
-            lambda: (
-                value
-                if (value := self.transcript("bob"))
-                and [item["id"] for item in value] == expected_top_level_ids
-                else None
-            ),
-            "Bob exact top-level transcript",
+        bob_transcript = self.wait_step(
+            lambda: self.transcript("bob"),
+            "bob.exact-top-level-transcript",
+            expected={"messageIds": expected_top_level_ids},
+            ready=lambda value: [item["id"] for item in value] == expected_top_level_ids,
             timeout=120,
         )
         top_level_ids = [item["id"] for item in alice_transcript]
