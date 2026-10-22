@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-22
-covered_docs_hash: 0c74991d17228e05c715e3225cd594691ae02fac4e33c64f6181d1b3578c17e6
+covered_docs_hash: 0b04345151c2f7de1af45f82d242b1c97c68195e9581156f7b7cae4db3b3c063
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,21 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## Parent Runtime Reset Lease Review
+
+Acceptance's Fixture reset reference remains scope metadata. The Runner now
+acquires the canonical Machine Dev OS lease before provisioning, revalidates
+the frozen identity while locked, retains the descriptor through cleanup, and
+releases it last. CLI and parent runtimes share one implementation. Current
+Profile protection, workspace capability, topology and exact-source rules
+remain unchanged; no review SKILL.md policy amendment is required.
+
+The fixture-authority lifecycle regression verifies real descriptor inheritance,
+contention, failed validation, failed resource cleanup, metadata clearing and
+release. The existing Machine Dev suite verifies admission and source fencing.
+Catalog allocations follow registered binding categories; explicit Gate
+requests retain unsupported-input rejection.
 
 ## Actionable Blocked Result Review
 
