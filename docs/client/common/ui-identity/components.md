@@ -135,6 +135,10 @@ Rules:
 - Avatar radius is derived from size and remains visibly below half the avatar dimension.
 - The same canonical actor identity must project the same display name, avatar asset, and deterministic fallback color across feeds, comments, chat, contacts, and notifications.
 - Feature code may supply a DTO fallback, but it must not create a second avatar primitive or display a raw PTID when a canonical profile is available.
+- Native profile cards pass avatar resource references through the shared avatar
+  resolver and renderer. A Station-relative file reference is not a browser
+  image URL; direct `<img src={profile.avatar}>` bypasses local materialization
+  and failure fallback.
 
 ## 9. Popovers And Menus
 

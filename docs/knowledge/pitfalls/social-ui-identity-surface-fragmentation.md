@@ -5,6 +5,7 @@ status: active
 owns:
   - apps/desktop/src/pages/moments/
   - apps/desktop/src/components/moments/
+  - apps/desktop/src/components/profile/
   - docs/client/common/ui-identity/
 referenced-by:
   - docs/knowledge/invariants/client-ui-identity-before-edit.md
@@ -48,6 +49,10 @@ The methodological error was treating UI ID as a style preference instead of a r
 - Comment rows, previews, and reply-target labels use `useActorIdentity` with
   canonical profiles. Public comment DTOs may contain only an account handle;
   reading their author fields directly loses the persisted name and portrait.
+- `PublicProfileCard` uses `UserSquareAvatar` to materialize Station-relative
+  avatar references through the existing native avatar cache. Direct image
+  rendering showed a broken portrait in Chat detail while Chat rows and
+  comments rendered that same actor correctly.
 
 ### What guards against regression
 
@@ -62,6 +67,7 @@ Run these checks during review:
 - `rg "Card|Segmented|borderRadius|marginBottom|source.*reason.*audience" apps/desktop/src/pages/moments apps/desktop/src/components/moments --glob '!**/surfaces/**'`
 - `rg "MomentCard|CommentList|MomentComposer" apps/desktop/src/pages/moments/MomentDetailPage.tsx`
 - `rg "comment.author\\?\\.|replyTarget.author\\?\\.|c.author\\?\\." apps/desktop/src/components/moments` — comment identity must resolve through the shared actor profile projection.
+- `rg "src=\\{profile.avatar\\}" apps/desktop/src/components/profile` — native profile cards must use the shared avatar renderer.
 - `rg "not-implemented|degraded|unavailable" apps/desktop/src/components/moments/surfaces docs/client/common/ui-identity/modules/social`
 
 Interpretation:
