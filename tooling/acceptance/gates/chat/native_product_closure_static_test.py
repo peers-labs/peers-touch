@@ -668,6 +668,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             [
                 "conversationMemberSettings",
                 "engineConversations",
+                "engineInteractionSnapshot",
                 "engineMessages",
                 "getRealtimeDevice",
                 "hydrateActiveActor",
@@ -1995,18 +1996,18 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             self.source,
         )
 
-    def test_reaction_fault_transport_is_ready_before_alice_login(self) -> None:
-        self.assertIn("self.reaction_proxy.start()", self.source)
+    def test_reaction_fault_preserves_signed_station_and_durable_command(self) -> None:
+        self.assertIn("proxy.start()", self.source)
         self.assertIn(
             "self.runtime_binding.create_transport_override(",
             self.source,
         )
         self.assertIn(
-            "self.runtime_binding.apply_transport_override(",
+            "self.runtime_binding.apply_verified_direct_route_override(",
             self.source,
         )
         self.assertIn(
-            "self.runtime_binding.clear_transport_override(",
+            "self.runtime_binding.clear_verified_direct_route_override(",
             self.source,
         )
         self.assertNotIn("expose_orchestrator_endpoint(", self.source)
@@ -2025,21 +2026,29 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         self.assertIn("controlled_loss", self.source)
         self.assertIn("reaction_proxy_port", self.source)
+        reaction_start = self.source.index("    def prove_reaction(")
+        reaction_end = self.source.index("\n    def open_details(", reaction_start)
+        reaction_source = self.source[reaction_start:reaction_end]
         self.assertLess(
-            self.source.index("self.reaction_proxy.start()"),
-            self.source.index(
+            reaction_source.index("proxy.start()"),
+            reaction_source.index(
                 "self.runtime_binding.create_transport_override("
             ),
         )
         launch_start = self.source.index("    def launch_actor(")
         launch_end = self.source.index("\n    def ", launch_start + 8)
         launch_source = self.source[launch_start:launch_end]
-        self.assertLess(
-            launch_source.index(
-                "self.runtime_binding.apply_transport_override("
-            ),
-            launch_source.index('"loginWithPassword"'),
-        )
+        self.assertNotIn("transport_override(", launch_source)
+        self.assertNotIn("DirectRouteFaultProxy", launch_source)
+        for boundary in (
+            "active_direct_route_multiaddr(", '"commandLedger"', "baseline_ids",
+            "reaction_command", '"commandSha256"', '"attemptCount"',
+            '"retry_wait"', '"submitted"', '"committed"', '"forwardedConnections"',
+            '"failedCommand"', '"recoveredCommand"', 'engine["alice"] == engine["bob"]',
+        ):
+            self.assertIn(boundary, reaction_source)
+        self.assertNotIn('"requestSha256"', reaction_source)
+        self.assertNotIn('"forwardedPaths"', reaction_source)
 
     def test_runtime_endpoint_releases_before_local_proxy(self) -> None:
         cleanup_start = self.source.index("    def cleanup_clients(")
@@ -2602,13 +2611,14 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             '"reaction automatic retry convergence"',
             reaction_source,
         )
-        self.assertIn("len(command_hashes) < 2", reaction_source)
-        self.assertIn("len(set(command_hashes)) != 1", reaction_source)
+        self.assertIn("len(recovered_candidates) != 1", reaction_source)
         self.assertIn(
-            'forwarded_paths.get("/conversation/command")',
+            'recovered_candidates[0].get("commandId") != reaction_command',
             reaction_source,
         )
-        self.assertNotIn('forwarded_paths.get("/messaging/', reaction_source)
+        self.assertIn('recovered_outbox.get("commandSha256") != failed_outbox.get("commandSha256")', reaction_source)
+        self.assertIn('proxy_evidence.get("forwardedConnections")', reaction_source)
+        self.assertNotIn("forwarded_paths", reaction_source)
         self.assertNotIn(
             "f'[data-message-reaction-retry=\"{message_id}\"]'",
             reaction_source,

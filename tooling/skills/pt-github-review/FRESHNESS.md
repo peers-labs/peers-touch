@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-22
-covered_docs_hash: cc0a69f657a3d3a05eef16e1fa5ae4a8094adc5a849b5077d546f49011570cd1
+covered_docs_hash: c657e218b6b8e94ad681409f36d279da80112a3d88f6851a695d6c483aae13ad
 
 covered_docs:
   - AGENTS.md
@@ -43,6 +43,17 @@ leave expected-rejection judgment to the enclosing negative assertion. Input
 payloads remain absent from these observations. Existing
 ownership, atomicity and evidence rules cover these changes; no Skill policy
 amendment is required.
+
+Target resolution now validates one live lease and each candidate Profile once
+per operation, retaining exact, stable and drift checks without cross-operation
+caching. The held-lease subprocess is bounded. Native interaction login consumes
+the already hydrated Actor ID and records consumption baselines. Direct fault
+handles preserve canonical launch/discovery/proof. Chat consumers use the
+existing TCP proxy, durable command identity/hash and visible recovery; encrypted
+connections do not claim HTTP path or wire-byte proof. Retired HTTP fault
+consumers, helpers and registrations are removed. The new owning pitfall
+supersedes the old HTTP constructor qualification. Existing policies cover the
+cut; no Skill policy amendment is required.
 
 Ordinary command failures retain their observed exception and Gate implementation
 owner. Launcher timeouts retain actual command and termination observations;

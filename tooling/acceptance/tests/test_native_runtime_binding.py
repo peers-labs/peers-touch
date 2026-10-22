@@ -1251,7 +1251,7 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
             "http://station.example/sub-oss/healthz",
         )
 
-    def test_prelaunch_transport_override_keeps_original_peer_identity(self) -> None:
+    def test_prelaunch_transport_override_keeps_canonical_discovery_and_origin(self) -> None:
         lifecycle = SyntheticRemoteNativeLifecycle("/tmp/fixture.png")
         binding = LinuxNativeDesktopRuntimeBinding(
             "chat-native", "source-commit", lifecycle,
@@ -1275,13 +1275,13 @@ class RemoteNativeDesktopRuntimeBindingTest(unittest.TestCase):
         ):
             session = binding.create_bound_session("alice")
         configure.assert_called_once_with(
-            session, "http://127.0.0.1:40123/proxy", "station-four", "station-peer-four",
+            session, "http://station.example", "station-four", "station-peer-four",
         )
         self.assertEqual(
             persist.call_args.kwargs["observed_runtime_identity"], "station-peer-four",
         )
         self.assertEqual(
-            lifecycle.calls[-1][1][2]["PT_STATION_URL"], "http://127.0.0.1:40123/proxy",
+            lifecycle.calls[-1][1][2]["PT_STATION_URL"], "http://station.example",
         )
 
     def test_relay_binding_stages_attested_tls_anchor_before_launch(

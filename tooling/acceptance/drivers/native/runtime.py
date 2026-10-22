@@ -270,15 +270,6 @@ class NativeDesktopRuntimeBinding(ABC):
             raise DriverError(
                 f"bound service {station_service_id!r} has no endpoint"
             )
-        overrides = [
-            value for value in self._transport_overrides.values()
-            if value.client_id == client_id and value.binding_role == "station"
-            and value.service_id == station_service_id
-        ]
-        if len(overrides) > 1:
-            raise DriverError("Native launch has multiple Station transport overrides")
-        if overrides:
-            station_url = overrides[0].endpoint
 
         environment = {
             "PT_ACCEPTANCE_WINDOW_SLOT": str(options.window_slot),
@@ -517,38 +508,6 @@ class NativeDesktopRuntimeBinding(ABC):
             client_id, binding_role, handle,
         ).endpoint
 
-    def apply_transport_override(
-        self,
-        client_id: str,
-        binding_role: str,
-        handle: TransportOverrideHandle,
-    ) -> None:
-        override = self._require_transport_override(
-            client_id,
-            binding_role,
-            handle,
-        )
-        session = self._sessions_by_client.get(client_id)
-        if session is None or not session.is_alive():
-            raise self._transport_override_error(
-                client_id,
-                binding_role,
-                "bound client session is not live",
-            )
-        if self._runtime_manifest is None:
-            raise DriverError("Runtime Binding manifest is not set")
-        _, service = require_runtime_client_service(
-            self._runtime_manifest,
-            client_id,
-            binding_role,
-        )
-        self._configure_session_station(
-            session,
-            override.endpoint,
-            override.service_id,
-            str(service.get("runtimeIdentity") or ""),
-        )
-
     def apply_verified_direct_route_override(
         self,
         client_id: str,
@@ -601,35 +560,6 @@ class NativeDesktopRuntimeBinding(ABC):
         self._release_transport_endpoint(override.endpoint_lease_id)
         if command_error is not None:
             raise command_error
-
-    def clear_transport_override(
-        self,
-        client_id: str,
-        binding_role: str,
-        handle: TransportOverrideHandle,
-    ) -> None:
-        override = self._require_transport_override(
-            client_id,
-            binding_role,
-            handle,
-        )
-        if self._runtime_manifest is None:
-            raise DriverError("Runtime Binding manifest is not set")
-        service_id, service = require_runtime_client_service(
-            self._runtime_manifest,
-            client_id,
-            binding_role,
-        )
-        session = self._sessions_by_client.get(client_id)
-        if session is not None and session.is_alive():
-            self._configure_session_station(
-                session,
-                str(service.get("endpoint") or ""),
-                service_id,
-                str(service.get("runtimeIdentity") or ""),
-            )
-        self._transport_overrides.pop(handle._token, None)
-        self._release_transport_endpoint(override.endpoint_lease_id)
 
     def _require_transport_override(
         self,
@@ -831,15 +761,6 @@ class NativeDesktopRuntimeBinding(ABC):
         )
         expected_url = str(service.get("endpoint") or "").rstrip("/")
         expected_peer_id = str(service.get("runtimeIdentity") or "").strip()
-        overrides = [
-            value for value in self._transport_overrides.values()
-            if value.client_id == client_id and value.binding_role == binding_role
-            and value.service_id == service_id
-        ]
-        if len(overrides) > 1:
-            raise DriverError("Native observation has multiple transport overrides")
-        if overrides:
-            expected_url = overrides[0].endpoint
         deadline = time.monotonic() + 30
         latest: Any = None
         while time.monotonic() < deadline:

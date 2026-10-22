@@ -275,7 +275,8 @@ class NativeInteractionContractsTest(unittest.TestCase):
             "self.runtime_binding.finalize_cleanup(",
             'bool(cleanup.get("processesReleased"))',
             'bool(cleanup.get("storageReleased"))',
-            '"hydrateActiveActor"',
+            '"loginWithPassword"',
+            'ptid = str((login or {}).get("actorPtid") or "")',
         ):
             self.assertIn(required, source)
         self.assertNotIn("expose_orchestrator_endpoint(", source)
@@ -427,10 +428,6 @@ class NativeInteractionContractsTest(unittest.TestCase):
                 '"messaging_acceptance_pause_lifecycle"',
             ),
             2,
-        )
-        self.assertNotIn(
-            "AcceptanceStationSubmitFaultProxy",
-            timeout_retry,
         )
         self.assertNotIn("DirectRouteFaultProxy", timeout_retry)
 
@@ -595,11 +592,11 @@ class NativeInteractionContractsTest(unittest.TestCase):
             registry,
         )
         self.assertIn(
-            '"tooling/acceptance/fixtures/chat_submit_fault_proxy.py"',
+            '"tooling/acceptance/node_connectivity_native_support.py"',
             registry,
         )
         self.assertIn(
-            '"tooling/acceptance/gates/chat/chat_submit_fault_proxy_test.py"',
+            '"tooling/acceptance/gates/station_access/node_connectivity_native_e2e_test.py"',
             registry,
         )
 
@@ -678,8 +675,10 @@ class ContactMessageResilienceTest(unittest.TestCase):
             "runtime_binding.cell_id != selected_cell",
             "self.runtime_binding.create_bound_session(",
             "self.runtime_binding.create_transport_override(",
-            "self.runtime_binding.apply_transport_override(",
-            "self.runtime_binding.clear_transport_override(",
+            "self.runtime_binding.apply_verified_direct_route_override(",
+            "self.runtime_binding.clear_verified_direct_route_override(",
+            "active_direct_route_multiaddr(",
+            'route_probe(self.client, "direct_only")',
             "native_runtime_source_identity(",
             "self.runtime_binding.finalize_cleanup(",
             'bool(cleanup.get("processesReleased"))',

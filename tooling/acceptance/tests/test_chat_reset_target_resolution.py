@@ -12,9 +12,6 @@ from unittest.mock import patch
 from tooling.acceptance.core.errors import BlockedError
 from tooling.acceptance.fixtures import chat_native_reset as reset
 from tooling.acceptance.fixtures import chat_reset_targets as targets
-from tooling.acceptance.fixtures.chat_submit_fault_proxy import (
-    AcceptanceStationSubmitFaultProxy,
-)
 
 
 class ChatResetTargetResolutionTests(unittest.TestCase):
@@ -87,6 +84,8 @@ class ChatResetTargetResolutionTests(unittest.TestCase):
     def test_both_implicit_urls_resolve_with_secondary_active(self) -> None:
         for target in self.profiles.values():
             with self.subTest(profile=target["profile"]):
+                self.authority.reset_mock()
+                self.registry.reset_mock()
                 resolved = reset.acceptance_station_environment(target["stationUrl"] + "/")
                 self.assertEqual(
                     resolved["PT_ACCEPTANCE_STATION_URL"], target["stationUrl"],
@@ -95,20 +94,23 @@ class ChatResetTargetResolutionTests(unittest.TestCase):
                     resolved["PT_ACCEPTANCE_COMPOSE_PROJECT"], target["environment"],
                 )
                 self.deployment.assert_called_with(target["environment"])
+                self.authority.assert_called_once_with("chat-native-actors")
+                self.assertEqual(
+                    [call.args[0] for call in self.registry.call_args_list],
+                    list(self.profiles),
+                )
         self.active.assert_not_called()
         self.authority.assert_called_with("chat-native-actors")
 
-    def test_submit_proxy_consumes_primary_bound_target(self) -> None:
-        proxy = AcceptanceStationSubmitFaultProxy(
-            self.profiles["chat-native-disposable"]["stationUrl"],
+    def test_explicit_target_resolves_only_its_profile_once(self) -> None:
+        resolved = reset.acceptance_station_environment(
+            self.profiles["chat-native-disposable"]["stationUrl"], "chat-station",
         )
-        proxy.start()
-        try:
-            self.assertGreater(proxy.port, 0)
-            self.deployment.assert_called_with("chat-station")
-            self.active.assert_not_called()
-        finally:
-            proxy.stop()
+        self.assertEqual(resolved["PT_ACCEPTANCE_ENVIRONMENT"], "chat-station")
+        self.registry.assert_called_once_with("chat-native-disposable")
+        self.authority.assert_called_once_with("chat-native-actors")
+        self.deployment.assert_called_once_with("chat-station")
+        self.active.assert_not_called()
 
     def test_explicit_secondary_environment_rejects_primary_url(self) -> None:
         with self.assertRaises(BlockedError) as caught:
@@ -149,7 +151,7 @@ class ChatResetTargetResolutionTests(unittest.TestCase):
     def test_profile_deployment_drift_rejects(self) -> None:
         self.profiles["fiveArm"]["environment"] = "drifted"
         with self.assertRaises(BlockedError) as caught:
-            targets.bound_reset_environment(self.profiles["fiveArm"]["stationUrl"])
+            targets.bound_reset_target("", self.profiles["fiveArm"]["stationUrl"])
         check = self.assert_diagnostic(caught.exception)
         self.assertEqual(check["expected"]["environment"], "drifted")
         self.assertEqual(check["observed"]["environment"], "five-station")
@@ -159,13 +161,13 @@ class ChatResetTargetResolutionTests(unittest.TestCase):
             with self.subTest(raw=raw), patch.dict(os.environ, {
                 targets.PROFILE_BINDINGS_ENV: raw,
             }), self.assertRaises(BlockedError) as caught:
-                targets.bound_reset_environment(self.profiles["fiveArm"]["stationUrl"])
+                targets.bound_reset_target("", self.profiles["fiveArm"]["stationUrl"])
             self.assertFalse(self.assert_diagnostic(caught.exception)["observed"]["validMapping"])
 
     def test_missing_scope_rejects_before_profile_lookup(self) -> None:
         os.environ.pop("PT_MACHINE_LEASE_RESET_SCOPE")
         with self.assertRaises(BlockedError) as caught:
-            targets.bound_reset_environment(self.profiles["fiveArm"]["stationUrl"])
+            targets.bound_reset_target("", self.profiles["fiveArm"]["stationUrl"])
         self.assertFalse(self.assert_diagnostic(caught.exception)["observed"]["resetScopePresent"])
         self.registry.assert_not_called()
 
@@ -174,7 +176,7 @@ class ChatResetTargetResolutionTests(unittest.TestCase):
             "actual held-lease verification rejected", "station.reset:chat-native-actors",
         )
         with self.assertRaises(BlockedError) as caught:
-            targets.bound_reset_environment(self.profiles["fiveArm"]["stationUrl"])
+            targets.bound_reset_target("", self.profiles["fiveArm"]["stationUrl"])
         check = self.assert_diagnostic(caught.exception)
         self.assertEqual(check["observed"]["reason"], "actual held-lease verification rejected")
         self.registry.assert_not_called()

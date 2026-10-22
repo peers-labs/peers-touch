@@ -30,7 +30,6 @@ from tooling.acceptance.core.reset_authority import (
     require_station_reset_authority,
 )
 from tooling.acceptance.fixtures.chat_reset_targets import (
-    bound_reset_environment,
     bound_reset_target,
     require_reset_lease,
 )
@@ -411,8 +410,9 @@ def _authorized_reset_environment(
     station_url: str,
     selected_environment: str,
     environment: dict[str, str],
+    *,
+    bound_target: dict[str, str] | None,
 ) -> tuple[str, dict[str, str]] | None:
-    bound_target = bound_reset_target(selected_environment, station_url)
     configured_profile = os.environ.get(
         RESET_PROFILE_AUTHORIZATION_ENV,
         "",
@@ -588,9 +588,10 @@ def acceptance_station_environment(
     )
     if local_environment is not None:
         return local_environment
+    bound_target = bound_reset_target(environment_name or "", station_url)
     selected_environment = (
         environment_name
-        or bound_reset_environment(station_url)
+        or (bound_target["environment"] if bound_target is not None else "")
         or active_deployment_environment()
     )
     environment = deploy_environment(selected_environment)
@@ -598,6 +599,7 @@ def acceptance_station_environment(
         station_url,
         selected_environment,
         environment,
+        bound_target=bound_target,
     )
     if explicit_authorization is not None:
         station_url, environment = explicit_authorization

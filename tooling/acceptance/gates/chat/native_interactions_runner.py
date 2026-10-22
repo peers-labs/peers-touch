@@ -457,13 +457,15 @@ class NativeInteractionsGate(AcceptanceGate):
         description: str,
         timeout: float = 120,
         interval: float = 0.25,
+        *,
+        expected: Any = "predicate returns a truthy value",
     ) -> Any:
         actor = description.split(" ", 1)[0]
         return self.wait_step(
             description,
             predicate,
             actor if actor in self.clients else "",
-            expected="predicate returns a truthy value",
+            expected=expected,
             timeout=timeout,
             interval=interval,
         )
@@ -642,14 +644,7 @@ class NativeInteractionsGate(AcceptanceGate):
                 if not (login or {}).get("authenticated"):
                     raise GateError(f"{actor} login did not authenticate")
                 self.client_lifecycles.mark_authenticated(client)
-                hydration = self.harness(
-                    client,
-                    "hydrateActiveActor",
-                    {},
-                    timeout=30,
-                    actor=actor,
-                )
-                ptid = str((hydration or {}).get("actorPtid") or "")
+                ptid = str((login or {}).get("actorPtid") or "")
                 if ptid != expected_ptid:
                     raise GateError(
                         f"{actor} login identity mismatch: "
@@ -1475,6 +1470,9 @@ class NativeInteractionsGate(AcceptanceGate):
                     f"{actor} {claim_kind} reaction attempt "
                     f"{attempt + 1} consumption",
                     STEP_TIMEOUT,
+                    expected={
+                        "consumptionCount": {"greaterThan": before_consumption[actor]},
+                    },
                 )
                 self.wait_until(
                     lambda actor=actor: (

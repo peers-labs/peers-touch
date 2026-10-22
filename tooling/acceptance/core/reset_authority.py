@@ -15,9 +15,11 @@ from typing import Any
 
 from ._paths import REPO_ROOT
 from .errors import BlockedError
+from .resource_diagnostic import ResourceDiagnostic
 
 
 STATION_RESET_AUTHORITY_PREFIX = "station.reset:"
+HELD_LEASE_VALIDATION_TIMEOUT_SECONDS = 10
 
 
 def station_reset_authorization_ref(scope: str) -> str:
@@ -131,29 +133,44 @@ def require_station_reset_authority(
     if not lease_id:
         raise _blocked(normalized)
 
-    completed = runner(
-        [
-            "node",
-            "tooling/scripts/local-dev/machine-dev.mjs",
-            "verify-held",
-            "--workspace-root",
-            str(repo_root),
-            "--resource-kind",
-            "station.reset",
-            "--resource-id",
-            normalized,
-            "--reset-scope",
-            normalized,
-            "--budget-seconds",
-            "1",
-        ],
-        cwd=repo_root,
-        env=os.environ.copy(),
-        pass_fds=(lease_fd,),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    try:
+        completed = runner(
+            [
+                "node",
+                "tooling/scripts/local-dev/machine-dev.mjs",
+                "verify-held",
+                "--workspace-root",
+                str(repo_root),
+                "--resource-kind",
+                "station.reset",
+                "--resource-id",
+                normalized,
+                "--reset-scope",
+                normalized,
+                "--budget-seconds",
+                "1",
+            ],
+            cwd=repo_root,
+            env=os.environ.copy(),
+            pass_fds=(lease_fd,),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=HELD_LEASE_VALIDATION_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as error:
+        resource = station_reset_authorization_ref(normalized)
+        raise BlockedError(
+            reason="Machine Dev held reset lease validation exceeded its subprocess deadline",
+            resource=resource,
+            diagnostic=ResourceDiagnostic.observed(
+                owner="machine-dev-lease",
+                recovery_action="Inspect the held-lease validator and reacquire the exact reset scope.",
+                resource=resource,
+                expected={"validation": "current", "timeoutSeconds": HELD_LEASE_VALIDATION_TIMEOUT_SECONDS},
+                observed={"validation": "timed-out", "timeoutSeconds": error.timeout},
+            ),
+        ) from error
     if completed.returncode != 0:
         raise _blocked(normalized)
     try:

@@ -160,39 +160,41 @@ def _bound_profiles() -> dict[str, str] | None:
     return bindings
 
 
-def bound_reset_environment(station_url: str) -> str | None:
-    """Resolve implicit targets only from the current reviewed Fixture bindings."""
-    bindings = _bound_profiles()
-    if bindings is None:
-        return None
-    candidates = [
-        bound_reset_target(environment, "")
-        for environment in bindings
-    ]
-    matches = [
-        target for target in candidates
-        if target is not None
-        and station_url.rstrip("/")
-        and target["stationUrl"].rstrip("/") == station_url.rstrip("/")
-    ]
-    if len(matches) != 1:
-        raise _blocked(
-            reason="Chat fixture Station URL requires one exact reviewed target",
-            resource="fixture-target:station-url",
-            expected={"uniqueExactMatch": True, "targets": candidates},
-            observed={"stationUrl": station_url, "matchingTargetCount": len(matches)},
-            recovery="Use the exact URL of one assigned reviewed Fixture target; repair ambiguous bindings.",
-        )
-    return matches[0]["environment"]
-
-
 def bound_reset_target(
     environment: str,
     station_url: str,
 ) -> dict[str, str] | None:
+    """Resolve one operation after one live lease check; never cache authority."""
     bindings = _bound_profiles()
     if bindings is None:
         return None
+    if not environment:
+        candidates = [
+            _reviewed_bound_target(bindings, candidate, "")
+            for candidate in bindings
+        ]
+        matches = [
+            target for target in candidates
+            if station_url.rstrip("/")
+            and target["stationUrl"].rstrip("/") == station_url.rstrip("/")
+        ]
+        if len(matches) != 1:
+            raise _blocked(
+                reason="Chat fixture Station URL requires one exact reviewed target",
+                resource="fixture-target:station-url",
+                expected={"uniqueExactMatch": True, "targets": candidates},
+                observed={"stationUrl": station_url, "matchingTargetCount": len(matches)},
+                recovery="Use the exact URL of one assigned reviewed Fixture target; repair ambiguous bindings.",
+            )
+        return matches[0]
+    return _reviewed_bound_target(bindings, environment, station_url)
+
+
+def _reviewed_bound_target(
+    bindings: dict[str, str],
+    environment: str,
+    station_url: str,
+) -> dict[str, str]:
     profile = bindings.get(environment)
     if not isinstance(profile, str):
         raise _blocked(

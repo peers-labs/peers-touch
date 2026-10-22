@@ -259,8 +259,11 @@ Run-scoped network-fault injection uses a separate opaque
 `TransportOverrideHandle`, not `launch_options` or `service_bindings`.
 Runtime Binding creates the handle from a Domain-owned local fault endpoint,
 keeps the routable endpoint private, and exposes only
-`apply_transport_override(client_id, binding_role, handle)` /
-`clear_transport_override(...)` to the Gate. The handle is bound to the current
+`apply_verified_direct_route_override(client_id, binding_role, handle)` /
+`clear_verified_direct_route_override(...)` to Direct fault consumers. Canonical
+Station launch, signed discovery origin and binding observations remain unchanged;
+the override only changes the dial multiaddr after the live session is verified.
+The handle is bound to the current
 run, client, binding role, and declared service ID. It cannot replace the
 canonical binding or satisfy `BindingProofRecord`; Domain fault evidence owns
 proxy upstream identity, behavior, and cleanup.

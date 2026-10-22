@@ -212,6 +212,10 @@ Profile 推断另一个 URL 的归属。显式 deployment 仍须通过原有精�
 空 URL、未知 URL、歧义匹配、binding 漂移、stable policy 与缺失 live lease
 均保持拒绝。Chat Fixture target owner 为这些拒绝附上实际 expected/observed
 资源检查与恢复动作；没有执行的检查不得补写为通过。
+一次目标解析只校验一次当前 live lease，并为每个待匹配 Profile 调用一次
+registry owner；显式目标只解析其 Profile。解析结果沿同一次 deployment
+加载与授权检查传递，不跨操作缓存。Core held-lease 校验子进程有独立
+10 秒 deadline，超时保留真实资源检查，不将命令参数当作进程超时。
 
 macOS Runtime Cell 采用 Native Input 合同的 semantic-nonintrusive 默认值，
 在构建和写入 PREPARING 状态之前检查输入隔离。
@@ -411,6 +415,20 @@ owner；predicate observation 保留期望值、实际值或实际异常，以�
 记录调用边界；轮询内仅采样实际结果，避免每次 RPC 生成嵌套 Step。
 权限负向断言拥有拒绝是否符合预期的判断，RPC 异常 observation 不能
 抢先把已预期的拒绝记为 Gate 首个失败。所有事件仍只是 supporting evidence。
+登录 Harness 已完成 Actor hydration，interactions 直接核对返回的 Actor ID，
+保留原有 device readiness 检查；不再次加载同一 Actor。消费等待记录
+`consumptionCount > beforeCount` 的真实基线，避免诊断缺少 predicate 操作数。
+
+Chat product closure 与联系人 Message 故障场景使用已存在的 Direct TCP proxy。
+Runtime Binding 始终通过 canonical Station origin 完成签名发现和 binding proof，
+只在 live client 完成发现后应用 opaque handle 到 Direct dial override。Reaction
+使用真实 UI 操作，Engine command ledger 前后唯一新增的目标 Message command、
+持久化 intent/outbox ID 与 hash、失败计数和终态以及双端可见结果证明 exact retry。
+`attemptCount` 计数失败重试安排，成功提交不自动递增；恢复保留该计数，proxy
+恢复后的新转发连接及 `submitted/committed` 状态证明后续提交。加密 TCP proxy
+只证明连接丢失与转发，不宣称 HTTP path 或线上 command byte hash。联系人场景
+保留 2000ms peer-bound 导航、inline error 与 enabled retry 断言，并通过恢复后的
+只读 Direct route probe 验证正常转发。
 
 缺少原因、具体资源、生产阶段、上述诊断或有效证据时，输出逐项缺口，
 而非合成完整结论。业务 producer 负责补足业务检查；Reporter 只投影。

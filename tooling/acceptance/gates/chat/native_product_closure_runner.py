@@ -44,12 +44,10 @@ from tooling.acceptance.drivers.native import (
 )
 from tooling.acceptance.drivers.native.runtime import NativeLaunchOptions
 from tooling.acceptance.drivers.tauri import TauriSession
-from tooling.acceptance.fixtures.chat_submit_fault_proxy import (
-    AcceptanceStationSubmitFaultProxy,
-)
 from tooling.acceptance.gates.chat.native_file_picker import select_native_file
 from tooling.acceptance.gates.chat.native_support import (
     NativeClientLifecycleLedger,
+    active_direct_route_multiaddr,
     cleanup_preserving_primary_failure,
     commits_match,
     read_station_version,
@@ -57,6 +55,7 @@ from tooling.acceptance.gates.chat.native_support import (
     verify_runtime_fixture_ready,
     wait_until,
 )
+from tooling.acceptance.node_connectivity_native_support import DirectRouteFaultProxy
 
 
 GATE_ID = "chat-native-product-closure-e2e"
@@ -351,7 +350,7 @@ class NativeProductClosureGate(AcceptanceGate):
         self.structured_evidence: dict[str, Any] = {}
         self.localization_checks: dict[str, dict[str, list[str]]] = {}
         self.native_activation_diagnostics: list[dict[str, Any]] = []
-        self.reaction_proxy: AcceptanceStationSubmitFaultProxy | None = None
+        self.reaction_proxy: DirectRouteFaultProxy | None = None
         self.reaction_transport_override = None
         self.fixture_root = Path(tempfile.mkdtemp(prefix="pt-chat-product-closure-"))
         self.report.station_url = self.station_url
@@ -454,15 +453,6 @@ class NativeProductClosureGate(AcceptanceGate):
             if client.process_id:
                 self.runtime_pids.add(int(client.process_id))
             self.register_driver(client)
-            if (
-                actor == "alice"
-                and self.reaction_transport_override is not None
-            ):
-                self.runtime_binding.apply_transport_override(
-                    "alice",
-                    "station",
-                    self.reaction_transport_override,
-                )
             if not restore_session:
                 account_ref = str(
                     self.actor_specs[actor_role].get("accountRef") or ""
@@ -2799,17 +2789,51 @@ class NativeProductClosureGate(AcceptanceGate):
             timeout=120,
         )
 
-        proxy = self.reaction_proxy
-        if proxy is None:
-            raise GateError("reaction fault proxy is not running")
+        if self.runtime_binding is None:
+            raise GateError("Native Desktop runtime binding is required")
+        proxy = DirectRouteFaultProxy(active_direct_route_multiaddr(self.clients["alice"]))
+        self.reaction_proxy = proxy
+        proxy.start()
+        self.reaction_transport_override = self.runtime_binding.create_transport_override(
+            "alice", "station", proxy.multiaddr,
+        )
+        self.runtime_binding.apply_verified_direct_route_override(
+            "alice", "station", self.reaction_transport_override,
+        )
+
+        def command_snapshot(command_id: str = "") -> dict[str, Any]:
+            value = call_async_harness(
+                self.clients["alice"],
+                "engineInteractionSnapshot",
+                {
+                    "actorPtid": self.ptids["alice"],
+                    "conversationId": conversation_id,
+                    "messageId": message_id,
+                    "commandId": command_id,
+                },
+                namespace="chat",
+                script_timeout=30,
+            )
+            if not isinstance(value, dict):
+                raise GateError("reaction Engine snapshot is invalid")
+            return value
+
+        baseline = command_snapshot()
+        baseline_ids = {
+            str(item["commandId"]) for item in baseline.get("commandLedger", [])
+        }
+        reaction_command = ""
+        failed_command: dict[str, Any] = {}
+        failed_proxy: dict[str, Any] = {}
         try:
-            proxy.arm_connection_loss()
+            proxy.arm()
             failure_emoji = self.prove_keyboard_reaction_picker(
                 "alice",
                 message_id,
             )
 
             def actionable_error() -> bool:
+                nonlocal reaction_command, failed_command, failed_proxy
                 row = self.clients["alice"].find_element(
                     f'[data-message-ulid="{message_id}"]',
                     5,
@@ -2837,14 +2861,33 @@ class NativeProductClosureGate(AcceptanceGate):
                     By.CSS_SELECTOR,
                     '[data-message-reaction-state="error"]',
                 )
-                proxy_evidence = snapshot["proxy"]
-                command_hashes = proxy_evidence.get("commandSha256") or []
+                ledger = command_snapshot().get("commandLedger", [])
+                candidates = [
+                    item for item in ledger
+                    if str(item.get("commandId") or "") not in baseline_ids
+                    and item.get("messageId") == message_id
+                ]
+                if len(candidates) > 1:
+                    raise GateError("reaction UI created multiple durable commands")
+                if not candidates:
+                    return False
+                command_id = str(candidates[0].get("commandId") or "")
+                if reaction_command and command_id != reaction_command:
+                    raise GateError("reaction retry changed its durable command identity")
+                reaction_command = command_id
+                current = command_snapshot(command_id)
+                intent = current.get("intent") or {}
+                outbox = current.get("outbox") or {}
                 controlled_loss = (
-                    int(proxy_evidence.get("connectionLossCount") or 0) >= 1
-                    and bool(proxy_evidence.get("requestSha256"))
-                    and bool(command_hashes)
-                    and len(set(command_hashes)) == 1
+                    int(snapshot["proxy"].get("failureCount") or 0) >= 1
+                    and bool(intent.get("commandSha256"))
+                    and intent.get("commandSha256") == outbox.get("commandSha256")
+                    and int(outbox.get("attemptCount") or 0) >= 1
+                    and outbox.get("state") == "retry_wait"
                 )
+                if error_surfaces and controlled_loss:
+                    failed_command = current
+                    failed_proxy = snapshot["proxy"]
                 return bool(error_surfaces and controlled_loss)
 
             wait_until(
@@ -2873,16 +2916,29 @@ class NativeProductClosureGate(AcceptanceGate):
                 timeout=30,
             )
             proxy_evidence = proxy.evidence()
-            command_hashes = proxy_evidence.get("commandSha256") or []
-            forwarded_paths = proxy_evidence.get("forwardedPaths") or {}
+            recovered_command = command_snapshot(reaction_command)
+            recovered_outbox = recovered_command.get("outbox") or {}
+            failed_outbox = failed_command.get("outbox") or {}
+            recovered_candidates = [
+                item for item in recovered_command.get("commandLedger", [])
+                if str(item.get("commandId") or "") not in baseline_ids
+                and item.get("messageId") == message_id
+            ]
             if (
-                len(command_hashes) < 2
-                or len(set(command_hashes)) != 1
-                or int(forwarded_paths.get("/conversation/command") or 0) < 1
+                len(recovered_candidates) != 1
+                or recovered_candidates[0].get("commandId") != reaction_command
+                or recovered_outbox.get("commandSha256") != failed_outbox.get("commandSha256")
+                or (recovered_command.get("intent") or {}).get("commandSha256")
+                != failed_outbox.get("commandSha256")
+                or int(recovered_outbox.get("attemptCount") or 0)
+                < int(failed_outbox.get("attemptCount") or 0)
+                or recovered_outbox.get("state") not in {"submitted", "committed"}
+                or int(proxy_evidence.get("forwardedConnections") or 0)
+                <= int(failed_proxy.get("forwardedConnections") or 0)
             ):
                 raise GateError(
-                    "reaction exact retry was not proven through the fault proxy: "
-                    f"{json.dumps(proxy_evidence, sort_keys=True)}"
+                    "reaction exact retry did not retain its durable command: "
+                    f"{json.dumps(recovered_command, sort_keys=True)}"
                 )
             engine: dict[str, list[dict[str, str]]] = {}
             for actor in ("alice", "bob"):
@@ -2942,6 +2998,9 @@ class NativeProductClosureGate(AcceptanceGate):
             return {
                 "failureEmoji": failure_emoji,
                 "proxy": proxy_evidence,
+                "commandId": reaction_command,
+                "failedCommand": failed_command,
+                "recoveredCommand": recovered_command,
                 "engine": engine,
                 "recovered": True,
             }
@@ -4824,7 +4883,7 @@ class NativeProductClosureGate(AcceptanceGate):
         cleanup_errors: list[dict[str, str]] = []
         if self.reaction_transport_override is not None:
             try:
-                self.runtime_binding.clear_transport_override(
+                self.runtime_binding.clear_verified_direct_route_override(
                     "alice",
                     "station",
                     self.reaction_transport_override,
@@ -5051,17 +5110,6 @@ class NativeProductClosureGate(AcceptanceGate):
 
         cleanup: dict[str, Any] = {}
         try:
-            self.reaction_proxy = AcceptanceStationSubmitFaultProxy(
-                self.station_url
-            )
-            self.reaction_proxy.start()
-            self.reaction_transport_override = (
-                self.runtime_binding.create_transport_override(
-                    "alice",
-                    "station",
-                    self.reaction_proxy.url,
-                )
-            )
             for actor in ("alice", "bob"):
                 self.step(f"{actor}.launch", lambda actor=actor: self.launch_actor(actor))
             direct_search = self.step(
