@@ -5,7 +5,7 @@ import { getDict, localePath, switchLocalePath, LOCALES, type Locale } from '../
 
 interface Props {
   locale: Locale;
-  page: 'home' | 'product' | 'roadmap' | 'community';
+  page: 'home' | 'product' | 'architecture' | 'roadmap' | 'community';
   currentPath: string;
 }
 
@@ -17,6 +17,7 @@ const GITHUB_URL = 'https://github.com/peers-labs/peers-touch';
 const navItems = [
   { key: 'home', href: localePath(locale), label: t.nav.home },
   { key: 'product', href: localePath(locale, 'product'), label: t.nav.product },
+  { key: 'architecture', href: localePath(locale, 'architecture'), label: t.nav.architecture },
   { key: 'roadmap', href: localePath(locale, 'roadmap'), label: t.nav.roadmap },
   { key: 'community', href: localePath(locale, 'community'), label: t.nav.community },
 ] as const;
@@ -139,8 +140,8 @@ const navItems = [
       }
       .pt-nav {
         display: grid;
-        grid-template-columns: 72px 112px 88px 104px;
-        gap: var(--pt-space-md);
+        grid-template-columns: 64px 102px 88px 78px 92px;
+        gap: var(--pt-space-sm);
         margin-right: auto;
         white-space: nowrap;
       }
@@ -221,11 +222,33 @@ const navItems = [
         border-radius: 5px;
       }
       @media (max-width: 920px) {
+        .pt-header__inner {
+          height: auto;
+          min-height: 68px;
+          padding-block: 10px;
+          flex-wrap: wrap;
+        }
         .pt-nav {
+          order: 3;
+          display: flex;
+          width: 100%;
+          margin: 0;
+          gap: 22px;
+          overflow-x: auto;
+          scrollbar-width: none;
+        }
+        .pt-nav::-webkit-scrollbar {
           display: none;
+        }
+        .pt-nav__link {
+          flex: 0 0 auto;
+          min-height: 36px;
         }
         .pt-header__gh {
           display: none;
+        }
+        .pt-header__actions {
+          margin-left: auto;
         }
       }
     </style>

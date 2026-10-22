@@ -20,7 +20,6 @@ const t = getDict(locale);
     <div class="hero__scrim" aria-hidden="true"></div>
     <div class="pt-shell hero__content">
       <div class="hero__copy">
-        <p class="pt-eyebrow">{t.home.eyebrow}</p>
         <h1 class="hero__title">{t.home.title}</h1>
         <p class="hero__subtitle">{t.home.subtitle}</p>
         <div class="hero__cta">
@@ -68,9 +67,9 @@ const t = getDict(locale);
     <h2 class="trust__title">{t.home.trustTitle}</h2>
     <div class="trust__grid">
       {t.home.trust.map((item) => (
-        <article class="trust-item">
-          <h3 class="trust-item__title">{item.title}</h3>
-          <p class="trust-item__body">{item.body}</p>
+        <article class="pt-trust-item">
+          <h3 class="pt-trust-item__title">{item.title}</h3>
+          <p class="pt-trust-item__body">{item.body}</p>
         </article>
       ))}
     </div>
@@ -238,21 +237,6 @@ const t = getDict(locale);
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     gap: var(--pt-space-md);
-  }
-  .trust-item {
-    padding: var(--pt-space-md) var(--pt-space-lg);
-    border-radius: var(--pt-radius-md);
-    background: var(--pt-surface-subtle);
-    border: 1px solid var(--pt-border-hairline);
-  }
-  .trust-item__title {
-    font-size: 1.02rem;
-    font-weight: 700;
-    margin-bottom: var(--pt-space-2xs);
-  }
-  .trust-item__body {
-    color: var(--pt-text-secondary);
-    font-size: 0.92rem;
   }
 </style>
 

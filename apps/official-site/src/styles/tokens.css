@@ -143,14 +143,6 @@ p {
   background: var(--pt-surface-subtle);
 }
 
-.pt-eyebrow {
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--pt-accent);
-}
-
 .pt-indexed-card {
   position: relative;
   display: block;
@@ -238,6 +230,56 @@ p {
 .pt-indexed-card[data-open='true'] .pt-indexed-card__tip {
   opacity: 1;
   transform: translateY(0);
+}
+
+/* Quiet subtle-surface card: Home trust grid and Architecture evidence. */
+.pt-trust-item {
+  padding: var(--pt-space-md) var(--pt-space-lg);
+  border-radius: var(--pt-radius-md);
+  background: var(--pt-surface-subtle);
+  border: 1px solid var(--pt-border-hairline);
+}
+.pt-trust-item__title {
+  font-size: 1.02rem;
+  font-weight: 700;
+  margin-bottom: var(--pt-space-2xs);
+}
+.pt-trust-item__body {
+  color: var(--pt-text-secondary);
+  font-size: 0.92rem;
+}
+
+/* Inner-page hero head shared by Roadmap, Community and Architecture.
+   Landing tabs (Home / How it works) keep their own gradient heroes. */
+.page-head {
+  padding-block: clamp(40px, 5vw, 56px) var(--pt-space-xl);
+}
+.page-head__title {
+  max-width: 520px;
+  margin-top: var(--pt-space-xs);
+  font-size: 44.8px;
+  font-weight: 800;
+  line-height: 53.76px;
+  letter-spacing: 0;
+}
+.page-head__subtitle {
+  max-width: 32em;
+  margin-top: var(--pt-space-sm);
+  color: var(--pt-text-secondary);
+  font-size: 17.6px;
+  line-height: 1.7;
+}
+@media (max-width: 720px) {
+  .page-head {
+    padding-block: var(--pt-space-xl);
+  }
+  .page-head__title {
+    font-size: 36px;
+    line-height: 43.2px;
+  }
+  .page-head__subtitle {
+    font-size: 16px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

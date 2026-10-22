@@ -1,22 +1,18 @@
 ---
 interface ProductCopy {
-  eyebrow: string;
   title: string;
   subtitle: string;
   network: {
-    eyebrow: string;
     title: string;
     note: string;
     points: Array<{ title: string; body: string }>;
   };
   layers: {
-    eyebrow: string;
     title: string;
     note: string;
     items: Array<{ name: string; tag: string; body: string }>;
   };
   agents: {
-    eyebrow: string;
     title: string;
     note: string;
     points: Array<{ title: string; body: string }>;
@@ -53,7 +49,6 @@ const ui =
         agentBody:
           '选择模型、上下文、工具和权限。Agent 使用你允许的数据，在执行外部动作前向你确认。',
         agentSignal: '真实产品形态 · Desktop Agent Module',
-        capabilityEyebrow: '正在形成的产品能力',
         closingTitle: '各自拥有，彼此连接。',
         closingBody: '人与 Agent，共同生活在一张没有平台中心的网络里。',
         roadmap: '查看路线图',
@@ -75,7 +70,6 @@ const ui =
         agentBody:
           'Choose its model, context, tools, and permissions. It works with data you allow and asks before taking external action.',
         agentSignal: 'Real product surface · Desktop Agent Module',
-        capabilityEyebrow: 'The product taking shape',
         closingTitle: 'Owned independently. Connected openly.',
         closingBody: 'People and Agents share one network without a platform at its center.',
         roadmap: 'View roadmap',
@@ -133,7 +127,6 @@ const ui =
 
 <section class="hi-hero pt-shell">
   <div class="hi-hero-copy">
-    <p class="pt-eyebrow">{p.eyebrow}</p>
     <h1>{p.title}</h1>
     <p>{p.subtitle}</p>
   </div>
@@ -427,7 +420,7 @@ const ui =
 </section>
 
 <section class="hi-capabilities pt-shell">
-  <header><p class="pt-eyebrow">{ui.capabilityEyebrow}</p><h2>{p.capabilities.title}</h2></header>
+  <header><h2>{p.capabilities.title}</h2></header>
   <div>
     {p.capabilities.items.map((cap, index) => (
       <article>
