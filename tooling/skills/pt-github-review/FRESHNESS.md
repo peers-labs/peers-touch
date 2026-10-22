@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-10-22
-covered_docs_hash: fa9c1c918e1896f07dbdbb685d6d324782b83838277b9fee824a3a207bbee070
+last_verified_at: 2026-10-23
+covered_docs_hash: 9295cb510ac7230e5891c5340f38080b5fa060b1ac5b94a53cf279c2f228254d
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,16 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## Search Source And SQLCipher Knowledge Integration
+
+The covered index changes add the canonical closed-domain Search source to
+`docs/README.md` and the raw-byte SQLCipher key pitfall to
+`docs/knowledge/README.md`. Both additions were reviewed against the existing
+domain ownership, current-source evidence, security and knowledge-delta rules.
+They introduce no new review authority or waiver, so `SKILL.md` remains
+applicable. The architecture registry fixture now checks the exact Search
+module and capability IDs; no assertion or Gate was weakened.
 
 ## Mobile Origin Contract Review
 
