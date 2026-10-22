@@ -8,11 +8,14 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
+import sys
 
 from tooling.acceptance.core import EvidenceStore, REPO_ROOT, blocked_manifest, new_manifest
-from tooling.acceptance.core.errors import BlockedError, EphemeralCapabilityBlocked
+from tooling.acceptance.core.errors import BlockedError, EphemeralCapabilityBlocked, EphemeralLaunchTimeout
 from tooling.acceptance.core.gate import AcceptanceGate
-from tooling.acceptance.core.launch_context import _blocked_error_from_response, _blocked_response
+from tooling.acceptance.core.launch_context import (
+    GateLaunchSpec, GateProcessLauncher, _blocked_error_from_response, _blocked_response,
+)
 from tooling.acceptance.core.resource_diagnostic import ResourceDiagnostic
 from tooling.acceptance.core.provisioner import EnvironmentProvisioner
 from tooling.acceptance.core.provisioning import CredentialRef, EnvironmentContract
@@ -185,6 +188,70 @@ class ResourceDiagnosticTests(unittest.TestCase):
                     patch.object(gate, "_print_fail"):
                 self.assertEqual(gate.execute(), 1)
             self.assertNotIn("diagnostic", json.loads(gate.report_path.read_text()))
+
+    def test_ordinary_command_failure_is_sealed_and_reporter_complete(self) -> None:
+        class FailingGate(AcceptanceGate):
+            gate_id = "synthetic-command-failure"
+            phase = "synthetic command"
+            bom = ("synthetic",)
+            spec = ("synthetic",)
+
+            def run(self):
+                self.report.runtime["firstFailedStep"] = "synthetic.action"
+                raise RuntimeError("observed command rejection")
+
+        runner = script_module("acceptance-run")
+        reporter = script_module("acceptance-report")
+        source = {"commit": "synthetic", "workspaceDigest": "clean"}
+        with tempfile.TemporaryDirectory() as directory:
+            store = EvidenceStore(Path(directory), worktree=REPO_ROOT)
+            with store.begin_run(FailingGate.gate_id, source=source) as run:
+                gate = FailingGate()
+                with patch.dict("os.environ", run.subprocess_environment()), \
+                        patch.object(gate, "_print_fail"):
+                    self.assertEqual(gate.execute(), 1)
+                result = runner.enrich_result_with_run_artifacts({
+                    "id": gate.gate_id, "status": "failed", "exit_code": 1,
+                    "tier": "local-evidence", "cleanupStatus": "passed",
+                }, run)
+                self.assertEqual(result["reason"], "observed command rejection")
+                self.assertEqual(result["diagnostic"]["resourceChecks"][0]["observed"]["firstFailedStep"],
+                                 "synthetic.action")
+                run.finalize(result=result)
+                delivered = {**result, "runManifest": run.manifest_ref.to_dict()}
+            self.assertEqual(reporter.result_diagnostic(delivered, source, store)["missingFields"], [])
+
+    def test_actual_command_timeout_is_not_a_missing_capability(self) -> None:
+        launcher = GateProcessLauncher(termination_timeout_seconds=0.2)
+        with self.assertRaises(EphemeralLaunchTimeout) as caught:
+            launcher.run(
+                GateLaunchSpec(
+                    argv=(sys.executable, "-c", "import time;time.sleep(5)"),
+                    timeout_seconds=0.05, required_capabilities=(),
+                ), None,
+            )
+        runner = script_module("acceptance-run")
+        reporter = script_module("acceptance-report")
+        source = {"commit": "synthetic", "workspaceDigest": "clean"}
+        with tempfile.TemporaryDirectory() as directory:
+            store = EvidenceStore(Path(directory), worktree=REPO_ROOT)
+            with store.begin_run("synthetic-timeout", source=source) as run:
+                result = runner.ephemeral_launch_failure_result(
+                    gate_id="synthetic-timeout", command="synthetic", environment="local",
+                    tier="local-evidence", error=caught.exception, duration_seconds=0.05,
+                )
+                result["status"] = "failed"
+                result["completionStatus"] = "PARTIAL"
+                result["cleanupStatus"] = "passed"
+                result = runner.record_failure_observation(result, run)
+                result = runner.enrich_result_with_run_artifacts(result, run)
+                self.assertEqual(result["blockedResource"], "gate-command-process")
+                observed = result["diagnostic"]["resourceChecks"][0]["observed"]
+                self.assertTrue(observed["deadlineExceeded"])
+                self.assertEqual(observed["processCleanup"], "completed")
+                run.finalize(result=result)
+                delivered = {**result, "runManifest": run.manifest_ref.to_dict()}
+            self.assertEqual(reporter.result_diagnostic(delivered, source, store)["missingFields"], [])
 
 
 if __name__ == "__main__":

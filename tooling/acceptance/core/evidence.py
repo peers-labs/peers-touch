@@ -145,6 +145,8 @@ class EvidenceReport:
         if self.blocked_reason:
             report["reason"] = self.blocked_reason
             report["blockedReason"] = self.blocked_reason
+        elif self.error:
+            report["reason"] = self.error
         if self.blocked_resource:
             report["blockedResource"] = self.blocked_resource
         if self.diagnostic is not None:

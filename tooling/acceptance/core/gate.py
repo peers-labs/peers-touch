@@ -11,6 +11,7 @@ from .drivers.base import BaseDriver, DomDriver
 from .errors import BlockedError, GateError
 from .evidence import EvidenceReport, new_report
 from .harness import call_async_harness
+from .resource_diagnostic import ResourceDiagnostic
 
 
 class AcceptanceGate(ABC):
@@ -145,8 +146,29 @@ class AcceptanceGate(ABC):
         except Exception as error:
             caught_error = error
             self.report.status = "FAIL"
-            self.report.error = str(error)
+            self.report.error = str(error) or type(error).__name__
             self.report.error_type = type(error).__name__
+            self.report.blocked_resource = f"gate-command:{self.gate_id}"
+            steps = self.report.runtime.get("steps")
+            self.report.diagnostic = ResourceDiagnostic.observed(
+                owner=type(self).__module__,
+                recovery_action=(
+                    f"Inspect reports/{self.gate_id}.json and the captured traceback "
+                    "at this Gate implementation; repair the observed failure, "
+                    "qualify the correction and refreeze the original scope and budget."
+                ),
+                resource=self.report.blocked_resource,
+                expected="Gate run completes its declared assertions without an exception",
+                observed={
+                    "errorType": type(error).__name__,
+                    "error": str(error),
+                    "firstFailedStep": self.report.runtime.get("firstFailedStep"),
+                    "failedSteps": [
+                        step for step in (steps if isinstance(steps, list) else [])
+                        if isinstance(step, dict) and step.get("status") == "fail"
+                    ],
+                },
+            )
             runtime_binding = getattr(self, "runtime_binding", None)
             if runtime_binding is not None:
                 self.report.runtime["clientBindingProofs"] = {

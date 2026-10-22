@@ -859,7 +859,13 @@ def ephemeral_launch_failure_result(
             result["diagnostic"] = error.diagnostic.to_dict()
     elif blocked:
         result["blockedReason"] = redact_text(str(error))
-        result["blockedResource"] = f"ephemeral-launch-context:{gate_id}"
+        result["blockedResource"] = (
+            getattr(error, "resource", "") or f"ephemeral-launch-context:{gate_id}"
+        )
+        diagnostic = getattr(error, "diagnostic", None)
+        if diagnostic is not None:
+            diagnostic.require_resource(result["blockedResource"])
+            result["diagnostic"] = diagnostic.to_dict()
     errno_name = getattr(error, "errno_name", "")
     resource_category = getattr(error, "resource_category", "")
     if errno_name:

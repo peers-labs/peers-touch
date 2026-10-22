@@ -17,6 +17,7 @@ from tooling.acceptance.core import (
     REPO_ROOT,
 )
 from tooling.acceptance.drivers.native import NativeDesktopRuntimeBinding
+from tooling.acceptance.core.evidence_store import write_current_artifact
 from tooling.acceptance.drivers.native.runtime import NativeLaunchOptions
 from tooling.acceptance.drivers.tauri import TauriSession
 from tooling.acceptance.fixtures.chat_native_reset import (
@@ -306,6 +307,7 @@ class NativeInteractionsGate(AcceptanceGate):
             else current_workspace_digest()
         )
         self.steps: list[dict[str, Any]] = []
+        self._step_observation_sequence = 0
         self.clients: dict[str, TauriSession] = {}
         self.runtime_instances: list[TauriSession] = []
         self.client_lifecycles = NativeClientLifecycleLedger()
@@ -368,11 +370,37 @@ class NativeInteractionsGate(AcceptanceGate):
         self.report.runtime["sourceIdentity"] = identity
         return identity
 
+    def observe_step(self, name: str, client: str, state: str, started: float) -> None:
+        self._step_observation_sequence += 1
+        observation = {
+            "artifactKind": "acceptance-step-observation",
+            "evidenceClass": "SUPPORTING_OBSERVATION",
+            "proofStatus": "NOT_APPLICABLE",
+            "gateId": self.gate_id,
+            "sequence": self._step_observation_sequence,
+            "source": {
+                "commit": self.tested_commit,
+                "workspaceDigest": self.workspace_digest,
+            },
+            "step": name,
+            "client": client,
+            "state": state,
+            "elapsedMs": int((time.monotonic() - started) * 1000),
+        }
+        write_current_artifact(
+            f"observations/step-{self._step_observation_sequence:05d}.json",
+            (json.dumps(observation, sort_keys=True) + "\n").encode("utf-8"),
+            repo_root=REPO_ROOT,
+        )
+        print(json.dumps(observation, sort_keys=True), flush=True)
+
     def step(self, name: str, action: Callable[[], Any], client: str = "") -> Any:
         started = time.monotonic()
+        self.observe_step(name, client, "STARTED", started)
         try:
             value = action()
         except Exception as error:
+            self.report.runtime.setdefault("firstFailedStep", name)
             self.steps.append(
                 {
                     "step": name,
@@ -382,6 +410,7 @@ class NativeInteractionsGate(AcceptanceGate):
                     "error": str(error),
                 }
             )
+            self.observe_step(name, client, "FAILED", started)
             raise
         self.steps.append(
             {
@@ -391,6 +420,7 @@ class NativeInteractionsGate(AcceptanceGate):
                 "durationMs": int((time.monotonic() - started) * 1000),
             }
         )
+        self.observe_step(name, client, "COMPLETED", started)
         return value
 
     def start_client(self, actor: str) -> None:
@@ -2782,34 +2812,42 @@ class NativeInteractionsGate(AcceptanceGate):
                 lambda: shared_federation_id(self.clients, ACTORS),
             )
 
-            wait_for_peer_key_bundle(
-                self.clients["alice"],
-                self.ptids["bob"],
-                str(
-                    runtime_station_service(
-                        self.manifest,
-                        "bob",
-                    ).get("runtimeIdentity")
-                    or ""
+            self.step(
+                "direct.peer_key_bundle",
+                lambda: wait_for_peer_key_bundle(
+                    self.clients["alice"],
+                    self.ptids["bob"],
+                    str(
+                        runtime_station_service(
+                            self.manifest,
+                            "bob",
+                        ).get("runtimeIdentity")
+                        or ""
+                    ),
                 ),
+                "alice",
             )
-            direct = async_harness(
-                self.clients["alice"],
-                "createDirectConversation",
-                {
-                    "peerPtid": self.ptids["bob"],
-                    "federationId": federation_id,
-                },
+            direct = self.step(
+                "direct.create",
+                lambda: async_harness(
+                    self.clients["alice"],
+                    "createDirectConversation",
+                    {
+                        "peerPtid": self.ptids["bob"],
+                        "federationId": federation_id,
+                    },
+                ),
+                "alice",
             )
             direct_id = str((direct or {}).get("conversationId") or "")
             if not direct_id:
                 raise GateError("Direct conversation creation returned no ID")
             self.conversations["direct"] = direct_id
             for actor in ("alice", "bob"):
-                self.sync(actor, "friend", direct_id)
-            self.prove_lifecycle("friend", direct_id, ("alice", "bob"))
-            self.prove_pending_timeout_retry("friend", direct_id)
-            self.prove_offline_recovery("friend", direct_id, ())
+                self.step("direct.sync", lambda actor=actor: self.sync(actor, "friend", direct_id), actor)
+            self.step("direct.interactions", lambda: self.prove_lifecycle("friend", direct_id, ("alice", "bob")))
+            self.step("direct.timeout_retry", lambda: self.prove_pending_timeout_retry("friend", direct_id))
+            self.step("direct.offline_recovery", lambda: self.prove_offline_recovery("friend", direct_id, ()))
 
             self.step(
                 "direct.client.restart",
@@ -2834,28 +2872,32 @@ class NativeInteractionsGate(AcceptanceGate):
             )
             self.assert_condition("direct_client_restart", True)
 
-            group = async_harness(
-                self.clients["alice"],
-                "createGroup",
-                {
-                    "name": f"acceptance-{time.time_ns()}",
-                    "federationId": federation_id,
-                    "memberPtids": [
-                        self.ptids["bob"],
-                        self.ptids["charlie"],
-                    ],
-                },
+            group = self.step(
+                "group.create",
+                lambda: async_harness(
+                    self.clients["alice"],
+                    "createGroup",
+                    {
+                        "name": f"acceptance-{time.time_ns()}",
+                        "federationId": federation_id,
+                        "memberPtids": [
+                            self.ptids["bob"],
+                            self.ptids["charlie"],
+                        ],
+                    },
+                ),
+                "alice",
             )
             group_id = str((group or {}).get("groupUlid") or "")
             if not group_id:
                 raise GateError("Group creation returned no conversation_id")
             self.conversations["group"] = group_id
             for actor in ACTORS:
-                self.sync(actor, "group", group_id)
-            self.prove_lifecycle("group", group_id, ACTORS)
-            self.prove_pending_timeout_retry("group", group_id)
+                self.step("group.sync", lambda actor=actor: self.sync(actor, "group", group_id), actor)
+            self.step("group.interactions", lambda: self.prove_lifecycle("group", group_id, ACTORS))
+            self.step("group.timeout_retry", lambda: self.prove_pending_timeout_retry("group", group_id))
             self.assert_condition("pending_interaction_timeout_retry", True)
-            self.prove_offline_recovery("group", group_id, ("charlie",))
+            self.step("group.offline_recovery", lambda: self.prove_offline_recovery("group", group_id, ("charlie",)))
 
             self.step("station.restart", self.restart_station)
             self.step(

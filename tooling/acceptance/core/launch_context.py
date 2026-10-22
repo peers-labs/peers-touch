@@ -330,6 +330,23 @@ class GateProcessLauncher:
             raise EphemeralLaunchTimeout(
                 "Gate process exceeded its launch timeout",
                 operation="gate_process",
+                resource="gate-command-process",
+                diagnostic=ResourceDiagnostic.observed(
+                    owner="tooling/acceptance/core/launch_context.py::GateProcessLauncher",
+                    recovery_action=(
+                        "Inspect the captured command output and same-run Step observations; "
+                        "attribute the command delay at its actual owner, repair and qualify "
+                        "it, then refreeze the original scope and budget."
+                    ),
+                    resource="gate-command-process",
+                    expected={"commandTimeoutSeconds": spec.timeout_seconds},
+                    observed={
+                        "processId": process.pid,
+                        "returnCode": process.returncode,
+                        "deadlineExceeded": True,
+                        "processCleanup": "completed",
+                    },
+                ),
             ) from error
         except BaseException:
             stdout, stderr = self._terminate(process)

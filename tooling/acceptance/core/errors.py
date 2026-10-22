@@ -200,6 +200,20 @@ class EphemeralLaunchProtocolError(EphemeralLaunchError):
 class EphemeralLaunchTimeout(EphemeralLaunchError):
     code = "EPHEMERAL_LAUNCH_TIMEOUT"
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        operation: str = "",
+        resource: str = "",
+        diagnostic: ResourceDiagnostic | None = None,
+    ) -> None:
+        super().__init__(message, operation=operation)
+        if diagnostic is not None:
+            diagnostic.require_resource(resource)
+        self.resource = resource
+        self.diagnostic = diagnostic
+
 
 class EphemeralCapabilityBlocked(EphemeralLaunchError, BlockedError):
     code = "EPHEMERAL_CAPABILITY_BLOCKED"

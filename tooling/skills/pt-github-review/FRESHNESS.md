@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-22
-covered_docs_hash: 525fb5fb7ea7e3c2665301a4dd7ade759f82a73d3c1a7f3a90450d1cc93a165f
+covered_docs_hash: cbef2ae608c6bef431f13b80ea1768891f6828768cf58de8a462856ef1052e81
 
 covered_docs:
   - AGENTS.md
@@ -32,6 +32,13 @@ covered_docs:
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
 
 ## Bound Fixture Target Review
+
+Ordinary command failures retain their observed exception and Gate implementation
+owner. Launcher timeouts retain actual command and termination observations;
+they do not infer missing capabilities. Native Step observations remain supporting
+evidence with no product proof. Existing source, lifecycle and evidence policies
+cover these changes; no Skill policy amendment is required. Real termination and
+durable Reporter regressions cover the changed boundaries.
 
 Implicit Chat Fixture URLs resolve by one exact match among current reviewed
 Profile bindings before loading deployment inputs. Explicit targets, stable

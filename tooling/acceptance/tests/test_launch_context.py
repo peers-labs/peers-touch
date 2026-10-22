@@ -2204,6 +2204,7 @@ time.sleep(60)
     def test_launcher_terminates_timed_out_process(self) -> None:
         process = MagicMock()
         process.pid = 1234
+        process.returncode = -signal.SIGKILL
         process.communicate.side_effect = (
             subprocess.TimeoutExpired(cmd=("synthetic-gate",), timeout=0.01),
             subprocess.TimeoutExpired(cmd=("synthetic-gate",), timeout=0.1),

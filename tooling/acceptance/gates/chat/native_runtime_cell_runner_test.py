@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import ast
+import contextlib
+import io
 import json
 import os
 import sqlite3
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -13,7 +16,10 @@ from unittest.mock import Mock, patch
 from selenium.common.exceptions import WebDriverException
 
 from tooling.acceptance.core import GateError
+from tooling.acceptance.core import EvidenceStore
+from tooling.acceptance.core.errors import EphemeralLaunchTimeout
 from tooling.acceptance.core.evidence import new_report
+from tooling.acceptance.core.launch_context import GateLaunchSpec, GateProcessLauncher
 from tooling.acceptance.gates.chat import native_support
 from tooling.acceptance.gates.chat.native_support import (
     NativeClientLifecycleLedger,
@@ -56,6 +62,67 @@ TRACEABLE_GATE_CLASSES = {
 
 
 class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
+    def test_nested_interaction_steps_emit_unique_supporting_observations(self) -> None:
+        from tooling.acceptance.gates.chat.native_interactions_runner import NativeInteractionsGate
+
+        gate = NativeInteractionsGate.__new__(NativeInteractionsGate)
+        gate.steps = []
+        gate._step_observation_sequence = 0
+        gate.tested_commit = "synthetic"
+        gate.workspace_digest = "clean"
+        gate.report = new_report(gate.gate_id)
+        with tempfile.TemporaryDirectory() as directory:
+            store = EvidenceStore(Path(directory), worktree=ROOT)
+            with store.begin_run(gate.gate_id, source={"commit": "synthetic"}) as run:
+                with patch.dict(os.environ, run.subprocess_environment()), \
+                        contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(gate.step("outer", lambda: gate.step("inner", lambda: 7)), 7)
+                observations = [
+                    json.loads(store.resolve(ref).read_text())
+                    for ref in run.collect_existing_artifacts().values()
+                ]
+                self.assertEqual([item["sequence"] for item in observations], [1, 2, 3, 4])
+                self.assertEqual([item["state"] for item in observations],
+                                 ["STARTED", "STARTED", "COMPLETED", "COMPLETED"])
+                self.assertTrue(all(item["proofStatus"] == "NOT_APPLICABLE" for item in observations))
+                run.finalize(result={"status": "failed", "proofStatus": "UNPROVEN"})
+
+    def test_interaction_step_start_survives_real_command_termination(self) -> None:
+        command = """
+import time
+from tooling.acceptance.core.evidence import new_report
+from tooling.acceptance.gates.chat.native_interactions_runner import NativeInteractionsGate
+gate = NativeInteractionsGate.__new__(NativeInteractionsGate)
+gate.steps = []
+gate._step_observation_sequence = 0
+gate.tested_commit = "synthetic"
+gate.workspace_digest = "clean"
+gate.report = new_report(gate.gate_id)
+gate.step("synthetic.pending", lambda: time.sleep(10), "synthetic-actor")
+"""
+        gate_id = "chat-native-interactions-e2e"
+        with tempfile.TemporaryDirectory() as directory:
+            store = EvidenceStore(Path(directory), worktree=ROOT)
+            with store.begin_run(gate_id, source={"commit": "synthetic"}) as run:
+                launcher = GateProcessLauncher(
+                    cwd=str(ROOT), environment=run.subprocess_environment(),
+                    termination_timeout_seconds=0.2,
+                )
+                with self.assertRaises(EphemeralLaunchTimeout):
+                    launcher.run(
+                        GateLaunchSpec(argv=(sys.executable, "-c", command),
+                                       timeout_seconds=2, required_capabilities=()), None,
+                    )
+                observations = [
+                    json.loads(store.resolve(ref).read_text())
+                    for ref in run.collect_existing_artifacts().values()
+                ]
+                self.assertEqual(len(observations), 1)
+                self.assertEqual(observations[0]["state"], "STARTED")
+                self.assertEqual(observations[0]["step"], "synthetic.pending")
+                self.assertEqual(observations[0]["proofStatus"], "NOT_APPLICABLE")
+                run.finalize(result={"status": "failed", "proofStatus": "UNPROVEN"})
+
     def source(self, runner: str) -> str:
         return RUNNERS[runner].read_text(encoding="utf-8")
 
