@@ -397,7 +397,8 @@ Runner 为准备异常和 deadline 生成本 Gate 的不可变失败 observation
 描述原始阻断为最终失败。Reporter 只验真并投影这些原始记录。
 
 `AcceptanceGate` 的普通异常也记录实际错误类型、错误文本和已经观察到的
-失败 Step，责任引用为该 Gate 的实现模块；该检查描述命令失败，不推断
+失败 Step，责任引用为实际 `run` 实现的绝对源码文件和 Gate 类名；
+脚本入口的 `__main__` 不是可定位的实现责任引用。该检查描述命令失败，不推断
 资源不存在或业务根因。进程 timeout 由 `GateProcessLauncher` 记录实际
 命令上界、PID、终止返回码和完成的进程清理，资源为命令进程，
 不把无 capability channel 的命令超时描述为缺少 ephemeral context。

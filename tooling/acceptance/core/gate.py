@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import sys
 import time
 import traceback
@@ -151,7 +152,10 @@ class AcceptanceGate(ABC):
             self.report.blocked_resource = f"gate-command:{self.gate_id}"
             steps = self.report.runtime.get("steps")
             self.report.diagnostic = ResourceDiagnostic.observed(
-                owner=type(self).__module__,
+                owner=(
+                    f"{Path(inspect.getfile(type(self).run)).resolve()}"
+                    f"::{type(self).__qualname__}"
+                ),
                 recovery_action=(
                     f"Inspect reports/{self.gate_id}.json and the captured traceback "
                     "at this Gate implementation; repair the observed failure, "

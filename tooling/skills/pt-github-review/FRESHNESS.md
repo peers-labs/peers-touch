@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-22
-covered_docs_hash: 88bae5269cc330802be79a0c7c0a5d9b6ade000e56ee233d119817a7f88b98e3
+covered_docs_hash: ce14979ae8b41bdf755e269ff64ae166e78a35c5be50e1364deebd3dbdd4b2b4
 
 covered_docs:
   - AGENTS.md
@@ -62,6 +62,10 @@ Reaction selection retains actual focus, events and overlay Message ID through
 the existing durable Step owner. Keyboard proof and business budgets remain
 unchanged. Existing Driver ownership and supporting-evidence rules cover the
 correction; no Skill policy amendment is required.
+Ordinary command failures now retain the actual implementation source file and
+Gate class instead of the script-entry module `__main__`. The actual subprocess
+regression verifies this public failure report; existing diagnostic ownership
+rules apply without a Skill policy amendment.
 
 The Fixture owner groups account reads by exact Station and checks both
 containers in one SSH operation. Identity completeness and per-account

@@ -3,6 +3,7 @@ kind: pitfall
 title: Generic credential resolution must preserve Core diagnostics
 status: active
 owns:
+  - tooling/acceptance/core/gate.py
   - tooling/acceptance/core/provisioner.py
   - tooling/acceptance/provisioners/home_station.py
   - tooling/acceptance/tests/test_resource_diagnostic.py
@@ -18,6 +19,8 @@ detected: 2026-10-22
 
 A concrete Provisioner can return an opaque credential refusal even when Core
 already records the resolver failure and actual environment-variable presence.
+An ordinary command failure can also carry an unusable owner `__main__` when
+its Gate is executed as a script.
 
 ## Root cause
 
@@ -30,6 +33,8 @@ did not reach this business Provisioner.
 Home Station inherits the Core resolver. Concrete overrides are reserved for
 different, business-owned credential sources; they must preserve their actual
 observations and the canonical safe-redaction contract.
+Ordinary Gate failure ownership uses the actual `run` implementation file and
+Gate class, so script invocation does not erase the source location.
 
 ## How to detect a recurrence
 
@@ -43,3 +48,5 @@ The Home Station case must retain owner `environment-provisioner:home-station`
 and the observed absence of the required variable. Review any concrete
 `_resolve_credentials` override for a real source difference; copying the
 generic CredentialRef loop creates a second owner.
+The actual subprocess script case must retain its absolute source path and
+`ScriptGate` identity through the ordinary command failure report.

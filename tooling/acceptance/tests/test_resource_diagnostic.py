@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -215,11 +217,44 @@ class ResourceDiagnosticTests(unittest.TestCase):
                     "tier": "local-evidence", "cleanupStatus": "passed",
                 }, run)
                 self.assertEqual(result["reason"], "observed command rejection")
+                self.assertEqual(
+                    result["diagnostic"]["owner"],
+                    f"{Path(__file__).resolve()}::{FailingGate.__qualname__}",
+                )
                 self.assertEqual(result["diagnostic"]["resourceChecks"][0]["observed"]["firstFailedStep"],
                                  "synthetic.action")
                 run.finalize(result=result)
                 delivered = {**result, "runManifest": run.manifest_ref.to_dict()}
             self.assertEqual(reporter.result_diagnostic(delivered, source, store)["missingFields"], [])
+
+    def test_script_command_failure_names_actual_implementation_owner(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            script = Path(directory) / "actual_gate.py"
+            report = Path(directory) / "report.json"
+            script.write_text(
+                "from pathlib import Path\n"
+                "import sys\n"
+                "from tooling.acceptance.core.gate import AcceptanceGate\n"
+                "class ScriptGate(AcceptanceGate):\n"
+                "    gate_id = 'script-owner'\n"
+                "    def run(self):\n"
+                "        raise RuntimeError('actual script failure')\n"
+                "gate = ScriptGate()\n"
+                "gate.report_path = Path(sys.argv[1])\n"
+                "raise SystemExit(gate.execute())\n",
+            )
+            completed = subprocess.run(
+                [sys.executable, str(script), str(report)],
+                cwd=REPO_ROOT, capture_output=True, text=True, timeout=10,
+                env={**os.environ, "PYTHONPATH": str(REPO_ROOT)},
+            )
+            self.assertEqual(completed.returncode, 1, completed.stderr)
+            diagnostic = json.loads(report.read_text())["diagnostic"]
+            self.assertEqual(diagnostic["owner"], f"{script.resolve()}::ScriptGate")
+            self.assertEqual(
+                diagnostic["resourceChecks"][0]["observed"]["error"],
+                "actual script failure",
+            )
 
     def test_actual_command_timeout_is_not_a_missing_capability(self) -> None:
         launcher = GateProcessLauncher(termination_timeout_seconds=0.2)
