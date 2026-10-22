@@ -17,11 +17,17 @@ from tooling.acceptance.core.suite_runtime import (
     RuntimeReuseContract,
     SuiteRuntimeLedger,
 )
-from tooling.acceptance.gates.agent.chat_operation_contract import coverage_report, operation_contract
+from tooling.acceptance.gates.agent.chat_operation_contract import (
+    coverage_report,
+    gate_for_area,
+    operation_contract,
+)
 from tooling.acceptance.gates.agent.chat_layout_scenarios import wide, compact, narrow, reduced_motion
 from tooling.acceptance.gates.agent.chat_roster_scenarios import prepare_roster, roster
 from tooling.acceptance.gates.agent.chat_identity_scenarios import identity
-from tooling.acceptance.gates.agent.chat_extension_scenarios import extensions
+from tooling.acceptance.gates.agent.chat_extension_scenarios import (
+    extensions,
+)
 from tooling.acceptance.gates.agent.chat_extension_fixture import prepare_extensions
 from tooling.acceptance.gates.agent.chat_model_scenarios import topic_isolation, settings_default, disable_recovery
 from tooling.acceptance.gates.agent.chat_composer_scenarios import attachments, slash
@@ -39,8 +45,15 @@ from tooling.acceptance.gates.agent.chat_profile_scenarios import (
     create_profile,
     edit_documents,
     consume_documents,
+    consume_bound_skill,
     prepare_prompt_fixture,
     restart_documents,
+)
+from tooling.acceptance.gates.agent.chat_depth_scenarios import (
+    command_degraded,
+    command_narrow,
+    command_projection,
+    historical_turn_attribution,
 )
 from tooling.acceptance.gates.agent.native_agent_runner import (
     AgentNativeJourney,
@@ -58,9 +71,27 @@ TASK_BY_AREA = {
     "profile": "ACA-01", "models": "ACA-02", "topics": "ACA-03",
     "conversation": "ACA-04", "layout": "ACA-05", "workspace": "ACA-05",
 }
+DEPTH_PLAN_ROOT = (
+    REPO_ROOT / "docs/architecture/domains/agent/execution-plans"
+    / "20261020-agent-depth-linux-desktop-v2"
+)
+TRACE_TASK_BY_AREA = {
+    **TASK_BY_AREA,
+    "commands": "ADL-03",
+    "attribution": "ADL-04",
+}
 
 
 def suite_contract(area: str) -> RuntimeReuseContract:
+    if area in ("commands", "attribution"):
+        task_id = "ADL-03" if area == "commands" else "ADL-04"
+        text = (DEPTH_PLAN_ROOT / "tasks" / f"{task_id}.md").read_text()
+        blocks = re.findall(r"```json\n([\s\S]*?)\n```", text)
+        if len(blocks) != 1:
+            raise ValueError("Task Slice must contain exactly one JSON contract")
+        return RuntimeReuseContract.from_dict(
+            json.loads(blocks[0])["runtimeReuse"]
+        )
     if area == "workspace":
         text = (PLAN_ROOT / "workspace-runtime.json").read_text()
         return RuntimeReuseContract.from_dict(json.loads(text))
@@ -69,6 +100,40 @@ def suite_contract(area: str) -> RuntimeReuseContract:
     if len(blocks) != 1:
         raise ValueError("Task Slice must contain exactly one JSON contract")
     return RuntimeReuseContract.from_dict(json.loads(blocks[0])["runtimeReuse"])
+
+
+def suite_traceability(area: str, gate_id: str) -> dict[str, Any]:
+    task_id = TRACE_TASK_BY_AREA[area]
+    task_root = (
+        DEPTH_PLAN_ROOT
+        if area in ("commands", "attribution")
+        else PLAN_ROOT
+    )
+    task_path = task_root / "tasks" / f"{task_id}.md"
+    operation_ids = sorted(
+        row["operationId"]
+        for row in operation_contract()
+        if (
+            gate_id == "agent-chat-workspace-native"
+            and row["gateId"] not in {
+                "agent-slash-command-native-e2e",
+                "agent-context-projection-native-e2e",
+            }
+        )
+        or row["gateId"] == gate_id
+    )
+    return {
+        "phase": task_id,
+        "bom": operation_ids,
+        "spec": [
+            str(task_path.relative_to(REPO_ROOT)),
+            "docs/architecture/domains/agent/modern-chat-agent/"
+            "product-definition.md",
+            "docs/architecture/domains/agent/modern-chat-agent/"
+            "experience-contract.md",
+        ],
+        "gate": gate_id,
+    }
 
 
 def scenario(
@@ -117,11 +182,24 @@ def run_profile(
         return result
 
     created = scenario(runner, ledger, "profile-create", creation)
+    extension_fixture = runner.step(
+        "suite-extension-fixture",
+        lambda: prepare_extensions(runner, created["agentId"]),
+    )
+    runner.step(
+        "suite-reload-model-catalog",
+        lambda: runner.harness("reconcileChatSuiteCapabilityProjection"),
+    )
 
     def profile_documents() -> dict[str, Any]:
         result = edit_documents(runner, created["agentId"])
         result["identity"] = identity(runner, created["agentId"])
-        result["extensions"] = extensions(runner, created["agentId"])
+        result["extensions"] = extensions(
+            runner,
+            created["agentId"],
+            retain_skill=True,
+            skill_capability_id=extension_fixture["skillCapabilityId"],
+        )
         return result
 
     documents = scenario(
@@ -132,6 +210,20 @@ def run_profile(
     consumed = scenario(
         runner, ledger, "profile-prompt-consumption",
         lambda: consume_documents(runner, created["agentId"], fixture),
+    )
+    retained_skill = documents["extensions"].get("retainedSkill")
+    if not isinstance(retained_skill, dict):
+        raise ValueError("Profile Suite retained no Skill for prompt consumption")
+    skill_consumed = scenario(
+        runner,
+        ledger,
+        "profile-skill-consumption",
+        lambda: consume_bound_skill(
+            runner,
+            created["agentId"],
+            retained_skill,
+            fixture,
+        ),
     )
     runner.click_agent_action(created["agentId"], "edit")
     ledger.record(
@@ -156,6 +248,7 @@ def run_profile(
         (created["roster"], "profile-create"),
         (documents["identity"], "profile-documents"),
         (documents["extensions"], "profile-documents"),
+        (skill_consumed, "profile-skill-consumption"),
     ):
         result["scenarioId"] = scenario_id
         for operation_id in result["operationIds"]:
@@ -175,9 +268,17 @@ def stamp_observations(
     failure: str,
 ) -> dict[str, dict[str, Any]]:
     """A failed generation cannot publish proven operation children."""
+    depth_gates = {
+        "agent-slash-command-native-e2e",
+        "agent-context-projection-native-e2e",
+    }
     expected = {
         row["operationId"] for row in operation_contract()
-        if gate_id == "agent-chat-workspace-native" or row["gateId"] == gate_id
+        if (
+            gate_id == "agent-chat-workspace-native"
+            and row["gateId"] not in depth_gates
+        )
+        or row["gateId"] == gate_id
     }
     suite_passed = (
         not failure
@@ -208,11 +309,14 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--area",
-        choices=("profile", "models", "topics", "conversation", "layout", "workspace"),
+        choices=(
+            "profile", "models", "topics", "conversation", "layout",
+            "workspace", "commands", "attribution",
+        ),
         required=True,
     )
     args = parser.parse_args()
-    gate_id = f"agent-chat-{args.area}-native"
+    gate_id = gate_for_area(args.area)
     runner = None
     observations: dict[str, dict[str, Any]] = {}
     failure = ""
@@ -239,15 +343,108 @@ def main() -> int:
             runner.step("suite-navigate", runner.navigate_and_configure)
             fixture = runner.step("suite-prompt-fixture", lambda: prepare_prompt_fixture(runner))
             runner.harness("reconcileChatSuiteModelProjection")
-            if args.area in ("profile", "workspace"):
-                runner.step("suite-roster-fixture", lambda: prepare_roster(runner))
-                runner.step("suite-extension-fixture", lambda: prepare_extensions(runner))
+            if args.area in ("commands", "attribution"):
+                created = runner.step(
+                    "suite-owned-agent",
+                    lambda: create_profile(runner),
+                )
+                extension_fixture = runner.step(
+                    "suite-extension-fixture",
+                    lambda: prepare_extensions(runner, created["agentId"]),
+                )
                 runner.step(
-                    "suite-reload-model-catalog",
+                    "suite-reload-capability-projection",
                     lambda: runner.harness(
-                        "reconcileChatSuiteCapabilityProjection"
+                        "reconcileChatSuiteCapabilityProjection",
                     ),
                 )
+                bound = scenario(
+                    runner,
+                    ledger,
+                    "depth-skill-binding",
+                    lambda: extensions(
+                        runner,
+                        created["agentId"],
+                        retain_skill=True,
+                        skill_capability_id=extension_fixture[
+                            "skillCapabilityId"
+                        ],
+                    ),
+                )
+                retained_skill = bound.get("retainedSkill")
+                if not isinstance(retained_skill, dict):
+                    raise ValueError("depth Suite retained no Skill")
+                if args.area == "commands":
+                    command_results = [
+                        scenario(
+                            runner,
+                            ledger,
+                            "commands-authority",
+                            lambda: command_projection(
+                                runner,
+                                created["agentId"],
+                                retained_skill,
+                            ),
+                        ),
+                        scenario(
+                            runner,
+                            ledger,
+                            "commands-degraded",
+                            lambda: command_degraded(
+                                runner,
+                                created["agentId"],
+                                retained_skill,
+                            ),
+                        ),
+                        scenario(
+                            runner,
+                            ledger,
+                            "commands-narrow",
+                            lambda: command_narrow(runner),
+                        ),
+                    ]
+                    for result in command_results:
+                        for operation_id in result["operationIds"]:
+                            observations[operation_id] = dict(result)
+                    runner.step(
+                        "suite-command-binding-cleanup",
+                        lambda: runner.harness(
+                            "cleanupChatSuiteCapabilityBindings",
+                            {"agentId": created["agentId"]},
+                        ),
+                    )
+                else:
+                    runner.click_visible(
+                        "[data-pt-agent-profile-back]",
+                        "return before Skill activation",
+                    )
+                    runner.select_agent_chat(created["agentId"])
+                    consumed = scenario(
+                        runner,
+                        ledger,
+                        "depth-skill-consumption",
+                        lambda: consume_bound_skill(
+                            runner,
+                            created["agentId"],
+                            retained_skill,
+                            fixture,
+                        ),
+                    )
+                    result = scenario(
+                        runner,
+                        ledger,
+                        "historical-attribution",
+                        lambda: historical_turn_attribution(
+                            runner,
+                            created["agentId"],
+                            consumed,
+                            restart=lambda: restart_client(runner, ledger),
+                        ),
+                    )
+                    for operation_id in result["operationIds"]:
+                        observations[operation_id] = dict(result)
+            if args.area in ("profile", "workspace"):
+                runner.step("suite-roster-fixture", lambda: prepare_roster(runner))
                 observations.update(run_profile(runner, ledger, fixture))
             if args.area in ("layout", "workspace"):
                 runner.harness("navigateToAgent", timeout=120)
@@ -495,7 +692,14 @@ def main() -> int:
         coverage = coverage_report(observations)
         missing = [
             row["operationId"] for row in coverage["operations"]
-            if (args.area == "workspace" or row["gateId"] == gate_id)
+            if (
+                args.area == "workspace"
+                and row["gateId"] not in {
+                    "agent-slash-command-native-e2e",
+                    "agent-context-projection-native-e2e",
+                }
+            )
+            or row["gateId"] == gate_id
             and row["proofStatus"] != "PROVEN"
         ]
         status = (
@@ -507,17 +711,25 @@ def main() -> int:
         artifacts.write_json(
             "evidence/operation-coverage.json", coverage, role="operation-coverage",
         )
+        traceability = suite_traceability(args.area, gate_id)
         artifacts.write_json(
             "evidence/validation.json",
             {
-                "artifactKind": "agent-chat-native-validation",
+                "artifactKind": "acceptance-gate-evidence-report",
                 "gateId": gate_id,
+                "environment": "home-station",
+                "runtimeCell": "desktop-linux-native",
                 "status": status,
+                "completionStatus": (
+                    "DONE" if status == "passed" else "PARTIAL"
+                ),
                 "proofStatus": "PROVEN" if status == "passed" else "UNPROVEN",
+                "sampleEmissionAllowed": status == "passed",
                 "completedAt": now_iso(),
                 "failure": failure,
                 "missingOperations": missing,
                 "cleanup": cleanup,
+                **traceability,
             },
             role="validation",
         )

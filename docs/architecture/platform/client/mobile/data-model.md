@@ -1,8 +1,8 @@
 # Mobile Shell — 数据与 Proto 映射
 
-> **Status**: active; owner-contract closure amendment accepted
-> **Version**: v1.3
-> **Created**: 2026-08-27 | **Updated**: 2026-10-07
+> **Status**: active
+> **Version**: v1.4
+> **Created**: 2026-08-27 | **Updated**: 2026-10-16
 > **Owner**: Mobile Architecture Team
 
 ---
@@ -70,27 +70,27 @@ not prove that Station and Mobile currently expose the full product operation.
 |---|---|---|---|---|
 | MS-P01 | PTID-only login/OAuth session identity | Model + Station auth | implemented | Mobile-facing auth/OAuth contracts use `ActorRef`; legacy numeric OAuth bridge fields are reserved and Mobile fails closed without PTID |
 | MS-P02 | OAuth provider attempt | Model + Station OAuth | implemented | `mobile_oauth.proto` and Station/Mobile Rust bind provider, Station, access attempt/gate, redirect, PKCE, nonce, attempt secret, device and generation |
-| MS-P03 | OAuth callback completion/status | Model + Station OAuth | implemented; simulator proof pending | Station performs one-time callback claim, candidate/finalizer/status/cancel/ack; required proof uses deterministic simulator cells under MS-D26 |
+| MS-P03 | OAuth callback completion/status | Model + Station OAuth | implemented; platform proof pending | Station performs one-time callback claim, candidate/finalizer/status/cancel/ack; Android and iOS require independent callback/restart evidence, with physical cells for live-provider claims |
 | MS-P04 | Mutation outcome lookup | Owning Model/Station domain | Friend Request and Social relationship lookup implemented; other domains remain gaps | Generated authenticated lookups return exact command ID/hash and `not_found`, `accepted_pending`, `terminal_result`, or `unresolved`; every additional offline-retriable mutation still requires an equivalent owner contract |
 | MS-P05 | Owner-specific settings CAS | Model + Actor Profile + Notification | accepted target; implementation pending | Profile needs dedicated editable-state revision; Notification needs aggregate revision and atomic batch; Desktop and Mobile must hard-cut together |
-| MS-P06 | Durable Mobile command envelope | Model + Mobile reliability | source complete; simulator proof pending | Generated v2 contract contains Friend Request and Social relationship commands; Rust enforces exact Station/PTID scope, ordering, state, key hierarchy, migration, one-ID resolvers, and projection checkpoint semantics |
+| MS-P06 | Durable Mobile command envelope | Model + Mobile reliability | shared source implemented; platform proof pending | Generated v2 contract contains Friend Request and Social relationship commands; Rust enforces exact Station/PTID scope, ordering, state, key hierarchy, migration, one-ID resolvers, and projection checkpoint semantics; Android and iOS restart/recovery remain separate cells |
 | MS-P07 | Station identity/capability handshake | Model + Station core | implemented | Libp2p-host-key-signed statement and Mobile Rust verification bind peer ID, origin, capabilities, challenge and expiry |
-| MS-P08 | Device-local draft envelope | Model + Mobile storage | source complete; simulator proof pending | Generated v2 Chat/Moment envelopes use exact Station/PTID scope, wrapped scope keys, lifecycle write fencing, and explicit retain/discard recovery |
+| MS-P08 | Device-local draft envelope | Model + Mobile storage | shared source implemented; platform proof pending | Generated v2 Chat/Moment envelopes use exact Station/PTID scope, wrapped scope keys, lifecycle write fencing, and explicit retain/discard recovery |
 | MS-P09 | Generic Access Gate action submission | Access Gate Model + Station | accepted target; implementation pending | Descriptor schema exists; submission needs action/schema binding, stable identity, typed built-ins, generic scalar values, result state, and finalizer isolation |
 | MS-P10 | Conversation member authority | Conversation | implemented | AO-D10 generated member-update/owner-transfer commands are consumed only through Device Messaging Engine; Mobile projects pending/uncertain/failed state until authoritative member/owner readback converges |
-| MS-P11 | Directional block/list/status | Social | source implemented; runtime proof pending | Generated public mutations, cursor-bounded list, privacy-safe relationship projection, result lookup, ordered event, Federation propagation, and Mobile durable-command cutover are implemented |
+| MS-P11 | Directional block/list/status | Social | source implemented; platform proof pending | Generated public mutations, cursor-bounded list, privacy-safe relationship projection, result lookup, ordered event, Federation propagation, and Mobile durable-command cutover are implemented |
 | MS-P12 | Forward/actor-hide/moderation | Conversation + Device Messaging Engine | accepted target; implementation pending | Retract exists; user forward, actor-scoped hide, and moderation tombstone contracts are absent |
-| MS-P13 | Moments visibility outcome and native media staging | Social + Secure Content + Mobile Rust | source implemented; simulator proof pending | Generated feed/detail outcomes and Rust picker staging, encryption, upload, promotion, and cleanup are implemented; required multi-actor proof uses simulators and physical picker behavior is optional diagnostics |
+| MS-P13 | Moments visibility outcome and native media staging | Social + Secure Content + Mobile Rust | shared and native adapter source present; platform proof incomplete | Generated outcomes, Rust staging, and Android/iOS picker adapter source exist; permission, interruption, upload, cleanup, and receiver proof are independent required cells |
 | MS-P14 | Settings ownership | Actor Profile + Notification + Social + Mobile device | accepted; source cutover pending | No additional account-preference owner exists in this release; selected-owner save and Profile/Notification CAS remain |
-| MS-P15 | Native authenticated transport and delivery lifecycle | Mobile Rust + Notification + native plugins | source implemented; simulator proof pending | Rust-owned authenticated transport, PTID/device-bound push registration, encrypted credential persistence, generation/sequence-fenced receipt/tap, one native scheduler identity per environment, exactly-once completion, and native-to-Rust media staging are implemented; required platform proof uses simulators and provider/device behavior is optional diagnostics |
+| MS-P15 | Native authenticated transport and delivery lifecycle | Mobile Rust + Notification + native plugins | incomplete and platform-asymmetric | Shared Rust/native adapter source does not prove APNs/FCM provider/service configuration, entitlements/host configuration, killed-process background behavior, receipt/tap routing, or runtime integration; each Android/iOS cell remains `UNPROVEN` until source-bound |
 
 These statuses describe the current architecture contract and implementation
 surface; they do not authorize a protocol version bump. Any future message,
 field-number, compatibility, or version change requires its own reviewed Model
 change.
 
-W2-E2 runtime-only Fixture, Station proof, provider/browser lease and physical
-build attestation schemas remain available for optional diagnostics in
+Fixture, Station proof, provider/browser lease, and physical build attestation
+schemas are defined in
 [`native-oauth-proof/data-model.md`](./native-oauth-proof/data-model.md). They
 are Acceptance artifacts, not additions to the Mobile OAuth product Proto.
 
@@ -282,11 +282,10 @@ MobileDurableCommandEnvelopeV2 {
 }
 ```
 
-> **MS-D15 status**: accepted by the Owner on 2026-09-11 and source-complete.
-> The exact membership and behavior below remain implementation authority. The
-> Friend Request result-lookup prerequisite and Mobile cutover are complete;
-> required simulator proof remains `UNPROVEN`. Physical native proof is
-> optional diagnostics under MS-D26.
+> **MS-D15 status**: accepted. The exact membership and behavior below remain
+> implementation authority. Friend Request result lookup and shared Mobile
+> cutover are implemented; Android and iOS runtime evidence remains
+> independently `UNPROVEN` until the corresponding source-bound Gates pass.
 
 The envelope is a generated Proto contract, not `string type + opaque bytes`.
 The oneof discriminator is the command kind; there is no parallel category or

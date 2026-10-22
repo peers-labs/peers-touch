@@ -89,7 +89,7 @@ The design is part of the change, not a chore after it. In the same change:
 
 - **Design docs** live in the layer that owns the boundary and are edited **in
   place** (they are authoritative, not append-only). Follow the hierarchy
-  top-down: architecture (`docs/architecture/`, `docs/global/architecture.md`) →
+  top-down: architecture (`docs/architecture/`, `docs/architecture/architecture.md`) →
   platform (`docs/client/*`, `docs/station/`) → spec (`docs/global/coding-guide/`).
   For module-/architecture-level work, write or update the formal doc under
   `docs/` and add/refresh the execution plan (AGENTS.md §3 Large Requirement

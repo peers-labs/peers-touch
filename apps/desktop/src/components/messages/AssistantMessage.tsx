@@ -11,7 +11,6 @@ import {
   FileText,
   Brain,
   Cpu,
-  Database,
   Activity,
   Download,
   Play,
@@ -35,7 +34,6 @@ import { useTTSStore } from '../../store/tts';
 import {
   api,
   isAgentContextOverflowError,
-  parseAgentChatConfig,
 } from '../../services/desktop_api';
 import { EVENT, eventBus } from '../../kernel/events';
 import { identityRuntime } from '../../kernel/identityRuntime';
@@ -50,7 +48,7 @@ import { ThinkingIndicator } from './ThinkingBlock';
 import { chatMarkdownProps } from './markdownConfig';
 import { timeAgo, fullTime, downloadCodeBlock, downloadArtifact } from './shared';
 import { TTSControls } from '../chat/TTSControls';
-import { SourceAttributionBadges } from './SourceAttributionBadges';
+import { TurnAttribution } from './TurnAttribution';
 
 // --- Collect delegation results from message + tool calls ---
 
@@ -184,19 +182,14 @@ function DiagnosticsRow({ label, value }: { label: string; value: ReactNode }) {
 function DiagnosticsBlock({
   message,
   providerName,
-  memoryEnabled,
-  compressionEnabled,
 }: {
   message: ChatMessage;
   providerName: string;
-  memoryEnabled: boolean;
-  compressionEnabled: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const { token } = theme.useToken();
   const { t } = useTranslation(['chat', 'agent']);
   const toolCalls = message.toolCalls || [];
-  const knowledgeChunks = message.knowledgeChunks || [];
   const delegationResults = collectDelegationResults(message);
   const failedTools = toolCalls.filter((tool) => tool.status === 'error' || tool.status === 'denied').length;
   const pendingTools = toolCalls.filter((tool) => tool.pending || tool.status === 'approval_required').length;
@@ -206,7 +199,7 @@ function DiagnosticsBlock({
       ? t(message.error, { ns: 'agent', defaultValue: message.error })
       : t(message.error, { defaultValue: message.error })
     : undefined;
-  const hasRuntimeDiagnostics = !!message.thinking || !!message.error || message.processDuration != null || toolCalls.length > 0 || knowledgeChunks.length > 0 || delegationResults.length > 0;
+  const hasRuntimeDiagnostics = !!message.thinking || !!message.error || message.processDuration != null || toolCalls.length > 0 || delegationResults.length > 0;
   const hasDiagnostics = hasRuntimeDiagnostics;
 
   if (!hasDiagnostics) return null;
@@ -300,21 +293,6 @@ function DiagnosticsBlock({
           <DiagnosticsRow label={t('chat.message.diagnostics.model')} value={message.model || t('chat.message.diagnostics.unknown')} />
           <DiagnosticsRow label={t('chat.message.diagnostics.tools')} value={t('chat.message.diagnostics.toolSummary', { total: toolCalls.length, pending: pendingTools, failed: failedTools })} />
           <DiagnosticsRow
-            label={t('chat.message.diagnostics.knowledge')}
-            value={knowledgeChunks.length > 0
-              ? (
-                <Flexbox gap={4}>
-                  <span>{t('chat.message.diagnostics.knowledgeSummary', { count: knowledgeChunks.length })}</span>
-                  {knowledgeChunks.slice(0, 3).map((chunk) => (
-                    <span key={chunk.chunkId} style={{ fontSize: 11, color: token.colorTextSecondary }}>
-                      {chunk.resourceTitle || chunk.source} #{chunk.chunkIndex + 1} ({chunk.score.toFixed(2)})
-                    </span>
-                  ))}
-                </Flexbox>
-              )
-              : t('chat.message.diagnostics.none')}
-          />
-          <DiagnosticsRow
             label={t('chat.message.diagnostics.delegation')}
             value={delegationResults.length > 0
               ? (
@@ -329,11 +307,6 @@ function DiagnosticsBlock({
               )
               : t('chat.message.diagnostics.none')}
           />
-          <DiagnosticsRow
-            label={t('chat.message.diagnostics.memory')}
-            value={<Flexbox horizontal align="center" gap={6}><Database size={12} />{memoryEnabled ? t('chat.message.diagnostics.enabled') : t('chat.message.diagnostics.disabled')}</Flexbox>}
-          />
-          <DiagnosticsRow label={t('chat.message.diagnostics.compression')} value={compressionEnabled ? t('chat.message.diagnostics.enabled') : t('chat.message.diagnostics.disabled')} />
         </Flexbox>
       )}
     </div>
@@ -402,7 +375,6 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
   const setAgentSurface = useAgentStore(s => s.setAgentSurface);
   const focusAgentCapability = useAgentStore(s => s.focusAgentCapability);
   const activeAgent = agents.find((agent) => agent.name === selectedAgent);
-  const activeChatConfig = activeAgent ? parseAgentChatConfig(activeAgent) : {};
   const topicProvider = useAgentTopicStore((state) => Object.values(state.topicsByAgentId)
     .flat().find((topic) => topic.key === currentSessionKey)?.provider_override);
   const messageProvider = message.providerId || topicProvider || '';
@@ -855,8 +827,6 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
           <DiagnosticsBlock
             message={message}
             providerName={providerName}
-            memoryEnabled={!!activeChatConfig.memory?.enabled}
-            compressionEnabled={!!activeChatConfig.enableContextCompression}
           />
 
           {message.budgetNotice && (
@@ -967,11 +937,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
             </div>
           ) : null}
 
-          <div data-source-badges>
-            <SourceAttributionBadges
-              message={message}
-            />
-          </div>
+          <TurnAttribution projection={message.turnAttribution} />
 
           {/* TTS inline controls */}
           <TTSControls messageId={message.id} />

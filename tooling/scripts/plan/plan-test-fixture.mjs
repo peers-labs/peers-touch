@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+import { digestOutcomePlannedSection } from './plan-package.mjs';
+
 const CREATED_AT = '2026-10-05T00:00:00.000Z';
 
 function writeJsonBlock(value) {
@@ -42,6 +44,9 @@ function writePlanPackage(repoRoot, slug, planId, taskId) {
         dependsOn: [],
       },
     ],
+    outcomeComparison: {
+      path: 'outcome-comparison.md',
+    },
     authorization: {
       checkpoint: {
         localCommit: 'allowed',
@@ -97,6 +102,53 @@ function writePlanPackage(repoRoot, slug, planId, taskId) {
     failureBehavior: ['Fail closed on invalid fixture state.'],
     updatedAt: CREATED_AT,
   };
+  const outcomeCriteria = [
+    ['UX-01', 'user-experience', 'User experience'],
+    ['PRODUCT-01', 'product-capability', 'Product capability'],
+    ['ARCH-01', 'architecture', 'Architecture'],
+    ['TECH-01', 'technology', 'Technology'],
+    ['QUALITY-01', 'quality-operations', 'Quality and operations'],
+  ].map(([id, dimension, title]) => ({
+    id,
+    dimension,
+    title,
+    taskIds: [taskId],
+    gateIds: [],
+  }));
+  const plannedOutcomeSection = outcomeCriteria
+    .map(
+      (criterion) =>
+        [
+          `### ${criterion.id}: ${criterion.title}`,
+          '',
+          '- Before: fixture baseline.',
+          '- Target: fixture target.',
+          '- Expected effect: fixture effect.',
+        ].join('\n'),
+    )
+    .join('\n\n');
+  const outcomeContract = {
+    kind: 'peers-touch-outcome-comparison-contract',
+    schemaVersion: 1,
+    planId,
+    plannedSectionDigest: digestOutcomePlannedSection(
+      plannedOutcomeSection,
+    ),
+    criteria: outcomeCriteria,
+  };
+  const outcomeResults = {
+    kind: 'peers-touch-outcome-comparison-results',
+    schemaVersion: 1,
+    planId,
+    sourceIdentity: null,
+    items: outcomeCriteria.map((criterion) => ({
+      id: criterion.id,
+      status: 'UNPROVEN',
+      actualEffect: 'The fixture has not executed.',
+      evidenceRefs: [],
+      deviation: 'Execution has not started.',
+    })),
+  };
 
   const planPath = path.join(packageDirectory, 'plan.md');
   fs.writeFileSync(
@@ -123,6 +175,29 @@ function writePlanPackage(repoRoot, slug, planId, taskId) {
     ].join('\n'),
   );
   fs.writeFileSync(
+    path.join(packageDirectory, 'outcome-comparison.md'),
+    [
+      `# ${planId} Outcome Comparison`,
+      '',
+      '## Outcome Comparison Contract',
+      '',
+      '```json',
+      writeJsonBlock(outcomeContract),
+      '```',
+      '',
+      '## Planned Outcome Comparison',
+      '',
+      plannedOutcomeSection,
+      '',
+      '## Actual Outcome Results',
+      '',
+      '```json outcome-comparison-results',
+      writeJsonBlock(outcomeResults),
+      '```',
+      '',
+    ].join('\n'),
+  );
+  fs.writeFileSync(
     path.join(tasksDirectory, `${taskId}.md`),
     [
       `# ${taskId}`,
@@ -132,10 +207,6 @@ function writePlanPackage(repoRoot, slug, planId, taskId) {
       '```json',
       writeJsonBlock(task),
       '```',
-      '',
-      '## Current Snapshot',
-      '',
-      '- Test fixture only.',
       '',
     ].join('\n'),
   );

@@ -3,6 +3,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use crate::error::{MobileError, MobileResult};
+use crate::ReleaseTargetId;
 
 const BUILD_IDENTITY_JSON: &str = env!("PT_MOBILE_BUILD_IDENTITY_JSON");
 
@@ -48,6 +49,7 @@ pub fn read_embedded_build_identity() -> MobileResult<EmbeddedMobileBuildIdentit
         ));
     }
     let identity = parse_embedded_build_identity(BUILD_IDENTITY_JSON)?;
+    validate_release_target(&identity, ReleaseTargetId::compiled())?;
     let digest = Sha256::digest(BUILD_IDENTITY_JSON.as_bytes());
     Ok(EmbeddedMobileBuildIdentity {
         identity,
@@ -92,6 +94,18 @@ fn parse_embedded_build_identity(raw: &str) -> MobileResult<MobileBuildIdentity>
     Ok(identity)
 }
 
+fn validate_release_target(
+    identity: &MobileBuildIdentity,
+    compiled_target: Option<ReleaseTargetId>,
+) -> MobileResult<()> {
+    if compiled_target.is_some_and(|target| identity.platform != target.wire_name()) {
+        return Err(MobileError::invalid_input(
+            "acceptance.mobile.buildIdentityTargetMismatch",
+        ));
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn mobile_build_identity() -> MobileResult<EmbeddedMobileBuildIdentity> {
     read_embedded_build_identity()
@@ -120,7 +134,8 @@ fn canonical_json(value: &Value) -> Result<String, serde_json::Error> {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_embedded_build_identity;
+    use super::{parse_embedded_build_identity, validate_release_target};
+    use crate::ReleaseTargetId;
 
     const VALID: &str = concat!(
         "{\"allowlistedEnvironmentDigest\":\"sha256:",
@@ -163,5 +178,21 @@ mod tests {
             )
         )
         .is_err());
+    }
+
+    #[test]
+    fn rejects_build_identity_for_another_release_target() {
+        let ios = parse_embedded_build_identity(VALID).unwrap();
+        let android = parse_embedded_build_identity(
+            &VALID
+                .replace("\"build-ios\"", "\"build-android\"")
+                .replace("\"platform\":\"ios\"", "\"platform\":\"android\""),
+        )
+        .unwrap();
+
+        assert!(validate_release_target(&ios, Some(ReleaseTargetId::Ios)).is_ok());
+        assert!(validate_release_target(&android, Some(ReleaseTargetId::Android)).is_ok());
+        assert!(validate_release_target(&ios, Some(ReleaseTargetId::Android)).is_err());
+        assert!(validate_release_target(&android, Some(ReleaseTargetId::Ios)).is_err());
     }
 }

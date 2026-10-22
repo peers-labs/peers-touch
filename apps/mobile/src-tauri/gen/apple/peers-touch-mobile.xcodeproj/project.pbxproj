@@ -34,7 +34,6 @@
 		0D33199FDB1DA6A3792D12B0 /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
 		128A11F6BECE79C06B74A004 /* transport.rs */ = {isa = PBXFileReference; path = transport.rs; sourceTree = "<group>"; };
 		13848CF5F59D3550D4AE901E /* secure_storage.rs */ = {isa = PBXFileReference; path = secure_storage.rs; sourceTree = "<group>"; };
-		1B94CBE49414281F263CB3EC /* worker.rs */ = {isa = PBXFileReference; path = worker.rs; sourceTree = "<group>"; };
 		1EC6C5864FC1F029F1634732 /* access_gate.rs */ = {isa = PBXFileReference; path = access_gate.rs; sourceTree = "<group>"; };
 		1EE9A2AB83E83EC2B9682957 /* network_bridge.rs */ = {isa = PBXFileReference; path = network_bridge.rs; sourceTree = "<group>"; };
 		20F98E12D957D2110D7AD313 /* BackgroundTasks.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = BackgroundTasks.framework; path = System/Library/Frameworks/BackgroundTasks.framework; sourceTree = SDKROOT; };
@@ -108,6 +107,7 @@
 		BAD307392C7965567BE94662 /* recovery.rs */ = {isa = PBXFileReference; path = recovery.rs; sourceTree = "<group>"; };
 		BBF682509308BA6096B91686 /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
 		BC6B10C7362982CCB7DCF902 /* station_route.rs */ = {isa = PBXFileReference; path = station_route.rs; sourceTree = "<group>"; };
+		BC918C06C6B16476320CDB0A /* runtime.rs */ = {isa = PBXFileReference; path = runtime.rs; sourceTree = "<group>"; };
 		BD4532501B8BB118A19537AA /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
 		BE07F44D8E2DA3DE9DDC1A61 /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
 		C03314EE01D41723A426E908 /* scope.rs */ = {isa = PBXFileReference; path = scope.rs; sourceTree = "<group>"; };
@@ -127,6 +127,7 @@
 		DDAD56ECF90CC7A8FBB94E19 /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = System/Library/Frameworks/QuartzCore.framework; sourceTree = SDKROOT; };
 		E02D1C72A6068309F389EA31 /* ios_keychain.rs */ = {isa = PBXFileReference; path = ios_keychain.rs; sourceTree = "<group>"; };
 		E09560AD989A4AD457C2E10F /* acceptance.rs */ = {isa = PBXFileReference; path = acceptance.rs; sourceTree = "<group>"; };
+		E0B7B34B95D555C5BFDD432B /* object_runtime.rs */ = {isa = PBXFileReference; path = object_runtime.rs; sourceTree = "<group>"; };
 		E250DB63B1B4C5F800FBD1F5 /* unsupported.rs */ = {isa = PBXFileReference; path = unsupported.rs; sourceTree = "<group>"; };
 		E2B228A5A35409D91F12C2E8 /* permission_bridge.rs */ = {isa = PBXFileReference; path = permission_bridge.rs; sourceTree = "<group>"; };
 		E496EA0031BA34CC71F88B4E /* acceptance.rs */ = {isa = PBXFileReference; path = acceptance.rs; sourceTree = "<group>"; };
@@ -301,14 +302,15 @@
 			children = (
 				7D63976FE1BD0218FF39DC7D /* adapter.rs */,
 				52CA588CF77DC45E120A52FB /* mod.rs */,
+				E0B7B34B95D555C5BFDD432B /* object_runtime.rs */,
 				80D9C708A55B2DBC77F9448A /* private_comment.rs */,
 				60E6408A1396258987FF157E /* private_mention.rs */,
 				0B25981672AC156DEE56678F /* proto.rs */,
 				48E53EC146E2616249BA512D /* receiver.rs */,
 				BAD307392C7965567BE94662 /* recovery.rs */,
+				BC918C06C6B16476320CDB0A /* runtime.rs */,
 				5D3EA77142A0AE8C2FABA34C /* store.rs */,
 				128A11F6BECE79C06B74A004 /* transport.rs */,
-				1B94CBE49414281F263CB3EC /* worker.rs */,
 			);
 			path = secure_content;
 			sourceTree = "<group>";

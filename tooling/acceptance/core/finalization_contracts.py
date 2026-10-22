@@ -7,8 +7,9 @@ import binascii
 import hashlib
 import json
 import math
+import posixpath
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, fields as dataclass_fields
 from datetime import datetime, timedelta
 from decimal import Decimal
 from enum import Enum
@@ -56,6 +57,7 @@ _SEAL_DOMAIN = "pt.acceptance.finalization.seal.v1"
 _CORE_BOOTSTRAP_SOURCE_DOMAIN = (
     "pt.acceptance.finalization.core-bootstrap-source.v1"
 )
+_SOURCE_CAPTURE_DOMAIN = "pt.acceptance.finalization.source-capture.v1"
 _SUPERVISOR_SOURCE_DOMAIN = (
     "pt.acceptance.finalization.supervisor-source.v1"
 )
@@ -63,6 +65,20 @@ _STDLIB_CLOSURE_DOMAIN = "pt.acceptance.finalization.stdlib-closure.v1"
 _COMPILER_FLAGS_DOMAIN = "pt.acceptance.finalization.compiler-flags.v1"
 _PLATFORM_RUNTIME_DOMAIN = (
     "pt.acceptance.finalization.platform-runtime.v1"
+)
+_PREFLIGHT_PLATFORM_RUNTIME_DOMAIN = (
+    "pt.acceptance.finalization.preflight-platform-runtime.v1"
+)
+_PREFLIGHT_RUNTIME_DOMAIN = "pt.acceptance.finalization.preflight-runtime.v1"
+_RUNTIME_CAPTURE_DOMAIN = "pt.acceptance.finalization.runtime-capture.v1"
+_AUTHORITY_RUNTIME_REF_DOMAIN = (
+    "pt.acceptance.finalization.authority-runtime-ref.v1"
+)
+_MAINTENANCE_WORKER_SOURCE_DOMAIN = (
+    "pt.acceptance.finalization.maintenance-worker-source.v1"
+)
+_MAINTENANCE_RUNTIME_DOMAIN = (
+    "pt.acceptance.finalization.maintenance-runtime.v1"
 )
 _RUNTIME_HOST_IDENTITY_DOMAIN = (
     "pt.acceptance.finalization.runtime-host-identity.v1"
@@ -82,6 +98,23 @@ _ENFORCEMENT_ACTIVATED_DOMAIN = (
 _ENFORCEMENT_CURRENT_DOMAIN = (
     "pt.acceptance.finalization.enforcement-current.v1"
 )
+_AUTHORITY_CONFIRMATION_DOMAIN = "pt.acceptance.finalization.authority-confirmation.v1"
+_AUTHORITY_AUTHORIZATION_DOMAIN = "pt.acceptance.finalization.authority-authorization.v1"
+_PUBLICATION_INTERLOCK_DOMAIN = "pt.acceptance.finalization.publication-interlock.v1"
+_ACTIVATION_INTENT_DOMAIN = "pt.acceptance.finalization.activation-intent.v1"
+_ACTIVATION_PENDING_DOMAIN = "pt.acceptance.finalization.activation-pending.v1"
+_ENFORCEMENT_DOMAIN = "pt.acceptance.finalization.enforcement.v1"
+_ABORT_CONFIRMATION_DOMAIN = "pt.acceptance.finalization.abort-confirmation.v1"
+_ABORT_EVENT_DOMAIN = "pt.acceptance.finalization.abort-event.v1"
+_ABORT_TOMBSTONE_IDENTITY_DOMAIN = (
+    "pt.acceptance.finalization.abort-tombstone-identity.v1"
+)
+_ABORT_CONTINUATION_DOMAIN = (
+    "pt.acceptance.finalization.abort-continuation.v1"
+)
+_ABORT_CONTROL_REF_DOMAIN = "pt.acceptance.finalization.abort-control-ref.v1"
+_ABORT_DELETION_PLAN_DOMAIN = "pt.acceptance.finalization.abort-deletion-plan.v1"
+_MAINTENANCE_RESULT_DOMAIN = "pt.acceptance.finalization.maintenance-result.v1"
 _PRIOR_LATEST_POINTER_DOMAIN = (
     "pt.acceptance.finalization.prior-latest-pointer.v1"
 )
@@ -259,9 +292,110 @@ _POWER_CONTROLLER_IDENTITY_DOMAIN = (
 _POWER_INTERRUPTION_EVIDENCE_DOMAIN = (
     "pt.acceptance.finalization.durability-power-interruption.v1"
 )
+_POWER_CONTROLLER_TRUST_ANCHOR_REF_DOMAIN = (
+    "pt.acceptance.finalization.durability-power-controller-trust-anchor-ref.v1"
+)
+_POWER_CONTROLLER_TRUST_ANCHOR_DOMAIN = (
+    "pt.acceptance.finalization.durability-power-controller-trust-anchor.v1"
+)
+_POWER_CONTROLLER_TRUST_GENERATION_REF_DOMAIN = (
+    "pt.acceptance.finalization.durability-power-controller-trust-generation-ref.v1"
+)
+_POWER_CONTROLLER_TRUST_GENERATION_DOMAIN = (
+    "pt.acceptance.finalization.durability-power-controller-trust-generation.v1"
+)
+_POWER_CONTROLLER_TRUST_CURRENT_DOMAIN = (
+    "pt.acceptance.finalization.durability-power-controller-trust-current.v1"
+)
+_POWER_CONTROLLER_JOURNAL_DOMAIN = (
+    "pt.acceptance.finalization.durability-power-controller-command-journal.v1"
+)
+_POWER_CONTROLLER_HEAD_DOMAIN = (
+    "pt.acceptance.finalization.durability-power-controller-command-journal-head.v1"
+)
+_POWER_CONTROLLER_EPOCH_DOMAIN = (
+    "pt.acceptance.finalization.durability-power-controller-runtime-epoch.v1"
+)
+_POWER_CONTROLLER_COMMAND_DOMAIN = (
+    "pt.acceptance.finalization.durability-power-controller-command-identity.v1"
+)
+_POWER_CONTROLLER_REQUEST_DOMAIN = (
+    "pt.acceptance.finalization.durability-power-controller-command-resolution-request.v1"
+)
+_POWER_CONTROLLER_LOCK_DOMAIN = (
+    "pt.acceptance.finalization.durability-power-controller-command-journal-lock.v1"
+)
+_POWER_CONTROLLER_JOURNAL_SIGNATURE_DOMAIN = (
+    "pt.acceptance.finalization.durability-power-controller-command-journal-signature.v1"
+)
+_POWER_CONTROLLER_EPOCH_SIGNATURE_DOMAIN = (
+    "pt.acceptance.finalization.durability-power-controller-runtime-epoch-signature.v1"
+)
+_CONTROLLER_WITNESS_DOMAIN = (
+    "pt.acceptance.finalization.durability-power-controller-store-witness.v1"
+)
+_CONTROLLER_WITNESS_AUTHORIZATION_DOMAIN = (
+    "pt.acceptance.finalization.durability-power-controller-store-witness-authorization.v1"
+)
+_CONTROLLER_WITNESS_AUTHORIZATION_ID_DOMAIN = (
+    "pt.acceptance.finalization.durability-power-controller-store-witness-authorization-id.v1"
+)
+_CONTROLLER_WITNESS_CONFIRMATION_DOMAIN = (
+    "pt.acceptance.finalization.durability-power-controller-store-witness-confirmation.v1"
+)
+_GATE_PUBLISH_LOCK_IDENTITY_DOMAIN = (
+    "pt.acceptance.finalization.gate-publish-lock-identity.v1"
+)
+_TRUST_DISPATCH_LEASE_DOMAIN = (
+    "pt.acceptance.finalization.trust-dispatch-lease.v1"
+)
+_DURABILITY_PROBE_RUNTIME_DOMAIN = (
+    "pt.acceptance.finalization.durability-probe-runtime.v1"
+)
+_DURABILITY_PROBE_SOURCE_DOMAIN = (
+    "pt.acceptance.finalization.durability-probe-source.v1"
+)
+_DURABILITY_CAPABILITY_EVIDENCE_DOMAIN = (
+    "pt.acceptance.finalization.durability-capability-evidence.v1"
+)
+_DURABILITY_PROFILE_DOMAIN = {
+    "LINUX": "pt.acceptance.finalization.durability-profile.linux.v1",
+    "DARWIN": "pt.acceptance.finalization.durability-profile.darwin.v1",
+}
+_DESCRIPTOR_OWNER_DOMAIN = (
+    "pt.acceptance.finalization.descriptor-owner-binding.v1"
+)
+_DESCRIPTOR_CLAIM_DOMAIN = "pt.acceptance.finalization.descriptor-claim.v1"
+_WORKER_REQUEST_IDENTITY_DOMAIN = (
+    "pt.acceptance.finalization.worker-request-identity.v1"
+)
+_WORKER_REQUEST_DOMAIN = "pt.acceptance.finalization.worker-request.v1"
+_WORKER_RESULT_DOMAIN = "pt.acceptance.finalization.worker-result.v1"
+_SUPERVISOR_CONTROL_FRAME_DOMAIN = (
+    "pt.acceptance.finalization.supervisor-control-frame.v1"
+)
+
+FINALIZER_BOOTSTRAP_SOURCE_PATHS = (
+    "tooling/acceptance/core/finalization_contracts.py",
+    "tooling/acceptance/core/finalization_supervisor.c",
+    "tooling/acceptance/core/finalizer_worker.py",
+    "tooling/acceptance/core/result_contracts.py",
+)
 
 _SUPPORTED_DIGEST_DOMAINS = frozenset(
     {
+        _WORKER_REQUEST_DOMAIN,
+        _PREFLIGHT_PLATFORM_RUNTIME_DOMAIN,
+        _PREFLIGHT_RUNTIME_DOMAIN,
+        _RUNTIME_CAPTURE_DOMAIN,
+        _AUTHORITY_RUNTIME_REF_DOMAIN,
+        _MAINTENANCE_WORKER_SOURCE_DOMAIN,
+        _MAINTENANCE_RUNTIME_DOMAIN,
+        _WORKER_RESULT_DOMAIN,
+        _SUPERVISOR_CONTROL_FRAME_DOMAIN,
+        _DESCRIPTOR_OWNER_DOMAIN,
+        _DESCRIPTOR_CLAIM_DOMAIN,
+        _WORKER_REQUEST_IDENTITY_DOMAIN,
         _PAYLOAD_DOMAIN,
         _SNAPSHOT_DOMAIN,
         _PRIMARY_RESULT_DOMAIN,
@@ -276,6 +410,7 @@ _SUPPORTED_DIGEST_DOMAINS = frozenset(
         _FINALIZER_INPUT_DOMAIN,
         _SEAL_DOMAIN,
         _CORE_BOOTSTRAP_SOURCE_DOMAIN,
+        _SOURCE_CAPTURE_DOMAIN,
         _SUPERVISOR_SOURCE_DOMAIN,
         _STDLIB_CLOSURE_DOMAIN,
         _COMPILER_FLAGS_DOMAIN,
@@ -288,6 +423,19 @@ _SUPPORTED_DIGEST_DOMAINS = frozenset(
         _AUTHORITATIVE_RESOLUTION_DOMAIN,
         _ENFORCEMENT_ACTIVATED_DOMAIN,
         _ENFORCEMENT_CURRENT_DOMAIN,
+        _AUTHORITY_CONFIRMATION_DOMAIN,
+        _AUTHORITY_AUTHORIZATION_DOMAIN,
+        _PUBLICATION_INTERLOCK_DOMAIN,
+        _ACTIVATION_INTENT_DOMAIN,
+        _ACTIVATION_PENDING_DOMAIN,
+        _ENFORCEMENT_DOMAIN,
+        _ABORT_CONFIRMATION_DOMAIN,
+        _ABORT_EVENT_DOMAIN,
+        _ABORT_TOMBSTONE_IDENTITY_DOMAIN,
+        _ABORT_CONTINUATION_DOMAIN,
+        _ABORT_CONTROL_REF_DOMAIN,
+        _ABORT_DELETION_PLAN_DOMAIN,
+        _MAINTENANCE_RESULT_DOMAIN,
         _PRIOR_LATEST_POINTER_DOMAIN,
         _ABORT_PREFLIGHT_REQUEST_DOMAIN,
         _ABORT_PREFLIGHT_RESULT_DOMAIN,
@@ -348,6 +496,29 @@ _SUPPORTED_DIGEST_DOMAINS = frozenset(
         _DURABILITY_CRASH_CASE_DOMAIN,
         _POWER_CONTROLLER_IDENTITY_DOMAIN,
         _POWER_INTERRUPTION_EVIDENCE_DOMAIN,
+        _POWER_CONTROLLER_TRUST_ANCHOR_REF_DOMAIN,
+        _POWER_CONTROLLER_TRUST_ANCHOR_DOMAIN,
+        _POWER_CONTROLLER_TRUST_GENERATION_REF_DOMAIN,
+        _POWER_CONTROLLER_TRUST_GENERATION_DOMAIN,
+        _POWER_CONTROLLER_TRUST_CURRENT_DOMAIN,
+        _POWER_CONTROLLER_JOURNAL_DOMAIN,
+        _POWER_CONTROLLER_HEAD_DOMAIN,
+        _POWER_CONTROLLER_EPOCH_DOMAIN,
+        _POWER_CONTROLLER_COMMAND_DOMAIN,
+        _POWER_CONTROLLER_REQUEST_DOMAIN,
+        _POWER_CONTROLLER_LOCK_DOMAIN,
+        _POWER_CONTROLLER_JOURNAL_SIGNATURE_DOMAIN,
+        _POWER_CONTROLLER_EPOCH_SIGNATURE_DOMAIN,
+        _CONTROLLER_WITNESS_DOMAIN,
+        _CONTROLLER_WITNESS_AUTHORIZATION_DOMAIN,
+        _CONTROLLER_WITNESS_AUTHORIZATION_ID_DOMAIN,
+        _CONTROLLER_WITNESS_CONFIRMATION_DOMAIN,
+        _GATE_PUBLISH_LOCK_IDENTITY_DOMAIN,
+        _TRUST_DISPATCH_LEASE_DOMAIN,
+        _DURABILITY_PROBE_RUNTIME_DOMAIN,
+        _DURABILITY_PROBE_SOURCE_DOMAIN,
+        _DURABILITY_CAPABILITY_EVIDENCE_DOMAIN,
+        *_DURABILITY_PROFILE_DOMAIN.values(),
     }
 )
 
@@ -411,6 +582,34 @@ class EvidenceFinalizationState(str, Enum):
     COMPLETED = "COMPLETED"
 
 
+class FinalizationReservationState(str, Enum):
+    READY = "READY"
+    INVOCATION_STARTED = "INVOCATION_STARTED"
+    OUTCOME_CACHED = "OUTCOME_CACHED"
+    MANIFEST_PREPARED = "MANIFEST_PREPARED"
+    MANIFEST_DURABLE = "MANIFEST_DURABLE"
+    LATEST_RESOLVED = "LATEST_RESOLVED"
+
+
+class FinalizationLatestDisposition(str, Enum):
+    PUBLISHED = "PUBLISHED"
+    ALREADY_CURRENT = "ALREADY_CURRENT"
+    SUPERSEDED = "SUPERSEDED"
+
+
+class ProtectedSourceComponent(str, Enum):
+    PROTECTED_BASELINE = "PROTECTED_BASELINE"
+    REQUIRED_MAPPING = "REQUIRED_MAPPING"
+    REGISTRATION_CATALOG = "REGISTRATION_CATALOG"
+    CONTRACT_SCHEMA = "CONTRACT_SCHEMA"
+    ENTRYPOINT_SOURCE = "ENTRYPOINT_SOURCE"
+    GENERATOR_SOURCE = "GENERATOR_SOURCE"
+    CORE_CONTRACTS = "CORE_CONTRACTS"
+    CORE_WORKER_BOOTSTRAP = "CORE_WORKER_BOOTSTRAP"
+    SUPERVISOR_SOURCE = "SUPERVISOR_SOURCE"
+    CORE_RESULT_CONTRACTS = "CORE_RESULT_CONTRACTS"
+
+
 class RuntimeOsFamily(str, Enum):
     DARWIN = "DARWIN"
     LINUX = "LINUX"
@@ -433,6 +632,34 @@ class RuntimeFileKind(str, Enum):
     STDLIB_MODULE = "STDLIB_MODULE"
     COMPILER_BINARY = "COMPILER_BINARY"
     LOADED_RUNTIME_IMAGE = "LOADED_RUNTIME_IMAGE"
+
+
+class RuntimePathKind(str, Enum):
+    SUPERVISOR_BINARY = "SUPERVISOR_BINARY"
+    PYTHON_EXECUTABLE = "PYTHON_EXECUTABLE"
+    COMPILER_BINARY = "COMPILER_BINARY"
+    STDLIB_MODULE = "STDLIB_MODULE"
+
+
+class ArtifactPayloadKind(str, Enum):
+    CANONICAL_JSON = "CANONICAL_JSON"
+    BINARY = "BINARY"
+
+
+class DescriptorRole(str, Enum):
+    GATE_DIRECTORY = "GATE_DIRECTORY"
+    RUN_DIRECTORY = "RUN_DIRECTORY"
+    REPOSITORY_ROOT = "REPOSITORY_ROOT"
+    TEMPORARY_DIRECTORY = "TEMPORARY_DIRECTORY"
+
+
+class WorkerKind(str, Enum):
+    AUTHORITY_RUNTIME_PERSISTER = "AUTHORITY_RUNTIME_PERSISTER"
+    MAINTENANCE = "MAINTENANCE"
+    BUNDLE_PREPARER = "BUNDLE_PREPARER"
+    RUNTIME_CAPTURE = "RUNTIME_CAPTURE"
+    MATERIALIZER = "MATERIALIZER"
+    FINALIZER = "FINALIZER"
 
 
 class LatestAuthorityMode(str, Enum):
@@ -1090,6 +1317,1267 @@ def _closed_mapping(
             f"{schema} fields mismatch; missing={missing}, unknown={unknown}"
         )
     return value
+
+
+@dataclass(frozen=True)
+class GateDirectoryOwnerBinding:
+    workspace_id: str
+    gate_id: str
+    role: ClassVar[DescriptorRole] = DescriptorRole.GATE_DIRECTORY
+
+    def __post_init__(self) -> None:
+        _validate_workspace_id(self.workspace_id)
+        _validate_slug(self.gate_id, field="gateId")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "role": self.role.value,
+            "workspaceId": self.workspace_id,
+            "gateId": self.gate_id,
+        }
+
+
+@dataclass(frozen=True)
+class RunDirectoryOwnerBinding:
+    workspace_id: str
+    gate_id: str
+    evidence_run_id: str
+    role: ClassVar[DescriptorRole] = DescriptorRole.RUN_DIRECTORY
+
+    def __post_init__(self) -> None:
+        _validate_workspace_id(self.workspace_id)
+        _validate_slug(self.gate_id, field="gateId")
+        _validate_run_id(self.evidence_run_id, field="evidenceRunId")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "role": self.role.value,
+            "workspaceId": self.workspace_id,
+            "gateId": self.gate_id,
+            "evidenceRunId": self.evidence_run_id,
+        }
+
+
+@dataclass(frozen=True)
+class RepositoryRootOwnerBinding:
+    workspace_id: str
+    source_commit: str
+    workspace_digest: str
+    canonical_worktree_hash: str
+    role: ClassVar[DescriptorRole] = DescriptorRole.REPOSITORY_ROOT
+
+    def __post_init__(self) -> None:
+        _validate_workspace_id(self.workspace_id)
+        _validate_non_empty_utf8(self.source_commit, field="sourceCommit")
+        validate_sha256(self.workspace_digest)
+        validate_sha256(self.canonical_worktree_hash)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "role": self.role.value,
+            "workspaceId": self.workspace_id,
+            "sourceCommit": self.source_commit,
+            "workspaceDigest": self.workspace_digest,
+            "canonicalWorktreeHash": self.canonical_worktree_hash,
+        }
+
+
+@dataclass(frozen=True)
+class TemporaryDirectoryOwnerBinding:
+    supervisor_session_id: str
+    request_id: str
+    temp_nonce: str
+    role: ClassVar[DescriptorRole] = DescriptorRole.TEMPORARY_DIRECTORY
+
+    def __post_init__(self) -> None:
+        for field, value in (
+            ("supervisorSessionId", self.supervisor_session_id),
+            ("requestId", self.request_id),
+            ("tempNonce", self.temp_nonce),
+        ):
+            _validate_non_empty_utf8(value, field=field, maximum_bytes=256)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "role": self.role.value,
+            "supervisorSessionId": self.supervisor_session_id,
+            "requestId": self.request_id,
+            "tempNonce": self.temp_nonce,
+        }
+
+
+DescriptorOwnerBinding = Union[
+    GateDirectoryOwnerBinding,
+    RunDirectoryOwnerBinding,
+    RepositoryRootOwnerBinding,
+    TemporaryDirectoryOwnerBinding,
+]
+_DESCRIPTOR_OWNER_TYPES = (
+    GateDirectoryOwnerBinding,
+    RunDirectoryOwnerBinding,
+    RepositoryRootOwnerBinding,
+    TemporaryDirectoryOwnerBinding,
+)
+
+
+def descriptor_owner_binding_from_dict(value: object) -> DescriptorOwnerBinding:
+    """Select a closed owner branch before interpreting descriptor identity."""
+    if not isinstance(value, Mapping):
+        raise ValueError("descriptor owner binding must be an object")
+    branches = {
+        DescriptorRole.GATE_DIRECTORY.value: (
+            GateDirectoryOwnerBinding,
+            ("workspaceId", "gateId"),
+        ),
+        DescriptorRole.RUN_DIRECTORY.value: (
+            RunDirectoryOwnerBinding,
+            ("workspaceId", "gateId", "evidenceRunId"),
+        ),
+        DescriptorRole.REPOSITORY_ROOT.value: (
+            RepositoryRootOwnerBinding,
+            ("workspaceId", "sourceCommit", "workspaceDigest", "canonicalWorktreeHash"),
+        ),
+        DescriptorRole.TEMPORARY_DIRECTORY.value: (
+            TemporaryDirectoryOwnerBinding,
+            ("supervisorSessionId", "requestId", "tempNonce"),
+        ),
+    }
+    role = value.get("role")
+    if not isinstance(role, str) or role not in branches:
+        raise ValueError("unknown descriptor owner role")
+    owner_type, fields = branches[role]
+    data = _closed_mapping(
+        value,
+        schema=owner_type.__name__,
+        keys=frozenset(("role", *fields)),
+    )
+    return owner_type(*(data[field] for field in fields))
+
+
+@dataclass(frozen=True)
+class DescriptorClaim:
+    role: DescriptorRole
+    device_id: str
+    inode: str
+    owner_binding: DescriptorOwnerBinding
+    owner_binding_digest: str
+    descriptor_claim_digest: str
+    file_type: str = "DIRECTORY"
+
+    def __post_init__(self) -> None:
+        if type(self.role) is not DescriptorRole:
+            raise ValueError("descriptor role must be closed")
+        if type(self.owner_binding) not in _DESCRIPTOR_OWNER_TYPES:
+            raise ValueError("descriptor owner must use a concrete branch")
+        if self.owner_binding.role is not self.role:
+            raise ValueError("descriptor role does not match owner binding")
+        if self.file_type != "DIRECTORY":
+            raise ValueError("descriptor fileType must be DIRECTORY")
+        for field, value in (("deviceId", self.device_id), ("inode", self.inode)):
+            if (
+                not isinstance(value, str)
+                or re.fullmatch(r"0|[1-9][0-9]{0,19}", value) is None
+                or int(value) > 18446744073709551615
+            ):
+                raise ValueError(f"{field} must be a canonical UInt64String")
+        expected_owner = domain_separated_sha256(
+            _DESCRIPTOR_OWNER_DOMAIN, self.owner_binding.to_dict()
+        )
+        if self.owner_binding_digest != expected_owner:
+            raise ValueError("ownerBindingDigest mismatch")
+        validate_sha256(self.descriptor_claim_digest)
+        if self.descriptor_claim_digest != domain_separated_sha256(
+            _DESCRIPTOR_CLAIM_DOMAIN, self._digest_payload()
+        ):
+            raise ValueError("descriptorClaimDigest mismatch")
+
+    def _digest_payload(self) -> dict[str, object]:
+        return {
+            "role": self.role.value,
+            "deviceId": self.device_id,
+            "inode": self.inode,
+            "fileType": self.file_type,
+            "ownerBinding": self.owner_binding.to_dict(),
+            "ownerBindingDigest": self.owner_binding_digest,
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            **self._digest_payload(),
+            "descriptorClaimDigest": self.descriptor_claim_digest,
+        }
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        device_id: str,
+        inode: str,
+        owner_binding: DescriptorOwnerBinding,
+    ) -> "DescriptorClaim":
+        if type(owner_binding) not in _DESCRIPTOR_OWNER_TYPES:
+            raise ValueError("descriptor owner must use a concrete branch")
+        owner_digest = domain_separated_sha256(
+            _DESCRIPTOR_OWNER_DOMAIN, owner_binding.to_dict()
+        )
+        payload = {
+            "role": owner_binding.role.value,
+            "deviceId": device_id,
+            "inode": inode,
+            "fileType": "DIRECTORY",
+            "ownerBinding": owner_binding.to_dict(),
+            "ownerBindingDigest": owner_digest,
+        }
+        return cls(
+            role=owner_binding.role,
+            device_id=device_id,
+            inode=inode,
+            owner_binding=owner_binding,
+            owner_binding_digest=owner_digest,
+            descriptor_claim_digest=domain_separated_sha256(
+                _DESCRIPTOR_CLAIM_DOMAIN, payload
+            ),
+        )
+
+    @classmethod
+    def from_dict(cls, value: object) -> "DescriptorClaim":
+        data = _closed_mapping(
+            value,
+            schema=cls.__name__,
+            keys=frozenset(
+                {
+                    "role", "deviceId", "inode", "fileType", "ownerBinding",
+                    "ownerBindingDigest", "descriptorClaimDigest",
+                }
+            ),
+        )
+        return cls(
+            role=_enum_from_wire(DescriptorRole, data["role"], field="role"),
+            device_id=data["deviceId"],
+            inode=data["inode"],
+            file_type=data["fileType"],
+            owner_binding=descriptor_owner_binding_from_dict(data["ownerBinding"]),
+            owner_binding_digest=data["ownerBindingDigest"],
+            descriptor_claim_digest=data["descriptorClaimDigest"],
+        )
+
+
+def worker_descriptor_roles(kind: WorkerKind) -> tuple[DescriptorRole, ...]:
+    if type(kind) is not WorkerKind:
+        raise ValueError("workerKind must be closed")
+    return _WORKER_CONTRACT_MATRIX[kind][2]
+
+
+@dataclass(frozen=True)
+class WorkerRequestIdentity:
+    supervisor_session_id: str
+    request_id: str
+    sequence: int
+    worker_kind: WorkerKind
+    descriptor_claims: tuple[DescriptorClaim, ...]
+    request_payload_digest: str
+    request_identity_digest: str
+
+    def __post_init__(self) -> None:
+        _validate_non_empty_utf8(
+            self.supervisor_session_id, field="supervisorSessionId", maximum_bytes=256
+        )
+        _validate_non_empty_utf8(
+            self.request_id, field="requestId", maximum_bytes=256
+        )
+        _validate_positive_integer(self.sequence, field="sequence")
+        if self.sequence > _I_JSON_INTEGER_MAX:
+            raise ValueError("sequence exceeds I-JSON range")
+        expected_roles = worker_descriptor_roles(self.worker_kind)
+        if (
+            type(self.descriptor_claims) is not tuple
+            or any(type(claim) is not DescriptorClaim for claim in self.descriptor_claims)
+            or tuple(claim.role for claim in self.descriptor_claims) != expected_roles
+        ):
+            raise ValueError("descriptor claims do not match ordered worker roles")
+        identities = tuple(
+            (claim.device_id, claim.inode) for claim in self.descriptor_claims
+        )
+        if len(set(identities)) != len(identities):
+            raise ValueError("descriptor claims must identify distinct directories")
+        for claim in self.descriptor_claims:
+            if type(claim.owner_binding) is TemporaryDirectoryOwnerBinding:
+                if (
+                    claim.owner_binding.supervisor_session_id != self.supervisor_session_id
+                    or claim.owner_binding.request_id != self.request_id
+                ):
+                    raise ValueError("temporary descriptor belongs to another request")
+        validate_sha256(self.request_payload_digest)
+        validate_sha256(self.request_identity_digest)
+        if self.request_identity_digest != domain_separated_sha256(
+            _WORKER_REQUEST_IDENTITY_DOMAIN, self._digest_payload()
+        ):
+            raise ValueError("requestIdentityDigest mismatch")
+
+    def _digest_payload(self) -> dict[str, object]:
+        return {
+            "supervisorSessionId": self.supervisor_session_id,
+            "requestId": self.request_id,
+            "sequence": self.sequence,
+            "workerKind": self.worker_kind.value,
+            "descriptorClaims": [claim.to_dict() for claim in self.descriptor_claims],
+            "requestPayloadDigest": self.request_payload_digest,
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {**self._digest_payload(), "requestIdentityDigest": self.request_identity_digest}
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        supervisor_session_id: str,
+        request_id: str,
+        sequence: int,
+        worker_kind: WorkerKind,
+        descriptor_claims: tuple[DescriptorClaim, ...],
+        request_payload_digest: str,
+    ) -> "WorkerRequestIdentity":
+        if type(worker_kind) is not WorkerKind or type(descriptor_claims) is not tuple:
+            raise ValueError("worker identity requires concrete contract types")
+        if any(type(claim) is not DescriptorClaim for claim in descriptor_claims):
+            raise ValueError("descriptor claims must use concrete contracts")
+        payload = {
+            "supervisorSessionId": supervisor_session_id,
+            "requestId": request_id,
+            "sequence": sequence,
+            "workerKind": worker_kind.value,
+            "descriptorClaims": [claim.to_dict() for claim in descriptor_claims],
+            "requestPayloadDigest": request_payload_digest,
+        }
+        return cls(
+            supervisor_session_id=supervisor_session_id,
+            request_id=request_id,
+            sequence=sequence,
+            worker_kind=worker_kind,
+            descriptor_claims=descriptor_claims,
+            request_payload_digest=request_payload_digest,
+            request_identity_digest=domain_separated_sha256(
+                _WORKER_REQUEST_IDENTITY_DOMAIN, payload
+            ),
+        )
+
+    @classmethod
+    def from_dict(cls, value: object) -> "WorkerRequestIdentity":
+        data = _closed_mapping(
+            value,
+            schema=cls.__name__,
+            keys=frozenset(
+                {
+                    "supervisorSessionId", "requestId", "sequence", "workerKind",
+                    "descriptorClaims", "requestPayloadDigest", "requestIdentityDigest",
+                }
+            ),
+        )
+        if type(data["descriptorClaims"]) is not list or len(data["descriptorClaims"]) > 2:
+            raise ValueError("descriptorClaims must be a bounded wire array")
+        return cls(
+            supervisor_session_id=data["supervisorSessionId"],
+            request_id=data["requestId"],
+            sequence=data["sequence"],
+            worker_kind=_enum_from_wire(WorkerKind, data["workerKind"], field="workerKind"),
+            descriptor_claims=tuple(
+                DescriptorClaim.from_dict(claim) for claim in data["descriptorClaims"]
+            ),
+            request_payload_digest=data["requestPayloadDigest"],
+            request_identity_digest=data["requestIdentityDigest"],
+        )
+
+
+@dataclass(frozen=True)
+class PrepareBundleRequest:
+    identity: WorkerRequestIdentity
+    source_inventory: tuple[tuple[str, str], ...]
+    entrypoint: str
+    file_limit: int = 64
+    path_byte_limit: int = 512
+    manifest_byte_limit: int = 256 * 1024
+    entry_byte_limit: int = 8 * 1024 * 1024
+    bundle_byte_limit: int = 64 * 1024 * 1024
+    expanded_byte_limit: int = 64 * 1024 * 1024
+    temporary_storage_byte_limit: int = 128 * 1024 * 1024
+    timeout_seconds: int = 60
+
+    def __post_init__(self) -> None:
+        _validate_file_identity_tuple(self.source_inventory, field="sourceInventory")
+        _validate_entrypoint(self.entrypoint)
+        limits = (
+            ("fileLimit", self.file_limit, 64),
+            ("pathByteLimit", self.path_byte_limit, 512),
+            ("manifestByteLimit", self.manifest_byte_limit, 256 * 1024),
+            ("entryByteLimit", self.entry_byte_limit, 8 * 1024 * 1024),
+            ("bundleByteLimit", self.bundle_byte_limit, 64 * 1024 * 1024),
+            ("expandedByteLimit", self.expanded_byte_limit, 64 * 1024 * 1024),
+            ("temporaryStorageByteLimit", self.temporary_storage_byte_limit, 128 * 1024 * 1024),
+            ("timeoutSeconds", self.timeout_seconds, 60),
+        )
+        for field, value, expected in limits:
+            if type(value) is not int or value != expected:
+                raise ValueError(f"{field} must equal the fixed bundle limit {expected}")
+        if len(self.source_inventory) > self.file_limit:
+            raise ValueError("sourceInventory exceeds fileLimit")
+        if len(canonical_json_bytes(self._payload())) > self.manifest_byte_limit:
+            raise ValueError("sourceInventory exceeds manifestByteLimit")
+        _validate_worker_request_binding(
+            self.identity, WorkerKind.BUNDLE_PREPARER, self._payload()
+        )
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "sourceInventory": [list(item) for item in self.source_inventory],
+            "entrypoint": self.entrypoint,
+            "fileLimit": self.file_limit,
+            "pathByteLimit": self.path_byte_limit,
+            "manifestByteLimit": self.manifest_byte_limit,
+            "entryByteLimit": self.entry_byte_limit,
+            "bundleByteLimit": self.bundle_byte_limit,
+            "expandedByteLimit": self.expanded_byte_limit,
+            "temporaryStorageByteLimit": self.temporary_storage_byte_limit,
+            "timeoutSeconds": self.timeout_seconds,
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {"identity": self.identity.to_dict(), **self._payload()}
+
+    @classmethod
+    def from_dict(cls, value: object) -> "PrepareBundleRequest":
+        fields = (
+            "fileLimit", "pathByteLimit", "manifestByteLimit", "entryByteLimit",
+            "bundleByteLimit", "expandedByteLimit", "temporaryStorageByteLimit",
+            "timeoutSeconds",
+        )
+        data = _closed_mapping(
+            value, schema=cls.__name__,
+            keys=frozenset(("identity", "sourceInventory", "entrypoint", *fields)),
+        )
+        inventory = data["sourceInventory"]
+        if type(inventory) is not list or len(inventory) > 64:
+            raise ValueError("sourceInventory must be a bounded array")
+        return cls(
+            WorkerRequestIdentity.from_dict(data["identity"]),
+            _file_identity_tuple_from_wire(inventory, field="sourceInventory"),
+            data["entrypoint"],
+            *(data[field] for field in fields),
+        )
+
+
+def _validate_worker_request_binding(
+    identity: object, kind: WorkerKind, payload: dict[str, object]
+) -> None:
+    if type(identity) is not WorkerRequestIdentity or identity.worker_kind is not kind:
+        raise ValueError("request does not match its worker-kind identity")
+    if identity.request_payload_digest != domain_separated_sha256(
+        _WORKER_REQUEST_DOMAIN, payload
+    ):
+        raise ValueError("requestPayloadDigest mismatch")
+
+
+@dataclass(frozen=True)
+class BundlePreparationCompleted:
+    identity: WorkerRequestIdentity
+    capture_id: str
+    source_capture_bundle_digest: str
+    expanded_inventory: tuple[tuple[str, str, int], ...]
+    worker_result_digest: str
+    status: ClassVar[str] = "COMPLETED"
+
+    def __post_init__(self) -> None:
+        if (
+            type(self.identity) is not WorkerRequestIdentity
+            or self.identity.worker_kind is not WorkerKind.BUNDLE_PREPARER
+        ):
+            raise ValueError("bundle result must match BUNDLE_PREPARER")
+        _validate_non_empty_utf8(self.capture_id, field="captureId", maximum_bytes=256)
+        validate_sha256(self.source_capture_bundle_digest)
+        if type(self.expanded_inventory) is not tuple or not 1 <= len(self.expanded_inventory) <= 64:
+            raise ValueError("expandedInventory must contain 1..64 immutable entries")
+        paths = []
+        cumulative = 0
+        for item in self.expanded_inventory:
+            if type(item) is not tuple or len(item) != 3:
+                raise ValueError("expandedInventory entries must be immutable triples")
+            paths.append(validate_repo_relative_path(item[0]))
+            validate_sha256(item[1])
+            if type(item[2]) is not int or not 0 <= item[2] <= 8 * 1024 * 1024:
+                raise ValueError("expandedInventory byteLength exceeds entry limit")
+            cumulative += item[2]
+        if paths != sorted(set(paths), key=lambda path: path.encode("utf-8")):
+            raise ValueError("expandedInventory must have unique UTF-8 sorted paths")
+        if cumulative > 64 * 1024 * 1024:
+            raise ValueError("expandedInventory exceeds expanded byte limit")
+        if self.worker_result_digest != domain_separated_sha256(
+            _WORKER_RESULT_DOMAIN, self._payload()
+        ):
+            raise ValueError("workerResultDigest mismatch")
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "identity": self.identity.to_dict(),
+            "status": self.status,
+            "captureId": self.capture_id,
+            "sourceCaptureBundleDigest": self.source_capture_bundle_digest,
+            "expandedInventory": [list(item) for item in self.expanded_inventory],
+            "failureCode": None,
+            "diagnostic": None,
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {**self._payload(), "workerResultDigest": self.worker_result_digest}
+
+    @classmethod
+    def from_dict(cls, value: object) -> "BundlePreparationCompleted":
+        data = _closed_mapping(
+            value, schema=cls.__name__, keys=_BUNDLE_RESULT_KEYS
+        )
+        if data["status"] != "COMPLETED" or data["failureCode"] is not None or data["diagnostic"] is not None:
+            raise ValueError("completed bundle result has invalid branch fields")
+        inventory = data["expandedInventory"]
+        if type(inventory) is not list or not 1 <= len(inventory) <= 64:
+            raise ValueError("expandedInventory must be a bounded wire array")
+        if any(type(item) is not list or len(item) != 3 for item in inventory):
+            raise ValueError("expandedInventory entries must be three-element arrays")
+        return cls(
+            WorkerRequestIdentity.from_dict(data["identity"]),
+            data["captureId"], data["sourceCaptureBundleDigest"],
+            tuple(tuple(item) for item in inventory),
+            data["workerResultDigest"],
+        )
+
+
+_BUNDLE_RESULT_KEYS = frozenset({
+    "identity", "status", "captureId", "sourceCaptureBundleDigest",
+    "expandedInventory", "workerResultDigest", "failureCode", "diagnostic",
+})
+
+
+@dataclass(frozen=True)
+class BundlePreparationFailed:
+    identity: WorkerRequestIdentity
+    failure_code: FinalizerFailureCode
+    diagnostic: str
+    worker_result_digest: str
+    status: ClassVar[str] = "FAILED"
+
+    def __post_init__(self) -> None:
+        if (
+            type(self.identity) is not WorkerRequestIdentity
+            or self.identity.worker_kind is not WorkerKind.BUNDLE_PREPARER
+        ):
+            raise ValueError("bundle result must match BUNDLE_PREPARER")
+        if type(self.failure_code) is not FinalizerFailureCode or self.failure_code not in (
+            FinalizerFailureCode.BUNDLE_INVALID, FinalizerFailureCode.TIMED_OUT,
+            FinalizerFailureCode.PROCESS_FAILED,
+        ):
+            raise ValueError("failureCode is outside the bundle failure branch")
+        _validate_non_empty_utf8(self.diagnostic, field="diagnostic", maximum_bytes=4096)
+        if self.worker_result_digest != domain_separated_sha256(
+            _WORKER_RESULT_DOMAIN, self._payload()
+        ):
+            raise ValueError("workerResultDigest mismatch")
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "identity": self.identity.to_dict(), "status": self.status,
+            "captureId": None, "sourceCaptureBundleDigest": None,
+            "expandedInventory": [], "failureCode": self.failure_code.value,
+            "diagnostic": self.diagnostic,
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {**self._payload(), "workerResultDigest": self.worker_result_digest}
+
+    @classmethod
+    def from_dict(cls, value: object) -> "BundlePreparationFailed":
+        data = _closed_mapping(value, schema=cls.__name__, keys=_BUNDLE_RESULT_KEYS)
+        if (
+            data["status"] != "FAILED" or data["captureId"] is not None
+            or data["sourceCaptureBundleDigest"] is not None
+            or type(data["expandedInventory"]) is not list
+            or data["expandedInventory"]
+        ):
+            raise ValueError("failed bundle result has invalid branch fields")
+        return cls(
+            WorkerRequestIdentity.from_dict(data["identity"]),
+            _enum_from_wire(FinalizerFailureCode, data["failureCode"], field="failureCode"),
+            data["diagnostic"], data["workerResultDigest"],
+        )
+
+
+def bundle_preparation_result_from_dict(
+    value: object, request: PrepareBundleRequest
+) -> Union[BundlePreparationCompleted, BundlePreparationFailed]:
+    if type(request) is not PrepareBundleRequest or not isinstance(value, Mapping):
+        raise ValueError("bundle result requires its concrete request")
+    if value.get("status") == "COMPLETED":
+        result = BundlePreparationCompleted.from_dict(value)
+    elif value.get("status") == "FAILED":
+        result = BundlePreparationFailed.from_dict(value)
+    else:
+        raise ValueError("unknown bundle result status")
+    if result.identity != request.identity:
+        raise ValueError("bundle result belongs to another request")
+    if type(result) is BundlePreparationCompleted:
+        captured = tuple((path, digest) for path, digest, _ in result.expanded_inventory)
+        if captured != request.source_inventory:
+            raise ValueError("bundle result does not match reviewed source inventory")
+    return result
+
+
+@dataclass(frozen=True)
+class WorkerRequestFrame:
+    """Closed request envelope shared by all six worker kinds."""
+
+    identity: WorkerRequestIdentity
+    request: WorkerRequest
+    frame_digest: str
+    frame_type: ClassVar[str] = "WORKER_REQUEST"
+
+    def __post_init__(self) -> None:
+        if (
+            type(self.identity) is not WorkerRequestIdentity
+            or type(self.request) not in _worker_request_types(self.identity.worker_kind)
+            or self.identity != self.request.identity
+        ):
+            raise ValueError("request frame inner/outer identity mismatch")
+        if self.frame_digest != domain_separated_sha256(
+            _SUPERVISOR_CONTROL_FRAME_DOMAIN, self._payload()
+        ):
+            raise ValueError("frameDigest mismatch")
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "frameType": self.frame_type,
+            "identity": self.identity.to_dict(),
+            "request": self.request.to_dict(),
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {**self._payload(), "frameDigest": self.frame_digest}
+
+    @classmethod
+    def from_dict(
+        cls, value: object, *,
+        epoch: ProofAdmissionEpochRecord | None = None,
+        current_epoch: ProofAdmissionCurrentEpoch | None = None,
+        pause: ProofAdmissionPauseRecord | None = None,
+        jobs: tuple[ProofAdmissionJobRecord, ...] = (),
+        completions: tuple[ProofAdmissionJobCompletion, ...] = (),
+        intents: tuple[ProofAdmissionEmissionIntent, ...] = (),
+        acknowledgements: tuple[ProofAdmissionEmissionAcknowledgement, ...] = (),
+    ) -> "WorkerRequestFrame":
+        data = _closed_mapping(
+            value, schema=cls.__name__,
+            keys=frozenset(("frameType", "identity", "request", "frameDigest")),
+        )
+        if data["frameType"] != cls.frame_type:
+            raise ValueError("frameType must be WORKER_REQUEST")
+        return cls(
+            WorkerRequestIdentity.from_dict(data["identity"]),
+            worker_request_from_dict(
+                data["request"], epoch=epoch, current_epoch=current_epoch, pause=pause,
+                jobs=jobs, completions=completions, intents=intents,
+                acknowledgements=acknowledgements,
+            ), data["frameDigest"],
+        )
+
+
+@dataclass(frozen=True)
+class WorkerResultFrame:
+    """Closed result envelope; request correlation is compulsory at decoding."""
+
+    identity: WorkerRequestIdentity
+    result: WorkerResult
+    frame_digest: str
+    frame_type: ClassVar[str] = "WORKER_RESULT"
+
+    def __post_init__(self) -> None:
+        if (
+            type(self.identity) is not WorkerRequestIdentity
+            or type(self.result) not in _worker_result_types(self.identity.worker_kind)
+            or self.identity != self.result.identity
+        ):
+            raise ValueError("result frame inner/outer identity mismatch")
+        if self.frame_digest != domain_separated_sha256(
+            _SUPERVISOR_CONTROL_FRAME_DOMAIN, self._payload()
+        ):
+            raise ValueError("frameDigest mismatch")
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "frameType": self.frame_type,
+            "identity": self.identity.to_dict(),
+            "result": self.result.to_dict(),
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {**self._payload(), "frameDigest": self.frame_digest}
+
+    @classmethod
+    def from_dict(
+        cls, value: object, *, request: WorkerRequest
+    ) -> "WorkerResultFrame":
+        data = _closed_mapping(
+            value, schema=cls.__name__,
+            keys=frozenset(("frameType", "identity", "result", "frameDigest")),
+        )
+        if data["frameType"] != cls.frame_type:
+            raise ValueError("frameType must be WORKER_RESULT")
+        return cls(
+            WorkerRequestIdentity.from_dict(data["identity"]),
+            worker_result_from_dict(data["result"], request),
+            data["frameDigest"],
+        )
+
+
+class _SupervisorFrame:
+    """Shared digest envelope; concrete frame classes own every payload field."""
+
+    frame_type: ClassVar[str]
+
+    def _payload(self) -> dict[str, object]:
+        raise NotImplementedError
+
+    def _validate_digest(self) -> None:
+        if self.frame_digest != domain_separated_sha256(
+            _SUPERVISOR_CONTROL_FRAME_DOMAIN, self._payload()
+        ):
+            raise ValueError("frameDigest mismatch")
+
+    def to_dict(self) -> dict[str, object]:
+        return {**self._payload(), "frameDigest": self.frame_digest}
+
+
+def _frame_identity_payload(
+    frame_type: str, identity: WorkerRequestIdentity
+) -> dict[str, object]:
+    if type(identity) is not WorkerRequestIdentity:
+        raise ValueError("frame identity must be WorkerRequestIdentity")
+    return {"frameType": frame_type, "identity": identity.to_dict()}
+
+
+def _validate_claim_digest_echo(
+    identity: WorkerRequestIdentity, digests: tuple[str, ...]
+) -> None:
+    if type(identity) is not WorkerRequestIdentity:
+        raise ValueError("frame identity must be WorkerRequestIdentity")
+    expected = tuple(claim.descriptor_claim_digest for claim in identity.descriptor_claims)
+    if type(digests) is not tuple or digests != expected:
+        raise ValueError("frame descriptor digests do not match ordered claims")
+
+
+@dataclass(frozen=True)
+class SupervisorReadyFrame(_SupervisorFrame):
+    supervisor_session_id: str
+    supervisor_runtime_digest: str
+    protocol_version: int
+    frame_digest: str
+    frame_type: ClassVar[str] = "SUPERVISOR_READY"
+
+    def __post_init__(self) -> None:
+        _validate_non_empty_utf8(
+            self.supervisor_session_id, field="supervisorSessionId", maximum_bytes=256
+        )
+        validate_sha256(self.supervisor_runtime_digest)
+        if type(self.protocol_version) is not int or self.protocol_version != 1:
+            raise ValueError("protocolVersion must be integer 1")
+        self._validate_digest()
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "frameType": self.frame_type, "supervisorSessionId": self.supervisor_session_id,
+            "supervisorRuntimeDigest": self.supervisor_runtime_digest,
+            "protocolVersion": self.protocol_version,
+        }
+
+
+@dataclass(frozen=True)
+class DescriptorTransferFrame(_SupervisorFrame):
+    identity: WorkerRequestIdentity
+    descriptor_claim_digests: tuple[str, ...]
+    frame_digest: str
+    frame_type: ClassVar[str] = "DESCRIPTOR_TRANSFER"
+
+    def __post_init__(self) -> None:
+        _validate_claim_digest_echo(self.identity, self.descriptor_claim_digests)
+        if not self.descriptor_claim_digests:
+            raise ValueError("descriptor-free worker forbids ancillary transfer")
+        self._validate_digest()
+        if len(canonical_json_bytes(self.to_dict())) > 4096:
+            raise ValueError("descriptor transfer exceeds the datagram byte limit")
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            **_frame_identity_payload(self.frame_type, self.identity),
+            "descriptorClaimDigests": list(self.descriptor_claim_digests),
+        }
+
+
+@dataclass(frozen=True)
+class RequestAcceptedFrame(_SupervisorFrame):
+    identity: WorkerRequestIdentity
+    accepted_descriptor_claim_digests: tuple[str, ...]
+    frame_digest: str
+    frame_type: ClassVar[str] = "REQUEST_ACCEPTED"
+
+    def __post_init__(self) -> None:
+        _validate_claim_digest_echo(self.identity, self.accepted_descriptor_claim_digests)
+        self._validate_digest()
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            **_frame_identity_payload(self.frame_type, self.identity),
+            "acceptedDescriptorClaimDigests": list(self.accepted_descriptor_claim_digests),
+        }
+
+
+@dataclass(frozen=True)
+class WorkerArmedFrame(_SupervisorFrame):
+    identity: WorkerRequestIdentity
+    pid: int
+    pgid: int
+    timer_kind: str
+    timer_seconds: int
+    frame_digest: str
+    frame_type: ClassVar[str] = "WORKER_ARMED"
+
+    def __post_init__(self) -> None:
+        _frame_identity_payload(self.frame_type, self.identity)
+        _validate_positive_bounded_integer(self.pid, field="pid", maximum=2147483647)
+        if type(self.pgid) is not int or self.pgid != self.pid:
+            raise ValueError("worker PGID must equal its PID")
+        if self.timer_kind != "ITIMER_REAL":
+            raise ValueError("worker timer must be ITIMER_REAL")
+        _validate_positive_bounded_integer(
+            self.timer_seconds, field="timerSeconds", maximum=60
+        )
+        self._validate_digest()
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            **_frame_identity_payload(self.frame_type, self.identity),
+            "pid": self.pid, "pgid": self.pgid, "timerKind": self.timer_kind,
+            "timerSeconds": self.timer_seconds,
+        }
+
+
+@dataclass(frozen=True)
+class WorkerReadyFrame(_SupervisorFrame):
+    identity: WorkerRequestIdentity
+    validated_descriptor_claim_digests: tuple[str, ...]
+    timer_remaining_micros: int
+    frame_digest: str
+    frame_type: ClassVar[str] = "WORKER_READY"
+
+    def __post_init__(self) -> None:
+        _validate_claim_digest_echo(self.identity, self.validated_descriptor_claim_digests)
+        _validate_positive_bounded_integer(
+            self.timer_remaining_micros, field="timerRemainingMicros", maximum=60000000
+        )
+        self._validate_digest()
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            **_frame_identity_payload(self.frame_type, self.identity),
+            "validatedDescriptorClaimDigests": list(self.validated_descriptor_claim_digests),
+            "timerRemainingMicros": self.timer_remaining_micros,
+        }
+
+
+@dataclass(frozen=True)
+class WorkerDiagnosticFrame(_SupervisorFrame):
+    identity: WorkerRequestIdentity
+    stream: str
+    chunk_sequence: int
+    chunk_base64: str
+    final_chunk: bool
+    frame_digest: str
+    frame_type: ClassVar[str] = "WORKER_DIAGNOSTIC"
+
+    def __post_init__(self) -> None:
+        _frame_identity_payload(self.frame_type, self.identity)
+        if self.stream not in ("STDOUT", "STDERR"):
+            raise ValueError("diagnostic stream must be STDOUT or STDERR")
+        _validate_positive_bounded_integer(
+            self.chunk_sequence, field="chunkSequence", maximum=_I_JSON_INTEGER_MAX
+        )
+        if type(self.chunk_base64) is not str or len(self.chunk_base64) > 87384:
+            raise ValueError("diagnostic chunk exceeds encoded byte limit")
+        try:
+            chunk = base64.b64decode(self.chunk_base64, validate=True)
+        except (ValueError, binascii.Error) as error:
+            raise ValueError("diagnostic chunk must be canonical base64") from error
+        if len(chunk) > 65536 or base64.b64encode(chunk).decode("ascii") != self.chunk_base64:
+            raise ValueError("diagnostic chunk is noncanonical or oversized")
+        if type(self.final_chunk) is not bool:
+            raise ValueError("finalChunk must be boolean")
+        self._validate_digest()
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            **_frame_identity_payload(self.frame_type, self.identity),
+            "stream": self.stream, "chunkSequence": self.chunk_sequence,
+            "chunkBase64": self.chunk_base64, "finalChunk": self.final_chunk,
+        }
+
+
+@dataclass(frozen=True)
+class WorkerExitedFrame(_SupervisorFrame):
+    identity: WorkerRequestIdentity
+    exit_code: int
+    frame_digest: str
+    frame_type: ClassVar[str] = "WORKER_EXITED"
+
+    def __post_init__(self) -> None:
+        _frame_identity_payload(self.frame_type, self.identity)
+        if type(self.exit_code) is not int or not 0 <= self.exit_code <= 255:
+            raise ValueError("exitCode must be a POSIX exit status in 0..255")
+        self._validate_digest()
+
+    def _payload(self) -> dict[str, object]:
+        return {**_frame_identity_payload(self.frame_type, self.identity), "exitCode": self.exit_code}
+
+
+@dataclass(frozen=True)
+class WorkerSignaledFrame(_SupervisorFrame):
+    identity: WorkerRequestIdentity
+    signal_number: int
+    frame_digest: str
+    frame_type: ClassVar[str] = "WORKER_SIGNALED"
+
+    def __post_init__(self) -> None:
+        _frame_identity_payload(self.frame_type, self.identity)
+        _validate_positive_bounded_integer(self.signal_number, field="signalNumber", maximum=127)
+        self._validate_digest()
+
+    def _payload(self) -> dict[str, object]:
+        return {**_frame_identity_payload(self.frame_type, self.identity), "signalNumber": self.signal_number}
+
+
+@dataclass(frozen=True)
+class WorkerTimeoutFrame(_SupervisorFrame):
+    identity: WorkerRequestIdentity
+    deadline_owner: str
+    frame_digest: str
+    frame_type: ClassVar[str] = "WORKER_TIMEOUT"
+
+    def __post_init__(self) -> None:
+        _frame_identity_payload(self.frame_type, self.identity)
+        if self.deadline_owner not in ("CHILD_ITIMER_REAL", "SUPERVISOR_MONOTONIC"):
+            raise ValueError("unknown deadline owner")
+        self._validate_digest()
+
+    def _payload(self) -> dict[str, object]:
+        return {**_frame_identity_payload(self.frame_type, self.identity), "deadlineOwner": self.deadline_owner}
+
+
+@dataclass(frozen=True)
+class WorkerCancelledFrame(_SupervisorFrame):
+    identity: WorkerRequestIdentity
+    reason: str
+    frame_digest: str
+    frame_type: ClassVar[str] = "WORKER_CANCELLED"
+
+    def __post_init__(self) -> None:
+        _frame_identity_payload(self.frame_type, self.identity)
+        if self.reason not in ("ORCHESTRATOR_CANCEL", "SESSION_CLOSE"):
+            raise ValueError("unknown cancellation reason")
+        self._validate_digest()
+
+    def _payload(self) -> dict[str, object]:
+        return {**_frame_identity_payload(self.frame_type, self.identity), "reason": self.reason}
+
+
+@dataclass(frozen=True)
+class WorkerCancelRequestFrame(WorkerCancelledFrame):
+    frame_type: ClassVar[str] = "WORKER_CANCEL_REQUEST"
+
+
+@dataclass(frozen=True)
+class SupervisorCloseFrame(_SupervisorFrame):
+    supervisor_session_id: str
+    last_sequence: int
+    frame_digest: str
+    frame_type: ClassVar[str] = "SUPERVISOR_CLOSE"
+
+    def __post_init__(self) -> None:
+        _validate_non_empty_utf8(
+            self.supervisor_session_id, field="supervisorSessionId", maximum_bytes=256
+        )
+        if type(self.last_sequence) is not int or not 0 <= self.last_sequence <= _I_JSON_INTEGER_MAX:
+            raise ValueError("lastSequence must be a nonnegative I-JSON integer")
+        self._validate_digest()
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "frameType": self.frame_type, "supervisorSessionId": self.supervisor_session_id,
+            "lastSequence": self.last_sequence,
+        }
+
+
+@dataclass(frozen=True)
+class SupervisorCloseAckFrame(SupervisorCloseFrame):
+    all_workers_reaped: bool = True
+    frame_type: ClassVar[str] = "SUPERVISOR_CLOSE_ACK"
+
+    def __post_init__(self) -> None:
+        if self.all_workers_reaped is not True:
+            raise ValueError("close acknowledgement requires allWorkersReaped=true")
+        super().__post_init__()
+
+    def _payload(self) -> dict[str, object]:
+        return {**super()._payload(), "allWorkersReaped": self.all_workers_reaped}
+
+
+_SUPERVISOR_SCALAR_FRAME_BRANCHES = {
+    "SUPERVISOR_READY": (SupervisorReadyFrame, ("supervisorSessionId", "supervisorRuntimeDigest", "protocolVersion")),
+    "DESCRIPTOR_TRANSFER": (DescriptorTransferFrame, ("identity", "descriptorClaimDigests")),
+    "REQUEST_ACCEPTED": (RequestAcceptedFrame, ("identity", "acceptedDescriptorClaimDigests")),
+    "WORKER_ARMED": (WorkerArmedFrame, ("identity", "pid", "pgid", "timerKind", "timerSeconds")),
+    "WORKER_READY": (WorkerReadyFrame, ("identity", "validatedDescriptorClaimDigests", "timerRemainingMicros")),
+    "WORKER_DIAGNOSTIC": (WorkerDiagnosticFrame, ("identity", "stream", "chunkSequence", "chunkBase64", "finalChunk")),
+    "WORKER_EXITED": (WorkerExitedFrame, ("identity", "exitCode")),
+    "WORKER_SIGNALED": (WorkerSignaledFrame, ("identity", "signalNumber")),
+    "WORKER_TIMEOUT": (WorkerTimeoutFrame, ("identity", "deadlineOwner")),
+    "WORKER_CANCELLED": (WorkerCancelledFrame, ("identity", "reason")),
+    "WORKER_CANCEL_REQUEST": (WorkerCancelRequestFrame, ("identity", "reason")),
+    "SUPERVISOR_CLOSE": (SupervisorCloseFrame, ("supervisorSessionId", "lastSequence")),
+    "SUPERVISOR_CLOSE_ACK": (SupervisorCloseAckFrame, ("supervisorSessionId", "lastSequence", "allWorkersReaped")),
+}
+
+
+def supervisor_scalar_frame_from_bytes(
+    wire: bytes, *, ancillary: bool = False,
+    expected_identity: WorkerRequestIdentity | None = None,
+) -> _SupervisorFrame:
+    """Decode a closed scalar frame on its designated channel before correlation."""
+    if type(ancillary) is not bool:
+        raise ValueError("ancillary must be boolean")
+    limit = 4096 if ancillary else 2097152
+    if type(wire) is not bytes or not 1 <= len(wire) <= limit:
+        raise ValueError("supervisor frame exceeds channel byte limit")
+    value = _strict_json_value(wire)
+    if not isinstance(value, Mapping):
+        raise ValueError("supervisor frame must be an object")
+    frame_type = value.get("frameType")
+    if type(frame_type) is not str or frame_type not in _SUPERVISOR_SCALAR_FRAME_BRANCHES:
+        raise ValueError("unknown scalar supervisor frame type")
+    if ancillary != (frame_type == "DESCRIPTOR_TRANSFER"):
+        raise ValueError("supervisor frame belongs to another channel")
+    frame_class, fields = _SUPERVISOR_SCALAR_FRAME_BRANCHES[frame_type]
+    data = _closed_mapping(
+        value, schema=frame_class.__name__,
+        keys=frozenset(("frameType", "frameDigest", *fields)),
+    )
+    values = []
+    for field in fields:
+        item = data[field]
+        if field == "identity":
+            item = WorkerRequestIdentity.from_dict(item)
+        elif field.endswith("DescriptorClaimDigests") or field == "descriptorClaimDigests":
+            if type(item) is not list or len(item) > 2:
+                raise ValueError("descriptor digest echo must be a bounded array")
+            item = tuple(item)
+        values.append(item)
+    if frame_class is SupervisorCloseAckFrame:
+        frame = frame_class(values[0], values[1], data["frameDigest"], values[2])
+    else:
+        frame = frame_class(*values, data["frameDigest"])
+    if expected_identity is not None:
+        if type(expected_identity) is not WorkerRequestIdentity or getattr(frame, "identity", None) != expected_identity:
+            raise ValueError("supervisor frame belongs to another request")
+    return frame
+
+
+class SupervisorSession:
+    """Pure six-kind admission state; runtime owns allocation, I/O and reaping."""
+
+    def __init__(self, supervisor_session_id: str, supervisor_runtime_digest: str):
+        _validate_non_empty_utf8(
+            supervisor_session_id, field="supervisorSessionId", maximum_bytes=256
+        )
+        validate_sha256(supervisor_runtime_digest)
+        self.supervisor_session_id = supervisor_session_id
+        self.supervisor_runtime_digest = supervisor_runtime_digest
+        self.state = "STARTING"
+        self.failure_code: FinalizerFailureCode | None = None
+        self.closed_after_failure = False
+        self.next_sequence = 1
+        self.phase: str | None = None
+        self.request: WorkerRequest | None = None
+        self.cancel_reason: str | None = None
+        self.timer_seconds: int | None = None
+        self._diagnostic_bytes = {"STDOUT": 0, "STDERR": 0}
+        self._diagnostic_sequence = {"STDOUT": 1, "STDERR": 1}
+        self._diagnostic_closed = {"STDOUT": False, "STDERR": False}
+
+    def accept(self, frame: object) -> None:
+        """Reject any bad transition permanently; runtime owner must kill/reap."""
+        try:
+            self._accept(frame)
+        except ValueError:
+            self.state = "FAILED"
+            self.failure_code = FinalizerFailureCode.SUPERVISOR_FAILED
+            raise
+
+    def _accept(self, frame: object) -> None:
+        if type(frame) is SupervisorReadyFrame:
+            if (
+                self.state != "STARTING"
+                or frame.supervisor_session_id != self.supervisor_session_id
+                or frame.supervisor_runtime_digest != self.supervisor_runtime_digest
+            ):
+                raise ValueError("READY does not match the starting supervisor")
+            self.state = "READY"
+            return
+        if type(frame) is SupervisorCloseFrame:
+            if (
+                self.state not in ("READY", "FAILED") or self.request is not None
+                or frame.supervisor_session_id != self.supervisor_session_id
+                or frame.last_sequence != self.next_sequence - 1
+            ):
+                raise ValueError("session cannot close with an outstanding worker")
+            self.state = "CLOSING"
+            return
+        if type(frame) is SupervisorCloseAckFrame:
+            if (
+                self.state != "CLOSING"
+                or frame.supervisor_session_id != self.supervisor_session_id
+                or frame.last_sequence != self.next_sequence - 1
+            ):
+                raise ValueError("unexpected close acknowledgement")
+            self.closed_after_failure = self.failure_code is not None
+            self.state = "CLOSED"
+            return
+        if type(frame) is WorkerRequestFrame:
+            if (
+                self.state != "READY"
+                or frame.identity.supervisor_session_id != self.supervisor_session_id
+                or frame.identity.sequence != self.next_sequence
+            ):
+                raise ValueError("request sequence/session does not match READY")
+            self.request = frame.request
+            self.state = "REQUEST_ACTIVE"
+            self.phase = "REQUEST_SENT"
+            self.cancel_reason = None
+            self.timer_seconds = None
+            self._diagnostic_bytes = {"STDOUT": 0, "STDERR": 0}
+            self._diagnostic_sequence = {"STDOUT": 1, "STDERR": 1}
+            self._diagnostic_closed = {"STDOUT": False, "STDERR": False}
+            return
+        if (
+            self.state != "REQUEST_ACTIVE" or self.request is None
+            or getattr(frame, "identity", None) != self.request.identity
+        ):
+            raise ValueError("frame does not match the active request")
+        if type(frame) is DescriptorTransferFrame:
+            if self.phase != "REQUEST_SENT" or not self.request.identity.descriptor_claims:
+                raise ValueError("descriptor transfer is out of order")
+            self.phase = "DESCRIPTORS_SENT"
+            return
+        if type(frame) is RequestAcceptedFrame:
+            expected_phase = (
+                "DESCRIPTORS_SENT" if self.request.identity.descriptor_claims else "REQUEST_SENT"
+            )
+            if self.phase != expected_phase:
+                raise ValueError("request accepted before descriptor transfer")
+            self.phase = "ACCEPTED"
+            return
+        if type(frame) is WorkerArmedFrame:
+            if self.phase != "ACCEPTED" or frame.timer_seconds != worker_timeout_seconds(self.request):
+                raise ValueError("worker timer acknowledgement does not match request")
+            self.timer_seconds = frame.timer_seconds
+            self.phase = "ARMED"
+            return
+        if type(frame) is WorkerReadyFrame:
+            if (
+                self.phase != "ARMED" or self.timer_seconds is None
+                or frame.timer_remaining_micros > self.timer_seconds * 1000000
+            ):
+                raise ValueError("worker ready has no matching armed timer")
+            self.phase = "WORKER_READY"
+            return
+        if type(frame) is WorkerDiagnosticFrame:
+            if (
+                self.phase != "WORKER_READY" or self.cancel_reason is not None
+                or self._diagnostic_closed[frame.stream]
+                or frame.chunk_sequence != self._diagnostic_sequence[frame.stream]
+            ):
+                raise ValueError("diagnostic chunk is out of order")
+            total = self._diagnostic_bytes[frame.stream] + len(
+                base64.b64decode(frame.chunk_base64, validate=True)
+            )
+            if total > 262144:
+                raise ValueError("diagnostic stream exceeds cumulative byte limit")
+            self._diagnostic_bytes[frame.stream] = total
+            self._diagnostic_sequence[frame.stream] += 1
+            self._diagnostic_closed[frame.stream] = frame.final_chunk
+            return
+        if type(frame) is WorkerResultFrame:
+            if self.phase != "WORKER_READY" or self.cancel_reason is not None:
+                raise ValueError("worker result before READY or after cancellation")
+            worker_result_from_dict(frame.result.to_dict(), self.request)
+            self.phase = "RESULT_RECEIVED"
+            return
+        if type(frame) is WorkerCancelRequestFrame:
+            if self.phase not in ("ACCEPTED", "ARMED", "WORKER_READY") or self.cancel_reason is not None:
+                raise ValueError("cancel request is out of order")
+            self.cancel_reason = frame.reason
+            return
+        if type(frame) is WorkerCancelledFrame:
+            if self.cancel_reason != frame.reason:
+                raise ValueError("cancellation lacks a matching request")
+            self._finish()
+            return
+        if type(frame) is WorkerExitedFrame:
+            if frame.exit_code == 0 and (
+                self.phase != "RESULT_RECEIVED" or self.cancel_reason is not None
+            ):
+                raise ValueError("successful exit requires a prior result")
+            if self.phase not in ("ACCEPTED", "ARMED", "WORKER_READY", "RESULT_RECEIVED"):
+                raise ValueError("exit before request acceptance")
+            self._finish()
+            if frame.exit_code != 0:
+                self.state = "FAILED"
+                self.failure_code = FinalizerFailureCode.PROCESS_FAILED
+            return
+        if type(frame) in (WorkerSignaledFrame, WorkerTimeoutFrame):
+            if self.phase not in ("ACCEPTED", "ARMED", "WORKER_READY", "RESULT_RECEIVED"):
+                raise ValueError("terminal worker frame before acceptance")
+            self._finish()
+            self.state = "FAILED"
+            self.failure_code = (
+                FinalizerFailureCode.TIMED_OUT
+                if type(frame) is WorkerTimeoutFrame else FinalizerFailureCode.PROCESS_FAILED
+            )
+            return
+        raise ValueError("frame is outside the supervisor contract")
+
+    def _finish(self) -> None:
+        self.request = None
+        self.phase = None
+        self.cancel_reason = None
+        self.timer_seconds = None
+        self.next_sequence += 1
+        self.state = "READY"
+
+    def acknowledge_reaped_after_failure(self, identity: WorkerRequestIdentity) -> None:
+        """Runtime may clear an active failed request only after actual kill/reap."""
+        if self.state != "FAILED" or self.request is None or identity != self.request.identity:
+            raise ValueError("reap acknowledgement does not match failed request")
+        self.request = None
+        self.phase = None
+        self.next_sequence += 1
+
+    def accept_eof(self) -> None:
+        if self.state != "CLOSED":
+            self.state = "FAILED"
+            self.failure_code = FinalizerFailureCode.SUPERVISOR_FAILED
+            raise ValueError("supervisor EOF without terminal close acknowledgement")
 
 
 @dataclass(frozen=True)
@@ -2524,6 +4012,365 @@ class FinalizerProtectedBaseline:
 
 
 @dataclass(frozen=True)
+class FinalizerBootstrapBaseline:
+    schema_version: int
+    source_files: tuple[tuple[str, str], ...]
+    core_bootstrap_source_digest: str
+
+    _WIRE_KEYS: ClassVar[frozenset[str]] = frozenset(
+        {"schemaVersion", "sourceFiles", "coreBootstrapSourceDigest"}
+    )
+
+    def __post_init__(self) -> None:
+        if type(self.schema_version) is not int or self.schema_version != 1:
+            raise ValueError("schemaVersion must be 1")
+        _validate_file_identity_tuple(self.source_files, field="sourceFiles")
+        if tuple(path for path, _ in self.source_files) != (
+            FINALIZER_BOOTSTRAP_SOURCE_PATHS
+        ):
+            raise ValueError(
+                "sourceFiles must equal the fixed Core bootstrap inventory"
+            )
+        validate_sha256(self.core_bootstrap_source_digest)
+        if self.core_bootstrap_source_digest != domain_separated_sha256(
+            _CORE_BOOTSTRAP_SOURCE_DOMAIN,
+            [list(item) for item in self.source_files],
+        ):
+            raise ValueError(
+                "coreBootstrapSourceDigest does not match sourceFiles"
+            )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schemaVersion": self.schema_version,
+            "sourceFiles": [list(item) for item in self.source_files],
+            "coreBootstrapSourceDigest": self.core_bootstrap_source_digest,
+        }
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        source_files: tuple[tuple[str, str], ...],
+    ) -> "FinalizerBootstrapBaseline":
+        return cls(
+            schema_version=1,
+            source_files=source_files,
+            core_bootstrap_source_digest=domain_separated_sha256(
+                _CORE_BOOTSTRAP_SOURCE_DOMAIN,
+                [list(item) for item in source_files],
+            ),
+        )
+
+    @classmethod
+    def from_dict(cls, value: object) -> "FinalizerBootstrapBaseline":
+        data = _closed_mapping(value, schema=cls.__name__, keys=cls._WIRE_KEYS)
+        return cls(
+            schema_version=data["schemaVersion"],
+            source_files=_file_identity_tuple_from_wire(
+                data["sourceFiles"],
+                field="sourceFiles",
+            ),
+            core_bootstrap_source_digest=data["coreBootstrapSourceDigest"],
+        )
+
+
+@dataclass(frozen=True)
+class CapturedProtectedSource:
+    component: ProtectedSourceComponent
+    repo_relative_path: str
+    file_sha256: str
+    byte_length: int
+    executable_included: bool
+
+    _WIRE_KEYS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "component",
+            "repoRelativePath",
+            "fileSha256",
+            "byteLength",
+            "executableIncluded",
+        }
+    )
+
+    def __post_init__(self) -> None:
+        if type(self.component) is not ProtectedSourceComponent:
+            raise ValueError("component must be a closed protected-source component")
+        validate_repo_relative_path(self.repo_relative_path)
+        validate_sha256(self.file_sha256)
+        _validate_non_negative_integer(self.byte_length, field="byteLength")
+        if self.byte_length > 8 * 1024 * 1024:
+            raise ValueError("protected source exceeds the fixed entry limit")
+        if type(self.executable_included) is not bool:
+            raise ValueError("executableIncluded must be boolean")
+
+    @property
+    def identity_key(self) -> bytes:
+        return self.repo_relative_path.encode("utf-8")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "component": self.component.value,
+            "repoRelativePath": self.repo_relative_path,
+            "fileSha256": self.file_sha256,
+            "byteLength": self.byte_length,
+            "executableIncluded": self.executable_included,
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> "CapturedProtectedSource":
+        data = _closed_mapping(value, schema=cls.__name__, keys=cls._WIRE_KEYS)
+        return cls(
+            component=_enum_from_wire(
+                ProtectedSourceComponent,
+                data["component"],
+                field="component",
+            ),
+            repo_relative_path=data["repoRelativePath"],
+            file_sha256=data["fileSha256"],
+            byte_length=data["byteLength"],
+            executable_included=data["executableIncluded"],
+        )
+
+
+def _validate_captured_protected_sources(
+    value: object,
+) -> tuple[CapturedProtectedSource, ...]:
+    if (
+        type(value) is not tuple
+        or not value
+        or len(value) > 4096
+        or any(type(item) is not CapturedProtectedSource for item in value)
+    ):
+        raise ValueError(
+            "capturedSources must contain 1..4096 protected-source values"
+        )
+    keys = tuple(item.identity_key for item in value)
+    if len(set(keys)) != len(keys) or keys != tuple(sorted(keys)):
+        raise ValueError(
+            "capturedSources must have unique UTF-8 lexical paths"
+        )
+    if sum(item.byte_length for item in value) > 64 * 1024 * 1024:
+        raise ValueError("capturedSources exceeds the fixed expanded limit")
+    return value
+
+
+@dataclass
+class PreflightSourceCapture:
+    capture_id: str
+    workspace_id: str
+    source_commit: str
+    workspace_digest: str
+    canonical_worktree_hash: str
+    source_files: tuple[CapturedProtectedSource, ...]
+    source_capture_bundle_digest: str
+    temporary_directory_claim: DescriptorClaim
+    source_capture_digest: str
+    consumed: bool = False
+
+    _WIRE_KEYS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "captureId",
+            "workspaceId",
+            "sourceCommit",
+            "workspaceDigest",
+            "canonicalWorktreeHash",
+            "sourceFiles",
+            "sourceCaptureBundleDigest",
+            "temporaryDirectoryClaim",
+            "sourceCaptureDigest",
+            "consumed",
+        }
+    )
+
+    def __post_init__(self) -> None:
+        _validate_non_empty_utf8(
+            self.capture_id,
+            field="captureId",
+            maximum_bytes=256,
+        )
+        _validate_workspace_id(self.workspace_id)
+        _validate_non_empty_utf8(self.source_commit, field="sourceCommit")
+        _validate_non_empty_utf8(self.workspace_digest, field="workspaceDigest")
+        validate_sha256(self.canonical_worktree_hash)
+        _validate_captured_protected_sources(self.source_files)
+        validate_sha256(self.source_capture_bundle_digest)
+        if (
+            type(self.temporary_directory_claim) is not DescriptorClaim
+            or self.temporary_directory_claim.role
+            is not DescriptorRole.TEMPORARY_DIRECTORY
+        ):
+            raise ValueError(
+                "temporaryDirectoryClaim must bind a temporary directory"
+            )
+        if type(self.consumed) is not bool:
+            raise ValueError("consumed must be boolean")
+        validate_sha256(self.source_capture_digest)
+        if self.source_capture_digest != self.expected_digest():
+            raise ValueError("sourceCaptureDigest does not match capture")
+
+    def _digest_payload(self) -> dict[str, object]:
+        return {
+            "captureId": self.capture_id,
+            "workspaceId": self.workspace_id,
+            "sourceCommit": self.source_commit,
+            "workspaceDigest": self.workspace_digest,
+            "canonicalWorktreeHash": self.canonical_worktree_hash,
+            "sourceFiles": [item.to_dict() for item in self.source_files],
+            "sourceCaptureBundleDigest": self.source_capture_bundle_digest,
+        }
+
+    def expected_digest(self) -> str:
+        return domain_separated_sha256(
+            _SOURCE_CAPTURE_DOMAIN,
+            self._digest_payload(),
+        )
+
+    def consume(self) -> None:
+        if self.consumed:
+            raise ValueError("source capture is already consumed")
+        self.consumed = True
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            **self._digest_payload(),
+            "temporaryDirectoryClaim": self.temporary_directory_claim.to_dict(),
+            "sourceCaptureDigest": self.source_capture_digest,
+            "consumed": self.consumed,
+        }
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        capture_id: str,
+        workspace_id: str,
+        source_commit: str,
+        workspace_digest: str,
+        canonical_worktree_hash: str,
+        source_files: tuple[CapturedProtectedSource, ...],
+        source_capture_bundle_digest: str,
+        temporary_directory_claim: DescriptorClaim,
+    ) -> "PreflightSourceCapture":
+        payload = {
+            "captureId": capture_id,
+            "workspaceId": workspace_id,
+            "sourceCommit": source_commit,
+            "workspaceDigest": workspace_digest,
+            "canonicalWorktreeHash": canonical_worktree_hash,
+            "sourceFiles": [item.to_dict() for item in source_files],
+            "sourceCaptureBundleDigest": source_capture_bundle_digest,
+        }
+        return cls(
+            capture_id=capture_id,
+            workspace_id=workspace_id,
+            source_commit=source_commit,
+            workspace_digest=workspace_digest,
+            canonical_worktree_hash=canonical_worktree_hash,
+            source_files=source_files,
+            source_capture_bundle_digest=source_capture_bundle_digest,
+            temporary_directory_claim=temporary_directory_claim,
+            source_capture_digest=domain_separated_sha256(
+                _SOURCE_CAPTURE_DOMAIN,
+                payload,
+            ),
+        )
+
+    @classmethod
+    def from_dict(cls, value: object) -> "PreflightSourceCapture":
+        data = _closed_mapping(value, schema=cls.__name__, keys=cls._WIRE_KEYS)
+        source_files = data["sourceFiles"]
+        if type(source_files) is not list:
+            raise ValueError("sourceFiles must be an array")
+        return cls(
+            capture_id=data["captureId"],
+            workspace_id=data["workspaceId"],
+            source_commit=data["sourceCommit"],
+            workspace_digest=data["workspaceDigest"],
+            canonical_worktree_hash=data["canonicalWorktreeHash"],
+            source_files=tuple(
+                CapturedProtectedSource.from_dict(item)
+                for item in source_files
+            ),
+            source_capture_bundle_digest=data["sourceCaptureBundleDigest"],
+            temporary_directory_claim=DescriptorClaim.from_dict(
+                data["temporaryDirectoryClaim"]
+            ),
+            source_capture_digest=data["sourceCaptureDigest"],
+            consumed=data["consumed"],
+        )
+
+
+@dataclass(frozen=True)
+class ProtectedSourceArtifact:
+    component: ProtectedSourceComponent
+    repo_relative_path: str
+    ref: ArtifactRef
+    file_sha256: str
+    byte_length: int
+    executable_included: bool
+
+    _WIRE_KEYS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "component",
+            "repoRelativePath",
+            "ref",
+            "fileSha256",
+            "byteLength",
+            "executableIncluded",
+        }
+    )
+
+    def __post_init__(self) -> None:
+        CapturedProtectedSource(
+            component=self.component,
+            repo_relative_path=self.repo_relative_path,
+            file_sha256=self.file_sha256,
+            byte_length=self.byte_length,
+            executable_included=self.executable_included,
+        )
+        _validate_ref_content(self.ref, field="ref", sha256=self.file_sha256)
+        if self.ref.path != self.repo_relative_path:
+            raise ValueError("ref path must equal repoRelativePath")
+
+    @property
+    def captured(self) -> CapturedProtectedSource:
+        return CapturedProtectedSource(
+            component=self.component,
+            repo_relative_path=self.repo_relative_path,
+            file_sha256=self.file_sha256,
+            byte_length=self.byte_length,
+            executable_included=self.executable_included,
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "component": self.component.value,
+            "repoRelativePath": self.repo_relative_path,
+            "ref": self.ref.to_dict(),
+            "fileSha256": self.file_sha256,
+            "byteLength": self.byte_length,
+            "executableIncluded": self.executable_included,
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> "ProtectedSourceArtifact":
+        data = _closed_mapping(value, schema=cls.__name__, keys=cls._WIRE_KEYS)
+        return cls(
+            component=_enum_from_wire(
+                ProtectedSourceComponent,
+                data["component"],
+                field="component",
+            ),
+            repo_relative_path=data["repoRelativePath"],
+            ref=ArtifactRef.from_dict(data["ref"]),
+            file_sha256=data["fileSha256"],
+            byte_length=data["byteLength"],
+            executable_included=data["executableIncluded"],
+        )
+
+
+@dataclass(frozen=True)
 class FinalizerExecutableArtifact:
     ref: ArtifactRef
     bundle_format: str
@@ -2835,6 +4682,13 @@ class StdlibModuleIdentity:
             ),
         }
 
+    def without_artifact_ref_dict(self) -> dict[str, object]:
+        return {
+            "moduleName": self.module_name,
+            "originKind": self.origin_kind.value,
+            "fileSha256": self.file_sha256,
+        }
+
     @classmethod
     def create(
         cls,
@@ -2985,9 +4839,12 @@ class LoadedRuntimeImage:
             raise ValueError(
                 "DARWIN_SHARED_CACHE forbids fileSha256 and artifactRef"
             )
+        if self.code_directory_hash is not None:
+            raise ValueError(
+                "DARWIN_SHARED_CACHE uses signed cache UUID plus Mach-O UUID, not per-image CDHash"
+            )
         for field, value in (
             ("machoUuid", self.macho_uuid),
-            ("codeDirectoryHash", self.code_directory_hash),
             ("sharedCacheUuid", self.shared_cache_uuid),
         ):
             _validate_non_empty_utf8(value, field=field, maximum_bytes=256)
@@ -3109,9 +4966,12 @@ class PreflightLoadedRuntimeImage:
             return
         if self.file_sha256 is not None:
             raise ValueError("DARWIN_SHARED_CACHE forbids fileSha256")
+        if self.code_directory_hash is not None:
+            raise ValueError(
+                "DARWIN_SHARED_CACHE uses signed cache UUID plus Mach-O UUID, not per-image CDHash"
+            )
         for field, value in (
             ("machoUuid", self.macho_uuid),
-            ("codeDirectoryHash", self.code_directory_hash),
             ("sharedCacheUuid", self.shared_cache_uuid),
         ):
             _validate_non_empty_utf8(value, field=field, maximum_bytes=256)
@@ -3172,6 +5032,68 @@ class PreflightLoadedRuntimeImage:
             macho_uuid=data["machoUuid"],
             code_directory_hash=data["codeDirectoryHash"],
             shared_cache_uuid=data["sharedCacheUuid"],
+        )
+
+
+@dataclass(frozen=True)
+class RuntimePathInput:
+    """Ephemeral lexical path contract; worker must verify the live realpath."""
+
+    kind: RuntimePathKind
+    module_name: str | None
+    absolute_path: str
+    expected_path_hash: str
+
+    _WIRE_KEYS: ClassVar[frozenset[str]] = frozenset(
+        {"kind", "moduleName", "absolutePath", "expectedPathHash"}
+    )
+
+    def __post_init__(self) -> None:
+        if type(self.kind) is not RuntimePathKind:
+            raise ValueError("kind must be a closed runtime path kind")
+        if self.kind is RuntimePathKind.STDLIB_MODULE:
+            _validate_non_empty_utf8(
+                self.module_name, field="moduleName", maximum_bytes=512
+            )
+        elif self.module_name is not None:
+            raise ValueError("non-module runtime paths forbid moduleName")
+        path = _validate_non_empty_utf8(
+            self.absolute_path, field="absolutePath", maximum_bytes=4096
+        )
+        if (
+            not path.startswith("/")
+            or path.startswith("//")
+            or posixpath.normpath(path) != path
+        ):
+            raise ValueError("absolutePath must be a normalized POSIX absolute path")
+        validate_sha256(self.expected_path_hash)
+        if raw_sha256(path.encode("utf-8")) != self.expected_path_hash:
+            raise ValueError("expectedPathHash does not match canonical path bytes")
+
+    @property
+    def identity_key(self) -> tuple[bytes, bytes, bytes]:
+        return (
+            self.kind.value.encode("ascii"),
+            _nullable_string_sort_key(self.module_name),
+            self.expected_path_hash.encode("ascii"),
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "kind": self.kind.value,
+            "moduleName": self.module_name,
+            "absolutePath": self.absolute_path,
+            "expectedPathHash": self.expected_path_hash,
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> "RuntimePathInput":
+        data = _closed_mapping(value, schema=cls.__name__, keys=cls._WIRE_KEYS)
+        return cls(
+            kind=_enum_from_wire(RuntimePathKind, data["kind"], field="kind"),
+            module_name=data["moduleName"],
+            absolute_path=data["absolutePath"],
+            expected_path_hash=data["expectedPathHash"],
         )
 
 
@@ -3296,6 +5218,100 @@ class CapturedRuntimeFile:
                 )
             ),
             path_hash=data["pathHash"],
+            file_sha256=data["fileSha256"],
+            byte_length=data["byteLength"],
+        )
+
+
+@dataclass(frozen=True)
+class RuntimeEvidenceArtifact:
+    kind: RuntimeFileKind
+    module_name: str | None
+    logical_name: str | None
+    origin_kind: RuntimeImageOriginKind | None
+    path_hash: str
+    ref: ArtifactRef
+    file_sha256: str
+    byte_length: int
+
+    _WIRE_KEYS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "kind",
+            "moduleName",
+            "logicalName",
+            "originKind",
+            "pathHash",
+            "ref",
+            "fileSha256",
+            "byteLength",
+        }
+    )
+
+    def __post_init__(self) -> None:
+        CapturedRuntimeFile(
+            kind=self.kind,
+            module_name=self.module_name,
+            logical_name=self.logical_name,
+            origin_kind=self.origin_kind,
+            path_hash=self.path_hash,
+            file_sha256=self.file_sha256,
+            byte_length=self.byte_length,
+        )
+        _validate_ref_content(self.ref, field="ref", sha256=self.file_sha256)
+
+    @property
+    def identity_key(self) -> tuple[bytes, bytes, bytes, bytes]:
+        return self.captured.identity_key
+
+    @property
+    def captured(self) -> CapturedRuntimeFile:
+        return CapturedRuntimeFile(
+            kind=self.kind,
+            module_name=self.module_name,
+            logical_name=self.logical_name,
+            origin_kind=self.origin_kind,
+            path_hash=self.path_hash,
+            file_sha256=self.file_sha256,
+            byte_length=self.byte_length,
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "kind": self.kind.value,
+            "moduleName": self.module_name,
+            "logicalName": self.logical_name,
+            "originKind": (
+                None if self.origin_kind is None else self.origin_kind.value
+            ),
+            "pathHash": self.path_hash,
+            "ref": self.ref.to_dict(),
+            "fileSha256": self.file_sha256,
+            "byteLength": self.byte_length,
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> "RuntimeEvidenceArtifact":
+        data = _closed_mapping(value, schema=cls.__name__, keys=cls._WIRE_KEYS)
+        origin_kind = data["originKind"]
+        return cls(
+            kind=_enum_from_wire(
+                RuntimeFileKind,
+                data["kind"],
+                field="kind",
+            ),
+            module_name=data["moduleName"],
+            logical_name=data["logicalName"],
+            origin_kind=(
+                None
+                if origin_kind is None
+                else _enum_from_wire(
+                    RuntimeImageOriginKind,
+                    origin_kind,
+                    field="originKind",
+                )
+            ),
+            path_hash=data["pathHash"],
+            ref=ArtifactRef.from_dict(data["ref"]),
             file_sha256=data["fileSha256"],
             byte_length=data["byteLength"],
         )
@@ -3787,6 +5803,1008 @@ class RuntimePlatformAttestation:
 
 
 @dataclass(frozen=True)
+class PreflightRuntimePlatformAttestation:
+    os_family: RuntimeOsFamily
+    host_build: RuntimeHostBuild
+    dynamic_loader_identity: PreflightLoadedRuntimeImage
+    shared_cache_uuid: str | None
+    loaded_images: tuple[PreflightLoadedRuntimeImage, ...]
+    preflight_platform_runtime_digest: str
+
+    _WIRE_KEYS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "osFamily", "hostBuild", "dynamicLoaderIdentity", "sharedCacheUuid",
+            "loadedImages", "preflightPlatformRuntimeDigest",
+        }
+    )
+
+    def __post_init__(self) -> None:
+        if type(self.os_family) is not RuntimeOsFamily:
+            raise ValueError("osFamily must be a closed runtime OS family")
+        expected_build_type = (
+            DarwinRuntimeHostBuild
+            if self.os_family is RuntimeOsFamily.DARWIN
+            else LinuxRuntimeHostBuild
+        )
+        if type(self.host_build) is not expected_build_type:
+            raise ValueError("hostBuild must match osFamily")
+        if type(self.dynamic_loader_identity) is not PreflightLoadedRuntimeImage:
+            raise ValueError("dynamicLoaderIdentity must be a preflight image")
+        if self.dynamic_loader_identity.logical_name != "dynamic-loader":
+            raise ValueError("dynamic loader logicalName must be dynamic-loader")
+        if (
+            type(self.loaded_images) is not tuple
+            or not self.loaded_images
+            or any(type(item) is not PreflightLoadedRuntimeImage for item in self.loaded_images)
+        ):
+            raise ValueError("loadedImages must be a non-empty tuple of preflight images")
+        keys = tuple(item.identity_key for item in self.loaded_images)
+        if len(set(keys)) != len(keys) or keys != tuple(sorted(keys)):
+            raise ValueError("loadedImages must have unique, canonical identities")
+        if self.dynamic_loader_identity not in self.loaded_images:
+            raise ValueError("dynamicLoaderIdentity must be an identity-equal member")
+        if self.os_family is RuntimeOsFamily.DARWIN:
+            _validate_non_empty_utf8(
+                self.shared_cache_uuid, field="sharedCacheUuid", maximum_bytes=256
+            )
+            if any(
+                image.origin_kind is RuntimeImageOriginKind.DARWIN_SHARED_CACHE
+                and image.shared_cache_uuid != self.shared_cache_uuid
+                for image in self.loaded_images
+            ):
+                raise ValueError("shared-cache UUID must match platform inventory")
+        elif self.shared_cache_uuid is not None or any(
+            item.origin_kind is not RuntimeImageOriginKind.STANDALONE_FILE
+            for item in self.loaded_images
+        ):
+            raise ValueError("LINUX forbids shared-cache fields and images")
+        validate_sha256(self.preflight_platform_runtime_digest)
+        if self.preflight_platform_runtime_digest != self.expected_digest():
+            raise ValueError("preflightPlatformRuntimeDigest does not match platform")
+
+    def _digest_payload(self) -> dict[str, object]:
+        return {
+            "osFamily": self.os_family.value,
+            "hostBuild": self.host_build.to_dict(),
+            "dynamicLoaderIdentity": self.dynamic_loader_identity.to_dict(),
+            "sharedCacheUuid": self.shared_cache_uuid,
+            "loadedImages": [item.to_dict() for item in self.loaded_images],
+        }
+
+    def expected_digest(self) -> str:
+        return domain_separated_sha256(
+            _PREFLIGHT_PLATFORM_RUNTIME_DOMAIN, self._digest_payload()
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            **self._digest_payload(),
+            "preflightPlatformRuntimeDigest": self.preflight_platform_runtime_digest,
+        }
+
+    @classmethod
+    def create(
+        cls, *, os_family: RuntimeOsFamily, host_build: RuntimeHostBuild,
+        dynamic_loader_identity: PreflightLoadedRuntimeImage,
+        shared_cache_uuid: str | None,
+        loaded_images: tuple[PreflightLoadedRuntimeImage, ...],
+    ) -> "PreflightRuntimePlatformAttestation":
+        payload = {
+            "osFamily": os_family.value,
+            "hostBuild": host_build.to_dict(),
+            "dynamicLoaderIdentity": dynamic_loader_identity.to_dict(),
+            "sharedCacheUuid": shared_cache_uuid,
+            "loadedImages": [item.to_dict() for item in loaded_images],
+        }
+        return cls(
+            os_family, host_build, dynamic_loader_identity, shared_cache_uuid,
+            loaded_images,
+            domain_separated_sha256(_PREFLIGHT_PLATFORM_RUNTIME_DOMAIN, payload),
+        )
+
+    @classmethod
+    def from_dict(cls, value: object) -> "PreflightRuntimePlatformAttestation":
+        data = _closed_mapping(value, schema=cls.__name__, keys=cls._WIRE_KEYS)
+        if type(data["loadedImages"]) is not list:
+            raise ValueError("loadedImages must be an array")
+        return cls(
+            os_family=_enum_from_wire(RuntimeOsFamily, data["osFamily"], field="osFamily"),
+            host_build=runtime_host_build_from_dict(data["hostBuild"]),
+            dynamic_loader_identity=PreflightLoadedRuntimeImage.from_dict(
+                data["dynamicLoaderIdentity"]
+            ),
+            shared_cache_uuid=data["sharedCacheUuid"],
+            loaded_images=tuple(
+                PreflightLoadedRuntimeImage.from_dict(item) for item in data["loadedImages"]
+            ),
+            preflight_platform_runtime_digest=data["preflightPlatformRuntimeDigest"],
+        )
+
+
+@dataclass(frozen=True)
+class PreflightRuntimeMeasurement:
+    supervisor_source_path: str
+    supervisor_source_file_sha256: str
+    supervisor_binary_sha256: str
+    supervisor_build_identity: PreflightSupervisorBuildIdentity
+    protocol_version: int
+    executable_path_hash: str
+    executable_sha256: str
+    implementation: str
+    version: str
+    stdlib_modules: tuple[PreflightStdlibModuleIdentity, ...]
+    stdlib_digest: str
+    platform_runtime: PreflightRuntimePlatformAttestation
+    core_bootstrap_source_digest: str
+    preflight_runtime_digest: str
+
+    _WIRE_KEYS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "supervisorSourcePath", "supervisorSourceFileSha256",
+            "supervisorBinarySha256", "supervisorBuildIdentity", "protocolVersion",
+            "executablePathHash", "executableSha256", "implementation", "version",
+            "stdlibModules", "stdlibDigest", "platformRuntime",
+            "coreBootstrapSourceDigest", "preflightRuntimeDigest",
+        }
+    )
+
+    def __post_init__(self) -> None:
+        validate_repo_relative_path(self.supervisor_source_path)
+        for value in (
+            self.supervisor_source_file_sha256, self.supervisor_binary_sha256,
+            self.executable_path_hash, self.executable_sha256,
+            self.core_bootstrap_source_digest, self.stdlib_digest,
+            self.preflight_runtime_digest,
+        ):
+            validate_sha256(value)
+        if type(self.supervisor_build_identity) is not PreflightSupervisorBuildIdentity:
+            raise ValueError("supervisorBuildIdentity must be a preflight build")
+        if type(self.protocol_version) is not int or self.protocol_version != 1:
+            raise ValueError("protocolVersion must be integer 1")
+        _validate_non_empty_utf8(self.implementation, field="implementation")
+        _validate_non_empty_utf8(self.version, field="version")
+        if type(self.stdlib_modules) is not tuple or any(
+            type(item) is not PreflightStdlibModuleIdentity for item in self.stdlib_modules
+        ):
+            raise ValueError("stdlibModules must be a tuple of preflight modules")
+        names = tuple(item.module_name for item in self.stdlib_modules)
+        if len(set(names)) != len(names) or names != tuple(
+            sorted(names, key=lambda name: name.encode("utf-8"))
+        ):
+            raise ValueError("stdlibModules must have unique UTF-8 lexical names")
+        if self.stdlib_digest != domain_separated_sha256(
+            _STDLIB_CLOSURE_DOMAIN, [item.to_dict() for item in self.stdlib_modules]
+        ):
+            raise ValueError("stdlibDigest does not match module closure")
+        if type(self.platform_runtime) is not PreflightRuntimePlatformAttestation:
+            raise ValueError("platformRuntime must be a preflight platform")
+        if self.preflight_runtime_digest != self.expected_digest():
+            raise ValueError("preflightRuntimeDigest does not match measurement")
+
+    def _digest_payload(self) -> dict[str, object]:
+        return {
+            "supervisorSourcePath": self.supervisor_source_path,
+            "supervisorSourceFileSha256": self.supervisor_source_file_sha256,
+            "supervisorBinarySha256": self.supervisor_binary_sha256,
+            "supervisorBuildIdentity": self.supervisor_build_identity.to_dict(),
+            "protocolVersion": self.protocol_version,
+            "executablePathHash": self.executable_path_hash,
+            "executableSha256": self.executable_sha256,
+            "implementation": self.implementation,
+            "version": self.version,
+            "stdlibModules": [item.to_dict() for item in self.stdlib_modules],
+            "stdlibDigest": self.stdlib_digest,
+            "platformRuntime": self.platform_runtime.to_dict(),
+            "coreBootstrapSourceDigest": self.core_bootstrap_source_digest,
+        }
+
+    def expected_digest(self) -> str:
+        return domain_separated_sha256(_PREFLIGHT_RUNTIME_DOMAIN, self._digest_payload())
+
+    def to_dict(self) -> dict[str, object]:
+        return {**self._digest_payload(), "preflightRuntimeDigest": self.preflight_runtime_digest}
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        supervisor_source_path: str,
+        supervisor_source_file_sha256: str,
+        supervisor_binary_sha256: str,
+        supervisor_build_identity: PreflightSupervisorBuildIdentity,
+        executable_path_hash: str,
+        executable_sha256: str,
+        implementation: str,
+        version: str,
+        stdlib_modules: tuple[PreflightStdlibModuleIdentity, ...],
+        platform_runtime: PreflightRuntimePlatformAttestation,
+        core_bootstrap_source_digest: str,
+    ) -> "PreflightRuntimeMeasurement":
+        stdlib_digest = domain_separated_sha256(
+            _STDLIB_CLOSURE_DOMAIN,
+            [item.to_dict() for item in stdlib_modules],
+        )
+        payload = {
+            "supervisorSourcePath": supervisor_source_path,
+            "supervisorSourceFileSha256": supervisor_source_file_sha256,
+            "supervisorBinarySha256": supervisor_binary_sha256,
+            "supervisorBuildIdentity": supervisor_build_identity.to_dict(),
+            "protocolVersion": 1,
+            "executablePathHash": executable_path_hash,
+            "executableSha256": executable_sha256,
+            "implementation": implementation,
+            "version": version,
+            "stdlibModules": [item.to_dict() for item in stdlib_modules],
+            "stdlibDigest": stdlib_digest,
+            "platformRuntime": platform_runtime.to_dict(),
+            "coreBootstrapSourceDigest": core_bootstrap_source_digest,
+        }
+        return cls(
+            supervisor_source_path,
+            supervisor_source_file_sha256,
+            supervisor_binary_sha256,
+            supervisor_build_identity,
+            1,
+            executable_path_hash,
+            executable_sha256,
+            implementation,
+            version,
+            stdlib_modules,
+            stdlib_digest,
+            platform_runtime,
+            core_bootstrap_source_digest,
+            domain_separated_sha256(_PREFLIGHT_RUNTIME_DOMAIN, payload),
+        )
+
+    @classmethod
+    def from_dict(cls, value: object) -> "PreflightRuntimeMeasurement":
+        data = _closed_mapping(value, schema=cls.__name__, keys=cls._WIRE_KEYS)
+        if type(data["stdlibModules"]) is not list:
+            raise ValueError("stdlibModules must be an array")
+        return cls(
+            supervisor_source_path=data["supervisorSourcePath"],
+            supervisor_source_file_sha256=data["supervisorSourceFileSha256"],
+            supervisor_binary_sha256=data["supervisorBinarySha256"],
+            supervisor_build_identity=PreflightSupervisorBuildIdentity.from_dict(
+                data["supervisorBuildIdentity"]
+            ),
+            protocol_version=data["protocolVersion"],
+            executable_path_hash=data["executablePathHash"],
+            executable_sha256=data["executableSha256"],
+            implementation=data["implementation"],
+            version=data["version"],
+            stdlib_modules=tuple(
+                PreflightStdlibModuleIdentity.from_dict(item) for item in data["stdlibModules"]
+            ),
+            stdlib_digest=data["stdlibDigest"],
+            platform_runtime=PreflightRuntimePlatformAttestation.from_dict(data["platformRuntime"]),
+            core_bootstrap_source_digest=data["coreBootstrapSourceDigest"],
+            preflight_runtime_digest=data["preflightRuntimeDigest"],
+        )
+
+    def validate_runtime_paths(self, paths: tuple[RuntimePathInput, ...]) -> None:
+        """Check exact caller inventory; live file/loader verification is worker-owned."""
+        if type(paths) is not tuple or any(type(item) is not RuntimePathInput for item in paths):
+            raise ValueError("runtimePaths must be a tuple of RuntimePathInput")
+        keys = tuple(item.identity_key for item in paths)
+        if len(set(keys)) != len(keys) or keys != tuple(sorted(keys)):
+            raise ValueError("runtimePaths must have unique canonical identities")
+        expected = {
+            (RuntimePathKind.SUPERVISOR_BINARY, None),
+            (RuntimePathKind.PYTHON_EXECUTABLE, None),
+            (RuntimePathKind.COMPILER_BINARY, None),
+            *((RuntimePathKind.STDLIB_MODULE, item.module_name)
+              for item in self.stdlib_modules if item.origin_kind is StdlibModuleOriginKind.FILE),
+        }
+        identities = tuple((item.kind, item.module_name) for item in paths)
+        if len(identities) != len(expected) or set(identities) != expected:
+            raise ValueError("runtimePaths must match the exact preflight file closure")
+        by_kind = {item.kind: item for item in paths if item.module_name is None}
+        if by_kind[RuntimePathKind.PYTHON_EXECUTABLE].expected_path_hash != self.executable_path_hash:
+            raise ValueError("Python path hash does not match measurement")
+        if (
+            by_kind[RuntimePathKind.COMPILER_BINARY].expected_path_hash
+            != self.supervisor_build_identity.compiler_executable_path_hash
+        ):
+            raise ValueError("compiler path hash does not match measurement")
+
+
+@dataclass(frozen=True)
+class RuntimeMeasurementBasis:
+    """Reviewed static facts completed by worker-owned file/loader measurement."""
+
+    supervisor_source_path: str
+    supervisor_source_file_sha256: str
+    supervisor_build_identity: PreflightSupervisorBuildIdentity
+    protocol_version: int
+    stdlib_modules: tuple[PreflightStdlibModuleIdentity, ...]
+    core_bootstrap_source_digest: str
+
+    _WIRE_KEYS: ClassVar[frozenset[str]] = frozenset({
+        "supervisorSourcePath", "supervisorSourceFileSha256",
+        "supervisorBuildIdentity", "protocolVersion", "stdlibModules",
+        "coreBootstrapSourceDigest",
+    })
+
+    def __post_init__(self) -> None:
+        validate_repo_relative_path(self.supervisor_source_path)
+        validate_sha256(self.supervisor_source_file_sha256)
+        if type(self.supervisor_build_identity) is not PreflightSupervisorBuildIdentity:
+            raise ValueError("supervisorBuildIdentity must be a preflight build")
+        if type(self.protocol_version) is not int or self.protocol_version != 1:
+            raise ValueError("protocolVersion must be integer 1")
+        if type(self.stdlib_modules) is not tuple or any(
+            type(item) is not PreflightStdlibModuleIdentity
+            for item in self.stdlib_modules
+        ):
+            raise ValueError("stdlibModules must contain preflight module identities")
+        names = tuple(item.module_name for item in self.stdlib_modules)
+        if names != tuple(sorted(set(names), key=lambda item: item.encode("utf-8"))):
+            raise ValueError("stdlibModules must have unique UTF-8 lexical names")
+        validate_sha256(self.core_bootstrap_source_digest)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "supervisorSourcePath": self.supervisor_source_path,
+            "supervisorSourceFileSha256": self.supervisor_source_file_sha256,
+            "supervisorBuildIdentity": self.supervisor_build_identity.to_dict(),
+            "protocolVersion": self.protocol_version,
+            "stdlibModules": [item.to_dict() for item in self.stdlib_modules],
+            "coreBootstrapSourceDigest": self.core_bootstrap_source_digest,
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> "RuntimeMeasurementBasis":
+        data = _closed_mapping(value, schema=cls.__name__, keys=cls._WIRE_KEYS)
+        if type(data["stdlibModules"]) is not list:
+            raise ValueError("stdlibModules must be an array")
+        return cls(
+            data["supervisorSourcePath"],
+            data["supervisorSourceFileSha256"],
+            PreflightSupervisorBuildIdentity.from_dict(data["supervisorBuildIdentity"]),
+            data["protocolVersion"],
+            tuple(
+                PreflightStdlibModuleIdentity.from_dict(item)
+                for item in data["stdlibModules"]
+            ),
+            data["coreBootstrapSourceDigest"],
+        )
+
+    @classmethod
+    def from_measurement(
+        cls, measurement: PreflightRuntimeMeasurement
+    ) -> "RuntimeMeasurementBasis":
+        if type(measurement) is not PreflightRuntimeMeasurement:
+            raise ValueError("measurement must be PreflightRuntimeMeasurement")
+        return cls(
+            measurement.supervisor_source_path,
+            measurement.supervisor_source_file_sha256,
+            measurement.supervisor_build_identity,
+            measurement.protocol_version,
+            measurement.stdlib_modules,
+            measurement.core_bootstrap_source_digest,
+        )
+
+    def validate_measurement(self, measurement: PreflightRuntimeMeasurement) -> None:
+        if type(measurement) is not PreflightRuntimeMeasurement:
+            raise ValueError("measurement must be PreflightRuntimeMeasurement")
+        if self != RuntimeMeasurementBasis.from_measurement(measurement):
+            raise ValueError("runtime measurement differs from request basis")
+
+
+@dataclass(frozen=True)
+class CaptureRuntimeRequest:
+    identity: WorkerRequestIdentity
+    runtime_paths: tuple[RuntimePathInput, ...]
+    measurement_basis: RuntimeMeasurementBasis
+    file_limit: int = 1024
+    single_file_byte_limit: int = 256 * 1024 * 1024
+    cumulative_byte_limit: int = 512 * 1024 * 1024
+    timeout_seconds: int = 60
+
+    def __post_init__(self) -> None:
+        for name, value, expected in (
+            ("fileLimit", self.file_limit, 1024),
+            ("singleFileByteLimit", self.single_file_byte_limit, 256 * 1024 * 1024),
+            ("cumulativeByteLimit", self.cumulative_byte_limit, 512 * 1024 * 1024),
+            ("timeoutSeconds", self.timeout_seconds, 60),
+        ):
+            if type(value) is not int or value != expected:
+                raise ValueError(f"{name} must equal fixed runtime capture limit")
+        if (
+            type(self.runtime_paths) is not tuple
+            or not 3 <= len(self.runtime_paths) <= self.file_limit
+            or any(type(item) is not RuntimePathInput for item in self.runtime_paths)
+        ):
+            raise ValueError("runtimePaths must contain 3..1024 concrete paths")
+        keys = tuple(item.identity_key for item in self.runtime_paths)
+        if len(set(keys)) != len(keys) or keys != tuple(sorted(keys)):
+            raise ValueError("runtimePaths must have unique canonical identities")
+        identities = tuple((item.kind, item.module_name) for item in self.runtime_paths)
+        if len(set(identities)) != len(identities):
+            raise ValueError("runtimePaths contains duplicate kind/module identities")
+        for kind in (
+            RuntimePathKind.SUPERVISOR_BINARY, RuntimePathKind.PYTHON_EXECUTABLE,
+            RuntimePathKind.COMPILER_BINARY,
+        ):
+            if identities.count((kind, None)) != 1:
+                raise ValueError("runtimePaths requires exactly one executable of each kind")
+        if type(self.measurement_basis) is not RuntimeMeasurementBasis:
+            raise ValueError("measurementBasis must be RuntimeMeasurementBasis")
+        expected_modules = {
+            item.module_name
+            for item in self.measurement_basis.stdlib_modules
+            if item.origin_kind is StdlibModuleOriginKind.FILE
+        }
+        actual_modules = {
+            item.module_name
+            for item in self.runtime_paths
+            if item.kind is RuntimePathKind.STDLIB_MODULE
+        }
+        if actual_modules != expected_modules:
+            raise ValueError("runtimePaths must match measurementBasis FILE stdlib closure")
+        compiler = next(
+            item for item in self.runtime_paths
+            if item.kind is RuntimePathKind.COMPILER_BINARY
+        )
+        if (
+            compiler.expected_path_hash
+            != self.measurement_basis.supervisor_build_identity.compiler_executable_path_hash
+        ):
+            raise ValueError("compiler path differs from measurementBasis")
+        _validate_worker_request_binding(self.identity, WorkerKind.RUNTIME_CAPTURE, self._payload())
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "runtimePaths": [item.to_dict() for item in self.runtime_paths],
+            "measurementBasis": self.measurement_basis.to_dict(),
+            "fileLimit": self.file_limit,
+            "singleFileByteLimit": self.single_file_byte_limit,
+            "cumulativeByteLimit": self.cumulative_byte_limit,
+            "timeoutSeconds": self.timeout_seconds,
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {"identity": self.identity.to_dict(), **self._payload()}
+
+    @classmethod
+    def from_dict(cls, value: object) -> "CaptureRuntimeRequest":
+        fields = ("fileLimit", "singleFileByteLimit", "cumulativeByteLimit", "timeoutSeconds")
+        data = _closed_mapping(
+            value, schema=cls.__name__,
+            keys=frozenset(("identity", "runtimePaths", "measurementBasis", *fields)),
+        )
+        paths = data["runtimePaths"]
+        if type(paths) is not list or not 3 <= len(paths) <= 1024:
+            raise ValueError("runtimePaths must be a bounded wire array")
+        return cls(
+            WorkerRequestIdentity.from_dict(data["identity"]),
+            tuple(RuntimePathInput.from_dict(item) for item in paths),
+            RuntimeMeasurementBasis.from_dict(data["measurementBasis"]),
+            *(data[field] for field in fields),
+        )
+
+
+_RUNTIME_CAPTURE_RESULT_KEYS = frozenset({
+    "identity", "status", "captureId", "measurement", "files",
+    "runtimeCaptureBundleDigest", "runtimeCaptureDigest", "workerResultDigest",
+    "failureCode", "diagnostic",
+})
+
+
+@dataclass(frozen=True)
+class CaptureRuntimeCompleted:
+    identity: WorkerRequestIdentity
+    capture_id: str
+    measurement: PreflightRuntimeMeasurement
+    files: tuple[CapturedRuntimeFile, ...]
+    runtime_capture_bundle_digest: str
+    runtime_capture_digest: str
+    worker_result_digest: str
+    status: ClassVar[str] = "COMPLETED"
+
+    def __post_init__(self) -> None:
+        if type(self.identity) is not WorkerRequestIdentity or self.identity.worker_kind is not WorkerKind.RUNTIME_CAPTURE:
+            raise ValueError("capture result must match RUNTIME_CAPTURE")
+        _validate_non_empty_utf8(self.capture_id, field="captureId", maximum_bytes=256)
+        if type(self.measurement) is not PreflightRuntimeMeasurement:
+            raise ValueError("measurement must be PreflightRuntimeMeasurement")
+        if (
+            type(self.files) is not tuple or not 3 <= len(self.files) <= 1024
+            or any(type(item) is not CapturedRuntimeFile for item in self.files)
+        ):
+            raise ValueError("files must be 3..1024 immutable captured files")
+        keys = tuple(item.identity_key for item in self.files)
+        if len(set(keys)) != len(keys) or keys != tuple(sorted(keys)):
+            raise ValueError("files must have unique canonical identities")
+        if any(item.byte_length > 256 * 1024 * 1024 for item in self.files):
+            raise ValueError("captured file exceeds singleFileByteLimit")
+        if sum(item.byte_length for item in self.files) > 512 * 1024 * 1024:
+            raise ValueError("captured files exceed cumulativeByteLimit")
+        validate_sha256(self.runtime_capture_bundle_digest)
+        validate_sha256(self.runtime_capture_digest)
+        validate_sha256(self.worker_result_digest)
+        if self.runtime_capture_digest != domain_separated_sha256(
+            _RUNTIME_CAPTURE_DOMAIN, self._capture_payload()
+        ):
+            raise ValueError("runtimeCaptureDigest does not match complete capture")
+        if self.worker_result_digest != domain_separated_sha256(_WORKER_RESULT_DOMAIN, self._payload()):
+            raise ValueError("workerResultDigest mismatch")
+        self._validate_file_closure()
+
+    def _validate_file_closure(self) -> None:
+        _validate_runtime_capture_files(self.measurement, self.files)
+
+    def _capture_payload(self) -> dict[str, object]:
+        return {
+            "captureId": self.capture_id, "measurement": self.measurement.to_dict(),
+            "files": [item.to_dict() for item in self.files],
+            "runtimeCaptureBundleDigest": self.runtime_capture_bundle_digest,
+        }
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "identity": self.identity.to_dict(), "status": self.status,
+            **self._capture_payload(), "runtimeCaptureDigest": self.runtime_capture_digest,
+            "failureCode": None, "diagnostic": None,
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {**self._payload(), "workerResultDigest": self.worker_result_digest}
+
+    @classmethod
+    def from_dict(cls, value: object) -> "CaptureRuntimeCompleted":
+        data = _closed_mapping(value, schema=cls.__name__, keys=_RUNTIME_CAPTURE_RESULT_KEYS)
+        if data["status"] != "COMPLETED" or data["failureCode"] is not None or data["diagnostic"] is not None:
+            raise ValueError("completed runtime result has invalid branch fields")
+        if type(data["files"]) is not list or not 3 <= len(data["files"]) <= 1024:
+            raise ValueError("files must be a bounded wire array")
+        return cls(
+            WorkerRequestIdentity.from_dict(data["identity"]), data["captureId"],
+            PreflightRuntimeMeasurement.from_dict(data["measurement"]),
+            tuple(CapturedRuntimeFile.from_dict(item) for item in data["files"]),
+            data["runtimeCaptureBundleDigest"], data["runtimeCaptureDigest"],
+            data["workerResultDigest"],
+        )
+
+
+def _validate_runtime_capture_files(
+    measurement: PreflightRuntimeMeasurement, files: tuple[CapturedRuntimeFile, ...]
+) -> None:
+    if type(measurement) is not PreflightRuntimeMeasurement:
+        raise ValueError("measurement must be PreflightRuntimeMeasurement")
+    if (
+        type(files) is not tuple or not 3 <= len(files) <= 1024
+        or any(type(item) is not CapturedRuntimeFile for item in files)
+    ):
+        raise ValueError("files must be 3..1024 concrete captured files")
+    keys = tuple(item.identity_key for item in files)
+    if keys != tuple(sorted(set(keys))):
+        raise ValueError("files must have unique canonical identities")
+    if any(item.byte_length > 256 * 1024 * 1024 for item in files):
+        raise ValueError("captured file exceeds singleFileByteLimit")
+    if sum(item.byte_length for item in files) > 512 * 1024 * 1024:
+        raise ValueError("captured files exceed cumulativeByteLimit")
+    expected: dict[tuple[RuntimeFileKind, str | None, str | None, str | None], tuple[str | None, str]] = {
+        (RuntimeFileKind.SUPERVISOR_BINARY, None, None, None): (None, measurement.supervisor_binary_sha256),
+        (RuntimeFileKind.PYTHON_EXECUTABLE, None, None, None): (measurement.executable_path_hash, measurement.executable_sha256),
+        (RuntimeFileKind.COMPILER_BINARY, None, None, None): (
+            measurement.supervisor_build_identity.compiler_executable_path_hash,
+            measurement.supervisor_build_identity.compiler_binary_sha256,
+        ),
+    }
+    for module in measurement.stdlib_modules:
+        if module.origin_kind is StdlibModuleOriginKind.FILE:
+            expected[(RuntimeFileKind.STDLIB_MODULE, module.module_name, None, None)] = (
+                None, module.file_sha256
+            )
+    for image in measurement.platform_runtime.loaded_images:
+        if image.origin_kind is RuntimeImageOriginKind.STANDALONE_FILE:
+            expected[(RuntimeFileKind.LOADED_RUNTIME_IMAGE, None, image.logical_name, image.path_hash)] = (
+                image.path_hash, image.file_sha256
+            )
+    actual = tuple(
+        (item.kind, item.module_name, item.logical_name,
+         item.path_hash if item.kind is RuntimeFileKind.LOADED_RUNTIME_IMAGE else None)
+        for item in files
+    )
+    if len(actual) != len(expected) or set(actual) != set(expected):
+        raise ValueError("captured files must equal the measured file-backed closure")
+    for item in files:
+        path_hash, file_hash = expected[(
+            item.kind, item.module_name, item.logical_name,
+            item.path_hash if item.kind is RuntimeFileKind.LOADED_RUNTIME_IMAGE else None,
+        )]
+        if item.file_sha256 != file_hash or (path_hash is not None and item.path_hash != path_hash):
+            raise ValueError("captured file does not match measured identity")
+
+
+@dataclass(frozen=True)
+class CaptureRuntimeFailed:
+    identity: WorkerRequestIdentity
+    failure_code: FinalizerFailureCode
+    diagnostic: str
+    worker_result_digest: str
+    status: ClassVar[str] = "FAILED"
+
+    def __post_init__(self) -> None:
+        if type(self.identity) is not WorkerRequestIdentity or self.identity.worker_kind is not WorkerKind.RUNTIME_CAPTURE:
+            raise ValueError("capture result must match RUNTIME_CAPTURE")
+        if type(self.failure_code) is not FinalizerFailureCode or self.failure_code not in (
+            FinalizerFailureCode.RUNTIME_MISMATCH, FinalizerFailureCode.TIMED_OUT,
+            FinalizerFailureCode.PROCESS_FAILED,
+        ):
+            raise ValueError("failureCode is outside runtime capture failure branch")
+        _validate_non_empty_utf8(self.diagnostic, field="diagnostic", maximum_bytes=4096)
+        if self.worker_result_digest != domain_separated_sha256(_WORKER_RESULT_DOMAIN, self._payload()):
+            raise ValueError("workerResultDigest mismatch")
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "identity": self.identity.to_dict(), "status": self.status, "captureId": None,
+            "measurement": None, "files": [], "runtimeCaptureBundleDigest": None,
+            "runtimeCaptureDigest": None, "failureCode": self.failure_code.value,
+            "diagnostic": self.diagnostic,
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {**self._payload(), "workerResultDigest": self.worker_result_digest}
+
+    @classmethod
+    def from_dict(cls, value: object) -> "CaptureRuntimeFailed":
+        data = _closed_mapping(value, schema=cls.__name__, keys=_RUNTIME_CAPTURE_RESULT_KEYS)
+        if (
+            data["status"] != "FAILED" or any(
+                data[field] is not None for field in (
+                    "captureId", "measurement", "runtimeCaptureBundleDigest", "runtimeCaptureDigest"
+                )
+            ) or type(data["files"]) is not list or data["files"]
+        ):
+            raise ValueError("failed runtime result has invalid branch fields")
+        return cls(
+            WorkerRequestIdentity.from_dict(data["identity"]),
+            _enum_from_wire(FinalizerFailureCode, data["failureCode"], field="failureCode"),
+            data["diagnostic"], data["workerResultDigest"],
+        )
+
+
+def capture_runtime_result_from_dict(
+    value: object, request: CaptureRuntimeRequest
+) -> Union[CaptureRuntimeCompleted, CaptureRuntimeFailed]:
+    if type(request) is not CaptureRuntimeRequest or not isinstance(value, Mapping):
+        raise ValueError("capture result requires its concrete request")
+    if value.get("status") == "COMPLETED":
+        result = CaptureRuntimeCompleted.from_dict(value)
+    elif value.get("status") == "FAILED":
+        result = CaptureRuntimeFailed.from_dict(value)
+    else:
+        raise ValueError("unknown runtime capture result status")
+    if result.identity != request.identity:
+        raise ValueError("capture result belongs to another request")
+    if type(result) is CaptureRuntimeCompleted:
+        request.measurement_basis.validate_measurement(result.measurement)
+        result.measurement.validate_runtime_paths(request.runtime_paths)
+        captured = {
+            (item.kind.value, item.module_name): item for item in result.files
+            if item.kind is not RuntimeFileKind.LOADED_RUNTIME_IMAGE
+        }
+        for path in request.runtime_paths:
+            if captured[(path.kind.value, path.module_name)].path_hash != path.expected_path_hash:
+                raise ValueError("captured file path does not match requested identity")
+    return result
+
+
+@dataclass
+class PreflightRuntimeCapture:
+    capture_id: str
+    measurement: PreflightRuntimeMeasurement
+    files: tuple[CapturedRuntimeFile, ...]
+    runtime_capture_bundle_digest: str
+    temporary_directory_claim: DescriptorClaim
+    runtime_capture_digest: str
+    consumed: bool = False
+
+    _WIRE_KEYS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "captureId",
+            "measurement",
+            "files",
+            "runtimeCaptureBundleDigest",
+            "temporaryDirectoryClaim",
+            "runtimeCaptureDigest",
+            "consumed",
+        }
+    )
+
+    def __post_init__(self) -> None:
+        _validate_non_empty_utf8(
+            self.capture_id,
+            field="captureId",
+            maximum_bytes=256,
+        )
+        _validate_runtime_capture_files(self.measurement, self.files)
+        validate_sha256(self.runtime_capture_bundle_digest)
+        if (
+            type(self.temporary_directory_claim) is not DescriptorClaim
+            or self.temporary_directory_claim.role
+            is not DescriptorRole.TEMPORARY_DIRECTORY
+        ):
+            raise ValueError(
+                "temporaryDirectoryClaim must bind a temporary directory"
+            )
+        if type(self.consumed) is not bool:
+            raise ValueError("consumed must be boolean")
+        validate_sha256(self.runtime_capture_digest)
+        if self.runtime_capture_digest != self.expected_digest():
+            raise ValueError("runtimeCaptureDigest does not match capture")
+
+    def _digest_payload(self) -> dict[str, object]:
+        return {
+            "captureId": self.capture_id,
+            "measurement": self.measurement.to_dict(),
+            "files": [item.to_dict() for item in self.files],
+            "runtimeCaptureBundleDigest": self.runtime_capture_bundle_digest,
+        }
+
+    def expected_digest(self) -> str:
+        return domain_separated_sha256(
+            _RUNTIME_CAPTURE_DOMAIN,
+            self._digest_payload(),
+        )
+
+    def consume(self) -> None:
+        if self.consumed:
+            raise ValueError("runtime capture is already consumed")
+        self.consumed = True
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            **self._digest_payload(),
+            "temporaryDirectoryClaim": self.temporary_directory_claim.to_dict(),
+            "runtimeCaptureDigest": self.runtime_capture_digest,
+            "consumed": self.consumed,
+        }
+
+    @classmethod
+    def from_completed(
+        cls,
+        result: CaptureRuntimeCompleted,
+    ) -> "PreflightRuntimeCapture":
+        if type(result) is not CaptureRuntimeCompleted:
+            raise ValueError("runtime capture requires completed worker result")
+        claims = tuple(
+            claim
+            for claim in result.identity.descriptor_claims
+            if claim.role is DescriptorRole.TEMPORARY_DIRECTORY
+        )
+        if len(claims) != 1:
+            raise ValueError(
+                "runtime capture requires one temporary-directory claim"
+            )
+        return cls(
+            capture_id=result.capture_id,
+            measurement=result.measurement,
+            files=result.files,
+            runtime_capture_bundle_digest=result.runtime_capture_bundle_digest,
+            temporary_directory_claim=claims[0],
+            runtime_capture_digest=result.runtime_capture_digest,
+        )
+
+    @classmethod
+    def from_dict(cls, value: object) -> "PreflightRuntimeCapture":
+        data = _closed_mapping(value, schema=cls.__name__, keys=cls._WIRE_KEYS)
+        if type(data["files"]) is not list:
+            raise ValueError("files must be an array")
+        return cls(
+            capture_id=data["captureId"],
+            measurement=PreflightRuntimeMeasurement.from_dict(
+                data["measurement"]
+            ),
+            files=tuple(
+                CapturedRuntimeFile.from_dict(item) for item in data["files"]
+            ),
+            runtime_capture_bundle_digest=data["runtimeCaptureBundleDigest"],
+            temporary_directory_claim=DescriptorClaim.from_dict(
+                data["temporaryDirectoryClaim"]
+            ),
+            runtime_capture_digest=data["runtimeCaptureDigest"],
+            consumed=data["consumed"],
+        )
+
+
+@dataclass(frozen=True)
+class AuthorityRuntimeArtifactRef:
+    workspace_id: str
+    gate_id: str
+    authorization_id: str
+    kind: RuntimeFileKind
+    module_name: str | None
+    logical_name: str | None
+    origin_kind: RuntimeImageOriginKind | None
+    content_sha256: str
+    byte_length: int
+    authority_runtime_ref_digest: str
+    artifact_kind: ClassVar[str] = "acceptance-finalizer-authority-runtime-ref"
+    schema_version: ClassVar[int] = 1
+
+    def __post_init__(self) -> None:
+        _validate_workspace_id(self.workspace_id)
+        _validate_slug(self.gate_id, field="gateId")
+        _validate_slug(self.authorization_id, field="authorizationId")
+        # Reuse the canonical runtime-kind nullability contract; refs have no path.
+        CapturedRuntimeFile(
+            self.kind, self.module_name, self.logical_name, self.origin_kind,
+            "0" * 64, self.content_sha256, self.byte_length,
+        )
+        if self.byte_length > 256 * 1024 * 1024:
+            raise ValueError("authority runtime file exceeds single-file limit")
+        validate_sha256(self.authority_runtime_ref_digest)
+        if self.authority_runtime_ref_digest != domain_separated_sha256(
+            _AUTHORITY_RUNTIME_REF_DOMAIN, self._payload()
+        ):
+            raise ValueError("authorityRuntimeRefDigest mismatch")
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "artifactKind": self.artifact_kind, "schemaVersion": self.schema_version,
+            "workspaceId": self.workspace_id, "gateId": self.gate_id,
+            "authorizationId": self.authorization_id, "kind": self.kind.value,
+            "moduleName": self.module_name, "logicalName": self.logical_name,
+            "originKind": None if self.origin_kind is None else self.origin_kind.value,
+            "contentSha256": self.content_sha256, "byteLength": self.byte_length,
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {**self._payload(), "authorityRuntimeRefDigest": self.authority_runtime_ref_digest}
+
+    @classmethod
+    def from_dict(cls, value: object) -> "AuthorityRuntimeArtifactRef":
+        fields = (
+            "artifactKind", "schemaVersion", "workspaceId", "gateId", "authorizationId",
+            "kind", "moduleName", "logicalName", "originKind", "contentSha256",
+            "byteLength", "authorityRuntimeRefDigest",
+        )
+        data = _closed_mapping(value, schema=cls.__name__, keys=frozenset(fields))
+        if data["artifactKind"] != cls.artifact_kind or type(data["schemaVersion"]) is not int or data["schemaVersion"] != 1:
+            raise ValueError("invalid authority runtime ref schema")
+        return cls(
+            data["workspaceId"], data["gateId"], data["authorizationId"],
+            _enum_from_wire(RuntimeFileKind, data["kind"], field="kind"),
+            data["moduleName"], data["logicalName"],
+            None if data["originKind"] is None else _enum_from_wire(
+                RuntimeImageOriginKind, data["originKind"], field="originKind"
+            ),
+            data["contentSha256"], data["byteLength"], data["authorityRuntimeRefDigest"],
+        )
+
+
+@dataclass(frozen=True)
+class FinalizerMaintenanceRuntimeIdentity:
+    worker_source_files: tuple[tuple[str, str, int], ...]
+    worker_source_digest: str
+    runtime_capture_id: str
+    runtime_measurement: PreflightRuntimeMeasurement
+    captured_runtime_files: tuple[CapturedRuntimeFile, ...]
+    runtime_artifacts: tuple[AuthorityRuntimeArtifactRef, ...]
+    runtime_capture_bundle_digest: str
+    runtime_capture_digest: str
+    maintenance_runtime_digest: str
+    protocol_version: ClassVar[int] = 1
+    worker_source_rule: ClassVar[str] = "MAINTENANCE_WORKER_SOURCE_V1"
+
+    def __post_init__(self) -> None:
+        if (
+            type(self.worker_source_files) is not tuple
+            or not 1 <= len(self.worker_source_files) <= 64
+        ):
+            raise ValueError("workerSourceFiles must contain 1..64 immutable triples")
+        paths = []
+        total = 0
+        for item in self.worker_source_files:
+            if type(item) is not tuple or len(item) != 3:
+                raise ValueError("workerSourceFiles requires immutable triples")
+            paths.append(validate_repo_relative_path(item[0]))
+            validate_sha256(item[1])
+            if type(item[2]) is not int or not 0 <= item[2] <= 8 * 1024 * 1024:
+                raise ValueError("worker source file exceeds entry limit")
+            total += item[2]
+        if paths != sorted(set(paths), key=lambda path: path.encode("utf-8")):
+            raise ValueError("workerSourceFiles requires unique lexical paths")
+        if "tooling/acceptance/core/finalizer_worker.py" not in paths:
+            raise ValueError("maintenance closure must include its fixed worker entrypoint")
+        if total > 64 * 1024 * 1024:
+            raise ValueError("worker source closure exceeds expanded limit")
+        validate_sha256(self.worker_source_digest)
+        if self.worker_source_digest != domain_separated_sha256(
+            _MAINTENANCE_WORKER_SOURCE_DOMAIN,
+            {"workerSourceRule": self.worker_source_rule,
+             "workerSourceFiles": [list(item) for item in self.worker_source_files]},
+        ):
+            raise ValueError("workerSourceDigest mismatch")
+        _validate_non_empty_utf8(self.runtime_capture_id, field="runtimeCaptureId", maximum_bytes=256)
+        _validate_runtime_capture_files(self.runtime_measurement, self.captured_runtime_files)
+        validate_sha256(self.runtime_capture_bundle_digest)
+        validate_sha256(self.runtime_capture_digest)
+        capture_payload = {
+            "captureId": self.runtime_capture_id,
+            "measurement": self.runtime_measurement.to_dict(),
+            "files": [item.to_dict() for item in self.captured_runtime_files],
+            "runtimeCaptureBundleDigest": self.runtime_capture_bundle_digest,
+        }
+        if self.runtime_capture_digest != domain_separated_sha256(
+            _RUNTIME_CAPTURE_DOMAIN, capture_payload
+        ):
+            raise ValueError("runtimeCaptureDigest mismatch")
+        if (
+            type(self.runtime_artifacts) is not tuple
+            or len(self.runtime_artifacts) != len(self.captured_runtime_files)
+            or any(type(ref) is not AuthorityRuntimeArtifactRef for ref in self.runtime_artifacts)
+        ):
+            raise ValueError("runtimeArtifacts must match capturedRuntimeFiles cardinality")
+        authorities = {
+            (ref.workspace_id, ref.gate_id, ref.authorization_id) for ref in self.runtime_artifacts
+        }
+        if len(authorities) != 1:
+            raise ValueError("runtimeArtifacts must belong to one workspace/Gate/authorization")
+        for ref, captured in zip(self.runtime_artifacts, self.captured_runtime_files):
+            if (
+                ref.kind, ref.module_name, ref.logical_name, ref.origin_kind,
+                ref.content_sha256, ref.byte_length,
+            ) != (
+                captured.kind, captured.module_name, captured.logical_name, captured.origin_kind,
+                captured.file_sha256, captured.byte_length,
+            ):
+                raise ValueError("runtimeArtifacts must match captured files in exact order")
+        validate_sha256(self.maintenance_runtime_digest)
+        if self.maintenance_runtime_digest != domain_separated_sha256(
+            _MAINTENANCE_RUNTIME_DOMAIN, self._payload()
+        ):
+            raise ValueError("maintenanceRuntimeDigest mismatch")
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "protocolVersion": self.protocol_version, "workerSourceRule": self.worker_source_rule,
+            "workerSourceFiles": [list(item) for item in self.worker_source_files],
+            "workerSourceDigest": self.worker_source_digest,
+            "runtimeCaptureId": self.runtime_capture_id,
+            "runtimeMeasurement": self.runtime_measurement.to_dict(),
+            "capturedRuntimeFiles": [item.to_dict() for item in self.captured_runtime_files],
+            "runtimeArtifacts": [item.to_dict() for item in self.runtime_artifacts],
+            "runtimeCaptureBundleDigest": self.runtime_capture_bundle_digest,
+            "runtimeCaptureDigest": self.runtime_capture_digest,
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {**self._payload(), "maintenanceRuntimeDigest": self.maintenance_runtime_digest}
+
+    @classmethod
+    def from_dict(cls, value: object) -> "FinalizerMaintenanceRuntimeIdentity":
+        fields = (
+            "protocolVersion", "workerSourceRule", "workerSourceFiles", "workerSourceDigest",
+            "runtimeCaptureId", "runtimeMeasurement", "capturedRuntimeFiles", "runtimeArtifacts",
+            "runtimeCaptureBundleDigest", "runtimeCaptureDigest", "maintenanceRuntimeDigest",
+        )
+        data = _closed_mapping(value, schema=cls.__name__, keys=frozenset(fields))
+        if type(data["protocolVersion"]) is not int or data["protocolVersion"] != 1 or data["workerSourceRule"] != cls.worker_source_rule:
+            raise ValueError("invalid maintenance runtime protocol/source rule")
+        sources = data["workerSourceFiles"]
+        if type(sources) is not list or not 1 <= len(sources) <= 64 or any(
+            type(item) is not list or len(item) != 3 for item in sources
+        ):
+            raise ValueError("workerSourceFiles must be a bounded triple array")
+        for field in ("capturedRuntimeFiles", "runtimeArtifacts"):
+            if type(data[field]) is not list or not 3 <= len(data[field]) <= 1024:
+                raise ValueError(f"{field} must be a bounded wire array")
+        return cls(
+            tuple(tuple(item) for item in sources), data["workerSourceDigest"],
+            data["runtimeCaptureId"], PreflightRuntimeMeasurement.from_dict(data["runtimeMeasurement"]),
+            tuple(CapturedRuntimeFile.from_dict(item) for item in data["capturedRuntimeFiles"]),
+            tuple(AuthorityRuntimeArtifactRef.from_dict(item) for item in data["runtimeArtifacts"]),
+            data["runtimeCaptureBundleDigest"], data["runtimeCaptureDigest"], data["maintenanceRuntimeDigest"],
+        )
+
+
+@dataclass(frozen=True)
 class FinalizerRuntimeIdentity:
     finalizer_runtime_digest: str
     supervisor_runtime_digest: str
@@ -3933,7 +6951,10 @@ class FinalizerRuntimeIdentity:
     def expected_stdlib_digest(self) -> str:
         return domain_separated_sha256(
             _STDLIB_CLOSURE_DOMAIN,
-            [item.to_dict() for item in self.stdlib_modules],
+            [
+                item.without_artifact_ref_dict()
+                for item in self.stdlib_modules
+            ],
         )
 
     def supervisor_runtime_payload(self) -> dict[str, object]:
@@ -4026,7 +7047,10 @@ class FinalizerRuntimeIdentity:
         )
         stdlib_digest = domain_separated_sha256(
             _STDLIB_CLOSURE_DOMAIN,
-            [item.to_dict() for item in stdlib_modules],
+            [
+                item.without_artifact_ref_dict()
+                for item in stdlib_modules
+            ],
         )
         supervisor_runtime_payload = {
             "supervisorSourceDigest": supervisor_source_digest,
@@ -4122,6 +7146,166 @@ class FinalizerRuntimeIdentity:
             ),
             core_bootstrap_source_digest=data["coreBootstrapSourceDigest"],
         )
+
+
+def materialize_runtime_identity(
+    measurement: PreflightRuntimeMeasurement,
+    captured_files: tuple[CapturedRuntimeFile, ...],
+    runtime_artifacts: tuple[RuntimeEvidenceArtifact, ...],
+    supervisor_source_artifact: ArtifactRef,
+) -> FinalizerRuntimeIdentity:
+    """Insert only run-scoped refs into one validated preflight measurement."""
+    if type(measurement) is not PreflightRuntimeMeasurement:
+        raise ValueError("measurement must be PreflightRuntimeMeasurement")
+    _validate_runtime_capture_files(measurement, captured_files)
+    if (
+        type(runtime_artifacts) is not tuple
+        or len(runtime_artifacts) != len(captured_files)
+        or any(type(item) is not RuntimeEvidenceArtifact for item in runtime_artifacts)
+    ):
+        raise ValueError(
+            "runtimeArtifacts must match capturedFiles cardinality"
+        )
+    if tuple(item.identity_key for item in runtime_artifacts) != tuple(
+        item.identity_key for item in captured_files
+    ):
+        raise ValueError(
+            "runtimeArtifacts must preserve capturedFiles canonical order"
+        )
+    for captured, artifact in zip(captured_files, runtime_artifacts):
+        if artifact.captured != captured:
+            raise ValueError(
+                "runtimeArtifacts must equal capturedFiles before ref insertion"
+            )
+    _validate_ref_content(
+        supervisor_source_artifact,
+        field="supervisorSourceArtifact",
+        sha256=measurement.supervisor_source_file_sha256,
+    )
+    if supervisor_source_artifact.path != measurement.supervisor_source_path:
+        raise ValueError(
+            "supervisorSourceArtifact path does not match measurement"
+        )
+
+    def artifact_for(
+        kind: RuntimeFileKind,
+        *,
+        module_name: str | None = None,
+        logical_name: str | None = None,
+        path_hash: str | None = None,
+    ) -> RuntimeEvidenceArtifact:
+        matches = tuple(
+            artifact
+            for artifact in runtime_artifacts
+            if artifact.kind is kind
+            and artifact.module_name == module_name
+            and artifact.logical_name == logical_name
+            and (path_hash is None or artifact.path_hash == path_hash)
+        )
+        if len(matches) != 1:
+            raise ValueError(
+                f"runtime artifact identity is not one-to-one: {kind.value}"
+            )
+        return matches[0]
+
+    supervisor_binary = artifact_for(RuntimeFileKind.SUPERVISOR_BINARY)
+    python_executable = artifact_for(RuntimeFileKind.PYTHON_EXECUTABLE)
+    compiler_binary = artifact_for(RuntimeFileKind.COMPILER_BINARY)
+    preflight_build = measurement.supervisor_build_identity
+    build = SupervisorBuildIdentity(
+        compiler_executable_path_hash=(
+            preflight_build.compiler_executable_path_hash
+        ),
+        compiler_binary_sha256=preflight_build.compiler_binary_sha256,
+        compiler_binary_ref=compiler_binary.ref,
+        compiler_version=preflight_build.compiler_version,
+        target_triple=preflight_build.target_triple,
+        compiler_flags=preflight_build.compiler_flags,
+        compiler_flags_digest=preflight_build.compiler_flags_digest,
+    )
+    stdlib_modules = tuple(
+        StdlibModuleIdentity(
+            module_name=module.module_name,
+            origin_kind=module.origin_kind,
+            file_sha256=module.file_sha256,
+            artifact_ref=(
+                artifact_for(
+                    RuntimeFileKind.STDLIB_MODULE,
+                    module_name=module.module_name,
+                ).ref
+                if module.origin_kind is StdlibModuleOriginKind.FILE
+                else None
+            ),
+        )
+        for module in measurement.stdlib_modules
+    )
+    loaded_images: list[LoadedRuntimeImage] = []
+    for image in measurement.platform_runtime.loaded_images:
+        artifact = (
+            artifact_for(
+                RuntimeFileKind.LOADED_RUNTIME_IMAGE,
+                logical_name=image.logical_name,
+                path_hash=image.path_hash,
+            )
+            if image.origin_kind is RuntimeImageOriginKind.STANDALONE_FILE
+            else None
+        )
+        loaded_images.append(
+            LoadedRuntimeImage(
+                logical_name=image.logical_name,
+                origin_kind=image.origin_kind,
+                path_hash=image.path_hash,
+                file_sha256=image.file_sha256,
+                artifact_ref=None if artifact is None else artifact.ref,
+                macho_uuid=image.macho_uuid,
+                code_directory_hash=image.code_directory_hash,
+                shared_cache_uuid=image.shared_cache_uuid,
+            )
+        )
+    loaded_images_tuple = tuple(loaded_images)
+    dynamic_loader = next(
+        (
+            image
+            for image in loaded_images_tuple
+            if image.identity_key
+            == measurement.platform_runtime.dynamic_loader_identity.identity_key
+        ),
+        None,
+    )
+    if dynamic_loader is None:
+        raise ValueError("dynamic loader is absent after runtime materialization")
+    platform_runtime = RuntimePlatformAttestation.create(
+        os_family=measurement.platform_runtime.os_family,
+        host_build=measurement.platform_runtime.host_build,
+        dynamic_loader_identity=dynamic_loader,
+        shared_cache_uuid=measurement.platform_runtime.shared_cache_uuid,
+        loaded_images=loaded_images_tuple,
+    )
+    result = FinalizerRuntimeIdentity.create(
+        supervisor_source_path=measurement.supervisor_source_path,
+        supervisor_source_file_sha256=(
+            measurement.supervisor_source_file_sha256
+        ),
+        supervisor_source_artifact=supervisor_source_artifact,
+        supervisor_binary_ref=supervisor_binary.ref,
+        supervisor_binary_sha256=measurement.supervisor_binary_sha256,
+        supervisor_build_identity=build,
+        executable_path_hash=measurement.executable_path_hash,
+        executable_ref=python_executable.ref,
+        executable_sha256=measurement.executable_sha256,
+        implementation=measurement.implementation,
+        version=measurement.version,
+        stdlib_modules=stdlib_modules,
+        platform_runtime=platform_runtime,
+        core_bootstrap_source_digest=measurement.core_bootstrap_source_digest,
+    )
+    if (
+        result.stdlib_digest != measurement.stdlib_digest
+        or build.compiler_flags_digest
+        != measurement.supervisor_build_identity.compiler_flags_digest
+    ):
+        raise ValueError("durable runtime projection changed preflight closure")
+    return result
 
 
 def _validate_finalizer_identity_fields(
@@ -4675,6 +7859,758 @@ class FinalizerInput:
 
 
 @dataclass(frozen=True)
+class ArtifactMaterializationInput:
+    role_name: str
+    discriminator: str | None
+    ref: ArtifactRef
+    payload_kind: ArtifactPayloadKind
+    schema_id: str | None
+    schema_digest: str | None
+
+    _WIRE_KEYS: ClassVar[frozenset[str]] = frozenset({
+        "roleName", "discriminator", "ref", "payloadKind",
+        "schemaId", "schemaDigest",
+    })
+
+    def __post_init__(self) -> None:
+        _validate_role_name(self.role_name)
+        _validate_optional_discriminator(self.discriminator)
+        if type(self.ref) is not ArtifactRef:
+            raise ValueError("ref must be an ArtifactRef")
+        if type(self.payload_kind) is not ArtifactPayloadKind:
+            raise ValueError("payloadKind must be closed")
+        if self.payload_kind is ArtifactPayloadKind.CANONICAL_JSON:
+            _validate_slug(self.schema_id, field="schemaId")
+            validate_sha256(self.schema_digest)
+            if self.ref.media_type != "application/json":
+                raise ValueError("CANONICAL_JSON artifact must use application/json")
+        elif self.schema_id is not None or self.schema_digest is not None:
+            raise ValueError("BINARY artifact forbids schema identity")
+
+    @property
+    def identity(self) -> tuple[str, str | None]:
+        return (self.role_name, self.discriminator)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "roleName": self.role_name,
+            "discriminator": self.discriminator,
+            "ref": self.ref.to_dict(),
+            "payloadKind": self.payload_kind.value,
+            "schemaId": self.schema_id,
+            "schemaDigest": self.schema_digest,
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> "ArtifactMaterializationInput":
+        data = _closed_mapping(value, schema=cls.__name__, keys=cls._WIRE_KEYS)
+        return cls(
+            data["roleName"],
+            data["discriminator"],
+            ArtifactRef.from_dict(data["ref"]),
+            _enum_from_wire(
+                ArtifactPayloadKind, data["payloadKind"], field="payloadKind"
+            ),
+            data["schemaId"],
+            data["schemaDigest"],
+        )
+
+    @classmethod
+    def from_snapshot_artifact(
+        cls, artifact: SnapshotArtifact
+    ) -> "ArtifactMaterializationInput":
+        if type(artifact) is not SnapshotArtifact:
+            raise ValueError("artifact must be SnapshotArtifact")
+        payload = artifact.payload
+        return cls(
+            artifact.role_name,
+            artifact.discriminator,
+            artifact.ref,
+            (
+                ArtifactPayloadKind.BINARY
+                if payload is None
+                else ArtifactPayloadKind.CANONICAL_JSON
+            ),
+            None if payload is None else payload.schema_id,
+            None if payload is None else payload.schema_digest,
+        )
+
+
+@dataclass(frozen=True)
+class MaterializeSnapshotRequest:
+    identity: WorkerRequestIdentity
+    workspace_id: str
+    gate_id: str
+    evidence_run_id: str
+    evaluation_time: str
+    artifact_inventory: tuple[ArtifactMaterializationInput, ...]
+    runtime_manifest_ref: ArtifactRef
+    source_commit: str
+    workspace_digest: str
+    canonical_worktree_hash: str
+    input_byte_limit: int
+    artifact_count_limit: int = 4096
+    single_artifact_byte_limit: int = 1024 * 1024 * 1024
+    cumulative_hash_byte_limit: int = 8 * 1024 * 1024 * 1024
+    timeout_seconds: int = 60
+
+    def __post_init__(self) -> None:
+        _validate_workspace_id(self.workspace_id)
+        _validate_slug(self.gate_id, field="gateId")
+        _validate_run_id(self.evidence_run_id, field="evidenceRunId")
+        _canonical_utc_instant(self.evaluation_time, field="evaluationTime")
+        _validate_non_empty_utf8(self.source_commit, field="sourceCommit")
+        _validate_non_empty_utf8(self.workspace_digest, field="workspaceDigest")
+        validate_sha256(self.canonical_worktree_hash)
+        _validate_positive_bounded_integer(
+            self.input_byte_limit, field="inputByteLimit",
+            maximum=FINALIZER_INPUT_BYTE_LIMIT_MAX,
+        )
+        for field, value, expected in (
+            ("artifactCountLimit", self.artifact_count_limit, 4096),
+            ("singleArtifactByteLimit", self.single_artifact_byte_limit, 1024 ** 3),
+            ("cumulativeHashByteLimit", self.cumulative_hash_byte_limit, 8 * 1024 ** 3),
+            ("timeoutSeconds", self.timeout_seconds, 60),
+        ):
+            if type(value) is not int or value != expected:
+                raise ValueError(f"{field} must equal the fixed materialization limit")
+        if (
+            type(self.artifact_inventory) is not tuple
+            or not 1 <= len(self.artifact_inventory) <= self.artifact_count_limit
+        ):
+            raise ValueError("artifactInventory must contain 1..4096 immutable triples")
+        identities = []
+        references = []
+        for item in self.artifact_inventory:
+            if type(item) is not ArtifactMaterializationInput:
+                raise ValueError(
+                    "artifactInventory requires ArtifactMaterializationInput values"
+                )
+            identities.append(item.identity)
+            references.append(item.ref)
+        if tuple(identities) != tuple(sorted(set(identities), key=_role_identity_key)):
+            raise ValueError("artifactInventory must have unique canonical role identities")
+        if type(self.runtime_manifest_ref) is not ArtifactRef or self.runtime_manifest_ref not in references:
+            raise ValueError("runtimeManifestRef must belong to artifactInventory")
+        runtime_input = next(
+            item for item in self.artifact_inventory
+            if item.ref == self.runtime_manifest_ref
+        )
+        if runtime_input.payload_kind is not ArtifactPayloadKind.CANONICAL_JSON:
+            raise ValueError("runtimeManifestRef must be materialized as canonical JSON")
+        expected_source = (self.workspace_id, self.gate_id, self.evidence_run_id)
+        if any(_artifact_source_identity(ref) != expected_source for ref in references):
+            raise ValueError("artifactInventory contains a foreign run reference")
+        _validate_worker_request_binding(self.identity, WorkerKind.MATERIALIZER, self._payload())
+        owner = self.identity.descriptor_claims[0].owner_binding
+        if type(owner) is not RunDirectoryOwnerBinding or (
+            owner.workspace_id, owner.gate_id, owner.evidence_run_id
+        ) != expected_source:
+            raise ValueError("RUN_DIRECTORY owner does not match materialization source")
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "workspaceId": self.workspace_id, "gateId": self.gate_id,
+            "evidenceRunId": self.evidence_run_id, "evaluationTime": self.evaluation_time,
+            "artifactInventory": [
+                item.to_dict() for item in self.artifact_inventory
+            ],
+            "runtimeManifestRef": self.runtime_manifest_ref.to_dict(),
+            "sourceCommit": self.source_commit, "workspaceDigest": self.workspace_digest,
+            "canonicalWorktreeHash": self.canonical_worktree_hash,
+            "inputByteLimit": self.input_byte_limit,
+            "artifactCountLimit": self.artifact_count_limit,
+            "singleArtifactByteLimit": self.single_artifact_byte_limit,
+            "cumulativeHashByteLimit": self.cumulative_hash_byte_limit,
+            "timeoutSeconds": self.timeout_seconds,
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {"identity": self.identity.to_dict(), **self._payload()}
+
+    @classmethod
+    def from_dict(cls, value: object) -> "MaterializeSnapshotRequest":
+        fields = (
+            "workspaceId", "gateId", "evidenceRunId", "evaluationTime",
+            "artifactInventory", "runtimeManifestRef", "sourceCommit",
+            "workspaceDigest", "canonicalWorktreeHash", "inputByteLimit",
+            "artifactCountLimit", "singleArtifactByteLimit",
+            "cumulativeHashByteLimit", "timeoutSeconds",
+        )
+        data = _closed_mapping(value, schema=cls.__name__, keys=frozenset(("identity", *fields)))
+        inventory = data["artifactInventory"]
+        if type(inventory) is not list or not 1 <= len(inventory) <= 4096:
+            raise ValueError("artifactInventory must be a bounded wire array")
+        if any(type(item) is not dict for item in inventory):
+            raise ValueError("artifactInventory requires object entries")
+        return cls(
+            WorkerRequestIdentity.from_dict(data["identity"]),
+            data["workspaceId"], data["gateId"], data["evidenceRunId"], data["evaluationTime"],
+            tuple(ArtifactMaterializationInput.from_dict(item) for item in inventory),
+            ArtifactRef.from_dict(data["runtimeManifestRef"]),
+            *(data[field] for field in fields[6:]),
+        )
+
+
+_MATERIALIZE_RESULT_KEYS = frozenset({
+    "identity", "status", "snapshot", "workerResultDigest", "failureCode", "diagnostic",
+})
+
+
+@dataclass(frozen=True)
+class MaterializeSnapshotCompleted:
+    identity: WorkerRequestIdentity
+    snapshot: ReadOnlyEvidenceSnapshot
+    worker_result_digest: str
+    status: ClassVar[str] = "COMPLETED"
+
+    def __post_init__(self) -> None:
+        _validate_worker_result_binding(self.identity, WorkerKind.MATERIALIZER, self.worker_result_digest, self._payload())
+        if type(self.snapshot) is not ReadOnlyEvidenceSnapshot:
+            raise ValueError("snapshot must be ReadOnlyEvidenceSnapshot")
+        if len(self.snapshot.artifacts) > 4096:
+            raise ValueError("snapshot exceeds artifactCountLimit")
+
+    def _payload(self) -> dict[str, object]:
+        if type(self.snapshot) is not ReadOnlyEvidenceSnapshot:
+            raise ValueError("snapshot must be ReadOnlyEvidenceSnapshot")
+        return {
+            "identity": self.identity.to_dict(), "status": self.status,
+            "snapshot": self.snapshot.to_dict(), "failureCode": None, "diagnostic": None,
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {**self._payload(), "workerResultDigest": self.worker_result_digest}
+
+    @classmethod
+    def from_dict(cls, value: object) -> "MaterializeSnapshotCompleted":
+        data = _closed_mapping(value, schema=cls.__name__, keys=_MATERIALIZE_RESULT_KEYS)
+        _validate_completed_worker_branch(data)
+        return cls(
+            WorkerRequestIdentity.from_dict(data["identity"]),
+            ReadOnlyEvidenceSnapshot.from_dict(data["snapshot"]), data["workerResultDigest"],
+        )
+
+
+@dataclass(frozen=True)
+class MaterializeSnapshotFailed:
+    identity: WorkerRequestIdentity
+    failure_code: FinalizerFailureCode
+    diagnostic: str
+    worker_result_digest: str
+    status: ClassVar[str] = "FAILED"
+
+    def __post_init__(self) -> None:
+        _validate_worker_failure(
+            self.failure_code, self.diagnostic,
+            (FinalizerFailureCode.MATERIALIZATION_FAILED, FinalizerFailureCode.TIMED_OUT,
+             FinalizerFailureCode.PROCESS_FAILED),
+        )
+        _validate_worker_result_binding(self.identity, WorkerKind.MATERIALIZER, self.worker_result_digest, self._payload())
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "identity": self.identity.to_dict(), "status": self.status, "snapshot": None,
+            "failureCode": self.failure_code.value, "diagnostic": self.diagnostic,
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {**self._payload(), "workerResultDigest": self.worker_result_digest}
+
+    @classmethod
+    def from_dict(cls, value: object) -> "MaterializeSnapshotFailed":
+        data = _closed_mapping(value, schema=cls.__name__, keys=_MATERIALIZE_RESULT_KEYS)
+        if data["status"] != "FAILED" or data["snapshot"] is not None:
+            raise ValueError("failed materialization forbids snapshot")
+        return cls(
+            WorkerRequestIdentity.from_dict(data["identity"]),
+            _enum_from_wire(FinalizerFailureCode, data["failureCode"], field="failureCode"),
+            data["diagnostic"], data["workerResultDigest"],
+        )
+
+
+def _validate_worker_result_binding(
+    identity: object, kind: WorkerKind, digest: str, payload: dict[str, object]
+) -> None:
+    if type(identity) is not WorkerRequestIdentity or identity.worker_kind is not kind:
+        raise ValueError("worker result has wrong worker-kind identity")
+    validate_sha256(digest)
+    if digest != domain_separated_sha256(_WORKER_RESULT_DOMAIN, payload):
+        raise ValueError("workerResultDigest mismatch")
+
+
+def _validate_completed_worker_branch(data: Mapping[str, object]) -> None:
+    if data["status"] != "COMPLETED" or data["failureCode"] is not None or data["diagnostic"] is not None:
+        raise ValueError("completed worker result forbids failure fields")
+
+
+def _validate_worker_failure(
+    code: object, diagnostic: object, allowed: tuple[FinalizerFailureCode, ...]
+) -> None:
+    if type(code) is not FinalizerFailureCode or code not in allowed:
+        raise ValueError("failureCode is outside the worker failure branch")
+    _validate_non_empty_utf8(diagnostic, field="diagnostic", maximum_bytes=4096)
+
+
+def materialize_snapshot_result_from_dict(
+    value: object, request: MaterializeSnapshotRequest
+) -> Union[MaterializeSnapshotCompleted, MaterializeSnapshotFailed]:
+    if type(request) is not MaterializeSnapshotRequest or not isinstance(value, Mapping):
+        raise ValueError("materialization result requires its concrete request")
+    if value.get("status") == "COMPLETED":
+        result = MaterializeSnapshotCompleted.from_dict(value)
+    elif value.get("status") == "FAILED":
+        result = MaterializeSnapshotFailed.from_dict(value)
+    else:
+        raise ValueError("unknown materialization result status")
+    if result.identity != request.identity:
+        raise ValueError("materialization result belongs to another request")
+    if type(result) is MaterializeSnapshotCompleted:
+        snapshot = result.snapshot
+        for field in (
+            "workspace_id", "gate_id", "evidence_run_id", "evaluation_time",
+            "runtime_manifest_ref", "source_commit", "workspace_digest", "canonical_worktree_hash",
+        ):
+            if getattr(snapshot, field) != getattr(request, field):
+                raise ValueError(f"materialized snapshot does not match requested {field}")
+        inventory = tuple(
+            ArtifactMaterializationInput.from_snapshot_artifact(item)
+            for item in snapshot.artifacts
+        )
+        if inventory != request.artifact_inventory:
+            raise ValueError("materialized snapshot does not match exact artifact inventory")
+        if len(canonical_json_bytes(snapshot.to_dict())) > request.input_byte_limit:
+            raise ValueError("materialized snapshot exceeds inputByteLimit")
+    return result
+
+
+@dataclass(frozen=True)
+class ExecuteFinalizerRequest:
+    identity: WorkerRequestIdentity
+    input: FinalizerInput
+    timeout_seconds: int
+    input_byte_limit: int
+
+    def __post_init__(self) -> None:
+        if type(self.input) is not FinalizerInput:
+            raise ValueError("input must be FinalizerInput")
+        config = FinalizerExecutionConfig(
+            self.input.invocation.gate_id, self.input.invocation.finalizer_id,
+            self.timeout_seconds, self.input_byte_limit,
+        )
+        if config.digest() != self.input.invocation.config_digest:
+            raise ValueError("execution limits do not match invocation configDigest")
+        if len(canonical_json_bytes(self.input.to_dict())) > self.input_byte_limit:
+            raise ValueError("finalizer input exceeds inputByteLimit")
+        _validate_worker_request_binding(self.identity, WorkerKind.FINALIZER, self._payload())
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "input": self.input.to_dict(), "timeoutSeconds": self.timeout_seconds,
+            "inputByteLimit": self.input_byte_limit,
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {"identity": self.identity.to_dict(), **self._payload()}
+
+    @classmethod
+    def from_dict(cls, value: object) -> "ExecuteFinalizerRequest":
+        data = _closed_mapping(
+            value, schema=cls.__name__,
+            keys=frozenset(("identity", "input", "timeoutSeconds", "inputByteLimit")),
+        )
+        return cls(
+            WorkerRequestIdentity.from_dict(data["identity"]), FinalizerInput.from_dict(data["input"]),
+            data["timeoutSeconds"], data["inputByteLimit"],
+        )
+
+
+_EXECUTE_FINALIZER_RESULT_KEYS = frozenset({
+    "identity", "status", "childOutcome", "workerResultDigest", "failureCode", "diagnostic",
+})
+
+
+@dataclass(frozen=True)
+class ExecuteFinalizerCompleted:
+    identity: WorkerRequestIdentity
+    child_outcome: FinalizerChildOutcome
+    worker_result_digest: str
+    status: ClassVar[str] = "COMPLETED"
+
+    def __post_init__(self) -> None:
+        _validate_worker_result_binding(self.identity, WorkerKind.FINALIZER, self.worker_result_digest, self._payload())
+
+    def _payload(self) -> dict[str, object]:
+        if type(self.child_outcome) is not FinalizerChildOutcome:
+            raise ValueError("childOutcome must be FinalizerChildOutcome")
+        return {
+            "identity": self.identity.to_dict(), "status": self.status,
+            "childOutcome": self.child_outcome.to_dict(), "failureCode": None, "diagnostic": None,
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {**self._payload(), "workerResultDigest": self.worker_result_digest}
+
+    @classmethod
+    def from_dict(cls, value: object) -> "ExecuteFinalizerCompleted":
+        data = _closed_mapping(value, schema=cls.__name__, keys=_EXECUTE_FINALIZER_RESULT_KEYS)
+        _validate_completed_worker_branch(data)
+        return cls(
+            WorkerRequestIdentity.from_dict(data["identity"]),
+            FinalizerChildOutcome.from_dict(data["childOutcome"]), data["workerResultDigest"],
+        )
+
+
+@dataclass(frozen=True)
+class ExecuteFinalizerFailed:
+    identity: WorkerRequestIdentity
+    failure_code: FinalizerFailureCode
+    diagnostic: str
+    worker_result_digest: str
+    status: ClassVar[str] = "FAILED"
+
+    def __post_init__(self) -> None:
+        _validate_worker_failure(
+            self.failure_code, self.diagnostic,
+            (FinalizerFailureCode.RUNTIME_MISMATCH, FinalizerFailureCode.INPUT_TOO_LARGE,
+             FinalizerFailureCode.OUTPUT_TOO_LARGE, FinalizerFailureCode.TIMED_OUT,
+             FinalizerFailureCode.CANCELLED, FinalizerFailureCode.PROCESS_FAILED,
+             FinalizerFailureCode.OUTPUT_INVALID),
+        )
+        _validate_worker_result_binding(self.identity, WorkerKind.FINALIZER, self.worker_result_digest, self._payload())
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "identity": self.identity.to_dict(), "status": self.status, "childOutcome": None,
+            "failureCode": self.failure_code.value, "diagnostic": self.diagnostic,
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {**self._payload(), "workerResultDigest": self.worker_result_digest}
+
+    @classmethod
+    def from_dict(cls, value: object) -> "ExecuteFinalizerFailed":
+        data = _closed_mapping(value, schema=cls.__name__, keys=_EXECUTE_FINALIZER_RESULT_KEYS)
+        if data["status"] != "FAILED" or data["childOutcome"] is not None:
+            raise ValueError("failed execution forbids childOutcome")
+        return cls(
+            WorkerRequestIdentity.from_dict(data["identity"]),
+            _enum_from_wire(FinalizerFailureCode, data["failureCode"], field="failureCode"),
+            data["diagnostic"], data["workerResultDigest"],
+        )
+
+
+def execute_finalizer_result_from_dict(
+    value: object, request: ExecuteFinalizerRequest
+) -> Union[ExecuteFinalizerCompleted, ExecuteFinalizerFailed]:
+    if type(request) is not ExecuteFinalizerRequest or not isinstance(value, Mapping):
+        raise ValueError("finalizer result requires its concrete request")
+    if value.get("status") == "COMPLETED":
+        result = ExecuteFinalizerCompleted.from_dict(value)
+    elif value.get("status") == "FAILED":
+        result = ExecuteFinalizerFailed.from_dict(value)
+    else:
+        raise ValueError("unknown finalizer result status")
+    if result.identity != request.identity:
+        raise ValueError("finalizer result belongs to another request")
+    if type(result) is ExecuteFinalizerCompleted:
+        outcome, invocation = result.child_outcome, request.input.invocation
+        expected = (
+            invocation.finalizer_id, invocation.invocation_digest,
+            request.input.finalizer_input_digest, invocation.snapshot_digest,
+            invocation.primary_result_digest,
+        )
+        actual = (
+            outcome.finalizer_id, outcome.invocation_digest, outcome.finalizer_input_digest,
+            outcome.snapshot_digest, outcome.primary_result_digest,
+        )
+        if actual != expected:
+            raise ValueError("childOutcome does not match finalizer input identity")
+        if outcome.status is FinalizerOutcomeStatus.VALIDATED and (
+            outcome.validated_role_instances != invocation.required_role_identities
+        ):
+            raise ValueError("validated childOutcome must cover exactly the required roles")
+    return result
+
+
+@dataclass(frozen=True)
+class PersistAuthorityRuntimeRequest:
+    identity: WorkerRequestIdentity
+    workspace_id: str
+    gate_id: str
+    authorization_id: str
+    candidate_runtime: FinalizerMaintenanceRuntimeIdentity
+    durability_profile: ProofAuthorityDurabilityProfile
+    environment_observation: ActiveDurabilityEnvironmentObservation
+    expected_durability_profile_digest: str
+    file_limit: int = 1024
+    single_file_byte_limit: int = 256 * 1024 * 1024
+    cumulative_byte_limit: int = 512 * 1024 * 1024
+    timeout_seconds: int = 60
+
+    def __post_init__(self) -> None:
+        _validate_workspace_id(self.workspace_id)
+        _validate_slug(self.gate_id, field="gateId")
+        _validate_slug(self.authorization_id, field="authorizationId")
+        validate_sha256(self.expected_durability_profile_digest)
+        if type(self.candidate_runtime) is not FinalizerMaintenanceRuntimeIdentity:
+            raise ValueError("candidateRuntime must be FinalizerMaintenanceRuntimeIdentity")
+        if type(self.durability_profile) not in (
+            LinuxProofAuthorityDurabilityProfile,
+            DarwinProofAuthorityDurabilityProfile,
+        ):
+            raise ValueError("durabilityProfile must use one closed OS branch")
+        if (
+            self.durability_profile.durability_profile_digest
+            != self.expected_durability_profile_digest
+        ):
+            raise ValueError(
+                "expectedDurabilityProfileDigest does not match durabilityProfile"
+            )
+        self.durability_profile.capability_evidence.validate_maintenance_source(
+            self.candidate_runtime
+        )
+        if (
+            type(self.environment_observation)
+            is not ActiveDurabilityEnvironmentObservation
+        ):
+            raise ValueError(
+                "environmentObservation must be active-profile evidence"
+            )
+        capability = self.durability_profile.capability_evidence
+        qualified = DurabilityQualifiedEnvironment.create(
+            host_build=capability.qualified_host_build,
+            host_identity=capability.qualified_host_identity,
+            filesystem_implementation_version=(
+                capability.filesystem_implementation_version
+            ),
+            required_mount_options=capability.required_mount_options,
+            stable_volume_identity=capability.stable_volume_identity,
+            probe_runtime_digest=capability.probe_runtime_digest,
+        )
+        validate_durability_environment_observation(
+            self.environment_observation,
+            qualified,
+        )
+        for field, value, expected in (
+            ("fileLimit", self.file_limit, 1024),
+            ("singleFileByteLimit", self.single_file_byte_limit, 256 * 1024 * 1024),
+            ("cumulativeByteLimit", self.cumulative_byte_limit, 512 * 1024 * 1024),
+            ("timeoutSeconds", self.timeout_seconds, 60),
+        ):
+            if type(value) is not int or value != expected:
+                raise ValueError(f"{field} must equal fixed authority-runtime limit")
+        expected_owner = (self.workspace_id, self.gate_id, self.authorization_id)
+        if any(
+            (ref.workspace_id, ref.gate_id, ref.authorization_id) != expected_owner
+            for ref in self.candidate_runtime.runtime_artifacts
+        ):
+            raise ValueError("candidateRuntime belongs to another authority")
+        _validate_worker_request_binding(
+            self.identity, WorkerKind.AUTHORITY_RUNTIME_PERSISTER, self._payload()
+        )
+        owner = self.identity.descriptor_claims[0].owner_binding
+        if type(owner) is not GateDirectoryOwnerBinding or (
+            owner.workspace_id, owner.gate_id
+        ) != expected_owner[:2]:
+            raise ValueError("GATE_DIRECTORY owner does not match authority")
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "workspaceId": self.workspace_id, "gateId": self.gate_id,
+            "authorizationId": self.authorization_id,
+            "candidateRuntime": self.candidate_runtime.to_dict(),
+            "durabilityProfile": self.durability_profile.to_dict(),
+            "environmentObservation": self.environment_observation.to_dict(),
+            "expectedDurabilityProfileDigest": self.expected_durability_profile_digest,
+            "fileLimit": self.file_limit, "singleFileByteLimit": self.single_file_byte_limit,
+            "cumulativeByteLimit": self.cumulative_byte_limit,
+            "timeoutSeconds": self.timeout_seconds,
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {"identity": self.identity.to_dict(), **self._payload()}
+
+    @classmethod
+    def from_dict(cls, value: object) -> "PersistAuthorityRuntimeRequest":
+        fields = (
+            "workspaceId", "gateId", "authorizationId", "candidateRuntime",
+            "durabilityProfile", "environmentObservation",
+            "expectedDurabilityProfileDigest",
+            "fileLimit", "singleFileByteLimit",
+            "cumulativeByteLimit", "timeoutSeconds",
+        )
+        data = _closed_mapping(value, schema=cls.__name__, keys=frozenset(("identity", *fields)))
+        return cls(
+            WorkerRequestIdentity.from_dict(data["identity"]),
+            data["workspaceId"], data["gateId"], data["authorizationId"],
+            FinalizerMaintenanceRuntimeIdentity.from_dict(data["candidateRuntime"]),
+            proof_authority_durability_profile_from_dict(
+                data["durabilityProfile"]
+            ),
+            ActiveDurabilityEnvironmentObservation.from_dict(
+                data["environmentObservation"]
+            ),
+            *(data[field] for field in fields[6:]),
+        )
+
+
+_PERSIST_AUTHORITY_RESULT_KEYS = frozenset({
+    "identity", "status", "durableBoundary", "maintenanceRuntimeDigest",
+    "failureCode", "workerResultDigest", "diagnostic",
+})
+
+
+@dataclass(frozen=True)
+class PersistAuthorityRuntimeCompleted:
+    identity: WorkerRequestIdentity
+    maintenance_runtime_digest: str
+    worker_result_digest: str
+    status: ClassVar[str] = "COMPLETED"
+    durable_boundary: ClassVar[str] = "AUTHORITY_RUNTIME_DURABLE"
+
+    def __post_init__(self) -> None:
+        validate_sha256(self.maintenance_runtime_digest)
+        _validate_worker_result_binding(
+            self.identity, WorkerKind.AUTHORITY_RUNTIME_PERSISTER,
+            self.worker_result_digest, self._payload(),
+        )
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "identity": self.identity.to_dict(), "status": self.status,
+            "durableBoundary": self.durable_boundary,
+            "maintenanceRuntimeDigest": self.maintenance_runtime_digest,
+            "failureCode": None, "diagnostic": None,
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {**self._payload(), "workerResultDigest": self.worker_result_digest}
+
+    @classmethod
+    def from_dict(cls, value: object) -> "PersistAuthorityRuntimeCompleted":
+        data = _closed_mapping(value, schema=cls.__name__, keys=_PERSIST_AUTHORITY_RESULT_KEYS)
+        _validate_completed_worker_branch(data)
+        if data["durableBoundary"] != cls.durable_boundary:
+            raise ValueError("completed persistence requires AUTHORITY_RUNTIME_DURABLE")
+        return cls(
+            WorkerRequestIdentity.from_dict(data["identity"]),
+            data["maintenanceRuntimeDigest"], data["workerResultDigest"],
+        )
+
+
+@dataclass(frozen=True)
+class PersistAuthorityRuntimeFailed:
+    identity: WorkerRequestIdentity
+    maintenance_runtime_digest: str
+    diagnostic: str
+    worker_result_digest: str
+    status: ClassVar[str] = "FAILED"
+    durable_boundary: ClassVar[str] = "AUTHORITY_RUNTIME_MAY_BE_DURABLE"
+    failure_code: ClassVar[FinalizerFailureCode] = FinalizerFailureCode.AUTHORITY_RUNTIME_IO_FAILED
+
+    def __post_init__(self) -> None:
+        validate_sha256(self.maintenance_runtime_digest)
+        _validate_non_empty_utf8(self.diagnostic, field="diagnostic", maximum_bytes=4096)
+        _validate_worker_result_binding(
+            self.identity, WorkerKind.AUTHORITY_RUNTIME_PERSISTER,
+            self.worker_result_digest, self._payload(),
+        )
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "identity": self.identity.to_dict(), "status": self.status,
+            "durableBoundary": self.durable_boundary,
+            "maintenanceRuntimeDigest": self.maintenance_runtime_digest,
+            "failureCode": self.failure_code.value, "diagnostic": self.diagnostic,
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {**self._payload(), "workerResultDigest": self.worker_result_digest}
+
+    @classmethod
+    def from_dict(cls, value: object) -> "PersistAuthorityRuntimeFailed":
+        data = _closed_mapping(value, schema=cls.__name__, keys=_PERSIST_AUTHORITY_RESULT_KEYS)
+        if (
+            data["status"] != cls.status or data["durableBoundary"] != cls.durable_boundary
+            or data["failureCode"] != cls.failure_code.value
+        ):
+            raise ValueError("failed persistence requires uncertain-publication branch")
+        return cls(
+            WorkerRequestIdentity.from_dict(data["identity"]),
+            data["maintenanceRuntimeDigest"], data["diagnostic"], data["workerResultDigest"],
+        )
+
+
+@dataclass(frozen=True)
+class PersistAuthorityRuntimeRejected:
+    identity: WorkerRequestIdentity
+    failure_code: FinalizerFailureCode
+    diagnostic: str
+    worker_result_digest: str
+    status: ClassVar[str] = "REJECTED"
+    durable_boundary: ClassVar[str] = "NO_MUTATION"
+
+    def __post_init__(self) -> None:
+        _validate_worker_failure(
+            self.failure_code, self.diagnostic,
+            (FinalizerFailureCode.RUNTIME_MISMATCH, FinalizerFailureCode.DURABILITY_PROFILE_UNSUPPORTED,
+             FinalizerFailureCode.AUTHORITY_RUNTIME_IO_FAILED, FinalizerFailureCode.INPUT_TOO_LARGE,
+             FinalizerFailureCode.TIMED_OUT, FinalizerFailureCode.PROCESS_FAILED),
+        )
+        _validate_worker_result_binding(
+            self.identity, WorkerKind.AUTHORITY_RUNTIME_PERSISTER,
+            self.worker_result_digest, self._payload(),
+        )
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "identity": self.identity.to_dict(), "status": self.status,
+            "durableBoundary": self.durable_boundary, "maintenanceRuntimeDigest": None,
+            "failureCode": self.failure_code.value, "diagnostic": self.diagnostic,
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {**self._payload(), "workerResultDigest": self.worker_result_digest}
+
+    @classmethod
+    def from_dict(cls, value: object) -> "PersistAuthorityRuntimeRejected":
+        data = _closed_mapping(value, schema=cls.__name__, keys=_PERSIST_AUTHORITY_RESULT_KEYS)
+        if (
+            data["status"] != cls.status or data["durableBoundary"] != cls.durable_boundary
+            or data["maintenanceRuntimeDigest"] is not None
+        ):
+            raise ValueError("rejected persistence requires NO_MUTATION and null digest")
+        return cls(
+            WorkerRequestIdentity.from_dict(data["identity"]),
+            _enum_from_wire(FinalizerFailureCode, data["failureCode"], field="failureCode"),
+            data["diagnostic"], data["workerResultDigest"],
+        )
+
+
+def persist_authority_runtime_result_from_dict(
+    value: object, request: PersistAuthorityRuntimeRequest
+) -> Union[PersistAuthorityRuntimeCompleted, PersistAuthorityRuntimeFailed, PersistAuthorityRuntimeRejected]:
+    if type(request) is not PersistAuthorityRuntimeRequest or not isinstance(value, Mapping):
+        raise ValueError("authority runtime result requires its concrete request")
+    if value.get("status") == "COMPLETED":
+        result = PersistAuthorityRuntimeCompleted.from_dict(value)
+    elif value.get("status") == "FAILED":
+        result = PersistAuthorityRuntimeFailed.from_dict(value)
+    elif value.get("status") == "REJECTED":
+        result = PersistAuthorityRuntimeRejected.from_dict(value)
+    else:
+        raise ValueError("unknown authority runtime result status")
+    if result.identity != request.identity:
+        raise ValueError("authority runtime result belongs to another request")
+    if type(result) is not PersistAuthorityRuntimeRejected and (
+        result.maintenance_runtime_digest != request.candidate_runtime.maintenance_runtime_digest
+    ):
+        raise ValueError("authority runtime result does not match candidate runtime digest")
+    return result
+
+
+@dataclass(frozen=True)
 class SealedEvidenceMarker:
     artifact_kind: str
     schema_version: int
@@ -4860,6 +8796,283 @@ class SealedEvidenceMarker:
             sealed_at=data["sealedAt"],
             seal_digest=data["sealDigest"],
         )
+
+
+def _validate_cached_finalization_outcome(
+    value: object,
+) -> GateEvidenceFinalization:
+    if type(value) not in (
+        ChildGateEvidenceFinalization,
+        CoreGateEvidenceFinalization,
+    ):
+        raise ValueError("cachedOutcome must be GateEvidenceFinalization")
+    return value
+
+
+def _validate_cached_publication_bytes(
+    *,
+    completed_at: object,
+    manifest_bytes: object,
+    manifest_digest: object,
+    latest_pointer_bytes: object,
+    latest_pointer_digest: object,
+) -> None:
+    _canonical_utc_instant(completed_at, field="completedAt")
+    for field, value, digest in (
+        ("manifestBytes", manifest_bytes, manifest_digest),
+        ("latestPointerBytes", latest_pointer_bytes, latest_pointer_digest),
+    ):
+        if type(value) is not bytes or not value:
+            raise ValueError(f"{field} must be non-empty exact bytes")
+        validate_sha256(digest)
+        if raw_sha256(value) != digest:
+            raise ValueError(f"{field} digest mismatch")
+
+
+@dataclass(frozen=True)
+class FinalizationReadyReservation:
+    state: ClassVar[FinalizationReservationState] = (
+        FinalizationReservationState.READY
+    )
+    invocation_digest: None = None
+    cached_outcome: None = None
+    completed_at: None = None
+    manifest_bytes: None = None
+    manifest_digest: None = None
+    latest_pointer_bytes: None = None
+    latest_pointer_digest: None = None
+    latest_disposition: None = None
+
+    def __post_init__(self) -> None:
+        if any(
+            value is not None
+            for value in (
+                self.invocation_digest,
+                self.cached_outcome,
+                self.completed_at,
+                self.manifest_bytes,
+                self.manifest_digest,
+                self.latest_pointer_bytes,
+                self.latest_pointer_digest,
+                self.latest_disposition,
+            )
+        ):
+            raise ValueError("READY reservation requires null branch fields")
+
+
+@dataclass(frozen=True)
+class FinalizationInvocationStartedReservation:
+    invocation_digest: str
+    state: ClassVar[FinalizationReservationState] = (
+        FinalizationReservationState.INVOCATION_STARTED
+    )
+    cached_outcome: None = None
+    completed_at: None = None
+    manifest_bytes: None = None
+    manifest_digest: None = None
+    latest_pointer_bytes: None = None
+    latest_pointer_digest: None = None
+    latest_disposition: None = None
+
+    def __post_init__(self) -> None:
+        validate_sha256(self.invocation_digest)
+
+
+@dataclass(frozen=True)
+class FinalizationOutcomeCachedReservation:
+    invocation_digest: str
+    cached_outcome: GateEvidenceFinalization
+    state: ClassVar[FinalizationReservationState] = (
+        FinalizationReservationState.OUTCOME_CACHED
+    )
+    completed_at: None = None
+    manifest_bytes: None = None
+    manifest_digest: None = None
+    latest_pointer_bytes: None = None
+    latest_pointer_digest: None = None
+    latest_disposition: None = None
+
+    def __post_init__(self) -> None:
+        validate_sha256(self.invocation_digest)
+        _validate_cached_finalization_outcome(self.cached_outcome)
+
+
+@dataclass(frozen=True)
+class FinalizationManifestPreparedReservation:
+    invocation_digest: str
+    cached_outcome: GateEvidenceFinalization
+    completed_at: str
+    manifest_bytes: bytes
+    manifest_digest: str
+    latest_pointer_bytes: bytes
+    latest_pointer_digest: str
+    state: ClassVar[FinalizationReservationState] = (
+        FinalizationReservationState.MANIFEST_PREPARED
+    )
+    latest_disposition: None = None
+
+    def __post_init__(self) -> None:
+        validate_sha256(self.invocation_digest)
+        _validate_cached_finalization_outcome(self.cached_outcome)
+        _validate_cached_publication_bytes(
+            completed_at=self.completed_at,
+            manifest_bytes=self.manifest_bytes,
+            manifest_digest=self.manifest_digest,
+            latest_pointer_bytes=self.latest_pointer_bytes,
+            latest_pointer_digest=self.latest_pointer_digest,
+        )
+
+
+@dataclass(frozen=True)
+class FinalizationManifestDurableReservation:
+    invocation_digest: str
+    cached_outcome: GateEvidenceFinalization
+    completed_at: str
+    manifest_bytes: bytes
+    manifest_digest: str
+    latest_pointer_bytes: bytes
+    latest_pointer_digest: str
+    state: ClassVar[FinalizationReservationState] = (
+        FinalizationReservationState.MANIFEST_DURABLE
+    )
+    latest_disposition: None = None
+
+    def __post_init__(self) -> None:
+        validate_sha256(self.invocation_digest)
+        _validate_cached_finalization_outcome(self.cached_outcome)
+        _validate_cached_publication_bytes(
+            completed_at=self.completed_at,
+            manifest_bytes=self.manifest_bytes,
+            manifest_digest=self.manifest_digest,
+            latest_pointer_bytes=self.latest_pointer_bytes,
+            latest_pointer_digest=self.latest_pointer_digest,
+        )
+
+
+@dataclass(frozen=True)
+class FinalizationLatestResolvedReservation:
+    invocation_digest: str
+    cached_outcome: GateEvidenceFinalization
+    completed_at: str
+    manifest_bytes: bytes
+    manifest_digest: str
+    latest_pointer_bytes: bytes
+    latest_pointer_digest: str
+    latest_disposition: FinalizationLatestDisposition
+    state: ClassVar[FinalizationReservationState] = (
+        FinalizationReservationState.LATEST_RESOLVED
+    )
+
+    def __post_init__(self) -> None:
+        validate_sha256(self.invocation_digest)
+        _validate_cached_finalization_outcome(self.cached_outcome)
+        _validate_cached_publication_bytes(
+            completed_at=self.completed_at,
+            manifest_bytes=self.manifest_bytes,
+            manifest_digest=self.manifest_digest,
+            latest_pointer_bytes=self.latest_pointer_bytes,
+            latest_pointer_digest=self.latest_pointer_digest,
+        )
+        if type(self.latest_disposition) is not FinalizationLatestDisposition:
+            raise ValueError("latestDisposition must be closed")
+
+
+FinalizationInvocationReservation = Union[
+    FinalizationReadyReservation,
+    FinalizationInvocationStartedReservation,
+    FinalizationOutcomeCachedReservation,
+    FinalizationManifestPreparedReservation,
+    FinalizationManifestDurableReservation,
+    FinalizationLatestResolvedReservation,
+]
+
+
+def start_finalizer_invocation(
+    reservation: FinalizationInvocationReservation,
+    *,
+    invocation_digest: str,
+) -> FinalizationInvocationStartedReservation:
+    if type(reservation) is not FinalizationReadyReservation:
+        raise ValueError("finalizer invocation may start only from READY")
+    return FinalizationInvocationStartedReservation(
+        invocation_digest=invocation_digest
+    )
+
+
+def cache_finalizer_outcome(
+    reservation: FinalizationInvocationReservation,
+    *,
+    outcome: GateEvidenceFinalization,
+) -> FinalizationOutcomeCachedReservation:
+    if type(reservation) is not FinalizationInvocationStartedReservation:
+        raise ValueError(
+            "finalizer outcome may be cached only after invocation start"
+        )
+    return FinalizationOutcomeCachedReservation(
+        invocation_digest=reservation.invocation_digest,
+        cached_outcome=outcome,
+    )
+
+
+def prepare_finalization_manifest(
+    reservation: FinalizationInvocationReservation,
+    *,
+    completed_at: str,
+    manifest_bytes: bytes,
+    latest_pointer_bytes: bytes,
+) -> FinalizationManifestPreparedReservation:
+    if type(reservation) is not FinalizationOutcomeCachedReservation:
+        raise ValueError(
+            "finalization manifest may be prepared only from cached outcome"
+        )
+    return FinalizationManifestPreparedReservation(
+        invocation_digest=reservation.invocation_digest,
+        cached_outcome=reservation.cached_outcome,
+        completed_at=completed_at,
+        manifest_bytes=manifest_bytes,
+        manifest_digest=raw_sha256(manifest_bytes),
+        latest_pointer_bytes=latest_pointer_bytes,
+        latest_pointer_digest=raw_sha256(latest_pointer_bytes),
+    )
+
+
+def mark_finalization_manifest_durable(
+    reservation: FinalizationInvocationReservation,
+) -> FinalizationManifestDurableReservation:
+    if type(reservation) is not FinalizationManifestPreparedReservation:
+        raise ValueError(
+            "manifest durability may advance only prepared reservation"
+        )
+    return FinalizationManifestDurableReservation(
+        invocation_digest=reservation.invocation_digest,
+        cached_outcome=reservation.cached_outcome,
+        completed_at=reservation.completed_at,
+        manifest_bytes=reservation.manifest_bytes,
+        manifest_digest=reservation.manifest_digest,
+        latest_pointer_bytes=reservation.latest_pointer_bytes,
+        latest_pointer_digest=reservation.latest_pointer_digest,
+    )
+
+
+def resolve_finalization_latest(
+    reservation: FinalizationInvocationReservation,
+    *,
+    disposition: FinalizationLatestDisposition,
+) -> FinalizationLatestResolvedReservation:
+    if type(reservation) is not FinalizationManifestDurableReservation:
+        raise ValueError(
+            "latest publication may resolve only a durable manifest"
+        )
+    return FinalizationLatestResolvedReservation(
+        invocation_digest=reservation.invocation_digest,
+        cached_outcome=reservation.cached_outcome,
+        completed_at=reservation.completed_at,
+        manifest_bytes=reservation.manifest_bytes,
+        manifest_digest=reservation.manifest_digest,
+        latest_pointer_bytes=reservation.latest_pointer_bytes,
+        latest_pointer_digest=reservation.latest_pointer_digest,
+        latest_disposition=disposition,
+    )
 
 
 @dataclass(frozen=True)
@@ -5506,6 +9719,288 @@ class AbortOperatorIdentity:
             ),
             principal_id=data["principalId"],
         )
+
+
+def _validate_witness_public_key(public_key_hex: object, public_key_sha256: object) -> None:
+    if (
+        type(public_key_hex) is not str
+        or re.fullmatch(r"04[0-9a-f]{128}", public_key_hex) is None
+    ):
+        raise ValueError("witness key must be canonical uncompressed SEC1 P-256")
+    encoded = bytes.fromhex(public_key_hex)
+    x = int.from_bytes(encoded[1:33], "big")
+    y = int.from_bytes(encoded[33:], "big")
+    prime = 0xFFFFFFFF00000001000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFF
+    coefficient = 0x5AC635D8AA3A93E7B3EBBD55769886BC651D06B0CC53B0F63BCE3C3E27D2604B
+    if (
+        x >= prime or y >= prime
+        or (y * y - (x * x * x - 3 * x + coefficient)) % prime != 0
+    ):
+        raise ValueError("witness key is not an on-curve canonical P-256 point")
+    validate_sha256(public_key_sha256)
+    if raw_sha256(encoded) != public_key_sha256:
+        raise ValueError("witness public key hash mismatch")
+
+
+@dataclass(frozen=True)
+class ControllerStoreQualificationWitnessAuthorization:
+    operator_identity: AbortOperatorIdentity
+    workspace_id: str
+    gate_id: str
+    bootstrap_candidate_digest: str
+    crash_fixture_id: str
+    qualification_run_id: str
+    qualification_id: str
+    subject_controller_identity_digest: str
+    witness_public_key_hex: str
+    witness_public_key_sha256: str
+    owner_approval_document_path: str
+    owner_approval_document_sha256: str
+    authority_source_commit: str
+    authorized_at: str
+    authorization_id: str
+    witness_confirmation_challenge_digest: str
+    witness_authorization_digest: str
+    artifact_kind: ClassVar[str] = "acceptance-power-controller-store-witness-authorization"
+    schema_version: ClassVar[int] = 1
+    action: ClassVar[str] = "AUTHORIZE_CONTROLLER_STORE_QUALIFICATION_WITNESS"
+    witness_signature_algorithm: ClassVar[str] = "ECDSA_P256_SHA256_P1363_LOW_S"
+    witness_scope: ClassVar[str] = "CONTROLLER_STORE_QUALIFICATION_ONLY"
+    production_authority_eligible: ClassVar[bool] = False
+    expected_target_absent: ClassVar[bool] = True
+    authorization_path_id: ClassVar[str] = "CANDIDATE_WITNESS_AUTHORIZATION_V1"
+
+    def __post_init__(self) -> None:
+        if type(self.operator_identity) is not AbortOperatorIdentity:
+            raise ValueError("witness operator must be a concrete kernel principal")
+        _validate_workspace_id(self.workspace_id)
+        for value in (
+            self.gate_id, self.crash_fixture_id, self.qualification_run_id,
+            self.qualification_id,
+        ):
+            validate_finalizer_id(value)
+        for value in (
+            self.bootstrap_candidate_digest, self.subject_controller_identity_digest,
+            self.owner_approval_document_sha256, self.authorization_id,
+            self.witness_confirmation_challenge_digest, self.witness_authorization_digest,
+        ):
+            validate_sha256(value)
+        _validate_witness_public_key(self.witness_public_key_hex, self.witness_public_key_sha256)
+        validate_repo_relative_path(self.owner_approval_document_path)
+        if re.fullmatch(r"[0-9a-f]{40}", self.authority_source_commit) is None:
+            raise ValueError("witness authority source must be a Git SHA-1 commit")
+        _canonical_utc_instant(self.authorized_at, field="authorizedAt")
+        payload = self._payload()
+        if self.authorization_id != domain_separated_sha256(
+            _CONTROLLER_WITNESS_AUTHORIZATION_ID_DOMAIN,
+            self._id_payload(payload),
+        ):
+            raise ValueError("witness authorization ID mismatch")
+        if self.witness_confirmation_challenge_digest != domain_separated_sha256(
+            _CONTROLLER_WITNESS_CONFIRMATION_DOMAIN, payload
+        ):
+            raise ValueError("witness confirmation challenge mismatch")
+        if self.witness_authorization_digest != domain_separated_sha256(
+            _CONTROLLER_WITNESS_AUTHORIZATION_DOMAIN,
+            {
+                **payload,
+                "witnessConfirmationChallengeDigest": self.witness_confirmation_challenge_digest,
+            },
+        ):
+            raise ValueError("witness authorization digest mismatch")
+
+    @property
+    def witness_id(self) -> str:
+        return "p256-sha256:" + self.witness_public_key_sha256
+
+    @staticmethod
+    def _id_payload(payload: Mapping[str, object]) -> dict[str, object]:
+        return {
+            key: payload[key] for key in (
+                "workspaceId", "gateId", "bootstrapCandidateDigest", "qualificationId",
+                "witnessId", "witnessPublicKeySha256", "ownerApprovalDocumentSha256",
+                "authoritySourceCommit",
+            )
+        }
+
+    def _payload(self) -> dict[str, object]:
+        return self._payload_values({
+            field.name: getattr(self, field.name) for field in dataclass_fields(self)
+        })
+
+    @classmethod
+    def _payload_values(cls, values: Mapping[str, object]) -> dict[str, object]:
+        return {
+            "artifactKind": cls.artifact_kind,
+            "schemaVersion": cls.schema_version,
+            "action": cls.action,
+            "authorizationId": values["authorization_id"],
+            "operatorIdentity": values["operator_identity"].to_dict(),
+            "workspaceId": values["workspace_id"],
+            "gateId": values["gate_id"],
+            "bootstrapCandidateDigest": values["bootstrap_candidate_digest"],
+            "crashFixtureId": values["crash_fixture_id"],
+            "qualificationRunId": values["qualification_run_id"],
+            "qualificationId": values["qualification_id"],
+            "subjectControllerIdentityDigest": values["subject_controller_identity_digest"],
+            "witnessId": "p256-sha256:" + values["witness_public_key_sha256"],
+            "witnessSignatureAlgorithm": cls.witness_signature_algorithm,
+            "witnessPublicKeyHex": values["witness_public_key_hex"],
+            "witnessPublicKeySha256": values["witness_public_key_sha256"],
+            "witnessScope": cls.witness_scope,
+            "productionAuthorityEligible": cls.production_authority_eligible,
+            "ownerApprovalDocumentPath": values["owner_approval_document_path"],
+            "ownerApprovalDocumentSha256": values["owner_approval_document_sha256"],
+            "authoritySourceCommit": values["authority_source_commit"],
+            "expectedTargetAbsent": cls.expected_target_absent,
+            "authorizationPathId": cls.authorization_path_id,
+            "authorizedAt": values["authorized_at"],
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            **self._payload(),
+            "witnessConfirmationChallengeDigest": self.witness_confirmation_challenge_digest,
+            "witnessAuthorizationDigest": self.witness_authorization_digest,
+        }
+
+    @classmethod
+    def create(cls, **values: object) -> "ControllerStoreQualificationWitnessAuthorization":
+        inputs = frozenset(field.name for field in dataclass_fields(cls)) - {
+            "witness_public_key_sha256", "authorization_id",
+            "witness_confirmation_challenge_digest", "witness_authorization_digest",
+        }
+        _closed_mapping(values, schema=cls.__name__ + " inputs", keys=inputs)
+        public_key_hex = values["witness_public_key_hex"]
+        if type(public_key_hex) is not str:
+            raise ValueError("witness key must be a lowercase hex string")
+        public_key_sha256 = raw_sha256(bytes.fromhex(public_key_hex))
+        _validate_witness_public_key(public_key_hex, public_key_sha256)
+        derived = {
+            **values,
+            "witness_public_key_sha256": public_key_sha256,
+            "authorization_id": "0" * 64,
+            "witness_confirmation_challenge_digest": "0" * 64,
+            "witness_authorization_digest": "0" * 64,
+        }
+        if type(values["operator_identity"]) is not AbortOperatorIdentity:
+            raise ValueError("witness operator must be a concrete kernel principal")
+        payload = cls._payload_values(derived)
+        derived["authorization_id"] = payload["authorizationId"] = domain_separated_sha256(
+            _CONTROLLER_WITNESS_AUTHORIZATION_ID_DOMAIN, cls._id_payload(payload)
+        )
+        derived["witness_confirmation_challenge_digest"] = domain_separated_sha256(
+            _CONTROLLER_WITNESS_CONFIRMATION_DOMAIN, payload
+        )
+        derived["witness_authorization_digest"] = domain_separated_sha256(
+            _CONTROLLER_WITNESS_AUTHORIZATION_DOMAIN,
+            {
+                **payload,
+                "witnessConfirmationChallengeDigest": derived["witness_confirmation_challenge_digest"],
+            },
+        )
+        return cls(**derived)
+
+    @classmethod
+    def from_dict(cls, value: object) -> "ControllerStoreQualificationWitnessAuthorization":
+        field_names = {
+            "operatorIdentity": "operator_identity", "workspaceId": "workspace_id",
+            "gateId": "gate_id", "bootstrapCandidateDigest": "bootstrap_candidate_digest",
+            "crashFixtureId": "crash_fixture_id", "qualificationRunId": "qualification_run_id",
+            "qualificationId": "qualification_id",
+            "subjectControllerIdentityDigest": "subject_controller_identity_digest",
+            "witnessPublicKeyHex": "witness_public_key_hex",
+            "witnessPublicKeySha256": "witness_public_key_sha256",
+            "ownerApprovalDocumentPath": "owner_approval_document_path",
+            "ownerApprovalDocumentSha256": "owner_approval_document_sha256",
+            "authoritySourceCommit": "authority_source_commit", "authorizedAt": "authorized_at",
+            "authorizationId": "authorization_id",
+            "witnessConfirmationChallengeDigest": "witness_confirmation_challenge_digest",
+            "witnessAuthorizationDigest": "witness_authorization_digest",
+        }
+        constants = {
+            "artifactKind": cls.artifact_kind, "schemaVersion": cls.schema_version,
+            "action": cls.action, "witnessSignatureAlgorithm": cls.witness_signature_algorithm,
+            "witnessScope": cls.witness_scope, "productionAuthorityEligible": False,
+            "expectedTargetAbsent": True, "authorizationPathId": cls.authorization_path_id,
+        }
+        data = _closed_mapping(
+            value, schema=cls.__name__,
+            keys=frozenset(field_names) | frozenset(constants) | {"witnessId"},
+        )
+        if any(type(data[key]) is not type(expected) or data[key] != expected for key, expected in constants.items()):
+            raise ValueError("witness authorization constants mismatch")
+        values = {attribute: data[key] for key, attribute in field_names.items()}
+        values["operator_identity"] = AbortOperatorIdentity.from_dict(data["operatorIdentity"])
+        result = cls(**values)
+        if data["witnessId"] != result.witness_id:
+            raise ValueError("witness ID must be derived from its canonical public key")
+        return result
+
+
+@dataclass(frozen=True)
+class ControllerStoreQualificationWitnessIdentity:
+    authorization: ControllerStoreQualificationWitnessAuthorization
+    witness_identity_digest: str
+
+    def __post_init__(self) -> None:
+        if type(self.authorization) is not ControllerStoreQualificationWitnessAuthorization:
+            raise ValueError("witness identity requires its concrete authorization")
+        if self.witness_identity_digest != domain_separated_sha256(
+            _CONTROLLER_WITNESS_DOMAIN, self._payload()
+        ):
+            raise ValueError("witness identity digest mismatch")
+
+    def _payload(self) -> dict[str, object]:
+        return self._authorization_payload(self.authorization)
+
+    @staticmethod
+    def _authorization_payload(
+        authorization: ControllerStoreQualificationWitnessAuthorization,
+    ) -> dict[str, object]:
+        return {
+            "witnessRole": authorization.witness_scope,
+            "witnessId": authorization.witness_id,
+            "witnessSignatureAlgorithm": authorization.witness_signature_algorithm,
+            "witnessPublicKeyHex": authorization.witness_public_key_hex,
+            "witnessPublicKeySha256": authorization.witness_public_key_sha256,
+            "subjectControllerIdentityDigest": authorization.subject_controller_identity_digest,
+            "productionAuthorityEligible": False,
+            "authorization": authorization.to_dict(),
+            "witnessAuthorizationDigest": authorization.witness_authorization_digest,
+            "ownerApprovalDocumentPath": authorization.owner_approval_document_path,
+            "ownerApprovalDocumentSha256": authorization.owner_approval_document_sha256,
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {**self._payload(), "witnessIdentityDigest": self.witness_identity_digest}
+
+    @classmethod
+    def create(
+        cls, authorization: ControllerStoreQualificationWitnessAuthorization
+    ) -> "ControllerStoreQualificationWitnessIdentity":
+        if type(authorization) is not ControllerStoreQualificationWitnessAuthorization:
+            raise ValueError("witness identity requires a concrete authorization")
+        return cls(
+            authorization=authorization,
+            witness_identity_digest=domain_separated_sha256(
+                _CONTROLLER_WITNESS_DOMAIN, cls._authorization_payload(authorization)
+            ),
+        )
+
+    @classmethod
+    def from_dict(cls, value: object) -> "ControllerStoreQualificationWitnessIdentity":
+        if not isinstance(value, Mapping):
+            raise ValueError("witness identity must be an object")
+        authorization = ControllerStoreQualificationWitnessAuthorization.from_dict(value.get("authorization"))
+        result = cls(authorization, value.get("witnessIdentityDigest"))
+        data = _closed_mapping(value, schema=cls.__name__, keys=frozenset(result.to_dict()))
+        if (
+            data["productionAuthorityEligible"] is not False
+            or data != result.to_dict()
+        ):
+            raise ValueError("witness identity does not match its authorization")
+        return result
 
 
 @dataclass(frozen=True)
@@ -9246,6 +13741,63 @@ class ProofAdmissionQuiescence:
         )
         return quiescence
 
+    @classmethod
+    def from_dict_unresolved(
+        cls,
+        value: object,
+    ) -> "ProofAdmissionQuiescence":
+        data = _closed_mapping(value, schema=cls.__name__, keys=cls._WIRE_KEYS)
+        for field in (
+            "registeredJobs",
+            "terminalJobCompletions",
+            "acknowledgedEmissions",
+            "pendingEmissions",
+            "activeJobs",
+        ):
+            if not isinstance(data[field], list):
+                raise ValueError(f"{field} must be an array")
+        return cls(
+            artifact_kind=data["artifactKind"],
+            schema_version=data["schemaVersion"],
+            workspace_id=data["workspaceId"],
+            gate_id=data["gateId"],
+            coordinator_epoch_id=data["coordinatorEpochId"],
+            epoch_digest=data["epochDigest"],
+            current_epoch_digest=data["currentEpochDigest"],
+            coordinator_state=data["coordinatorState"],
+            source_commit=data["sourceCommit"],
+            proof_admission_source_digest=data[
+                "proofAdmissionSourceDigest"
+            ],
+            claim_admission_lock_identity=(
+                ProofAdmissionLockIdentity.from_dict(
+                    data["claimAdmissionLockIdentity"]
+                )
+            ),
+            claim_sequence_lock_identity=(
+                ProofAdmissionLockIdentity.from_dict(
+                    data["claimSequenceLockIdentity"]
+                )
+            ),
+            pause_digest=data["pauseDigest"],
+            registered_jobs=_sequence_digest_tuple_from_wire(
+                data["registeredJobs"],
+                field="registeredJobs",
+            ),
+            terminal_job_completions=_sequence_digest_tuple_from_wire(
+                data["terminalJobCompletions"],
+                field="terminalJobCompletions",
+            ),
+            acknowledged_emissions=_sequence_digest_tuple_from_wire(
+                data["acknowledgedEmissions"],
+                field="acknowledgedEmissions",
+            ),
+            pending_emissions=tuple(data["pendingEmissions"]),
+            active_jobs=tuple(data["activeJobs"]),
+            captured_at=data["capturedAt"],
+            quiescence_digest=data["quiescenceDigest"],
+        )
+
 
 class DurabilityBackend(str, Enum):
     LINUX_FILE_AND_DIRECTORY_FSYNC_V1 = "LINUX_FILE_AND_DIRECTORY_FSYNC_V1"
@@ -9424,6 +13976,677 @@ class DurabilityCapabilityArtifactRef:
             content_sha256=data["contentSha256"],
             byte_length=data["byteLength"],
             durability_capability_ref_digest=data["durabilityCapabilityRefDigest"],
+        )
+
+
+@dataclass(frozen=True)
+class PowerControllerTrustAnchorRef:
+    workspace_id: str
+    gate_id: str
+    trust_generation: int
+    controller_identity_digest: str
+    trust_anchor_digest: str
+    trust_anchor_ref_digest: str
+    artifact_kind: ClassVar[str] = "acceptance-power-controller-trust-anchor-ref"
+    schema_version: ClassVar[int] = 1
+
+    def __post_init__(self) -> None:
+        _validate_workspace_id(self.workspace_id)
+        _validate_slug(self.gate_id, field="gateId")
+        if type(self.trust_generation) is not int or not 1 <= self.trust_generation <= _I_JSON_INTEGER_MAX:
+            raise ValueError("trustGeneration must be a positive I-JSON integer")
+        for digest in (
+            self.controller_identity_digest, self.trust_anchor_digest,
+            self.trust_anchor_ref_digest,
+        ):
+            validate_sha256(digest)
+        if self.trust_anchor_ref_digest != domain_separated_sha256(
+            _POWER_CONTROLLER_TRUST_ANCHOR_REF_DOMAIN, self._payload()
+        ):
+            raise ValueError("trustAnchorRefDigest mismatch")
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "artifactKind": self.artifact_kind, "schemaVersion": self.schema_version,
+            "workspaceId": self.workspace_id, "gateId": self.gate_id,
+            "trustGeneration": self.trust_generation,
+            "controllerIdentityDigest": self.controller_identity_digest,
+            "trustAnchorDigest": self.trust_anchor_digest,
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {**self._payload(), "trustAnchorRefDigest": self.trust_anchor_ref_digest}
+
+    @classmethod
+    def from_dict(cls, value: object) -> "PowerControllerTrustAnchorRef":
+        data = _closed_mapping(value, schema=cls.__name__, keys=frozenset({
+            "artifactKind", "schemaVersion", "workspaceId", "gateId",
+            "trustGeneration", "controllerIdentityDigest", "trustAnchorDigest",
+            "trustAnchorRefDigest",
+        }))
+        if data["artifactKind"] != cls.artifact_kind or type(data["schemaVersion"]) is not int or data["schemaVersion"] != 1:
+            raise ValueError("invalid controller trust anchor ref schema")
+        return cls(
+            data["workspaceId"], data["gateId"], data["trustGeneration"],
+            data["controllerIdentityDigest"], data["trustAnchorDigest"],
+            data["trustAnchorRefDigest"],
+        )
+
+
+class PowerControllerTrustGenerationState(str, Enum):
+    ACTIVE = "ACTIVE"
+    REVOKED = "REVOKED"
+
+
+@dataclass(frozen=True)
+class PowerControllerTrustGenerationRef:
+    workspace_id: str
+    gate_id: str
+    trust_generation: int
+    trust_generation_digest: str
+    trust_generation_ref_digest: str
+    artifact_kind: ClassVar[str] = "acceptance-power-controller-trust-generation-ref"
+    schema_version: ClassVar[int] = 1
+
+    def __post_init__(self) -> None:
+        _validate_workspace_id(self.workspace_id)
+        _validate_slug(self.gate_id, field="gateId")
+        if (
+            type(self.trust_generation) is not int
+            or not 1 <= self.trust_generation <= _I_JSON_INTEGER_MAX
+        ):
+            raise ValueError("trustGeneration must be a positive I-JSON integer")
+        validate_sha256(self.trust_generation_digest)
+        validate_sha256(self.trust_generation_ref_digest)
+        if self.trust_generation_ref_digest != domain_separated_sha256(
+            _POWER_CONTROLLER_TRUST_GENERATION_REF_DOMAIN, self._payload()
+        ):
+            raise ValueError("trustGenerationRefDigest mismatch")
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "artifactKind": self.artifact_kind,
+            "schemaVersion": self.schema_version,
+            "workspaceId": self.workspace_id,
+            "gateId": self.gate_id,
+            "trustGeneration": self.trust_generation,
+            "trustGenerationDigest": self.trust_generation_digest,
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            **self._payload(),
+            "trustGenerationRefDigest": self.trust_generation_ref_digest,
+        }
+
+    @classmethod
+    def create(cls, **values: object) -> "PowerControllerTrustGenerationRef":
+        payload = {
+            "artifactKind": cls.artifact_kind,
+            "schemaVersion": cls.schema_version,
+            "workspaceId": values["workspace_id"],
+            "gateId": values["gate_id"],
+            "trustGeneration": values["trust_generation"],
+            "trustGenerationDigest": values["trust_generation_digest"],
+        }
+        return cls(
+            **values,
+            trust_generation_ref_digest=domain_separated_sha256(
+                _POWER_CONTROLLER_TRUST_GENERATION_REF_DOMAIN, payload
+            ),
+        )
+
+    @classmethod
+    def from_dict(cls, value: object) -> "PowerControllerTrustGenerationRef":
+        data = _closed_mapping(
+            value,
+            schema=cls.__name__,
+            keys=frozenset(
+                {
+                    "artifactKind",
+                    "schemaVersion",
+                    "workspaceId",
+                    "gateId",
+                    "trustGeneration",
+                    "trustGenerationDigest",
+                    "trustGenerationRefDigest",
+                }
+            ),
+        )
+        if (
+            data["artifactKind"] != cls.artifact_kind
+            or type(data["schemaVersion"]) is not int
+            or data["schemaVersion"] != cls.schema_version
+        ):
+            raise ValueError("invalid controller trust generation ref schema")
+        return cls(
+            workspace_id=data["workspaceId"],
+            gate_id=data["gateId"],
+            trust_generation=data["trustGeneration"],
+            trust_generation_digest=data["trustGenerationDigest"],
+            trust_generation_ref_digest=data["trustGenerationRefDigest"],
+        )
+
+
+@dataclass(frozen=True)
+class ActivePowerControllerTrustGeneration:
+    workspace_id: str
+    gate_id: str
+    trust_generation: int
+    predecessor_generation_ref: PowerControllerTrustGenerationRef | None
+    trust_anchor_digest: str
+    trust_generation_digest: str
+    artifact_kind: ClassVar[str] = "acceptance-power-controller-trust-generation"
+    schema_version: ClassVar[int] = 1
+    state: ClassVar[PowerControllerTrustGenerationState] = (
+        PowerControllerTrustGenerationState.ACTIVE
+    )
+
+    def __post_init__(self) -> None:
+        _validate_workspace_id(self.workspace_id)
+        _validate_slug(self.gate_id, field="gateId")
+        if (
+            type(self.trust_generation) is not int
+            or not 1 <= self.trust_generation <= _I_JSON_INTEGER_MAX
+        ):
+            raise ValueError("trustGeneration must be a positive I-JSON integer")
+        if self.trust_generation == 1:
+            if self.predecessor_generation_ref is not None:
+                raise ValueError("initial trust generation cannot have a predecessor")
+        else:
+            predecessor = self.predecessor_generation_ref
+            if (
+                type(predecessor) is not PowerControllerTrustGenerationRef
+                or predecessor.workspace_id != self.workspace_id
+                or predecessor.gate_id != self.gate_id
+                or predecessor.trust_generation != self.trust_generation - 1
+            ):
+                raise ValueError("trust generation predecessor is invalid")
+        validate_sha256(self.trust_anchor_digest)
+        validate_sha256(self.trust_generation_digest)
+        if self.trust_generation_digest != domain_separated_sha256(
+            _POWER_CONTROLLER_TRUST_GENERATION_DOMAIN, self._payload()
+        ):
+            raise ValueError("trustGenerationDigest mismatch")
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "artifactKind": self.artifact_kind,
+            "schemaVersion": self.schema_version,
+            "state": self.state.value,
+            "workspaceId": self.workspace_id,
+            "gateId": self.gate_id,
+            "trustGeneration": self.trust_generation,
+            "predecessorGenerationRef": (
+                None
+                if self.predecessor_generation_ref is None
+                else self.predecessor_generation_ref.to_dict()
+            ),
+            "trustAnchorDigest": self.trust_anchor_digest,
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            **self._payload(),
+            "trustGenerationDigest": self.trust_generation_digest,
+        }
+
+    def reference(self) -> PowerControllerTrustGenerationRef:
+        return PowerControllerTrustGenerationRef.create(
+            workspace_id=self.workspace_id,
+            gate_id=self.gate_id,
+            trust_generation=self.trust_generation,
+            trust_generation_digest=self.trust_generation_digest,
+        )
+
+    @classmethod
+    def create(cls, **values: object) -> "ActivePowerControllerTrustGeneration":
+        predecessor = values["predecessor_generation_ref"]
+        payload = {
+            "artifactKind": cls.artifact_kind,
+            "schemaVersion": cls.schema_version,
+            "state": cls.state.value,
+            "workspaceId": values["workspace_id"],
+            "gateId": values["gate_id"],
+            "trustGeneration": values["trust_generation"],
+            "predecessorGenerationRef": (
+                None if predecessor is None else predecessor.to_dict()
+            ),
+            "trustAnchorDigest": values["trust_anchor_digest"],
+        }
+        return cls(
+            **values,
+            trust_generation_digest=domain_separated_sha256(
+                _POWER_CONTROLLER_TRUST_GENERATION_DOMAIN, payload
+            ),
+        )
+
+    @classmethod
+    def from_dict(cls, value: object) -> "ActivePowerControllerTrustGeneration":
+        data = _closed_mapping(
+            value,
+            schema=cls.__name__,
+            keys=frozenset(
+                {
+                    "artifactKind",
+                    "schemaVersion",
+                    "state",
+                    "workspaceId",
+                    "gateId",
+                    "trustGeneration",
+                    "predecessorGenerationRef",
+                    "trustAnchorDigest",
+                    "trustGenerationDigest",
+                }
+            ),
+        )
+        if (
+            data["artifactKind"] != cls.artifact_kind
+            or type(data["schemaVersion"]) is not int
+            or data["schemaVersion"] != cls.schema_version
+            or data["state"] != cls.state.value
+        ):
+            raise ValueError("invalid active controller trust generation schema")
+        predecessor = data["predecessorGenerationRef"]
+        return cls(
+            workspace_id=data["workspaceId"],
+            gate_id=data["gateId"],
+            trust_generation=data["trustGeneration"],
+            predecessor_generation_ref=(
+                None
+                if predecessor is None
+                else PowerControllerTrustGenerationRef.from_dict(predecessor)
+            ),
+            trust_anchor_digest=data["trustAnchorDigest"],
+            trust_generation_digest=data["trustGenerationDigest"],
+        )
+
+
+@dataclass(frozen=True)
+class PowerControllerTrustCurrent:
+    workspace_id: str
+    gate_id: str
+    generation_ref: PowerControllerTrustGenerationRef
+    current_trust_digest: str
+    artifact_kind: ClassVar[str] = "acceptance-power-controller-trust-current"
+    schema_version: ClassVar[int] = 1
+
+    def __post_init__(self) -> None:
+        _validate_workspace_id(self.workspace_id)
+        _validate_slug(self.gate_id, field="gateId")
+        if (
+            type(self.generation_ref) is not PowerControllerTrustGenerationRef
+            or self.generation_ref.workspace_id != self.workspace_id
+            or self.generation_ref.gate_id != self.gate_id
+        ):
+            raise ValueError("generationRef scope must equal current trust scope")
+        validate_sha256(self.current_trust_digest)
+        if self.current_trust_digest != domain_separated_sha256(
+            _POWER_CONTROLLER_TRUST_CURRENT_DOMAIN, self._payload()
+        ):
+            raise ValueError("currentTrustDigest mismatch")
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "artifactKind": self.artifact_kind,
+            "schemaVersion": self.schema_version,
+            "workspaceId": self.workspace_id,
+            "gateId": self.gate_id,
+            "generationRef": self.generation_ref.to_dict(),
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {**self._payload(), "currentTrustDigest": self.current_trust_digest}
+
+    @classmethod
+    def create(cls, **values: object) -> "PowerControllerTrustCurrent":
+        payload = {
+            "artifactKind": cls.artifact_kind,
+            "schemaVersion": cls.schema_version,
+            "workspaceId": values["workspace_id"],
+            "gateId": values["gate_id"],
+            "generationRef": values["generation_ref"].to_dict(),
+        }
+        return cls(
+            **values,
+            current_trust_digest=domain_separated_sha256(
+                _POWER_CONTROLLER_TRUST_CURRENT_DOMAIN, payload
+            ),
+        )
+
+    @classmethod
+    def from_dict(cls, value: object) -> "PowerControllerTrustCurrent":
+        data = _closed_mapping(
+            value,
+            schema=cls.__name__,
+            keys=frozenset(
+                {
+                    "artifactKind",
+                    "schemaVersion",
+                    "workspaceId",
+                    "gateId",
+                    "generationRef",
+                    "currentTrustDigest",
+                }
+            ),
+        )
+        if (
+            data["artifactKind"] != cls.artifact_kind
+            or type(data["schemaVersion"]) is not int
+            or data["schemaVersion"] != cls.schema_version
+        ):
+            raise ValueError("invalid controller trust current schema")
+        return cls(
+            workspace_id=data["workspaceId"],
+            gate_id=data["gateId"],
+            generation_ref=PowerControllerTrustGenerationRef.from_dict(
+                data["generationRef"]
+            ),
+            current_trust_digest=data["currentTrustDigest"],
+        )
+
+
+@dataclass(frozen=True)
+class GatePublishLockIdentity:
+    workspace_id: str
+    gate_id: str
+    device_id: str
+    inode: str
+    lock_identity_digest: str
+    lock_path_id: ClassVar[str] = "GATE_FINALIZER_PUBLISH_LOCK_V1"
+    file_type: ClassVar[str] = "REGULAR_FILE"
+    opened_no_follow: ClassVar[bool] = True
+
+    def __post_init__(self) -> None:
+        _validate_workspace_id(self.workspace_id)
+        _validate_slug(self.gate_id, field="gateId")
+        _validate_uint_string(self.device_id, field="deviceId")
+        _validate_uint_string(self.inode, field="inode")
+        validate_sha256(self.lock_identity_digest)
+        if self.lock_identity_digest != domain_separated_sha256(
+            _GATE_PUBLISH_LOCK_IDENTITY_DOMAIN, self._payload()
+        ):
+            raise ValueError("lockIdentityDigest mismatch")
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "workspaceId": self.workspace_id,
+            "gateId": self.gate_id,
+            "lockPathId": self.lock_path_id,
+            "deviceId": self.device_id,
+            "inode": self.inode,
+            "fileType": self.file_type,
+            "openedNoFollow": self.opened_no_follow,
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {**self._payload(), "lockIdentityDigest": self.lock_identity_digest}
+
+    @classmethod
+    def create(cls, **values: object) -> "GatePublishLockIdentity":
+        payload = {
+            "workspaceId": values["workspace_id"],
+            "gateId": values["gate_id"],
+            "lockPathId": cls.lock_path_id,
+            "deviceId": values["device_id"],
+            "inode": values["inode"],
+            "fileType": cls.file_type,
+            "openedNoFollow": cls.opened_no_follow,
+        }
+        return cls(
+            **values,
+            lock_identity_digest=domain_separated_sha256(
+                _GATE_PUBLISH_LOCK_IDENTITY_DOMAIN, payload
+            ),
+        )
+
+    @classmethod
+    def from_dict(cls, value: object) -> "GatePublishLockIdentity":
+        data = _closed_mapping(
+            value,
+            schema=cls.__name__,
+            keys=frozenset(
+                {
+                    "workspaceId",
+                    "gateId",
+                    "lockPathId",
+                    "deviceId",
+                    "inode",
+                    "fileType",
+                    "openedNoFollow",
+                    "lockIdentityDigest",
+                }
+            ),
+        )
+        if (
+            data["lockPathId"] != cls.lock_path_id
+            or data["fileType"] != cls.file_type
+            or data["openedNoFollow"] is not True
+        ):
+            raise ValueError("invalid Gate publish lock identity")
+        return cls(
+            workspace_id=data["workspaceId"],
+            gate_id=data["gateId"],
+            device_id=data["deviceId"],
+            inode=data["inode"],
+            lock_identity_digest=data["lockIdentityDigest"],
+        )
+
+
+@dataclass(frozen=True)
+class TrustDispatchLease:
+    workspace_id: str
+    gate_id: str
+    selected_trust_generation_ref: PowerControllerTrustGenerationRef
+    selected_current_trust_digest: str
+    controller_runtime_epoch_id: str
+    controller_runtime_epoch_digest: str
+    command_id: str
+    command_identity_digest: str
+    resolution_request_digest: str
+    expected_head_digest: str
+    command_lock_identity_digest: str
+    holder_pid: int
+    holder_process_start_identity: ProcessStartIdentity
+    publish_lock_identity: GatePublishLockIdentity
+    random_lease_bytes: bytes
+    trust_dispatch_lease_digest: str
+    lock_mode: ClassVar[str] = "SHARED"
+
+    def __post_init__(self) -> None:
+        _validate_workspace_id(self.workspace_id)
+        _validate_slug(self.gate_id, field="gateId")
+        if (
+            type(self.selected_trust_generation_ref)
+            is not PowerControllerTrustGenerationRef
+            or self.selected_trust_generation_ref.workspace_id != self.workspace_id
+            or self.selected_trust_generation_ref.gate_id != self.gate_id
+        ):
+            raise ValueError("selected trust generation scope mismatch")
+        for digest in (
+            self.selected_current_trust_digest,
+            self.controller_runtime_epoch_digest,
+            self.command_identity_digest,
+            self.resolution_request_digest,
+            self.expected_head_digest,
+            self.command_lock_identity_digest,
+            self.trust_dispatch_lease_digest,
+        ):
+            validate_sha256(digest)
+        for value, field in (
+            (self.controller_runtime_epoch_id, "controllerRuntimeEpochId"),
+            (self.command_id, "commandId"),
+        ):
+            _validate_non_empty_utf8(value, field=field, maximum_bytes=256)
+        if type(self.holder_pid) is not int or self.holder_pid <= 0:
+            raise ValueError("holderPid must be positive")
+        if not isinstance(
+            self.holder_process_start_identity,
+            (DarwinProcessStartIdentity, LinuxProcessStartIdentity),
+        ):
+            raise ValueError("holderProcessStartIdentity must be typed")
+        if (
+            type(self.publish_lock_identity) is not GatePublishLockIdentity
+            or self.publish_lock_identity.workspace_id != self.workspace_id
+            or self.publish_lock_identity.gate_id != self.gate_id
+        ):
+            raise ValueError("publish lock identity scope mismatch")
+        if type(self.random_lease_bytes) is not bytes or len(self.random_lease_bytes) != 32:
+            raise ValueError("random lease must be 32 process-memory bytes")
+        if self.trust_dispatch_lease_digest != domain_separated_sha256(
+            _TRUST_DISPATCH_LEASE_DOMAIN, self._digest_payload()
+        ):
+            raise ValueError("trustDispatchLeaseDigest mismatch")
+
+    def _digest_payload(self) -> dict[str, object]:
+        return {
+            "workspaceId": self.workspace_id,
+            "gateId": self.gate_id,
+            "selectedTrustGenerationRef": self.selected_trust_generation_ref.to_dict(),
+            "selectedCurrentTrustDigest": self.selected_current_trust_digest,
+            "controllerRuntimeEpochId": self.controller_runtime_epoch_id,
+            "controllerRuntimeEpochDigest": self.controller_runtime_epoch_digest,
+            "commandId": self.command_id,
+            "commandIdentityDigest": self.command_identity_digest,
+            "resolutionRequestDigest": self.resolution_request_digest,
+            "expectedHeadDigest": self.expected_head_digest,
+            "commandLockIdentityDigest": self.command_lock_identity_digest,
+            "holderPid": self.holder_pid,
+            "holderProcessStartIdentity": self.holder_process_start_identity.to_dict(),
+            "publishLockIdentity": self.publish_lock_identity.to_dict(),
+            "lockMode": self.lock_mode,
+            "randomLeaseBytesHex": self.random_lease_bytes.hex(),
+        }
+
+    @classmethod
+    def create(cls, **values: object) -> "TrustDispatchLease":
+        payload = {
+            "workspaceId": values["workspace_id"],
+            "gateId": values["gate_id"],
+            "selectedTrustGenerationRef": (
+                values["selected_trust_generation_ref"].to_dict()
+            ),
+            "selectedCurrentTrustDigest": values[
+                "selected_current_trust_digest"
+            ],
+            "controllerRuntimeEpochId": values["controller_runtime_epoch_id"],
+            "controllerRuntimeEpochDigest": values[
+                "controller_runtime_epoch_digest"
+            ],
+            "commandId": values["command_id"],
+            "commandIdentityDigest": values["command_identity_digest"],
+            "resolutionRequestDigest": values["resolution_request_digest"],
+            "expectedHeadDigest": values["expected_head_digest"],
+            "commandLockIdentityDigest": values["command_lock_identity_digest"],
+            "holderPid": values["holder_pid"],
+            "holderProcessStartIdentity": values[
+                "holder_process_start_identity"
+            ].to_dict(),
+            "publishLockIdentity": values["publish_lock_identity"].to_dict(),
+            "lockMode": cls.lock_mode,
+            "randomLeaseBytesHex": values["random_lease_bytes"].hex(),
+        }
+        return cls(
+            **values,
+            trust_dispatch_lease_digest=domain_separated_sha256(
+                _TRUST_DISPATCH_LEASE_DOMAIN, payload
+            ),
+        )
+
+    def __reduce__(self) -> object:
+        raise TypeError("TrustDispatchLease is process-local and non-serializable")
+
+    def __deepcopy__(self, memo: object) -> object:
+        raise TypeError("TrustDispatchLease cannot be copied")
+
+
+@dataclass(frozen=True)
+class DurabilityProbeRuntimeManifest:
+    probe_source_digest: str
+    runtime_measurement: PreflightRuntimeMeasurement
+    captured_runtime_files: tuple[CapturedRuntimeFile, ...]
+    runtime_artifacts: tuple[DurabilityCapabilityArtifactRef, ...]
+    runtime_capture_bundle_digest: str
+    runtime_capture_id: str
+    runtime_capture_digest: str
+    probe_runtime_digest: str
+    artifact_kind: ClassVar[str] = "acceptance-durability-probe-runtime"
+    schema_version: ClassVar[int] = 1
+
+    def __post_init__(self) -> None:
+        for digest in (
+            self.probe_source_digest, self.runtime_capture_bundle_digest,
+            self.runtime_capture_digest, self.probe_runtime_digest,
+        ):
+            validate_sha256(digest)
+        _validate_non_empty_utf8(self.runtime_capture_id, field="runtimeCaptureId", maximum_bytes=256)
+        _validate_runtime_capture_files(self.runtime_measurement, self.captured_runtime_files)
+        if (
+            type(self.runtime_artifacts) is not tuple
+            or len(self.runtime_artifacts) != len(self.captured_runtime_files)
+            or any(type(ref) is not DurabilityCapabilityArtifactRef for ref in self.runtime_artifacts)
+        ):
+            raise ValueError("runtimeArtifacts must match captured file cardinality")
+        scopes = {
+            (ref.workspace_id, ref.gate_id, ref.crash_fixture_id)
+            for ref in self.runtime_artifacts
+        }
+        if len(scopes) != 1:
+            raise ValueError("probe runtime artifacts must share one qualification scope")
+        for ref, captured in zip(self.runtime_artifacts, self.captured_runtime_files):
+            if (
+                ref.artifact_name is not DurabilityCapabilityArtifactName.PROBE_RUNTIME_BLOB
+                or ref.content_sha256 != captured.file_sha256
+                or ref.byte_length != captured.byte_length
+            ):
+                raise ValueError("probe runtime refs must match captured files in exact order")
+        capture = {
+            "captureId": self.runtime_capture_id,
+            "measurement": self.runtime_measurement.to_dict(),
+            "files": [item.to_dict() for item in self.captured_runtime_files],
+            "runtimeCaptureBundleDigest": self.runtime_capture_bundle_digest,
+        }
+        if self.runtime_capture_digest != domain_separated_sha256(_RUNTIME_CAPTURE_DOMAIN, capture):
+            raise ValueError("runtimeCaptureDigest mismatch")
+        if self.probe_runtime_digest != domain_separated_sha256(
+            _DURABILITY_PROBE_RUNTIME_DOMAIN, self._payload()
+        ):
+            raise ValueError("probeRuntimeDigest mismatch")
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "artifactKind": self.artifact_kind, "schemaVersion": self.schema_version,
+            "probeSourceDigest": self.probe_source_digest,
+            "runtimeMeasurement": self.runtime_measurement.to_dict(),
+            "capturedRuntimeFiles": [item.to_dict() for item in self.captured_runtime_files],
+            "runtimeArtifacts": [item.to_dict() for item in self.runtime_artifacts],
+            "runtimeCaptureBundleDigest": self.runtime_capture_bundle_digest,
+            "runtimeCaptureId": self.runtime_capture_id,
+            "runtimeCaptureDigest": self.runtime_capture_digest,
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {**self._payload(), "probeRuntimeDigest": self.probe_runtime_digest}
+
+    @classmethod
+    def from_dict(cls, value: object) -> "DurabilityProbeRuntimeManifest":
+        data = _closed_mapping(value, schema=cls.__name__, keys=frozenset({
+            "artifactKind", "schemaVersion", "probeSourceDigest",
+            "runtimeMeasurement", "capturedRuntimeFiles", "runtimeArtifacts",
+            "runtimeCaptureBundleDigest", "runtimeCaptureId", "runtimeCaptureDigest",
+            "probeRuntimeDigest",
+        }))
+        if data["artifactKind"] != cls.artifact_kind or type(data["schemaVersion"]) is not int or data["schemaVersion"] != 1:
+            raise ValueError("invalid durability probe runtime schema")
+        for field in ("capturedRuntimeFiles", "runtimeArtifacts"):
+            if type(data[field]) is not list or not 3 <= len(data[field]) <= 1024:
+                raise ValueError(f"{field} must be a bounded wire array")
+        return cls(
+            data["probeSourceDigest"], PreflightRuntimeMeasurement.from_dict(data["runtimeMeasurement"]),
+            tuple(CapturedRuntimeFile.from_dict(item) for item in data["capturedRuntimeFiles"]),
+            tuple(DurabilityCapabilityArtifactRef.from_dict(item) for item in data["runtimeArtifacts"]),
+            data["runtimeCaptureBundleDigest"], data["runtimeCaptureId"],
+            data["runtimeCaptureDigest"], data["probeRuntimeDigest"],
         )
 
 
@@ -10381,6 +15604,2870 @@ def validate_durability_environment_observation(
             "environment observation does not equal qualified environment"
         )
     return observation
+
+
+@dataclass(frozen=True)
+class ProofAuthorityDurabilityCapabilityEvidence:
+    os_family: RuntimeOsFamily
+    backend: DurabilityBackend
+    stable_volume_identity: StableVolumeIdentity
+    qualified_host_build: RuntimeHostBuild
+    qualified_host_identity: RuntimeHostIdentity
+    filesystem_implementation_version: str
+    required_mount_options: tuple[str, ...]
+    probe_source_files: tuple[tuple[str, str, int], ...]
+    probe_source_digest: str
+    probe_runtime_digest: str
+    successful_operations: tuple[DurabilitySyncOperation, ...]
+    crash_fixture_id: str
+    qualification_run_id: str
+    crash_fixture_manifest_ref: DurabilityCapabilityArtifactRef
+    crash_fixture_artifacts: tuple[DurabilityCapabilityArtifactRef, ...]
+    bootstrap_qualification_manifest_digest: str
+    controller_trust_anchor_ref: PowerControllerTrustAnchorRef
+    controller_trust_anchor_digest: str
+    controller_runtime_digest: str
+    controller_runtime_lock_backend_digest: str
+    result: DurabilitySupportResult
+    observed_at: str
+    capability_evidence_digest: str
+    evidence_rule: ClassVar[str] = "DURABILITY_CAPABILITY_EVIDENCE_V1"
+
+    def __post_init__(self) -> None:
+        if self.os_family not in (RuntimeOsFamily.DARWIN, RuntimeOsFamily.LINUX):
+            raise ValueError("capability OS must be DARWIN or LINUX")
+        expected_backend = (
+            DurabilityBackend.DARWIN_APFS_FULLFSYNC_V1 if self.os_family is RuntimeOsFamily.DARWIN
+            else DurabilityBackend.LINUX_FILE_AND_DIRECTORY_FSYNC_V1
+        )
+        if self.backend is not expected_backend:
+            raise ValueError("capability backend must match OS")
+        expected_operations = (DurabilitySyncOperation.SYNC_FILE, DurabilitySyncOperation.SYNC_DIRECTORY)
+        if self.os_family is RuntimeOsFamily.DARWIN:
+            expected_operations += (DurabilitySyncOperation.SYNC_ANCHOR,)
+        if type(self.successful_operations) is not tuple or self.successful_operations != expected_operations:
+            raise ValueError("successfulOperations must match exact backend sequence")
+        # Reuse the closed host/build/volume/mount qualification checks.
+        DurabilityQualifiedEnvironment.create(
+            host_build=self.qualified_host_build, host_identity=self.qualified_host_identity,
+            filesystem_implementation_version=self.filesystem_implementation_version,
+            required_mount_options=self.required_mount_options,
+            stable_volume_identity=self.stable_volume_identity,
+            probe_runtime_digest=self.probe_runtime_digest,
+        )
+        if self.qualified_host_build.os_family is not self.os_family:
+            raise ValueError("qualified host OS must match capability OS")
+        if type(self.probe_source_files) is not tuple or not 1 <= len(self.probe_source_files) <= 64:
+            raise ValueError("probeSourceFiles must contain 1..64 immutable triples")
+        paths = []
+        total = 0
+        for item in self.probe_source_files:
+            if type(item) is not tuple or len(item) != 3:
+                raise ValueError("probe source must be an immutable triple")
+            paths.append(validate_repo_relative_path(item[0]))
+            validate_sha256(item[1])
+            if type(item[2]) is not int or not 0 <= item[2] <= 8 * 1024 * 1024:
+                raise ValueError("probe source file exceeds entry limit")
+            total += item[2]
+        if paths != sorted(set(paths), key=lambda path: path.encode("utf-8")) or total > 64 * 1024 * 1024:
+            raise ValueError("probe sources must be unique lexical bounded inventory")
+        validate_sha256(self.probe_source_digest)
+        if self.probe_source_digest != domain_separated_sha256(
+            _DURABILITY_PROBE_SOURCE_DOMAIN, [list(item) for item in self.probe_source_files]
+        ):
+            raise ValueError("probeSourceDigest mismatch")
+        _validate_slug(self.crash_fixture_id, field="crashFixtureId")
+        _validate_slug(self.qualification_run_id, field="qualificationRunId")
+        if type(self.crash_fixture_manifest_ref) is not DurabilityCapabilityArtifactRef:
+            raise ValueError("crashFixtureManifestRef must be concrete")
+        if self.crash_fixture_manifest_ref.artifact_name is not DurabilityCapabilityArtifactName.MANIFEST:
+            raise ValueError("crashFixtureManifestRef must name MANIFEST")
+        if (
+            type(self.crash_fixture_artifacts) is not tuple
+            or not 1 <= len(self.crash_fixture_artifacts) <= 4096
+            or any(type(ref) is not DurabilityCapabilityArtifactRef for ref in self.crash_fixture_artifacts)
+        ):
+            raise ValueError("crashFixtureArtifacts must be a bounded concrete tuple")
+        scope = (
+            self.crash_fixture_manifest_ref.workspace_id,
+            self.crash_fixture_manifest_ref.gate_id, self.crash_fixture_id,
+        )
+        if any(
+            (ref.workspace_id, ref.gate_id, ref.crash_fixture_id) != scope
+            for ref in (self.crash_fixture_manifest_ref, *self.crash_fixture_artifacts)
+        ):
+            raise ValueError("crash fixture references must match qualification scope")
+        if len({ref.durability_capability_ref_digest for ref in self.crash_fixture_artifacts}) != len(self.crash_fixture_artifacts):
+            raise ValueError("crash fixture references must be unique")
+        for name in (
+            DurabilityCapabilityArtifactName.EXPECTATION, DurabilityCapabilityArtifactName.MANIFEST,
+            DurabilityCapabilityArtifactName.PROBE_RUNTIME_MANIFEST,
+            DurabilityCapabilityArtifactName.CONTROLLER_RUNTIME_EPOCH,
+            DurabilityCapabilityArtifactName.CONTROLLER_RUNTIME_CURRENT,
+        ):
+            if sum(ref.artifact_name is name for ref in self.crash_fixture_artifacts) != 1:
+                raise ValueError(f"capability requires exactly one {name.value}")
+        if self.crash_fixture_manifest_ref not in self.crash_fixture_artifacts:
+            raise ValueError("crashFixtureManifestRef must equal inventory MANIFEST ref")
+        if type(self.controller_trust_anchor_ref) is not PowerControllerTrustAnchorRef:
+            raise ValueError("controllerTrustAnchorRef must be concrete")
+        if (self.controller_trust_anchor_ref.workspace_id, self.controller_trust_anchor_ref.gate_id) != scope[:2]:
+            raise ValueError("controller trust anchor must match capability scope")
+        for digest in (
+            self.bootstrap_qualification_manifest_digest, self.controller_trust_anchor_digest,
+            self.controller_runtime_digest, self.controller_runtime_lock_backend_digest,
+            self.capability_evidence_digest,
+        ):
+            validate_sha256(digest)
+        if self.controller_trust_anchor_ref.trust_anchor_digest != self.controller_trust_anchor_digest:
+            raise ValueError("controllerTrustAnchorDigest must match ref")
+        if self.result is not DurabilitySupportResult.SUPPORTED:
+            raise ValueError("capability result must be SUPPORTED")
+        _canonical_utc_instant(self.observed_at, field="observedAt")
+        if self.capability_evidence_digest != domain_separated_sha256(
+            _DURABILITY_CAPABILITY_EVIDENCE_DOMAIN, self._payload()
+        ):
+            raise ValueError("capabilityEvidenceDigest mismatch")
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "evidenceRule": self.evidence_rule, "osFamily": self.os_family.value,
+            "backend": self.backend.value, "stableVolumeIdentity": self.stable_volume_identity.to_dict(),
+            "qualifiedHostBuild": self.qualified_host_build.to_dict(),
+            "qualifiedHostIdentity": self.qualified_host_identity.to_dict(),
+            "filesystemImplementationVersion": self.filesystem_implementation_version,
+            "requiredMountOptions": list(self.required_mount_options),
+            "probeSourceFiles": [list(item) for item in self.probe_source_files],
+            "probeSourceDigest": self.probe_source_digest, "probeRuntimeDigest": self.probe_runtime_digest,
+            "successfulOperations": [item.value for item in self.successful_operations],
+            "crashFixtureId": self.crash_fixture_id, "qualificationRunId": self.qualification_run_id,
+            "crashFixtureManifestRef": self.crash_fixture_manifest_ref.to_dict(),
+            "crashFixtureArtifacts": [ref.to_dict() for ref in self.crash_fixture_artifacts],
+            "bootstrapQualificationManifestDigest": self.bootstrap_qualification_manifest_digest,
+            "controllerTrustAnchorRef": self.controller_trust_anchor_ref.to_dict(),
+            "controllerTrustAnchorDigest": self.controller_trust_anchor_digest,
+            "controllerRuntimeDigest": self.controller_runtime_digest,
+            "controllerRuntimeLockBackendDigest": self.controller_runtime_lock_backend_digest,
+            "result": self.result.value, "observedAt": self.observed_at,
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {**self._payload(), "capabilityEvidenceDigest": self.capability_evidence_digest}
+
+    def validate_maintenance_source(self, runtime: FinalizerMaintenanceRuntimeIdentity) -> None:
+        if type(runtime) is not FinalizerMaintenanceRuntimeIdentity:
+            raise ValueError("maintenance runtime must be concrete")
+        if not set(self.probe_source_files).issubset(runtime.worker_source_files):
+            raise ValueError("probe source must be exact subset of maintenance source")
+        if runtime.runtime_measurement.platform_runtime.host_build != self.qualified_host_build:
+            raise ValueError("maintenance runtime must match qualified host build")
+
+    def validate_manifest_runtime(
+        self, manifest: DurabilityCrashFixtureManifest, probe: DurabilityProbeRuntimeManifest
+    ) -> None:
+        """Validate resolved manifest/runtime; controller/trace admission is separate."""
+        if type(manifest) is not DurabilityCrashFixtureManifest or type(probe) is not DurabilityProbeRuntimeManifest:
+            raise ValueError("qualification manifest and probe runtime must be concrete")
+        if (
+            manifest.workspace_id, manifest.gate_id, manifest.crash_fixture_id,
+            manifest.qualification_run_id, manifest.backend, manifest.stable_volume_identity,
+            manifest.controller_runtime_digest, manifest.controller_runtime_lock_backend_digest,
+        ) != (
+            self.crash_fixture_manifest_ref.workspace_id, self.crash_fixture_manifest_ref.gate_id,
+            self.crash_fixture_id, self.qualification_run_id, self.backend, self.stable_volume_identity,
+            self.controller_runtime_digest, self.controller_runtime_lock_backend_digest,
+        ):
+            raise ValueError("manifest identity must match capability")
+        qualified = manifest.qualified_environment
+        if (
+            qualified.host_build, qualified.host_identity, qualified.filesystem_implementation_version,
+            qualified.required_mount_options, qualified.probe_runtime_digest,
+        ) != (
+            self.qualified_host_build, self.qualified_host_identity, self.filesystem_implementation_version,
+            self.required_mount_options, self.probe_runtime_digest,
+        ):
+            raise ValueError("manifest qualification must match capability")
+        if (
+            self.crash_fixture_manifest_ref.object_digest != manifest.crash_fixture_manifest_digest
+            or self.bootstrap_qualification_manifest_digest != manifest.crash_fixture_manifest_digest
+            or probe.probe_runtime_digest != self.probe_runtime_digest
+            or probe.probe_source_digest != self.probe_source_digest
+        ):
+            raise ValueError("qualification/probe digest mismatch")
+        references = set(self.crash_fixture_artifacts)
+        required = {
+            manifest.expectation_ref, manifest.probe_runtime_manifest_ref,
+            *probe.runtime_artifacts,
+            *(ref for case in manifest.cases for ref in (case.trace_ref, case.recovery_result_ref)),
+        }
+        if not required.issubset(references):
+            raise ValueError("capability inventory omits manifest/runtime artifact")
+        for name in (
+            DurabilityCapabilityArtifactName.PROBE_RUNTIME_BLOB,
+            DurabilityCapabilityArtifactName.POWER_CUT_TRACE,
+            DurabilityCapabilityArtifactName.RECOVERY_RESULT,
+        ):
+            if {ref for ref in references if ref.artifact_name is name} != {
+                ref for ref in required if ref.artifact_name is name
+            }:
+                raise ValueError(f"capability inventory has extra {name.value}")
+
+    @classmethod
+    def from_dict(cls, value: object) -> "ProofAuthorityDurabilityCapabilityEvidence":
+        fields = frozenset({
+            "evidenceRule", "osFamily", "backend", "stableVolumeIdentity", "qualifiedHostBuild",
+            "qualifiedHostIdentity", "filesystemImplementationVersion", "requiredMountOptions",
+            "probeSourceFiles", "probeSourceDigest", "probeRuntimeDigest", "successfulOperations",
+            "crashFixtureId", "qualificationRunId", "crashFixtureManifestRef",
+            "crashFixtureArtifacts", "bootstrapQualificationManifestDigest",
+            "controllerTrustAnchorRef", "controllerTrustAnchorDigest", "controllerRuntimeDigest",
+            "controllerRuntimeLockBackendDigest", "result", "observedAt", "capabilityEvidenceDigest",
+        })
+        data = _closed_mapping(value, schema=cls.__name__, keys=fields)
+        if data["evidenceRule"] != cls.evidence_rule:
+            raise ValueError("unknown durability capability evidence rule")
+        for field, limit in (
+            ("requiredMountOptions", 4096), ("probeSourceFiles", 64),
+            ("successfulOperations", 3), ("crashFixtureArtifacts", 4096),
+        ):
+            if type(data[field]) is not list or len(data[field]) > limit:
+                raise ValueError(f"{field} must be a bounded wire array")
+        if any(type(item) is not list or len(item) != 3 for item in data["probeSourceFiles"]):
+            raise ValueError("probeSourceFiles must contain triple arrays")
+        return cls(
+            _enum_from_wire(RuntimeOsFamily, data["osFamily"], field="osFamily"),
+            _enum_from_wire(DurabilityBackend, data["backend"], field="backend"),
+            stable_volume_identity_from_dict(data["stableVolumeIdentity"]),
+            runtime_host_build_from_dict(data["qualifiedHostBuild"]),
+            runtime_host_identity_from_dict(data["qualifiedHostIdentity"]),
+            data["filesystemImplementationVersion"], tuple(data["requiredMountOptions"]),
+            tuple(tuple(item) for item in data["probeSourceFiles"]),
+            data["probeSourceDigest"], data["probeRuntimeDigest"],
+            tuple(_enum_from_wire(DurabilitySyncOperation, item, field="successfulOperation")
+                  for item in data["successfulOperations"]),
+            data["crashFixtureId"], data["qualificationRunId"],
+            DurabilityCapabilityArtifactRef.from_dict(data["crashFixtureManifestRef"]),
+            tuple(DurabilityCapabilityArtifactRef.from_dict(item) for item in data["crashFixtureArtifacts"]),
+            data["bootstrapQualificationManifestDigest"],
+            PowerControllerTrustAnchorRef.from_dict(data["controllerTrustAnchorRef"]),
+            data["controllerTrustAnchorDigest"], data["controllerRuntimeDigest"],
+            data["controllerRuntimeLockBackendDigest"],
+            _enum_from_wire(DurabilitySupportResult, data["result"], field="result"),
+            data["observedAt"], data["capabilityEvidenceDigest"],
+        )
+
+
+class _ProofAuthorityDurabilityProfile:
+    def _validate(self) -> None:
+        if type(self.capability_evidence) is not ProofAuthorityDurabilityCapabilityEvidence:
+            raise ValueError("capabilityEvidence must be concrete")
+        evidence = self.capability_evidence
+        if (
+            evidence.os_family, evidence.backend, evidence.stable_volume_identity
+        ) != (self.os_family, self.backend, self.stable_volume_identity):
+            raise ValueError("profile OS/backend/volume must match capability evidence")
+        validate_sha256(self.durability_profile_digest)
+        if self.durability_profile_digest != domain_separated_sha256(
+            _DURABILITY_PROFILE_DOMAIN[self.os_family.value], self._payload()
+        ):
+            raise ValueError("durabilityProfileDigest mismatch")
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "osFamily": self.os_family.value, "backend": self.backend.value,
+            "stableVolumeIdentity": self.stable_volume_identity.to_dict(),
+            "syncAnchorIdentity": None if self.sync_anchor_identity is None else self.sync_anchor_identity.to_dict(),
+            "capabilityEvidence": self.capability_evidence.to_dict(),
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {**self._payload(), "durabilityProfileDigest": self.durability_profile_digest}
+
+    @classmethod
+    def from_dict(cls, value: object):
+        data = _closed_mapping(value, schema=cls.__name__, keys=frozenset({
+            "osFamily", "backend", "stableVolumeIdentity", "syncAnchorIdentity",
+            "capabilityEvidence", "durabilityProfileDigest",
+        }))
+        if data["osFamily"] != cls.os_family.value or data["backend"] != cls.backend.value:
+            raise ValueError("durability profile branch mismatch")
+        return cls(
+            stable_volume_identity_from_dict(data["stableVolumeIdentity"]),
+            None if data["syncAnchorIdentity"] is None else DurabilitySyncAnchorIdentity.from_dict(data["syncAnchorIdentity"]),
+            ProofAuthorityDurabilityCapabilityEvidence.from_dict(data["capabilityEvidence"]),
+            data["durabilityProfileDigest"],
+        )
+
+
+@dataclass(frozen=True)
+class LinuxProofAuthorityDurabilityProfile(_ProofAuthorityDurabilityProfile):
+    stable_volume_identity: LinuxStableVolumeIdentity
+    sync_anchor_identity: None
+    capability_evidence: ProofAuthorityDurabilityCapabilityEvidence
+    durability_profile_digest: str
+    os_family: ClassVar[RuntimeOsFamily] = RuntimeOsFamily.LINUX
+    backend: ClassVar[DurabilityBackend] = DurabilityBackend.LINUX_FILE_AND_DIRECTORY_FSYNC_V1
+
+    def __post_init__(self) -> None:
+        if type(self.stable_volume_identity) is not LinuxStableVolumeIdentity or self.sync_anchor_identity is not None:
+            raise ValueError("Linux profile requires Linux volume and null anchor")
+        self._validate()
+
+
+@dataclass(frozen=True)
+class DarwinProofAuthorityDurabilityProfile(_ProofAuthorityDurabilityProfile):
+    stable_volume_identity: DarwinStableVolumeIdentity
+    sync_anchor_identity: DurabilitySyncAnchorIdentity
+    capability_evidence: ProofAuthorityDurabilityCapabilityEvidence
+    durability_profile_digest: str
+    os_family: ClassVar[RuntimeOsFamily] = RuntimeOsFamily.DARWIN
+    backend: ClassVar[DurabilityBackend] = DurabilityBackend.DARWIN_APFS_FULLFSYNC_V1
+
+    def __post_init__(self) -> None:
+        if type(self.stable_volume_identity) is not DarwinStableVolumeIdentity or type(self.sync_anchor_identity) is not DurabilitySyncAnchorIdentity:
+            raise ValueError("Darwin profile requires Darwin volume and concrete sync anchor")
+        self._validate()
+
+
+ProofAuthorityDurabilityProfile = Union[
+    LinuxProofAuthorityDurabilityProfile, DarwinProofAuthorityDurabilityProfile
+]
+
+
+@dataclass(frozen=True)
+class FinalizerRequirementRecord:
+    artifact_kind: str
+    schema_version: int
+    enforcement_generation: int
+    enforcement_digest: str
+    workspace_id: str
+    source_commit: str
+    workspace_digest: str
+    canonical_worktree_hash: str
+    requirement: FinalizerRequirement
+    config: FinalizerExecutionConfig
+    protected_baseline: FinalizerProtectedBaseline
+    bootstrap_baseline: FinalizerBootstrapBaseline
+    requirement_mapping: RequiredFinalizerMapping
+    captured_sources: tuple[CapturedProtectedSource, ...]
+    protected_source_artifacts: tuple[ProtectedSourceArtifact, ...]
+    registry_entry: FinalizerRegistryEntry
+    source_files: tuple[tuple[str, str], ...]
+    source_capture_id: str
+    source_capture_digest: str
+    source_capture_bundle_digest: str
+    runtime_capture_id: str
+    runtime_capture_digest: str
+    runtime_measurement: PreflightRuntimeMeasurement
+    captured_runtime_files: tuple[CapturedRuntimeFile, ...]
+    runtime_capture_bundle_digest: str
+    runtime_evidence_artifacts: tuple[RuntimeEvidenceArtifact, ...]
+    finalizer_runtime: FinalizerRuntimeIdentity
+    durability_profile: ProofAuthorityDurabilityProfile
+    requirement_digest: str
+    config_digest: str
+    source_digest: str
+    created_at: str
+
+    _WIRE_KEYS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "artifactKind",
+            "schemaVersion",
+            "enforcementGeneration",
+            "enforcementDigest",
+            "workspaceId",
+            "sourceCommit",
+            "workspaceDigest",
+            "canonicalWorktreeHash",
+            "requirement",
+            "config",
+            "protectedBaseline",
+            "bootstrapBaseline",
+            "requirementMapping",
+            "capturedSources",
+            "protectedSourceArtifacts",
+            "registryEntry",
+            "sourceFiles",
+            "sourceCaptureId",
+            "sourceCaptureDigest",
+            "sourceCaptureBundleDigest",
+            "runtimeCaptureId",
+            "runtimeCaptureDigest",
+            "runtimeMeasurement",
+            "capturedRuntimeFiles",
+            "runtimeCaptureBundleDigest",
+            "runtimeEvidenceArtifacts",
+            "finalizerRuntime",
+            "durabilityProfile",
+            "requirementDigest",
+            "configDigest",
+            "sourceDigest",
+            "createdAt",
+        }
+    )
+
+    def __post_init__(self) -> None:
+        if self.artifact_kind != "acceptance-finalizer-requirement":
+            raise ValueError(
+                "artifactKind must be acceptance-finalizer-requirement"
+            )
+        if type(self.schema_version) is not int or self.schema_version != 1:
+            raise ValueError("schemaVersion must be 1")
+        _validate_positive_integer(
+            self.enforcement_generation,
+            field="enforcementGeneration",
+        )
+        validate_sha256(self.enforcement_digest)
+        _validate_workspace_id(self.workspace_id)
+        _validate_non_empty_utf8(self.source_commit, field="sourceCommit")
+        _validate_non_empty_utf8(self.workspace_digest, field="workspaceDigest")
+        validate_sha256(self.canonical_worktree_hash)
+        if (
+            type(self.requirement) is not FinalizerRequirement
+            or type(self.config) is not FinalizerExecutionConfig
+            or type(self.protected_baseline) is not FinalizerProtectedBaseline
+            or type(self.bootstrap_baseline) is not FinalizerBootstrapBaseline
+            or type(self.requirement_mapping) is not RequiredFinalizerMapping
+            or type(self.registry_entry) is not FinalizerRegistryEntry
+        ):
+            raise ValueError("requirement record requires concrete source contracts")
+        gate_id = self.requirement.gate_id
+        finalizer_id = self.requirement.finalizer_id
+        if (
+            (self.config.gate_id, self.config.finalizer_id)
+            != (gate_id, finalizer_id)
+            or (
+                self.protected_baseline.gate_id,
+                self.protected_baseline.finalizer_id,
+            )
+            != (gate_id, finalizer_id)
+            or (
+                self.requirement_mapping.gate_id,
+                self.requirement_mapping.finalizer_id,
+            )
+            != (gate_id, finalizer_id)
+            or self.registry_entry.finalizer_id != finalizer_id
+        ):
+            raise ValueError("requirement record Gate/finalizer identity mismatch")
+        if (
+            self.requirement.finalizer_registry_path
+            != self.protected_baseline.registry_file_path
+            or self.requirement.protected_baseline_digest
+            != self.protected_baseline.digest()
+            or self.protected_baseline.requirement_mapping_digest
+            != self.requirement.requirement_mapping_digest()
+        ):
+            raise ValueError("requirement record protected-source identity mismatch")
+        _validate_captured_protected_sources(self.captured_sources)
+        if (
+            type(self.protected_source_artifacts) is not tuple
+            or len(self.protected_source_artifacts) != len(self.captured_sources)
+            or any(
+                type(item) is not ProtectedSourceArtifact
+                for item in self.protected_source_artifacts
+            )
+        ):
+            raise ValueError(
+                "protectedSourceArtifacts must match capturedSources cardinality"
+            )
+        if tuple(
+            item.captured for item in self.protected_source_artifacts
+        ) != self.captured_sources:
+            raise ValueError(
+                "protectedSourceArtifacts must preserve capturedSources exactly"
+            )
+        source_by_path = {
+            item.repo_relative_path: item for item in self.captured_sources
+        }
+        expected_components = {
+            self.requirement.protected_baseline_path: (
+                ProtectedSourceComponent.PROTECTED_BASELINE
+            ),
+            self.requirement.finalizer_registry_path: (
+                ProtectedSourceComponent.REGISTRATION_CATALOG
+            ),
+            self.protected_baseline.contract_schema_path: (
+                ProtectedSourceComponent.CONTRACT_SCHEMA
+            ),
+            self.protected_baseline.entrypoint_source_path: (
+                ProtectedSourceComponent.ENTRYPOINT_SOURCE
+            ),
+            self.protected_baseline.generator_source_path: (
+                ProtectedSourceComponent.GENERATOR_SOURCE
+            ),
+            FINALIZER_BOOTSTRAP_SOURCE_PATHS[0]: (
+                ProtectedSourceComponent.CORE_CONTRACTS
+            ),
+            FINALIZER_BOOTSTRAP_SOURCE_PATHS[1]: (
+                ProtectedSourceComponent.SUPERVISOR_SOURCE
+            ),
+            FINALIZER_BOOTSTRAP_SOURCE_PATHS[2]: (
+                ProtectedSourceComponent.CORE_WORKER_BOOTSTRAP
+            ),
+            FINALIZER_BOOTSTRAP_SOURCE_PATHS[3]: (
+                ProtectedSourceComponent.CORE_RESULT_CONTRACTS
+            ),
+        }
+        for path, component in expected_components.items():
+            source = source_by_path.get(path)
+            if source is None or source.component is not component:
+                raise ValueError(
+                    f"capturedSources lacks required component: {component.value}"
+                )
+        if sum(
+            item.component is ProtectedSourceComponent.REQUIRED_MAPPING
+            for item in self.captured_sources
+        ) != 1:
+            raise ValueError("capturedSources requires one REQUIRED_MAPPING")
+        bootstrap_files = tuple(
+            (
+                path,
+                source_by_path[path].file_sha256,
+            )
+            for path in FINALIZER_BOOTSTRAP_SOURCE_PATHS
+        )
+        if bootstrap_files != self.bootstrap_baseline.source_files:
+            raise ValueError(
+                "bootstrapBaseline does not match captured Core sources"
+            )
+        if any(
+            not source_by_path[path].executable_included
+            for path in (
+                *FINALIZER_BOOTSTRAP_SOURCE_PATHS,
+                *self.registry_entry.source_paths,
+            )
+        ):
+            raise ValueError(
+                "bootstrap and registered business sources must be executable-included"
+            )
+        expected_file_hashes = {
+            self.requirement.protected_baseline_path: (
+                self.requirement.protected_baseline_file_sha256
+            ),
+            self.protected_baseline.registry_file_path: (
+                self.protected_baseline.registry_file_digest
+            ),
+            self.protected_baseline.contract_schema_path: (
+                self.protected_baseline.contract_schema_digest
+            ),
+            self.protected_baseline.entrypoint_source_path: (
+                self.protected_baseline.entrypoint_source_digest
+            ),
+            self.protected_baseline.generator_source_path: (
+                self.protected_baseline.generator_source_digest
+            ),
+        }
+        if any(
+            source_by_path[path].file_sha256 != expected
+            for path, expected in expected_file_hashes.items()
+        ):
+            raise ValueError(
+                "protected source hash does not match parsed baseline"
+            )
+        _validate_file_identity_tuple(self.source_files, field="sourceFiles")
+        if tuple(path for path, _ in self.source_files) != (
+            self.registry_entry.source_paths
+        ):
+            raise ValueError("sourceFiles must project registry sourcePaths")
+        if any(
+            source_by_path.get(path) is None
+            or source_by_path[path].file_sha256 != digest
+            for path, digest in self.source_files
+        ):
+            raise ValueError("sourceFiles are absent from capturedSources")
+        validate_sha256(self.source_digest)
+        if self.source_digest != domain_separated_sha256(
+            _SOURCE_DOMAIN,
+            [list(item) for item in self.source_files],
+        ):
+            raise ValueError("sourceDigest does not match sourceFiles")
+        if self.source_digest != self.registry_entry.source_digest:
+            raise ValueError("sourceDigest does not match registryEntry")
+        _validate_non_empty_utf8(
+            self.source_capture_id,
+            field="sourceCaptureId",
+            maximum_bytes=256,
+        )
+        validate_sha256(self.source_capture_bundle_digest)
+        validate_sha256(self.source_capture_digest)
+        source_capture_payload = {
+            "captureId": self.source_capture_id,
+            "workspaceId": self.workspace_id,
+            "sourceCommit": self.source_commit,
+            "workspaceDigest": self.workspace_digest,
+            "canonicalWorktreeHash": self.canonical_worktree_hash,
+            "sourceFiles": [
+                item.to_dict() for item in self.captured_sources
+            ],
+            "sourceCaptureBundleDigest": self.source_capture_bundle_digest,
+        }
+        if self.source_capture_digest != domain_separated_sha256(
+            _SOURCE_CAPTURE_DOMAIN,
+            source_capture_payload,
+        ):
+            raise ValueError(
+                "sourceCaptureDigest does not match durable source capture"
+            )
+        _validate_non_empty_utf8(
+            self.runtime_capture_id,
+            field="runtimeCaptureId",
+            maximum_bytes=256,
+        )
+        if type(self.runtime_measurement) is not PreflightRuntimeMeasurement:
+            raise ValueError(
+                "runtimeMeasurement must be PreflightRuntimeMeasurement"
+            )
+        if (
+            self.runtime_measurement.core_bootstrap_source_digest
+            != self.bootstrap_baseline.core_bootstrap_source_digest
+        ):
+            raise ValueError(
+                "runtimeMeasurement does not match bootstrapBaseline"
+            )
+        _validate_runtime_capture_files(
+            self.runtime_measurement,
+            self.captured_runtime_files,
+        )
+        validate_sha256(self.runtime_capture_bundle_digest)
+        validate_sha256(self.runtime_capture_digest)
+        runtime_capture_payload = {
+            "captureId": self.runtime_capture_id,
+            "measurement": self.runtime_measurement.to_dict(),
+            "files": [
+                item.to_dict() for item in self.captured_runtime_files
+            ],
+            "runtimeCaptureBundleDigest": self.runtime_capture_bundle_digest,
+        }
+        if self.runtime_capture_digest != domain_separated_sha256(
+            _RUNTIME_CAPTURE_DOMAIN,
+            runtime_capture_payload,
+        ):
+            raise ValueError(
+                "runtimeCaptureDigest does not match durable runtime capture"
+            )
+        if (
+            type(self.runtime_evidence_artifacts) is not tuple
+            or len(self.runtime_evidence_artifacts)
+            != len(self.captured_runtime_files)
+            or any(
+                type(item) is not RuntimeEvidenceArtifact
+                for item in self.runtime_evidence_artifacts
+            )
+        ):
+            raise ValueError(
+                "runtimeEvidenceArtifacts must match capturedRuntimeFiles"
+            )
+        if tuple(
+            item.captured for item in self.runtime_evidence_artifacts
+        ) != self.captured_runtime_files:
+            raise ValueError(
+                "runtimeEvidenceArtifacts changed captured runtime identity"
+            )
+        source_identities = {
+            _artifact_source_identity(item.ref)
+            for item in (
+                *self.protected_source_artifacts,
+                *self.runtime_evidence_artifacts,
+            )
+        }
+        if len(source_identities) != 1:
+            raise ValueError("durable requirement refs must share one run")
+        source_identity = next(iter(source_identities))
+        if source_identity[:2] != (self.workspace_id, gate_id):
+            raise ValueError(
+                "durable requirement refs do not match record scope"
+            )
+        supervisor_source_artifact = next(
+            (
+                item.ref
+                for item in self.protected_source_artifacts
+                if item.component is ProtectedSourceComponent.SUPERVISOR_SOURCE
+            ),
+            None,
+        )
+        if supervisor_source_artifact is None:
+            raise ValueError("supervisor source artifact is absent")
+        if type(self.finalizer_runtime) is not FinalizerRuntimeIdentity:
+            raise ValueError("finalizerRuntime must be FinalizerRuntimeIdentity")
+        expected_runtime = materialize_runtime_identity(
+            self.runtime_measurement,
+            self.captured_runtime_files,
+            self.runtime_evidence_artifacts,
+            supervisor_source_artifact,
+        )
+        if self.finalizer_runtime != expected_runtime:
+            raise ValueError(
+                "finalizerRuntime is not the canonical durable projection"
+            )
+        if type(self.durability_profile) not in (
+            LinuxProofAuthorityDurabilityProfile,
+            DarwinProofAuthorityDurabilityProfile,
+        ):
+            raise ValueError("durabilityProfile must use one closed OS branch")
+        capability_ref = (
+            self.durability_profile.capability_evidence.crash_fixture_manifest_ref
+        )
+        if (capability_ref.workspace_id, capability_ref.gate_id) != (
+            self.workspace_id,
+            gate_id,
+        ):
+            raise ValueError(
+                "durabilityProfile does not match requirement record scope"
+            )
+        validate_sha256(self.requirement_digest)
+        validate_sha256(self.config_digest)
+        if self.requirement_digest != self.requirement.digest():
+            raise ValueError("requirementDigest does not match requirement")
+        if self.config_digest != self.config.digest():
+            raise ValueError("configDigest does not match config")
+        _canonical_utc_instant(self.created_at, field="createdAt")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "artifactKind": self.artifact_kind,
+            "schemaVersion": self.schema_version,
+            "enforcementGeneration": self.enforcement_generation,
+            "enforcementDigest": self.enforcement_digest,
+            "workspaceId": self.workspace_id,
+            "sourceCommit": self.source_commit,
+            "workspaceDigest": self.workspace_digest,
+            "canonicalWorktreeHash": self.canonical_worktree_hash,
+            "requirement": self.requirement.to_dict(),
+            "config": self.config.to_dict(),
+            "protectedBaseline": self.protected_baseline.to_dict(),
+            "bootstrapBaseline": self.bootstrap_baseline.to_dict(),
+            "requirementMapping": self.requirement_mapping.to_dict(),
+            "capturedSources": [
+                item.to_dict() for item in self.captured_sources
+            ],
+            "protectedSourceArtifacts": [
+                item.to_dict() for item in self.protected_source_artifacts
+            ],
+            "registryEntry": self.registry_entry.to_dict(),
+            "sourceFiles": [list(item) for item in self.source_files],
+            "sourceCaptureId": self.source_capture_id,
+            "sourceCaptureDigest": self.source_capture_digest,
+            "sourceCaptureBundleDigest": self.source_capture_bundle_digest,
+            "runtimeCaptureId": self.runtime_capture_id,
+            "runtimeCaptureDigest": self.runtime_capture_digest,
+            "runtimeMeasurement": self.runtime_measurement.to_dict(),
+            "capturedRuntimeFiles": [
+                item.to_dict() for item in self.captured_runtime_files
+            ],
+            "runtimeCaptureBundleDigest": self.runtime_capture_bundle_digest,
+            "runtimeEvidenceArtifacts": [
+                item.to_dict() for item in self.runtime_evidence_artifacts
+            ],
+            "finalizerRuntime": self.finalizer_runtime.to_dict(),
+            "durabilityProfile": self.durability_profile.to_dict(),
+            "requirementDigest": self.requirement_digest,
+            "configDigest": self.config_digest,
+            "sourceDigest": self.source_digest,
+            "createdAt": self.created_at,
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> "FinalizerRequirementRecord":
+        data = _closed_mapping(value, schema=cls.__name__, keys=cls._WIRE_KEYS)
+        array_fields = (
+            "capturedSources",
+            "protectedSourceArtifacts",
+            "sourceFiles",
+            "capturedRuntimeFiles",
+            "runtimeEvidenceArtifacts",
+        )
+        if any(type(data[field]) is not list for field in array_fields):
+            raise ValueError("requirement record inventories must be arrays")
+        return cls(
+            artifact_kind=data["artifactKind"],
+            schema_version=data["schemaVersion"],
+            enforcement_generation=data["enforcementGeneration"],
+            enforcement_digest=data["enforcementDigest"],
+            workspace_id=data["workspaceId"],
+            source_commit=data["sourceCommit"],
+            workspace_digest=data["workspaceDigest"],
+            canonical_worktree_hash=data["canonicalWorktreeHash"],
+            requirement=FinalizerRequirement.from_dict(data["requirement"]),
+            config=FinalizerExecutionConfig.from_dict(data["config"]),
+            protected_baseline=FinalizerProtectedBaseline.from_dict(
+                data["protectedBaseline"]
+            ),
+            bootstrap_baseline=FinalizerBootstrapBaseline.from_dict(
+                data["bootstrapBaseline"]
+            ),
+            requirement_mapping=RequiredFinalizerMapping.from_dict(
+                data["requirementMapping"]
+            ),
+            captured_sources=tuple(
+                CapturedProtectedSource.from_dict(item)
+                for item in data["capturedSources"]
+            ),
+            protected_source_artifacts=tuple(
+                ProtectedSourceArtifact.from_dict(item)
+                for item in data["protectedSourceArtifacts"]
+            ),
+            registry_entry=FinalizerRegistryEntry.from_dict(
+                data["registryEntry"]
+            ),
+            source_files=_file_identity_tuple_from_wire(
+                data["sourceFiles"],
+                field="sourceFiles",
+            ),
+            source_capture_id=data["sourceCaptureId"],
+            source_capture_digest=data["sourceCaptureDigest"],
+            source_capture_bundle_digest=data["sourceCaptureBundleDigest"],
+            runtime_capture_id=data["runtimeCaptureId"],
+            runtime_capture_digest=data["runtimeCaptureDigest"],
+            runtime_measurement=PreflightRuntimeMeasurement.from_dict(
+                data["runtimeMeasurement"]
+            ),
+            captured_runtime_files=tuple(
+                CapturedRuntimeFile.from_dict(item)
+                for item in data["capturedRuntimeFiles"]
+            ),
+            runtime_capture_bundle_digest=data["runtimeCaptureBundleDigest"],
+            runtime_evidence_artifacts=tuple(
+                RuntimeEvidenceArtifact.from_dict(item)
+                for item in data["runtimeEvidenceArtifacts"]
+            ),
+            finalizer_runtime=FinalizerRuntimeIdentity.from_dict(
+                data["finalizerRuntime"]
+            ),
+            durability_profile=proof_authority_durability_profile_from_dict(
+                data["durabilityProfile"]
+            ),
+            requirement_digest=data["requirementDigest"],
+            config_digest=data["configDigest"],
+            source_digest=data["sourceDigest"],
+            created_at=data["createdAt"],
+        )
+
+
+def proof_authority_durability_profile_from_dict(value: object) -> ProofAuthorityDurabilityProfile:
+    if not isinstance(value, Mapping):
+        raise ValueError("durability profile must be a closed OS-tagged object")
+    if value.get("osFamily") == "LINUX":
+        return LinuxProofAuthorityDurabilityProfile.from_dict(value)
+    if value.get("osFamily") == "DARWIN":
+        return DarwinProofAuthorityDurabilityProfile.from_dict(value)
+    raise ValueError("unknown durability profile OS")
+
+
+class FinalizerAuthorityAction(str, Enum):
+    INSTALL_INTERLOCK = "INSTALL_INTERLOCK"
+    ACTIVATE_GENERATION = "ACTIVATE_GENERATION"
+
+
+@dataclass(frozen=True)
+class FinalizerAuthorityAuthorization:
+    action: FinalizerAuthorityAction
+    authorization_id: str
+    operator_identity: AbortOperatorIdentity
+    workspace_id: str
+    gate_id: str
+    required_finalizer_id: str
+    target_generation: int | None
+    expected_current_generation: int | None
+    expected_prior_latest_pointer: LatestPointer | None
+    expected_prior_latest_pointer_digest: str | None
+    requirement_digest: str | None
+    config_digest: str | None
+    source_digest: str | None
+    protected_baseline_digest: str | None
+    expected_interlock_digest: str | None
+    proof_admission_source_digest: str
+    proof_admission_quiescence: ProofAdmissionQuiescence | None
+    maintenance_runtime: FinalizerMaintenanceRuntimeIdentity
+    durability_profile: ProofAuthorityDurabilityProfile
+    authority_source_commit: str
+    approval_document_sha256: str
+    authorized_at: str
+    confirmation_challenge_digest: str
+    authorization_digest: str
+    artifact_kind: ClassVar[str] = "acceptance-finalizer-authority-authorization"
+    schema_version: ClassVar[int] = 1
+    proof_admission_inventory_rule: ClassVar[str] = "ALL_TRACKED_ACCEPTANCE_CLAIM_SOURCES"
+    approval_document_path: ClassVar[str] = "docs/architecture/engineering/acceptance/decisions.md"
+    decision_id: ClassVar[str] = "D-19"
+    decision_status: ClassVar[str] = "accepted"
+    _CONFIRMATION_DOMAIN: ClassVar[str] = "pt.acceptance.finalization.authority-confirmation.v1"
+    _AUTHORIZATION_DOMAIN: ClassVar[str] = "pt.acceptance.finalization.authority-authorization.v1"
+
+    def __post_init__(self) -> None:
+        if type(self.action) is not FinalizerAuthorityAction:
+            raise ValueError("authority action must be closed")
+        _validate_slug(self.authorization_id, field="authorizationId")
+        _validate_workspace_id(self.workspace_id)
+        _validate_slug(self.gate_id, field="gateId")
+        _validate_slug(self.required_finalizer_id, field="requiredFinalizerId")
+        if type(self.operator_identity) is not AbortOperatorIdentity:
+            raise ValueError("operatorIdentity must be concrete")
+        _validate_non_empty_utf8(self.authority_source_commit, field="authoritySourceCommit")
+        _canonical_utc_instant(self.authorized_at, field="authorizedAt")
+        validate_sha256(self.approval_document_sha256)
+        validate_sha256(self.proof_admission_source_digest)
+        pointer = self.expected_prior_latest_pointer
+        if pointer is None:
+            if self.expected_prior_latest_pointer_digest is not None:
+                raise ValueError("absent prior pointer requires null digest")
+        elif (
+            type(pointer) is not LatestPointer
+            or (pointer.workspace_id, pointer.gate_id) != (self.workspace_id, self.gate_id)
+            or pointer.digest() != self.expected_prior_latest_pointer_digest
+        ):
+            raise ValueError("prior pointer scope/digest mismatch")
+        activation_digests = (
+            self.requirement_digest, self.config_digest, self.source_digest,
+            self.protected_baseline_digest, self.expected_interlock_digest,
+        )
+        if self.action is FinalizerAuthorityAction.INSTALL_INTERLOCK:
+            if (
+                self.target_generation is not None
+                or self.expected_current_generation is not None
+                or any(value is not None for value in activation_digests)
+            ):
+                raise ValueError("interlock installation forbids generation/activation fields")
+            quiescence = self.proof_admission_quiescence
+            if type(quiescence) is not ProofAdmissionQuiescence:
+                raise ValueError("interlock installation requires concrete quiescence")
+            if (
+                quiescence.workspace_id, quiescence.gate_id, quiescence.source_commit,
+                quiescence.proof_admission_source_digest,
+            ) != (
+                self.workspace_id, self.gate_id, self.authority_source_commit,
+                self.proof_admission_source_digest,
+            ):
+                raise ValueError("quiescence scope/source mismatch")
+            if quiescence.captured_at > self.authorized_at:
+                raise ValueError("quiescence cannot follow authorization")
+        else:
+            if type(self.target_generation) is not int or self.target_generation < 1:
+                raise ValueError("targetGeneration must be a positive integer")
+            if self.target_generation == 1:
+                if self.expected_current_generation is not None:
+                    raise ValueError("first activation requires null current generation")
+            elif (
+                type(self.expected_current_generation) is not int
+                or self.expected_current_generation != self.target_generation - 1
+            ):
+                raise ValueError("activation must advance exactly one generation")
+            if self.proof_admission_quiescence is not None:
+                raise ValueError("activation requires null quiescence")
+            for value in activation_digests:
+                validate_sha256(value)
+        if type(self.maintenance_runtime) is not FinalizerMaintenanceRuntimeIdentity:
+            raise ValueError("maintenanceRuntime must be concrete")
+        if type(self.durability_profile) not in (
+            LinuxProofAuthorityDurabilityProfile, DarwinProofAuthorityDurabilityProfile,
+        ):
+            raise ValueError("durabilityProfile must be a concrete closed branch")
+        if any(
+            (ref.workspace_id, ref.gate_id, ref.authorization_id)
+            != (self.workspace_id, self.gate_id, self.authorization_id)
+            for ref in self.maintenance_runtime.runtime_artifacts
+        ):
+            raise ValueError("authority runtime refs must belong to enclosing authorization")
+        capability = self.durability_profile.capability_evidence
+        if (
+            capability.crash_fixture_manifest_ref.workspace_id,
+            capability.crash_fixture_manifest_ref.gate_id,
+        ) != (self.workspace_id, self.gate_id):
+            raise ValueError("durability capability must belong to enclosing authority")
+        capability.validate_maintenance_source(self.maintenance_runtime)
+        validate_sha256(self.confirmation_challenge_digest)
+        validate_sha256(self.authorization_digest)
+        if self.confirmation_challenge_digest != domain_separated_sha256(
+            self._CONFIRMATION_DOMAIN, self._payload()
+        ):
+            raise ValueError("confirmationChallengeDigest mismatch")
+        if self.authorization_digest != domain_separated_sha256(
+            self._AUTHORIZATION_DOMAIN,
+            {**self._payload(), "confirmationChallengeDigest": self.confirmation_challenge_digest},
+        ):
+            raise ValueError("authorizationDigest mismatch")
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "artifactKind": self.artifact_kind, "schemaVersion": self.schema_version,
+            "action": self.action.value, "authorizationId": self.authorization_id,
+            "operatorIdentity": self.operator_identity.to_dict(),
+            "workspaceId": self.workspace_id, "gateId": self.gate_id,
+            "requiredFinalizerId": self.required_finalizer_id,
+            "targetGeneration": self.target_generation,
+            "expectedCurrentGeneration": self.expected_current_generation,
+            "expectedPriorLatestPointer": None if self.expected_prior_latest_pointer is None
+            else self.expected_prior_latest_pointer.to_dict(),
+            "expectedPriorLatestPointerDigest": self.expected_prior_latest_pointer_digest,
+            "requirementDigest": self.requirement_digest, "configDigest": self.config_digest,
+            "sourceDigest": self.source_digest, "protectedBaselineDigest": self.protected_baseline_digest,
+            "expectedInterlockDigest": self.expected_interlock_digest,
+            "proofAdmissionInventoryRule": self.proof_admission_inventory_rule,
+            "proofAdmissionSourceDigest": self.proof_admission_source_digest,
+            "proofAdmissionQuiescence": None if self.proof_admission_quiescence is None
+            else self.proof_admission_quiescence.to_dict(),
+            "maintenanceRuntime": self.maintenance_runtime.to_dict(),
+            "durabilityProfile": self.durability_profile.to_dict(),
+            "authoritySourceCommit": self.authority_source_commit,
+            "approvalDocumentPath": self.approval_document_path,
+            "approvalDocumentSha256": self.approval_document_sha256,
+            "decisionId": self.decision_id, "decisionStatus": self.decision_status,
+            "authorizedAt": self.authorized_at,
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            **self._payload(), "confirmationChallengeDigest": self.confirmation_challenge_digest,
+            "authorizationDigest": self.authorization_digest,
+        }
+
+    @classmethod
+    def from_dict(
+        cls, value: object, *,
+        epoch: ProofAdmissionEpochRecord | None = None,
+        current_epoch: ProofAdmissionCurrentEpoch | None = None,
+        pause: ProofAdmissionPauseRecord | None = None,
+        jobs: tuple[ProofAdmissionJobRecord, ...] | None = None,
+        completions: tuple[ProofAdmissionJobCompletion, ...] | None = None,
+        intents: tuple[ProofAdmissionEmissionIntent, ...] | None = None,
+        acknowledgements: tuple[ProofAdmissionEmissionAcknowledgement, ...] | None = None,
+        validate_proof_references: bool = True,
+    ) -> "FinalizerAuthorityAuthorization":
+        fields = frozenset({
+            "artifactKind", "schemaVersion", "action", "authorizationId", "operatorIdentity",
+            "workspaceId", "gateId", "requiredFinalizerId", "targetGeneration",
+            "expectedCurrentGeneration", "expectedPriorLatestPointer",
+            "expectedPriorLatestPointerDigest", "requirementDigest", "configDigest",
+            "sourceDigest", "protectedBaselineDigest", "expectedInterlockDigest",
+            "proofAdmissionInventoryRule", "proofAdmissionSourceDigest", "proofAdmissionQuiescence",
+            "maintenanceRuntime", "durabilityProfile", "authoritySourceCommit",
+            "approvalDocumentPath", "approvalDocumentSha256", "decisionId", "decisionStatus",
+            "authorizedAt", "confirmationChallengeDigest", "authorizationDigest",
+        })
+        data = _closed_mapping(value, schema=cls.__name__, keys=fields)
+        for field, expected in (
+            ("artifactKind", cls.artifact_kind), ("schemaVersion", cls.schema_version),
+            ("proofAdmissionInventoryRule", cls.proof_admission_inventory_rule),
+            ("approvalDocumentPath", cls.approval_document_path),
+            ("decisionId", cls.decision_id), ("decisionStatus", cls.decision_status),
+        ):
+            if type(data[field]) is not type(expected) or data[field] != expected:
+                raise ValueError(f"invalid authority {field}")
+        return cls(
+            _enum_from_wire(FinalizerAuthorityAction, data["action"], field="action"),
+            data["authorizationId"], AbortOperatorIdentity.from_dict(data["operatorIdentity"]),
+            data["workspaceId"], data["gateId"], data["requiredFinalizerId"],
+            data["targetGeneration"], data["expectedCurrentGeneration"],
+            None if data["expectedPriorLatestPointer"] is None
+            else LatestPointer.from_dict(data["expectedPriorLatestPointer"]),
+            data["expectedPriorLatestPointerDigest"], data["requirementDigest"],
+            data["configDigest"], data["sourceDigest"], data["protectedBaselineDigest"],
+            data["expectedInterlockDigest"], data["proofAdmissionSourceDigest"],
+            None if data["proofAdmissionQuiescence"] is None
+            else (
+                ProofAdmissionQuiescence.from_dict(
+                    data["proofAdmissionQuiescence"],
+                    epoch=epoch,
+                    current_epoch=current_epoch,
+                    pause=pause,
+                    jobs=jobs,
+                    completions=completions,
+                    intents=intents,
+                    acknowledgements=acknowledgements,
+                )
+                if validate_proof_references
+                else ProofAdmissionQuiescence.from_dict_unresolved(
+                    data["proofAdmissionQuiescence"]
+                )
+            ),
+            FinalizerMaintenanceRuntimeIdentity.from_dict(data["maintenanceRuntime"]),
+            proof_authority_durability_profile_from_dict(data["durabilityProfile"]),
+            data["authoritySourceCommit"], data["approvalDocumentSha256"], data["authorizedAt"],
+            data["confirmationChallengeDigest"], data["authorizationDigest"],
+        )
+
+
+@dataclass(frozen=True)
+class FinalizerPublicationInterlock:
+    workspace_id: str
+    gate_id: str
+    required_finalizer_id: str
+    installed_at: str
+    installation_source_commit: str
+    proof_admission_source_digest: str
+    authorization: FinalizerAuthorityAuthorization
+    interlock_digest: str
+    artifact_kind: ClassVar[str] = "acceptance-finalizer-publication-interlock"
+    schema_version: ClassVar[int] = 1
+
+    def __post_init__(self) -> None:
+        if type(self.authorization) is not FinalizerAuthorityAuthorization:
+            raise ValueError("interlock authorization must be concrete")
+        authority = self.authorization
+        if authority.action is not FinalizerAuthorityAction.INSTALL_INTERLOCK:
+            raise ValueError("interlock requires INSTALL_INTERLOCK authorization")
+        if (
+            self.workspace_id, self.gate_id, self.required_finalizer_id,
+            self.installation_source_commit, self.proof_admission_source_digest,
+        ) != (
+            authority.workspace_id, authority.gate_id, authority.required_finalizer_id,
+            authority.authority_source_commit, authority.proof_admission_source_digest,
+        ):
+            raise ValueError("interlock identity/source must match authorization")
+        _canonical_utc_instant(self.installed_at, field="installedAt")
+        if self.installed_at < authority.authorized_at:
+            raise ValueError("installation cannot precede authorization")
+        validate_sha256(self.interlock_digest)
+        if self.interlock_digest != domain_separated_sha256(
+            "pt.acceptance.finalization.publication-interlock.v1", self._payload()
+        ):
+            raise ValueError("interlockDigest mismatch")
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "artifactKind": self.artifact_kind, "schemaVersion": self.schema_version,
+            "workspaceId": self.workspace_id, "gateId": self.gate_id,
+            "requiredFinalizerId": self.required_finalizer_id, "installedAt": self.installed_at,
+            "installationSourceCommit": self.installation_source_commit,
+            "proofAdmissionSourceDigest": self.proof_admission_source_digest,
+            "authorization": self.authorization.to_dict(),
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {**self._payload(), "interlockDigest": self.interlock_digest}
+
+    @classmethod
+    def from_dict(
+        cls, value: object, *,
+        epoch: ProofAdmissionEpochRecord | None = None,
+        current_epoch: ProofAdmissionCurrentEpoch | None = None,
+        pause: ProofAdmissionPauseRecord | None = None,
+        jobs: tuple[ProofAdmissionJobRecord, ...] | None = None,
+        completions: tuple[ProofAdmissionJobCompletion, ...] | None = None,
+        intents: tuple[ProofAdmissionEmissionIntent, ...] | None = None,
+        acknowledgements: tuple[ProofAdmissionEmissionAcknowledgement, ...] | None = None,
+        validate_proof_references: bool = True,
+    ) -> "FinalizerPublicationInterlock":
+        data = _closed_mapping(value, schema=cls.__name__, keys=frozenset({
+            "artifactKind", "schemaVersion", "workspaceId", "gateId", "requiredFinalizerId",
+            "installedAt", "installationSourceCommit", "proofAdmissionSourceDigest",
+            "authorization", "interlockDigest",
+        }))
+        if (
+            data["artifactKind"] != cls.artifact_kind
+            or type(data["schemaVersion"]) is not int or data["schemaVersion"] != 1
+        ):
+            raise ValueError("invalid interlock kind/version")
+        return cls(
+            data["workspaceId"], data["gateId"], data["requiredFinalizerId"],
+            data["installedAt"], data["installationSourceCommit"], data["proofAdmissionSourceDigest"],
+            FinalizerAuthorityAuthorization.from_dict(
+                data["authorization"], epoch=epoch, current_epoch=current_epoch,
+                pause=pause, jobs=jobs, completions=completions, intents=intents,
+                acknowledgements=acknowledgements,
+                validate_proof_references=validate_proof_references,
+            ), data["interlockDigest"],
+        )
+
+
+@dataclass(frozen=True)
+class FinalizerActivationIntent:
+    workspace_id: str
+    gate_id: str
+    required_finalizer_id: str
+    target_generation: int
+    expected_current_generation: int | None
+    activated_at: str
+    activation_source_commit: str
+    expected_prior_latest_pointer: LatestPointer | None
+    expected_prior_latest_pointer_digest: str | None
+    requirement_digest: str
+    config_digest: str
+    source_digest: str
+    protected_baseline_digest: str
+    authorization: FinalizerAuthorityAuthorization
+    intent_digest: str
+    artifact_kind: ClassVar[str] = "acceptance-finalizer-activation-intent"
+    schema_version: ClassVar[int] = 1
+
+    def __post_init__(self) -> None:
+        authority = self.authorization
+        if (
+            type(authority) is not FinalizerAuthorityAuthorization
+            or authority.action is not FinalizerAuthorityAction.ACTIVATE_GENERATION
+        ):
+            raise ValueError("intent requires concrete ACTIVATE_GENERATION authorization")
+        for field in (
+            "workspace_id", "gate_id", "required_finalizer_id", "target_generation",
+            "expected_current_generation", "expected_prior_latest_pointer",
+            "expected_prior_latest_pointer_digest", "requirement_digest", "config_digest",
+            "source_digest", "protected_baseline_digest",
+        ):
+            value = getattr(self, field)
+            if type(value) is not type(getattr(authority, field)) or value != getattr(authority, field):
+                raise ValueError(f"intent {field} must match authorization")
+        if self.activation_source_commit != authority.authority_source_commit:
+            raise ValueError("intent source must match authorization")
+        _canonical_utc_instant(self.activated_at, field="activatedAt")
+        if self.activated_at < authority.authorized_at:
+            raise ValueError("activation cannot precede authorization")
+        validate_sha256(self.intent_digest)
+        if self.intent_digest != domain_separated_sha256(
+            "pt.acceptance.finalization.activation-intent.v1", self._payload()
+        ):
+            raise ValueError("intentDigest mismatch")
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "artifactKind": self.artifact_kind, "schemaVersion": self.schema_version,
+            "workspaceId": self.workspace_id, "gateId": self.gate_id,
+            "requiredFinalizerId": self.required_finalizer_id, "targetGeneration": self.target_generation,
+            "expectedCurrentGeneration": self.expected_current_generation,
+            "activatedAt": self.activated_at, "activationSourceCommit": self.activation_source_commit,
+            "expectedPriorLatestPointer": None if self.expected_prior_latest_pointer is None
+            else self.expected_prior_latest_pointer.to_dict(),
+            "expectedPriorLatestPointerDigest": self.expected_prior_latest_pointer_digest,
+            "requirementDigest": self.requirement_digest, "configDigest": self.config_digest,
+            "sourceDigest": self.source_digest, "protectedBaselineDigest": self.protected_baseline_digest,
+            "authorization": self.authorization.to_dict(),
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {**self._payload(), "intentDigest": self.intent_digest}
+
+    @classmethod
+    def from_dict(cls, value: object) -> "FinalizerActivationIntent":
+        data = _closed_mapping(value, schema=cls.__name__, keys=frozenset({
+            "artifactKind", "schemaVersion", "workspaceId", "gateId", "requiredFinalizerId",
+            "targetGeneration", "expectedCurrentGeneration", "activatedAt", "activationSourceCommit",
+            "expectedPriorLatestPointer", "expectedPriorLatestPointerDigest", "requirementDigest",
+            "configDigest", "sourceDigest", "protectedBaselineDigest", "authorization", "intentDigest",
+        }))
+        if (
+            data["artifactKind"] != cls.artifact_kind
+            or type(data["schemaVersion"]) is not int or data["schemaVersion"] != 1
+        ):
+            raise ValueError("invalid activation intent kind/version")
+        return cls(
+            data["workspaceId"], data["gateId"], data["requiredFinalizerId"],
+            data["targetGeneration"], data["expectedCurrentGeneration"], data["activatedAt"],
+            data["activationSourceCommit"],
+            None if data["expectedPriorLatestPointer"] is None
+            else LatestPointer.from_dict(data["expectedPriorLatestPointer"]),
+            data["expectedPriorLatestPointerDigest"], data["requirementDigest"], data["configDigest"],
+            data["sourceDigest"], data["protectedBaselineDigest"],
+            FinalizerAuthorityAuthorization.from_dict(data["authorization"]), data["intentDigest"],
+        )
+
+
+@dataclass(frozen=True)
+class FinalizerEnforcementRecord:
+    generation: int
+    workspace_id: str
+    gate_id: str
+    required_finalizer_id: str
+    activation_intent: FinalizerActivationIntent
+    activated_at: str
+    activation_source_commit: str
+    prior_latest_pointer: LatestPointer | None
+    prior_latest_pointer_digest: str | None
+    requirement_digest: str
+    config_digest: str
+    source_digest: str
+    protected_baseline_digest: str
+    enforcement_digest: str
+    artifact_kind: ClassVar[str] = "acceptance-finalizer-enforcement-generation"
+    schema_version: ClassVar[int] = 1
+
+    def __post_init__(self) -> None:
+        intent = self.activation_intent
+        if type(intent) is not FinalizerActivationIntent:
+            raise ValueError("activationIntent must be concrete")
+        for own, target in (
+            ("generation", "target_generation"), ("workspace_id", "workspace_id"),
+            ("gate_id", "gate_id"), ("required_finalizer_id", "required_finalizer_id"),
+            ("activated_at", "activated_at"), ("activation_source_commit", "activation_source_commit"),
+            ("prior_latest_pointer", "expected_prior_latest_pointer"),
+            ("prior_latest_pointer_digest", "expected_prior_latest_pointer_digest"),
+            ("requirement_digest", "requirement_digest"), ("config_digest", "config_digest"),
+            ("source_digest", "source_digest"), ("protected_baseline_digest", "protected_baseline_digest"),
+        ):
+            value, expected = getattr(self, own), getattr(intent, target)
+            if type(value) is not type(expected) or value != expected:
+                raise ValueError(f"enforcement {own} must match intent")
+        validate_sha256(self.enforcement_digest)
+        if self.enforcement_digest != domain_separated_sha256(
+            "pt.acceptance.finalization.enforcement.v1", self._payload()
+        ):
+            raise ValueError("enforcementDigest mismatch")
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "artifactKind": self.artifact_kind, "schemaVersion": self.schema_version,
+            "generation": self.generation, "workspaceId": self.workspace_id, "gateId": self.gate_id,
+            "requiredFinalizerId": self.required_finalizer_id, "activationIntent": self.activation_intent.to_dict(),
+            "activatedAt": self.activated_at, "activationSourceCommit": self.activation_source_commit,
+            "priorLatestPointer": None if self.prior_latest_pointer is None else self.prior_latest_pointer.to_dict(),
+            "priorLatestPointerDigest": self.prior_latest_pointer_digest, "requirementDigest": self.requirement_digest,
+            "configDigest": self.config_digest, "sourceDigest": self.source_digest,
+            "protectedBaselineDigest": self.protected_baseline_digest,
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {**self._payload(), "enforcementDigest": self.enforcement_digest}
+
+    @classmethod
+    def from_dict(cls, value: object) -> "FinalizerEnforcementRecord":
+        data = _closed_mapping(value, schema=cls.__name__, keys=frozenset({
+            "artifactKind", "schemaVersion", "generation", "workspaceId", "gateId", "requiredFinalizerId",
+            "activationIntent", "activatedAt", "activationSourceCommit", "priorLatestPointer",
+            "priorLatestPointerDigest", "requirementDigest", "configDigest", "sourceDigest",
+            "protectedBaselineDigest", "enforcementDigest",
+        }))
+        if (
+            data["artifactKind"] != cls.artifact_kind
+            or type(data["schemaVersion"]) is not int or data["schemaVersion"] != 1
+        ):
+            raise ValueError("invalid enforcement kind/version")
+        return cls(
+            data["generation"], data["workspaceId"], data["gateId"], data["requiredFinalizerId"],
+            FinalizerActivationIntent.from_dict(data["activationIntent"]), data["activatedAt"],
+            data["activationSourceCommit"], None if data["priorLatestPointer"] is None
+            else LatestPointer.from_dict(data["priorLatestPointer"]),
+            data["priorLatestPointerDigest"], data["requirementDigest"], data["configDigest"],
+            data["sourceDigest"], data["protectedBaselineDigest"], data["enforcementDigest"],
+        )
+
+
+@dataclass(frozen=True)
+class FinalizerActivationPending:
+    intent: FinalizerActivationIntent
+    candidate_enforcement_record: FinalizerEnforcementRecord
+    candidate_activated: FinalizerEnforcementActivated | None
+    candidate_current: FinalizerEnforcementCurrent
+    pending_digest: str
+    artifact_kind: ClassVar[str] = "acceptance-finalizer-activation-pending"
+    schema_version: ClassVar[int] = 1
+
+    def __post_init__(self) -> None:
+        if (
+            type(self.intent) is not FinalizerActivationIntent
+            or type(self.candidate_enforcement_record) is not FinalizerEnforcementRecord
+            or type(self.candidate_current) is not FinalizerEnforcementCurrent
+        ):
+            raise ValueError("pending activation requires concrete intent/record/current")
+        intent, record, current = self.intent, self.candidate_enforcement_record, self.candidate_current
+        if record.activation_intent != intent:
+            raise ValueError("pending record must contain the exact intent")
+        if (
+            current.workspace_id, current.gate_id, current.required_finalizer_id,
+            current.generation, current.enforcement_digest,
+        ) != (
+            intent.workspace_id, intent.gate_id, intent.required_finalizer_id,
+            intent.target_generation, record.enforcement_digest,
+        ):
+            raise ValueError("pending current must match candidate enforcement")
+        activated = self.candidate_activated
+        if intent.target_generation == 1:
+            if type(activated) is not FinalizerEnforcementActivated:
+                raise ValueError("first generation requires candidateActivated")
+            if (
+                activated.workspace_id, activated.gate_id, activated.required_finalizer_id,
+                activated.first_generation, activated.first_enforcement_digest, activated.activated_at,
+                activated.activation_source_commit, activated.activation_intent_digest,
+            ) != (
+                intent.workspace_id, intent.gate_id, intent.required_finalizer_id, 1,
+                record.enforcement_digest, intent.activated_at, intent.activation_source_commit, intent.intent_digest,
+            ):
+                raise ValueError("candidateActivated must match first intent/record")
+        elif activated is not None:
+            raise ValueError("later generations forbid candidateActivated")
+        validate_sha256(self.pending_digest)
+        if self.pending_digest != domain_separated_sha256(
+            "pt.acceptance.finalization.activation-pending.v1", self._payload()
+        ):
+            raise ValueError("pendingDigest mismatch")
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "artifactKind": self.artifact_kind, "schemaVersion": self.schema_version,
+            "intent": self.intent.to_dict(), "candidateEnforcementRecord": self.candidate_enforcement_record.to_dict(),
+            "candidateActivated": None if self.candidate_activated is None else self.candidate_activated.to_dict(),
+            "candidateCurrent": self.candidate_current.to_dict(),
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {**self._payload(), "pendingDigest": self.pending_digest}
+
+    @classmethod
+    def from_dict(cls, value: object) -> "FinalizerActivationPending":
+        data = _closed_mapping(value, schema=cls.__name__, keys=frozenset({
+            "artifactKind", "schemaVersion", "intent", "candidateEnforcementRecord",
+            "candidateActivated", "candidateCurrent", "pendingDigest",
+        }))
+        if (
+            data["artifactKind"] != cls.artifact_kind
+            or type(data["schemaVersion"]) is not int or data["schemaVersion"] != 1
+        ):
+            raise ValueError("invalid pending activation kind/version")
+        return cls(
+            FinalizerActivationIntent.from_dict(data["intent"]),
+            FinalizerEnforcementRecord.from_dict(data["candidateEnforcementRecord"]),
+            None if data["candidateActivated"] is None else FinalizerEnforcementActivated.from_dict(data["candidateActivated"]),
+            FinalizerEnforcementCurrent.from_dict(data["candidateCurrent"]), data["pendingDigest"],
+        )
+
+
+class AbortReasonCode(str, Enum):
+    OPERATOR_REQUESTED_DISCARD = "OPERATOR_REQUESTED_DISCARD"
+    STORAGE_RECLAMATION = "STORAGE_RECLAMATION"
+    SUPERSEDED_UNPUBLISHED_RUN = "SUPERSEDED_UNPUBLISHED_RUN"
+
+
+@dataclass(frozen=True)
+class AbortAuthorization:
+    authorization_id: str
+    attempt_id: str
+    authorized_at: str
+    operator_identity: AbortOperatorIdentity
+    reason_code: AbortReasonCode
+    workspace_id: str
+    gate_id: str
+    evidence_run_id: str
+    run_directory_claim: DescriptorClaim
+    snapshot_digest: str
+    requirement_digest: str
+    authority_source_commit: str
+    proof_admission_source_digest: str
+    maintenance_runtime: FinalizerMaintenanceRuntimeIdentity
+    durability_profile: ProofAuthorityDurabilityProfile
+    confirmation_challenge_digest: str
+    proof_admission_inventory_rule: ClassVar[str] = "ALL_TRACKED_ACCEPTANCE_CLAIM_SOURCES"
+
+    def __post_init__(self) -> None:
+        _validate_slug(self.authorization_id, field="authorizationId")
+        _validate_slug(self.attempt_id, field="attemptId")
+        _validate_workspace_id(self.workspace_id)
+        _validate_slug(self.gate_id, field="gateId")
+        _validate_run_id(self.evidence_run_id, field="evidenceRunId")
+        _canonical_utc_instant(self.authorized_at, field="authorizedAt")
+        _validate_non_empty_utf8(self.authority_source_commit, field="authoritySourceCommit")
+        if type(self.operator_identity) is not AbortOperatorIdentity or type(self.reason_code) is not AbortReasonCode:
+            raise ValueError("abort operator/reason must be concrete closed contracts")
+        claim = self.run_directory_claim
+        if (
+            type(claim) is not DescriptorClaim
+            or claim.role is not DescriptorRole.RUN_DIRECTORY
+            or type(claim.owner_binding) is not RunDirectoryOwnerBinding
+            or (claim.owner_binding.workspace_id, claim.owner_binding.gate_id,
+                claim.owner_binding.evidence_run_id)
+            != (self.workspace_id, self.gate_id, self.evidence_run_id)
+        ):
+            raise ValueError("abort run directory must bind exact run identity")
+        for digest in (
+            self.snapshot_digest, self.requirement_digest,
+            self.proof_admission_source_digest, self.confirmation_challenge_digest,
+        ):
+            validate_sha256(digest)
+        if type(self.maintenance_runtime) is not FinalizerMaintenanceRuntimeIdentity:
+            raise ValueError("abort maintenance runtime must be concrete")
+        if type(self.durability_profile) not in (
+            LinuxProofAuthorityDurabilityProfile, DarwinProofAuthorityDurabilityProfile,
+        ):
+            raise ValueError("abort durability profile must be a concrete branch")
+        if any(
+            (ref.workspace_id, ref.gate_id, ref.authorization_id)
+            != (self.workspace_id, self.gate_id, self.authorization_id)
+            for ref in self.maintenance_runtime.runtime_artifacts
+        ):
+            raise ValueError("abort runtime refs must bind enclosing authorization")
+        capability = self.durability_profile.capability_evidence
+        if (
+            capability.crash_fixture_manifest_ref.workspace_id,
+            capability.crash_fixture_manifest_ref.gate_id,
+        ) != (self.workspace_id, self.gate_id):
+            raise ValueError("abort durability capability must bind authority scope")
+        capability.validate_maintenance_source(self.maintenance_runtime)
+        if self.confirmation_challenge_digest != domain_separated_sha256(
+            _ABORT_CONFIRMATION_DOMAIN, self._payload()
+        ):
+            raise ValueError("abort confirmationChallengeDigest mismatch")
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "authorizationId": self.authorization_id, "attemptId": self.attempt_id,
+            "authorizedAt": self.authorized_at, "operatorIdentity": self.operator_identity.to_dict(),
+            "reasonCode": self.reason_code.value, "workspaceId": self.workspace_id,
+            "gateId": self.gate_id, "evidenceRunId": self.evidence_run_id,
+            "runDirectoryClaim": self.run_directory_claim.to_dict(),
+            "snapshotDigest": self.snapshot_digest, "requirementDigest": self.requirement_digest,
+            "authoritySourceCommit": self.authority_source_commit,
+            "proofAdmissionInventoryRule": self.proof_admission_inventory_rule,
+            "proofAdmissionSourceDigest": self.proof_admission_source_digest,
+            "maintenanceRuntime": self.maintenance_runtime.to_dict(),
+            "durabilityProfile": self.durability_profile.to_dict(),
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {**self._payload(), "confirmationChallengeDigest": self.confirmation_challenge_digest}
+
+    @classmethod
+    def from_dict(cls, value: object) -> "AbortAuthorization":
+        data = _closed_mapping(value, schema=cls.__name__, keys=frozenset({
+            "authorizationId", "attemptId", "authorizedAt", "operatorIdentity", "reasonCode",
+            "workspaceId", "gateId", "evidenceRunId", "runDirectoryClaim", "snapshotDigest",
+            "requirementDigest", "authoritySourceCommit", "proofAdmissionInventoryRule",
+            "proofAdmissionSourceDigest", "maintenanceRuntime", "durabilityProfile", "confirmationChallengeDigest",
+        }))
+        if data["proofAdmissionInventoryRule"] != cls.proof_admission_inventory_rule:
+            raise ValueError("abort requires full proof-admission inventory")
+        return cls(
+            data["authorizationId"], data["attemptId"], data["authorizedAt"],
+            AbortOperatorIdentity.from_dict(data["operatorIdentity"]),
+            _enum_from_wire(AbortReasonCode, data["reasonCode"], field="reasonCode"),
+            data["workspaceId"], data["gateId"], data["evidenceRunId"],
+            DescriptorClaim.from_dict(data["runDirectoryClaim"]), data["snapshotDigest"],
+            data["requirementDigest"], data["authoritySourceCommit"], data["proofAdmissionSourceDigest"],
+            FinalizerMaintenanceRuntimeIdentity.from_dict(data["maintenanceRuntime"]),
+            proof_authority_durability_profile_from_dict(data["durabilityProfile"]),
+            data["confirmationChallengeDigest"],
+        )
+
+
+class AbortEventType(str, Enum):
+    AUTHORIZED = "AUTHORIZED"
+    TOMBSTONED = "TOMBSTONED"
+    DELETE_BATCH_STARTED = "DELETE_BATCH_STARTED"
+    DELETED = "DELETED"
+    FAILED = "FAILED"
+
+
+class AbortCompletionSource(str, Enum):
+    DELETE_BATCH_STARTED = "DELETE_BATCH_STARTED"
+    TERMINAL_FAILED = "TERMINAL_FAILED"
+
+
+@dataclass(frozen=True)
+class AbortEventAuthorizationProjection:
+    authorization_id: str
+    authorized_at: str
+    workspace_id: str
+    gate_id: str
+    evidence_run_id: str
+    run_directory_claim: DescriptorClaim
+    snapshot_digest: str
+    requirement_digest: str
+    reason_code: AbortReasonCode
+    operator_identity: AbortOperatorIdentity
+    authority_source_commit: str
+    proof_admission_source_digest: str
+    maintenance_runtime: FinalizerMaintenanceRuntimeIdentity
+    durability_profile: ProofAuthorityDurabilityProfile
+    confirmation_challenge_digest: str
+    proof_admission_inventory_rule: ClassVar[str] = (
+        "ALL_TRACKED_ACCEPTANCE_CLAIM_SOURCES"
+    )
+
+    def __post_init__(self) -> None:
+        authorization = AbortAuthorization(
+            authorization_id=self.authorization_id,
+            attempt_id="projection-validation",
+            authorized_at=self.authorized_at,
+            operator_identity=self.operator_identity,
+            reason_code=self.reason_code,
+            workspace_id=self.workspace_id,
+            gate_id=self.gate_id,
+            evidence_run_id=self.evidence_run_id,
+            run_directory_claim=self.run_directory_claim,
+            snapshot_digest=self.snapshot_digest,
+            requirement_digest=self.requirement_digest,
+            authority_source_commit=self.authority_source_commit,
+            proof_admission_source_digest=self.proof_admission_source_digest,
+            maintenance_runtime=self.maintenance_runtime,
+            durability_profile=self.durability_profile,
+            confirmation_challenge_digest=domain_separated_sha256(
+                _ABORT_CONFIRMATION_DOMAIN,
+                {
+                    "authorizationId": self.authorization_id,
+                    "attemptId": "projection-validation",
+                    "authorizedAt": self.authorized_at,
+                    "operatorIdentity": self.operator_identity.to_dict(),
+                    "reasonCode": self.reason_code.value,
+                    "workspaceId": self.workspace_id,
+                    "gateId": self.gate_id,
+                    "evidenceRunId": self.evidence_run_id,
+                    "runDirectoryClaim": self.run_directory_claim.to_dict(),
+                    "snapshotDigest": self.snapshot_digest,
+                    "requirementDigest": self.requirement_digest,
+                    "authoritySourceCommit": self.authority_source_commit,
+                    "proofAdmissionInventoryRule": self.proof_admission_inventory_rule,
+                    "proofAdmissionSourceDigest": self.proof_admission_source_digest,
+                    "maintenanceRuntime": self.maintenance_runtime.to_dict(),
+                    "durabilityProfile": self.durability_profile.to_dict(),
+                },
+            ),
+        )
+        if authorization.confirmation_challenge_digest is None:
+            raise ValueError("abort authorization projection is invalid")
+        validate_sha256(self.confirmation_challenge_digest)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "authorizationId": self.authorization_id,
+            "authorizedAt": self.authorized_at,
+            "workspaceId": self.workspace_id,
+            "gateId": self.gate_id,
+            "evidenceRunId": self.evidence_run_id,
+            "runDirectoryClaim": self.run_directory_claim.to_dict(),
+            "snapshotDigest": self.snapshot_digest,
+            "requirementDigest": self.requirement_digest,
+            "reasonCode": self.reason_code.value,
+            "operatorIdentity": self.operator_identity.to_dict(),
+            "authoritySourceCommit": self.authority_source_commit,
+            "proofAdmissionInventoryRule": self.proof_admission_inventory_rule,
+            "proofAdmissionSourceDigest": self.proof_admission_source_digest,
+            "maintenanceRuntime": self.maintenance_runtime.to_dict(),
+            "durabilityProfile": self.durability_profile.to_dict(),
+            "confirmationChallengeDigest": self.confirmation_challenge_digest,
+        }
+
+    @classmethod
+    def from_authorization(
+        cls,
+        authorization: AbortAuthorization,
+    ) -> "AbortEventAuthorizationProjection":
+        if type(authorization) is not AbortAuthorization:
+            raise ValueError("authorization must be AbortAuthorization")
+        return cls(
+            authorization.authorization_id,
+            authorization.authorized_at,
+            authorization.workspace_id,
+            authorization.gate_id,
+            authorization.evidence_run_id,
+            authorization.run_directory_claim,
+            authorization.snapshot_digest,
+            authorization.requirement_digest,
+            authorization.reason_code,
+            authorization.operator_identity,
+            authorization.authority_source_commit,
+            authorization.proof_admission_source_digest,
+            authorization.maintenance_runtime,
+            authorization.durability_profile,
+            authorization.confirmation_challenge_digest,
+        )
+
+    @classmethod
+    def from_dict(cls, value: object) -> "AbortEventAuthorizationProjection":
+        keys = frozenset(
+            {
+                "authorizationId",
+                "authorizedAt",
+                "workspaceId",
+                "gateId",
+                "evidenceRunId",
+                "runDirectoryClaim",
+                "snapshotDigest",
+                "requirementDigest",
+                "reasonCode",
+                "operatorIdentity",
+                "authoritySourceCommit",
+                "proofAdmissionInventoryRule",
+                "proofAdmissionSourceDigest",
+                "maintenanceRuntime",
+                "durabilityProfile",
+                "confirmationChallengeDigest",
+            }
+        )
+        data = _closed_mapping(value, schema=cls.__name__, keys=keys)
+        if data["proofAdmissionInventoryRule"] != cls.proof_admission_inventory_rule:
+            raise ValueError("abort event projection requires full inventory")
+        return cls(
+            data["authorizationId"],
+            data["authorizedAt"],
+            data["workspaceId"],
+            data["gateId"],
+            data["evidenceRunId"],
+            DescriptorClaim.from_dict(data["runDirectoryClaim"]),
+            data["snapshotDigest"],
+            data["requirementDigest"],
+            _enum_from_wire(AbortReasonCode, data["reasonCode"], field="reasonCode"),
+            AbortOperatorIdentity.from_dict(data["operatorIdentity"]),
+            data["authoritySourceCommit"],
+            data["proofAdmissionSourceDigest"],
+            FinalizerMaintenanceRuntimeIdentity.from_dict(data["maintenanceRuntime"]),
+            proof_authority_durability_profile_from_dict(data["durabilityProfile"]),
+            data["confirmationChallengeDigest"],
+        )
+
+
+def abort_tombstone_identity_digest(
+    authorization: AbortAuthorization | AbortEventAuthorizationProjection,
+) -> str:
+    if type(authorization) not in (
+        AbortAuthorization,
+        AbortEventAuthorizationProjection,
+    ):
+        raise ValueError("abort tombstone identity requires authorization")
+    return domain_separated_sha256(
+        _ABORT_TOMBSTONE_IDENTITY_DOMAIN,
+        {
+            "workspaceId": authorization.workspace_id,
+            "gateId": authorization.gate_id,
+            "evidenceRunId": authorization.evidence_run_id,
+            "authorizationId": authorization.authorization_id,
+            "runDirectoryClaimDigest": (
+                authorization.run_directory_claim.descriptor_claim_digest
+            ),
+            "snapshotDigest": authorization.snapshot_digest,
+            "requirementDigest": authorization.requirement_digest,
+        },
+    )
+
+
+def abort_continuation_token(
+    *,
+    authorization_id: str,
+    event_sequence: int,
+    next_deletion_plan_index: int,
+    deletion_plan_digest: str,
+    tombstone_identity_digest: str,
+) -> str:
+    _validate_slug(authorization_id, field="authorizationId")
+    _validate_positive_integer(event_sequence, field="eventSequence")
+    _validate_non_negative_integer(
+        next_deletion_plan_index,
+        field="nextDeletionPlanIndex",
+    )
+    validate_sha256(deletion_plan_digest)
+    validate_sha256(tombstone_identity_digest)
+    return domain_separated_sha256(
+        _ABORT_CONTINUATION_DOMAIN,
+        {
+            "authorizationId": authorization_id,
+            "eventSequence": event_sequence,
+            "nextDeletionPlanIndex": next_deletion_plan_index,
+            "deletionPlanDigest": deletion_plan_digest,
+            "tombstoneIdentityDigest": tombstone_identity_digest,
+        },
+    )
+
+
+@dataclass(frozen=True)
+class AbortSealedAuditEvent:
+    event_type: AbortEventType
+    event_sequence: int
+    previous_event_digest: str | None
+    authorization: AbortEventAuthorizationProjection
+    attempt_id: str
+    tombstone_identity_digest: str
+    deletion_plan_ref: AbortControlArtifactRef | None
+    deletion_plan_digest: str | None
+    completion_source: AbortCompletionSource | None
+    batch_end_index_exclusive: int | None
+    next_traversal_index: int | None
+    continuation_token: str | None
+    recorded_at: str
+    diagnostic: str | None
+    event_digest: str
+
+    def __post_init__(self) -> None:
+        if type(self.event_type) is not AbortEventType:
+            raise ValueError("eventType must be closed")
+        _validate_positive_integer(self.event_sequence, field="eventSequence")
+        if self.previous_event_digest is not None:
+            validate_sha256(self.previous_event_digest)
+        if type(self.authorization) is not AbortEventAuthorizationProjection:
+            raise ValueError("authorization projection must be concrete")
+        _validate_slug(self.attempt_id, field="attemptId")
+        validate_sha256(self.tombstone_identity_digest)
+        if self.tombstone_identity_digest != abort_tombstone_identity_digest(
+            self.authorization
+        ):
+            raise ValueError("tombstoneIdentityDigest mismatch")
+        pair = (self.deletion_plan_ref, self.deletion_plan_digest)
+        if (pair[0] is None) != (pair[1] is None):
+            raise ValueError("deletion plan ref/digest must be jointly present")
+        if pair[0] is not None:
+            if (
+                type(pair[0]) is not AbortControlArtifactRef
+                or (
+                    pair[0].workspace_id,
+                    pair[0].gate_id,
+                    pair[0].evidence_run_id,
+                )
+                != (
+                    self.authorization.workspace_id,
+                    self.authorization.gate_id,
+                    self.authorization.evidence_run_id,
+                )
+            ):
+                raise ValueError("deletion plan ref scope mismatch")
+            validate_sha256(pair[1])
+        _canonical_utc_instant(self.recorded_at, field="recordedAt")
+        if self.diagnostic is not None:
+            _validate_non_empty_utf8(
+                self.diagnostic,
+                field="diagnostic",
+                maximum_bytes=4096,
+            )
+        self._validate_branch()
+        validate_sha256(self.event_digest)
+        if self.event_digest != domain_separated_sha256(
+            _ABORT_EVENT_DOMAIN,
+            self._payload(),
+        ):
+            raise ValueError("eventDigest mismatch")
+
+    def _validate_branch(self) -> None:
+        if self.event_type is AbortEventType.AUTHORIZED:
+            AbortAuthorization(
+                authorization_id=self.authorization.authorization_id,
+                attempt_id=self.attempt_id,
+                authorized_at=self.authorization.authorized_at,
+                operator_identity=self.authorization.operator_identity,
+                reason_code=self.authorization.reason_code,
+                workspace_id=self.authorization.workspace_id,
+                gate_id=self.authorization.gate_id,
+                evidence_run_id=self.authorization.evidence_run_id,
+                run_directory_claim=self.authorization.run_directory_claim,
+                snapshot_digest=self.authorization.snapshot_digest,
+                requirement_digest=self.authorization.requirement_digest,
+                authority_source_commit=(
+                    self.authorization.authority_source_commit
+                ),
+                proof_admission_source_digest=(
+                    self.authorization.proof_admission_source_digest
+                ),
+                maintenance_runtime=self.authorization.maintenance_runtime,
+                durability_profile=self.authorization.durability_profile,
+                confirmation_challenge_digest=(
+                    self.authorization.confirmation_challenge_digest
+                ),
+            )
+            if (
+                self.event_sequence != 1
+                or self.previous_event_digest is not None
+                or self.deletion_plan_ref is not None
+                or self.completion_source is not None
+                or self.batch_end_index_exclusive is not None
+                or self.next_traversal_index is not None
+                or self.continuation_token is not None
+                or self.diagnostic is not None
+            ):
+                raise ValueError("AUTHORIZED branch is invalid")
+        elif self.event_type is AbortEventType.TOMBSTONED:
+            if (
+                self.event_sequence != 2
+                or self.previous_event_digest is None
+                or self.deletion_plan_ref is None
+                or self.completion_source is not None
+                or self.batch_end_index_exclusive is not None
+                or self.next_traversal_index != 0
+                or self.continuation_token is None
+                or self.diagnostic is not None
+            ):
+                raise ValueError("TOMBSTONED branch is invalid")
+        elif self.event_type is AbortEventType.DELETE_BATCH_STARTED:
+            if (
+                self.previous_event_digest is None
+                or self.deletion_plan_ref is None
+                or self.completion_source is not None
+                or type(self.batch_end_index_exclusive) is not int
+                or self.batch_end_index_exclusive <= 0
+                or type(self.next_traversal_index) is not int
+                or self.next_traversal_index < 0
+                or self.next_traversal_index
+                >= self.batch_end_index_exclusive
+                or self.continuation_token is None
+                or self.diagnostic is not None
+            ):
+                raise ValueError("DELETE_BATCH_STARTED branch is invalid")
+        elif self.event_type is AbortEventType.FAILED:
+            if (
+                self.previous_event_digest is None
+                or self.deletion_plan_ref is None
+                or self.completion_source is not None
+                or self.batch_end_index_exclusive is not None
+                or type(self.next_traversal_index) is not int
+                or self.next_traversal_index < 0
+                or self.continuation_token is None
+                or self.diagnostic is None
+            ):
+                raise ValueError("FAILED branch is invalid")
+        elif (
+            self.previous_event_digest is None
+            or self.deletion_plan_ref is None
+            or type(self.completion_source) is not AbortCompletionSource
+            or self.batch_end_index_exclusive is not None
+            or self.next_traversal_index is not None
+            or self.continuation_token is not None
+            or self.diagnostic is not None
+        ):
+            raise ValueError("DELETED branch is invalid")
+        if self.continuation_token is not None:
+            validate_sha256(self.continuation_token)
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "eventType": self.event_type.value,
+            "eventSequence": self.event_sequence,
+            "previousEventDigest": self.previous_event_digest,
+            "authorization": self.authorization.to_dict(),
+            "attemptId": self.attempt_id,
+            "tombstoneIdentityDigest": self.tombstone_identity_digest,
+            "deletionPlanRef": (
+                None
+                if self.deletion_plan_ref is None
+                else self.deletion_plan_ref.to_dict()
+            ),
+            "deletionPlanDigest": self.deletion_plan_digest,
+            "completionSource": (
+                None
+                if self.completion_source is None
+                else self.completion_source.value
+            ),
+            "batchEndIndexExclusive": self.batch_end_index_exclusive,
+            "nextTraversalIndex": self.next_traversal_index,
+            "continuationToken": self.continuation_token,
+            "recordedAt": self.recorded_at,
+            "diagnostic": self.diagnostic,
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {**self._payload(), "eventDigest": self.event_digest}
+
+    @classmethod
+    def create(cls, **values: object) -> "AbortSealedAuditEvent":
+        payload = {
+            "eventType": values["event_type"].value,
+            "eventSequence": values["event_sequence"],
+            "previousEventDigest": values["previous_event_digest"],
+            "authorization": values["authorization"].to_dict(),
+            "attemptId": values["attempt_id"],
+            "tombstoneIdentityDigest": values["tombstone_identity_digest"],
+            "deletionPlanRef": (
+                None
+                if values["deletion_plan_ref"] is None
+                else values["deletion_plan_ref"].to_dict()
+            ),
+            "deletionPlanDigest": values["deletion_plan_digest"],
+            "completionSource": (
+                None
+                if values["completion_source"] is None
+                else values["completion_source"].value
+            ),
+            "batchEndIndexExclusive": values["batch_end_index_exclusive"],
+            "nextTraversalIndex": values["next_traversal_index"],
+            "continuationToken": values["continuation_token"],
+            "recordedAt": values["recorded_at"],
+            "diagnostic": values["diagnostic"],
+        }
+        return cls(
+            **values,
+            event_digest=domain_separated_sha256(
+                _ABORT_EVENT_DOMAIN,
+                payload,
+            ),
+        )
+
+    @classmethod
+    def from_dict(cls, value: object) -> "AbortSealedAuditEvent":
+        keys = frozenset(
+            {
+                "eventType",
+                "eventSequence",
+                "previousEventDigest",
+                "authorization",
+                "attemptId",
+                "tombstoneIdentityDigest",
+                "deletionPlanRef",
+                "deletionPlanDigest",
+                "completionSource",
+                "batchEndIndexExclusive",
+                "nextTraversalIndex",
+                "continuationToken",
+                "recordedAt",
+                "diagnostic",
+                "eventDigest",
+            }
+        )
+        data = _closed_mapping(value, schema=cls.__name__, keys=keys)
+        return cls(
+            event_type=_enum_from_wire(
+                AbortEventType,
+                data["eventType"],
+                field="eventType",
+            ),
+            event_sequence=data["eventSequence"],
+            previous_event_digest=data["previousEventDigest"],
+            authorization=AbortEventAuthorizationProjection.from_dict(
+                data["authorization"]
+            ),
+            attempt_id=data["attemptId"],
+            tombstone_identity_digest=data["tombstoneIdentityDigest"],
+            deletion_plan_ref=(
+                None
+                if data["deletionPlanRef"] is None
+                else AbortControlArtifactRef.from_dict(
+                    data["deletionPlanRef"]
+                )
+            ),
+            deletion_plan_digest=data["deletionPlanDigest"],
+            completion_source=(
+                None
+                if data["completionSource"] is None
+                else _enum_from_wire(
+                    AbortCompletionSource,
+                    data["completionSource"],
+                    field="completionSource",
+                )
+            ),
+            batch_end_index_exclusive=data["batchEndIndexExclusive"],
+            next_traversal_index=data["nextTraversalIndex"],
+            continuation_token=data["continuationToken"],
+            recorded_at=data["recordedAt"],
+            diagnostic=data["diagnostic"],
+            event_digest=data["eventDigest"],
+        )
+
+
+@dataclass(frozen=True)
+class AbortControlArtifactRef:
+    workspace_id: str
+    gate_id: str
+    evidence_run_id: str
+    content_sha256: str
+    control_ref_digest: str
+    artifact_kind: ClassVar[str] = "acceptance-abort-control-ref"
+    schema_version: ClassVar[int] = 1
+    control_name: ClassVar[str] = "deletion-plan"
+
+    def __post_init__(self) -> None:
+        _validate_workspace_id(self.workspace_id)
+        _validate_slug(self.gate_id, field="gateId")
+        _validate_run_id(self.evidence_run_id, field="evidenceRunId")
+        validate_sha256(self.content_sha256)
+        validate_sha256(self.control_ref_digest)
+        if self.control_ref_digest != domain_separated_sha256(
+            _ABORT_CONTROL_REF_DOMAIN, self._payload()
+        ):
+            raise ValueError("controlRefDigest mismatch")
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "artifactKind": self.artifact_kind, "schemaVersion": self.schema_version,
+            "workspaceId": self.workspace_id, "gateId": self.gate_id,
+            "evidenceRunId": self.evidence_run_id, "controlName": self.control_name,
+            "contentSha256": self.content_sha256,
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {**self._payload(), "controlRefDigest": self.control_ref_digest}
+
+    @classmethod
+    def from_dict(cls, value: object) -> "AbortControlArtifactRef":
+        data = _closed_mapping(value, schema=cls.__name__, keys=frozenset({
+            "artifactKind", "schemaVersion", "workspaceId", "gateId", "evidenceRunId",
+            "controlName", "contentSha256", "controlRefDigest",
+        }))
+        if (
+            data["artifactKind"] != cls.artifact_kind or type(data["schemaVersion"]) is not int
+            or data["schemaVersion"] != 1 or data["controlName"] != cls.control_name
+        ):
+            raise ValueError("invalid abort control ref kind/version/name")
+        return cls(data["workspaceId"], data["gateId"], data["evidenceRunId"],
+                   data["contentSha256"], data["controlRefDigest"])
+
+
+@dataclass(frozen=True)
+class AbortDeletionPlanEntry:
+    entry_kind: str
+    tombstone_relative_path: str | None
+    file_type: str
+    device_id: str
+    inode: str
+    byte_length: int | None
+
+    def __post_init__(self) -> None:
+        for field, value in (("deviceId", self.device_id), ("inode", self.inode)):
+            if (
+                type(value) is not str or re.fullmatch(r"0|[1-9][0-9]{0,19}", value) is None
+                or int(value) > 18446744073709551615
+            ):
+                raise ValueError(f"{field} must be a canonical UInt64String")
+        if self.entry_kind == "TOMBSTONE_ROOT":
+            if self.tombstone_relative_path is not None or self.file_type != "DIRECTORY" or self.byte_length is not None:
+                raise ValueError("tombstone root requires null path/length and DIRECTORY")
+        elif self.entry_kind == "CONTENT":
+            validate_repo_relative_path(self.tombstone_relative_path)
+            if self.file_type == "REGULAR_FILE":
+                if type(self.byte_length) is not int or not 0 <= self.byte_length <= _I_JSON_INTEGER_MAX:
+                    raise ValueError("regular-file byteLength must be a nonnegative I-JSON integer")
+            elif self.file_type == "DIRECTORY":
+                if self.byte_length is not None:
+                    raise ValueError("directory byteLength must be null")
+            else:
+                raise ValueError("deletion plan forbids symlinks and special files")
+        else:
+            raise ValueError("unknown deletion plan entryKind")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "entryKind": self.entry_kind, "tombstoneRelativePath": self.tombstone_relative_path,
+            "fileType": self.file_type, "deviceId": self.device_id,
+            "inode": self.inode, "byteLength": self.byte_length,
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> "AbortDeletionPlanEntry":
+        data = _closed_mapping(value, schema=cls.__name__, keys=frozenset({
+            "entryKind", "tombstoneRelativePath", "fileType", "deviceId", "inode", "byteLength",
+        }))
+        return cls(*(data[field] for field in (
+            "entryKind", "tombstoneRelativePath", "fileType", "deviceId", "inode", "byteLength",
+        )))
+
+
+@dataclass(frozen=True)
+class AbortDeletionPlan:
+    workspace_id: str
+    gate_id: str
+    evidence_run_id: str
+    authorization_id: str
+    tombstone_identity_digest: str
+    entries: tuple[AbortDeletionPlanEntry, ...]
+    deletion_plan_digest: str
+    artifact_kind: ClassVar[str] = "acceptance-abort-deletion-plan"
+    schema_version: ClassVar[int] = 1
+
+    def __post_init__(self) -> None:
+        _validate_workspace_id(self.workspace_id)
+        _validate_slug(self.gate_id, field="gateId")
+        _validate_run_id(self.evidence_run_id, field="evidenceRunId")
+        _validate_slug(self.authorization_id, field="authorizationId")
+        validate_sha256(self.tombstone_identity_digest)
+        validate_sha256(self.deletion_plan_digest)
+        if (
+            type(self.entries) is not tuple or not 1 <= len(self.entries) <= 16384
+            or any(type(entry) is not AbortDeletionPlanEntry for entry in self.entries)
+            or self.entries[-1].entry_kind != "TOMBSTONE_ROOT"
+            or any(entry.entry_kind != "CONTENT" for entry in self.entries[:-1])
+        ):
+            raise ValueError("deletion plan requires bounded content followed by one explicit root")
+        paths = tuple(entry.tombstone_relative_path for entry in self.entries[:-1])
+        if len(paths) != len(set(paths)):
+            raise ValueError("deletion plan content paths must be unique")
+        # A retained parent must outlive every child it is authorized to remove.
+        positions = {entry.tombstone_relative_path: (index, entry.file_type)
+                     for index, entry in enumerate(self.entries[:-1])}
+        for index, entry in enumerate(self.entries[:-1]):
+            parent = posixpath.dirname(entry.tombstone_relative_path)
+            while parent:
+                if parent in positions and (
+                    positions[parent][1] != "DIRECTORY" or positions[parent][0] <= index
+                ):
+                    raise ValueError("deletion plan parents must be directories ordered after children")
+                parent = posixpath.dirname(parent)
+        if len(canonical_json_bytes(self.to_dict())) > 4 * 1024 * 1024:
+            raise ValueError("deletion plan exceeds 4 MiB")
+        if self.deletion_plan_digest != domain_separated_sha256(
+            _ABORT_DELETION_PLAN_DOMAIN, self._payload()
+        ):
+            raise ValueError("deletionPlanDigest mismatch")
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "artifactKind": self.artifact_kind, "schemaVersion": self.schema_version,
+            "workspaceId": self.workspace_id, "gateId": self.gate_id,
+            "evidenceRunId": self.evidence_run_id, "authorizationId": self.authorization_id,
+            "tombstoneIdentityDigest": self.tombstone_identity_digest,
+            "entries": [entry.to_dict() for entry in self.entries],
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {**self._payload(), "deletionPlanDigest": self.deletion_plan_digest}
+
+    @classmethod
+    def from_dict(cls, value: object) -> "AbortDeletionPlan":
+        data = _closed_mapping(value, schema=cls.__name__, keys=frozenset({
+            "artifactKind", "schemaVersion", "workspaceId", "gateId", "evidenceRunId",
+            "authorizationId", "tombstoneIdentityDigest", "entries", "deletionPlanDigest",
+        }))
+        if data["artifactKind"] != cls.artifact_kind or type(data["schemaVersion"]) is not int or data["schemaVersion"] != 1:
+            raise ValueError("invalid deletion plan kind/version")
+        if type(data["entries"]) is not list or not 1 <= len(data["entries"]) <= 16384:
+            raise ValueError("entries must be a bounded nonempty wire array")
+        return cls(
+            data["workspaceId"], data["gateId"], data["evidenceRunId"], data["authorizationId"],
+            data["tombstoneIdentityDigest"],
+            tuple(AbortDeletionPlanEntry.from_dict(entry) for entry in data["entries"]),
+            data["deletionPlanDigest"],
+        )
+
+
+class MaintenanceOperation(str, Enum):
+    INSTALL_PUBLICATION_INTERLOCK = "INSTALL_PUBLICATION_INTERLOCK"
+    ACTIVATE_ENFORCEMENT = "ACTIVATE_ENFORCEMENT"
+    WRITE_ABORT_EVENT = "WRITE_ABORT_EVENT"
+    TOMBSTONE_RUN = "TOMBSTONE_RUN"
+    DELETE_TOMBSTONE_BATCH = "DELETE_TOMBSTONE_BATCH"
+
+
+class _MaintenanceRequest:
+    operation: ClassVar[MaintenanceOperation]
+
+    def _payload(self) -> dict[str, object]:
+        payload = {"operation": self.operation.value}
+        for field in dataclass_fields(self):
+            name = field.name
+            if name == "identity":
+                continue
+            key = name.split("_")[0] + "".join(part.title() for part in name.split("_")[1:])
+            item = getattr(self, name)
+            payload[key] = item.to_dict() if hasattr(item, "to_dict") else item
+        return payload
+
+    def to_dict(self) -> dict[str, object]:
+        return {"identity": self.identity.to_dict(), **self._payload()}
+
+    def _validate(self) -> None:
+        _validate_workspace_id(self.workspace_id)
+        _validate_slug(self.gate_id, field="gateId")
+        _validate_worker_request_binding(self.identity, WorkerKind.MAINTENANCE, self._payload())
+        owner = self.identity.descriptor_claims[0].owner_binding
+        if (owner.workspace_id, owner.gate_id) != (self.workspace_id, self.gate_id):
+            raise ValueError("maintenance gate descriptor must match requested scope")
+        validate_sha256(self.expected_maintenance_runtime_digest)
+        validate_sha256(self.expected_durability_profile_digest)
+        if (
+            type(self.environment_observation)
+            is not ActiveDurabilityEnvironmentObservation
+        ):
+            raise ValueError(
+                "environmentObservation must be active-profile evidence"
+            )
+
+    def _validate_authority(self, authority: object) -> None:
+        if (authority.workspace_id, authority.gate_id) != (self.workspace_id, self.gate_id):
+            raise ValueError("maintenance authority must match request scope")
+        if (
+            self.expected_maintenance_runtime_digest != authority.maintenance_runtime.maintenance_runtime_digest
+            or self.expected_durability_profile_digest != authority.durability_profile.durability_profile_digest
+        ):
+            raise ValueError("maintenance request must bind exact authority runtime/profile")
+        capability = authority.durability_profile.capability_evidence
+        qualified = DurabilityQualifiedEnvironment.create(
+            host_build=capability.qualified_host_build,
+            host_identity=capability.qualified_host_identity,
+            filesystem_implementation_version=(
+                capability.filesystem_implementation_version
+            ),
+            required_mount_options=capability.required_mount_options,
+            stable_volume_identity=capability.stable_volume_identity,
+            probe_runtime_digest=capability.probe_runtime_digest,
+        )
+        validate_durability_environment_observation(
+            self.environment_observation,
+            qualified,
+        )
+
+    def _validate_abort_ids(self) -> None:
+        _validate_run_id(self.evidence_run_id, field="evidenceRunId")
+        _validate_slug(self.authorization_id, field="authorizationId")
+        _validate_slug(self.attempt_id, field="attemptId")
+
+    def _validate_limits(self, **limits: int) -> None:
+        for name, maximum in limits.items():
+            value = getattr(self, name)
+            if type(value) is not int or not 1 <= value <= maximum:
+                raise ValueError(f"{name} must be positive and at most {maximum}")
+
+
+@dataclass(frozen=True)
+class InstallPublicationInterlockRequest(_MaintenanceRequest):
+    identity: WorkerRequestIdentity
+    workspace_id: str
+    gate_id: str
+    candidate_interlock: FinalizerPublicationInterlock
+    expected_prior_latest_pointer: LatestPointer | None
+    expected_prior_latest_pointer_digest: str | None
+    environment_observation: ActiveDurabilityEnvironmentObservation
+    expected_maintenance_runtime_digest: str
+    expected_durability_profile_digest: str
+    byte_limit: int = FINALIZER_INPUT_BYTE_LIMIT_MAX
+    timeout_seconds: int = 60
+    operation: ClassVar[MaintenanceOperation] = MaintenanceOperation.INSTALL_PUBLICATION_INTERLOCK
+
+    def __post_init__(self) -> None:
+        self._validate()
+        if type(self.candidate_interlock) is not FinalizerPublicationInterlock:
+            raise ValueError("candidateInterlock requires concrete publication interlock")
+        self._validate_authority(self.candidate_interlock.authorization)
+        authority = self.candidate_interlock.authorization
+        if (
+            self.expected_prior_latest_pointer != authority.expected_prior_latest_pointer
+            or self.expected_prior_latest_pointer_digest != authority.expected_prior_latest_pointer_digest
+        ):
+            raise ValueError("interlock request prior latest must match authorized prior latest")
+        self._validate_limits(
+            byte_limit=FINALIZER_INPUT_BYTE_LIMIT_MAX,
+            timeout_seconds=60,
+        )
+        if len(canonical_json_bytes(self.candidate_interlock.to_dict())) > self.byte_limit:
+            raise ValueError("candidateInterlock exceeds byteLimit")
+
+
+@dataclass(frozen=True)
+class ActivateEnforcementRequest(_MaintenanceRequest):
+    identity: WorkerRequestIdentity
+    workspace_id: str
+    gate_id: str
+    intent: FinalizerActivationIntent
+    environment_observation: ActiveDurabilityEnvironmentObservation
+    expected_maintenance_runtime_digest: str
+    expected_durability_profile_digest: str
+    entry_limit: int = 4096
+    byte_limit: int = FINALIZER_INPUT_BYTE_LIMIT_MAX
+    timeout_seconds: int = 60
+    operation: ClassVar[MaintenanceOperation] = MaintenanceOperation.ACTIVATE_ENFORCEMENT
+
+    def __post_init__(self) -> None:
+        self._validate()
+        if type(self.intent) is not FinalizerActivationIntent:
+            raise ValueError("intent requires concrete activation intent")
+        self._validate_authority(self.intent.authorization)
+        self._validate_limits(
+            entry_limit=4096,
+            byte_limit=FINALIZER_INPUT_BYTE_LIMIT_MAX,
+            timeout_seconds=60,
+        )
+        if len(canonical_json_bytes(self.intent.to_dict())) > self.byte_limit:
+            raise ValueError("intent exceeds byteLimit")
+
+
+@dataclass(frozen=True)
+class WriteAbortEventRequest(_MaintenanceRequest):
+    identity: WorkerRequestIdentity
+    workspace_id: str
+    gate_id: str
+    evidence_run_id: str
+    authorization_id: str
+    attempt_id: str
+    authorization: AbortAuthorization
+    environment_observation: ActiveDurabilityEnvironmentObservation
+    expected_maintenance_runtime_digest: str
+    expected_durability_profile_digest: str
+    operation: ClassVar[MaintenanceOperation] = MaintenanceOperation.WRITE_ABORT_EVENT
+
+    def __post_init__(self) -> None:
+        self._validate()
+        self._validate_abort_ids()
+        if type(self.authorization) is not AbortAuthorization:
+            raise ValueError("authorization requires concrete AbortAuthorization")
+        self._validate_authority(self.authorization)
+        if (self.evidence_run_id, self.authorization_id, self.attempt_id) != (
+            self.authorization.evidence_run_id, self.authorization.authorization_id,
+            self.authorization.attempt_id,
+        ):
+            raise ValueError("abort request must match exact authorization run/attempt")
+
+
+@dataclass(frozen=True)
+class TombstoneRunRequest(_MaintenanceRequest):
+    identity: WorkerRequestIdentity
+    workspace_id: str
+    gate_id: str
+    evidence_run_id: str
+    authorization_id: str
+    attempt_id: str
+    expected_snapshot_digest: str
+    environment_observation: ActiveDurabilityEnvironmentObservation
+    expected_maintenance_runtime_digest: str
+    expected_durability_profile_digest: str
+    deletion_plan_entry_limit: int = 16384
+    deletion_plan_byte_limit: int = 4 * 1024 * 1024
+    timeout_seconds: int = 60
+    operation: ClassVar[MaintenanceOperation] = MaintenanceOperation.TOMBSTONE_RUN
+
+    def __post_init__(self) -> None:
+        self._validate()
+        self._validate_abort_ids()
+        validate_sha256(self.expected_snapshot_digest)
+        self._validate_limits(deletion_plan_entry_limit=16384,
+                              deletion_plan_byte_limit=4 * 1024 * 1024, timeout_seconds=60)
+
+
+@dataclass(frozen=True)
+class DeleteTombstoneBatchRequest(_MaintenanceRequest):
+    identity: WorkerRequestIdentity
+    workspace_id: str
+    gate_id: str
+    evidence_run_id: str
+    authorization_id: str
+    attempt_id: str
+    expected_tombstone_identity_digest: str
+    deletion_plan_ref: AbortControlArtifactRef
+    deletion_plan_digest: str
+    continuation_event_digest: str
+    continuation_token: str
+    environment_observation: ActiveDurabilityEnvironmentObservation
+    expected_maintenance_runtime_digest: str
+    expected_durability_profile_digest: str
+    entry_limit: int = 1024
+    byte_limit: int = 1024 * 1024 * 1024
+    timeout_seconds: int = 30
+    operation: ClassVar[MaintenanceOperation] = MaintenanceOperation.DELETE_TOMBSTONE_BATCH
+
+    def __post_init__(self) -> None:
+        self._validate()
+        self._validate_abort_ids()
+        for digest in (self.expected_tombstone_identity_digest, self.deletion_plan_digest,
+                       self.continuation_event_digest, self.continuation_token):
+            validate_sha256(digest)
+        if type(self.deletion_plan_ref) is not AbortControlArtifactRef or (
+            self.deletion_plan_ref.workspace_id, self.deletion_plan_ref.gate_id,
+            self.deletion_plan_ref.evidence_run_id,
+        ) != (self.workspace_id, self.gate_id, self.evidence_run_id):
+            raise ValueError("deletion plan ref must match requested run")
+        self._validate_limits(entry_limit=1024, byte_limit=1024 * 1024 * 1024, timeout_seconds=30)
+
+
+MaintenanceRequest = Union[
+    InstallPublicationInterlockRequest, ActivateEnforcementRequest, WriteAbortEventRequest,
+    TombstoneRunRequest, DeleteTombstoneBatchRequest,
+]
+_MAINTENANCE_REQUEST_TYPES = {
+    cls.operation.value: cls for cls in (
+        InstallPublicationInterlockRequest, ActivateEnforcementRequest, WriteAbortEventRequest,
+        TombstoneRunRequest, DeleteTombstoneBatchRequest,
+    )
+}
+
+
+def maintenance_request_from_dict(
+    value: object, *, epoch: ProofAdmissionEpochRecord | None = None,
+    current_epoch: ProofAdmissionCurrentEpoch | None = None,
+    pause: ProofAdmissionPauseRecord | None = None,
+    jobs: tuple[ProofAdmissionJobRecord, ...] = (),
+    completions: tuple[ProofAdmissionJobCompletion, ...] = (),
+    intents: tuple[ProofAdmissionEmissionIntent, ...] = (),
+    acknowledgements: tuple[ProofAdmissionEmissionAcknowledgement, ...] = (),
+    validate_proof_references: bool = True,
+) -> MaintenanceRequest:
+    if not isinstance(value, Mapping) or type(value.get("operation")) is not str:
+        raise ValueError("maintenance request requires closed operation")
+    cls = _MAINTENANCE_REQUEST_TYPES.get(value["operation"])
+    if cls is None:
+        raise ValueError("unknown maintenance request operation")
+    fields = tuple(field.name for field in dataclass_fields(cls))
+    wire = {name: name.split("_")[0] + "".join(part.title() for part in name.split("_")[1:])
+            for name in fields}
+    data = _closed_mapping(value, schema=cls.__name__, keys=frozenset(("operation", *wire.values())))
+    args = {name: data[key] for name, key in wire.items()}
+    args["identity"] = WorkerRequestIdentity.from_dict(args["identity"])
+    args["environment_observation"] = (
+        ActiveDurabilityEnvironmentObservation.from_dict(
+            args["environment_observation"]
+        )
+    )
+    if cls is InstallPublicationInterlockRequest:
+        args["candidate_interlock"] = FinalizerPublicationInterlock.from_dict(
+            args["candidate_interlock"], epoch=epoch, current_epoch=current_epoch, pause=pause,
+            jobs=jobs, completions=completions, intents=intents, acknowledgements=acknowledgements,
+            validate_proof_references=validate_proof_references,
+        )
+        if args["expected_prior_latest_pointer"] is not None:
+            args["expected_prior_latest_pointer"] = LatestPointer.from_dict(args["expected_prior_latest_pointer"])
+    elif cls is ActivateEnforcementRequest:
+        args["intent"] = FinalizerActivationIntent.from_dict(args["intent"])
+    elif cls is WriteAbortEventRequest:
+        args["authorization"] = AbortAuthorization.from_dict(args["authorization"])
+    elif cls is DeleteTombstoneBatchRequest:
+        args["deletion_plan_ref"] = AbortControlArtifactRef.from_dict(args["deletion_plan_ref"])
+    return cls(**args)
+
+
+@dataclass(frozen=True)
+class _MaintenanceResult:
+    identity: WorkerRequestIdentity
+    failure_code: MaintenanceFailureCode | None
+    result_digest: str
+    diagnostic: str | None
+    operation: ClassVar[MaintenanceOperation]
+    status: ClassVar[str]
+    allowed_boundaries: ClassVar[tuple[str, ...]]
+
+    def _payload(self) -> dict[str, object]:
+        payload = {"operation": self.operation.value, "status": self.status,
+                   "durableBoundary": self.durable_boundary}
+        for field in dataclass_fields(self):
+            if field.name == "result_digest":
+                continue
+            key = field.name.split("_")[0] + "".join(part.title() for part in field.name.split("_")[1:])
+            item = getattr(self, field.name)
+            payload[key] = item.to_dict() if hasattr(item, "to_dict") else (
+                item.value if isinstance(item, Enum) else item
+            )
+        if self.operation is MaintenanceOperation.WRITE_ABORT_EVENT:
+            payload["eventType"] = "AUTHORIZED"
+        return payload
+
+    def to_dict(self) -> dict[str, object]:
+        return {**self._payload(), "resultDigest": self.result_digest}
+
+    def __post_init__(self) -> None:
+        if type(self.identity) is not WorkerRequestIdentity or self.identity.worker_kind is not WorkerKind.MAINTENANCE:
+            raise ValueError("maintenance result requires maintenance worker identity")
+        if self.durable_boundary not in self.allowed_boundaries:
+            raise ValueError("maintenance result durableBoundary outside status branch")
+        if self.status == "COMPLETED":
+            if self.failure_code is not None or self.diagnostic is not None:
+                raise ValueError("completed maintenance result forbids failure fields")
+        else:
+            if type(self.failure_code) is not MaintenanceFailureCode:
+                raise ValueError("maintenance failure requires closed failureCode")
+            _validate_non_empty_utf8(self.diagnostic, field="diagnostic", maximum_bytes=4096)
+            if self.failure_code not in self._allowed_failures():
+                raise ValueError("maintenance failureCode outside durable boundary branch")
+        for name in ("authorization_id", "attempt_id"):
+            if hasattr(self, name):
+                _validate_slug(getattr(self, name), field=name)
+        self._validate_branch()
+        validate_sha256(self.result_digest)
+        if self.result_digest != domain_separated_sha256(_MAINTENANCE_RESULT_DOMAIN, self._payload()):
+            raise ValueError("maintenance resultDigest mismatch")
+
+    def _allowed_failures(self) -> tuple[MaintenanceFailureCode, ...]:
+        common = tuple(code for code in MaintenanceFailureCode if code is not MaintenanceFailureCode.ACTIVE_RUN)
+        io = (MaintenanceFailureCode.TIMED_OUT, MaintenanceFailureCode.IO_FAILED)
+        if self.operation is MaintenanceOperation.INSTALL_PUBLICATION_INTERLOCK:
+            return io if self.status == "FAILED" else tuple(code for code in common if code is not MaintenanceFailureCode.LIMIT_EXCEEDED)
+        if self.operation is MaintenanceOperation.ACTIVATE_ENFORCEMENT:
+            return io if self.status == "FAILED" else tuple(MaintenanceFailureCode)
+        if self.operation is MaintenanceOperation.WRITE_ABORT_EVENT:
+            return io if self.durable_boundary == "EVENT_MAY_BE_DURABLE" else common
+        if self.operation is MaintenanceOperation.TOMBSTONE_RUN:
+            return (*io, MaintenanceFailureCode.LIMIT_EXCEEDED) if self.durable_boundary == "RUN_TOMBSTONED" else common
+        if self.status == "INCOMPLETE":
+            return (MaintenanceFailureCode.LIMIT_EXCEEDED,)
+        if self.status == "REJECTED":
+            return tuple(code for code in common if code is not MaintenanceFailureCode.LIMIT_EXCEEDED)
+        return tuple(MaintenanceFailureCode)
+
+    def _validate_branch(self) -> None:
+        if self.operation is MaintenanceOperation.INSTALL_PUBLICATION_INTERLOCK:
+            if self.status == "REJECTED":
+                if self.interlock_digest is not None:
+                    raise ValueError("rejected interlock forbids interlockDigest")
+            else:
+                validate_sha256(self.interlock_digest)
+        elif self.operation is MaintenanceOperation.ACTIVATE_ENFORCEMENT:
+            if self.generation is not None:
+                _validate_positive_integer(self.generation, field="generation")
+                if self.generation > _I_JSON_INTEGER_MAX:
+                    raise ValueError("generation exceeds I-JSON")
+            if self.status == "REJECTED":
+                if self.enforcement_digest is not None:
+                    raise ValueError("rejected activation forbids enforcementDigest")
+            else:
+                if self.generation is None:
+                    raise ValueError("activation mutation requires generation")
+                validate_sha256(self.enforcement_digest)
+        elif self.operation is MaintenanceOperation.WRITE_ABORT_EVENT:
+            if self.durable_boundary == "NONE":
+                if self.event_digest is not None:
+                    raise ValueError("prepublication authorization failure forbids eventDigest")
+            else:
+                validate_sha256(self.event_digest)
+        elif self.operation is MaintenanceOperation.TOMBSTONE_RUN:
+            pair = (self.deletion_plan_ref, self.deletion_plan_digest)
+            if (pair[0] is None) != (pair[1] is None):
+                raise ValueError("deletion plan ref and digest must be jointly present")
+            if pair[0] is not None:
+                if type(pair[0]) is not AbortControlArtifactRef:
+                    raise ValueError("deletionPlanRef requires concrete abort control ref")
+                validate_sha256(pair[1])
+            if self.status == "COMPLETED":
+                if pair[0] is None:
+                    raise ValueError("completed tombstone requires deletion plan")
+                validate_sha256(self.continuation_token)
+                validate_sha256(self.tombstoned_event_digest)
+            else:
+                if self.continuation_token is not None or self.tombstoned_event_digest is not None:
+                    raise ValueError("failed tombstone forbids continuation/event")
+                if self.durable_boundary == "AUTHORIZATION_DURABLE" and pair[0] is not None:
+                    raise ValueError("authorization-only failure forbids deletion plan")
+        else:
+            for name in ("deleted_entries", "deleted_bytes"):
+                item = getattr(self, name)
+                if type(item) is not int or not 0 <= item <= _I_JSON_INTEGER_MAX:
+                    raise ValueError(f"{name} must be nonnegative I-JSON integer")
+            if self.status == "REJECTED":
+                if self.deleted_entries != 0 or self.deleted_bytes != 0 or self.continuation_token is not None or self.terminal_event_digest is not None:
+                    raise ValueError("NO_MUTATION forbids deletion deltas and events")
+            else:
+                validate_sha256(self.terminal_event_digest)
+                if self.status == "COMPLETED":
+                    if self.continuation_token is not None:
+                        raise ValueError("completed deletion forbids continuationToken")
+                else:
+                    validate_sha256(self.continuation_token)
+
+
+@dataclass(frozen=True)
+class InstallPublicationInterlockCompleted(_MaintenanceResult):
+    interlock_digest: str
+    operation: ClassVar[MaintenanceOperation] = MaintenanceOperation.INSTALL_PUBLICATION_INTERLOCK
+    status: ClassVar[str] = "COMPLETED"
+    durable_boundary: ClassVar[str] = "INTERLOCK_DURABLE"
+    allowed_boundaries: ClassVar[tuple[str, ...]] = ("INTERLOCK_DURABLE",)
+
+
+@dataclass(frozen=True)
+class InstallPublicationInterlockFailed(_MaintenanceResult):
+    interlock_digest: str
+    operation: ClassVar[MaintenanceOperation] = MaintenanceOperation.INSTALL_PUBLICATION_INTERLOCK
+    status: ClassVar[str] = "FAILED"
+    durable_boundary: ClassVar[str] = "INTERLOCK_MAY_BE_DURABLE"
+    allowed_boundaries: ClassVar[tuple[str, ...]] = ("INTERLOCK_MAY_BE_DURABLE",)
+
+
+@dataclass(frozen=True)
+class InstallPublicationInterlockRejected(_MaintenanceResult):
+    interlock_digest: None
+    operation: ClassVar[MaintenanceOperation] = MaintenanceOperation.INSTALL_PUBLICATION_INTERLOCK
+    status: ClassVar[str] = "REJECTED"
+    durable_boundary: ClassVar[str] = "NO_MUTATION"
+    allowed_boundaries: ClassVar[tuple[str, ...]] = ("NO_MUTATION",)
+
+
+@dataclass(frozen=True)
+class ActivateEnforcementCompleted(_MaintenanceResult):
+    generation: int
+    enforcement_digest: str
+    operation: ClassVar[MaintenanceOperation] = MaintenanceOperation.ACTIVATE_ENFORCEMENT
+    status: ClassVar[str] = "COMPLETED"
+    durable_boundary: ClassVar[str] = "ACTIVATED"
+    allowed_boundaries: ClassVar[tuple[str, ...]] = ("ACTIVATED",)
+
+
+@dataclass(frozen=True)
+class ActivateEnforcementFailed(_MaintenanceResult):
+    generation: int
+    enforcement_digest: str
+    durable_boundary: str
+    operation: ClassVar[MaintenanceOperation] = MaintenanceOperation.ACTIVATE_ENFORCEMENT
+    status: ClassVar[str] = "FAILED"
+    allowed_boundaries: ClassVar[tuple[str, ...]] = (
+        "PENDING_DURABLE", "GENERATION_DURABLE", "ACTIVATION_SENTINEL_DURABLE", "CURRENT_DURABLE",
+    )
+
+
+@dataclass(frozen=True)
+class ActivateEnforcementRejected(_MaintenanceResult):
+    generation: int | None
+    enforcement_digest: None
+    operation: ClassVar[MaintenanceOperation] = MaintenanceOperation.ACTIVATE_ENFORCEMENT
+    status: ClassVar[str] = "REJECTED"
+    durable_boundary: ClassVar[str] = "NO_MUTATION"
+    allowed_boundaries: ClassVar[tuple[str, ...]] = ("NO_MUTATION",)
+
+
+@dataclass(frozen=True)
+class WriteAuthorizationCompleted(_MaintenanceResult):
+    authorization_id: str
+    attempt_id: str
+    event_digest: str
+    operation: ClassVar[MaintenanceOperation] = MaintenanceOperation.WRITE_ABORT_EVENT
+    status: ClassVar[str] = "COMPLETED"
+    durable_boundary: ClassVar[str] = "EVENT_DURABLE"
+    allowed_boundaries: ClassVar[tuple[str, ...]] = ("EVENT_DURABLE",)
+
+
+@dataclass(frozen=True)
+class WriteAuthorizationFailed(_MaintenanceResult):
+    authorization_id: str
+    attempt_id: str
+    event_digest: str | None
+    durable_boundary: str
+    operation: ClassVar[MaintenanceOperation] = MaintenanceOperation.WRITE_ABORT_EVENT
+    status: ClassVar[str] = "FAILED"
+    allowed_boundaries: ClassVar[tuple[str, ...]] = ("NONE", "EVENT_MAY_BE_DURABLE")
+
+
+@dataclass(frozen=True)
+class TombstoneRunCompleted(_MaintenanceResult):
+    authorization_id: str
+    attempt_id: str
+    deletion_plan_ref: AbortControlArtifactRef
+    deletion_plan_digest: str
+    continuation_token: str
+    tombstoned_event_digest: str
+    operation: ClassVar[MaintenanceOperation] = MaintenanceOperation.TOMBSTONE_RUN
+    status: ClassVar[str] = "COMPLETED"
+    durable_boundary: ClassVar[str] = "TOMBSTONED_EVENT_DURABLE"
+    allowed_boundaries: ClassVar[tuple[str, ...]] = ("TOMBSTONED_EVENT_DURABLE",)
+
+
+@dataclass(frozen=True)
+class TombstoneRunFailed(_MaintenanceResult):
+    authorization_id: str
+    attempt_id: str
+    deletion_plan_ref: AbortControlArtifactRef | None
+    deletion_plan_digest: str | None
+    continuation_token: None
+    tombstoned_event_digest: None
+    durable_boundary: str
+    operation: ClassVar[MaintenanceOperation] = MaintenanceOperation.TOMBSTONE_RUN
+    status: ClassVar[str] = "FAILED"
+    allowed_boundaries: ClassVar[tuple[str, ...]] = ("AUTHORIZATION_DURABLE", "RUN_TOMBSTONED")
+
+
+@dataclass(frozen=True)
+class DeleteTombstoneBatchCompleted(_MaintenanceResult):
+    authorization_id: str
+    attempt_id: str
+    deleted_entries: int
+    deleted_bytes: int
+    continuation_token: None
+    terminal_event_digest: str
+    operation: ClassVar[MaintenanceOperation] = MaintenanceOperation.DELETE_TOMBSTONE_BATCH
+    status: ClassVar[str] = "COMPLETED"
+    durable_boundary: ClassVar[str] = "DELETED_EVENT_DURABLE"
+    allowed_boundaries: ClassVar[tuple[str, ...]] = ("DELETED_EVENT_DURABLE",)
+
+
+@dataclass(frozen=True)
+class DeleteTombstoneBatchIncomplete(_MaintenanceResult):
+    authorization_id: str
+    attempt_id: str
+    deleted_entries: int
+    deleted_bytes: int
+    continuation_token: str
+    terminal_event_digest: str
+    operation: ClassVar[MaintenanceOperation] = MaintenanceOperation.DELETE_TOMBSTONE_BATCH
+    status: ClassVar[str] = "INCOMPLETE"
+    durable_boundary: ClassVar[str] = "FAILED_EVENT_DURABLE"
+    allowed_boundaries: ClassVar[tuple[str, ...]] = ("FAILED_EVENT_DURABLE",)
+
+
+@dataclass(frozen=True)
+class DeleteTombstoneBatchFailed(_MaintenanceResult):
+    authorization_id: str
+    attempt_id: str
+    deleted_entries: int
+    deleted_bytes: int
+    continuation_token: str
+    terminal_event_digest: str
+    operation: ClassVar[MaintenanceOperation] = MaintenanceOperation.DELETE_TOMBSTONE_BATCH
+    status: ClassVar[str] = "FAILED"
+    durable_boundary: ClassVar[str] = "FAILED_EVENT_DURABLE"
+    allowed_boundaries: ClassVar[tuple[str, ...]] = ("FAILED_EVENT_DURABLE",)
+
+
+@dataclass(frozen=True)
+class DeleteTombstoneBatchRejected(_MaintenanceResult):
+    authorization_id: str
+    attempt_id: str
+    deleted_entries: int
+    deleted_bytes: int
+    continuation_token: None
+    terminal_event_digest: None
+    operation: ClassVar[MaintenanceOperation] = MaintenanceOperation.DELETE_TOMBSTONE_BATCH
+    status: ClassVar[str] = "REJECTED"
+    durable_boundary: ClassVar[str] = "NO_MUTATION"
+    allowed_boundaries: ClassVar[tuple[str, ...]] = ("NO_MUTATION",)
+
+
+InstallPublicationInterlockResult = Union[
+    InstallPublicationInterlockCompleted, InstallPublicationInterlockFailed, InstallPublicationInterlockRejected,
+]
+ActivateEnforcementResult = Union[
+    ActivateEnforcementCompleted, ActivateEnforcementFailed, ActivateEnforcementRejected,
+]
+WriteAbortEventResult = Union[WriteAuthorizationCompleted, WriteAuthorizationFailed]
+TombstoneRunResult = Union[TombstoneRunCompleted, TombstoneRunFailed]
+DeleteTombstoneBatchResult = Union[
+    DeleteTombstoneBatchCompleted, DeleteTombstoneBatchIncomplete,
+    DeleteTombstoneBatchFailed, DeleteTombstoneBatchRejected,
+]
+MaintenanceResult = Union[
+    InstallPublicationInterlockResult, ActivateEnforcementResult, WriteAbortEventResult,
+    TombstoneRunResult, DeleteTombstoneBatchResult,
+]
+_MAINTENANCE_RESULT_TYPES = {
+    (cls.operation.value, cls.status): cls for cls in (
+        InstallPublicationInterlockCompleted, InstallPublicationInterlockFailed, InstallPublicationInterlockRejected,
+        ActivateEnforcementCompleted, ActivateEnforcementFailed, ActivateEnforcementRejected,
+        WriteAuthorizationCompleted, WriteAuthorizationFailed, TombstoneRunCompleted, TombstoneRunFailed,
+        DeleteTombstoneBatchCompleted, DeleteTombstoneBatchIncomplete, DeleteTombstoneBatchFailed,
+        DeleteTombstoneBatchRejected,
+    )
+}
+
+
+def maintenance_result_from_dict(value: object, request: MaintenanceRequest) -> MaintenanceResult:
+    if type(request) not in _MAINTENANCE_REQUEST_TYPES.values() or not isinstance(value, Mapping):
+        raise ValueError("maintenance result requires its concrete request")
+    if value.get("operation") != request.operation.value or type(value.get("status")) is not str:
+        raise ValueError("maintenance result belongs to another operation matrix row")
+    cls = _MAINTENANCE_RESULT_TYPES.get((request.operation.value, value["status"]))
+    if cls is None:
+        raise ValueError("unknown maintenance result status")
+    fields = tuple(field.name for field in dataclass_fields(cls))
+    wire = {name: name.split("_")[0] + "".join(part.title() for part in name.split("_")[1:])
+            for name in fields}
+    keys = {"operation", "status", "durableBoundary", *wire.values()}
+    if request.operation is MaintenanceOperation.WRITE_ABORT_EVENT:
+        keys.add("eventType")
+    data = _closed_mapping(value, schema=cls.__name__, keys=frozenset(keys))
+    if data["durableBoundary"] not in cls.allowed_boundaries:
+        raise ValueError("durable boundary outside selected maintenance status")
+    if request.operation is MaintenanceOperation.WRITE_ABORT_EVENT and data["eventType"] != "AUTHORIZED":
+        raise ValueError("authorization result requires AUTHORIZED eventType")
+    args = {name: data[key] for name, key in wire.items()}
+    args["identity"] = WorkerRequestIdentity.from_dict(args["identity"])
+    if args["identity"] != request.identity:
+        raise ValueError("maintenance result must echo exact request identity")
+    if args["failure_code"] is not None:
+        args["failure_code"] = _enum_from_wire(MaintenanceFailureCode, args["failure_code"], field="failureCode")
+    if args.get("deletion_plan_ref") is not None:
+        args["deletion_plan_ref"] = AbortControlArtifactRef.from_dict(args["deletion_plan_ref"])
+    result = cls(**args)
+    for field in ("authorization_id", "attempt_id"):
+        if hasattr(request, field) and getattr(result, field) != getattr(request, field):
+            raise ValueError("maintenance result must echo exact authorization/attempt")
+    if type(request) is InstallPublicationInterlockRequest and result.status != "REJECTED":
+        if result.interlock_digest != request.candidate_interlock.interlock_digest:
+            raise ValueError("interlock result must bind exact candidate")
+    elif type(request) is ActivateEnforcementRequest:
+        if result.generation is not None and result.generation != request.intent.target_generation:
+            raise ValueError("activation result must bind requested generation")
+        if result.status != "REJECTED":
+            intent = request.intent
+            record = {
+                "artifactKind": FinalizerEnforcementRecord.artifact_kind, "schemaVersion": 1,
+                "generation": intent.target_generation,
+                **{key: intent.to_dict()[key] for key in (
+                    "workspaceId", "gateId", "requiredFinalizerId", "activatedAt",
+                    "activationSourceCommit", "requirementDigest", "configDigest", "sourceDigest",
+                    "protectedBaselineDigest",
+                )},
+                "activationIntent": intent.to_dict(),
+                "priorLatestPointer": None if intent.expected_prior_latest_pointer is None else intent.expected_prior_latest_pointer.to_dict(),
+                "priorLatestPointerDigest": intent.expected_prior_latest_pointer_digest,
+            }
+            if result.enforcement_digest != domain_separated_sha256(_ENFORCEMENT_DOMAIN, record):
+                raise ValueError("activation result must bind exact candidate enforcement")
+    elif type(request) is TombstoneRunRequest and result.deletion_plan_ref is not None:
+        ref = result.deletion_plan_ref
+        if (ref.workspace_id, ref.gate_id, ref.evidence_run_id) != (
+            request.workspace_id, request.gate_id, request.evidence_run_id,
+        ):
+            raise ValueError("tombstone result plan ref must match requested run")
+    elif type(request) is DeleteTombstoneBatchRequest:
+        if result.deleted_entries > request.entry_limit or result.deleted_bytes > request.byte_limit:
+            raise ValueError("deletion result exceeds requested batch budgets")
+    return result
 
 
 @dataclass(frozen=True)
@@ -15233,6 +23320,7 @@ class ProofAdmissionEpochRecord:
         epoch.validate_previous_epoch(previous_epoch=previous_epoch)
         return epoch
 
+
     @classmethod
     def from_dict(
         cls,
@@ -15262,3 +23350,137 @@ class ProofAdmissionEpochRecord:
         )
         epoch.validate_previous_epoch(previous_epoch=previous_epoch)
         return epoch
+
+
+WorkerRequest = Union[
+    PrepareBundleRequest, CaptureRuntimeRequest, MaterializeSnapshotRequest,
+    ExecuteFinalizerRequest, PersistAuthorityRuntimeRequest, MaintenanceRequest,
+]
+WorkerResult = Union[
+    BundlePreparationCompleted, BundlePreparationFailed,
+    CaptureRuntimeCompleted, CaptureRuntimeFailed,
+    MaterializeSnapshotCompleted, MaterializeSnapshotFailed,
+    ExecuteFinalizerCompleted, ExecuteFinalizerFailed,
+    PersistAuthorityRuntimeCompleted, PersistAuthorityRuntimeFailed,
+    PersistAuthorityRuntimeRejected, MaintenanceResult,
+]
+
+
+_WORKER_CONTRACT_MATRIX = {
+    WorkerKind.BUNDLE_PREPARER: (
+        (PrepareBundleRequest,), (BundlePreparationCompleted, BundlePreparationFailed),
+        (DescriptorRole.REPOSITORY_ROOT, DescriptorRole.TEMPORARY_DIRECTORY),
+        bundle_preparation_result_from_dict,
+    ),
+    WorkerKind.RUNTIME_CAPTURE: (
+        (CaptureRuntimeRequest,), (CaptureRuntimeCompleted, CaptureRuntimeFailed),
+        (DescriptorRole.TEMPORARY_DIRECTORY,), capture_runtime_result_from_dict,
+    ),
+    WorkerKind.MATERIALIZER: (
+        (MaterializeSnapshotRequest,), (MaterializeSnapshotCompleted, MaterializeSnapshotFailed),
+        (DescriptorRole.RUN_DIRECTORY,), materialize_snapshot_result_from_dict,
+    ),
+    WorkerKind.FINALIZER: (
+        (ExecuteFinalizerRequest,), (ExecuteFinalizerCompleted, ExecuteFinalizerFailed),
+        (), execute_finalizer_result_from_dict,
+    ),
+    WorkerKind.AUTHORITY_RUNTIME_PERSISTER: (
+        (PersistAuthorityRuntimeRequest,),
+        (PersistAuthorityRuntimeCompleted, PersistAuthorityRuntimeFailed, PersistAuthorityRuntimeRejected),
+        (DescriptorRole.GATE_DIRECTORY, DescriptorRole.TEMPORARY_DIRECTORY),
+        persist_authority_runtime_result_from_dict,
+    ),
+    WorkerKind.MAINTENANCE: (
+        tuple(_MAINTENANCE_REQUEST_TYPES.values()), tuple(_MAINTENANCE_RESULT_TYPES.values()),
+        (DescriptorRole.GATE_DIRECTORY,), maintenance_result_from_dict,
+    ),
+}
+
+
+def _worker_request_types(kind: WorkerKind) -> tuple[type, ...]:
+    if type(kind) is not WorkerKind:
+        raise ValueError("worker kind must be concrete WorkerKind")
+    return _WORKER_CONTRACT_MATRIX[kind][0]
+
+
+def _worker_result_types(kind: WorkerKind) -> tuple[type, ...]:
+    if type(kind) is not WorkerKind:
+        raise ValueError("worker kind must be concrete WorkerKind")
+    return _WORKER_CONTRACT_MATRIX[kind][1]
+
+
+def worker_timeout_seconds(request: WorkerRequest) -> int:
+    if (
+        type(getattr(request, "identity", None)) is not WorkerRequestIdentity
+        or type(request) not in _worker_request_types(request.identity.worker_kind)
+    ):
+        raise ValueError("worker timeout requires a concrete request")
+    if type(request) is WriteAbortEventRequest:
+        return FINALIZER_TIMEOUT_SECONDS_MAX
+    return request.timeout_seconds
+
+
+def worker_request_from_dict(
+    value: object, *,
+    epoch: ProofAdmissionEpochRecord | None = None,
+    current_epoch: ProofAdmissionCurrentEpoch | None = None,
+    pause: ProofAdmissionPauseRecord | None = None,
+    jobs: tuple[ProofAdmissionJobRecord, ...] = (),
+    completions: tuple[ProofAdmissionJobCompletion, ...] = (),
+    intents: tuple[ProofAdmissionEmissionIntent, ...] = (),
+    acknowledgements: tuple[ProofAdmissionEmissionAcknowledgement, ...] = (),
+) -> WorkerRequest:
+    if not isinstance(value, Mapping):
+        raise ValueError("worker request must be an object")
+    identity = WorkerRequestIdentity.from_dict(value.get("identity"))
+    if identity.worker_kind is WorkerKind.MAINTENANCE:
+        return maintenance_request_from_dict(
+            value, epoch=epoch, current_epoch=current_epoch, pause=pause,
+            jobs=jobs, completions=completions, intents=intents,
+            acknowledgements=acknowledgements,
+            validate_proof_references=epoch is not None,
+        )
+    return _worker_request_types(identity.worker_kind)[0].from_dict(value)
+
+
+def worker_result_from_dict(value: object, request: WorkerRequest) -> WorkerResult:
+    if (
+        type(getattr(request, "identity", None)) is not WorkerRequestIdentity
+        or type(request) not in _worker_request_types(request.identity.worker_kind)
+    ):
+        raise ValueError("worker result requires its concrete originating request")
+    return _WORKER_CONTRACT_MATRIX[request.identity.worker_kind][3](value, request)
+
+
+def supervisor_control_frame_from_bytes(
+    wire: bytes, *, request: WorkerRequest | None = None,
+    expected_identity: WorkerRequestIdentity | None = None,
+    epoch: ProofAdmissionEpochRecord | None = None,
+    current_epoch: ProofAdmissionCurrentEpoch | None = None,
+    pause: ProofAdmissionPauseRecord | None = None,
+    jobs: tuple[ProofAdmissionJobRecord, ...] = (),
+    completions: tuple[ProofAdmissionJobCompletion, ...] = (),
+    intents: tuple[ProofAdmissionEmissionIntent, ...] = (),
+    acknowledgements: tuple[ProofAdmissionEmissionAcknowledgement, ...] = (),
+) -> _SupervisorFrame | WorkerRequestFrame | WorkerResultFrame:
+    """Decode the bounded control channel; ancillary frames are never admitted."""
+    if type(wire) is not bytes or not 1 <= len(wire) <= 2097152:
+        raise ValueError("supervisor frame exceeds channel byte limit")
+    value = _strict_json_value(wire)
+    if not isinstance(value, Mapping):
+        raise ValueError("supervisor frame must be an object")
+    if value.get("frameType") == "WORKER_REQUEST":
+        frame = WorkerRequestFrame.from_dict(
+            value, epoch=epoch, current_epoch=current_epoch, pause=pause,
+            jobs=jobs, completions=completions, intents=intents,
+            acknowledgements=acknowledgements,
+        )
+    elif value.get("frameType") == "WORKER_RESULT":
+        frame = WorkerResultFrame.from_dict(value, request=request)
+    else:
+        return supervisor_scalar_frame_from_bytes(wire, expected_identity=expected_identity)
+    if expected_identity is not None and (
+        type(expected_identity) is not WorkerRequestIdentity or frame.identity != expected_identity
+    ):
+        raise ValueError("supervisor frame belongs to another request")
+    return frame

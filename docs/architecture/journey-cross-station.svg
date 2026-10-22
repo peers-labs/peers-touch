@@ -1,0 +1,150 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1900 1120" width="1900" height="1120"
+  role="img" aria-labelledby="title-project.journey.cross-station">
+<style>
+  .canvas { fill: #111418; }
+  .headerRule { stroke: #30363d; stroke-width: 1; }
+  .title { fill: #f4f7fa; font: 600 30px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .viewpoint { fill: #8c98a4; font: 600 13px "SFMono-Regular","Menlo",monospace; letter-spacing: 0; }
+  .boundary { fill: none; stroke: #69737d; stroke-width: 1.5; stroke-dasharray: 7 6; }
+  .boundaryTitle { fill: #aeb7c0; font: 600 14px "SFMono-Regular","Menlo",monospace; letter-spacing: 0; }
+  .zone { fill: #171b20; stroke: #343b43; stroke-width: 1.4; }
+  .zone-primary { fill: #152019; stroke: #55d98d; }
+  .zone-secondary { fill: #141d25; stroke: #65b8ff; }
+  .zone-state { fill: #211d14; stroke: #e0b35a; }
+  .zone-external { fill: #191b1e; stroke: #7c8792; stroke-dasharray: 6 5; }
+  .zone-muted { fill: #14171b; stroke: #2c3239; }
+  .zoneTitle { fill: #aeb7c0; font: 600 15px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .node { fill: #1b2026; stroke: #49525c; stroke-width: 1.4; }
+  .node-primary { fill: #17231b; stroke: #55d98d; stroke-width: 1.8; }
+  .node-secondary { fill: #16212b; stroke: #65b8ff; }
+  .node-state { fill: #252116; stroke: #e0b35a; }
+  .node-external { fill: #1a1d21; stroke: #7c8792; }
+  .node-muted { fill: #161a1f; stroke: #343b43; }
+  .nodeTitle { fill: #f0f3f6; font: 600 18px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .nodeCaption { fill: #9da8b3; font: 400 13px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .edge { fill: none; stroke: #55d98d; stroke-width: 2; stroke-linejoin: round; }
+  .edge-secondary { stroke: #65b8ff; }
+  .edge-return { stroke: #a6b0ba; stroke-dasharray: 6 5; }
+  .edge-event { stroke: #e0b35a; stroke-dasharray: 3 4; }
+  .edge-feedback { stroke: #d48787; stroke-dasharray: 7 5; }
+  .edgeLabelBox { fill: #111418; stroke: #30363d; stroke-width: 1; }
+  .edgeLabel { fill: #d7dde3; font: 500 13px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .band { fill: #171b20; }
+  .band-primary { fill: #142019; }
+  .band-secondary { fill: #141d25; }
+  .band-state { fill: #201c14; }
+  .band-muted { fill: #14171b; }
+  .bandRule { stroke: #30363d; stroke-width: 1; }
+  .bandTitle { fill: #8f9aa5; font: 600 14px "SFMono-Regular","Menlo",monospace; letter-spacing: 0; }
+  .lifeline { stroke: #48515a; stroke-width: 1.3; stroke-dasharray: 5 6; }
+  .fragment { fill: #151a1f; stroke: #3b444d; stroke-width: 1; }
+  .fragment-primary { fill: #142019; stroke: #3d7555; }
+  .fragment-secondary { fill: #141d25; stroke: #416884; }
+  .fragmentLabel { fill: #aeb7c0; font: 600 12px "SFMono-Regular","Menlo",monospace; letter-spacing: 0; }
+  .matrixHead { fill: #181d22; stroke: #343b43; stroke-width: 1; }
+  .matrixCell { fill: #14181d; stroke: #2d343c; stroke-width: 1; }
+  .matrixOwner { fill: #17301f; stroke: #55d98d; stroke-width: 1.4; }
+  .matrixText { fill: #d8dee4; font: 500 14px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .matrixOwnerText { fill: #7fe7a8; font: 700 13px "SFMono-Regular","Menlo",monospace; letter-spacing: 0; }
+  .guard { fill: #151a1f; stroke: #59636e; stroke-width: 1; }
+  .guard-primary { stroke: #55d98d; }
+  .guard-secondary { stroke: #65b8ff; }
+  .guard-state { stroke: #e0b35a; }
+  .guardLine { stroke: #59636e; stroke-width: 1; stroke-dasharray: 3 4; }
+  .guardText { fill: #b4bec8; font: 500 13px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+</style>
+<defs>
+  <marker id="arrow-primary" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#55d98d"/>
+  </marker>
+  <marker id="arrow-secondary" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#65b8ff"/>
+  </marker>
+  <marker id="arrow-return" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#a6b0ba"/>
+  </marker>
+  <marker id="arrow-event" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#e0b35a"/>
+  </marker>
+  <marker id="arrow-feedback" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#d48787"/>
+  </marker>
+</defs>
+<title id="title-project.journey.cross-station">跨 Station Durable 投递时序</title>
+<rect class="canvas" width="1900" height="1120"/>
+<text class="title" x="44" y="48">跨 Station Durable 投递时序</text>
+<text class="viewpoint" x="1856" y="46" text-anchor="end">DYNAMIC-FLOW</text>
+<line class="headerRule" x1="44" y1="72" x2="1856" y2="72"/>
+<rect class="fragment fragment-primary" x="44" y="293" width="1812" height="698" rx="4"/>
+<text class="fragmentLabel" x="56" y="312">REGION · DURABLE DELIVERY</text>
+<rect class="node node-neutral" x="29" y="104" width="182" height="52" rx="5"/>
+<text class="nodeTitle" x="120" y="136" text-anchor="middle">Client A</text>
+<line class="lifeline" x1="120" y1="156" x2="120" y2="1021"/>
+<rect class="node node-secondary" x="236.5" y="104" width="182" height="52" rx="5"/>
+<text class="nodeTitle" x="327.5" y="136" text-anchor="middle">Station A Frame</text>
+<line class="lifeline" x1="327.5" y1="156" x2="327.5" y2="1021"/>
+<rect class="node node-primary" x="444" y="104" width="182" height="52" rx="5"/>
+<text class="nodeTitle" x="535" y="136" text-anchor="middle">Station A App</text>
+<line class="lifeline" x1="535" y1="156" x2="535" y2="1021"/>
+<rect class="node node-state" x="651.5" y="104" width="182" height="52" rx="5"/>
+<text class="nodeTitle" x="742.5" y="136" text-anchor="middle">Store A</text>
+<line class="lifeline" x1="742.5" y1="156" x2="742.5" y2="1021"/>
+<rect class="node node-secondary" x="859" y="104" width="182" height="52" rx="5"/>
+<text class="nodeTitle" x="950" y="136" text-anchor="middle">Station B Frame</text>
+<line class="lifeline" x1="950" y1="156" x2="950" y2="1021"/>
+<rect class="node node-primary" x="1066.5" y="104" width="182" height="52" rx="5"/>
+<text class="nodeTitle" x="1157.5" y="136" text-anchor="middle">Station B App</text>
+<line class="lifeline" x1="1157.5" y1="156" x2="1157.5" y2="1021"/>
+<rect class="node node-state" x="1274" y="104" width="182" height="52" rx="5"/>
+<text class="nodeTitle" x="1365" y="136" text-anchor="middle">Store B</text>
+<line class="lifeline" x1="1365" y1="156" x2="1365" y2="1021"/>
+<rect class="node node-neutral" x="1481.5" y="104" width="182" height="52" rx="5"/>
+<text class="nodeTitle" x="1572.5" y="136" text-anchor="middle">Client B Runtime</text>
+<line class="lifeline" x1="1572.5" y1="156" x2="1572.5" y2="1021"/>
+<rect class="node node-neutral" x="1689" y="104" width="182" height="52" rx="5"/>
+<text class="nodeTitle" x="1780" y="136" text-anchor="middle">Receiver UI</text>
+<line class="lifeline" x1="1780" y1="156" x2="1780" y2="1021"/>
+<path class="edge edge-primary" d="M 127 205 L 318.5 205" marker-end="url(#arrow-primary)"/>
+<rect class="edgeLabelBox" x="163.79" y="178" width="119.92000000000002" height="22" rx="4"/>
+<text class="edgeLabel" x="223.75" y="194" text-anchor="middle">submit payload</text>
+<path class="edge edge-primary" d="M 334.5 263 L 526 263" marker-end="url(#arrow-primary)"/>
+<rect class="edgeLabelBox" x="349.45" y="236" width="163.60000000000002" height="22" rx="4"/>
+<text class="edgeLabel" x="431.25" y="252" text-anchor="middle">authorize + dispatch</text>
+<path class="edge edge-event" d="M 542 321 L 733.5 321" marker-end="url(#arrow-event)"/>
+<rect class="edgeLabelBox" x="582.43" y="294" width="112.64000000000001" height="22" rx="4"/>
+<text class="edgeLabel" x="638.75" y="310" text-anchor="middle">source commit</text>
+<path class="edge edge-return" d="M 735.5 379 L 544 379" marker-end="url(#arrow-return)"/>
+<rect class="edgeLabelBox" x="575.15" y="352" width="127.20000000000002" height="22" rx="4"/>
+<text class="edgeLabel" x="638.75" y="368" text-anchor="middle">delivery intent</text>
+<path class="edge edge-secondary" d="M 528 437 L 336.5 437" marker-end="url(#arrow-secondary)"/>
+<rect class="edgeLabelBox" x="367.65" y="410" width="127.20000000000002" height="22" rx="4"/>
+<text class="edgeLabel" x="431.25" y="426" text-anchor="middle">signed delivery</text>
+<path class="edge edge-secondary" d="M 334.5 495 L 941 495" marker-end="url(#arrow-secondary)"/>
+<rect class="edgeLabelBox" x="556.95" y="468" width="163.60000000000002" height="22" rx="4"/>
+<text class="edgeLabel" x="638.75" y="484" text-anchor="middle">HTTP/2 or Circuit v2</text>
+<path class="edge edge-primary" d="M 957 553 L 1148.5 553" marker-end="url(#arrow-primary)"/>
+<rect class="edgeLabelBox" x="982.87" y="526" width="141.76000000000002" height="22" rx="4"/>
+<text class="edgeLabel" x="1053.75" y="542" text-anchor="middle">verify + dispatch</text>
+<path class="edge edge-event" d="M 1164.5 611 L 1356 611" marker-end="url(#arrow-event)"/>
+<rect class="edgeLabelBox" x="1172.17" y="584" width="178.16000000000003" height="22" rx="4"/>
+<text class="edgeLabel" x="1261.25" y="600" text-anchor="middle">dedupe + target commit</text>
+<path class="edge edge-return" d="M 1358 669 L 1166.5 669" marker-end="url(#arrow-return)"/>
+<rect class="edgeLabelBox" x="1219.49" y="642" width="83.52000000000001" height="22" rx="4"/>
+<text class="edgeLabel" x="1261.25" y="658" text-anchor="middle">committed</text>
+<path class="edge edge-return" d="M 1150.5 727 L 959 727" marker-end="url(#arrow-return)"/>
+<rect class="edgeLabelBox" x="993.79" y="700" width="119.92000000000002" height="22" rx="4"/>
+<text class="edgeLabel" x="1053.75" y="716" text-anchor="middle">commit receipt</text>
+<path class="edge edge-return" d="M 943 785 L 336.5 785" marker-end="url(#arrow-return)"/>
+<rect class="edgeLabelBox" x="578.79" y="758" width="119.92000000000002" height="22" rx="4"/>
+<text class="edgeLabel" x="638.75" y="774" text-anchor="middle">signed receipt</text>
+<path class="edge edge-event" d="M 1150.5 843 L 959 843" marker-end="url(#arrow-event)"/>
+<rect class="edgeLabelBox" x="997.43" y="816" width="112.64000000000001" height="22" rx="4"/>
+<text class="edgeLabel" x="1053.75" y="832" text-anchor="middle">durable event</text>
+<path class="edge edge-event" d="M 957 901 L 1563.5 901" marker-end="url(#arrow-event)"/>
+<rect class="edgeLabelBox" x="1201.29" y="874" width="119.92000000000002" height="22" rx="4"/>
+<text class="edgeLabel" x="1261.25" y="890" text-anchor="middle">SSE / recovery</text>
+<path class="edge edge-primary" d="M 1579.5 959 L 1771 959" marker-end="url(#arrow-primary)"/>
+<rect class="edgeLabelBox" x="1583.53" y="932" width="185.44000000000003" height="22" rx="4"/>
+<text class="edgeLabel" x="1676.25" y="948" text-anchor="middle">receiver-visible result</text>
+</svg>

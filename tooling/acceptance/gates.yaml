@@ -89,7 +89,44 @@
       "environment": "home-station", "provisioner": "home-station",
       "tier": "env-evidence", "initial_proof_status": "UNPROVEN",
       "required_artifact_roles": ["receiver-dom", "station-readback", "cleanup", "operation-coverage"],
-      "description": "Native Profile creation, document autosave, authoritative readback, restart, prompt consumption and deletion."
+      "description": "Native Profile creation, document autosave, authoritative readback, restart, typed prompt consumption, pinned Skill index/body evidence, and deletion."
+    },
+    "agent-definition-roundtrip-native-e2e": {
+      "requiredRuntimeCells": ["desktop-linux-native"],
+      "argv": ["python3", "tooling/acceptance/gates/agent/agent_definition_roundtrip.py"],
+      "timeout_seconds": 1800,
+      "environment": "home-station", "provisioner": "home-station",
+      "tier": "env-evidence", "initial_proof_status": "UNPROVEN",
+      "required_artifact_roles": ["receiver-dom", "station-readback", "suite-runtime", "cleanup", "validation"],
+      "description": "Profile-two Native AgentDefinition create/edit, explicit empty and non-empty package roundtrip, restart readback, CAS conflict draft retention, and owned-fixture cleanup."
+    },
+    "agent-slash-command-native-e2e": {
+      "requiredRuntimeCells": ["desktop-linux-native"],
+      "argv": ["python3", "tooling/acceptance/gates/agent/chat_native_suite.py", "--area", "commands"],
+      "timeout_seconds": 1800,
+      "environment": "home-station", "provisioner": "home-station",
+      "tier": "env-evidence", "initial_proof_status": "UNPROVEN",
+      "required_artifact_roles": ["receiver-dom", "station-readback", "suite-runtime", "cleanup", "operation-coverage", "validation"],
+      "description": "Profile-two Native Commands and Skills palette proof for Desktop /help, versioned Station /tools and /skills, Station-created /clear, stale/unavailable fail-closed behavior, ordinary text continuity, keyboard focus, and narrow layout."
+    },
+    "agent-context-projection-native-e2e": {
+      "requiredRuntimeCells": ["desktop-linux-native"],
+      "argv": ["python3", "tooling/acceptance/gates/agent/chat_native_suite.py", "--area", "attribution"],
+      "timeout_seconds": 1800,
+      "environment": "home-station", "provisioner": "home-station",
+      "tier": "env-evidence", "initial_proof_status": "UNPROVEN",
+      "required_artifact_roles": ["receiver-dom", "station-readback", "suite-runtime", "cleanup", "operation-coverage", "validation"],
+      "description": "Profile-two Native historical Turn attribution proof from ContextLedger and ToolCall lineage, including typed badges, included/omitted/truncated detail, exact versions, redaction, binding-change immutability, and restart readback."
+    },
+    "agent-depth-linux-native-e2e": {
+      "requiredRuntimeCells": ["desktop-linux-native"],
+      "runtimeCellArtifact": "installed-appimage",
+      "argv": ["python3", "tooling/acceptance/gates/agent/depth_linux_native.py"],
+      "timeout_seconds": 10800,
+      "environment": "home-station", "provisioner": "home-station",
+      "tier": "env-evidence", "initial_proof_status": "UNPROVEN",
+      "required_artifact_roles": ["source-receipt", "install-log", "receiver-dom", "station-readback", "suite-runtime", "cleanup", "validation"],
+      "description": "Build and install an acceptance-enabled exact-source Linux AppImage through make desktop-install, then prove one reusable Profile-two Native AgentDefinition, command snapshot, Skill activation, immutable historical attribution, restart readback, and reverse cleanup journey."
     },
     "agent-chat-models-native": {
       "requiredRuntimeCells": ["desktop-linux-native"],
@@ -869,6 +906,23 @@
       "tier": "local-evidence",
       "description": "Build the Desktop Tauri application in release mode from the current clean source without packaging an installer."
     },
+    "desktop-linux-install-native-e2e": {
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.desktop.linux_install_e2e"
+      ],
+      "timeout_seconds": 7200,
+      "environment": "local",
+      "tier": "env-evidence",
+      "initial_proof_status": "UNPROVEN",
+      "required_artifact_roles": [
+        "source-receipt",
+        "desktop-entry",
+        "install-log"
+      ],
+      "description": "On a Linux graphical session with the declared Tauri prerequisites, build the exact-source AppImage through make desktop-install, verify atomic user-scoped XDG installation, protocol registration, running-inode replacement, deep-link dispatch, source receipt, and reverse cleanup."
+    },
     "desktop-shell-tray-e2e": {
       "argv": [
         "python3",
@@ -903,7 +957,7 @@
         "desktop-macos-native"
       ],
       "tier": "env-evidence",
-      "description": "Launch the exact-source Native Tauri Desktop and prove primary-nav cleanup, Settings ownership, selected-only Cron lifecycle, canonical Command Palette access, legacy Notes fallback, native input, and native screenshot evidence."
+      "description": "Launch the exact-source Native Tauri Desktop and prove the fixed Search/Chat/Agent/Moments primary rail, Agent-owned Chat/Atelier secondary navigation, hidden Applets launcher, Discover and Memory ownership under Settings > AI, selected-only Cron lifecycle, canonical Command Palette access, legacy Notes fallback, native input, and native screenshot evidence."
     },
     "mobile-native-build": {
       "argv": [
@@ -916,6 +970,84 @@
       "provisioner": "mobile-simulator",
       "tier": "env-evidence",
       "description": "Build and verify the source-bound Mobile Tauri iOS Simulator application through the canonical isolated native provisioner."
+    },
+    "unified-client-android-host-e2e": {
+      "argv": ["python3", "-m", "tooling.acceptance.gates.mobile.android_host_e2e", "--reuse-suite-runtime"],
+      "ephemeralCapabilities": ["mobile.native.appium-session"],
+      "timeout_seconds": 3600,
+      "environment": "mobile-native",
+      "provisioner": "mobile-native",
+      "requiredRuntimeCells": ["mobile-android-native"],
+      "tier": "env-evidence",
+      "description": "Fail closed after UCA-02 source closure until a dedicated exact-source physical Android Suite proves FCM, killed-process wake, Back, full-resolution media, system actions, receiver-visible outcomes and cleanup."
+    },
+    "unified-client-ios-host-e2e": {
+      "argv": ["python3", "-m", "tooling.acceptance.gates.mobile.ios_host_e2e", "--reuse-suite-runtime"],
+      "ephemeralCapabilities": ["mobile.native.appium-session"],
+      "timeout_seconds": 3600,
+      "environment": "mobile-native",
+      "provisioner": "mobile-native",
+      "requiredRuntimeCells": ["mobile-ios-native"],
+      "tier": "env-evidence",
+      "description": "Fail closed after UCA-03 source closure until a dedicated signed physical iOS Suite proves APNs success/failure, background wake, system actions, receiver-visible outcomes and cleanup."
+    },
+    "unified-client-messaging-core-contract": {
+      "command": "python3 -m tooling.acceptance.gates.chat.unified_client_core_contract",
+      "timeout_seconds": 900,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Prove the MP-D16 portable Messaging Engine lifecycle, single-write store policy, authoritative command reconciliation, recovery/receipt/attachment APIs, typed Host ports, production consumer cutover, OS-free core and shared native filesystem adapter."
+    },
+    "unified-client-messaging-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.chat.unified_client_core_suite --runtime-cells desktop-macos-native,mobile-ios-native,mobile-android-native --reuse-suite-runtime",
+      "timeout_seconds": 7200,
+      "environment": "local",
+      "tier": "env-evidence",
+      "requiredRuntimeCells": ["desktop-macos-native", "mobile-ios-native", "mobile-android-native"],
+      "description": "Validate exact-source Desktop, signed iOS and physical Android Messaging convergence in one reusable Suite Runtime; remain UNPROVEN when physical evidence is unavailable."
+    },
+    "messaging-owner-hard-cut-zero": {
+      "command": "python3 -m tooling.acceptance.gates.unified_client.messaging_owner_zero",
+      "timeout_seconds": 300,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Prove that former Desktop/Mobile Messaging semantic owners and callers are absent, portable-core declarations are unique, and both Hosts share one native filesystem adapter."
+    },
+    "secure-content-portable-core": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.secure_content_portable_core",
+      "timeout_seconds": 600,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Prove the SC-D30 host-neutral Secure Content operation state, PreKey planning, readback-first reconciliation, recovery continuation, typed ports, migration inventory, and production consumer contract."
+    },
+    "unified-client-secure-content-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.mobile.unified_secure_content_suite --runtime-cells desktop-macos-native,mobile-ios-native,mobile-android-native --reuse-suite-runtime",
+      "timeout_seconds": 7200,
+      "environment": "local",
+      "tier": "env-evidence",
+      "requiredRuntimeCells": ["desktop-macos-native", "mobile-ios-native", "mobile-android-native"],
+      "description": "Validate exact-source Desktop, signed iOS and physical Android Secure Content publish, receiver, restart, revocation and object-resume convergence in one reusable Suite Runtime; remain UNPROVEN when physical evidence is unavailable."
+    },
+    "secure-content-owner-hard-cut-zero": {
+      "command": "python3 -m tooling.acceptance.gates.unified_client.secure_content_owner_zero",
+      "timeout_seconds": 300,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Prove that former Desktop/Mobile Secure Content operation and object-transfer owners are absent and both production Hosts consume the portable core."
+    },
+    "unified-client-shared-semantics": {
+      "command": "python3 -m tooling.acceptance.gates.unified_client.shared_semantics",
+      "timeout_seconds": 300,
+      "environment": "local",
+      "tier": "ci-structure",
+      "description": "Prove one renderer-neutral owner for shared Chat projection, media descriptor codec, wire codec, storage scope/reconciliation and capability admission while Desktop/Mobile Presentation Policy remains form-specific."
+    },
+    "unified-client-architecture-aggregate": {
+      "command": "python3 -m tooling.acceptance.gates.unified_client.architecture_aggregate",
+      "timeout_seconds": 900,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Run bounded source checks and aggregate exact-source child evidence, runtime cells, owner-zero Gates, reusable Suite cleanup and outcome-comparison identity without provisioning."
     },
     "station-access-lifecycle-aggregate-e2e": {
       "command": "python3 -m tooling.acceptance.gates.station_access.lifecycle_aggregate",
@@ -2236,12 +2368,13 @@
       "description": "Prove required same-Station contact, Direct, Group, interaction, attachment, search, receipt, and restart readback on simulator cells."
     },
     "mobile-simulator-recovery-e2e": {
-      "command": "python3 -m tooling.acceptance.gates.mobile.simulator_social_e2e --scenario recovery",
-      "timeout_seconds": 2400,
+      "argv": ["python3", "-m", "tooling.acceptance.gates.mobile.simulator_social_e2e", "--scenario", "recovery"],
+      "ephemeralCapabilities": ["mobile.station-outage"],
+      "timeout_seconds": 3600,
       "environment": "mobile-direct-simulator",
       "provisioner": "mobile-direct-simulator",
       "tier": "env-evidence",
-      "description": "Prove same-Station deterministic unknown-outcome reconciliation and exact-scope Chat/Moments draft restart recovery on the required simulator pair."
+      "description": "Prove same-Station unknown-outcome reconciliation, normal process restart, SIGKILL, real Chat composer draft/history restoration, route-attestation renewal across expiry, source-bound Station outage with visible Retry, and receiver-visible post-recovery send on the required iOS Simulator pair."
     },
     "mobile-simulator-recovery-ui-e2e": {
       "command": "python3 -m tooling.acceptance.gates.mobile.simulator_social_e2e --scenario recovery-ui",

@@ -34,6 +34,10 @@ the outcome.
   decision is required.
 - Create a frozen Plan Version only for complex work that needs durable
   dependency/closure structure and has received required confirmation.
+- Every new complex Plan uses the current unversioned contract and a
+  digest-bound `outcome-comparison.md`; never emit `schemaVersion` or a `vN`
+  label. Inspect its user, product, architecture, technology, and
+  quality/operations effects before implementation.
 - Read an explicit Plan directly with `planctl inspect`; never require or
   create PlanMount.
 - Never create, switch, remove, or prune a worktree unless the user explicitly
@@ -140,6 +144,11 @@ Until the selected delivery obligations cover current source, report only
 implementation/checkpoint progress, failures, or blockers; do not present a
 candidate as a staged delivery.
 
+When a Plan declares an outcome comparison, update its actual results from the
+same evidence. Use only `PASS | PARTIAL | BLOCKED | UNPROVEN |
+NOT_APPLICABLE`; `PASS/PARTIAL` requires current source identity and evidence.
+Never edit the digest-bound planned section during execution.
+
 ### 7. Deliver
 
 Run findings-first completion review from explicit obligations and current
@@ -147,6 +156,11 @@ source. Only after required verification and Acceptance may the Agent present
 the result as staged delivery. Report implemented, proven, unverified, and
 blocked scope separately. Push, PR, merge, publish/release, history rewrite,
 worktree lifecycle, and destructive cleanup remain separately governed.
+
+For a Plan with an outcome comparison, deliver the completed report and bind
+its full-file SHA-256 in the completion or aggregate evidence. Call out every
+deviation from the planned user, product, architecture, technology, and
+quality/operations effects.
 
 Release only resources owned by this request. Explicitly retained resources
 must name their owner and purpose. Do not close unrelated services or seal the
@@ -227,9 +241,11 @@ Before a non-trivial readiness claim:
 1. Re-read completion obligations.
 2. Confirm changed paths and removed old paths.
 3. Run current-source completion review.
-4. Verify functional and formal proof at the required strength.
-5. Confirm task-owned resource disposition.
-6. Run applicable `pt-code-structure-review`, security, frontend, prototype,
+4. Reconcile every outcome criterion with actual effect, evidence, and
+   deviation when the Plan declares an outcome comparison.
+5. Verify functional and formal proof at the required strength.
+6. Confirm task-owned resource disposition.
+7. Run applicable `pt-code-structure-review`, security, frontend, prototype,
    and Acceptance gap checks.
 
 Close optional task progress only after evidence references are current and
@@ -254,3 +270,4 @@ task-owned resources are `released` or explicitly `retained`.
   coverage output.
 - Claim overall completion while required product/runtime proof remains
   unverified.
+- Treat Task/Gate completion as automatic proof of the human-readable outcome.

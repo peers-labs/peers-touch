@@ -12,7 +12,7 @@ class OperationEvidenceTest(unittest.TestCase):
     def test_confirmed_baseline_and_production_authority_are_separate(self) -> None:
         rows = operation_contract()
         baseline = [row for row in rows if row["origin"] == "confirmed-prototype"]
-        self.assertEqual(len(baseline), 121)
+        self.assertEqual(len(baseline), 136)
         self.assertEqual(len({row["journey"] for row in baseline}), 11)
         self.assertEqual(len({row["operationId"] for row in rows}), len(rows))
         self.assertIn("profile.documents.provider-consumption", {
@@ -55,11 +55,26 @@ class OperationEvidenceTest(unittest.TestCase):
     def test_each_operation_maps_to_an_approved_task_scenario(self) -> None:
         import json
         import re
-        from tooling.acceptance.gates.agent.chat_native_suite import PLAN_ROOT, TASK_BY_AREA
+        from tooling.acceptance.gates.agent.chat_native_suite import (
+            DEPTH_PLAN_ROOT,
+            PLAN_ROOT,
+            TASK_BY_AREA,
+        )
 
         for row in operation_contract():
-            area = row["gateId"].removeprefix("agent-chat-").removesuffix("-native")
-            source = (PLAN_ROOT / "tasks" / f"{TASK_BY_AREA[area]}.md").read_text()
+            if row["gateId"] == "agent-slash-command-native-e2e":
+                source = (DEPTH_PLAN_ROOT / "tasks" / "ADL-03.md").read_text()
+            elif row["gateId"] == "agent-context-projection-native-e2e":
+                source = (DEPTH_PLAN_ROOT / "tasks" / "ADL-04.md").read_text()
+            else:
+                area = (
+                    row["gateId"]
+                    .removeprefix("agent-chat-")
+                    .removesuffix("-native")
+                )
+                source = (
+                    PLAN_ROOT / "tasks" / f"{TASK_BY_AREA[area]}.md"
+                ).read_text()
             contract = json.loads(re.findall(r"```json\n([\s\S]*?)\n```", source)[0])
             self.assertIn(row["scenarioId"], contract["runtimeReuse"]["scenarioIds"])
 
@@ -103,11 +118,38 @@ class OperationEvidenceTest(unittest.TestCase):
         from tooling.acceptance.gates.agent.chat_native_suite import suite_contract
 
         contract = suite_contract("workspace")
+        depth_gates = {
+            "agent-slash-command-native-e2e",
+            "agent-context-projection-native-e2e",
+        }
         self.assertTrue({
             row["scenarioId"] for row in operation_contract()
+            if row["gateId"] not in depth_gates
         }.issubset(contract.scenario_ids))
         self.assertEqual(contract.max_provisioning_runs, 1)
         self.assertEqual(contract.max_client_launches, 3)
+
+    def test_depth_gate_traceability_binds_task_and_operations(self) -> None:
+        from tooling.acceptance.gates.agent.chat_native_suite import (
+            suite_traceability,
+        )
+
+        trace = suite_traceability(
+            "commands",
+            "agent-slash-command-native-e2e",
+        )
+        self.assertEqual(trace["phase"], "ADL-03")
+        self.assertEqual(
+            trace["gate"],
+            "agent-slash-command-native-e2e",
+        )
+        self.assertIn(
+            "composer.command.narrow-palette",
+            trace["bom"],
+        )
+        self.assertTrue(
+            trace["spec"][0].endswith("/tasks/ADL-03.md")
+        )
 
     def test_workspace_children_retain_owning_gates(self) -> None:
         from tooling.acceptance.gates.agent.chat_native_suite import stamp_observations
@@ -119,6 +161,10 @@ class OperationEvidenceTest(unittest.TestCase):
                 "receiverAssertion": "actual output visible",
             }
             for row in operation_contract()
+            if row["gateId"] not in {
+                "agent-slash-command-native-e2e",
+                "agent-context-projection-native-e2e",
+            }
         }
         stamped = stamp_observations(
             observations, gate_id="agent-chat-workspace-native",
@@ -127,8 +173,23 @@ class OperationEvidenceTest(unittest.TestCase):
             cleanup={"status": "passed"}, failure="",
         )
         for row in operation_contract():
+            if row["gateId"] in {
+                "agent-slash-command-native-e2e",
+                "agent-context-projection-native-e2e",
+            }:
+                continue
             self.assertEqual(stamped[row["operationId"]]["gateId"], row["gateId"])
-        self.assertEqual(coverage_report(stamped)["missingOperations"], [])
+        missing = coverage_report(stamped)["missingOperations"]
+        self.assertEqual(
+            set(missing),
+            {
+                row["operationId"] for row in operation_contract()
+                if row["gateId"] in {
+                    "agent-slash-command-native-e2e",
+                    "agent-context-projection-native-e2e",
+                }
+            },
+        )
 
 
 if __name__ == "__main__":

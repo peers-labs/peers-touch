@@ -21,15 +21,14 @@ import type { Page } from '../types/navigation';
 
 interface Props {
   appletId: string;
-  onPin?: () => void;
-  pinned?: boolean;
 }
 
-export function AppletRuntimePage({ appletId, onPin, pinned = false }: Props) {
+export function AppletRuntimePage({ appletId }: Props) {
   const { t } = useTranslation('applet');
   const { navigation } = usePageContext();
   const { token } = theme.useToken();
   const pageId = `applet:${appletId}`;
+  const exitPage: Page = appletId === 'peers.atelier' ? 'agent' : 'applets';
   const [navigationTitle, setNavigationTitle] = useState<string | null>(null);
   const [debugEvents, setDebugEvents] = useState<LynxDebugEvent[]>([]);
   const [immersive, setImmersive] = useState(() => isStandaloneAppletShell());
@@ -58,15 +57,15 @@ export function AppletRuntimePage({ appletId, onPin, pinned = false }: Props) {
     if (isStandaloneAppletShell()) {
       void closeStandaloneAppletWindow().then((closed) => {
         if (!closed) {
-          navigation.navigateTo('applets');
+          navigation.navigateTo(exitPage);
           requestPageRuntimeRelease(pageId, 'explicit-close');
         }
       });
       return;
     }
-    navigation.navigateTo('applets');
+    navigation.navigateTo(exitPage);
     requestPageRuntimeRelease(pageId, 'explicit-close');
-  }, [navigation, pageId]);
+  }, [exitPage, navigation, pageId]);
 
   const handleOpenStandalone = useCallback(() => {
     void openStandaloneAppletWindow(appletId, navigationTitle || applet?.name || appletId).catch((error) => {
@@ -143,10 +142,10 @@ export function AppletRuntimePage({ appletId, onPin, pinned = false }: Props) {
       if (window.history.length > 1) {
         window.history.back();
       } else {
-        navigation.navigateTo('applets');
+        navigation.navigateTo(exitPage);
       }
     }
-  }, [handleClose, navigation, recordDebugStage]);
+  }, [exitPage, handleClose, navigation, recordDebugStage]);
 
   const handleUiRequest = useCallback((request: AppletHostUiRequest): unknown | Promise<unknown> => {
     const { action, params } = request;
@@ -305,7 +304,6 @@ export function AppletRuntimePage({ appletId, onPin, pinned = false }: Props) {
       controlsVisible={controlsVisible}
       debugEvents={debugEvents}
       immersive={immersive}
-      pinned={pinned}
       runtimeContent={runtimeContent}
       subtitle={applet?.description || t('applet.runtime.shellHint')}
       version={applet?.version}
@@ -315,7 +313,6 @@ export function AppletRuntimePage({ appletId, onPin, pinned = false }: Props) {
       onExitImmersive={handleExitImmersive}
       onHideControls={() => setControlsVisible(false)}
       onOpenStandalone={handleOpenStandalone}
-      onPin={onPin}
       onShowControls={() => setControlsVisible(true)}
     />
   );

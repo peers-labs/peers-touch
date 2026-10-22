@@ -696,16 +696,16 @@ export function CronJobDrawer({ open, editingJob, onClose, onSaved }: CronJobDra
               <Flexbox horizontal gap={12}>
                 <Form.Item
                   name="timeoutSec"
-                  label="Timeout (seconds)"
+                  label={t('cron.drawer.field.timeoutLabel')}
                   style={{ flex: 1, marginBottom: 0 }}
-                  extra={<Text type="secondary" style={{ fontSize: 11 }}>Optional. Leave 0 for default (10 min).</Text>}
+                  extra={<Text type="secondary" style={{ fontSize: 11 }}>{t('cron.drawer.field.timeoutHint')}</Text>}
                 >
                   <InputNumber min={0} max={3600} style={{ width: '100%' }} placeholder="0" />
                 </Form.Item>
                 <Form.Item
-                  label="Model"
+                  label={t('cron.drawer.field.modelLabel')}
                   style={{ flex: 1, marginBottom: 0 }}
-                  extra={<Text type="secondary" style={{ fontSize: 11 }}>Override the Model Service default for this job.</Text>}
+                  extra={<Text type="secondary" style={{ fontSize: 11 }}>{t('cron.drawer.field.modelHint')}</Text>}
                 >
                   <ModelSelect
                     models={availableModels}

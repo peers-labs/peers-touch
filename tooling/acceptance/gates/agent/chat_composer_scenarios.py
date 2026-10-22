@@ -54,24 +54,36 @@ def _persisted_conversation_id(runner: AgentNativeJourney) -> str:
 def slash(runner: AgentNativeJourney) -> dict[str, Any]:
     runner.set_input_value("[data-pt-agent-composer-input]", "Preserve ", "slash draft")
     runner.click_visible(
-        "[data-pt-agent-composer-slash]", "insert slash",
+        "[data-pt-agent-composer-slash]", "open Commands and Skills",
     )
-    value = wait_until(lambda: (
-        text if (text := runner.driver.find_element(
-            By.CSS_SELECTOR, "[data-pt-agent-composer-input]",
-        ).get_attribute("value")) == "Preserve /" else None
-    ), "slash appended to current draft")
+    palette = runner.wait_visible_element(
+        "[data-pt-agent-command-palette]",
+        "Commands and Skills palette",
+    )
+    value = runner.driver.find_element(
+        By.CSS_SELECTOR,
+        "[data-pt-agent-composer-input]",
+    ).get_attribute("value")
+    require(value == "Preserve ", "command palette replaced the composer draft")
+    runner.click_visible(
+        '[data-command-id="help"]',
+        "open local command help",
+    )
     wait_until(
-        lambda: runner.driver.execute_script(
-            "return document.activeElement === document.querySelector("
-            "'[data-pt-agent-composer-input]');"
-        ) or None,
-        "slash insertion focused composer",
+        lambda: palette.get_attribute("data-command-palette-view") == "help",
+        "local help projection",
+    )
+    runner.press_native_key(NativeKey.ESCAPE)
+    wait_until(
+        lambda: runner.visible_element_state(
+            "[data-pt-agent-command-palette]",
+        ) is None,
+        "command palette closed",
     )
     runner.set_input_value("[data-pt-agent-composer-input]", "", "clear slash draft")
     return {
-        "uiAction": "click slash with an existing draft",
-        "receiverAssertion": "slash appends without replacing draft and composer owns focus",
+        "uiAction": "open Commands and Skills and inspect local /help",
+        "receiverAssertion": "palette preserves the draft and exposes Desktop-owned help",
         "value": value, "operationIds": ["composer.slash"],
     }
 

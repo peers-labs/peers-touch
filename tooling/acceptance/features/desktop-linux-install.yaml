@@ -1,0 +1,52 @@
+{
+  "id": "desktop-linux-install",
+  "status": "active",
+  "product_area": "desktop-shell",
+  "owners": [
+    "tooling/devctl/desktop-install.mjs",
+    "tooling/devctl/desktop.mjs",
+    "tooling/devctl/test/desktop.test.mjs",
+    "docs/architecture/engineering/local-dev/design.md",
+    "docs/global/local-dev-environment.md"
+  ],
+  "truth_sources": [
+    "devctl Desktop install orchestrator",
+    "platform adapter selected from process.platform",
+    "Tauri AppImage artifact built from PT_BUILD_SOURCE_COMMIT",
+    "installed source receipt and Linux XDG registration"
+  ],
+  "visible_surfaces": [
+    {
+      "type": "native-linux",
+      "surface": "user-installed Peers Dev AppImage"
+    },
+    {
+      "type": "native-linux",
+      "surface": "application launcher and peers-touch-dev protocol handler"
+    }
+  ],
+  "required_gates": [
+    "desktop-linux-install-native-e2e"
+  ],
+  "acceptance": {
+    "runtime": [
+      "make desktop-install builds the exact frozen source as one AppImage and installs it without root",
+      "the AppImage, launcher, icon, desktop entry and source receipt are staged and replaced atomically in user-owned XDG paths",
+      "a running old AppImage inode remains alive while the next launch resolves the replaced artifact",
+      "the desktop entry registers peers-touch-dev and readback resolves the installed handler",
+      "the installed application launches, accepts one deep-link dispatch and releases its process and temporary install root"
+    ],
+    "failure": [
+      "missing Linux build prerequisites fail before build with exact pkg-config module and package hints",
+      "source movement during build rejects installation",
+      "verification failure restores the previous AppImage and desktop entry",
+      "devctl never installs system packages, requests root, or falls back to a bare developer binary"
+    ]
+  },
+  "negative": [
+    "unit tests alone do not prove an installed Native Linux process",
+    "a source receipt alone does not prove the binary launched",
+    "macOS bundle behavior and Windows Native development behavior must not change",
+    "Xvfb or browser-only evidence cannot prove the declared Linux Native journey"
+  ]
+}

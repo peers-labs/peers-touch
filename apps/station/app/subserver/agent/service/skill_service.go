@@ -4,9 +4,7 @@
 //              integration, content validation, fuzzy patch, and conditional
 //              activation index building.
 // 2026-04-11 — Skill Versioning & Rollback: added recordVersion, ListVersions,
-//              RollbackSkill, ToggleSkill for "dumbed-down agent" recovery.
-//              BuildSkillIndex now filters disabled skills. toManifest maps
-//              the new Enabled field.
+//              and RollbackSkill for "dumbed-down agent" recovery.
 // 2026-04-11 — Growth Metrics Integration: injected GrowthMetricsService dependency,
 //   emit RecordEvent on Create (skill_created), Patch (skill_patched), Delete (skill_deleted).
 
@@ -17,7 +15,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -80,6 +80,7 @@ func (s *SkillService) ListSkills(ctx context.Context, agentID string) ([]domain
 	manifests := make([]domain.SkillManifest, 0, len(rows))
 	for _, row := range rows {
 		m := s.toManifest(&row)
+		m.Enabled = s.skillBindingEnabled(ctx, db, &row)
 		m.Content = ""
 		manifests = append(manifests, m)
 	}
@@ -100,6 +101,7 @@ func (s *SkillService) GetSkill(ctx context.Context, agentID, name string) (*dom
 	}
 
 	m := s.toManifest(row)
+	m.Enabled = s.skillBindingEnabled(ctx, db, row)
 	return &m, nil
 }
 
@@ -116,7 +118,44 @@ func (s *SkillService) GetSkillByID(ctx context.Context, agentID, skillID string
 	}
 
 	m := s.toManifest(row)
+	m.Enabled = s.skillBindingEnabled(ctx, db, row)
 	return &m, nil
+}
+
+func (s *SkillService) GetSkillAtVersion(
+	ctx context.Context,
+	agentID string,
+	skillID string,
+	version int,
+) (*domain.SkillManifest, error) {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	row, err := s.findByID(ctx, db, agentID, skillID)
+	if err != nil {
+		return nil, err
+	}
+	manifest := s.toManifest(row)
+	if row.Version == version {
+		manifest.Enabled = s.skillBindingEnabled(ctx, db, row)
+		return &manifest, nil
+	}
+	var historical persistence.SkillVersion
+	if err := db.WithContext(ctx).
+		Where("skill_id = ? AND agent_id = ? AND version = ?", skillID, agentID, version).
+		First(&historical).Error; err != nil {
+		return nil, errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			fmt.Sprintf("Skill %s version %d is unavailable", skillID, version),
+			err,
+		)
+	}
+	manifest.Content = historical.Content
+	manifest.Version = historical.Version
+	manifest.Enabled = true
+	return &manifest, nil
 }
 
 // CreateSkill validates content, runs security scan, checks install policy,
@@ -223,7 +262,7 @@ func (s *SkillService) PatchSkill(ctx context.Context, agentID, name, oldStr, ne
 	}
 
 	updated, _, err := s.UpdateSkill(
-		ctx, agentID, row.ID, nil, nil, &patched, nil,
+		ctx, agentID, row.ID, nil, nil, &patched,
 	)
 	if err != nil {
 		return nil, err
@@ -253,7 +292,6 @@ func (s *SkillService) UpdateSkill(
 	name *string,
 	description *string,
 	content *string,
-	enabled *bool,
 ) (*domain.SkillManifest, *domain.ScanResult, error) {
 	db, err := s.getDB(ctx)
 	if err != nil {
@@ -277,15 +315,10 @@ func (s *SkillService) UpdateSkill(
 	if content != nil {
 		nextContent = *content
 	}
-	nextEnabled := row.Enabled
-	if enabled != nil {
-		nextEnabled = *enabled
-	}
 	contentChanged := nextContent != row.Content
 	changed := nextName != row.Name ||
 		nextDescription != row.Description ||
-		contentChanged ||
-		nextEnabled != row.Enabled
+		contentChanged
 
 	if err := s.validateContent(nextDescription, nextContent); err != nil {
 		return nil, nil, err
@@ -300,7 +333,6 @@ func (s *SkillService) UpdateSkill(
 		"name":        nextName,
 		"description": nextDescription,
 		"content":     nextContent,
-		"enabled":     nextEnabled,
 		"version":     row.Version + 1,
 		"updated_at":  now,
 	}
@@ -326,7 +358,6 @@ func (s *SkillService) UpdateSkill(
 	updated.Name = nextName
 	updated.Description = nextDescription
 	updated.Content = nextContent
-	updated.Enabled = nextEnabled
 	updated.Version = row.Version + 1
 	updated.UpdatedAt = now
 	if verdict, ok := updates["scan_verdict"].(*string); ok {
@@ -444,16 +475,10 @@ func (s *SkillService) BuildAuthorizedSkillIndex(
 		return "", 0, err
 	}
 
-	var rows []persistence.Skill
-	if err := db.WithContext(ctx).
-		Where("agent_id = ? AND enabled = ?", agentID, true).
-		Order("category ASC, name ASC").
-		Find(&rows).Error; err != nil {
-		logger.Errorf(ctx, "skill index query failed: agent_id=%s, err=%v", agentID, err)
-		return "", 0, errcode.New(errcode.AgentInternal, 500, "failed to query skills for index", err)
-	}
-
-	if len(rows) == 0 {
+	authorizedSkills := authorized.Sources(
+		model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_SKILL,
+	)
+	if len(authorizedSkills) == 0 {
 		return "", 0, nil
 	}
 
@@ -470,17 +495,33 @@ func (s *SkillService) BuildAuthorizedSkillIndex(
 
 	var entries []indexEntry
 
-	for _, row := range rows {
-		capability, ok := authorized.Source(
-			model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_SKILL,
-			row.Name,
+	for _, capability := range authorizedSkills {
+		skillID := strings.TrimPrefix(
+			capability.Manifest.GetCapabilityId(),
+			"skill:",
 		)
-		if !ok ||
-			capability.Manifest.GetCapabilityId() != "skill:"+row.ID ||
-			capability.Manifest.GetVersion() != fmt.Sprintf("%d", row.Version) {
-			continue
+		version, versionErr := strconv.Atoi(capability.Manifest.GetVersion())
+		if skillID == "" || versionErr != nil || version <= 0 {
+			return "", 0, capabilityStateError(
+				"authorized Skill manifest identity is invalid",
+				versionErr,
+			)
+		}
+		var row persistence.Skill
+		if err := db.WithContext(ctx).
+			Where("id = ? AND agent_id = ?", skillID, agentID).
+			First(&row).Error; err != nil {
+			return "", 0, capabilityStateError(
+				"authorized Skill source is unavailable",
+				err,
+			)
 		}
 		manifest := s.toManifest(&row)
+		manifest.Version = version
+		if display := capability.Manifest.GetDisplayMetadata(); display != nil {
+			manifest.Name = display.GetName()
+			manifest.Description = display.GetDescription()
+		}
 
 		if len(manifest.Platforms) > 0 {
 			continue
@@ -539,6 +580,73 @@ func (s *SkillService) BuildAuthorizedSkillIndex(
 	sb.WriteString("</available_skills>")
 
 	return sb.String(), len(entries), nil
+}
+
+func (s *SkillService) ToggleSkill(
+	ctx context.Context,
+	agentID string,
+	skillID string,
+	enabled bool,
+) error {
+	if s.capabilities == nil {
+		return capabilityStateError("Skill binding authority is unavailable", nil)
+	}
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+	skill, err := s.findByID(ctx, db, agentID, skillID)
+	if err != nil {
+		return err
+	}
+	var agent persistence.Agent
+	if err := db.WithContext(ctx).Where("id = ?", agentID).First(&agent).Error; err != nil {
+		return capabilityRecordError("Agent", err)
+	}
+	capabilityID := "skill:" + skill.ID
+	capabilityVersion := strconv.Itoa(skill.Version)
+	var binding persistence.AgentCapabilityBinding
+	bindingErr := db.WithContext(ctx).
+		Where(
+			"ptid = ? AND agent_id = ? AND capability_id = ? AND capability_version = ? AND tombstoned_at IS NULL",
+			agent.OwnerActorPTID,
+			agent.ID,
+			capabilityID,
+			capabilityVersion,
+		).
+		Order("revision DESC").
+		First(&binding).Error
+	if errors.Is(bindingErr, gorm.ErrRecordNotFound) {
+		if !enabled {
+			return nil
+		}
+		binding = persistence.AgentCapabilityBinding{}
+	} else if bindingErr != nil {
+		return capabilityInternal("load Skill capability binding", bindingErr)
+	}
+
+	approval := model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_AUTO
+	if binding.BindingID != "" {
+		approval = model.CapabilityApprovalPolicy(binding.ApprovalPolicy)
+	}
+	_, err = s.capabilities.UpsertBinding(
+		ctx,
+		agent.OwnerActorPTID,
+		&model.UpsertAgentCapabilityBindingRequest{
+			Binding: &model.AgentCapabilityBinding{
+				BindingId:            binding.BindingID,
+				AgentId:              agent.ID,
+				CapabilityId:         capabilityID,
+				CapabilityVersion:    capabilityVersion,
+				Enabled:              enabled,
+				ApprovalPolicy:       approval,
+				ExpectedAgentVersion: uint64(agent.Version),
+			},
+			IdempotencyKey:          generateID("skill-binding"),
+			ExpectedBindingRevision: binding.Revision,
+		},
+	)
+	return err
 }
 
 // RecordSkillUsage updates usage statistics for skills that were loaded during
@@ -689,7 +797,6 @@ func (s *SkillService) toManifest(row *persistence.Skill) domain.SkillManifest {
 		Description: row.Description,
 		Content:     row.Content,
 		TrustLevel:  domain.TrustLevel(row.TrustLevel),
-		Enabled:     row.Enabled,
 		Version:     row.Version,
 		CreatedAt:   row.CreatedAt,
 		UpdatedAt:   row.UpdatedAt,
@@ -717,6 +824,30 @@ func (s *SkillService) toManifest(row *persistence.Skill) domain.SkillManifest {
 	}
 
 	return m
+}
+
+func (s *SkillService) skillBindingEnabled(
+	ctx context.Context,
+	db *gorm.DB,
+	row *persistence.Skill,
+) bool {
+	if db == nil || row == nil {
+		return false
+	}
+	var count int64
+	if err := db.WithContext(ctx).Model(&persistence.AgentCapabilityBinding{}).
+		Where(
+			"agent_id = ? AND capability_id = ? AND capability_version = ? AND enabled = ? AND tombstoned_at IS NULL",
+			row.AgentID,
+			"skill:"+row.ID,
+			strconv.Itoa(row.Version),
+			true,
+		).
+		Count(&count).Error; err != nil {
+		logger.Warnf(ctx, "failed to project Skill binding state: skill_id=%s err=%v", row.ID, err)
+		return false
+	}
+	return count > 0
 }
 
 func (s *SkillService) findByID(ctx context.Context, db *gorm.DB, agentID, skillID string) (*persistence.Skill, error) {
@@ -849,7 +980,7 @@ func (s *SkillService) RollbackSkill(ctx context.Context, agentID, skillID strin
 	}
 
 	updated, _, err := s.UpdateSkill(
-		ctx, agentID, skillID, nil, nil, &version.Content, nil,
+		ctx, agentID, skillID, nil, nil, &version.Content,
 	)
 	if err != nil {
 		return err
@@ -860,15 +991,6 @@ func (s *SkillService) RollbackSkill(ctx context.Context, agentID, skillID strin
 		skillID, targetVersion, updated.Version,
 	)
 	return nil
-}
-
-// ToggleSkill enables or disables a skill. Disabled skills are excluded from
-// BuildSkillIndex, effectively deactivating them without deletion.
-func (s *SkillService) ToggleSkill(ctx context.Context, agentID, skillID string, enabled bool) error {
-	_, _, err := s.UpdateSkill(
-		ctx, agentID, skillID, nil, nil, nil, &enabled,
-	)
-	return err
 }
 
 // hasRequiredTools returns true if all required tools are available.

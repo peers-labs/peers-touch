@@ -85,6 +85,13 @@ describe('Agent workbench ownership contract', () => {
     expect(agentRailSource).not.toContain('setSelectedAgent(agent.name)');
   });
 
+  it('keeps Agent row menu actions from dispatching row selection', () => {
+    expect(agentRailSource).toContain(
+      'onClick: ({ domEvent }) => domEvent.stopPropagation()',
+    );
+    expect(agentRailSource).toContain('onClick={(event) => event.stopPropagation()}');
+  });
+
   it('keeps Profile on identity documents and Station-backed extensions', () => {
     expect(profileSource).toContain("type ProfileSection = 'identity' | 'extensions'");
     expect(profileSource).toContain('CapabilitySourceKind.SKILL');

@@ -326,7 +326,7 @@ function CreateProviderModal({
         </Form.Item>
 
         <Form.Item name="logo" label={t('provider.menu.providerLogo')}>
-          <Input placeholder="https://example.com/logo.png" variant="filled" allowClear />
+          <Input placeholder={t('provider.menu.providerLogoPlaceholder')} variant="filled" allowClear />
         </Form.Item>
 
         <SectionTitle>{t('provider.menu.configInfo')}</SectionTitle>
@@ -336,7 +336,7 @@ function CreateProviderModal({
           label={t('provider.menu.proxyUrl')}
           rules={[{ required: true, message: t('provider.menu.proxyUrlRequired') }]}
         >
-          <Input placeholder="https://your-proxy-url.com/v1" variant="filled" />
+          <Input placeholder={t('provider.menu.proxyUrlPlaceholder')} variant="filled" />
         </Form.Item>
 
         <Form.Item name="api_key" label={t('provider.menu.apiKey')}>

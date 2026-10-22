@@ -25,13 +25,10 @@ const PAGE_ICONS: Record<string, string> = {
   home: 'Home',
   chat: 'MessageSquare',
   agent: 'Bot',
-  evaluation: 'FlaskConical',
   settings: 'Settings',
   search: 'Search',
   'agent-profile': 'UserCircle',
-  'agent-orchestration': 'Network',
   'agent-groups': 'Users',
-  marketplace: 'Store',
 };
 
 export function useCommandMenuItems(deps: CommandMenuDeps): GroupedCommands {
@@ -49,9 +46,7 @@ export function useCommandMenuItems(deps: CommandMenuDeps): GroupedCommands {
       { id: 'page:home', page: 'home', titleKey: 'agent.commandMenu.page.home' },
       { id: 'page:chat', page: 'chat', titleKey: 'agent.commandMenu.page.chat' },
       { id: 'page:agent', page: 'agent', titleKey: 'agent.commandMenu.page.agent' },
-      { id: 'page:evaluation', page: 'evaluation', titleKey: 'agent.commandMenu.page.evaluation' },
       { id: 'page:search', page: 'search', titleKey: 'agent.commandMenu.page.search' },
-      { id: 'page:marketplace', page: 'marketplace', titleKey: 'agent.commandMenu.page.marketplace' },
       { id: 'page:agent-groups', page: 'agent-groups', titleKey: 'agent.commandMenu.page.agentGroups' },
       { id: 'page:settings', page: 'settings', titleKey: 'agent.commandMenu.page.settings' },
     ];
@@ -122,6 +117,12 @@ export function useCommandMenuItems(deps: CommandMenuDeps): GroupedCommands {
         titleKey: 'agent.commandMenu.settings',
         icon: 'Settings',
         action: () => navigateToSettings('general'),
+      },
+      {
+        id: 'action:open-discover',
+        titleKey: 'agent.commandMenu.page.marketplace',
+        icon: 'Compass',
+        action: () => navigateToSettings('discover'),
       },
     ];
 

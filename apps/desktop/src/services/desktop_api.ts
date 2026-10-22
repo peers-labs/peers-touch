@@ -70,12 +70,14 @@ import type {
 } from '../gen/proto/domain/agent/agent_pb';
 import {
   ExportTurnDiagnosticsResponseSchema,
+  GetTurnAttributionsResponseSchema,
   ListTurnFeedbackResponseSchema,
   RecordFeedbackResponseSchema,
   ResetConversationRuntimeResponseSchema,
 } from '../gen/proto/domain/agent/agent_pb';
 import type {
   AdvanceCapabilityAcceptanceScenarioClockRequest,
+  AgentCommandCapabilitySnapshot,
   AgentPackageUnresolvedDependency,
   ArmCapabilityAcceptanceExecutorHookRequest,
   CapabilityCatalogIssue,
@@ -117,6 +119,7 @@ import {
   GetCapabilityOperationRequestSchema,
   GetCapabilityOperationResponseSchema,
   GetCapabilityReadinessResponseSchema,
+  GetAgentCommandCapabilitySnapshotResponseSchema,
   ImportAgentPackageRequestSchema,
   ImportAgentPackageResponseSchema,
   InterruptCapabilityAcceptanceWorkerRequestSchema,
@@ -234,6 +237,15 @@ export interface DesktopNativeHostEventInput {
   sessionUlid?: string;
   notificationId?: string;
   reason?: string;
+}
+
+export interface DesktopHealth {
+  readonly status: 'ok';
+  readonly clientForm: 'desktop';
+  readonly releaseTarget: 'desktop';
+  readonly processModel: 'tauri-desktop';
+  readonly hostOs: 'macos' | 'windows' | 'linux';
+  readonly sourceCommit: string;
 }
 
 // Always-quiet (regardless of mode): commands that fire many times per
@@ -466,6 +478,45 @@ async function invokeRustDataFromStatus<TInput, TOut>(
   const err = new RustCommandException(command, response.error);
   log.error('api', `Command error: ${command}`, { error: err.message, code: err.code });
   throw err;
+}
+
+const DESKTOP_HEALTH_KEYS = [
+  'clientForm',
+  'hostOs',
+  'processModel',
+  'releaseTarget',
+  'sourceCommit',
+  'status',
+] as const;
+
+function parseDesktopHealth(value: unknown): DesktopHealth {
+  if (
+    typeof value !== 'object'
+    || value === null
+    || Array.isArray(value)
+  ) {
+    throw new Error('desktop.platform.identityInvalid');
+  }
+
+  const health = value as Record<string, unknown>;
+  if (
+    health.status !== 'ok'
+    || health.clientForm !== 'desktop'
+    || health.releaseTarget !== 'desktop'
+    || health.processModel !== 'tauri-desktop'
+    || (
+      health.hostOs !== 'macos'
+      && health.hostOs !== 'windows'
+      && health.hostOs !== 'linux'
+    )
+    || typeof health.sourceCommit !== 'string'
+    || !/^[0-9a-f]{40}$/.test(health.sourceCommit)
+    || Object.keys(health).sort().join(',') !== DESKTOP_HEALTH_KEYS.join(',')
+  ) {
+    throw new Error('desktop.platform.identityInvalid');
+  }
+
+  return health as unknown as DesktopHealth;
 }
 
 async function invokeRustData<TInput, TOut>(
@@ -1927,7 +1978,6 @@ export interface LogTailResponse {
 // --- User preferences ---
 
 export interface UserPreferences {
-  pinned_applets?: string[];
   wide_screen?: boolean;
   user_name?: string;
   user_avatar?: string;
@@ -2506,7 +2556,6 @@ export interface SkillUpdateInput {
   name?: string;
   description?: string;
   content?: string;
-  enabled?: boolean;
 }
 
 export interface SkillToggleInput {
@@ -3596,8 +3645,6 @@ export interface AgentExecuteTurnInput {
   requested_budget?: AgentRuntimeBudgetInput;
   provider?: string;
   model?: string;
-  identity?: string;
-  agent_config_prompt?: string;
   effort?: string;
   thinking_mode?: AgentThinkingMode;
   context_window_size?: number;
@@ -3702,6 +3749,8 @@ export interface AgentCapabilityReadinessInput {
   agent_id: string;
   runtime_snapshot_id?: string;
   client_capability_session_id?: string;
+  provider_id?: string;
+  model_id?: string;
 }
 
 type SnakeCase<S extends string> =
@@ -5114,7 +5163,9 @@ export const api = {
   getContractVersion: () =>
     invokeRustDataFromStatus<void, { version: string }>('meta_contract_version'),
 
-  health: () => invokeRustDataFromStatus<void, { status: string }>('system_health'),
+  health: () =>
+    invokeRustDataFromStatus<void, unknown>('system_health')
+      .then(parseDesktopHealth),
 
   contextSnapshotGet: (input?: ContextSnapshotGetInput) =>
     invokeRustDataFromStatus<ContextSnapshotGetInput | void, Record<string, unknown>>('context_snapshot_get', input),
@@ -5693,6 +5744,13 @@ export const api = {
       { turn_id: turnId },
     ),
 
+  getAgentTurnAttributions: (turnIds: string[]) =>
+    invokeRustProto(
+      'agent_turn_attributions_get',
+      GetTurnAttributionsResponseSchema,
+      { turn_ids: turnIds },
+    ),
+
   listAgentTurnFeedback: (turnId: string) =>
     invokeRustProto(
       'agent_list_turn_feedback',
@@ -6168,7 +6226,6 @@ export const api = {
       name: data.name,
       description: data.description,
       content: data.content,
-      enabled: data.enabled,
     }),
 
   deleteSkill: (id: string) =>
@@ -6692,6 +6749,20 @@ export const api = {
     ).then((response) => {
       if (!response.snapshot) {
         throw new Error('agent.capabilityReadinessSnapshotMissing');
+      }
+      return response.snapshot;
+    }),
+
+  readAgentCommandCapabilitySnapshot: (
+    input: AgentCapabilityReadinessInput,
+  ): Promise<AgentCommandCapabilitySnapshot> =>
+    invokeRustProto(
+      'agent_command_capability_snapshot',
+      GetAgentCommandCapabilitySnapshotResponseSchema,
+      input,
+    ).then((response) => {
+      if (!response.snapshot) {
+        throw new Error('agent.commandCapabilitySnapshotMissing');
       }
       return response.snapshot;
     }),

@@ -53,6 +53,15 @@ import {
   type PrototypeChatModelProvider,
   type PrototypeChatModelId,
 } from '../../shared/prototypeAgentModels';
+import {
+  AgentCommandPalette,
+  type AgentCapabilityCommand,
+  type AgentCapabilityProjectionState,
+} from './AgentCommandPalette';
+import {
+  TurnAttribution,
+  type TurnAttributionEntry,
+} from './TurnAttribution';
 
 // ─────────────────────────────────────────────────────────────────────────
 // Ordinary-Agent chat workbench — prototype only.
@@ -75,7 +84,7 @@ interface Thread {
 }
 
 // An ordinary Agent the user can chat with. Threads, drafts and the selected
-// model are owned per agent. Creation is instant (reference-client Create Local
+// model are owned per agent. Creation is instant (reference Create Local
 // parity): the entity exists immediately and lands in its Profile Builder;
 // identity and extensions persist on change, with no blocking form.
 interface ChatAgent {
@@ -217,6 +226,7 @@ interface ChatMessage {
   artifact?: ArtifactRef;
   followUps?: string[];
   tokens?: number;
+  attribution?: TurnAttributionEntry[];
   // Continuation answers (ask replies) run as their own assistant message.
   fromAsk?: boolean;
   phase: 'thinking' | 'waiting' | 'streaming' | 'done' | 'error';
@@ -239,6 +249,68 @@ interface TurnSpec {
   artifact?: ArtifactRef;
   followUps: string[];
   tokens: number;
+}
+
+function buildTurnAttribution(
+  spec: TurnSpec,
+  attachments: Array<{ name: string }> = [],
+  capabilities: AgentCapabilityCommand[] = [],
+  toolExecuted = false,
+): TurnAttributionEntry[] {
+  const skill = capabilities.find((item) => item.kind === 'skill');
+  const toolStep = spec.steps.find((step) => step.kind === 'command');
+  const attachment = attachments[0];
+  return [
+    {
+      id: 'skill',
+      kind: 'skill',
+      name: skill?.name ?? 'No Skill selected',
+      version: skill ? `v${skill.version}` : 'snapshot v18',
+      outcome: skill ? 'included' : 'omitted',
+      reason: skill
+        ? 'Loaded from the version pinned to this Turn.'
+        : 'No enabled Skill matched this request.',
+    },
+    {
+      id: 'memory',
+      kind: 'memory',
+      name: 'Working preferences',
+      version: 'memory rev 12',
+      outcome: 'included',
+      reason: 'Applied the concise-response preference approved for this Agent.',
+    },
+    {
+      id: 'knowledge',
+      kind: 'knowledge',
+      name: 'Workspace architecture notes',
+      version: 'snapshot 2026-10-20',
+      outcome: 'truncated',
+      reason: 'The relevant section was included; lower-ranked sections exceeded the Turn budget.',
+    },
+    {
+      id: 'attachment',
+      kind: 'attachment',
+      name: attachment?.name ?? 'No attachment used',
+      version: attachment ? 'message attachment' : 'not present',
+      outcome: attachment ? 'included' : 'omitted',
+      reason: attachment
+        ? 'Read from the attachment bound to this Turn.'
+        : 'This Turn did not include an attachment.',
+    },
+    {
+      id: 'tool',
+      kind: 'tool',
+      name: toolStep?.label ?? 'No Tool executed',
+      version: toolStep ? 'tool manifest v7' : 'not invoked',
+      outcome: toolStep && toolExecuted ? 'included' : 'omitted',
+      reason:
+        toolStep && toolExecuted
+          ? 'The approved Tool result contributed to the response.'
+          : toolStep
+            ? 'The Tool was proposed but did not contribute a result.'
+            : 'This Turn completed without Tool execution.',
+    },
+  ];
 }
 
 interface Starter { prompt: string; icon: LucideIcon }
@@ -458,7 +530,7 @@ export function AgentChatPage({
   const [ultraNarrow, setUltraNarrow] = useState(false);
   const [railOpen, setRailOpen] = useState(true);
   // Roster. Seed with the built-in Agent; created Agents join instantly and
-  // are configured afterwards in the Profile Builder (reference-client parity).
+  // are configured afterwards in the Profile Builder (reference parity).
   const [agents, setAgents] = useState<ChatAgent[]>(() => {
     const stored = loadStoredAgents();
     return stored.some((agent) => agent.id === BUILTIN_AGENT_ID)
@@ -476,7 +548,7 @@ export function AgentChatPage({
   const [activeAgentId, setActiveAgentId] = useState<string>(BUILTIN_AGENT_ID);
   const [profileTargetId, setProfileTargetId] = useState<string | null>(null); // which agent the profile surface edits
   const [profileSection, setProfileSection] = useState<'identity' | 'extensions'>('identity');
-  // Reference-client parity: the expanded rail is always the Agent roster. Topics are
+  // Reference parity: the expanded rail is always the Agent roster. Topics are
   // contextual to the selected Agent and keep their own sibling rail.
   const [agentQuery, setAgentQuery] = useState('');
   const [agentDeleteTarget, setAgentDeleteTarget] = useState<ChatAgent | null>(null);
@@ -611,7 +683,9 @@ export function AgentChatPage({
 
   const closeMobileAgentPicker = useCallback(() => {
     setMobileAgentPickerOpen(false);
-    requestAnimationFrame(() => mobileAgentPickerTriggerRef.current?.focus());
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      mobileAgentPickerTriggerRef.current?.focus();
+    }));
   }, []);
 
   useLayoutEffect(() => {
@@ -780,7 +854,7 @@ export function AgentChatPage({
   }, [activeAgentId, threads]);
 
   // A roster-row selection always opens that Agent's Chat. Profile is an
-  // explicit row-menu action, matching the reference client instead of changing meaning
+  // explicit row-menu action, matching the reference instead of changing meaning
   // based on the surface that happened to be open.
   const pickAgent = (id: string) => {
     activateAgent(id);
@@ -828,7 +902,7 @@ export function AgentChatPage({
     setRailOpen((open) => !open);
   };
 
-  // Create Local parity (reference client): the Agent is created INSTANTLY with an
+  // Create Local parity (reference): the Agent is created INSTANTLY with an
   // auto-generated unique name, joins the roster, becomes active, and lands in
   // its Profile Builder workspace — no blocking "name it first" form. The
   // builder auto-saves; Back returns straight to the new Agent's chat.
@@ -878,7 +952,7 @@ export function AgentChatPage({
   };
 
   const openAgentProfile = (id: string) => {
-    // The reference client opens the builder with the Agent as context, and Back returns
+    // The reference opens the builder with the Agent as context, and Back returns
     // to that Agent's chat — activate it here so the two surfaces agree.
     setProfileTargetId(id);
     setProfileSection('identity');
@@ -917,7 +991,7 @@ export function AgentChatPage({
     });
   };
 
-  // Reference-client parity: non-default agents are deletable. Removal is a full
+  // Reference parity: non-default agents are deletable. Removal is a full
   // closed loop — roster record + order + per-agent profile/extension keys +
   // in-memory threads/drafts/timers all go away; the active surface falls
   // back to the built-in Agent. The built-in Agent has no delete affordance.
@@ -1024,7 +1098,21 @@ export function AgentChatPage({
       setAttachmentDrafts((previous) => ({ ...previous, [attachmentKey]: [] }));
     }
     const assistantId = uid('a');
-    const assistantMsg: ChatMessage = { id: assistantId, role: 'assistant', text: '', ts: nowTs, phase: 'thinking', steps: [] };
+    const spec = answerFor(text, useModel);
+    const assistantMsg: ChatMessage = {
+      id: assistantId,
+      role: 'assistant',
+      text: '',
+      ts: nowTs,
+      phase: 'thinking',
+      steps: [],
+      attribution: buildTurnAttribution(
+        spec,
+        submittedAttachments,
+        capabilityCommands,
+        !spec.approval,
+      ),
+    };
 
     if (!tid) {
       tid = uid('th');
@@ -1080,7 +1168,7 @@ export function AgentChatPage({
     setBusyId(tid);
     setActivityOpen((s) => new Set(s).add(assistantId));
     stopFlags.current.delete(tid);
-    runTurn(tid, assistantId, text, useModel);
+    runTurn(tid, assistantId, text, useModel, spec);
   };
 
   // Mark a failed turn: one typed error, busy cleared. Pre-acceptance failures
@@ -1110,8 +1198,14 @@ export function AgentChatPage({
     timers.current.add(handle);
   };
 
-  const runTurn = (tid: string, mid: string, prompt: string, useModel: ModelId) => {
-    const spec = answerFor(prompt, useModel);
+  const runTurn = (
+    tid: string,
+    mid: string,
+    prompt: string,
+    useModel: ModelId,
+    providedSpec?: TurnSpec,
+  ) => {
+    const spec = providedSpec ?? answerFor(prompt, useModel);
     const injected = injectedError;
     // Thinking phase, then gate / injected fault / normal stream.
     scheduleTurn(tid, 520, () => {
@@ -1191,7 +1285,21 @@ export function AgentChatPage({
   const launchAskContinuation = (tid: string, prompt: string, choice: string, spec: TurnSpec, appendBubble: boolean) => {
     const nowTs = Date.now();
     const newId = uid('a');
-    const contMsg: ChatMessage = { id: newId, role: 'assistant', text: '', ts: nowTs, phase: 'thinking', steps: [], fromAsk: true };
+    const contSpec: TurnSpec = {
+      ...spec,
+      artifact: undefined,
+      text: continuationText(prompt, choice),
+    };
+    const contMsg: ChatMessage = {
+      id: newId,
+      role: 'assistant',
+      text: '',
+      ts: nowTs,
+      phase: 'thinking',
+      steps: [],
+      fromAsk: true,
+      attribution: buildTurnAttribution(contSpec, [], capabilityCommands),
+    };
     const extra: ChatMessage[] = appendBubble
       ? [{ id: uid('u'), role: 'user', text: choice, ts: nowTs, phase: 'done' }, contMsg]
       : [contMsg];
@@ -1203,7 +1311,6 @@ export function AgentChatPage({
     stopFlags.current.delete(tid);
     scheduleTurn(tid, 460, () => {
       const steps: ActivityStep[] = [{ id: 'th', kind: 'thought', label: `Used your answer: ${choice}` }];
-      const contSpec: TurnSpec = { ...spec, artifact: undefined, text: continuationText(prompt, choice) };
       patchMessage(tid, newId, { steps, phase: 'streaming' });
       streamSpec(tid, newId, contSpec, contSpec.text);
     });
@@ -1249,6 +1356,12 @@ export function AgentChatPage({
       ts: Date.now(),
       phase: 'thinking',
       steps: [],
+      attribution: buildTurnAttribution(
+        spec,
+        origin?.attachments ?? [],
+        capabilityCommands,
+        approved,
+      ),
     };
     patchThread(tid, (thread) => ({
       ...thread,
@@ -1346,12 +1459,26 @@ export function AgentChatPage({
     setDrafts((d) => (d[active.id] === lastUser.text ? { ...d, [active.id]: '' } : d));
     const nowTs = Date.now();
     const assistantId = uid('a');
-    const assistantMsg: ChatMessage = { id: assistantId, role: 'assistant', text: '', ts: nowTs, phase: 'thinking', steps: [] };
+    const spec = answerFor(lastUser.text, useModel);
+    const assistantMsg: ChatMessage = {
+      id: assistantId,
+      role: 'assistant',
+      text: '',
+      ts: nowTs,
+      phase: 'thinking',
+      steps: [],
+      attribution: buildTurnAttribution(
+        spec,
+        lastUser.attachments,
+        capabilityCommands,
+        !spec.approval,
+      ),
+    };
     patchThread(active.id, (t) => ({ ...t, messages: [...t.messages, assistantMsg] }));
     setBusyId(active.id);
     setActivityOpen((s) => new Set(s).add(assistantId));
     stopFlags.current.delete(active.id);
-    runTurn(active.id, assistantId, lastUser.text, useModel);
+    runTurn(active.id, assistantId, lastUser.text, useModel, spec);
   };
 
   // Edit-and-resend: keep the messages before the edited prompt, replace the
@@ -1366,7 +1493,21 @@ export function AgentChatPage({
     const nowTs = Date.now();
     const assistantId = uid('a');
     const userMsg: ChatMessage = { id: uid('u'), role: 'user', text: trimmed, ts: nowTs, phase: 'done' };
-    const assistantMsg: ChatMessage = { id: assistantId, role: 'assistant', text: '', ts: nowTs, phase: 'thinking', steps: [] };
+    const spec = answerFor(trimmed, active.model);
+    const assistantMsg: ChatMessage = {
+      id: assistantId,
+      role: 'assistant',
+      text: '',
+      ts: nowTs,
+      phase: 'thinking',
+      steps: [],
+      attribution: buildTurnAttribution(
+        spec,
+        [],
+        capabilityCommands,
+        !spec.approval,
+      ),
+    };
     patchThread(active.id, (t) => ({
       ...t,
       messages: [...t.messages.slice(0, idx), userMsg, assistantMsg],
@@ -1376,7 +1517,7 @@ export function AgentChatPage({
     setBusyId(active.id);
     setActivityOpen((s) => new Set(s).add(assistantId));
     stopFlags.current.delete(active.id);
-    runTurn(active.id, assistantId, trimmed, active.model);
+    runTurn(active.id, assistantId, trimmed, active.model, spec);
   };
 
   const togglePin = (id: string) =>
@@ -1502,7 +1643,25 @@ export function AgentChatPage({
       return n;
     });
 
-  const slashCommands = listAgentSlashCommands(activeAgent.id);
+  const capabilityCommands: AgentCapabilityCommand[] = listAgentSlashCommands(
+    activeAgent.id,
+  ).map((command) => ({
+    ...command,
+    version: command.kind === 'skill' ? '1.4.2' : '2.1.0',
+  }));
+  const requestedCapabilityState =
+    reviewMode && typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search).get('agentCapabilityState')
+      : null;
+  const capabilityProjectionState: AgentCapabilityProjectionState =
+    requestedCapabilityState === 'stale'
+    || requestedCapabilityState === 'unavailable'
+    || requestedCapabilityState === 'empty'
+    || requestedCapabilityState === 'ready'
+      ? requestedCapabilityState
+      : capabilityCommands.length > 0
+        ? 'ready'
+        : 'empty';
   const agentThreads = threads.filter((t) => t.agentId === activeAgent.id);
   const filtered = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -1545,7 +1704,7 @@ export function AgentChatPage({
   return (
     <div ref={rootRef} data-testid="desktop-shell-agent-chat" style={S.root}>
       <style>{AGENT_CHAT_CSS}</style>
-      {/* Reference-client topology, Peers visual identity: the Agent roster remains
+      {/* Reference topology, Peers visual identity: the Agent roster remains
           module-owned; Chat adds a sibling Topic rail, while Profile does not. */}
       <aside
         data-expanded={railOpen}
@@ -1907,7 +2066,10 @@ export function AgentChatPage({
                 busy={busyId === active.id}
                 askActive={waitingAsk}
                 agentName={activeAgent.name}
-                slashItems={slashCommands}
+                capabilityItems={capabilityCommands}
+                capabilityProjectionState={capabilityProjectionState}
+                compactPalette={ultraNarrow}
+                onClearTopic={newChat}
                 usedTokens={active.messages.reduce((sum, m) => sum + (m.tokens ?? 0), 0)}
                 onChange={(v) => activeId && setDrafts((d) => ({ ...d, [activeId]: v }))}
                 onSend={() => startTurn(composerValue, model, active.id)}
@@ -1929,7 +2091,10 @@ export function AgentChatPage({
               onModel={(id) => setActiveModel(id)}
               busy={false}
               agentName={activeAgent.name}
-              slashItems={slashCommands}
+              capabilityItems={capabilityCommands}
+              capabilityProjectionState={capabilityProjectionState}
+              compactPalette={ultraNarrow}
+              onClearTopic={newChat}
               usedTokens={0}
               onChange={(v) => setDrafts((d) => ({ ...d, [newDraftKey]: v }))}
               onSend={() => startTurn(drafts[newDraftKey] ?? '', model)}
@@ -2030,7 +2195,7 @@ export function AgentChatPage({
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// AgentCreateMenu — roster header "+" (reference-client My Agents parity).
+// AgentCreateMenu — roster header "+" (reference My Agents parity).
 // Create Local: instant create + Profile Builder; Create Orchestrator: the
 // orchestration canvas. Import / From Hub are cut — no contract behind them.
 // ─────────────────────────────────────────────────────────────────────────
@@ -2155,7 +2320,7 @@ function AgentCreateMenu({ triggerStyle, triggerIcon, onLocal, onOrchestrator, o
 // ─────────────────────────────────────────────────────────────────────────
 // Agent roster — the expanded rail's permanent information architecture.
 // Rows are a list, never chips: initial tile + name + description; the trailing
-// "⋯" opens an anchored reference-client-style action menu. Start New Topic and Search
+// "⋯" opens an anchored reference-style action menu. Start New Topic and Search
 // stay in the selected Agent's Topic rail, so row actions never cause hidden
 // cross-surface jumps. The built-in Agent is pinned and cannot be deleted.
 // ─────────────────────────────────────────────────────────────────────────
@@ -2441,7 +2606,7 @@ function DeleteAgentDialog({ name, onCancel, onConfirm }: {
   );
 }
 
-// Centered destructive confirmation (benchmark: reference-client topic delete modal).
+// Centered destructive confirmation (benchmark: reference topic delete modal).
 // Portalled to body; the chat subtree is inert while it is open. Focus starts
 // on the safe action, Tab cycles inside, Esc/scrim cancels and returns focus
 // to the opener (handled by onCancel).
@@ -2825,7 +2990,7 @@ function MessageRow({
   onEditPrompt: (mid: string, next: string) => void;
   onOpenArtifact: (artifact: ArtifactRef, opener: HTMLElement) => void;
 }) {
-  // Inline edit-and-resend (reference-client-aligned): replacing a sent prompt
+  // Inline edit-and-resend (reference-aligned): replacing a sent prompt
   // truncates the thread there and re-runs from the edited message.
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(message.text);
@@ -2991,6 +3156,9 @@ function MessageRow({
           {renderRich(message.text)}
           {streaming && <span className="pt-stream-caret" aria-hidden />}
         </div>
+      )}
+      {done && message.attribution && (
+        <TurnAttribution entries={message.attribution} />
       )}
 
       {errored && message.turnError && (
@@ -3303,19 +3471,13 @@ function renderInline(line: string): React.ReactNode {
 // Grounded composer (per docs/client/common/ui-identity/patterns/composer.md)
 // ─────────────────────────────────────────────────────────────────────────
 
-interface ComposerSlashItem {
-  id: string;
-  kind: 'skill' | 'mcp';
-  name: string;
-  token: string;
-  description: string;
-}
-
 function Composer({
   attachments, onAttachmentsChange,
   onOpenExtensions,
   onReturnToRunningTopic,
-  value, model, modelProviders, busy, askActive, agentName, slashItems, usedTokens = 0,
+  value, model, modelProviders, busy, askActive, agentName,
+  capabilityItems, capabilityProjectionState, compactPalette, onClearTopic,
+  usedTokens = 0,
   onChange, onSend, onStop, onModel, floatingDraft,
 }: {
   attachments: File[];
@@ -3328,7 +3490,10 @@ function Composer({
   busy: boolean;
   askActive?: boolean;
   agentName: string;
-  slashItems: ComposerSlashItem[];
+  capabilityItems: AgentCapabilityCommand[];
+  capabilityProjectionState: AgentCapabilityProjectionState;
+  compactPalette: boolean;
+  onClearTopic: () => void;
   usedTokens?: number;
   onChange: (v: string) => void;
   onSend: () => void;
@@ -3341,7 +3506,6 @@ function Composer({
   const modelBtnRef = useRef<HTMLButtonElement>(null);
   const slashBtnRef = useRef<HTMLButtonElement>(null);
   const modelListRef = useRef<HTMLDivElement>(null);
-  const slashListRef = useRef<HTMLDivElement>(null);
   const [focused, setFocused] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
   const [slashOpen, setSlashOpen] = useState(false);
@@ -3367,22 +3531,22 @@ function Composer({
     setExpandedModelProviders((previous) => new Set(previous).add(current.providerId));
   }, [current.providerId]);
 
-  // Close both popovers on Escape (restore focus to their triggers).
+  // The model tree owns its Escape/focus loop. AgentCommandPalette owns the
+  // equivalent command semantics so stale/empty states cannot diverge here.
   useLayoutEffect(() => {
-    if (!modelOpen && !slashOpen) return;
+    if (!modelOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       e.stopPropagation();
-      if (modelOpen) { setModelOpen(false); modelBtnRef.current?.focus(); }
-      else { setSlashOpen(false); slashBtnRef.current?.focus(); }
+      setModelOpen(false);
+      modelBtnRef.current?.focus();
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [modelOpen, slashOpen]);
+  }, [modelOpen]);
   useLayoutEffect(() => {
     if (modelOpen) modelListRef.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.focus();
-    if (slashOpen) slashListRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
-  }, [modelOpen, slashOpen]);
+  }, [modelOpen]);
 
   const closePopovers = () => {
     setModelOpen(false);
@@ -3400,7 +3564,7 @@ function Composer({
     else if (e.key === 'Tab') {
       e.preventDefault();
       closePopovers();
-      (scope === slashListRef ? slashBtnRef : modelBtnRef).current?.focus();
+      modelBtnRef.current?.focus();
     }
   };
 
@@ -3432,6 +3596,15 @@ function Composer({
     requestAnimationFrame(() => taRef.current?.focus());
   };
 
+  const handleComposerChange = (next: string) => {
+    onChange(next);
+    const line = next.slice(next.lastIndexOf('\n') + 1);
+    if (line === '/') {
+      setModelOpen(false);
+      setSlashOpen(true);
+    }
+  };
+
   const onFiles = (files: FileList | null) => {
     if (files && files.length) onAttachmentsChange([...attachments, ...Array.from(files)].slice(0, 6));
     if (fileRef.current) fileRef.current.value = '';
@@ -3457,7 +3630,7 @@ function Composer({
           <textarea
             ref={taRef}
             value={value}
-            onChange={(e) => onChange(e.target.value)}
+            onChange={(e) => handleComposerChange(e.target.value)}
             onKeyDown={onKey}
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
@@ -3485,7 +3658,7 @@ function Composer({
           )}
 
           <div style={S.composerToolbar}>
-            {/* Left: slash commands + upload (reference-client DEFAULT_LEFT_ACTIONS) */}
+            {/* Left: slash commands + upload (reference DEFAULT_LEFT_ACTIONS) */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <div style={{ position: 'relative' }}>
                 <button
@@ -3501,34 +3674,21 @@ function Composer({
                   <span style={{ fontWeight: 700, fontSize: 14, lineHeight: 1 }}>/</span>
                 </button>
                 {slashOpen && (
-                  <>
-                    <button type="button" aria-hidden tabIndex={-1} style={S.popScrim} onClick={() => { setSlashOpen(false); slashBtnRef.current?.focus(); }} />
-                    <div ref={slashListRef} role="menu" aria-label="Commands and Skills" style={S.slashMenu} onKeyDown={(e) => listboxKeys(e, slashListRef)}>
-                      <div style={S.slashHead}>Commands &amp; Skills</div>
-                      {slashItems.length === 0 ? (
-                        <div style={S.slashEmpty}>
-                          No tools enabled for {agentName}.
-                          <button type="button" role="menuitem" style={S.slashItem} onClick={() => { closePopovers(); onOpenExtensions(); }}>
-                            Enable extensions
-                          </button>
-                        </div>
-                      ) : slashItems.map((it) => (
-                        <button
-                          key={it.id}
-                          type="button"
-                          role="menuitem"
-                          style={S.slashItem}
-                          onClick={() => insertSlash(it.token)}
-                        >
-                          {it.kind === 'skill' ? <Sparkles size={13} color={T.textTertiary} /> : <PlugIcon />}
-                          <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                            <span style={{ fontSize: 12.5, fontWeight: 600, color: T.text }}>{it.name}</span>
-                            <span style={S.slashItemDesc}>{it.description}</span>
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  </>
+                  <AgentCommandPalette
+                    agentName={agentName}
+                    compact={compactPalette}
+                    items={capabilityItems}
+                    open={slashOpen}
+                    projectionState={capabilityProjectionState}
+                    triggerRef={slashBtnRef}
+                    onClear={onClearTopic}
+                    onClose={() => setSlashOpen(false)}
+                    onInsertCapability={insertSlash}
+                    onOpenExtensions={() => {
+                      closePopovers();
+                      onOpenExtensions();
+                    }}
+                  />
                 )}
               </div>
 
@@ -3667,11 +3827,6 @@ function Composer({
       </div>
     </div>
   );
-}
-
-// Small plug glyph for MCP tools (avoids pulling another lucide symbol).
-function PlugIcon() {
-  return <TerminalSquare size={13} color={T.textTertiary} />;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -3947,7 +4102,7 @@ const S: Record<string, any> = {
   activityList: { display: 'flex', flexDirection: 'column', gap: 4, margin: '0 0 10px' },
   activityItem: { display: 'flex', alignItems: 'flex-start', gap: 8, padding: '6px 10px', borderRadius: 8, background: T.surface, fontSize: 12, color: T.textSecondary },
   activityLabel: { fontWeight: 500, minWidth: 0, overflowWrap: 'anywhere' },
-  // Commands always wrap (reference client: pre-wrap + break-all); never clipped, since
+  // Commands always wrap (reference: pre-wrap + break-all); never clipped, since
   // the row is the audit record of what was actually considered.
   mono: { fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 12, color: T.textSecondary, background: T.white, border: `1px solid ${T.border}`, borderRadius: T.radiusSm, padding: '1px 6px', whiteSpace: 'pre-wrap', wordBreak: 'break-all', minWidth: 0 },
 
@@ -4048,13 +4203,6 @@ const S: Record<string, any> = {
   composerToolbar: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   composerIconBtn: (active: boolean) => ({ width: 32, height: 32, borderRadius: 8, border: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: active ? T.fillTertiary : 'transparent', color: active ? T.primary : T.textSecondary, cursor: 'pointer', flexShrink: 0 }),
   popScrim: { position: 'fixed', inset: 0, zIndex: 19, border: 0, background: 'transparent', padding: 0, cursor: 'default' },
-  // Slash commands & skills
-  slashMenu: { position: 'absolute', bottom: 38, left: 0, width: 264, maxHeight: 280, overflowY: 'auto', background: T.white, border: `1px solid ${T.borderSoft}`, borderRadius: 10, boxShadow: T.shadowMd, padding: 4, zIndex: 20, display: 'flex', flexDirection: 'column', gap: 1 },
-  slashHead: { fontSize: 11, fontWeight: 700, color: T.textTertiary, textTransform: 'uppercase', letterSpacing: 0.4, padding: '6px 8px 4px' },
-  slashItem: { display: 'flex', alignItems: 'center', gap: 9, width: '100%', border: 0, borderRadius: 8, background: 'transparent', padding: '8px 8px', cursor: 'pointer', textAlign: 'left' },
-  slashItemDesc: { fontSize: 11, color: T.textTertiary, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
-  slashEmpty: { fontSize: 11.5, color: T.textTertiary, lineHeight: 1.5, padding: '6px 8px 8px' },
-
   // Attachments
   attachRow: { display: 'flex', flexWrap: 'wrap', gap: 6 },
   attachChip: { display: 'inline-flex', alignItems: 'center', gap: 6, maxWidth: 220, padding: '4px 6px 4px 8px', borderRadius: 8, border: `1px solid ${T.borderSoft}`, background: T.white, color: T.textSecondary },

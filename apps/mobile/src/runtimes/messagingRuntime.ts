@@ -213,9 +213,9 @@ export function createMessagingRuntimeDescriptor(): MobileRuntimeDescriptor {
   };
 }
 
-export async function wakeActiveMessagingSession(): Promise<void> {
+export async function wakeActiveMessagingSession(): Promise<MessagingReconcileResult | null> {
   try {
-    await reconcileActiveMessagingSession();
+    return await reconcileActiveMessagingSession();
   } catch (error) {
     reportRuntimeError('worker-cycle', error);
     throw error;

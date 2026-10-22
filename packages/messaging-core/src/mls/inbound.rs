@@ -7,7 +7,7 @@ use crate::contracts::{
     MlsMessageProjection, MlsRetirementReceiveCommit, MlsSenderTransitionReceiveCommit,
     MlsTransitionReceiveCommit, ReceiveCommitResult,
 };
-use crate::inbox::ClaimedItemConsumer;
+use crate::inbox::{ClaimedItemConsumer, CommandResultLifecycle, MlsItemConsumer};
 use crate::proto::chat::{
     conversation_event, ConversationAuthoritySnapshot, ConversationCreatedFact, ConversationEvent,
     CryptoEndpoint as ProtoCryptoEndpoint, DeviceConsumptionReceipt, DurableDeviceInboxItem,
@@ -21,6 +21,87 @@ use prost::Message;
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use std::sync::Arc;
+
+pub struct MlsItemProcessor<R: MlsInboundRepository> {
+    manager: Arc<MlsGroupManager>,
+    application: MlsApplicationProcessor<R>,
+    transition: MlsTransitionProcessor<R>,
+    retirement: MlsRetirementProcessor<R>,
+    sender_transition: MlsSenderTransitionProcessor<R>,
+}
+
+impl<R: MlsInboundRepository> MlsItemProcessor<R> {
+    pub fn new(
+        manager: Arc<MlsGroupManager>,
+        store: Arc<R>,
+        endpoint: CryptoEndpoint,
+        clock: fn() -> i64,
+    ) -> Result<Self, String> {
+        Ok(Self {
+            manager: manager.clone(),
+            application: MlsApplicationProcessor::new(
+                manager.clone(),
+                store.clone(),
+                endpoint.clone(),
+                clock,
+            )?,
+            transition: MlsTransitionProcessor::new(
+                manager.clone(),
+                store.clone(),
+                endpoint.clone(),
+                clock,
+            )?,
+            retirement: MlsRetirementProcessor::new(
+                manager.clone(),
+                store.clone(),
+                endpoint.clone(),
+                clock,
+            )?,
+            sender_transition: MlsSenderTransitionProcessor::new(manager, store, endpoint, clock)?,
+        })
+    }
+}
+
+impl<R: MlsInboundRepository> MlsItemConsumer for MlsItemProcessor<R> {
+    fn consume_application(
+        &self,
+        item: &DurableDeviceInboxItem,
+        consumer_epoch: u64,
+    ) -> Result<(), String> {
+        self.application.consume(item, consumer_epoch)
+    }
+
+    fn consume_transition(
+        &self,
+        item: &DurableDeviceInboxItem,
+        consumer_epoch: u64,
+    ) -> Result<(), String> {
+        self.transition.consume(item, consumer_epoch)
+    }
+
+    fn consume_retirement(
+        &self,
+        item: &DurableDeviceInboxItem,
+        consumer_epoch: u64,
+    ) -> Result<(), String> {
+        self.retirement.consume(item, consumer_epoch)
+    }
+
+    fn consume_sender_transition(
+        &self,
+        item: &DurableDeviceInboxItem,
+        consumer_epoch: u64,
+    ) -> Result<(), String> {
+        self.sender_transition.consume(item, consumer_epoch)
+    }
+}
+
+impl<R: MlsInboundRepository> CommandResultLifecycle for MlsItemProcessor<R> {
+    fn discard_pending_transition(&self, conversation_id: &str, transition_id: &str) {
+        self.manager
+            .discard_pending_transition_if_matches(conversation_id, transition_id);
+    }
+}
 
 pub struct MlsApplicationProcessor<R: MlsInboundRepository> {
     manager: Arc<MlsGroupManager>,

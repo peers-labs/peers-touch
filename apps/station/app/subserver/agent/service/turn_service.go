@@ -112,7 +112,9 @@ type TurnConfig struct {
 	RuntimeProfileID          string
 	PinnedRuntimeSnapshot     *model.RuntimeSnapshot
 	PinnedReadinessSnapshot   *model.CapabilityReadinessSnapshot
+	PinnedAgentDefinition     *domain.Agent
 	ExpectedAgentVersion      uint64
+	AgentDefinitionVersion    uint64
 	Attachments               []*model.AgentAttachmentRef
 	AdmittedAttachments       []AdmittedAttachment
 	RotationStrategy          domain.RotationStrategy
@@ -338,7 +340,9 @@ func (s *TurnService) PreflightTurn(
 	if err != nil {
 		return err
 	}
-	s.resolveAgentDefaults(ctx, config)
+	if err := s.resolveAgentDefaults(ctx, config); err != nil {
+		return err
+	}
 	if s.admissionResolver == nil {
 		return errcode.New(
 			errcode.AgentInvalidSourceState,
@@ -502,10 +506,12 @@ func (s *TurnService) StartEvaluationTurn(
 	admission *model.TurnAdmission,
 	runtimeSnapshot *model.RuntimeSnapshot,
 	readinessSnapshot *model.CapabilityReadinessSnapshot,
+	agentDefinition *domain.Agent,
 	expectedAgentVersion uint64,
 ) bool {
 	if request == nil || admission == nil || runtimeSnapshot == nil ||
-		readinessSnapshot == nil || expectedAgentVersion == 0 {
+		readinessSnapshot == nil || agentDefinition == nil ||
+		expectedAgentVersion == 0 {
 		return false
 	}
 	if admission.GetStatus() !=
@@ -543,6 +549,8 @@ func (s *TurnService) StartEvaluationTurn(
 		config.PinnedReadinessSnapshot = proto.Clone(
 			readinessSnapshot,
 		).(*model.CapabilityReadinessSnapshot)
+		pinnedDefinition := *agentDefinition
+		config.PinnedAgentDefinition = &pinnedDefinition
 		config.ExpectedAgentVersion = expectedAgentVersion
 		if _, err := s.ExecuteTurn(ctx, config, request.GetUserInput()); err != nil {
 			logger.Warnf(
@@ -751,8 +759,6 @@ func (s *TurnService) queuedTurnConfig(
 		AgentID:                   request.GetAgentId(),
 		ActorID:                   actorID,
 		ConversationID:            request.GetConversationId(),
-		Identity:                  request.GetIdentity(),
-		AgentConfigPrompt:         request.GetAgentConfigPrompt(),
 		ContextWindowSize:         contextWindowSize,
 		MaxRetries:                maxRetries,
 		Provider:                  request.GetProvider(),
@@ -1394,13 +1400,9 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		return nil, settleAdmissionFailure("delegation depth rejected", cause)
 	}
 
-	// Resolve agent identity/config defaults from DB when not provided per-turn.
-	if config.Identity == "" ||
-		config.AgentConfigPrompt == "" ||
-		config.Provider == "" ||
-		config.Model == "" ||
-		config.ThinkingMode == "" {
-		s.resolveAgentDefaults(ctx, config)
+	// Resolve the typed Station AgentDefinition before provider execution.
+	if err := s.resolveAgentDefaults(ctx, config); err != nil {
+		return nil, settleAdmissionFailure("AgentDefinition rejected", err)
 	}
 	thinkingMode, err := normalizeThinkingMode(config.ThinkingMode)
 	if err != nil {
@@ -1651,9 +1653,12 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 
 	assemblyResult, err := s.promptAssembly.AssembleTurnContext(
 		ctx,
-		config.AgentID,
-		config.Identity,
-		config.AgentConfigPrompt,
+		AgentPromptDefinition{
+			AgentID:           config.AgentID,
+			Version:           config.AgentDefinitionVersion,
+			IdentityPrompt:    config.Identity,
+			AgentConfigPrompt: config.AgentConfigPrompt,
+		},
 		config.AvailableTools,
 		processedInput,
 		db,
@@ -2213,9 +2218,12 @@ func (s *TurnService) runCompression(
 	}
 	freshAssembly, freshErr := s.promptAssembly.AssembleTurnContext(
 		ctx,
-		config.AgentID,
-		config.Identity,
-		config.AgentConfigPrompt,
+		AgentPromptDefinition{
+			AgentID:           config.AgentID,
+			Version:           config.AgentDefinitionVersion,
+			IdentityPrompt:    config.Identity,
+			AgentConfigPrompt: config.AgentConfigPrompt,
+		},
 		config.AvailableTools,
 		currentInput,
 		db,
@@ -3198,21 +3206,14 @@ func toolSchemaContextSegment(
 	}
 	sourceRefs := make([]string, 0, len(definitions))
 	for _, definition := range definitions {
-		capability, ok := authorized.Tool(definition.Name)
-		if !ok {
+		refs := authorized.ToolSchemaSourceRefs(definition.Name)
+		if len(refs) == 0 {
 			return nil, 0, fmt.Errorf(
 				"Tool schema %q is not authorized by the pinned snapshot",
 				definition.Name,
 			)
 		}
-		sourceRefs = append(
-			sourceRefs,
-			fmt.Sprintf(
-				"capability:%s@%s",
-				capability.Manifest.GetCapabilityId(),
-				capability.Manifest.GetVersion(),
-			),
-		)
+		sourceRefs = append(sourceRefs, refs...)
 	}
 	tokens := uint64((len(encoded) + 3) / 4)
 	return &ContextSegment{
@@ -3444,7 +3445,10 @@ func (s *TurnService) validateProviderToolCallsBeforePersistence(
 				nil,
 			)
 		}
-		if _, ok := config.AuthorizedCapabilities.Tool(toolCall.ToolName); !ok {
+		if _, ok := config.AuthorizedCapabilities.ResolveToolCall(
+			toolCall.ToolName,
+			toolCall.Arguments,
+		); !ok {
 			toolVersion := unregisteredProviderToolVersion
 			if s != nil && s.toolRegistry != nil {
 				if version, registered := s.toolRegistry.ManifestVersion(
@@ -3625,7 +3629,10 @@ func (s *TurnService) processToolCalls(
 				Iteration:  nextIteration,
 			})
 
-			authorized, ok := config.AuthorizedCapabilities.Tool(tc.ToolName)
+			authorized, ok := config.AuthorizedCapabilities.ResolveToolCall(
+				tc.ToolName,
+				tc.Arguments,
+			)
 			if !ok {
 				return iterations, false, capabilityStateError(
 					"tool is not authorized by the admitted capability set",
@@ -4258,6 +4265,12 @@ func (s *TurnService) executeReadyStationTools(ctx context.Context) error {
 			if interrupted {
 				return errCapabilityAcceptanceWorkerInterrupted
 			}
+			if err := s.persistAppliedStationToolContextEffects(
+				ctx,
+				claim,
+			); err != nil {
+				return err
+			}
 			if _, err := s.toolDispatch.CompleteStationToolExecution(
 				ctx,
 				claim,
@@ -4436,10 +4449,11 @@ func (s *TurnService) executeReadyStationTools(ctx context.Context) error {
 				result := s.toolRegistry.Dispatch(
 					toolCtx,
 					&domain.ToolCallMeta{
-						ActorID:        claim.ActorID,
-						AgentID:        batch.AgentID,
-						ConversationID: batch.ConversationID,
-						TurnID:         claim.TurnID,
+						ActorID:          claim.ActorID,
+						AgentID:          batch.AgentID,
+						ConversationID:   batch.ConversationID,
+						TurnID:           claim.TurnID,
+						AuthorizedSkills: config.AuthorizedCapabilities.SkillRefs(),
 					},
 					call.ToolName,
 					call.Arguments,
@@ -4501,6 +4515,12 @@ func (s *TurnService) executeReadyStationTools(ctx context.Context) error {
 		if handled {
 			continue
 		}
+		if err := s.persistAppliedStationToolContextEffects(
+			ctx,
+			claim,
+		); err != nil {
+			return err
+		}
 		if _, err := s.toolDispatch.CompleteStationToolExecution(
 			ctx,
 			claim,
@@ -4510,6 +4530,65 @@ func (s *TurnService) executeReadyStationTools(ctx context.Context) error {
 			return err
 		}
 	}
+}
+
+func (s *TurnService) persistAppliedStationToolContextEffects(
+	ctx context.Context,
+	claim *persistence.ToolCall,
+) error {
+	if claim == nil ||
+		claim.ToolName != "skill_view" ||
+		claim.StationReceiptStatus != persistence.ToolReceiptStatusApplied {
+		return nil
+	}
+	skillID, found := strings.CutPrefix(claim.CapabilityID, "skill:")
+	version, err := strconv.Atoi(claim.SchemaVersion)
+	if !found || strings.TrimSpace(skillID) == "" || err != nil || version <= 0 {
+		return capabilityStateError(
+			"applied skill_view has invalid pinned Skill lineage",
+			err,
+		)
+	}
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return err
+	}
+	var batch persistence.ToolBatch
+	if err := db.WithContext(ctx).
+		Select("agent_id").
+		Where("id = ? AND actor_id = ?", claim.ToolBatchID, claim.ActorID).
+		First(&batch).Error; err != nil {
+		return capabilityStateError(
+			"applied skill_view ToolBatch is unavailable",
+			err,
+		)
+	}
+	var skillVersion persistence.SkillVersion
+	if err := db.WithContext(ctx).
+		Where(
+			"skill_id = ? AND agent_id = ? AND version = ?",
+			skillID,
+			batch.AgentID,
+			version,
+		).
+		First(&skillVersion).Error; err != nil {
+		return capabilityStateError(
+			"applied skill_view Skill body version is unavailable",
+			err,
+		)
+	}
+	if err := s.upsertContextLedgerSegment(
+		ctx,
+		claim.AttemptID,
+		contextSegmentForSkillBody(&domain.SkillManifest{
+			SkillID: skillID,
+			Version: version,
+			Content: skillVersion.Content,
+		}),
+	); err != nil {
+		return fmt.Errorf("persist applied Skill body in ContextLedger: %w", err)
+	}
+	return nil
 }
 
 func (s *TurnService) loadToolBatchRuntimeConfig(
@@ -5725,125 +5804,6 @@ func (s *TurnService) appendClientToolResultsToTrace(
 	return nil
 }
 
-func (s *TurnService) recordToolOutcome(
-	ctx context.Context,
-	config *TurnConfig,
-	turnID string,
-	trace *domain.TurnTrace,
-	messages *[]domain.Message,
-	callID string,
-	tc toolCallEntry,
-	toolResult string,
-	toolErr error,
-	duration time.Duration,
-	iteration int,
-	persist bool,
-) error {
-	resultContent := toolResult
-	if toolErr != nil {
-		resultContent = fmt.Sprintf("[tool_error] %s: %v", tc.ToolName, toolErr)
-		logger.Warnf(ctx, "tool call failed: turn_id=%s tool=%s err=%v", turnID, tc.ToolName, toolErr)
-	}
-	event := TurnEvent{
-		Type:       "tool_result",
-		ToolCallID: callID,
-		ToolName:   tc.ToolName,
-		Result:     resultContent,
-		Iteration:  iteration,
-	}
-	if toolErr != nil {
-		event.Error = toolErr.Error()
-	}
-	if err := s.emitTurnEvent(ctx, config, turnID, event); err != nil {
-		return err
-	}
-
-	if tc.ToolName == "skill_view" && toolErr == nil {
-		var viewArgs struct {
-			Name string `json:"name"`
-		}
-		if json.Unmarshal([]byte(tc.Arguments), &viewArgs) == nil && viewArgs.Name != "" {
-			if s.skillService == nil {
-				return errcode.New(
-					errcode.AgentInvalidSourceState,
-					http.StatusConflict,
-					"skill_view completed without a Station Skill service",
-					nil,
-				)
-			}
-			manifest, err := s.skillService.GetSkill(ctx, config.AgentID, viewArgs.Name)
-			if err != nil {
-				return fmt.Errorf("load activated Skill body for ContextLedger: %w", err)
-			}
-			if err := s.upsertContextLedgerSegment(
-				ctx,
-				config.AttemptID,
-				contextSegmentForSkillBody(manifest),
-			); err != nil {
-				return fmt.Errorf("persist activated Skill body in ContextLedger: %w", err)
-			}
-			seen := false
-			for _, skillName := range trace.SkillsLoaded {
-				if skillName == viewArgs.Name {
-					seen = true
-					break
-				}
-			}
-			if !seen {
-				trace.SkillsLoaded = append(trace.SkillsLoaded, viewArgs.Name)
-			}
-		}
-	}
-
-	trace.ToolCalls = append(trace.ToolCalls, domain.ToolCallRecord{
-		ToolName:  tc.ToolName,
-		Arguments: tc.Arguments,
-		Result:    resultContent,
-		Duration:  duration,
-	})
-	toolMessage := fmt.Sprintf("[%s] %s", tc.ToolName, resultContent)
-	toolCallID := strings.TrimSpace(tc.ProviderCallID)
-	if toolCallID == "" {
-		toolCallID = callID
-	}
-	metadataJSON, err := json.Marshal(map[string]string{
-		"tool_call_id": toolCallID,
-	})
-	if err != nil {
-		return fmt.Errorf("encode tool result metadata: %w", err)
-	}
-	if persist {
-		if err := s.persistMessageRecord(
-			ctx,
-			config.ConversationID,
-			turnID,
-			string(domain.MessageRoleTool),
-			toolMessage,
-			config.Model,
-			nil,
-			metadataJSON,
-			nil,
-			"",
-			"",
-			"",
-		); err != nil {
-			return fmt.Errorf("persist tool message %s: %w", tc.ToolName, err)
-		}
-	}
-	now := time.Now()
-	*messages = append(*messages, domain.Message{
-		MessageID:      generateID("msg"),
-		ConversationID: config.ConversationID,
-		TurnID:         turnID,
-		Role:           domain.MessageRoleTool,
-		Content:        toolMessage,
-		MetadataJSON:   metadataJSON,
-		CreatedAt:      now,
-		UpdatedAt:      now,
-	})
-	return nil
-}
-
 func isClientOwnedTool(toolName string) bool {
 	return capabilityIDForTool(toolName) != ""
 }
@@ -6938,7 +6898,10 @@ func persistenceTurnTraceToDomain(record *persistence.TurnTrace) (domain.TurnTra
 	}
 	for index := range trace.ToolCalls {
 		trace.ToolCalls[index].Arguments = redactDiagnosticText(trace.ToolCalls[index].Arguments)
-		trace.ToolCalls[index].Result = redactDiagnosticText(trace.ToolCalls[index].Result)
+		trace.ToolCalls[index].Result = redactDiagnosticToolResult(
+			trace.ToolCalls[index].ToolName,
+			trace.ToolCalls[index].Result,
+		)
 	}
 	if err := json.Unmarshal(record.ProviderCalls, &trace.ProviderCalls); err != nil && len(record.ProviderCalls) > 0 {
 		return domain.TurnTraceEntry{}, err
@@ -7903,14 +7866,64 @@ func (s *TurnService) getDB(ctx context.Context) (*gorm.DB, error) {
 	return db, nil
 }
 
-func (s *TurnService) resolveAgentDefaults(ctx context.Context, config *TurnConfig) {
+func (s *TurnService) resolveAgentDefaults(ctx context.Context, config *TurnConfig) error {
+	if config == nil {
+		return errcode.New(
+			errcode.AgentInvalidRequest,
+			http.StatusBadRequest,
+			"turn config is required",
+			nil,
+		)
+	}
+	var agent domain.Agent
+	if config.PinnedAgentDefinition != nil {
+		agent = *config.PinnedAgentDefinition
+		if agent.AgentID != config.AgentID ||
+			agent.OwnerActorPTID != config.ActorID ||
+			agent.Version <= 0 ||
+			(config.ExpectedAgentVersion > 0 &&
+				uint64(agent.Version) != config.ExpectedAgentVersion) {
+			return errcode.New(
+				errcode.AgentInvalidSourceState,
+				http.StatusConflict,
+				"pinned AgentDefinition does not match the admitted Turn",
+				nil,
+			)
+		}
+	} else {
+		db, err := s.getDB(ctx)
+		if err != nil {
+			return err
+		}
+		var record persistence.Agent
+		if err := db.WithContext(ctx).
+			Where("id = ? AND owner_actor_ptid = ?", config.AgentID, config.ActorID).
+			First(&record).Error; err != nil {
+			return errcode.New(
+				errcode.AgentInvalidSourceState,
+				http.StatusConflict,
+				"typed AgentDefinition is unavailable",
+				err,
+			)
+		}
+		agent = persistenceAgentToDomain(&record)
+		if config.ExpectedAgentVersion > 0 &&
+			uint64(agent.Version) != config.ExpectedAgentVersion {
+			return errcode.New(
+				errcode.AgentVersionConflict,
+				http.StatusConflict,
+				"AgentDefinition version changed before execution",
+				nil,
+			)
+		}
+	}
+	config.Identity = agent.IdentityPrompt
+	config.AgentConfigPrompt = agent.AgentConfigPrompt
+	config.AgentDefinitionVersion = uint64(agent.Version)
+
 	db, err := s.getDB(ctx)
 	if err != nil {
-		return
-	}
-	var agent persistence.Agent
-	if err := db.WithContext(ctx).Where("id = ?", config.AgentID).First(&agent).Error; err != nil {
-		return
+		return err
 	}
 	if config.Provider == "" && config.Model == "" && config.ConversationID != "" {
 		var conversation persistence.Conversation
@@ -7928,29 +7941,9 @@ func (s *TurnService) resolveAgentDefaults(ctx context.Context, config *TurnConf
 		config.Effort = strings.TrimSpace(agent.Effort)
 	}
 	if config.ThinkingMode == "" {
-		config.ThinkingMode = domain.ThinkingMode(agent.ThinkingMode)
+		config.ThinkingMode = agent.ThinkingMode
 	}
-	var cfg map[string]interface{}
-	_ = json.Unmarshal([]byte(agent.ConfigJSON), &cfg)
-	if cfg == nil {
-		return
-	}
-	extractStr := func(keys ...string) string {
-		for _, k := range keys {
-			if v, ok := cfg[k]; ok {
-				if s, ok := v.(string); ok {
-					return s
-				}
-			}
-		}
-		return ""
-	}
-	if config.Identity == "" {
-		config.Identity = extractStr("soulMd", "identity", "soul_md", "soul", "systemPrompt", "system_prompt")
-	}
-	if config.AgentConfigPrompt == "" {
-		config.AgentConfigPrompt = extractStr("agentsMd", "agentConfigPrompt", "agent_config_prompt", "agents_md", "agents")
-	}
+	return nil
 }
 
 // generateID creates a unique identifier with the given prefix (e.g. "turn", "msg", "trace").

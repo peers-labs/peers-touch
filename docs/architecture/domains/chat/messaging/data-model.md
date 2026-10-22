@@ -42,6 +42,53 @@ Identity invariant：
 - 每台设备以 `(conversation_id, event_id)` 幂等写入 projection。
 - 同一用户各设备看到的是同一消息，不是相互独立的消息副本。
 
+### 1.1 Device-Local Engine And Store Contract
+
+`messaging-store-v1` is the only target schema owner for the portable Device
+Messaging Engine. Host lifecycle phase values are frozen:
+
+| Value | Phase | Meaning |
+|---:|---|---|
+| 1 | `INACTIVE` | no Host worker owns the profile |
+| 2 | `STARTING` | one generation-fenced worker is initializing |
+| 3 | `ACTIVE` | the worker may drain, dispatch and reconcile |
+| 4 | `SUSPENDED` | durable state is retained but Host admission is paused |
+| 5 | `STOPPING` | cancellation is closed and the Host is joining the worker |
+| 6 | `FAILED` | an interrupted owned phase requires recovery before reactivation |
+
+Every lifecycle record binds:
+
+```text
+endpoint(ptid, device_id)
+station_peer_id
+phase
+lifecycle_generation
+worker_generation
+consumer_epoch
+updated_at_unix_ms
+```
+
+The lifecycle and worker generations are an atomic fence. A stale generation
+cannot suspend, stop, emit a terminal projection, or continue a retry.
+Authentication Session and Messaging endpoint reuse the same persisted
+`device_id`; migration must preserve identity seed, signing material,
+certificate, Direct session generations and MLS state.
+
+The cutover transaction writes one migration marker:
+
+```text
+source_schema_id
+target_schema_id = messaging-store-v1
+migrated_row_count
+source_content_sha256
+```
+
+The marker commits only after every identity, command, inbox, cursor, crypto,
+projection, receipt, recovery and attachment row validates. The portable owner
+becomes writable only after the marker commits. UCA-04A freezes this contract
+without migrating a production store; UCA-04 owns the one-time hard cut and
+old-owner deletion.
+
 ## 2. Protocol Families
 
 CA-W1 target contract roots:

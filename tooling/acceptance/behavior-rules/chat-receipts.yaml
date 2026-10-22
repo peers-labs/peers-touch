@@ -6,8 +6,11 @@
       "features": ["chat-native-visible-clients"],
       "when": {
         "paths": [
-          "apps/desktop/src-tauri/src/messaging/direct.rs",
-          "apps/desktop/src/runtimes/imRuntime.ts",
+          "packages/messaging-core/src/inbox/direct.rs",
+          "packages/messaging-core/src/inbox/receipt.rs",
+          "packages/messaging-core/src/outbox/receipt.rs",
+          "apps/desktop/src-tauri/src/messaging/engine.rs",
+          "apps/desktop/src/runtimes/messagingRuntime.ts",
           "apps/desktop/src/services/chatReceipt.ts",
           "apps/desktop/src/store/socialChat.ts",
           "apps/desktop/src/store/socialProjection.ts",

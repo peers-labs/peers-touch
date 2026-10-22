@@ -1517,6 +1517,22 @@ class ProvisionerBlockingTests(unittest.TestCase):
             agent_native_requires_provider("agent-stream-resilience-e2e")
         )
 
+    def test_agent_depth_gates_use_two_with_one_existing_actor(self):
+        for gate_id in (
+            "agent-slash-command-native-e2e",
+            "agent-context-projection-native-e2e",
+            "agent-depth-linux-native-e2e",
+        ):
+            with self.subTest(gate_id=gate_id):
+                self.assertEqual(GATE_ROLES[gate_id], ("alice",))
+                self.assertIn(gate_id, HOME_SINGLE_NATIVE_GATES)
+                self.assertEqual(agent_profile_for_gate(gate_id), "two")
+                self.assertTrue(agent_native_requires_runtime_binding(gate_id))
+                self.assertFalse(
+                    agent_native_requires_disposable_fixture(gate_id)
+                )
+                self.assertFalse(agent_native_requires_provider(gate_id))
+
     def test_agent_minimum_usable_chat_uses_two_without_reset_or_profile_provider(
         self,
     ):

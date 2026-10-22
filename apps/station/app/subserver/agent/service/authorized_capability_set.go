@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"sort"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
@@ -320,21 +322,101 @@ func (s *AuthorizedCapabilitySet) Tool(toolName string) (AuthorizedCapability, b
 	return AuthorizedCapability{}, false
 }
 
+func (s *AuthorizedCapabilitySet) ResolveToolCall(
+	toolName string,
+	arguments string,
+) (AuthorizedCapability, bool) {
+	if toolName != "skill_view" {
+		return s.Tool(toolName)
+	}
+	var input skillViewArgs
+	if err := json.Unmarshal([]byte(arguments), &input); err != nil {
+		return AuthorizedCapability{}, false
+	}
+	name := strings.TrimSpace(input.Name)
+	if name == "" {
+		return AuthorizedCapability{}, false
+	}
+	return s.Source(
+		model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_SKILL,
+		name,
+	)
+}
+
+func (s *AuthorizedCapabilitySet) ToolSchemaSourceRefs(
+	toolName string,
+) []string {
+	if toolName != "skill_view" {
+		capability, ok := s.Tool(toolName)
+		if !ok {
+			return nil
+		}
+		return []string{fmtCapabilitySourceRef(capability)}
+	}
+	skills := s.Sources(
+		model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_SKILL,
+	)
+	refs := make([]string, 0, len(skills))
+	for _, skill := range skills {
+		refs = append(refs, fmtCapabilitySourceRef(skill))
+	}
+	sort.Strings(refs)
+	return refs
+}
+
+func fmtCapabilitySourceRef(capability AuthorizedCapability) string {
+	return "capability:" +
+		capability.Manifest.GetCapabilityId() +
+		"@" +
+		capability.Manifest.GetVersion()
+}
+
 func (s *AuthorizedCapabilitySet) ToolNames() []string {
 	if s == nil {
 		return nil
 	}
-	result := make([]string, 0)
+	names := make(map[string]struct{})
+	hasAuthorizedSkill := false
 	for _, capability := range s.byCapability {
 		switch capability.Manifest.GetSourceKind() {
 		case model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_BUILTIN_TOOL,
 			model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_MCP,
 			model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_CONNECTOR,
 			model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_CLIENT_NATIVE:
-			result = append(result, capability.Manifest.GetSourceInstanceId())
+			names[capability.Manifest.GetSourceInstanceId()] = struct{}{}
+		case model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_SKILL:
+			hasAuthorizedSkill = true
 		}
 	}
+	if hasAuthorizedSkill {
+		names["skill_view"] = struct{}{}
+	}
+	result := make([]string, 0, len(names))
+	for name := range names {
+		result = append(result, name)
+	}
 	sort.Strings(result)
+	return result
+}
+
+func (s *AuthorizedCapabilitySet) SkillRefs() map[string]domain.AuthorizedSkillRef {
+	result := make(map[string]domain.AuthorizedSkillRef)
+	for _, capability := range s.Sources(
+		model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_SKILL,
+	) {
+		skillID := strings.TrimPrefix(
+			capability.Manifest.GetCapabilityId(),
+			"skill:",
+		)
+		version, err := strconv.Atoi(capability.Manifest.GetVersion())
+		if skillID == "" || err != nil || version <= 0 {
+			continue
+		}
+		result[capability.Manifest.GetSourceInstanceId()] = domain.AuthorizedSkillRef{
+			SkillID: skillID,
+			Version: version,
+		}
+	}
 	return result
 }
 

@@ -35,8 +35,8 @@ Inside `desktop-web`, long-lived runtimes own projection freshness:
 | `messaging` | Chat command lifecycle, native projection events, scoped reset, cold sync, and periodic reconciliation |
 | `socialRealtime` | Friendship, contact, profile, presence, and Social notification projections |
 | `momentsRuntime` | Moments HOME / Explore / Circles projection bootstrap, periodic reconciliation, and actor-scoped reset |
-| `agent-capability` | Provider, model, Agent, applet, MCP, Skill, and Tool projection bootstrap |
-| `agent-topic` | Selected Agent topic/message bootstrap, Agent-switch refresh, and periodic reconciliation |
+| `agent-capability` | Provider, model, Agent, applet, MCP, Skill, Tool, and versioned Commands & Skills snapshot bootstrap |
+| `agent-topic` | Selected Agent topic/message bootstrap, historical Turn attribution readback, Agent-switch refresh, and periodic reconciliation |
 | `agent-tool` | Station-authored ToolCall proposal, approval-decision, and result projections; user decision-intent submission through Desktop Rust |
 | `home` | Station-authored Home projection bootstrap, actor-scoped reset, exact recent-conversation handoff, and periodic reconciliation |
 | `evaluation` | Station-authored benchmark, dataset, case, run, result, metrics, and recovery projection; actor-scoped reset, event consumption, and periodic reconciliation |
@@ -210,14 +210,13 @@ Prefetch is **not** a substitute for a runtime — runtimes own *long-lived* pro
 |---|---|---|---|
 | `search` | `pages/SearchPage.descriptor.tsx` | `search` | migrated |
 | `chat` | `pages/SocialChatPage.descriptor.tsx` | `messaging`, `social` | migrated |
-| `settings` | `pages/SettingsPage.descriptor.tsx` | `settings` | migrated |
-| `applets` | `pages/AppletsPage.descriptor.tsx` | `applets` | migrated |
+| `settings` | `pages/SettingsPage.descriptor.tsx` | `settings` | migrated; AI owns Discover and Memory as lazy sections |
+| `applets` | `pages/AppletsPage.descriptor.tsx` | `applets` | migrated internal launcher; no primary-nav entry |
 | `applet:*` | `pages/AppletRuntimePage.descriptor.tsx` | `applets` | migrated dynamic route; `appletsRuntime` owns `acquirePage/releasePage` session lease |
 | `moments` | `pages/moments/MomentsApp.descriptor.tsx` | `moments`, `social`, `messaging` | migrated |
 | `agent` | `pages/AgentChatPage.descriptor.tsx` | `agent-capability`, `agent-topic`, `agent-tool`, `social` | migrated (`preload: idle`, `keepAlive: forever`); page is a pure `AgentWorkbench` renderer |
 | `home` | `pages/HomePage.descriptor.tsx` | `home` | migrated (`preload: eager`, `keepAlive: forever`); page renders the Station Home projection |
-| `evaluation` | `pages/EvaluationPage.descriptor.tsx` | `evaluation`, `agent-capability` | migrated (`preload: on-visit`, `keepAlive: lru(1)`); page renders Station-owned Evaluation truth and runtime recovery |
-| `marketplace` | `pages/MarketplacePage.descriptor.tsx` | none | migrated (`preload: on-visit`, `keepAlive: lru(1)`); page uses one-shot prefetch for the verified Desktop Rust catalog cache and explicit user sync for invalidation |
-| `agent-profile`, `agent-orchestration` | — | — | legacy `PageRouter` fallback |
+| `evaluation` | `pages/EvaluationPage.descriptor.tsx` | `evaluation`, `agent-capability` | migrated internal/Acceptance surface (`preload: on-visit`, `keepAlive: lru(1)`); no user navigation entry |
+| `agent-profile`, `agent-orchestration` | — | — | legacy `PageRouter` fallback; orchestration is an internal Atelier-owned mode with no standalone navigation entry |
 
 New pages that fit the contract should ship as descriptors from day one. Adding a page to the legacy `PageRouter` requires an explicit reason in the PR description.

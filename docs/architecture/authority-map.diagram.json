@@ -1,0 +1,131 @@
+{
+  "kind": "peers-touch-architecture-diagram",
+  "schemaVersion": 3,
+  "id": "project.authority-map",
+  "module": "project",
+  "viewpoint": "authority-map",
+  "layout": "matrix",
+  "output": "authority-map.svg",
+  "title": "Peers-Touch 权威矩阵",
+  "canvas": {
+    "width": 1500,
+    "height": 850
+  },
+  "edgeMeaning": null,
+  "scene": {
+    "owners": [
+      {
+        "id": "model",
+        "title": "Model"
+      },
+      {
+        "id": "presentation",
+        "title": "Presentation"
+      },
+      {
+        "id": "client-runtime",
+        "title": "Client Runtime"
+      },
+      {
+        "id": "portable-core",
+        "title": "Portable Core"
+      },
+      {
+        "id": "platform-host",
+        "title": "Platform Host"
+      },
+      {
+        "id": "station-frame",
+        "title": "Station Frame"
+      },
+      {
+        "id": "identity-access",
+        "title": "Identity"
+      },
+      {
+        "id": "station-domains",
+        "title": "Domains"
+      },
+      {
+        "id": "relay",
+        "title": "Relay"
+      }
+    ],
+    "concerns": [
+      {
+        "id": "wire",
+        "title": "Wire shape / meaning"
+      },
+      {
+        "id": "ux",
+        "title": "Navigation / interaction"
+      },
+      {
+        "id": "local-app",
+        "title": "Binding / draft / projection"
+      },
+      {
+        "id": "local-core",
+        "title": "Local protocol / crypto"
+      },
+      {
+        "id": "os-facts",
+        "title": "OS capability facts"
+      },
+      {
+        "id": "platform",
+        "title": "Ingress / event transport"
+      },
+      {
+        "id": "session",
+        "title": "Access Gate / Actor session"
+      },
+      {
+        "id": "business",
+        "title": "Shared business truth"
+      },
+      {
+        "id": "relay-facts",
+        "title": "Relay endpoint / circuit"
+      }
+    ],
+    "assignments": [
+      {
+        "concern": "wire",
+        "owner": "model"
+      },
+      {
+        "concern": "ux",
+        "owner": "presentation"
+      },
+      {
+        "concern": "local-app",
+        "owner": "client-runtime"
+      },
+      {
+        "concern": "local-core",
+        "owner": "portable-core"
+      },
+      {
+        "concern": "os-facts",
+        "owner": "platform-host"
+      },
+      {
+        "concern": "platform",
+        "owner": "station-frame"
+      },
+      {
+        "concern": "session",
+        "owner": "identity-access"
+      },
+      {
+        "concern": "business",
+        "owner": "station-domains"
+      },
+      {
+        "concern": "relay-facts",
+        "owner": "relay"
+      }
+    ]
+  }
+}

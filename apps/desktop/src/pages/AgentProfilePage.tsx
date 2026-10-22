@@ -43,7 +43,6 @@ import { log } from '../utils/logger';
 interface AgentProfilePageProps {
   agentName: string;
   onBack?: () => void;
-  onOpenOrchestration?: () => void;
   embedded?: boolean;
 }
 

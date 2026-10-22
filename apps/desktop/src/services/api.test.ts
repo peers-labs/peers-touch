@@ -389,17 +389,48 @@ describe('agentTurnStreamErrorFromData', () => {
 })
 
 describe('api.health', () => {
-  it('returns status on success', async () => {
+  const desktopHealth = {
+    status: 'ok',
+    clientForm: 'desktop',
+    releaseTarget: 'desktop',
+    processModel: 'tauri-desktop',
+    hostOs: 'macos',
+    sourceCommit: '1'.repeat(40),
+  } as const
+
+  it('returns the exact compiled Desktop identity on success', async () => {
     vi.mocked(invoke).mockResolvedValue({
       ok: true,
       data: {
         command: 'system_health',
-        status: JSON.stringify({ status: 'ok' }),
+        status: JSON.stringify(desktopHealth),
       },
     })
     const result = await api.health()
-    expect(result).toEqual({ status: 'ok' })
+    expect(result).toEqual(desktopHealth)
     expect(invoke).toHaveBeenCalledWith('system_health', undefined)
+  })
+
+  it('rejects malformed or widened Desktop identity diagnostics', async () => {
+    for (const health of [
+      { ...desktopHealth, releaseTarget: 'ios' },
+      { ...desktopHealth, processModel: 'browser' },
+      { ...desktopHealth, hostOs: 'ios' },
+      { ...desktopHealth, sourceCommit: 'not-a-source-commit' },
+      { ...desktopHealth, extra: true },
+    ]) {
+      vi.mocked(invoke).mockResolvedValueOnce({
+        ok: true,
+        data: {
+          command: 'system_health',
+          status: JSON.stringify(health),
+        },
+      })
+
+      await expect(api.health()).rejects.toThrow(
+        'desktop.platform.identityInvalid',
+      )
+    }
   })
 
   it('throws on HTTP error', async () => {
@@ -1282,11 +1313,10 @@ describe('api.getPreferences', () => {
       ok: true,
       data: {
         command: 'preferences_get',
-        status: JSON.stringify({ pinned_applets: ['web-search'], wide_screen: true }),
+        status: JSON.stringify({ wide_screen: true }),
       },
     })
     const prefs = await api.getPreferences()
-    expect(prefs.pinned_applets).toEqual(['web-search'])
     expect(prefs.wide_screen).toBe(true)
   })
 })

@@ -147,6 +147,8 @@ function withoutRecordKey<T>(record: Record<string, T>, key: string): Record<str
   return next;
 }
 
+let selectionIntentRevision = 0;
+
 export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) => ({
   selectedAgent: 'assistant',
   defaultAgent: 'assistant',
@@ -177,6 +179,7 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
   },
 
   setSelectedAgent: (agent: string) => {
+    selectionIntentRevision += 1;
     set({
       selectedAgent: agent,
     });
@@ -253,6 +256,7 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
   },
 
   loadAgents: async () => {
+    const loadSelectionRevision = selectionIntentRevision;
     set({ loading: true, error: null });
     try {
       const [result, persistedSelected] = await Promise.all([
@@ -263,10 +267,13 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
         }),
       ]);
       let agents = (result.agents || []).map(reconcileAgent);
+      const selectionChangedDuringLoad =
+        selectionIntentRevision !== loadSelectionRevision;
       let selectedCandidates = [
+        ...(selectionChangedDuringLoad ? [get().selectedAgent] : []),
         persistedSelected,
         result.selectedAgent,
-        get().selectedAgent,
+        ...(!selectionChangedDuringLoad ? [get().selectedAgent] : []),
       ];
       let defaultCandidate = result.defaultAgent;
       if (agents.length === 0) {
@@ -379,6 +386,7 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
           lastLoadedAt: Date.now(),
         };
       });
+      selectionIntentRevision += 1;
       void api.setSelectedAgent(reconciled.name).catch(() => { /* selection best-effort */ });
       return reconciled;
     } catch (error) {

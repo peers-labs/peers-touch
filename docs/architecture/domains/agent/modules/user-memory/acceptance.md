@@ -21,9 +21,9 @@
 
 | # | Scenario | Steps | Expected |
 |---|----------|-------|----------|
-| F1 | Edit memory content | MemoryPage → browse → click item → edit icon → change text → save | Memory content updated, list refreshes |
+| F1 | Edit memory content | Settings > AI > Memory → Browse → click item → edit icon → change text → save | Memory content updated, list refreshes |
 | F2 | Cancel memory edit | Click edit → modify text → cancel | Original content preserved |
-| F3 | Memory store reactivity | Edit memory on MemoryPage → switch to chat → return to MemoryPage | Updated content persists without re-fetch |
+| F3 | Memory store reactivity | Edit memory in Settings → switch to Chat → return to Settings > AI > Memory | Updated content persists without re-fetch |
 | F4 | Layer tab filter | Click "Identity" tab → only identity memories shown | Filter applied, count matches |
 | F5 | Memory toggle in chat | Open chat → click memory toggle off → send message | Response generated without memory context |
 | F6 | Memory toggle persistence | Toggle off → switch session → return | Toggle state preserved per-session |
@@ -33,6 +33,6 @@
 
 | # | Check | Verification |
 |---|-------|-------------|
-| I1 | Store integrates with existing MemoryPage | No duplicate state management; page reads from store |
+| I1 | Store integrates with `MemorySettingsSection` | No duplicate state management; Settings section reads from store |
 | I2 | Update reuses existing embedding pipeline | Updated memory is re-embedded via same provider |
 | I3 | Memory toggle doesn't break turn flow | Turn executes normally with or without memory |

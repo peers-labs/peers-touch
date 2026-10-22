@@ -25,8 +25,8 @@
   ],
   "runtimeReuse": {
     "scope": "suite", "entryCheckId": "profile-native",
-    "scenarioIds": ["profile-create", "profile-documents", "profile-restart", "profile-prompt-consumption"],
-    "maxProvisioningRuns": 1, "maxClientLaunches": 2, "minWarmReuseRate": 0.75,
+    "scenarioIds": ["profile-create", "profile-documents", "profile-prompt-consumption", "profile-skill-consumption", "profile-restart"],
+    "maxProvisioningRuns": 1, "maxClientLaunches": 2, "minWarmReuseRate": 0.8,
     "requireAttachOnlyScenarios": true, "requireReceiverVisibleProof": true, "allowClientReplacement": true
   },
   "doneWhen": ["All creation entries enter Profile immediately.", "Agent no longer owns ordinary Chat model selection.", "SOUL.md and AGENTS.md survive authority readback and restart and enter the actual Provider prompt."],
@@ -55,8 +55,10 @@ passed (`TestResolveAgentDefaults|TestConversationModelOverride`, count=1).
 The Native Profile scenario now exercises roster search and anchored actions,
 identity autosave feedback and alignment, emoji and image avatar persistence,
 invalid-upload rejection and cancellation, bounded Skills/MCP binding pickers,
-skill enable/disable/removal, both document saves, both explicit-empty values,
-editor reopen, Native restart, and actual Provider system-document consumption.
+skill enable/disable/removal, pinned authorized Skill index and `skill_view` body
+version, redacted ContextLedger source refs, both document saves, both
+explicit-empty values, editor reopen, Native restart, and actual Provider
+system-document consumption.
 All 28 Profile operation IDs have executable scenario coverage; runtime proof has
 not run and remains UNPROVEN.
 

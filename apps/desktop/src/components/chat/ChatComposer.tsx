@@ -33,17 +33,13 @@ import {
   X,
 } from 'lucide-react';
 import {
-  CHAT_COMPOSER_CAPABILITIES_DESKTOP_MAIN,
   canSubmitChatComposerDraft,
   chatMediaKindFromMimeFilename,
   chatMessageTypeForAttachments,
-  chatVisualCssVars,
-  chatVisualLayoutForSurface,
   formatChatAttachmentSize,
   resolveChatComposerCapabilities,
   shouldSendComposerEnter,
   type ChatComposerCapabilities,
-  type ChatVisualSurface,
 } from '@peers-touch/client-chat-core';
 
 import { log } from '../../utils/logger';
@@ -66,6 +62,12 @@ import {
   markTextInputVisible,
   scheduleAfterPaint,
 } from '../../kernel/frontendRuntimeProfiler';
+import {
+  DESKTOP_CHAT_COMPOSER_CAPABILITIES_MAIN,
+  desktopChatLayoutForSurface,
+  desktopChatVisualCssVars,
+  type DesktopChatVisualSurface,
+} from './chatPresentationPolicy';
 
 export type { ChatComposerCapabilities } from '@peers-touch/client-chat-core';
 
@@ -101,7 +103,7 @@ interface ChatComposerProps {
   placeholder?: string;
   replyPreview?: string;
   replyPreviewKey?: string | null;
-  visualSurface?: Extract<ChatVisualSurface, 'desktop-main' | 'desktop-thread'>;
+  visualSurface?: DesktopChatVisualSurface;
   editPreview?: string;
   sending: boolean;
 }
@@ -172,10 +174,10 @@ export function ChatComposer({
     (state) => state.sendOutcomes[activeConversationId],
   );
   const activeCapabilities = resolveChatComposerCapabilities(
-    CHAT_COMPOSER_CAPABILITIES_DESKTOP_MAIN,
+    DESKTOP_CHAT_COMPOSER_CAPABILITIES_MAIN,
     capabilities,
   );
-  const visualLayout = chatVisualLayoutForSurface(visualSurface);
+  const visualLayout = desktopChatLayoutForSurface(visualSurface);
   const handleTextInputObserved = (event: FormEvent<HTMLTextAreaElement>) => {
     const nextValue = event.currentTarget.value;
     const target = `chat-composer:${activeConversationId || 'none'}`;
@@ -536,7 +538,7 @@ export function ChatComposer({
       onDragLeave={() => setDragging(false)}
       onDrop={handleDrop}
       style={{
-        ...(chatVisualCssVars(visualLayout) as CSSProperties),
+        ...(desktopChatVisualCssVars(visualLayout) as CSSProperties),
         padding: visualLayout.composerOuterPadding,
         background: surfaceBackground ?? token.colorBgLayout,
         position: 'relative',

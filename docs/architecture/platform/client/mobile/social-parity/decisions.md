@@ -187,7 +187,9 @@ acceptance alongside the smaller set of true routes.
 
 ### Context
 
-The current Mobile Shell uses iOS Simulator as canonical proof and defers cross-Station Social.
+Mobile Social parity spans Android, iOS, Desktop interoperability, and
+cross-Station behavior. No single platform or same-Station cell can establish
+the aggregate claim.
 
 ### Decision
 
@@ -201,7 +203,9 @@ Claiming “Mobile” from iOS-only or same-Station evidence overstates readines
 
 ### Alternatives Considered
 
-iOS-only canonical proof was retained only for explicit iOS-scoped claims, not aggregate parity.
+- iOS-only aggregate parity: rejected because it cannot prove Android.
+- Same-Station-only aggregate parity: rejected because it cannot prove
+  cross-Station interoperability.
 
 ### Consequences
 

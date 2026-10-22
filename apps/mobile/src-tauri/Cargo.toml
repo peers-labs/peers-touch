@@ -22,6 +22,7 @@ hkdf = "0.12"
 hex = "0.4"
 libp2p-identity = { version = "=0.3.0", features = ["ed25519", "peerid"] }
 messaging-core = { path = "../../../packages/messaging-core" }
+messaging-native-filesystem = { path = "../../../packages/messaging-native-filesystem" }
 secure-content-core = { path = "../../../packages/secure-content-core" }
 station-libp2p-http = { path = "../../../packages/station-libp2p-http" }
 station-trust = { path = "../../../packages/station-trust" }

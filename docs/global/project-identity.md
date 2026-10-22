@@ -1,17 +1,17 @@
 # Project Identity: What Is Peers-Touch?
 
 > Foundation-level identity document for what the project is, what it owns, and what it is trying to become.
-> For system relationships, read `docs/global/architecture.md`.
+> For system relationships, read `docs/architecture/architecture.md`.
 
 ---
 
 ## 1. Project Definition
 
-**Peers-Touch** is a decentralized, federated social network framework organized around three layers:
+**Peers-Touch** is a decentralized, federated social network framework with:
 
-- `Client`
-- `Model`
-- `Station`
+- Client runtimes;
+- a Station business runtime;
+- shared Model contracts consumed by both.
 
 It is not a single app. It is a system that supports multiple client runtimes, shared protobuf contracts, and a backend runtime that owns shared business truth.
 
@@ -31,15 +31,20 @@ Peers-Touch exists to build a user-centered social and intelligent runtime where
 ## 3. System Shape
 
 ```text
-Client -> Model -> Station
+Runtime topology: Client <-> Station
 ```
+
+Contract substrate: `model/domain/*.proto`, which generates Client and Station
+bindings. Model is not a runtime tier or request intermediary. Proto-first
+describes how shared wire meaning is authored, not where a live call runs.
 
 ### 3.1 Client
 
 The user-facing runtimes:
 
 - Desktop: Tauri + React/TypeScript + Rust
-- Mobile: Android native + iOS native
+- Mobile: Tauri Mobile + shared React/TypeScript + Rust, hosted by Android or
+  iOS
 
 ### 3.2 Model
 
@@ -147,6 +152,10 @@ Clients may own:
 
 But clients do not become the shared business truth owner when Station already owns that role.
 
+Desktop and Mobile may embed portable Rust cores for protocol, security, and
+stateful local mechanisms. Those cores are libraries inside a client, not
+services or additional business authorities.
+
 ---
 
 ## 7. Repository Shape
@@ -157,9 +166,12 @@ peers-touch/
 │   ├── desktop/
 │   ├── mobile/
 │   │   ├── src/            # mobile-web UI
-│   │   ├── src-tauri/      # Rust capability kernel + Tauri generated projects
-│   │   ├── android/        # legacy/native plugin source during migration
-│   │   └── ios/            # legacy/native plugin source during migration
+│   │   └── src-tauri/
+│   │       ├── src/        # shared Mobile Rust runtime
+│   │       ├── plugins/    # typed native capability plugins
+│   │       └── gen/
+│   │           ├── android/
+│   │           └── apple/
 │   └── station/
 │       ├── app/
 │       └── frame/
@@ -188,9 +200,10 @@ Peers-Touch is not:
 If you are new to the project, read in this order:
 
 1. `docs/README.md`
-2. `docs/global/architecture.md`
-3. `docs/global/domain-model.md`
-4. platform base documents:
+2. `docs/architecture/architecture.md`
+3. `docs/architecture/platform/client/cross-client-runtime/README.md`
+4. `docs/global/domain-model.md`
+5. platform base documents:
    - `docs/client/desktop/base.md`
    - `docs/client/mobile/base.md`
    - `docs/station/base.md`

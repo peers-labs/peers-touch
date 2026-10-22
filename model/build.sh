@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Proto code generation — Go (Station) and TypeScript (desktop).
 # Dart/Flutter generation has been removed (deprecated path).
-# Mobile (Kotlin/Swift) generation: use tooling/scripts/proto-gen-mobile.sh
+# Shared Mobile TypeScript generation: use tooling/scripts/proto-gen-mobile.sh web
 # Desktop Rust generation: handled separately by tauri build pipeline.
 
 PROJECT_ROOT=$(cd "$(dirname "$0")/.."; pwd)

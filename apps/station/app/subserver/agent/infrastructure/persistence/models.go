@@ -86,7 +86,6 @@ func AllModels() []interface{} {
 		&AgentWorkspace{},
 		&AgentWorkspaceFile{},
 		&AgentKnowledgeBinding{},
-		&AgentSkillBinding{},
 		&AgentOfflineOp{},
 		&CollaborationTask{},
 		&CollaborationTaskNode{},

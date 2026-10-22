@@ -1,6 +1,6 @@
 // Agent Prototype — Agent Profile Editor (Center Panel)
 // Quiet Protocol Minimalism surface for an ordinary Agent:
-// - Hero: reference-client-aligned 64px identity axis + editable name/description
+// - Hero: reference-aligned 64px identity axis + editable name/description
 // - Avatar picker: emoji or validated local image
 // - SOUL.md / AGENTS.md: two side-by-side monospace editors
 // - Extensions: selected Agent bindings only; the Settings-owned catalog stays
@@ -15,7 +15,7 @@
 //   binding model instead of mock Skill/Tool/MCP rows.
 // - AI Rewrite button removed: no rewrite action exists behind it.
 //
-// Persistence (reference client Profile Builder parity): the Agent already
+// Persistence (reference Agent Profile Builder parity): the Agent already
 // exists when this surface opens. Identity,
 // description, SOUL/AGENTS and extensions persist to localStorage (one key per
 // agent id) on a short debounce; the roster owner receives live identity
@@ -167,7 +167,7 @@ export interface AgentSlashCommand {
 }
 
 // Real per-agent slash commands: the extensions enabled on this Agent in its
-// Profile (matches the reference client's commands & skills palette data source).
+// Profile (matches the reference commands & skills palette data source).
 export function listAgentSlashCommands(agentId: string): AgentSlashCommand[] {
   const bindings = loadExtensionBindings(agentId);
   return extensionCatalog()

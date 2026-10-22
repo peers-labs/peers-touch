@@ -7,7 +7,6 @@ interface TestModule {
   id: string;
   name: string;
   settingsEntry?: { order: number };
-  sidebarEntry?: { position: 'top' | 'bottom'; order: number };
 }
 
 function createTestRegistry() {
@@ -21,11 +20,6 @@ function createTestRegistry() {
       return this.all()
         .filter((m) => m.settingsEntry)
         .sort((a, b) => a.settingsEntry!.order - b.settingsEntry!.order);
-    },
-    withSidebar() {
-      return this.all()
-        .filter((m) => m.sidebarEntry)
-        .sort((a, b) => a.sidebarEntry!.order - b.sidebarEntry!.order);
     },
   };
 }
@@ -62,17 +56,6 @@ describe('ModuleRegistry', () => {
     expect(settings).toHaveLength(2);
     expect(settings[0].id).toBe('a');
     expect(settings[1].id).toBe('z');
-  });
-
-  it('returns sidebar modules sorted by order', () => {
-    reg.register({ id: 'ch', name: 'Channels', sidebarEntry: { position: 'top', order: 50 } });
-    reg.register({ id: 'cr', name: 'Cron', sidebarEntry: { position: 'top', order: 40 } });
-    reg.register({ id: 'pr', name: 'Providers' });
-
-    const sidebar = reg.withSidebar();
-    expect(sidebar).toHaveLength(2);
-    expect(sidebar[0].id).toBe('cr');
-    expect(sidebar[1].id).toBe('ch');
   });
 
   it('overwrites module on re-register', () => {

@@ -13,6 +13,9 @@ import {
 import { create } from '@bufbuild/protobuf';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import {
+  clientMediaEncryptionDescriptorFromAttachment,
+} from '@peers-touch/client-media-security';
+import {
   Audience_Kind,
   AudienceSchema,
   ImageAttachmentSchema,
@@ -112,21 +115,42 @@ function makeLocalId(): string {
 }
 
 function toEncryptedMediaDescriptor(wire: SocialEncryptedMediaDescriptorWire) {
+  const descriptor = clientMediaEncryptionDescriptorFromAttachment({
+    mediaEncryption: {
+      encrypted: wire.encrypted,
+      version: wire.version,
+      suite: wire.suite,
+      keyB64: wire.key_b64,
+      nonceB64: wire.nonce_b64,
+      plaintextSha256B64: wire.plaintext_sha256_b64,
+      ciphertextSha256B64: wire.ciphertext_sha256_b64,
+      plaintextSize: wire.plaintext_size,
+      ciphertextSize: wire.ciphertext_size,
+      chunking: wire.chunking,
+      chunkSize: wire.chunk_size,
+      chunkCount: wire.chunk_count,
+      tagSize: wire.tag_size,
+      nonceStrategy: wire.nonce_strategy,
+    },
+  });
+  if (!descriptor) {
+    throw new Error('desktop.moments.media.invalidDescriptor');
+  }
   return create(EncryptedMediaDescriptorSchema, {
-    encrypted: wire.encrypted,
-    version: wire.version,
-    suite: wire.suite,
-    keyB64: wire.key_b64,
-    nonceB64: wire.nonce_b64,
-    plaintextSha256B64: wire.plaintext_sha256_b64,
-    ciphertextSha256B64: wire.ciphertext_sha256_b64,
-    plaintextSize: BigInt(wire.plaintext_size),
-    ciphertextSize: BigInt(wire.ciphertext_size),
-    chunking: wire.chunking || 'single-aead',
-    chunkSize: wire.chunk_size ?? 0,
-    chunkCount: wire.chunk_count ?? 0,
-    tagSize: wire.tag_size ?? 0,
-    nonceStrategy: wire.nonce_strategy ?? '',
+    encrypted: descriptor.encrypted,
+    version: descriptor.version,
+    suite: descriptor.suite,
+    keyB64: descriptor.keyB64,
+    nonceB64: descriptor.nonceB64,
+    plaintextSha256B64: descriptor.plaintextSha256B64,
+    ciphertextSha256B64: descriptor.ciphertextSha256B64,
+    plaintextSize: BigInt(descriptor.plaintextSize),
+    ciphertextSize: BigInt(descriptor.ciphertextSize),
+    chunking: descriptor.chunking || 'single-aead',
+    chunkSize: descriptor.chunkSize ?? 0,
+    chunkCount: descriptor.chunkCount ?? 0,
+    tagSize: descriptor.tagSize ?? 0,
+    nonceStrategy: descriptor.nonceStrategy ?? '',
   });
 }
 

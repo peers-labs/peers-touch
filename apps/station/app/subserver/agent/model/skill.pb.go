@@ -774,7 +774,6 @@ type UpdateSkillRequest struct {
 	Name          *string                `protobuf:"bytes,3,opt,name=name,proto3,oneof" json:"name,omitempty"`
 	Description   *string                `protobuf:"bytes,4,opt,name=description,proto3,oneof" json:"description,omitempty"`
 	Content       *string                `protobuf:"bytes,5,opt,name=content,proto3,oneof" json:"content,omitempty"`
-	Enabled       *bool                  `protobuf:"varint,6,opt,name=enabled,proto3,oneof" json:"enabled,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -842,13 +841,6 @@ func (x *UpdateSkillRequest) GetContent() string {
 		return *x.Content
 	}
 	return ""
-}
-
-func (x *UpdateSkillRequest) GetEnabled() bool {
-	if x != nil && x.Enabled != nil {
-		return *x.Enabled
-	}
-	return false
 }
 
 type UpdateSkillResponse struct {
@@ -1193,20 +1185,17 @@ const file_domain_agent_skill_proto_rawDesc = "" +
 	"\averdict\x18\x02 \x01(\tR\averdict\x12L\n" +
 	"\vscan_result\x18\x03 \x01(\v2+.peers_touch.model.agent.v1.SkillScanResultR\n" +
 	"scanResult\x12\x1c\n" +
-	"\tinstalled\x18\x04 \x01(\bR\tinstalled\"\xf9\x01\n" +
+	"\tinstalled\x18\x04 \x01(\bR\tinstalled\"\xdd\x01\n" +
 	"\x12UpdateSkillRequest\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x19\n" +
 	"\bskill_id\x18\x02 \x01(\tR\askillId\x12\x17\n" +
 	"\x04name\x18\x03 \x01(\tH\x00R\x04name\x88\x01\x01\x12%\n" +
 	"\vdescription\x18\x04 \x01(\tH\x01R\vdescription\x88\x01\x01\x12\x1d\n" +
-	"\acontent\x18\x05 \x01(\tH\x02R\acontent\x88\x01\x01\x12\x1d\n" +
-	"\aenabled\x18\x06 \x01(\bH\x03R\aenabled\x88\x01\x01B\a\n" +
+	"\acontent\x18\x05 \x01(\tH\x02R\acontent\x88\x01\x01B\a\n" +
 	"\x05_nameB\x0e\n" +
 	"\f_descriptionB\n" +
 	"\n" +
-	"\b_contentB\n" +
-	"\n" +
-	"\b_enabled\"\xbe\x01\n" +
+	"\b_contentJ\x04\b\x06\x10\aR\aenabled\"\xbe\x01\n" +
 	"\x13UpdateSkillResponse\x12?\n" +
 	"\x05skill\x18\x01 \x01(\v2).peers_touch.model.agent.v1.SkillManifestR\x05skill\x12L\n" +
 	"\vscan_result\x18\x02 \x01(\v2+.peers_touch.model.agent.v1.SkillScanResultR\n" +

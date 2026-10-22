@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Badge } from 'antd';
 import { Image, MessageCircle, User, Users } from 'lucide-react';
 
@@ -39,6 +39,7 @@ import {
 } from '../features/chat/chatActionState';
 import { MobileRouteBoundary } from './MobileRouteBoundary';
 import { MobileCallSurface } from './call/MobileCallSurface';
+import { useMobilePlatform } from '../services/platform/PlatformContext';
 
 type TabId = 'chat' | 'moments' | 'contacts' | 'settings';
 
@@ -234,6 +235,7 @@ export interface MobileShellProps {
  */
 export function MobileShell(props: MobileShellProps) {
   const { t } = useMobileI18n();
+  const platform = useMobilePlatform();
   const authSession = useAuthStore((state) => state.session);
   const primaryRouteId = useMobileNavigationStore(
     (state) => state.primaryRouteId,
@@ -342,6 +344,34 @@ export function MobileShell(props: MobileShellProps) {
     const nextRoute = activeMobileDetailRoute(state) ?? state.primaryRouteId;
     restoreLocation(nextRoute);
   }, [popDetail, restoreLocation, saveCurrentLocation]);
+
+  useEffect(() => {
+    let disposed = false;
+    let unsubscribe: (() => Promise<void>) | null = null;
+    void platform.subscribeSystemBack(() => {
+      const state = useMobileNavigationStore.getState();
+      if (state.overlayRoute !== null) {
+        state.closeOverlay();
+        return;
+      }
+      if (activeMobileDetailRoute(state) !== null) {
+        requestSettingsExit(closeDetail);
+        return;
+      }
+      void platform.systemActions.execute({ kind: 'return_to_system' })
+        .catch(() => undefined);
+    }).then((release) => {
+      if (disposed) {
+        void release();
+        return;
+      }
+      unsubscribe = release;
+    }).catch(() => undefined);
+    return () => {
+      disposed = true;
+      if (unsubscribe) void unsubscribe();
+    };
+  }, [closeDetail, platform]);
 
   const hideTabbar = activeDetail !== null || momentsImmersive;
 

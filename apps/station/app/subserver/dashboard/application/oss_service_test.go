@@ -783,6 +783,9 @@ func (s *stubFileService) PatchFile(_ context.Context, _, _ string, _ ossservice
 func (s *stubFileService) ListMyFiles(_ context.Context, _ string, _ ossservice.ListMyFilesRequest) (*ossservice.ListMyFilesResult, error) {
 	panic("admin upload should not call ListMyFiles")
 }
+func (s *stubFileService) ReadOwnedFile(_ context.Context, _, _ string, _ uint64) (*ossmodel.FileMeta, []byte, error) {
+	panic("admin upload should not call ReadOwnedFile")
+}
 
 // stubProvider hands the OSSService a minimal FileServiceProvider.
 // We bake in a sentinel `MaxFileSize` so the handler-side check

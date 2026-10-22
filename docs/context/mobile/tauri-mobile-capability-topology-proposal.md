@@ -20,11 +20,13 @@
 本文位于 `docs/context/`，不作为当前正式架构真源。当前正式口径请阅读：
 
 - `docs/client/mobile/base.md`
-- `docs/client/mobile/native-dual-platform.md`
+- `docs/client/mobile/native-plugin-layer.md`
 - `docs/client/mobile/applet-container.md`
 - `docs/client/mobile/sync-protocol.md`
 
-本方案已被采纳，`base.md` 和 `native-dual-platform.md` 已迁移为“Tauri Mobile 主线 + Native Plugin 能力层”口径。
+当前真源为 `docs/client/mobile/base.md`、
+`docs/client/mobile/native-plugin-layer.md` 和
+`docs/architecture/platform/client/cross-client-runtime/README.md`。
 
 ---
 

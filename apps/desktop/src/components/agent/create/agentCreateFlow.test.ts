@@ -35,7 +35,8 @@ describe('shared Agent creation', () => {
   });
 
   it('reports rejection and permits a subsequent creation', async () => {
-    createAgent.mockRejectedValueOnce(new Error('station unavailable'));
+    const creationError = new Error('station unavailable');
+    createAgent.mockRejectedValueOnce(creationError);
     const openProfile = vi.fn();
     openAgentCreateFlow(openProfile);
     await vi.waitFor(() => expect(toastError).toHaveBeenCalledWith('station unavailable'));

@@ -1,11 +1,13 @@
 ---
 kind: pitfall
-title: Desktop must consume every Group public lifecycle fact
+title: Clients must consume every Group public lifecycle fact
 status: active
 owns:
-  - apps/desktop/src-tauri/src/messaging/public_event.rs
-  - apps/desktop/src-tauri/src/messaging/store.rs
   - packages/messaging-core/src/inbox/public_event.rs
+  - apps/desktop/src-tauri/src/messaging/engine.rs
+  - apps/desktop/src-tauri/src/messaging/store.rs
+  - apps/mobile/src-tauri/src/messaging/engine.rs
+  - apps/mobile/src-tauri/src/messaging/adapter.rs
 referenced-by: []
 related:
   - ../../architecture/domains/chat/messaging/design.md
@@ -13,7 +15,7 @@ related:
 detected: 2026-10-18
 ---
 
-# Desktop must consume every Group public lifecycle fact
+# Clients must consume every Group public lifecycle fact
 
 ## Symptom
 
@@ -34,16 +36,20 @@ not provide an executable consumer or a transactional Store implementation.
 
 ### What was done in code
 
-Desktop consumes the lifecycle facts through its existing public-event processor
-and atomic receive transaction. It reuses Messaging Core marker/member fact
-validation, preserves all member metadata, and checks the exact locally owned
-command before committing its intent. A Group with its sole remaining Owner is
-a valid active projection.
+Messaging Core owns public-event validation and the shared
+`PublicEventProcessor`. Desktop and Mobile compose that processor and provide
+typed repository adapters for their atomic receive transactions. The adapters
+preserve all member metadata and check the exact locally owned command before
+committing its intent. A Group with its sole remaining Owner is a valid active
+projection.
 
 ### What guards against regression
 
-`group_lifecycle_markers_commit_exact_intents_and_preserve_authority_projection`
-proves rename, member role/mute, terminal state, exact intent commit and replay.
+`portable_public_event_processor_commits_group_update_and_dissolve` exercises
+the shared processor through Desktop's real adapter and checks rename,
+terminal state, exact command commit and the lane checkpoint.
+`core_member_authority_adapter_commits_the_exact_local_intent` checks the
+member-authority transaction through the shared repository port.
 `conversation_mutation_readback_mismatch_rolls_back_lane_and_local_intent`
 proves a contradictory result changes no projection, command, head, receipt or
 lane cursor. The Native lifecycle Gate requires receiver-visible rename, role,
@@ -51,15 +57,15 @@ Owner transfer, mutation by the new Owner, leave, dissolve and restart history.
 
 ## How to detect a recurrence
 
-From `apps/desktop/src-tauri`:
+From the repository root:
 
 ```bash
-cargo test --bin peers-touch-desktop --no-default-features --features acceptance-webdriver messaging::public_event::tests --offline
-cargo test --bin peers-touch-desktop --no-default-features --features acceptance-webdriver conversation_mutation_readback_mismatch --offline
+cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml portable_public_event_processor --offline
+cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml core_member_authority_adapter --offline
+cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml conversation_mutation_readback_mismatch --offline
 ```
 
-From the repository root, with reviewed remote Profiles and the required reset
-authorization:
+With reviewed remote Profiles and the required reset authorization:
 
 ```bash
 python3 tooling/scripts/acceptance-run.py --runtime-cell desktop-macos-native --station-profile station-four=four --station-profile station-five=fiveArm --gate chat-lifecycle-interactions-group-e2e

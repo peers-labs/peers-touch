@@ -25,12 +25,12 @@ Do **not** use this for post-login, in-shell permission checks — those are not
 ## Pre-conditions
 
 - [ ] The gate's contract (type enum + any new request/field shape) is added to `model/domain/access_gate/access_gate.proto` and reviewed.
-- [ ] `./model/build.sh` has regenerated Go proto, and `./tooling/scripts/proto-gen-mobile.sh` the mobile/native bindings.
+- [ ] `./model/build.sh` has regenerated shared/Station contracts, and `./tooling/scripts/proto-gen-mobile.sh web` the Mobile TypeScript bindings.
 - [ ] You have read invariant [`access-gate-wire-contract.md`](../invariants/access-gate-wire-contract.md) — every client predicate you touch must match both enum forms and snake_case-first keys.
 
 ## Steps
 
-1. **Add the gate type to proto** — Extend `AccessGateType` in [`model/domain/access_gate/access_gate.proto`](../../../model/domain/access_gate/access_gate.proto). Reuse an existing submit field if the input fits; only add a new request field if the gate carries genuinely new input. Regenerate (`./model/build.sh`, `./tooling/scripts/proto-gen-mobile.sh`). Never hand-edit generated `*.pb.go` / prost output.
+1. **Add the gate type to proto** — Extend `AccessGateType` in [`model/domain/access_gate/access_gate.proto`](../../../model/domain/access_gate/access_gate.proto). Reuse an existing submit field if the input fits; only add a new request field if the gate carries genuinely new input. Regenerate (`./model/build.sh`, `./tooling/scripts/proto-gen-mobile.sh web`). Never hand-edit generated `*.pb.go` / prost output.
 
 2. **Implement the gatekeeper** — Add a `<name>Gatekeeper` struct in [`apps/station/frame/touch/accessgate/builtin_gatekeepers.go`](../../../apps/station/frame/touch/accessgate/builtin_gatekeepers.go) implementing `Type()`, `GateID()`, and `Evaluate(ctx, *gatekeeper.EvalContext) *pb.AccessGate`. Define a stable `gateID<Name>` constant alongside the existing ones in [`service.go`](../../../apps/station/frame/touch/accessgate/service.go). If the gate needs form input, populate `InputSchemaJson` with a `{"fields":[…]}` schema and set `SubmitAction`. Keep policy storage out of the gatekeeper — inject it as a func (see `allowlistGatekeeper`'s `allowed allowedFunc`).
 

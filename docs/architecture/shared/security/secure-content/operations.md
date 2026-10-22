@@ -1,8 +1,8 @@
 # Secure Content - Operational Contract
 
 > **Status**: active
-> **Version**: v1.8
-> **Created**: 2026-09-13 | **Updated**: 2026-09-21
+> **Version**: v1.9
+> **Created**: 2026-09-13 | **Updated**: 2026-10-17
 > **Owner**: Architecture Team
 
 ---
@@ -67,6 +67,32 @@ orphaned pending/in-flight work into `UNKNOWN_COMMIT` and retries the same
 command with a fresh proof. Command state and per-key root-commit state remain
 separate. Logout, account/Station switch, vault lock, revocation and shutdown
 stop admission, fence callbacks and zeroize in-memory secrets.
+
+Under accepted `SC-D30`, the portable core owns the mechanism behind that
+contract:
+
+1. plan endpoint/recovery replenishment from typed inventory;
+2. derive `cpk-pub-v1-*` only from canonical proof-free request bytes;
+3. persist the exact command before dispatch through the encrypted-store port;
+4. acquire one session/lease generation and increment the attempt once;
+5. map transport result to a typed committed/retry/unknown/terminal outcome;
+6. after an unknown may-commit result, require owner-supplied authoritative
+   readback before exact-command retry;
+7. reject stale session/lease completion and lifecycle-cancelled continuation.
+
+`Prepared` owner submissions remain outside background reconciliation until the
+explicit user action acquires them. The portable mechanism never calls Social
+or Conversation submit routes itself. Host adapters may implement HTTP,
+SQLCipher, filesystem, and OS lifecycle details but cannot change these
+decisions.
+
+UCA-05 applies this contract to Moment and Comment submissions on Desktop and
+to private Social submissions on Mobile. A successful may-commit response first
+becomes `COMMITTED_PENDING_READBACK`; only verified owner readback commits the
+local projection. `UNKNOWN_OUTCOME` retries only after
+`AuthoritativeAbsent`. Mobile private-object upload persists
+`ObjectTransferRecord` before begin, checkpoints each completed chunk, and
+resumes through `ObjectTransferWorker`; Social no longer owns a chunk loop.
 
 EC5A requires PostgreSQL receipt contention, pool/Actor lock ordering,
 profile-rotation and revocation races. Its runner requires a DSN, parses

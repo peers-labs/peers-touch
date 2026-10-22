@@ -1,162 +1,108 @@
-# Mobile Shell — 产品验收矩阵
+# Mobile Shell - Product Acceptance Matrix
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-08-27 | **Updated**: 2026-10-12
+> **Version**: v2.0
+> **Created**: 2026-08-27 | **Updated**: 2026-10-16
 > **Owner**: Mobile Product Team
 
 ---
 
-| ID | Journey | User action and visible result | Durable/readback proof | Required cell |
+## 1. Platform Rule
+
+Mobile is one product with Android and iOS release targets.
+
+Every Mobile claim binds to:
+
+```text
+capability x release target x runtime mode x source revision
+```
+
+`Android + iOS` means separate source-bound cells, not one shared run. An
+unregistered, missing, failed, or stale required cell is `UNPROVEN`.
+
+## 2. Product Acceptance
+
+| ID | Journey | User-visible result | Durable/readback proof | Required platform |
 |---|---|---|---|---|
-| MS-PA01 | MS-J01 | Add and select a reachable Station; current access gate appears | Station registry plus access decision | iOS Simulator |
-| MS-PA02 | MS-J01 | Complete Email login; Shell appears only after access grant | Station session and access grant | iOS Simulator |
-| MS-PA03 | MS-J01 | Complete the deterministic OAuth callback/finalizer journey; callback returns to the same Station and enters the gate chain | Station attempt/finalizer and secure-session metadata readback without exposing token material; live provider authorization is optional diagnostics | iOS Simulator |
-| MS-PA04 | MS-J02 | Restart with a valid session; Shell restores without showing another actor's data | Secure session plus actor-scoped projection | cold restart |
-| MS-PA05 | MS-J02 | Open with revoked session; login gate appears and stale projections are cleared | Station rejects session; local session absent | revoke + resume |
-| MS-PA06 | MS-J03 | Send friend and group messages; peer receives content and receipts progress monotonically | Station conversation/message readback | two actors, two devices |
-| MS-PA07 | MS-J03 | Reply, edit, recall, react, pin, forward, and open a thread; each committed action survives reload | Station event/history readback; local-only flag explicitly excluded | two actors |
-| MS-PA08 | MS-J03 | Lose network during a write; UI shows retryable or unknown outcome without duplicate commit | Idempotency/readback evidence | disconnect/reconnect |
-| MS-PA09 | MS-J04 | On one Station, accept a friend request, inspect profile, and start a Direct chat | Station relationship and conversation readback | two actors, two devices, same Station |
-| MS-PA10 | MS-J04 | Create a group and manage members according to role | Station group/member/ownership readback | owner/admin/member |
-| MS-PA11 | MS-J05 | Read, paginate, publish, react, comment, and reply in Moments | Station post/comment/reaction readback | two actors |
-| MS-PA12 | MS-J06 | Edit Actor Profile/privacy or device preferences from its selected detail and reopen the app | Profile revision/readback or device-local readback; no cross-owner save claim | restart |
-| MS-PA13 | MS-J06 | Change Station; prior session projections disappear before the new gate renders | Old actor-scoped cache/session absent | two Stations |
-| MS-PA14 | MS-J02..06 | Background then resume; stale state is reconciled before mutation controls re-enable | Cursor/reconcile evidence | simulator background/resume |
-| MS-PA15 | MS-J03..05 | Use long lists and rapid tab switching; visible feedback remains within runtime budget | Interaction-linked timing and no unbounded render | populated simulator runtime |
-| MS-PA16 | MS-J01, MS-J06 | Remove a saved Station or explicitly replace an identity-mismatched Station | Registry readback; unrelated Station sessions/caches unchanged | two Stations |
-| MS-PA17 | MS-J01 | Complete invite/device/terms/custom schema-driven gates or observe pending/blocked recovery | Station access decision and audit readback | iOS Simulator |
-| MS-PA18 | MS-J03 | Upload attachment, observe typing, search, delete, and change conversation settings with truthful progress/recovery | Station message/settings/event readback | two actors, two devices |
-| MS-PA19 | MS-J04 | Send/reject requests and handle duplicate, no-result, and role-denied states on one Station | Station relationship/group readback | two actors, two devices, same Station |
-| MS-PA20 | MS-J05 | Distinguish empty/filtered/policy-hidden/unavailable feed and recover rejected publish/reaction/comment | Station feed/policy readback and rollback evidence | two actors, two devices, same Station |
-| MS-PA21 | MS-J06 | Change Notification, Profile/privacy, storage/language, and blocked-user settings from their selected owner; resolve stale revision, lost response, unsaved, unavailable, and permission states | Owner-specific Profile/Notification revision and canonical snapshot, Social readback, plus device-local readback | restart + second device |
-| MS-PA22 | MS-J07 | Flag a message locally; another device does not show the flag and UI names the device-only scope | Device-local readback plus peer-device absence | two devices |
-| MS-PA23 | MS-J03, MS-J05, MS-J07 | Chat/Moments drafts survive tab/detail unmount, background, failure, and process restart until publish/discard | Encrypted device draft readback | restart + background |
-| MS-PA24 | MS-J01..07 | Complete primary journeys with screen reader, maximum supported text size, reduced motion, long locale, and restored focus | Accessibility tree, focus trace, screenshots | iOS Simulator |
-| MS-PA25 | MS-J01, MS-J07 | Station peer mismatch, capability incompatibility, OAuth expiry/replay, and session revocation show blocking trust state and recovery | Signed handshake/access/session evidence | iOS Simulator |
-| MS-PA26 | MS-J07 | Fill command capacity or overflow data events; reads remain available and writes explain why they are blocked | Queue/admission/reconcile counters | simulator stress cell |
-| MS-PA27 | MS-J01, MS-J03, MS-J07 | WeChat/Docs entries are absent or disabled with a useful reason; local-only capability is not advertised as shared | Surface inventory and interaction evidence | iOS Simulator |
-| MS-PA28 | MS-J08 | In one foreground iOS run, open and interact with every registered pre-shell, tab, detail, overlay, and recovery surface; every surface has coherent hierarchy, touch targets, navigation, state meaning, and a valid next action | Route/state coverage manifest, screenshots, DOM/AX snapshots, and interaction trace for every inventory row | foreground iOS Simulator |
-| MS-PA29 | MS-J08 | Across the complete surface inventory, friendly identity and product copy remain primary; raw PTIDs, Station URLs, runtime/command IDs, untranslated keys, blocking module notices, clipping, overlap, and occluded controls are absent | Automated visual/content assertions plus agent-reviewed screenshots at normal and maximum supported text size | foreground iOS Simulator |
-| MS-PA30 | MS-J03 | From a Direct conversation, two Mobile clients complete incoming/outgoing audio and video through ring, accept/reject/no-answer, active media, mute/camera controls, reconnect, hangup, and cleanup while Chat remains usable | Sealed signaling, one call identity, direct/TURN path evidence, visible receiver media, and zero leaked tracks/peer connections/timers after terminal state | same-Station and cross-Station iOS Simulator cells |
-| MS-PA31 | MS-J03, MS-J07 | Desktop and Mobile for one callee ring under the same call identity; the first accepted terminal action wins and the sibling becomes `handled_elsewhere` | Realtime resolution readback preserves one winner across duplicate, conflict, reconnect, and Station restart | `chat-mixed-native` |
+| MS-PA01 | MS-J01 | Add/select a reachable Station; current access gate appears | Station registry and access decision | Android + iOS |
+| MS-PA02 | MS-J01 | Complete Email login; Shell appears only after access grant | Station session and grant | Android + iOS |
+| MS-PA03 | MS-J01 | Complete OAuth callback/finalization and return to the same Station gate chain | Station attempt/finalizer and secure-session metadata; no token in Web state | Android + iOS; physical cells for live providers |
+| MS-PA04 | MS-J02 | Restart with a valid session without leaking another actor's data | Secure session and actor-scoped projection | Android + iOS |
+| MS-PA05 | MS-J02 | Resume with a revoked session; login gate appears and stale data clears | Station rejection and local-session absence | Android + iOS |
+| MS-PA06 | MS-J03 | Send Direct/Group messages; receiver gets content and monotonic receipts | Conversation/message readback | two isolated Android clients + two isolated iOS clients |
+| MS-PA07 | MS-J03 | Reply, edit, recall, react, pin, forward, and thread actions survive reload | Station event/history readback | Android + iOS |
+| MS-PA08 | MS-J03 | Network loss during write produces retryable or unknown outcome without duplicate commit | Idempotency and result readback | Android + iOS |
+| MS-PA09 | MS-J04 | Accept friend request, inspect profile, start Direct chat | Relationship and conversation readback | two isolated Android clients + two isolated iOS clients |
+| MS-PA10 | MS-J04 | Create group and manage members by role | Conversation member/ownership readback | Android + iOS |
+| MS-PA11 | MS-J05 | Read, paginate, publish, react, comment, and reply in Moments | Post/comment/reaction readback | Android + iOS |
+| MS-PA12 | MS-J06 | Edit profile/privacy or device preference and reopen | Owner-specific or device-local readback | Android + iOS |
+| MS-PA13 | MS-J06 | Change Station; old projections disappear before the new gate | Old scoped state absent | Android + iOS |
+| MS-PA14 | MS-J02..06 | Background/resume reconciles stale state before writes reopen | Cursor/reconcile evidence | physical Android + physical iOS |
+| MS-PA15 | MS-J03..05 | Long lists and rapid navigation stay within interaction budgets | Interaction-linked timing and bounded render | pinned physical Android + iOS |
+| MS-PA16 | MS-J01, MS-J06 | Remove or replace a Station without altering unrelated scopes | Registry and scope readback | Android + iOS |
+| MS-PA17 | MS-J01 | Complete or recover invite/device/terms/custom access gates | Access decision and audit | Android + iOS |
+| MS-PA18 | MS-J03 | Attachment, typing, search, delete, and settings show truthful progress/recovery | Message/settings/event readback | Android + iOS |
+| MS-PA19 | MS-J04 | Request and group actions handle duplicate, missing-result, and role-denied states | Relationship/group readback | Android + iOS |
+| MS-PA20 | MS-J05 | Feed distinguishes empty, filtered, hidden, unavailable, and rejected actions | Feed/policy readback and rollback | Android + iOS |
+| MS-PA21 | MS-J06 | Settings preserve Profile, Notification, Social, and device ownership | Owner-specific and device-local readback | Android + iOS |
+| MS-PA22 | MS-J07 | Device-local message flag does not appear on another device | Local readback and peer absence | Android + iOS |
+| MS-PA23 | MS-J03, MS-J05, MS-J07 | Drafts survive unmount, background, failure, and restart until publish/discard | Encrypted local draft readback | Android + iOS |
+| MS-PA24 | MS-J01..07 | Primary journeys work with screen reader, large text, reduced motion, long locale, and restored focus | Accessibility tree, focus trace, screenshots | physical Android + iOS |
+| MS-PA25 | MS-J01, MS-J07 | Trust mismatch, incompatibility, OAuth replay/expiry, and revocation fail closed | Handshake/access/session evidence | Android + iOS |
+| MS-PA26 | MS-J07 | Admission/data overflow keeps reads available and explains blocked writes | Queue/admission/reconcile counters | Android + iOS |
+| MS-PA27 | MS-J01, MS-J03, MS-J07 | Unsupported capabilities are absent or explain why unavailable | Surface inventory and interaction evidence | Android + iOS |
+| MS-PA28 | MS-J08 | Every registered surface is operable with coherent hierarchy and valid next action | Route/state manifest, screenshots, DOM/accessibility, interaction trace | Android + iOS |
+| MS-PA29 | MS-J08 | No raw identifiers, untranslated copy, clipping, overlap, occlusion, or blocking module notices | Automated assertions and reviewed screenshots | Android + iOS |
+| MS-PA30 | MS-J03 | Direct audio/video covers ring, answer/reject/no-answer, active media, reconnect, hangup, and cleanup | Signaling, routing, receiver media, and zero leaked resources | physical Android pair + physical iOS pair; same/cross-Station |
+| MS-PA31 | MS-J03, MS-J07 | Desktop and Mobile share one call identity; first terminal action wins | Realtime resolution readback | Desktop + Android and Desktop + iOS |
 
-## Architecture Gates
+## 3. Architecture Gates
 
-All commands run from the repository root.
-`tooling/acceptance/plans/mobile-shell.json` is created by execution-plan W0
-before runtime gates run.
+| Gate | Required cells | Pass contract | Current registration state |
+|---|---|---|---|
+| MS-AG01 Static/contracts | shared source | `pnpm mobile:check`; generated contracts and ownership scans pass | registered |
+| MS-AG02 Lifecycle/isolation | Android + iOS | restore, revocation, Station switch, logout, monotonic generation, zero old-scope reads | iOS simulator Gates exist; Android Gate required and `UNPROVEN` |
+| MS-AG03 OAuth security | Android + iOS; physical for live-provider claim | callback/finalizer binding, replay/mismatch rejection, secret absence, secure session | deterministic iOS Gate exists; Android and physical provider cells `UNPROVEN` |
+| MS-AG04 Unknown outcome | Android + iOS | one Station commit; converged or visibly unresolved result after restart | iOS Gate exists; Android `UNPROVEN` |
+| MS-AG05 Resume/teardown | physical Android + iOS | no cross-generation data; writes wait for reconcile; resources return to baseline | required physical matrix `UNPROVEN` |
+| MS-AG06 Projection freshness | Android + iOS | receiver convergence and authoritative readback | iOS scenario Gates exist; Android `UNPROVEN` |
+| MS-AG07 Interaction performance | pinned physical Android + iOS | declared P95/P99 budgets and attribution; no unbounded main-thread work | required physical matrix `UNPROVEN` |
+| MS-AG08 Layout | Android emulator/device + iOS simulator/device | smallest/largest viewport, keyboard, orientation, safe area, no clipping/overlap | iOS layout Gate exists; Android `UNPROVEN` |
+| MS-AG09 Admission/overload | Android + iOS | bounded queues, fairness, typed overflow, no silent loss or duplicate | iOS Gate exists; Android `UNPROVEN` |
+| MS-AG10 Payload/storage | Android + iOS | payload bounds, atomic recovery, encrypted/no-secret disk scan | iOS Gate exists; Android `UNPROVEN` |
+| MS-AG11 Accessibility/i18n | physical Android + iOS | TalkBack/VoiceOver order and labels, focus, text size, locale, reduced motion | required physical matrix `UNPROVEN` |
+| MS-AG12 Whole-product usability | Android + iOS | full shared inventory visited; zero blocker/major usability defects | iOS Gate exists; Android `UNPROVEN` |
+| MS-AG13 One-to-one call lifecycle | physical Android pair + physical iOS pair | audio/video ring through cleanup; Chat remains usable | required Mobile-native Gates `UNPROVEN` |
+| MS-AG14 Cross-device call resolution | Desktop + Android; Desktop + iOS | dual ring, first-action-wins, loser cleanup, reconnect/restart | iOS mixed Gate exists; Android mixed cell `UNPROVEN` |
 
-| Gate | Command | Runtime cell and sample policy | Pass threshold | Evidence |
-|---|---|---|---|---|
-| MS-AG01 Static/contracts | `pnpm mobile:check`, `pnpm --dir apps/mobile run check:mobile-shell-contracts`, and `./tooling/scripts/proto-gen-mobile.sh` | CI; one clean run | exit 0; PTID/manual-domain scans have zero violations | Evidence Store `ArtifactRef`s from the selected static Gates |
-| MS-AG02 Lifecycle/isolation | `python3 tooling/scripts/acceptance-run.py --gate mobile-simulator-runtime-lifecycle-e2e`; `python3 tooling/scripts/acceptance-run.py --gate mobile-simulator-station-lifecycle-e2e` | two isolated iOS Simulators; two disposable Stations for session restore/revocation and Station switching | local graph order, valid restore, takeover revocation, 10 Station switches, logout, monotonic generation, and zero old-scope reads pass | Evidence Store latest for both required simulator lifecycle Gates |
-| MS-AG03 OAuth security | `python3 tooling/scripts/acceptance-run.py --gate mobile-simulator-access-e2e` | iOS Simulator; deterministic callback/finalizer, cancel, expiry, replay, and mismatch cells | attempt binding is preserved; session activates only after final grant; replay/mismatch fails closed; no provider credential enters Web state | Evidence Store latest for `mobile-simulator-access-e2e` |
-| MS-AG04 Unknown outcome | `python3 tooling/scripts/acceptance-run.py --gate mobile-simulator-recovery-e2e` | two actors on isolated iOS Simulators bound to one source-attested Station; deterministic response loss plus restart | exactly one Station commit; every command converges or remains visibly unresolved after restart | Evidence Store latest for `mobile-simulator-recovery-e2e` |
-| MS-AG05 Resume/teardown | lifecycle and recovery simulator Gates | two isolated iOS Simulators; Station switching, logout, secure-store fault and restart | no cross-generation data; writes wait for reconcile; secure-store failure blocks; resources return to baseline | Evidence Store latest for required simulator lifecycle and recovery Gates |
-| MS-AG06 Projection freshness | `mobile-simulator-social-convergence-e2e`, `mobile-simulator-chat-contacts-e2e`, `mobile-simulator-moments-e2e`, and `mobile-simulator-settings-e2e` | two actors and two isolated simulator clients on one source-attested Station; Settings retains its same-account lifecycle cell | realtime convergence <= 5 s; forced reconcile convergence <= 30 s; authoritative readback matches both clients | Evidence Store latest for the scenario-specific simulator Gates |
-| MS-AG07 Interaction performance | `python3 tooling/scripts/acceptance-run.py --gate mobile-simulator-platform-e2e` | pinned iOS Simulator cells with declared workload | interaction samples and attribution are reported; no unbounded main-thread task is accepted | Evidence Store timing and attribution `ArtifactRef`s |
-| MS-AG08 Layout | same Acceptance command | smallest/largest supported viewport, keyboard open/closed, portrait/landscape | no overlap/clipping; one safe-area/keyboard occlusion model | Evidence Store screenshot, DOM and AX `ArtifactRef`s |
-| MS-AG09 Admission/overload | same Acceptance command | 50 intents/5 s across 8 ordering keys; Station delay 10 s; fill ledger limits; flood 2,000 data events plus revocation | command bounds/fairness hold; overflow is typed; data overflow reconciles; revocation closes writes; zero silent drop/duplicate | Evidence Store admission and reconcile `ArtifactRef`s |
-| MS-AG10 Payload/storage | same Acceptance command | payload at 256 KiB and +1 byte; media at Station-advertised maximum and +1 byte; process kill during ledger/draft transition | boundaries hold; media bytes stay external; command/draft stores recover atomically; disk scan finds no token, secret, or plaintext content | Evidence Store payload, recovery and redaction `ArtifactRef`s |
-| MS-AG11 Accessibility/i18n | layout and platform simulator Gates | simulator accessibility trees; maximum supported text size; reduced motion; longest supported locale; keyboard/focus traversal | semantic order and labels complete; focus restored; no clipped/overlapping text; motion preference honored | Evidence Store accessibility tree, focus trace and screenshot `ArtifactRef`s |
-| MS-AG12 Whole-product usability | `mobile-simulator-whole-product-usability-e2e` consumes the descriptor/state inventory and foreground evidence contract; the launch-only layout Gate remains separately scoped | visible iOS Simulator; every registered route and product-owned recovery state; normal and maximum supported text size | every inventory row visited; zero raw-identifier, untranslated-copy, blocking-overlay, clipping, overlap, occlusion, missing-action, or prototype-drift failures; agent visual review passes | Per-surface screenshot, DOM/AX, interaction trace, inventory coverage manifest, and reviewed verdict `ArtifactRef`s |
-| MS-AG13 One-to-one call lifecycle | Required Mobile call Gate is not registered yet | two isolated iOS Simulator clients on same-Station and cross-Station direct/TURN cells | audio/video ring through teardown passes; Chat remains usable; media and signaling resources return to baseline | `UNPROVEN` until a Mobile-native Gate is registered and passes on exact source |
-| MS-AG14 Cross-device call resolution | `python3 tooling/scripts/acceptance-run.py --gate chat-lifecycle-call-resolution-e2e` | one Native Desktop plus one isolated iOS Simulator for the same callee, with an independent caller | dual ring, first-terminal-action-wins, loser `handled_elsewhere`, conflict/reconnect/restart cases pass | Evidence Store latest for `chat-lifecycle-call-resolution-e2e` |
+Current iOS Gates remain valid only for their declared cells. They do not
+produce a whole-Mobile readiness verdict.
 
-Missing required iOS Simulator evidence remains `UNPROVEN`. Android Emulator,
-physical-device, live-provider, VoiceOver/TalkBack, OEM scheduler/picker,
-secure-hardware, and pinned-hardware performance runs are optional diagnostics.
-Their absence does not block the required Mobile bundle, and their output never
-substitutes for a required iOS Simulator Gate.
-
-Cross-Station or Relay-backed Social, Chat, Contacts, Moments, and command
-recovery are deferred from `mobile-shell-20260827`. They remain `UNPROVEN` and
-must be planned together with the Desktop cross-Station work; same-Station
-evidence cannot be promoted to that scope.
-
-## Product-To-Architecture Mapping
+## 4. Product-To-Gate Mapping
 
 | Product acceptance | Architecture gates |
 |---|---|
 | MS-PA01, MS-PA02, MS-PA04, MS-PA05 | MS-AG01, MS-AG02, MS-AG05 |
 | MS-PA03 | MS-AG01, MS-AG03 |
 | MS-PA06, MS-PA07, MS-PA08 | MS-AG01, MS-AG04, MS-AG06, MS-AG09, MS-AG10 |
-| MS-PA09, MS-PA10, MS-PA11, MS-PA12 | MS-AG01, MS-AG06, MS-AG09, MS-AG10 |
+| MS-PA09..MS-PA12 | MS-AG01, MS-AG06, MS-AG09, MS-AG10 |
 | MS-PA13, MS-PA14 | MS-AG02, MS-AG05, MS-AG06 |
 | MS-PA15 | MS-AG07, MS-AG08 |
 | MS-PA16, MS-PA17, MS-PA25 | MS-AG02, MS-AG03, MS-AG05, MS-AG08 |
-| MS-PA18, MS-PA19, MS-PA20, MS-PA21 | MS-AG04, MS-AG06, MS-AG08, MS-AG09, MS-AG10 |
+| MS-PA18..MS-PA21 | MS-AG04, MS-AG06, MS-AG08, MS-AG09, MS-AG10 |
 | MS-PA22, MS-PA23, MS-PA26 | MS-AG04, MS-AG05, MS-AG09, MS-AG10 |
 | MS-PA24, MS-PA27 | MS-AG08, MS-AG11 |
 | MS-PA28, MS-PA29 | MS-AG08, MS-AG11, MS-AG12 |
 | MS-PA30 | MS-AG08, MS-AG11, MS-AG13 |
 | MS-PA31 | MS-AG14 |
 
-## Capability Traceability
+## 5. Failure Rules
 
-| Capability | Journey | Product acceptance | Prototype surface |
-|---|---|---|---|
-| MS-C01 | MS-J01, MS-J06 | MS-PA01, MS-PA16, MS-PA25 | Launch/Station selector + trust recovery |
-| MS-C02 | MS-J01, MS-J02 | MS-PA02, MS-PA04, MS-PA05, MS-PA17 | Access Gate states |
-| MS-C03 | MS-J01 | MS-PA03, MS-PA25 | OAuth progress/recovery |
-| MS-C04 | MS-J03..06 | MS-PA15, MS-PA24 | Shell tabs + detail routes |
-| MS-C05 | MS-J03 | MS-PA06, MS-PA18, MS-PA23 | Chat list/thread/composer/settings |
-| MS-C06 | MS-J03, MS-J07 | MS-PA07, MS-PA08 | Message actions/forward/thread/uncertain write |
-| MS-C07 | MS-J04 | MS-PA09, MS-PA10, MS-PA19 | Contacts/profile/group flows |
-| MS-C08 | MS-J05, MS-J07 | MS-PA11, MS-PA20, MS-PA23 | Moments feed/composer/recovery |
-| MS-C09 | MS-J06 | MS-PA12, MS-PA21, MS-PA24 | Me/settings/details |
-| MS-C10 | MS-J02, MS-J07 | MS-PA04, MS-PA05, MS-PA08, MS-PA13, MS-PA14, MS-PA25, MS-PA26 | Runtime recovery scenarios |
-| MS-C11 | MS-J01 | MS-PA27 | Disabled/absent WeChat OAuth entry |
-| MS-C12 | MS-J03, MS-J07 | MS-PA30, MS-PA31 | Direct call actions + shell-owned outgoing/incoming/active/reconnecting/handled-elsewhere/ended surface |
-| MS-C13 | MS-J03 | MS-PA27 | Disabled/absent Docs entry |
-| MS-C14 | MS-J07 | MS-PA22, MS-PA27 | Device-only message flag |
-| MS-C15 | MS-J08 | MS-PA28, MS-PA29 | Complete foreground Mobile surface inventory |
-
-## Architecture Requirement Traceability
-
-| Product acceptance | Architecture requirements |
-|---|---|
-| MS-PA01, MS-PA16, MS-PA25 | MS-P07 signed Station identity/capability handshake |
-| MS-PA02, MS-PA04, MS-PA05, MS-PA17 | MS-P01 PTID-only session identity; Access Gate chain |
-| MS-PA03, MS-PA25 | MS-P02 OAuth attempt; MS-P03 callback/status |
-| MS-PA06..MS-PA11, MS-PA18..MS-PA20 | Existing generated domain Proto plus MS-P04 mutation outcome lookup where a write is durable |
-| MS-PA12, MS-PA21 | MS-P05 owner-specific Profile/Notification CAS; MS-P14 Settings ownership |
-| MS-PA08, MS-PA13, MS-PA14, MS-PA26 | MS-P06 durable command envelope and runtime generation fencing |
-| MS-PA22 | Device-local typed flag projection; no shared business contract |
-| MS-PA23 | MS-P08 device-local draft envelope |
-| MS-PA24, MS-PA27 | UI Identity and component-tree contracts; no new business schema |
-| MS-PA28, MS-PA29 | MS-D28 whole-product usability attestation; descriptor/state inventory; UI Identity and confirmed prototype |
-| MS-PA30 | MS-D29; CHAT-D05 sealed CallSignal + shared Realtime + WebRTC direct/TURN; Mobile shell OverlayHost and call runtime |
-| MS-PA31 | MS-D29; CCU-E09 Realtime call-resolution owner and CHAT-G19 mixed-client arbitration |
-
-Execution-plan W0 must register the concrete Acceptance JSON and run:
-
-```bash
-pnpm mobile:check
-pnpm --dir apps/mobile run check:mobile-shell-contracts
-./tooling/scripts/proto-gen-mobile.sh
-make acceptance PLAN=tooling/acceptance/plans/mobile-shell.json
-```
-
-`check:mobile-shell-contracts` is registered in `apps/mobile/package.json` and
-must continue to fail on numeric/aliased actor identity outside generated
-compatibility ingress, manual domain types outside the gateway, imports of
-retired JSON adapters, invalid runtime dependency graphs/budgets, URL-keyed
-session/command scopes, or a second durable-command persistence owner.
-
-The Acceptance artifact must index every `MS-PAxx` row and its mapped
-`MS-AGxx` evidence. Each required runtime Gate records lifecycle generation,
-Station/PTID scope, command ID, queue depth, active worker/listener/timer
-counts, transition timestamps, and typed error codes without secrets or PII. A
-missing row, required simulator cell, Station readback, percentile, attribution
-metric, or artifact path is `UNPROVEN`.
-
-## Failure Requirements
-
-- Missing required simulator evidence is `UNPROVEN`, never passed by browser
-  prototype or optional physical proof.
-- Screenshots prove visible layout only; persisted claims require Station readback.
-- Single-actor tests cannot prove delivery, receipts, friend requests, reactions,
-  comments, group membership, or cross-device convergence.
-- Mock APIs are forbidden in production acceptance.
+- Missing required platform evidence is `UNPROVEN`.
+- Screenshots prove visible state only; durable claims require owner readback.
+- Single-client evidence cannot prove delivery or receiver convergence.
+- Simulator/emulator evidence cannot prove hardware/provider behavior it does
+  not execute.
+- Mocks and injected success are forbidden in product acceptance.
+- Same-Station evidence cannot be promoted to cross-Station or Relay scope.
+- Shared-core tests cannot be promoted to Android or iOS host proof.

@@ -9,11 +9,7 @@ import { ConversationRail } from './ConversationRail';
 import { deriveAgentWorkbenchLayout } from './layout';
 import { TopicRail } from './TopicRail';
 
-interface AgentWorkbenchProps {
-  onOpenOrchestration?: () => void;
-}
-
-export function AgentWorkbench({ onOpenOrchestration }: AgentWorkbenchProps) {
+export function AgentWorkbench() {
   const { t } = useTranslation('agent');
   const { token } = theme.useToken();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -131,7 +127,6 @@ export function AgentWorkbench({ onOpenOrchestration }: AgentWorkbenchProps) {
         <ConversationRail
           narrow={layout.narrow}
           onOpenChat={(agentName) => openSurface(agentName, 'chat')}
-          onOpenOrchestration={onOpenOrchestration}
         />
       </div>
       {layout.ultraNarrow && mobileTopicsOpen && currentSurface === 'chat' && (

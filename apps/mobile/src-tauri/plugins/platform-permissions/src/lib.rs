@@ -60,6 +60,42 @@ pub struct PermissionResponse {
     pub can_request: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum NativeCapabilityState {
+    Available,
+    Unavailable,
+    Denied,
+    Restricted,
+    Unsupported,
+    Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeCapabilityObservation {
+    pub state: NativeCapabilityState,
+    pub source: String,
+    pub detail: Option<String>,
+    pub timestamp_ms: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum NativeSystemActionState {
+    Completed,
+    Cancelled,
+    Unavailable,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeSystemActionOutcome {
+    pub state: NativeSystemActionState,
+    pub reason: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NetworkObservationResponse {
@@ -95,6 +131,7 @@ pub struct NativePushCallback {
     pub target_hint: Option<String>,
     pub issued_at_ms: Option<u64>,
     pub expires_at_ms: Option<u64>,
+    pub error_code: Option<String>,
 }
 
 #[derive(Clone, PartialEq, Eq, Deserialize)]
@@ -209,6 +246,62 @@ impl<R: Runtime> PlatformPermissions<R> {
         }
     }
 
+    pub async fn observe_capability(
+        &self,
+        capability: &str,
+    ) -> Result<NativeCapabilityObservation> {
+        #[cfg(any(target_os = "android", target_os = "ios"))]
+        {
+            return self
+                .plugin_handle
+                .run_mobile_plugin_async(
+                    "observeCapability",
+                    CapabilityObservationArgs { capability },
+                )
+                .await
+                .map_err(|error| Error::invoke("observe capability", error));
+        }
+
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        {
+            let _ = capability;
+            Ok(NativeCapabilityObservation {
+                state: NativeCapabilityState::Unsupported,
+                source: "unsupported-host".to_string(),
+                detail: Some("mobile host is unavailable".to_string()),
+                timestamp_ms: 0,
+            })
+        }
+    }
+
+    pub async fn execute_system_action(
+        &self,
+        kind: &str,
+        text: Option<&str>,
+        url: Option<&str>,
+    ) -> Result<NativeSystemActionOutcome> {
+        #[cfg(any(target_os = "android", target_os = "ios"))]
+        {
+            return self
+                .plugin_handle
+                .run_mobile_plugin_async(
+                    "executeSystemAction",
+                    SystemActionArgs { kind, text, url },
+                )
+                .await
+                .map_err(|error| Error::invoke("execute system action", error));
+        }
+
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        {
+            let _ = (kind, text, url);
+            Ok(NativeSystemActionOutcome {
+                state: NativeSystemActionState::Unavailable,
+                reason: Some("mobile host is unavailable".to_string()),
+            })
+        }
+    }
+
     pub async fn start_network_observation(&self) -> Result<NetworkObservationResponse> {
         #[cfg(any(target_os = "android", target_os = "ios"))]
         {
@@ -235,6 +328,7 @@ impl<R: Runtime> PlatformPermissions<R> {
         &self,
         lifecycle_generation: u64,
         environment: &str,
+        scope_token: &str,
     ) -> Result<PushArmResponse> {
         #[cfg(any(target_os = "android", target_os = "ios"))]
         {
@@ -245,6 +339,7 @@ impl<R: Runtime> PlatformPermissions<R> {
                     PushArmArgs {
                         lifecycle_generation,
                         environment,
+                        scope_token,
                     },
                 )
                 .await
@@ -253,7 +348,7 @@ impl<R: Runtime> PlatformPermissions<R> {
 
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         {
-            let _ = (lifecycle_generation, environment);
+            let _ = (lifecycle_generation, environment, scope_token);
             Ok(PushArmResponse { armed: false })
         }
     }
@@ -295,6 +390,7 @@ impl<R: Runtime> PlatformPermissions<R> {
         &self,
         lifecycle_generation: u64,
         environment: &str,
+        scope_token: &str,
     ) -> Result<ScheduledReconcileRegistration> {
         #[cfg(any(target_os = "android", target_os = "ios"))]
         {
@@ -305,6 +401,7 @@ impl<R: Runtime> PlatformPermissions<R> {
                     PushArmArgs {
                         lifecycle_generation,
                         environment,
+                        scope_token,
                     },
                 )
                 .await
@@ -313,7 +410,7 @@ impl<R: Runtime> PlatformPermissions<R> {
 
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         {
-            let _ = (lifecycle_generation, environment);
+            let _ = (lifecycle_generation, environment, scope_token);
             Ok(ScheduledReconcileRegistration {
                 identifier: String::new(),
                 registered: false,
@@ -399,9 +496,26 @@ struct PermissionArgs<'a> {
 #[cfg(any(target_os = "android", target_os = "ios"))]
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+struct CapabilityObservationArgs<'a> {
+    capability: &'a str,
+}
+
+#[cfg(any(target_os = "android", target_os = "ios"))]
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SystemActionArgs<'a> {
+    kind: &'a str,
+    text: Option<&'a str>,
+    url: Option<&'a str>,
+}
+
+#[cfg(any(target_os = "android", target_os = "ios"))]
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct PushArmArgs<'a> {
     lifecycle_generation: u64,
     environment: &'a str,
+    scope_token: &'a str,
 }
 
 #[cfg(any(target_os = "android", target_os = "ios"))]
@@ -507,5 +621,18 @@ mod tests {
         assert_eq!(callback.lifecycle_generation, 7);
         assert_eq!(callback.apns_token_base64.as_deref(), Some("AQ=="));
         assert!(callback.fcm_token.is_none());
+        assert!(callback.error_code.is_none());
+    }
+
+    #[test]
+    fn native_host_contract_rejects_unknown_states() {
+        assert!(serde_json::from_str::<NativeCapabilityObservation>(
+            r#"{"state":"ready","source":"host","timestampMs":1}"#,
+        )
+        .is_err());
+        assert!(serde_json::from_str::<NativeSystemActionOutcome>(
+            r#"{"state":"opened","reason":null}"#,
+        )
+        .is_err());
     }
 }

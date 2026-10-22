@@ -1,8 +1,8 @@
-# Agent Chat 范围总账与基准客户端体验基准
+# Agent Chat 范围总账与参考工程体验基准
 
 > 阶段：PRODUCT 原型对齐
 > 状态：confirmed
-> 更新：2026-10-17
+> 更新：2026-10-20
 > 实现：`packages/prototypes/desktop/shell/src/AgentChatPage.tsx`
 > 门禁：`packages/prototypes/desktop/shell/qa/agent_chat_checks.cjs`
 
@@ -11,9 +11,9 @@
 本文件冻结 Agent Chat 原型的功能边界。
 
 - **功能范围**只来自 Peers 已确认清单。
-- **基准客户端**只作为信息架构、空间归属、交互反馈和返回路径基准。
-- 基准客户端有而清单没有的功能不得因“对齐”进入原型。
-- 清单有而基准客户端放在其他位置的能力，采用基准客户端的空间归属，不机械保留旧入口。
+- **参考工程**只作为信息架构、空间归属、交互反馈和返回路径基准。
+- 参考工程有而清单没有的功能不得因“对齐”进入原型。
+- 清单有而参考工程放在其他位置的能力，采用参考工程的空间归属，不机械保留旧入口。
 
 ## 产品论点
 
@@ -24,7 +24,7 @@ Agent 名册、Topic、对话和 Profile 必须保持清晰所有权，不能靠
 - Main subject：当前 Agent 的当前 Topic。
 - 主动作：composer 发送或停止。
 - Signature：常驻 Agent 名册与 Topic/Chat 连续工作面。
-- Positive calibration：采用基准客户端的栏位关系、行菜单锚定、移动端页面层级和局部反馈。
+- Positive calibration：采用参考工程的栏位关系、行菜单锚定、移动端页面层级和局部反馈。
 - Negative calibration：拒绝底部 Agent 面板、菜单驱动的隐式跨面跳转、功能越界和开发者控制面。
 
 ## IN：确认范围
@@ -36,7 +36,7 @@ Agent 名册、Topic、对话和 Profile 必须保持清晰所有权，不能靠
 - 行点击进入该 Agent 的 Chat。
 - 行菜单仅保留 Agent 级动作：Agent Profile；非内置 Agent 额外提供 Delete。
 - 创建 Agent 后立即进入 Profile，Profile 自动保存。
-- Profile 使用基准客户端实测的 `64px 身份轴 + 12px 间距 + 内容轴`：Back `36×36` 与头像 `64×64` 左边界相同；头像无二层按钮框，头像顶边与 `64px` 描述框顶边相同；名称/描述左边界相同，SOUL/AGENTS 编辑器填满剩余高度。
+- Profile 使用参考工程实测的 `64px 身份轴 + 12px 间距 + 内容轴`：Back `36×36` 与头像 `64×64` 左边界相同；头像无二层按钮框，头像顶边与 `64px` 描述框顶边相同；名称/描述左边界相同，SOUL/AGENTS 编辑器填满剩余高度。
 - 自动保存不常驻显示说明文字；名称、描述、SOUL/AGENTS、头像及扩展保存后统一通过 Shell `ToastHost` 通知，失败使用同一组件的错误态；Toast 复用 Chat 所用 LobeUI owner，并固定从右下角出现。
 - 头像支持 Emoji 与本地图片；图片仅接受 PNG/JPEG/WebP/GIF 且不超过 2 MB。头像持久化到 Agent，并同步投影到名册与 Profile。
 - Profile 的 Extensions 只显示已绑定项；Add skill / Add MCP tool 打开有搜索和分页上限的目录。
@@ -74,9 +74,18 @@ Agent 名册、Topic、对话和 Profile 必须保持清晰所有权，不能靠
 - Enter 发送；Shift/Ctrl/Command + Enter 换行。
 - 模型以 `Provider → Models` 为唯一目录结构；Settings 默认模型和 composer Topic 覆盖均从该树投影。
 - Settings 拥有全局默认模型；新 Topic 继承默认值，composer 右下角通过可折叠、可搜索的 Provider 模型树设置当前 Topic 覆盖。
-- slash command/skill、附件选择/移除/发送后回显。
+- Commands & Skills palette 同时支持 `/` 输入、指针和键盘打开。
+- `/help` 为 Desktop 静态说明；`/tools`、`/skills` 只展示带版本的
+  Station capability snapshot；`/clear` 创建空 Topic，旧 Topic 与证据保留。
+- snapshot 覆盖 ready、empty、stale、unavailable；stale/unavailable 禁用
+  capability action，但不阻断普通文本对话。
+- 附件选择/移除/发送后回显。
 - conversation header 左侧显示当前 Topic 标题，右侧提供会话正文搜索。搜索匹配消息正文、附件名、提问和产物标题，支持上/下一处定位、当前命中高亮与关闭还焦。
 - thinking、streaming、activity 折叠/展开。
+- 完成消息只显示实际参与或部分参与的 Skill、Memory、Knowledge、Attachment、
+  Tool 紧凑徽标；展开详情同时说明 included、omitted、truncated、版本和原因。
+  详情固定到历史 Turn，不随当前 Agent Binding 改写，也不暴露 Prompt、凭据、
+  本地路径或 debug trace。
 - 用户消息 Edit and resend。
 - Stop、Regenerate、Copy。
 - 两阶段 quick reply：Add to input / Reply now，且保留原草稿。
@@ -109,9 +118,9 @@ Agent 名册、Topic、对话和 Profile 必须保持清晰所有权，不能靠
 - Agent Hub、Import、Duplicate、Export bundle、Share Agent、Set default、Pin Agent。
 - executor/provider/fallback 等普通用户不应直接操作的开发者配置。
 
-## 基准客户端现场事实
+## 参考工程现场事实
 
-真实运行时：`http://127.0.0.1:8436`，基准客户端实例 #6。
+历史实测运行时：`http://127.0.0.1:8436`，参考工程实例 #6。
 
 本轮重新实测，不使用旧推断：
 
@@ -125,16 +134,9 @@ Agent 名册、Topic、对话和 Profile 必须保持清晰所有权，不能靠
 
 现场截图：
 
-- `/tmp/reference-client-1440-chat.png`
-- `/tmp/reference-client-roster-expanded.png`
-- `/tmp/reference-client-agent-profile-route.png`
-- `/tmp/reference-client-430-topics-ready.png`
-- `/tmp/reference-client-430-agent-picker-ready.png`
-- `/tmp/reference-client-430-agent-menu.png`
-- `/tmp/reference-client-430-agent-profile.png`
-- `/tmp/reference-client-profile-1440-before.png`
-- `/tmp/reference-client-profile-avatar-picker-1100.png`
-- `/tmp/reference-client-avatar-upload.png`
+原始产品标识、截图文件名和历史证据目录保存在
+[不可变取证清单](https://github.com/peers-labs/peers-touch/blob/e26b81c4cf3c5b9d0b920e9d1a434a751cfba208/docs/architecture/engineering/prototypes/desktop-shell/agent-chat-coverage.md#L121-L146)。
+这些是历史观察，不代表本次源码重新通过验证；不重命名或改写原始证据。
 
 ## 状态所有权
 
@@ -154,45 +156,56 @@ composer 草稿保留，用户可 Stop 当前 turn 后继续。
 执行：
 
 ```bash
-CHROMIUM_PATH="${CHROMIUM_PATH:-$HOME/.cache/ms-playwright/chromium-1187/chrome-linux/chrome}" \
+CHROMIUM_PATH="<installed-chromium-executable>" \
 AGENT_CHAT_URL=http://127.0.0.1:4173/?state=agent-chat \
 node packages/prototypes/desktop/shell/qa/agent_chat_checks.cjs
 ```
 
-当前结果：11 条完整 Journey、121 个唯一操作/状态合同，`errors=[]`。
+当前结果：11 条完整 Journey、136 个唯一操作/状态合同，`errors=[]`。
 
-证据：`/tmp/pt-provider-usable-filter/`
+本轮 ADL-00 source-bound 证据：`/tmp/pt-agent-depth-v2-prototype-final/`
 
-- `01-agent-roster-wide.png`
-- `02-profile-identity.png`
-- `02-profile-extensions.png`
-- `03-topic-management.png`
-- `03-topic-search-inline.png`
-- `04-provider-usable-filter.png`
-- `04-cli-provider-settings.png`
-- `04-model-availability.png`
-- `04-default-model-only.png`
-- `04-provider-model-tree.png`
-- `05-conversation-search.png`
-- `04-basic-artifacts.png`
-- `05-approval-continuation.png`
-- `06-typed-error-recovered.png`
-- `07-mobile-left-agent-drawer.png`
-- `08-mobile-chat.png`
+- `04-command-palette-ready.png`
+- `04-command-palette-empty.png`
+- `04-command-palette-stale.png`
+- `04-command-palette-unavailable.png`
+- `05-turn-attribution-detail.png`
+- `08-mobile-command-palette.png`
 - `results.json`
 
 门禁同时覆盖：
 
 - 当前 worktree、commit 和源码 SHA-256。
+- `/help`、`/tools`、`/skills`、`/clear` authority 与历史保留语义。
+- ready/empty/stale/unavailable、keyboard/pointer、compact/narrow palette。
+- Skill/Memory/Knowledge/Attachment/Tool attribution 的
+  included/omitted/truncated 与历史固定语义。
 - Shell TypeScript 检查与 Vite build。
 - 宽屏、compact、mobile 几何与零横向溢出。
 - 菜单、dialog、drawer 的键盘焦点与返回。
 - 附件 file chooser、clipboard、reduced motion。
 - 零 `pageerror`、零 console error、零失败请求。
 
+## ADL-00 Owner Review
+
+原型已由 Owner 明确确认为 `confirmed`。本轮确认冻结 Commands/Attribution
+产品合同和可交互状态，不构成 Station authority 或 Native product evidence。
+
+Owner 已确认：
+
+- Commands & Skills 是否保持一个 palette，且 `/help`、Station snapshot、
+  `/clear` 的空间归属和禁用语义正确。
+- stale/unavailable 时 capability action 禁用、普通文本对话继续的表达是否清楚。
+- Attribution 是否只用紧凑徽标表达实际参与项，并通过一层详情解释历史版本、
+  included/omitted/truncated，而不过度暴露开发者信息。
+
+ADL-03/ADL-04 production implementation 的产品确认阻塞已解除。
+
 ## Production 落地映射
 
-Owner 已于 2026-10-17 确认本原型可进入生产开发；Memory 图形化交互明确保留在原型，本期不落地。
+2026-10-17 的确认仅覆盖此前 Agent Chat 基线。2026-10-20 新增的
+Commands/Attribution 合同正在重新确认；Memory 图形化交互仍保留在原型，
+本期不落地。
 
 - Agent roster：`apps/desktop/src/components/agent/workbench/AgentRail.tsx`
   复用 Station-backed `agent` store；创建后直接进入 Profile，行菜单仅保留 Profile / Delete。

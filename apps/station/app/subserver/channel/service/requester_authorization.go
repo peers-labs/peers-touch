@@ -226,7 +226,7 @@ func managedLarkCLIEnvironment(current []string) []string {
 		if !ok {
 			continue
 		}
-		if _, remove := managedLarkCLIIdentityEnv[name]; remove {
+		if _, remove := managedLarkCLIIdentityEnv[name]; remove || strings.HasSuffix(name, "_LARK_PROFILE") {
 			continue
 		}
 		filtered = append(filtered, entry)

@@ -10,7 +10,7 @@ import {
 } from 'react';
 import type { InputRef } from 'antd';
 import { Flexbox } from 'react-layout-kit';
-import { ActionIcon, Tag } from '@lobehub/ui';
+import { ActionIcon, Tag, toast } from '@lobehub/ui';
 import { Dropdown, Input, theme } from 'antd';
 import type { MenuProps } from 'antd';
 import { AlertTriangle, ArrowUp, ChevronDown, ChevronUp, Image as ImageIcon, RefreshCw, Search, ServerCog, Slash, Square } from 'lucide-react';
@@ -18,7 +18,10 @@ import { useTranslation } from 'react-i18next';
 import { useChatStore, type ChatComposerAttachment } from '../store/chat';
 import { useAgentStore } from '../store/agent';
 import { useTopicModel } from '../hooks/useTopicModel';
-import { useAgentCapabilityStore } from '../store/agentCapabilities';
+import {
+  selectAgentCommandCapabilityProjectionState,
+  useAgentCapabilityStore,
+} from '../store/agentCapabilities';
 import {
   projectAgentComposerReadiness,
   type AgentComposerReadinessState,
@@ -48,6 +51,9 @@ import { selectAgentCapabilityWarning } from './composer/agentCapabilityWarning'
 import { removeRejectedInlineReferences } from './composer/invalidReferenceRecovery';
 import { log } from '../utils/logger';
 import type { AgentCapabilityBinding } from '../gen/proto/domain/agent/capability_pb';
+import { AgentCommandPalette } from './agent/AgentCommandPalette';
+import { createStationAgentTopic } from '../services/openAgentChatSession';
+import { EVENT, eventBus } from '../kernel/events';
 
 const COMPOSER_COLORS = {
   border: '#d1d1d1',
@@ -118,7 +124,10 @@ function modelMenuKey(model: AvailableModel): string {
 export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: ChatInputProps) {
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const [modelSearch, setModelSearch] = useState('');
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [creatingTopic, setCreatingTopic] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const commandTriggerRef = useRef<HTMLButtonElement>(null);
   const searchInputRef = useRef<InputRef>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isComposingRef = useRef(false);
@@ -186,6 +195,19 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
   const refreshCapabilityReadiness = useAgentCapabilityStore(
     (state) => state.loadAgent,
   );
+  const commandSnapshot = useAgentCapabilityStore((state) => (
+    selectedAgentData
+      ? state.commandSnapshotsByAgentId[selectedAgentData.id]
+      : undefined
+  ));
+  const commandProjectionState = useAgentCapabilityStore((state) => (
+    selectedAgentData
+      ? selectAgentCommandCapabilityProjectionState(
+          state,
+          selectedAgentData.id,
+        )
+      : 'unavailable'
+  ));
 
   // Mention (@) system — wires the standalone mention store/popup/trigger into
   // the live agent composer. Aligns Peers @mention with LobeHub composer-level
@@ -241,6 +263,10 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
     capabilityReadinessSnapshot,
     readyAttachments,
   );
+
+  useEffect(() => {
+    setCommandPaletteOpen(false);
+  }, [selectedAgentData?.id]);
 
   // I2 follow-up: consume a pending composer-fill request (fill-not-send), aligning
   // with LobeHub `fillInputMessage`. Populate the draft, focus, then clear the request.
@@ -435,6 +461,15 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
       nextLength: value.length,
     });
     // #endregion
+    const lineStart = value.lastIndexOf('\n') + 1;
+    if (value.slice(lineStart) === '/') {
+      const next = value.slice(0, -1);
+      setInput(next);
+      setModelDropdownOpen(false);
+      setCommandPaletteOpen(true);
+      mentionScan(next, next.length);
+      return;
+    }
     setInput(value);
     mentionScan(value, event.target.selectionStart ?? value.length);
   }, [mentionScan]);
@@ -479,16 +514,58 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
     handleSend();
   }, [handleSend, mentionKeyDown]);
 
-  const insertSlash = useCallback(() => {
-    const el = textareaRef.current;
-    if (!el) {
-      setInput((prev) => `${prev}/`);
-      return;
-    }
-    el.focus();
-    setInput((prev) => `${prev}/`);
-    requestAnimationFrame(() => el.focus());
+  const toggleCommandPalette = useCallback(() => {
+    setModelDropdownOpen(false);
+    setCommandPaletteOpen((open) => !open);
   }, []);
+
+  const insertCapabilityToken = useCallback((token: string) => {
+    setInput((previous) => {
+      const needsSpace =
+        previous.length > 0
+        && previous[previous.length - 1] !== ' '
+        && previous[previous.length - 1] !== '\n';
+      return `${previous}${needsSpace ? ' ' : ''}/${token} `;
+    });
+    setCommandPaletteOpen(false);
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }, []);
+
+  const clearToStationTopic = useCallback(async () => {
+    if (!selectedAgentData || creatingTopic) return;
+    setCreatingTopic(true);
+    try {
+      await createStationAgentTopic(
+        selectedAgentData,
+        t('chat.input.commands.newTopicTitle'),
+      );
+      setInput('');
+      clearDrafts(false);
+      clearMentions();
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    } catch (error) {
+      log.error('chat', 'Failed to create Station topic from /clear', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      toast.error(t('chat.input.commands.clearFailed'));
+      requestAnimationFrame(() => commandTriggerRef.current?.focus());
+    } finally {
+      setCreatingTopic(false);
+    }
+  }, [
+    clearDrafts,
+    clearMentions,
+    creatingTopic,
+    selectedAgentData,
+    t,
+  ]);
+
+  const openAgentExtensions = useCallback(() => {
+    if (!selectedAgentData) return;
+    useAgentStore.getState().setAgentSurface(selectedAgentData.name, 'profile');
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+    setCommandPaletteOpen(false);
+  }, [selectedAgentData]);
 
   const handlePickImages = useCallback(() => {
     fileInputRef.current?.click();
@@ -803,20 +880,50 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
 
       <Flexbox horizontal align="center" gap={8}>
         <Flexbox horizontal align="center" gap={8}>
-          <ActionIcon
-            data-pt-agent-composer-slash
-            icon={Slash}
-            onClick={insertSlash}
-            title={t('chat.input.slashCommand')}
-            size={{ blockSize: 28, size: 13 }}
-            style={{
-              borderRadius: 8,
-              border: `1px solid ${COMPOSER_COLORS.borderSoft}`,
-              background: '#ffffff',
-              color: token.colorText,
-              boxShadow: COMPOSER_COLORS.toolButtonShadow,
-            }}
-          />
+          <div style={{ position: 'relative' }}>
+            <button
+              ref={commandTriggerRef}
+              data-pt-agent-composer-slash
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={commandPaletteOpen}
+              aria-label={t('chat.input.commands.title')}
+              title={t('chat.input.commands.title')}
+              onClick={toggleCommandPalette}
+              style={{
+                width: 28,
+                height: 28,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: 8,
+                border: `1px solid ${COMPOSER_COLORS.borderSoft}`,
+                background: '#ffffff',
+                color: token.colorText,
+                boxShadow: COMPOSER_COLORS.toolButtonShadow,
+                cursor: 'pointer',
+              }}
+            >
+              <Slash size={13} />
+            </button>
+            <AgentCommandPalette
+              agentName={
+                selectedAgentData?.title
+                || selectedAgentData?.name
+                || selectedAgentName
+              }
+              onClear={() => {
+                void clearToStationTopic();
+              }}
+              onClose={() => setCommandPaletteOpen(false)}
+              onInsertCapability={insertCapabilityToken}
+              onOpenExtensions={openAgentExtensions}
+              open={commandPaletteOpen}
+              projectionState={commandProjectionState}
+              snapshot={commandSnapshot}
+              triggerRef={commandTriggerRef}
+            />
+          </div>
           <ActionIcon
             data-pt-agent-composer-attachment-choose
             icon={ImageIcon}
@@ -844,6 +951,7 @@ export function ChatInput({ placeholder: customPlaceholder, minHeight = 96 }: Ch
             open={modelDropdownOpen}
             onOpenChange={(open) => {
               setModelDropdownOpen(open);
+              if (open) setCommandPaletteOpen(false);
               if (!open) setModelSearch('');
               if (open) setTimeout(() => searchInputRef.current?.focus(), 50);
             }}

@@ -1,12 +1,12 @@
 use crate::application::station_runtime::client::StationClient;
 use crate::error::{AppResult, ErrorCode};
-use crate::messaging::CommandDispatchProgress;
 use crate::model::chat::{
     ConversationKind, GetMemberSettingsRequest, GetMemberSettingsResponse, MemberRole,
     MemberSettings, MemberStatus, MessageContent, MessageSourceContext, MessagingMembershipAction,
     MlsLeaveIntent, UpdateMemberSettingsRequest, UpdateMemberSettingsResponse,
 };
 use crate::state::AppState;
+use messaging_core::outbox::{CommandDispatchProgress, CommandRetryPolicy};
 use prost::Message;
 use reqwest::Method;
 use serde::Deserialize;
@@ -1001,15 +1001,14 @@ pub(crate) fn messaging_commit_authorized_leave_with_engine(
     let progress = engine.dispatch_command_once(
         token,
         crate::messaging::now_unix_ms(),
-        crate::messaging::CommandRetryPolicy {
+        CommandRetryPolicy {
             initial_delay_ms: 1_000,
             maximum_delay_ms: 300_000,
         },
     );
     if !matches!(
         progress,
-        Ok(crate::messaging::CommandDispatchProgress::Submitted { .. })
-            | Ok(crate::messaging::CommandDispatchProgress::Idle)
+        Ok(CommandDispatchProgress::Submitted { .. }) | Ok(CommandDispatchProgress::Idle)
     ) {
         return AppResult::fail(
             ErrorCode::InternalError,
@@ -1775,7 +1774,7 @@ pub(crate) fn messaging_create_group_with_engine(
     let progress = match engine.dispatch_command_once(
         token,
         crate::messaging::now_unix_ms(),
-        crate::messaging::CommandRetryPolicy {
+        CommandRetryPolicy {
             initial_delay_ms: 1_000,
             maximum_delay_ms: 300_000,
         },
@@ -1897,15 +1896,14 @@ pub(crate) fn messaging_membership_transition_with_engine(
     let progress = engine.dispatch_command_once(
         token,
         crate::messaging::now_unix_ms(),
-        crate::messaging::CommandRetryPolicy {
+        CommandRetryPolicy {
             initial_delay_ms: 1_000,
             maximum_delay_ms: 300_000,
         },
     );
     if !matches!(
         progress,
-        Ok(crate::messaging::CommandDispatchProgress::Submitted { .. })
-            | Ok(crate::messaging::CommandDispatchProgress::Idle)
+        Ok(CommandDispatchProgress::Submitted { .. }) | Ok(CommandDispatchProgress::Idle)
     ) {
         return AppResult::fail(
             ErrorCode::InternalError,
@@ -1949,17 +1947,17 @@ fn dispatch_prepared_command(
     let progress = engine.dispatch_command_once(
         token,
         crate::messaging::now_unix_ms(),
-        crate::messaging::CommandRetryPolicy {
+        CommandRetryPolicy {
             initial_delay_ms: 1_000,
             maximum_delay_ms: 300_000,
         },
     );
     match progress {
-        Ok(crate::messaging::CommandDispatchProgress::Failed { code, .. }) => {
+        Ok(CommandDispatchProgress::Failed { code, .. }) => {
             return AppResult::fail(ErrorCode::InternalError, code, None)
         }
-        Ok(crate::messaging::CommandDispatchProgress::StaleDeliveryPlan { .. })
-        | Ok(crate::messaging::CommandDispatchProgress::StaleAuthorityPlan { .. }) => {
+        Ok(CommandDispatchProgress::StaleDeliveryPlan { .. })
+        | Ok(CommandDispatchProgress::StaleAuthorityPlan { .. }) => {
             return AppResult::fail(
                 ErrorCode::Conflict,
                 "messaging command authority changed before dispatch",
@@ -2895,8 +2893,8 @@ mod tests {
     #[cfg(feature = "acceptance-webdriver")]
     use super::require_acceptance_actor;
     use super::{conversation_member_json, group_creation_state, member_settings_json};
-    use crate::messaging::CommandDispatchProgress;
     use crate::model::chat::{MemberRole, MemberSettings, MemberStatus};
+    use messaging_core::outbox::CommandDispatchProgress;
 
     #[test]
     fn group_creation_only_reports_projected_for_its_own_consumed_command() {

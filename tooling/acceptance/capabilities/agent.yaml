@@ -8,6 +8,10 @@
       "initial_proof_status": "UNPROVEN",
       "features": ["agent-chat-production"],
       "required_gates": [
+        "agent-definition-roundtrip-native-e2e",
+        "agent-slash-command-native-e2e",
+        "agent-context-projection-native-e2e",
+        "agent-depth-linux-native-e2e",
         "agent-chat-profile-native", "agent-chat-models-native",
         "agent-chat-topics-native", "agent-chat-conversation-native",
         "agent-chat-layout-native", "agent-chat-workspace-native"
@@ -20,15 +24,21 @@
         "truth_sources": ["Station Agent, Conversation, Provider, Turn and ToolCall authority", "Desktop actor-scoped drafts and attachments"],
         "surfaces": ["Native Desktop Agent Chat and global Settings"],
         "proven_by": [
+          "agent-definition-roundtrip-native-e2e",
+          "agent-slash-command-native-e2e",
+          "agent-context-projection-native-e2e",
+          "agent-depth-linux-native-e2e",
           "agent-chat-profile-native", "agent-chat-models-native",
           "agent-chat-topics-native", "agent-chat-conversation-native",
           "agent-chat-layout-native", "agent-chat-workspace-native"
         ],
         "proven_scope": [
-          "Only operations with current-source Native action, receiver assertion and immutable artifact references"
+          "Only operations with current-source Native action, receiver assertion and immutable artifact references",
+          "Typed AgentDefinition package and authority readback emitted by the same Native Suite Runtime",
+          "Versioned Station command projection and immutable historical Turn attribution from Profile-two Native Desktop"
         ],
         "unproven_scope": [
-          "All 121 baseline operations and additional production assertions until their Native Gates execute",
+          "All 136 baseline operations and additional production assertions until their Native Gates execute",
           "Mobile, macOS and Windows platform-specific behavior",
           "CUT product scope and broader Agent orchestration, marketplace and Evaluation"
         ]

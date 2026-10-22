@@ -2,6 +2,13 @@ import type { FriendChatSession } from './socialProjection';
 import type { Conversation, ConversationMember } from '../gen/proto/domain/chat/conversation_pb';
 import { ConversationKind, ConversationStatus, MemberRole, MemberStatus } from '../gen/proto/domain/chat/conversation_pb';
 import type { Timestamp } from '@bufbuild/protobuf/wkt';
+import {
+  clientWireEnumNumber,
+  clientWireNumber,
+  clientWireRecord,
+  clientWireString,
+  clientWireTimestampIso,
+} from '@peers-touch/client-chat-core';
 
 export interface FriendRequestData {
   id: string;
@@ -20,7 +27,11 @@ export interface FriendRequestData {
   receiverAvatar: string;
 }
 
-type RawRecord = Record<string, unknown>;
+const recordFromUnknown = clientWireRecord;
+const stringValue = clientWireString;
+const numberValue = clientWireNumber;
+const timestampString = clientWireTimestampIso;
+const enumValue = clientWireEnumNumber;
 
 export function normalizeFriendChatSession(raw: unknown): FriendChatSession {
   const record = recordFromUnknown(raw);
@@ -87,48 +98,6 @@ function actorPtid(value: unknown): string {
   return stringValue(actor.ptid);
 }
 
-function recordFromUnknown(value: unknown): RawRecord {
-  return value && typeof value === 'object' ? value as RawRecord : {};
-}
-
-function stringValue(...values: unknown[]): string {
-  for (const value of values) {
-    if (typeof value === 'string') return value;
-    if (typeof value === 'number' || typeof value === 'bigint') return String(value);
-  }
-  return '';
-}
-
-function numberValue(value: unknown): number {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'bigint') return Number(value);
-  if (typeof value === 'string' && value.trim()) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : 0;
-  }
-  return 0;
-}
-
-function timestampString(...values: unknown[]): string {
-  for (const value of values) {
-    if (typeof value === 'string') return value;
-    const timestamp = recordFromUnknown(value);
-    const seconds = timestamp.seconds;
-    if (
-      typeof seconds === 'number'
-      || typeof seconds === 'bigint'
-      || (typeof seconds === 'string' && seconds.trim())
-    ) {
-      const milliseconds = Number(seconds) * 1000
-        + Math.floor(numberValue(timestamp.nanos) / 1_000_000);
-      if (Number.isFinite(milliseconds)) {
-        return new Date(milliseconds).toISOString();
-      }
-    }
-  }
-  return '';
-}
-
 const CONVERSATION_KIND_MAP: Record<string, number> = {
   CONVERSATION_KIND_UNSPECIFIED: ConversationKind.UNSPECIFIED,
   CONVERSATION_KIND_DIRECT: ConversationKind.DIRECT,
@@ -156,12 +125,6 @@ const MEMBER_STATUS_MAP: Record<string, number> = {
   MEMBER_STATUS_LEFT: MemberStatus.LEFT,
   MEMBER_STATUS_REMOVED: MemberStatus.REMOVED,
 };
-
-function enumValue(value: unknown, map: Record<string, number>): number {
-  if (typeof value === 'number') return value;
-  if (typeof value === 'string') return map[value] ?? 0;
-  return 0;
-}
 
 function normalizeTimestamp(value: unknown): Timestamp | undefined {
   if (!value) return undefined;

@@ -8,20 +8,24 @@
 
 ## 1. What Is Peers-Touch
 
-A decentralized, federated social network framework. Three-tier architecture:
+A decentralized, federated social network framework:
 
 ```text
-Client  ->  Model  ->  Station
+Runtime topology: Client <-> Station
 ```
 
-| Layer | What it is | Stack |
-|-------|-----------|-------|
+Contract substrate: `model/domain/*.proto`. Its bindings are generated into
+Client and Station consumers. Model is not a runtime process or a request hop.
+
+| Area | What it is | Stack |
+|------|------------|-------|
 | **Station** | Shared business runtime | Go, DDD subservers, Hertz, PostgreSQL |
 | **Desktop** | Desktop client | Tauri + React/TypeScript + Rust |
 | **Mobile** | Mobile client | Tauri v2 Mobile + Web UI + Rust + native plugins |
-| **Model** | Shared contracts | Protobuf (`model/domain/*.proto`) |
+| **Model** | Shared contract substrate | Protobuf (`model/domain/*.proto`) |
 
-All data models are defined in proto first. Manual models are forbidden.
+All shared wire models are defined in proto first. Manual parallel shared
+models are forbidden. Proto-first is an authoring rule, not runtime hierarchy.
 
 For the full project identity, read
 [`docs/global/project-identity.md`](project-identity.md).
@@ -128,7 +132,7 @@ Full profile system documentation:
 | Desktop | `docs/.agent/desktop.md` → linked architecture and platform sources |
 | Mobile | `docs/.agent/mobile.md` → linked sources |
 | Station | `docs/.agent/station.md` → linked sources |
-| Cross-platform | `docs/global/architecture.md`, `docs/global/domain-model.md` |
+| Cross-platform | `docs/architecture/architecture.md`, `docs/global/domain-model.md` |
 
 ### 5.3 Document Hierarchy
 

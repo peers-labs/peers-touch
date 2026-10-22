@@ -81,6 +81,9 @@ func (s *agentSubServer) Init(ctx context.Context, opts ...option.Option) error 
 	if err = persistence.MigrateActorIdentityColumns(rds); err != nil {
 		return err
 	}
+	if err = persistence.MigrateAgentDefinitions(rds); err != nil {
+		return err
+	}
 	if err = persistence.MigrateAgentMessages(rds); err != nil {
 		return err
 	}
@@ -122,6 +125,9 @@ func (s *agentSubServer) Init(ctx context.Context, opts ...option.Option) error 
 		rds,
 		capabilityBackfillRegistry,
 	).Run(ctx); err != nil {
+		return err
+	}
+	if err = persistence.PurgeLegacySkillEnablement(rds); err != nil {
 		return err
 	}
 	if err = persistence.PurgeRetiredExtensionEndpointTable(rds); err != nil {
@@ -572,6 +578,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-capability-manifest-list", "/agent/capability/manifest/list", server.POST, capabilityAuthorityHandlers.HandleListManifests, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-capability-manifest-retire", "/agent/capability/manifest/retire", server.POST, capabilityAuthorityHandlers.HandleRetireManifest, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-capability-binding-list", "/agent/capability/binding/list", server.POST, capabilityAuthorityHandlers.HandleListBindings, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-command-capability-snapshot", "/agent/capability/command-snapshot", server.POST, capabilityAuthorityHandlers.HandleCommandSnapshot, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-capability-binding-upsert", "/agent/capability/binding/upsert", server.POST, capabilityAuthorityHandlers.HandleUpsertBinding, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-capability-binding-delete", "/agent/capability/binding/delete", server.POST, capabilityAuthorityHandlers.HandleDeleteBinding, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-mcp-server-upsert", "/agent/mcp/server/upsert", server.POST, mcpServerHandlers.HandleUpsert, logIDWrapper, jwtWrapper),
@@ -588,6 +595,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewHTTPHandler("agent-quick-completion", "/agent/quick-completion", server.POST, turnHandlers.HandleQuickCompletion, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-turn-trace-list", "/agent/turn/trace/list", server.POST, turnHandlers.HandleListTurnTraces, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-turn-trace-get", "/agent/turn/trace/get", server.POST, turnHandlers.HandleGetTurnTrace, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-turn-attribution-get", "/agent/turn/attribution/get", server.POST, turnHandlers.HandleGetTurnAttributions, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-turn-diagnostics-export", "/agent/turn/diagnostics/export", server.POST, turnHandlers.HandleExportTurnDiagnostics, logIDWrapper, jwtWrapper),
 
 		server.NewHTTPHandler("agent-conversation-list", "/agent/conversation/list", server.POST, convHandlers.HandleListConversations, logIDWrapper, jwtWrapper),

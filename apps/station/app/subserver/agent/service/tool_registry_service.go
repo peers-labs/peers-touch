@@ -15,6 +15,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 
@@ -397,19 +398,29 @@ func (r *ToolRegistryService) registerSkillsListTool(svc *SkillService) {
 }`)
 
 	handler := func(ctx context.Context, meta *domain.ToolCallMeta, _ json.RawMessage) (*domain.ToolResult, error) {
-		manifests, err := svc.ListSkills(ctx, meta.AgentID)
-		if err != nil {
-			return &domain.ToolResult{Content: fmt.Sprintf("skills_list failed: %v", err), IsError: true}, nil
-		}
-
-		if len(manifests) == 0 {
+		if len(meta.AuthorizedSkills) == 0 {
 			return &domain.ToolResult{Content: "No skills installed."}, nil
 		}
 
+		names := make([]string, 0, len(meta.AuthorizedSkills))
+		for name := range meta.AuthorizedSkills {
+			names = append(names, name)
+		}
+		sort.Strings(names)
 		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("Found %d skill(s):\n\n", len(manifests)))
-		for _, m := range manifests {
-			sb.WriteString(fmt.Sprintf("- **%s**: %s\n", m.Name, m.Description))
+		sb.WriteString(fmt.Sprintf("Found %d skill(s):\n\n", len(names)))
+		for _, name := range names {
+			ref := meta.AuthorizedSkills[name]
+			manifest, err := svc.GetSkillAtVersion(
+				ctx,
+				meta.AgentID,
+				ref.SkillID,
+				ref.Version,
+			)
+			if err != nil {
+				return &domain.ToolResult{Content: fmt.Sprintf("skills_list failed: %v", err), IsError: true}, nil
+			}
+			sb.WriteString(fmt.Sprintf("- **%s**: %s\n", name, manifest.Description))
 		}
 		sb.WriteString("\nUse skill_view(name) to load the full content of any skill.")
 
@@ -454,7 +465,16 @@ func (r *ToolRegistryService) registerSkillViewTool(svc *SkillService) {
 			return &domain.ToolResult{Content: "name is required", IsError: true}, nil
 		}
 
-		manifest, err := svc.GetSkill(ctx, meta.AgentID, args.Name)
+		ref, ok := meta.AuthorizedSkills[args.Name]
+		if !ok {
+			return &domain.ToolResult{Content: "skill_view rejected: Skill is not authorized for this Turn", IsError: true}, nil
+		}
+		manifest, err := svc.GetSkillAtVersion(
+			ctx,
+			meta.AgentID,
+			ref.SkillID,
+			ref.Version,
+		)
 		if err != nil {
 			return &domain.ToolResult{Content: fmt.Sprintf("skill_view failed: %v", err), IsError: true}, nil
 		}

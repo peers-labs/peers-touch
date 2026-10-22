@@ -375,7 +375,6 @@ pub struct SkillUpdateInput {
     pub name: Option<String>,
     pub description: Option<String>,
     pub content: Option<String>,
-    pub enabled: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -985,8 +984,6 @@ pub struct AgentExecuteTurnInput {
     pub model: Option<String>,
     pub workspace_mode: Option<String>,
     pub allowed_roots: Option<Vec<String>>,
-    pub identity: Option<String>,
-    pub agent_config_prompt: Option<String>,
     pub effort: Option<String>,
     pub thinking_mode: Option<String>,
     pub workspace_root: Option<String>,
@@ -1051,6 +1048,11 @@ pub struct AgentTurnTraceGetInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentTurnDiagnosticsInput {
     pub turn_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentTurnAttributionsInput {
+    pub turn_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

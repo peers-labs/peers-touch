@@ -34,26 +34,20 @@ func TestSkillLifecycleOwnsCapabilityManifestLifecycle(t *testing.T) {
 		model.CapabilityAvailability_CAPABILITY_AVAILABILITY_AVAILABLE, false,
 	)
 
-	if err := skills.ToggleSkill(ctx, "assistant", created.SkillID, false); err != nil {
-		t.Fatalf("disable skill: %v", err)
+	if err := skills.ToggleSkill(ctx, "assistant", created.SkillID, true); err != nil {
+		t.Fatalf("bind skill: %v", err)
 	}
+	assertSkillBindingState(t, db, created.SkillID, true, 1)
 	assertSkillCapabilityVersion(
 		t, db, created.SkillID, 1,
-		model.CapabilityAvailability_CAPABILITY_AVAILABILITY_BLOCKED, true,
+		model.CapabilityAvailability_CAPABILITY_AVAILABILITY_AVAILABLE, false,
 	)
-	assertSkillCapabilityVersion(
-		t, db, created.SkillID, 2,
-		model.CapabilityAvailability_CAPABILITY_AVAILABILITY_BLOCKED, false,
-	)
-	if err := skills.ToggleSkill(ctx, "assistant", created.SkillID, true); err != nil {
-		t.Fatalf("re-enable skill: %v", err)
+	if err := skills.ToggleSkill(ctx, "assistant", created.SkillID, false); err != nil {
+		t.Fatalf("disable Skill binding: %v", err)
 	}
+	assertSkillBindingState(t, db, created.SkillID, false, 2)
 	assertSkillCapabilityVersion(
-		t, db, created.SkillID, 2,
-		model.CapabilityAvailability_CAPABILITY_AVAILABILITY_BLOCKED, true,
-	)
-	assertSkillCapabilityVersion(
-		t, db, created.SkillID, 3,
+		t, db, created.SkillID, 1,
 		model.CapabilityAvailability_CAPABILITY_AVAILABILITY_AVAILABLE, false,
 	)
 
@@ -61,7 +55,7 @@ func TestSkillLifecycleOwnsCapabilityManifestLifecycle(t *testing.T) {
 		t.Fatalf("delete skill: %v", err)
 	}
 	assertSkillCapabilityVersion(
-		t, db, created.SkillID, 3,
+		t, db, created.SkillID, 1,
 		model.CapabilityAvailability_CAPABILITY_AVAILABILITY_BLOCKED, true,
 	)
 	var skillCount int64
@@ -100,20 +94,159 @@ func TestSkillCapabilityConflictRollsBackSkillMutation(t *testing.T) {
 		t.Fatalf("seed manifest conflict: %v", err)
 	}
 
-	if err := skills.ToggleSkill(ctx, "assistant", created.SkillID, false); err == nil {
-		t.Fatal("toggle unexpectedly committed through manifest conflict")
+	replacement := "Updated content that must roll back."
+	if _, _, err := skills.UpdateSkill(
+		ctx,
+		"assistant",
+		created.SkillID,
+		nil,
+		nil,
+		&replacement,
+	); err == nil {
+		t.Fatal("Skill content update unexpectedly committed through manifest conflict")
 	}
 	var skill persistence.Skill
 	if err := db.Where("id = ?", created.SkillID).First(&skill).Error; err != nil {
 		t.Fatalf("reload skill: %v", err)
 	}
-	if skill.Version != 1 || !skill.Enabled {
-		t.Fatalf("skill mutation escaped rollback: version=%d enabled=%v", skill.Version, skill.Enabled)
+	if skill.Version != 1 || skill.Content != "Keep capability authority consistent." {
+		t.Fatalf("Skill mutation escaped rollback: version=%d content=%q", skill.Version, skill.Content)
 	}
 	assertSkillCapabilityVersion(
 		t, db, created.SkillID, 1,
 		model.CapabilityAvailability_CAPABILITY_AVAILABILITY_AVAILABLE, false,
 	)
+}
+
+func TestSkillPromptUsesOnlyPinnedBindingAndExactBodyVersion(t *testing.T) {
+	db, skills, _ := newSkillCapabilityTestServices(t)
+	ctx := context.Background()
+	bound, _, err := skills.CreateSkill(
+		ctx,
+		"assistant",
+		"Bound Skill",
+		"Bound description",
+		"Version one body.",
+		domain.TrustLevelCommunity,
+	)
+	if err != nil {
+		t.Fatalf("create bound Skill: %v", err)
+	}
+	if _, _, err := skills.CreateSkill(
+		ctx,
+		"assistant",
+		"Unbound Skill",
+		"Must not enter the index",
+		"Unbound body.",
+		domain.TrustLevelCommunity,
+	); err != nil {
+		t.Fatalf("create unbound Skill: %v", err)
+	}
+	var row persistence.Skill
+	if err := db.First(&row, "id = ?", bound.SkillID).Error; err != nil {
+		t.Fatalf("read bound Skill: %v", err)
+	}
+	manifest := capabilitySkillManifestSeed(row).manifest
+	capability := AuthorizedCapability{
+		Manifest: manifest,
+		Binding: &model.AgentCapabilityBinding{
+			BindingId:         "skill-binding",
+			AgentId:           "assistant",
+			CapabilityId:      manifest.GetCapabilityId(),
+			CapabilityVersion: manifest.GetVersion(),
+			Enabled:           true,
+			Revision:          1,
+			ApprovalPolicy:    model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_AUTO,
+		},
+	}
+	authorized := &AuthorizedCapabilitySet{
+		byCapability: map[string]AuthorizedCapability{
+			authorizedCapabilityKey(manifest.GetCapabilityId(), manifest.GetVersion()): capability,
+		},
+		bySource: map[string]AuthorizedCapability{
+			authorizedSourceKey(manifest.GetSourceKind(), manifest.GetSourceInstanceId()): capability,
+		},
+	}
+	toolNames := authorized.ToolNames()
+	if len(toolNames) != 1 || toolNames[0] != "skill_view" {
+		t.Fatalf("authorized Skill tools = %v, want [skill_view]", toolNames)
+	}
+	resolved, ok := authorized.ResolveToolCall(
+		"skill_view",
+		`{"name":"Bound Skill"}`,
+	)
+	if !ok || resolved.Binding.GetBindingId() != "skill-binding" {
+		t.Fatalf("skill_view did not resolve the pinned Skill binding: %+v", resolved)
+	}
+	if _, ok := authorized.ResolveToolCall(
+		"skill_view",
+		`{"name":"Unbound Skill"}`,
+	); ok {
+		t.Fatal("skill_view resolved an unbound Skill")
+	}
+	refs := authorized.ToolSchemaSourceRefs("skill_view")
+	expectedRef := "capability:" + manifest.GetCapabilityId() + "@" + manifest.GetVersion()
+	if len(refs) != 1 || refs[0] != expectedRef {
+		t.Fatalf("skill_view schema refs = %v, want [%s]", refs, expectedRef)
+	}
+	index, count, err := skills.BuildAuthorizedSkillIndex(
+		ctx,
+		"assistant",
+		toolNames,
+		authorized,
+	)
+	if err != nil {
+		t.Fatalf("build pinned Skill index: %v", err)
+	}
+	if count != 1 ||
+		!strings.Contains(index, "Bound Skill") ||
+		strings.Contains(index, "Unbound Skill") {
+		t.Fatalf("Skill index escaped binding authority: count=%d index=%q", count, index)
+	}
+
+	versionTwo := "Version two body."
+	if _, _, err := skills.UpdateSkill(
+		ctx,
+		"assistant",
+		bound.SkillID,
+		nil,
+		nil,
+		&versionTwo,
+	); err != nil {
+		t.Fatalf("update bound Skill content: %v", err)
+	}
+	registry := NewToolRegistryService(nil, skills)
+	result := registry.Dispatch(
+		ctx,
+		&domain.ToolCallMeta{
+			AgentID: "assistant",
+			AuthorizedSkills: map[string]domain.AuthorizedSkillRef{
+				"Bound Skill": {
+					SkillID: bound.SkillID,
+					Version: 1,
+				},
+			},
+		},
+		"skill_view",
+		`{"name":"Bound Skill"}`,
+	)
+	if result.IsError ||
+		!strings.Contains(result.Content, "Version one body.") ||
+		strings.Contains(result.Content, versionTwo) {
+		t.Fatalf("skill_view did not load the pinned body version: %+v", result)
+	}
+	denied := registry.Dispatch(
+		ctx,
+		&domain.ToolCallMeta{
+			AgentID:          "assistant",
+			AuthorizedSkills: map[string]domain.AuthorizedSkillRef{},
+		},
+		"skill_view",
+		`{"name":"Bound Skill"}`,
+	)
+	if !denied.IsError {
+		t.Fatalf("skill_view loaded an unbound Skill: %+v", denied)
+	}
 }
 
 func newSkillCapabilityTestServices(
@@ -128,16 +261,51 @@ func newSkillCapabilityTestServices(
 		t.Fatalf("open database: %v", err)
 	}
 	if err := db.AutoMigrate(
+		&persistence.Agent{},
 		&persistence.Skill{},
 		&persistence.SkillVersion{},
 		&persistence.CapabilityManifest{},
+		&persistence.AgentCapabilityBinding{},
+		&persistence.CapabilityBindingCommand{},
 	); err != nil {
 		t.Fatalf("migrate database: %v", err)
+	}
+	if err := db.Create(&persistence.Agent{
+		ID:             "assistant",
+		Name:           "Assistant",
+		ThinkingMode:   string(domain.ThinkingModeAuto),
+		Visibility:     string(domain.AgentVisibilityPrivate),
+		OwnerActorPTID: "ptid:person:test",
+		Version:        1,
+	}).Error; err != nil {
+		t.Fatalf("seed Agent: %v", err)
 	}
 	authority := NewCapabilityAuthorityService(db)
 	skills := NewSkillService(NewSkillsGuardService(), nil)
 	skills.SetCapabilityAuthority(authority)
 	return db, skills, authority
+}
+
+func assertSkillBindingState(
+	t *testing.T,
+	db *gorm.DB,
+	skillID string,
+	enabled bool,
+	revision uint64,
+) {
+	t.Helper()
+	var binding persistence.AgentCapabilityBinding
+	if err := db.Where(
+		"agent_id = ? AND capability_id = ? AND capability_version = ? AND tombstoned_at IS NULL",
+		"assistant",
+		"skill:"+skillID,
+		"1",
+	).First(&binding).Error; err != nil {
+		t.Fatalf("load Skill binding: %v", err)
+	}
+	if binding.Enabled != enabled || binding.Revision != revision {
+		t.Fatalf("Skill binding = %+v, want enabled=%v revision=%d", binding, enabled, revision)
+	}
 }
 
 func assertSkillCapabilityVersion(

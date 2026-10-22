@@ -165,6 +165,13 @@ pub struct StationRouteBindingProjection {
     pub transport_origin: String,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StationRouteRefreshProjection {
+    pub binding: StationRouteBindingProjection,
+    pub route: StationRouteCandidate,
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VerifiedStationIdentity {
@@ -532,6 +539,31 @@ pub fn station_route_snapshot() -> MobileResult<Option<StationRouteBindingProjec
     };
     let origin = ROUTES.ensure_proxy()?;
     Ok(Some(binding_projection(&active, origin)))
+}
+
+#[tauri::command]
+pub async fn station_route_refresh(
+    input: StationRouteSelectionInput,
+) -> MobileResult<StationRouteRefreshProjection> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let previous = ROUTES.active_snapshot()?;
+        if previous.candidate.station_peer_id != input.station_peer_id
+            || previous.candidate.route_id != input.route_id
+            || previous.route_revision != input.route_revision
+        {
+            return Err(route_error("routeChanged"));
+        }
+        // Returns the current route when it is still fresh; otherwise renews
+        // the cached route with optimistic concurrency against `previous`.
+        let refreshed = ROUTES
+            .renew_expired_route_with(|source| discover_station_input(source, true))?;
+        Ok(StationRouteRefreshProjection {
+            binding: binding_projection(&refreshed, ROUTES.ensure_proxy()?),
+            route: refreshed.candidate,
+        })
+    })
+    .await
+    .map_err(|_| route_error("runtimeUnavailable"))?
 }
 
 #[tauri::command]

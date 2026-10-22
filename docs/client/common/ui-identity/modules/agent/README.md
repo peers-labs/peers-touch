@@ -2,15 +2,14 @@
 
 > Status: active module refinement.
 > Inherits: `docs/client/common/ui-identity/`.
-> Applies to: Agent Chat, Agent Profile, Atelier, Orchestration, and shared Agent rails.
+> Applies to: Agent Chat, Agent Profile, Atelier, Atelier orchestration mode, and shared Agent rails.
 
 ## Product Identity
 
-Agent is one Desktop product module with three sibling task surfaces:
+Agent is one Desktop product module with two sibling task surfaces:
 
-- **Agent**: select an execution unit, converse, and configure its profile.
-- **Atelier**: operate tasks through a conversation stream and contextual work panels.
-- **Orchestration**: compose multiple Agents and inspect execution progress.
+- **Chat**: select an execution unit, converse, and configure its profile.
+- **Atelier**: operate goals and tasks, compose multiple Agents, and inspect execution progress.
 
 These surfaces share identity, navigation, panel behavior, density, and interaction primitives. A child surface must not introduce another global navigation system.
 
@@ -19,15 +18,15 @@ These surfaces share identity, navigation, panel behavior, density, and interact
 ```text
 Desktop Shell
   Agent Module Navigation
-    Agent
+    Chat
     Atelier
-    Orchestration
   Active Surface
 ```
 
-- The Agent module navigation is owned by Desktop Shell and remains visually stable across all three surfaces.
+- The Agent module navigation is owned by Desktop Shell and remains visually stable across Chat and Atelier.
 - Surface-local navigation may switch tabs, tasks, topics, or panels, but must not duplicate the module navigation.
-- Agent Profile is a route within Agent, not a fourth sibling module.
+- Agent Profile is a route within Chat, not a third sibling module.
+- Orchestration is an Atelier-owned work mode, not a global or Agent sibling destination.
 
 ## Panel Contract
 
@@ -67,7 +66,7 @@ Desktop Shell
   path. A decision produces a terminal card, a system receipt, and Agent
   continuation; cancellation must not be presented as success.
 - Attachments remain bound to the owning Agent/topic before send and become readable message metadata after send; they must not disappear merely because the file chooser closed.
-- Profile copies the reference client's measured identity grid: a 64px left track, 12px column gap, and one right content track. The 36px Back button and 64px avatar share the same left edge; the avatar has no nested button frame and shares its top edge with the 64px description field. Name and description share the same left edge. SOUL/AGENTS editors fill the remaining desktop height and stack on narrow containers.
+- Profile follows the measured reference identity grid: a 64px left track, 12px column gap, and one right content track. The 36px Back button and 64px avatar share the same left edge; the avatar has no nested button frame and shares its top edge with the 64px description field. Name and description share the same left edge. SOUL/AGENTS editors fill the remaining desktop height and stack on narrow containers.
 - Autosave feedback is transient Shell toast feedback, never a persistent line that changes the identity row height. Successful and failed identity, document, avatar, extension, and Provider saves use the same LobeUI notification owner at the Chat-standard bottom-right placement.
 - Agent avatar is one persisted identity value (`initial | emoji | image`) projected consistently into roster and Profile. Upload validates image type and 2 MB size, previews before Save, and preserves the old value on Cancel.
 - Profile does not own model configuration. Provider→Models is the model directory source of truth; Settings owns the global default and a new Topic inherits it. The composer exposes the same searchable, collapsible Provider tree for an optional Topic-local override.
@@ -85,12 +84,12 @@ Canonical widths:
 | Atelier task rail | 230px | 48px |
 | Atelier context rail | 230px | 48px |
 | Profile Builder | remaining center work surface | remains beside the collapsed roster |
-| Orchestration Agent library | 230px | 48px |
-| Orchestration context rail | 230px | 48px |
+| Atelier orchestration Agent library | 230px | 48px |
+| Atelier orchestration context rail | 230px | 48px |
 
 ## Continuous Workspace Contract
 
-- Agent, Atelier, and Orchestration use the same continuous split-workspace anatomy: left rail, dominant center rail, and optional right rail.
+- Chat and Atelier use the same continuous split-workspace anatomy: left rail, dominant center rail, and optional right rail.
 - Adjacent rails are separated by `border.hairline`; they are not arranged as independent rounded cards with page gutters between them.
 - Surface-local headers are compact rows inside their owning rail. They must not duplicate the Desktop Shell module navigation.
 - The center work surface owns its own scroll boundary. Its composer or prompt input remains fixed at the bottom of that center rail.
@@ -99,7 +98,7 @@ Canonical widths:
 
 ## Surface Lifetime Contract
 
-- `Agent`, `Atelier`, and `Orchestration` mount on first visit and remain mounted while the Desktop Shell is alive.
+- `Chat` and `Atelier` mount on first visit and remain mounted while the Desktop Shell is alive.
 - Module-tab switching changes frame visibility; it must not conditionally replace the active surface tree.
 - Local drafts, selected inner tabs, panel state, scroll position, and canvas state survive sibling surface switches.
 - A hidden alive surface must ignore zero-width `ResizeObserver` samples.
@@ -110,10 +109,10 @@ Canonical widths:
 - The central conversation, editor, or canvas is always the dominant reading and action rail.
 - Chat and Atelier composers align to the central content rail and remain fully usable at narrow widths.
 - SOUL / AGENTS cards stack vertically when two columns would make editing cramped.
-- Orchestration collapses secondary rails before the execution graph becomes cramped; opening one narrow rail closes the other.
+- Atelier orchestration mode collapses secondary rails before the execution graph becomes cramped; opening one narrow rail closes the other.
 - No surface may preserve fixed side columns that leave the central rail clipped or narrower than its primary controls.
 
-## Orchestration Surface Contract
+## Atelier Orchestration Contract
 
 - The left rail owns recent runs and participant selection. It must not become a separate template marketplace or duplicate Agent administration.
 - The center rail is lifecycle-owned: participant composition in `draft`, generated read-only execution graph from `plan_ready` through execution, and acceptance coverage in terminal states.
@@ -151,12 +150,12 @@ Each Agent surface must verify:
 
 ## AI Agent Checklist
 
-- [ ] Desktop Shell owns `Agent / Atelier / Orchestration`.
+- [ ] Desktop Shell owns `Chat / Atelier` inside the Agent module.
 - [ ] No nested global navigation exists inside a child surface.
 - [ ] Every collapse/expand control uses `PanelToggleDock`.
-- [ ] All three sibling surfaces preserve drafts, inner tabs, and panel state across switching.
+- [ ] Chat and Atelier preserve drafts, inner modes, and panel state across switching.
 - [ ] Compact desktop rails remain layout-owned and mutually exclusive when expanded; ultra-narrow uses chat → Topic list → left-side full-height Agent drawer navigation with no retained desktop rail.
 - [ ] The center rail remains usable after every panel transition.
 - [ ] Agent tiles are square and rounded.
-- [ ] L2 evidence covers Agent, Profile, Atelier, and Orchestration at desktop and narrow widths.
+- [ ] L2 evidence covers Chat, Profile, and Atelier orchestration mode at desktop and narrow widths.
 - [ ] L3 evidence covers module switching and every panel open/close path.

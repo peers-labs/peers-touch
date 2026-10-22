@@ -47,7 +47,7 @@ class TcpFaultProxyTest(unittest.TestCase):
 
     def test_direct_multiaddr_preserves_the_station_peer_identity(self) -> None:
         proxy = TcpFaultProxy.from_multiaddr(
-            "/ip4/10.0.0.10/tcp/18280/p2p/station-peer-two"
+            "/ip4/10.37.246.80/tcp/18280/p2p/station-peer-two"
         )
         try:
             self.assertEqual(
@@ -64,9 +64,9 @@ class TcpFaultProxyTest(unittest.TestCase):
 
     def test_rejects_circuit_and_malformed_direct_multiaddrs(self) -> None:
         for value in (
-            "/ip4/10.0.0.10/tcp/18280/p2p-circuit/p2p/station-peer-two",
-            "/ip4/10.0.0.10/udp/18280/p2p/station-peer-two",
-            "/ip4/10.0.0.10/tcp/0/p2p/station-peer-two",
+            "/ip4/10.37.246.80/tcp/18280/p2p-circuit/p2p/station-peer-two",
+            "/ip4/10.37.246.80/udp/18280/p2p/station-peer-two",
+            "/ip4/10.37.246.80/tcp/0/p2p/station-peer-two",
         ):
             with self.subTest(value=value), self.assertRaises(
                 TcpFaultProxyError

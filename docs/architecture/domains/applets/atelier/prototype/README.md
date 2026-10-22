@@ -16,7 +16,7 @@
 
 这个原型只为**展示 Atelier 终态产品长什么样**，用 React + LobeUI 写成网页给人确认形态；**不碰 Lynx / applet 容器 / SDK**。official applet product unit 已落在 `apps/applets/atelier/`，按 Lynx 运行时与 Station-bundled service binding 继续实现。
 
-> **Atelier 本质是 applet，跑在 peers-touch Desktop 容器里**，不是独立全屏 app。容器外壳（全局 SideNav + 内容区 + applet pins）由 [desktop 容器外壳原型](../../../../engineering/prototypes/desktop-shell/README.md) 展示；本原型作为 workspace 包 `@peers-touch/prototype-desktop-atelier` 被 desktop 原型作为一个 applet 嵌入其内容区。本原型也可单独跑起来看 Atelier 自身界面（壳子高度自适应，`height: 100%`）。
+> **Atelier 本质是 applet，跑在 peers-touch Desktop 容器里**，不是独立全屏 app。其产品入口属于 Agent 模块二级工作面，不向全局 SideNav 注入 applet pin。容器外壳由 [desktop 容器外壳原型](../../../../engineering/prototypes/desktop-shell/README.md) 展示；本原型作为 workspace 包 `@peers-touch/prototype-desktop-atelier` 被 desktop 原型嵌入内容区。本原型也可单独跑起来看 Atelier 自身界面（壳子高度自适应，`height: 100%`）。
 
 P4-299 SDK Lynx bridge envelope robustness unit gate：`packages/applet-sdk/src/adapters/lynx.test.ts` 现在为 Applet SDK Lynx bridge 提供 controlled/local unit matrix，覆盖 canonical object/string envelope unwrap、Host canonical error preservation、`bridge.invoke` 与 legacy `bridge.call` fallback、bridge-not-ready fail-closed、`events.subscribe` 无 params local long-poll、malformed event backoff，以及 SDK pending Host event replay bounded tail。`tooling/scripts/atelier-sdk-lynx-bridge-unit-gate.mjs` 写入 `official-applet/atelier-sdk-lynx-bridge-unit-gate.json`，并接入 completion readiness audit；该证据只证明 SDK bridge envelope robustness，不证明真实 Desktop Host Lynx injection、真实 Station SSE/Gateway delivery、真实 product-window UI 或完整 Host+Station+applet E2E，readiness 仍为 `NOT_READY`。
 

@@ -1,6 +1,8 @@
 > **Historical reference (Flutter/GetX era)**. This document describes the Flutter-era shared package structure
 > (`peers_touch_base` and `peers_touch_ui`). These packages are no longer the active client architecture.
-> Current Desktop uses React/TS + Rust/Tauri (`apps/desktop/`). Current Mobile uses native Kotlin + Swift (`apps/mobile/android/`, `apps/mobile/ios/`).
+> Current Desktop uses React/TS + Rust/Tauri (`apps/desktop/`). Current Mobile
+> uses Tauri Mobile with shared React/TS + Rust and Android/iOS native plugins
+> (`apps/mobile/src/`, `apps/mobile/src-tauri/`).
 
 ---
 

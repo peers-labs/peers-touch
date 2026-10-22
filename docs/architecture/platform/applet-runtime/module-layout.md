@@ -179,19 +179,19 @@ domain/applets/
 
 ## 3. Mobile 模块
 
-Mobile 主线是 Tauri v2 Mobile。旧 `apps/mobile/android/` 与 `apps/mobile/ios/`
-standalone 原生 App 已删除；Android/iOS 原生代码只能落在 Tauri native plugin
-目标中，不能重新形成第二个 App 壳。
+Mobile 主线是 Tauri v2 Mobile。Android/iOS 原生代码落在 Tauri native
+plugin 或 generated host 中，不能形成独立产品壳。
 
-目标结构：
+结构：
 
 ```text
 apps/mobile/src/                 # shared Mobile product shell
 apps/mobile/src-tauri/
 ├── src/                         # Rust capability kernel / commands
+├── plugins/                     # Android/iOS native capability adapters
 └── gen/
     ├── apple/                   # Tauri iOS generated project
-    └── android/                 # Tauri Android generated project (to be generated)
+    └── android/                 # Tauri Android generated project
 ```
 
 Plugin 职责：
@@ -272,7 +272,9 @@ packages/applet-contract/
 - **升级顺序**：Host 先升级（向后兼容） → SDK 升级 → Applet 升级。Host 必须能同时服务新旧 Applet。
 - **CI 保障**：`packages/applet-contract/scripts/generate-schemas.ts` 在 CI 中运行，生成的 JSON Schema 提交到仓库。Mobile 工程 CI 引用 JSON Schema 做 manifest 校验。
 
-Mobile 可按同一 schema 在 Kotlin / Swift 重写校验逻辑，或由 JSON Schema 生成 Kotlin/Swift 数据类。
+Mobile 通过共享 Rust/Applet Kernel validator 消费同一 schema。JSON Schema
+可以生成 native serialization binding，但 Kotlin/Swift adapter 不重写
+Manifest 或 capability validation 规则。
 
 ### 4.2 `packages/applet-sdk/`
 

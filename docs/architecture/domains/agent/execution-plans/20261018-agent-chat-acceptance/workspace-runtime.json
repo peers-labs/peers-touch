@@ -5,6 +5,7 @@
     "profile-create",
     "profile-documents",
     "profile-prompt-consumption",
+    "profile-skill-consumption",
     "profile-restart",
     "workspace-wide",
     "workspace-compact",

@@ -7,13 +7,11 @@ import { PortalPanel } from '../../portal';
 interface ConversationRailProps {
   narrow: boolean;
   onOpenChat: (agentName: string) => void;
-  onOpenOrchestration?: () => void;
 }
 
 export function ConversationRail({
   narrow,
   onOpenChat,
-  onOpenOrchestration,
 }: ConversationRailProps) {
   const { selectedAgent, currentSurface } = useActiveAgentSlice((state) => ({
     selectedAgent: state.selectedAgent,
@@ -77,7 +75,6 @@ export function ConversationRail({
             <AgentProfilePage
               agentName={selectedAgent}
               onBack={() => onOpenChat(selectedAgent)}
-              onOpenOrchestration={onOpenOrchestration}
               embedded
             />
           </div>

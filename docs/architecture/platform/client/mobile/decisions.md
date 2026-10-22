@@ -1,8 +1,8 @@
 # Mobile Shell — 设计决策
 
-> **Status**: active; whole-product usability and Mobile call amendments accepted
-> **Version**: v1.5
-> **Created**: 2026-08-27 | **Updated**: 2026-10-12
+> **Status**: active
+> **Version**: v1.6
+> **Created**: 2026-08-27 | **Updated**: 2026-10-16
 > **Owner**: Mobile Architecture Team
 
 ---
@@ -39,14 +39,10 @@
 | MS-D23B | Native scheduling and media selection have one terminal owner | accepted |
 | MS-D24 | Owner cutovers delete legacy semantics atomically | accepted |
 | MS-D25 | Moments typed outcomes and native media lifecycle close as one owner-composed flow | accepted |
-| MS-D26 | Required Mobile proof uses isolated iOS Simulator cells | accepted |
+| MS-D26 | Required Mobile proof uses an Android/iOS platform matrix | accepted |
 | MS-D27 | Current Mobile product proof uses one Station; cross-Station and Relay proof is deferred | accepted |
-| MS-D28 | Whole-product readiness requires a complete foreground iOS surface walkthrough | accepted |
+| MS-D28 | Whole-product readiness requires complete foreground Android and iOS walkthroughs | accepted |
 | MS-D29 | Mobile one-to-one calls inherit Chat lifecycle semantics and remain independently proven | accepted |
-
-W2-E2 physical-proof refinements are isolated in
-[`native-oauth-proof/decisions.md`](./native-oauth-proof/decisions.md).
-MOP-D01..MOP-D04 were accepted by the Owner on 2026-08-29.
 
 ## MS-D01: One Lifecycle Kernel
 
@@ -696,11 +692,9 @@ ledger, but the current v1 skeleton does not implement that contract:
   generated command identity and authoritative result/readback contract.
   Their current best-effort ledger calls cannot prove recovery.
 
-These were the verified source facts at review time. The Owner accepted the
-contract below on 2026-09-11. The authenticated Friend Request command-result
-lookup required by item 2 and the Mobile schema-v2 implementation are now
-source-complete; required simulator proof remains `UNPROVEN`, while physical
-native proof is optional diagnostics under MS-D26.
+The authenticated Friend Request command-result lookup and Mobile schema-v2
+implementation are present in shared source. Android and iOS recovery remain
+independently `UNPROVEN` until their required runtime cells pass.
 
 ### Decision
 
@@ -1243,8 +1237,10 @@ discarded.
 
 ### Consequences
 
-- Native source and simulator evidence are required independently on iOS and
-  Android; physical evidence is optional diagnostics.
+- Native source and runtime evidence are required independently on iOS and
+  Android. Physical evidence is required whenever the claim depends on real
+  provider, hardware, background, picker, accessibility, or performance
+  behavior.
 - Missing provider configuration degrades to foreground/pull reconciliation;
   it does not invalidate the session.
 - Token and staged-media cleanup become explicit lifecycle obligations.
@@ -1353,8 +1349,9 @@ only opaque handles and metadata to Web.
 ### Consequences
 
 - OS scheduling remains best effort; source completion does not prove cadence.
-- Simulator expiration/cancellation and picker behavior remain W7-PROOF;
-  physical behavior is optional diagnostics.
+- Simulator/emulator cells cover deterministic expiration and cancellation.
+  Physical Android and iOS cells are required for real scheduler and picker
+  behavior.
 - Native and Rust cleanup paths become mandatory source checks.
 
 See
@@ -1439,89 +1436,61 @@ have one deterministic cleanup outcome.
 ### Consequences
 
 - W6B source closure may rely on generated Social outcomes and Rust staging.
-- W6B-PROOF and W7-PROOF require simulator picker, permission, interruption,
+- Platform proof requires Android and iOS picker, permission, interruption,
   multi-actor, and receiver-perspective evidence.
-- Simulator success does not claim the optional physical diagnostic scope.
+- Simulator/emulator success does not claim physical provider behavior.
 
 See
 [`20260919-moments-outcome-media-lifecycle-amendment.md`](./proposals/20260919-moments-outcome-media-lifecycle-amendment.md).
 
-## MS-D26: iOS Simulator-Canonical Mobile Acceptance
+## MS-D26: Android/iOS Required Mobile Platform Matrix
 
 **Status**: accepted
-**Date**: 2026-09-21
+**Date**: 2026-10-16
 
 ### Context
 
-The Mobile Plan made physical iOS and Android devices mandatory for every
-runtime closure even when the asserted business behavior is owned above the
-hardware boundary. That coupled product completion to scarce device leases,
-provider accounts, and hardware availability while several required
-`mobile-native-*` scenarios were only catalogued placeholders.
+Mobile is one product with Android and iOS release targets. Shared source and
+one OS runtime cannot prove the other OS host, provider setup, permission
+model, lifecycle, packaging, accessibility, or native callback behavior.
 
 ### Decision
 
-The canonical required Mobile runtime cell is source-bound iOS Simulator.
-Single-client journeys use one pinned iOS Simulator. Journeys that require
-concurrent sessions, cross-actor truth, or cross-Station truth use two isolated
-iOS Simulators with distinct devices, Appium sessions, ports, profiles, and
-storage roots, plus real source-attested services, disposable actors,
-authoritative readback, and deterministic cleanup.
+Every Mobile support or readiness claim is evaluated as:
 
-The required client identities are `sim-ios` for the primary client and
-`sim-ios-peer` for the independent peer. A missing peer client is `BLOCKED` for
-takeover, cross-actor, cross-device, or receiver-perspective assertions; those
-assertions must not degrade to a single shared session.
+```text
+capability x release target x runtime mode x source revision
+```
 
-Required simulator Gates must execute production actions through
-`window.__PEERS_MOBILE_ACCEPTANCE__`; they cannot replace runtime evidence with
-source scans, mocks, injected success results, or stale artifacts. Platform
-callbacks, restart, lifecycle, recovery, layout, accessibility, Moments,
-Settings, Chat, Contacts, and Social convergence are proved on their declared
-simulator cells.
+The required platform set is declared per capability. A whole-Mobile or
+cross-platform capability claim requires both Android and iOS cells unless the
+product definition explicitly marks one platform unsupported.
 
-Android Emulator and the existing `mobile-native-*` physical-device
-environment remain optional diagnostics. They may strengthen Android-specific
-and hardware-specific confidence for real provider browsers,
-Keychain/AndroidKeyStore behavior, VoiceOver/TalkBack, OEM scheduling,
-camera/photo providers, and pinned-hardware performance. Their absence,
-failure to provision, or missing provider credentials does not block a Mobile
-Task, W8 hard cut, W9 completion, or the required Acceptance bundle. Optional
-Android or physical evidence must never be relabeled as required iOS Simulator
-evidence, and iOS Simulator evidence must never claim Android or physical
-execution.
+Deterministic simulator/emulator cells prove behavior that those environments
+actually execute. Physical-device cells are required when the claim depends on
+secure hardware, real provider delivery, OEM scheduling, camera/media
+providers, radio/process behavior, assistive technology, or pinned-hardware
+performance.
 
-OAuth's required proof boundary is the Station-bound access attempt,
-callback-routing, finalization, replay/mismatch rejection, secure-session
-projection, and restart behavior that can run deterministically on simulator
-cells. A live GitHub/Google browser authorization remains an optional provider
-diagnostic and does not own product completion.
+Multi-client assertions use isolated clients with distinct devices/simulators,
+Appium sessions, profiles, ports, storage roots, and runtime identities.
+Receiver-perspective assertions never collapse into one shared session.
 
-### Rejected
-
-- Keeping physical devices as hidden completion prerequisites.
-- Keeping Android Emulator as a hidden completion prerequisite.
-- Treating an unavailable optional physical Gate as `BLOCKED` required work.
-- Reusing `mobile-native-*` IDs for simulator runs.
-- Replacing missing runtime journeys with static checks or fabricated Harness
-  state.
-- Keeping dual required bundles with different completion truth.
+Required Gates execute production actions through the bounded Acceptance
+Harness. Source scans, mocks, injected success, stale artifacts, and another
+platform's evidence cannot satisfy a runtime cell.
 
 ### Consequences
 
-- Feature, Capability, Registry, Plan, and Task contracts reference only iOS
-  Simulator Gates for required Mobile runtime proof.
-- Two-client product assertions retain independent receiver evidence through
-  two isolated iOS Simulator clients; they are not collapsed into one session.
-- Missing simulator Journey coverage is implemented before the corresponding
-  proof Task can close.
-- Android and physical Gate artifacts remain separately named and explicitly
-  optional.
-- This Plan makes no Android runtime-readiness claim. Android regressions do
-  not block completion until a later product decision restores Android to the
-  required platform matrix.
-- Historical physical-proof evidence remains truthful historical evidence but
-  is not a current blocker or substitute for the canonical simulator run.
+- iOS evidence never proves Android; Android evidence never proves iOS.
+- Shared Rust/TypeScript tests prove portable semantics only.
+- Feature, capability, Plan, and Task contracts declare their required
+  platform cells explicitly.
+- Missing, failed, or stale required evidence is `UNPROVEN`.
+- Gate and artifact IDs remain platform-specific and source-bound.
+- OAuth, push, deep link, secure storage, background work, media, accessibility,
+  layout, and performance declare simulator/emulator versus physical scope
+  from the behavior being asserted.
 
 ## MS-D27: Same-Station Direct Proof For The Current Mobile Plan
 
@@ -1540,11 +1509,11 @@ boundary.
 
 ### Decision
 
-The current Mobile Plan requires two isolated iOS Simulator clients and two
+Same-Station receiver journeys require two isolated Mobile clients and two
 distinct actors bound through typed client-service bindings to one
-source-attested disposable Station. The canonical environment is
-`mobile-direct-simulator`; it reuses the production Harness and the existing
-scenario-specific product oracles without a Relay.
+source-attested disposable Station. Each required Android and iOS cell uses
+its platform-specific environment. `mobile-direct-simulator` is the current
+iOS implementation; the missing Android counterpart remains `UNPROVEN`.
 
 Cross-Station or Relay-backed Social, Chat, Contacts, Moments, and recovery
 proof is excluded from `mobile-shell-20260827`. It remains `UNPROVEN` and must
@@ -1579,27 +1548,25 @@ future topology without weakening its two-Station assertions.
 - Cross-Station scope stays visible in product, architecture, and Acceptance
   documents as deferred and unproven.
 
-## MS-D28: Whole-Product Foreground Usability Is A Release Gate
+## MS-D28: Whole-Product Foreground Usability Is A Cross-Platform Release Gate
 
 **Status**: accepted
-**Date**: 2026-10-08
+**Date**: 2026-10-16
 
 ### Context
 
-The completed MICU-03 Session-class Suite proved its narrow Session and message
-delivery contract, but its native screenshot also showed a raw PTID as the
-conversation title, oversized hierarchy, an app-obstructing
-deferred-capability card, large unused space, and a compromised composer. The
-functional oracle did not inspect every Mobile page or judge whether a person
-could understand, operate, and visually trust the product.
+Feature-specific functional evidence does not prove that the complete Mobile
+product is understandable, operable, accessible, or visually coherent.
+Android and iOS also differ in WebView, system chrome, font metrics, keyboard,
+safe areas, permissions, and accessibility services.
 
 ### Decision
 
-Mobile whole-product readiness requires one source-bound foreground iOS
-walkthrough generated from the complete lifecycle, route, overlay, and recovery
-inventory. The walkthrough opens and operates each surface, captures screenshot
-and DOM/AX evidence, and applies deterministic content/layout checks plus an
-agent-led visual review.
+Mobile whole-product readiness requires source-bound foreground walkthroughs
+for both Android and iOS generated from the same complete lifecycle, route,
+overlay, and recovery inventory. Each walkthrough opens and operates every
+surface, captures screenshot and DOM/accessibility evidence, and applies
+deterministic content/layout checks plus agent-led visual review.
 
 A module-local failure must remain inside its owning page or section. Raw
 technical identifiers and internal errors may appear only behind an explicit
@@ -1625,14 +1592,14 @@ accessibility, or recovery states elsewhere in the app.
 
 ### Consequences
 
-- `mobile-simulator-whole-product-usability-e2e` must cover the full
-  descriptor/state inventory and preserve per-surface evidence; the
-  launch-only layout Gate remains independently scoped.
-- Any unvisited route or required visible state remains `UNPROVEN`.
+- Android and iOS walkthrough Gates consume the same descriptor/state inventory
+  and preserve separate per-surface evidence.
+- Any unvisited route, required visible state, or required platform cell remains
+  `UNPROVEN`.
 - Any blocker or major usability finding prevents a whole-product completion
   claim even when feature-specific business assertions pass.
-- Historical MICU-03 evidence remains valid only for its declared Session
-  scope and cannot be relabeled as Mobile product readiness.
+- Evidence from one OS cannot be relabeled as the other OS or as whole-Mobile
+  readiness.
 
 ## MS-D29: Mobile One-To-One Calls Inherit Chat Lifecycle Semantics
 

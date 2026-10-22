@@ -1,6 +1,8 @@
 # Applet 容器设计（Mobile 端）
 
-> Mobile 主线已迁移为 Tauri v2 Mobile。本文采用 `@peers-touch/applet-contract` 的 canonical manifest 与 `peers-touch.applet.bridge` 协议；历史 Bridge V2 / Manifest V2 术语仅作为兼容背景，不再作为新实现目标。Android / iOS 原生集成方式应通过 Tauri mobile native plugin 承载，而不是 Compose / SwiftUI 主 UI 直接嵌入。
+> Mobile 使用 Tauri v2 Mobile、`@peers-touch/applet-contract` canonical
+> manifest 与 `peers-touch.applet.bridge` 协议。Android/iOS 原生集成通过
+> Tauri Mobile native plugin 承载。
 
 ## 1. 文档目标
 
@@ -308,7 +310,7 @@ Canonical bridge 协议（`peers-touch.applet.bridge`）定义了 Applet 与宿�
 - Bridge response/event envelope 序列化/反序列化使用平台 JSON 能力，错误码必须使用 canonical applet error code。
 - Bridge 消息通过 Lynx SDK 的 `evaluateJavascript` 从宿主推送到 Applet。
 - 宿主侧维护 `Map<String, AppletBridgeSession>` 管理各 Applet 的 Bridge 会话。
-- Android runtime release evidence 入口必须在 Tauri Android native plugin 落地后重建；旧 `apps/mobile/android` standalone APK 已删除，不能再作为验收宿主。
+- Android runtime release evidence 必须由当前 Tauri Android Host 与 native plugin 生成。
 - Tauri plugin 宿主加载前必须扫描本地 applet bundle，并把 `load.android.entry` 解析为 app sandbox 中的实际 bundle URL，而不是只把相对 entry 传给 Lynx。
 - 最终 Android E2E 必须通过 Tauri Mobile app/plugin 在真实 emulator/device 中打开 applet route，并且只有在 `AppletBridgeNativeModule` 观察到 SDK canonical marker 后才能写出 release evidence。
 
@@ -316,7 +318,7 @@ Canonical bridge 协议（`peers-touch.applet.bridge`）定义了 Applet 与宿�
 - Bridge response/event envelope 序列化/反序列化使用 `Codable` / dictionary bridge，错误码必须使用 canonical applet error code。
 - Bridge 消息通过 Lynx SDK 的 JS 执行接口从宿主推送到 Applet。
 - 宿主侧维护 `[String: AppletBridgeSession]` 字典管理各 Applet 的 Bridge 会话。
-- iOS runtime release evidence 入口必须在 Tauri iOS native plugin 落地后重建；旧 `apps/mobile/ios/PeersTouch` standalone App 已删除，不能再作为验收宿主。
+- iOS runtime release evidence 必须由当前 Tauri iOS Host 与 native plugin 生成。
 - 最终 iOS E2E 必须通过 Tauri Mobile app/plugin 在 Simulator/device 中打开 applet route，并且只有在 `AppletBridgeNativeModule` 观察到 SDK canonical marker 后才能写出 release evidence。
 
 ---

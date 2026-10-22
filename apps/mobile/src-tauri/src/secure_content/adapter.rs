@@ -3,6 +3,7 @@ use prost::Message;
 use rand::{rngs::OsRng, RngCore};
 use secure_content_core::codec::CanonicalMessageEncoder;
 use secure_content_core::envelope::{seal_content_key, ContentKey};
+use secure_content_core::operation::OperationState;
 use secure_content_core::payload::{
     derive_payload_key, encrypt_payload, PayloadKeyContext, PAYLOAD_FORMAT_VERSION,
 };
@@ -17,7 +18,7 @@ use crate::secure_content::private_mention::{
     PrivateMentionIntent,
 };
 use crate::secure_content::proto::{secure_content::v1 as wire, social::v1 as social};
-use crate::secure_content::store::{DurableState, StoredDraft, StoredSubmission};
+use crate::secure_content::store::{StoredDraft, StoredSubmission};
 use crate::secure_content::NativeSocialSession;
 
 const MAX_PRIVATE_TEXT_BYTES: usize = 64 * 1024;
@@ -353,9 +354,12 @@ pub fn build_text_submission(
             request_bytes,
             root_key: root_key.to_bytes(),
             projection_json: projection.encode()?,
-            state: DurableState::Prepared,
+            state: OperationState::Prepared,
             lease_generation: 0,
             session_generation: 0,
+            attempt_count: 0,
+            next_attempt_at_unix_ms: 0,
+            updated_at_unix_ms: 0,
             post_id: None,
             last_error_code: None,
         },
@@ -699,9 +703,12 @@ pub fn build_moment_submission(
             request_bytes,
             root_key: root_key.to_bytes(),
             projection_json: projection.encode()?,
-            state: DurableState::Pending,
+            state: OperationState::Pending,
             lease_generation: 0,
             session_generation: 0,
+            attempt_count: 0,
+            next_attempt_at_unix_ms: 0,
+            updated_at_unix_ms: 0,
             post_id: None,
             last_error_code: None,
         },

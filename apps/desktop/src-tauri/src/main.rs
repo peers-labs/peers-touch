@@ -637,7 +637,7 @@ fn main() {
                     }
                 }))
                 .expect("messaging projection notifier must initialize");
-            #[cfg(debug_assertions)]
+            #[cfg(any(debug_assertions, feature = "acceptance-webdriver"))]
             interface::http_gateway::start(Arc::clone(state.inner()), app.handle().clone());
             application::desktop_executor_worker::start(Arc::clone(state.inner()));
             let capability_supervisor = app
@@ -878,6 +878,7 @@ fn main() {
             agent_turn::agent_turn_trace_list,
             agent_turn::agent_turn_trace_get,
             agent_turn::agent_turn_diagnostics_export,
+            agent_turn::agent_turn_attributions_get,
             agent_turn::agent_submit_tool_decision,
             runtime_evidence::agent_runtime_profile_effective,
             capability_authority::agent_capability_manifest_list,
@@ -885,6 +886,7 @@ fn main() {
             capability_authority::agent_capability_binding_upsert,
             capability_authority::agent_capability_binding_delete,
             capability_authority::agent_capability_readiness,
+            capability_authority::agent_command_capability_snapshot,
             #[cfg(feature = "acceptance-webdriver")]
             capability_authority::agent_capability_acceptance_scenario_prepare,
             #[cfg(feature = "acceptance-webdriver")]
@@ -1308,6 +1310,7 @@ fn main() {
             }
             // Clicking the dock icon with the window resident-hidden reopens
             // and focuses it, mirroring the tray Show action.
+            #[cfg(target_os = "macos")]
             if matches!(event, tauri::RunEvent::Reopen { .. }) {
                 application::tray::restore_main_window(app);
             }

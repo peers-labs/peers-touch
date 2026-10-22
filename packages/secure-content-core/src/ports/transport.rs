@@ -2,6 +2,28 @@ use crate::object::{
     EncryptedObjectChunk, ObjectDescriptor, ObjectTransferFailure, ObjectTransferRecord,
     PreparedObjectUpload,
 };
+use crate::operation::{
+    ContentPreKeyInventory, ContentPreKeyPoolKind, ContentPreKeyPublishDisposition,
+    OperationFailure,
+};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ContentPreKeyInventoryRead {
+    Found(ContentPreKeyInventory),
+    PoolNotFound,
+}
+
+pub trait ContentPreKeyTransport: Send + Sync {
+    fn inventory(
+        &self,
+        kind: ContentPreKeyPoolKind,
+    ) -> Result<ContentPreKeyInventoryRead, OperationFailure>;
+
+    fn publish(
+        &self,
+        canonical_request: &[u8],
+    ) -> Result<ContentPreKeyPublishDisposition, OperationFailure>;
+}
 
 pub trait ObjectTransferTransport: Send + Sync {
     fn begin_upload(

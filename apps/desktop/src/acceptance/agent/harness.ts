@@ -49,7 +49,10 @@ import { usePortalStore } from '../../store/portal';
 import { useProviderStore } from '../../store/provider';
 import { useSessionStore } from '../../store/session';
 import { evaluationRevisionMutationKey } from '../../store/evaluation/commands';
-import { useAgentCapabilityStore } from '../../store/agentCapabilities';
+import {
+  selectAgentCommandCapabilityProjectionState,
+  useAgentCapabilityStore,
+} from '../../store/agentCapabilities';
 import { useAgentConnectorStore } from '../../store/agentConnectors';
 import { useMCPStore } from '../../store/mcp';
 import { useOAuth2Store } from '../../store/oauth2';
@@ -33435,6 +33438,52 @@ export function installAcceptanceHarness(): void {
       return { reconciled: true };
     },
 
+    async setChatSuiteCommandProjectionState({
+      agentId,
+      state,
+    }: {
+      agentId: string;
+      state: 'ready' | 'stale' | 'unavailable';
+    }) {
+      const capabilityStore = useAgentCapabilityStore.getState();
+      if (state === 'ready') {
+        await capabilityStore.loadAgent(
+          agentId,
+          capabilityStore.readinessInputByAgentId[agentId],
+        );
+      } else {
+        await waitFor(
+          () => !useAgentCapabilityStore.getState().loadingAgentIds[agentId],
+          `Agent ${agentId} capability projection idle`,
+          30_000,
+        );
+        useAgentCapabilityStore.setState((current) => {
+          const commandSnapshotsByAgentId = {
+            ...current.commandSnapshotsByAgentId,
+          };
+          if (state === 'unavailable') {
+            delete commandSnapshotsByAgentId[agentId];
+          }
+          return {
+            commandSnapshotsByAgentId,
+            commandSnapshotStateByAgentId: {
+              ...current.commandSnapshotStateByAgentId,
+              [agentId]: state,
+            },
+          };
+        });
+        await new Promise<void>((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+        });
+      }
+      const current = useAgentCapabilityStore.getState();
+      return {
+        state: selectAgentCommandCapabilityProjectionState(current, agentId),
+        snapshotId:
+          current.commandSnapshotsByAgentId[agentId]?.snapshotId ?? '',
+      };
+    },
+
     async reconcileChatSuiteTopicProjection() {
       await reconcileRuntime('agent-topic', 'acceptance-chat-suite-setup');
       return { reconciled: true };
@@ -33446,6 +33495,26 @@ export function installAcceptanceHarness(): void {
         api.listAgentCapabilityBindings(agentId),
       ]);
       return evidenceValue({ ...inventory, bindings });
+    },
+
+    async cleanupChatSuiteCapabilityBindings({
+      agentId,
+    }: {
+      agentId: string;
+    }) {
+      const bindings = await api.listAgentCapabilityBindings(agentId);
+      const removed: string[] = [];
+      for (const binding of bindings) {
+        if (binding.tombstonedAt) continue;
+        await api.deleteAgentCapabilityBinding(
+          binding.bindingId,
+          binding.revision,
+          `chat-suite-cleanup-${crypto.randomUUID()}`,
+          'acceptance_suite_cleanup',
+        );
+        removed.push(binding.bindingId);
+      }
+      return { agentId, removed };
     },
 
     async prepareChatSuiteToolApproval({ agentId }: { agentId: string }) {
@@ -37545,6 +37614,99 @@ export function installAcceptanceHarness(): void {
         conversations,
         selectedConversationKey: useChatStore.getState().currentSessionKey,
       };
+    },
+
+    async cleanupAgentDepthFixtures({
+      agentIds,
+    }: {
+      agentIds: string[];
+    }) {
+      const failures: string[] = [];
+      for (const agentId of [...new Set(agentIds.filter(Boolean))]) {
+        try {
+          await api.deleteAgent(agentId);
+        } catch (error) {
+          if (!isFoundationResourceNotFound(error)) {
+            failures.push(`${agentId}:${observedErrorCode(error)}`);
+          }
+        }
+      }
+      await useAgentStore.getState().loadAgents();
+      const remaining = new Set(
+        useAgentStore.getState().agents.map((agent) => agent.id),
+      );
+      const retained = agentIds.filter((agentId) => remaining.has(agentId));
+      if (retained.length > 0) {
+        failures.push(`retained:${retained.join(',')}`);
+      }
+      return evidenceValue({
+        status: failures.length === 0 ? 'clean' : 'failed',
+        deletedAgentCount: agentIds.length - retained.length,
+        retainedAgentIds: retained,
+        failures,
+      });
+    },
+
+    async roundtripAgentDefinitionPackage({
+      agentId,
+      importedName,
+    }: {
+      agentId: string;
+      importedName: string;
+    }) {
+      const source = await api.getAgent(agentId);
+      const exported = await api.exportAgentPackage(agentId);
+      const document = exported.package as Record<string, unknown>;
+      const packagedAgent = document.agent as Record<string, unknown> | undefined;
+      if (!packagedAgent) {
+        throw new Error('agent.acceptance.definitionPackageAgentMissing');
+      }
+      const imported = await api.importAgentPackage(exported.package, importedName);
+      if (!imported.agent) {
+        throw new Error('agent.acceptance.definitionPackageImportMissing');
+      }
+      const importedReadback = await api.getAgent(imported.agent.id);
+      const config = JSON.parse(String(packagedAgent.configJson || '{}')) as Record<
+        string,
+        unknown
+      >;
+      const retiredAliases = [
+        'identity',
+        'identityPrompt',
+        'identity_prompt',
+        'soul',
+        'soulMd',
+        'soul_md',
+        'systemPrompt',
+        'system_prompt',
+        'agentConfigPrompt',
+        'agent_config_prompt',
+        'agents',
+        'agentsMd',
+        'agents_md',
+      ].filter((key) => Object.prototype.hasOwnProperty.call(config, key));
+
+      return evidenceValue({
+        source: {
+          agentId: source.id,
+          soulMd: source.soulMd,
+          agentsMd: source.agentsMd,
+          version: source.version,
+        },
+        package: {
+          identityPrompt: packagedAgent.identityPrompt ?? '',
+          agentConfigPrompt: packagedAgent.agentConfigPrompt ?? '',
+          retiredAliases,
+          unresolvedDependencies: exported.unresolvedDependencies,
+        },
+        imported: {
+          agentId: importedReadback.id,
+          soulMd: importedReadback.soulMd,
+          agentsMd: importedReadback.agentsMd,
+          version: importedReadback.version,
+          unresolvedDependencies: imported.unresolvedDependencies,
+        },
+      });
     },
 
     async getFoundationAgentState() {

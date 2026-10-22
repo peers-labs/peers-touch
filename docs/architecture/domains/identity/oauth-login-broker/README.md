@@ -76,7 +76,7 @@ so a dedicated service or database can take over without changing OAuth use case
 
 ## 5. Upstream Sources
 
-- `docs/global/architecture.md`
+- `docs/architecture/architecture.md`
 - `docs/architecture/platform/station/access/`
 - `docs/architecture/platform/client/mobile/`
 - `docs/architecture/platform/station/access/station-access-gate-architecture.md`

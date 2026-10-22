@@ -130,7 +130,7 @@
 │  │  │  Memory Toggle │  │    │  │  Memory Toggle │                │ │
 │  │  └────────────────┘  │    │  └────────────────┘                │ │
 │  │                      │    │                                     │ │
-│  │  ┌────────────────┐  │    │  Local Cache (SQLite/Room/SwiftData)│ │
+│  │  ┌────────────────┐  │    │  Shared Mobile cache + Rust store   │ │
 │  │  │ Local Cache    │  │    │  - 记忆摘要缓存                     │ │
 │  │  │ (Rust SQLite)  │  │    │  - Persona 缓存                    │ │
 │  │  └────────────────┘  │    │  - 不缓存 embedding 向量            │ │
@@ -985,8 +985,8 @@ apps/desktop/src-tauri/src/
 ### 10.3 前端保持现有 UI
 
 现有前端的 Memory UI 已经比较完善，保持以下组件并对接真实数据：
-- `MemoryPage.tsx` — Browse/Search/Persona/Events 四个 Tab
-- `MemorySettingsTab.tsx` — Memory + Embedding 配置
+- `components/settings/MemorySettingsSection.tsx` — Settings > AI > Memory 下的 Browse/Search/Persona/Events/Configuration
+- `components/settings/MemorySettingsTab.tsx` — Memory + Embedding 配置内容
 - `ChatInput.tsx` — Memory 开关（MemoryControls 组件）
 - `AgentSettingsModal.tsx` — Agent 级 memory 配置（enabled + effort: low/medium/high）
 - `AgentProfilePage.tsx` — Agent 的 Memories Tab（按 identity/preference/context/experience/activity 过滤）
@@ -1063,7 +1063,7 @@ Rules:
 
 ## 13. 相关文档
 
-- [全局架构](../../../global/architecture.md)
+- [全局架构](../../architecture.md)
 - [领域模型规范](../../../global/domain-model.md)
 - [第一性原理](../../../global/first-principles.md)
 - [SubServer 开发标准](../../../station/subserver-standard.md)

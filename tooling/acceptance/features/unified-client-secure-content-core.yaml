@@ -1,0 +1,42 @@
+{
+  "id": "unified-client-secure-content-core",
+  "status": "active",
+  "product_area": "mobile",
+  "owners": [
+    "packages/secure-content-core/**",
+    "docs/architecture/shared/security/secure-content/**",
+    "tooling/acceptance/gates/mobile/secure_content_portable_core.py"
+  ],
+  "truth_sources": [
+    "SC-D30 portable Native client-operation ownership",
+    "secure-content-core operation transition and known-answer tests"
+  ],
+  "visible_surfaces": [
+    {
+      "type": "source-contract",
+      "state": "secure-content-operation-v1"
+    }
+  ],
+  "required_gates": [
+    "secure-content-portable-core"
+  ],
+  "acceptance": {
+    "architecture_assertions": [
+      "PreKey planning and canonical command identity have one portable owner",
+      "durable operation transitions are session and lease generation fenced",
+      "UNKNOWN_OUTCOME requires authoritative readback before exact-command retry",
+      "recovery continuation consumes only typed key-material and cancellation ports",
+      "the core imports no HTTP, SQL, filesystem, Tauri, Social, Conversation or UI implementation"
+    ],
+    "migration_assertions": [
+      "Desktop and Mobile owner inventory maps every duplicated mechanism",
+      "secure-content-operation-v1 schema migration is frozen before consumer cutover",
+      "UCA-05 production consumers use the portable operation contract without dual write"
+    ]
+  },
+  "negative": [
+    "this source-only contract does not prove Desktop, iOS or Android product journeys",
+    "Social and Conversation business authority must remain outside the core",
+    "the Gate must fail if a production consumer bypasses the portable operation contract"
+  ]
+}

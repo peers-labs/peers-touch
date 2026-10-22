@@ -898,10 +898,10 @@ export interface PrivateSocialRuntimeStatus {
   actorPtid?: string;
   deviceId?: string;
   activationGeneration: number;
-  workerMode: 'on_demand';
+  reconciliationMode: 'on_demand';
 }
 
-export interface PrivateSocialWorkerReport {
+export interface PrivateSocialReconciliationReport {
   endpointPrekeysAvailable: number;
   recoveryPrekeysAvailable: number | null;
   submissionsProcessed: number;
@@ -932,7 +932,7 @@ export type PrivateSocialInvalidation =
       entireScope: true;
     };
 
-export interface PrivateSocialReconcileResult extends PrivateSocialWorkerReport {
+export interface PrivateSocialReconcileResult extends PrivateSocialReconciliationReport {
   invalidatedReadProjections: PrivateMomentReadProjection[];
 }
 
@@ -1550,6 +1550,11 @@ export interface StationRouteBindingProjection {
   transportOrigin: string;
 }
 
+export interface StationRouteRefreshProjection {
+  binding: StationRouteBindingProjection;
+  route: NativeStationRouteCandidate;
+}
+
 export type XConfigFreshness = 'current' | 'stale' | 'embedded' | 'unavailable';
 
 export interface XConfigSuggestion {
@@ -1606,8 +1611,8 @@ export async function restoreStationRouteBinding(input: {
   routeRevision: number;
   sourceRef: string;
   endpointOrigin: string;
-}): Promise<StationRouteBindingProjection> {
-  return invoke<StationRouteBindingProjection>('station_route_restore', { input });
+}): Promise<StationRouteRefreshProjection> {
+  return invoke<StationRouteRefreshProjection>('station_route_restore', { input });
 }
 
 export async function removeStationRouteBinding(input: {
@@ -1620,6 +1625,14 @@ export async function removeStationRouteBinding(input: {
 
 export async function readStationRouteBinding(): Promise<StationRouteBindingProjection | null> {
   return invoke<StationRouteBindingProjection | null>('station_route_snapshot');
+}
+
+export async function refreshStationRouteBinding(input: {
+  stationPeerId: string;
+  routeId: string;
+  routeRevision: number;
+}): Promise<StationRouteRefreshProjection> {
+  return invoke('station_route_refresh', { input });
 }
 
 export async function fetchActiveStationIdentity(): Promise<VerifiedStationIdentity> {

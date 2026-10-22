@@ -3,17 +3,14 @@
  *
  * Faithful web-stack mock of the real desktop chrome (apps/desktop):
  *   - global SideNav (LobeUI `<SideNav>` form): avatar + topActions
- *     (Search / chat / agent + applet pins) + bottomActions
+ *     (Search / Chat / Agent / Moments) + bottomActions
  *     (notifications / settings)
  *   - a content area that swaps pages by `page` (kernel-style pages render
  *     a lightweight placeholder; applets render their own surface)
  *   - command palette (Cmd/Ctrl + K), also opened from Settings
  *
- * Atelier is NOT a standalone full-screen app — it is an *applet*. The rail
- * `▦` icon opens the **applets center** (`page === 'applets'`), which lists all
- * installed applets as cards; clicking an applet's "Open" enters its surface as
- * `applet:<id>` inside the content area. This mirrors the real desktop flow
- * (AppletsPage → handleOpen → navigate `applet:<id>`).
+ * Applets remain runtime surfaces, but the generic launcher and applet
+ * instances do not inject entries into the global rail.
  *
  * This prototype exists to show that container relationship; the page bodies
  * other than atelier are intentionally thin placeholders.
@@ -36,11 +33,9 @@ import {
   Wrench,
   ChevronRight,
   Zap,
-  Workflow as WorkflowIcon,
   type LucideIcon,
 } from 'lucide-react';
 import { AtelierPage } from '@peers-touch/prototype-desktop-atelier';
-import { AgentCanvasPage } from '@peers-touch/prototype-agent-canvas';
 import { AppletWorkspacePage } from '../../features/applet-workspace/src/AppletWorkspacePrototype';
 import { SocialChatPage } from '../../features/social-chat/src/pages/SocialChatPage';
 import { Page as AgentFeaturePage } from '../../features/agent/src/Page';
@@ -114,6 +109,7 @@ const NAV_ITEMS: { id: string; icon: LucideIcon; title: string }[] = [
   { id: 'search', icon: Search, title: '搜索' },
   { id: 'chat', icon: MessageCircle, title: '聊天' },
   { id: 'agent', icon: Bot, title: 'Agent' },
+  { id: 'moments', icon: Sparkles, title: '动态' },
 ];
 
 const COMMANDS: { id: string; label: string; desc: string; shortcut: string; target: string }[] = [
@@ -121,9 +117,7 @@ const COMMANDS: { id: string; label: string; desc: string; shortcut: string; tar
   { id: 'chat', label: '聊天', desc: '打开 Social Chat', shortcut: '⌘⇧C', target: 'chat' },
   { id: 'agent', label: 'Agent', desc: '打开 Agent', shortcut: '⌘J', target: 'agent' },
   { id: 'agent-atelier', label: 'Atelier', desc: '打开 Agent 工作台', shortcut: '⌘⇧A', target: 'agent-atelier' },
-  { id: 'agent-orchestration', label: 'Agent 编排', desc: '从 Agent 页进入编排画板', shortcut: '⌘⇧J', target: 'agent-orchestration' },
-  { id: 'applets', label: 'Applets', desc: '打开 Applets 中心', shortcut: '⌘⇧E', target: 'applets' },
-  { id: 'atelier', label: '打开 Atelier', desc: '进入 Atelier applet', shortcut: '⌘⇧A', target: 'applet:atelier' },
+  { id: 'moments', label: '动态', desc: '打开 Social', shortcut: '⌘⇧M', target: 'moments' },
   { id: 'settings', label: '设置', desc: '打开设置', shortcut: '⌘,', target: 'settings' },
 ];
 
@@ -247,17 +241,10 @@ function SideNav({
             key={n.id}
             icon={n.icon}
             title={n.title}
-            active={page === n.id || (n.id === 'agent' && page === 'agent-orchestration')}
+            active={page === n.id || (n.id === 'agent' && page.startsWith('agent'))}
             onClick={() => onNavigate(n.id)}
           />
         ))}
-        {/* applets center entry (▦); active on the list page or any applet surface */}
-        <RailIcon
-          icon={Blocks}
-          title="Applets"
-          active={page === 'applets' || page.startsWith('applet:')}
-          onClick={() => onNavigate('applets')}
-        />
       </div>
 
       {/* spacer */}
@@ -284,6 +271,7 @@ function PagePlaceholder({ page }: { page: string }) {
   const meta: Record<string, { title: string; desc: string; icon: LucideIcon }> = {
     search: { title: '搜索', desc: '全局搜索页（peers-touch 容器壳页，原型未细化）', icon: Search },
     chat: { title: '聊天', desc: '社交聊天页（含 Chat / Contacts 与会话内 stream call）', icon: MessageCircle },
+    moments: { title: '动态', desc: 'Social 动态页', icon: Sparkles },
     settings: { title: '设置', desc: '设置页（peers-touch 容器壳页，原型未细化）', icon: Settings },
   };
   const m = meta[page] ?? { title: page, desc: '占位页', icon: Blocks };
@@ -304,9 +292,6 @@ function PagePlaceholder({ page }: { page: string }) {
       <Icon size={40} color={T.textQuaternary} />
       <div style={{ fontSize: 17, fontWeight: 'bold', color: T.textSecondary }}>{m.title}</div>
       <div style={{ fontSize: 13, maxWidth: 360, textAlign: 'center' }}>{m.desc}</div>
-      <div style={{ fontSize: 12, color: T.textQuaternary, marginTop: 8 }}>
-        本原型聚焦容器外壳 + Atelier applet；点左栏 ▦ 进入 Applets 中心。
-      </div>
     </div>
   );
 }
@@ -638,19 +623,17 @@ export interface DesktopShellProps {
   initialPage?: string;
 }
 
-type AgentSurfaceId = 'agent' | 'agent-atelier' | 'agent-orchestration';
+type AgentSurfaceId = 'agent' | 'agent-atelier';
 
 function getAgentSurfaceId(page: string): AgentSurfaceId | null {
   if (page === 'agent' || page === 'agent-profile') return 'agent';
   if (page === 'agent-atelier') return 'agent-atelier';
-  if (page === 'agent-orchestration') return 'agent-orchestration';
   return null;
 }
 
 export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
-  // page mirrors the real router: kernel ids (search/chat/agent/settings),
-  // `applets` for the applets center, or `applet:<id>` for an applet surface.
-  // Default lands on the applets center to show: rail ▦ → list → enter applet.
+  // page mirrors the real router: public shell ids plus hidden applet runtime
+  // routes (`applets` and `applet:<id>`). The visible shell lands on Search.
   const modernChatState = typeof window === 'undefined'
     ? ''
     : new URLSearchParams(window.location.search).get('state') ?? '';
@@ -663,7 +646,7 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
     : new URLSearchParams(window.location.search).get('surface') ?? '';
   const defaultPage = showModernChatReview || showV2ProductReview || showAgentChatReview
     ? 'agent'
-    : initialPage ?? (requestedSurface === 'chat' ? 'chat' : 'applets');
+    : initialPage ?? (requestedSurface === 'chat' ? 'chat' : 'search');
   const [page, setPage] = useState(defaultPage);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [notificationView, setNotificationView] = useState<'closed' | 'preview' | 'all'>('closed');
@@ -744,7 +727,7 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
   } else if (page === 'agent') {
     body = (
       <AgentChatPage
-        onOpenOrchestration={() => navigate('agent-orchestration')}
+        onOpenOrchestration={() => navigate('agent-atelier')}
         profileOpen={false}
         onOpenProfile={() => navigate('agent-profile')}
         onCloseProfile={() => navigate('agent')}
@@ -753,14 +736,12 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
   } else if (page === 'agent-profile') {
     body = (
       <AgentChatPage
-        onOpenOrchestration={() => navigate('agent-orchestration')}
+        onOpenOrchestration={() => navigate('agent-atelier')}
         profileOpen
         onOpenProfile={() => navigate('agent-profile')}
         onCloseProfile={() => navigate('agent')}
       />
     );
-  } else if (page === 'agent-orchestration') {
-    body = <AgentCanvasPage embedded onBack={() => navigate('agent')} />;
   } else if (page === 'settings') {
     body = <SettingsPage onOpenCommandPalette={() => setPaletteOpen(true)} />;
   } else {
@@ -827,7 +808,6 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
               {[
                 { id: 'agent', label: 'Agent', icon: Bot },
                 { id: 'agent-atelier', label: 'Atelier', icon: Zap },
-                { id: 'agent-orchestration', label: 'Orchestration', icon: WorkflowIcon },
               ].map((item) => {
                 const Icon = item.icon;
                 const active = item.id === 'agent'
@@ -872,7 +852,7 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
                       <ModernChatReview initialState={modernChatState} withTopicRail />
                     ) : (
                       <AgentChatPage
-                        onOpenOrchestration={() => navigate('agent-orchestration')}
+                        onOpenOrchestration={() => navigate('agent-atelier')}
                         profileOpen={page === 'agent-profile'}
                         onOpenProfile={() => navigate('agent-profile')}
                         onCloseProfile={() => navigate('agent')}
@@ -887,14 +867,6 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
                   style={{ position: 'absolute', inset: 0, display: page === 'agent-atelier' ? 'block' : 'none' }}
                 >
                   <AgentFeaturePage initialSurface="atelier" showGlobalNav={false} />
-                </div>
-              )}
-              {visitedAgentSurfaces.has('agent-orchestration') && (
-                <div
-                  data-agent-surface="agent-orchestration"
-                  style={{ position: 'absolute', inset: 0, display: page === 'agent-orchestration' ? 'block' : 'none' }}
-                >
-                  <AgentCanvasPage embedded onBack={() => navigate('agent')} />
                 </div>
               )}
             </div>

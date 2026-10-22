@@ -72,6 +72,7 @@ use crate::interface::tauri_commands::oss::{
     OssUploadAttachmentBytesInput,
 };
 use crate::model;
+use messaging_core::outbox::CommandRetryPolicy;
 use messaging_core::proto::{actor_device_ptid, actor_device_ref, actor_ref};
 use prost::Message;
 use reqwest::Method;
@@ -3547,10 +3548,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             ))
         }
         "agent_conversation_delete_batch" => {
-            let input = match parse_args::<crate::contracts::AgentConversationDeleteBatchInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
+            let input =
+                match parse_args::<crate::contracts::AgentConversationDeleteBatchInput>(args) {
+                    Ok(v) => v,
+                    Err(e) => return e,
+                };
             let token = match http_gateway_bearer_token(state) {
                 Some(t) => t,
                 None => return to_json(unauthorized_error()),
@@ -3912,6 +3914,21 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 None => return to_json(unauthorized_error()),
             };
             to_json(app_agent_turn::agent_turn_diagnostics_export(
+                state.station.client(),
+                input,
+                &token,
+            ))
+        }
+        "agent_turn_attributions_get" => {
+            let input = match parse_args::<AgentTurnAttributionsInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_turn_attributions_get(
                 state.station.client(),
                 input,
                 &token,
@@ -4288,6 +4305,22 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 None => return to_json(unauthorized_error()),
             };
             to_json(app_capability_authority::readiness(
+                state.station.client(),
+                input,
+                &token,
+            ))
+        }
+        "agent_command_capability_snapshot" => {
+            let input = match parse_args::<app_capability_authority::CapabilityReadinessInput>(args)
+            {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_capability_authority::command_snapshot(
                 state.station.client(),
                 input,
                 &token,
@@ -7629,7 +7662,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_millis() as i64;
-            let retry_policy = crate::messaging::CommandRetryPolicy {
+            let retry_policy = CommandRetryPolicy {
                 initial_delay_ms: 1000,
                 maximum_delay_ms: 30000,
             };

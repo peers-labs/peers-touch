@@ -5,7 +5,7 @@ import type {
   PrivateMomentFileIntent,
   PrivateMomentProjection,
   PrivateMomentReadProjection,
-  PrivateSocialWorkerReport,
+  PrivateSocialReconciliationReport,
 } from '../../services/mobileCommands';
 import type {
   CommandOutcome,
@@ -77,5 +77,5 @@ export interface SocialIntentPort {
     cursor?: string,
     limit?: number,
   ): Promise<PrivateCommentPage>;
-  reconcilePrivate(): Promise<PrivateSocialWorkerReport | null>;
+  reconcilePrivate(): Promise<PrivateSocialReconciliationReport | null>;
 }

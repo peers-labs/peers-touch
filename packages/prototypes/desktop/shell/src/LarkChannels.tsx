@@ -176,7 +176,7 @@ function createConnection(
     isDefault: index === 1,
     state: 'connected',
     agent,
-    ownerName: 'Operator',
+    ownerName: 'Shuxian',
     routes: [],
     automations: [],
     account: {
@@ -193,7 +193,7 @@ function createConnection(
     },
     testDelivery: {
       state: 'idle',
-      recipient: 'Operator',
+      recipient: 'Shuxian',
       message: 'Hello from Peers. This Lark connection is ready.',
       messageId: null,
       deliveredAt: null,
@@ -467,7 +467,7 @@ export function LarkChannels() {
         account: {
           state: 'connected',
           name: current.ownerName,
-          email: 'operator@lark.example',
+          email: 'shuxian@lark.example',
         },
       }));
       setIntentNotice('Your personal Lark account is connected.');
@@ -851,7 +851,7 @@ export function LarkChannels() {
       nextErrors.appId = 'Enter a valid App ID beginning with cli_.';
     }
     if (appSecret.length < 6) {
-      nextErrors.secret = 'Enter the App Secret from Lark Developer Console.';
+      nextErrors['secret'] = 'Enter the App Secret from Lark Developer Console.';
     }
     setAppErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) {

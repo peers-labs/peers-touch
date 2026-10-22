@@ -813,15 +813,17 @@ func TestManagedLarkCLIRunnerRejectsStorageOverridingWrapper(t *testing.T) {
 func TestManagedLarkCLIRunnerIsolatesConfigDataAndInheritedIdentity(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "lark-cli")
 	script := `#!/bin/sh
-printf '%s\n%s\n%s\n' \
+printf '%s\n%s\n%s\n%s\n' \
   "$LARKSUITE_CLI_CONFIG_DIR" \
   "$LARKSUITE_CLI_DATA_DIR" \
-  "${LARKSUITE_CLI_USER_ACCESS_TOKEN-}"
+  "${LARKSUITE_CLI_USER_ACCESS_TOKEN-}" \
+  "${OTHER_LARK_PROFILE-}"
 `
 	if err := os.WriteFile(path, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("LARKSUITE_CLI_USER_ACCESS_TOKEN", "must-not-leak")
+	t.Setenv("OTHER_LARK_PROFILE", "must-not-leak")
 	runner := &managedLarkCLIRunner{executable: path}
 	configDir := filepath.Join(t.TempDir(), "authorization")
 	stdout, stderr, err := runner.Run(
@@ -837,5 +839,36 @@ printf '%s\n%s\n%s\n' \
 		lines[0] != configDir ||
 		lines[1] != filepath.Join(configDir, "data") {
 		t.Fatalf("unexpected managed environment: %q", stdout)
+	}
+}
+
+func TestManagedLarkCLIEnvironment(t *testing.T) {
+	tests := []struct {
+		name    string
+		current []string
+		want    string
+	}{
+		{"empty", nil, ""},
+		{"identity isolation", []string{
+			"OTHER_LARK_PROFILE=foreign-profile",
+			"LARKSUITE_CLI_PROFILE=foreign-profile",
+			"LARKSUITE_CLI_USER_ACCESS_TOKEN=foreign-token",
+			"PT_LARK_PROFILE=foreign-profile",
+		}, ""},
+		{"ordinary values and malformed entries", []string{
+			"PATH=/usr/bin",
+			"LANG=en_US.UTF-8",
+			"NO_EQUALS",
+			"PT_LARK_PROFILE_DESCRIPTION=ordinary",
+			"VALUE=with=equals",
+		}, "PATH=/usr/bin\nLANG=en_US.UTF-8\nPT_LARK_PROFILE_DESCRIPTION=ordinary\nVALUE=with=equals"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := strings.Join(managedLarkCLIEnvironment(test.current), "\n")
+			if got != test.want {
+				t.Fatalf("managed environment = %q, want %q", got, test.want)
+			}
+		})
 	}
 }

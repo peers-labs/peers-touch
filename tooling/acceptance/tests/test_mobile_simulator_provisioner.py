@@ -14,7 +14,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, Mock, call, patch
 
 from tooling.acceptance.core import (
     ArtifactRef,
@@ -61,6 +61,9 @@ from tooling.acceptance.provisioners.mobile_simulator import (
     IOS_PEER_DEVICE_NAME,
     IOS_LAYOUT_CLIENTS,
     IOS_RUNTIME,
+    MOBILE_RECOVERY_GATE_ID,
+    MOBILE_STATION_OUTAGE_CHANNEL_TIMEOUT_SECONDS,
+    MOBILE_STATION_OUTAGE_CAPABILITY_ID,
     MOBILE_WEB_DIST_RELATIVE_PATH,
     SIMULATOR_CAPABILITY_TIMEOUT_SECONDS,
     SIMULATOR_APPIUM_CAPABILITY_ID,
@@ -70,6 +73,7 @@ from tooling.acceptance.provisioners.mobile_simulator import (
     STATION_LIFECYCLE_HARNESS_ACTIONS,
     CommandResult,
     MobileSimulatorAppiumCapabilityHandler,
+    MobileStationOutageCapabilityHandler,
     SelectedMobileSimulatorProvisioner,
     _GeneratedAndroidManifestGuard,
     _resolve_android_ndk_home,
@@ -312,10 +316,15 @@ class FakeCommandExecutor:
 
 class TestMobileSimulatorProvisioner(MobileSimulatorProvisioner):
     def _git_commit(self) -> str:
-        return "source-commit"
+        return "a" * 40
 
     def _git_workspace_digest(self) -> str:
-        return "sha256:workspace"
+        return "sha256:" + ("b" * 64)
+
+    @staticmethod
+    def _build_inputs_digest(platform: str) -> str:
+        assert platform == "ios"
+        return "sha256:" + ("c" * 64)
 
     def acquire_profile_lease(self, resource: str, owner: str) -> None:
         del owner
@@ -824,6 +833,18 @@ class MobileSimulatorContractTests(unittest.TestCase):
             "lifecycle.scope.read",
             payload["harness"]["required_actions"],
         )
+        self.assertIn(
+            "build.identity",
+            payload["harness"]["required_actions"],
+        )
+        self.assertIn(
+            "runtime.prepareActorIdentity",
+            payload["harness"]["required_actions"],
+        )
+        self.assertIn(
+            "lifecycle.waitReady",
+            payload["harness"]["required_actions"],
+        )
         self.assertIsInstance(
             get_provisioner(contract),
             MobileDirectSimulatorProvisioner,
@@ -883,6 +904,59 @@ class MobileSimulatorContractTests(unittest.TestCase):
         )
         self.assertNotIn("PT_MOBILE_DIRECT_STATION_URL", active)
 
+    def test_public_simulator_resources_preserve_build_identity(self) -> None:
+        overlay_path = ENVIRONMENTS_DIR / "mobile-direct-simulator.yaml"
+        overlay = json.loads(overlay_path.read_text(encoding="utf-8"))
+        resources = {
+            "appium": {
+                "serverVersion": "2.19.0",
+                "expectedServerVersion": "2.19.0",
+                "drivers": {
+                    "ios": {
+                        "identity": "appium-xcuitest",
+                        "automationName": "XCUITest",
+                        "version": "9.10.5",
+                        "expectedVersion": "9.10.5",
+                    },
+                },
+            },
+            "applications": {
+                "ios": {
+                    "id": "com.peers.touch.mobile",
+                    "sha256": "a" * 64,
+                    "callbackScheme": "peers-touch",
+                    "buildIdentity": {
+                        "schema": "peers-mobile-build-identity",
+                        "buildId": "build-ios",
+                    },
+                },
+            },
+            "clients": {
+                client_id: {
+                    "platform": "ios",
+                    "role": client_id,
+                    "runtime": "tauri-ios-simulator",
+                    "deviceRole": client_id,
+                    "profile": client_id,
+                }
+                for client_id in ("sim-ios", "sim-ios-peer")
+            },
+        }
+
+        projected = (
+            MobileStationLifecycleSimulatorProvisioner
+            ._public_simulator_resources(
+                resources,
+                overlay,
+                environment_id=DIRECT_SIMULATOR_ENVIRONMENT_ID,
+            )
+        )
+
+        self.assertEqual(
+            projected["applications"]["ios"]["buildIdentity"],
+            resources["applications"]["ios"]["buildIdentity"],
+        )
+
     def test_direct_simulator_rejects_non_active_station_profile(self) -> None:
         path = ENVIRONMENTS_DIR / "mobile-direct-simulator.yaml"
         contract = EnvironmentContract.from_yaml(path)
@@ -939,7 +1013,83 @@ class MobileSimulatorContractTests(unittest.TestCase):
                     gates[gate_id]["provisioner"],
                     DIRECT_SIMULATOR_ENVIRONMENT_ID,
                 )
+        recovery = gates[MOBILE_RECOVERY_GATE_ID]
+        self.assertEqual(
+            recovery["ephemeralCapabilities"],
+            [MOBILE_STATION_OUTAGE_CAPABILITY_ID],
+        )
+        self.assertEqual(
+            recovery["argv"][-2:],
+            ["--scenario", "recovery"],
+        )
+        self.assertGreater(
+            MOBILE_STATION_OUTAGE_CHANNEL_TIMEOUT_SECONDS,
+            420 + SIMULATOR_CAPABILITY_TIMEOUT_SECONDS,
+        )
 
+    def test_station_outage_handler_restores_on_parent_cleanup(self) -> None:
+        before = {
+            "containerId": "station-container",
+            "processIds": [101],
+            "sourceCommit": "a" * 40,
+            "buildCommit": "a" * 40,
+            "runtimeOwner": "docker-compose:test/station",
+        }
+        after = {
+            **before,
+            "processIds": [202],
+        }
+        transport = SimpleNamespace(
+            run_argv=Mock(
+                return_value=SimpleNamespace(
+                    returncode=0,
+                    stderr="",
+                    stdout="station-container",
+                )
+            )
+        )
+        config = SimpleNamespace(
+            environment_name="profile-three",
+            transport=lambda: transport,
+        )
+        with (
+            patch.dict(
+                "os.environ",
+                {"PT_MOBILE_ACCEPTANCE_ALLOW_STATION_RESTART": "1"},
+            ),
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "PosixServiceRuntimeConfig.load",
+                return_value=config,
+            ),
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "inspect_posix_runtime",
+                side_effect=[before, after],
+            ),
+        ):
+            handler = MobileStationOutageCapabilityHandler(
+                deployment_environment="profile-three",
+                expected_commit="a" * 40,
+            )
+            stopped = handler.invoke(
+                "stop",
+                {},
+                deadline_monotonic=time.monotonic() + 30,
+                cancellation=threading.Event(),
+            )
+            cleanup = handler.close()
+
+        self.assertTrue(stopped["stopped"])
+        self.assertTrue(cleanup.closed)
+        self.assertEqual(
+            transport.run_argv.call_args_list[0].args[0],
+            ["docker", "stop", "--time", "10", "station-container"],
+        )
+        self.assertEqual(
+            transport.run_argv.call_args_list[1].args[0],
+            ["docker", "start", "station-container"],
+        )
     def test_mobile_social_ios_gate_uses_reset_isolated_environment(
         self,
     ) -> None:
@@ -2078,6 +2228,10 @@ class MobileSimulatorContractTests(unittest.TestCase):
                     + hashlib.sha256(b"station-direct").hexdigest()[:20]
                 ),
             ) as prepare_federation,
+            patch(
+                "tooling.acceptance.provisioners.mobile_simulator."
+                "prepare_local_friend_request_lifecycle",
+            ) as prepare_friend_request,
         ):
             provisioner._prepare_actor_fixture(
                 "mobile-simulator-recovery-e2e",
@@ -2123,6 +2277,17 @@ class MobileSimulatorContractTests(unittest.TestCase):
                 for actor in actor_payload["stations"]["station"]["actors"]
             },
             {"station-direct"},
+        )
+        prepare_friend_request.assert_called_once_with(
+            "chat-native-disposable-station",
+            "ptid:alice",
+            "ptid:bob",
+            reset_authorized=True,
+        )
+        self.assertTrue(
+            actor_payload["stations"]["station"][
+                "friendRequestLifecyclePrepared"
+            ]
         )
         prepare_federation.assert_called_once_with({
             "station": (
@@ -3683,6 +3848,26 @@ class MobileSimulatorProvisionerTests(unittest.TestCase):
         application = resources["applications"]["ios"]
         self.assertTrue(Path(application["artifact"]).exists())
         self.assertEqual(len(application["sha256"]), 64)
+        build_identities = [
+            json.loads(environment["PT_MOBILE_BUILD_IDENTITY_JSON"])
+            for environment in self.executor.environments
+            if "PT_MOBILE_BUILD_IDENTITY_JSON" in environment
+        ]
+        self.assertEqual(len(build_identities), 2)
+        self.assertEqual(build_identities[0], build_identities[1])
+        self.assertEqual(application["buildIdentity"], build_identities[0])
+        self.assertEqual(
+            build_identities[0]["sourceCommit"],
+            "a" * 40,
+        )
+        self.assertEqual(
+            build_identities[0]["workspaceState"],
+            "dirty",
+        )
+        self.assertEqual(
+            build_identities[0]["workspaceDigest"],
+            "sha256:" + ("b" * 64),
+        )
 
         for client_id, (platform, _, _) in EXPECTED_CLIENTS.items():
             client = resources["clients"][client_id]

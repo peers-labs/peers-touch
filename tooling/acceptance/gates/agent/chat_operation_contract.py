@@ -12,7 +12,7 @@ PROTOTYPE_CHECKS = (
     ROOT / "packages/prototypes/desktop/shell/qa/agent_chat_checks.cjs"
 )
 GROUP_TARGETS = {
-    "Agent roster keeps stable ownership and reference-client-style row actions":
+    "Agent roster keeps stable ownership and reference-style row actions":
         ("profile", "profile-create"),
     "Profile edits one Agent and binds capabilities from bounded pickers":
         ("profile", "profile-documents"),
@@ -32,7 +32,7 @@ GROUP_TARGETS = {
         ("conversation", "conversation-retry"),
     "Agent and Topic owners preserve isolated drafts":
         ("topics", "topics-rename-cancel"),
-    "Wide, compact and mobile topology matches observed reference-client behavior":
+    "Wide, compact and mobile topology matches observed reference behavior":
         ("layout", "workspace-narrow"),
 }
 ADDITIONAL_OPERATIONS = {
@@ -48,6 +48,11 @@ ADDITIONAL_OPERATIONS = {
     "ask.answer.persisted": ("conversation", "conversation-clarification"),
     "ask.restart-continuation": ("conversation", "conversation-clarification"),
     "layout.drawer.close-focus": ("layout", "workspace-narrow"),
+}
+
+GATE_BY_AREA = {
+    "commands": "agent-slash-command-native-e2e",
+    "attribution": "agent-context-projection-native-e2e",
 }
 
 OPERATION_TARGETS = {
@@ -76,7 +81,38 @@ OPERATION_TARGETS = {
     "turn.stop.topic-error": ("conversation", "conversation-send-stop"),
     "layout.wide-roster-topic-chat": ("layout", "workspace-wide"),
     "layout.compact-rails": ("layout", "workspace-compact"),
+    "profile.extensions.skill-remove": ("profile", "profile-skill-consumption"),
+    "composer.slash": ("commands", "commands-authority"),
+    "composer.command.help": ("commands", "commands-authority"),
+    "composer.command.tools": ("commands", "commands-authority"),
+    "composer.command.skills": ("commands", "commands-authority"),
+    "composer.command.clear-preserves-history":
+        ("commands", "commands-authority"),
+    "composer.command.typing-slash-opens": ("commands", "commands-authority"),
+    "composer.command.stale-disables-capabilities":
+        ("commands", "commands-degraded"),
+    "composer.command.unavailable-disables-capabilities":
+        ("commands", "commands-degraded"),
+    "composer.command.text-chat-survives-stale":
+        ("commands", "commands-degraded"),
+    "composer.command.narrow-palette": ("commands", "commands-narrow"),
+    "turn.attribution.compact-badges":
+        ("attribution", "historical-attribution"),
+    "turn.attribution.detail-included":
+        ("attribution", "historical-attribution"),
+    "turn.attribution.detail-omitted":
+        ("attribution", "historical-attribution"),
+    "turn.attribution.detail-truncated":
+        ("attribution", "historical-attribution"),
+    "turn.attribution.version-pinned":
+        ("attribution", "historical-attribution"),
+    "turn.attribution.current-binding-does-not-rewrite-history":
+        ("attribution", "historical-attribution"),
 }
+
+
+def gate_for_area(area: str) -> str:
+    return GATE_BY_AREA.get(area, f"agent-chat-{area}-native")
 
 
 def operation_contract() -> list[dict[str, str]]:
@@ -99,19 +135,19 @@ def operation_contract() -> list[dict[str, str]]:
                 "journey": name,
                 "featureId": "agent-chat-production",
                 "capabilityId": "agent-chat-production",
-                "gateId": f"agent-chat-{target_area}-native",
+                "gateId": gate_for_area(target_area),
                 "scenarioId": target_scenario,
                 "origin": "confirmed-prototype",
             })
-    if len(rows) != 121 or len({row["operationId"] for row in rows}) != 121:
-        raise ValueError("confirmed prototype must have 121 unique operations")
+    if len(rows) != 136 or len({row["operationId"] for row in rows}) != 136:
+        raise ValueError("confirmed prototype must have 136 unique operations")
     for operation, (area, scenario) in ADDITIONAL_OPERATIONS.items():
         rows.append({
             "operationId": operation,
             "journey": "authority-and-restoration",
             "featureId": "agent-chat-production",
             "capabilityId": "agent-chat-production",
-            "gateId": f"agent-chat-{area}-native",
+            "gateId": gate_for_area(area),
             "scenarioId": scenario,
             "origin": "production-closure",
         })
@@ -150,7 +186,7 @@ def coverage_report(
     missing = [row["operationId"] for row in rows if row["proofStatus"] != "PROVEN"]
     return {
         "artifactKind": "agent-chat-operation-coverage",
-        "baselineOperationCount": 121,
+        "baselineOperationCount": 136,
         "operationCount": len(rows),
         "status": "passed" if not missing else "unproven",
         "missingOperations": missing,

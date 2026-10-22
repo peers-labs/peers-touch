@@ -720,12 +720,16 @@ class AcceptanceRunTest(unittest.TestCase):
                     cell_id="desktop-linux-native",
                     gate_id="synthetic-gate",
                     gate_run=run,
+                    artifact_kind="installed-appimage",
                 )
             stored_manifest = json.loads(path.read_text(encoding="utf-8"))
             run.close()
 
         self.assertIs(resolved, lifecycle)
-        lifecycle.ready.assert_called_once_with("synthetic-gate")
+        lifecycle.ready.assert_called_once_with(
+            "synthetic-gate",
+            artifact_kind="installed-appimage",
+        )
         lifecycle.stop.assert_not_called()
         self.assertEqual(payload["cellId"], "desktop-linux-native")
         self.assertEqual(
@@ -2834,6 +2838,35 @@ class AcceptanceRunTest(unittest.TestCase):
             gate["requiredRuntimeCells"],
             ["desktop-macos-native", "desktop-linux-native"],
         )
+
+    def test_gate_preserves_installed_runtime_cell_artifact(self) -> None:
+        module = load_module()
+
+        gate = module.gate_from_definition(
+            "installed-native-gate",
+            {
+                "argv": ["python3", "installed_gate.py"],
+                "requiredRuntimeCells": ["desktop-linux-native"],
+                "runtimeCellArtifact": "installed-appimage",
+            },
+        )
+
+        self.assertEqual(gate["runtimeCellArtifact"], "installed-appimage")
+
+    def test_runtime_cell_artifact_requires_declared_cell(self) -> None:
+        module = load_module()
+
+        with self.assertRaisesRegex(
+            SystemExit,
+            "runtimeCellArtifact requires requiredRuntimeCells",
+        ):
+            module.gate_from_definition(
+                "invalid-installed-gate",
+                {
+                    "argv": ["python3", "installed_gate.py"],
+                    "runtimeCellArtifact": "installed-appimage",
+                },
+            )
 
     def test_plan_gate_rejects_stale_launch_form(self) -> None:
         module = load_module()

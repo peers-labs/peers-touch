@@ -159,16 +159,46 @@
       "features": ["agent-chat-production"],
       "when": {
         "paths": [
+          "tooling/acceptance/gates/agent/agent_definition_roundtrip*",
           "tooling/acceptance/gates/agent/chat_*",
           "tooling/acceptance/features/agent-chat-production.yaml",
+          "model/domain/agent/agent.proto",
+          "model/domain/agent/capability.proto",
+          "apps/desktop/src-tauri/src/application/agents/mod.rs",
+          "apps/desktop/src-tauri/src/application/capability_authority.rs",
+          "apps/desktop/src-tauri/src/application/agent_turn/mod.rs",
           "apps/desktop/src/pages/AgentProfilePage.tsx",
+          "apps/desktop/src/components/ChatInput.tsx",
           "apps/desktop/src/components/agent/workbench/**",
+          "apps/desktop/src/components/agent/AgentCommandPalette.tsx",
+          "apps/desktop/src/components/messages/AssistantMessage.tsx",
+          "apps/desktop/src/components/messages/TurnAttribution.tsx",
           "apps/desktop/src/components/messages/ClarificationQuestion.tsx",
+          "apps/desktop/src/store/agentCapabilities.ts",
+          "apps/desktop/src/store/chat.ts",
+          "apps/station/app/subserver/agent/domain/agent.go",
+          "apps/station/app/subserver/agent/handler/agent_handler.go",
+          "apps/station/app/subserver/agent/handler/capability_authority_handler.go",
+          "apps/station/app/subserver/agent/handler/turn_handler.go",
+          "apps/station/app/subserver/agent/infrastructure/persistence/agent*",
+          "apps/station/app/subserver/agent/infrastructure/persistence/migrations*",
+          "apps/station/app/subserver/agent/service/agent_definition_config.go",
+          "apps/station/app/subserver/agent/service/agent_package_service*",
+          "apps/station/app/subserver/agent/service/agent_service*",
+          "apps/station/app/subserver/agent/service/prompt_assembly_service*",
+          "apps/station/app/subserver/agent/service/skill_service*",
+          "apps/station/app/subserver/agent/service/turn_service.go",
+          "apps/station/app/subserver/agent/service/turn_attribution_service*",
+          "apps/station/app/subserver/agent/service/capability_command_projection_service*",
           "apps/station/app/subserver/agent/service/clarification*",
           "apps/station/app/subserver/agent/service/conversation_deletion_service*"
         ]
       },
       "require": [
+        "agent-definition-roundtrip-native-e2e",
+        "agent-slash-command-native-e2e",
+        "agent-context-projection-native-e2e",
+        "agent-depth-linux-native-e2e",
         "agent-chat-profile-native", "agent-chat-models-native",
         "agent-chat-topics-native", "agent-chat-conversation-native",
         "agent-chat-layout-native", "agent-chat-workspace-native"
@@ -947,7 +977,8 @@
           "apps/station/app/subserver/bot/handler_management.go",
           "packages/messaging-core/src/inbox/service_plaintext.rs",
           "packages/messaging-core/tests/service_plaintext_processor_test.rs",
-          "apps/desktop/src-tauri/src/messaging/service_plaintext.rs",
+          "apps/desktop/src-tauri/src/messaging/engine.rs",
+          "apps/desktop/src-tauri/src/messaging/store.rs",
           "apps/desktop/src/components/chat/message/serviceEventAggregation*.ts",
           "apps/desktop/src/store/socialChat.conversationProjection.test.ts",
           "apps/desktop/src/acceptance/message_publishing/**",
@@ -962,6 +993,81 @@
         "messaging-platform-contract",
         "desktop-check",
         "chat-message-publishing-native-e2e"
+      ]
+    },
+    {
+      "id": "unified-client-messaging-core",
+      "features": [
+        "unified-client-messaging-core"
+      ],
+      "when": {
+        "paths": [
+          "packages/messaging-core/**",
+          "docs/architecture/domains/chat/messaging/**",
+          "tooling/acceptance/features/unified-client-messaging-core.yaml",
+          "tooling/acceptance/gates/chat/unified_client_core_contract.py",
+          "tooling/acceptance/gates/chat/unified_client_core_contract_test.py",
+          "tooling/acceptance/capabilities/chat.yaml",
+          "tooling/acceptance/domains/chat.yaml"
+        ]
+      },
+      "require": [
+        "unified-client-messaging-core-contract"
+      ]
+    },
+    {
+      "id": "unified-client-messaging-runtime",
+      "features": [
+        "unified-client-messaging-runtime"
+      ],
+      "when": {
+        "paths": [
+          "packages/messaging-core/**",
+          "packages/messaging-native-filesystem/**",
+          "apps/desktop/src-tauri/src/messaging/**",
+          "apps/mobile/src-tauri/src/messaging/**",
+          "tooling/acceptance/features/unified-client-messaging-runtime.yaml",
+          "tooling/acceptance/gates/chat/unified_client_core_suite.py",
+          "tooling/acceptance/gates/chat/unified_client_core_suite_test.py",
+          "tooling/acceptance/gates/unified_client/messaging_owner_zero.py",
+          "tooling/acceptance/gates/unified_client/messaging_owner_zero_test.py",
+          "tooling/acceptance/capabilities/chat.yaml"
+        ]
+      },
+      "require": [
+        "messaging-owner-hard-cut-zero",
+        "unified-client-messaging-e2e"
+      ]
+    },
+    {
+      "id": "unified-client-shared-semantics",
+      "features": [
+        "unified-client-shared-semantics"
+      ],
+      "when": {
+        "paths": [
+          "packages/client-chat-core/**",
+          "packages/client-media-security/**",
+          "packages/client-storage/**",
+          "apps/desktop/src/components/chat/chatPresentationPolicy.ts",
+          "apps/desktop/src/runtimes/chatStorageRuntime.ts",
+          "apps/desktop/src/store/socialNormalizers.ts",
+          "apps/desktop/src/store/socialProjection.ts",
+          "apps/desktop/src/components/moments/MomentComposer.tsx",
+          "apps/mobile/src/pages/chat/chatPresentationPolicy.ts",
+          "apps/mobile/src/runtimes/chatStorageRuntime.ts",
+          "apps/mobile/src/features/social/socialNormalizers.ts",
+          "apps/mobile/src/features/social/socialProjection.ts",
+          "apps/mobile/src/services/gateways/momentMediaGateway.ts",
+          "docs/architecture/platform/client/cross-client-runtime/**",
+          "docs/client/common/**",
+          "tooling/acceptance/features/unified-client-shared-semantics.yaml",
+          "tooling/acceptance/gates/unified_client/shared_semantics.py",
+          "tooling/acceptance/gates/unified_client/shared_semantics_test.py"
+        ]
+      },
+      "require": [
+        "unified-client-shared-semantics"
       ]
     },
     {
@@ -1077,6 +1183,24 @@
       },
       "require": [
         "chat-lifecycle-tree-zero-reference-e2e"
+      ]
+    },
+    {
+      "id": "desktop-linux-install",
+      "features": [
+        "desktop-linux-install"
+      ],
+      "when": {
+        "paths": [
+          "tooling/devctl/desktop-install.mjs",
+          "tooling/devctl/desktop.mjs",
+          "tooling/devctl/test/desktop.test.mjs",
+          "docs/architecture/engineering/local-dev/design.md",
+          "docs/global/local-dev-environment.md"
+        ]
+      },
+      "require": [
+        "desktop-linux-install-native-e2e"
       ]
     },
     {
@@ -1201,7 +1325,7 @@
           "apps/desktop/src-tauri/src/messaging/engine.rs",
           "apps/desktop/src-tauri/src/messaging/store.rs",
           "apps/desktop/src-tauri/src/messaging/recovery.rs",
-          "apps/desktop/src-tauri/src/messaging/public_event.rs",
+          "packages/messaging-core/src/inbox/public_event.rs",
           "apps/desktop/src/store/socialChat.ts",
           "apps/desktop/src/acceptance/chat/**",
           "apps/mobile/src-tauri/src/messaging/engine.rs",
@@ -1417,17 +1541,20 @@
       "when": {
         "paths": [
           "packages/messaging-core/src/crypto/prekeys.rs",
+          "packages/messaging-core/src/engine/reconciliation.rs",
+          "packages/messaging-core/src/inbox/consumer.rs",
+          "packages/messaging-core/src/inbox/direct.rs",
+          "packages/messaging-core/src/inbox/drain.rs",
+          "packages/messaging-core/src/inbox/receipt.rs",
+          "packages/messaging-core/src/outbox/receipt.rs",
+          "packages/messaging-core/src/outbox/send.rs",
           "packages/messaging-core/src/store/schema.rs",
           "apps/desktop/src-tauri/src/messaging/prekeys.rs",
-          "apps/desktop/src-tauri/src/messaging/direct.rs",
           "apps/desktop/src-tauri/src/messaging/direct_session.rs",
-          "apps/desktop/src-tauri/src/messaging/drain.rs",
           "apps/desktop/src-tauri/src/messaging/engine.rs",
           "apps/desktop/src-tauri/src/messaging/lifecycle.rs",
           "apps/desktop/src-tauri/src/messaging/store.rs",
           "apps/desktop/src-tauri/src/messaging/transport.rs",
-          "apps/desktop/src-tauri/src/messaging/consumer.rs",
-          "apps/desktop/src-tauri/src/messaging/receipt.rs",
           "apps/desktop/src/store/socialChat.ts",
           "apps/station/app/subserver/conversation/application/interaction/service.go",
           "apps/station/app/subserver/conversation/application/interaction/service_test.go",
@@ -1543,10 +1670,10 @@
           "apps/station/app/subserver/conversation/infrastructure/delivery/receipt_recorder.go",
           "apps/station/app/subserver/conversation/interface/http/interaction.go",
           "apps/station/app/subserver/conversation/interface/http/mapper.go",
+          "packages/messaging-core/src/inbox/public_event.rs",
+          "packages/messaging-core/src/outbox/interaction.rs",
           "apps/desktop/src-tauri/src/messaging/engine.rs",
-          "apps/desktop/src-tauri/src/messaging/direct.rs",
           "apps/desktop/src-tauri/src/messaging/mls.rs",
-          "apps/desktop/src-tauri/src/messaging/public_event.rs",
           "apps/desktop/src-tauri/src/messaging/store.rs",
           "apps/desktop/src-tauri/src/provider_models_lib.rs",
           "apps/desktop/src/services/desktop_api.ts",
@@ -1940,6 +2067,52 @@
       ]
     },
     {
+      "id": "unified-client-secure-content-core",
+      "features": [
+        "unified-client-secure-content-core"
+      ],
+      "when": {
+        "paths": [
+          "packages/secure-content-core/**",
+          "docs/architecture/shared/security/secure-content/**",
+          "tooling/acceptance/features/unified-client-secure-content-core.yaml",
+          "tooling/acceptance/gates/mobile/secure_content_portable_core.py",
+          "tooling/acceptance/gates/mobile/secure_content_portable_core_test.py",
+          "tooling/acceptance/capabilities/mobile.yaml",
+          "tooling/acceptance/domains/mobile.yaml"
+        ]
+      },
+      "require": [
+        "secure-content-portable-core"
+      ]
+    },
+    {
+      "id": "unified-client-secure-content-runtime",
+      "features": [
+        "unified-client-secure-content-runtime"
+      ],
+      "when": {
+        "paths": [
+          "apps/desktop/src-tauri/src/secure_content/**",
+          "apps/desktop/src-tauri/src/social/private_comment.rs",
+          "apps/desktop/src-tauri/src/social/private_moment.rs",
+          "apps/mobile/src-tauri/src/secure_content/**",
+          "apps/mobile/src-tauri/src/social/**",
+          "tooling/acceptance/features/unified-client-secure-content-runtime.yaml",
+          "tooling/acceptance/gates/mobile/unified_secure_content_suite.py",
+          "tooling/acceptance/gates/mobile/unified_secure_content_suite_test.py",
+          "tooling/acceptance/gates/unified_client/secure_content_owner_zero.py",
+          "tooling/acceptance/gates/unified_client/secure_content_owner_zero_test.py",
+          "tooling/acceptance/capabilities/mobile.yaml",
+          "tooling/acceptance/domains/mobile.yaml"
+        ]
+      },
+      "require": [
+        "secure-content-owner-hard-cut-zero",
+        "unified-client-secure-content-e2e"
+      ]
+    },
+    {
       "id": "mobile-station-access",
       "features": [
         "mobile-station-trust",
@@ -2153,6 +2326,9 @@
           "apps/station/app/subserver/social/infrastructure/federated_friend_request_store.go",
           "apps/mobile/scripts/check-mobile-shell-contracts.py",
           "apps/mobile/scripts/check_mobile_shell_contracts_test.py",
+          "apps/mobile/src/acceptance/contracts.ts",
+          "apps/mobile/src/acceptance/projection.ts",
+          "apps/mobile/src/acceptance/registry.test.ts",
           "apps/mobile/src/runtimes/commandRuntime.ts",
           "apps/mobile/src/features/chat/chatCommands.ts",
           "apps/mobile/src/features/social/contactCommands.ts",
@@ -3321,8 +3497,9 @@
           "apps/station/app/subserver/agent/agent.go",
           "apps/desktop/src-tauri/build.rs",
           "apps/desktop/src-tauri/src/application/skills_market/**",
-          "apps/desktop/src/pages/MarketplacePage.tsx",
-          "apps/desktop/src/pages/marketplace/**",
+          "apps/desktop/src/components/settings/DiscoverSettings.tsx",
+          "apps/desktop/src/components/settings/discover/**",
+          "apps/desktop/src/modules/discover.ts",
           "apps/desktop/src/components/SkillsTab.tsx",
           "apps/desktop/src/services/desktop_api.ts",
           "apps/desktop/src/hooks/useNavigation.ts",
@@ -3706,7 +3883,6 @@
           "apps/station/app/subserver/social/**",
           "docs/architecture/domains/social/core/**",
           "model/domain/social/**",
-          "packages/secure-content-core/**",
           "tooling/acceptance/capabilities/social.yaml",
           "tooling/acceptance/domains/social.yaml",
           "tooling/acceptance/features/social-private-moments-desktop.yaml",

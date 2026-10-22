@@ -74,6 +74,9 @@ GATE_ROLES = {
     "agent-chat-conversation-native": ("alice",),
     "agent-chat-layout-native": ("alice",),
     "agent-chat-workspace-native": ("alice",),
+    "agent-slash-command-native-e2e": ("alice",),
+    "agent-context-projection-native-e2e": ("alice",),
+    "agent-depth-linux-native-e2e": ("alice",),
     "desktop-primary-navigation-e2e": ("alice",),
     "agent-attachment-e2e": ("alice",),
     "agent-cli-provider-primary-native-e2e": ("alice",),
@@ -117,7 +120,17 @@ AGENT_MARKETPLACE_GATE = "agent-marketplace-catalog-e2e"
 AGENT_CLI_PROVIDER_GATE = "agent-cli-provider-primary-native-e2e"
 AGENT_CORE_LIFECYCLE_GATE = "agent-core-lifecycle-native-e2e"
 AGENT_MINIMUM_USABLE_CHAT_GATE = "agent-minimum-usable-chat-native-e2e"
+AGENT_SLASH_COMMAND_GATE = "agent-slash-command-native-e2e"
+AGENT_CONTEXT_PROJECTION_GATE = "agent-context-projection-native-e2e"
+AGENT_DEPTH_LINUX_GATE = "agent-depth-linux-native-e2e"
 MESSAGE_PUBLISHING_GATE = "chat-message-publishing-native-e2e"
+AGENT_DEPTH_GATES = frozenset(
+    {
+        AGENT_SLASH_COMMAND_GATE,
+        AGENT_CONTEXT_PROJECTION_GATE,
+        AGENT_DEPTH_LINUX_GATE,
+    }
+)
 AGENT_NATIVE_GATES = frozenset(
     {
         "agent-chat-profile-native", "agent-chat-models-native",
@@ -129,7 +142,7 @@ AGENT_NATIVE_GATES = frozenset(
         AGENT_MINIMUM_USABLE_CHAT_GATE,
         "agent-stream-resilience-e2e",
     }
-)
+) | AGENT_DEPTH_GATES
 HOME_SINGLE_NATIVE_GATES = AGENT_NATIVE_GATES | {MESSAGE_PUBLISHING_GATE}
 AGENT_V2_PROFILE = os.environ.get("PT_ACCEPTANCE_APPROVED_PROFILE", "one")
 AGENT_V2_BINDING_PROFILE = "two"
@@ -184,6 +197,8 @@ CLIENT_ROLES = {
 def agent_profile_for_gate(gate_id: str) -> str:
     if gate_id.startswith("agent-chat-"):
         return os.environ.get("PT_ACCEPTANCE_APPROVED_PROFILE", "one-slave")
+    if gate_id in AGENT_DEPTH_GATES:
+        return AGENT_V2_BINDING_PROFILE
     if gate_id in AGENT_V2_BINDING_GATES:
         return AGENT_V2_BINDING_PROFILE
     return AGENT_V2_PROFILE
@@ -192,12 +207,13 @@ def agent_profile_for_gate(gate_id: str) -> str:
 def agent_native_requires_runtime_binding(gate_id: str) -> bool:
     return (
         gate_id.startswith("agent-chat-")
+        or gate_id in AGENT_DEPTH_GATES
         or gate_id == AGENT_CORE_LIFECYCLE_GATE
     )
 
 
 def agent_native_requires_disposable_fixture(gate_id: str) -> bool:
-    if gate_id.startswith("agent-chat-"):
+    if gate_id.startswith("agent-chat-") or gate_id in AGENT_DEPTH_GATES:
         return False
     return gate_id not in {
         AGENT_CLI_PROVIDER_GATE,
@@ -208,7 +224,7 @@ def agent_native_requires_disposable_fixture(gate_id: str) -> bool:
 
 
 def agent_native_requires_provider(gate_id: str) -> bool:
-    if gate_id.startswith("agent-chat-"):
+    if gate_id.startswith("agent-chat-") or gate_id in AGENT_DEPTH_GATES:
         return False
     return gate_id not in {
         AGENT_CLI_PROVIDER_GATE,

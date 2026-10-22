@@ -279,6 +279,23 @@ func (h *TurnHandlers) HandleExportTurnDiagnostics(
 	return &model.ExportTurnDiagnosticsResponse{Replay: replay}, nil
 }
 
+func (h *TurnHandlers) HandleGetTurnAttributions(
+	ctx context.Context,
+	req *model.GetTurnAttributionsRequest,
+) (*model.GetTurnAttributionsResponse, error) {
+	attributions, err := h.turnService.GetTurnAttributions(
+		ctx,
+		subjectActorID(ctx),
+		req.GetTurnIds(),
+	)
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	return &model.GetTurnAttributionsResponse{
+		Attributions: attributions,
+	}, nil
+}
+
 func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.Request, resp server.Response) error {
 	resp.SetHeader("Content-Type", "text/event-stream")
 	resp.SetHeader("Cache-Control", "no-cache")
@@ -698,8 +715,6 @@ func (h *TurnHandlers) turnConfigFromRequest(
 		AgentID:                   req.GetAgentId(),
 		ActorID:                   actorID,
 		ConversationID:            req.GetConversationId(),
-		Identity:                  req.GetIdentity(),
-		AgentConfigPrompt:         req.GetAgentConfigPrompt(),
 		AvailableTools:            h.toolRegistry.ToolNames(),
 		ContextWindowSize:         contextWindowSize,
 		MaxRetries:                maxRetries,

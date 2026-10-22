@@ -16,7 +16,7 @@ Agent subsystem.
 
 Upstream constraints retained:
 
-- `docs/global/architecture.md`
+- `docs/architecture/architecture.md`
 - `docs/architecture/domains/agent/agent-lobehub-blueprint.md`
 - `docs/architecture/domains/agent/provider-station-ownership/`
 - `docs/architecture/domains/agent/agent-memory-architecture.md`
@@ -41,6 +41,8 @@ Downstream consumers:
 | `service/memory_service.go` | Memory retrieval, snapshots, extraction, attribution |
 | `service/skill_service.go` and `skills_guard_service.go` | Skill truth, versioning, trust, scan |
 | `service/knowledge_retrieval_service.go` | Knowledge retrieval and trace references |
+| `service/capability_command_projection_service.go` | Versioned Commands & Skills snapshot from manifest/binding/readiness authority |
+| `service/turn_attribution_service.go` | Redacted immutable historical Turn attribution |
 | `service/compression_service.go` | Context compression foundation |
 | `service/provider_service.go` | Direct model provider execution |
 | `service/credential_pool_service.go` | Actor-scoped credential lease and rotation |
@@ -71,8 +73,9 @@ Downstream consumers:
 | `runtimes/agentTopicRuntime.ts` | Conversation projection lifecycle, after Station rebinding |
 | `store/agentTopics.ts` | Conversation projection cache |
 | `store/chat.ts` | Transitional message/stream reducer only |
+| `store/agentCapabilities.ts` | Station command snapshot cache with explicit stale/unavailable states |
 | `services/desktop_api.ts` | Low-level transport adapter |
-| `MessageBubble` and chat components | Rendering and user actions |
+| `AgentCommandPalette`, `TurnAttribution` and chat components | Rendering and user actions over Station projections |
 | Agent capability/tool/skill/knowledge stores | Runtime projections, not truth |
 
 ## 3. Current Assets To Replace Or Delete
@@ -535,10 +538,10 @@ This is the authoritative starting point for the next planning job.
 
 | Capability ID | Architecture decisions | Contract root | Owning runtime/module | Verified foundation | Remaining closure | Deletion obligation | Completion evidence |
 |---|---|---|---|---|---|---|---|
-| MCA-C01 Agent/config truth | D01, D12 | `AgentDefinition` | Station Agent config | Agent/config services exist | Versioned shared Agent truth and projection | Local durable Agent truth | A01, A04, A13 |
+| MCA-C01 Agent/config truth | D01, D12 | `AgentDefinition` | Station Agent config | Typed prompt CRUD, atomic alias migration, package roundtrip, CAS and Desktop projection landed | Exact-source Native create/edit/restart/conflict proof remains UNPROVEN | Local durable Agent truth and `config_json` prompt aliases | A01, A04, A13 |
 | MCA-C02 Conversation/message truth | D01, D06, D08 | `Conversation`, `AgentMessage` | Station conversation/turn | Persistence models exist | CRUD, branches, queue, idempotency | Desktop `ChatStore` | A02-A04, A09-A10 |
 | MCA-C03 Runtime execution | D02, D03, D05 | `RuntimeSnapshot`, runtime binding | Station runtime resolver/direct/external | Provider and CLI foundations exist | Runtime classification, binding, resume/reset | Desktop AI CLI execution | A02, A11, A13 |
-| MCA-C04 Context intelligence | D04 | `ContextLedger` | Station prompt/memory/skill/knowledge | Services exist | Deterministic ledger and complete token budget | Untyped prompt-only attribution | A03, A05-A06 |
+| MCA-C04 Context intelligence | D04 | `ContextLedger`, `TurnAttributionProjection` | Station prompt/memory/skill/knowledge | Typed Agent version refs, authorized Skill index/body refs and historical redacted Chat attribution landed | Exact-source Provider and Native attribution/binding-change/restart proof remains UNPROVEN | Caller prompt overrides, current-config inference and Knowledge/Attachment-only badges | A03, A05-A06 |
 | MCA-C05 Stream/recovery | D06, D07 | `Turn`, `TurnEvent` | Station turn/event plus client chat runtime | SSE bridge exists | Sequence, cursor, replay, snapshot, queue | Browser one-shot path | A02, A09 |
 | MCA-C06 Model capability | D05, D09 | capability snapshot, budget | Station runtime resolver | Model metadata partially exists | Fresh provenance, degradation, hard limits | Client/provider-name inference | A08, A11 |
 | MCA-C07 Tool/MCP policy | D09, D10, D13, D16A | `ToolCall`, capability request/result | Station registry plus Station/client executors | Two-owner ToolDispatch exists | Per-Server/Tool owner pinning, loop budget, durable audit | Desktop-specific generic MCP contract | A07, A09, A13-A14, A17 |
@@ -546,7 +549,7 @@ This is the authoritative starting point for the next planning job.
 | MCA-C09 Evaluation/evidence | D10, D12 | usage, feedback, diagnostic export | Station trace/evaluation | Trace/growth foundations exist | Unified outcomes, fixed cases, replay export | Screenshot-only claims | A12 |
 | MCA-C10 Client portability | D01, D05, D07, D13 | client capability session | Shared client contract plus platform kernels | Desktop and Mobile Tauri kernels exist | Portable bridge, platform capability registry, Mobile contract test | `desktop-rust` shared semantics | A11, A13-A14 |
 | MCA-C11 Home work projection | D14 | `HomeWorkProjection` | Station Home Projection + Desktop `homeRuntime` | Home pinned/recent UI and Station topic/task services exist | Revisioned partial/stale projection and canonical Chat/Task handoff | Page-derived recents/Brief truth | A15 |
-| MCA-C12 Capability manifest/binding | D15, D16A | `CapabilityManifest`, `AgentCapabilityBinding`, readiness snapshot | Station capability catalog/binding/admission | Tool registry and source-specific bindings exist | MCP Server/Tool manifest publication and atomic consumer cutover | Generic `local_mcp`, Desktop catalog truth, config JSON truth | A16, A17, A19 |
+| MCA-C12 Capability manifest/binding | D15, D16A | `CapabilityManifest`, `AgentCapabilityBinding`, readiness and command snapshots | Station capability catalog/binding/admission | Skill enablement/policy, version-pinned index/body loading and Commands & Skills projection use the canonical binding | Remaining source families and exact-source Native stale/unavailable/clear proof | `Skill.enabled`, generic `local_mcp`, Desktop catalog truth, config JSON truth | A16, A17, A19 |
 | MCA-C13 MCP control/execution | D13, D16A | `McpServer`, `McpToolDescriptor`, `McpServerCommand`, client capability request/result | Station MCP service plus Station/Desktop executors | Two-owner ToolDispatch exists | Station-local runtime, Desktop projection/secret cutover, revision-pinned execution and cleanup | Desktop-only config/execution and generic MCP dispatch | A17, A19 |
 | MCA-C14 Connector resource tools | D15, D17 | `ConnectorResourceManifest`, Tool manifest/binding | OAuth owner + Station Connector Manifest/Tool services | OAuth mount/sync lifecycle exists | Scoped resource/version manifests, invocation and expiry recovery | enabled tool names as readiness | A18-A19 |
 | MCA-C15 Evaluation aggregate | D10, D18 | benchmark/dataset/case/run/attempt/result | Station Evaluation + canonical TurnService | Station dataset CRUD and Desktop Evaluation UI exist | Durable run/result/cancel/retry/metrics/restart | localStorage and `quickCompletion` Evaluation | A20 |

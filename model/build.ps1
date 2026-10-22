@@ -1,13 +1,13 @@
 # Proto code generation — Go only.
 # Dart/Flutter generation has been removed (deprecated path).
-# Mobile (Kotlin/Swift) generation: use tooling/scripts/proto-gen-mobile.sh
+# Shared Mobile TypeScript generation: use tooling/scripts/proto-gen-mobile.sh web
 
 $ErrorActionPreference = "Stop"
 
 $ScriptRoot = $PSScriptRoot
 $ProjectRoot = (Get-Item -Path "$ScriptRoot\..").FullName
 $ProtoRoot = "$ProjectRoot\model"
-$GoOut = "$ProjectRoot\station"
+$GoOut = "$ProjectRoot\apps\station"
 
 Write-Output "=== Peers Touch Proto Generation (Go) ==="
 Write-Output "Project Root: $ProjectRoot"

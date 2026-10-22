@@ -71,6 +71,21 @@ class AgentCoreLifecycleRunnerTest(unittest.TestCase):
             start,
         )
 
+    def test_http_station_transport_always_uses_loopback_proxy(self) -> None:
+        initializer = self.source.split(
+            "class AgentNativeJourney:",
+            1,
+        )[1].split("    def _load_runtime_manifest", 1)[0]
+
+        self.assertIn(
+            'if self.station_url.startswith("http://")',
+            initializer,
+        )
+        self.assertNotIn(
+            'journey.startswith("chat-") and self.station_url.startswith',
+            initializer,
+        )
+
     def test_core_lifecycle_binds_the_committed_direct_route_opaquely(
         self,
     ) -> None:
@@ -221,6 +236,50 @@ class AgentCoreLifecycleRunnerTest(unittest.TestCase):
             'click_primary_navigation("settings", "global Settings")',
             scenario_sources,
         )
+
+    def test_input_helper_captures_value_before_blur_projection(self) -> None:
+        helper = self.source.split(
+            "    def set_input_value(",
+            1,
+        )[1].split("    def press_native_key(", 1)[0]
+
+        accepted = helper.index("const acceptedValue = input.value;")
+        blur = helper.index("input.blur();")
+        self.assertLess(accepted, blur)
+        self.assertIn("return { selector, value: acceptedValue };", helper)
+        self.assertIn("return wait_until(", helper)
+        self.assertIn("edit_visible_input,", helper)
+        self.assertIn(".find(isRendered)", helper)
+        self.assertIn(
+            "input.scrollIntoView({ block: 'center', inline: 'nearest' });",
+            helper,
+        )
+
+    def test_native_key_target_clicks_verified_actor_window_before_key(self) -> None:
+        helper = self.source.split(
+            "    def press_native_key(",
+            1,
+        )[1].split("    def click_agent_action(", 1)[0]
+
+        geometry = helper.index("candidate.scrollIntoView({")
+        control_focus = helper.index("adapter.post_mouse(")
+        key_post = helper.index("adapter.post_key(")
+        self.assertLess(geometry, control_focus)
+        self.assertLess(control_focus, key_post)
+        self.assertIn("candidate.scrollIntoView({", helper)
+        self.assertIn("adapter.content_origin(process_id)", helper)
+        self.assertIn("adapter.window_stack_at_point(point)", helper)
+        self.assertIn("window_stack.point_owned_by(process_id)", helper)
+        self.assertIn("MouseAction.LEFT_DOWN", helper)
+        self.assertIn("MouseAction.LEFT_UP", helper)
+        self.assertIn("wait_until(", helper)
+        self.assertNotIn("adapter.activate_process(process_id)", helper)
+        self.assertNotIn("adapter.post_mouse_to_process(", helper)
+        targeted = helper.split("if selector is not None:", 1)[1].split(
+            "self.runtime_binding.native_adapter.post_key_to_process(",
+            1,
+        )[0]
+        self.assertNotIn("post_key_to_process(", targeted)
 
     def test_agent_selection_filters_long_rails_through_product_search(self) -> None:
         helper = self.source.split(
@@ -417,6 +476,14 @@ class AgentCoreLifecycleRunnerTest(unittest.TestCase):
         )[0]
         self.assertIn(
             'failures.append(f"Agent profile inspection: {error}")',
+            lifecycle_cleanup,
+        )
+        self.assertIn(
+            '"agents_delete"',
+            lifecycle_cleanup,
+        )
+        self.assertNotIn(
+            "self.delete_lifecycle_agent(agent_id)",
             lifecycle_cleanup,
         )
 

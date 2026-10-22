@@ -1,0 +1,117 @@
+{
+  "kind": "peers-touch-architecture-diagram",
+  "schemaVersion": 3,
+  "id": "project.journey.same-station",
+  "module": "project",
+  "viewpoint": "dynamic-flow",
+  "layout": "sequence",
+  "output": "journey-same-station.svg",
+  "title": "同 Station 业务提交时序",
+  "canvas": {
+    "width": 1400,
+    "height": 900
+  },
+  "edgeMeaning": "箭头表示一次 mutation 的时间顺序",
+  "scene": {
+    "participants": [
+      {
+        "id": "ui",
+        "title": "Client UI",
+        "tone": "neutral"
+      },
+      {
+        "id": "runtime",
+        "title": "Client Runtime",
+        "tone": "secondary"
+      },
+      {
+        "id": "frame",
+        "title": "Station Frame",
+        "tone": "secondary"
+      },
+      {
+        "id": "domain",
+        "title": "Domain Owner",
+        "tone": "primary"
+      },
+      {
+        "id": "state",
+        "title": "Durable State",
+        "tone": "state"
+      }
+    ],
+    "messages": [
+      {
+        "from": "ui",
+        "to": "runtime",
+        "label": "typed action",
+        "at": 1,
+        "style": "primary"
+      },
+      {
+        "from": "runtime",
+        "to": "frame",
+        "label": "protobuf request",
+        "at": 2,
+        "style": "primary"
+      },
+      {
+        "from": "frame",
+        "to": "domain",
+        "label": "authorize + dispatch",
+        "at": 3,
+        "style": "primary"
+      },
+      {
+        "from": "domain",
+        "to": "state",
+        "label": "atomic commit",
+        "at": 4,
+        "style": "event"
+      },
+      {
+        "from": "state",
+        "to": "domain",
+        "label": "committed(version)",
+        "at": 5,
+        "style": "return"
+      },
+      {
+        "from": "domain",
+        "to": "frame",
+        "label": "response",
+        "at": 6,
+        "style": "return"
+      },
+      {
+        "from": "frame",
+        "to": "runtime",
+        "label": "response(result)",
+        "at": 7,
+        "style": "return"
+      },
+      {
+        "from": "domain",
+        "to": "frame",
+        "label": "durable event",
+        "at": 8,
+        "style": "event"
+      },
+      {
+        "from": "frame",
+        "to": "runtime",
+        "label": "SSE event",
+        "at": 9,
+        "style": "event"
+      },
+      {
+        "from": "runtime",
+        "to": "ui",
+        "label": "confirmed projection",
+        "at": 10,
+        "style": "primary"
+      }
+    ],
+    "fragments": []
+  }
+}

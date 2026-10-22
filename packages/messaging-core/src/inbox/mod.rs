@@ -13,8 +13,8 @@ pub use consumer::{is_mls_sender_public_event, MessagingItemConsumer, MlsItemCon
 pub use conversation_state::ConversationStateProcessor;
 pub use direct::DirectMessageProcessor;
 pub use drain::{
-    AcknowledgedItemObserver, ClaimedItemConsumer, ConsumerEpochObserver, DrainProgress,
-    QueueDrain, QueueTransport,
+    AcknowledgedItemObserver, BeforeConsumeHook, ClaimedItemConsumer, ConsumerEpochObserver,
+    DrainProgress, QueueDrain, QueueTransport,
 };
 pub use public_event::PublicEventProcessor;
 pub use receipt::{decode_device_receipt_payload, DeliveryReceiptProcessor, DeviceReceiptPayload};

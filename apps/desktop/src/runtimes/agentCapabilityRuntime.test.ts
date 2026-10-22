@@ -132,9 +132,43 @@ describe('reconcileAgentCapabilityProjection', () => {
     expect(authorityStore.loadKnowledgeDescriptors).toHaveBeenCalledOnce();
     expect(authorityStore.loadAgent).toHaveBeenNthCalledWith(1, 'agent-1', {
       clientCapabilitySessionId: 'session-desktop',
+      providerId: undefined,
+      modelId: undefined,
     });
     expect(authorityStore.loadAgent).toHaveBeenNthCalledWith(2, 'agent-2', {
       clientCapabilitySessionId: 'session-desktop',
+      providerId: undefined,
+      modelId: undefined,
+    });
+  });
+
+  it('binds the selected Topic model only to its Agent projection', async () => {
+    const authorityStore = {
+      loadCatalog: vi.fn().mockResolvedValue(undefined),
+      loadKnowledgeDescriptors: vi.fn().mockResolvedValue(undefined),
+      loadAgent: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await reconcileAgentCapabilityProjection(
+      authorityStore,
+      ['agent-1', 'agent-2'],
+      'session-desktop',
+      {
+        agentId: 'agent-2',
+        providerId: 'provider-topic',
+        modelId: 'model-topic',
+      },
+    );
+
+    expect(authorityStore.loadAgent).toHaveBeenNthCalledWith(1, 'agent-1', {
+      clientCapabilitySessionId: 'session-desktop',
+      providerId: undefined,
+      modelId: undefined,
+    });
+    expect(authorityStore.loadAgent).toHaveBeenNthCalledWith(2, 'agent-2', {
+      clientCapabilitySessionId: 'session-desktop',
+      providerId: 'provider-topic',
+      modelId: 'model-topic',
     });
   });
 

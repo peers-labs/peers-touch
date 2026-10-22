@@ -61,7 +61,7 @@
     "Stale or unavailable capability projection keeps the last accepted list visibly stale and blocks execution.",
     "A disabled, retired or incompatible capability is absent or visibly unavailable.",
     "Command selection never bypasses Station mutation or Tool approval ownership.",
-    "Reference-client CUT commands and developer inspectors remain explicit non-claims."
+    "Reference-product CUT commands and developer inspectors remain explicit non-claims."
   ],
   "updatedAt": "2026-10-20T03:15:00.000Z"
 }
@@ -69,6 +69,6 @@
 
 ## Current Snapshot
 
-未开始。Production Composer 的 Slash action 只向草稿插入 `/`；基准客户端式
+未开始。Production Composer 的 Slash action 只向草稿插入 `/`；参考工程式
 Commands & Skills 菜单只存在于 Prototype，并以 localStorage 作为数据源，
 不构成生产投影证据。

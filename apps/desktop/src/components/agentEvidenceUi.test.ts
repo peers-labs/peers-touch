@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { selectAgentCapabilityWarning } from './composer/agentCapabilityWarning';
 import { agentAttachmentDraftsBlockSend } from './composer/useAgentAttachmentDrafts';
-import { collectSourceAttributions } from './messages/SourceAttributionBadges';
+import { visibleAttributionEntries } from './messages/TurnAttribution';
 import {
   acceptTurnDiagnostics,
   turnDiagnosticsExportFilename,
@@ -22,6 +22,10 @@ import {
 import type { ChatMessage } from '../store/chat';
 import {
   RuntimeCapabilitySnapshotSchema,
+  TurnAttributionKind,
+  TurnAttributionOutcome,
+  TurnAttributionProjectionSchema,
+  TurnAttributionState,
   type ExportTurnDiagnosticsResponse,
 } from '../gen/proto/domain/agent/agent_pb';
 import { CapabilityReadinessSnapshotSchema } from '../gen/proto/domain/agent/capability_pb';
@@ -35,34 +39,35 @@ const assistantMessage: ChatMessage = {
 };
 
 describe('Agent evidence UI projections', () => {
-  it('deduplicates visible source attribution by authoritative source identity', () => {
-    expect(collectSourceAttributions({
-      knowledgeChunks: [
+  it('shows only actual or partial historical participation as badges', () => {
+    const projection = create(TurnAttributionProjectionSchema, {
+      turnId: 'turn-1',
+      state: TurnAttributionState.AVAILABLE,
+      entries: [
         {
-          chunkId: 'chunk-1',
-          resourceId: 'resource-1',
-          resourceTitle: 'Architecture',
-          source: 'knowledge',
-          chunkIndex: 0,
-          score: 0.9,
-          contentPreview: '',
+          attributionId: 'included',
+          kind: TurnAttributionKind.KNOWLEDGE,
+          name: 'Architecture',
+          outcome: TurnAttributionOutcome.INCLUDED,
         },
         {
-          chunkId: 'chunk-2',
-          resourceId: 'resource-1',
-          resourceTitle: 'Architecture',
-          source: 'knowledge',
-          chunkIndex: 1,
-          score: 0.8,
-          contentPreview: '',
+          attributionId: 'omitted',
+          kind: TurnAttributionKind.MEMORY,
+          name: 'Memory',
+          outcome: TurnAttributionOutcome.OMITTED,
+        },
+        {
+          attributionId: 'partial',
+          kind: TurnAttributionKind.TOOL,
+          name: 'workspace_read',
+          outcome: TurnAttributionOutcome.TRUNCATED,
         },
       ],
-      attachments: [],
-    })).toEqual([{
-      id: 'resource-1',
-      type: 'knowledge',
-      label: 'Architecture',
-    }]);
+    });
+
+    expect(visibleAttributionEntries(projection).map((entry) => (
+      entry.attributionId
+    ))).toEqual(['included', 'partial']);
   });
 
   it('projects typed budget exhaustion details onto the affected message', () => {
@@ -205,7 +210,7 @@ describe('Agent evidence UI projections', () => {
   it('keeps stable proof selectors on all four user-facing surfaces', () => {
     const assistant = readFileSync(new URL('./messages/AssistantMessage.tsx', import.meta.url), 'utf8');
     const desktopApi = readFileSync(new URL('../services/desktop_api.ts', import.meta.url), 'utf8');
-    const sources = readFileSync(new URL('./messages/SourceAttributionBadges.tsx', import.meta.url), 'utf8');
+    const sources = readFileSync(new URL('./messages/TurnAttribution.tsx', import.meta.url), 'utf8');
     const composer = readFileSync(new URL('./ChatInput.tsx', import.meta.url), 'utf8');
     const attachments = readFileSync(new URL('./composer/AttachmentStage.tsx', import.meta.url), 'utf8');
     const details = readFileSync(new URL('./portal/views/TurnDetailsView.tsx', import.meta.url), 'utf8');
@@ -247,13 +252,16 @@ describe('Agent evidence UI projections', () => {
     expect(desktopApi).toContain("label: 'agent.recovery.recover'");
     expect(assistant).toContain('agent.recovery.reduceContext');
     expect(assistant).toContain("ns: 'agent'");
-    expect(sources).toContain('data-source-badges');
-    expect(sources).toContain('data-source-badge');
+    expect(sources).toContain('data-turn-attribution');
+    expect(sources).toContain('data-attribution-kind');
+    expect(sources).toContain('data-attribution-detail-outcome');
     expect(composer).toContain('data-agent-capability-warning');
     expect(composer).toContain('data-pt-agent-attachment-input');
     expect(composer).toContain('data-pt-agent-composer-slash');
     expect(composer).toContain('data-pt-agent-composer-attachment-choose');
-    expect(composer).toContain('requestAnimationFrame(() => el.focus())');
+    expect(composer).toContain(
+      'requestAnimationFrame(() => textareaRef.current?.focus())',
+    );
     expect(composer).toContain('composerFocusNonce');
     expect(attachments).toContain('data-pt-agent-composer-attachment-status');
     expect(attachments).toContain('data-pt-agent-composer-attachment-remove');

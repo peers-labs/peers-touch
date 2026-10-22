@@ -50,8 +50,8 @@ Prior to this design, Desktop Rust owned provider configuration, credential stor
 
 | Source | Constraint applied |
 |--------|-------------------|
-| `docs/global/architecture.md` §3.3 | Station owns shared business truth. Clients orchestrate and present. |
-| `docs/global/architecture.md` §3.1 | Client layer maintains local ephemeral state and local runtime orchestration. Client is NOT the shared business source of truth. |
+| `docs/architecture/architecture.md` §3.3 | Station owns shared business truth. Clients orchestrate and present. |
+| `docs/architecture/architecture.md` §3.1 | Client layer maintains local ephemeral state and local runtime orchestration. Client is NOT the shared business source of truth. |
 | `docs/global/first-principles.md` L0.1 | Proto-first domain modeling for cross-platform data contracts. |
 | `docs/global/first-principles.md` L0.4 | No secrets in logs. Validate auth/ownership for all handlers. |
 | `docs/architecture/domains/agent/README.md` §5 | "Station 承担全部后端能力, Tauri 承担通信桥接, Desktop 承担用户交互和成长可视化." |

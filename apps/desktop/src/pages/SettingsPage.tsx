@@ -188,7 +188,7 @@ function useTabGroups(): TabGroupDef[] {
         key: 'ai',
         label: t('settings.group.ai'),
         icon: Sparkles,
-        sectionKeys: ['providers', 'models', 'memory', 'skills', 'mcp', 'tts'],
+        sectionKeys: ['providers', 'models', 'discover', 'memory', 'skills', 'mcp', 'tts'],
       },
       {
         key: 'tools',

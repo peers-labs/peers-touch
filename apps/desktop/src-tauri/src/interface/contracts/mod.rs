@@ -147,7 +147,6 @@ pub struct SkillUpdateInput {
     pub name: Option<String>,
     pub description: Option<String>,
     pub content: Option<String>,
-    pub enabled: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

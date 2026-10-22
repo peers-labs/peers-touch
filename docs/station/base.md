@@ -193,7 +193,7 @@ Related examples:
 
 Detailed cross-system ownership is defined in:
 
-- `../global/architecture.md`
+- `../architecture/architecture.md`
 - `../architecture/platform/station-desktop-boundary.md`
 - `../architecture/platform/runtime/node-connectivity/README.md`
 
@@ -211,5 +211,5 @@ If you are working on Station, continue with:
 
 If you are resolving cross-end ownership:
 
-- [Project Architecture](../global/architecture.md)
+- [Project Architecture](../architecture/architecture.md)
 - [Station/Desktop Scope Boundary](../architecture/platform/station-desktop-boundary.md)

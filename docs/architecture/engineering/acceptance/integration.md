@@ -725,10 +725,12 @@ D-19 accepted target compatibility boundary：
   manifest和ordered length-prefixed file bytes定义exact bundle hash。Allocation持久化
   supervisor/Python/compiler/FILE-stdlib refs后才构造final runtime identity，历史reader
   从这些refs重建bundle并复验hash，不读取host当前runtime。Caller只提供closed
-  supervisor/Python/compiler/FILE-stdlib `RuntimePathInput`；loaded-image
+  `RuntimeMeasurementBasis`与supervisor/Python/compiler/FILE-stdlib
+  `RuntimePathInput`；basis绑定reviewed build/bootstrap/stdlib closure，loaded-image
   logical/origin identity由worker loader probe独占枚举；
-- Infra bootstrap closure固定为pure `core/finalization_contracts.py`、isolated
-  `core/finalizer_worker.py`与native `core/finalization_supervisor.c`；Mobile
+- Infra bootstrap closure固定为pure `core/finalization_contracts.py`与
+  `core/result_contracts.py`、isolated `core/finalizer_worker.py`及native
+  `core/finalization_supervisor.c`；Mobile
   registration只列business sources，business finalizer不得transitively import
   Evidence Store；
 - seal-time artifact materialization由Evidence Store-owned native setup在timer
@@ -742,6 +744,8 @@ D-19 accepted target compatibility boundary：
   device/inode/type和logical owner digest，
   independent request-identity digest绑定kind/claims，receiver逐项`fstat`等值；
   count/order/object mismatch关闭全部duplicates并fail closed；
+  materializer inventory使用closed `ArtifactMaterializationInput`显式绑定
+  JSON/binary与schema identity，禁止Core从role name推断payload schema；
 - stream channel只接受closed `SupervisorControlFrame` union，SCM_RIGHTS datagram只
   接受identity-correlated `DescriptorTransferFrame`；worker matrix精确绑定
   kind/request/results/descriptors，active cancel使用request/ack pair，frame
@@ -801,3 +805,30 @@ D-19 accepted target compatibility boundary：
   byte-compare重生成结果，protected baseline绑定required mapping、registration、
   contract/schema与entrypoint digests，避免第二个可编辑role或mapping真源；
 - Infra不包含Mobile role或业务断言，也不得direct-import Mobile validator。
+
+## 7. Unified Client Aggregate Integration
+
+UCA 的最终 aggregate 使用现有 Evidence Store latest manifest 与 Suite Runtime
+contract，不新增第二套证据存储、结果 tuple 或 Provisioner。
+
+```text
+UCA child Gate
+  -> immutable current-source run manifest
+  -> optional suite-runtime artifact role
+  -> unified-client-architecture-aggregate
+  -> aggregate report + outcome-comparison SHA-256
+```
+
+集成约束：
+
+- aggregate catalog entry 固定为 `environment: local`，不得声明
+  `provisioner` 或 `requiredRuntimeCells`；
+- aggregate 只运行 `check:native-platforms` 与 architecture registry validation
+  两项 bounded source baseline；
+- Android、iOS、Messaging 与 Secure Content runtime Gate 自己 provision 一次并
+  产出 reusable Suite Runtime；aggregate 只读取其 immutable artifact；
+- Messaging/Secure Content owner-zero Gate 作为独立 child manifest 消费；
+- outcome comparison 的计划区受 frozen Plan digest 保护；实际结果只在 UCA-08
+  根据 current-source 证据回填，aggregate 记录完整文件 SHA-256；
+- 尚未实现的 Gate 先指向统一 fail-closed entry；对应 owner Task 必须原子替换
+  catalog command、实现和证据合同，不能把 placeholder 成功化。

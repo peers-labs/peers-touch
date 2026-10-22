@@ -175,6 +175,10 @@ command/event/authority sequence 框架；crypto payload 由 Direct/MLS engine �
 每个责任域使用原子切换：new owner 完成、所有 consumer 切换、旧 symbol/path 删除、
 tree scan 为零。回滚使用版本控制和部署回滚，不保留双 runtime。
 
+Key Exchange 的 Direct public-key 表迁移由 `CanonicalStore.Migrate` 统一执行。
+旧 `actor_did` 结构只在表为空时原子重建为 `actor_ptid` 结构；非空旧表必须明确
+迁移或经过授权重置，启动不能把旧数据静默转换、删除或继续使用旧主键。
+
 代价：切换 closure 必须更小且证据充分，不能长期分批混跑。
 
 ## MP-D11: Control Plane 与 Attachment Data Plane 分离
@@ -1461,6 +1465,21 @@ feature flag 双跑或平台私有 crypto fork。
 - Desktop 现有 implementation 需要整体迁移，不能长期保留原目录作为第二真源；
 - 两个 Tauri crate 的 Rust dependency/build pipeline 需要统一；
 - native mobile background、push 和 secure-storage adapters 仍需单独验证。
+
+UCA-04A freezes `messaging-store-v1`, the Desktop/Mobile symbol inventory, the
+generation-fenced portable lifecycle and the narrow Host ports before consumer
+cutover. This source-only step deliberately does not start a second production
+worker; UCA-04 remains the sole owner of consumer activation and legacy-owner
+deletion.
+
+UCA-04 completed the source hard cut: Desktop and Mobile production
+composition now calls the same core inbox, outbox, reconciliation, receipt and
+lifecycle policies; former Desktop owner modules and Mobile parallel owner
+symbols are deleted. Physical storage measurement/deletion is implemented once
+in `messaging-native-filesystem`, while `messaging-core` retains only typed
+facts, policy and ports. This source closure does not promote Desktop/iOS/
+physical-Android runtime evidence; missing release-target cells remain
+`UNPROVEN`.
 
 ### Acceptance
 

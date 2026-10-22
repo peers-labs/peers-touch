@@ -1,7 +1,7 @@
 # 任务进度与运行记录约定
 
 > **Status**: active
-> **Created**: 2026-09-13 | **Updated**: 2026-10-14
+> **Created**: 2026-09-13 | **Updated**: 2026-10-17
 > **Owner**: Platform Team
 
 本文是[重构设计](./design.md)的当前记录合同。它只服务内部研发恢复，不是跨应用 API，也不增加第二套状态真源。
@@ -121,6 +121,49 @@ OperationRecord
 无运行证据只支持已检查的源码结论。正式验收必须由正式入口写入，任意 JSON 文件、调用者传入 `PASS` 或任务状态不能建立正式证明。
 
 审查读取显式范围与证据，不依赖 OWNER、PlanMount 或开发 Session。任务进度坏了，可以检查现有代码和证据；恢复进度未知仍如实报告，不能伪称任务整体已完成。
+
+## 8b. Outcome Comparison 合同
+
+复杂 Plan 在 Plan Package 同目录声明 Outcome Comparison，不增加 Plan schema 版本：
+
+```text
+PlanVersion.outcomeComparison.path = "outcome-comparison.md"
+
+OutcomeComparisonContract
+  kind
+  schemaVersion
+  planId
+  plannedSectionDigest
+  criteria[]
+    id
+    dimension              user-experience | product-capability |
+                           architecture | technology |
+                           quality-operations
+    title
+    taskIds[]
+    gateIds[]
+
+OutcomeComparisonResults
+  kind
+  schemaVersion
+  planId
+  sourceIdentity?
+  items[]
+    id
+    status                 PASS | PARTIAL | BLOCKED |
+                           UNPROVEN | NOT_APPLICABLE
+    actualEffect
+    evidenceRefs[]
+    deviation
+```
+
+`plannedSectionDigest` 绑定报告中 `Planned Outcome Comparison` 的规范化内容，并
+连同 Contract 进入 `planVersionDigest`。Plan 的所有 Task 与所有声明 Gate 必须至少
+被一个 criterion 覆盖，五类 dimension 都必须存在。
+
+`Actual Outcome Results` 不参与 Plan digest。`PASS/PARTIAL` 必须声明
+`sourceIdentity` 且至少有一个 evidence ref；其余状态仍须说明实际效果与偏差。
+最终完整文件摘要由 completion 或 aggregate evidence 保存，不在报告内部自引用。
 
 ## 9. 旧记录如何处理
 

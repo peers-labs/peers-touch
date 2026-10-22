@@ -1,5 +1,12 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, rm, unlink, writeFile } from 'node:fs/promises';
+import {
+  mkdtemp,
+  mkdir,
+  rm,
+  symlink,
+  unlink,
+  writeFile,
+} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -8,7 +15,9 @@ import { fileURLToPath } from 'node:url';
 import {
   ArchitectureGovernanceError,
   buildPreEditContext,
+  collectSharedClientDependencies,
   deriveRequiredDocuments,
+  loadArchitectureRegistry,
   renderPreEditContext,
   validateArchitectureRegistry,
   validateChangedArchitecturePaths,
@@ -121,6 +130,9 @@ async function fixture(t) {
   await mkdir(path.join(root, 'docs/architecture/domains'), {
     recursive: true,
   });
+  await mkdir(path.join(root, 'tooling/acceptance'), {
+    recursive: true,
+  });
   await writeFile(
     path.join(root, 'docs/architecture/domains/README.md'),
     document('Architecture Team'),
@@ -130,17 +142,150 @@ async function fixture(t) {
     path.join(root, 'docs', 'README.md'),
     '- Example: `architecture/domains/example/README.md`\n',
   );
+  await writeFile(
+    path.join(root, 'tooling/acceptance/gates.yaml'),
+    JSON.stringify({
+      version: 1,
+      gates: {
+        'architecture-test': {
+          command: 'true',
+          timeout_seconds: 1,
+          environment: 'local',
+          tier: 'ci-cheap',
+          description: 'Fixture gate.',
+        },
+        'unrelated-gate': {
+          command: 'true',
+          timeout_seconds: 1,
+          environment: 'local',
+          tier: 'ci-cheap',
+          description: 'Unrelated fixture gate.',
+        },
+      },
+    }),
+  );
   return {
     root,
     module,
     registry: {
       kind: 'peers-touch-architecture-module-registry',
-      schemaVersion: 3,
+      schemaVersion: 5,
       taxonomyIndexes: ['docs/architecture/domains/README.md'],
       documentCollections: [],
       modules: [module],
+      reuseDivergences: [],
     },
   };
+}
+
+function addDivergenceCapability(value, overrides = {}) {
+  const capability = {
+    id: 'architecture.example.variant',
+    owner: 'architecture.variant',
+    contractRoots: [value.module.root],
+    consumers: ['tooling/example', value.module.root],
+    allowedDependencies: ['architecture.example.validate'],
+    evidenceGates: ['architecture-test'],
+    ...overrides,
+  };
+  value.module.capabilities.push(capability);
+  return capability;
+}
+
+async function createSharedDependencyWorkspace(t) {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'shared-dependencies-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const directories = [
+    'apps/desktop/src-tauri/src',
+    'apps/mobile/src-tauri/src',
+    'workspace-packages/shared',
+    'workspace-packages/dev-only',
+    'rust/shared/src',
+    'rust/dev-only/src',
+  ];
+  await Promise.all(
+    directories.map((relative) =>
+      mkdir(path.join(root, relative), { recursive: true })),
+  );
+  await writeFile(
+    path.join(root, 'pnpm-workspace.yaml'),
+    'packages:\n  - apps/*\n  - workspace-packages/{shared,dev-only}\n',
+  );
+  await writeFile(
+    path.join(root, 'package.json'),
+    JSON.stringify({ name: 'fixture-root', private: true }),
+  );
+  await writeFile(
+    path.join(root, 'workspace-packages/shared/package.json'),
+    JSON.stringify({ name: '@test/shared', version: '1.0.0' }),
+  );
+  await writeFile(
+    path.join(root, 'workspace-packages/dev-only/package.json'),
+    JSON.stringify({ name: '@test/dev-only', version: '1.0.0' }),
+  );
+  for (const client of ['desktop', 'mobile']) {
+    await writeFile(
+      path.join(root, `apps/${client}/package.json`),
+      JSON.stringify({
+        name: `@test/${client}`,
+        dependencies: {
+          'shared-alias': 'workspace:@test/shared@*',
+        },
+        devDependencies: {
+          '@test/dev-only': 'workspace:*',
+        },
+      }),
+    );
+    await writeFile(
+      path.join(root, `apps/${client}/src-tauri/src/lib.rs`),
+      '',
+    );
+  }
+  await writeFile(
+    path.join(root, 'rust/shared/Cargo.toml'),
+    '[package]\nname = "shared-crate"\nversion = "0.1.0"\nedition = "2021"\n',
+  );
+  await writeFile(path.join(root, 'rust/shared/src/lib.rs'), '');
+  await writeFile(
+    path.join(root, 'rust/dev-only/Cargo.toml'),
+    '[package]\nname = "dev-only-crate"\nversion = "0.1.0"\nedition = "2021"\n',
+  );
+  await writeFile(path.join(root, 'rust/dev-only/src/lib.rs'), '');
+  await writeFile(
+    path.join(root, 'apps/desktop/src-tauri/Cargo.toml'),
+    [
+      '[package]',
+      'name = "desktop-client"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      '',
+      '[dependencies.shared_alias]',
+      'package = "shared-crate"',
+      'path = "../../../rust/shared"',
+      '',
+      '[dev-dependencies]',
+      'dev-only-alias = { package = "dev-only-crate", path = "../../../rust/dev-only" }',
+      '',
+    ].join('\n'),
+  );
+  await writeFile(
+    path.join(root, 'apps/mobile/src-tauri/Cargo.toml'),
+    [
+      '[package]',
+      'name = "mobile-client"',
+      'version = "0.1.0"',
+      'edition = "2021"',
+      '',
+      '[dependencies]',
+      'mobile_shared = { package = "shared-crate", path = "../../../rust/shared" }',
+      '',
+      '[dev-dependencies.dev-only-alias]',
+      'package = "dev-only-crate"',
+      'path = "../../../rust/dev-only"',
+      '',
+    ].join('\n'),
+  );
+  return root;
 }
 
 function rejectsCode(code, operation) {
@@ -159,6 +304,7 @@ test('current repository satisfies the module registry', () => {
     'architecture-module-governance',
     'bot',
     'chat-storage-governance',
+    'cross-client-runtime',
     'cross-station-social',
     'development-workflow',
     'local-dev-control-plane',
@@ -167,18 +313,187 @@ test('current repository satisfies the module registry', () => {
     'oauth-login-broker',
     'secure-content',
     'station-access-lifecycle',
+    'x-config',
   ]);
   assert.deepEqual(result.capabilityIds, [
     'agent.chat.minimum-usable',
     'agent.mcp.dual-runtime',
     'architecture.module.validate',
     'chat.storage.device-governance',
+    'client.chat.headless',
+    'client.chat.presentation.desktop',
+    'client.chat.presentation.mobile',
+    'client.media-security.headless',
+    'client.messaging.native-filesystem',
+    'client.messaging.portable-core',
+    'client.reuse.admission',
+    'client.runtime.portability',
+    'client.secure-content.portable-core',
+    'client.station-trust.portable-core',
+    'client.storage.headless',
     'mobile.social.native-parity',
     'oauth.login.broker',
     'relay.control.enrollment',
     'relay.transport.circuit',
     'station.connectivity.node-authorization',
+    'x.config.operator',
+    'x.config.publication',
+    'x.config.snapshot',
   ]);
+});
+
+test('current shared client dependencies are capability-registered', () => {
+  const result = validateArchitectureRegistry({ repoRoot: REPO_ROOT });
+  assert.deepEqual(
+    result.sharedClientDependencies.map((dependency) => ({
+      id: `${dependency.ecosystem}:${dependency.package}`,
+      capabilityId: dependency.capabilityId,
+      reuseLayer: dependency.reuseLayer,
+    })),
+    [
+      {
+        id: 'cargo:messaging-core',
+        capabilityId: 'client.messaging.portable-core',
+        reuseLayer: 'portable-rust-core',
+      },
+      {
+        id: 'cargo:messaging-native-filesystem',
+        capabilityId: 'client.messaging.native-filesystem',
+        reuseLayer: 'platform-adapter',
+      },
+      {
+        id: 'cargo:secure-content-core',
+        capabilityId: 'client.secure-content.portable-core',
+        reuseLayer: 'portable-rust-core',
+      },
+      {
+        id: 'cargo:station-libp2p-http',
+        capabilityId: 'relay.transport.circuit',
+        reuseLayer: 'portable-rust-core',
+      },
+      {
+        id: 'cargo:station-trust',
+        capabilityId: 'client.station-trust.portable-core',
+        reuseLayer: 'portable-rust-core',
+      },
+      {
+        id: 'cargo:x-config-core',
+        capabilityId: 'x.config.snapshot',
+        reuseLayer: 'portable-rust-core',
+      },
+      {
+        id: 'pnpm:@peers-touch/client-chat-core',
+        capabilityId: 'client.chat.headless',
+        reuseLayer: 'shared-ts-core',
+      },
+      {
+        id: 'pnpm:@peers-touch/client-media-security',
+        capabilityId: 'client.media-security.headless',
+        reuseLayer: 'shared-ts-core',
+      },
+      {
+        id: 'pnpm:@peers-touch/client-storage',
+        capabilityId: 'client.storage.headless',
+        reuseLayer: 'shared-ts-core',
+      },
+    ],
+  );
+});
+
+test('shared dependency collection follows workspace and Cargo metadata', async (t) => {
+  const root = await createSharedDependencyWorkspace(t);
+  assert.deepEqual(
+    collectSharedClientDependencies({ repoRoot: root }).map(
+      (dependency) => ({
+        id: `${dependency.ecosystem}:${dependency.package}`,
+        manifest: dependency.manifest,
+      }),
+    ),
+    [
+      {
+        id: 'cargo:shared-crate',
+        manifest: 'rust/shared/Cargo.toml',
+      },
+      {
+        id: 'pnpm:@test/shared',
+        manifest: 'workspace-packages/shared/package.json',
+      },
+    ],
+  );
+});
+
+test('workspace dependency collection rejects package symlink escapes', async (t) => {
+  const root = await createSharedDependencyWorkspace(t);
+  const external = await mkdtemp(path.join(os.tmpdir(), 'external-package-'));
+  t.after(() => rm(external, { recursive: true, force: true }));
+  await writeFile(
+    path.join(external, 'package.json'),
+    JSON.stringify({ name: '@test/external', version: '1.0.0' }),
+  );
+  await symlink(external, path.join(root, 'workspace-packages/external'));
+  await writeFile(
+    path.join(root, 'pnpm-workspace.yaml'),
+    'packages:\n  - apps/*\n  - workspace-packages/*\n',
+  );
+  rejectsCode('ARCHITECTURE_REUSE_INVALID', () =>
+    collectSharedClientDependencies({ repoRoot: root }));
+});
+
+test('registry rejects an unregistered shared client dependency', () => {
+  const registry = structuredClone(
+    loadArchitectureRegistry({ repoRoot: REPO_ROOT }),
+  );
+  const module = registry.modules.find(
+    (candidate) => candidate.id === 'cross-client-runtime',
+  );
+  module.capabilities = module.capabilities.filter(
+    (capability) => capability.id !== 'client.storage.headless',
+  );
+  rejectsCode('ARCHITECTURE_REUSE_UNREGISTERED', () =>
+    validateArchitectureRegistry({
+      repoRoot: REPO_ROOT,
+      registry,
+    }));
+});
+
+test('registry rejects shared dependency capabilities with incomplete consumers', () => {
+  const registry = structuredClone(
+    loadArchitectureRegistry({ repoRoot: REPO_ROOT }),
+  );
+  const module = registry.modules.find(
+    (candidate) => candidate.id === 'cross-client-runtime',
+  );
+  for (const capability of module.capabilities) {
+    if (
+      capability.id === 'client.storage.headless'
+      || capability.id === 'client.reuse.admission'
+    ) {
+      capability.consumers = ['apps'];
+    }
+  }
+  rejectsCode('ARCHITECTURE_REUSE_UNREGISTERED', () =>
+    validateArchitectureRegistry({
+      repoRoot: REPO_ROOT,
+      registry,
+    }));
+});
+
+test('registry rejects a shared dependency with the wrong reuse layer', () => {
+  const registry = structuredClone(
+    loadArchitectureRegistry({ repoRoot: REPO_ROOT }),
+  );
+  const module = registry.modules.find(
+    (candidate) => candidate.id === 'cross-client-runtime',
+  );
+  module.capabilities.find(
+    (capability) => capability.id === 'client.storage.headless',
+  ).reuseLayer = 'platform-adapter';
+
+  rejectsCode('ARCHITECTURE_REUSE_INVALID', () =>
+    validateArchitectureRegistry({
+      repoRoot: REPO_ROOT,
+      registry,
+    }));
 });
 
 test('required documents are derived from module characteristics', () => {
@@ -214,6 +529,168 @@ test('registry rejects unknown fields', async (t) => {
     }));
 });
 
+test('reuse divergences require a registered accepted decision', async (t) => {
+  const value = await fixture(t);
+  const implementationCapability = addDivergenceCapability(value);
+  value.registry.reuseDivergences.push({
+    capabilityId: 'architecture.example.validate',
+    axis: 'runtime-constraint',
+    canonicalRoot: 'tooling/example',
+    implementations: [
+      {
+        capabilityId: implementationCapability.id,
+        root: 'docs/architecture/domains/example',
+        consumers: ['tooling/example'],
+        evidenceGates: ['architecture-test'],
+      },
+    ],
+    rationale: 'The fixture exercises divergence validation.',
+    decisionId: 'EX-D99',
+    reviewTrigger: 'Review when the runtime constraint disappears.',
+  });
+  rejectsCode('ARCHITECTURE_REUSE_INVALID', () =>
+    validateArchitectureRegistry({
+      repoRoot: value.root,
+      registry: value.registry,
+    }));
+});
+
+test('reuse divergences bind capability roots, consumers, and decisions', async (t) => {
+  const value = await fixture(t);
+  const implementationCapability = addDivergenceCapability(value);
+  const divergence = {
+    capabilityId: 'architecture.example.validate',
+    axis: 'runtime-constraint',
+    canonicalRoot: 'tooling/example',
+    implementations: [
+      {
+        capabilityId: implementationCapability.id,
+        root: 'docs/architecture/domains/example',
+        consumers: [
+          'tooling/example',
+          'docs/architecture/domains/example',
+        ],
+        evidenceGates: ['architecture-test'],
+      },
+    ],
+    rationale: 'The fixture exercises a bounded runtime variation.',
+    decisionId: 'EX-D01',
+    reviewTrigger: 'Review when the runtime constraint disappears.',
+  };
+  value.registry.reuseDivergences.push(divergence);
+  const result = validateArchitectureRegistry({
+    repoRoot: value.root,
+    registry: value.registry,
+  });
+  assert.deepEqual(result.reuseDivergences, [divergence]);
+});
+
+test('reuse divergences reject unknown evidence gates', async (t) => {
+  const value = await fixture(t);
+  const implementationCapability = addDivergenceCapability(value);
+  value.registry.reuseDivergences.push({
+    capabilityId: 'architecture.example.validate',
+    axis: 'runtime-constraint',
+    canonicalRoot: 'tooling/example',
+    implementations: [
+      {
+        capabilityId: implementationCapability.id,
+        root: 'docs/architecture/domains/example',
+        consumers: ['tooling/example'],
+        evidenceGates: ['missing-gate'],
+      },
+    ],
+    rationale: 'The fixture exercises evidence gate validation.',
+    decisionId: 'EX-D01',
+    reviewTrigger: 'Review when the runtime constraint disappears.',
+  });
+  rejectsCode('ARCHITECTURE_REUSE_INVALID', () =>
+    validateArchitectureRegistry({
+      repoRoot: value.root,
+      registry: value.registry,
+    }));
+});
+
+test('reuse divergences reject Gates not owned by the implementation capability', async (t) => {
+  const value = await fixture(t);
+  const implementationCapability = addDivergenceCapability(value);
+  value.registry.reuseDivergences.push({
+    capabilityId: 'architecture.example.validate',
+    axis: 'runtime-constraint',
+    canonicalRoot: 'tooling/example',
+    implementations: [
+      {
+        capabilityId: implementationCapability.id,
+        root: 'docs/architecture/domains/example',
+        consumers: ['tooling/example'],
+        evidenceGates: ['unrelated-gate'],
+      },
+    ],
+    rationale: 'The fixture exercises Gate ownership validation.',
+    decisionId: 'EX-D01',
+    reviewTrigger: 'Review when the runtime constraint disappears.',
+  });
+  rejectsCode('ARCHITECTURE_REUSE_INVALID', () =>
+    validateArchitectureRegistry({
+      repoRoot: value.root,
+      registry: value.registry,
+    }));
+});
+
+test('reuse divergence implementation capabilities depend on the canonical capability', async (t) => {
+  const value = await fixture(t);
+  const implementationCapability = addDivergenceCapability(value, {
+    allowedDependencies: [],
+  });
+  value.registry.reuseDivergences.push({
+    capabilityId: 'architecture.example.validate',
+    axis: 'runtime-constraint',
+    canonicalRoot: 'tooling/example',
+    implementations: [
+      {
+        capabilityId: implementationCapability.id,
+        root: 'docs/architecture/domains/example',
+        consumers: ['tooling/example'],
+        evidenceGates: ['architecture-test'],
+      },
+    ],
+    rationale: 'The fixture exercises canonical dependency validation.',
+    decisionId: 'EX-D01',
+    reviewTrigger: 'Review when the runtime constraint disappears.',
+  });
+  rejectsCode('ARCHITECTURE_REUSE_INVALID', () =>
+    validateArchitectureRegistry({
+      repoRoot: value.root,
+      registry: value.registry,
+    }));
+});
+
+test('reuse divergences require architecture-owned implementation roots', async (t) => {
+  const value = await fixture(t);
+  const implementationCapability = addDivergenceCapability(value);
+  value.registry.reuseDivergences.push({
+    capabilityId: 'architecture.example.validate',
+    axis: 'runtime-constraint',
+    canonicalRoot: 'tooling/example',
+    implementations: [
+      {
+        capabilityId: implementationCapability.id,
+        root: 'docs/README.md',
+        consumers: ['tooling/example'],
+        evidenceGates: ['architecture-test'],
+      },
+    ],
+    rationale: 'The fixture exercises implementation ownership.',
+    decisionId: 'EX-D01',
+    reviewTrigger: 'Review when the runtime constraint disappears.',
+  });
+  rejectsCode('ARCHITECTURE_REUSE_INVALID', () =>
+    validateArchitectureRegistry({
+      repoRoot: value.root,
+      registry: value.registry,
+    }));
+});
+
 test('registry rejects an incomplete derived document set', async (t) => {
   const value = await fixture(t);
   value.registry.modules[0].requiredDocuments =
@@ -237,14 +714,27 @@ test('registry rejects a missing required document', async (t) => {
     }));
 });
 
-test('capability paths must exist inside module governance', async (t) => {
+test('capability contract roots must exist inside module governance', async (t) => {
   const value = await fixture(t);
-  value.registry.modules[0].capabilities[0].consumers = ['docs/README.md'];
+  value.registry.modules[0].capabilities[0].contractRoots = ['docs/README.md'];
   rejectsCode('ARCHITECTURE_REGISTRY_INVALID', () =>
     validateArchitectureRegistry({
       repoRoot: value.root,
       registry: value.registry,
     }));
+});
+
+test('capability consumers may live outside the owning module', async (t) => {
+  const value = await fixture(t);
+  value.registry.modules[0].capabilities[0].consumers = ['docs/README.md'];
+  const result = validateArchitectureRegistry({
+    repoRoot: value.root,
+    registry: value.registry,
+  });
+  assert.deepEqual(
+    result.registry.modules[0].capabilities[0].consumers,
+    ['docs/README.md'],
+  );
 });
 
 test('registry rejects document status drift', async (t) => {

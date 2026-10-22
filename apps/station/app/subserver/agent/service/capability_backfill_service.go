@@ -321,8 +321,10 @@ func (s *CapabilityBackfillService) scanSkills(
 		return nil, nil, nil, err
 	}
 	var legacyBindings []persistence.AgentSkillBinding
-	if err := s.db.WithContext(ctx).Order("id").Find(&legacyBindings).Error; err != nil {
-		return nil, nil, nil, err
+	if s.db.Migrator().HasTable(&persistence.AgentSkillBinding{}) {
+		if err := s.db.WithContext(ctx).Order("id").Find(&legacyBindings).Error; err != nil {
+			return nil, nil, nil, err
+		}
 	}
 	byID := make(map[string]persistence.Skill, len(skills))
 	var manifests []capabilityManifestSeed
@@ -871,10 +873,6 @@ func capabilityToolManifestSeed(definition *domain.ToolDefinition) capabilityMan
 }
 
 func capabilitySkillManifestSeed(skill persistence.Skill) capabilityManifestSeed {
-	availability := model.CapabilityAvailability_CAPABILITY_AVAILABILITY_BLOCKED
-	if skill.Enabled {
-		availability = model.CapabilityAvailability_CAPABILITY_AVAILABILITY_AVAILABLE
-	}
 	return capabilityManifestSeed{
 		source:   "skill",
 		sourceID: skill.ID,
@@ -890,7 +888,7 @@ func capabilitySkillManifestSeed(skill persistence.Skill) capabilityManifestSeed
 			RiskClass:             "context",
 			DefaultApprovalPolicy: model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_AUTO,
 			SecretBoundary:        "station",
-			Availability:          availability,
+			Availability:          model.CapabilityAvailability_CAPABILITY_AVAILABILITY_AVAILABLE,
 		},
 	}
 }

@@ -1,8 +1,8 @@
 # Secure Content - Module Layout
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-09-13 | **Updated**: 2026-09-15
+> **Version**: v1.3
+> **Created**: 2026-09-13 | **Updated**: 2026-10-17
 > **Owner**: Architecture Team
 
 ---
@@ -33,12 +33,18 @@ packages/secure-content-core/
     ├── envelope.rs
     ├── prekey.rs
     ├── recovery.rs
+    ├── operation/
+    │   ├── state.rs
+    │   ├── prekey_maintenance.rs
+    │   ├── reconciliation.rs
+    │   └── outcome.rs
     ├── object/
     │   ├── crypto.rs
     │   ├── validation.rs
     │   └── transfer.rs
     └── ports/
         ├── blob.rs
+        ├── cancellation.rs
         ├── clock.rs
         ├── key_material.rs
         ├── store.rs
@@ -107,8 +113,9 @@ apps/station/app/subserver/social/
 apps/desktop/src-tauri/src/
 ├── secure_content/
 │   ├── adapter.rs
+│   ├── object_runtime.rs
+│   ├── prekey_runtime.rs
 │   ├── store.rs
-│   ├── worker.rs
 │   └── recovery.rs
 └── social/
     ├── private_moment.rs
@@ -117,16 +124,18 @@ apps/desktop/src-tauri/src/
 apps/mobile/src-tauri/src/
 ├── secure_content/
 │   ├── adapter.rs
+│   ├── object_runtime.rs
+│   ├── runtime.rs
 │   ├── store.rs
-│   ├── worker.rs
 │   └── recovery.rs
 └── social/
-    ├── private_moment.rs
-    └── projection.rs
+    ├── mod.rs
+    └── private_reaction.rs
 ```
 
-Exact filenames may be refined by the execution plan; ownership and dependency
-direction may not change.
+The deleted `worker.rs` files are forbidden legacy owners. Runtime modules
+compose the portable mechanism; Host stores, codecs, transports, file adapters,
+and lifecycle bindings remain under each client.
 
 ## 2. Responsibilities
 
@@ -136,7 +145,7 @@ direction may not change.
 | `apps/station/frame/core/types/securecontent/` | generated neutral Secure Content and Content PreKey wire values | Key Exchange pool/service behavior |
 | `apps/station/frame/touch/model/privatecontent/` | generated Social private-content wire projection | shared crypto semantics or independent business authority |
 | `model/domain/error/error.proto` | shared Station API error codes and `ErrorResponse` | Key Exchange pool/replay policy |
-| `packages/secure-content-core/` | portable crypto, codec, object and transfer FSM | platform or business policy |
+| `packages/secure-content-core/` | portable crypto, codec, client-operation, object and transfer FSM | platform or business policy |
 | `apps/station/app/internal/securecontent/` | pure validation/transitions/policy/conformance | route, DB, transaction, worker, ACL |
 | `apps/station/app/subserver/key_exchange/` | Content PreKey publish/inventory/claim pools, receipts, quotas and replay | Native private keys or Social policy |
 | `apps/station/frame/core/server/` | model-neutral canonical-protobuf and route-error projector mechanics | generated app-domain error model |
@@ -144,7 +153,7 @@ direction may not change.
 | `conversation/application/attachment/` | Chat route, UOW and grant adapter | copied crypto/transition algorithms |
 | `conversation/infrastructure/attachment/` | Conversation tables, object adapter and workers | Social object state |
 | `social/` | Moment audience, Post/Comment UOW, Social object/grant plane | Chat policy or copied crypto |
-| Native `secure_content/` | platform key/store/network/filesystem adapters | Social/Chat business authority |
+| Native `secure_content/` | platform key/store/network/filesystem/lifecycle adapters | operation state machine or Social/Chat business authority |
 | Native `social/` | Social orchestration and decrypted projection | crypto implementation |
 | OSS/storage backend | opaque physical bytes | audience, membership, keys |
 

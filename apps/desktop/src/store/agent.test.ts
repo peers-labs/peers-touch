@@ -304,6 +304,65 @@ describe('Agent profile capability reconciliation', () => {
     );
   });
 
+  it('preserves a user selection made while roster reconciliation is in flight', async () => {
+    const other = {
+      ...agent,
+      id: 'agent-other',
+      name: 'other',
+      title: 'Other',
+      isDefault: false,
+    };
+    useAgentStore.setState({
+      agents: [agent, other],
+      selectedAgent: agent.name,
+    });
+    let resolveRoster!: (value: {
+      agents: Agent[];
+      defaultAgent: string;
+      selectedAgent: string;
+    }) => void;
+    api.listAgentsWithMeta.mockReturnValueOnce(new Promise((resolve) => {
+      resolveRoster = resolve;
+    }));
+    api.getSelectedAgent.mockResolvedValueOnce(agent.name);
+
+    const load = useAgentStore.getState().loadAgents();
+    await Promise.resolve();
+    useAgentStore.getState().setSelectedAgent(other.name);
+    resolveRoster({
+      agents: [agent, other],
+      defaultAgent: agent.name,
+      selectedAgent: agent.name,
+    });
+    await load;
+
+    expect(useAgentStore.getState().selectedAgent).toBe(other.name);
+  });
+
+  it('adopts persisted selection when no user selection races reconciliation', async () => {
+    const other = {
+      ...agent,
+      id: 'agent-other',
+      name: 'other',
+      title: 'Other',
+      isDefault: false,
+    };
+    useAgentStore.setState({
+      agents: [agent, other],
+      selectedAgent: agent.name,
+    });
+    api.getSelectedAgent.mockResolvedValueOnce(other.name);
+    api.listAgentsWithMeta.mockResolvedValueOnce({
+      agents: [agent, other],
+      defaultAgent: agent.name,
+      selectedAgent: other.name,
+    });
+
+    await useAgentStore.getState().loadAgents();
+
+    expect(useAgentStore.getState().selectedAgent).toBe(other.name);
+  });
+
   it('reconciles selection and default after deleting the active Agent', async () => {
     const fallback = {
       ...agent,

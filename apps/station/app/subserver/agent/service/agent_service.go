@@ -106,22 +106,28 @@ func (s *AgentService) createAgentTx(
 	if err != nil {
 		return nil, err
 	}
+	configJSON, err := normalizeAgentConfigJSON(options.ConfigJSON)
+	if err != nil {
+		return nil, err
+	}
 	now := time.Now()
 	record := persistence.Agent{
-		ID:             generateID("agent"),
-		Name:           name,
-		Title:          strings.TrimSpace(options.Title),
-		Description:    strings.TrimSpace(options.Description),
-		ProviderID:     strings.TrimSpace(options.ProviderID),
-		ModelName:      strings.TrimSpace(options.ModelName),
-		Effort:         strings.TrimSpace(options.Effort),
-		ThinkingMode:   string(thinkingMode),
-		Visibility:     string(normalizeAgentVisibility(options.Visibility)),
-		OwnerActorPTID: actorPTID,
-		ConfigJSON:     options.ConfigJSON,
-		Version:        1,
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		ID:                generateID("agent"),
+		Name:              name,
+		Title:             strings.TrimSpace(options.Title),
+		Description:       strings.TrimSpace(options.Description),
+		ProviderID:        strings.TrimSpace(options.ProviderID),
+		ModelName:         strings.TrimSpace(options.ModelName),
+		Effort:            strings.TrimSpace(options.Effort),
+		ThinkingMode:      string(thinkingMode),
+		Visibility:        string(normalizeAgentVisibility(options.Visibility)),
+		OwnerActorPTID:    actorPTID,
+		IdentityPrompt:    options.IdentityPrompt,
+		AgentConfigPrompt: options.AgentConfigPrompt,
+		ConfigJSON:        configJSON,
+		Version:           1,
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
 	if err := tx.WithContext(ctx).Create(&record).Error; err != nil {
 		logger.Errorf(ctx, "failed to create agent: actor_ptid=%s err=%v", actorPTID, err)
@@ -133,6 +139,10 @@ func (s *AgentService) createAgentTx(
 
 func (s *AgentService) UpdateAgent(ctx context.Context, options domain.AgentUpsertOptions) (*domain.Agent, error) {
 	db, err := s.getDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	configJSON, err := normalizeAgentConfigJSON(options.ConfigJSON)
 	if err != nil {
 		return nil, err
 	}
@@ -174,21 +184,25 @@ func (s *AgentService) UpdateAgent(ctx context.Context, options domain.AgentUpse
 		record.Effort = strings.TrimSpace(options.Effort)
 		record.ThinkingMode = string(thinkingMode)
 		record.Visibility = string(normalizeAgentVisibility(options.Visibility))
-		record.ConfigJSON = options.ConfigJSON
+		record.IdentityPrompt = options.IdentityPrompt
+		record.AgentConfigPrompt = options.AgentConfigPrompt
+		record.ConfigJSON = configJSON
 		nextVersion := record.Version + 1
 		now := time.Now()
 		updates := map[string]interface{}{
-			"name":          record.Name,
-			"title":         record.Title,
-			"description":   record.Description,
-			"provider_id":   record.ProviderID,
-			"model_name":    record.ModelName,
-			"effort":        record.Effort,
-			"thinking_mode": record.ThinkingMode,
-			"visibility":    record.Visibility,
-			"config_json":   record.ConfigJSON,
-			"version":       nextVersion,
-			"updated_at":    now,
+			"name":                record.Name,
+			"title":               record.Title,
+			"description":         record.Description,
+			"provider_id":         record.ProviderID,
+			"model_name":          record.ModelName,
+			"effort":              record.Effort,
+			"thinking_mode":       record.ThinkingMode,
+			"visibility":          record.Visibility,
+			"identity_prompt":     record.IdentityPrompt,
+			"agent_config_prompt": record.AgentConfigPrompt,
+			"config_json":         record.ConfigJSON,
+			"version":             nextVersion,
+			"updated_at":          now,
 		}
 		result := tx.Model(&persistence.Agent{}).
 			Where("id = ? AND owner_actor_ptid = ? AND version = ?", record.ID, options.ActorPTID, record.Version).
@@ -296,10 +310,9 @@ func (s *AgentService) DeleteAgent(ctx context.Context, actorPTID, agentID strin
 						"revision": gorm.Expr("revision + 1")}).Error; err != nil {
 					return err
 				}
-				for _, binding := range []interface{}{&persistence.AgentKnowledgeBinding{}, &persistence.AgentSkillBinding{}} {
-					if err := tx.Where("agent_id = ?", agentID).Delete(binding).Error; err != nil {
-						return err
-					}
+				if err := tx.Where("agent_id = ?", agentID).
+					Delete(&persistence.AgentKnowledgeBinding{}).Error; err != nil {
+					return err
 				}
 				workspaces := tx.Model(&persistence.AgentWorkspace{}).Select("id").Where("agent_id = ?", agentID)
 				if err := tx.Where("workspace_id IN (?)", workspaces).
@@ -562,19 +575,21 @@ func persistenceAgentToDomain(record *persistence.Agent) domain.Agent {
 		thinkingMode = domain.ThinkingModeAuto
 	}
 	return domain.Agent{
-		AgentID:        record.ID,
-		Name:           record.Name,
-		Title:          record.Title,
-		Description:    record.Description,
-		ProviderID:     record.ProviderID,
-		ModelName:      record.ModelName,
-		Effort:         record.Effort,
-		ThinkingMode:   thinkingMode,
-		Visibility:     domain.AgentVisibility(record.Visibility),
-		OwnerActorPTID: record.OwnerActorPTID,
-		ConfigJSON:     record.ConfigJSON,
-		Version:        record.Version,
-		CreatedAt:      record.CreatedAt,
-		UpdatedAt:      record.UpdatedAt,
+		AgentID:           record.ID,
+		Name:              record.Name,
+		Title:             record.Title,
+		Description:       record.Description,
+		ProviderID:        record.ProviderID,
+		ModelName:         record.ModelName,
+		Effort:            record.Effort,
+		ThinkingMode:      thinkingMode,
+		Visibility:        domain.AgentVisibility(record.Visibility),
+		OwnerActorPTID:    record.OwnerActorPTID,
+		IdentityPrompt:    record.IdentityPrompt,
+		AgentConfigPrompt: record.AgentConfigPrompt,
+		ConfigJSON:        record.ConfigJSON,
+		Version:           record.Version,
+		CreatedAt:         record.CreatedAt,
+		UpdatedAt:         record.UpdatedAt,
 	}
 }

@@ -35,6 +35,7 @@
 
 ## Files
 
-- `src/pages/MarketplacePage.tsx`, descriptor, container
-- `src/pages/marketplace/{AgentCard,SkillCard,MCPCard,index}.tsx`
+- `src/components/settings/DiscoverSettings.tsx`
+- `src/components/settings/discover/PackageCard.tsx`
+- `src/modules/discover.ts`
 - Locale: 20 keys

@@ -47,15 +47,19 @@ for line in sys.stdin:
 """
 
 
-def prepare_extensions(runner: AgentNativeJourney) -> dict[str, Any]:
+def prepare_extensions(
+    runner: AgentNativeJourney,
+    agent_id: str,
+) -> dict[str, Any]:
     marker = str(runner.runtime_manifest["runId"]).lower()
     skill = runner.invoke_readback_command("skills_create", {
+        "agent_id": agent_id,
         "name": f"chat-suite-{marker}",
         "content": "Describe supplied facts precisely and preserve the user's request.",
     })
-    runner.chat_skill_fixture_ids.append(skill["id"])
-    runner.invoke_readback_command("skills_toggle", {
-        "id": skill["id"], "enabled": True,
+    runner.chat_skill_fixture_ids.append({
+        "agentId": agent_id,
+        "skillId": skill["id"],
     })
     require(runner.runtime_binding is not None, "MCP fixture requires the Native cell")
     root = runner.run_root / "extension-fixtures"
@@ -83,4 +87,9 @@ def prepare_extensions(runner: AgentNativeJourney) -> dict[str, Any]:
 
     observed = wait_until(catalogue, "real MCP discovered tool catalogue")
     runner.harness("reconcileChatSuiteCapabilityProjection")
-    return {"skillId": skill["id"], "mcpName": name, "mcpToolCount": observed["toolCount"]}
+    return {
+        "skillId": skill["id"],
+        "skillCapabilityId": f"skill:{skill['id']}",
+        "mcpName": name,
+        "mcpToolCount": observed["toolCount"],
+    }

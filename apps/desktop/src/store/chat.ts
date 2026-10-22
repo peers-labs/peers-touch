@@ -41,7 +41,10 @@ import { getDesktopAgentChatCache } from '../storage/desktopAgentChatCache';
 import { toolRuntime } from '../runtimes/toolRuntime';
 import type { CachedAgentConversation, CachedAgentMessage } from '@peers-touch/client-chat-core';
 import type { AgentTurnSnapshotReloadResult } from '../runtimes/chatRuntime';
-import type { ToolExecutionOwner } from '../gen/proto/domain/agent/agent_pb';
+import type {
+  ToolExecutionOwner,
+  TurnAttributionProjection,
+} from '../gen/proto/domain/agent/agent_pb';
 import {
   reduceStreamEvent,
   projectAgentTypedError,
@@ -212,6 +215,7 @@ export interface ChatMessage {
   queueEntryId?: string;
   queuePosition?: number;
   budgetNotice?: BudgetNotice;
+  turnAttribution?: TurnAttributionProjection;
 }
 
 // #region debug-point A-B:foundation-approval-receiver
@@ -458,6 +462,53 @@ export function cachedMessageToChatMessage(message: CachedAgentMessage): ChatMes
   return chatMessage;
 }
 
+async function projectTurnAttributions(
+  messages: ChatMessage[],
+): Promise<ChatMessage[]> {
+  const turnIDs = Array.from(new Set(messages
+    .filter((message) => (
+      message.role === 'assistant'
+      && Boolean(message.turnId)
+      && Boolean(message.terminalStatus)
+      && !message.turnAttribution
+    ))
+    .map((message) => message.turnId as string)));
+  if (turnIDs.length === 0) return messages;
+
+  const response = await api.getAgentTurnAttributions(turnIDs);
+  const requested = new Set(turnIDs);
+  const byTurnID = new Map<string, TurnAttributionProjection>();
+  for (const projection of response.attributions) {
+    if (!requested.has(projection.turnId)) {
+      throw new Error('agent.error.turnAttributionIdentityMismatch');
+    }
+    byTurnID.set(projection.turnId, projection);
+  }
+  if (byTurnID.size !== requested.size) {
+    throw new Error('agent.error.turnAttributionProjectionMissing');
+  }
+  return messages.map((message) => (
+    message.turnId && byTurnID.has(message.turnId)
+      ? { ...message, turnAttribution: byTurnID.get(message.turnId) }
+      : message
+  ));
+}
+
+async function projectTurnAttributionsOrKeep(
+  messages: ChatMessage[],
+  stage: string,
+): Promise<ChatMessage[]> {
+  try {
+    return await projectTurnAttributions(messages);
+  } catch (error) {
+    log.warn('chat', 'Turn attribution projection unavailable', {
+      stage,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return messages;
+  }
+}
+
 function foldToolMessages(messages: ChatMessage[]): ChatMessage[] {
   const folded: ChatMessage[] = [];
   for (const message of messages) {
@@ -522,7 +573,8 @@ function carryChainOfThoughtFields(target: ChatMessage, source: ChatMessage): Ch
     || source.typedError
     || source.errorDetail
     || source.resolution
-    || source.budgetNotice;
+    || source.budgetNotice
+    || source.turnAttribution;
   const merged = hasLocalProjection ? {
     ...target,
     toolCalls: target.toolCalls ?? source.toolCalls,
@@ -548,6 +600,7 @@ function carryChainOfThoughtFields(target: ChatMessage, source: ChatMessage): Ch
     resolution:
       targetOwnsTerminal ? target.resolution : target.resolution ?? source.resolution,
     budgetNotice: target.budgetNotice ?? source.budgetNotice,
+    turnAttribution: target.turnAttribution ?? source.turnAttribution,
   } : target;
   if (sourceOwnsNonTerminalLeaseIncident) {
     return {
@@ -1503,15 +1556,35 @@ async function loadSessionMessages(
     const cachedMessages = reconcileToolMessages(
       cached.map(cachedMessageToChatMessage),
     );
-    set({ messages: mergeServerMessages(get().messages, cachedMessages) });
+    const attributedCachedMessages = await projectTurnAttributionsOrKeep(
+      cachedMessages,
+      'cache-read',
+    );
+    if (get().currentSessionKey !== key) return;
+    set({
+      messages: mergeServerMessages(
+        get().messages,
+        attributedCachedMessages,
+      ),
+    });
     void agentChatCache
       .syncConversation(key)
-      .then((synced) => {
+      .then(async (synced) => {
         if (get().currentSessionKey !== key) return;
         const serverMessages = reconcileToolMessages(
           synced.map(cachedMessageToChatMessage),
         );
-        set({ messages: mergeServerMessages(get().messages, serverMessages) });
+        const attributedServerMessages = await projectTurnAttributionsOrKeep(
+          serverMessages,
+          'background-sync',
+        );
+        if (get().currentSessionKey !== key) return;
+        set({
+          messages: mergeServerMessages(
+            get().messages,
+            attributedServerMessages,
+          ),
+        });
       })
       .catch((syncError) => {
         log.warn('chat', 'Background conversation sync failed; keeping cache', { key, error: String(syncError) });
@@ -1794,8 +1867,16 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       const serverMessages = reconcileToolMessages(
         synced.map(cachedMessageToChatMessage),
       );
+      const attributedServerMessages = await projectTurnAttributionsOrKeep(
+        serverMessages,
+        'authoritative-sync',
+      );
+      if (get().currentSessionKey !== currentSessionKey) return;
 
-      const merged = mergeServerMessages(get().messages, serverMessages);
+      const merged = mergeServerMessages(
+        get().messages,
+        attributedServerMessages,
+      );
       set({ messages: merged });
       reportFoundationApprovalReceiverDebug(
         'authoritative-sync-complete',

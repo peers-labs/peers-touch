@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Browser proof for the approved Peers Agent Chat scope and reference-client interaction benchmark.
+// Browser proof for the approved Peers Agent Chat scope and reference interaction benchmark.
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
@@ -24,6 +24,8 @@ fs.mkdirSync(evidence, { recursive: true });
 const url = process.env.AGENT_CHAT_URL || 'http://127.0.0.1:4173/?state=agent-chat';
 const sourcePaths = [
   'packages/prototypes/desktop/shell/src/AgentChatPage.tsx',
+  'packages/prototypes/desktop/shell/src/AgentCommandPalette.tsx',
+  'packages/prototypes/desktop/shell/src/TurnAttribution.tsx',
   'packages/prototypes/desktop/shell/src/Settings.tsx',
   'packages/prototypes/desktop/features/agent/src/panels/AgentProfile.tsx',
   'packages/prototypes/desktop/shared/PrototypeAgentAvatar.tsx',
@@ -50,7 +52,7 @@ const source = {
 const results = [];
 const errors = [];
 const operationCoverageByCheck = {
-  'Agent roster keeps stable ownership and reference-client-style row actions': [
+  'Agent roster keeps stable ownership and reference-style row actions': [
     'agent.roster.persistent',
     'agent.search',
     'agent.row.switches-to-chat',
@@ -127,6 +129,15 @@ const operationCoverageByCheck = {
     'composer.topic-model-override',
     'composer.topic-model-restore',
     'composer.slash',
+    'composer.command.help',
+    'composer.command.tools',
+    'composer.command.skills',
+    'composer.command.clear-preserves-history',
+    'composer.command.typing-slash-opens',
+    'composer.command.stale-disables-capabilities',
+    'composer.command.unavailable-disables-capabilities',
+    'composer.command.text-chat-survives-stale',
+    'composer.command.narrow-palette',
     'composer.attachment.choose',
     'composer.attachment.remove',
     'composer.attachment.readback',
@@ -150,6 +161,12 @@ const operationCoverageByCheck = {
     'artifact.basic-scope-only',
     'header.no-export-share-link',
     'turn.no-developer-inspectors',
+    'turn.attribution.compact-badges',
+    'turn.attribution.detail-included',
+    'turn.attribution.detail-omitted',
+    'turn.attribution.detail-truncated',
+    'turn.attribution.version-pinned',
+    'turn.attribution.current-binding-does-not-rewrite-history',
   ],
   'Running turns keep the draft without exposing a queue': [
     'turn.single-active-owner',
@@ -182,7 +199,7 @@ const operationCoverageByCheck = {
     'topic.switch',
     'draft.topic-restore',
   ],
-  'Wide, compact and mobile topology matches observed reference-client behavior': [
+  'Wide, compact and mobile topology matches observed reference behavior': [
     'layout.wide-roster-topic-chat',
     'layout.compact-rails',
     'layout.mobile-chat',
@@ -207,7 +224,7 @@ function operationCoverage() {
 async function check(name, run) {
   await run();
   results.push(name);
-  console.log(`PASS ${name}`);
+  process.stdout.write(`PASS ${name}\n`);
 }
 
 function attachErrorCapture(page) {
@@ -276,7 +293,7 @@ async function main() {
       exact: true,
     });
 
-    await check('Agent roster keeps stable ownership and reference-client-style row actions', async () => {
+    await check('Agent roster keeps stable ownership and reference-style row actions', async () => {
       assert.equal(Math.round((await roster().boundingBox()).width), 230);
       assert.equal(Math.round((await topics().boundingBox()).width), 238);
       await roster().getByRole('textbox', { name: 'Search agents' }).fill('Second');
@@ -444,6 +461,16 @@ async function main() {
         true,
       );
       await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+      await page.waitForFunction((name) => {
+        const trigger = document.querySelector(`[data-agent-actions-for="${name}"]`);
+        return trigger === document.activeElement;
+      }, await page.evaluate((name) => {
+        const order = JSON.parse(localStorage.getItem('agent-chat-agent-order') || '[]');
+        return order.find((candidate) => {
+          const value = JSON.parse(localStorage.getItem(`agent-chat-agent-${candidate}`) || 'null');
+          return value?.name === name;
+        });
+      }, createdAgentName));
       assert.equal(
         await agentActions(createdAgentName).evaluate((element) => element === document.activeElement),
         true,
@@ -598,6 +625,8 @@ async function main() {
       );
       await page.keyboard.press('Escape');
       assert.equal(await addDialog.count(), 0);
+      await page.waitForFunction(() =>
+        document.activeElement?.textContent?.trim() === 'Add Provider');
       assert.equal(await addProviderButton.evaluate((element) => element === document.activeElement), true);
       await addProviderButton.click();
       addDialog = page.getByRole('dialog', { name: 'Add provider', exact: true });
@@ -769,8 +798,38 @@ async function main() {
       await root.getByRole('button', { name: 'Topic model', exact: true }).filter({ hasText: 'claude-haiku-4' }).waitFor();
       assert.match(await root.getByRole('button', { name: 'Topic model', exact: true }).innerText(), /claude-haiku-4/);
       await root.getByRole('button', { name: 'Commands and Skills', exact: true }).click();
-      await page.getByRole('menuitem', { name: 'Enable extensions', exact: true }).waitFor();
+      let commandPalette = page.getByRole('menu', { name: 'Commands and Skills', exact: true });
+      await commandPalette.waitFor();
+      await root.screenshot({ path: path.join(evidence, '04-command-palette-empty.png') });
+      for (const command of ['/help', '/tools', '/skills', '/clear']) {
+        assert.equal(
+          await commandPalette.getByRole('menuitem').filter({ hasText: command }).count(),
+          1,
+        );
+      }
+      await commandPalette.getByRole('menuitem').filter({ hasText: '/help' }).click();
+      await commandPalette.getByText('Visibility never grants Tool authority or bypasses approval.', { exact: false }).waitFor();
+      await commandPalette.getByRole('button', { name: 'Back to all commands', exact: true }).click();
+      await commandPalette.getByRole('menuitem').filter({ hasText: '/tools' }).click();
+      await commandPalette.getByText('No Tools in this snapshot.', { exact: true }).waitFor();
+      await commandPalette.getByRole('button', { name: 'Back to all commands', exact: true }).click();
+      await commandPalette.getByRole('menuitem').filter({ hasText: '/skills' }).click();
+      await commandPalette.getByText('No Skills in this snapshot.', { exact: true }).waitFor();
+      await commandPalette.getByRole('button', { name: 'Back to all commands', exact: true }).click();
+      await commandPalette.getByRole('menuitem').filter({ hasText: '/clear' }).click();
+      await composer().waitFor();
+      assert.equal(await topics().getByRole('button', { name: 'Manual scope title', exact: true }).count(), 1);
+
+      await composer().fill('/');
+      commandPalette = page.getByRole('menu', { name: 'Commands and Skills', exact: true });
+      await commandPalette.waitFor();
       await page.keyboard.press('Escape');
+      assert.equal(
+        await root.getByRole('button', { name: 'Commands and Skills', exact: true })
+          .evaluate((element) => element === document.activeElement),
+        true,
+      );
+      await composer().fill('');
 
       const chooser = page.waitForEvent('filechooser');
       await root.getByRole('button', { name: 'Upload file', exact: true }).click();
@@ -782,6 +841,51 @@ async function main() {
       await send('Read the attached brief');
       await finish();
       await root.locator('[aria-label="Message attachments"]').getByText('brief.txt', { exact: true }).waitFor();
+      const attachmentAnswer = root.locator('.pt-assistant-row').last();
+      await attachmentAnswer.getByRole('button', { name: /Attachment: brief.txt/ }).waitFor();
+      await attachmentAnswer.getByRole('button', { name: /Tool:/ }).waitFor();
+
+      const projectionContext = await browser.newContext({ viewport: { width: 1180, height: 820 } });
+      await projectionContext.addInitScript(() => {
+        localStorage.clear();
+        localStorage.setItem('agent-profile-assistant-extensions', JSON.stringify({
+          bound: ['skill.meeting-digest', 'mcp.integrated-browser'],
+          enabled: ['skill.meeting-digest', 'mcp.integrated-browser'],
+        }));
+      });
+      for (const state of ['ready', 'stale', 'unavailable']) {
+        const projectionPage = await projectionContext.newPage();
+        attachErrorCapture(projectionPage);
+        await projectionPage.goto(`${url}${url.includes('?') ? '&' : '?'}review=1&agentCapabilityState=${state}`, {
+          waitUntil: 'networkidle',
+        });
+        const projectionRoot = projectionPage.getByTestId('desktop-shell-agent-chat');
+        await projectionRoot.getByRole('button', { name: 'Commands and Skills', exact: true }).click();
+        const projectionPalette = projectionPage.getByRole('menu', { name: 'Commands and Skills', exact: true });
+        await projectionPalette.waitFor();
+        assert.equal(
+          await projectionPalette.getByRole('menuitem').filter({ hasText: 'Meeting digest' }).isDisabled(),
+          state !== 'ready',
+        );
+        assert.equal(
+          await projectionPalette.getAttribute('data-capability-projection-state'),
+          state,
+        );
+        if (state === 'ready' || state === 'stale' || state === 'unavailable') {
+          await projectionRoot.screenshot({
+            path: path.join(evidence, `04-command-palette-${state}.png`),
+          });
+        }
+        await projectionPage.keyboard.press('Escape');
+        const projectionComposer = projectionRoot.getByRole('textbox', { name: /^Message / });
+        await projectionComposer.fill(`Text chat remains available while ${state}`);
+        assert.equal(
+          await projectionRoot.getByRole('button', { name: 'Send message', exact: true }).isEnabled(),
+          true,
+        );
+        await projectionPage.close();
+      }
+      await projectionContext.close();
     });
 
     await check('Conversation preserves activity, copy, quick reply and basic artifacts', async () => {
@@ -820,12 +924,38 @@ async function main() {
       assert.notEqual(await root.locator('[data-conversation-search-match="true"]').getAttribute('data-message-id'), firstMatchId);
       await root.screenshot({ path: path.join(evidence, '05-conversation-search.png') });
       await conversationHeader.getByRole('button', { name: 'Close conversation search', exact: true }).click();
+      await page.waitForFunction(() =>
+        document.activeElement?.getAttribute('aria-label') === 'Search conversation');
       assert.equal(await conversationSearchButton.evaluate((element) => element === document.activeElement), true);
 
       const assistant = root.locator('.pt-assistant-row').last();
       const activity = assistant.getByRole('button', { name: /thought|command/ });
       await activity.click();
       assert.equal(await activity.getAttribute('aria-expanded'), 'true');
+
+      await assistant.getByRole('button', { name: /Memory: Working preferences/ }).waitFor();
+      await assistant.getByRole('button', { name: /Knowledge: Workspace architecture notes/ }).waitFor();
+      await assistant.getByRole('button', { name: 'Turn sources', exact: true }).click();
+      const attributionDetail = assistant.getByRole('region', {
+        name: 'Historical Turn source details',
+        exact: true,
+      });
+      await attributionDetail.waitFor();
+      assert.match(await attributionDetail.innerText(), /Included/);
+      assert.match(await attributionDetail.innerText(), /Omitted/);
+      assert.match(await attributionDetail.innerText(), /Partially included/);
+      assert.match(await attributionDetail.innerText(), /Pinned to this response/);
+      const historicalSkill = attributionDetail.locator('[data-attribution-detail-kind="skill"]');
+      const historicalSkillText = await historicalSkill.innerText();
+      assert.match(historicalSkillText, /No Skill selected/);
+      await page.evaluate(() => {
+        localStorage.setItem('agent-profile-assistant-extensions', JSON.stringify({
+          bound: ['skill.meeting-digest'],
+          enabled: ['skill.meeting-digest'],
+        }));
+      });
+      assert.equal(await historicalSkill.innerText(), historicalSkillText);
+      await root.screenshot({ path: path.join(evidence, '05-turn-attribution-detail.png') });
 
       await context.grantPermissions(['clipboard-read', 'clipboard-write']);
       await assistant.getByRole('button', { name: 'Copy', exact: true }).click();
@@ -946,7 +1076,7 @@ async function main() {
       assert.equal(await composer().inputValue(), 'Topic-owned draft');
     });
 
-    await check('Wide, compact and mobile topology matches observed reference-client behavior', async () => {
+    await check('Wide, compact and mobile topology matches observed reference behavior', async () => {
       await page.setViewportSize({ width: 1600, height: 1000 });
       await page.waitForFunction(() => document.querySelector('[data-testid="desktop-shell-agent-chat"]')?.clientWidth > 1040);
       let geometry = await root.evaluate((element) => ({
@@ -1008,6 +1138,8 @@ async function main() {
       assert.equal(await mobileMore.evaluate((element) => element === document.activeElement), true);
       await root.screenshot({ path: path.join(evidence, '07-mobile-left-agent-drawer.png') });
       await drawer.getByRole('button', { name: 'Close Agent picker', exact: true }).click();
+      await page.waitForFunction(() =>
+        document.activeElement?.getAttribute('aria-label') === 'Switch Agent');
       assert.equal(await switchAgent.evaluate((element) => element === document.activeElement), true);
 
       geometry = await root.evaluate((element) => ({
@@ -1018,6 +1150,17 @@ async function main() {
       assert.equal(Math.round(geometry.topics), Math.round(rootBox.width));
       await topics().getByRole('button', { name: 'Start new topic', exact: true }).click();
       await root.getByRole('button', { name: 'Back to topics', exact: true }).waitFor();
+
+      await root.getByRole('button', { name: 'Commands and Skills', exact: true }).click();
+      const mobilePalette = page.getByRole('menu', { name: 'Commands and Skills', exact: true });
+      const [mobileRootBox, mobilePaletteBox] = await Promise.all([
+        root.boundingBox(),
+        mobilePalette.boundingBox(),
+      ]);
+      assert.ok(mobilePaletteBox.x >= mobileRootBox.x);
+      assert.ok(mobilePaletteBox.x + mobilePaletteBox.width <= mobileRootBox.x + mobileRootBox.width);
+      await root.screenshot({ path: path.join(evidence, '08-mobile-command-palette.png') });
+      await page.keyboard.press('Escape');
 
       await page.emulateMedia({ reducedMotion: 'reduce' });
       await composer().fill('Reduced motion turn');
@@ -1039,17 +1182,11 @@ async function main() {
 main().then(() => {
   const operations = operationCoverage();
   fs.writeFileSync(path.join(evidence, 'results.json'), JSON.stringify({
-    classification: 'PROTOTYPE_AGENT_CHAT_SCOPE_AND_REFERENCE_CLIENT_PARITY_CHECK',
+    classification: 'PROTOTYPE_AGENT_CHAT_SCOPE_AND_REFERENCE_PARITY_CHECK',
     benchmark: {
-      runtime: 'reference client #6 at http://127.0.0.1:8436',
-      evidence: [
-        '/tmp/reference-client-1440-chat.png',
-        '/tmp/reference-client-roster-expanded.png',
-        '/tmp/reference-client-430-topics-ready.png',
-        '/tmp/reference-client-430-agent-picker-ready.png',
-        '/tmp/reference-client-430-agent-menu.png',
-        '/tmp/reference-client-430-agent-profile.png',
-      ],
+      runtime: 'Historical reference instance #6 at http://127.0.0.1:8436',
+      historicalEvidenceInventory:
+        'https://github.com/peers-labs/peers-touch/blob/e26b81c4cf3c5b9d0b920e9d1a434a751cfba208/docs/architecture/engineering/prototypes/desktop-shell/agent-chat-coverage.md#L121-L146',
     },
     source,
     coverage: {
@@ -1060,7 +1197,7 @@ main().then(() => {
     results,
     errors,
   }, null, 2));
-  console.log(`Evidence: ${evidence}`);
+  process.stdout.write(`Evidence: ${evidence}\n`);
 }).catch((error) => {
   fs.writeFileSync(path.join(evidence, 'failure.json'), JSON.stringify({
     source,

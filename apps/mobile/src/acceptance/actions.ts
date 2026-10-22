@@ -74,7 +74,7 @@ import {
   requestPermission,
   type PermissionKind,
 } from '../runtimes/nativeLifecycleBridge';
-import { reconcileActiveMessagingSession } from '../runtimes/messagingRuntime';
+import { wakeActiveMessagingSession } from '../runtimes/messagingRuntime';
 import { dispatchOpenContactChat } from '../features/social/contactCommands';
 import { mobileCallManager } from '../features/call/callState';
 import {
@@ -933,7 +933,7 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
   },
 
   'messaging.reconcile': async () => {
-    return reconcileActiveMessagingSession();
+    return wakeActiveMessagingSession();
   },
 
   'messaging.command.read': async (input) => messagingCommandStatus({

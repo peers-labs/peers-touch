@@ -5,10 +5,8 @@ import (
 	"time"
 )
 
-// Skill maps to the agent_skills table.
-// 2026-04-11 — Added Enabled field: disabled skills are excluded from
-//
-//	BuildSkillIndex, allowing temporary deactivation without deletion.
+// Skill maps immutable Skill content and metadata to the agent_skills table.
+// AgentCapabilityBinding exclusively owns whether a Skill is enabled.
 type Skill struct {
 	ID          string          `gorm:"primaryKey;type:varchar(36)"`
 	AgentID     string          `gorm:"not null;type:varchar(36);index:idx_skills_agent_id;uniqueIndex:idx_skills_agent_name,priority:1"`
@@ -21,7 +19,6 @@ type Skill struct {
 	Source      *string         `gorm:"type:text"`
 	TrustLevel  string          `gorm:"not null;type:varchar(20);default:'community'"`
 	ScanVerdict *string         `gorm:"type:varchar(20)"`
-	Enabled     bool            `gorm:"not null;default:true"`
 	Version     int             `gorm:"not null;default:1"`
 	ViewCount   int             `gorm:"not null;default:0"`
 	ApplyCount  int             `gorm:"not null;default:0"`

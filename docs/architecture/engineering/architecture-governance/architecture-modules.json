@@ -1,6 +1,6 @@
 {
   "kind": "peers-touch-architecture-module-registry",
-  "schemaVersion": 3,
+  "schemaVersion": 5,
   "taxonomyIndexes": [
     "docs/architecture/domains/README.md",
     "docs/architecture/domains/applets/README.md",
@@ -36,6 +36,7 @@
     "docs/architecture/engineering/quality",
     "docs/architecture/engineering/toolchain",
     "docs/architecture/platform/applet-runtime",
+    "docs/architecture/platform/client/cross-client-runtime",
     "docs/architecture/platform/client/frontend-runtime",
     "docs/architecture/platform/client/mobile",
     "docs/architecture/platform/runtime/node-connectivity/relay-attachment",
@@ -72,7 +73,9 @@
         "AMG-D02",
         "AMG-D03",
         "AMG-D04",
-        "AMG-D05"
+        "AMG-D05",
+        "AMG-D06",
+        "AMG-D07"
       ],
       "governedPaths": [
         "docs/architecture/engineering/architecture-governance",
@@ -166,7 +169,8 @@
         "DWF-D39",
         "DWF-D40",
         "DWF-D46",
-        "DWF-D47"
+        "DWF-D47",
+        "DWF-D48"
       ],
       "governedPaths": [
         "docs/architecture/engineering/development-workflow",
@@ -196,6 +200,7 @@
         "tooling/scripts/plan/planctl.mjs",
         "tooling/skills/pt-acceptance-gap-detector",
         "tooling/skills/pt-agent-development",
+        "tooling/skills/pt-architecture-execution-methodology",
         "tooling/skills/pt-completion-auditor",
         "tooling/skills/pt-context-anchor",
         "tooling/skills/pt-dev-runtime-handoff",
@@ -368,7 +373,8 @@
         "LDCP-D16",
         "LDCP-D17",
         "LDCP-D19",
-        "LDCP-D21"
+        "LDCP-D21",
+        "LDCP-D22"
       ],
       "governedPaths": [
         "docs/architecture/engineering/local-dev",
@@ -638,7 +644,9 @@
           "consumers": [
             "apps/station/frame/core/federation",
             "apps/desktop/src-tauri/src/infrastructure/station",
-            "apps/mobile/src-tauri/src/runtime/station_route.rs"
+            "apps/mobile/src-tauri/src/runtime/station_route.rs",
+            "apps/desktop/src-tauri/Cargo.toml",
+            "apps/mobile/src-tauri/Cargo.toml"
           ],
           "allowedDependencies": [
             "model.domain.peer",
@@ -652,7 +660,8 @@
             "NCP-G03",
             "NCP-G07",
             "NCP-G08"
-          ]
+          ],
+          "reuseLayer": "portable-rust-core"
         },
         {
           "id": "station.connectivity.node-authorization",
@@ -754,8 +763,11 @@
           ],
           "consumers": [
             "apps/desktop/src-tauri/src/application/x_config",
-            "apps/mobile/src-tauri/src/runtime/x_config.rs"
+            "apps/mobile/src-tauri/src/runtime/x_config.rs",
+            "apps/desktop/src-tauri/Cargo.toml",
+            "apps/mobile/src-tauri/Cargo.toml"
           ],
+          "reuseLayer": "portable-rust-core",
           "allowedDependencies": [
             "station.connectivity.node-authorization",
             "go.crypto"
@@ -955,6 +967,319 @@
       "externalCapabilityRegistries": []
     },
     {
+      "id": "cross-client-runtime",
+      "root": "docs/architecture/platform/client/cross-client-runtime",
+      "status": "active",
+      "owner": "Client Platform Team",
+      "characteristics": {
+        "protocol": true,
+        "stateMachine": false,
+        "persistence": true,
+        "ownership": true,
+        "moduleLayout": true,
+        "crossRuntime": true,
+        "integration": true
+      },
+      "requiredDocuments": [
+        "README.md",
+        "design.md",
+        "decisions.md",
+        "data-model.md",
+        "module-layout.md",
+        "integration.md"
+      ],
+      "decisionIds": [
+        "CCR-D01",
+        "CCR-D02",
+        "CCR-D03",
+        "CCR-D04",
+        "CCR-D05",
+        "CCR-D06",
+        "CCR-D07",
+        "CCR-D08",
+        "CCR-D09",
+        "CCR-D10",
+        "CCR-D11",
+        "CCR-D12",
+        "CCR-D13"
+      ],
+      "governedPaths": [
+        "docs/architecture/platform/client/cross-client-runtime",
+        "pnpm-workspace.yaml",
+        "apps/desktop/package.json",
+        "apps/mobile/package.json",
+        "apps/desktop/src-tauri/Cargo.toml",
+        "apps/mobile/src-tauri/Cargo.toml",
+        "apps/desktop/src/components/chat/chatPresentationPolicy.ts",
+        "apps/mobile/src/pages/chat/chatPresentationPolicy.ts",
+        "packages/client-chat-core/package.json",
+        "packages/client-chat-core/src/chatStorageProjection.ts",
+        "packages/client-chat-core/src/wireCodec.ts",
+        "packages/client-media-security/package.json",
+        "packages/client-media-security/src/index.ts",
+        "packages/client-storage/package.json",
+        "packages/client-storage/src/index.ts",
+        "packages/messaging-core/Cargo.toml",
+        "packages/messaging-native-filesystem/Cargo.toml",
+        "packages/secure-content-core/Cargo.toml",
+        "packages/station-trust/Cargo.toml"
+      ],
+      "capabilities": [
+        {
+          "id": "client.reuse.admission",
+          "owner": "client.platform",
+          "contractRoots": [
+            "docs/architecture/platform/client/cross-client-runtime"
+          ],
+          "consumers": [
+            "apps/desktop/package.json",
+            "apps/mobile/package.json",
+            "apps/desktop/src-tauri/Cargo.toml",
+            "apps/mobile/src-tauri/Cargo.toml"
+          ],
+          "allowedDependencies": [
+            "architecture.module.validate",
+            "cargo.manifest",
+            "pnpm.workspace"
+          ],
+          "evidenceGates": [
+            "CCR-G09",
+            "CCR-G10",
+            "CCR-G11",
+            "CCR-G12"
+          ]
+        },
+        {
+          "id": "client.runtime.portability",
+          "owner": "client.platform",
+          "contractRoots": [
+            "docs/architecture/platform/client/cross-client-runtime"
+          ],
+          "consumers": [
+            "apps/desktop/src-tauri/Cargo.toml",
+            "apps/mobile/src-tauri/Cargo.toml"
+          ],
+          "allowedDependencies": [
+            "model.contracts",
+            "station.business",
+            "frontend-runtime",
+            "mobile-shell",
+            "messaging-platform",
+            "secure-content"
+          ],
+          "evidenceGates": [
+            "CCR-G01",
+            "CCR-G02",
+            "CCR-G03",
+            "CCR-G04",
+            "CCR-G05",
+            "CCR-G06",
+            "CCR-G07",
+            "CCR-G08",
+            "unified-client-android-host-e2e",
+            "unified-client-ios-host-e2e",
+            "unified-client-architecture-aggregate"
+          ]
+        },
+        {
+          "id": "client.chat.headless",
+          "owner": "client.chat.core",
+          "contractRoots": [
+            "packages/client-chat-core/package.json",
+            "packages/client-chat-core/src/chatStorageProjection.ts",
+            "packages/client-chat-core/src/wireCodec.ts"
+          ],
+          "consumers": [
+            "apps/desktop/package.json",
+            "apps/mobile/package.json"
+          ],
+          "allowedDependencies": [
+            "client.storage.headless",
+            "model.contracts"
+          ],
+          "evidenceGates": [
+            "CCR-G09",
+            "client-chat-core-contract",
+            "unified-client-shared-semantics"
+          ],
+          "reuseLayer": "shared-ts-core"
+        },
+        {
+          "id": "client.chat.presentation.desktop",
+          "owner": "client.desktop.presentation",
+          "contractRoots": [
+            "apps/desktop/src/components/chat/chatPresentationPolicy.ts"
+          ],
+          "consumers": [
+            "apps/desktop/src/components/chat/ChatComposer.tsx",
+            "apps/desktop/src/components/chat/ChatMessageArea.tsx",
+            "apps/desktop/src/components/chat/ChatThreadPanel.tsx"
+          ],
+          "allowedDependencies": [
+            "client.chat.headless"
+          ],
+          "evidenceGates": [
+            "CCR-G11",
+            "unified-client-shared-semantics"
+          ],
+          "reuseLayer": "presentation-policy"
+        },
+        {
+          "id": "client.chat.presentation.mobile",
+          "owner": "client.mobile.presentation",
+          "contractRoots": [
+            "apps/mobile/src/pages/chat/chatPresentationPolicy.ts"
+          ],
+          "consumers": [
+            "apps/mobile/src/pages/ChatPage.tsx"
+          ],
+          "allowedDependencies": [
+            "client.chat.headless"
+          ],
+          "evidenceGates": [
+            "CCR-G05",
+            "CCR-G11",
+            "unified-client-shared-semantics"
+          ],
+          "reuseLayer": "presentation-policy"
+        },
+        {
+          "id": "client.media-security.headless",
+          "owner": "client.media.security",
+          "contractRoots": [
+            "packages/client-media-security/package.json",
+            "packages/client-media-security/src/index.ts"
+          ],
+          "consumers": [
+            "apps/desktop/package.json",
+            "apps/mobile/package.json"
+          ],
+          "allowedDependencies": [
+            "model.contracts",
+            "web.crypto"
+          ],
+          "evidenceGates": [
+            "CCR-G09",
+            "client-media-security-contract",
+            "unified-client-shared-semantics"
+          ],
+          "reuseLayer": "shared-ts-core"
+        },
+        {
+          "id": "client.storage.headless",
+          "owner": "client.storage",
+          "contractRoots": [
+            "packages/client-storage/package.json",
+            "packages/client-storage/src/index.ts"
+          ],
+          "consumers": [
+            "apps/desktop/package.json",
+            "apps/mobile/package.json"
+          ],
+          "allowedDependencies": [
+            "web.storage"
+          ],
+          "evidenceGates": [
+            "CCR-G09",
+            "client-storage-contract",
+            "unified-client-shared-semantics"
+          ],
+          "reuseLayer": "shared-ts-core"
+        },
+        {
+          "id": "client.messaging.portable-core",
+          "owner": "messaging.platform",
+          "contractRoots": [
+            "packages/messaging-core/Cargo.toml"
+          ],
+          "consumers": [
+            "apps/desktop/src-tauri/Cargo.toml",
+            "apps/mobile/src-tauri/Cargo.toml"
+          ],
+          "allowedDependencies": [
+            "model.contracts",
+            "secure-content-core",
+            "openmls"
+          ],
+          "evidenceGates": [
+            "CCR-G02",
+            "CCR-G09",
+            "messaging-platform-contract",
+            "unified-client-messaging-core-contract",
+            "unified-client-messaging-e2e",
+            "messaging-owner-hard-cut-zero"
+          ],
+          "reuseLayer": "portable-rust-core"
+        },
+        {
+          "id": "client.messaging.native-filesystem",
+          "owner": "messaging.platform",
+          "contractRoots": [
+            "packages/messaging-native-filesystem/Cargo.toml"
+          ],
+          "consumers": [
+            "apps/desktop/src-tauri/Cargo.toml",
+            "apps/mobile/src-tauri/Cargo.toml"
+          ],
+          "allowedDependencies": [
+            "client.messaging.portable-core",
+            "rustix"
+          ],
+          "evidenceGates": [
+            "CCR-G03",
+            "CCR-G09",
+            "messaging-owner-hard-cut-zero"
+          ],
+          "reuseLayer": "platform-adapter"
+        },
+        {
+          "id": "client.secure-content.portable-core",
+          "owner": "secure-content",
+          "contractRoots": [
+            "packages/secure-content-core/Cargo.toml"
+          ],
+          "consumers": [
+            "apps/desktop/src-tauri/Cargo.toml",
+            "apps/mobile/src-tauri/Cargo.toml"
+          ],
+          "allowedDependencies": [
+            "model.contracts",
+            "rust.crypto"
+          ],
+          "evidenceGates": [
+            "CCR-G02",
+            "CCR-G09",
+            "secure-content-portable-core",
+            "unified-client-secure-content-e2e",
+            "secure-content-owner-hard-cut-zero"
+          ],
+          "reuseLayer": "portable-rust-core"
+        },
+        {
+          "id": "client.station-trust.portable-core",
+          "owner": "station.access",
+          "contractRoots": [
+            "packages/station-trust/Cargo.toml"
+          ],
+          "consumers": [
+            "apps/desktop/src-tauri/Cargo.toml",
+            "apps/mobile/src-tauri/Cargo.toml"
+          ],
+          "allowedDependencies": [
+            "model.domain.peer",
+            "libp2p.identity"
+          ],
+          "evidenceGates": [
+            "CCR-G02",
+            "CCR-G09",
+            "station-identity-contract"
+          ],
+          "reuseLayer": "portable-rust-core"
+        }
+      ],
+      "externalCapabilityRegistries": []
+    },
+    {
       "id": "mobile-social-parity",
       "root": "docs/architecture/platform/client/mobile/social-parity",
       "status": "active",
@@ -1047,7 +1372,7 @@
         "persistence": true,
         "ownership": true,
         "moduleLayout": true,
-        "crossRuntime": false,
+        "crossRuntime": true,
         "integration": true
       },
       "requiredDocuments": [
@@ -1087,7 +1412,8 @@
         "SC-D26",
         "SC-D27",
         "SC-D28",
-        "SC-D29"
+        "SC-D29",
+        "SC-D30"
       ],
       "governedPaths": [
         "docs/architecture/shared/security/secure-content"
@@ -1095,5 +1421,6 @@
       "capabilities": [],
       "externalCapabilityRegistries": []
     }
-  ]
+  ],
+  "reuseDivergences": []
 }

@@ -1,8 +1,8 @@
 # Agent 架构
 
 > **Status**: active
-> **Version**: v1.5
-> **Created**: 2026-04-11 | **Updated**: 2026-10-03
+> **Version**: v1.6
+> **Created**: 2026-04-11 | **Updated**: 2026-10-20
 > **Owner**: Peers-Touch Agent Team
 > **Module**: `apps/station/app/subserver/agent/`, `apps/desktop/src-tauri/src/application/agent_turn/`, `apps/desktop/src-tauri/src/application/mcp/`
 
@@ -25,7 +25,7 @@ WebView renderer、Desktop Rust、Station 的 Agent 能力边界、设计目标�
 
 本架构受 `external/hermes-agent` 启发，适配 peers-touch 的 Station + Tauri + Desktop 三层体系。核心理念：Agent 在运行中积累知识资产（Memory + Skill），通过信任评分和行为度量评估知识质量，通过精准归因和自动修正回收有害知识。
 
-2026-06 起，Agent 产品体验重构以 `external/lobehub` 作为 UI / UX / Tool / Skill / MCP 能力蓝本，但实现必须遵守 Peers-Touch 的 Client -> Model -> Station 边界。
+2026-06 起，Agent 产品体验重构以 `external/lobehub` 作为 UI / UX / Tool / Skill / MCP 能力蓝本，但实现必须遵守 Peers-Touch 的 Client ↔ Station 运行时边界与共享 Model 契约语义。
 
 ---
 
@@ -58,21 +58,30 @@ WebView renderer、Desktop Rust、Station 的 Agent 能力边界、设计目标�
 ## 4. 执行计划
 
 当前执行入口为
-[Linux Desktop 与 Agent 深度闭环](./execution-plans/20261020-agent-depth-linux-desktop/plan.md)：
-在不增加基准客户端 CUT 能力的前提下，完成 Linux 用户态 Native 安装、
+[Linux Desktop 与 Agent 深度闭环 V2](./execution-plans/20261020-agent-depth-linux-desktop-v2/plan.md)：
+在不增加参考工程 CUT 能力的前提下，完成 Linux 用户态 Native 安装、
 类型化 AgentDefinition、Station-backed Commands & Skills 和 Turn Attribution。
 
+[V1 Plan](./execution-plans/20261020-agent-depth-linux-desktop/plan.md)
+已由 findings-first review 取代；V2 拆分 AgentDefinition/Prompt closure、补充产品
+和原型确认门，并冻结 XDG 安装与 North Star 指标。
+
 [Agent Chat Production Acceptance](./execution-plans/20261018-agent-chat-acceptance/plan.md)
-已由 Owner 于 2026-10-20 停止；已通过的 Agent Core Lifecycle 证据保留，
+已取消并于 2026-10-22 归档；已通过的 Agent Core Lifecycle 证据保留，
 未执行的 Profile/Models/Topics/Conversation/Layout/Workspace Gate 仍为
 `UNPROVEN`，不迁移为新 Plan 的完成证据。
+
+本周之前的 [Lark 能力闭环计划](./execution-plans/20261015-lark-capability-closure/plan.md)
+也已于 2026-10-22 取消并归档；现有实现和业务 Gate 保留，未证明能力仍为 `UNPROVEN`。
 
 执行计划独立于架构文档，按依赖顺序排列。状态标记：`done` = 代码已实现并跑通，`code` = 代码已编写但未端到端验证，`pending` = 未开始。
 
 | 优先级 | 状态 | 文档 | 定位 |
 |---|---|---|---|
-| Current | approved | [Linux Desktop 与 Agent 深度闭环](./execution-plans/20261020-agent-depth-linux-desktop/plan.md) | Linux `desktop-install` 平台 adapter、AgentDefinition hard cut、Slash command 与 Context attribution 的一体化 Native 闭环 |
-| Stopped | cancelled / partial evidence retained | [Agent Chat Production Acceptance](./execution-plans/20261018-agent-chat-acceptance/plan.md) | Owner 于 2026-10-20 停止；仅保留已通过的 Agent Core Lifecycle 证据，其余 Gate 不作完成声明 |
+| Current | approved | [Linux Desktop 与 Agent 深度闭环 V2](./execution-plans/20261020-agent-depth-linux-desktop-v2/plan.md) | Linux `desktop-install`、类型化 Agent truth、Commands、Attribution 与 Native North Star 闭环 |
+| Superseded | superseded by V2 | [Linux Desktop 与 Agent 深度闭环 V1](./execution-plans/20261020-agent-depth-linux-desktop/plan.md) | 保留首次冻结版本与 review 输入，不再作为执行入口 |
+| Closed | cancelled / partial evidence retained | [Agent Chat Production Acceptance](./execution-plans/20261018-agent-chat-acceptance/plan.md) | 2026-10-22 归档；仅保留已通过的 Agent Core Lifecycle 证据，其余 Gate 不作完成声明 |
+| Closed | cancelled / unproven scope retained | [Lark 能力闭环计划](./execution-plans/20261015-lark-capability-closure/plan.md) | 2026-10-22 按用户指令取消；不作为执行或 PR 完成度输入 |
 | Prepared | prepared | [MCP Dual Runtime](./execution-plans/20261003-mcp-dual-runtime/plan.md) | Station-owned MCP 配置，Station-local 与 Desktop-local 双执行位置 hard cut；不覆盖当前 ADL Plan |
 | Completed | completed | [Minimum Usable Agent Chat](./execution-plans/20261001-minimum-usable-agent-chat/plan.md) | Direct Model Agent Chat、Skill/MCP 注入、最终回复与重启恢复基线 |
 | Historical | completed / remaining scope descoped | [Modern Chat Agent V2 Alignment Plan Package](./execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md) | 2026-10-01 由 Product Owner 强制停止；未完成的外部 runtime、419-cell remediation 和 aggregate proof 全部退出首版路径 |

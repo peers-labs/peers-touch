@@ -439,22 +439,20 @@ message AckEventsResponse {
 2. 生成共享 / 服务端需要的目标产物
 3. 生成 Go 代码到 `apps/station/...`（路径由 `go_package` 决定）
 
-### 6.2 Kotlin + Swift 生成
+### 6.2 Mobile TypeScript 生成
 
 ```bash
-# 全部生成
-./tooling/scripts/proto-gen-mobile.sh
-
-# 仅 Kotlin
-./tooling/scripts/proto-gen-mobile.sh kotlin
-
-# 仅 Swift
-./tooling/scripts/proto-gen-mobile.sh swift
+./tooling/scripts/proto-gen-mobile.sh web
 ```
 
 输出路径：
-- Kotlin: `apps/mobile/android/app/src/main/java/`
-- Swift: `apps/mobile/ios/PeersTouch/Core/Proto/`
+
+- TypeScript: `apps/mobile/src/gen/proto/`
+
+Mobile Rust 在 `apps/mobile/src-tauri/` 中通过 `prost-build` 或模块拥有的
+生成边界消费 Proto。Android/iOS native plugin 只有在 OS capability
+contract 直接需要共享类型时才生成对应 binding；它们不维护独立 Mobile
+业务模型。
 
 ### 6.3 Desktop Rust 生成
 
@@ -492,7 +490,7 @@ Desktop TypeScript 当前消费生成产物的位置为：
 
 ## 7. 强制规则
 
-1. **所有跨平台数据模型必须先定义 .proto** -- 绝对不允许手写模型类（Go struct / Dart class / Rust struct / Kotlin data class / Swift struct）来替代 proto 生成
+1. **所有跨平台数据模型必须先定义 .proto** -- 绝对不允许手写模型类（Go struct / Rust struct / TypeScript interface / Kotlin data class / Swift struct）来替代 proto 生成
 2. **绝对不允许编辑生成文件** -- `.pb.go`、Desktop TS 生成文件、`prost` 生成的 `.rs` 文件以及移动端生成文件均为生成产物，修改会在下次 build 时被覆盖
 3. **新 proto 文件必须遵守命名和 package 规范** -- 参照本文档第 1、2 节
 4. **提交 .proto 源文件** -- 生成文件可能在 `.gitignore` 中，但 `.proto` 必须提交
@@ -558,7 +556,7 @@ message MarkReadResponse {
 }
 ```
 
-### 第二步：生成 Go + Dart 代码
+### 第二步：生成共享 / Station 代码
 
 ```bash
 ./model/build.sh
@@ -567,7 +565,7 @@ message MarkReadResponse {
 ### 第三步：生成 Mobile 代码
 
 ```bash
-./tooling/scripts/proto-gen-mobile.sh
+./tooling/scripts/proto-gen-mobile.sh web
 ```
 
 ### 第四步：注册 Rust model module
@@ -589,5 +587,5 @@ pub mod notification {
 - Go: `cd apps/station && go build ./...`
 - TypeScript: `cd apps/desktop && pnpm run check`
 - Rust: `cd apps/desktop/src-tauri && cargo check`
-- Android: `cd apps/mobile/android && ./gradlew build`
-- iOS: Xcode build
+- Mobile shared source: `pnpm mobile:check`
+- Android/iOS: run each required source-bound native Acceptance Gate

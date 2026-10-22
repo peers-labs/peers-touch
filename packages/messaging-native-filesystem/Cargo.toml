@@ -1,0 +1,14 @@
+[package]
+name = "messaging-native-filesystem"
+version = "0.1.0"
+edition = "2021"
+description = "Native filesystem adapter for the portable Messaging Core"
+
+[dependencies]
+hex = "0.4"
+messaging-core = { path = "../messaging-core" }
+rustix = { version = "1.1", features = ["fs"] }
+sha2 = "0.10"
+
+[dev-dependencies]
+ulid = "1"

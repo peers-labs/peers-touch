@@ -14,7 +14,12 @@ import {
   verifyBoundStationRoute,
   type StationIdentityResult,
 } from '../features/station/stationConnection';
-import { restoreStationRouteBinding } from '../services/mobileCommands';
+import {
+  readStationRouteBinding,
+  refreshStationRouteBinding,
+  restoreStationRouteBinding,
+  type StationRouteRefreshProjection,
+} from '../services/mobileCommands';
 import { purgeLegacyMobileIdentityStorage } from '../storage/mobileClientStorage';
 
 interface StationRegistryPersistence {
@@ -98,26 +103,155 @@ export function createStationRegistryRuntime(
 }
 
 const stationRegistryRuntime = createStationRegistryRuntime();
-let nativeRouteBootstrapped = false;
+let routeBootstrapInFlight: Promise<StoredStationRegistry> | null = null;
+let routeRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+let routeRefreshUnsubscribe: (() => void) | null = null;
+let routeRefreshInFlight: Promise<void> | null = null;
+let routeRenewalEpoch = 0;
 
-export async function bootstrapStationRuntime(): Promise<StoredStationRegistry> {
+export function startStationRouteRenewal(): void {
+  if (routeRefreshUnsubscribe) return;
+  const epoch = ++routeRenewalEpoch;
+  const schedule = () => {
+    if (epoch !== routeRenewalEpoch) return;
+    if (routeRefreshTimer !== null) clearTimeout(routeRefreshTimer);
+    routeRefreshTimer = null;
+    const station = activeStationEntry(stationRegistryRuntime.getSnapshot());
+    const expiry = station && activeStationRoute(station)?.attestationExpiresAtUnixMs;
+    if (!expiry) return;
+    routeRefreshTimer = setTimeout(() => {
+      routeRefreshTimer = null;
+      void refreshActiveStationRoute().then(schedule, () => {
+        if (epoch === routeRenewalEpoch) {
+          routeRefreshTimer = setTimeout(schedule, 10_000);
+        }
+      });
+    }, Math.max(1000, expiry - Date.now() - 60_000));
+  };
+  routeRefreshUnsubscribe = stationRegistryRuntime.subscribe(schedule);
+  schedule();
+}
+
+export function stopStationRouteRenewal(): void {
+  ++routeRenewalEpoch;
+  routeRefreshUnsubscribe?.();
+  routeRefreshUnsubscribe = null;
+  if (routeRefreshTimer !== null) clearTimeout(routeRefreshTimer);
+  routeRefreshTimer = null;
+}
+
+async function persistBoundRoute(
+  stationPeerId: string,
+  routeId: string,
+  revision: number,
+  refreshed: StationRouteRefreshProjection,
+): Promise<StoredStationRegistry> {
+  if (
+    refreshed.binding.stationPeerId !== stationPeerId
+    || refreshed.binding.routeId !== routeId
+    || refreshed.route.stationPeerId !== stationPeerId
+    || refreshed.route.routeId !== routeId
+    || refreshed.binding.routeGeneration !== refreshed.route.routeGeneration
+    || refreshed.binding.routeRevision < revision
+  ) throw new Error('mobile.launch.stationIdentityInvalid');
+  return stationRegistryRuntime.update((current) => {
+    const selected = activeStationEntry(current);
+    if (
+      selected?.stationPeerId !== stationPeerId
+      || selected.activeRouteId !== routeId
+      || (selected.routeRevision ?? 1) !== revision
+    ) throw new Error('mobile.launch.stationRouteChanged');
+    const previous = activeStationRoute(selected);
+    if (
+      !previous
+      || previous.routeGeneration !== refreshed.route.routeGeneration
+      || previous.nodePeerId !== refreshed.route.nodePeerId
+      || previous.authorizationEpoch !== refreshed.route.authorizationEpoch
+      || (selected.pinnedStationRootPublicKey
+        && selected.pinnedStationRootPublicKey.join(',')
+          !== refreshed.route.stationRootPublicKey.join(','))
+    ) throw new Error('mobile.launch.stationIdentityInvalid');
+    return {
+      ...current,
+      entries: current.entries.map((entry) => entry !== selected ? entry : ({
+        ...entry,
+        online: true,
+        lastCheckedAt: Date.now(),
+        routeRevision: refreshed.binding.routeRevision,
+        routes: entry.routes?.map((candidate) => candidate.routeId !== routeId
+          ? candidate
+          : {
+            ...candidate,
+            ...refreshed.route,
+            lastVerifiedAt: Date.now(),
+            health: 'available' as const,
+          }),
+      })),
+    };
+  });
+}
+
+export function refreshActiveStationRoute(): Promise<void> {
+  if (routeRefreshInFlight) return routeRefreshInFlight;
+  const operation = (async () => {
+    const registry = await stationRegistryRuntime.read();
+    const station = activeStationEntry(registry);
+    const route = station && activeStationRoute(station);
+    if (!station || !route) return;
+    const revision = station.routeRevision ?? 1;
+    const current = await readStationRouteBinding();
+    const refreshed = current?.stationPeerId === station.stationPeerId
+      && current.routeId === route.routeId
+      && current.routeRevision === revision
+      ? await refreshStationRouteBinding({
+        stationPeerId: station.stationPeerId,
+        routeId: route.routeId,
+        routeRevision: revision,
+      })
+      : await restoreStationRouteBinding({
+        stationPeerId: station.stationPeerId,
+        routeId: route.routeId,
+        routeGeneration: route.routeGeneration,
+        routeRevision: revision,
+        sourceRef: route.sourceRef,
+        endpointOrigin: route.endpointOrigin,
+      });
+    await persistBoundRoute(station.stationPeerId, route.routeId, revision, refreshed);
+  })();
+  routeRefreshInFlight = operation.finally(() => {
+    if (routeRefreshInFlight === pending) routeRefreshInFlight = null;
+  });
+  const pending = routeRefreshInFlight;
+  return pending;
+}
+
+export function bootstrapStationRuntime(): Promise<StoredStationRegistry> {
+  if (routeBootstrapInFlight) return routeBootstrapInFlight;
+  const pending = restoreActiveStationRoute().finally(() => {
+    if (routeBootstrapInFlight === pending) routeBootstrapInFlight = null;
+  });
+  routeBootstrapInFlight = pending;
+  return pending;
+}
+
+async function restoreActiveStationRoute(): Promise<StoredStationRegistry> {
+  if (routeRefreshInFlight) await routeRefreshInFlight.catch(() => undefined);
   let loaded = await stationRegistryRuntime.bootstrap();
-  if (nativeRouteBootstrapped) return loaded;
-  nativeRouteBootstrapped = true;
   const station = activeStationEntry(loaded);
   const route = station ? activeStationRoute(station) : null;
   if (!station || !route) return loaded;
   try {
-    await restoreStationRouteBinding({
+    const revision = station.routeRevision ?? 1;
+    const restored = await restoreStationRouteBinding({
       stationPeerId: station.stationPeerId,
       routeId: route.routeId,
       routeGeneration: route.routeGeneration,
-      routeRevision: station.routeRevision ?? 1,
+      routeRevision: revision,
       sourceRef: route.sourceRef,
       endpointOrigin: route.endpointOrigin,
     });
-    return loaded;
-  } catch {
+    return await persistBoundRoute(station.stationPeerId, route.routeId, revision, restored);
+  } catch (error) {
     loaded = await stationRegistryRuntime.update((current) => ({
       ...current,
       entries: current.entries.map((entry) => (
@@ -126,6 +260,7 @@ export async function bootstrapStationRuntime(): Promise<StoredStationRegistry> 
           : entry
       )),
     }));
+    throw error;
   }
   return loaded;
 }

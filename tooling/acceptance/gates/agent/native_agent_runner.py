@@ -46,6 +46,7 @@ from tooling.acceptance.drivers.tauri import LocalTauriLauncher, TauriSession
 from tooling.acceptance.drivers.native import (
     NativeLaunchOptions,
     NativeKey,
+    MouseAction,
     NativeModifier,
     resolve_native_desktop_runtime,
 )
@@ -82,6 +83,10 @@ GATE_BY_JOURNEY = {
     "chat-conversation": "agent-chat-conversation-native",
     "chat-layout": "agent-chat-layout-native",
     "chat-workspace": "agent-chat-workspace-native",
+    "chat-commands": "agent-slash-command-native-e2e",
+    "chat-attribution": "agent-context-projection-native-e2e",
+    "depth-linux": "agent-depth-linux-native-e2e",
+    "agent-definition": "agent-definition-roundtrip-native-e2e",
     "turn": "agent-native-turn-e2e",
     "cli-provider": "agent-cli-provider-primary-native-e2e",
     "core-lifecycle": "agent-core-lifecycle-native-e2e",
@@ -268,8 +273,14 @@ def model_capability_config(
 
 
 def approved_profile_for_journey(journey: str) -> str:
+    if journey in {"chat-commands", "chat-attribution"}:
+        return CORE_LIFECYCLE_PROFILE
+    if journey == "depth-linux":
+        return CORE_LIFECYCLE_PROFILE
     if journey.startswith("chat-"):
         return CHAT_APPROVED_PROFILE
+    if journey == "agent-definition":
+        return CORE_LIFECYCLE_PROFILE
     if journey == "minimum-usable-chat":
         return MINIMUM_USABLE_CHAT_PROFILE
     if journey == "core-lifecycle":
@@ -283,8 +294,10 @@ def provider_configuration_required_for_journey(journey: str) -> bool:
     if journey.startswith("chat-"):
         return False
     return journey not in {
+        "agent-definition",
         "cli-provider",
         "core-lifecycle",
+        "depth-linux",
         "minimum-usable-chat",
     }
 
@@ -454,8 +467,7 @@ class AgentNativeJourney:
         self.desktop_log = self.run_root / "desktop.log"
         self.proxy = (
             TcpFaultProxy.from_url(self.station_url)
-            if journey in {"stream-resilience", "core-lifecycle"}
-            or (journey.startswith("chat-") and self.station_url.startswith("http://"))
+            if self.station_url.startswith("http://")
             else None
         )
         self.station_transport_url = (
@@ -494,7 +506,7 @@ class AgentNativeJourney:
         self.lifecycle_fixture_ids: list[str] = []
         self.cli_provider_fixture: dict[str, str] | None = None
         self.chat_provider_fixture_ids: list[str] = []
-        self.chat_skill_fixture_ids: list[str] = []
+        self.chat_skill_fixture_ids: list[dict[str, str]] = []
         self.chat_mcp_fixture_names: list[str] = []
         self.chat_provider_restore: dict[str, dict[str, Any]] = {}
         self.cli_provider_sample_id = ""
@@ -1182,47 +1194,61 @@ class AgentNativeJourney:
         value: str,
         description: str,
     ) -> dict[str, Any]:
-        result = self.driver.execute_script(
-            """
-            const [selector, value] = arguments;
-            const isViewportVisible = (element) => {
-              const style = getComputedStyle(element);
-              const rect = element.getBoundingClientRect();
-              return element.getClientRects().length > 0
-                && style.display !== 'none'
-                && style.visibility !== 'hidden'
-                && Number(style.opacity) > 0
-                && rect.width > 0
-                && rect.height > 0
-                && rect.right > 0
-                && rect.bottom > 0
-                && rect.left < window.innerWidth
-                && rect.top < window.innerHeight;
-            };
-            const input = Array.from(document.querySelectorAll(selector))
-              .find(isViewportVisible);
-            if (!(input instanceof HTMLInputElement)
-              && !(input instanceof HTMLTextAreaElement)) return null;
-            const prototype = input instanceof HTMLTextAreaElement
-              ? HTMLTextAreaElement.prototype
-              : HTMLInputElement.prototype;
-            const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
-            if (!setter) return null;
-            input.focus();
-            setter.call(input, value);
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-            input.dispatchEvent(new Event('change', { bubbles: true }));
-            input.blur();
-            return { selector, value: input.value };
-            """,
-            selector,
-            value,
+        def edit_visible_input() -> dict[str, Any] | None:
+            result = self.driver.execute_script(
+                """
+                const [selector, value] = arguments;
+                const isRendered = (element) => {
+                  const style = getComputedStyle(element);
+                  const rect = element.getBoundingClientRect();
+                  return element.getClientRects().length > 0
+                    && style.display !== 'none'
+                    && style.visibility !== 'hidden'
+                    && Number(style.opacity) > 0
+                    && rect.width > 0
+                    && rect.height > 0;
+                };
+                const isViewportVisible = (element) => {
+                  const rect = element.getBoundingClientRect();
+                  return rect.right > 0
+                    && rect.bottom > 0
+                    && rect.left < window.innerWidth
+                    && rect.top < window.innerHeight;
+                };
+                const input = Array.from(document.querySelectorAll(selector))
+                  .find(isRendered);
+                if (!(input instanceof HTMLInputElement)
+                  && !(input instanceof HTMLTextAreaElement)) return null;
+                if (!isViewportVisible(input)) {
+                  input.scrollIntoView({ block: 'center', inline: 'nearest' });
+                  return null;
+                }
+                const prototype = input instanceof HTMLTextAreaElement
+                  ? HTMLTextAreaElement.prototype
+                  : HTMLInputElement.prototype;
+                const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
+                if (!setter) return null;
+                input.focus();
+                setter.call(input, value);
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+                const acceptedValue = input.value;
+                input.blur();
+                return { selector, value: acceptedValue };
+                """,
+                selector,
+                value,
+            )
+            return (
+                result
+                if isinstance(result, dict) and result.get("value") == value
+                else None
+            )
+
+        return wait_until(
+            edit_visible_input,
+            f"{description} to accept edited value",
         )
-        require(
-            isinstance(result, dict) and result.get("value") == value,
-            f"{description} could not be edited",
-        )
-        return result
 
     def press_native_key(
         self,
@@ -1238,31 +1264,89 @@ class AgentNativeJourney:
         process_id = self.tauri_driver.process_id
         require(process_id is not None, "Native Desktop process identity is unavailable")
         if selector is not None:
-            focused = self.driver.execute_script(
-                """
-                const isViewportVisible = (element) => {
-                  const style = getComputedStyle(element);
-                  const rect = element.getBoundingClientRect();
-                  return element.getClientRects().length > 0
-                    && style.display !== 'none'
-                    && style.visibility !== 'hidden'
-                    && Number(style.opacity) > 0
-                    && rect.width > 0
-                    && rect.height > 0
-                    && rect.right > 0
-                    && rect.bottom > 0
-                    && rect.left < window.innerWidth
-                    && rect.top < window.innerHeight;
-                };
-                const element = Array.from(document.querySelectorAll(arguments[0]))
-                  .find(isViewportVisible);
-                if (!element) return false;
-                element.focus({ preventScroll: true });
-                return document.activeElement === element;
-                """,
-                selector,
+            adapter = self.runtime_binding.native_adapter
+
+            target = wait_until(
+                lambda: self.driver.execute_script(
+                    """
+                    const candidate = Array.from(
+                      document.querySelectorAll(arguments[0])
+                    ).find((item) => {
+                      const style = getComputedStyle(item);
+                      const rect = item.getBoundingClientRect();
+                      return item.getClientRects().length > 0
+                        && style.display !== 'none'
+                        && style.visibility !== 'hidden'
+                        && Number(style.opacity) > 0
+                        && rect.width > 0
+                        && rect.height > 0;
+                    });
+                    if (!candidate) return null;
+                    candidate.scrollIntoView({
+                      block: 'center',
+                      inline: 'nearest',
+                    });
+                    const rect = candidate.getBoundingClientRect();
+                    return {
+                      x: rect.left + rect.width / 2,
+                      y: rect.top + Math.min(rect.height / 2, 24),
+                      viewportWidth: window.innerWidth,
+                      viewportHeight: window.innerHeight,
+                      devicePixelRatio: window.devicePixelRatio || 1,
+                    };
+                    """,
+                    selector,
+                ),
+                f"Native key target {selector} geometry",
             )
-            require(focused is True, f"Native key target {selector} could not own focus")
+            origin = adapter.content_origin(process_id)
+            if origin is None:
+                ratio = float(target["devicePixelRatio"])
+                require(ratio > 0, "Native key target returned an invalid scale")
+                window = self.driver.get_window_rect()
+                window_left = float(window["x"]) / ratio
+                window_top = float(window["y"]) / ratio
+                window_width = float(window["width"]) / ratio
+                window_height = float(window["height"]) / ratio
+                origin = (
+                    window_left
+                    + max(
+                        0.0,
+                        (
+                            window_width
+                            - float(target["viewportWidth"])
+                        ) / 2,
+                    ),
+                    window_top
+                    + max(
+                        0.0,
+                        window_height - float(target["viewportHeight"]),
+                    ),
+                )
+            point = (
+                float(origin[0]) + float(target["x"]),
+                float(origin[1]) + float(target["y"]),
+            )
+            window_stack = adapter.window_stack_at_point(point)
+            require(
+                not window_stack.error
+                and window_stack.point_owned_by(process_id),
+                f"Native key target {selector} is not owned by the Desktop actor",
+            )
+            adapter.post_mouse(
+                (
+                    MouseAction.MOVE,
+                    MouseAction.LEFT_DOWN,
+                    MouseAction.LEFT_UP,
+                ),
+                point,
+            )
+            adapter.post_key(
+                key,
+                modifiers=modifiers,
+                private_source=True,
+            )
+            return
         self.runtime_binding.native_adapter.post_key_to_process(
             process_id,
             key,
@@ -3037,33 +3121,50 @@ class AgentNativeJourney:
                 )
             except Exception as error:  # noqa: BLE001 - continue residue cleanup.
                 failures.append(f"Agent profile exit: {error}")
+        for skill in reversed(tuple(self.chat_skill_fixture_ids)):
+            try:
+                self.invoke_readback_command(
+                    "skills_delete",
+                    {
+                        "agent_id": skill["agentId"],
+                        "id": skill["skillId"],
+                    },
+                )
+                self.chat_skill_fixture_ids.remove(skill)
+            except Exception as error:
+                failures.append(
+                    f"Chat Suite Skill {skill.get('skillId', '')} cleanup: {error}"
+                )
         for agent_id in reversed(tuple(self.lifecycle_fixture_ids)):
             try:
-                self.delete_lifecycle_agent(agent_id)
-            except Exception as ui_error:  # noqa: BLE001 - cleanup must remove residue.
-                try:
+                self.harness(
+                    "cleanupChatSuiteCapabilityBindings",
+                    {"agentId": agent_id},
+                    timeout=120,
+                )
+            except Exception as error:  # noqa: BLE001 - continue Agent cleanup.
+                failures.append(
+                    f"Agent fixture {agent_id} capability cleanup: {error}"
+                )
+            try:
+                if self.station_agent_absent(agent_id) is None:
                     self.invoke_readback_command(
                         "agents_delete",
                         {"id": agent_id},
                     )
-                    self.lifecycle_fixture_ids.remove(agent_id)
-                except Exception as command_error:  # noqa: BLE001
-                    failures.append(
-                        f"Agent fixture {agent_id}: ui={ui_error}; "
-                        f"command={command_error}"
+                    wait_until(
+                        lambda: self.station_agent_absent(agent_id),
+                        f"Agent {agent_id} cleanup readback",
                     )
+                self.lifecycle_fixture_ids.remove(agent_id)
+            except Exception as error:  # noqa: BLE001 - cleanup must remove residue.
+                failures.append(f"Agent fixture {agent_id} cleanup: {error}")
         for name in reversed(tuple(self.chat_mcp_fixture_names)):
             try:
                 self.invoke_readback_command("mcp_delete_server", {"name": name})
                 self.chat_mcp_fixture_names.remove(name)
             except Exception as error:
                 failures.append(f"Chat Suite MCP {name} cleanup: {error}")
-        for skill_id in reversed(tuple(self.chat_skill_fixture_ids)):
-            try:
-                self.invoke_readback_command("skills_delete", {"id": skill_id})
-                self.chat_skill_fixture_ids.remove(skill_id)
-            except Exception as error:
-                failures.append(f"Chat Suite Skill {skill_id} cleanup: {error}")
         if self.journey.startswith("chat-") and self.cli_provider_fixture:
             try:
                 self.invoke_readback_command(

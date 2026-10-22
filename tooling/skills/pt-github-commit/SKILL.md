@@ -62,8 +62,7 @@ Derive scope from the changed files:
 | `apps/station/**` | `station` |
 | `apps/desktop/src/**` | `desktop` |
 | `apps/desktop/src-tauri/**` | `desktop` |
-| `apps/mobile/android/**` | `android` |
-| `apps/mobile/ios/**` | `ios` |
+| `apps/mobile/**` | `mobile` |
 | `model/domain/**` | `proto` |
 | `packages/applet-sdk/**` | `applet-sdk` |
 | `packages/applets/**` | `applets` |

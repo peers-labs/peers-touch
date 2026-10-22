@@ -2,6 +2,7 @@ import { create } from '@bufbuild/protobuf';
 
 import type {
   AgentCapabilityBinding,
+  AgentCommandCapabilitySnapshot,
   CapabilityCatalogIssue,
   CapabilityManifest,
   CapabilityReadiness,
@@ -34,7 +35,15 @@ import {
 export interface AgentCapabilityReadinessInput {
   runtimeSnapshotId?: string;
   clientCapabilitySessionId?: string;
+  providerId?: string;
+  modelId?: string;
 }
+
+export type AgentCommandCapabilityProjectionState =
+  | 'ready'
+  | 'empty'
+  | 'stale'
+  | 'unavailable';
 
 export interface UpsertAgentCapabilityBindingIntent
   extends AgentCapabilityReadinessInput {
@@ -65,6 +74,14 @@ export interface AgentCapabilityState extends RevalidationState {
   knowledgeDescriptors: KnowledgeResourceDescriptor[];
   bindingsByAgentId: Record<string, AgentCapabilityBinding[]>;
   readinessByAgentId: Record<string, CapabilityReadinessSnapshot | undefined>;
+  commandSnapshotsByAgentId: Record<
+    string,
+    AgentCommandCapabilitySnapshot | undefined
+  >;
+  commandSnapshotStateByAgentId: Record<
+    string,
+    AgentCommandCapabilityProjectionState
+  >;
   readinessInputByAgentId: Record<string, AgentCapabilityReadinessInput>;
   loadingCatalog: boolean;
   loadingKnowledgeDescriptors: boolean;
@@ -146,6 +163,8 @@ export const useAgentCapabilityStore = createDesktopStore<AgentCapabilityState>(
     knowledgeDescriptors: [],
     bindingsByAgentId: {},
     readinessByAgentId: {},
+    commandSnapshotsByAgentId: {},
+    commandSnapshotStateByAgentId: {},
     readinessInputByAgentId: {},
     loadingCatalog: false,
     loadingKnowledgeDescriptors: false,
@@ -265,6 +284,10 @@ export const useAgentCapabilityStore = createDesktopStore<AgentCapabilityState>(
         clientCapabilitySessionId:
           readinessInput.clientCapabilitySessionId
           ?? previousInput.clientCapabilitySessionId,
+        providerId:
+          readinessInput.providerId ?? previousInput.providerId,
+        modelId:
+          readinessInput.modelId ?? previousInput.modelId,
       };
       const epoch = projectionEpoch;
       const sequence = nextAgentLoadSequence(agentId);
@@ -278,13 +301,24 @@ export const useAgentCapabilityStore = createDesktopStore<AgentCapabilityState>(
         },
       }));
       try {
-        const [bindingsResult, readinessResult] = await Promise.allSettled([
+        const [bindingsResult, readinessResult, commandSnapshotResult] =
+          await Promise.allSettled([
           api.listAgentCapabilityBindings(agentId),
           api.readAgentCapabilityReadiness({
             agent_id: agentId,
             runtime_snapshot_id: effectiveInput.runtimeSnapshotId,
             client_capability_session_id:
               effectiveInput.clientCapabilitySessionId,
+            provider_id: effectiveInput.providerId,
+            model_id: effectiveInput.modelId,
+          }),
+          api.readAgentCommandCapabilitySnapshot({
+            agent_id: agentId,
+            runtime_snapshot_id: effectiveInput.runtimeSnapshotId,
+            client_capability_session_id:
+              effectiveInput.clientCapabilitySessionId,
+            provider_id: effectiveInput.providerId,
+            model_id: effectiveInput.modelId,
           }),
         ]);
         if (!isCurrentAgentLoad(agentId, sequence, epoch)) return;
@@ -301,10 +335,30 @@ export const useAgentCapabilityStore = createDesktopStore<AgentCapabilityState>(
                 [agentId]: readinessResult.value,
               }
             : state.readinessByAgentId,
+          commandSnapshotsByAgentId:
+            commandSnapshotResult.status === 'fulfilled'
+              ? {
+                  ...state.commandSnapshotsByAgentId,
+                  [agentId]: commandSnapshotResult.value,
+                }
+              : state.commandSnapshotsByAgentId,
+          commandSnapshotStateByAgentId: {
+            ...state.commandSnapshotStateByAgentId,
+            [agentId]: commandSnapshotResult.status === 'fulfilled'
+              ? commandSnapshotResult.value.items.length === 0
+                ? 'empty'
+                : 'ready'
+              : state.commandSnapshotsByAgentId[agentId]
+                ? 'stale'
+                : 'unavailable',
+          },
           lastLoadedAt: Date.now(),
         }));
         if (bindingsResult.status === 'rejected') throw bindingsResult.reason;
         if (readinessResult.status === 'rejected') throw readinessResult.reason;
+        if (commandSnapshotResult.status === 'rejected') {
+          throw commandSnapshotResult.reason;
+        }
       } catch (error) {
         const message = toStoreError(error);
         log.error('agentCapabilities', 'Failed to load Agent capability projection', {
@@ -569,6 +623,8 @@ export const useAgentCapabilityStore = createDesktopStore<AgentCapabilityState>(
         knowledgeDescriptors: [],
         bindingsByAgentId: {},
         readinessByAgentId: {},
+        commandSnapshotsByAgentId: {},
+        commandSnapshotStateByAgentId: {},
         readinessInputByAgentId: {},
         loadingCatalog: false,
         loadingKnowledgeDescriptors: false,
@@ -599,6 +655,32 @@ export const selectAgentCapabilityReadiness = (
   state: AgentCapabilityState,
   agentId: string,
 ): CapabilityReadinessSnapshot | undefined => state.readinessByAgentId[agentId];
+
+export const selectAgentCommandCapabilitySnapshot = (
+  state: AgentCapabilityState,
+  agentId: string,
+): AgentCommandCapabilitySnapshot | undefined =>
+  state.commandSnapshotsByAgentId[agentId];
+
+export function selectAgentCommandCapabilityProjectionState(
+  state: AgentCapabilityState,
+  agentId: string,
+  now = Date.now(),
+): AgentCommandCapabilityProjectionState {
+  const projected = state.commandSnapshotStateByAgentId[agentId]
+    ?? 'unavailable';
+  if (projected !== 'ready' && projected !== 'empty') {
+    return projected;
+  }
+  const expiresAt = state.commandSnapshotsByAgentId[agentId]?.expiresAt;
+  if (!expiresAt) return 'stale';
+  const expiresAtMs =
+    Number(expiresAt.seconds) * 1000
+    + Math.floor(expiresAt.nanos / 1_000_000);
+  return Number.isFinite(expiresAtMs) && expiresAtMs > now
+    ? projected
+    : 'stale';
+}
 
 export function selectCapabilityManifest(
   state: AgentCapabilityState,

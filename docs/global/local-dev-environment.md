@@ -300,7 +300,7 @@ registered and its binding must resolve.
 | `make plan-task PLAN=<path> TASK=<id>` | Read one explicit Plan task |
 | `make station` | Reuse a healthy source-matched Station, otherwise deploy the current commit and verify its live build identity |
 | `make desktop` | Start Desktop Tauri app |
-| `make desktop-install` | Build the current source and atomically install `~/Applications/Peers Dev.app` |
+| `make desktop-install` | Build the current source and atomically install the platform-native development artifact: macOS `.app` or Linux AppImage/XDG entry |
 | `make mobile` | Start Mobile iOS simulator |
 
 Normal initial registration is explicit and one-step:
@@ -349,13 +349,28 @@ ports are checked and the pair is restarted. A separate `pnpm install`,
 There is no supported Desktop browser launch path. Native Tauri is the only
 Desktop development and product-proof runtime.
 
-`make desktop-install` is the persistent macOS development install. It prepares
-the same package, generated-source, and applet inputs, builds only the Tauri
-`.app` bundle, and atomically replaces `~/Applications/Peers Dev.app`. The
-installed application uses bundle identifier `com.peers.touch.desktop.dev` and
-deep-link scheme `peers-touch-dev://`; override the identifier with
-`PT_DESKTOP_APP_ID` or the destination directory with
-`PT_DESKTOP_INSTALL_DIR`. This command neither starts nor deploys Station.
+`make desktop-install` uses one install orchestrator with a platform adapter.
+It prepares the same package, generated-source, applet, source-identity, build,
+installation and verification lifecycle on every supported platform.
+
+- macOS builds only the Tauri `.app` bundle, ad-hoc signs and verifies it, then
+  atomically replaces `~/Applications/Peers Dev.app`.
+- Linux builds only the Tauri AppImage and installs it without root:
+  `${XDG_DATA_HOME:-$HOME/.local/share}/peers-touch/apps/peers-dev.AppImage`,
+  `${PT_DESKTOP_INSTALL_BIN_DIR:-$HOME/.local/bin}/peers-dev`, the matching
+  XDG desktop entry, and hicolor icon. The AppImage, launcher, source receipt,
+  desktop entry and icon are same-directory staged, fsynced and atomically
+  replaced. A running old inode may finish; the next launch uses the new
+  artifact. Verification failure restores every previous file and protocol
+  association.
+
+Both use application identifier `com.peers.touch.desktop.dev` and deep-link
+scheme `peers-touch-dev://`. Override the identifier with
+`PT_DESKTOP_APP_ID` or artifact destination with
+`PT_DESKTOP_INSTALL_DIR`; Linux also accepts `PT_DESKTOP_INSTALL_BIN_DIR`.
+Missing Linux system prerequisites fail before build with exact `pkg-config`
+module and distro package hints. The command never installs OS packages,
+requests root, starts Station or deploys Station.
 
 Registration does not create or edit an environment definition. A later
 destructive wrapper uses the generic lease API after deriving Profile reset

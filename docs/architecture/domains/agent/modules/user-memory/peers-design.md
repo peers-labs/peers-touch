@@ -14,7 +14,7 @@
 | Station | Full memory service (26+ methods) | ✅ |
 | Rust BFF | 12 Tauri commands | ✅ |
 | Desktop API | Typed wrappers | ✅ |
-| Desktop UI | MemoryPage (browse/search/persona/events) | ✅ |
+| Desktop UI | Settings > AI > Memory (browse/search/persona/events/configuration) | ✅ |
 | Prompt injection | L3 BuildRelevantSnapshot | ✅ |
 | Memory tool | LLM can save/query via tool call | ✅ |
 
@@ -29,7 +29,7 @@
 
 ## 3. Design: G1 — Zustand Memory Store
 
-**Problem**: MemoryPage manages all memory state via local `useState`. This prevents other components (chat, settings, sidebar badges) from reacting to memory changes.
+**Problem**: `MemorySettingsSection` manages its view state locally. Shared Memory truth must still be projected through the store so Chat and other consumers can react to mutations.
 
 **Solution**: Create `store/memory.ts` as a Zustand store with the same pattern as `store/agent.ts`.
 
@@ -82,7 +82,7 @@ interface MemoryActions {
 **Desktop changes**:
 - Add `api.updateMemory(id, content)` in desktop_api.ts
 - Add `updateMemory` action in the new store
-- Add inline edit mode in MemoryPage browse items (click content → editable textarea → save/cancel)
+- Add inline edit mode in the Memory Settings browse tab (click content → editable textarea → save/cancel)
 
 ## 5. Design: G3 — Per-Chat Memory Toggle
 
@@ -115,7 +115,7 @@ interface MemoryActions {
 | # | File | Action | Gap |
 |---|------|--------|-----|
 | 1 | `apps/desktop/src/store/memory.ts` | Create — Zustand memory store | G1 |
-| 2 | `apps/desktop/src/pages/MemoryPage.tsx` | Modify — use store, add inline edit, layer tabs | G1, G2, G4 |
+| 2 | `apps/desktop/src/components/settings/MemorySettingsSection.tsx` | Modify — use store, add inline edit, layer tabs | G1, G2, G4 |
 | 3 | `apps/desktop/src/services/desktop_api.ts` | Modify — add updateMemory API | G2 |
 | 4 | `apps/desktop/src-tauri/src/interface/tauri_commands/memory.rs` | Modify — add memory_update command | G2 |
 | 5 | `apps/station/app/subserver/agent/service/memory_service.go` | Modify — add UpdateMemory method | G2 |

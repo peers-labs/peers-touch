@@ -7,7 +7,10 @@ import {
   type AgentCapabilitySessionList,
   type AgentAuthorityStreamPayload,
 } from '../services/desktop_api';
-import { useAgentStore } from '../store/agent';
+import {
+  resolveAvailableModelSelection,
+  useAgentStore,
+} from '../store/agent';
 import { useAgentTopicStore } from '../store/agentTopics';
 import { useChatStore } from '../store/chat';
 import { createAgentDraftKey } from '../store/agentDraft';
@@ -37,6 +40,11 @@ type AgentCapabilityProjectionStore = Pick<
   AgentCapabilityState,
   'loadCatalog' | 'loadKnowledgeDescriptors' | 'loadAgent'
 >;
+export interface AgentCapabilityRuntimeSelection {
+  agentId: string;
+  providerId: string;
+  modelId: string;
+}
 
 function capabilitySessionExpiresAtMs(session: CapabilitySession): number {
   if (!session.expires_at) return 0;
@@ -70,6 +78,7 @@ export async function reconcileAgentCapabilityProjection(
   authorityStore: AgentCapabilityProjectionStore,
   agentIds: readonly string[],
   clientCapabilitySessionId?: string,
+  runtimeSelection?: AgentCapabilityRuntimeSelection,
 ): Promise<void> {
   const failures: unknown[] = new Array(agentIds.length);
   let nextAgentIndex = 0;
@@ -84,6 +93,12 @@ export async function reconcileAgentCapabilityProjection(
         try {
           await authorityStore.loadAgent(agentIds[index], {
             clientCapabilitySessionId,
+            providerId: runtimeSelection?.agentId === agentIds[index]
+              ? runtimeSelection.providerId
+              : undefined,
+            modelId: runtimeSelection?.agentId === agentIds[index]
+              ? runtimeSelection.modelId
+              : undefined,
           });
         } catch (error) {
           failures[index] = error;
@@ -148,11 +163,31 @@ async function loadAgentCapabilities(reason: string): Promise<void> {
 
   const authorityStore = useAgentCapabilityStore.getState();
   const agentState = useAgentStore.getState();
-  const agentIds = Array.from(new Set(
-    agentState.agents
-      .map((agent) => agent.id.trim())
-      .filter(Boolean),
-  ));
+  const selectedAgent = agentState.agents.find(
+    (agent) => agent.name === agentState.selectedAgent,
+  );
+  const selectedTopic = selectedAgent
+    ? useAgentTopicStore.getState()
+      .getTopicsForAgent(selectedAgent.id)
+      .find((topic) => topic.key === useChatStore.getState().currentSessionKey)
+    : undefined;
+  const modelSelection = resolveAvailableModelSelection(
+    agentState.availableModels,
+    selectedTopic?.model_override ?? '',
+    selectedTopic?.provider_override ?? '',
+    agentState.defaultModel,
+    agentState.defaultProviderId,
+  );
+  const runtimeSelection = selectedAgent
+    && modelSelection.providerId
+    && modelSelection.modelId
+    ? {
+        agentId: selectedAgent.id,
+        providerId: modelSelection.providerId,
+        modelId: modelSelection.modelId,
+      }
+    : undefined;
+  const agentIds = selectedAgent?.id.trim() ? [selectedAgent.id.trim()] : [];
   syncAuthorityStreams(selectAuthorityStreamAgentIds(
     agentState.agents,
     agentState.selectedAgent,
@@ -161,6 +196,7 @@ async function loadAgentCapabilities(reason: string): Promise<void> {
     authorityStore,
     agentIds,
     activeSession?.session_id,
+    runtimeSelection,
   );
 }
 
@@ -190,10 +226,7 @@ function syncAuthorityStreams(agentIds: readonly string[]): void {
       (payload) => {
         const changedAgentId = authorityEventAgentId(payload);
         if (changedAgentId !== agentId || !installed) return;
-        void reconcileAgentCapabilityProjection(
-          useAgentCapabilityStore.getState(),
-          [agentId],
-        ).catch((error) => {
+        void loadAgentCapabilities('authority-invalidated').catch((error) => {
           log.warn('agentCapabilityRuntime', 'authority event refresh failed', {
             agentId,
             error: String(error),
@@ -258,6 +291,33 @@ function installProjectionInvalidation(): void {
         ];
         topicState.discardAgentProjection(agent.id);
         void useChatStore.getState().purgeSessions([...new Set(keys)]);
+      }
+      if (
+        state.selectedAgent !== previous.selectedAgent
+        || state.defaultModel !== previous.defaultModel
+        || state.defaultProviderId !== previous.defaultProviderId
+      ) {
+        reconcile('agent-or-default-model-selection');
+      }
+    }),
+    useAgentTopicStore.subscribe((state, previous) => {
+      const sessionKey = useChatStore.getState().currentSessionKey;
+      const activeAgentId = state.activeAgentId;
+      const current = (state.topicsByAgentId[activeAgentId] ?? [])
+        .find((topic) => topic.key === sessionKey);
+      const prior = (previous.topicsByAgentId[previous.activeAgentId] ?? [])
+        .find((topic) => topic.key === sessionKey);
+      if (
+        state.activeAgentId !== previous.activeAgentId
+        || current?.provider_override !== prior?.provider_override
+        || current?.model_override !== prior?.model_override
+      ) {
+        reconcile('topic-model-selection');
+      }
+    }),
+    useChatStore.subscribe((state, previous) => {
+      if (state.currentSessionKey !== previous.currentSessionKey) {
+        reconcile('topic-selection');
       }
     }),
     eventBus.subscribe(EVENT.OAUTH_CONNECTIONS_CHANGED, () => {

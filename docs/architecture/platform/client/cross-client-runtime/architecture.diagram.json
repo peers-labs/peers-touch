@@ -1,0 +1,288 @@
+{
+  "kind": "peers-touch-architecture-diagram",
+  "schemaVersion": 3,
+  "id": "cross-client-runtime.reuse-topology",
+  "module": "cross-client-runtime",
+  "viewpoint": "reuse-topology",
+  "layout": "composition",
+  "output": "architecture.svg",
+  "title": "跨端客户端复用拓扑",
+  "canvas": {
+    "width": 1400,
+    "height": 830
+  },
+  "edgeMeaning": "箭头表示共享能力消费关系",
+  "scene": {
+    "rows": [
+      {
+        "id": "forms",
+        "title": "PRODUCT FORMS",
+        "y": 100,
+        "height": 130,
+        "tone": "muted",
+        "modules": [
+          {
+            "id": "desktop-form",
+            "role": "module",
+            "x": 120,
+            "y": 140,
+            "width": 430,
+            "height": 70,
+            "title": "Desktop Presentation Policy",
+            "caption": "window · keyboard · dense workspace",
+            "tone": "neutral"
+          },
+          {
+            "id": "mobile-form",
+            "role": "module",
+            "x": 650,
+            "y": 140,
+            "width": 430,
+            "height": 70,
+            "title": "Mobile Presentation Policy",
+            "caption": "touch · navigation · app lifecycle",
+            "tone": "neutral"
+          }
+        ]
+      },
+      {
+        "id": "shared-ts",
+        "title": "SHARED SEMANTICS",
+        "y": 240,
+        "height": 110,
+        "tone": "primary",
+        "modules": [
+          {
+            "id": "headless-typescript",
+            "role": "module",
+            "x": 250,
+            "y": 270,
+            "width": 700,
+            "height": 62,
+            "title": "Headless TypeScript",
+            "caption": "selectors · codecs · projections",
+            "tone": "primary"
+          }
+        ]
+      },
+      {
+        "id": "runtimes",
+        "title": "APPLICATION RUNTIMES",
+        "y": 360,
+        "height": 130,
+        "tone": "secondary",
+        "modules": [
+          {
+            "id": "desktop-runtime",
+            "role": "module",
+            "x": 120,
+            "y": 400,
+            "width": 430,
+            "height": 70,
+            "title": "Desktop Tauri Runtime",
+            "caption": "Desktop orchestration · typed commands",
+            "tone": "secondary"
+          },
+          {
+            "id": "mobile-runtime",
+            "role": "module",
+            "x": 650,
+            "y": 400,
+            "width": 430,
+            "height": 70,
+            "title": "Mobile Tauri Runtime",
+            "caption": "one runtime for Android and iOS",
+            "tone": "secondary"
+          }
+        ]
+      },
+      {
+        "id": "portable-rust",
+        "title": "PORTABLE MECHANISMS",
+        "y": 500,
+        "height": 110,
+        "tone": "primary",
+        "modules": [
+          {
+            "id": "portable-cores",
+            "role": "module",
+            "x": 250,
+            "y": 530,
+            "width": 700,
+            "height": 62,
+            "title": "Portable Rust Cores",
+            "caption": "protocol · security · state machines",
+            "tone": "primary"
+          }
+        ]
+      },
+      {
+        "id": "hosts",
+        "title": "RELEASE HOSTS",
+        "y": 620,
+        "height": 160,
+        "tone": "muted",
+        "modules": [
+          {
+            "id": "desktop-host",
+            "role": "module",
+            "x": 90,
+            "y": 670,
+            "width": 280,
+            "height": 76,
+            "title": "Desktop Host",
+            "caption": "Tauri · OS ports",
+            "tone": "muted"
+          },
+          {
+            "id": "android-host",
+            "role": "module",
+            "x": 430,
+            "y": 670,
+            "width": 280,
+            "height": 76,
+            "title": "Android Host",
+            "caption": "Kotlin · native plugins",
+            "tone": "muted"
+          },
+          {
+            "id": "ios-host",
+            "role": "module",
+            "x": 770,
+            "y": 670,
+            "width": 280,
+            "height": 76,
+            "title": "iOS Host",
+            "caption": "Swift · native plugins",
+            "tone": "muted"
+          }
+        ]
+      }
+    ],
+    "rail": {
+      "id": "model-contracts",
+      "title": "MODEL CONTRACTS",
+      "x": 1176,
+      "y": 100,
+      "width": 180,
+      "height": 680,
+      "tone": "external",
+      "items": [
+        {
+          "id": "typescript-bindings",
+          "role": "rail-item",
+          "x": 1190,
+          "y": 265,
+          "width": 152,
+          "height": 72,
+          "title": "TypeScript",
+          "caption": "generated",
+          "tone": "external"
+        },
+        {
+          "id": "rust-bindings",
+          "role": "rail-item",
+          "x": 1190,
+          "y": 525,
+          "width": 152,
+          "height": 72,
+          "title": "Rust",
+          "caption": "generated",
+          "tone": "external"
+        }
+      ]
+    },
+    "relations": [
+      {
+        "from": "desktop-form",
+        "to": "headless-typescript",
+        "fromAnchor": "bottom",
+        "toAnchor": "top",
+        "label": null,
+        "style": "primary",
+        "via": [
+          {
+            "x": 335,
+            "y": 235
+          },
+          {
+            "x": 600,
+            "y": 235
+          }
+        ]
+      },
+      {
+        "from": "mobile-form",
+        "to": "headless-typescript",
+        "fromAnchor": "bottom",
+        "toAnchor": "top",
+        "label": null,
+        "style": "primary",
+        "via": [
+          {
+            "x": 865,
+            "y": 235
+          },
+          {
+            "x": 600,
+            "y": 235
+          }
+        ]
+      },
+      {
+        "from": "desktop-runtime",
+        "to": "portable-cores",
+        "fromAnchor": "bottom",
+        "toAnchor": "top",
+        "label": null,
+        "style": "primary",
+        "via": [
+          {
+            "x": 335,
+            "y": 505
+          },
+          {
+            "x": 600,
+            "y": 505
+          }
+        ]
+      },
+      {
+        "from": "mobile-runtime",
+        "to": "portable-cores",
+        "fromAnchor": "bottom",
+        "toAnchor": "top",
+        "label": null,
+        "style": "primary",
+        "via": [
+          {
+            "x": 865,
+            "y": 505
+          },
+          {
+            "x": 600,
+            "y": 505
+          }
+        ]
+      },
+      {
+        "from": "headless-typescript",
+        "to": "typescript-bindings",
+        "fromAnchor": "right",
+        "toAnchor": "left",
+        "label": null,
+        "style": "secondary",
+        "via": []
+      },
+      {
+        "from": "portable-cores",
+        "to": "rust-bindings",
+        "fromAnchor": "right",
+        "toAnchor": "left",
+        "label": null,
+        "style": "secondary",
+        "via": []
+      }
+    ]
+  }
+}

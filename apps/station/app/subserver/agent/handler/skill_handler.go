@@ -134,7 +134,6 @@ func (h *SkillHandlers) HandleUpdateSkill(ctx context.Context, req *model.Update
 		req.Name,
 		req.Description,
 		req.Content,
-		req.Enabled,
 	)
 	if err != nil {
 		logger.Errorf(ctx, "HandleUpdateSkill failed: agent_id=%s skill_id=%s err=%v",

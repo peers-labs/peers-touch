@@ -4,6 +4,16 @@ use std::sync::{Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
+use secure_content_core::object::{
+    ObjectDescriptor, ObjectTransferDirection, ObjectTransferErrorCode, ObjectTransferFailure,
+    ObjectTransferRecord, ObjectTransferState,
+};
+use secure_content_core::operation::{
+    acquire_operation, apply_readback_decision, complete_operation, recover_interrupted_operation,
+    DispatchCause, OperationCompletion, OperationKind, OperationLease, OperationRecord,
+    OperationState, PreparedContentPreKeyPublication, ReadbackDecision,
+};
+use secure_content_core::ports::{LifecycleCancellation, ObjectTransferRepository};
 use sha2::{Digest, Sha256};
 use zeroize::Zeroize;
 
@@ -12,33 +22,6 @@ use crate::secure_content::proto::secure_content::v1::ContentPreKeyKind;
 const ENDPOINT_PREKEY_KIND: i64 = ContentPreKeyKind::ContentPrekeyKindEndpoint as i32 as i64;
 const RECOVERY_PREKEY_KIND: i64 = ContentPreKeyKind::ContentPrekeyKindActorRecovery as i32 as i64;
 const MAX_REACTION_RETRY_AFTER_SECONDS: u64 = 300;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(i64)]
-pub enum DurableState {
-    Pending = 1,
-    InFlight = 2,
-    UnknownOutcome = 3,
-    Committed = 4,
-    Terminal = 5,
-    Prepared = 6,
-}
-
-impl TryFrom<i64> for DurableState {
-    type Error = String;
-
-    fn try_from(value: i64) -> Result<Self, Self::Error> {
-        match value {
-            1 => Ok(Self::Pending),
-            2 => Ok(Self::InFlight),
-            3 => Ok(Self::UnknownOutcome),
-            4 => Ok(Self::Committed),
-            5 => Ok(Self::Terminal),
-            6 => Ok(Self::Prepared),
-            _ => Err("private Social durable state is invalid".to_string()),
-        }
-    }
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(i64)]
@@ -151,6 +134,12 @@ pub struct StoredCommentDraft {
     pub request_sha256: Option<[u8; 32]>,
     pub root_key: Option<[u8; 32]>,
     pub generation: u64,
+    pub publication_state: Option<OperationState>,
+    pub lease_generation: u64,
+    pub session_generation: u64,
+    pub attempt_count: u32,
+    pub next_attempt_at_unix_ms: i64,
+    pub updated_at_unix_ms: i64,
     pub state: CommentState,
     pub comment_id: Option<String>,
     pub error_code: Option<String>,
@@ -166,6 +155,47 @@ impl Drop for StoredCommentDraft {
 }
 
 #[derive(Clone, Debug)]
+pub struct AcquiredCommentSubmission {
+    pub draft: StoredCommentDraft,
+    pub lease: OperationLease,
+}
+
+impl StoredCommentDraft {
+    pub(crate) fn operation_record(&self) -> Result<OperationRecord, String> {
+        let command_id = self
+            .submit_command_id
+            .as_ref()
+            .ok_or_else(|| "private Comment command ID is unavailable".to_string())?;
+        let command_bytes = self
+            .request_bytes
+            .as_deref()
+            .ok_or_else(|| "private Comment command bytes are unavailable".to_string())?;
+        let command_sha256 = self
+            .request_sha256
+            .ok_or_else(|| "private Comment command hash is unavailable".to_string())?;
+        let state = self
+            .publication_state
+            .ok_or_else(|| "private Comment operation state is unavailable".to_string())?;
+        let record = OperationRecord {
+            operation_id: command_id.clone(),
+            command_id: command_id.clone(),
+            kind: OperationKind::OwnerSubmission,
+            state,
+            command_sha256,
+            session_generation: self.session_generation,
+            lease_generation: self.lease_generation,
+            attempt_count: self.attempt_count,
+            next_attempt_at_unix_ms: self.next_attempt_at_unix_ms,
+            updated_at_unix_ms: self.updated_at_unix_ms,
+        };
+        record
+            .validate_command_bytes(command_bytes)
+            .map_err(|error| error.to_string())?;
+        Ok(record)
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct StoredSubmission {
     pub command_id: String,
     pub draft_id: String,
@@ -176,9 +206,12 @@ pub struct StoredSubmission {
     pub request_sha256: [u8; 32],
     pub root_key: [u8; 32],
     pub projection_json: Vec<u8>,
-    pub state: DurableState,
+    pub state: OperationState,
     pub lease_generation: u64,
     pub session_generation: u64,
+    pub attempt_count: u32,
+    pub next_attempt_at_unix_ms: i64,
+    pub updated_at_unix_ms: i64,
     pub post_id: Option<String>,
     pub last_error_code: Option<i32>,
 }
@@ -212,7 +245,7 @@ impl Drop for StoredSubmission {
 #[derive(Clone, Debug)]
 pub struct AcquiredSubmission {
     pub command: StoredSubmission,
-    pub reconciles_unknown_outcome: bool,
+    pub lease: OperationLease,
 }
 
 #[derive(Clone, Debug)]
@@ -222,9 +255,64 @@ pub struct StoredPreKeyPublication {
     pub pool_epoch: u64,
     pub request_bytes: Vec<u8>,
     pub request_sha256: [u8; 32],
-    pub state: DurableState,
+    pub state: OperationState,
     pub lease_generation: u64,
     pub session_generation: u64,
+    pub attempt_count: u32,
+    pub next_attempt_at_unix_ms: i64,
+    pub updated_at_unix_ms: i64,
+}
+
+#[derive(Clone, Debug)]
+pub struct AcquiredPreKeyPublication {
+    pub command: StoredPreKeyPublication,
+    pub lease: OperationLease,
+}
+
+impl StoredSubmission {
+    pub(crate) fn operation_record_for_runtime(&self) -> Result<OperationRecord, String> {
+        let record = OperationRecord {
+            operation_id: self.command_id.clone(),
+            command_id: self.command_id.clone(),
+            kind: OperationKind::OwnerSubmission,
+            state: self.state,
+            command_sha256: self.request_sha256,
+            session_generation: self.session_generation,
+            lease_generation: self.lease_generation,
+            attempt_count: self.attempt_count,
+            next_attempt_at_unix_ms: self.next_attempt_at_unix_ms,
+            updated_at_unix_ms: self.updated_at_unix_ms,
+        };
+        record
+            .validate_command_bytes(&self.request_bytes)
+            .map_err(|error| error.to_string())?;
+        Ok(record)
+    }
+
+    fn operation_record(&self) -> Result<OperationRecord, String> {
+        self.operation_record_for_runtime()
+    }
+}
+
+impl StoredPreKeyPublication {
+    fn operation_record(&self) -> Result<OperationRecord, String> {
+        let record = OperationRecord {
+            operation_id: self.command_id.clone(),
+            command_id: self.command_id.clone(),
+            kind: OperationKind::ContentPreKeyPublication,
+            state: self.state,
+            command_sha256: self.request_sha256,
+            session_generation: self.session_generation,
+            lease_generation: self.lease_generation,
+            attempt_count: self.attempt_count,
+            next_attempt_at_unix_ms: self.next_attempt_at_unix_ms,
+            updated_at_unix_ms: self.updated_at_unix_ms,
+        };
+        record
+            .validate_command_bytes(&self.request_bytes)
+            .map_err(|error| error.to_string())?;
+        Ok(record)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -243,6 +331,12 @@ impl Drop for StoredEndpointPreKey {
 pub struct PrivateSocialStore {
     connection: Mutex<Connection>,
     session_generation: AtomicU64,
+}
+
+impl LifecycleCancellation for PrivateSocialStore {
+    fn is_cancelled(&self) -> bool {
+        self.session_generation.load(Ordering::Acquire) == 0
+    }
 }
 
 impl PrivateSocialStore {
@@ -284,11 +378,11 @@ impl PrivateSocialStore {
     }
 
     fn from_connection(
-        connection: Connection,
+        mut connection: Connection,
         station_peer_id: &str,
         actor_ptid: &str,
     ) -> Result<Self, String> {
-        migrate(&connection)?;
+        migrate(&mut connection)?;
         bind_scope(&connection, station_peer_id, actor_ptid)?;
         let store = Self {
             connection: Mutex::new(connection),
@@ -308,6 +402,13 @@ impl PrivateSocialStore {
         if generation == 0 {
             return Err("private Social session generation is required".to_string());
         }
+        self.connection()?
+            .execute(
+                "UPDATE mobile_private_social_object_transfers
+                 SET session_generation = ?1",
+                params![to_i64(generation, "session generation")?],
+            )
+            .map_err(|error| error.to_string())?;
         self.session_generation.store(generation, Ordering::Release);
         Ok(())
     }
@@ -339,30 +440,146 @@ impl PrivateSocialStore {
 
     pub fn recover_interrupted_dispatches(&self) -> Result<usize, String> {
         let now = now_unix_ms();
-        let connection = self.connection()?;
-        let prekeys = connection
-            .execute(
-                "UPDATE mobile_private_social_prekey_commands
-                 SET state = ?1, updated_at_unix_ms = ?2 WHERE state = ?3",
-                params![
-                    DurableState::UnknownOutcome as i64,
-                    now,
-                    DurableState::InFlight as i64
-                ],
-            )
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|error| error.to_string())?;
-        let submissions = connection
-            .execute(
-                "UPDATE mobile_private_social_submissions
-                 SET state = ?1, updated_at_unix_ms = ?2 WHERE state = ?3",
-                params![
-                    DurableState::UnknownOutcome as i64,
-                    now,
-                    DurableState::InFlight as i64
-                ],
-            )
-            .map_err(|error| error.to_string())?;
-        let reactions = connection
+        let submissions = {
+            let mut statement = transaction
+                .prepare(
+                    "SELECT command_id, draft_id, draft_revision, content_id, generation,
+                            request_bytes, request_sha256, root_key, projection_json, state,
+                            lease_generation, session_generation, attempt_count,
+                            next_attempt_at_unix_ms, updated_at_unix_ms, post_id, last_error_code
+                     FROM mobile_private_social_submissions WHERE state = ?1",
+                )
+                .map_err(|error| error.to_string())?;
+            let rows = statement
+                .query_map(
+                    params![OperationState::InFlight as i64],
+                    submission_from_row,
+                )
+                .map_err(|error| error.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| error.to_string())?;
+            rows
+        };
+        let comments = {
+            let mut statement = transaction
+                .prepare(
+                    "SELECT draft_id, draft_revision, post_id, reply_to_comment_id, text,
+                            mention_intent_json, mention_commitment_salt, intent_sha256,
+                            content_id, prepare_command_id, submit_command_id, request_bytes,
+                            request_sha256, root_key, generation, publication_state,
+                            lease_generation, session_generation, attempt_count,
+                            next_attempt_at_unix_ms, updated_at_unix_ms, state, comment_id,
+                            error_code, retry_after_seconds
+                     FROM mobile_private_social_comment_drafts
+                     WHERE publication_state = ?1",
+                )
+                .map_err(|error| error.to_string())?;
+            let rows = statement
+                .query_map(
+                    params![OperationState::InFlight as i64],
+                    comment_draft_from_row,
+                )
+                .map_err(|error| error.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| error.to_string())?;
+            rows
+        };
+        let prekeys = {
+            let mut statement = transaction
+                .prepare(
+                    "SELECT command_id, key_kind, pool_epoch, request_bytes, request_sha256,
+                            state, lease_generation, session_generation, attempt_count,
+                            next_attempt_at_unix_ms, updated_at_unix_ms
+                     FROM mobile_private_social_prekey_commands WHERE state = ?1",
+                )
+                .map_err(|error| error.to_string())?;
+            let rows = statement
+                .query_map(
+                    params![OperationState::InFlight as i64],
+                    prekey_publication_from_row,
+                )
+                .map_err(|error| error.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| error.to_string())?;
+            rows
+        };
+        let mut recovered = 0;
+        for command in submissions {
+            let current = command.operation_record()?;
+            let next =
+                recover_interrupted_operation(&current, now).map_err(|error| error.to_string())?;
+            recovered += transaction
+                .execute(
+                    "UPDATE mobile_private_social_submissions
+                     SET state = ?1, next_attempt_at_unix_ms = ?2, updated_at_unix_ms = ?3
+                     WHERE command_id = ?4 AND state = ?5
+                       AND lease_generation = ?6 AND session_generation = ?7",
+                    params![
+                        next.state as i64,
+                        next.next_attempt_at_unix_ms,
+                        next.updated_at_unix_ms,
+                        command.command_id,
+                        current.state as i64,
+                        to_i64(current.lease_generation, "lease generation")?,
+                        to_i64(current.session_generation, "session generation")?,
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        for draft in comments {
+            let current = draft.operation_record()?;
+            let next =
+                recover_interrupted_operation(&current, now).map_err(|error| error.to_string())?;
+            recovered += transaction
+                .execute(
+                    "UPDATE mobile_private_social_comment_drafts
+                     SET publication_state = ?1, state = ?2, error_code = ?3,
+                         next_attempt_at_unix_ms = ?4, updated_at_unix_ms = ?5
+                     WHERE draft_id = ?6 AND draft_revision = ?7
+                       AND publication_state = ?8
+                       AND lease_generation = ?9 AND session_generation = ?10",
+                    params![
+                        next.state as i64,
+                        CommentState::Failed as i64,
+                        "SOCIAL_PRIVATE_COMMENT_RESULT_UNKNOWN",
+                        next.next_attempt_at_unix_ms,
+                        next.updated_at_unix_ms,
+                        draft.draft_id,
+                        to_i64(draft.draft_revision, "comment draft revision")?,
+                        current.state as i64,
+                        to_i64(current.lease_generation, "comment lease generation")?,
+                        to_i64(current.session_generation, "comment session generation")?,
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        for command in prekeys {
+            let current = command.operation_record()?;
+            let next =
+                recover_interrupted_operation(&current, now).map_err(|error| error.to_string())?;
+            recovered += transaction
+                .execute(
+                    "UPDATE mobile_private_social_prekey_commands
+                     SET state = ?1, next_attempt_at_unix_ms = ?2, updated_at_unix_ms = ?3
+                     WHERE command_id = ?4 AND state = ?5
+                       AND lease_generation = ?6 AND session_generation = ?7",
+                    params![
+                        next.state as i64,
+                        next.next_attempt_at_unix_ms,
+                        next.updated_at_unix_ms,
+                        command.command_id,
+                        current.state as i64,
+                        to_i64(current.lease_generation, "lease generation")?,
+                        to_i64(current.session_generation, "session generation")?,
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        recovered += transaction
             .execute(
                 "UPDATE mobile_private_social_reaction_commands
                  SET state = ?1, updated_at_unix_ms = ?2 WHERE state = ?3",
@@ -373,7 +590,8 @@ impl PrivateSocialStore {
                 ],
             )
             .map_err(|error| error.to_string())?;
-        Ok(prekeys + submissions + reactions)
+        transaction.commit().map_err(|error| error.to_string())?;
+        Ok(recovered)
     }
 
     pub fn reserve_draft(&self, candidate: &StoredDraft) -> Result<StoredDraft, String> {
@@ -476,7 +694,9 @@ impl PrivateSocialStore {
                 "SELECT draft_id, draft_revision, post_id, reply_to_comment_id, text,
                         mention_intent_json, mention_commitment_salt, intent_sha256,
                         content_id, prepare_command_id, submit_command_id, request_bytes,
-                        request_sha256, root_key, generation, state, comment_id,
+                        request_sha256, root_key, generation, publication_state,
+                        lease_generation, session_generation, attempt_count,
+                        next_attempt_at_unix_ms, updated_at_unix_ms, state, comment_id,
                         error_code, retry_after_seconds
                  FROM mobile_private_social_comment_drafts
                  WHERE draft_id = ?1 AND draft_revision = ?2",
@@ -505,7 +725,9 @@ impl PrivateSocialStore {
                 "SELECT draft_id, draft_revision, post_id, reply_to_comment_id, text,
                         mention_intent_json, mention_commitment_salt, intent_sha256,
                         content_id, prepare_command_id, submit_command_id, request_bytes,
-                        request_sha256, root_key, generation, state, comment_id,
+                        request_sha256, root_key, generation, publication_state,
+                        lease_generation, session_generation, attempt_count,
+                        next_attempt_at_unix_ms, updated_at_unix_ms, state, comment_id,
                         error_code, retry_after_seconds
                  FROM mobile_private_social_comment_drafts
                  WHERE draft_id = ?1 AND draft_revision = ?2",
@@ -523,7 +745,9 @@ impl PrivateSocialStore {
                 "SELECT draft_id, draft_revision, post_id, reply_to_comment_id, text,
                         mention_intent_json, mention_commitment_salt, intent_sha256,
                         content_id, prepare_command_id, submit_command_id, request_bytes,
-                        request_sha256, root_key, generation, state, comment_id,
+                        request_sha256, root_key, generation, publication_state,
+                        lease_generation, session_generation, attempt_count,
+                        next_attempt_at_unix_ms, updated_at_unix_ms, state, comment_id,
                         error_code, retry_after_seconds
                  FROM mobile_private_social_comment_drafts
                  ORDER BY updated_at_unix_ms DESC, draft_id, draft_revision",
@@ -547,11 +771,13 @@ impl PrivateSocialStore {
         request_bytes: &[u8],
         request_sha256: &[u8; 32],
         root_key: &[u8; 32],
+        session_generation: u64,
     ) -> Result<(), String> {
         if request_bytes.is_empty()
             || Sha256::digest(request_bytes).as_slice() != request_sha256
             || generation == 0
             || submit_command_id.trim().is_empty()
+            || session_generation == 0
         {
             return Err("private Comment prepared request is invalid".to_string());
         }
@@ -561,12 +787,15 @@ impl PrivateSocialStore {
                 "UPDATE mobile_private_social_comment_drafts
                  SET generation = ?1, submit_command_id = ?2, request_bytes = ?3,
                      request_sha256 = ?4, root_key = ?5, state = ?6,
+                     publication_state = ?7, lease_generation = 0,
+                     session_generation = ?8, attempt_count = 0,
+                     next_attempt_at_unix_ms = 0,
                      error_code = NULL, retry_after_seconds = NULL,
-                     updated_at_unix_ms = ?7
-                 WHERE draft_id = ?8 AND draft_revision = ?9
+                     updated_at_unix_ms = ?9
+                 WHERE draft_id = ?10 AND draft_revision = ?11
                    AND intent_sha256 = (
                      SELECT intent_sha256 FROM mobile_private_social_comment_drafts
-                     WHERE draft_id = ?8 AND draft_revision = ?9
+                     WHERE draft_id = ?10 AND draft_revision = ?11
                    )",
                 params![
                     to_i64(generation, "comment generation")?,
@@ -575,6 +804,8 @@ impl PrivateSocialStore {
                     request_sha256.as_slice(),
                     root_key.as_slice(),
                     CommentState::Submitting as i64,
+                    OperationState::Pending as i64,
+                    to_i64(session_generation, "comment session generation")?,
                     now_unix_ms(),
                     draft_id,
                     to_i64(draft_revision, "comment draft revision")?,
@@ -586,6 +817,169 @@ impl PrivateSocialStore {
         } else {
             Err("private Comment draft is unavailable".to_string())
         }
+    }
+
+    pub fn acquire_comment_submission(
+        &self,
+        draft_id: &str,
+        draft_revision: u64,
+        session_generation: u64,
+        cause: DispatchCause,
+    ) -> Result<AcquiredCommentSubmission, String> {
+        self.ensure_session_generation(session_generation)?;
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|error| error.to_string())?;
+        let mut draft = transaction
+            .query_row(
+                "SELECT draft_id, draft_revision, post_id, reply_to_comment_id, text,
+                        mention_intent_json, mention_commitment_salt, intent_sha256,
+                        content_id, prepare_command_id, submit_command_id, request_bytes,
+                        request_sha256, root_key, generation, publication_state,
+                        lease_generation, session_generation, attempt_count,
+                        next_attempt_at_unix_ms, updated_at_unix_ms, state, comment_id,
+                        error_code, retry_after_seconds
+                 FROM mobile_private_social_comment_drafts
+                 WHERE draft_id = ?1 AND draft_revision = ?2",
+                params![draft_id, to_i64(draft_revision, "comment draft revision")?],
+                comment_draft_from_row,
+            )
+            .map_err(|error| error.to_string())?;
+        let current = draft.operation_record()?;
+        let lease = acquire_operation(&current, session_generation, cause, now_unix_ms())
+            .map_err(|error| error.to_string())?;
+        let changed = transaction
+            .execute(
+                "UPDATE mobile_private_social_comment_drafts
+                 SET publication_state = ?1, lease_generation = ?2,
+                     session_generation = ?3, attempt_count = ?4,
+                     next_attempt_at_unix_ms = ?5, state = ?6,
+                     error_code = NULL, retry_after_seconds = NULL,
+                     updated_at_unix_ms = ?7
+                 WHERE draft_id = ?8 AND draft_revision = ?9
+                   AND publication_state = ?10
+                   AND lease_generation = ?11 AND session_generation = ?12",
+                params![
+                    lease.record.state as i64,
+                    to_i64(lease.record.lease_generation, "comment lease generation")?,
+                    to_i64(
+                        lease.record.session_generation,
+                        "comment session generation"
+                    )?,
+                    i64::from(lease.record.attempt_count),
+                    lease.record.next_attempt_at_unix_ms,
+                    CommentState::Submitting as i64,
+                    lease.record.updated_at_unix_ms,
+                    draft_id,
+                    to_i64(draft_revision, "comment draft revision")?,
+                    current.state as i64,
+                    to_i64(current.lease_generation, "comment lease generation")?,
+                    to_i64(current.session_generation, "comment session generation")?,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed != 1 {
+            return Err("private Comment submission lost its operation fence".to_string());
+        }
+        apply_operation_record_to_comment(&mut draft, &lease.record);
+        draft.state = CommentState::Submitting;
+        draft.error_code = None;
+        draft.retry_after_seconds = None;
+        transaction.commit().map_err(|error| error.to_string())?;
+        Ok(AcquiredCommentSubmission { draft, lease })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn complete_comment_submission(
+        &self,
+        acquired: &AcquiredCommentSubmission,
+        completion: OperationCompletion,
+        state: CommentState,
+        comment_id: Option<&str>,
+        error_code: Option<&str>,
+        retry_after_seconds: Option<u64>,
+    ) -> Result<bool, String> {
+        let current = acquired.draft.operation_record()?;
+        let completed = complete_operation(
+            &current,
+            acquired.lease.record.fence(),
+            completion,
+            now_unix_ms(),
+        )
+        .map_err(|error| error.to_string())?;
+        self.connection()?
+            .execute(
+                "UPDATE mobile_private_social_comment_drafts
+                 SET publication_state = ?1,
+                     comment_id = COALESCE(?2, comment_id),
+                     state = ?3, error_code = ?4, retry_after_seconds = ?5,
+                     next_attempt_at_unix_ms = ?6, updated_at_unix_ms = ?7
+                 WHERE draft_id = ?8 AND draft_revision = ?9
+                   AND publication_state = ?10
+                   AND lease_generation = ?11 AND session_generation = ?12",
+                params![
+                    completed.state as i64,
+                    comment_id,
+                    state as i64,
+                    error_code,
+                    retry_after_seconds.map(|value| value.min(i64::MAX as u64) as i64),
+                    completed.next_attempt_at_unix_ms,
+                    completed.updated_at_unix_ms,
+                    acquired.draft.draft_id,
+                    to_i64(acquired.draft.draft_revision, "comment draft revision")?,
+                    OperationState::InFlight as i64,
+                    to_i64(acquired.draft.lease_generation, "comment lease generation")?,
+                    to_i64(
+                        acquired.draft.session_generation,
+                        "comment session generation"
+                    )?,
+                ],
+            )
+            .map(|changed| changed == 1)
+            .map_err(|error| error.to_string())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn apply_comment_readback(
+        &self,
+        draft: &StoredCommentDraft,
+        decision: &ReadbackDecision,
+        state: CommentState,
+        comment_id: Option<&str>,
+        error_code: Option<&str>,
+        retry_after_seconds: Option<u64>,
+    ) -> Result<bool, String> {
+        let current = draft.operation_record()?;
+        let advanced = apply_readback_decision(&current, current.fence(), decision, now_unix_ms())
+            .map_err(|error| error.to_string())?;
+        self.connection()?
+            .execute(
+                "UPDATE mobile_private_social_comment_drafts
+                 SET publication_state = ?1,
+                     comment_id = COALESCE(?2, comment_id),
+                     state = ?3, error_code = ?4, retry_after_seconds = ?5,
+                     next_attempt_at_unix_ms = ?6, updated_at_unix_ms = ?7
+                 WHERE draft_id = ?8 AND draft_revision = ?9
+                   AND publication_state = ?10
+                   AND lease_generation = ?11 AND session_generation = ?12",
+                params![
+                    advanced.state as i64,
+                    comment_id,
+                    state as i64,
+                    error_code,
+                    retry_after_seconds.map(|value| value.min(i64::MAX as u64) as i64),
+                    advanced.next_attempt_at_unix_ms,
+                    advanced.updated_at_unix_ms,
+                    draft.draft_id,
+                    to_i64(draft.draft_revision, "comment draft revision")?,
+                    current.state as i64,
+                    to_i64(current.lease_generation, "comment lease generation")?,
+                    to_i64(current.session_generation, "comment session generation")?,
+                ],
+            )
+            .map(|changed| changed == 1)
+            .map_err(|error| error.to_string())
     }
 
     pub fn finish_comment(
@@ -698,9 +1092,10 @@ impl PrivateSocialStore {
                 "INSERT INTO mobile_private_social_submissions(
                    command_id, draft_id, draft_revision, content_id, generation,
                    request_bytes, request_sha256, root_key, projection_json, state,
-                   lease_generation, session_generation, post_id, last_error_code,
-                   updated_at_unix_ms
-                 ) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 0, ?11, NULL, NULL, ?12)
+                   lease_generation, session_generation, attempt_count,
+                   next_attempt_at_unix_ms, post_id, last_error_code, updated_at_unix_ms
+                 ) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 0, ?11, 0, 0,
+                          NULL, NULL, ?12)
                  ON CONFLICT(command_id) DO NOTHING",
                 params![
                     command.command_id,
@@ -741,10 +1136,29 @@ impl PrivateSocialStore {
             .query_row(
                 "SELECT command_id, draft_id, draft_revision, content_id, generation,
                         request_bytes, request_sha256, root_key, projection_json, state,
-                        lease_generation, session_generation, post_id, last_error_code
+                        lease_generation, session_generation, attempt_count,
+                        next_attempt_at_unix_ms, updated_at_unix_ms, post_id, last_error_code
                  FROM mobile_private_social_submissions
                  WHERE draft_id = ?1 AND draft_revision = ?2",
                 params![draft_id, to_i64(draft_revision, "draft revision")?],
+                submission_from_row,
+            )
+            .optional()
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn submission_by_command_id(
+        &self,
+        command_id: &str,
+    ) -> Result<Option<StoredSubmission>, String> {
+        self.connection()?
+            .query_row(
+                "SELECT command_id, draft_id, draft_revision, content_id, generation,
+                        request_bytes, request_sha256, root_key, projection_json, state,
+                        lease_generation, session_generation, attempt_count,
+                        next_attempt_at_unix_ms, updated_at_unix_ms, post_id, last_error_code
+                 FROM mobile_private_social_submissions WHERE command_id = ?1",
+                params![command_id],
                 submission_from_row,
             )
             .optional()
@@ -757,17 +1171,22 @@ impl PrivateSocialStore {
             .prepare(
                 "SELECT command_id, draft_id, draft_revision, content_id, generation,
                         request_bytes, request_sha256, root_key, projection_json, state,
-                        lease_generation, session_generation, post_id, last_error_code
+                        lease_generation, session_generation, attempt_count,
+                        next_attempt_at_unix_ms, updated_at_unix_ms, post_id, last_error_code
                  FROM mobile_private_social_submissions
-                 WHERE state IN (?1, ?2)
+                 WHERE state IN (?1, ?2, ?3)
+                    OR (state = ?4 AND next_attempt_at_unix_ms <= ?5)
                  ORDER BY updated_at_unix_ms, command_id",
             )
             .map_err(|error| error.to_string())?;
         let rows = statement
             .query_map(
                 params![
-                    DurableState::Pending as i64,
-                    DurableState::UnknownOutcome as i64
+                    OperationState::Pending as i64,
+                    OperationState::UnknownOutcome as i64,
+                    OperationState::CommittedPendingReadback as i64,
+                    OperationState::RetryWait as i64,
+                    now_unix_ms(),
                 ],
                 submission_from_row,
             )
@@ -777,89 +1196,132 @@ impl PrivateSocialStore {
         Ok(rows)
     }
 
-    pub fn acquire_submission(&self, command_id: &str) -> Result<AcquiredSubmission, String> {
+    pub fn acquire_submission(
+        &self,
+        command_id: &str,
+        cause: DispatchCause,
+    ) -> Result<AcquiredSubmission, String> {
         let generation = self.generation()?;
         let mut connection = self.connection()?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|error| error.to_string())?;
-        let prior = transaction
-            .query_row(
-                "SELECT state FROM mobile_private_social_submissions WHERE command_id = ?1",
-                params![command_id],
-                |row| row.get::<_, i64>(0),
-            )
-            .map_err(|error| error.to_string())?;
-        let prior = DurableState::try_from(prior)?;
-        let changed = transaction
-            .execute(
-                "UPDATE mobile_private_social_submissions
-                 SET state = ?1, lease_generation = lease_generation + 1,
-                     session_generation = ?2, updated_at_unix_ms = ?3
-                 WHERE command_id = ?4 AND state IN (?5, ?6, ?7)",
-                params![
-                    DurableState::InFlight as i64,
-                    to_i64(generation, "session generation")?,
-                    now_unix_ms(),
-                    command_id,
-                    DurableState::Prepared as i64,
-                    DurableState::Pending as i64,
-                    DurableState::UnknownOutcome as i64,
-                ],
-            )
-            .map_err(|error| error.to_string())?;
-        if changed != 1 {
-            return Err("private Social submission is not dispatchable".to_string());
-        }
-        let command = transaction
+        let mut command = transaction
             .query_row(
                 "SELECT command_id, draft_id, draft_revision, content_id, generation,
                         request_bytes, request_sha256, root_key, projection_json, state,
-                        lease_generation, session_generation, post_id, last_error_code
+                        lease_generation, session_generation, attempt_count,
+                        next_attempt_at_unix_ms, updated_at_unix_ms, post_id, last_error_code
                  FROM mobile_private_social_submissions WHERE command_id = ?1",
                 params![command_id],
                 submission_from_row,
             )
             .map_err(|error| error.to_string())?;
+        let current = command.operation_record()?;
+        let lease = acquire_operation(&current, generation, cause, now_unix_ms())
+            .map_err(|error| error.to_string())?;
+        let changed = transaction
+            .execute(
+                "UPDATE mobile_private_social_submissions
+                 SET state = ?1, lease_generation = ?2, session_generation = ?3,
+                     attempt_count = ?4, next_attempt_at_unix_ms = ?5,
+                     updated_at_unix_ms = ?6
+                 WHERE command_id = ?7 AND state = ?8
+                   AND lease_generation = ?9 AND session_generation = ?10",
+                params![
+                    lease.record.state as i64,
+                    to_i64(lease.record.lease_generation, "lease generation")?,
+                    to_i64(lease.record.session_generation, "session generation")?,
+                    i64::from(lease.record.attempt_count),
+                    lease.record.next_attempt_at_unix_ms,
+                    lease.record.updated_at_unix_ms,
+                    command_id,
+                    current.state as i64,
+                    to_i64(current.lease_generation, "lease generation")?,
+                    to_i64(current.session_generation, "session generation")?,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed != 1 {
+            return Err("private Social submission lost its operation fence".to_string());
+        }
+        apply_operation_record_to_submission(&mut command, &lease.record);
         transaction.commit().map_err(|error| error.to_string())?;
-        Ok(AcquiredSubmission {
-            command,
-            reconciles_unknown_outcome: prior == DurableState::UnknownOutcome,
-        })
+        Ok(AcquiredSubmission { command, lease })
     }
 
-    pub fn finish_submission(
+    pub fn complete_submission(
         &self,
-        command: &StoredSubmission,
-        target: DurableState,
+        acquired: &AcquiredSubmission,
+        completion: OperationCompletion,
         post_id: Option<&str>,
         error_code: Option<i32>,
         projection_json: &[u8],
     ) -> Result<bool, String> {
-        if !matches!(
-            target,
-            DurableState::UnknownOutcome | DurableState::Committed | DurableState::Terminal
-        ) {
-            return Err("private Social submission target state is invalid".to_string());
-        }
+        let current = acquired.command.operation_record()?;
+        let completed = complete_operation(
+            &current,
+            acquired.lease.record.fence(),
+            completion,
+            now_unix_ms(),
+        )
+        .map_err(|error| error.to_string())?;
         let connection = self.connection()?;
         connection
             .execute(
                 "UPDATE mobile_private_social_submissions
                  SET state = ?1, post_id = COALESCE(?2, post_id), last_error_code = ?3,
-                     projection_json = ?4, updated_at_unix_ms = ?5
-                 WHERE command_id = ?6 AND state = ?7
-                   AND lease_generation = ?8 AND session_generation = ?9",
+                     projection_json = ?4, next_attempt_at_unix_ms = ?5,
+                     updated_at_unix_ms = ?6
+                 WHERE command_id = ?7 AND state = ?8
+                   AND lease_generation = ?9 AND session_generation = ?10",
                 params![
-                    target as i64,
+                    completed.state as i64,
                     post_id,
                     error_code,
                     projection_json,
-                    now_unix_ms(),
+                    completed.next_attempt_at_unix_ms,
+                    completed.updated_at_unix_ms,
+                    acquired.command.command_id,
+                    OperationState::InFlight as i64,
+                    to_i64(acquired.command.lease_generation, "lease generation")?,
+                    to_i64(acquired.command.session_generation, "session generation")?,
+                ],
+            )
+            .map(|changed| changed == 1)
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn apply_submission_readback(
+        &self,
+        command: &StoredSubmission,
+        decision: &ReadbackDecision,
+        post_id: Option<&str>,
+        error_code: Option<i32>,
+        projection_json: &[u8],
+    ) -> Result<bool, String> {
+        let current = command.operation_record()?;
+        let advanced = apply_readback_decision(&current, current.fence(), decision, now_unix_ms())
+            .map_err(|error| error.to_string())?;
+        self.connection()?
+            .execute(
+                "UPDATE mobile_private_social_submissions
+                 SET state = ?1, post_id = COALESCE(?2, post_id), last_error_code = ?3,
+                     projection_json = ?4, next_attempt_at_unix_ms = ?5,
+                     updated_at_unix_ms = ?6
+                 WHERE command_id = ?7 AND state = ?8
+                   AND lease_generation = ?9 AND session_generation = ?10",
+                params![
+                    advanced.state as i64,
+                    post_id,
+                    error_code,
+                    projection_json,
+                    advanced.next_attempt_at_unix_ms,
+                    advanced.updated_at_unix_ms,
                     command.command_id,
-                    DurableState::InFlight as i64,
-                    to_i64(command.lease_generation, "lease generation")?,
-                    to_i64(command.session_generation, "session generation")?,
+                    current.state as i64,
+                    to_i64(current.lease_generation, "lease generation")?,
+                    to_i64(current.session_generation, "session generation")?,
                 ],
             )
             .map(|changed| changed == 1)
@@ -909,8 +1371,9 @@ impl PrivateSocialStore {
             .execute(
                 "INSERT INTO mobile_private_social_prekey_commands(
                    command_id, key_kind, pool_epoch, request_bytes, request_sha256,
-                   state, lease_generation, session_generation, updated_at_unix_ms
-                 ) VALUES(?1, ?2, ?3, ?4, ?5, ?6, 0, 0, ?7)
+                   state, lease_generation, session_generation, attempt_count,
+                   next_attempt_at_unix_ms, updated_at_unix_ms
+                 ) VALUES(?1, ?2, ?3, ?4, ?5, ?6, 0, 0, 0, 0, ?7)
                  ON CONFLICT(command_id) DO NOTHING",
                 params![
                     command.command_id,
@@ -918,7 +1381,7 @@ impl PrivateSocialStore {
                     to_i64(command.pool_epoch, "pool epoch")?,
                     command.request_bytes,
                     command.request_sha256.as_slice(),
-                    DurableState::Pending as i64,
+                    OperationState::Pending as i64,
                     now_unix_ms(),
                 ],
             )
@@ -946,21 +1409,60 @@ impl PrivateSocialStore {
         transaction.commit().map_err(|error| error.to_string())
     }
 
+    pub fn persist_prepared_prekey_publication(
+        &self,
+        prepared: &PreparedContentPreKeyPublication,
+    ) -> Result<(), String> {
+        let command = StoredPreKeyPublication {
+            command_id: prepared.operation.command_id.clone(),
+            key_kind: match prepared.kind {
+                secure_content_core::operation::ContentPreKeyPoolKind::Endpoint => {
+                    ContentPreKeyKind::ContentPrekeyKindEndpoint as i32
+                }
+                secure_content_core::operation::ContentPreKeyPoolKind::ActorRecovery => {
+                    ContentPreKeyKind::ContentPrekeyKindActorRecovery as i32
+                }
+            },
+            pool_epoch: prepared.pool_epoch,
+            request_bytes: prepared.proof_free_request_bytes.clone(),
+            request_sha256: prepared.operation.command_sha256,
+            state: prepared.operation.state,
+            lease_generation: prepared.operation.lease_generation,
+            session_generation: prepared.operation.session_generation,
+            attempt_count: prepared.operation.attempt_count,
+            next_attempt_at_unix_ms: prepared.operation.next_attempt_at_unix_ms,
+            updated_at_unix_ms: prepared.operation.updated_at_unix_ms,
+        };
+        let keys = zeroize::Zeroizing::new(
+            prepared
+                .endpoint_keys
+                .iter()
+                .map(|key| (key.key_id.clone(), key.private_key, key.public_key))
+                .collect::<Vec<_>>(),
+        );
+        self.persist_prekey_publication(&command, keys.as_slice())
+    }
+
     pub fn pending_prekey_publications(&self) -> Result<Vec<StoredPreKeyPublication>, String> {
         let connection = self.connection()?;
         let mut statement = connection
             .prepare(
                 "SELECT command_id, key_kind, pool_epoch, request_bytes, request_sha256,
-                        state, lease_generation, session_generation
+                        state, lease_generation, session_generation, attempt_count,
+                        next_attempt_at_unix_ms, updated_at_unix_ms
                  FROM mobile_private_social_prekey_commands
-                 WHERE state IN (?1, ?2) ORDER BY updated_at_unix_ms, command_id",
+                 WHERE state IN (?1, ?2)
+                    OR (state = ?3 AND next_attempt_at_unix_ms <= ?4)
+                 ORDER BY updated_at_unix_ms, command_id",
             )
             .map_err(|error| error.to_string())?;
         let rows = statement
             .query_map(
                 params![
-                    DurableState::Pending as i64,
-                    DurableState::UnknownOutcome as i64
+                    OperationState::Pending as i64,
+                    OperationState::UnknownOutcome as i64,
+                    OperationState::RetryWait as i64,
+                    now_unix_ms(),
                 ],
                 prekey_publication_from_row,
             )
@@ -973,57 +1475,69 @@ impl PrivateSocialStore {
     pub fn acquire_prekey_publication(
         &self,
         command_id: &str,
-    ) -> Result<(StoredPreKeyPublication, bool), String> {
+        cause: DispatchCause,
+    ) -> Result<AcquiredPreKeyPublication, String> {
         let generation = self.generation()?;
         let mut connection = self.connection()?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|error| error.to_string())?;
-        let prior = transaction
-            .query_row(
-                "SELECT state FROM mobile_private_social_prekey_commands WHERE command_id = ?1",
-                params![command_id],
-                |row| row.get::<_, i64>(0),
-            )
-            .map_err(|error| error.to_string())?;
-        let prior = DurableState::try_from(prior)?;
-        let changed = transaction
-            .execute(
-                "UPDATE mobile_private_social_prekey_commands
-                 SET state = ?1, lease_generation = lease_generation + 1,
-                     session_generation = ?2, updated_at_unix_ms = ?3
-                 WHERE command_id = ?4 AND state IN (?5, ?6)",
-                params![
-                    DurableState::InFlight as i64,
-                    to_i64(generation, "session generation")?,
-                    now_unix_ms(),
-                    command_id,
-                    DurableState::Pending as i64,
-                    DurableState::UnknownOutcome as i64,
-                ],
-            )
-            .map_err(|error| error.to_string())?;
-        if changed != 1 {
-            return Err("private Social PreKey publication is not dispatchable".to_string());
-        }
-        let command = transaction
+        let mut command = transaction
             .query_row(
                 "SELECT command_id, key_kind, pool_epoch, request_bytes, request_sha256,
-                        state, lease_generation, session_generation
+                        state, lease_generation, session_generation, attempt_count,
+                        next_attempt_at_unix_ms, updated_at_unix_ms
                  FROM mobile_private_social_prekey_commands WHERE command_id = ?1",
                 params![command_id],
                 prekey_publication_from_row,
             )
             .map_err(|error| error.to_string())?;
+        let current = command.operation_record()?;
+        let lease = acquire_operation(&current, generation, cause, now_unix_ms())
+            .map_err(|error| error.to_string())?;
+        let changed = transaction
+            .execute(
+                "UPDATE mobile_private_social_prekey_commands
+                 SET state = ?1, lease_generation = ?2, session_generation = ?3,
+                     attempt_count = ?4, next_attempt_at_unix_ms = ?5,
+                     updated_at_unix_ms = ?6
+                 WHERE command_id = ?7 AND state = ?8
+                   AND lease_generation = ?9 AND session_generation = ?10",
+                params![
+                    lease.record.state as i64,
+                    to_i64(lease.record.lease_generation, "lease generation")?,
+                    to_i64(lease.record.session_generation, "session generation")?,
+                    i64::from(lease.record.attempt_count),
+                    lease.record.next_attempt_at_unix_ms,
+                    lease.record.updated_at_unix_ms,
+                    command_id,
+                    current.state as i64,
+                    to_i64(current.lease_generation, "lease generation")?,
+                    to_i64(current.session_generation, "session generation")?,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed != 1 {
+            return Err("private Social PreKey publication lost its operation fence".to_string());
+        }
+        apply_operation_record_to_prekey(&mut command, &lease.record);
         transaction.commit().map_err(|error| error.to_string())?;
-        Ok((command, prior == DurableState::UnknownOutcome))
+        Ok(AcquiredPreKeyPublication { command, lease })
     }
 
-    pub fn finish_prekey_publication(
+    pub fn complete_prekey_publication(
         &self,
-        command: &StoredPreKeyPublication,
-        target: DurableState,
+        acquired: &AcquiredPreKeyPublication,
+        completion: OperationCompletion,
     ) -> Result<bool, String> {
+        let current = acquired.command.operation_record()?;
+        let completed = complete_operation(
+            &current,
+            acquired.lease.record.fence(),
+            completion,
+            now_unix_ms(),
+        )
+        .map_err(|error| error.to_string())?;
         let mut connection = self.connection()?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -1031,33 +1545,34 @@ impl PrivateSocialStore {
         let changed = transaction
             .execute(
                 "UPDATE mobile_private_social_prekey_commands
-                 SET state = ?1, updated_at_unix_ms = ?2
-                 WHERE command_id = ?3 AND state = ?4
-                   AND lease_generation = ?5 AND session_generation = ?6",
+                 SET state = ?1, next_attempt_at_unix_ms = ?2, updated_at_unix_ms = ?3
+                 WHERE command_id = ?4 AND state = ?5
+                   AND lease_generation = ?6 AND session_generation = ?7",
                 params![
-                    target as i64,
-                    now_unix_ms(),
-                    command.command_id,
-                    DurableState::InFlight as i64,
-                    to_i64(command.lease_generation, "lease generation")?,
-                    to_i64(command.session_generation, "session generation")?,
+                    completed.state as i64,
+                    completed.next_attempt_at_unix_ms,
+                    completed.updated_at_unix_ms,
+                    acquired.command.command_id,
+                    OperationState::InFlight as i64,
+                    to_i64(acquired.command.lease_generation, "lease generation")?,
+                    to_i64(acquired.command.session_generation, "session generation")?,
                 ],
             )
             .map_err(|error| error.to_string())?;
-        if changed == 1 && target == DurableState::Committed {
+        if changed == 1 && completed.state == OperationState::Committed {
             transaction
                 .execute(
                     "UPDATE mobile_private_social_prekeys SET published = 1
                      WHERE command_id = ?1",
-                    params![command.command_id],
+                    params![acquired.command.command_id],
                 )
                 .map_err(|error| error.to_string())?;
-        } else if changed == 1 && target == DurableState::Terminal {
+        } else if changed == 1 && completed.state == OperationState::Terminal {
             transaction
                 .execute(
                     "DELETE FROM mobile_private_social_prekeys
                      WHERE command_id = ?1 AND published = 0",
-                    params![command.command_id],
+                    params![acquired.command.command_id],
                 )
                 .map_err(|error| error.to_string())?;
         }
@@ -1733,6 +2248,374 @@ impl PrivateSocialStore {
             .map_err(|error| error.to_string())?;
         Ok(projections)
     }
+
+    pub fn ensure_object_upload_transfer(
+        &self,
+        record: &ObjectTransferRecord,
+        media_type: &str,
+    ) -> Result<ObjectTransferRecord, String> {
+        secure_content_core::object::validate_object_transfer_record(record)?;
+        if record.direction != ObjectTransferDirection::Upload || media_type.trim().is_empty() {
+            return Err("private Social object upload journal is invalid".to_string());
+        }
+        let session_generation = self.generation()?;
+        let connection = self.connection()?;
+        connection
+            .execute(
+                "INSERT INTO mobile_private_social_object_transfers(
+                   transfer_id, owner_scope_id, operation_id, authority_id,
+                   direction, state, upload_id, generation, descriptor_sha256,
+                   completed_chunk_bitmap, source_local_ref, partial_local_ref,
+                   object_key, base_nonce, plaintext_size, chunk_size, media_type,
+                   attempt_count, next_attempt_at_unix_ms, last_error,
+                   descriptor_bytes, updated_at_unix_ms, session_generation
+                 ) VALUES(
+                   ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
+                   ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, NULL, ?21, ?22
+                 ) ON CONFLICT(transfer_id) DO NOTHING",
+                params![
+                    record.transfer_id,
+                    record.owner_scope_id,
+                    record.operation_id,
+                    record.authority_id,
+                    record.direction as i32,
+                    record.state as i32,
+                    record.upload_id,
+                    to_i64(record.generation, "object upload generation")?,
+                    record.descriptor_sha256,
+                    record.completed_chunk_bitmap,
+                    record.source_local_ref,
+                    record.partial_local_ref,
+                    record.object_key,
+                    record.base_nonce,
+                    to_i64(record.plaintext_size, "object plaintext size")?,
+                    record.chunk_size,
+                    media_type,
+                    i64::from(record.attempt_count),
+                    record.next_attempt_at_unix_ms,
+                    record.last_error.map(|value| value as i32),
+                    record.updated_at_unix_ms,
+                    to_i64(session_generation, "session generation")?,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        let existing = connection
+            .query_row(
+                "SELECT transfer_id, owner_scope_id, operation_id, authority_id,
+                        direction, state, upload_id, generation, descriptor_sha256,
+                        completed_chunk_bitmap, source_local_ref, partial_local_ref,
+                        object_key, base_nonce, plaintext_size, chunk_size,
+                        attempt_count, next_attempt_at_unix_ms, last_error,
+                        updated_at_unix_ms
+                 FROM mobile_private_social_object_transfers
+                 WHERE transfer_id = ?1 AND session_generation = ?2",
+                params![
+                    record.transfer_id,
+                    to_i64(session_generation, "session generation")?
+                ],
+                object_transfer_from_row,
+            )
+            .map_err(|error| error.to_string())?;
+        let stored_media_type: String = connection
+            .query_row(
+                "SELECT media_type FROM mobile_private_social_object_transfers
+                 WHERE transfer_id = ?1 AND session_generation = ?2",
+                params![
+                    record.transfer_id,
+                    to_i64(session_generation, "session generation")?
+                ],
+                |row| row.get(0),
+            )
+            .map_err(|error| error.to_string())?;
+        if existing.owner_scope_id != record.owner_scope_id
+            || existing.operation_id != record.operation_id
+            || existing.authority_id != record.authority_id
+            || existing.direction != record.direction
+            || existing.source_local_ref != record.source_local_ref
+            || existing.partial_local_ref != record.partial_local_ref
+            || existing.object_key != record.object_key
+            || existing.base_nonce != record.base_nonce
+            || existing.plaintext_size != record.plaintext_size
+            || existing.chunk_size != record.chunk_size
+            || stored_media_type != media_type
+        {
+            return Err("private Social object upload replay conflict".to_string());
+        }
+        Ok(existing)
+    }
+
+    pub fn persist_object_descriptor(
+        &self,
+        transfer_id: &str,
+        descriptor_bytes: &[u8],
+    ) -> Result<(), String> {
+        if transfer_id.trim().is_empty() || descriptor_bytes.is_empty() {
+            return Err("private Social object descriptor is invalid".to_string());
+        }
+        let connection = self.connection()?;
+        let existing: Option<Vec<u8>> = connection
+            .query_row(
+                "SELECT descriptor_bytes FROM mobile_private_social_object_transfers
+                 WHERE transfer_id = ?1 AND session_generation = ?2",
+                params![
+                    transfer_id,
+                    to_i64(self.generation()?, "session generation")?
+                ],
+                |row| row.get(0),
+            )
+            .map_err(|error| error.to_string())?;
+        if existing
+            .as_ref()
+            .is_some_and(|stored| stored.as_slice() != descriptor_bytes)
+        {
+            return Err("private Social object descriptor replay conflict".to_string());
+        }
+        connection
+            .execute(
+                "UPDATE mobile_private_social_object_transfers
+                 SET descriptor_bytes = ?1
+                 WHERE transfer_id = ?2 AND session_generation = ?3
+                   AND state NOT IN (?4, ?5)",
+                params![
+                    descriptor_bytes,
+                    transfer_id,
+                    to_i64(self.generation()?, "session generation")?,
+                    ObjectTransferState::Cancelled as i32,
+                    ObjectTransferState::Terminal as i32,
+                ],
+            )
+            .map_err(|error| error.to_string())
+            .and_then(|changed| {
+                if changed == 1 {
+                    Ok(())
+                } else {
+                    Err("private Social object transfer generation is stale".to_string())
+                }
+            })
+    }
+
+    pub fn object_descriptor_bytes(&self, transfer_id: &str) -> Result<Option<Vec<u8>>, String> {
+        self.connection()?
+            .query_row(
+                "SELECT descriptor_bytes FROM mobile_private_social_object_transfers
+                 WHERE transfer_id = ?1 AND session_generation = ?2",
+                params![
+                    transfer_id,
+                    to_i64(self.generation()?, "session generation")?
+                ],
+                |row| row.get(0),
+            )
+            .optional()
+            .map(|value| value.flatten())
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn delete_completed_uploads_for_owner(&self, owner_scope_id: &str) -> Result<(), String> {
+        self.connection()?
+            .execute(
+                "DELETE FROM mobile_private_social_object_transfers
+                 WHERE owner_scope_id = ?1 AND direction = ?2 AND state = ?3
+                   AND session_generation = ?4",
+                params![
+                    owner_scope_id,
+                    ObjectTransferDirection::Upload as i32,
+                    ObjectTransferState::Complete as i32,
+                    to_i64(self.generation()?, "session generation")?,
+                ],
+            )
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    }
+}
+
+impl ObjectTransferRepository for PrivateSocialStore {
+    fn object_transfer(
+        &self,
+        transfer_id: &str,
+    ) -> Result<Option<ObjectTransferRecord>, ObjectTransferFailure> {
+        self.connection()
+            .map_err(transfer_error)?
+            .query_row(
+                "SELECT transfer_id, owner_scope_id, operation_id, authority_id,
+                        direction, state, upload_id, generation, descriptor_sha256,
+                        completed_chunk_bitmap, source_local_ref, partial_local_ref,
+                        object_key, base_nonce, plaintext_size, chunk_size,
+                        attempt_count, next_attempt_at_unix_ms, last_error,
+                        updated_at_unix_ms
+                 FROM mobile_private_social_object_transfers
+                 WHERE transfer_id = ?1 AND session_generation = ?2",
+                params![
+                    transfer_id,
+                    to_i64(
+                        self.generation().map_err(transfer_error)?,
+                        "session generation"
+                    )
+                    .map_err(transfer_error)?
+                ],
+                object_transfer_from_row,
+            )
+            .optional()
+            .map_err(|error| transfer_error(error.to_string()))
+    }
+
+    fn upload_media_type(
+        &self,
+        transfer_id: &str,
+    ) -> Result<Option<String>, ObjectTransferFailure> {
+        self.connection()
+            .map_err(transfer_error)?
+            .query_row(
+                "SELECT media_type FROM mobile_private_social_object_transfers
+                 WHERE transfer_id = ?1 AND session_generation = ?2",
+                params![
+                    transfer_id,
+                    to_i64(
+                        self.generation().map_err(transfer_error)?,
+                        "session generation"
+                    )
+                    .map_err(transfer_error)?
+                ],
+                |row| row.get(0),
+            )
+            .optional()
+            .map(|value| value.flatten())
+            .map_err(|error| transfer_error(error.to_string()))
+    }
+
+    fn update_transfer_prepared(
+        &self,
+        transfer_id: &str,
+        descriptor_sha256: &[u8],
+        partial_local_ref: &str,
+        updated_at_unix_ms: i64,
+    ) -> Result<(), ObjectTransferFailure> {
+        let connection = self.connection().map_err(transfer_error)?;
+        let current: Vec<u8> = connection
+            .query_row(
+                "SELECT descriptor_sha256 FROM mobile_private_social_object_transfers
+                 WHERE transfer_id = ?1",
+                params![transfer_id],
+                |row| row.get(0),
+            )
+            .map_err(|error| transfer_error(error.to_string()))?;
+        if current != vec![0; 32] && current != descriptor_sha256 {
+            return Err(ObjectTransferFailure::terminal(
+                ObjectTransferErrorCode::DescriptorMismatch,
+                "private Social object descriptor changed",
+            ));
+        }
+        let changed = connection
+            .execute(
+                "UPDATE mobile_private_social_object_transfers
+                 SET descriptor_sha256 = ?1, partial_local_ref = ?2,
+                     updated_at_unix_ms = ?3
+                 WHERE transfer_id = ?4 AND session_generation = ?5
+                   AND state NOT IN (?6, ?7, ?8)",
+                params![
+                    descriptor_sha256,
+                    partial_local_ref,
+                    updated_at_unix_ms,
+                    transfer_id,
+                    to_i64(
+                        self.generation().map_err(transfer_error)?,
+                        "session generation"
+                    )
+                    .map_err(transfer_error)?,
+                    ObjectTransferState::Cancelled as i32,
+                    ObjectTransferState::Terminal as i32,
+                    ObjectTransferState::Complete as i32,
+                ],
+            )
+            .map_err(|error| transfer_error(error.to_string()))?;
+        if changed == 1 {
+            Ok(())
+        } else {
+            Err(transfer_error(
+                "private Social object transfer generation is stale",
+            ))
+        }
+    }
+
+    fn update_transfer_progress(
+        &self,
+        transfer_id: &str,
+        state: ObjectTransferState,
+        upload_id: &str,
+        generation: u64,
+        completed_chunk_bitmap: &[u8],
+        attempt_count: u32,
+        next_attempt_at_unix_ms: i64,
+        last_error: Option<ObjectTransferErrorCode>,
+        updated_at_unix_ms: i64,
+    ) -> Result<(), ObjectTransferFailure> {
+        let changed = self
+            .connection()
+            .map_err(transfer_error)?
+            .execute(
+                "UPDATE mobile_private_social_object_transfers
+                 SET state = ?1, upload_id = ?2, generation = ?3,
+                     completed_chunk_bitmap = ?4, attempt_count = ?5,
+                     next_attempt_at_unix_ms = ?6, last_error = ?7,
+                     updated_at_unix_ms = ?8
+                 WHERE transfer_id = ?9 AND session_generation = ?10
+                   AND state NOT IN (?11, ?12)",
+                params![
+                    state as i32,
+                    upload_id,
+                    to_i64(generation, "object upload generation").map_err(transfer_error)?,
+                    completed_chunk_bitmap,
+                    i64::from(attempt_count),
+                    next_attempt_at_unix_ms,
+                    last_error.map(|value| value as i32),
+                    updated_at_unix_ms,
+                    transfer_id,
+                    to_i64(
+                        self.generation().map_err(transfer_error)?,
+                        "session generation"
+                    )
+                    .map_err(transfer_error)?,
+                    ObjectTransferState::Cancelled as i32,
+                    ObjectTransferState::Terminal as i32,
+                ],
+            )
+            .map_err(|error| transfer_error(error.to_string()))?;
+        if changed == 1 {
+            Ok(())
+        } else {
+            Err(transfer_error(
+                "private Social object transfer generation is stale",
+            ))
+        }
+    }
+
+    fn complete_upload(
+        &self,
+        transfer: &ObjectTransferRecord,
+        _descriptor: &ObjectDescriptor,
+        updated_at_unix_ms: i64,
+    ) -> Result<(), ObjectTransferFailure> {
+        self.update_transfer_progress(
+            &transfer.transfer_id,
+            ObjectTransferState::Complete,
+            &transfer.upload_id,
+            transfer.generation,
+            &transfer.completed_chunk_bitmap,
+            transfer.attempt_count,
+            0,
+            None,
+            updated_at_unix_ms,
+        )
+    }
+
+    fn complete_download(
+        &self,
+        transfer: &ObjectTransferRecord,
+        descriptor: &ObjectDescriptor,
+        _cache_path: &str,
+        updated_at_unix_ms: i64,
+    ) -> Result<(), ObjectTransferFailure> {
+        self.complete_upload(transfer, descriptor, updated_at_unix_ms)
+    }
 }
 
 fn validate_draft(draft: &StoredDraft) -> Result<(), String> {
@@ -1756,15 +2639,48 @@ fn validate_submission(command: &StoredSubmission) -> Result<(), String> {
         || command.request_bytes.is_empty()
         || command.projection_json.is_empty()
         || Sha256::digest(&command.request_bytes).as_slice() != command.request_sha256
+        || command.lease_generation != 0
+        || command.attempt_count != 0
+        || command.next_attempt_at_unix_ms != 0
         || !matches!(
             command.state,
-            DurableState::Prepared | DurableState::Pending
+            OperationState::Prepared | OperationState::Pending
         )
     {
         Err("private Social submission is invalid".to_string())
     } else {
         Ok(())
     }
+}
+
+fn apply_operation_record_to_submission(command: &mut StoredSubmission, record: &OperationRecord) {
+    command.state = record.state;
+    command.lease_generation = record.lease_generation;
+    command.session_generation = record.session_generation;
+    command.attempt_count = record.attempt_count;
+    command.next_attempt_at_unix_ms = record.next_attempt_at_unix_ms;
+    command.updated_at_unix_ms = record.updated_at_unix_ms;
+}
+
+fn apply_operation_record_to_comment(draft: &mut StoredCommentDraft, record: &OperationRecord) {
+    draft.publication_state = Some(record.state);
+    draft.lease_generation = record.lease_generation;
+    draft.session_generation = record.session_generation;
+    draft.attempt_count = record.attempt_count;
+    draft.next_attempt_at_unix_ms = record.next_attempt_at_unix_ms;
+    draft.updated_at_unix_ms = record.updated_at_unix_ms;
+}
+
+fn apply_operation_record_to_prekey(
+    command: &mut StoredPreKeyPublication,
+    record: &OperationRecord,
+) {
+    command.state = record.state;
+    command.lease_generation = record.lease_generation;
+    command.session_generation = record.session_generation;
+    command.attempt_count = record.attempt_count;
+    command.next_attempt_at_unix_ms = record.next_attempt_at_unix_ms;
+    command.updated_at_unix_ms = record.updated_at_unix_ms;
 }
 
 fn bind_scope(
@@ -1797,7 +2713,7 @@ fn bind_scope(
     Ok(())
 }
 
-fn migrate(connection: &Connection) -> Result<(), String> {
+fn migrate(connection: &mut Connection) -> Result<(), String> {
     connection
         .execute_batch(
             "CREATE TABLE IF NOT EXISTS mobile_private_social_metadata (
@@ -1843,6 +2759,11 @@ fn migrate(connection: &Connection) -> Result<(), String> {
                request_sha256 BLOB CHECK(request_sha256 IS NULL OR length(request_sha256) = 32),
                root_key BLOB CHECK(root_key IS NULL OR length(root_key) = 32),
                generation INTEGER NOT NULL DEFAULT 0 CHECK(generation >= 0),
+               publication_state INTEGER,
+               lease_generation INTEGER NOT NULL DEFAULT 0,
+               session_generation INTEGER NOT NULL DEFAULT 0,
+               attempt_count INTEGER NOT NULL DEFAULT 0,
+               next_attempt_at_unix_ms INTEGER NOT NULL DEFAULT 0,
                state INTEGER NOT NULL,
                comment_id TEXT,
                error_code TEXT,
@@ -1935,6 +2856,31 @@ fn migrate(connection: &Connection) -> Result<(), String> {
                retry_after_seconds INTEGER,
                retry_not_before_unix_ms INTEGER,
                updated_at_unix_ms INTEGER NOT NULL
+             );
+             CREATE TABLE IF NOT EXISTS mobile_private_social_object_transfers (
+               transfer_id TEXT PRIMARY KEY,
+               owner_scope_id TEXT NOT NULL,
+               operation_id TEXT NOT NULL,
+               authority_id TEXT NOT NULL,
+               direction INTEGER NOT NULL,
+               state INTEGER NOT NULL,
+               upload_id TEXT NOT NULL,
+               generation INTEGER NOT NULL,
+               descriptor_sha256 BLOB NOT NULL CHECK(length(descriptor_sha256) = 32),
+               completed_chunk_bitmap BLOB NOT NULL,
+               source_local_ref TEXT NOT NULL,
+               partial_local_ref TEXT NOT NULL,
+               object_key BLOB NOT NULL CHECK(length(object_key) = 32),
+               base_nonce BLOB NOT NULL CHECK(length(base_nonce) = 12),
+               plaintext_size INTEGER NOT NULL CHECK(plaintext_size > 0),
+               chunk_size INTEGER NOT NULL CHECK(chunk_size > 0),
+               media_type TEXT NOT NULL,
+               attempt_count INTEGER NOT NULL,
+               next_attempt_at_unix_ms INTEGER NOT NULL,
+               last_error INTEGER,
+               descriptor_bytes BLOB,
+               updated_at_unix_ms INTEGER NOT NULL,
+               session_generation INTEGER NOT NULL DEFAULT 0
              );",
         )
         .map_err(|error| error.to_string())?;
@@ -1973,6 +2919,127 @@ fn migrate(connection: &Connection) -> Result<(), String> {
                 )
                 .map_err(|error| error.to_string())?;
         }
+    }
+    for (table, column, definition) in [
+        (
+            "mobile_private_social_comment_drafts",
+            "publication_state",
+            "INTEGER",
+        ),
+        (
+            "mobile_private_social_comment_drafts",
+            "lease_generation",
+            "INTEGER NOT NULL DEFAULT 0",
+        ),
+        (
+            "mobile_private_social_comment_drafts",
+            "session_generation",
+            "INTEGER NOT NULL DEFAULT 0",
+        ),
+        (
+            "mobile_private_social_comment_drafts",
+            "attempt_count",
+            "INTEGER NOT NULL DEFAULT 0",
+        ),
+        (
+            "mobile_private_social_comment_drafts",
+            "next_attempt_at_unix_ms",
+            "INTEGER NOT NULL DEFAULT 0",
+        ),
+        (
+            "mobile_private_social_submissions",
+            "attempt_count",
+            "INTEGER NOT NULL DEFAULT 0",
+        ),
+        (
+            "mobile_private_social_submissions",
+            "next_attempt_at_unix_ms",
+            "INTEGER NOT NULL DEFAULT 0",
+        ),
+        (
+            "mobile_private_social_prekey_commands",
+            "attempt_count",
+            "INTEGER NOT NULL DEFAULT 0",
+        ),
+        (
+            "mobile_private_social_prekey_commands",
+            "next_attempt_at_unix_ms",
+            "INTEGER NOT NULL DEFAULT 0",
+        ),
+    ] {
+        let exists = {
+            let mut statement = connection
+                .prepare(&format!("PRAGMA table_info({table})"))
+                .map_err(|error| error.to_string())?;
+            let columns = statement
+                .query_map([], |row| row.get::<_, String>(1))
+                .map_err(|error| error.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| error.to_string())?;
+            columns.iter().any(|candidate| candidate == column)
+        };
+        if !exists {
+            connection
+                .execute(
+                    &format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"),
+                    [],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+    }
+    let operation_schema: Option<String> = connection
+        .query_row(
+            "SELECT value FROM mobile_private_social_metadata
+             WHERE key = 'secure_content_operation_schema'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    match operation_schema.as_deref() {
+        Some("secure-content-operation-v1") => {}
+        Some(value) if value != "mobile-private-social-legacy" => {
+            return Err("private Social operation schema marker is invalid".to_string());
+        }
+        Some("mobile-private-social-legacy") | None => {
+            let transaction = connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .map_err(|error| error.to_string())?;
+            for table in [
+                "mobile_private_social_submissions",
+                "mobile_private_social_prekey_commands",
+            ] {
+                transaction
+                    .execute(
+                        &format!(
+                            "UPDATE {table}
+                             SET state = CASE state
+                               WHEN 1 THEN 2
+                               WHEN 2 THEN 3
+                               WHEN 3 THEN 4
+                               WHEN 4 THEN 6
+                               WHEN 5 THEN 8
+                               WHEN 6 THEN 1
+                               ELSE state
+                             END"
+                        ),
+                        [],
+                    )
+                    .map_err(|error| error.to_string())?;
+            }
+            transaction
+                .execute(
+                    "INSERT INTO mobile_private_social_metadata(key, value)
+                     VALUES('secure_content_operation_schema', 'secure-content-operation-v1')
+                     ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                     WHERE mobile_private_social_metadata.value =
+                           'mobile-private-social-legacy'",
+                    [],
+                )
+                .map_err(|error| error.to_string())?;
+            transaction.commit().map_err(|error| error.to_string())?;
+        }
+        Some(_) => unreachable!(),
     }
     Ok(())
 }
@@ -2025,11 +3092,22 @@ fn comment_draft_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredCom
             .map(|value| fixed_32(value, "comment root key"))
             .transpose()?,
         generation: from_i64(row.get(14)?, "comment generation")?,
-        state: CommentState::try_from(row.get::<_, i64>(15)?).map_err(conversion_error)?,
-        comment_id: row.get(16)?,
-        error_code: row.get(17)?,
+        publication_state: row
+            .get::<_, Option<i64>>(15)?
+            .map(operation_state_from_i64)
+            .transpose()
+            .map_err(conversion_error)?,
+        lease_generation: from_i64(row.get(16)?, "comment lease generation")?,
+        session_generation: from_i64(row.get(17)?, "comment session generation")?,
+        attempt_count: u32::try_from(row.get::<_, i64>(18)?)
+            .map_err(|_| conversion_error("comment attempt count is invalid"))?,
+        next_attempt_at_unix_ms: row.get(19)?,
+        updated_at_unix_ms: row.get(20)?,
+        state: CommentState::try_from(row.get::<_, i64>(21)?).map_err(conversion_error)?,
+        comment_id: row.get(22)?,
+        error_code: row.get(23)?,
         retry_after_seconds: row
-            .get::<_, Option<i64>>(18)?
+            .get::<_, Option<i64>>(24)?
             .map(|value| from_i64(value, "comment retry after"))
             .transpose()?,
     })
@@ -2046,11 +3124,15 @@ fn submission_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredSubmis
         request_sha256: fixed_32(row.get(6)?, "submission request hash")?,
         root_key: fixed_32(row.get(7)?, "content root key")?,
         projection_json: row.get(8)?,
-        state: DurableState::try_from(row.get::<_, i64>(9)?).map_err(conversion_error)?,
+        state: operation_state_from_i64(row.get(9)?).map_err(conversion_error)?,
         lease_generation: from_i64(row.get(10)?, "lease generation")?,
         session_generation: from_i64(row.get(11)?, "session generation")?,
-        post_id: row.get(12)?,
-        last_error_code: row.get(13)?,
+        attempt_count: u32::try_from(row.get::<_, i64>(12)?)
+            .map_err(|_| conversion_error("submission attempt count is invalid"))?,
+        next_attempt_at_unix_ms: row.get(13)?,
+        updated_at_unix_ms: row.get(14)?,
+        post_id: row.get(15)?,
+        last_error_code: row.get(16)?,
     })
 }
 
@@ -2063,9 +3145,13 @@ fn prekey_publication_from_row(
         pool_epoch: from_i64(row.get(2)?, "pool epoch")?,
         request_bytes: row.get(3)?,
         request_sha256: fixed_32(row.get(4)?, "PreKey request hash")?,
-        state: DurableState::try_from(row.get::<_, i64>(5)?).map_err(conversion_error)?,
+        state: operation_state_from_i64(row.get(5)?).map_err(conversion_error)?,
         lease_generation: from_i64(row.get(6)?, "lease generation")?,
         session_generation: from_i64(row.get(7)?, "session generation")?,
+        attempt_count: u32::try_from(row.get::<_, i64>(8)?)
+            .map_err(|_| conversion_error("PreKey attempt count is invalid"))?,
+        next_attempt_at_unix_ms: row.get(9)?,
+        updated_at_unix_ms: row.get(10)?,
     })
 }
 
@@ -2094,6 +3180,37 @@ fn reaction_command_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Stored
             .map(|value| from_i64(value, "Reaction retry after"))
             .transpose()?,
         retry_not_before_unix_ms: row.get(15)?,
+    })
+}
+
+fn object_transfer_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ObjectTransferRecord> {
+    let last_error = row
+        .get::<_, Option<i32>>(18)?
+        .map(|value| ObjectTransferErrorCode::try_from(value).map_err(conversion_error))
+        .transpose()?;
+    Ok(ObjectTransferRecord {
+        transfer_id: row.get(0)?,
+        owner_scope_id: row.get(1)?,
+        operation_id: row.get(2)?,
+        authority_id: row.get(3)?,
+        direction: ObjectTransferDirection::try_from(row.get::<_, i32>(4)?)
+            .map_err(conversion_error)?,
+        state: ObjectTransferState::try_from(row.get::<_, i32>(5)?).map_err(conversion_error)?,
+        upload_id: row.get(6)?,
+        generation: from_i64(row.get(7)?, "object upload generation")?,
+        descriptor_sha256: row.get(8)?,
+        completed_chunk_bitmap: row.get(9)?,
+        source_local_ref: row.get(10)?,
+        partial_local_ref: row.get(11)?,
+        object_key: row.get(12)?,
+        base_nonce: row.get(13)?,
+        plaintext_size: from_i64(row.get(14)?, "object plaintext size")?,
+        chunk_size: row.get(15)?,
+        attempt_count: u32::try_from(row.get::<_, i64>(16)?)
+            .map_err(|_| conversion_error("object attempt count is invalid"))?,
+        next_attempt_at_unix_ms: row.get(17)?,
+        last_error,
+        updated_at_unix_ms: row.get(19)?,
     })
 }
 
@@ -2129,6 +3246,16 @@ fn conversion_error(error: impl ToString) -> rusqlite::Error {
     )
 }
 
+fn operation_state_from_i64(value: i64) -> Result<OperationState, String> {
+    let value = i32::try_from(value)
+        .map_err(|_| "private Social operation state is invalid".to_string())?;
+    OperationState::try_from(value).map_err(|error| error.to_string())
+}
+
+fn transfer_error(error: impl Into<String>) -> ObjectTransferFailure {
+    ObjectTransferFailure::retryable(ObjectTransferErrorCode::RetryLater, None, error)
+}
+
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
@@ -2136,6 +3263,31 @@ fn hex(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn object_upload() -> ObjectTransferRecord {
+        ObjectTransferRecord {
+            transfer_id: "mobile-social-object-1".to_string(),
+            owner_scope_id: "content-1".to_string(),
+            operation_id: "object-1".to_string(),
+            authority_id: "plan-1".to_string(),
+            direction: ObjectTransferDirection::Upload,
+            state: ObjectTransferState::Queued,
+            upload_id: String::new(),
+            generation: 0,
+            descriptor_sha256: vec![0; 32],
+            completed_chunk_bitmap: vec![0],
+            source_local_ref: "/tmp/mobile-social-source".to_string(),
+            partial_local_ref: "/tmp/mobile-social-partial".to_string(),
+            object_key: vec![7; 32],
+            base_nonce: vec![0; 12],
+            plaintext_size: 1024,
+            chunk_size: 1024,
+            attempt_count: 0,
+            next_attempt_at_unix_ms: 0,
+            last_error: None,
+            updated_at_unix_ms: 1,
+        }
+    }
 
     fn draft(hash: u8) -> StoredDraft {
         StoredDraft {
@@ -2162,12 +3314,128 @@ mod tests {
             request_bytes,
             root_key: [9; 32],
             projection_json: br#"{"state":"PUBLISHING"}"#.to_vec(),
-            state: DurableState::Pending,
+            state: OperationState::Pending,
             lease_generation: 0,
             session_generation: 1,
+            attempt_count: 0,
+            next_attempt_at_unix_ms: 0,
+            updated_at_unix_ms: 0,
             post_id: None,
             last_error_code: None,
         }
+    }
+
+    #[test]
+    fn object_upload_checkpoint_is_generation_fenced_and_resumable() {
+        let store = PrivateSocialStore::in_memory("station-a", "ptid:alice").unwrap();
+        store.bind_session_generation(7).unwrap();
+        let record = object_upload();
+        store
+            .ensure_object_upload_transfer(&record, "image/png")
+            .unwrap();
+        store
+            .update_transfer_prepared(&record.transfer_id, &[8; 32], &record.partial_local_ref, 2)
+            .unwrap();
+        store
+            .update_transfer_progress(
+                &record.transfer_id,
+                ObjectTransferState::Transferring,
+                "upload-1",
+                3,
+                &[1],
+                1,
+                0,
+                None,
+                3,
+            )
+            .unwrap();
+        store
+            .persist_object_descriptor(&record.transfer_id, b"descriptor")
+            .unwrap();
+
+        let checkpoint = store.object_transfer(&record.transfer_id).unwrap().unwrap();
+        assert_eq!(checkpoint.state, ObjectTransferState::Transferring);
+        assert_eq!(checkpoint.completed_chunk_bitmap, vec![1]);
+        assert_eq!(checkpoint.upload_id, "upload-1");
+        assert_eq!(
+            store
+                .object_descriptor_bytes(&record.transfer_id)
+                .unwrap()
+                .unwrap(),
+            b"descriptor",
+        );
+
+        store.bind_session_generation(8).unwrap();
+        assert!(store
+            .object_transfer(&record.transfer_id)
+            .unwrap()
+            .is_some());
+    }
+
+    #[test]
+    fn operation_schema_migrates_legacy_states_atomically() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        migrate(&mut connection).unwrap();
+        connection
+            .execute(
+                "UPDATE mobile_private_social_metadata
+                 SET value = 'mobile-private-social-legacy'
+                 WHERE key = 'secure_content_operation_schema'",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO mobile_private_social_submissions(
+                   command_id, draft_id, draft_revision, content_id, generation,
+                   request_bytes, request_sha256, root_key, projection_json, state,
+                   lease_generation, session_generation, attempt_count,
+                   next_attempt_at_unix_ms, updated_at_unix_ms
+                 ) VALUES('submit-legacy', 'draft-legacy', 1, 'content-legacy', 1,
+                          X'01', zeroblob(32), zeroblob(32), X'01', 6, 0, 1, 0, 0, 1)",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO mobile_private_social_prekey_commands(
+                   command_id, key_kind, pool_epoch, request_bytes, request_sha256,
+                   state, lease_generation, session_generation, attempt_count,
+                   next_attempt_at_unix_ms, updated_at_unix_ms
+                 ) VALUES('prekey-legacy', 1, 1, X'01', zeroblob(32), 2, 1, 1, 1, 0, 1)",
+                [],
+            )
+            .unwrap();
+
+        migrate(&mut connection).unwrap();
+
+        let submission_state: i64 = connection
+            .query_row(
+                "SELECT state FROM mobile_private_social_submissions
+                 WHERE command_id = 'submit-legacy'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let prekey_state: i64 = connection
+            .query_row(
+                "SELECT state FROM mobile_private_social_prekey_commands
+                 WHERE command_id = 'prekey-legacy'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let marker: String = connection
+            .query_row(
+                "SELECT value FROM mobile_private_social_metadata
+                 WHERE key = 'secure_content_operation_schema'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(submission_state, OperationState::Prepared as i64);
+        assert_eq!(prekey_state, OperationState::InFlight as i64);
+        assert_eq!(marker, "secure-content-operation-v1");
     }
 
     #[test]
@@ -2214,6 +3482,12 @@ mod tests {
             request_sha256: None,
             root_key: None,
             generation: 0,
+            publication_state: None,
+            lease_generation: 0,
+            session_generation: 0,
+            attempt_count: 0,
+            next_attempt_at_unix_ms: 0,
+            updated_at_unix_ms: 0,
             state: CommentState::Editing,
             comment_id: None,
             error_code: None,
@@ -2234,18 +3508,127 @@ mod tests {
     }
 
     #[test]
+    fn comment_unknown_outcome_requires_readback_before_exact_retry() {
+        use secure_content_core::operation::{decide_unknown_outcome, ReadbackObservation};
+
+        let store = PrivateSocialStore::in_memory("station-1", "ptid:alice").unwrap();
+        store.bind_session_generation(7).unwrap();
+        let candidate = StoredCommentDraft {
+            draft_id: "comment-draft-unknown".to_string(),
+            draft_revision: 1,
+            post_id: "post-1".to_string(),
+            reply_to_comment_id: String::new(),
+            text: "private reply".to_string(),
+            mention_intent_json: "[]".to_string(),
+            mention_commitment_salt: None,
+            intent_sha256: [4; 32],
+            content_id: "comment-content-unknown".to_string(),
+            prepare_command_id: "comment-prepare-unknown".to_string(),
+            submit_command_id: None,
+            request_bytes: None,
+            request_sha256: None,
+            root_key: None,
+            generation: 0,
+            publication_state: None,
+            lease_generation: 0,
+            session_generation: 7,
+            attempt_count: 0,
+            next_attempt_at_unix_ms: 0,
+            updated_at_unix_ms: 0,
+            state: CommentState::Editing,
+            comment_id: None,
+            error_code: None,
+            retry_after_seconds: None,
+        };
+        store.reserve_comment_draft(&candidate).unwrap();
+        let request = b"canonical-comment-request";
+        let request_sha256: [u8; 32] = Sha256::digest(request).into();
+        store
+            .persist_comment_request(
+                &candidate.draft_id,
+                candidate.draft_revision,
+                1,
+                "comment-submit-unknown",
+                request,
+                &request_sha256,
+                &[9; 32],
+                7,
+            )
+            .unwrap();
+        let acquired = store
+            .acquire_comment_submission(
+                &candidate.draft_id,
+                candidate.draft_revision,
+                7,
+                DispatchCause::ExplicitUserAction,
+            )
+            .unwrap();
+        assert!(store
+            .complete_comment_submission(
+                &acquired,
+                OperationCompletion::UnknownOutcome,
+                CommentState::Failed,
+                None,
+                Some("SOCIAL_PRIVATE_COMMENT_RESULT_UNKNOWN"),
+                None,
+            )
+            .unwrap());
+        assert!(store
+            .acquire_comment_submission(
+                &candidate.draft_id,
+                candidate.draft_revision,
+                7,
+                DispatchCause::ExplicitUserAction,
+            )
+            .is_err());
+
+        let unknown = store
+            .comment_draft(&candidate.draft_id, candidate.draft_revision)
+            .unwrap()
+            .unwrap();
+        let decision = decide_unknown_outcome(
+            &unknown.operation_record().unwrap(),
+            ReadbackObservation::AuthoritativeAbsent,
+        )
+        .unwrap();
+        assert_eq!(decision, ReadbackDecision::RetryExactCommand);
+        assert!(store
+            .apply_comment_readback(
+                &unknown,
+                &decision,
+                CommentState::Failed,
+                None,
+                Some("SOCIAL_PRIVATE_COMMENT_RESULT_UNKNOWN"),
+                None,
+            )
+            .unwrap());
+        let retry = store
+            .acquire_comment_submission(
+                &candidate.draft_id,
+                candidate.draft_revision,
+                7,
+                DispatchCause::ReadbackAuthorizedRetry,
+            )
+            .unwrap();
+        assert!(retry.lease.reconciles_unknown_outcome);
+        assert_eq!(retry.draft.attempt_count, 2);
+    }
+
+    #[test]
     fn submission_is_persisted_before_generation_fenced_dispatch() {
         let store = PrivateSocialStore::in_memory("station-1", "ptid:alice").unwrap();
         store.bind_session_generation(7).unwrap();
         store.persist_submission(&submission(3)).unwrap();
-        let acquired = store.acquire_submission("submit-1").unwrap();
-        assert_eq!(acquired.command.state, DurableState::InFlight);
+        let acquired = store
+            .acquire_submission("submit-1", DispatchCause::InitialReconciliation)
+            .unwrap();
+        assert_eq!(acquired.command.state, OperationState::InFlight);
         assert_eq!(acquired.command.session_generation, 7);
         assert_eq!(acquired.command.lease_generation, 1);
         assert!(store
-            .finish_submission(
-                &acquired.command,
-                DurableState::Committed,
+            .complete_submission(
+                &acquired,
+                OperationCompletion::Committed,
                 Some("content-1"),
                 None,
                 br#"{"state":"PUBLISHED"}"#,
@@ -2253,7 +3636,7 @@ mod tests {
             .unwrap());
         assert_eq!(
             store.submission("draft-1", 1).unwrap().unwrap().state,
-            DurableState::Committed
+            OperationState::Committed
         );
     }
 
@@ -2262,14 +3645,16 @@ mod tests {
         let store = PrivateSocialStore::in_memory("station-1", "ptid:alice").unwrap();
         store.bind_session_generation(7).unwrap();
         let mut prepared = submission(3);
-        prepared.state = DurableState::Prepared;
+        prepared.state = OperationState::Prepared;
 
         store.persist_submission(&prepared).unwrap();
 
         assert!(store.pending_submissions().unwrap().is_empty());
-        let acquired = store.acquire_submission("submit-1").unwrap();
-        assert_eq!(acquired.command.state, DurableState::InFlight);
-        assert!(!acquired.reconciles_unknown_outcome);
+        let acquired = store
+            .acquire_submission("submit-1", DispatchCause::ExplicitUserAction)
+            .unwrap();
+        assert_eq!(acquired.command.state, OperationState::InFlight);
+        assert!(!acquired.lease.reconciles_unknown_outcome);
     }
 
     #[test]
@@ -2277,11 +3662,13 @@ mod tests {
         let store = PrivateSocialStore::in_memory("station-1", "ptid:alice").unwrap();
         store.bind_session_generation(2).unwrap();
         store.persist_submission(&submission(4)).unwrap();
-        store.acquire_submission("submit-1").unwrap();
+        store
+            .acquire_submission("submit-1", DispatchCause::InitialReconciliation)
+            .unwrap();
         assert_eq!(store.recover_interrupted_dispatches().unwrap(), 1);
         assert_eq!(
             store.submission("draft-1", 1).unwrap().unwrap().state,
-            DurableState::UnknownOutcome
+            OperationState::UnknownOutcome
         );
     }
 
@@ -2364,9 +3751,12 @@ mod tests {
             pool_epoch: 1,
             request_sha256: Sha256::digest(&request_bytes).into(),
             request_bytes,
-            state: DurableState::Pending,
+            state: OperationState::Pending,
             lease_generation: 0,
             session_generation: 0,
+            attempt_count: 0,
+            next_attempt_at_unix_ms: 0,
+            updated_at_unix_ms: 0,
         };
 
         assert!(store
@@ -2393,9 +3783,12 @@ mod tests {
             pool_epoch: 1,
             request_sha256: Sha256::digest(&request_bytes).into(),
             request_bytes,
-            state: DurableState::Pending,
+            state: OperationState::Pending,
             lease_generation: 0,
             session_generation: 0,
+            attempt_count: 0,
+            next_attempt_at_unix_ms: 0,
+            updated_at_unix_ms: 0,
         };
 
         assert!(store.persist_prekey_publication(&command, &[]).is_err());

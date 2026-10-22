@@ -45,6 +45,7 @@ type EvaluationTurnAdmission struct {
 	Admission         *model.TurnAdmission
 	RuntimeSnapshot   *model.RuntimeSnapshot
 	ReadinessSnapshot *model.CapabilityReadinessSnapshot
+	AgentDefinition   *domain.Agent
 	AgentRevision     uint64
 }
 
@@ -128,8 +129,6 @@ func (k *CanonicalEvaluationTurnKernel) Admit(
 	}
 	providerID := strings.TrimSpace(spec.ProviderID)
 	modelID := strings.TrimSpace(spec.ModelID)
-	identity := spec.Identity
-	agentPrompt := spec.AgentConfigPrompt
 	effort := strings.TrimSpace(spec.Effort)
 	request := &model.ExecuteTurnRequest{
 		ConversationId:       spec.ConversationID,
@@ -137,8 +136,6 @@ func (k *CanonicalEvaluationTurnKernel) Admit(
 		UserInput:            spec.Input,
 		Provider:             &providerID,
 		Model:                &modelID,
-		Identity:             &identity,
-		AgentConfigPrompt:    &agentPrompt,
 		Effort:               &effort,
 		ClientIdempotencyKey: spec.ClientIdempotencyKey,
 		ThinkingMode:         spec.ThinkingMode,
@@ -183,7 +180,14 @@ func (k *CanonicalEvaluationTurnKernel) Admit(
 		Admission:         admission,
 		RuntimeSnapshot:   proto.Clone(spec.RuntimeSnapshot).(*model.RuntimeSnapshot),
 		ReadinessSnapshot: readiness,
-		AgentRevision:     spec.TargetAgentRevision,
+		AgentDefinition: &domain.Agent{
+			AgentID:           spec.AgentID,
+			OwnerActorPTID:    spec.PTID,
+			IdentityPrompt:    spec.Identity,
+			AgentConfigPrompt: spec.AgentConfigPrompt,
+			Version:           int64(spec.TargetAgentRevision),
+		},
+		AgentRevision: spec.TargetAgentRevision,
 	}, nil
 }
 
@@ -199,6 +203,7 @@ func (k *CanonicalEvaluationTurnKernel) Start(
 		admission.Admission,
 		admission.RuntimeSnapshot,
 		admission.ReadinessSnapshot,
+		admission.AgentDefinition,
 		admission.AgentRevision,
 	) {
 		return nil

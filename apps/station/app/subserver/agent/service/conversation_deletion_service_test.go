@@ -120,9 +120,12 @@ func TestAgentDeletionIncludesTopicsAndBindings(t *testing.T) {
 	if err := persistence.MigrateEvaluationAggregate(db); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&persistence.AgentKnowledgeBinding{}, &persistence.AgentSkillBinding{},
+	if err := db.AutoMigrate(&persistence.AgentKnowledgeBinding{},
 		&persistence.AgentWorkspace{}, &persistence.AgentWorkspaceFile{}); err != nil {
 		t.Fatal(err)
+	}
+	if db.Migrator().HasTable(&persistence.AgentSkillBinding{}) {
+		t.Fatal("legacy Agent Skill binding table must remain retired")
 	}
 	agent := seedAgentServiceTestAgent(t, db)
 	now := time.Now()
@@ -131,7 +134,17 @@ func TestAgentDeletionIncludesTopicsAndBindings(t *testing.T) {
 	if err := db.Create(&row).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Create(&persistence.AgentSkillBinding{ID: "skill-bind", AgentID: agent.ID, SkillID: "shared-skill"}).Error; err != nil {
+	capabilityBinding := persistence.AgentCapabilityBinding{
+		BindingID: "skill-bind", Ptid: agent.OwnerActorPTID, AgentID: agent.ID,
+		CapabilityID: "skill.shared", CapabilityVersion: "1", Enabled: true,
+		AgentVersion: 1, Revision: 1, UpdatedAt: now,
+	}
+	if err := db.Create(&capabilityBinding).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&persistence.AgentKnowledgeBinding{
+		ID: "knowledge-bind", AgentID: agent.ID, ResourceID: "shared-knowledge",
+	}).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Create(&persistence.AgentWorkspace{ID: "owned-workspace", AgentID: agent.ID, Name: "Workspace"}).Error; err != nil {
@@ -158,11 +171,18 @@ func TestAgentDeletionIncludesTopicsAndBindings(t *testing.T) {
 	if row.Status != "deleted" {
 		t.Fatalf("Agent Topic survived: %s", row.Status)
 	}
-	if err := db.Model(&persistence.AgentSkillBinding{}).Where("agent_id = ?", agent.ID).Count(&retained).Error; err != nil {
+	var tombstoned persistence.AgentCapabilityBinding
+	if err := db.First(&tombstoned, "binding_id = ?", capabilityBinding.BindingID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if tombstoned.TombstonedAt == nil || tombstoned.Revision != 2 {
+		t.Fatalf("Agent capability binding was not tombstoned: %+v", tombstoned)
+	}
+	if err := db.Model(&persistence.AgentKnowledgeBinding{}).Where("agent_id = ?", agent.ID).Count(&retained).Error; err != nil {
 		t.Fatal(err)
 	}
 	if retained != 0 {
-		t.Fatal("Agent skill binding survived")
+		t.Fatal("Agent knowledge binding survived")
 	}
 	for _, resource := range []interface{}{&persistence.AgentWorkspace{}, &persistence.AgentWorkspaceFile{}} {
 		if err := db.Model(resource).Count(&retained).Error; err != nil {

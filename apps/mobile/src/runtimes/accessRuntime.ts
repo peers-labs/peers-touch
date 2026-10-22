@@ -20,7 +20,9 @@ import {
   requireMatchingStationIdentity,
   type MobileStationEntry,
 } from '../features/station/stationRegistry';
-import type { OAuthAccessDecisionProjection } from '../services/mobileCommands';
+import {
+  type OAuthAccessDecisionProjection,
+} from '../services/mobileCommands';
 import { readableErrorMessage } from '../utils/errorMessage';
 import {
   cancelOAuthForScope,

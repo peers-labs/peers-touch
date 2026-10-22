@@ -161,8 +161,8 @@ impl NativeSocialTransport {
         let request_sha256 = Sha256::digest(&canonical_proof_free).into();
         request.proof =
             Some(self.client_proof(PUBLISH_CAPABILITY, &request.command_id, request_sha256)?);
-        let request_bytes =
-            canonical_publication_bytes(&request).map_err(|_| local_error(20002))?;
+        let request_bytes = canonicalize_publish_content_prekeys_request(&request.encode_to_vec())
+            .map_err(|_| local_error(20002))?;
         self.post_proto_bytes(
             "/key-exchange/content-prekeys/publish",
             &request_bytes,
@@ -246,6 +246,26 @@ impl NativeSocialTransport {
         self.post_proto(
             &format!("/api/v1/social/moments/objects/uploads/{upload_id}/complete"),
             request,
+            CommitSemantics::MayCommit,
+        )
+    }
+
+    pub fn cancel_private_object_upload(
+        &self,
+        upload_id: &str,
+        generation: u64,
+        command_id: &str,
+    ) -> Result<wire::CancelEncryptedObjectUploadResponse, TransportError> {
+        if upload_id.trim().is_empty() || generation == 0 || command_id.trim().is_empty() {
+            return Err(local_error(20002));
+        }
+        self.post_proto(
+            &format!("/api/v1/social/moments/objects/uploads/{upload_id}/cancel"),
+            &wire::CancelEncryptedObjectUploadRequest {
+                upload_id: upload_id.to_string(),
+                generation,
+                command_id: command_id.to_string(),
+            },
             CommitSemantics::MayCommit,
         )
     }
@@ -367,6 +387,24 @@ impl NativeSocialTransport {
             &format!("/api/v1/social/moments/{post_id}/unreact"),
             request_bytes,
             CommitSemantics::MayCommit,
+        )
+    }
+
+    pub fn get_private_comment(
+        &self,
+        post_id: &str,
+        comment_id: &str,
+    ) -> Result<social::GetMomentCommentResourceResponse, TransportError> {
+        if post_id.trim().is_empty()
+            || post_id != post_id.trim()
+            || comment_id.trim().is_empty()
+            || comment_id != comment_id.trim()
+        {
+            return Err(local_error(20002));
+        }
+        self.get_proto(
+            &format!("/api/v1/social/moments/{post_id}/comments/{comment_id}"),
+            None,
         )
     }
 
@@ -639,12 +677,7 @@ pub fn resolve_trusted_station_signing_key(
     // Station's home peer id is re-proven independently by the signed profile
     // envelope below, so an empty value in this legacy profile projection does
     // not invalidate the identity.
-    if profile
-        .r#ref
-        .as_ref()
-        .map(|actor| actor.ptid.as_str())
-        != Some(scope.actor_ptid.as_str())
-    {
+    if profile.r#ref.as_ref().map(|actor| actor.ptid.as_str()) != Some(scope.actor_ptid.as_str()) {
         return Err("private Social Actor profile identity is inconsistent".to_string());
     }
     // Resolve the canonical handle: prefer the profile projection, then fall
@@ -690,25 +723,6 @@ pub fn jwt_session_id(token: &str) -> Result<String, String> {
         .filter(|value| !value.trim().is_empty() && value.trim() == *value)
         .map(ToOwned::to_owned)
         .ok_or_else(|| "private Social session token has no validated session ID".to_string())
-}
-
-pub fn canonical_publication_bytes(
-    request: &wire::PublishContentPreKeysRequest,
-) -> Result<Vec<u8>, String> {
-    canonicalize_publish_content_prekeys_request(&request.encode_to_vec())
-        .map_err(|error| format!("canonicalize Content PreKey publication: {error}"))
-}
-
-pub fn publication_command_id(
-    request: &wire::PublishContentPreKeysRequest,
-) -> Result<String, String> {
-    let mut request = request.clone();
-    request.command_id.clear();
-    request.proof = None;
-    Ok(format!(
-        "cpk-pub-v1-{}",
-        hex(&Sha256::digest(canonical_publication_bytes(&request)?))
-    ))
 }
 
 pub(crate) fn federated_private_interaction_signing_bytes(
@@ -1572,7 +1586,8 @@ mod tests {
                 signature: vec![5; 64],
             }),
         };
-        let canonical = canonical_publication_bytes(&request).unwrap();
+        let canonical =
+            canonicalize_publish_content_prekeys_request(&request.encode_to_vec()).unwrap();
         assert_ne!(request.encode_to_vec(), canonical);
         assert_eq!(
             hex(&canonical),
@@ -1581,10 +1596,6 @@ mod tests {
                 "/../../../model/domain/secure_content/testdata/content_prekey_publication.hex"
             ))
             .trim()
-        );
-        assert_eq!(
-            publication_command_id(&request).unwrap(),
-            "cpk-pub-v1-5ca0fee4658c8956feeca6d8a9272e70ce8c6127e41cd81a2961dbf1a4dd0d8c"
         );
     }
 

@@ -6,13 +6,14 @@
  *   2. Left Sidebar (180px): Section items within selected group
  *   3. Right: Content area (max-width 720px, padding 24px)
  *
- * Groups: General, AI, Channels, Applets, Data, Help
+ * Groups: General, Network, AI, Channels, Advanced
  *
  * Standalone web prototype: mock-data only, no real store / kernel / tauri.
  */
 import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import {
   Settings,
+  Search,
   Sparkles,
   Send,
   Puzzle,
@@ -369,13 +370,13 @@ function SettingsRow({ label, desc, children }: {
   return (
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      gap: 16, padding: '9px 0',
+      flexWrap: 'wrap', gap: 12, padding: '9px 0',
     }}>
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ flex: '1 1 180px', minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 500, color: T.text }}>{label}</div>
         {desc ? <div style={{ fontSize: 12, color: T.textTertiary, marginTop: 2, lineHeight: 1.4 }}>{desc}</div> : null}
       </div>
-      <div style={{ flexShrink: 0 }}>{children}</div>
+      <div style={{ flex: '0 1 auto', maxWidth: '100%', marginLeft: 'auto' }}>{children}</div>
     </div>
   );
 }
@@ -1965,6 +1966,87 @@ function ModelsSection() {
   );
 }
 
+const DISCOVER_PACKAGES = [
+  { id: 'research-partner', name: 'Research Partner', publisher: 'Peers', type: 'Agent', installed: false },
+  { id: 'source-reader', name: 'Source Reader', publisher: 'Peers', type: 'Skill', installed: true },
+  { id: 'browser-tools', name: 'Browser Tools', publisher: 'Peers', type: 'MCP', installed: false },
+] as const;
+
+function DiscoverSection() {
+  const [query, setQuery] = useState('');
+  const [installedIds, setInstalledIds] = useState<Set<string>>(
+    () => new Set<string>(DISCOVER_PACKAGES.filter((item) => item.installed).map((item) => item.id)),
+  );
+  const packages = DISCOVER_PACKAGES.filter((item) => {
+    const normalized = query.trim().toLowerCase();
+    return !normalized
+      || item.name.toLowerCase().includes(normalized)
+      || item.publisher.toLowerCase().includes(normalized)
+      || item.type.toLowerCase().includes(normalized);
+  });
+
+  return (
+    <SettingsContainer>
+      <SettingsSection
+        icon={Search}
+        title="Discover"
+      >
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+          <input
+            aria-label="Search packages"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search packages"
+            style={{ ...inputStyle, width: 'min(220px, 100%)' }}
+          />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          {packages.map((item, index) => (
+            <div
+              key={item.id}
+              style={{
+                minHeight: 56,
+                display: 'grid',
+                gridTemplateColumns: 'minmax(0, 1fr) auto auto',
+                alignItems: 'center',
+                gap: 12,
+                borderTop: index === 0 ? 'none' : `1px solid ${T.borderSoft}`,
+              }}
+            >
+              <div style={{ minWidth: 0 }}>
+                <div style={{ color: T.text, fontSize: 13, fontWeight: 600 }}>{item.name}</div>
+                <div style={{ color: T.textTertiary, fontSize: 12 }}>{item.publisher}</div>
+              </div>
+              <Tag text={item.type} color="#6d5bd0" />
+              {installedIds.has(item.id) ? (
+                <GhostBtn
+                  label="Uninstall"
+                  onClick={() => setInstalledIds((current) => {
+                    const next = new Set(current);
+                    next.delete(item.id);
+                    return next;
+                  })}
+                />
+              ) : (
+                <GhostBtn
+                  icon={Plus}
+                  label="Install"
+                  onClick={() => setInstalledIds((current) => new Set(current).add(item.id))}
+                />
+              )}
+            </div>
+          ))}
+          {packages.length === 0 ? (
+            <div style={{ padding: '28px 0', color: T.textTertiary, fontSize: 13, textAlign: 'center' }}>
+              No packages found
+            </div>
+          ) : null}
+        </div>
+      </SettingsSection>
+    </SettingsContainer>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // SECTION: MEMORY (AI group)
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -2657,7 +2739,7 @@ type GroupId = 'general' | 'network' | 'ai' | 'channels' | 'advanced';
 type SectionId =
   | 'account' | 'notifications' | 'privacy' | 'appearance'
   | 'station' | 'discovery' | 'federation'
-  | 'providers' | 'models' | 'memory' | 'skills' | 'mcp'
+  | 'providers' | 'models' | 'discover' | 'memory' | 'skills' | 'mcp'
   | 'lark' | 'bots'
   | 'storage' | 'applets' | 'statistics' | 'cron' | 'command-menu' | 'logs' | 'about';
 
@@ -2687,6 +2769,7 @@ const GROUPS: GroupDef[] = [
     sections: [
       { id: 'providers', label: 'Providers', icon: Server },
       { id: 'models', label: 'Models', icon: Brain },
+      { id: 'discover', label: 'Discover', icon: Search },
       { id: 'memory', label: 'Memory', icon: HardDrive },
       { id: 'skills', label: 'Skills', icon: ScrollText },
       { id: 'mcp', label: 'MCP', icon: Plug },
@@ -2725,6 +2808,7 @@ function renderSection(sectionId: SectionId, onOpenCommandPalette: () => void,
     case 'federation': return <FederationSection federations={federations} setFederations={setFederations} />;
     case 'providers': return <ProvidersSection />;
     case 'models': return <ModelsSection />;
+    case 'discover': return <DiscoverSection />;
     case 'memory': return <MemorySection />;
     case 'skills': return <SkillsSection />;
     case 'mcp': return <MCPSection />;

@@ -1,7 +1,7 @@
 # Desktop Runtime Architecture
 
 > **Status**: active
-> **Updated**: 2026-10-04
+> **Updated**: 2026-10-16
 > **Owner**: Client Platform Team
 
 ## 1. Scope
@@ -17,6 +17,10 @@ native Tauri application
 
 The React/TypeScript renderer is source inside the native application. It is
 not an independently supported browser client.
+
+Desktop is one of two client forms. Its relationship to Mobile, release
+targets, portable Rust cores, runtime ports, and presentation policy is defined
+by [Cross-Client Runtime](../cross-client-runtime/README.md).
 
 ## 2. Runtime Units
 
@@ -44,6 +48,10 @@ and typed calls into Desktop Rust. Detailed contracts live in
 Owns local application state, storage, native capabilities, command handlers,
 and Station communication. It is part of the Tauri process and is not launched
 as a browser-only gateway.
+
+Desktop Rust embeds portable libraries such as `messaging-core` and
+`secure-content-core`. Each is an in-process mechanism with a device-local
+instance/store, not a service or shared business authority.
 
 ### Station
 

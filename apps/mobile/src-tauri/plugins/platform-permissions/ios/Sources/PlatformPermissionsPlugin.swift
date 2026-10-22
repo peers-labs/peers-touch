@@ -23,9 +23,24 @@ private let scheduledProductionIdentifier =
 private let didRegisterRemoteNotificationsSelector = NSSelectorFromString(
   "application:didRegisterForRemoteNotificationsWithDeviceToken:"
 )
+private let didFailRemoteNotificationsSelector = NSSelectorFromString(
+  "application:didFailToRegisterForRemoteNotificationsWithError:"
+)
+private let didReceiveRemoteNotificationSelector = NSSelectorFromString(
+  "application:didReceiveRemoteNotification:fetchCompletionHandler:"
+)
 private weak var activePushPlugin: PlatformPermissionsPlugin?
 private var originalDidRegisterRemoteNotificationsImplementation: IMP?
+private var originalDidFailRemoteNotificationsImplementation: IMP?
+private var originalDidReceiveRemoteNotificationImplementation: IMP?
 private var remoteNotificationHookInstalled = false
+
+private func validScopeToken(_ value: String) -> Bool {
+  value.count == 64 && value.allSatisfy {
+    ("0"..."9").contains(String($0))
+      || ("a"..."f").contains(String($0))
+  }
+}
 
 private struct PermissionArgs: Decodable {
   let kind: String
@@ -34,6 +49,28 @@ private struct PermissionArgs: Decodable {
 private struct PermissionResponse: Encodable {
   let status: PermissionStatus
   let canRequest: Bool
+}
+
+private struct CapabilityObservationArgs: Decodable {
+  let capability: String
+}
+
+private struct CapabilityObservationResponse: Encodable {
+  let state: CapabilityState
+  let source: String
+  let detail: String?
+  let timestampMs: Int
+}
+
+private struct SystemActionArgs: Decodable {
+  let kind: String
+  let text: String?
+  let url: String?
+}
+
+private struct SystemActionResponse: Encodable {
+  let state: SystemActionState
+  let reason: String?
 }
 
 private struct LifecycleSignal: Encodable {
@@ -54,6 +91,7 @@ private struct NetworkSignal: Encodable {
 private struct PushArmArgs: Decodable {
   let lifecycleGeneration: Int
   let environment: String
+  let scopeToken: String
 }
 
 private struct PushArmResponse: Encodable {
@@ -82,6 +120,7 @@ private struct NativePushCallback: Encodable {
   let targetHint: String?
   let issuedAtMs: Int?
   let expiresAtMs: Int?
+  let errorCode: String?
 }
 
 private struct NativePushCallbackBatch: Encodable {
@@ -153,6 +192,22 @@ private enum PermissionStatus: String, Encodable {
   case unsupported
 }
 
+private enum CapabilityState: String, Encodable {
+  case available
+  case unavailable
+  case denied
+  case restricted
+  case unsupported
+  case unknown
+}
+
+private enum SystemActionState: String, Encodable {
+  case completed
+  case cancelled
+  case unavailable
+  case failed
+}
+
 private enum LifecycleState: String, Encodable {
   case foreground
   case background
@@ -185,6 +240,7 @@ final class PlatformPermissionsPlugin: Plugin, UNUserNotificationCenterDelegate,
   private var permissionRequestInProgress = false
   private var pushLifecycleGeneration: Int?
   private var pushEnvironment: String?
+  private var pushScopeToken: String?
   private var pushSequence = 0
   private var pendingPushCallbacks: [NativePushCallback] = []
   private var scheduledSequence = 0
@@ -200,7 +256,7 @@ final class PlatformPermissionsPlugin: Plugin, UNUserNotificationCenterDelegate,
     backgrounded = UIApplication.shared.applicationState == .background
     UNUserNotificationCenter.current().delegate = self
     activePushPlugin = self
-    installRemoteNotificationDelegateHook()
+    installRemoteNotificationDelegateHooks()
     registerScheduledHandlers()
     cleanupNativePickerCache()
   }
@@ -258,6 +314,118 @@ final class PlatformPermissionsPlugin: Plugin, UNUserNotificationCenterDelegate,
     }
   }
 
+  @objc public func observeCapability(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(CapabilityObservationArgs.self)
+      observeCapability(args.capability) { state, source, detail in
+        invoke.resolve(
+          CapabilityObservationResponse(
+            state: state,
+            source: source,
+            detail: detail,
+            timestampMs: Int(Date().timeIntervalSince1970 * 1_000)
+          )
+        )
+      }
+    } catch {
+      invoke.reject(
+        "invalid capability observation",
+        code: "PLATFORM_CAPABILITY_INVALID"
+      )
+    }
+  }
+
+  @objc public func executeSystemAction(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(SystemActionArgs.self)
+      DispatchQueue.main.async {
+        switch args.kind {
+        case "open_app_settings":
+          guard let url = URL(string: UIApplication.openSettingsURLString) else {
+            invoke.resolve(
+              SystemActionResponse(
+                state: .unavailable,
+                reason: "settings_url_unavailable"
+              )
+            )
+            return
+          }
+          UIApplication.shared.open(url, options: [:]) { opened in
+            invoke.resolve(
+              SystemActionResponse(
+                state: opened ? .completed : .unavailable,
+                reason: opened ? nil : "settings_open_rejected"
+              )
+            )
+          }
+        case "open_external_url":
+          guard let raw = args.url,
+            let url = URL(string: raw),
+            url.scheme == "http" || url.scheme == "https"
+          else {
+            invoke.resolve(
+              SystemActionResponse(state: .failed, reason: "invalid_external_url")
+            )
+            return
+          }
+          UIApplication.shared.open(url, options: [:]) { opened in
+            invoke.resolve(
+              SystemActionResponse(
+                state: opened ? .completed : .unavailable,
+                reason: opened ? nil : "external_url_unavailable"
+              )
+            )
+          }
+        case "share":
+          guard let text = args.text, !text.isEmpty,
+            let presenter = self.manager.viewController
+          else {
+            invoke.resolve(
+              SystemActionResponse(state: .failed, reason: "share_input_invalid")
+            )
+            return
+          }
+          var items: [Any] = [text]
+          if let raw = args.url, let url = URL(string: raw) {
+            items.append(url)
+          }
+          let controller = UIActivityViewController(
+            activityItems: items,
+            applicationActivities: nil
+          )
+          controller.completionWithItemsHandler = {
+            _, completed, _, error in
+            invoke.resolve(
+              SystemActionResponse(
+                state: error == nil
+                  ? (completed ? .completed : .cancelled)
+                  : .failed,
+                reason: error == nil ? nil : "share_failed"
+              )
+            )
+          }
+          presenter.present(controller, animated: true)
+        case "return_to_system":
+          invoke.resolve(
+            SystemActionResponse(
+              state: .unavailable,
+              reason: "ios_has_no_root_back_action"
+            )
+          )
+        default:
+          invoke.resolve(
+            SystemActionResponse(
+              state: .unavailable,
+              reason: "unsupported_system_action"
+            )
+          )
+        }
+      }
+    } catch {
+      invoke.reject("invalid system action", code: "PLATFORM_SYSTEM_ACTION_INVALID")
+    }
+  }
+
   @objc public func startNetworkObservation(_ invoke: Invoke) {
     DispatchQueue.main.async {
       if self.networkObservationReady, let signal = self.latestNetworkSignal {
@@ -281,7 +449,8 @@ final class PlatformPermissionsPlugin: Plugin, UNUserNotificationCenterDelegate,
     do {
       let args = try invoke.parseArgs(PushArmArgs.self)
       guard args.lifecycleGeneration > 0,
-        args.environment == "development" || args.environment == "production"
+        args.environment == "development" || args.environment == "production",
+        validScopeToken(args.scopeToken)
       else {
         invoke.reject("invalid push arm request", code: "PLATFORM_PUSH_INVALID_ARM")
         return
@@ -289,6 +458,7 @@ final class PlatformPermissionsPlugin: Plugin, UNUserNotificationCenterDelegate,
       DispatchQueue.main.async {
         self.pushLifecycleGeneration = args.lifecycleGeneration
         self.pushEnvironment = args.environment
+        self.pushScopeToken = args.scopeToken
         self.pendingPushCallbacks.removeAll()
         UIApplication.shared.registerForRemoteNotifications()
         invoke.resolve(PushArmResponse(armed: true))
@@ -310,6 +480,7 @@ final class PlatformPermissionsPlugin: Plugin, UNUserNotificationCenterDelegate,
     DispatchQueue.main.async {
       self.pushLifecycleGeneration = nil
       self.pushEnvironment = nil
+      self.pushScopeToken = nil
       self.pendingPushCallbacks.removeAll()
       for completionId in Array(self.pendingScheduledTasks.keys) {
         self.finishScheduledCallback(completionId, success: false)
@@ -330,6 +501,7 @@ final class PlatformPermissionsPlugin: Plugin, UNUserNotificationCenterDelegate,
     do {
       let args = try invoke.parseArgs(PushArmArgs.self)
       guard args.lifecycleGeneration > 0,
+        validScopeToken(args.scopeToken),
         let identifier = scheduledIdentifier(args.environment)
       else {
         invoke.reject(
@@ -341,6 +513,7 @@ final class PlatformPermissionsPlugin: Plugin, UNUserNotificationCenterDelegate,
       DispatchQueue.main.async {
         self.pushLifecycleGeneration = args.lifecycleGeneration
         self.pushEnvironment = args.environment
+        self.pushScopeToken = args.scopeToken
         for completionId in Array(self.pendingScheduledTasks.keys) {
           self.finishScheduledCallback(completionId, success: false)
         }
@@ -361,6 +534,17 @@ final class PlatformPermissionsPlugin: Plugin, UNUserNotificationCenterDelegate,
             )
           )
         } catch {
+          let schedulerError = error as NSError
+          if schedulerError.domain == BGTaskScheduler.errorDomain,
+            schedulerError.code == BGTaskScheduler.Error.Code.unavailable.rawValue {
+            invoke.resolve(
+              ScheduledReconcileRegistration(
+                identifier: identifier,
+                registered: false
+              )
+            )
+            return
+          }
           invoke.reject(
             "scheduled reconcile registration failed",
             code: "PLATFORM_SCHEDULE_FAILED"
@@ -581,6 +765,20 @@ final class PlatformPermissionsPlugin: Plugin, UNUserNotificationCenterDelegate,
     )
   }
 
+  public func ingestAPNsRegistrationFailure() {
+    enqueuePushCallback(
+      kind: "registration_failed",
+      environment: pushEnvironment,
+      errorCode: "apns_registration_failed"
+    )
+  }
+
+  public func ingestRemoteNotification(
+    _ userInfo: [AnyHashable: Any]
+  ) {
+    enqueuePushWakeup(userInfo, kind: "receipt")
+  }
+
   public func userNotificationCenter(
     _ center: UNUserNotificationCenter,
     willPresent notification: UNNotification,
@@ -598,6 +796,111 @@ final class PlatformPermissionsPlugin: Plugin, UNUserNotificationCenterDelegate,
   ) {
     enqueuePushWakeup(response.notification.request.content.userInfo, kind: "tap")
     completionHandler()
+  }
+
+  private func observeCapability(
+    _ capability: String,
+    completion: @escaping (CapabilityState, String, String?) -> Void
+  ) {
+    switch capability {
+    case "camera":
+      guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
+        completion(.unavailable, "ios.camera", "camera-hardware-missing")
+        return
+      }
+      checkPermission(.camera) {
+        completion(
+          self.capabilityState($0),
+          "ios.permission.camera",
+          self.capabilityDetail($0)
+        )
+      }
+    case "microphone":
+      checkPermission(.microphone) {
+        completion(
+          self.capabilityState($0),
+          "ios.permission.microphone",
+          self.capabilityDetail($0)
+        )
+      }
+    case "photo-library":
+      checkPermission(.storage) {
+        completion(
+          self.capabilityState($0),
+          "ios.permission.photo-library",
+          self.capabilityDetail($0)
+        )
+      }
+    case "document-picker":
+      completion(.available, "ios.document-picker", nil)
+    case "notifications":
+      checkPermission(.notifications) {
+        completion(
+          self.capabilityState($0),
+          "ios.permission.notifications",
+          self.capabilityDetail($0)
+        )
+      }
+    case "push":
+      checkPermission(.notifications) {
+        let permissionState = self.capabilityState($0)
+        if permissionState == .available,
+          !UIApplication.shared.isRegisteredForRemoteNotifications
+        {
+          completion(.unknown, "ios.apns", "registration-not-confirmed")
+        } else {
+          completion(permissionState, "ios.apns", self.capabilityDetail($0))
+        }
+      }
+    case "background-execution":
+      let modes = Bundle.main.object(
+        forInfoDictionaryKey: "UIBackgroundModes"
+      ) as? [String] ?? []
+      let configured =
+        modes.contains("fetch")
+        && modes.contains("remote-notification")
+        && self.registeredScheduledIdentifiers.contains(
+          scheduledDevelopmentIdentifier
+        )
+        && self.registeredScheduledIdentifiers.contains(
+          scheduledProductionIdentifier
+        )
+      completion(
+        configured ? .available : .unavailable,
+        "ios.background-tasks",
+        configured ? nil : "background-mode-or-registration-missing"
+      )
+    case "system-settings":
+      completion(.available, "ios.application-settings", nil)
+    case "share":
+      completion(.available, "ios.activity-controller", nil)
+    default:
+      completion(.unsupported, "ios.platform-host", "unknown-capability")
+    }
+  }
+
+  private func capabilityState(
+    _ permission: PermissionResponse
+  ) -> CapabilityState {
+    switch permission.status {
+    case .granted: return .available
+    case .notDetermined: return .unknown
+    case .denied: return .denied
+    case .restricted: return .restricted
+    case .unsupported: return .unsupported
+    }
+  }
+
+  private func capabilityDetail(
+    _ permission: PermissionResponse
+  ) -> String? {
+    switch permission.status {
+    case .granted: return nil
+    case .notDetermined: return "permission-not-determined"
+    case .denied: return "permission-denied"
+    case .restricted: return "permission-restricted"
+    case .unsupported: return "permission-unsupported"
+    }
   }
 
   private func checkPermission(
@@ -1107,7 +1410,8 @@ final class PlatformPermissionsPlugin: Plugin, UNUserNotificationCenterDelegate,
     category: Int? = nil,
     targetHint: String? = nil,
     issuedAtMs: Int? = nil,
-    expiresAtMs: Int? = nil
+    expiresAtMs: Int? = nil,
+    errorCode: String? = nil
   ) {
     DispatchQueue.main.async {
       guard let generation = self.pushLifecycleGeneration else {
@@ -1131,7 +1435,8 @@ final class PlatformPermissionsPlugin: Plugin, UNUserNotificationCenterDelegate,
           category: category,
           targetHint: targetHint,
           issuedAtMs: issuedAtMs,
-          expiresAtMs: expiresAtMs
+          expiresAtMs: expiresAtMs,
+          errorCode: errorCode
         )
       )
       do {
@@ -1199,7 +1504,7 @@ final class PlatformPermissionsPlugin: Plugin, UNUserNotificationCenterDelegate,
   }
 }
 
-private func installRemoteNotificationDelegateHook() {
+private func installRemoteNotificationDelegateHooks() {
   guard !remoteNotificationHookInstalled,
     let delegate = UIApplication.shared.delegate,
     let delegateClass: AnyClass = object_getClass(delegate)
@@ -1245,6 +1550,100 @@ private func installRemoteNotificationDelegateHook() {
       didRegisterRemoteNotificationsSelector,
       replacement,
       "v@:@@"
+    )
+  }
+
+  typealias RegistrationFailureBlock = @convention(block) (
+    AnyObject,
+    UIApplication,
+    NSError
+  ) -> Void
+  let failureBlock: RegistrationFailureBlock = {
+    delegateObject, application, error in
+    activePushPlugin?.ingestAPNsRegistrationFailure()
+    if let original = originalDidFailRemoteNotificationsImplementation {
+      typealias FailureImplementation = @convention(c) (
+        AnyObject,
+        Selector,
+        UIApplication,
+        NSError
+      ) -> Void
+      unsafeBitCast(original, to: FailureImplementation.self)(
+        delegateObject,
+        didFailRemoteNotificationsSelector,
+        application,
+        error
+      )
+    }
+  }
+  let failureReplacement = imp_implementationWithBlock(failureBlock)
+  if let method = class_getInstanceMethod(
+    delegateClass,
+    didFailRemoteNotificationsSelector
+  ) {
+    originalDidFailRemoteNotificationsImplementation = method_getImplementation(method)
+    method_setImplementation(method, failureReplacement)
+  } else {
+    class_addMethod(
+      delegateClass,
+      didFailRemoteNotificationsSelector,
+      failureReplacement,
+      "v@:@@"
+    )
+  }
+
+  typealias FetchCompletion = @convention(block) (
+    UIBackgroundFetchResult
+  ) -> Void
+  typealias RemoteNotificationBlock = @convention(block) (
+    AnyObject,
+    UIApplication,
+    NSDictionary,
+    FetchCompletion
+  ) -> Void
+  let remoteNotificationBlock: RemoteNotificationBlock = {
+    delegateObject, application, userInfo, completion in
+    activePushPlugin?.ingestRemoteNotification(
+      userInfo as? [AnyHashable: Any] ?? [:]
+    )
+    if let original = originalDidReceiveRemoteNotificationImplementation {
+      typealias RemoteNotificationImplementation = @convention(c) (
+        AnyObject,
+        Selector,
+        UIApplication,
+        NSDictionary,
+        FetchCompletion
+      ) -> Void
+      unsafeBitCast(
+        original,
+        to: RemoteNotificationImplementation.self
+      )(
+        delegateObject,
+        didReceiveRemoteNotificationSelector,
+        application,
+        userInfo,
+        completion
+      )
+    } else {
+      completion(.noData)
+    }
+  }
+  let remoteNotificationReplacement = imp_implementationWithBlock(
+    remoteNotificationBlock
+  )
+  if let method = class_getInstanceMethod(
+    delegateClass,
+    didReceiveRemoteNotificationSelector
+  ) {
+    originalDidReceiveRemoteNotificationImplementation =
+      method_getImplementation(method)
+    method_setImplementation(method, remoteNotificationReplacement)
+  } else {
+    class_addMethod(
+      delegateClass,
+      didReceiveRemoteNotificationSelector,
+      remoteNotificationReplacement,
+      "v@:@@@?"
     )
   }
   remoteNotificationHookInstalled = true

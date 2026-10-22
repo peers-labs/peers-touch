@@ -1,0 +1,131 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1750 800" width="1750" height="800"
+  role="img" aria-labelledby="title-project.runtime-topology">
+<style>
+  .canvas { fill: #111418; }
+  .headerRule { stroke: #30363d; stroke-width: 1; }
+  .title { fill: #f4f7fa; font: 600 30px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .viewpoint { fill: #8c98a4; font: 600 13px "SFMono-Regular","Menlo",monospace; letter-spacing: 0; }
+  .boundary { fill: none; stroke: #69737d; stroke-width: 1.5; stroke-dasharray: 7 6; }
+  .boundaryTitle { fill: #aeb7c0; font: 600 14px "SFMono-Regular","Menlo",monospace; letter-spacing: 0; }
+  .zone { fill: #171b20; stroke: #343b43; stroke-width: 1.4; }
+  .zone-primary { fill: #152019; stroke: #55d98d; }
+  .zone-secondary { fill: #141d25; stroke: #65b8ff; }
+  .zone-state { fill: #211d14; stroke: #e0b35a; }
+  .zone-external { fill: #191b1e; stroke: #7c8792; stroke-dasharray: 6 5; }
+  .zone-muted { fill: #14171b; stroke: #2c3239; }
+  .zoneTitle { fill: #aeb7c0; font: 600 15px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .node { fill: #1b2026; stroke: #49525c; stroke-width: 1.4; }
+  .node-primary { fill: #17231b; stroke: #55d98d; stroke-width: 1.8; }
+  .node-secondary { fill: #16212b; stroke: #65b8ff; }
+  .node-state { fill: #252116; stroke: #e0b35a; }
+  .node-external { fill: #1a1d21; stroke: #7c8792; }
+  .node-muted { fill: #161a1f; stroke: #343b43; }
+  .nodeTitle { fill: #f0f3f6; font: 600 18px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .nodeCaption { fill: #9da8b3; font: 400 13px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .edge { fill: none; stroke: #55d98d; stroke-width: 2; stroke-linejoin: round; }
+  .edge-secondary { stroke: #65b8ff; }
+  .edge-return { stroke: #a6b0ba; stroke-dasharray: 6 5; }
+  .edge-event { stroke: #e0b35a; stroke-dasharray: 3 4; }
+  .edge-feedback { stroke: #d48787; stroke-dasharray: 7 5; }
+  .edgeLabelBox { fill: #111418; stroke: #30363d; stroke-width: 1; }
+  .edgeLabel { fill: #d7dde3; font: 500 13px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .band { fill: #171b20; }
+  .band-primary { fill: #142019; }
+  .band-secondary { fill: #141d25; }
+  .band-state { fill: #201c14; }
+  .band-muted { fill: #14171b; }
+  .bandRule { stroke: #30363d; stroke-width: 1; }
+  .bandTitle { fill: #8f9aa5; font: 600 14px "SFMono-Regular","Menlo",monospace; letter-spacing: 0; }
+  .lifeline { stroke: #48515a; stroke-width: 1.3; stroke-dasharray: 5 6; }
+  .fragment { fill: #151a1f; stroke: #3b444d; stroke-width: 1; }
+  .fragment-primary { fill: #142019; stroke: #3d7555; }
+  .fragment-secondary { fill: #141d25; stroke: #416884; }
+  .fragmentLabel { fill: #aeb7c0; font: 600 12px "SFMono-Regular","Menlo",monospace; letter-spacing: 0; }
+  .matrixHead { fill: #181d22; stroke: #343b43; stroke-width: 1; }
+  .matrixCell { fill: #14181d; stroke: #2d343c; stroke-width: 1; }
+  .matrixOwner { fill: #17301f; stroke: #55d98d; stroke-width: 1.4; }
+  .matrixText { fill: #d8dee4; font: 500 14px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+  .matrixOwnerText { fill: #7fe7a8; font: 700 13px "SFMono-Regular","Menlo",monospace; letter-spacing: 0; }
+  .guard { fill: #151a1f; stroke: #59636e; stroke-width: 1; }
+  .guard-primary { stroke: #55d98d; }
+  .guard-secondary { stroke: #65b8ff; }
+  .guard-state { stroke: #e0b35a; }
+  .guardLine { stroke: #59636e; stroke-width: 1; stroke-dasharray: 3 4; }
+  .guardText { fill: #b4bec8; font: 500 13px "Avenir Next","PingFang SC","Helvetica Neue",sans-serif; letter-spacing: 0; }
+</style>
+<defs>
+  <marker id="arrow-primary" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#55d98d"/>
+  </marker>
+  <marker id="arrow-secondary" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#65b8ff"/>
+  </marker>
+  <marker id="arrow-return" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#a6b0ba"/>
+  </marker>
+  <marker id="arrow-event" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#e0b35a"/>
+  </marker>
+  <marker id="arrow-feedback" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#d48787"/>
+  </marker>
+</defs>
+<title id="title-project.runtime-topology">Peers-Touch 运行时拓扑</title>
+<rect class="canvas" width="1750" height="800"/>
+<text class="title" x="44" y="48">Peers-Touch 运行时拓扑</text>
+<text class="viewpoint" x="1706" y="46" text-anchor="end">RUNTIME-TOPOLOGY</text>
+<line class="headerRule" x1="44" y1="72" x2="1706" y2="72"/>
+<rect class="zone zone-secondary" x="40" y="110" width="340" height="300" rx="7"/>
+<text class="zoneTitle" x="54" y="137">DESKTOP INSTALLATION</text>
+<rect class="zone zone-secondary" x="40" y="450" width="340" height="300" rx="7"/>
+<text class="zoneTitle" x="54" y="477">MOBILE INSTALLATION</text>
+<rect class="zone zone-primary" x="800" y="110" width="420" height="640" rx="7"/>
+<text class="zoneTitle" x="814" y="137">HOME STATION DEPLOYMENT</text>
+<rect class="zone zone-neutral" x="1270" y="110" width="420" height="640" rx="7"/>
+<text class="zoneTitle" x="1284" y="137">REMOTE STATION DEPLOYMENT</text>
+<rect class="zone zone-external" x="450" y="430" width="280" height="180" rx="7"/>
+<text class="zoneTitle" x="464" y="457">RELAY DEPLOYMENT</text>
+<path class="edge edge-primary" d="M 350 320 L 700 320 L 700 200 L 1010 200 L 1010 250" marker-end="url(#arrow-primary)"/>
+<rect class="edgeLabelBox" x="494.15999999999997" y="305" width="61.68000000000001" height="24" rx="4"/>
+<text class="edgeLabel" x="525" y="322" text-anchor="middle">direct</text>
+<path class="edge edge-primary" d="M 350 660 L 1010 660 L 1010 390" marker-end="url(#arrow-primary)"/>
+<rect class="edgeLabelBox" x="649.16" y="645" width="61.68000000000001" height="24" rx="4"/>
+<text class="edgeLabel" x="680" y="662" text-anchor="middle">direct</text>
+<path class="edge edge-secondary" d="M 210 360 L 210 420 L 590 420 L 590 470" marker-end="url(#arrow-secondary)"/>
+<path class="edge edge-secondary" d="M 210 620 L 210 600 L 590 600 L 590 570" marker-end="url(#arrow-secondary)"/>
+<path class="edge edge-secondary" d="M 700 520 L 760 520 L 760 320 L 840 320" marker-end="url(#arrow-secondary)"/>
+<path class="edge edge-secondary" d="M 1180 320 L 1310 320" marker-end="url(#arrow-secondary)"/>
+<rect class="edgeLabelBox" x="1199.6" y="305" width="90.80000000000001" height="24" rx="4"/>
+<text class="edgeLabel" x="1245" y="322" text-anchor="middle">federation</text>
+<rect class="node node-secondary" x="70" y="150" width="280" height="80" rx="6"/>
+<text class="nodeTitle" x="84" y="181">Desktop App Process</text>
+<text class="nodeCaption" x="84" y="213">WebView · Tauri · local state</text>
+<rect class="node node-neutral" x="70" y="280" width="280" height="80" rx="6"/>
+<text class="nodeTitle" x="84" y="311">Station Transport</text>
+<text class="nodeCaption" x="84" y="343">Desktop-owned instance</text>
+<rect class="node node-secondary" x="70" y="490" width="280" height="80" rx="6"/>
+<text class="nodeTitle" x="84" y="521">Mobile App Process</text>
+<text class="nodeCaption" x="84" y="553">React · Tauri · Android / iOS</text>
+<rect class="node node-neutral" x="70" y="620" width="280" height="80" rx="6"/>
+<text class="nodeTitle" x="84" y="651">Station Transport</text>
+<text class="nodeCaption" x="84" y="683">Mobile-owned instance</text>
+<rect class="node node-primary" x="840" y="250" width="340" height="140" rx="6"/>
+<text class="nodeTitle" x="854" y="281">Station Role Process</text>
+<text class="nodeCaption" x="854" y="373">Frame ingress + App domains</text>
+<rect class="node node-state" x="840" y="520" width="160" height="100" rx="6"/>
+<text class="nodeTitle" x="854" y="551">SQL State</text>
+<text class="nodeCaption" x="854" y="603">Postgres / SQLite</text>
+<rect class="node node-state" x="1020" y="520" width="160" height="100" rx="6"/>
+<text class="nodeTitle" x="1034" y="551">Object State</text>
+<text class="nodeCaption" x="1034" y="603">local / S3 adapter</text>
+<rect class="node node-neutral" x="1310" y="250" width="340" height="140" rx="6"/>
+<text class="nodeTitle" x="1324" y="281">Remote Station Process</text>
+<text class="nodeCaption" x="1324" y="373">independent identity + App domains</text>
+<rect class="node node-state" x="1310" y="520" width="340" height="100" rx="6"/>
+<text class="nodeTitle" x="1324" y="551">Remote Durable State</text>
+<text class="nodeCaption" x="1324" y="603">records · inbox · recovery</text>
+<rect class="node node-external" x="480" y="470" width="220" height="100" rx="6"/>
+<text class="nodeTitle" x="494" y="501">Relay Role Process</text>
+<text class="nodeCaption" x="494" y="553">Circuit v2 · no App</text>
+</svg>

@@ -416,7 +416,14 @@ function AgentRailItem({
           {agent.description}
         </span>
       </span>
-      <Dropdown menu={{ items: menuItems }} trigger={['click']} placement="bottomRight">
+      <Dropdown
+        menu={{
+          items: menuItems,
+          onClick: ({ domEvent }) => domEvent.stopPropagation(),
+        }}
+        trigger={['click']}
+        placement="bottomRight"
+      >
         <button
           data-pt-agent-id={agent.id}
           data-pt-agent-menu

@@ -15,6 +15,8 @@ const MANIFEST_MAX_LINES = 300;
 const MANIFEST_MAX_BYTES = 20 * 1024;
 const TASK_MAX_LINES = 200;
 const TASK_MAX_BYTES = 12 * 1024;
+const OUTCOME_COMPARISON_MAX_LINES = 1200;
+const OUTCOME_COMPARISON_MAX_BYTES = 64 * 1024;
 const SNAPSHOT_MAX_LINES = 30;
 
 const WORK_CLASSES = new Set([
@@ -46,9 +48,24 @@ const FOCUSED_VERIFICATION_CLASSES = new Set([
   'STRUCTURAL_CHECK',
   'UX_REVIEW',
 ]);
+const OUTCOME_DIMENSIONS = new Set([
+  'user-experience',
+  'product-capability',
+  'architecture',
+  'technology',
+  'quality-operations',
+]);
+const OUTCOME_STATUSES = new Set([
+  'PASS',
+  'PARTIAL',
+  'BLOCKED',
+  'UNPROVEN',
+  'NOT_APPLICABLE',
+]);
 const FORBIDDEN_SECTION_PATTERN =
   /^(?:context anchor|appendix|appendices|dated progress|progress (?:log|history|appendix)|execution log|attempt log|raw (?:command )?(?:output|log)|command output|run[- ]?ids?(?: list)?)$/i;
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const SHA256_PATTERN = /^sha256:[a-f0-9]{64}$/;
 
 export const TASK_SLICES_COLLECTION = 'Map';
 
@@ -173,6 +190,27 @@ function assertBounds(text, kind, sourcePath) {
   }
 }
 
+function assertOutcomeComparisonBounds(text, sourcePath) {
+  const lines = lineCount(text);
+  const bytes = Buffer.byteLength(text, 'utf8');
+  if (
+    lines > OUTCOME_COMPARISON_MAX_LINES ||
+    bytes > OUTCOME_COMPARISON_MAX_BYTES
+  ) {
+    fail(
+      'PLAN_BOUNDS_EXCEEDED',
+      'outcome comparison exceeds its mechanical bounds',
+      {
+        path: sourcePath,
+        lines,
+        maxLines: OUTCOME_COMPARISON_MAX_LINES,
+        bytes,
+        maxBytes: OUTCOME_COMPARISON_MAX_BYTES,
+      },
+    );
+  }
+}
+
 function markdownLines(text) {
   const result = [];
   let offset = 0;
@@ -271,6 +309,54 @@ function parseStructuredBlock(text, label, sourcePath, { optional = false } = {}
   }
 }
 
+function extractMarkdownSection(text, requestedHeading, sourcePath) {
+  const expected = normalizeBlockLabel(requestedHeading);
+  const lines = markdownLines(text);
+  const matches = [];
+  lines.forEach((line, index) => {
+    const heading = /^(#{1,6})\s+(.+?)\s*$/.exec(line.value);
+    if (
+      heading &&
+      heading[1].length === 2 &&
+      normalizeBlockLabel(heading[2]) === expected
+    ) {
+      matches.push(index);
+    }
+  });
+  if (matches.length !== 1) {
+    fail(
+      'PLAN_OUTCOME_INVALID',
+      `${requestedHeading} section must appear exactly once`,
+      { path: sourcePath, count: matches.length },
+    );
+  }
+  const start = matches[0];
+  let end = lines.length;
+  for (let index = start + 1; index < lines.length; index += 1) {
+    const heading = /^(#{1,6})\s+/.exec(lines[index].value);
+    if (heading && heading[1].length <= 2) {
+      end = index;
+      break;
+    }
+  }
+  return text.slice(
+    lines[start].offset + lines[start].raw.length,
+    end < lines.length ? lines[end].offset : text.length,
+  );
+}
+
+export function digestOutcomePlannedSection(section) {
+  const normalized = `${section.replace(/\r\n?/g, '\n').trim()}\n`;
+  return `sha256:${crypto
+    .createHash('sha256')
+    .update(normalized)
+    .digest('hex')}`;
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function assertNoForbiddenSections(text, sourcePath) {
   markdownLines(text).forEach((line, index) => {
     const heading = /^#{1,6}\s+(.+?)\s*$/.exec(line.value);
@@ -284,7 +370,7 @@ function assertNoForbiddenSections(text, sourcePath) {
   });
 }
 
-function assertCurrentSnapshot(text, sourcePath) {
+function assertBoundedLegacyCurrentSnapshot(text, sourcePath) {
   const lines = markdownLines(text);
   const indexes = [];
   lines.forEach((line, index) => {
@@ -292,13 +378,14 @@ function assertCurrentSnapshot(text, sourcePath) {
       indexes.push(index);
     }
   });
-  if (indexes.length !== 1) {
+  if (indexes.length > 1) {
     fail(
       'PLAN_SNAPSHOT_INVALID',
-      'Task Slice must contain exactly one Current Snapshot section',
+      'Task Slice may contain at most one legacy Current Snapshot section',
       { path: sourcePath, count: indexes.length },
     );
   }
+  if (indexes.length === 0) return;
   const start = indexes[0];
   const headingLevel = /^(#{1,6})/.exec(lines[start].value)[1].length;
   let end = lines.length;
@@ -588,9 +675,11 @@ function validateRuntimeReuse(value, context) {
 }
 
 function validatePlanVersion(plan) {
+  const hasOutcomeComparison = Object.hasOwn(plan, 'outcomeComparison');
   assertClosedObject(
     plan,
     [
+      ...(hasOutcomeComparison ? ['outcomeComparison'] : []),
       'kind',
       'planId',
       'versionId',
@@ -605,6 +694,24 @@ function validatePlanVersion(plan) {
   );
   if (plan.kind !== 'peers-touch-plan-version') {
     fail('PLAN_SCHEMA_INVALID', 'Plan Version kind is unsupported');
+  }
+  if (hasOutcomeComparison) {
+    assertClosedObject(
+      plan.outcomeComparison,
+      ['path'],
+      'Plan Version.outcomeComparison',
+    );
+    validateRepositoryPath(
+      plan.outcomeComparison.path,
+      'Plan Version.outcomeComparison.path',
+    );
+    if (plan.outcomeComparison.path !== 'outcome-comparison.md') {
+      fail(
+        'PLAN_PATH_INVALID',
+        'Plan Version outcome comparison must use outcome-comparison.md',
+        { path: plan.outcomeComparison.path },
+      );
+    }
   }
   assertString(plan.planId, 'Plan Version.planId', { pattern: ID_PATTERN });
   assertString(plan.versionId, 'Plan Version.versionId', { pattern: ID_PATTERN });
@@ -963,6 +1070,190 @@ function validateAcceptance(acceptance) {
   assertUniqueStrings(acceptance.full, 'Acceptance Execution.full');
 }
 
+function validateOutcomeComparisonContract(contract, plan, plannedSection) {
+  assertClosedObject(
+    contract,
+    [
+      'kind',
+      'schemaVersion',
+      'planId',
+      'plannedSectionDigest',
+      'criteria',
+    ],
+    'Outcome Comparison Contract',
+  );
+  if (contract.kind !== 'peers-touch-outcome-comparison-contract') {
+    fail(
+      'PLAN_OUTCOME_INVALID',
+      'Outcome Comparison Contract kind is unsupported',
+    );
+  }
+  if (contract.schemaVersion !== 1) {
+    fail(
+      'PLAN_OUTCOME_INVALID',
+      'Outcome Comparison Contract schemaVersion is unsupported',
+    );
+  }
+  if (contract.planId !== plan.planId) {
+    fail(
+      'PLAN_OUTCOME_INVALID',
+      'Outcome Comparison Contract planId does not match Plan Version',
+    );
+  }
+  assertString(
+    contract.plannedSectionDigest,
+    'Outcome Comparison Contract.plannedSectionDigest',
+    { pattern: SHA256_PATTERN },
+  );
+  const actualDigest = digestOutcomePlannedSection(plannedSection);
+  if (actualDigest !== contract.plannedSectionDigest) {
+    fail(
+      'PLAN_OUTCOME_STALE',
+      'planned outcome comparison changed without a new Plan Version',
+      {
+        expected: contract.plannedSectionDigest,
+        actual: actualDigest,
+      },
+    );
+  }
+
+  assertArray(
+    contract.criteria,
+    'Outcome Comparison Contract.criteria',
+    { min: OUTCOME_DIMENSIONS.size },
+  );
+  const criterionIds = new Set();
+  const dimensions = new Set();
+  for (const [index, criterion] of contract.criteria.entries()) {
+    const context = `Outcome Comparison Contract.criteria[${index}]`;
+    assertClosedObject(
+      criterion,
+      ['id', 'dimension', 'title', 'taskIds', 'gateIds'],
+      context,
+    );
+    assertString(criterion.id, `${context}.id`, { pattern: ID_PATTERN });
+    assertEnum(criterion.dimension, OUTCOME_DIMENSIONS, `${context}.dimension`);
+    assertString(criterion.title, `${context}.title`);
+    assertUniqueStrings(criterion.taskIds, `${context}.taskIds`, {
+      min: 1,
+      pattern: ID_PATTERN,
+    });
+    assertUniqueStrings(criterion.gateIds, `${context}.gateIds`, {
+      pattern: ID_PATTERN,
+    });
+    if (criterionIds.has(criterion.id)) {
+      fail('PLAN_DUPLICATE', 'Outcome criterion ID is duplicated', {
+        criterionId: criterion.id,
+      });
+    }
+    criterionIds.add(criterion.id);
+    dimensions.add(criterion.dimension);
+    const headingPattern = new RegExp(
+      `^###\\s+${escapeRegExp(criterion.id)}(?:\\s|:|：|$)`,
+      'gm',
+    );
+    const headings = plannedSection.match(headingPattern) ?? [];
+    if (headings.length !== 1) {
+      fail(
+        'PLAN_OUTCOME_INVALID',
+        'each outcome criterion must own one planned comparison heading',
+        { criterionId: criterion.id, count: headings.length },
+      );
+    }
+  }
+  const missingDimensions = [...OUTCOME_DIMENSIONS].filter(
+    (dimension) => !dimensions.has(dimension),
+  );
+  if (missingDimensions.length > 0) {
+    fail(
+      'PLAN_OUTCOME_INVALID',
+      'Outcome Comparison Contract misses required human-readable dimensions',
+      { missingDimensions },
+    );
+  }
+}
+
+function validateOutcomeComparisonResults(results, plan, contract) {
+  assertClosedObject(
+    results,
+    ['kind', 'schemaVersion', 'planId', 'sourceIdentity', 'items'],
+    'Outcome Comparison Results',
+  );
+  if (results.kind !== 'peers-touch-outcome-comparison-results') {
+    fail(
+      'PLAN_OUTCOME_INVALID',
+      'Outcome Comparison Results kind is unsupported',
+    );
+  }
+  if (results.schemaVersion !== 1) {
+    fail(
+      'PLAN_OUTCOME_INVALID',
+      'Outcome Comparison Results schemaVersion is unsupported',
+    );
+  }
+  if (results.planId !== plan.planId) {
+    fail(
+      'PLAN_OUTCOME_INVALID',
+      'Outcome Comparison Results planId does not match Plan Version',
+    );
+  }
+  if (
+    results.sourceIdentity !== null &&
+    (typeof results.sourceIdentity !== 'string' ||
+      results.sourceIdentity.trim().length === 0)
+  ) {
+    fail(
+      'PLAN_OUTCOME_INVALID',
+      'Outcome Comparison Results.sourceIdentity must be null or a string',
+    );
+  }
+  assertArray(results.items, 'Outcome Comparison Results.items', {
+    min: contract.criteria.length,
+  });
+  const resultIds = new Set();
+  for (const [index, item] of results.items.entries()) {
+    const context = `Outcome Comparison Results.items[${index}]`;
+    assertClosedObject(
+      item,
+      ['id', 'status', 'actualEffect', 'evidenceRefs', 'deviation'],
+      context,
+    );
+    assertString(item.id, `${context}.id`, { pattern: ID_PATTERN });
+    assertEnum(item.status, OUTCOME_STATUSES, `${context}.status`);
+    assertString(item.actualEffect, `${context}.actualEffect`);
+    assertUniqueStrings(item.evidenceRefs, `${context}.evidenceRefs`);
+    assertString(item.deviation, `${context}.deviation`);
+    if (resultIds.has(item.id)) {
+      fail('PLAN_DUPLICATE', 'Outcome result ID is duplicated', {
+        criterionId: item.id,
+      });
+    }
+    resultIds.add(item.id);
+    if (
+      (item.status === 'PASS' || item.status === 'PARTIAL') &&
+      (results.sourceIdentity === null || item.evidenceRefs.length === 0)
+    ) {
+      fail(
+        'PLAN_OUTCOME_INVALID',
+        'PASS or PARTIAL outcome requires source identity and evidence',
+        { criterionId: item.id, status: item.status },
+      );
+    }
+  }
+  const expectedIds = contract.criteria.map((criterion) => criterion.id).sort();
+  const actualIds = [...resultIds].sort();
+  if (
+    expectedIds.length !== actualIds.length ||
+    expectedIds.some((id, index) => id !== actualIds[index])
+  ) {
+    fail(
+      'PLAN_OUTCOME_INVALID',
+      'Outcome result IDs must exactly match planned criteria',
+      { expected: expectedIds, actual: actualIds },
+    );
+  }
+}
+
 function validateSourceInvalidationPolicy(policy, plan) {
   if (policy === null) return;
   assertClosedObject(
@@ -1087,6 +1378,53 @@ function validateCrosswalk(plan, taskSlices, acceptance) {
   }
 }
 
+function validateOutcomeComparisonCrosswalk(
+  plan,
+  acceptance,
+  outcomeComparison,
+) {
+  if (outcomeComparison === null) return;
+  const taskIds = new Set(plan.tasks.map((task) => task.id));
+  const gateIds = new Set([
+    ...Object.values(acceptance.closures).flat(),
+    ...acceptance.completion,
+    ...acceptance.full,
+  ]);
+  const coveredTasks = new Set();
+  const coveredGates = new Set();
+  for (const criterion of outcomeComparison.contract.criteria) {
+    for (const taskId of criterion.taskIds) {
+      if (!taskIds.has(taskId)) {
+        fail(
+          'PLAN_OUTCOME_INVALID',
+          'Outcome criterion references an unknown Task',
+          { criterionId: criterion.id, taskId },
+        );
+      }
+      coveredTasks.add(taskId);
+    }
+    for (const gateId of criterion.gateIds) {
+      if (!gateIds.has(gateId)) {
+        fail(
+          'PLAN_OUTCOME_INVALID',
+          'Outcome criterion references an undeclared Gate',
+          { criterionId: criterion.id, gateId },
+        );
+      }
+      coveredGates.add(gateId);
+    }
+  }
+  const missingTasks = [...taskIds].filter((taskId) => !coveredTasks.has(taskId));
+  const missingGates = [...gateIds].filter((gateId) => !coveredGates.has(gateId));
+  if (missingTasks.length > 0 || missingGates.length > 0) {
+    fail(
+      'PLAN_OUTCOME_INVALID',
+      'Outcome comparison must cover every Task and declared Gate',
+      { missingTasks, missingGates },
+    );
+  }
+}
+
 function canonicalize(value) {
   if (Array.isArray(value)) return value.map(canonicalize);
   if (!isPlainObject(value)) return value;
@@ -1102,6 +1440,7 @@ export function digestPlanVersionInput({
   tasks,
   acceptance,
   sourceInvalidationPolicy = null,
+  outcomeComparisonContract = null,
 }) {
   return crypto
     .createHash('sha256')
@@ -1114,6 +1453,7 @@ export function digestPlanVersionInput({
           ),
           acceptance,
           sourceInvalidationPolicy,
+          outcomeComparisonContract,
         }),
       ),
     )
@@ -1193,6 +1533,59 @@ async function validateRegisteredArchitecture(plan, repoRoot) {
   }
 }
 
+async function loadOutcomeComparison(plan, packageDirectory, repoRoot) {
+  if (!Object.hasOwn(plan, 'outcomeComparison')) return null;
+  const outcomePath = path.join(
+    packageDirectory,
+    ...plan.outcomeComparison.path.split('/'),
+  );
+  const relativeOutcomePath = path
+    .relative(repoRoot, outcomePath)
+    .split(path.sep)
+    .join('/');
+  await assertRepositoryPathContained(
+    repoRoot,
+    relativeOutcomePath,
+    'Plan Version.outcomeComparison.path',
+  );
+  let markdown;
+  try {
+    markdown = await fsp.readFile(outcomePath, 'utf8');
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      fail('PLAN_OUTCOME_INVALID', 'outcome comparison file is missing', {
+        path: relativeOutcomePath,
+      });
+    }
+    throw error;
+  }
+  assertOutcomeComparisonBounds(markdown, outcomePath);
+  const plannedSection = extractMarkdownSection(
+    markdown,
+    'Planned Outcome Comparison',
+    outcomePath,
+  );
+  extractMarkdownSection(markdown, 'Actual Outcome Results', outcomePath);
+  const { value: contract } = parseStructuredBlock(
+    markdown,
+    'Outcome Comparison Contract',
+    outcomePath,
+  );
+  const { value: results } = parseStructuredBlock(
+    markdown,
+    'Outcome Comparison Results',
+    outcomePath,
+  );
+  validateOutcomeComparisonContract(contract, plan, plannedSection);
+  validateOutcomeComparisonResults(results, plan, contract);
+  return {
+    path: outcomePath,
+    planPath: plan.outcomeComparison.path,
+    contract,
+    results,
+  };
+}
+
 export async function loadPlanPackage(planPath, options = {}) {
   assertString(planPath, 'planPath');
   const absolutePlan = path.resolve(planPath);
@@ -1233,6 +1626,11 @@ export async function loadPlanPackage(planPath, options = {}) {
     .join('/');
   validateRepositoryPath(planRelativePath, 'planPath');
   const packageDirectory = path.dirname(realPlan);
+  const outcomeComparison = await loadOutcomeComparison(
+    plan,
+    packageDirectory,
+    repoRoot,
+  );
 
   for (const [index, source] of plan.architecture.sources.entries()) {
     await assertRepositoryPathContained(
@@ -1287,7 +1685,7 @@ export async function loadPlanPackage(planPath, options = {}) {
     const taskMarkdown = await fsp.readFile(taskPath, 'utf8');
     assertBounds(taskMarkdown, 'task', taskPath);
     assertNoForbiddenSections(taskMarkdown, taskPath);
-    assertCurrentSnapshot(taskMarkdown, taskPath);
+    assertBoundedLegacyCurrentSnapshot(taskMarkdown, taskPath);
     const { value: task } = parseStructuredBlock(
       taskMarkdown,
       'Task Slice',
@@ -1323,6 +1721,7 @@ export async function loadPlanPackage(planPath, options = {}) {
     taskSlices.set(task.taskId, task);
   }
   validateCrosswalk(plan, taskSlices, acceptance);
+  validateOutcomeComparisonCrosswalk(plan, acceptance, outcomeComparison);
 
   const tasks = plan.tasks.map((task) => taskSlices.get(task.id));
   const planVersionDigest = digestPlanVersionInput({
@@ -1330,6 +1729,7 @@ export async function loadPlanPackage(planPath, options = {}) {
     tasks,
     acceptance,
     sourceInvalidationPolicy,
+    outcomeComparisonContract: outcomeComparison?.contract ?? null,
   });
   return {
     path: realPlan,
@@ -1339,6 +1739,7 @@ export async function loadPlanPackage(planPath, options = {}) {
     manifest: plan,
     acceptance,
     sourceInvalidationPolicy,
+    outcomeComparison,
     architectureGovernance,
     taskSlices,
     tasks,
@@ -1376,6 +1777,23 @@ export function summarizePlanPackage(planPackage) {
     completion: planPackage.acceptance.completion,
     full: planPackage.acceptance.full,
     allDeclaredGateIds: allDeclaredGateIds(planPackage.acceptance),
+    outcomeComparison:
+      planPackage.outcomeComparison === null
+        ? null
+        : {
+            path: planPackage.outcomeComparison.planPath,
+            plannedSectionDigest:
+              planPackage.outcomeComparison.contract.plannedSectionDigest,
+            criterionIds:
+              planPackage.outcomeComparison.contract.criteria.map(
+                (criterion) => criterion.id,
+              ),
+            resultStatuses:
+              planPackage.outcomeComparison.results.items.map((item) => ({
+                id: item.id,
+                status: item.status,
+              })),
+          },
   };
 }
 

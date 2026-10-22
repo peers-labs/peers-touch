@@ -1,8 +1,8 @@
 # Secure Content - Security Contract
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-09-13 | **Updated**: 2026-09-16
+> **Version**: v1.4
+> **Created**: 2026-09-13 | **Updated**: 2026-10-17
 > **Owner**: Architecture Team
 
 ---
@@ -315,6 +315,16 @@ Station must not retain:
   plaintext never enter URL, logs, metrics, traces, Acceptance evidence, or Web
   storage.
 - Native secret-bearing structs zeroize on drop where supported.
+- Recovery continuation loads the epoch master only through the key-material
+  port, derives the selected one-time private key in the portable core, and
+  zeroizes both owners on drop; operation stores never persist a derived
+  recovery private key.
+- Lifecycle cancellation is checked before loading recovery material, after
+  loading it, and before envelope open. A cancelled continuation returns a
+  typed cancellation outcome and releases in-memory secrets.
+- Encrypted operation stores persist command bytes and digests, state, and
+  generation fences. Their common operation record contains no plaintext,
+  access token, signature, recovery phrase, root key, or filesystem path.
 - Temporary decrypted files are account-scoped, permission-restricted, and
   atomically removed on revoke, logout, account switch, or integrity failure.
 - Crash recovery may retain ciphertext/checkpoints, never partial plaintext.

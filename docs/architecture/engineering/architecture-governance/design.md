@@ -1,8 +1,8 @@
 # 架构模块治理 - 架构设计
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-09-27 | **Updated**: 2026-10-05
+> **Version**: v1.3
+> **Created**: 2026-09-27 | **Updated**: 2026-10-17
 > **Owner**: Architecture Team
 > **Module**: `docs/architecture/`, `tooling/scripts/`, `tooling/plugins/`
 
@@ -16,6 +16,8 @@
 4. **按特征完备**：协议、状态、ownership 和跨运行时特征决定必需文档。
 5. **未知即失败**：受治理边界内未登记的接口或不完整模块不能进入实现。
 6. **分类不冒充模块**：taxonomy index 只提供导航；稳定 module ID 与物理目录名解耦。
+7. **索引是投影**：模块索引与图反向引用从 registry、Diagram spec、SVG 资产和
+   真实链接生成，不成为第二份模块或依赖真源。
 
 ## 2. 系统架构
 
@@ -50,8 +52,10 @@ flowchart LR
 |---|---|
 | 文档结构与内容最低要求 | `docs/global/architecture-document-standard.md` |
 | 信息架构分类 | `docs/architecture/{domains,platform,shared,engineering}/` |
+| 项目级架构图 | `docs/architecture/architecture.md` |
 | 模块边界与语义 | 对应 taxonomy 下的叶子模块文档集 |
 | 机器治理声明 | `architecture-modules.json` |
+| 模块索引与图反向引用 | `docs/architecture/README.md`、`references.md` 的生成投影 |
 | Station 公共能力 | `docs/architecture/engineering/api-governance/station-api-capabilities.yaml` |
 | 路径级运行知识 | `docs/knowledge/` |
 | 执行范围与授权 | 当前绑定 Plan Package |
@@ -114,10 +118,43 @@ fail closed。
 
 - `id` 在全局唯一；
 - owner、契约根和 consumer 均必须非空且指向当前路径；
+- contract root 必须位于 owning module 的 governed paths；consumer 可以位于
+  其他模块，但必须是当前非 symlink 路径；
 - 受专用 capability registry 管理的模块只引用稳定 capability ID；
 - validator 必须证明引用 ID 存在；
 - 声明不得包含 retired、legacy、alias、denylist 或 superseded 字段；
 - 受治理边界发现的新接口若没有正向登记，校验失败。
+
+### 5.1 Cross-client reuse coverage
+
+当 `cross-client-runtime` 模块已登记时，validator 从 Desktop/Mobile 的
+`package.json` 与 `Cargo.toml` 推导共同 direct workspace dependency。每个共享
+package/crate 必须由至少一个 capability `contractRoots` 覆盖。
+
+pnpm package 集合由 pnpm 自身的 workspace resolver 解析，只有显式
+`workspace:` dependency 进入 inventory。Cargo dependency 由
+`cargo metadata` 解析，只纳入 normal direct path dependency；合法的 brace
+glob、exclude、renamed、table 和 target-specific 声明不能绕过检查，dev/build
+dependency 不冒充产品复用。任何 symlink component 或 repo 外 realpath 均
+fail closed。
+
+该检查证明：
+
+- 共享资产可回到 owner 和 canonical root；
+- 新增共同依赖不能绕过架构登记；
+- pnpm/Cargo manifest 是消费证据，不是第二份能力真源。
+
+Capability 的 canonical roots 还登记实际语义 Owner 文件。Form-specific
+Presentation Policy 以独立 capability 引用 headless owner，因此 registry 可同时
+证明共享语义只有一个 Owner，并保留 Desktop/Mobile 合法的布局与交互分叉。
+
+它不通过文件名相似度猜测语义重复；组件或业务语义分叉仍由 owning module 的
+reuse admission 与 divergence review 判断。
+
+允许的语义分叉登记在同一 registry 的 `reuseDivergences`。Validator 证明
+capability、canonical root、实现 root、consumer、Acceptance Gate 和 accepted
+decision 均存在，且 implementation/consumer 具有 registered architecture
+owner；reviewer 仍负责判断分叉理由是否真实以及 review trigger 是否已经触发。
 
 ## 6. 编辑前上下文
 
@@ -173,6 +210,7 @@ Review/CI 对 changed paths 执行相同校验。修改 active 架构模块但�
 | active 模块缺必需文档 | fail closed |
 | 决策未接受或不在声明中 | fail closed |
 | capability ID 不存在 | fail closed |
+| Desktop/Mobile 共同 direct dependency 未登记 capability | fail closed |
 | active 架构模块被修改但未登记 | fail closed |
 | knowledge 或架构文档无法读取 | 编辑前拒绝 |
 | 无匹配模块的普通源码修改 | 继续执行 knowledge 匹配 |

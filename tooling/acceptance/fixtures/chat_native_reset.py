@@ -411,6 +411,12 @@ def _authorized_reset_environment(
         RESET_PROFILE_AUTHORIZATION_ENV,
         "",
     ).strip()
+    lease_profile = (
+        ""
+        if configured_profile
+        else machine_lease_reset_profile()
+    )
+    authorized_profile = configured_profile or lease_profile
     authorized_environments_raw = os.environ.get(
         RESET_ENVIRONMENTS_AUTHORIZATION_ENV,
         "",
@@ -2482,8 +2488,15 @@ def prepare_local_friend_request_lifecycle(
     environment_name: str,
     sender_ptid: str,
     receiver_ptid: str,
+    *,
+    reset_authorized: bool | None = None,
 ) -> None:
-    if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
+    authorized = (
+        os.environ.get("CHAT_ACCEPTANCE_RESET") == "1"
+        if reset_authorized is None
+        else reset_authorized
+    )
+    if not authorized:
         raise RuntimeError(
             "CHAT_ACCEPTANCE_RESET=1 is required for destructive Chat reset"
         )

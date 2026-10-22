@@ -1,0 +1,184 @@
+{
+  "kind": "peers-touch-architecture-diagram",
+  "schemaVersion": 3,
+  "id": "project.engineering-control-plane",
+  "module": "project",
+  "viewpoint": "control-plane",
+  "layout": "control-loop",
+  "output": "engineering-control-plane.svg",
+  "title": "Peers-Touch 工程控制闭环",
+  "canvas": {
+    "width": 1500,
+    "height": 850
+  },
+  "edgeMeaning": "箭头表示工程状态推进与评审反馈",
+  "scene": {
+    "stages": [
+      {
+        "id": "architecture",
+        "role": "stage",
+        "x": 80,
+        "y": 300,
+        "width": 200,
+        "height": 90,
+        "title": "Architecture",
+        "caption": "scope · owners · gates",
+        "tone": "muted"
+      },
+      {
+        "id": "source",
+        "role": "stage",
+        "x": 345,
+        "y": 300,
+        "width": 200,
+        "height": 90,
+        "title": "Source Change",
+        "caption": "canonical worktree",
+        "tone": "secondary"
+      },
+      {
+        "id": "runtime",
+        "role": "stage",
+        "x": 610,
+        "y": 300,
+        "width": 200,
+        "height": 90,
+        "title": "Exact-source Run",
+        "caption": "reviewed Profile",
+        "tone": "secondary"
+      },
+      {
+        "id": "evidence",
+        "role": "stage",
+        "x": 875,
+        "y": 300,
+        "width": 200,
+        "height": 90,
+        "title": "Evidence",
+        "caption": "functional + formal",
+        "tone": "primary"
+      },
+      {
+        "id": "review",
+        "role": "stage",
+        "x": 1140,
+        "y": 300,
+        "width": 200,
+        "height": 90,
+        "title": "Completion Review",
+        "caption": "findings · gaps",
+        "tone": "primary"
+      },
+      {
+        "id": "delivery",
+        "role": "stage",
+        "x": 1140,
+        "y": 600,
+        "width": 200,
+        "height": 90,
+        "title": "Delivery State",
+        "caption": "proof + resources",
+        "tone": "state"
+      }
+    ],
+    "guards": [
+      {
+        "title": "Knowledge + Registry",
+        "target": "source",
+        "x": 335,
+        "y": 165,
+        "width": 220,
+        "tone": "secondary"
+      },
+      {
+        "title": "Profile + Lease",
+        "target": "runtime",
+        "x": 600,
+        "y": 165,
+        "width": 220,
+        "tone": "secondary"
+      },
+      {
+        "title": "Acceptance Policy",
+        "target": "evidence",
+        "x": 865,
+        "y": 165,
+        "width": 220,
+        "tone": "primary"
+      },
+      {
+        "title": "CI + Completion Gates",
+        "target": "review",
+        "x": 1130,
+        "y": 165,
+        "width": 220,
+        "tone": "state"
+      }
+    ],
+    "relations": [
+      {
+        "from": "architecture",
+        "to": "source",
+        "fromAnchor": "right",
+        "toAnchor": "left",
+        "label": null,
+        "style": "primary",
+        "via": []
+      },
+      {
+        "from": "source",
+        "to": "runtime",
+        "fromAnchor": "right",
+        "toAnchor": "left",
+        "label": null,
+        "style": "primary",
+        "via": []
+      },
+      {
+        "from": "runtime",
+        "to": "evidence",
+        "fromAnchor": "right",
+        "toAnchor": "left",
+        "label": null,
+        "style": "primary",
+        "via": []
+      },
+      {
+        "from": "evidence",
+        "to": "review",
+        "fromAnchor": "right",
+        "toAnchor": "left",
+        "label": null,
+        "style": "primary",
+        "via": []
+      },
+      {
+        "from": "review",
+        "to": "source",
+        "fromAnchor": "bottom",
+        "toAnchor": "bottom",
+        "label": "findings",
+        "style": "feedback",
+        "via": [
+          {
+            "x": 1240,
+            "y": 520
+          },
+          {
+            "x": 445,
+            "y": 520
+          }
+        ]
+      },
+      {
+        "from": "review",
+        "to": "delivery",
+        "fromAnchor": "bottom",
+        "toAnchor": "top",
+        "label": "proven",
+        "style": "event",
+        "via": []
+      }
+    ]
+  }
+}

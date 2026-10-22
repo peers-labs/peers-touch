@@ -13,7 +13,13 @@ from tooling.acceptance.gates.agent.native_agent_runner import (
 )
 
 
-def extensions(runner: AgentNativeJourney, agent_id: str) -> dict[str, Any]:
+def extensions(
+    runner: AgentNativeJourney,
+    agent_id: str,
+    *,
+    retain_skill: bool = False,
+    skill_capability_id: str = "",
+) -> dict[str, Any]:
     labels = json.loads((REPO_ROOT / "packages/locales/en/agent.json").read_text())
 
     def inventory() -> dict[str, Any]:
@@ -27,6 +33,7 @@ def extensions(runner: AgentNativeJourney, agent_id: str) -> dict[str, Any]:
         "return Boolean(document.querySelector('[data-pt-agent-extension]'))"
     ), "unbound catalogue rendered as Profile extensions")
     readbacks = {}
+    retained_skill: dict[str, Any] | None = None
     for kind, source_kind in (
         ("skill", 4),
         ("mcp", 2),
@@ -38,6 +45,27 @@ def extensions(runner: AgentNativeJourney, agent_id: str) -> dict[str, Any]:
             and manifest["availability"] in (1, 2)
         ]
         require(bool(candidates), f"Suite catalogue has no available {kind} capability")
+        manifest = (
+            next(
+                (
+                    candidate
+                    for candidate in candidates
+                    if candidate["capabilityId"] == skill_capability_id
+                ),
+                None,
+            )
+            if kind == "skill"
+            else candidates[0]
+        )
+        require(
+            isinstance(manifest, dict),
+            f"Suite catalogue omitted the target {kind} capability",
+        )
+        target_name = (
+            manifest.get("displayMetadata", {}).get("name", "").strip()
+            or manifest.get("sourceInstanceId", "").strip()
+            or manifest["capabilityId"]
+        )
         runner.click_visible(
             f'button[data-pt-agent-extension-add="{kind}"]',
             f"open {kind} picker",
@@ -57,18 +85,16 @@ def extensions(runner: AgentNativeJourney, agent_id: str) -> dict[str, Any]:
             const modal = [...document.querySelectorAll('.ant-modal')]
               .find(element => element.getClientRects().length);
             const button = [...modal.querySelectorAll('button')]
-              .find(element => element.querySelector('strong'));
+              .find(element => element.querySelector('strong')?.innerText === arguments[0]);
             const name = button?.querySelector('strong')?.innerText;
             button?.click();
             return name;
-            """
+            """,
+            target_name,
         )
-        require(bool(chosen), f"{kind} picker had no selectable row")
-        manifest = next(
-            item for item in candidates
-            if (item.get("displayMetadata", {}).get("name", "").strip()
-                or item.get("sourceInstanceId", "").strip()
-                or item["capabilityId"]) == chosen
+        require(
+            chosen == target_name,
+            f"{kind} picker did not expose the target capability",
         )
         capability_id = manifest["capabilityId"]
         row_selector = f'[data-pt-agent-extension="{capability_id}"]'
@@ -96,23 +122,47 @@ def extensions(runner: AgentNativeJourney, agent_id: str) -> dict[str, Any]:
                 "disabled skill not projected",
             )
             runner.click_visible(f'{row_selector} [role="switch"]', "enable bound skill")
-            wait_until(lambda: binding(True), "enabled skill authority")
-            runner.click_visible(
-                f'{row_selector} button[data-pt-agent-extension-remove="{capability_id}"]',
-                "remove bound skill",
-            )
-            wait_until(
-                lambda: runner.visible_element_state(row_selector) is None,
-                "removed skill row",
-            )
-            removed = inventory()
-            require(not any(
-                item["capabilityId"] == capability_id and not item.get("tombstonedAt")
-                for item in removed["bindings"]
-            ), "skill removal did not reach authority")
-            readbacks[kind] = {
-                "accepted": accepted, "disabled": disabled, "removed": removed["bindings"],
-            }
+            enabled = wait_until(lambda: binding(True), "enabled skill authority")
+            if retain_skill:
+                retained_skill = {
+                    "capabilityId": capability_id,
+                    "skillId": capability_id.removeprefix("skill:"),
+                    "name": manifest.get("sourceInstanceId", ""),
+                    "version": int(manifest["version"]),
+                    "content": (
+                        "Describe supplied facts precisely and preserve the user's request."
+                    ),
+                }
+                require(
+                    bool(retained_skill["skillId"])
+                    and bool(retained_skill["name"])
+                    and retained_skill["version"] > 0,
+                    f"retained Skill identity is incomplete: {retained_skill}",
+                )
+                readbacks[kind] = {
+                    "accepted": accepted,
+                    "disabled": disabled,
+                    "enabled": enabled,
+                }
+            else:
+                runner.click_visible(
+                    f'{row_selector} button[data-pt-agent-extension-remove="{capability_id}"]',
+                    "remove bound skill",
+                )
+                wait_until(
+                    lambda: runner.visible_element_state(row_selector) is None,
+                    "removed skill row",
+                )
+                removed = inventory()
+                require(not any(
+                    item["capabilityId"] == capability_id and not item.get("tombstonedAt")
+                    for item in removed["bindings"]
+                ), "skill removal did not reach authority")
+                readbacks[kind] = {
+                    "accepted": accepted,
+                    "disabled": disabled,
+                    "removed": removed["bindings"],
+                }
         else:
             runner.click_visible(
                 f'{row_selector} button[data-pt-agent-extension-remove="{capability_id}"]',
@@ -135,13 +185,86 @@ def extensions(runner: AgentNativeJourney, agent_id: str) -> dict[str, Any]:
         readbacks[kind]["initialRowCount"] = rows
     click_text(runner, '[data-pt-agent-profile-editor] [role="tab"]',
                labels["agent.profile.section.identity"])
+    operation_ids = [
+        "profile.extensions.skill-bind", "profile.extensions.skill-toggle",
+        "profile.extensions.mcp-bind", "profile.extensions.picker-unmount",
+    ]
+    if not retain_skill:
+        operation_ids.append("profile.extensions.skill-remove")
     return {
-        "uiAction": "open bounded Skills and MCP pickers, bind, toggle and remove skill",
-        "receiverAssertion": "only bound rows render; switch and removal project authority; pickers unmount",
+        "uiAction": (
+            "open bounded Skills and MCP pickers, bind and toggle the Skill"
+            if retain_skill
+            else "open bounded Skills and MCP pickers, bind, toggle and remove skill"
+        ),
+        "receiverAssertion": (
+            "only bound rows render; the Skill switch projects binding authority"
+            if retain_skill
+            else "only bound rows render; switch and removal project authority; pickers unmount"
+        ),
         "bindings": readbacks,
-        "operationIds": [
-            "profile.extensions.skill-bind", "profile.extensions.skill-toggle",
-            "profile.extensions.skill-remove", "profile.extensions.mcp-bind",
-            "profile.extensions.picker-unmount",
-        ],
+        "retainedSkill": retained_skill,
+        "operationIds": operation_ids,
+    }
+
+
+def remove_retained_skill(
+    runner: AgentNativeJourney,
+    agent_id: str,
+    skill: dict[str, Any],
+) -> dict[str, Any]:
+    labels = json.loads((REPO_ROOT / "packages/locales/en/agent.json").read_text())
+    runner.select_agent_chat(agent_id)
+    runner.click_visible(
+        "[data-pt-agent-topic-profile]",
+        "current Agent Profile",
+    )
+    runner.wait_visible_element(
+        runner.lifecycle_selector("profile", agent_id=agent_id),
+        "retained Skill Agent Profile",
+    )
+    click_text(
+        runner,
+        '[data-pt-agent-profile-editor] [role="tab"]',
+        labels["agent.profile.tab.extensions"],
+    )
+    capability_id = str(skill["capabilityId"])
+    row_selector = f'[data-pt-agent-extension="{capability_id}"]'
+    runner.wait_visible_element(row_selector, "retained Skill extension")
+    runner.click_visible(
+        f'{row_selector} button[data-pt-agent-extension-remove="{capability_id}"]',
+        "remove consumed Skill",
+    )
+
+    def removed() -> dict[str, Any] | None:
+        inventory = runner.harness(
+            "getChatSuiteCapabilityInventory",
+            {"agentId": agent_id},
+        )
+        bindings = inventory.get("bindings") if isinstance(inventory, dict) else None
+        if not isinstance(bindings, list):
+            return None
+        return inventory if not any(
+            item.get("capabilityId") == capability_id
+            and not item.get("tombstonedAt")
+            for item in bindings
+            if isinstance(item, dict)
+        ) else None
+
+    inventory = wait_until(removed, "consumed Skill binding removal")
+    wait_until(
+        lambda: runner.visible_element_state(row_selector) is None,
+        "consumed Skill row removal",
+    )
+    click_text(
+        runner,
+        '[data-pt-agent-profile-editor] [role="tab"]',
+        labels["agent.profile.section.identity"],
+    )
+    runner.click_visible("[data-pt-agent-profile-back]", "return after Skill removal")
+    return {
+        "uiAction": "remove the consumed Skill from the visible Extensions panel",
+        "receiverAssertion": "the Skill row disappears and Station binding readback is empty",
+        "operationIds": ["profile.extensions.skill-remove"],
+        "stationReadback": inventory,
     }

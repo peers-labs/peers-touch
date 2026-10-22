@@ -1,8 +1,8 @@
 # 架构模块治理 - 设计决策
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-09-27 | **Updated**: 2026-10-05
+> **Version**: v1.4
+> **Created**: 2026-09-27 | **Updated**: 2026-10-20
 > **Owner**: Architecture Team
 
 ---
@@ -16,6 +16,8 @@
 | AMG-D03 | 模块特征决定必需文档 | accepted |
 | AMG-D04 | Hook、Plan 与 Review 共享解析器 | accepted |
 | AMG-D05 | 存量模块在首次变更时纳入治理 | accepted |
+| AMG-D06 | Registry 承载有界的跨客户端分叉记录 | accepted |
+| AMG-D07 | Registry 驱动架构索引，Markdown link graph 驱动反向引用 | accepted |
 
 ## AMG-D01：模块文档是真源，机器声明是闭合投影
 
@@ -166,3 +168,100 @@ architecture sources，Review/CI 校验 changed paths。
 ### Consequences
 
 覆盖面随真实改动单调扩大，不提供绕过已登记模块的降级开关。
+
+---
+
+## AMG-D06：Registry 承载有界的跨客户端分叉记录
+
+**Status**: accepted
+**Date**: 2026-10-17
+
+### Context
+
+Cross-Client Runtime 允许由 Presentation Policy、OS capability、runtime
+constraint 或 security boundary 产生的真实分叉。若记录散落在平台文档中，
+reviewer 无法从 capability inventory 发现当前例外，也无法验证其 decision、
+consumer、evidence 与 review trigger。
+
+### Decision
+
+`architecture-modules.json` 在 capability inventory 旁维护
+`reuseDivergences`。每条记录引用一个已登记 capability 和一个已接受 decision，
+声明 canonical root，并为每个实现引用一个依赖 canonical capability 的独立
+capability、root、consumers、证据 Gate 与 review trigger。
+Registry 只保存闭合投影；分叉语义仍由引用的架构决策定义。
+
+### Rationale
+
+复用 owner 与分叉例外必须在同一正向 inventory 中可发现。引用已接受 decision
+可以避免 registry 复制完整设计，同时让不存在的 capability、decision 或路径
+fail closed。
+
+### Alternatives Considered
+
+- 独立 divergence registry：拒绝，因为会复制 capability inventory。
+- 只在 PR 描述记录：拒绝，因为合并后不可发现，也无法参与后续 review。
+- 只靠文件名或内容相似度扫描：拒绝，因为不能可靠判断语义是否相同。
+
+### Consequences
+
+- 无已接受 decision 的分叉不能登记。
+- 被删除或移动的 canonical root、实现 root 或 consumer 会使校验失败。
+- 无 registered architecture owner 的实现/consumer 或不存在的 Acceptance
+  Gate 会使校验失败。
+- `reuseDivergences: []` 明确表示当前没有已接受的跨客户端语义分叉。
+
+---
+
+## AMG-D07：Registry 驱动架构索引，Markdown link graph 驱动反向引用
+
+**Status**: accepted
+**Date**: 2026-10-20
+
+### Context
+
+人工维护项目模块表、架构图列表和“被哪些文档引用”会形成三份容易漂移的目录。
+另建 Structurizr、D2 或 PlantUML 模型还会与现有 module/capability registry
+争夺机器真源。
+
+### Decision
+
+项目整体架构迁入 `docs/architecture/architecture.md`。模块继续以各自
+`design.md` 为设计真源。canonical 图使用同目录 `*.diagram.json` 声明稳定
+Diagram ID、module、viewpoint、边界、节点与单一箭头语义，由统一 renderer
+生成独立 SVG。Markdown 只嵌入成品 SVG。
+
+`document-index.mjs` 从现有 `architecture-modules.json` 生成 active module
+索引，从真实 Markdown SVG link graph 生成图反向引用。生成内容只做导航投影，
+不得定义模块、能力、owner 或依赖。
+
+Diagram spec 使用与 viewpoint 一一匹配的 layout。System Context、Logical
+Layer、Runtime Topology、Reuse Topology、Authority Map、Dynamic Flow 和
+Control Plane 分别使用系统边界、分层带、部署区、共享带、owner-state 矩阵、
+时序泳道和控制闭环；不再共享一套通用卡片 scene。
+
+### Rationale
+
+这种组合保留 GitHub 原生 SVG/Markdown 可读性，提供统一的专业视觉系统，同时让
+索引和引用关系机械更新。
+模块语义仍由文档定义，机器模块集合仍由现有 registry 闭合，不引入第二套架构
+模型。
+
+### Alternatives Considered
+
+- 手工维护索引与反向引用：拒绝，因为无法证明新鲜度。
+- 新增独立 architecture index manifest：拒绝，因为复制 module registry。
+- 全面引入 Structurizr/D2/PlantUML：拒绝，因为需要额外架构模型或外部渲染链。
+- Markdown 内嵌 Mermaid：拒绝作为 canonical 主图，因为布局、视觉层级和
+  renderer 一致性无法达到模块架构图的工艺要求。
+
+### Consequences
+
+- 项目级架构只有 `docs/architecture/architecture.md` 一个 active 真源。
+- 图引用必须指向具体 SVG 资产，仅链接文档不计入图反向引用。
+- Registry、Diagram spec、SVG 或引用变化后必须重新生成并通过 `--check`。
+- 图内源码路径和解释移到正文；节点只保留标题和一行短副词。
+- schema 校验后必须执行位图视觉检查；节点无重叠不等于图的层次、对称、
+  文字边界和连线已可读。
+- 存量模块可以继续使用现有 `design.md`；新建或重画主图时必须采用 canonical
+  diagram spec 与统一 SVG renderer，逐步进入图级反向索引。

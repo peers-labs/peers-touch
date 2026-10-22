@@ -28,7 +28,7 @@ RUN if ! command -v go >/dev/null 2>&1; then \
 
 ENV PATH="/usr/local/go/bin:${PATH}"
 
-ARG GOPROXY=https://goproxy.cn,direct
+ARG GOPROXY=https://goproxy.cn|https://mirrors.aliyun.com/goproxy/|direct
 ENV GOPROXY=${GOPROXY}
 ENV GOSUMDB=off
 ENV GONOSUMCHECK=*

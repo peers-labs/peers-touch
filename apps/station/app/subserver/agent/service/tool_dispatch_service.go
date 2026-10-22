@@ -3696,7 +3696,7 @@ func resolveToolCapabilityAuthorizationTx(
 		return nil, invalidToolState("capability manifest is unavailable")
 	}
 	if (manifest.OwnerPtid != "" && manifest.OwnerPtid != proposal.ActorID) ||
-		manifest.SourceInstanceID != call.ToolName {
+		!capabilityManifestMatchesToolCall(manifest, call) {
 		return nil, invalidToolState("capability manifest authority is stale")
 	}
 	executionOwner := model.ToolExecutionOwner(manifest.ExecutionOwner)
@@ -3791,6 +3791,25 @@ func resolveToolCapabilityAuthorizationTx(
 		Policy:              policy,
 		BoundedArguments:    boundedArguments,
 	}, nil
+}
+
+func capabilityManifestMatchesToolCall(
+	manifest persistence.CapabilityManifest,
+	call AuthorizedToolProposal,
+) bool {
+	if model.CapabilitySourceKind(manifest.SourceKind) !=
+		model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_SKILL {
+		return manifest.SourceInstanceID == call.ToolName
+	}
+	if call.ToolName != "skill_view" {
+		return false
+	}
+	var input skillViewArgs
+	if err := json.Unmarshal(call.Arguments, &input); err != nil {
+		return false
+	}
+	return strings.TrimSpace(input.Name) != "" &&
+		strings.TrimSpace(input.Name) == strings.TrimSpace(manifest.SourceInstanceID)
 }
 
 func toolExecutionOwnerStorageValue(owner model.ToolExecutionOwner) string {

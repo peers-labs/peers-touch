@@ -652,10 +652,10 @@ function AutomationPanel({
                       documentFileType: event.target.value as ChannelAutomationDraft['documentFileType'],
                     })}
                   >
-                    <option value="docx">Docx</option>
-                    <option value="doc">Doc</option>
-                    <option value="sheet">Sheet</option>
-                    <option value="bitable">Base</option>
+                    <option value="docx">{t('channels.v2.automations.documentType.docx')}</option>
+                    <option value="doc">{t('channels.v2.automations.documentType.doc')}</option>
+                    <option value="sheet">{t('channels.v2.automations.documentType.sheet')}</option>
+                    <option value="bitable">{t('channels.v2.automations.documentType.bitable')}</option>
                   </select>
                 </label>
               </div>

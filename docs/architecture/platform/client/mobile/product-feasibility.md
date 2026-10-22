@@ -1,8 +1,8 @@
 # Mobile Shell — 产品可行性闭环
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-08-27 | **Updated**: 2026-10-12
+> **Version**: v1.4
+> **Created**: 2026-08-27 | **Updated**: 2026-10-16
 > **Owner**: Mobile Product Team
 > **Module**: `apps/mobile/`
 
@@ -31,20 +31,21 @@
 | MS-C12 One-to-one voice/video call | Start or receive audio/video, accept/reject, mute/toggle camera, reconnect/end, and resolve one winning device | `MobileCallManager`, sealed CallSignal ingress, WebRTC/TURN setup, Direct header actions, shell-owned `MobileCallSurface`, and mixed-client resolution actions | Production styling/i18n, native audio/video media journey, permission/device selection, direct/TURN evidence, reconnect/cleanup, and full exact-source Mobile runtime proof remain `UNPROVEN` | MS-PA30, MS-PA31 |
 | MS-C13 Chat Docs tab | No enabled entry | None required | Shared-document product/domain absent; remains deferred | MS-PA27 |
 | MS-C14 Local message flag | Flag/unflag locally and understand device-only scope | Prototype interaction | Durable local projection and explicit scope copy | MS-PA22 |
-| MS-C15 Whole-product usability | Complete every primary task and recovery path on every reachable page in a visible iOS Simulator | Confirmed Mobile prototype, descriptor registry, current production pages, Appium/DOM/AX/screenshot capture | Remove production/prototype drift; add complete route/state inventory, automated content/layout oracles, and agent visual review | MS-PA28, MS-PA29 |
+| MS-C15 Whole-product usability | Complete every primary task and recovery path on every reachable page on Android and iOS | Confirmed Mobile prototype, descriptor registry, current production pages, Appium/DOM/accessibility/screenshot capture | Remove production/prototype drift; complete both platform walkthrough Gates and agent visual review | MS-PA28, MS-PA29 |
 
 ## 3. Feasibility Rules
 
 - Existing code is evidence only for the row's “foundation”, not proof of the
   missing closure.
 - A required capability remains incomplete until every listed MS-PA assertion
-  has source-bound simulator evidence and authoritative readback where state
-  persists.
+  has every required source-bound Android/iOS cell and authoritative readback
+  where state persists.
 - Deferred capability UI is absent unless its unavailable explanation helps the
   current decision; disabled controls must never imply near-term readiness.
 - Prototype evidence establishes interaction intent only. Production proof uses
   the required runtime cells in `acceptance-matrix.md`; physical-device runs
-  are optional diagnostics.
+  are mandatory when the asserted behavior depends on hardware, provider,
+  background, accessibility, media, or performance behavior.
 - MS-C12 is required because the governing Chat lifecycle contract requires it.
   Existing source does not close the row: MS-PA30 and MS-PA31 remain open until
   exact-source Mobile media and resolution Gates produce current evidence.

@@ -3,7 +3,7 @@ name: "pt-architecture-execution-methodology"
 description: "Transforms accepted product and architecture contracts into a vertical, dependency-backed execution model. Planning only: it neither persists the frozen Plan Version nor executes work."
 stage: "PLAN"
 requires: ["accepted product contract when applicable", "accepted architecture"]
-produces: ["accepted vertical execution model", "dependency DAG", "risk-based verification model"]
+produces: ["accepted vertical execution model", "dependency DAG", "risk-based verification model", "human-readable outcome comparison model"]
 next: "pt-plan-and-document"
 ---
 
@@ -24,6 +24,7 @@ accepted model as a frozen Plan Version.
 This Skill owns:
 
 - current-state impact inventory;
+- human-readable before/target/effect criteria;
 - vertical execution closures;
 - dependency order and atomic cutovers;
 - architecture/product traceability;
@@ -96,6 +97,27 @@ Inspect:
 - old paths that the target state removes.
 
 Use current repository evidence, not estimated file lists.
+
+### 2b. Define The Human-Readable Outcome Comparison
+
+For every complex formal Plan, derive stable outcome criteria before Task
+decomposition. Cover all five dimensions:
+
+- `user-experience`: user or developer Journey, friction, recovery, feedback,
+  and platform-appropriate behavior;
+- `product-capability`: capability availability, exclusions, compatibility,
+  and visible/non-visible effects;
+- `architecture`: source of truth, ownership, topology, dependency direction,
+  and paths removed;
+- `technology`: contracts, packages, runtime ports, storage/build/migration,
+  security, performance, and observability changes;
+- `quality-operations`: verification cells, release confidence, rollback,
+  operational cost, and unresolved risk.
+
+Each criterion has a stable ID, title, evidence-classified baseline, target,
+expected effect, Task mapping, and Gate mapping. State explicitly when a
+dimension has no direct end-user effect. Do not replace baseline facts with
+aspirational language or describe implementation activity as an outcome.
 
 ### 3. Define Vertical Closures
 
@@ -217,6 +239,7 @@ Return a structured model containing:
 - focused checks and risk-based Acceptance mapping;
 - authorization requirements;
 - completion/release criteria.
+- the complete outcome criterion set and Task/Gate crosswalk.
 
 The model is not yet a repository Plan Version and has no Task lifecycle,
 current selection or task-progress state.
@@ -227,6 +250,8 @@ Pass the accepted model to `pt-plan-and-document`, which:
 
 - renders `plan.md` and bounded Task Slices;
 - creates the single machine-readable `Acceptance Execution` contract;
+- renders `outcome-comparison.md` with a digest-bound planned section and an
+  initially `UNPROVEN` actual-results section;
 - records authorization without execution worktree identity;
 - runs `planctl validate`;
 - freezes the Plan Version digest;
@@ -246,6 +271,8 @@ Return `PLAN_MODEL_READY` only when:
 - verification traces to product states or concrete risks;
 - no plan item redesigns architecture;
 - completion claims are bounded.
+- the outcome comparison covers all five dimensions, every Task, and every
+  declared Gate without claiming unverified actual effects.
 - each closure is small enough to be one meaningful Task-closing continuation.
 
 Before persistence, the Development Run invokes an agent-led plan-model review.

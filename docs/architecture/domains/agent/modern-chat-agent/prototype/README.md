@@ -2,7 +2,7 @@
 
 > **Status**: confirmed
 > **Version**: v1.0
-> **Created**: 2026-07-30 | **Updated**: 2026-10-01
+> **Created**: 2026-07-30 | **Updated**: 2026-10-20
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -150,8 +150,11 @@ V2 focused verification:
 
 The Peers product prototype is independently registered as
 `modern-chat-agent`. V1 and focused V2 L1/L2/L3 evidence are available. Owner
-confirmed the prototype on 2026-08-17; the historical benchmark prototype does
-not satisfy or block this product gate.
+confirmed the prior baseline on 2026-08-17. The Owner explicitly confirmed the
+2026-10-20 Commands & Skills and historical Turn Attribution contract before
+ADL-03/ADL-04 production work.
+The historical benchmark prototype does not satisfy or block this product
+gate.
 
 ## Remaining Gate Items
 

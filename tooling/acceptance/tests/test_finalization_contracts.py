@@ -309,6 +309,18 @@ def snapshot() -> ReadOnlyEvidenceSnapshot:
         schema_digest=SHA_D,
         value={"released": True},
     )
+    runtime_payload = CanonicalOpaqueJson.from_value(
+        schema_id="synthetic-runtime-manifest-v1",
+        schema_digest=SHA_C,
+        value={
+            "workspaceId": WORKSPACE_ID,
+            "gateId": GATE_ID,
+            "runId": RUN_ID,
+            "sourceCommit": "synthetic-source-commit",
+            "workspaceDigest": "clean",
+            "canonicalWorktreeHash": SHA_E,
+        },
+    )
     artifacts = (
         SnapshotArtifact(
             role_name="synthetic-cleanup",
@@ -321,8 +333,8 @@ def snapshot() -> ReadOnlyEvidenceSnapshot:
             role_name="synthetic-runtime",
             discriminator=None,
             ref=runtime_ref,
-            payload=None,
-            payload_digest=None,
+            payload=runtime_payload,
+            payload_digest=runtime_payload.payload_digest(),
         ),
     )
     return ReadOnlyEvidenceSnapshot.create(
@@ -1605,7 +1617,7 @@ class RuntimeIdentityContractTest(unittest.TestCase):
             origin_kind=RuntimeImageOriginKind.DARWIN_SHARED_CACHE,
             path_hash=SHA_B,
             macho_uuid="synthetic-macho-uuid",
-            code_directory_hash="synthetic-code-directory-hash",
+            code_directory_hash=None,
             shared_cache_uuid="synthetic-shared-cache-uuid",
         )
         platform = RuntimePlatformAttestation.create(

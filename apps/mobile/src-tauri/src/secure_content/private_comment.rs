@@ -1,9 +1,14 @@
 use std::collections::{HashMap, HashSet};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use prost::Message;
 use rand::{rngs::OsRng, RngCore};
 use secure_content_core::envelope::{open_content_key, ContentKey, SealedContentKey};
+use secure_content_core::operation::{
+    decide_committed_readback, decide_unknown_outcome, DispatchCause, OperationCompletion,
+    OperationState, ReadbackDecision, ReadbackObservation,
+};
 use secure_content_core::payload::{
     decrypt_payload, derive_payload_key, encrypt_payload, EncryptedPayload as CoreEncryptedPayload,
     PayloadKeyContext, PAYLOAD_FORMAT_VERSION,
@@ -30,12 +35,15 @@ use crate::secure_content::receiver::{
 use crate::secure_content::recovery::open_recovery_content_key;
 use crate::secure_content::store::{CommentState, PrivateSocialStore, StoredCommentDraft};
 use crate::secure_content::transport::{
-    federated_private_interaction_signing_bytes, NativeSocialTransport, TransportError,
+    federated_private_interaction_signing_bytes, NativeSocialTransport, TransportDisposition,
+    TransportError,
 };
 use crate::secure_content::NativeSocialSession;
 
 const COMMENT_PAYLOAD_KIND: u32 = social::PrivateMomentKind::Text as u32;
 const CLOCK_SKEW_SECONDS: i64 = 60;
+const COMMENT_READBACK_PENDING: &str = "SOCIAL_PRIVATE_COMMENT_READBACK_PENDING";
+const COMMENT_RESULT_UNKNOWN: &str = "SOCIAL_PRIVATE_COMMENT_RESULT_UNKNOWN";
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -162,6 +170,12 @@ pub fn submit(
         request_sha256: None,
         root_key: None,
         generation: 0,
+        publication_state: None,
+        lease_generation: 0,
+        session_generation,
+        attempt_count: 0,
+        next_attempt_at_unix_ms: 0,
+        updated_at_unix_ms: 0,
         state: CommentState::Editing,
         comment_id: None,
         error_code: None,
@@ -181,6 +195,19 @@ pub fn submit(
             draft: draft_projection(&stored)?,
             comment,
         });
+    }
+    if matches!(
+        stored.publication_state,
+        Some(OperationState::UnknownOutcome | OperationState::CommittedPendingReadback)
+    ) {
+        if let Some(result) =
+            reconcile_comment_readback(session, store, transport, session_generation, &stored)?
+        {
+            return Ok(result);
+        }
+        stored = store
+            .comment_draft(&stored.draft_id, stored.draft_revision)?
+            .ok_or_else(|| "reconciled private Comment disappeared".to_string())?;
     }
     if stored.request_bytes.is_none() {
         let mut prepare_request = social::PreparePrivateCommentRequest {
@@ -302,6 +329,7 @@ pub fn submit(
             &request_bytes,
             &request_sha256,
             root.as_bytes(),
+            session_generation,
         )?;
         stored = store
             .comment_draft(&stored.draft_id, stored.draft_revision)?
@@ -314,52 +342,217 @@ pub fn submit(
             .ok_or_else(|| "private Comment request is unavailable".to_string())?,
     )
     .map_err(|_| "private Comment request is malformed".to_string())?;
-    let response = transport
-        .submit_private_comment(&stored.post_id, &request)
-        .map_err(|error| finish_failure(store, &stored, error))?;
-    let comment = response
-        .comment
-        .as_ref()
-        .ok_or_else(|| "private Comment submit response omitted Comment".to_string())?;
-    let root = stored
-        .root_key
-        .map(ContentKey::from_bytes)
-        .ok_or_else(|| "private Comment root key is unavailable".to_string())?;
-    let decrypted = decrypt_comment(
-        session,
-        store,
-        transport,
-        &stored.post_id,
-        comment,
-        Some(root),
-        None,
-    )?;
-    store.commit_comment_receiver_projection(
-        session_generation,
-        &decrypted.projection.content_id,
-        stored.generation,
-        &decrypted.projection.post_id,
-        &decrypted.projection.comment_id,
-        decrypted.content_key.as_bytes(),
-        decrypted.consumed_prekey_id.as_deref(),
-        &decrypted.projection.encode()?,
-    )?;
-    store.finish_comment(
+    let cause = match stored.publication_state {
+        Some(OperationState::Pending) => DispatchCause::ExplicitUserAction,
+        Some(OperationState::UnknownOutcome) => DispatchCause::ReadbackAuthorizedRetry,
+        Some(OperationState::RetryWait) => DispatchCause::RetryDeadlineReached,
+        _ => return Err("private Comment submission is not dispatchable".to_string()),
+    };
+    let acquired = store.acquire_comment_submission(
         &stored.draft_id,
         stored.draft_revision,
-        CommentState::Posted,
-        Some(&decrypted.projection.comment_id),
-        None,
-        None,
+        session_generation,
+        cause,
     )?;
-    stored = store
-        .comment_draft(&stored.draft_id, stored.draft_revision)?
-        .ok_or_else(|| "posted private Comment disappeared".to_string())?;
-    Ok(PrivateCommentSubmitResult {
-        draft: draft_projection(&stored)?,
-        comment: Some(decrypted.projection),
-    })
+    match transport.submit_private_comment(&stored.post_id, &request) {
+        Ok(_) => {
+            if !store.complete_comment_submission(
+                &acquired,
+                OperationCompletion::CommittedPendingReadback,
+                CommentState::Failed,
+                Some(&stored.content_id),
+                Some(COMMENT_READBACK_PENDING),
+                None,
+            )? {
+                return Err("private Comment submission lost its operation fence".to_string());
+            }
+            let committed = store
+                .comment_draft(&stored.draft_id, stored.draft_revision)?
+                .ok_or_else(|| "committed private Comment disappeared".to_string())?;
+            reconcile_comment_readback(session, store, transport, session_generation, &committed)?
+                .ok_or_else(|| "committed private Comment cannot retry submit".to_string())
+        }
+        Err(error)
+            if error
+                .http_status
+                .is_some_and(|status| (200..300).contains(&status)) =>
+        {
+            if !store.complete_comment_submission(
+                &acquired,
+                OperationCompletion::CommittedPendingReadback,
+                CommentState::Failed,
+                Some(&stored.content_id),
+                Some(COMMENT_READBACK_PENDING),
+                None,
+            )? {
+                return Err("private Comment submission lost its operation fence".to_string());
+            }
+            let committed = store
+                .comment_draft(&stored.draft_id, stored.draft_revision)?
+                .ok_or_else(|| "committed private Comment disappeared".to_string())?;
+            reconcile_comment_readback(session, store, transport, session_generation, &committed)?
+                .ok_or_else(|| "committed private Comment cannot retry submit".to_string())
+        }
+        Err(error) => {
+            let completion =
+                submit_failure_completion(acquired.lease.reconciles_unknown_outcome, &error)?;
+            let (state, error_code) = transport_failure_projection(&error);
+            if !store.complete_comment_submission(
+                &acquired,
+                completion,
+                state,
+                None,
+                Some(&error_code),
+                error.retry_after_seconds,
+            )? {
+                return Err("private Comment submission lost its operation fence".to_string());
+            }
+            Err(error.to_string())
+        }
+    }
 }
+
+fn reconcile_comment_readback(
+    session: &NativeSocialSession,
+    store: &PrivateSocialStore,
+    transport: &NativeSocialTransport,
+    session_generation: u64,
+    draft: &StoredCommentDraft,
+) -> Result<Option<PrivateCommentSubmitResult>, String> {
+    let mut decrypted = None;
+    let mut readback_error = None;
+    let mut parent_unavailable = false;
+    let observation = match transport.get_private_comment(&draft.post_id, &draft.content_id) {
+        Ok(point) => {
+            let verified = (|| {
+                let comment = point
+                    .comment
+                    .as_ref()
+                    .ok_or_else(|| "private Comment point read omitted Comment".to_string())?;
+                if comment
+                    .metadata
+                    .as_ref()
+                    .map(|metadata| metadata.comment_id.as_str())
+                    != Some(draft.content_id.as_str())
+                {
+                    return Err("private Comment point read identity mismatch".to_string());
+                }
+                let root = draft
+                    .root_key
+                    .map(ContentKey::from_bytes)
+                    .ok_or_else(|| "private Comment root key is unavailable".to_string())?;
+                let opened = decrypt_comment(
+                    session,
+                    store,
+                    transport,
+                    &draft.post_id,
+                    comment,
+                    Some(root),
+                    None,
+                )?;
+                store.commit_comment_receiver_projection(
+                    session_generation,
+                    &opened.projection.content_id,
+                    draft.generation,
+                    &opened.projection.post_id,
+                    &opened.projection.comment_id,
+                    opened.content_key.as_bytes(),
+                    opened.consumed_prekey_id.as_deref(),
+                    &opened.projection.encode()?,
+                )?;
+                Ok::<_, String>(opened)
+            })();
+            match verified {
+                Ok(opened) => {
+                    decrypted = Some(opened);
+                    ReadbackObservation::Committed {
+                        receipt_sha256: Sha256::digest(point.encode_to_vec()).into(),
+                    }
+                }
+                Err(error) => {
+                    readback_error = Some(error.clone());
+                    ReadbackObservation::Invalid { detail: error }
+                }
+            }
+        }
+        Err(error) if error.http_status == Some(404) => ReadbackObservation::AuthoritativeAbsent,
+        Err(error) if matches!(error.http_status, Some(403 | 410)) => {
+            parent_unavailable = true;
+            readback_error = Some(error.to_string());
+            ReadbackObservation::Invalid {
+                detail: error.to_string(),
+            }
+        }
+        Err(error) => {
+            readback_error = Some(error.to_string());
+            ReadbackObservation::Unavailable {
+                retry_after_unix_ms: Some(operation_retry_deadline(error.retry_after_seconds)?),
+            }
+        }
+    };
+    let operation = draft.operation_record()?;
+    let decision = match draft.publication_state {
+        Some(OperationState::UnknownOutcome) => decide_unknown_outcome(&operation, observation),
+        Some(OperationState::CommittedPendingReadback) => {
+            decide_committed_readback(&operation, observation)
+        }
+        _ => return Err("private Comment readback requires an unresolved operation".to_string()),
+    }
+    .map_err(|error| error.to_string())?;
+    let (state, error_code, retry_after_seconds) = match &decision {
+        ReadbackDecision::CommitFromReadback { .. } => (CommentState::Posted, None, None),
+        ReadbackDecision::RetryExactCommand => {
+            (CommentState::Failed, Some(COMMENT_RESULT_UNKNOWN), None)
+        }
+        ReadbackDecision::KeepUnknown { .. }
+        | ReadbackDecision::KeepCommittedPendingReadback { .. } => (
+            CommentState::Failed,
+            Some(COMMENT_READBACK_PENDING),
+            Some(1),
+        ),
+        ReadbackDecision::TerminalIntegrityFailure { .. } => (
+            if parent_unavailable {
+                CommentState::ParentUnavailable
+            } else {
+                CommentState::Failed
+            },
+            Some("SOCIAL_PRIVATE_COMMENT_INTEGRITY_FAILURE"),
+            None,
+        ),
+    };
+    if !store.apply_comment_readback(
+        draft,
+        &decision,
+        state,
+        Some(&draft.content_id),
+        error_code,
+        retry_after_seconds,
+    )? {
+        return Err("private Comment readback lost its operation fence".to_string());
+    }
+    match decision {
+        ReadbackDecision::RetryExactCommand => Ok(None),
+        ReadbackDecision::CommitFromReadback { .. } => {
+            let decrypted = decrypted.ok_or_else(|| {
+                "private Comment committed readback omitted projection".to_string()
+            })?;
+            let stored = store
+                .comment_draft(&draft.draft_id, draft.draft_revision)?
+                .ok_or_else(|| "posted private Comment disappeared".to_string())?;
+            Ok(Some(PrivateCommentSubmitResult {
+                draft: draft_projection(&stored)?,
+                comment: Some(decrypted.projection),
+            }))
+        }
+        ReadbackDecision::KeepUnknown { .. }
+        | ReadbackDecision::KeepCommittedPendingReadback { .. } => Err(readback_error
+            .unwrap_or_else(|| "private Comment readback remains pending".to_string())),
+        ReadbackDecision::TerminalIntegrityFailure { detail } => {
+            Err(readback_error.unwrap_or(detail))
+        }
+    }
+}
+
 pub fn list(
     session: &NativeSocialSession,
     store: &PrivateSocialStore,
@@ -548,7 +741,7 @@ fn decrypt_recovered_comment(
         &object_hash,
         &sender_key,
     )?;
-    let root = open_recovery_content_key(store, &session.scope.actor_ptid, recovery_envelope)
+    let root = open_recovery_content_key(session, store, recovery_envelope)
         .map_err(|_| "private Comment recovery key is unavailable".to_string())?;
     let mut recovered_comment = comment.clone();
     attach_comment_recovery_envelope(&mut recovered_comment, recovery_envelope)?;
@@ -583,6 +776,65 @@ fn finish_failure(
         error.retry_after_seconds,
     );
     error.to_string()
+}
+
+fn submit_failure_completion(
+    reconciles_unknown_outcome: bool,
+    error: &TransportError,
+) -> Result<OperationCompletion, String> {
+    match error.http_status {
+        Some(403 | 404 | 409 | 410) => Ok(OperationCompletion::Terminal),
+        Some(429) => Ok(OperationCompletion::RetryAt(operation_retry_deadline(
+            error.retry_after_seconds,
+        )?)),
+        _ => match error.disposition {
+            TransportDisposition::Retryable => Ok(OperationCompletion::RetryAt(
+                operation_retry_deadline(error.retry_after_seconds)?,
+            )),
+            TransportDisposition::UnknownOutcome => Ok(OperationCompletion::UnknownOutcome),
+            TransportDisposition::Terminal
+                if reconciles_unknown_outcome && error.http_status == Some(401) =>
+            {
+                Ok(OperationCompletion::UnknownOutcome)
+            }
+            TransportDisposition::Terminal | TransportDisposition::PoolNotFound => {
+                Ok(OperationCompletion::Terminal)
+            }
+        },
+    }
+}
+
+fn operation_retry_deadline(retry_after_seconds: Option<u64>) -> Result<i64, String> {
+    let now = i64::try_from(
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| "private Comment clock is before Unix epoch".to_string())?
+            .as_millis(),
+    )
+    .map_err(|_| "private Comment clock overflowed".to_string())?;
+    let delay = retry_after_seconds
+        .and_then(|seconds| seconds.checked_mul(1_000))
+        .and_then(|milliseconds| i64::try_from(milliseconds).ok())
+        .unwrap_or(1_000)
+        .max(1_000);
+    now.checked_add(delay)
+        .ok_or_else(|| "private Comment retry deadline overflowed".to_string())
+}
+
+fn transport_failure_projection(error: &TransportError) -> (CommentState, String) {
+    let state = match error.http_status {
+        Some(429) => CommentState::RateLimited,
+        Some(403 | 404 | 410) => CommentState::ParentUnavailable,
+        _ => CommentState::Failed,
+    };
+    (
+        state,
+        if error.disposition == TransportDisposition::UnknownOutcome {
+            COMMENT_RESULT_UNKNOWN.to_string()
+        } else {
+            format!("SOCIAL_PRIVATE_COMMENT_{}", error.stable_code)
+        },
+    )
 }
 
 fn validate_intent(intent: &PrivateCommentIntent) -> Result<(), String> {
@@ -1262,6 +1514,27 @@ mod tests {
         assert!(validate_intent(&intent).is_ok());
         intent.mentions[0].offset = 99;
         assert!(validate_intent(&intent).is_err());
+    }
+
+    #[test]
+    fn ambiguous_comment_submit_requires_authoritative_readback() {
+        let error = TransportError {
+            http_status: None,
+            stable_code: 1,
+            typed_error: false,
+            private_content_code: None,
+            retry_after_seconds: None,
+            disposition: TransportDisposition::UnknownOutcome,
+        };
+
+        assert_eq!(
+            submit_failure_completion(false, &error).unwrap(),
+            OperationCompletion::UnknownOutcome,
+        );
+        assert_eq!(
+            transport_failure_projection(&error),
+            (CommentState::Failed, COMMENT_RESULT_UNKNOWN.to_string(),),
+        );
     }
 
     #[test]

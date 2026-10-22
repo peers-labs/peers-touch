@@ -22,7 +22,7 @@
     "maxProvisioningRuns": 1, "maxClientLaunches": 1, "minWarmReuseRate": 0.75,
     "requireAttachOnlyScenarios": true, "requireReceiverVisibleProof": true, "allowClientReplacement": true
   },
-  "doneWhen": ["Compact and narrow navigation keep Profile, Topics and Chat accessible.", "Every one of the 121 baseline operations and added document contracts has explicit coverage.", "All six Gates bind current source and successful owned-resource cleanup."],
+  "doneWhen": ["Compact and narrow navigation keep Profile, Topics and Chat accessible.", "Every one of the 136 baseline operations and added production contracts has explicit coverage.", "All six Gates bind current source and successful owned-resource cleanup."],
   "failureBehavior": ["Unsupported or unobserved operation remains UNPROVEN.", "Structural validation never substitutes for runtime proof."],
   "updatedAt": "2026-10-18T00:00:00.000Z"
 }
@@ -36,7 +36,7 @@ Switch Agent opens a transient left drawer. Profile does not mount Topic history
 Compact Topic navigation includes the projected Topic count.
 
 Five layout checks and six existing workbench contracts passed. Native navigation,
-drawer focus restoration, menu anchoring, overflow and the full 121-operation
+drawer focus restoration, menu anchoring, overflow and the full 136-operation
 trace remain UNPROVEN. All six Gates are registered.
 
 The workspace runner executes Profile, layout, Topics, Models and Conversation

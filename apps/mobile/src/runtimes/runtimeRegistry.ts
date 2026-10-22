@@ -89,6 +89,9 @@ import {
 import {
   bootstrapStationRuntime,
   readStationRegistryProjection,
+  refreshActiveStationRoute,
+  startStationRouteRenewal,
+  stopStationRouteRenewal,
 } from './stationRuntime';
 
 // --- Secure Storage Runtime Descriptor ---
@@ -175,17 +178,21 @@ function createStationRuntimeDescriptor(): MobileRuntimeDescriptor {
 
     async bootstrap(): Promise<void> {
       await bootstrapStationRuntime();
+      startStationRouteRenewal();
     },
 
     async suspend(): Promise<void> {
-      // The app-scoped registry has no active resource to suspend.
+      stopStationRouteRenewal();
     },
 
     async resume(): Promise<void> {
       await bootstrapStationRuntime();
+      await refreshActiveStationRoute();
+      startStationRouteRenewal();
     },
 
     async teardown(): Promise<RuntimeOperationResult> {
+      stopStationRouteRenewal();
       return {
         runtimeId: 'station',
         success: true,

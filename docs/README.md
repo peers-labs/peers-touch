@@ -209,7 +209,13 @@
 以下列表保留高频正式真源导航；专题状态、草案/历史边界与完整分类以
 `architecture/README.md` 和最近的模块 README 为准。
 
-- 项目整体架构：`global/architecture.md`
+- 项目整体架构：
+  [`architecture/architecture.md`](./architecture/architecture.md) ·
+  [逻辑分层图](./architecture/architecture.svg) ·
+  [运行时拓扑](./architecture/runtime-topology.svg) ·
+  [权威图](./architecture/authority-map.svg)
+- Desktop / Mobile 客户端关系、共享资产复用准入、portable Rust core 与平台 Host：
+  `architecture/platform/client/cross-client-runtime/README.md`
 - 状态机目录（全端 FSM 汇总索引）：`architecture/engineering/architecture-governance/state-machines.md`
 - Station 与 Desktop 边界：`architecture/platform/station-desktop-boundary.md`
 - Desktop 运行时关系：`architecture/platform/client/desktop/runtime.md`
@@ -364,7 +370,9 @@
 ### 我想看项目整体
 
 - `global/project-identity.md`
-- `global/architecture.md`
+- [`architecture/architecture.md`](./architecture/architecture.md)
+- [逻辑分层图](./architecture/architecture.svg)
+- [运行时拓扑](./architecture/runtime-topology.svg)
 - `global/domain-model.md`
 
 ### 我想看 Desktop
@@ -390,9 +398,8 @@
 ### 我想看 Mobile
 
 - 先看当前平台真源：`client/mobile/base.md`
-- 再按主题看：`client/mobile/sync-protocol.md`、`client/mobile/native-dual-platform.md` 等
-- 如果要看 Tauri Mobile 方案形成过程，阅读：`context/mobile/tauri-mobile-capability-topology-proposal.md`（过程记录，不是当前真源）
-- 如果要看 Tauri Mobile 落地路径，阅读：`client/mobile/execution-plans/20260531-tauri-mobile-mainline-migration.md`
+- 再看跨客户端关系：`architecture/platform/client/cross-client-runtime/README.md`
+- 再按主题看：`client/mobile/sync-protocol.md`、`client/mobile/native-plugin-layer.md` 等
 
 ### 我想看 Station
 
@@ -434,13 +441,13 @@
 ### 新成员
 
 1. `global/project-identity.md`
-2. `global/architecture.md`
+2. `architecture/architecture.md`
 3. 对应平台 `base.md`
 4. 对应平台相关架构文档
 
 ### 做架构或迁移
 
-1. `global/architecture.md`
+1. `architecture/architecture.md`
 2. `architecture/`
 3. 对应平台 `base.md`
 4. `context/decisions/` 和相关历史材料

@@ -1,6 +1,6 @@
 // `ExecuteTurnRequest` / `ExecuteTurnResponse` exist in `model::agent`, but Station's
 // `HandleExecuteTurn` binds JSON to ad-hoc Go structs (not generated protos) and the JSON
-// payload includes fields not present on the proto (identity, platform, workspace_root, …).
+// payload includes fields not present on the proto (platform, workspace_root, …).
 // `TypedHandler` protobuf mode requires `proto.Message` request types. Keep JSON until the
 // subserver handler and proto definitions are aligned with the desktop contract.
 // TODO(agent): align `agent.proto` + Station `HandleExecuteTurn` with the full turn payload, then use `request_proto`.
@@ -18,10 +18,10 @@ use crate::contracts::{
     AgentSelectActiveBranchInput, AgentTaskCreateInput, AgentTaskDeleteInput, AgentTaskListInput,
     AgentTaskStatusInput, AgentTaskSubtaskAddInput, AgentTaskSubtaskCompleteInput,
     AgentThreadCreateInput, AgentThreadListInput, AgentThreadMessagesInput,
-    AgentTombstoneMessageInput, AgentToolDecisionIntentInput, AgentTurnDiagnosticsInput,
-    AgentTurnQueueCancelInput, AgentTurnQueueListInput, AgentTurnTraceGetInput,
-    AgentTurnTraceListInput, StubPayload, TopicCommentCreateInput, TopicCommentDeleteInput,
-    TopicCommentListInput,
+    AgentTombstoneMessageInput, AgentToolDecisionIntentInput, AgentTurnAttributionsInput,
+    AgentTurnDiagnosticsInput, AgentTurnQueueCancelInput, AgentTurnQueueListInput,
+    AgentTurnTraceGetInput, AgentTurnTraceListInput, StubPayload, TopicCommentCreateInput,
+    TopicCommentDeleteInput, TopicCommentListInput,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::model::agent;
@@ -279,8 +279,12 @@ pub fn submit_tool_decision(
     if !input.answer.is_empty() {
         let canonical = format!(
             "{}\0{}\0{}\0{}\0{}\0{}",
-            input.approval_id, input.tool_call_id, input.decision_id,
-            input.expected_revision, input.approved, input.answer,
+            input.approval_id,
+            input.tool_call_id,
+            input.decision_id,
+            input.expected_revision,
+            input.approved,
+            input.answer,
         );
         payload_hash = hex::encode(Sha256::digest(canonical.as_bytes()));
     }
@@ -779,6 +783,37 @@ pub fn agent_turn_diagnostics_export(
     }
 }
 
+pub fn agent_turn_attributions_get(
+    station_client: &StationClient,
+    input: AgentTurnAttributionsInput,
+    token: &str,
+) -> AppResult<Vec<u8>> {
+    let turn_ids = input
+        .turn_ids
+        .into_iter()
+        .map(|turn_id| turn_id.trim().to_string())
+        .filter(|turn_id| !turn_id.is_empty())
+        .collect::<Vec<_>>();
+    if turn_ids.is_empty() || turn_ids.len() > 100 {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "between 1 and 100 turn_ids are required",
+            None,
+        );
+    }
+    let request = agent::GetTurnAttributionsRequest { turn_ids };
+    match station_client.request_proto::<_, agent::GetTurnAttributionsResponse>(
+        Method::POST,
+        "/sub-agent/agent/turn/attribution/get",
+        token,
+        None,
+        Some(&request),
+    ) {
+        Ok(response) => AppResult::success(response.encode_to_vec()),
+        Err(error) => error.into_app_result("agent.turnAttributionFailed"),
+    }
+}
+
 pub fn agent_execute_turn_stream(
     station_client: &StationClient,
     app: AppHandle,
@@ -884,15 +919,6 @@ fn build_turn_request_body(input: AgentExecuteTurnInput, stream: bool) -> Value 
     }
     if let Some(requested_budget) = input.requested_budget {
         body["requested_budget"] = json!(requested_budget);
-    }
-    if let Some(identity) = input.identity.filter(|value| !value.trim().is_empty()) {
-        body["identity"] = json!(identity);
-    }
-    if let Some(prompt) = input
-        .agent_config_prompt
-        .filter(|value| !value.trim().is_empty())
-    {
-        body["agent_config_prompt"] = json!(prompt);
     }
     if let Some(thinking_mode) = input.thinking_mode.filter(|value| !value.trim().is_empty()) {
         body["thinking_mode"] = json!(thinking_mode);

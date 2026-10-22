@@ -262,6 +262,14 @@ fn station_agent_to_desktop(agent: Value) -> Value {
         "description".to_string(),
         field("description", "description"),
     );
+    desktop.insert(
+        "soulMd".to_string(),
+        field("identity_prompt", "identityPrompt"),
+    );
+    desktop.insert(
+        "agentsMd".to_string(),
+        field("agent_config_prompt", "agentConfigPrompt"),
+    );
     desktop.insert("provider".to_string(), field("provider_id", "providerId"));
     desktop.insert("model".to_string(), field("model_name", "modelName"));
     desktop.insert("effort".to_string(), field("effort", "effort"));
@@ -289,6 +297,9 @@ fn desktop_agent_config(data: &Value) -> String {
         "name",
         "title",
         "description",
+        "systemPrompt",
+        "soulMd",
+        "agentsMd",
         "provider",
         "model",
         "effort",
@@ -321,6 +332,8 @@ fn station_agent_body(data: &Value, agent_id: Option<&str>) -> Value {
         "effort": string_value("effort"),
         "thinking_mode": string_value("thinkingMode"),
         "visibility": visibility,
+        "identity_prompt": string_value("soulMd"),
+        "agent_config_prompt": string_value("agentsMd"),
         "config_json": desktop_agent_config(data),
         "version": data.get("version").and_then(Value::as_i64).unwrap_or(0),
     });
@@ -1008,6 +1021,8 @@ mod tests {
             "thinking_mode": "disabled",
             "visibility": "AGENT_VISIBILITY_PRIVATE",
             "version": "2",
+            "identity_prompt": "You are precise.",
+            "agent_config_prompt": "Use workspace conventions.",
             "config_json": "{\"openingMessage\":\"Ready\"}"
         }));
 
@@ -1016,6 +1031,8 @@ mod tests {
         assert_eq!(mapped["model"], "ep-model");
         assert_eq!(mapped["effort"], "medium");
         assert_eq!(mapped["thinkingMode"], "disabled");
+        assert_eq!(mapped["soulMd"], "You are precise.");
+        assert_eq!(mapped["agentsMd"], "Use workspace conventions.");
         assert_eq!(mapped["visibility"], "private");
         assert_eq!(mapped["version"], 2);
         assert_eq!(mapped["openingMessage"], "Ready");
@@ -1025,6 +1042,9 @@ mod tests {
         assert_eq!(body["visibility"], "private");
         assert_eq!(body["version"], 2);
         assert_eq!(body["thinking_mode"], "disabled");
+        assert_eq!(body["identity_prompt"], "You are precise.");
+        assert_eq!(body["agent_config_prompt"], "Use workspace conventions.");
+        assert_eq!(body["config_json"], "{\"openingMessage\":\"Ready\"}");
     }
 
     #[test]

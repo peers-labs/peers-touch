@@ -104,3 +104,7 @@ device-addressed Direct sessions 与 RFC 9420 MLS。
 - Execution：当前 Chat 产品完成度从 Chat Lifecycle 的 current-source Gate
   重新计算，不继承 MP-W* 或 NDR-W* 的完成百分比。CA-HC 由
   `peers-access-gate` worktree 独立负责，不进入本 worktree 的 active work。
+- Portable Core：UCA-04A 已冻结 `messaging-store-v1`、Desktop/Mobile symbol
+  inventory、generation-fenced engine lifecycle、submitted-command
+  reconciliation 与 typed Host ports；在 UCA-04 hard cut 前保持 source-only，
+  不声明 Desktop/Mobile production owner 已切换。

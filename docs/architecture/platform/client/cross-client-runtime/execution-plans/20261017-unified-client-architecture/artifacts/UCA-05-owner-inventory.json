@@ -1,0 +1,50 @@
+{
+  "kind": "peers-touch-uca-owner-inventory",
+  "planId": "UCA-20261017",
+  "taskId": "UCA-05",
+  "targetOwner": "packages/secure-content-core",
+  "operationSchema": "secure-content-operation-v1",
+  "deletedOwners": [
+    "apps/desktop/src-tauri/src/secure_content/worker.rs",
+    "apps/mobile/src-tauri/src/secure_content/worker.rs"
+  ],
+  "retainedHostAdapters": {
+    "desktop": [
+      "apps/desktop/src-tauri/src/secure_content/adapter.rs",
+      "apps/desktop/src-tauri/src/secure_content/object_runtime.rs",
+      "apps/desktop/src-tauri/src/secure_content/prekey_runtime.rs",
+      "apps/desktop/src-tauri/src/secure_content/recovery.rs",
+      "apps/desktop/src-tauri/src/secure_content/store.rs"
+    ],
+    "mobile": [
+      "apps/mobile/src-tauri/src/secure_content/object_runtime.rs",
+      "apps/mobile/src-tauri/src/secure_content/runtime.rs",
+      "apps/mobile/src-tauri/src/secure_content/recovery.rs",
+      "apps/mobile/src-tauri/src/secure_content/store.rs",
+      "apps/mobile/src-tauri/src/secure_content/transport.rs"
+    ]
+  },
+  "forbiddenLegacySymbols": [
+    "DurableState",
+    "PrivateSocialWorker",
+    "PrivateSocialWorkerReport",
+    "canonical_publication_bytes",
+    "publication_command_id",
+    "unknown_submission_readback"
+  ],
+  "canonicalMechanisms": [
+    "OperationState",
+    "acquire_operation",
+    "complete_operation",
+    "recover_interrupted_operation",
+    "plan_content_prekey_maintenance",
+    "prepare_content_prekey_publication",
+    "classify_content_prekey_publish",
+    "decide_unknown_outcome",
+    "decide_committed_readback",
+    "apply_readback_decision",
+    "continue_recovery_envelope",
+    "ObjectTransferWorker",
+    "ObjectTransferRepository"
+  ]
+}

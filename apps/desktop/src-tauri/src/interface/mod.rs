@@ -1,5 +1,5 @@
 pub mod contracts;
 pub mod tauri_commands;
 
-#[cfg(debug_assertions)]
+#[cfg(any(debug_assertions, feature = "acceptance-webdriver"))]
 pub mod http_gateway;

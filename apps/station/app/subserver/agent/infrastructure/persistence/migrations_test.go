@@ -223,6 +223,135 @@ func TestMigrateActorIdentityColumnsRenamesLegacyColumnsIdempotently(t *testing.
 	}
 }
 
+func TestMigrateAgentDefinitionsCopiesTypedPromptsAndRemovesAliases(t *testing.T) {
+	db, err := gorm.Open(
+		sqlite.Open("file:agent-definition-migration?mode=memory&cache=shared"),
+		&gorm.Config{},
+	)
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	if err := db.Exec(`
+		CREATE TABLE agents (
+			id TEXT PRIMARY KEY,
+			config_json TEXT
+		)
+	`).Error; err != nil {
+		t.Fatalf("create legacy agents table: %v", err)
+	}
+	if err := db.Exec(
+		`INSERT INTO agents (id, config_json) VALUES (?, ?)`,
+		"agent-1",
+		`{"soulMd":"typed identity","identity":"stale identity","agentsMd":"","temperature":0.2}`,
+	).Error; err != nil {
+		t.Fatalf("insert legacy Agent: %v", err)
+	}
+
+	if err := MigrateAgentDefinitions(db); err != nil {
+		t.Fatalf("migrate Agent definitions: %v", err)
+	}
+	if err := MigrateAgentDefinitions(db); err != nil {
+		t.Fatalf("repeat Agent definition migration: %v", err)
+	}
+
+	var row struct {
+		IdentityPrompt    string
+		AgentConfigPrompt string
+		ConfigJSON        string
+	}
+	if err := db.Table("agents").Where("id = ?", "agent-1").First(&row).Error; err != nil {
+		t.Fatalf("read migrated Agent: %v", err)
+	}
+	if row.IdentityPrompt != "typed identity" {
+		t.Fatalf("identity_prompt = %q", row.IdentityPrompt)
+	}
+	if row.AgentConfigPrompt != "" {
+		t.Fatalf("agent_config_prompt = %q, want explicit empty", row.AgentConfigPrompt)
+	}
+	if row.ConfigJSON != `{"temperature":0.2}` {
+		t.Fatalf("config_json = %q", row.ConfigJSON)
+	}
+}
+
+func TestMigrateAgentDefinitionsRollsBackInvalidLegacyPayload(t *testing.T) {
+	db, err := gorm.Open(
+		sqlite.Open("file:agent-definition-migration-invalid?mode=memory&cache=shared"),
+		&gorm.Config{},
+	)
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	if err := db.Exec(`
+		CREATE TABLE agents (
+			id TEXT PRIMARY KEY,
+			config_json TEXT
+		)
+	`).Error; err != nil {
+		t.Fatalf("create legacy agents table: %v", err)
+	}
+	const legacy = `{"soulMd":{"invalid":true},"temperature":0.2}`
+	if err := db.Exec(
+		`INSERT INTO agents (id, config_json) VALUES (?, ?)`,
+		"agent-invalid",
+		legacy,
+	).Error; err != nil {
+		t.Fatalf("insert invalid legacy Agent: %v", err)
+	}
+
+	if err := MigrateAgentDefinitions(db); err == nil {
+		t.Fatal("invalid legacy Agent prompt payload was accepted")
+	}
+	var configJSON string
+	if err := db.Table("agents").Select("config_json").
+		Where("id = ?", "agent-invalid").Scan(&configJSON).Error; err != nil {
+		t.Fatalf("read rolled-back Agent: %v", err)
+	}
+	if configJSON != legacy {
+		t.Fatalf("invalid migration changed durable row: %q", configJSON)
+	}
+}
+
+func TestPurgeLegacySkillEnablementRemovesDuplicateAuthorities(t *testing.T) {
+	db, err := gorm.Open(
+		sqlite.Open("file:legacy-skill-enablement-cleanup?mode=memory&cache=shared"),
+		&gorm.Config{},
+	)
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	if err := db.Exec(`
+		CREATE TABLE agent_skills (
+			id TEXT PRIMARY KEY,
+			enabled BOOLEAN NOT NULL DEFAULT true
+		);
+	`).Error; err != nil {
+		t.Fatalf("create legacy Skill table: %v", err)
+	}
+	if err := db.Exec(`
+		CREATE TABLE agent_skill_bindings (
+			id TEXT PRIMARY KEY,
+			agent_id TEXT NOT NULL,
+			skill_id TEXT NOT NULL,
+			enabled BOOLEAN NOT NULL DEFAULT true
+		);
+	`).Error; err != nil {
+		t.Fatalf("create legacy Skill binding table: %v", err)
+	}
+
+	if err := PurgeLegacySkillEnablement(db); err != nil {
+		t.Fatalf("purge legacy Skill enablement: %v", err)
+	}
+	if err := PurgeLegacySkillEnablement(db); err != nil {
+		t.Fatalf("repeat legacy Skill enablement purge: %v", err)
+	}
+	if db.Migrator().HasColumn("agent_skills", "enabled") {
+		t.Fatal("agent_skills.enabled still exists")
+	}
+	if db.Migrator().HasTable("agent_skill_bindings") {
+		t.Fatal("agent_skill_bindings still exists")
+	}
+}
+
 func TestMigrateActorIdentityColumnsResolvesNumericValuesToCanonicalPTIDs(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:agent-actor-identity-values?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
