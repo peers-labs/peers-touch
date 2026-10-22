@@ -274,6 +274,17 @@ be decomposed into independent role writes. See `AO-D10`.
 
 ## 9. Architecture Gates
 
+The Go validator owns one bounded directory scanner in
+`apps/station/app/cmd/station_api_ownership/source_tree.go`.
+Registration and source inventories use it instead of independent serial
+walkers. Directory and file reads use a queue with at most 16 workers, with one
+analysis-owned inventory sharing directory results and file bytes among
+route, proto, retired-symbol, truth-store and DDD consumers. It sorts resulting
+paths deterministically, preserves the declared skip list and symlink behavior,
+and releases every worker before returning. No source cache survives an
+analysis invocation. AST parsing and all ownership/deletion assertions remain
+mandatory; filesystem errors still produce a failed report.
+
 `station-api-ownership` must:
 
 1. parse registered Station handlers with Go AST;

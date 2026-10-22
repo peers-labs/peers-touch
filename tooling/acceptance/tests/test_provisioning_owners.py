@@ -232,6 +232,32 @@ class StationAttestationOwnerTests(unittest.TestCase):
             ):
                 resolve_remote_source_identity("station-three")
 
+    def test_remote_attestation_timeout_is_environment_blocked(self) -> None:
+        from tooling.acceptance.provisioners.remote_source_identity import (
+            resolve_remote_source_identity,
+        )
+
+        transport = MagicMock()
+        transport.target.remote_platform = RemotePlatform.POSIX
+        transport.run_argv.side_effect = subprocess.TimeoutExpired(
+            ("ssh", "station.example"),
+            30,
+        )
+        with patch(
+            "tooling.acceptance.provisioners.remote_source_identity."
+            "_reviewed_remote_transport",
+            return_value=(transport, {"PT_DEPLOY_PATH": "station-three"}),
+        ), self.assertRaisesRegex(
+            BlockedError,
+            "Cannot attest deployment station-three",
+        ) as raised:
+            resolve_remote_source_identity("station-three")
+
+        self.assertEqual(
+            raised.exception.resource,
+            "deployment-source:station-three",
+        )
+
     def test_remote_attestation_uses_windows_transport_without_bash(self) -> None:
         from tooling.acceptance.provisioners.remote_source_identity import (
             _windows_source_identity_script,
@@ -1022,9 +1048,9 @@ class ActorFixtureOwnerTests(unittest.TestCase):
             / "provisioners"
             / "preset_actor.py"
         ).read_text(encoding="utf-8")
-        for provisioner in (
-            "home_station.py",
-            "native_tauri_current_profile.py",
+        for provisioner, resolver in (
+            ("home_station.py", "resolve_existing_preset_actor_identity("),
+            ("native_tauri_current_profile.py", "resolve_existing_preset_actor("),
         ):
             source = (
                 root
@@ -1034,7 +1060,7 @@ class ActorFixtureOwnerTests(unittest.TestCase):
                 / provisioner
             ).read_text(encoding="utf-8")
             self.assertNotIn("/actor/login", source)
-            self.assertIn("resolve_existing_preset_actor(", source)
+            self.assertIn(resolver, source)
         self.assertIn('"run", "./tests/access_client"', helper)
         self.assertIn("/actor/logout", helper)
 

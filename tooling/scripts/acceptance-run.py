@@ -25,6 +25,7 @@ RUN_ARTIFACT_KIND = "acceptance-run"
 RESULT_ARTIFACT_KIND = "acceptance-gate-result"
 AGENT_V2_SCHEMA_ROOT = REPO_ROOT / "tooling/acceptance/schemas/agent-v2"
 AGGREGATE_SOURCE_ENV = "PT_ACCEPTANCE_AGGREGATE_SOURCE"
+PREREQUISITE_PROOFS_ENV = "PT_ACCEPTANCE_PREREQUISITE_PROOFS"
 RESULT_TRACEABILITY_FIELDS = (
     "sourceArtifact",
     "sourceArtifactKind",
@@ -41,6 +42,7 @@ CONTEXT_GATE_INHERITED_ENV_KEYS = (
     "PATH",
     "PATHEXT",
     "PYTHONHOME",
+    "PYTHONDONTWRITEBYTECODE",
     "PYTHONIOENCODING",
     "PYTHONPATH",
     "PYTHONUTF8",
@@ -54,8 +56,50 @@ CONTEXT_GATE_INHERITED_ENV_KEYS = (
 DEVELOPMENT_WORK_ITEM_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
+from tooling.acceptance.core.execution_budget import (
+    ExecutionBudgetError,
+    ExecutionBudgetPolicy,
+    ExecutionDeadline,
+    GateBudget,
+    GateExecution,
+    execute_stage,
+    freeze_scope,
+    stopped_results,
+)
+from tooling.acceptance.core.execution_graph import compile_graph, efficiency_report, prerequisite_results
+from tooling.acceptance.core.execution_session import ExecutionSession
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="microseconds")
+
+
+def current_result_proof_envelope(
+    source: Mapping[str, str],
+    results: list[dict[str, Any]],
+) -> dict[str, Any]:
+    proof_fields = (
+        "id",
+        "artifactKind",
+        "status",
+        "completionStatus",
+        "proofStatus",
+        "cleanupStatus",
+        "developmentRunId",
+        "runManifest",
+        "developmentManifest",
+    )
+    return {
+        "source": dict(source),
+        "results": [
+            {
+                field: result[field]
+                for field in proof_fields
+                if field in result
+            }
+            for result in results
+        ],
+    }
 
 
 def development_artifact_root(work_item: str, workspace: str) -> Path:
@@ -301,6 +345,24 @@ def parse_service_profile_bindings(values: list[str]) -> dict[str, str]:
                 f"--service-profile repeats service {service_id!r}"
             )
         bindings[service_id] = profile_name
+    return bindings
+
+
+def parse_runtime_cell_bindings(values: list[str]) -> dict[str, str]:
+    bindings: dict[str, str] = {}
+    for value in values:
+        gate_id, separator, cell_id = value.partition("=")
+        gate_id = gate_id.strip()
+        cell_id = cell_id.strip()
+        if not separator or not gate_id or not cell_id:
+            raise SystemExit(
+                "--runtime-cell-binding must use GATE_ID=RUNTIME_CELL"
+            )
+        if gate_id in bindings:
+            raise SystemExit(
+                f"--runtime-cell-binding repeats Gate {gate_id!r}"
+            )
+        bindings[gate_id] = cell_id
     return bindings
 
 
@@ -782,6 +844,12 @@ def ephemeral_launch_failure_result(
     elif blocked:
         result["blockedReason"] = redact_text(str(error))
         result["blockedResource"] = f"ephemeral-launch-context:{gate_id}"
+    errno_name = getattr(error, "errno_name", "")
+    resource_category = getattr(error, "resource_category", "")
+    if errno_name:
+        result["spawnErrno"] = errno_name
+    if resource_category:
+        result["spawnResourceCategory"] = resource_category
     return result
 
 
@@ -832,6 +900,7 @@ def load_plan(
             check=False,
             capture_output=True,
             text=True,
+            timeout=30,
             env={
                 **os.environ,
                 "PT_ACCEPTANCE_ARTIFACT_ROOT": str(store.root),
@@ -853,10 +922,29 @@ def load_plan(
 
 
 def load_gate_definitions(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8")).get("gates", {})
+    def unique_pairs(pairs):
+        value = {}
+        for key, item in pairs:
+            if key in value:
+                raise ExecutionBudgetError(f"duplicate catalog field: {key}")
+            value[key] = item
+        return value
+    return json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=unique_pairs).get("gates", {})
+
+
+def load_scope_capabilities() -> list[dict[str, Any]]:
+    return [
+        item
+        for path in sorted((REPO_ROOT / "tooling/acceptance/capabilities").glob("*.yaml"))
+        for item in json.loads(path.read_text())["capabilities"]
+    ]
 
 
 def gate_launch_fields(gate_id: str, definition: dict[str, Any]) -> dict[str, Any]:
+    if "judgment" in definition:
+        if definition["judgment"] != "all-prerequisites" or "command" in definition or "argv" in definition:
+            raise SystemExit(f"{gate_id}: invalid prerequisite judgment")
+        return {"judgment": definition["judgment"]}
     has_command = "command" in definition
     has_argv = "argv" in definition
     if has_command == has_argv:
@@ -931,6 +1019,7 @@ def gate_from_definition(gate_id: str, definition: dict[str, Any]) -> dict[str, 
         "requiredRuntimeCells": definition.get("requiredRuntimeCells", []),
         "tier": definition.get("tier", "local-evidence"),
         "description": definition.get("description", ""),
+        "dependsOn": definition.get("dependsOn", []),
         "required_by": ["manual"],
     }
     artifact_kind = definition.get("runtimeCellArtifact")
@@ -949,6 +1038,8 @@ def gate_from_definition(gate_id: str, definition: dict[str, Any]) -> dict[str, 
 
 
 def gate_launch_display(gate: dict[str, Any]) -> str:
+    if "judgment" in gate:
+        return "judge immutable prerequisite proofs"
     if "command" in gate:
         return str(gate["command"])
     return json.dumps(gate["argv"], ensure_ascii=False)
@@ -1026,6 +1117,8 @@ def plan_gate_from_entry(entry: Any, definitions: dict[str, Any]) -> dict[str, A
         "argv",
         "ephemeralCapabilities",
         "runtimeCellArtifact",
+        "dependsOn",
+        "judgment",
     ):
         if field in entry and entry[field] != gate.get(field):
             raise SystemExit(
@@ -1121,6 +1214,10 @@ def evidence_summary_from_artifact(path: Any, artifact: Any) -> dict[str, Any]:
         "spec",
         "gate",
         "reason",
+        "blockedReason",
+        "blockedResource",
+        "error",
+        "error_type",
         "failedStep",
         "sampleEmissionAllowed",
     ):
@@ -1239,6 +1336,27 @@ def enrich_result_with_run_artifacts(
     ):
         if source_key in primary:
             enriched[target_key] = primary[source_key]
+    for key in ("blockedReason", "blockedResource"):
+        if key in primary:
+            enriched[key] = primary[key]
+    if (
+        result.get("exit_code") == 2
+        and result.get("cleanupStatus") != "failed"
+        and not result.get("timedOut")
+        and "sourceDrift" not in result
+        and primary.get("status") == "BLOCKED"
+        and primary.get("completionStatus") == "BLOCKED"
+        and primary.get("proofStatus") == "UNPROVEN"
+        and primary.get("sampleEmissionAllowed") is False
+    ):
+        enriched["status"] = "blocked"
+        enriched["completionStatus"] = "BLOCKED"
+        enriched["proofStatus"] = "UNPROVEN"
+        enriched["sampleEmissionAllowed"] = False
+        enriched.setdefault(
+            "blockedReason",
+            str(primary.get("reason") or primary.get("error") or "BLOCKED"),
+        )
     for source_key, target_key in (
         ("phase", "sourcePhase"),
         ("bom", "sourceBom"),
@@ -1985,6 +2103,7 @@ def candidate_artifacts_required(
 
 
 def main() -> int:
+    request_started = time.monotonic()
     from tooling.acceptance.core import (
         EvidenceConflict,
         EvidenceError,
@@ -2000,11 +2119,24 @@ def main() -> int:
     parser.add_argument("--execution-plan")
     parser.add_argument("--gates", default="tooling/acceptance/gates.yaml")
     parser.add_argument("--gate", action="append", default=[])
+    parser.add_argument("--all-gates", action="store_true")
+    parser.add_argument("--exclude-domain", action="append", default=[])
+    parser.add_argument("--exclude-gate", action="append", default=[])
+    parser.add_argument("--execution-budget", help="explicit lifecycle budget JSON")
+    parser.add_argument("--resume-session", help="previous paused supporting session JSON")
+    parser.add_argument("--repair-record", help="qualified repair with immutable validation refs")
+    parser.add_argument("--stop-on-failure", action="store_true")
     parser.add_argument("--tier", action="append", default=[])
     execution_mode = parser.add_mutually_exclusive_group()
     execution_mode.add_argument("--completion", action="store_true")
     execution_mode.add_argument("--full", action="store_true")
     parser.add_argument("--runtime-cell")
+    parser.add_argument(
+        "--runtime-cell-binding",
+        action="append",
+        default=[],
+        metavar="GATE_ID=RUNTIME_CELL",
+    )
     parser.add_argument(
         "--execution-policy",
         choices=("acceptance", "development"),
@@ -2031,6 +2163,44 @@ def main() -> int:
     parser.add_argument("--candidate-ref-out")
     parser.add_argument("--candidate-manifest-sha-out")
     args = parser.parse_args()
+    if bool(args.resume_session) != bool(args.repair_record) or (
+        args.resume_session and (not args.execution_budget or args.dry_run)
+    ):
+        raise SystemExit("session resume requires budget, prior session and qualified repair")
+    if args.all_gates and (
+        args.plan or args.execution_plan or args.gate or args.tier
+        or args.completion or args.full or args.run_id or args.allocate_run_id
+    ):
+        raise SystemExit("--all-gates requires a catalog scope without other selectors")
+    if (args.exclude_domain or args.exclude_gate) and not args.all_gates:
+        raise SystemExit("scope exclusions require --all-gates")
+    if args.all_gates and not args.execution_budget and not args.dry_run:
+        raise SystemExit("--all-gates execution requires an explicit --execution-budget")
+    policy = (
+        ExecutionBudgetPolicy(json.loads(Path(args.execution_budget).read_text()))
+        if args.execution_budget else None
+    )
+    if policy is not None:
+        # The invoked interpreter is the selected toolchain. Preserve its
+        # executable path (including venv identity), never resolve a symlink
+        # into a different Python environment or silently fall back.
+        interpreter = os.environ.get("PT_ACCEPTANCE_PYTHON") or sys.executable
+        os.environ["PT_ACCEPTANCE_PYTHON"] = interpreter
+        os.environ["PT_ARCHITECTURE_PYTHON"] = interpreter
+        os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+        os.environ["PATH"] = str(Path(interpreter).parent) + os.pathsep + os.environ.get("PATH", "")
+    request_deadline = request_started + (
+        policy.request_seconds if policy else float("inf")
+    )
+    planning = (
+        GateExecution(
+            "control-plane",
+            GateBudget(policy.planning_seconds + 2, 1, 1),
+            request_deadline,
+        ) if policy else None
+    )
+    scope = None
+    publication = None
     if args.allocate_run_id:
         if any(
             (
@@ -2041,6 +2211,7 @@ def main() -> int:
                 args.completion,
                 args.full,
                 args.runtime_cell,
+                args.runtime_cell_binding,
                 args.station_profile,
                 args.dry_run,
                 args.candidate_ref_out,
@@ -2066,6 +2237,13 @@ def main() -> int:
     )
     station_profiles = parse_station_profile_bindings(args.station_profile)
     service_profiles = parse_service_profile_bindings(args.service_profile)
+    runtime_cell_bindings = parse_runtime_cell_bindings(
+        args.runtime_cell_binding
+    )
+    if args.runtime_cell and runtime_cell_bindings:
+        raise SystemExit(
+            "--runtime-cell and --runtime-cell-binding are mutually exclusive"
+        )
     candidate_mode = bool(
         args.candidate_ref_out or args.candidate_manifest_sha_out
     )
@@ -2143,32 +2321,104 @@ def main() -> int:
                 worktree=REPO_ROOT,
             )
         else:
-            store = EvidenceStore.from_environment(
+            store = execute_stage(
+                planning, "evidence-store", EvidenceStore.from_environment,
                 repo_root=REPO_ROOT,
                 worktree=REPO_ROOT,
             )
-        if args.gate and not args.plan and not args.execution_plan:
+        if (args.gate or args.all_gates) and not args.plan and not args.execution_plan:
             plan = {"selected_gates": []}
             plan_source = {
                 "artifactKind": "acceptance-manual-selection",
                 "gateIds": list(args.gate),
             }
         else:
-            plan, plan_source = load_plan(
+            plan, plan_source = execute_stage(
+                planning, "plan", load_plan,
                 Path(args.plan) if args.plan else None,
                 store,
                 selected_execution_mode,
                 Path(args.execution_plan) if args.execution_plan else None,
             )
-        definitions = load_gate_definitions(Path(args.gates))
+        definitions = execute_stage(
+            planning, "catalog", load_gate_definitions, Path(args.gates)
+        )
+        if args.all_gates:
+            capabilities = execute_stage(
+                planning, "capability-catalog", load_scope_capabilities
+            )
+            scope = execute_stage(
+                planning, "scope", freeze_scope,
+                definitions, capabilities,
+                excluded_domains=args.exclude_domain,
+                excluded_gates=args.exclude_gate,
+            )
+            plan_source = scope
+            args.gate = scope["dispatchGateIds"]
         gates = resolve_requested_gates(plan, definitions, args.gate)
         gates = filter_gates_by_tier(gates, args.tier)
+        selected_by_id = {gate["id"]: gate for gate in gates}
+        graph = execute_stage(
+            planning, "execution-graph", compile_graph, definitions,
+            list(selected_by_id),
+            excluded_ids=tuple(
+                item["gateId"] for item in scope["decisions"] if not item["included"]
+            ) if scope else (),
+        )
+        gates = [
+            selected_by_id.get(gate_id) or gate_from_definition(gate_id, definitions[gate_id])
+            for gate_id in graph["dispatchGateIds"]
+        ]
+        selected_gate_ids = {gate["id"] for gate in gates}
+        unknown_runtime_bindings = (
+            set(runtime_cell_bindings) - selected_gate_ids
+        )
+        if unknown_runtime_bindings:
+            raise SystemExit(
+                "--runtime-cell-binding references unselected Gate(s): "
+                + ", ".join(sorted(unknown_runtime_bindings))
+            )
+        for gate in gates:
+            bound_cell = runtime_cell_bindings.get(gate["id"])
+            if bound_cell is not None and (
+                select_runtime_cell(gate, bound_cell) != bound_cell
+            ):
+                raise SystemExit(
+                    f"gate {gate['id']!r} does not declare runtime cells"
+                )
+        if candidate_mode and len(gates) != 1:
+            raise ExecutionBudgetError("candidate handoff cannot expand prerequisite scope")
         if not gates:
             raise EvidenceError(
                 "selected Acceptance scope contains no executable Gates"
             )
-        aggregate_source = source_identity(REPO_ROOT)
-        aggregate_run = store.begin_run(
+        aggregate_source = execute_stage(
+            planning, "source-snapshot", source_identity, REPO_ROOT
+        )
+        session = None
+        if policy is not None and not args.dry_run:
+            session = (
+                ExecutionSession.restore(json.loads(Path(args.resume_session).read_text()))
+                if args.resume_session else ExecutionSession(graph["dispatchGateIds"], policy.identity)
+            )
+            if (
+                set(session.required_gate_ids) != set(graph["dispatchGateIds"])
+                or len(session.required_gate_ids) != len(graph["dispatchGateIds"])
+                or session.policy_digest != policy.identity
+            ):
+                raise ExecutionBudgetError("repair attempt must preserve full scope and budget")
+            if args.repair_record:
+                from tooling.acceptance.core import ArtifactRef
+                repair = json.loads(Path(args.repair_record).read_text())
+                for ref in repair.get("validation_refs", []):
+                    execute_stage(planning, "repair-evidence", store.resolve, ArtifactRef.from_dict(ref))
+                session.repair(**repair)
+            session.begin(
+                aggregate_source,
+                graph["dispatchGateIds"],
+            )
+        aggregate_run = execute_stage(
+            planning, "aggregate-initialize", store.begin_run,
             (
                 "development-run"
                 if args.execution_policy == "development"
@@ -2176,7 +2426,7 @@ def main() -> int:
             ),
             source=aggregate_source,
         )
-    except EvidenceError as error:
+    except (EvidenceError, ExecutionBudgetError, ExecutionDeadline) as error:
         print(
             f"Acceptance evidence initialization failed: {type(error).__name__}: {error}",
             file=sys.stderr,
@@ -2184,6 +2434,9 @@ def main() -> int:
         return 1
 
     results: list[dict[str, Any]] = []
+    execution_reports: list[dict[str, Any]] = []
+    started_gate_ids: set[str] = set()
+    execution_stop = None
     print(
         "Development Functional Run"
         if args.execution_policy == "development"
@@ -2205,8 +2458,25 @@ def main() -> int:
         print("[SKIP] no selected gates")
 
     active_gate_run = None
+    execution = None
     candidate_manifest_ref = None
     try:
+        graph_ref = execute_stage(
+            planning, "graph-persist", aggregate_run.write_json,
+            "reports/graph.json", graph, role="execution-graph",
+        )
+        if scope is not None:
+            scope_ref = execute_stage(
+                planning, "scope-persist", aggregate_run.write_json,
+                "reports/scope.json", scope, role="execution-scope", phase="publish",
+            )
+            plan_source = {
+                "artifactKind": "acceptance-execution-scope-reference",
+                "scope": scope_ref.to_dict(),
+                "scopeDigest": scope["digest"],
+            }
+        if planning is not None:
+            planning.finish()
         for gate in gates:
             gate_id = gate["id"]
             command = gate_launch_display(gate)
@@ -2215,10 +2485,17 @@ def main() -> int:
             tier = gate.get("tier", "local-evidence")
             runtime_cell = select_runtime_cell(
                 gate,
-                str(args.runtime_cell or ""),
+                runtime_cell_bindings.get(
+                    gate_id,
+                    str(args.runtime_cell or ""),
+                ),
             )
             print(f"[RUN] {gate_id} [{tier}/{environment}]: {command}")
             started = time.time()
+            execution = (
+                GateExecution(gate_id, policy.for_gate(gate), request_deadline)
+                if policy else None
+            )
 
             if args.dry_run:
                 results.append(
@@ -2234,17 +2511,21 @@ def main() -> int:
                 )
                 continue
 
-            gate_source = source_identity(REPO_ROOT)
+            gate_source = execute_stage(
+                execution, "source-snapshot", source_identity, REPO_ROOT
+            )
             source_drift = source_identity_drift(
                 aggregate_source,
                 gate_source,
             )
-            gate_run = store.begin_run(
+            gate_run = execute_stage(
+                execution, "gate-initialize", store.begin_run,
                 gate_id,
                 source=gate_source,
                 run_id=args.run_id,
             )
             active_gate_run = gate_run
+            started_gate_ids.add(gate_id)
             gate_env = gate_run.subprocess_environment(os.environ.copy())
             gate_env[AGGREGATE_SOURCE_ENV] = json.dumps(
                 aggregate_source,
@@ -2302,6 +2583,64 @@ def main() -> int:
                     "reason": "aggregate source drift before Gate execution",
                     "sourceDrift": source_drift,
                 }
+            prerequisite_refs, unproven_dependencies = execute_stage(
+                execution, "prerequisite-proof", prerequisite_results,
+                gate, results, aggregate_source, store,
+            )
+            if result is None and unproven_dependencies:
+                output_text = "Required prerequisite proof is unavailable.\n"
+                judgment = {
+                    "artifactKind": "acceptance-prerequisite-judgment",
+                    "gateId": gate_id,
+                    "gate": gate_id,
+                    "status": "BLOCKED",
+                    "completionStatus": "BLOCKED",
+                    "proofStatus": "UNPROVEN",
+                    "sampleEmissionAllowed": False,
+                    "phase": "Prerequisite Proof",
+                    "bom": ["acceptance-execution"],
+                    "spec": ["dependsOn"],
+                    "reason": "Required prerequisite proof is unavailable",
+                    "blockedReason": "PREREQUISITE_UNPROVEN",
+                    "requiredGateIds": unproven_dependencies,
+                    "prerequisiteProofs": prerequisite_refs,
+                }
+                judgment_ref = execute_stage(
+                    execution,
+                    "prerequisite-judgment",
+                    gate_run.write_json,
+                    "reports/prerequisite-judgment.json",
+                    judgment,
+                    role="prerequisite-judgment",
+                )
+                result = {
+                    "id": gate_id, "tier": tier, "environment": environment,
+                    "status": "blocked", "completionStatus": "BLOCKED",
+                    "proofStatus": "UNPROVEN", "blockedReason": "PREREQUISITE_UNPROVEN",
+                    "requiredGateIds": unproven_dependencies,
+                    "duration_seconds": 0, "exit_code": None,
+                    "sourceArtifact": judgment_ref.to_dict(),
+                    "sourceArtifactKind": "acceptance-prerequisite-judgment",
+                    "sourcePhase": "Prerequisite Proof",
+                    "sourceBom": ["acceptance-execution"],
+                    "sourceSpec": ["dependsOn"],
+                    "sourceGate": gate_id,
+                }
+            elif result is None and "judgment" in gate:
+                result = {
+                    "artifactKind": "acceptance-gate-judgment",
+                    "id": gate_id, "tier": tier, "environment": environment,
+                    "status": "passed", "completionStatus": "DONE", "proofStatus": "PROVEN",
+                    "duration_seconds": 0, "exit_code": None,
+                    "prerequisiteProofs": prerequisite_refs,
+                    "sampleEmissionAllowed": False,
+                }
+                judgment_ref = execute_stage(
+                    execution, "prerequisite-judgment", gate_run.write_json,
+                    "reports/judgment.json", result, role="prerequisite-judgment",
+                )
+                result["sourceArtifact"] = judgment_ref.to_dict()
+                result["sourceArtifactKind"] = "acceptance-gate-judgment"
             try:
                 if result is None and provisioner_id:
                     if provisioner_id != environment:
@@ -2313,14 +2652,17 @@ def main() -> int:
                     try:
                         preparation_error: Exception | None = None
                         with run_environment(gate_env):
-                            provisioner = environment_provisioner(
+                            provisioner = execute_stage(
+                                execution, "environment-resolve", environment_provisioner,
                                 provisioner_id,
                                 station_profiles=station_profiles,
                                 service_profiles=service_profiles,
                             )
                             provisioner.bind_evidence_run(gate_run)
                             try:
-                                provisioner.prepare_credentials()
+                                execute_stage(
+                                    execution, "credentials", provisioner.prepare_credentials
+                                )
                             except Exception as error:
                                 preparation_error = error
                         runtime_secrets = credential_values(provisioner)
@@ -2329,7 +2671,8 @@ def main() -> int:
                         if preparation_error is not None:
                             raise preparation_error
                         with run_environment(gate_env):
-                            provisioner, manifest, manifest_path = provision_environment(
+                            provisioner, manifest, manifest_path = execute_stage(
+                                execution, "provision", provision_environment,
                                 provisioner_id,
                                 gate_id,
                                 provisioner,
@@ -2387,7 +2730,8 @@ def main() -> int:
                                 runtime_cell_lifecycle,
                                 runtime_cell_manifest,
                                 runtime_cell_manifest_path,
-                            ) = provision_runtime_cell(
+                            ) = execute_stage(
+                                execution, "runtime-cell", provision_runtime_cell,
                                 cell_id=runtime_cell,
                                 gate_id=gate_id,
                                 gate_run=gate_run,
@@ -2424,20 +2768,24 @@ def main() -> int:
                         (
                             launch_context,
                             provisioning_run_id,
-                        ) = prepare_gate_launch_context(
+                        ) = execute_stage(
+                            execution, "launch-context", prepare_gate_launch_context,
                             gate=gate,
                             gate_run=gate_run,
                             provisioner=provisioner,
                             manifest=manifest,
                         )
-                        launch_context.seal(
+                        execute_stage(
+                            execution, "launch-seal", launch_context.seal,
                             workspace_id=gate_run.store.workspace_id,
                             gate_id=gate_id,
                             evidence_run_id=gate_run.run_id,
                             provisioning_run_id=provisioning_run_id,
                         )
-                        launch_binding = launch_context.bind_child()
-                        launch_context.activate()
+                        launch_binding = execute_stage(
+                            execution, "launch-bind", launch_context.bind_child
+                        )
+                        execute_stage(execution, "launch-activate", launch_context.activate)
                     except Exception as error:
                         output_text = (
                             "Ephemeral launch preparation failed: "
@@ -2451,7 +2799,6 @@ def main() -> int:
                             error=error,
                             duration_seconds=round(time.time() - started, 3),
                         )
-
                 if result is None:
                     if gate.get("ephemeralCapabilities"):
                         gate_env = context_gate_subprocess_environment(
@@ -2466,12 +2813,18 @@ def main() -> int:
                         aggregate_source,
                         sort_keys=True,
                     )
+                    gate_env[PREREQUISITE_PROOFS_ENV] = json.dumps(
+                        prerequisite_refs,
+                        ensure_ascii=True,
+                        separators=(",", ":"),
+                    )
                     gate_env["PT_ACCEPTANCE_CURRENT_RESULTS"] = json.dumps(
-                        {
-                            "source": aggregate_run.source,
-                            "results": results,
-                        },
-                        ensure_ascii=False,
+                        current_result_proof_envelope(
+                            aggregate_run.source,
+                            results,
+                        ),
+                        ensure_ascii=True,
+                        separators=(",", ":"),
                     )
                     if manifest_path is not None:
                         gate_env["PT_ACCEPTANCE_RUNTIME_MANIFEST"] = str(
@@ -2489,19 +2842,31 @@ def main() -> int:
                         )
                     )
                     try:
-                        if "argv" in gate:
+                        if "argv" in gate or execution is not None:
                             from tooling.acceptance.core import (
                                 GateLaunchSpec,
                                 GateProcessLauncher,
                             )
 
-                            completed = GateProcessLauncher(
+                            launcher = GateProcessLauncher(
                                 cwd=str(REPO_ROOT),
                                 environment=gate_env,
-                            ).run(
+                                termination_timeout_seconds=(
+                                    min(1, execution.budget.cleanup_seconds / 4)
+                                    if execution else 5
+                                ),
+                            )
+                            completed = execute_stage(
+                                execution, "command", launcher.run,
                                 GateLaunchSpec(
-                                    argv=tuple(gate["argv"]),
-                                    timeout_seconds=timeout,
+                                    argv=(
+                                        tuple(gate["argv"]) if "argv" in gate
+                                        else ("sh", "-c", command)
+                                    ),
+                                    timeout_seconds=(
+                                        min(timeout, max(0.001, execution.remaining() - 0.05))
+                                        if execution else timeout
+                                    ),
                                     required_capabilities=tuple(
                                         gate.get("ephemeralCapabilities", ())
                                     ),
@@ -2547,12 +2912,27 @@ def main() -> int:
                         if not isinstance(error, EphemeralLaunchError):
                             raise
                         timed_out = isinstance(error, EphemeralLaunchTimeout)
+                        if timed_out and execution is not None:
+                            execution.overrun = execution.overrun or {
+                                "stage": "command", "phase": "work"
+                            }
+                            cause = error.__cause__
+                            if isinstance(cause, subprocess.TimeoutExpired):
+                                stdout = cause.stdout or b""
+                                stderr = cause.stderr or b""
+                                output_text += (
+                                    stdout.decode("utf-8", errors="replace")
+                                    if isinstance(stdout, bytes) else stdout
+                                ) + (
+                                    stderr.decode("utf-8", errors="replace")
+                                    if isinstance(stderr, bytes) else stderr
+                                )
                         if isinstance(error, EphemeralLaunchCleanupFailed):
                             gate_process_cleanup_status = "failed"
                             gate_process_cleanup_error = str(error)
                         elif timed_out:
                             gate_process_cleanup_status = "passed"
-                        output_text = (
+                        output_text += (
                             f"Ephemeral Gate launch failed: "
                             f"{type(error).__name__}: {error}\n"
                         )
@@ -2564,12 +2944,39 @@ def main() -> int:
                             error=error,
                             duration_seconds=round(time.time() - started, 3),
                         )
+                        if execution is not None and not gate.get("ephemeralCapabilities"):
+                            result.update({
+                                "status": "failed",
+                                "completionStatus": "PARTIAL",
+                                "proofStatus": "UNPROVEN",
+                                "sourcePhase": "Gate Command",
+                                "sourceBom": ["acceptance-execution"],
+                                "sourceSpec": ["execution-budget"],
+                                "sourceGate": "Selected Gate command must terminate within its lifecycle budget",
+                            })
+            except ExecutionDeadline as error:
+                timed_out = True
+                output_text += f"\n{error}\n"
+                result = {
+                    "id": gate_id,
+                    "status": "failed",
+                    "completionStatus": "PARTIAL",
+                    "proofStatus": "UNPROVEN",
+                    "reason": str(error),
+                    "timedOut": True,
+                    "sampleEmissionAllowed": False,
+                }
             finally:
+                if execution is not None:
+                    execution.enter_phase("cleanup")
                 if launch_context is not None:
                     try:
-                        launch_context.quiesce()
+                        execute_stage(
+                            execution, "launch-quiesce", launch_context.quiesce,
+                            phase="cleanup",
+                        )
                         launch_context_quiesce_status = "passed"
-                    except Exception as error:
+                    except (Exception, ExecutionDeadline) as error:
                         launch_context_quiesce_status = "failed"
                         launch_context_cleanup_error = str(error)
                         launch_context_cleanup = ephemeral_cleanup_payload(
@@ -2592,10 +2999,13 @@ def main() -> int:
                     try:
                         with run_environment(gate_env):
                             runtime_cell_cleanup = (
-                                runtime_cell_lifecycle.stop()
+                                execute_stage(
+                                    execution, "runtime-cell-stop", runtime_cell_lifecycle.stop,
+                                    phase="cleanup",
+                                )
                             )
                         runtime_cell_cleanup_status = "passed"
-                    except Exception as error:
+                    except (Exception, ExecutionDeadline) as error:
                         runtime_cell_cleanup_status = "failed"
                         runtime_cell_cleanup_error = str(error)
                         output_text += (
@@ -2613,9 +3023,12 @@ def main() -> int:
                 if provisioner is not None and resource_cleanup_allowed:
                     try:
                         with run_environment(gate_run.subprocess_environment(os.environ.copy())):
-                            cleanup_completed_resources = provisioner.cleanup()
+                            cleanup_completed_resources = execute_stage(
+                                execution, "environment-cleanup", provisioner.cleanup,
+                                phase="cleanup",
+                            )
                         environment_cleanup_status = "passed"
-                    except Exception as error:
+                    except (Exception, ExecutionDeadline) as error:
                         environment_cleanup_status = "failed"
                         environment_cleanup_error = str(error)
                         output_text += f"\nProvisioning cleanup failed: {error}\n"
@@ -2637,12 +3050,15 @@ def main() -> int:
                     channel_error = launch_context.channel_error
                     blocked_error = launch_context.blocked_error
                     try:
-                        close_result = launch_context.close()
+                        close_result = execute_stage(
+                            execution, "launch-close", launch_context.close,
+                            phase="cleanup",
+                        )
                         launch_context_cleanup = ephemeral_cleanup_payload(
                             close_result
                         )
                         launch_context_close_status = "passed"
-                    except Exception as error:
+                    except (Exception, ExecutionDeadline) as error:
                         launch_context_close_status = "failed"
                         launch_context_cleanup = ephemeral_cleanup_payload(
                             getattr(error, "result", None)
@@ -2705,7 +3121,9 @@ def main() -> int:
                 or launch_context is not None
                 or gate_process_cleanup_status != "not-required"
             ):
-                cleanup_artifact = persist_provisioner_cleanup_result(
+                cleanup_artifact = execute_stage(
+                    execution, "cleanup-artifact", persist_provisioner_cleanup_result,
+                    phase="publish",
                     gate_run=gate_run,
                     gate_id=gate_id,
                     environment=environment,
@@ -2732,7 +3150,10 @@ def main() -> int:
 
             source_drift_after = source_identity_drift(
                 aggregate_source,
-                source_identity(REPO_ROOT),
+                execute_stage(
+                    execution, "source-revalidate", source_identity, REPO_ROOT,
+                    phase="publish",
+                ),
             )
             if source_drift_after is not None:
                 source_drift = source_drift or source_drift_after
@@ -2745,11 +3166,13 @@ def main() -> int:
                 log_ref,
                 redacted_artifacts,
                 leaked_artifacts,
-            ) = finalize_runtime_log(
+            ) = execute_stage(
+                execution, "evidence-scan", finalize_runtime_log,
                 gate_run,
                 gate_id,
                 output_text,
                 runtime_secrets,
+                phase="publish",
             )
             redacted_artifacts = sorted(
                 set(redacted_artifacts) | set(gate_run.redacted_artifacts)
@@ -2824,8 +3247,12 @@ def main() -> int:
                 result["completionStatus"] = "PARTIAL"
                 result["proofStatus"] = "UNPROVEN"
                 result["sampleEmissionAllowed"] = False
+            result["prerequisiteProofs"] = prerequisite_refs
 
-            result = enrich_result_with_run_artifacts(result, gate_run)
+            result = execute_stage(
+                execution, "evidence-read", enrich_result_with_run_artifacts,
+                result, gate_run, phase="publish",
+            )
             if candidate_artifacts_required(
                 result,
                 candidate_mode=candidate_mode,
@@ -2855,7 +3282,8 @@ def main() -> int:
                     runtime_cell_manifest
                 )
             if args.execution_policy == "development":
-                result = record_development_result(
+                result = execute_stage(
+                    execution, "result-finalize", record_development_result,
                     result,
                     gate_run,
                     plan_source,
@@ -2863,9 +3291,11 @@ def main() -> int:
                     finalized_runtime,
                     runtime_cell or None,
                     runtime_secrets,
+                    phase="publish",
                 )
             else:
-                result = finalize_gate_result(
+                result = execute_stage(
+                    execution, "result-finalize", finalize_gate_result,
                     result,
                     gate_run,
                     plan_source,
@@ -2873,6 +3303,7 @@ def main() -> int:
                     runtime_cell or None,
                     runtime_secrets,
                     candidate_mode=candidate_mode,
+                    phase="publish",
                 )
                 result["runManifest"] = gate_run.manifest_ref.to_dict()
                 if candidate_mode and result.get("status") == "passed":
@@ -2880,10 +3311,49 @@ def main() -> int:
             gate_run.close()
             active_gate_run = None
             results.append(result)
+            if execution is not None:
+                cost = execution.report()
+                execution_reports.append(cost)
+                execute_stage(
+                    execution, "cost-persist", aggregate_run.write_json,
+                    f"reports/execution/{gate_id}.json", {
+                        **cost,
+                        "measurementBoundary": "before-cost-publication",
+                        "terminalCostOwner": "aggregate executionBudget.gates or execution-stop",
+                    },
+                    role=f"execution-cost:{gate_id}",
+                    phase="publish",
+                )
+                execution.finish()
+                cost = execution.report()
+                execution_reports[-1] = cost
+                if cost["state"] == "OVER_BUDGET":
+                    execution_stop = {
+                        "gateId": gate_id,
+                        "reason": "EXECUTION_BUDGET_STOP",
+                        "cost": cost,
+                        "source": aggregate_source,
+                        "policyDigest": policy.identity,
+                        "resumePolicy": "new attempt; revalidate source, scope and owned resources",
+                    }
+                elif args.stop_on_failure and result_is_incomplete(result):
+                    execution_stop = {
+                        "gateId": gate_id,
+                        "reason": "EXECUTION_FAILURE_STOP",
+                        "cost": cost,
+                        "source": aggregate_source,
+                        "policyDigest": policy.identity,
+                        "resumePolicy": "diagnose and repair before a new attempt",
+                    }
             print(
                 f"[{str(result.get('status')).upper()}] {gate_id} "
                 f"duration={duration}s run={gate_run.run_id}"
             )
+            if execution_stop is not None:
+                results.extend(stopped_results(
+                    gates, {item["id"] for item in results}, execution_stop
+                ))
+                break
 
         report = build_run_report(
             plan_source,
@@ -2892,12 +3362,41 @@ def main() -> int:
             source=aggregate_source,
             execution_policy=args.execution_policy,
         )
-        run_ref = aggregate_run.write_json(
+        report["executionGraph"] = {
+            "artifact": graph_ref.to_dict(), "digest": graph["digest"],
+            "efficiency": efficiency_report(graph, execution_reports),
+        }
+        if policy is not None:
+            report["executionBudget"] = {
+                "policyDigest": policy.identity,
+                "requestDurationSeconds": round(time.monotonic() - request_started, 6),
+                "planning": planning.report(),
+                "gates": execution_reports,
+                "stop": execution_stop,
+                "selectedGateCount": len(gates),
+                "dispatchedGateCount": len(execution_reports),
+            }
+        publication = (
+            GateExecution(
+                "aggregate-publication", GateBudget(20, 1, 1),
+                time.monotonic() + 20,
+            ) if policy else None
+        )
+        run_ref = execute_stage(
+            publication, "report-json", aggregate_run.write_json,
             "reports/run.json",
             report,
             role="run",
         )
-        aggregate_run.write_bytes(
+        if session is not None:
+            session.observe(report, run_ref.to_dict())
+            session_ref = execute_stage(
+                publication, "session-ledger", aggregate_run.write_json,
+                "reports/session.json", session.report(), role="execution-session",
+            )
+            print(f"execution-session: {json.dumps(session_ref.to_dict(), sort_keys=True)}")
+        execute_stage(
+            publication, "report-markdown", aggregate_run.write_bytes,
             "reports/run.md",
             render_markdown(report).encode("utf-8"),
             media_type="text/markdown",
@@ -2905,7 +3404,8 @@ def main() -> int:
         )
         development_manifest_ref = None
         if args.execution_policy == "acceptance":
-            aggregate_run.finalize(
+            execute_stage(
+                publication, "aggregate-finalize", aggregate_run.finalize,
                 result={
                     "status": (
                         "passed"
@@ -2921,7 +3421,7 @@ def main() -> int:
                 },
                 runtime={"plan": plan_source},
             )
-            aggregate_run.publish_latest()
+            execute_stage(publication, "aggregate-publish", aggregate_run.publish_latest)
         elif args.development_manifest_out:
             development_manifest_ref = finalize_development_run(
                 report,
@@ -2955,6 +3455,8 @@ def main() -> int:
                 candidate_mode=candidate_mode,
             )
         )
+        if execution_stop is not None:
+            exit_code = exit_code or 1
         if candidate_mode:
             if exit_code != 0 or candidate_manifest_ref is None:
                 return exit_code or 1
@@ -2982,6 +3484,87 @@ def main() -> int:
                 development_manifest_ref.to_dict(),
             )
         return exit_code
+    except (ExecutionDeadline, ExecutionBudgetError) as error:
+        if policy is None:
+            print(f"Acceptance execution failed: {type(error).__name__}: {error}", file=sys.stderr)
+            return 1
+        failed_execution = (
+            publication if isinstance(publication, GateExecution)
+            else execution if isinstance(execution, GateExecution) else planning
+        )
+        cost = failed_execution.report()
+        dispatched_ids = started_gate_ids
+        stop = {
+            "artifactKind": "acceptance-execution-stop",
+            "reason": (
+                "EXECUTION_BUDGET_STOP"
+                if isinstance(error, ExecutionDeadline) or cost["overrun"]
+                else "EXECUTION_POLICY_STOP"
+            ),
+            "gateId": cost["gateId"],
+            "cost": cost,
+            "source": aggregate_source,
+            "scopeDigest": scope["digest"] if scope else None,
+            "policyDigest": policy.identity if policy else None,
+            "dispatchedGateIds": sorted(dispatched_ids),
+            "recordedGateResultIds": [
+                item["id"] for item in results if item["id"] in dispatched_ids
+            ],
+            "unexecutedGateIds": [
+                gate["id"] for gate in gates
+                if gate["id"] not in dispatched_ids
+            ],
+            "firstOverrun": execution_stop,
+            "proofStatus": "UNPROVEN",
+            "resourceCleanup": "UNPROVEN; inspect current run before resuming",
+            "failure": type(error).__name__,
+        }
+        if session is not None and session.state == "RUNNING":
+            interrupted_results = list(results)
+            recorded_ids = {item["id"] for item in results}
+            if cost["gateId"] in dispatched_ids - recorded_ids:
+                interrupted_results.append({
+                    "id": cost["gateId"],
+                    "status": "failed",
+                    "completionStatus": "PARTIAL",
+                    "proofStatus": "UNPROVEN",
+                    "duration_seconds": cost["durationSeconds"],
+                    "reason": "execution interrupted before result publication",
+                    "errorType": type(error).__name__,
+                    "timedOut": isinstance(error, ExecutionDeadline),
+                    "sampleEmissionAllowed": False,
+                })
+            stop["results"] = interrupted_results + stopped_results(
+                gates, {item["id"] for item in interrupted_results}, stop,
+            )
+            stop["executionBudget"] = {"stop": {
+                "gateId": cost["gateId"], "reason": stop["reason"],
+                "policyDigest": stop["policyDigest"],
+            }}
+        # A publication failure must not mutate an already sealed Gate run.
+        # The independent diagnostic is supporting evidence, never product proof.
+        from tooling.acceptance.core.execution_budget import deadline
+        try:
+            with deadline(5, ExecutionDeadline("stop-record", "publish", "publish")):
+                diagnostic = store.begin_run("acceptance-execution-stop", source=aggregate_source)
+                try:
+                    ref = diagnostic.write_json("reports/stop.json", stop, role="execution-stop")
+                    if session is not None and session.state == "RUNNING":
+                        session.observe(stop, ref.to_dict())
+                        diagnostic.write_json(
+                            "reports/session.json", session.report(), role="execution-session",
+                        )
+                    diagnostic.finalize(result={
+                        "status": "failed", "completionStatus": "PARTIAL",
+                        "proofStatus": "UNPROVEN",
+                    })
+                    diagnostic.publish_latest()
+                    print(f"execution-stop: {json.dumps(ref.to_dict(), sort_keys=True)}")
+                finally:
+                    diagnostic.close()
+        except (Exception, ExecutionDeadline):
+            print("Execution stopped; durable stop-record publication failed", file=sys.stderr)
+        return 1
     except EvidenceError as error:
         print(
             f"Acceptance evidence failed: {type(error).__name__}: {error}",
@@ -2989,9 +3572,19 @@ def main() -> int:
         )
         return 1
     finally:
-        if active_gate_run is not None:
-            active_gate_run.close()
-        aggregate_run.close()
+        if policy is not None:
+            from tooling.acceptance.core.execution_budget import deadline
+            try:
+                with deadline(2, ExecutionDeadline("handles", "close", "cleanup")):
+                    if active_gate_run is not None:
+                        active_gate_run.close()
+                    aggregate_run.close()
+            except ExecutionDeadline:
+                print("Evidence handles did not close within reserved tail", file=sys.stderr)
+        else:
+            if active_gate_run is not None:
+                active_gate_run.close()
+            aggregate_run.close()
 
 
 if __name__ == "__main__":

@@ -35,6 +35,7 @@ from tooling.acceptance.provisioners import (
     HomeStationProvisioner,
     MobileNativeProvisioner,
     NativeTauriEmbeddedWebDriverProvisioner,
+    XConfigHomeProvisioner,
     get_provisioner,
 )
 from tooling.acceptance.provisioners.home_station import (
@@ -79,6 +80,15 @@ class ProvisionerBaseClassTests(unittest.TestCase):
         self.assertIsInstance(
             get_provisioner(contract),
             MobileNativeProvisioner,
+        )
+
+    def test_x_config_home_runtime_provisioner_is_registered(self):
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "x-config-home-runtime.yaml"
+        )
+        self.assertIsInstance(
+            get_provisioner(contract),
+            XConfigHomeProvisioner,
         )
 
     def test_native_tauri_defaults_to_canonical_station_profiles(self):

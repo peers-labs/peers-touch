@@ -103,7 +103,7 @@ func handlers() {
 `)
 
 	routes, diagnostics, _ := discoverRoutes(
-		root,
+		newSourceInventory(root),
 		[]string{"apps/station/app/subserver/notification"},
 	)
 	if len(diagnostics) != 0 {
@@ -343,7 +343,7 @@ func TestDiscoverForbiddenDDDImportsRejectsMissingLayerRoot(t *testing.T) {
 	root := t.TempDir()
 	const layerRoot = "apps/station/app/subserver/conversation/domain"
 
-	diagnostics := discoverForbiddenDDDImports(root, []dddLayerRule{{
+	diagnostics := discoverForbiddenDDDImports(newSourceInventory(root), []dddLayerRule{{
 		Name:             "conversation.domain",
 		Root:             layerRoot,
 		ForbiddenImports: []string{"net/http"},
@@ -362,7 +362,7 @@ func TestDiscoverForbiddenDDDImportsRejectsNonDirectoryLayerRoot(t *testing.T) {
 	const layerRoot = "apps/station/app/subserver/conversation/domain"
 	writeFixture(t, root, layerRoot, "not a directory")
 
-	diagnostics := discoverForbiddenDDDImports(root, []dddLayerRule{{
+	diagnostics := discoverForbiddenDDDImports(newSourceInventory(root), []dddLayerRule{{
 		Name:             "conversation.domain",
 		Root:             layerRoot,
 		ForbiddenImports: []string{"net/http"},
@@ -383,7 +383,7 @@ func TestDiscoverForbiddenDDDImportsAllowsPresentEmptyLayerRoot(t *testing.T) {
 		t.Fatalf("create empty DDD layer root: %v", err)
 	}
 
-	diagnostics := discoverForbiddenDDDImports(root, []dddLayerRule{{
+	diagnostics := discoverForbiddenDDDImports(newSourceInventory(root), []dddLayerRule{{
 		Name:             "conversation.domain",
 		Root:             layerRoot,
 		ForbiddenImports: []string{"net/http"},

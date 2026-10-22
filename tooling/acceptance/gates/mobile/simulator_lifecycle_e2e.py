@@ -6,6 +6,7 @@ from __future__ import annotations
 import sys
 import time
 from collections.abc import Mapping
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from tooling.acceptance.core import (
@@ -200,14 +201,30 @@ class SimulatorRuntimeLifecycleGate(
             "mobile-simulator lifecycle Appium",
         )
         client_results: dict[str, Any] = {}
-        for spec in self._client_specs(resources):
-            session = self._create_session(server_url, spec)
+        clients = [
+            (spec, self._create_session(server_url, spec))
+            for spec in self._client_specs(resources)
+        ]
+        for _spec, session in clients:
             self.sessions.append(session)
-            client_results[spec.client_id] = self._exercise_lifecycle(
-                artifacts,
-                session,
-                spec,
-            )
+        if clients:
+            with ThreadPoolExecutor(
+                max_workers=len(clients),
+                thread_name_prefix="mobile-lifecycle",
+            ) as executor:
+                futures = {
+                    spec.client_id: executor.submit(
+                        self._exercise_lifecycle,
+                        artifacts,
+                        session,
+                        spec,
+                    )
+                    for spec, session in clients
+                }
+                for spec, _session in clients:
+                    client_results[spec.client_id] = futures[
+                        spec.client_id
+                    ].result()
 
         artifacts.write_json(
             "mobile-simulator-lifecycle/source-identity.json",

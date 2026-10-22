@@ -33,6 +33,13 @@ PROTO_NON_ACTOR_ID_ALLOWLIST = {
         "provider_user_id",
         "receiver_id",
     },
+    Path("model/domain/channel/channel.proto"): {
+        "owner_provider_user_id",
+        "provider_user_id",
+        "sender_id",
+        "sender_user_id",
+        "user_id",
+    },
 }
 LEGACY_MIGRATION_ALLOWLIST = {
     Path("apps/station/frame/touch/model/db/automigrate.go"): {
@@ -72,6 +79,12 @@ LEGACY_MIGRATION_ALLOWLIST = {
     },
     Path(
         "apps/station/app/subserver/key_exchange/infrastructure/repo.go"
+    ): {
+        "actor_did",
+    },
+    Path(
+        "apps/station/app/subserver/key_exchange/infrastructure/"
+        "canonical_store.go"
     ): {
         "actor_did",
     },

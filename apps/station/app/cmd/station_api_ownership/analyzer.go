@@ -84,7 +84,8 @@ func analyze(options analysisOptions) analysisReport {
 		protoRoots = defaultProtoRoots
 	}
 
-	routes, routeDiagnostics, parsedCount := discoverRoutes(root, registrationRoots)
+	inventory := newSourceInventory(root)
+	routes, routeDiagnostics, parsedCount := discoverRoutes(inventory, registrationRoots)
 	report.Diagnostics = append(report.Diagnostics, routeDiagnostics...)
 	report.Summary.GoFilesParsed = parsedCount
 	report.Summary.RoutesDiscovered = len(routes)
@@ -99,7 +100,7 @@ func analyze(options analysisOptions) analysisReport {
 		evaluateRoutes(registry, report.Routes)...,
 	)
 
-	protoSymbols, protoDiagnostics := discoverProtoSymbols(root, protoRoots)
+	protoSymbols, protoDiagnostics := discoverProtoSymbols(inventory, protoRoots)
 	report.Diagnostics = append(report.Diagnostics, protoDiagnostics...)
 	report.Diagnostics = append(
 		report.Diagnostics,
@@ -108,7 +109,7 @@ func analyze(options analysisOptions) analysisReport {
 
 	supersededSymbols := allSupersededSymbols(registry)
 	supersededLocations, supersededDiagnostics := discoverSupersededSymbols(
-		root,
+		inventory,
 		sourceRoots,
 		supersededSymbols,
 	)
@@ -128,7 +129,7 @@ func analyze(options analysisOptions) analysisReport {
 	}
 
 	truthStoreLocations, truthStoreDiagnostics := discoverForbiddenTruthStores(
-		root,
+		inventory,
 		[]string{"apps/station/app", "apps/station/frame"},
 		registry.TargetAbsentTruthStores,
 	)
@@ -149,7 +150,7 @@ func analyze(options analysisOptions) analysisReport {
 
 	report.Diagnostics = append(
 		report.Diagnostics,
-		discoverForbiddenDDDImports(root, registry.DDDLayers)...,
+		discoverForbiddenDDDImports(inventory, registry.DDDLayers)...,
 	)
 
 	finalizeReport(&report)

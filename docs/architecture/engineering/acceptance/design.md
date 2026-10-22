@@ -8,6 +8,13 @@
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/`
 
+实验执行预算由 [execution-budget.md](execution-budget.md) 约束：
+Runner 冻结显式全量范围，生命周期阶段消费绝对 deadline，
+预留 cleanup/publish 尾部并在首个超标后停止所有后续 dispatch。
+Gate 成本和产品 proof 独立；未执行项保持 UNPROVEN。
+结构检查的显式 dependsOn 由同一个编译器处理，生产者只执行一次，
+消费者引用当前源码的原始 durable manifest；不自动合并业务资源。
+
 ---
 
 ## 1. 核心原则

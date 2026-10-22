@@ -353,6 +353,69 @@ class AcceptanceRunTest(unittest.TestCase):
             with self.subTest(values=values), self.assertRaises(SystemExit):
                 module.parse_service_profile_bindings(values)
 
+    def test_runtime_cells_are_bound_per_gate(self) -> None:
+        module = load_module()
+
+        self.assertEqual(
+            module.parse_runtime_cell_bindings(
+                [
+                    "chat-native-two-client-e2e=desktop-macos-native",
+                    "NCP-G03=desktop-windows-native",
+                ]
+            ),
+            {
+                "chat-native-two-client-e2e": "desktop-macos-native",
+                "NCP-G03": "desktop-windows-native",
+            },
+        )
+        for values in (
+            ["desktop-macos-native"],
+            ["chat-native-two-client-e2e="],
+            ["=desktop-macos-native"],
+            [
+                "chat-native-two-client-e2e=desktop-macos-native",
+                "chat-native-two-client-e2e=desktop-linux-native",
+            ],
+        ):
+            with self.subTest(values=values), self.assertRaises(SystemExit):
+                module.parse_runtime_cell_bindings(values)
+
+    def test_current_result_projection_is_bounded_to_proof_fields(self) -> None:
+        module = load_module()
+        envelope = module.current_result_proof_envelope(
+            {"commit": "abc", "workspaceDigest": "clean"},
+            [
+                {
+                    "id": "gate-a",
+                    "status": "passed",
+                    "completionStatus": "DONE",
+                    "proofStatus": "PROVEN",
+                    "runManifest": {"path": "manifest.json"},
+                    "largeProductReport": "x" * 2_000_000,
+                }
+            ],
+        )
+
+        self.assertEqual(
+            envelope,
+            {
+                "source": {
+                    "commit": "abc",
+                    "workspaceDigest": "clean",
+                },
+                "results": [
+                    {
+                        "id": "gate-a",
+                        "status": "passed",
+                        "completionStatus": "DONE",
+                        "proofStatus": "PROVEN",
+                        "runManifest": {"path": "manifest.json"},
+                    }
+                ],
+            },
+        )
+        self.assertLess(len(json.dumps(envelope)), 1000)
+
     def test_environment_provisioner_receives_only_its_profile_bindings(
         self,
     ) -> None:
@@ -1168,6 +1231,10 @@ class AcceptanceRunTest(unittest.TestCase):
         )
         self.assertNotIn("SYNTHETIC_SECRET", child_environment)
         self.assertNotIn("resolved-secret", json.dumps(child_environment))
+        self.assertEqual(
+            json.loads(child_environment["PT_ACCEPTANCE_PREREQUISITE_PROOFS"]),
+            [],
+        )
         self.assertEqual(
             json.loads(child_environment["PT_ACCEPTANCE_CURRENT_RESULTS"]),
             {
@@ -2509,6 +2576,57 @@ class AcceptanceRunTest(unittest.TestCase):
         self.assertEqual(
             result["traceability"]["missingFields"],
             ["sourcePhase", "sourceBom", "sourceSpec"],
+        )
+
+    def test_canonical_blocked_gate_report_preserves_blocked_result(self) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            worktree = root / "repo"
+            worktree.mkdir()
+            store = EvidenceStore(root / "artifacts", worktree=worktree)
+            run = store.begin_run("blocked-gate", source={})
+            report = new_report(
+                "blocked-gate",
+                phase="runtime preflight",
+                bom=("ENV-01",),
+                spec=("environment-runtime",),
+            )
+            report.status = "BLOCKED"
+            report.error = "required runtime is unavailable"
+            report.error_type = "BlockedError"
+            report.blocked_reason = "required runtime is unavailable"
+            report.blocked_resource = "runtime-cell:synthetic"
+            report.write(run.run_dir / "reports" / "blocked-gate.json")
+
+            result = module.enrich_result_with_run_artifacts(
+                {
+                    "id": "blocked-gate",
+                    "status": "failed",
+                    "exit_code": 2,
+                    "tier": "ci-cheap",
+                    "cleanupStatus": "not-required",
+                    "timedOut": False,
+                },
+                run,
+            )
+            result = module.standardize_result(
+                result,
+                "/tmp/acceptance-plan.json",
+            )
+            run.close()
+
+        self.assertEqual(result["status"], "blocked")
+        self.assertEqual(result["completionStatus"], "BLOCKED")
+        self.assertEqual(result["proofStatus"], "UNPROVEN")
+        self.assertFalse(result["sampleEmissionAllowed"])
+        self.assertEqual(
+            result["blockedReason"],
+            "required runtime is unavailable",
+        )
+        self.assertEqual(
+            result["blockedResource"],
+            "runtime-cell:synthetic",
         )
 
     def test_validation_artifact_does_not_replace_environment_report(

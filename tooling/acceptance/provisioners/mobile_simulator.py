@@ -23,6 +23,7 @@ import urllib.parse
 import urllib.request
 import zipfile
 from collections.abc import Callable, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
@@ -105,6 +106,7 @@ from tooling.acceptance.provisioners.mobile_native_build import (
     canonical_json_bytes,
     canonical_value_digest,
     create_build_identity,
+    parse_build_identity,
 )
 from tooling.acceptance.provisioners.remote_source_identity import (
     resolve_remote_source_identity,
@@ -2341,18 +2343,16 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
                 apple_assets_guard.restore,
             )
 
-            ios_device = self._create_isolated_ios_simulator(
+            ios_devices = self._create_isolated_ios_simulator_definitions(
                 spec,
                 command_env,
-                client_id="sim-ios",
-                device_name=spec.ios_device_name,
+                (
+                    ("sim-ios", spec.ios_device_name),
+                    ("sim-ios-peer", spec.ios_peer_device_name),
+                ),
             )
-            peer_device = self._create_isolated_ios_simulator(
-                spec,
-                command_env,
-                client_id="sim-ios-peer",
-                device_name=spec.ios_peer_device_name,
-            )
+            ios_device = ios_devices["sim-ios"]
+            peer_device = ios_devices["sim-ios-peer"]
             if ios_device["udid"] == peer_device["udid"]:
                 raise BlockedError(
                     reason=(
@@ -2366,57 +2366,66 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
                 "ios_udid": ios_device["udid"],
                 "runtime_root": str(runtime_root),
             }
-            for name in ("web", "ios"):
-                if name in spec.artifact_patterns:
-                    self._remove_artifact_matches(
+            concurrent_errors: dict[str, Exception] = {}
+            concurrent_results: dict[str, Any] = {}
+            with ThreadPoolExecutor(max_workers=3) as executor:
+                concurrent_work = {
+                    "sim-ios": executor.submit(
+                        self._boot_isolated_ios_simulator,
+                        ios_device["udid"],
+                        command_env,
+                        client_id="sim-ios",
+                    ),
+                    "sim-ios-peer": executor.submit(
+                        self._boot_isolated_ios_simulator,
+                        peer_device["udid"],
+                        command_env,
+                        client_id="sim-ios-peer",
+                    ),
+                    "ios-build": executor.submit(
+                        self._prepare_ios_application_build,
+                        manifest,
                         spec,
-                        name,
-                        runtime_root,
-                    )
-                    self.register_cleanup(
-                        f"build-artifact:{name}",
-                        lambda platform=name: self._remove_artifact_matches(
-                            spec,
-                            platform,
-                            runtime_root,
-                        ),
-                    )
-                command = tuple(
-                    item.replace(
-                        "{ios_udid}",
-                        substitutions["ios_udid"],
-                    ).replace(
-                        "{runtime_root}",
-                        substitutions["runtime_root"],
-                    )
-                    for item in spec.build_commands[name]
-                )
-                self._run_checked(
-                    command,
-                    env=build_environment,
-                    timeout=1800,
-                    resource=f"mobile-simulator:build:{name}",
-                )
-                if name == "web":
-                    apple_assets_guard.stage(
-                        self.repo_root / MOBILE_WEB_DIST_RELATIVE_PATH
-                    )
+                        build_environment,
+                        runtime_root=runtime_root,
+                        ios_udid=substitutions["ios_udid"],
+                        apple_assets_guard=apple_assets_guard,
+                    ),
+                }
+                for work_id in ("sim-ios", "sim-ios-peer", "ios-build"):
+                    try:
+                        concurrent_results[work_id] = (
+                            concurrent_work[work_id].result()
+                        )
+                    except Exception as error:
+                        concurrent_errors[work_id] = error
+            if concurrent_errors:
+                for work_id in ("sim-ios", "sim-ios-peer", "ios-build"):
+                    error = concurrent_errors.get(work_id)
+                    if error is not None:
+                        raise error
+
+            ios_build_root = self._ios_incremental_build_root(manifest, spec)
+            actual_build_identity = concurrent_results["ios-build"]
 
             applications = {
                 "ios": self._stage_application(
                     spec,
                     "ios",
-                    runtime_root,
+                    ios_build_root,
+                    stage_root=runtime_root,
                 )
             }
-            applications["ios"]["buildIdentity"] = build_identity
-            for device in (ios_device, peer_device):
-                self._deploy_ios(
-                    device["udid"],
-                    applications["ios"]["artifact"],
-                    spec.application_ids["ios"],
-                    command_env,
-                )
+            applications["ios"]["buildIdentity"] = actual_build_identity
+            self._deploy_ios_applications(
+                (
+                    ("sim-ios", ios_device["udid"]),
+                    ("sim-ios-peer", peer_device["udid"]),
+                ),
+                artifact=applications["ios"]["artifact"],
+                application_id=spec.application_ids["ios"],
+                env=command_env,
+            )
 
             client_devices = {
                 "sim-ios": {
@@ -2563,6 +2572,75 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
         client_id: str,
         device_name: str,
     ) -> dict[str, str]:
+        device = self._create_isolated_ios_simulator_definition(
+            spec,
+            env,
+            client_id=client_id,
+            device_name=device_name,
+        )
+        self._register_ios_simulator_cleanup(
+            client_id=client_id,
+            udid=device["udid"],
+            env=env,
+        )
+        self._boot_isolated_ios_simulator(
+            device["udid"],
+            env,
+            client_id=client_id,
+        )
+        return device
+
+    def _create_isolated_ios_simulator_definitions(
+        self,
+        spec: MobileSimulatorSpec,
+        env: Mapping[str, str],
+        targets: Sequence[tuple[str, str]],
+    ) -> dict[str, dict[str, str]]:
+        if not targets:
+            return {}
+
+        devices: dict[str, dict[str, str]] = {}
+        errors: dict[str, Exception] = {}
+        with ThreadPoolExecutor(max_workers=len(targets)) as executor:
+            futures = {
+                client_id: executor.submit(
+                    self._create_isolated_ios_simulator_definition,
+                    spec,
+                    env,
+                    client_id=client_id,
+                    device_name=device_name,
+                )
+                for client_id, device_name in targets
+            }
+            for client_id, _device_name in targets:
+                try:
+                    devices[client_id] = futures[client_id].result()
+                except Exception as error:
+                    errors[client_id] = error
+
+        for client_id, _device_name in targets:
+            device = devices.get(client_id)
+            if device is not None:
+                self._register_ios_simulator_cleanup(
+                    client_id=client_id,
+                    udid=device["udid"],
+                    env=env,
+                )
+        if errors:
+            for client_id, _device_name in targets:
+                error = errors.get(client_id)
+                if error is not None:
+                    raise error
+        return devices
+
+    def _create_isolated_ios_simulator_definition(
+        self,
+        spec: MobileSimulatorSpec,
+        env: Mapping[str, str],
+        *,
+        client_id: str,
+        device_name: str,
+    ) -> dict[str, str]:
         instance_name = (
             f"Peers Touch {client_id} {os.getpid()}-{secrets.token_hex(4)}"
         )
@@ -2585,6 +2663,39 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
                 reason="simctl create returned an invalid device identity",
                 resource=f"mobile-simulator:ios-create:{client_id}",
             )
+        return {
+            "udid": udid,
+            "name": device_name,
+            "runtime": spec.ios_runtime,
+        }
+
+    def _boot_isolated_ios_simulator(
+        self,
+        udid: str,
+        env: Mapping[str, str],
+        *,
+        client_id: str,
+    ) -> None:
+        self._run_checked(
+            ("xcrun", "simctl", "boot", udid),
+            env=env,
+            timeout=60,
+            resource=f"mobile-simulator:ios-boot:{client_id}",
+        )
+        self._run_checked(
+            ("xcrun", "simctl", "bootstatus", udid, "-b"),
+            env=env,
+            timeout=180,
+            resource=f"mobile-simulator:ios-ready:{client_id}",
+        )
+
+    def _register_ios_simulator_cleanup(
+        self,
+        *,
+        client_id: str,
+        udid: str,
+        env: Mapping[str, str],
+    ) -> None:
         self.register_cleanup(
             f"simulator-delete:{client_id}:{udid}",
             lambda: self._run_cleanup(
@@ -2592,12 +2703,6 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
                 env=env,
                 resource=f"mobile-simulator:ios-delete:{client_id}",
             ),
-        )
-        self._run_checked(
-            ("xcrun", "simctl", "boot", udid),
-            env=env,
-            timeout=60,
-            resource=f"mobile-simulator:ios-boot:{client_id}",
         )
         self.register_cleanup(
             f"simulator-shutdown:{client_id}:{udid}",
@@ -2607,17 +2712,6 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
                 resource=f"mobile-simulator:ios-shutdown:{client_id}",
             ),
         )
-        self._run_checked(
-            ("xcrun", "simctl", "bootstatus", udid, "-b"),
-            env=env,
-            timeout=180,
-            resource=f"mobile-simulator:ios-ready:{client_id}",
-        )
-        return {
-            "udid": udid,
-            "name": device_name,
-            "runtime": spec.ios_runtime,
-        }
 
     def _ready_android_emulator(
         self,
@@ -3156,11 +3250,13 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
         self,
         spec: MobileSimulatorSpec,
         platform: str,
-        runtime_root: Path,
+        build_root: Path,
+        *,
+        stage_root: Path | None = None,
     ) -> dict[str, str]:
-        matches = self._artifact_matches(spec, platform, runtime_root)
+        matches = self._artifact_matches(spec, platform, build_root)
         pattern = spec.artifact_patterns[platform].format(
-            runtime_root=str(runtime_root)
+            runtime_root=str(build_root)
         )
         if not os.path.isabs(pattern):
             pattern = str(self.repo_root / pattern)
@@ -3174,7 +3270,9 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
                 resource=f"mobile-simulator:{platform}-artifact",
             )
         source = matches[0]
-        destination_root = runtime_root / "applications" / platform
+        destination_root = (
+            stage_root if stage_root is not None else build_root
+        ) / "applications" / platform
         destination_root.mkdir(parents=True, exist_ok=False)
         destination = destination_root / source.name
         if source.is_dir():
@@ -3187,6 +3285,210 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
             "id": spec.application_ids[platform],
             "callbackScheme": spec.callback_schemes[platform],
         }
+
+    def _prepare_ios_application_build(
+        self,
+        manifest: RuntimeManifest,
+        spec: MobileSimulatorSpec,
+        env: Mapping[str, str],
+        *,
+        runtime_root: Path,
+        ios_udid: str,
+        apple_assets_guard: _GeneratedAppleAssetsGuard,
+    ) -> dict[str, Any]:
+        identity_json = env.get("PT_MOBILE_BUILD_IDENTITY_JSON")
+        if not isinstance(identity_json, str):
+            raise ProvisioningError(
+                "Mobile iOS build identity is missing from the build environment"
+            )
+        build_identity = parse_build_identity(identity_json)
+        ios_build_root = self._ios_incremental_build_root(manifest, spec)
+        cached = self._cached_ios_application(spec, ios_build_root)
+        if cached is not None:
+            _artifact, cached_build_identity = cached
+            return cached_build_identity
+
+        for name in ("web", "ios"):
+            build_root = ios_build_root if name == "ios" else runtime_root
+            if name in spec.artifact_patterns and name != "ios":
+                self._remove_artifact_matches(
+                    spec,
+                    name,
+                    build_root,
+                )
+                self.register_cleanup(
+                    f"build-artifact:{name}",
+                    lambda platform=name, root=build_root: (
+                        self._remove_artifact_matches(
+                            spec,
+                            platform,
+                            root,
+                        )
+                    ),
+                )
+            command = tuple(
+                item.replace(
+                    "{ios_udid}",
+                    ios_udid,
+                ).replace(
+                    "{runtime_root}",
+                    str(build_root),
+                )
+                for item in spec.build_commands[name]
+            )
+            self._run_checked(
+                command,
+                env=env,
+                timeout=1800,
+                resource=f"mobile-simulator:build:{name}",
+            )
+            if name == "web":
+                apple_assets_guard.stage(
+                    self.repo_root / MOBILE_WEB_DIST_RELATIVE_PATH
+                )
+        self._record_ios_build_cache(
+            spec,
+            ios_build_root,
+            build_identity=build_identity,
+        )
+        return build_identity
+
+    def _ios_incremental_build_root(
+        self,
+        manifest: RuntimeManifest,
+        spec: MobileSimulatorSpec,
+    ) -> Path:
+        cache_identity = canonical_value_digest(
+            {
+                "source": {
+                    "worktree": manifest.source_worktree,
+                    "commit": manifest.source_commit,
+                    "workspaceDigest": manifest.workspace_digest,
+                },
+                "commands": {
+                    name: list(spec.build_commands[name])
+                    for name in ("web", "ios")
+                },
+                "environment": spec.build_environment,
+                "host": {
+                    "machine": platform.machine(),
+                    "macVersion": platform.mac_ver()[0],
+                },
+            }
+        )
+        cache_base = (self.runtime_cache_base / "ios-build").resolve()
+        build_root = (cache_base / cache_identity).resolve()
+        if cache_base not in build_root.parents:
+            raise BlockedError(
+                reason="Mobile iOS build cache escaped its external root",
+                resource="mobile-simulator:ios-build-cache",
+            )
+        build_root.mkdir(parents=True, exist_ok=True)
+        return build_root
+
+    @staticmethod
+    def _ios_build_cache_manifest(build_root: Path) -> Path:
+        return build_root / "acceptance-ios-build-cache.json"
+
+    def _cached_ios_application(
+        self,
+        spec: MobileSimulatorSpec,
+        build_root: Path,
+    ) -> tuple[Path, dict[str, Any]] | None:
+        manifest_path = self._ios_build_cache_manifest(build_root)
+        try:
+            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        if (
+            not isinstance(payload, dict)
+            or set(payload)
+            != {
+                "artifactKind",
+                "artifactRelativePath",
+                "artifactSha256",
+                "buildIdentity",
+            }
+            or payload.get("artifactKind")
+            != "acceptance-mobile-ios-build-cache"
+        ):
+            return None
+        relative = payload.get("artifactRelativePath")
+        digest = payload.get("artifactSha256")
+        build_identity = payload.get("buildIdentity")
+        if (
+            not isinstance(relative, str)
+            or not relative
+            or not isinstance(digest, str)
+            or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+            or not isinstance(build_identity, dict)
+        ):
+            return None
+        try:
+            build_identity = parse_build_identity(
+                canonical_json_bytes(build_identity).decode("ascii")
+            )
+        except MobileNativeBuildError:
+            return None
+        root = build_root.resolve()
+        artifact = (root / relative).resolve()
+        matches = [
+            match.resolve()
+            for match in self._artifact_matches(spec, "ios", build_root)
+        ]
+        if (
+            root not in artifact.parents
+            or artifact.is_symlink()
+            or not artifact.is_dir()
+            or matches != [artifact]
+            or _artifact_digest(artifact) != digest
+        ):
+            return None
+        return artifact, build_identity
+
+    def _record_ios_build_cache(
+        self,
+        spec: MobileSimulatorSpec,
+        build_root: Path,
+        *,
+        build_identity: Mapping[str, Any],
+    ) -> None:
+        matches = self._artifact_matches(spec, "ios", build_root)
+        if len(matches) != 1:
+            raise BlockedError(
+                reason=(
+                    "Mobile iOS build cache cannot seal an ambiguous "
+                    f"application set: {len(matches)} artifacts"
+                ),
+                resource="mobile-simulator:ios-build-cache",
+            )
+        root = build_root.resolve()
+        artifact = matches[0].resolve()
+        if root not in artifact.parents or artifact.is_symlink():
+            raise BlockedError(
+                reason="Mobile iOS cached application escaped its build root",
+                resource="mobile-simulator:ios-build-cache",
+            )
+        manifest_path = self._ios_build_cache_manifest(root)
+        temporary = manifest_path.with_name(
+            f".{manifest_path.name}.{os.getpid()}.{secrets.token_hex(4)}"
+        )
+        temporary.write_text(
+            json.dumps(
+                {
+                    "artifactKind": "acceptance-mobile-ios-build-cache",
+                    "artifactRelativePath": artifact.relative_to(root).as_posix(),
+                    "artifactSha256": _artifact_digest(artifact),
+                    "buildIdentity": dict(build_identity),
+                },
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        os.replace(temporary, manifest_path)
 
     def _stage_ios_static_assets(self) -> None:
         source = (self.repo_root / "apps" / "mobile" / "dist").resolve()
@@ -3273,6 +3575,69 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
         application_id: str,
         env: Mapping[str, str],
     ) -> None:
+        self._deploy_ios_application(
+            udid,
+            artifact,
+            application_id,
+            env,
+        )
+        self._register_ios_application_cleanup(
+            udid=udid,
+            application_id=application_id,
+            env=env,
+        )
+
+    def _deploy_ios_applications(
+        self,
+        targets: Sequence[tuple[str, str]],
+        *,
+        artifact: str,
+        application_id: str,
+        env: Mapping[str, str],
+    ) -> None:
+        if not targets:
+            return
+
+        completed: set[str] = set()
+        errors: dict[str, Exception] = {}
+        with ThreadPoolExecutor(max_workers=len(targets)) as executor:
+            futures = {
+                client_id: executor.submit(
+                    self._deploy_ios_application,
+                    udid,
+                    artifact,
+                    application_id,
+                    env,
+                )
+                for client_id, udid in targets
+            }
+            for client_id, _udid in targets:
+                try:
+                    futures[client_id].result()
+                    completed.add(client_id)
+                except Exception as error:
+                    errors[client_id] = error
+
+        for client_id, udid in targets:
+            if client_id in completed:
+                self._register_ios_application_cleanup(
+                    udid=udid,
+                    application_id=application_id,
+                    env=env,
+                )
+        if errors:
+            for client_id, _udid in targets:
+                error = errors.get(client_id)
+                if error is not None:
+                    raise error
+
+    def _deploy_ios_application(
+        self,
+        udid: str,
+        artifact: str,
+        application_id: str,
+        env: Mapping[str, str],
+    ) -> None:
         self._run_cleanup(
             ("xcrun", "simctl", "uninstall", udid, application_id),
             env=env,
@@ -3284,6 +3649,14 @@ class MobileSimulatorProvisioner(EnvironmentProvisioner):
             timeout=180,
             resource="mobile-simulator:ios-install",
         )
+
+    def _register_ios_application_cleanup(
+        self,
+        *,
+        udid: str,
+        application_id: str,
+        env: Mapping[str, str],
+    ) -> None:
         self.register_cleanup(
             f"application-uninstall:ios:{udid}:{application_id}",
             lambda: self._run_cleanup(

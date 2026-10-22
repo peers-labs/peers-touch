@@ -46,11 +46,13 @@ class StorageGovernanceContractTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn("pub fn measure_storage(", core)
-        self.assertIn("FileIdentity", core)
+        self.assertIn("pub struct PhysicalStorageFile", core)
+        self.assertIn("pub physical_identity: String", core)
         self.assertNotIn("rusqlite", core)
         self.assertNotIn("tauri", core)
-        self.assertIn("measure_storage(StorageAccountingInput", desktop_engine)
-        self.assertIn("measure_storage(StorageAccountingInput", mobile_engine)
+        for engine in (desktop_engine, mobile_engine):
+            self.assertIn("measure_storage(", engine)
+            self.assertIn("StorageAccountingInput {", engine)
 
     def test_both_clients_register_scope_fenced_snapshot_commands(self) -> None:
         desktop_command = (
@@ -274,7 +276,7 @@ class StorageGovernanceContractTest(unittest.TestCase):
             ROOT / "apps/mobile/src/pages/settings/SettingsSections.tsx"
         ).read_text(encoding="utf-8")
         recovery = (
-            ROOT / "apps/desktop/src-tauri/src/messaging/recovery.rs"
+            ROOT / "packages/messaging-core/src/recovery/types.rs"
         ).read_text(encoding="utf-8")
 
         self.assertIn("message ChatStorageRetentionRequest", proto)
@@ -362,6 +364,9 @@ class StorageGovernanceContractTest(unittest.TestCase):
         mobile_ui = (
             ROOT / "apps/mobile/src/pages/ChatPage.tsx"
         ).read_text(encoding="utf-8")
+        mobile_overlay = (
+            ROOT / "apps/mobile/src/pages/chat/ChatOverlayHost.tsx"
+        ).read_text(encoding="utf-8")
 
         expected_gates = [
             "chat-storage-delete-reclaim-e2e",
@@ -393,7 +398,7 @@ class StorageGovernanceContractTest(unittest.TestCase):
         ):
             self.assertIn(symbol, core)
         self.assertIn('data-chat-history-action="clear"', desktop_ui)
-        self.assertIn("data-chat-actions-open", mobile_ui)
+        self.assertIn("'chat.conversation-actions'", mobile_overlay)
         self.assertIn("data-chat-conversation-clear-result", mobile_ui)
         self.assertIn(
             "storage.conversation-clear.seed",

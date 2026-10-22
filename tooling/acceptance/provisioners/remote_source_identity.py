@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import shlex
+import subprocess
 from collections.abc import Mapping
 from typing import Any
 
@@ -234,11 +235,19 @@ def resolve_remote_source_identity(
         "print(h.hexdigest())"
     )
     if transport.target.remote_platform == RemotePlatform.WINDOWS:
-        completed = transport.run_argv(
-            ["python", "-c", _windows_source_identity_script(), deploy_path],
-            timeout=30,
-            check=False,
-        )
+        try:
+            completed = transport.run_argv(
+                ["python", "-c", _windows_source_identity_script(), deploy_path],
+                timeout=30,
+                check=False,
+            )
+        except (OSError, ProvisioningError, subprocess.TimeoutExpired) as error:
+            raise BlockedError(
+                reason=(
+                    f"Cannot attest deployment {deploy_environment}: {error}"
+                ),
+                resource=f"deployment-source:{deploy_environment}",
+            ) from error
         try:
             values = json.loads(completed.stdout.strip().splitlines()[-1])
         except (IndexError, json.JSONDecodeError) as error:
@@ -273,11 +282,19 @@ def resolve_remote_source_identity(
         "if test -z \"$status\"; then echo clean; else echo dirty; fi && "
         f"python3 -c {shlex.quote(digest_script)}"
     )
-    completed = transport.run_argv(
-        ["bash", "-lc", remote_command],
-        timeout=30,
-        check=False,
-    )
+    try:
+        completed = transport.run_argv(
+            ["bash", "-lc", remote_command],
+            timeout=30,
+            check=False,
+        )
+    except (OSError, ProvisioningError, subprocess.TimeoutExpired) as error:
+        raise BlockedError(
+            reason=(
+                f"Cannot attest deployment {deploy_environment}: {error}"
+            ),
+            resource=f"deployment-source:{deploy_environment}",
+        ) from error
     lines = [
         line.strip()
         for line in completed.stdout.splitlines()

@@ -29,9 +29,39 @@ if SPEC is None or SPEC.loader is None:
     raise RuntimeError(f"failed to load {SCRIPT}")
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
+FRAMEWORK_PREREQUISITES = {
+    "architecture-module-governance", "architecture-registry-self",
+    "architecture-host-contract-self", "agent-integration-framework-self",
+    "acceptance-run-static-gate", "acceptance-planner-framework-self",
+    "acceptance-validator-framework-self", "acceptance-boundary-framework-self",
+    "development-workflow-control-plane",
+}
 
 
 class ChangedPathsTests(unittest.TestCase):
+    def test_cli_renders_structural_judgment_without_launch_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "registry.yaml").write_text(json.dumps({"rules": [{
+                "id": "synthetic", "when": {"paths": ["synthetic/**"]},
+                "require": ["consumer"],
+            }]}))
+            (root / "gates.yaml").write_text(json.dumps({"gates": {
+                "producer": {"command": "false", "tier": "ci-structure"},
+                "consumer": {"judgment": "all-prerequisites", "dependsOn": ["producer"],
+                             "tier": "ci-structure"},
+            }}))
+            completed = subprocess.run(
+                [sys.executable, str(SCRIPT), "--root", str(root),
+                 "--changed-file", "synthetic/example", "--output", str(root / "plan.json")],
+                cwd=ROOT, capture_output=True, text=True, timeout=15,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            self.assertIn("judge immutable prerequisite proofs", completed.stdout)
+            projection = json.loads((root / "plan.json").read_text())
+            self.assertEqual([gate["id"] for gate in projection["selected_gates"]],
+                             ["producer", "consumer"])
+
     def test_make_entrypoints_default_to_external_evidence_store(self) -> None:
         makefile = (
             ROOT / "tooling" / "make" / "acceptance.mk"
@@ -421,7 +451,7 @@ class BehaviorRuleTests(unittest.TestCase):
                 self.assertTrue(expected.issubset(self.selected_ids(path)))
 
     def test_acceptance_tooling_selects_all_self_validation_gates(self) -> None:
-        expected = {
+        expected = FRAMEWORK_PREREQUISITES | {
             "acceptance-plan-self",
             "acceptance-infra-validation",
             "acceptance-workflow-contract",
@@ -490,7 +520,7 @@ class BehaviorRuleTests(unittest.TestCase):
                 "unified-client-messaging-core-contract",
                 "messaging-owner-hard-cut-zero",
                 "unified-client-messaging-e2e",
-            },
+            } | FRAMEWORK_PREREQUISITES,
         )
 
     def test_message_publishing_narrowing_preserves_existing_chat_owners(
@@ -786,7 +816,7 @@ class BehaviorRuleTests(unittest.TestCase):
                 "acceptance-infra-validation",
                 "acceptance-runtime-provisioning-self",
                 "acceptance-workflow-contract",
-            },
+            } | FRAMEWORK_PREREQUISITES,
         )
 
 

@@ -320,21 +320,35 @@ def redact_value_with_values(
     value: Any,
     secret_values: tuple[str, ...],
 ) -> Any:
-    redacted = redact_value(value)
-    if isinstance(redacted, dict):
-        return {
-            redact_text_with_values(str(key), secret_values):
-                redact_value_with_values(item, secret_values)
-            for key, item in redacted.items()
-        }
-    if isinstance(redacted, list):
-        return [
-            redact_value_with_values(item, secret_values)
-            for item in redacted
-        ]
-    if isinstance(redacted, str):
-        return redact_text_with_values(redacted, secret_values)
-    return redacted
+    representations = _secret_representations(secret_values)
+
+    def text(value: str) -> str:
+        result = redact_text(value)
+        for representation in representations:
+            result = result.replace(representation, REDACTED)
+        return result
+
+    def visit(item: Any) -> Any:
+        if isinstance(item, Mapping):
+            return {
+                text(str(key)): (
+                    child if is_sensitive_key(key) and isinstance(child, bool)
+                    else REDACTED if is_sensitive_key(key)
+                    else visit(child)
+                )
+                for key, child in item.items()
+            }
+        if isinstance(item, (list, tuple)):
+            return [visit(child) for child in item]
+        if isinstance(item, str):
+            return text(item)
+        if isinstance(item, (bytes, bytearray, memoryview)):
+            return REDACTED
+        if item is None or isinstance(item, (bool, int, float)):
+            return item
+        return text(str(item))
+
+    return visit(value)
 
 
 def redact_artifact_bytes(

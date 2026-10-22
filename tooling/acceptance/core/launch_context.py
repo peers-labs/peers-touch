@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import math
@@ -52,6 +53,16 @@ DEFAULT_MAX_REQUEST_IDS = 4096
 DEFAULT_REQUEST_TIMEOUT_SECONDS = 30.0
 DEFAULT_QUIESCE_TIMEOUT_SECONDS = 5.0
 _LENGTH_PREFIX = struct.Struct("!I")
+
+_SPAWN_RESOURCE_CATEGORIES = {
+    errno.E2BIG: "argument-environment-limit",
+    errno.EAGAIN: "process-resource-limit",
+    errno.EMFILE: "process-file-descriptor-limit",
+    errno.ENFILE: "system-file-descriptor-limit",
+    errno.ENOMEM: "memory-pressure",
+    errno.ENOENT: "executable-unavailable",
+    errno.EACCES: "permission-denied",
+}
 
 
 class EphemeralLaunchContextState(str, Enum):
@@ -273,9 +284,15 @@ class GateProcessLauncher:
             )
             process = subprocess.Popen(launch_argv, **popen_options)
         except OSError as error:
+            errno_name = errno.errorcode.get(error.errno or 0, "UNKNOWN")
             raise EphemeralLaunchBindFailed(
-                "failed to spawn Gate process",
+                f"failed to spawn Gate process ({errno_name})",
                 operation="gate_process",
+                errno_name=errno_name,
+                resource_category=_SPAWN_RESOURCE_CATEGORIES.get(
+                    error.errno,
+                    "operating-system-spawn-failure",
+                ),
             ) from error
         finally:
             if binding is not None:
@@ -343,6 +360,10 @@ class GateProcessLauncher:
                 process.terminate()
         except ProcessLookupError:
             return
+        except PermissionError:
+            # macOS can report EPERM for a zombie-only process group. The
+            # bounded extinction probe remains authoritative.
+            return
         except OSError as error:
             raise EphemeralLaunchCleanupFailed(
                 "Gate process group could not be signalled",
@@ -359,6 +380,10 @@ class GateProcessLauncher:
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
             return
+        except PermissionError:
+            # Do not turn macOS's transient zombie-group EPERM into a cleanup
+            # failure; the probe below still fails closed if the group lives.
+            pass
         except OSError as error:
             raise EphemeralLaunchCleanupFailed(
                 "Gate process descendants could not be killed",

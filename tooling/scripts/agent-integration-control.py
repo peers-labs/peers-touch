@@ -190,17 +190,31 @@ def canonical_catalog(root: Path) -> tuple[list[Path], Path, dict[str, object]]:
 
     entries: list[dict[str, object]] = []
     roots = [*skills, plugin]
-    for source_root in roots:
-        for candidate in sorted(source_root.rglob("*")):
-            if candidate.is_symlink():
+
+    def source_files(directory: Path):
+        with os.scandir(directory) as listing:
+            children = sorted(listing, key=lambda entry: entry.name)
+        for entry in children:
+            if entry.is_symlink():
                 raise RuntimeError("CANONICAL_INTEGRATION_SYMLINK")
-            if not candidate.is_file():
-                continue
+            if entry.is_dir(follow_symlinks=False):
+                yield from source_files(Path(entry.path))
+            elif entry.is_file(follow_symlinks=False):
+                yield entry
+
+    for source_root in roots:
+        if source_root.is_symlink():
+            raise RuntimeError("CANONICAL_INTEGRATION_SYMLINK")
+        # DirEntry retains the type/stat observation; avoid resolving and
+        # statting every descendant repeatedly in a fixed canonical tree.
+        candidates = sorted(source_files(source_root), key=lambda entry: entry.path)
+        for entry in candidates:
+            candidate = Path(entry.path)
             content = candidate.read_bytes()
             entries.append(
                 {
                     "path": candidate.relative_to(root).as_posix(),
-                    "mode": candidate.stat().st_mode & 0o777,
+                    "mode": entry.stat(follow_symlinks=False).st_mode & 0o777,
                     "size": len(content),
                     "sha256": hashlib.sha256(content).hexdigest(),
                 }

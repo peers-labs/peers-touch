@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-22
-covered_docs_hash: fa9c1c918e1896f07dbdbb685d6d324782b83838277b9fee824a3a207bbee070
+covered_docs_hash: 0c74991d17228e05c715e3225cd594691ae02fac4e33c64f6181d1b3578c17e6
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,38 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## Actionable Blocked Result Review
+
+The Gate execution contract now separates a legitimate blocked proof from an
+incomplete diagnostic handoff. Reports verify the original sealed Gate result,
+source identity, artifact hashes and inventory before projecting observations.
+Consumers retain root dependency paths and original producer references.
+Missing resource checks do not prove absent devices or an unfinished product.
+
+The existing fail-closed, exact-source and evidence-honesty rules already reject
+these overclaims; no SKILL.md policy change is required. Reporter regressions
+cover valid blocked diagnostics, missing and cyclic dependencies, changed
+aggregate fields, stale source, corrupted or borrowed artifacts, secret
+redaction, structural judgments and the real CLI refusal path. Business owners
+still supply resource observations and recovery actions. These additions do
+not waive product evidence, clean-source runtime or resource authority guards.
+
+## Gate Execution Contract Review
+
+The Acceptance design adds explicit prerequisite closure, lifecycle budgets,
+source-bound repair attempts and separate terminal cost ownership. Structural
+consumers reference original durable producer manifests; missing proof blocks
+dispatch. Interrupted active Gates retain failed, partial and unproven state,
+while untouched Gates remain unexecuted. Scope, thresholds and product proof
+strength stay fixed across repairs.
+
+These changes use the existing exact-source, explicit-scope, cleanup and
+failure-honesty review rules. No `SKILL.md` change is needed. Synthetic Runner
+fixtures now verify unique producers, cancellation, failed prerequisite
+isolation, publication interruption and repair qualification. The prerequisite
+proof invariant and bounded Station inventory pitfall document the ownership
+contracts. Business scenario reuse and native product proof remain unproven.
 
 ## Mobile Origin Contract Review
 

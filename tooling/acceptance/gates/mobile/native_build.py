@@ -10,6 +10,7 @@ from typing import Any, Mapping
 
 from tooling.acceptance.core import (
     AcceptanceGate,
+    BlockedError,
     GateError,
     load_runtime_manifest,
 )
@@ -34,7 +35,10 @@ def validate_mobile_native_build(
         or source.get("workspaceDigest") != "clean"
         or not source.get("commit")
     ):
-        raise GateError("Mobile native build source identity is not clean")
+        raise BlockedError(
+            reason="Mobile native build source identity is not clean",
+            resource="mobile-native-build:source",
+        )
     mobile = manifest.get("mobileSimulator")
     applications = (
         mobile.get("applications")

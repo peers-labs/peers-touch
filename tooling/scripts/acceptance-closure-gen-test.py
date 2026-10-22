@@ -28,7 +28,7 @@ class AcceptanceClosureGeneratorTests(unittest.TestCase):
             REPO_ROOT / "tooling" / "acceptance" / "gates.yaml"
         )["gates"]
 
-    def test_w11_preserves_linux_claim_and_product_closure_gate(self) -> None:
+    def test_w11_preserves_macos_claim_and_product_closure_gate(self) -> None:
         self.assertEqual(
             MODULE.validate_contract(self.contract, self.gates),
             [],
@@ -39,11 +39,11 @@ class AcceptanceClosureGeneratorTests(unittest.TestCase):
 
         self.assertEqual(
             plan["claimed_runtime_cell"],
-            "desktop-linux-native",
+            "desktop-macos-native",
         )
         self.assertEqual(
             manifest["claimed_runtime_cell"],
-            "desktop-linux-native",
+            "desktop-macos-native",
         )
         self.assertEqual(
             manifest["canonical_range"],
@@ -75,6 +75,23 @@ class AcceptanceClosureGeneratorTests(unittest.TestCase):
         self.assertLess(
             gate_ids.index("chat-native-product-closure-e2e"),
             gate_ids.index("chat-w11-completion-audit"),
+        )
+        completion_audit = plan["selected_gates"][-1]
+        self.assertEqual(
+            completion_audit["dependsOn"],
+            gate_ids[:-1],
+        )
+
+    def test_rejects_completion_audit_dependency_drift(self) -> None:
+        gates = copy.deepcopy(self.gates)
+        gates["chat-w11-completion-audit"]["dependsOn"] = ["proto-build"]
+
+        errors = MODULE.validate_contract(self.contract, gates)
+
+        self.assertIn(
+            "chat-w11-completion-audit dependsOn must exactly match "
+            "the preceding gate_order",
+            errors,
         )
 
     def test_rejects_runtime_cell_not_supported_by_required_gate(self) -> None:

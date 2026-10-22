@@ -82,9 +82,6 @@ class MobileSocialFacadeContractGate(AcceptanceGate):
     def _assert_source_contract(self) -> None:
         page_sources = list((REPO_ROOT / "apps/mobile/src/pages").rglob("*.ts"))
         page_sources.extend((REPO_ROOT / "apps/mobile/src/pages").rglob("*.tsx"))
-        page_sources.append(
-            REPO_ROOT / "apps/mobile/src/runtimes/socialProjectionRuntime.ts"
-        )
         forbidden = ("createMomentsGateway", "MomentsGateway", "privateMomentsRuntime")
         hits = [
             f"{path.relative_to(REPO_ROOT)}:{symbol}"

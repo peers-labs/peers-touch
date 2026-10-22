@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -34,7 +35,6 @@ from tooling.acceptance.finalizers import (
     load_strict_json_object,
     loads_strict_json_value,
 )
-from tooling.acceptance.provisioners import get_provisioner
 
 AGENT_V2_SCHEMA_ROOT = REPO_ROOT / "tooling/acceptance/schemas/agent-v2"
 TUPLE_FIELDS = (
@@ -2112,23 +2112,16 @@ def validate_finalizer_contracts(
 
 def run_plan_for_paths(repo_root: Path, acceptance_root: Path, paths: list[str]) -> dict[str, Any]:
     script = repo_root / "tooling/scripts/acceptance-plan.py"
-    code = (
-        "import importlib.util, json, pathlib, sys\n"
-        f"sys.path.insert(0, {str(script.parent)!r})\n"
-        f"spec = importlib.util.spec_from_file_location('acceptance_plan', {str(script)!r})\n"
-        "module = importlib.util.module_from_spec(spec)\n"
-        "spec.loader.exec_module(module)\n"
-        f"result = module.plan(pathlib.Path({str(acceptance_root)!r}), {paths!r})\n"
-        "print(json.dumps(result, ensure_ascii=False))\n"
-    )
-    completed = subprocess.run(
-        ["python3", "-c", code],
-        cwd=repo_root,
-        check=True,
-        text=True,
-        capture_output=True,
-    )
-    return json.loads(completed.stdout)
+    spec = importlib.util.spec_from_file_location("acceptance_plan", script)
+    require(spec is not None and spec.loader is not None, "canonical planner is unavailable")
+    previous_path = list(sys.path)
+    try:
+        sys.path.insert(0, str(script.parent))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module.plan(acceptance_root, paths)
+    finally:
+        sys.path[:] = previous_path
 
 
 def flatten_feature_gates(features: list[dict[str, Any]], feature_ids: list[str]) -> set[str]:
@@ -2139,6 +2132,18 @@ def flatten_feature_gates(features: list[dict[str, Any]], feature_ids: list[str]
         require(feature is not None, f"capability references missing feature: {feature_id}")
         gates.update(feature.get("required_gates", []))
     return gates
+
+
+def required_gate_closure(
+    gate_defs: dict[str, Any], required_gate_ids: set[str],
+) -> set[str]:
+    from tooling.acceptance.core.execution_graph import compile_graph
+    from tooling.acceptance.core.execution_budget import ExecutionBudgetError
+    try:
+        graph = compile_graph(gate_defs, sorted(required_gate_ids))
+    except ExecutionBudgetError as error:
+        raise RuntimeError(f"STRUCTURAL_GAP: {error}") from error
+    return set(graph["dispatchGateIds"])
 
 
 def validate_gate_catalog(
@@ -2159,6 +2164,7 @@ def validate_gate_catalog(
         not missing_gate_ids,
         f"STRUCTURAL_GAP: required gates missing from gates.yaml: {missing_gate_ids}",
     )
+    required_gate_ids = required_gate_closure(gate_defs, required_gate_ids)
     agent_v2_contract = load_agent_v2_contract()
     agent_v2_matrix = matrix_identity(agent_v2_contract)
     for gate_id in sorted(required_gate_ids):
@@ -2198,6 +2204,14 @@ def validate_gate_catalog(
 
 
 def validate_gate_launch(gate_id: str, gate: dict[str, Any]) -> None:
+    if "judgment" in gate:
+        require(
+            gate["judgment"] == "all-prerequisites"
+            and bool(gate.get("dependsOn"))
+            and "command" not in gate and "argv" not in gate,
+            f"{gate_id}: invalid prerequisite judgment",
+        )
+        return
     has_command = "command" in gate
     has_argv = "argv" in gate
     require(
@@ -2262,6 +2276,8 @@ def is_supported_context_argv(argv: list[str]) -> bool:
 
 
 def gate_launch_arguments(gate: dict[str, Any]) -> list[str]:
+    if "judgment" in gate:
+        return []
     if "argv" in gate:
         return list(gate["argv"])
     return str(gate["command"]).split()
@@ -2365,10 +2381,13 @@ def validate_synthetic_paths(
     def check_paths(source_id: str, paths: list[str]) -> None:
         for path_str in paths:
             if "*" in path_str or "?" in path_str or "[" in path_str:
-                matches = glob_module.glob(
-                    str(repo_root / path_str), recursive=True
+                # Existence needs one match, not a traversal of every generated
+                # artifact, dependency and build directory under a broad **.
+                match = next(
+                    glob_module.iglob(str(repo_root / path_str), recursive=True),
+                    None,
                 )
-                if not matches:
+                if match is None:
                     stale.append({"source": source_id, "path": path_str, "type": "glob_no_match"})
             else:
                 if not (repo_root / path_str).exists():
@@ -2460,6 +2479,8 @@ def validate_domain_contract_closure(
                 sort_keys=True,
             )
         )
+    else:
+        required_gates = required_gate_closure(gate_defs, required_gates)
 
     environment_gates: dict[str, set[str]] = {}
     provisioning_wiring: list[dict[str, str]] = []
@@ -2517,6 +2538,8 @@ def validate_domain_contract_closure(
             )
             continue
         try:
+            from tooling.acceptance.provisioners import get_provisioner
+
             get_provisioner(contract)
         except ProvisioningError as error:
             unregistered_environments.append(
@@ -2774,7 +2797,14 @@ def validate_domain(
     )
     validate_gate_inheritance(repo_root, gate_defs, required_gates)
     validate_gate_import_isolation(repo_root, gate_defs, required_gates)
-    validate_synthetic_paths(repo_root, selected, features)
+    selected_features = {
+        feature_id for capability in selected
+        for feature_id in capability.get("features", [])
+    }
+    validate_synthetic_paths(
+        repo_root, selected,
+        [feature for feature in features if feature.get("id") in selected_features],
+    )
     passed_gates = latest_passed_gates(
         store,
         validation_gate_id,
@@ -2837,7 +2867,14 @@ def validate_infra(
     )
     validate_gate_inheritance(repo_root, gate_defs, required_gates)
     validate_gate_import_isolation(repo_root, gate_defs, required_gates)
-    validate_synthetic_paths(repo_root, selected, features)
+    selected_features = {
+        feature_id for capability in selected
+        for feature_id in capability.get("features", [])
+    }
+    validate_synthetic_paths(
+        repo_root, selected,
+        [feature for feature in features if feature.get("id") in selected_features],
+    )
     passed_gates = latest_passed_gates(
         store,
         current_gate_id,

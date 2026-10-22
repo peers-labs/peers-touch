@@ -163,6 +163,18 @@ class EphemeralLaunchTransportUnsupported(EphemeralLaunchError):
 class EphemeralLaunchBindFailed(EphemeralLaunchError):
     code = "EPHEMERAL_LAUNCH_BIND_FAILED"
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        operation: str = "",
+        errno_name: str = "",
+        resource_category: str = "",
+    ) -> None:
+        super().__init__(message, operation=operation)
+        self.errno_name = errno_name
+        self.resource_category = resource_category
+
 
 class EphemeralLaunchHandshakeFailed(EphemeralLaunchError):
     code = "EPHEMERAL_LAUNCH_HANDSHAKE_FAILED"

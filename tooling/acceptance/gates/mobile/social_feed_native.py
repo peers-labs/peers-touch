@@ -76,8 +76,11 @@ class MobileSocialFeedNativeGate(AcceptanceGate):
         )
         gateway = self._read("apps/mobile/src/services/gateways/momentsGateway.ts")
         page = self._read("apps/mobile/src/pages/MomentsPage.tsx")
+        scope_header = self._read(
+            "apps/mobile/src/pages/moments/MomentsScopeHeader.tsx"
+        )
         item = self._read("apps/mobile/src/pages/moments/MomentFeedItem.tsx")
-        styles = self._read("apps/mobile/src/styles.css")
+        styles = self._read("apps/mobile/src/pages/moments/Moments.css")
 
         self._require_markers(
             facade,
@@ -127,23 +130,30 @@ class MobileSocialFeedNativeGate(AcceptanceGate):
             page,
             (
                 "surfaceKey={`moments:feed:${feedScope}`}",
-                "className=\"moments-scope-segment\"",
                 "projection?.[feedScope]",
             ),
             "Moments page",
         )
         self._require_markers(
+            scope_header,
+            ("className=\"moments-scope\"",),
+            "Moments scope header",
+        )
+        self._require_markers(
             item,
-            ("data-moment-content-kind={contentKind}", "renderStructuredContent()"),
+            (
+                "data-moment-content-kind={post.content.case ?? 'unknown'}",
+                "<MomentContent post={post} onOpenMedia={onOpenMedia} />",
+            ),
             "Moment feed item",
         )
         self._require_markers(
             styles,
             (
-                ".moments-scope-segment",
-                "height: 36px;",
-                ".moments-scope-control",
-                "height: 32px;",
+                ".moments-scope {",
+                "flex: 0 0 36px;",
+                ".moments-scope button {",
+                "min-height: 32px;",
             ),
             "Moments feed styles",
         )

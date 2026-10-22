@@ -8,6 +8,12 @@
 > **Owner**: Architecture Team
 > **Module**: `tooling/acceptance/core/`
 
+本轮 [执行预算实验](execution-budget.md) 在既有 Runner 和
+GateProcessLauncher 集成 scope、deadline、计时和停止记录。
+YAML governance parser 使用 Node 的显式 `yaml` 依赖，
+删除跨 Python 解析子进程；输入与 alias expansion 有界，失败不跳过 registry。
+共享场景与具体资源迁移尚未发生，旧产品证明要求保持有效。
+
 ---
 
 ## 1. 与现有模块的映射

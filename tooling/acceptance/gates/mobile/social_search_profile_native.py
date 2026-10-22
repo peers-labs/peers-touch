@@ -122,7 +122,9 @@ class MobileSocialSearchProfileNativeGate(AcceptanceGate):
             profile,
             (
                 "loadAuthoredPosts(actorPtid)",
-                "dispatchOpenContactChat(actorPtid, directFederationId)",
+                "dispatchOpenContactChat(",
+                "actorPtid,",
+                "directFederationId,",
                 "requestSocialPeerProfile(actorPtid, true)",
                 "facade?.feeds.home.refresh()",
                 "facade?.feeds.explore.refresh()",

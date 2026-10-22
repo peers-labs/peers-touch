@@ -1,0 +1,63 @@
+---
+kind: invariant
+title: Shared Gate prerequisites retain original proof ownership
+status: active
+owns:
+  - tooling/acceptance/core/execution_graph.py
+  - tooling/acceptance/core/execution_budget.py
+  - tooling/acceptance/core/execution_session.py
+  - tooling/acceptance/gates.yaml
+  - tooling/scripts/acceptance-run.py
+  - tooling/scripts/acceptance-plan.py
+  - tooling/scripts/acceptance-validate.py
+related:
+  - docs/architecture/engineering/acceptance/execution-budget.md
+  - docs/knowledge/invariants/acceptance-scope-is-runner-owned.md
+  - docs/knowledge/invariants/acceptance-suite-runtime-reuse.md
+detected: 2026-10-22
+---
+
+# Shared Gate prerequisites retain original proof ownership
+
+## What must hold
+
+Only an explicit `dependsOn` contract creates a proof dependency. Equal
+commands or equal environment names never authorize reuse. Planner and Runner
+use one compiler, include prerequisite closure, reject missing, repeated,
+cyclic or excluded dependencies, and dispatch a producer at most once.
+
+A consumer verifies the producer's original SHA-256 ArtifactRef, durable
+manifest, current source identity, complete proven result and cleanup.
+Missing proof blocks downstream work. A structural prerequisite judgment
+references original producer manifests; it never clones an evidence report
+under the consumer's gateId. Structural judgments cannot substitute for
+native runtime, UI, receiver-visible or negative assertions.
+
+The first overrun pauses downstream dispatch. Its owner diagnoses, repairs,
+records validation and begins a new frozen-source attempt. Recording a failure
+alone does not complete the engineering task. Unknown attribution requires
+judgment. New source invalidates previous proof; a repair ledger neither grants
+authority nor manufactures proof, and must retain the full scope and budget.
+
+## Why this is non-negotiable
+
+Repeating producers multiplies setup and proof cost. Renaming their reports
+destroys traceability. Increasing thresholds or inheriting previous PASS after
+repair hides the regression instead of proving the candidate.
+
+## How to verify
+
+Use bounded invocations of:
+
+```text
+python3 -m unittest tooling.acceptance.tests.test_execution_graph
+python3 -m unittest tooling.acceptance.tests.test_execution_budget
+python3 -m unittest tooling.acceptance.tests.test_execution_session
+python3 tooling/scripts/acceptance-plan-test.py
+python3 tooling/scripts/acceptance-validate-test.py
+```
+
+The real Runner tests prove one dispatch for two consumers, original producer
+identity, failed prerequisite isolation, source mismatch rejection, descendant
+cancellation, untouched unrelated processes, full-scope stop results and an
+actual failed-attempt → validated-repair → repeated-execution cycle.

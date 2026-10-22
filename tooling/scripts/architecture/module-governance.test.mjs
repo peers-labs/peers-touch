@@ -833,6 +833,29 @@ test('external YAML capability references must resolve', async (t) => {
     }));
 });
 
+test('external YAML registries retain merge semantics and reject duplicate keys', async (t) => {
+  const value = await fixture(t);
+  const registryPath = path.join(value.root, 'capabilities.yaml');
+  value.registry.modules[0].externalCapabilityRegistries.push({
+    path: 'capabilities.yaml',
+    capabilityIds: ['station.current'],
+    gate: 'station-capability-gate',
+  });
+  await writeFile(registryPath,
+    'defaults: &cap {id: station.current}\ncapabilities:\n  - <<: *cap\n');
+  assert.equal(validateArchitectureRegistry({
+    repoRoot: value.root,
+    registry: value.registry,
+  }).ok, true);
+  await writeFile(registryPath,
+    'capabilities:\n  - id: station.current\n    id: station.other\n');
+  rejectsCode('ARCHITECTURE_REGISTRY_INVALID', () =>
+    validateArchitectureRegistry({
+      repoRoot: value.root,
+      registry: value.registry,
+    }));
+});
+
 test('governed paths cannot overlap across modules', async (t) => {
   const value = await fixture(t);
   const second = await createModule(value.root, 'second');

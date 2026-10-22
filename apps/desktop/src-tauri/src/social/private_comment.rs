@@ -2443,6 +2443,7 @@ mod tests {
 
         draft.state = CommentState::Failed;
         draft.error_code = Some(PRIVATE_CONTENT_STALE_PLAN.to_string());
+        draft.publication_state = Some(OperationState::Terminal);
         assert!(comment_requires_reprepare(&draft).unwrap());
 
         draft.publication_state = Some(OperationState::UnknownOutcome);

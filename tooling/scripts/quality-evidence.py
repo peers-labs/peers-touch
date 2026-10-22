@@ -19,6 +19,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from tooling.acceptance.core.errors import EvidenceManifestInvalid
+from tooling.acceptance.core.execution_graph import validate_judgment
 from tooling.scripts.review.code_structure_decision import (
     collect_latest_decision,
 )
@@ -232,6 +233,9 @@ def selected_capability_evidence(root: Path, impacted_features: list[str]) -> di
 
 
 def gate_invocation(gate: dict[str, Any]) -> str:
+    if "judgment" in gate:
+        validate_judgment(str(gate.get("id", "<unknown>")), gate)
+        return "prerequisite judgment: " + ", ".join(gate["dependsOn"])
     command = gate.get("command")
     argv = gate.get("argv")
     if isinstance(command, str) and command.strip() and argv is None:

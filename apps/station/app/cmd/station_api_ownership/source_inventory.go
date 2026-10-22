@@ -5,7 +5,6 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -20,13 +19,13 @@ type lexicalToken struct {
 }
 
 func discoverProtoSymbols(
-	root string,
+	inventory *sourceInventory,
 	protoRoots []string,
 ) (map[string][]sourceLocation, []diagnostic) {
 	declarations := make(map[string][]sourceLocation)
-	files, diagnostics := collectSourceFiles(root, protoRoots, map[string]struct{}{".proto": {}})
-	for _, file := range files {
-		content, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(file)))
+	files, diagnostics := collectSourceFiles(inventory, protoRoots, map[string]struct{}{".proto": {}})
+	for _, input := range inventory.readFiles(files) {
+		file, content, err := input.path, input.content, input.err
 		if err != nil {
 			diagnostics = append(diagnostics, diagnostic{
 				Code:    "source_inventory_failed",
@@ -80,7 +79,7 @@ func discoverProtoSymbols(
 }
 
 func discoverSupersededSymbols(
-	root string,
+	inventory *sourceInventory,
 	sourceRoots []string,
 	symbols []string,
 ) (map[string][]sourceLocation, []diagnostic) {
@@ -106,10 +105,9 @@ func discoverSupersededSymbols(
 		".ts":    {},
 		".tsx":   {},
 	}
-	files, diagnostics := collectSourceFiles(root, sourceRoots, extensions)
-	for _, file := range files {
-		absolutePath := filepath.Join(root, filepath.FromSlash(file))
-		content, err := os.ReadFile(absolutePath)
+	files, diagnostics := collectSourceFiles(inventory, sourceRoots, extensions)
+	for _, input := range inventory.readFiles(files) {
+		file, content, err := input.path, input.content, input.err
 		if err != nil {
 			diagnostics = append(diagnostics, diagnostic{
 				Code:    "source_inventory_failed",
@@ -160,7 +158,7 @@ func lexRawIdentifiers(content []byte) []lexicalToken {
 }
 
 func discoverForbiddenTruthStores(
-	root string,
+	inventory *sourceInventory,
 	stationRoots []string,
 	stores []string,
 ) (map[string][]sourceLocation, []diagnostic) {
@@ -173,13 +171,15 @@ func discoverForbiddenTruthStores(
 		forbidden[store] = struct{}{}
 	}
 
-	files, diagnostics := collectSourceFiles(root, stationRoots, map[string]struct{}{".go": {}})
+	files, diagnostics := collectSourceFiles(inventory, stationRoots, map[string]struct{}{".go": {}})
+	retained := files[:0]
 	for _, file := range files {
-		if strings.HasSuffix(file, "_test.go") {
-			continue
+		if !strings.HasSuffix(file, "_test.go") {
+			retained = append(retained, file)
 		}
-		absolutePath := filepath.Join(root, filepath.FromSlash(file))
-		content, readErr := os.ReadFile(absolutePath)
+	}
+	for _, input := range inventory.readFiles(retained) {
+		file, content, readErr := input.path, input.content, input.err
 		if readErr != nil {
 			diagnostics = append(diagnostics, diagnostic{
 				Code:      "source_inventory_failed",
@@ -229,9 +229,10 @@ func discoverForbiddenTruthStores(
 }
 
 func discoverForbiddenDDDImports(
-	root string,
+	inventory *sourceInventory,
 	rules []dddLayerRule,
 ) []diagnostic {
+	root := inventory.root
 	var diagnostics []diagnostic
 	for _, rule := range rules {
 		// A configured root is part of the Gate contract; treating a missing path
@@ -241,16 +242,19 @@ func discoverForbiddenDDDImports(
 			continue
 		}
 		files, sourceDiagnostics := collectSourceFiles(
-			root,
+			inventory,
 			[]string{rule.Root},
 			map[string]struct{}{".go": {}},
 		)
 		diagnostics = append(diagnostics, sourceDiagnostics...)
+		retained := files[:0]
 		for _, file := range files {
-			if strings.HasSuffix(file, "_test.go") {
-				continue
+			if !strings.HasSuffix(file, "_test.go") {
+				retained = append(retained, file)
 			}
-			content, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(file)))
+		}
+		for _, input := range inventory.readFiles(retained) {
+			file, content, err := input.path, input.content, input.err
 			if err != nil {
 				diagnostics = append(diagnostics, diagnostic{
 					Code:      "source_inventory_failed",
@@ -352,10 +356,11 @@ func containsIdentifier(value, identifier string) bool {
 }
 
 func collectSourceFiles(
-	root string,
+	inventory *sourceInventory,
 	searchRoots []string,
 	extensions map[string]struct{},
 ) ([]string, []diagnostic) {
+	root := inventory.root
 	seen := make(map[string]struct{})
 	var files []string
 	var diagnostics []diagnostic
@@ -387,31 +392,23 @@ func collectSourceFiles(
 			})
 			continue
 		}
-		walkErr := filepath.WalkDir(absoluteRoot, func(path string, entry fs.DirEntry, entryErr error) error {
-			if entryErr != nil {
-				return entryErr
-			}
-			if entry.IsDir() {
-				if shouldSkipDirectory(entry.Name()) && path != absoluteRoot {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-			if _, accepted := extensions[filepath.Ext(entry.Name())]; !accepted {
-				return nil
+		discovered, walkErr := inventory.tree(absoluteRoot)
+		for _, path := range discovered {
+			if _, accepted := extensions[filepath.Ext(path)]; !accepted {
+				continue
 			}
 			relativePath, relErr := filepath.Rel(root, path)
 			if relErr != nil {
-				return relErr
+				walkErr = relErr
+				break
 			}
 			relativePath = filepath.ToSlash(relativePath)
 			if _, exists := seen[relativePath]; exists {
-				return nil
+				continue
 			}
 			seen[relativePath] = struct{}{}
 			files = append(files, relativePath)
-			return nil
-		})
+		}
 		if walkErr != nil {
 			diagnostics = append(diagnostics, diagnostic{
 				Code:    "source_inventory_failed",

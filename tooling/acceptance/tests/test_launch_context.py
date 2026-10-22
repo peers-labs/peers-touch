@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import json
 import os
 import pickle
@@ -1998,6 +1999,41 @@ raise SystemExit(int(sys.argv[2]))
             ],
         )
 
+    def test_launcher_probes_after_macos_zombie_group_permission_error(
+        self,
+    ) -> None:
+        process = MagicMock()
+        process.pid = 1234
+        launcher = GateProcessLauncher(termination_timeout_seconds=0.1)
+
+        with patch(
+            "tooling.acceptance.core.launch_context.os.killpg",
+            side_effect=(PermissionError(), ProcessLookupError()),
+        ) as killpg:
+            launcher._kill_remaining_process_group(process)
+
+        self.assertEqual(
+            killpg.call_args_list,
+            [
+                call(1234, signal.SIGKILL),
+                call(1234, 0),
+            ],
+        )
+
+    def test_launcher_signal_tolerates_macos_zombie_group_permission_error(
+        self,
+    ) -> None:
+        process = MagicMock()
+        process.pid = 1234
+
+        with patch(
+            "tooling.acceptance.core.launch_context.os.killpg",
+            side_effect=PermissionError(),
+        ) as killpg:
+            GateProcessLauncher._signal_process_tree(process, force=False)
+
+        killpg.assert_called_once_with(1234, signal.SIGTERM)
+
     def test_spawn_failure_is_typed_and_closes_parent_binding_copy(self) -> None:
         context = new_context(SyntheticHandler())
         binding = context.bind_child()
@@ -2011,7 +2047,7 @@ raise SystemExit(int(sys.argv[2]))
 
         with patch(
             "tooling.acceptance.core.launch_context.subprocess.Popen",
-            side_effect=OSError("synthetic spawn failure"),
+            side_effect=OSError(errno.E2BIG, "synthetic spawn failure"),
         ):
             with self.assertRaises(EphemeralLaunchBindFailed) as raised:
                 GateProcessLauncher(
@@ -2020,6 +2056,12 @@ raise SystemExit(int(sys.argv[2]))
                 ).run(spec, binding)
 
         self.assertEqual(raised.exception.operation, "gate_process")
+        self.assertEqual(raised.exception.errno_name, "E2BIG")
+        self.assertEqual(
+            raised.exception.resource_category,
+            "argument-environment-limit",
+        )
+        self.assertEqual(str(raised.exception), "failed to spawn Gate process (E2BIG)")
         with self.assertRaises(OSError):
             os.fstat(inherited_descriptor)
         context.quiesce()

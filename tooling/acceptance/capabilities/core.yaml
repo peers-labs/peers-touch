@@ -17,6 +17,12 @@
         "tooling/acceptance/gates.yaml",
         "tooling/acceptance/core/launch_context.py",
         "tooling/acceptance/tests/test_launch_context.py",
+        "tooling/acceptance/core/execution_budget.py",
+        "tooling/acceptance/tests/test_execution_budget.py",
+        "tooling/acceptance/core/execution_session.py",
+        "tooling/acceptance/tests/test_execution_session.py",
+        "tooling/acceptance/core/execution_graph.py",
+        "tooling/acceptance/tests/test_execution_graph.py",
         "tooling/scripts/acceptance-plan.py",
         "tooling/scripts/execution-plan.py"
       ],
@@ -41,6 +47,8 @@
           "feature contracts and gate definitions are machine-readable",
           "context-enabled Gates inherit one bounded anonymous capability channel without durable authority transport",
           "launch-context failures preserve typed blocked semantics, process-group extinction and deterministic context-first cleanup",
+          "explicit lifecycle budgets freeze scope and stop downstream dispatch after the first overrun without manufacturing product proof",
+          "explicit prerequisite graphs dispatch each producer once and consume immutable current-source proof before downstream work",
           "capability graph links product capabilities to features gates evidence and unproven scope",
           "Acceptance Infra readiness is isolated from business Domain injection and reverse-validation evidence"
         ],

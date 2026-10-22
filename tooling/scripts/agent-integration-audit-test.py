@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import contextlib
+import io
 import os
 import runpy
 import shlex
@@ -9,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 
@@ -16,76 +19,85 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 class AgentIntegrationTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self.temporary = tempfile.TemporaryDirectory(prefix="pt integration ")
-        self.base = Path(self.temporary.name)
-        self.root = self.base / "project root"
-        self.root.mkdir()
-        self.home = self.base / "home"
-        self.machine = self.base / "machine"
-        self.home.mkdir()
+    @classmethod
+    def setUpClass(cls) -> None:
+        roots = [
+            REPO_ROOT / "tooling/plugins/pt-ew-plugin",
+            REPO_ROOT / "tooling/scripts/local-dev",
+            REPO_ROOT / "tooling/scripts/lib",
+            REPO_ROOT / "tooling/scripts/architecture",
+            *(
+                REPO_ROOT / "tooling/skills" / name
+                for name in (
+                    "pt-ew", "pt-dev-workflow", "pt-goal-orchestrator",
+                    "pt-trae-host-adapter", "pt-cursor-host-adapter", "pt-codex-host-adapter",
+                )
+            ),
+        ]
+        fixture_files = [
+            (path.relative_to(REPO_ROOT), path.read_bytes(), path.stat().st_mode & 0o777)
+            for root in roots for path in root.rglob("*") if path.is_file()
+            and not path.name.endswith((".test.mjs", "_test.py"))
+        ]
 
+        cls.shared = tempfile.TemporaryDirectory(prefix="pt integration source ")
+        cls.fixture = Path(cls.shared.name) / "template"
+        cls.fixture.mkdir()
         for name in (
             "agent-integration-control.py",
             "agent-integration-audit.py",
             "install-agent-integration.sh",
         ):
-            destination = self.root / "tooling/scripts" / name
+            destination = cls.fixture / "tooling/scripts" / name
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(REPO_ROOT / "tooling/scripts" / name, destination)
-        shutil.copytree(
-            REPO_ROOT / "tooling/plugins/pt-ew-plugin",
-            self.root / "tooling/plugins/pt-ew-plugin",
+        for relative, content, mode in fixture_files:
+            destination = cls.fixture / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(content)
+            destination.chmod(mode)
+        dependencies = cls.fixture / "node_modules"
+        dependencies.mkdir()
+        (dependencies / "yaml").symlink_to(
+            REPO_ROOT / "node_modules/yaml", target_is_directory=True
         )
-        shutil.copytree(
-            REPO_ROOT / "tooling/scripts/local-dev",
-            self.root / "tooling/scripts/local-dev",
-        )
-        shutil.copytree(
-            REPO_ROOT / "tooling/scripts/lib",
-            self.root / "tooling/scripts/lib",
-        )
-        shutil.copytree(
-            REPO_ROOT / "tooling/scripts/architecture",
-            self.root / "tooling/scripts/architecture",
-        )
-        for name in (
-            "pt-ew",
-            "pt-dev-workflow",
-            "pt-goal-orchestrator",
-            "pt-trae-host-adapter",
-            "pt-cursor-host-adapter",
-            "pt-codex-host-adapter",
-        ):
-            shutil.copytree(
-                REPO_ROOT / "tooling/skills" / name,
-                self.root / "tooling/skills" / name,
-            )
-        subprocess.run(
+        # A synthetic repository owns its hooks. Global developer hooks may
+        # launch this real workspace's tooling and cannot qualify the fixture.
+        isolated_hooks = Path(cls.shared.name) / "isolated hooks"
+        isolated_hooks.mkdir()
+        for command in (
             ["git", "init", "-b", "test/integration"],
-            cwd=self.root,
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(
             ["git", "config", "user.email", "test@example.invalid"],
-            cwd=self.root,
-            check=True,
-        )
-        subprocess.run(
             ["git", "config", "user.name", "Test"],
-            cwd=self.root,
-            check=True,
-        )
-        subprocess.run(["git", "add", "."], cwd=self.root, check=True)
-        subprocess.run(
-            ["git", "commit", "-m", "fixture"],
-            cwd=self.root,
-            check=True,
-            capture_output=True,
-        )
+            ["git", "config", "core.hooksPath", str(isolated_hooks)],
+            ["git", "add", "."],
+            ["git", "-c", "commit.gpgsign=false", "commit", "-m", "fixture"],
+        ):
+            subprocess.run(command, cwd=cls.fixture, check=True, capture_output=True, timeout=3)
+        cls.control_module = runpy.run_path(str(cls.fixture / "tooling/scripts/agent-integration-control.py"))
+        cls.audit_module = runpy.run_path(str(cls.fixture / "tooling/scripts/agent-integration-audit.py"))
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.shared.cleanup()
+
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory(prefix="pt integration ")
+        self.base = Path(self.temporary.name)
+        # One Suite owns immutable runtime sources and Git identity. Each
+        # sequential case resets only its host projections after assertions.
+        self.root = self.fixture
+        self.home = self.base / "home"
+        self.machine = self.base / "machine"
+        self.home.mkdir()
 
     def tearDown(self) -> None:
+        for name in (".trae", ".cursor", ".agents"):
+            path = self.root / name
+            if path.is_symlink():
+                path.unlink()
+            elif path.exists():
+                shutil.rmtree(path)
         self.temporary.cleanup()
 
     def environment(self, **overrides: str) -> dict[str, str]:
@@ -94,15 +106,17 @@ class AgentIntegrationTests(unittest.TestCase):
             "HOME": str(self.home),
             "USERPROFILE": str(self.home),
             "PT_MACHINE_DEV_ROOT": str(self.machine),
+            "PYTHONDONTWRITEBYTECODE": "1",
             **overrides,
         }
 
     def workspace_entries(self) -> list[str]:
-        return sorted(
-            str(relative)
-            for item in self.root.rglob("*")
-            if ".git" not in (relative := item.relative_to(self.root)).parts
-        )
+        entries = []
+        for base, directories, files in os.walk(self.root, followlinks=False):
+            directories[:] = [name for name in directories if name != ".git"]
+            entries.extend(str((Path(base) / name).relative_to(self.root))
+                           for name in directories + files)
+        return sorted(entries)
 
     def control(
         self,
@@ -111,9 +125,10 @@ class AgentIntegrationTests(unittest.TestCase):
         host: str = "trae",
         workspace: Path | None = None,
         environment: dict[str, str] | None = None,
+        subprocess_cli: bool = False,
     ) -> subprocess.CompletedProcess[str]:
         command = [
-            sys.executable,
+            os.environ.get("PT_ACCEPTANCE_PYTHON") or sys.executable,
             "tooling/scripts/agent-integration-control.py",
             action,
             "--root",
@@ -123,6 +138,8 @@ class AgentIntegrationTests(unittest.TestCase):
         ]
         if workspace is not None:
             command.extend(["--workspace", str(workspace)])
+        if not subprocess_cli:
+            return self.invoke_main(self.control_module, command, environment or self.environment())
         return subprocess.run(
             command,
             cwd=self.root,
@@ -130,6 +147,7 @@ class AgentIntegrationTests(unittest.TestCase):
             text=True,
             check=False,
             env=environment or self.environment(),
+            timeout=5,
         )
 
     def audit(
@@ -137,9 +155,10 @@ class AgentIntegrationTests(unittest.TestCase):
         *,
         host: str = "trae",
         workspace: Path | None = None,
+        subprocess_cli: bool = False,
     ) -> tuple[subprocess.CompletedProcess[str], dict[str, object]]:
         command = [
-            sys.executable,
+            os.environ.get("PT_ACCEPTANCE_PYTHON") or sys.executable,
             "tooling/scripts/agent-integration-audit.py",
             "--root",
             str(self.root),
@@ -148,15 +167,25 @@ class AgentIntegrationTests(unittest.TestCase):
         ]
         if workspace is not None:
             command.extend(["--workspace", str(workspace)])
-        completed = subprocess.run(
+        completed = self.invoke_main(self.audit_module, command, self.environment()) if not subprocess_cli else subprocess.run(
             command,
             cwd=self.root,
             capture_output=True,
             text=True,
             check=False,
             env=self.environment(),
+            timeout=5,
         )
         return completed, json.loads(completed.stdout)
+
+    def invoke_main(self, module, command, environment):
+        output, errors = io.StringIO(), io.StringIO()
+        # Exercise the real CLI owner and filesystem. Only its process entry
+        # boundary is in-process; one smoke case below launches actual CLIs.
+        with patch.dict(os.environ, environment, clear=True), patch.object(sys, "argv", command[1:]):
+            with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+                code = module["main"]()
+        return subprocess.CompletedProcess(command, code, output.getvalue(), errors.getvalue())
 
     def write_unrelated_hook(self) -> bytes:
         hooks = self.root / ".trae/hooks.json"
@@ -189,7 +218,7 @@ class AgentIntegrationTests(unittest.TestCase):
 
     def test_flow_a03_selected_root_install_uses_absolute_interpreter(self) -> None:
         self.write_unrelated_hook()
-        completed = self.control()
+        completed = self.control(subprocess_cli=True)
         self.assertEqual(completed.returncode, 0, completed.stderr)
         report = json.loads(completed.stdout)
         self.assertEqual(report["status"], "PASS")
@@ -217,7 +246,7 @@ class AgentIntegrationTests(unittest.TestCase):
         self.assertTrue(Path(invocation[0]).is_absolute())
         self.assertEqual(Path(invocation[0]).resolve(), Path(shutil.which("node")).resolve())
 
-        audited, audit = self.audit()
+        audited, audit = self.audit(subprocess_cli=True)
         self.assertEqual(audited.returncode, 0, audited.stderr)
         self.assertEqual(audit["status"], "PASS")
         self.assertEqual(audit["callbackProbe"]["permissionDecision"], "allow")

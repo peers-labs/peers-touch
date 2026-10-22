@@ -141,6 +141,10 @@ def finalizer_bindings(
 
 
 def gate_launch_fields(gate_id: str, gate: dict[str, Any]) -> dict[str, Any]:
+    if "judgment" in gate:
+        if gate["judgment"] != "all-prerequisites" or "command" in gate or "argv" in gate:
+            raise SystemExit(f"{gate_id}: invalid prerequisite judgment")
+        return {"judgment": gate["judgment"]}
     has_command = "command" in gate
     has_argv = "argv" in gate
     if has_command == has_argv:
@@ -220,6 +224,7 @@ def planned_gate(
         "provisioner": gate.get("provisioner", ""),
         "tier": gate.get("tier", "local-evidence"),
         "description": gate.get("description", ""),
+        "dependsOn": gate.get("dependsOn", []),
         "required_by": [],
     }
     if finalizer_binding is not None:
@@ -311,11 +316,18 @@ def plan(
             )
             selected[gate_id]["required_by"].append(f"behavior:{rule.get('id')}")
 
+    from tooling.acceptance.core.execution_graph import compile_graph
+    graph = compile_graph(gates, list(selected))
+    for gate_id in graph["dispatchGateIds"]:
+        selected.setdefault(
+            gate_id, planned_gate(gate_id, gates[gate_id], bindings.get(gate_id)),
+        )
     return {
         "changed_paths": paths,
         "matched_rules": matched_rules,
         "impacted_features": sorted(impacted_features),
-        "selected_gates": list(selected.values()),
+        "selected_gates": [selected[gate_id] for gate_id in graph["dispatchGateIds"]],
+        "execution_graph": graph,
     }
 
 
@@ -366,9 +378,12 @@ def main() -> int:
             catalog_changed_gate_ids=catalog_changes,
         )
         if formal_plan:
+            from tooling.acceptance.core.execution_graph import compile_graph
+            definitions = load_json_yaml(root / "gates.yaml").get("gates", {})
             candidate_ids = [gate["id"] for gate in result["selected_gates"]]
+            declared = compile_graph(definitions, sorted(formal_plan.all_declared_gate_ids()))
             undeclared = sorted(
-                set(candidate_ids) - formal_plan.all_declared_gate_ids()
+                set(candidate_ids) - set(declared["dispatchGateIds"])
             )
             if undeclared:
                 raise ExecutionPlanError(
@@ -376,7 +391,6 @@ def main() -> int:
                     "registry impact contains Gates absent from the formal plan: "
                     + ", ".join(undeclared),
                 )
-            definitions = load_json_yaml(root / "gates.yaml").get("gates", {})
             bindings = finalizer_bindings(root, definitions)
             selected_ids = formal_plan.gate_ids(execution_mode)
             missing = [
@@ -387,7 +401,9 @@ def main() -> int:
                     PLAN_DRIFT,
                     "formal plan references missing Gates: " + ", ".join(missing),
                 )
+            selected_graph = compile_graph(definitions, selected_ids)
             result["candidate_gates"] = candidate_ids
+            result["execution_graph"] = selected_graph
             result["selected_gates"] = [
                 {
                     **planned_gate(
@@ -401,7 +417,7 @@ def main() -> int:
                         else f"formal-plan:{execution_mode}"
                     ],
                 }
-                for gate_id in selected_ids
+                for gate_id in selected_graph["dispatchGateIds"]
             ]
             try:
                 formal_plan_path = formal_plan.path.relative_to(REPO_ROOT).as_posix()
@@ -508,7 +524,8 @@ def main() -> int:
     if result["selected_gates"]:
         for gate in result["selected_gates"]:
             launch = (
-                gate["command"]
+                "judge immutable prerequisite proofs"
+                if "judgment" in gate else gate["command"]
                 if "command" in gate
                 else json.dumps(gate["argv"], ensure_ascii=False)
             )

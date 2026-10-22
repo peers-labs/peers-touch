@@ -537,6 +537,9 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
             "tooling.acceptance.fixtures.chat_native_reset."
             "deploy_environment",
             side_effect=lambda name: deployments[name],
+        ), patch(
+            "tooling.acceptance.fixtures.chat_native_reset."
+            "require_station_reset_authority",
         ):
             four = acceptance_station_environment(
                 "http://192.0.2.40:18080",

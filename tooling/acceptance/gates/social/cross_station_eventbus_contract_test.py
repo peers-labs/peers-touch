@@ -107,11 +107,10 @@ class CrossStationEventBusContractTest(unittest.TestCase):
         ):
             self.assertIn(marker, runtime)
 
-        app_runtime = source(DESKTOP / "services" / "appRuntime.ts")
-        self.assertIn("onWindowStationActiveChanged", app_runtime)
+        desktop_api = source(DESKTOP / "services" / "desktop_api.ts")
         self.assertIn(
             "eventBus.publish(EVENT.STATION_ACTIVE_CHANGED",
-            app_runtime,
+            desktop_api,
         )
 
     def test_one_host_policy_controls_all_social_registration(self) -> None:
@@ -120,8 +119,10 @@ class CrossStationEventBusContractTest(unittest.TestCase):
         self.assertIn("__TAURI_INTERNALS__", host_policy)
         self.assertNotIn("__PT_GATEWAY_BASE__", host_policy)
 
+        modules = source(DESKTOP / "modules" / "index.ts")
+        self.assertNotIn("moments", modules)
+        self.assertNotIn("social", modules)
         registrations = {
-            "module": source(DESKTOP / "modules" / "index.ts"),
             "page": source(DESKTOP / "pages" / "registry.ts"),
             "runtime": source(DESKTOP / "services" / "appRuntime.ts"),
         }
@@ -135,10 +136,7 @@ class CrossStationEventBusContractTest(unittest.TestCase):
         main = source(DESKTOP / "main.tsx")
         self.assertNotIn("installBrowserGateway", main)
         self.assertFalse((DESKTOP / "kernel" / "gateway.ts").exists())
-        self.assertLess(
-            main.index("initializeDesktopHostPolicy();"),
-            main.index("registerModulesForHost();"),
-        )
+        self.assertIn("initializeDesktopHostPolicy();", main)
 
 
 if __name__ == "__main__":

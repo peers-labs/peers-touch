@@ -18,6 +18,123 @@ MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 
 
+class CurrentAggregateDependencyContractTests(unittest.TestCase):
+    def test_proven_domain_validators_depend_on_their_domain_gates(self) -> None:
+        repo_root = SCRIPT_PATH.parents[2]
+        acceptance_root = SCRIPT_PATH.parents[1] / "acceptance"
+        catalog = MODULE.load(acceptance_root / "gates.yaml")["gates"]
+        capabilities = {
+            capability["id"]: capability
+            for path in sorted((acceptance_root / "capabilities").glob("*.yaml"))
+            for capability in MODULE.load(path)["capabilities"]
+        }
+        domain_index = MODULE.load(acceptance_root / "domains" / "index.yaml")
+
+        checked = []
+        for domain in domain_index["domains"]:
+            if domain["status"] != "active" or domain["id"] == "agent":
+                continue
+            profile = MODULE.load(repo_root / domain["profile"])
+            gate_id = profile["validation_gate_id"]
+            definition = catalog[gate_id]
+            if "--require-proven" not in definition["command"]:
+                continue
+            expected = {
+                required_gate
+                for capability_id in profile["capabilities"]
+                for required_gate in capabilities[capability_id]["required_gates"]
+            }
+            dependencies = definition["dependsOn"]
+            with self.subTest(domain=domain["id"], gate_id=gate_id):
+                self.assertEqual(set(dependencies), expected)
+                self.assertEqual(len(dependencies), len(expected))
+            checked.append(domain["id"])
+
+        self.assertEqual(
+            set(checked),
+            {
+                "applet",
+                "chat",
+                "desktop-shell",
+                "federation",
+                "mobile",
+                "social",
+                "station-access",
+                "station-dashboard",
+            },
+        )
+
+    def test_evidence_consumers_declare_their_source_dependencies(self) -> None:
+        from tooling.acceptance.gates.chat import lifecycle_ccu_aggregate
+        from tooling.acceptance.gates.chat_storage import (
+            batch_clear_aggregate,
+            governance_aggregate,
+        )
+        from tooling.acceptance.gates.station_access import (
+            lifecycle_aggregate,
+            relay_aggregate,
+            relay_attachment_lifecycle_e2e,
+            session_class_e2e,
+        )
+        from tooling.acceptance.gates.unified_client import (
+            architecture_aggregate,
+        )
+        from tooling.acceptance.gates.x_config import aggregate as x_config_aggregate
+
+        catalog = MODULE.load(
+            SCRIPT_PATH.parents[1] / "acceptance" / "gates.yaml"
+        )["gates"]
+        expected = {
+            "x-config-api-aggregate-e2e": list(
+                x_config_aggregate.REQUIRED_GATES
+            ),
+            "unified-client-architecture-aggregate": [
+                spec.gate_id for spec in architecture_aggregate.CHILD_GATES
+            ],
+            "station-access-lifecycle-aggregate-e2e": [
+                spec.gate_id for spec in lifecycle_aggregate.PRECEDING_GATES
+            ],
+            "station-access-session-class-e2e": [
+                spec.gate_id for spec in session_class_e2e.PRECEDING_GATES
+            ],
+            "station-access-relay-security-e2e": [
+                spec.gate_id for spec in relay_aggregate.SECURITY_GATES
+            ],
+            "unified-relay-station-access-aggregate-e2e": [
+                relay_aggregate.SECURITY_GATE_ID,
+                *[
+                    spec.gate_id
+                    for spec in relay_aggregate.UNIFIED_GATES[
+                        len(relay_aggregate.SECURITY_GATES):
+                    ]
+                    if spec.gate_id != relay_aggregate.SECURITY_GATE_ID
+                ],
+            ],
+            "chat-storage-batch-clear-aggregate-e2e": [
+                spec.gate_id for spec in batch_clear_aggregate.PRECEDING_GATES
+            ],
+            "chat-storage-governance-aggregate-e2e": [
+                spec.gate_id for spec in governance_aggregate.PRECEDING_GATES
+            ],
+            "chat-lifecycle-ccu-aggregate-e2e": [
+                spec.gate_id for spec in lifecycle_ccu_aggregate.PRECEDING_GATES
+            ],
+            relay_attachment_lifecycle_e2e.AGGREGATE_GATE_ID: [
+                spec.gate_id
+                for spec in
+                relay_attachment_lifecycle_e2e.RelayAttachmentAggregateGate.preceding_gates
+            ],
+        }
+        expected.update({
+            gate_id: [relay_attachment_lifecycle_e2e.SUITE_GATE_ID]
+            for gate_id in relay_attachment_lifecycle_e2e.PROJECTION_GATE_IDS
+        })
+
+        for gate_id, dependencies in expected.items():
+            with self.subTest(gate_id=gate_id):
+                self.assertEqual(catalog[gate_id]["dependsOn"], dependencies)
+
+
 class GateLaunchContractTests(unittest.TestCase):
     def test_rejects_duplicate_gate_catalog_keys(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -546,6 +663,32 @@ class DomainContractClosureTests(unittest.TestCase):
             "acceptance-plan-self",
             {gate["id"] for gate in result["selected_gates"]},
         )
+
+    def test_dependency_closure_is_validated_and_returned(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            acceptance_root = Path(temp_dir)
+            capabilities = [{"id": "consumer-capability", "required_gates": ["consumer"]}]
+            gates = {
+                "consumer": {
+                    "command": "true", "environment": "local",
+                    "tier": "ci-structure", "dependsOn": ["producer"],
+                },
+                "producer": {
+                    "command": "true", "environment": "home-station",
+                    "tier": "env-evidence",
+                },
+            }
+            with self.assertRaisesRegex(RuntimeError, "PROVISIONING_WIRING_MISSING"):
+                MODULE.validate_domain_contract_closure(
+                    acceptance_root, "synthetic", capabilities, [], gates, "",
+                )
+            gates["producer"].update(environment="local", tier="ci-structure")
+            self.assertEqual(
+                MODULE.validate_domain_contract_closure(
+                    acceptance_root, "synthetic", capabilities, [], gates, "",
+                ),
+                {"producer", "consumer"},
+            )
 
     def test_rejects_missing_gate_wiring_and_environment_contract(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

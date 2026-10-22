@@ -20,6 +20,9 @@ tooling/acceptance/
 ├── core/                           # [NEW] 通用核心抽象（domain-neutral）
 │   ├── __init__.py
 │   ├── gate.py                     # AcceptanceGate 基类
+│   ├── execution_budget.py         # 实验：范围冻结、阶段deadline、成本和停止投影
+│   ├── execution_graph.py          # 显式证明依赖、唯一生产者、原始manifest验证与效率投影
+│   ├── execution_session.py        # 实验：暂停→归因→修复验证→新候选的循环记录
 │   ├── evidence.py                 # Evidence Schema + 报告工具
 │   ├── evidence_store.py           # [D-11] 唯一root/run/ref/manifest/latest/cleanup owner
 │   ├── errors.py                   # GateError 统一异常

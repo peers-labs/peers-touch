@@ -54,6 +54,8 @@ class EvidenceReport:
     station_url: Optional[str] = None
     error: Optional[str] = None
     error_type: Optional[str] = None
+    blocked_reason: Optional[str] = None
+    blocked_resource: Optional[str] = None
     manifest: Optional[dict[str, Any]] = None
 
     def add_evidence_file(
@@ -116,12 +118,15 @@ class EvidenceReport:
                 )
 
         passed = self.status == "PASS"
+        blocked = self.status == "BLOCKED"
         report = {
             "artifactKind": "acceptance-gate-evidence-report",
             "gate": self.gate_id,
             "gateId": self.gate_id,
             "status": self.status,
-            "completionStatus": "DONE" if passed else "PARTIAL",
+            "completionStatus": (
+                "DONE" if passed else "BLOCKED" if blocked else "PARTIAL"
+            ),
             "proofStatus": "PROVEN" if passed else "UNPROVEN",
             "sampleEmissionAllowed": passed,
             "started_at": self.started_at,
@@ -135,6 +140,11 @@ class EvidenceReport:
             "error_type": self.error_type,
             "manifest": self.manifest,
         }
+        if self.blocked_reason:
+            report["reason"] = self.blocked_reason
+            report["blockedReason"] = self.blocked_reason
+        if self.blocked_resource:
+            report["blockedResource"] = self.blocked_resource
         if self.phase:
             report["phase"] = self.phase
         if self.bom:

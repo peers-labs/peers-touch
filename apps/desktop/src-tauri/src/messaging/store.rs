@@ -80,7 +80,7 @@ use messaging_core::storage_governance::retention::{
     RetentionBoundary, RetentionCandidate, RetentionCommit, RetentionFloor, RetentionPlan,
     RetentionRepository, RetentionResume, RETENTION_SCOPE_KIND,
 };
-use messaging_core::store::{migrate_messaging_schema, MessagingSchemaBackend};
+use messaging_core::store::{ensure_messaging_schema, MessagingSchemaBackend};
 use messaging_core::store::{
     DirectOutboundEditCommit, DirectOutboundRepository, DirectOutboundSendCommit,
     DirectOutboundSession, DirectSessionAdvance, MessagingRepository, MlsInboundRepository,
@@ -15523,16 +15523,6 @@ impl MessagingSchemaBackend for RusqliteMessagingSchema<'_> {
         self.0.execute_batch(sql).map_err(|error| error.to_string())
     }
 
-    fn table_columns(&self, table: &str) -> Result<Vec<String>, String> {
-        self.0
-            .prepare(&format!("PRAGMA table_info({table})"))
-            .map_err(|error| error.to_string())?
-            .query_map([], |row| row.get::<_, String>(1))
-            .map_err(|error| error.to_string())?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| error.to_string())
-    }
-
     fn table_exists(&self, table: &str) -> Result<bool, String> {
         self.0
             .query_row(
@@ -15550,14 +15540,10 @@ impl MessagingSchemaBackend for RusqliteMessagingSchema<'_> {
             .query_row(sql, [], |row| row.get(0))
             .map_err(|error| error.to_string())
     }
-
-    fn migrate_legacy_attachment_rows(&self) -> Result<(), String> {
-        Err("legacy Mobile attachment metadata cannot exist in a Desktop profile".to_string())
-    }
 }
 
 fn migrate(connection: &Connection) -> Result<(), String> {
-    migrate_messaging_schema(&RusqliteMessagingSchema(connection))
+    ensure_messaging_schema(&RusqliteMessagingSchema(connection))
 }
 
 #[cfg(test)]

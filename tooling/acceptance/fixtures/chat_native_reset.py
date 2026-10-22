@@ -411,12 +411,6 @@ def _authorized_reset_environment(
         RESET_PROFILE_AUTHORIZATION_ENV,
         "",
     ).strip()
-    lease_profile = (
-        ""
-        if configured_profile
-        else machine_lease_reset_profile()
-    )
-    authorized_profile = configured_profile or lease_profile
     authorized_environments_raw = os.environ.get(
         RESET_ENVIRONMENTS_AUTHORIZATION_ENV,
         "",

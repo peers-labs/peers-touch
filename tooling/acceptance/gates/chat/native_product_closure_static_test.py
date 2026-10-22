@@ -1715,8 +1715,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         selection_source = self.native_file_picker[
             selection_start:selection_end
         ]
-        self.assertIn("control.main_window", selection_source)
-        self.assertIn("control.frontmost", selection_source)
+        self.assertIn("main_window_restored(control)", selection_source)
         self.assertIn("control.focused_window", selection_source)
         self.assertNotIn('control.kind == "unknown"', selection_source)
         self.assertIn(

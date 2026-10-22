@@ -2775,6 +2775,19 @@ describe('moments runtime: realtime recovery', () => {
       restoring: false,
       sessionEpoch: 9,
     });
+    enqueue('social_sync_moments_projection',
+      bytesOk(SyncMomentsProjectionResponseSchema, {
+        homeTimeline: { posts: [], nextCursor: '', hasMore: false },
+        publicTimeline: { posts: [], nextCursor: '', hasMore: false },
+      }),
+    );
+    enqueue('actor_get_my_profile', dataOk({
+      id: 'viewer',
+      displayName: 'Viewer',
+      username: 'viewer',
+      avatar: '',
+    }));
+    enqueue('social_circle_list_mine', bytesOk(ListMyCirclesResponseSchema, { circles: [] }));
     enqueue('social_private_moments_bootstrap', {
       ok: false,
       error: {
@@ -2792,11 +2805,15 @@ describe('moments runtime: realtime recovery', () => {
     });
     await vi.waitFor(() => {
       expect(invokeMock).toHaveBeenCalledWith(
-        'frontend_log',
+        'frontend_log_batch',
         {
-          input: expect.objectContaining({
-            message: 'moments projection bootstrap failed',
-          }),
+          input: {
+            entries: expect.arrayContaining([
+              expect.objectContaining({
+                message: 'private Moments projection unavailable',
+              }),
+            ]),
+          },
         },
       );
     });

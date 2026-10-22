@@ -544,37 +544,38 @@ function listFiles(root) {
 
 function snapshotRepository(root) {
   const snapshot = new Map();
-  const visit = (directory) => {
+  const visit = (directory, metadataOnly = false) => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       if (directory === root && entry.name === '.git') {
         continue;
       }
       const absolute = path.join(directory, entry.name);
       const relative = path.relative(root, absolute).split(path.sep).join('/');
+      const entryMetadataOnly =
+        metadataOnly || METADATA_ONLY_DIRECTORY_NAMES.has(entry.name);
+      if (entryMetadataOnly && entry.isDirectory()) {
+        snapshot.set(relative, 'metadata-dir');
+        visit(absolute, true);
+        continue;
+      }
+      if (metadataOnly && entry.isFile()) {
+        snapshot.set(relative, 'metadata-file');
+        continue;
+      }
       const stats = lstatSync(absolute);
       if (stats.isDirectory()) {
         snapshot.set(
           relative,
           `dir:${stats.mode & 0o777}:${stats.mtimeMs}`,
         );
-        visit(absolute);
+        visit(absolute, entryMetadataOnly);
       } else if (stats.isSymbolicLink()) {
         snapshot.set(relative, `link:${readlinkSync(absolute)}`);
       } else if (stats.isFile()) {
-        const metadataOnly = relative
-          .split('/')
-          .some((segment) => METADATA_ONLY_DIRECTORY_NAMES.has(segment));
-        if (metadataOnly) {
-          snapshot.set(
-            relative,
-            `file-meta:${stats.mode & 0o777}:${stats.size}:${stats.mtimeMs}`,
-          );
-        } else {
-          const digest = createHash('sha256')
-            .update(readFileSync(absolute))
-            .digest('hex');
-          snapshot.set(relative, `file:${stats.mode & 0o777}:${digest}`);
-        }
+        const digest = createHash('sha256')
+          .update(readFileSync(absolute))
+          .digest('hex');
+        snapshot.set(relative, `file:${stats.mode & 0o777}:${digest}`);
       } else {
         snapshot.set(relative, `other:${stats.mode}`);
       }
