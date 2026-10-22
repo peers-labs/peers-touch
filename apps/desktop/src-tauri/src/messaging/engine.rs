@@ -2660,6 +2660,92 @@ impl MessagingEngine {
             .search_message_projections(conversation_id, query, before, limit)
     }
 
+    /// Cross-conversation device search for the closed-domain Search overlay.
+    /// Returns fused search-core documents from the encrypted local FTS
+    /// projection. Conversation display names are resolved from the local
+    /// conversations table so the renderer never joins store tables itself.
+    pub fn search_device_documents(
+        &self,
+        query: &str,
+        before: Option<(i64, &str, &str)>,
+        limit: usize,
+        check: &dyn Fn() -> Result<(), String>,
+    ) -> Result<Vec<search_core::ScoredDocument>, String> {
+        use search_core::model::{ResourceRef, ResultKind, TrustZone};
+        check()?;
+        let hits = self.store.search_message_hits_page_checked(None, query, before, limit, check)?;
+        check()?;
+        let mut documents = Vec::with_capacity(hits.len());
+        for hit in hits {
+            check()?;
+            let conversation_title = self
+                .store
+                .conversation_title(&hit.conversation_id, check)?
+                .unwrap_or_default();
+            documents.push(search_core::ScoredDocument {
+                resource: ResourceRef {
+                    kind: "message".to_string(),
+                    id: hit.message_id.clone(),
+                    conversation_id: hit.conversation_id.clone(),
+                    message_id: hit.message_id.clone(),
+                    target_page: String::new(),
+                },
+                kind: ResultKind::Message,
+                zone: TrustZone::DeviceE2ee,
+                title: conversation_title.clone(),
+                snippet: hit.plaintext,
+                conversation_title,
+                author_ptid: hit.sender_ptid,
+                created_at_unix_ms: hit.committed_at_unix_ms,
+                score: 0.0,
+            });
+        }
+        Ok(documents)
+    }
+
+    /// Immediate in-conversation name suggestions for the overlay's
+    /// suggestion phase (no full-text scan). Returns conversation resources.
+    pub fn suggest_conversations(
+        &self,
+        query: &str,
+        limit: usize,
+        check: &dyn Fn() -> Result<(), String>,
+    ) -> Result<Vec<search_core::ScoredDocument>, String> {
+        use search_core::model::{ResourceRef, ResultKind, TrustZone};
+        let needle = query.trim().to_lowercase();
+        if needle.is_empty() {
+            return Ok(Vec::new());
+        }
+        check()?;
+        let conversations = self.store.suggest_conversation_names(query, limit, check)?;
+        check()?;
+        let mut documents = Vec::new();
+        for (conversation_id, name, updated_at_unix_ms) in conversations {
+            check()?;
+            documents.push(search_core::ScoredDocument {
+                resource: ResourceRef {
+                    kind: "conversation".to_string(),
+                    id: conversation_id.clone(),
+                    conversation_id,
+                    message_id: String::new(),
+                    target_page: String::new(),
+                },
+                kind: ResultKind::Conversation,
+                zone: TrustZone::DeviceE2ee,
+                title: name.clone(),
+                snippet: String::new(),
+                conversation_title: name,
+                author_ptid: String::new(),
+                created_at_unix_ms: updated_at_unix_ms,
+                score: 0.0,
+            });
+            if documents.len() >= limit {
+                break;
+            }
+        }
+        Ok(documents)
+    }
+
     pub fn create_direct_conversation(
         &self,
         token: &str,

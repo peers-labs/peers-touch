@@ -47,6 +47,8 @@ import { ToastHost } from '../../shared/Toast';
 import { ModernChatReview } from '../../features/modern-chat-agent/src/ModernChatReview';
 import { V2ProductReview } from '../../features/modern-chat-agent/src/V2ProductReview';
 import { OAuthLoginPrototype } from './OAuthLoginPrototype';
+import { SearchOverlay } from './search/SearchOverlay';
+import { toast } from '../../shared/Toast';
 
 /** An installed applet (mirrors RuntimeAppletInfo.manifest + status). */
 interface AppletInfo {
@@ -190,10 +192,12 @@ function SideNav({
   unreadCount,
   onToggleNotifications,
   notificationButtonRef,
+  searchOpen,
 }: {
   page: string;
   onNavigate: (p: string) => void;
   notifOpen: boolean;
+  searchOpen?: boolean;
   unreadCount: number;
   onToggleNotifications: (pointer: boolean) => void;
   notificationButtonRef: RefObject<HTMLButtonElement | null>;
@@ -241,7 +245,7 @@ function SideNav({
             key={n.id}
             icon={n.icon}
             title={n.title}
-            active={page === n.id || (n.id === 'agent' && page.startsWith('agent'))}
+            active={n.id === 'search' ? !!searchOpen : page === n.id || (n.id === 'agent' && page.startsWith('agent'))}
             onClick={() => onNavigate(n.id)}
           />
         ))}
@@ -646,9 +650,11 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
     : new URLSearchParams(window.location.search).get('surface') ?? '';
   const defaultPage = showModernChatReview || showV2ProductReview || showAgentChatReview
     ? 'agent'
-    : initialPage ?? (requestedSurface === 'chat' ? 'chat' : 'search');
-  const [page, setPage] = useState(defaultPage);
+    : initialPage ?? (requestedSurface === 'search' ? 'search-placeholder' : 'chat');
+  const [page, setPage] = useState(defaultPage === 'search-placeholder' ? 'chat' : defaultPage);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  // Search 是按需唤起的覆盖层，不是页面（S-01：Chat 默认落点）。
+  const [searchOpen, setSearchOpen] = useState(requestedSurface === 'search');
   const [notificationView, setNotificationView] = useState<'closed' | 'preview' | 'all'>('closed');
   const notificationButtonRef = useRef<HTMLButtonElement>(null);
   // Whether the current preview was opened by pointer (mouse/touch); pointer
@@ -666,6 +672,11 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
   });
 
   const navigate = (p: string) => {
+    // 搜索是覆盖层而不是路由页：点击搜索图标只唤起 Search，保留当前页面。
+    if (p === 'search') {
+      setSearchOpen(true);
+      return;
+    }
     const surface = getAgentSurfaceId(p);
     if (surface) {
       setVisitedAgentSurfaces((current) => {
@@ -690,9 +701,11 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
       const mod = e.metaKey || e.ctrlKey;
       if (mod && e.key.toLowerCase() === 'k') {
         e.preventDefault();
-        setPaletteOpen((v) => !v);
+        // ⌘K 是 Search 门户快捷键（S-02）；通用命令面板仍可从设置入口打开。
+        setSearchOpen((v) => !v);
       } else if (e.key === 'Escape') {
         setPaletteOpen(false);
+        setSearchOpen(false);
         if (notificationViewRef.current !== 'closed') {
           setNotificationView('closed');
           // Restore the bell after the dialog's own close/focus teardown.
@@ -749,12 +762,13 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
   }
 
   return (
-    <div style={{ width: '100%', height: '100%', minHeight: 0, overflow: 'hidden', display: 'flex', backgroundColor: T.bg }}>
+    <div style={{ width: '100%', height: '100%', minHeight: 0, overflow: 'hidden', display: 'flex', position: 'relative', backgroundColor: T.bg }}>
       <SideNav
         page={page}
         onNavigate={navigate}
         notifOpen={notifOpen}
         unreadCount={unreadCount}
+        searchOpen={searchOpen}
         notificationButtonRef={notificationButtonRef}
         onToggleNotifications={(pointer) => {
           setNotificationView((v) => {
@@ -880,6 +894,15 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
         onRun={(target) => {
           navigate(target);
           setPaletteOpen(false);
+        }}
+      />
+      <SearchOverlay
+        open={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        onOpenResult={(item) => {
+          navigate(item.targetPage);
+          // 原型层用 toast 表达“打开并定位到原对象 anchor”的用户可见反馈。
+          toast.success(`已定位：${item.anchor}`);
         }}
       />
       <ToastHost />

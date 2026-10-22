@@ -35,6 +35,7 @@ pub struct AppState {
     pub secure_content: SecureContentSupervisor,
     /// Sole in-process authority for authenticated Desktop sessions.
     pub sessions: WindowSessionRegistry,
+    pub search_requests: std::sync::Arc<crate::application::search::requests::SearchRequests>,
 }
 
 impl AppState {
@@ -52,6 +53,7 @@ impl AppState {
             messaging_engines,
             secure_content: SecureContentSupervisor::new(),
             sessions: WindowSessionRegistry::new(),
+            search_requests: Default::default(),
         }
     }
 }

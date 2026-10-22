@@ -34,3 +34,8 @@ development governance do not belong here.
 Code-backed domains without an accepted architecture module are listed as
 gaps in the nearest domain index. An index must not manufacture product
 semantics merely to make the tree look complete.
+
+## 4. Design Proposals
+
+- [Search 门户能力](./search/README.md)：Peers 封闭域（端 + Station、当前 actor 授权）内
+  的现状研究、产品合同、内容接入、聚合、索引、权限与打开原对象设计草案。待用户确认，不是 active module。

@@ -1,0 +1,17 @@
+[package]
+name = "search-core"
+version = "0.1.0"
+edition = "2021"
+description = "Portable Peers Search query kernel — CJK-aware tokenizer, query AST, FTS5 match expression, RRF fusion, cursor, cancellation, and source ports"
+
+[dependencies]
+base64 = "0.22"
+prost = "0.14"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+
+[build-dependencies]
+prost-build = "0.14"
+
+[dev-dependencies]

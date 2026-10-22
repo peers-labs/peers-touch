@@ -828,6 +828,19 @@ pub struct MessagingStore {
     database_path: Option<PathBuf>,
 }
 
+/// One cross-conversation full-text hit. This is the device search D-zone
+/// projection: it carries only what the overlay needs to render a row and
+/// open an anchor. It never loads pins, reactions, or receipts — those stay
+/// single-conversation concerns of `search_message_projections`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MessageSearchHit {
+    pub conversation_id: String,
+    pub message_id: String,
+    pub plaintext: String,
+    pub sender_ptid: String,
+    pub committed_at_unix_ms: i64,
+}
+
 struct RecoveryDirectPreKeyBundle {
     signed_prekey_id: i32,
     signed_prekey_private: Zeroizing<Vec<u8>>,
@@ -3963,6 +3976,146 @@ impl MessagingStore {
         Ok(rows)
     }
 
+    /// Full-text search across conversations. When `conversation_id` is
+    /// `None` every visible conversation is searched; when `Some`, it is
+    /// equivalent to the in-conversation modal path. Hidden/retracted/
+    /// moderated messages are excluded by the same predicates as the
+    /// single-conversation query.
+    pub fn search_message_hits(
+        &self,
+        conversation_id: Option<&str>,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<MessageSearchHit>, String> {
+        self.search_message_hits_page(conversation_id, query, None, limit)
+    }
+
+    pub fn search_message_hits_page(
+        &self,
+        conversation_id: Option<&str>,
+        query: &str,
+        before: Option<(i64, &str, &str)>,
+        limit: usize,
+    ) -> Result<Vec<MessageSearchHit>, String> {
+        self.search_message_hits_page_checked(conversation_id, query, before, limit, &|| Ok(()))
+    }
+
+    pub fn search_message_hits_page_checked(
+        &self,
+        conversation_id: Option<&str>,
+        query: &str,
+        before: Option<(i64, &str, &str)>,
+        limit: usize,
+        check: &dyn Fn() -> Result<(), String>,
+    ) -> Result<Vec<MessageSearchHit>, String> {
+        if query.trim().is_empty() || limit == 0 || limit > 101 {
+            return Err("messaging search input is invalid".to_string());
+        }
+        if let Some(scope) = conversation_id {
+            if scope.trim().is_empty() {
+                return Err("messaging search input is invalid".to_string());
+            }
+        }
+        let search_query = fts_phrase_query(query)?;
+        let connection = self.connection()?;
+        check()?;
+        let sql = "SELECT message.conversation_id, message.message_id,
+                          COALESCE(message.edited_text, message.plaintext), message.sender_ptid,
+                          message.committed_at_unix_ms
+                   FROM messaging_message_search_fts
+                   JOIN messaging_message_projections message
+                     ON message.conversation_id = messaging_message_search_fts.conversation_id
+                    AND message.message_id = messaging_message_search_fts.message_id
+                   WHERE messaging_message_search_fts MATCH ?1
+                     AND message.retracted = 0
+                     AND message.hidden_for_actor = 0
+                     AND message.moderated = 0
+                     AND NOT EXISTS (
+                         SELECT 1 FROM messaging_service_messages service
+                         WHERE service.conversation_id = message.conversation_id
+                           AND service.message_id = message.message_id
+                     )
+                     AND (?2 = '' OR messaging_message_search_fts.conversation_id = ?2)
+                     AND (message.committed_at_unix_ms, message.message_id,
+                          message.conversation_id) < (?3, ?4, ?5)
+                   ORDER BY message.committed_at_unix_ms DESC, message.message_id DESC,
+                            message.conversation_id DESC
+                   LIMIT ?6";
+        let scope = conversation_id.unwrap_or("");
+        let (timestamp, message_id, conversation) =
+            before.unwrap_or((i64::MAX, "\u{10ffff}", "\u{10ffff}"));
+        let mut statement = connection.prepare(sql).map_err(|error| error.to_string())?;
+        check()?;
+        let rows = statement
+            .query_map(
+                params![
+                    search_query,
+                    scope,
+                    timestamp,
+                    message_id,
+                    conversation,
+                    i64::try_from(limit).map_err(|_| "messaging search limit exceeds i64")?
+                ],
+                |row| {
+                    Ok(MessageSearchHit {
+                        conversation_id: row.get(0)?,
+                        message_id: row.get(1)?,
+                        plaintext: row.get(2)?,
+                        sender_ptid: row.get(3)?,
+                        committed_at_unix_ms: row.get(4)?,
+                    })
+                },
+            )
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        Ok(rows)
+    }
+
+    /// Name-only suggestions: no member or message hydration, stop as soon
+    /// as enough matching names have been found.
+    pub fn suggest_conversation_names(
+        &self, query: &str, limit: usize, check: &dyn Fn() -> Result<(), String>,
+    ) -> Result<Vec<(String, String, i64)>, String> {
+        let connection = self.connection()?;
+        check()?;
+        let needle = query.trim().to_lowercase();
+        let mut statement = connection.prepare(
+            "SELECT conversation_id, name, updated_at_unix_ms
+             FROM messaging_conversations ORDER BY conversation_id",
+        ).map_err(|error| error.to_string())?;
+        let mut rows = statement.query([]).map_err(|error| error.to_string())?;
+        let mut names = Vec::new();
+        while let Some(row) = rows.next().map_err(|error| error.to_string())? {
+            check()?;
+            let name: String = row.get(1).map_err(|error| error.to_string())?;
+            if name.to_lowercase().contains(&needle) {
+                names.push((row.get(0).map_err(|error| error.to_string())?, name,
+                    row.get(2).map_err(|error| error.to_string())?));
+                if names.len() >= limit { break; }
+            }
+        }
+        Ok(names)
+    }
+
+    /// Resolve one conversation's display name; None when the conversation
+    /// is not present locally. Used by device search to title message hits.
+    pub fn conversation_title(
+        &self, conversation_id: &str, check: &dyn Fn() -> Result<(), String>,
+    ) -> Result<Option<String>, String> {
+        let connection = self.connection()?;
+        check()?;
+        let exists = connection
+            .query_row(
+                "SELECT name FROM messaging_conversations WHERE conversation_id = ?1",
+                params![conversation_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+        Ok(exists)
+    }
+
     pub fn conversation_projections(&self) -> Result<Vec<ConversationProjection>, String> {
         let connection = self.connection()?;
         let mut statement = connection
@@ -6122,8 +6275,8 @@ impl MessagingStore {
                     params![
                         message.conversation_id,
                         message.message_id,
-                        message.plaintext,
-                        attachment_filenames
+                        fts_index_text(&message.plaintext),
+                        fts_index_text(&attachment_filenames)
                     ],
                 )
                 .map_err(|error| error.to_string())?;
@@ -7094,13 +7247,15 @@ impl MessagingStore {
                 .execute(
                     "UPDATE messaging_message_projections
                      SET edited_text = ?1, edited_at_unix_ms = ?2
-                     WHERE message_id = ?3",
-                    params![input.edited_text, input.edited_at_unix_ms, input.message_id],
+                     WHERE message_id = ?3 AND conversation_id = ?4",
+                    params![input.edited_text, input.edited_at_unix_ms,
+                            input.message_id, input.conversation_id],
                 )
                 .map_err(|error| error.to_string())?;
             if changed == 0 {
                 return Err("messaging direct edit target message not found".to_string());
             }
+            refresh_message_search_index(transaction, input.conversation_id, input.message_id)?;
             Ok(())
         })
     }
@@ -7490,6 +7645,9 @@ impl MessagingStore {
                             ],
                         )
                         .map_err(|error| error.to_string())?;
+                    refresh_message_search_index(
+                        transaction, input.conversation_id, input.message_id,
+                    )?;
                 }
                 InteractionMutation::Retract | InteractionMutation::HideForActor => {
                     apply_message_redaction(
@@ -9351,8 +9509,8 @@ impl MessagingStore {
                     params![
                         projection.conversation_id,
                         projection.message_id,
-                        projection.plaintext,
-                        attachment_filenames,
+                        fts_index_text(&projection.plaintext),
+                        fts_index_text(&attachment_filenames),
                     ],
                 )
                 .map_err(|error| error.to_string())?;
@@ -9610,7 +9768,7 @@ impl MessagingStore {
                 "INSERT INTO messaging_message_search_fts(
                     conversation_id, message_id, plaintext, attachment_filenames
                  ) VALUES(?1, ?2, ?3, '')",
-                params![conversation_id, message_id, plaintext],
+                params![conversation_id, message_id, fts_index_text(&plaintext)],
             )
             .map_err(|error| error.to_string())?;
         transaction.commit().map_err(|error| error.to_string())?;
@@ -12698,12 +12856,14 @@ fn persist_sender_content(
             params![
                 conversation_id,
                 message_id,
-                plaintext,
-                attachments
-                    .iter()
-                    .map(|attachment| attachment.filename.as_str())
-                    .collect::<Vec<_>>()
-                    .join("\n"),
+                fts_index_text(plaintext),
+                fts_index_text(
+                    &attachments
+                        .iter()
+                        .map(|attachment| attachment.filename.as_str())
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                ),
             ],
         )
         .map_err(|error| error.to_string())?;
@@ -13754,12 +13914,50 @@ impl AttachmentTransferRepository for MessagingStore {
     }
 }
 
+/// Build the FTS5 MATCH expression for a user query. Segmented FTS content
+/// is written through [`search_core::build_index_text`], so query and index
+/// tokens share one CJK-aware tokenizer; every token is emitted as a quoted
+/// phrase joined as implicit AND.
 fn fts_phrase_query(query: &str) -> Result<String, String> {
-    let normalized = query.trim();
-    if normalized.is_empty() || normalized.chars().count() > 256 {
-        return Err("messaging search query exceeds policy".to_string());
+    search_core::build_match_expression(query).map_err(|error| error.to_string())
+}
+
+/// Refresh the derived row inside the same transaction as an accepted edit.
+/// Visibility policy is reapplied so an edit cannot resurrect redacted content.
+fn refresh_message_search_index(
+    transaction: &Transaction<'_>,
+    conversation_id: &str,
+    message_id: &str,
+) -> Result<(), String> {
+    transaction.execute(
+        "DELETE FROM messaging_message_search_fts
+         WHERE conversation_id = ?1 AND message_id = ?2",
+        params![conversation_id, message_id],
+    ).map_err(|error| error.to_string())?;
+    let text = transaction.query_row(
+        "SELECT COALESCE(edited_text, plaintext) FROM messaging_message_projections
+         WHERE conversation_id = ?1 AND message_id = ?2
+           AND retracted = 0 AND hidden_for_actor = 0 AND moderated = 0",
+        params![conversation_id, message_id],
+        |row| row.get::<_, String>(0),
+    ).optional().map_err(|error| error.to_string())?;
+    if let Some(text) = text {
+        let filenames = load_attachment_metadata(transaction, message_id)?
+            .into_iter().map(|a| a.filename).collect::<Vec<_>>().join("\n");
+        transaction.execute(
+            "INSERT INTO messaging_message_search_fts
+             (conversation_id, message_id, plaintext, attachment_filenames)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![conversation_id, message_id, fts_index_text(&text),
+                    fts_index_text(&filenames)],
+        ).map_err(|error| error.to_string())?;
     }
-    Ok(format!("\"{}\"", normalized.replace('"', "\"\"")))
+    Ok(())
+}
+
+/// Segment text before writing it into a generation-2 FTS content column.
+fn fts_index_text(text: &str) -> String {
+    search_core::build_index_text(text)
 }
 
 fn storage_redaction_physical_bytes(
@@ -20544,5 +20742,179 @@ mod tests {
             .unwrap();
         let next = store.next_delivery_receipt().unwrap().unwrap();
         assert_eq!(next.receipt_id, "device-consumed:item-2");
+    }
+
+    /// Insert a conversation, one committed message projection, and its
+    /// generation-2 segmented FTS row — mirroring the production write path.
+    fn insert_generation_two_message(
+        store: &MessagingStore,
+        conversation_id: &str,
+        event_id: &str,
+        sequence: i64,
+        message_id: &str,
+        plaintext: &str,
+        attachment_filenames: &str,
+        committed_at_unix_ms: i64,
+    ) {
+        let connection = store.connection().unwrap();
+        connection
+            .execute(
+                "INSERT INTO messaging_conversations(
+                    conversation_id, authority_station_id, federation_id, kind, name,
+                    owner_ptid, membership_epoch, mls_epoch, active, updated_at_unix_ms
+                 ) VALUES (?1, '', '', 1, ?2, 'ptid:alice', 0, 0, 1, ?3)",
+                params![conversation_id, conversation_id, committed_at_unix_ms],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO messaging_message_projections(
+                    conversation_id, event_id, event_sequence, message_id,
+                    sender_ptid, sender_device_id, plaintext, delivery_state,
+                    committed_at_unix_ms
+                 ) VALUES (?1, ?2, ?3, ?4, 'ptid:alice', 'alice-device', ?5, 'consumed', ?6)",
+                params![
+                    conversation_id,
+                    event_id,
+                    sequence,
+                    message_id,
+                    plaintext,
+                    committed_at_unix_ms
+                ],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO messaging_message_search_fts(
+                    conversation_id, message_id, plaintext, attachment_filenames
+                 ) VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    conversation_id,
+                    message_id,
+                    fts_index_text(plaintext),
+                    fts_index_text(attachment_filenames)
+                ],
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn search_fts_cjk_probe_finds_short_terms_across_conversations() {
+        let store = MessagingStore::in_memory().unwrap();
+        insert_generation_two_message(
+            &store,
+            "conversation-hike",
+            "event-1",
+            1,
+            "message-hike",
+            "这个周六徒步改到早上八点集合，林场北门",
+            "",
+            100,
+        );
+        insert_generation_two_message(
+            &store,
+            "conversation-vlog",
+            "event-2",
+            1,
+            "message-vlog",
+            "雨崩三天两夜徒步 vlog 剪好了",
+            "林场日出.jpg",
+            200,
+        );
+
+        // Two-character CJK term that the legacy quoted-phrase query missed.
+        let hits = store
+            .search_message_hits(None, "徒步", 20)
+            .expect("cross-conversation CJK search");
+        assert_eq!(hits.len(), 2, "both conversations match the bigram");
+
+        // Cross-conversation scope stays time ordered.
+        assert_eq!(hits[0].message_id, "message-vlog");
+
+        // Scoping to one conversation narrows to its message.
+        let scoped = store
+            .search_message_hits(Some("conversation-hike"), "徒步", 20)
+            .unwrap();
+        assert_eq!(scoped.len(), 1);
+        assert_eq!(scoped[0].message_id, "message-hike");
+
+        // A different bigram appearing in only one message.
+        let thursday = store.search_message_hits(None, "早上", 20).unwrap();
+        assert_eq!(thursday.len(), 1);
+        assert_eq!(thursday[0].conversation_id, "conversation-hike");
+
+        // Attachment filename (CJK + latin suffix) is searchable.
+        let by_attachment = store.search_message_hits(None, "林场", 20).unwrap();
+        assert_eq!(by_attachment.len(), 2);
+        let jpg = store.search_message_hits(None, "jpg", 20).unwrap();
+        assert_eq!(jpg.len(), 1);
+        assert_eq!(jpg[0].message_id, "message-vlog");
+
+        // Hidden/retracted rows never surface.
+        store
+            .connection()
+            .unwrap()
+            .execute(
+                "UPDATE messaging_message_projections SET hidden_for_actor = 1
+                 WHERE message_id = 'message-vlog'",
+                [],
+            )
+            .unwrap();
+        assert!(store.search_message_hits(None, "徒步", 20).unwrap().len() == 1);
+    }
+
+    #[test]
+    fn search_pages_cover_more_than_one_hundred_equal_timestamp_hits_without_repetition() {
+        let store = MessagingStore::in_memory().unwrap();
+        for n in 0..120 {
+            insert_generation_two_message(
+                &store, &format!("conversation-{n:03}"), &format!("event-{n:03}"),
+                1, &format!("message-{n:03}"), "完整分页 corpus", "", 100,
+            );
+        }
+        let first = store.search_message_hits_page(None, "分页", None, 101).unwrap();
+        assert_eq!(first.len(), 101);
+        let boundary = &first[99];
+        let second = store.search_message_hits_page(
+            None, "分页",
+            Some((boundary.committed_at_unix_ms, &boundary.message_id, &boundary.conversation_id)),
+            101,
+        ).unwrap();
+        assert_eq!(second.len(), 20);
+        let ids = first[..100].iter().chain(&second)
+            .map(|hit| (&hit.conversation_id, &hit.message_id)).collect::<HashSet<_>>();
+        assert_eq!(ids.len(), 120);
+    }
+
+    #[test]
+    fn search_kana_punctuation_never_becomes_an_empty_required_fts_phrase() {
+        let store = MessagingStore::in_memory().unwrap();
+        insert_generation_two_message(
+            &store, "kana", "kana-event", 1, "kana-message", "ア・イ", "", 100,
+        );
+        let hits = store.search_message_hits(None, "ア・イ", 20).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].plaintext, "ア・イ");
+    }
+
+    #[test]
+    fn search_device_e2ee_page_excludes_service_plaintext_before_limiting() {
+        let store = MessagingStore::in_memory().unwrap();
+        insert_generation_two_message(
+            &store, "normal", "event-normal", 1, "message-normal", "设备消息", "", 100,
+        );
+        insert_generation_two_message(
+            &store, "service", "event-service", 1, "message-service", "设备消息", "", 200,
+        );
+        store.connection().unwrap().execute(
+            "INSERT INTO messaging_service_messages
+             (conversation_id, event_id, event_sequence, message_id, sender_ptid,
+              sender_device_id, fallback_text, committed_at_unix_ms)
+             VALUES ('service', 'event-service', 1, 'message-service',
+                     'ptid:service', 'service', '设备消息', 200)", [],
+        ).unwrap();
+        let hits = store.search_message_hits_page(None, "设备消息", None, 1).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].message_id, "message-normal");
     }
 }
