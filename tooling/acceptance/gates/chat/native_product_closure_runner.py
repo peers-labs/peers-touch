@@ -54,6 +54,7 @@ from tooling.acceptance.gates.chat.native_support import (
     commits_match,
     read_station_version,
     runtime_station_service,
+    verify_runtime_fixture_ready,
     wait_until,
 )
 
@@ -5035,8 +5036,7 @@ class NativeProductClosureGate(AcceptanceGate):
         return identity
 
     def run(self) -> dict[str, Any]:
-        if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
-            raise GateError("CHAT_ACCEPTANCE_RESET=1 is required")
+        verify_runtime_fixture_ready(self.manifest, self.actor_manifest)
         source_identity = self.source_identity()
         self.assert_condition("native_dom_only", True)
 

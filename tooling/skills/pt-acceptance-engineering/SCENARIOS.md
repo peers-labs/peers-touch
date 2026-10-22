@@ -75,19 +75,16 @@ Use God View to complete native Chat delivery Acceptance.
    make status
    ```
 
-   Before reset:
-
-   ```bash
-   test "${CHAT_ACCEPTANCE_RESET:-0}" = "1"
-   ```
-
-   Verify the Station is the approved disposable target.
+   Bind every required Station service to an explicitly reviewed non-stable
+   Profile. The Runner prepares the exact-scope live reset lease, and the
+   Fixture verifies the target before mutation. The Native Gate consumes the
+   resulting FIXTURE_READY and verified Actor Manifest; no separate boolean
+   reset flag authorizes that operation.
 
 8. **Execute and judge**
 
    ```bash
    make acceptance-chat-native-static
-   CHAT_ACCEPTANCE_RESET=1 \
    make acceptance-chat-native-two-client
    python3 tooling/scripts/acceptance-validate.py \
      --domain chat \

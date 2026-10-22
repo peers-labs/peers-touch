@@ -11,7 +11,7 @@ import unittest
 
 from tooling.acceptance.core.execution_budget import ExecutionBudgetError
 from tooling.acceptance.core.execution_graph import compile_graph, prerequisite_results
-from tooling.acceptance.core import EvidenceStore
+from tooling.acceptance.core import ArtifactRef, EvidenceStore
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -224,7 +224,14 @@ class ExecutionGraphTest(unittest.TestCase):
             stop = json.loads(stop_path.read_text())
             self.assertEqual(stop["unexecutedGateIds"], ["second"])
             self.assertEqual(stop["cost"]["overrun"]["phase"], "publish")
-            first, second = stop["results"]
+            store = EvidenceStore(root / "evidence", worktree=REPO_ROOT)
+            report = store.read_json(ArtifactRef.from_dict(session["attempts"][-1]["report"]))
+            self.assertEqual(
+                store.read_json(ArtifactRef.from_dict(report["terminalObservation"])),
+                stop,
+            )
+            self.assertEqual(report["executionBudget"]["dispatchedGateCount"], 1)
+            first, second = report["results"]
             self.assertEqual(first["id"], "first")
             self.assertEqual(first["status"], "failed")
             self.assertEqual(first["completionStatus"], "PARTIAL")

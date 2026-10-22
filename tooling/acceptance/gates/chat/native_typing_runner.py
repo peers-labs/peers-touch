@@ -910,8 +910,6 @@ class NativeTypingGate(AcceptanceGate):
         return self.cleanup_evidence
 
     def run(self) -> dict[str, Any]:
-        if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
-            raise GateError("CHAT_ACCEPTANCE_RESET=1 is required")
         if self.runtime_binding is None:
             try:
                 acceptance_station_environment(self.station_url)

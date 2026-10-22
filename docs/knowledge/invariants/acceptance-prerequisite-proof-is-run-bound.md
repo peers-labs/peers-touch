@@ -39,6 +39,13 @@ alone does not complete the engineering task. Unknown attribution requires
 judgment. New source invalidates previous proof; a repair ledger neither grants
 authority nor manufactures proof, and must retain the full scope and budget.
 
+Early initialization and Gate publication failures must produce a full-scope
+UNPROVEN run report even without an ExecutionSession. The independently sealed
+stop observation owns the exception facts; it must not rewrite a sealed Gate.
+The dispatched count derives from actual acquired Gate runs, not attempted
+source snapshots. Owner SIGINT is OWNER_INTERRUPTED, not a timeout; existing
+Launcher termination, output capture, cleanup and publication remain bounded.
+
 ## Why this is non-negotiable
 
 Repeating producers multiplies setup and proof cost. Renaming their reports
@@ -61,3 +68,7 @@ The real Runner tests prove one dispatch for two consumers, original producer
 identity, failed prerequisite isolation, source mismatch rejection, descendant
 cancellation, untouched unrelated processes, full-scope stop results and an
 actual failed-attempt → validated-repair → repeated-execution cycle.
+The budget suite also injects early source timeout/SIGINT, real command SIGINT
+and result-publication timeout. It checks exact dispatch counts, full scope,
+durable stop/run references, child extinction, captured output and no downstream
+mutation under the unchanged lifecycle policy.

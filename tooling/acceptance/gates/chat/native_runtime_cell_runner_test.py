@@ -82,6 +82,67 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             )
         )
 
+    def test_prepared_fixture_authority_is_mode_specific(self) -> None:
+        for ready, authorized, verified in (
+            (True, True, True),
+            (False, True, True),
+            (True, False, True),
+            (True, True, False),
+        ):
+            with self.subTest(ready=ready, authorized=authorized, verified=verified):
+                manifest = {"state": "FIXTURE_READY" if ready else "PREPARING"}
+                actors = {"reset": {
+                    "authorized": authorized, "targetVerified": verified,
+                }}
+                if ready and authorized and verified:
+                    native_support.verify_runtime_fixture_ready(manifest, actors)
+                else:
+                    with self.assertRaises(GateError):
+                        native_support.verify_runtime_fixture_ready(manifest, actors)
+
+    def test_product_closure_checks_fixture_before_source_and_product_actions(self) -> None:
+        from tooling.acceptance.gates.chat.native_product_closure_runner import (
+            NativeProductClosureGate,
+        )
+
+        for authorized, verified in ((True, True), (False, True), (True, False)):
+            with self.subTest(authorized=authorized, verified=verified):
+                gate = NativeProductClosureGate.__new__(NativeProductClosureGate)
+                gate.manifest = {"state": "FIXTURE_READY"}
+                gate.actor_manifest = {"reset": {
+                    "authorized": authorized, "targetVerified": verified,
+                }}
+                with (
+                    patch.dict(os.environ, {}, clear=True),
+                    patch.object(
+                        gate, "source_identity",
+                        side_effect=RuntimeError("source probe reached"),
+                    ) as source_probe,
+                ):
+                    if authorized and verified:
+                        with self.assertRaisesRegex(RuntimeError, "source probe reached"):
+                            gate.run()
+                        source_probe.assert_called_once_with()
+                    else:
+                        with self.assertRaises(GateError):
+                            gate.run()
+                        source_probe.assert_not_called()
+
+    def test_native_run_entries_have_no_second_boolean_reset_authority(self) -> None:
+        paths = (
+            *ALL_MIGRATED_RUNNERS,
+            "native_two_client_runner.py",
+            "native_product_closure_runner.py",
+            "lifecycle_group_live.py",
+        )
+        for name in paths:
+            with self.subTest(runner=name):
+                path = ROOT / "tooling/acceptance/gates/chat" / name
+                self.assertNotIn(
+                    "CHAT_ACCEPTANCE_RESET",
+                    self.function_source(path, "run"),
+                )
+
     def test_enter_chat_page_retries_webdriver_script_timeout(self) -> None:
         class Driver:
             clicked = False

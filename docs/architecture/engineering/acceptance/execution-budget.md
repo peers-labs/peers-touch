@@ -193,6 +193,12 @@ credentials、provision 与 cleanup 均重新进入这一上下文；只更新�
 
 Native Chat、Chat Storage、Home Station 与 Cross-Station Social 的 Fixture
 声明 canonical `station.reset:<scope>`，不再要求布尔 reset 开关。
+Native Gate 消费同一 `verify_runtime_fixture_ready` 校验：
+Runtime 为 `FIXTURE_READY`，Actor Manifest 的 targetVerified 为 true；
+reset 模式要求 authorized 为 true，保留既有状态的模式要求
+initialState 为 existing 且 authorized 为 false。Gate 不再独立读取旧布尔
+开关作为第二份权限。该状态校验不签发 reset 权限；真实 mutation 仍由
+Fixture 的 reviewed Profile、精确目标与 live OS lease 控制。
 Chat Fixture 子进程保留八个租约字段并使用 `pass_fds` 继承真实 FD；
 远端 reset 必须先通过租约校验，再触碰本地 client storage。
 多 Station Fixture 由业务 Provisioner 将已选择的 Profile 映射为精确部署目标；
@@ -220,6 +226,18 @@ app bundle；其 Acceptance driver 由 Runtime Cell 唯一构建。共享用户
 第一次工作超时进入清理，清理共享预留预算；发布再共享其预留预算。
 清理或发布超时同样停止后续 Gate。发布异常不能重写 sealed Gate，
 停止诊断写入独立 Evidence Store run，属于 supporting evidence。
+独立停止 run 同时保存 immutable stop observation 和完整范围 run report，
+不依赖调用者是否启用 Session。初始化阶段尚未取得 Gate run 时，启动数
+保持零；已经启动但尚未发布结果的 Gate 保留实际时长与 UNPROVEN 失败。
+停止 report 引用原始 stop observation，不补造 Gate Manifest 或产品证明。
+
+SIGINT 记录为 `OWNER_INTERRUPTED`，不归类为 timeout。Gate 内中断先由
+已有 Launcher 终止并确认后代进程、捕获输出，再执行剩余资源 cleanup
+和结果发布；初始化或发布中断通过相同独立停止 owner 保存完整范围。
+所有路径保留现有预算，停止下游调度。Launcher 的输出回调仅在其真实
+终止检查完成后报告 process cleanup；中断本身不证明远端资源已释放。
+Session 消费实际 run report 和原始 ArtifactRef，下一轮仍要求有界
+诊断与资格验证，不能从中断记录继承 PASS。
 
 普通 stop report 保留已经实际完成的结果，所有未执行项记为
 `BLOCKED/UNPROVEN`，含 stop 引用和零执行时间。

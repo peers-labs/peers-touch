@@ -205,6 +205,160 @@ class ExecutionBudgetTest(unittest.TestCase):
             self.assertEqual(report["results"][1]["proofStatus"], "UNPROVEN")
             self.assertEqual(report["proofStatus"], "UNPROVEN")
 
+    def test_real_runner_publishes_full_scope_on_early_timeout_and_interrupt(self):
+        for interruption in (False, True):
+            with self.subTest(interruption=interruption), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                marker = root / "command-dispatched"
+                catalog = root / "catalog.json"
+                policy = root / "policy.json"
+                catalog.write_text(json.dumps({"gates": {
+                    name: {
+                        "argv": [
+                            sys.executable, "-c",
+                            f"from pathlib import Path;Path({str(marker)!r}).touch()",
+                        ],
+                        "timeout_seconds": 10,
+                    }
+                    for name in ("synthetic-first", "synthetic-next")
+                }}))
+                policy.write_text(json.dumps({
+                    "requestSeconds": 20, "planningSeconds": 5,
+                    "default": {
+                        "totalSeconds": 3, "cleanupSeconds": 0.5, "publishSeconds": 2,
+                    },
+                    "tiers": {}, "gates": {},
+                }))
+                injected_action = (
+                    "os.kill(os.getpid(), signal.SIGINT)"
+                    if interruption else "time.sleep(1)"
+                )
+                program = f"""
+import importlib.util, os, signal, sys, time
+import tooling.acceptance.core as core
+spec = importlib.util.spec_from_file_location("bounded_runner", "tooling/scripts/acceptance-run.py")
+runner = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(runner)
+original = core.source_identity
+calls = 0
+def observed_source(root):
+    global calls
+    calls += 1
+    if calls == 2:
+        {injected_action}
+    return original(root)
+core.source_identity = observed_source
+sys.argv = ["acceptance-run.py", "--gates", {str(catalog)!r},
+            "--gate", "synthetic-first", "--gate", "synthetic-next",
+            "--execution-budget", {str(policy)!r}]
+raise SystemExit(runner.main())
+"""
+                completed = subprocess.run(
+                    [sys.executable, "-c", program], cwd=REPO_ROOT,
+                    env={**os.environ, "PT_ACCEPTANCE_ARTIFACT_ROOT": str(root / "evidence")},
+                    capture_output=True, text=True, timeout=15,
+                )
+                output = completed.stdout + completed.stderr
+                self.assertNotEqual(completed.returncode, 0, output)
+                self.assertFalse(marker.exists(), output)
+                reports = list((root / "evidence").rglob("reports/run.json"))
+                self.assertEqual(len(reports), 1, output)
+                report = json.loads(reports[0].read_text())
+                self.assertEqual(len(report["results"]), 2)
+                self.assertTrue(all(item["proofStatus"] == "UNPROVEN" for item in report["results"]))
+                self.assertEqual(report["executionBudget"]["dispatchedGateCount"], 0)
+                self.assertEqual(report["executionBudget"]["stop"]["gateId"], "synthetic-first")
+                self.assertEqual(
+                    report["executionBudget"]["stop"]["reason"],
+                    "OWNER_INTERRUPTED" if interruption else "EXECUTION_BUDGET_STOP",
+                )
+
+    def test_real_runner_records_command_cancellation_and_publication_timeout(self):
+        for interruption in (True, False):
+            with self.subTest(interruption=interruption), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                marker = root / "downstream"
+                late = root / "late-mutation"
+                started = root / "child-pid"
+                first_command = (
+                    "import os,signal,time;from pathlib import Path;"
+                    f"Path({str(started)!r}).write_text(str(os.getpid()));"
+                    "print('command started',flush=True);"
+                    "os.kill(os.getppid(),signal.SIGINT);time.sleep(1);"
+                    f"Path({str(late)!r}).touch()"
+                    if interruption else "print('command completed')"
+                )
+                catalog = root / "catalog.json"
+                catalog.write_text(json.dumps({"gates": {
+                    "synthetic-first": {
+                        "argv": [sys.executable, "-c", first_command],
+                        "timeout_seconds": 10,
+                    },
+                    "synthetic-next": {
+                        "argv": [
+                            sys.executable, "-c",
+                            f"from pathlib import Path;Path({str(marker)!r}).touch()",
+                        ],
+                        "timeout_seconds": 10,
+                    },
+                }}))
+                policy = root / "policy.json"
+                policy.write_text(json.dumps({
+                    "requestSeconds": 20, "planningSeconds": 5,
+                    "default": {
+                        "totalSeconds": 3, "cleanupSeconds": 0.5, "publishSeconds": 2,
+                    },
+                    "tiers": {}, "gates": {},
+                }))
+                program = f"""
+import importlib.util, sys, time
+spec = importlib.util.spec_from_file_location("bounded_runner", "tooling/scripts/acceptance-run.py")
+runner = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(runner)
+if not {interruption!r}:
+    original = runner.finalize_gate_result
+    def delayed_result(*args, **kwargs):
+        time.sleep(3)
+        return original(*args, **kwargs)
+    runner.finalize_gate_result = delayed_result
+sys.argv = ["acceptance-run.py", "--gates", {str(catalog)!r},
+            "--gate", "synthetic-first", "--gate", "synthetic-next",
+            "--execution-budget", {str(policy)!r}]
+raise SystemExit(runner.main())
+"""
+                completed = subprocess.run(
+                    [sys.executable, "-c", program], cwd=REPO_ROOT,
+                    env={**os.environ, "PT_ACCEPTANCE_ARTIFACT_ROOT": str(root / "evidence")},
+                    capture_output=True, text=True, timeout=15,
+                )
+                output = completed.stdout + completed.stderr
+                self.assertNotEqual(completed.returncode, 0, output)
+                self.assertFalse(marker.exists(), output)
+                reports = list((root / "evidence").rglob("reports/run.json"))
+                self.assertEqual(len(reports), 1, output)
+                report = json.loads(reports[0].read_text())
+                self.assertEqual(report["executionBudget"]["dispatchedGateCount"], 1)
+                self.assertEqual(report["results"][0]["status"], "failed")
+                self.assertEqual(report["results"][1]["proofStatus"], "UNPROVEN")
+                self.assertEqual(
+                    report["executionBudget"]["stop"]["reason"],
+                    "OWNER_INTERRUPTED" if interruption else "EXECUTION_BUDGET_STOP",
+                )
+                if interruption:
+                    self.assertTrue(started.exists(), output)
+                    with self.assertRaises(ProcessLookupError):
+                        os.kill(int(started.read_text()), 0)
+                    self.assertFalse(late.exists())
+                    cleanup = list((root / "evidence").rglob("reports/provisioner-cleanup.json"))
+                    self.assertEqual(len(cleanup), 1)
+                    self.assertEqual(json.loads(cleanup[0].read_text())["status"], "passed")
+                    logs = list((root / "evidence").rglob("logs/*.log"))
+                    self.assertTrue(any("command started" in path.read_text() for path in logs))
+                else:
+                    stop = report["executionBudget"]["stop"]
+                    self.assertEqual(stop["cost"]["overrun"]["phase"], "publish")
+                    self.assertEqual(stop["cost"]["overrun"]["stage"], "result-finalize")
+
     def test_stopping_large_scope_keeps_report_bounded(self):
         stop = {
             "gateId": "first", "reason": "EXECUTION_BUDGET_STOP",

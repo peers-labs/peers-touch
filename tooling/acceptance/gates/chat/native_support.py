@@ -346,15 +346,25 @@ def selected_native_runtime(gate_id: str) -> SelectedNativeRuntime | None:
 def verify_runtime_fixture_ready(
     manifest: dict[str, Any],
     actor_manifest: dict[str, Any],
+    *,
+    allow_existing_fixture: bool = False,
 ) -> None:
     reset = actor_manifest.get("reset")
     if (
         manifest.get("state") != "FIXTURE_READY"
         or not isinstance(reset, dict)
-        or reset.get("authorized") is not True
         or reset.get("targetVerified") is not True
     ):
-        raise GateError("runtime manifest fixture is not reset and verified")
+        raise GateError("runtime manifest fixture is not ready for the selected mode")
+    if allow_existing_fixture:
+        valid_authority = (
+            reset.get("authorized") is False
+            and actor_manifest.get("initialState") == "existing"
+        )
+    else:
+        valid_authority = reset.get("authorized") is True
+    if not valid_authority:
+        raise GateError("runtime manifest fixture is not ready for the selected mode")
 
 
 def cleanup_preserving_primary_failure(

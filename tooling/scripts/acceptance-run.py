@@ -2535,6 +2535,7 @@ def main() -> int:
     active_gate_run = None
     execution = None
     candidate_manifest_ref = None
+    graph_ref = None
     try:
         graph_ref = execute_stage(
             planning, "graph-persist", aggregate_run.write_json,
@@ -2618,6 +2619,7 @@ def main() -> int:
             authority_environment: dict[str, str] = {}
             output_text = ""
             exit_code: int | None = None
+            owner_interrupted = False
             timed_out = False
             cleanup_status = "not-required"
             cleanup_completed_resources: tuple[str, ...] = ()
@@ -2964,6 +2966,12 @@ def main() -> int:
                                 ),
                                 pass_fds=inherited_fds,
                             )
+
+                            def capture_gate_output(stdout: str, stderr: str) -> None:
+                                nonlocal output_text, gate_process_cleanup_status
+                                output_text = stdout + stderr
+                                gate_process_cleanup_status = "passed"
+
                             completed = execute_stage(
                                 execution, "command", launcher.run,
                                 GateLaunchSpec(
@@ -2980,6 +2988,7 @@ def main() -> int:
                                     ),
                                 ),
                                 launch_binding,
+                                capture_output=capture_gate_output,
                             )
                             gate_process_cleanup_status = "passed"
                         else:
@@ -3062,6 +3071,20 @@ def main() -> int:
                                 "sourceSpec": ["execution-budget"],
                                 "sourceGate": "Selected Gate command must terminate within its lifecycle budget",
                             })
+            except KeyboardInterrupt:
+                owner_interrupted = True
+                output_text += "\nGate interrupted by owner (SIGINT)\n"
+                result = {
+                    "id": gate_id,
+                    "status": "failed",
+                    "completionStatus": "PARTIAL",
+                    "proofStatus": "UNPROVEN",
+                    "reason": "OWNER_INTERRUPTED",
+                    "errorType": "KeyboardInterrupt",
+                    "timedOut": False,
+                    "sampleEmissionAllowed": False,
+                    "sourcePhase": "Gate Owner Cancellation",
+                }
             except ExecutionDeadline as error:
                 timed_out = True
                 output_text += f"\n{error}\n"
@@ -3466,7 +3489,16 @@ def main() -> int:
                 execution.finish()
                 cost = execution.report()
                 execution_reports[-1] = cost
-                if cost["state"] == "OVER_BUDGET":
+                if owner_interrupted:
+                    execution_stop = {
+                        "gateId": gate_id,
+                        "reason": "OWNER_INTERRUPTED",
+                        "cost": cost,
+                        "source": aggregate_source,
+                        "policyDigest": policy.identity,
+                        "resumePolicy": "inspect recorded cleanup and qualify before a new attempt",
+                    }
+                elif cost["state"] == "OVER_BUDGET":
                     execution_stop = {
                         "gateId": gate_id,
                         "reason": "EXECUTION_BUDGET_STOP",
@@ -3494,6 +3526,13 @@ def main() -> int:
                         "policyDigest": policy.identity,
                         "resumePolicy": "diagnose and repair before a new attempt",
                     }
+            elif owner_interrupted:
+                execution_stop = {
+                    "gateId": gate_id,
+                    "reason": "OWNER_INTERRUPTED",
+                    "source": aggregate_source,
+                    "resumePolicy": "inspect recorded cleanup before a new attempt",
+                }
             print(
                 f"[{str(result.get('status')).upper()}] {gate_id} "
                 f"duration={duration}s run={gate_run.run_id}"
@@ -3633,7 +3672,7 @@ def main() -> int:
                 development_manifest_ref.to_dict(),
             )
         return exit_code
-    except (ExecutionDeadline, ExecutionBudgetError) as error:
+    except (ExecutionDeadline, ExecutionBudgetError, KeyboardInterrupt) as error:
         if policy is None:
             print(f"Acceptance execution failed: {type(error).__name__}: {error}", file=sys.stderr)
             return 1
@@ -3646,6 +3685,7 @@ def main() -> int:
         stop = {
             "artifactKind": "acceptance-execution-stop",
             "reason": (
+                "OWNER_INTERRUPTED" if isinstance(error, KeyboardInterrupt) else
                 "EXECUTION_BUDGET_STOP"
                 if isinstance(error, ExecutionDeadline) or cost["overrun"]
                 else "EXECUTION_POLICY_STOP"
@@ -3668,28 +3708,23 @@ def main() -> int:
             "resourceCleanup": "UNPROVEN; inspect current run before resuming",
             "failure": type(error).__name__,
         }
-        if session is not None and session.state == "RUNNING":
-            interrupted_results = list(results)
-            recorded_ids = {item["id"] for item in results}
-            if cost["gateId"] in dispatched_ids - recorded_ids:
-                interrupted_results.append({
-                    "id": cost["gateId"],
-                    "status": "failed",
-                    "completionStatus": "PARTIAL",
-                    "proofStatus": "UNPROVEN",
-                    "duration_seconds": cost["durationSeconds"],
-                    "reason": "execution interrupted before result publication",
-                    "errorType": type(error).__name__,
-                    "timedOut": isinstance(error, ExecutionDeadline),
-                    "sampleEmissionAllowed": False,
-                })
-            stop["results"] = interrupted_results + stopped_results(
-                gates, {item["id"] for item in interrupted_results}, stop,
-            )
-            stop["executionBudget"] = {"stop": {
-                "gateId": cost["gateId"], "reason": stop["reason"],
-                "policyDigest": stop["policyDigest"],
-            }}
+        interrupted_results = list(results)
+        recorded_ids = {item["id"] for item in results}
+        if cost["gateId"] in dispatched_ids - recorded_ids:
+            interrupted_results.append({
+                "id": cost["gateId"],
+                "status": "failed",
+                "completionStatus": "PARTIAL",
+                "proofStatus": "UNPROVEN",
+                "duration_seconds": cost["durationSeconds"],
+                "reason": "execution interrupted before result publication",
+                "errorType": type(error).__name__,
+                "timedOut": isinstance(error, ExecutionDeadline),
+                "sampleEmissionAllowed": False,
+            })
+        terminal_results = interrupted_results + stopped_results(
+            gates, {item["id"] for item in interrupted_results}, stop,
+        )
         # A publication failure must not mutate an already sealed Gate run.
         # The independent diagnostic is supporting evidence, never product proof.
         from tooling.acceptance.core.execution_budget import deadline
@@ -3698,8 +3733,38 @@ def main() -> int:
                 diagnostic = store.begin_run("acceptance-execution-stop", source=aggregate_source)
                 try:
                     ref = diagnostic.write_json("reports/stop.json", stop, role="execution-stop")
+                    report = build_run_report(
+                        plan_source, terminal_results,
+                        candidate_mode=candidate_mode,
+                        source=aggregate_source,
+                        execution_policy=args.execution_policy,
+                    )
+                    report.update(
+                        completionStatus="PARTIAL",
+                        proofStatus="UNPROVEN",
+                        sampleEmissionAllowed=False,
+                    )
+                    report["terminalObservation"] = ref.to_dict()
+                    report["executionBudget"] = {
+                        "policyDigest": policy.identity,
+                        "requestDurationSeconds": round(time.monotonic() - request_started, 6),
+                        "planning": planning.report(),
+                        "gates": [
+                            *[item for item in execution_reports if item["gateId"] != cost["gateId"]],
+                            *([cost] if cost["gateId"] in dispatched_ids else []),
+                        ],
+                        "stop": stop,
+                        "selectedGateCount": len(gates),
+                        "dispatchedGateCount": len(dispatched_ids),
+                    }
+                    if graph_ref is not None:
+                        report["executionGraph"] = {
+                            "artifact": graph_ref.to_dict(), "digest": graph["digest"],
+                            "efficiency": efficiency_report(graph, report["executionBudget"]["gates"]),
+                        }
+                    run_ref = diagnostic.write_json("reports/run.json", report, role="run")
                     if session is not None and session.state == "RUNNING":
-                        session.observe(stop, ref.to_dict())
+                        session.observe(report, run_ref.to_dict())
                         diagnostic.write_json(
                             "reports/session.json", session.report(), role="execution-session",
                         )
@@ -3709,6 +3774,7 @@ def main() -> int:
                     })
                     diagnostic.publish_latest()
                     print(f"execution-stop: {json.dumps(ref.to_dict(), sort_keys=True)}")
+                    print(f"run: {json.dumps(run_ref.to_dict(), sort_keys=True)}")
                 finally:
                     diagnostic.close()
         except (Exception, ExecutionDeadline):

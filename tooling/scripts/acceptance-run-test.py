@@ -1239,9 +1239,11 @@ class AcceptanceRunTest(unittest.TestCase):
                 None,
             )
 
-        def run_gate(spec, binding):
+        def run_gate(spec, binding, *, capture_output=None):
             events.append("gate")
             binding.close_parent_copy()
+            if capture_output is not None:
+                capture_output("", "")
             return subprocess.CompletedProcess(
                 args=spec.argv,
                 returncode=0,

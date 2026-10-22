@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-22
-covered_docs_hash: d7de96bcc92e05b5382ec51dc400b1ebca8db2c74f323e85717ad5217e51d443
+covered_docs_hash: a6f7bfbeb06ad18f8139f524e1b3a3336baa407e2c0871f1b2d6efc7bc6e7ffe
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,19 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## Fixture Consumption and Terminal Publication Review
+
+Native Gates consume the prepared Fixture validator instead of a second raw
+boolean authority. Reset and retained-existing modes remain distinct; the
+actual mutation owner still validates reviewed targets and the live OS lease.
+Early initialization, result publication and owner SIGINT now retain the full
+selected scope through an immutable stop observation and independent run report.
+SIGINT is not relabeled as timeout, and sealed Gate evidence is never rewritten.
+Real child regressions verify termination, captured output, cleanup and untouched
+downstream mutation under the unchanged budget. Existing source, resource,
+single-owner and immutable evidence review policies apply without a SKILL.md
+amendment; the existing native Fixture and proof invariants are updated.
 
 ## Desktop Build Input Review
 

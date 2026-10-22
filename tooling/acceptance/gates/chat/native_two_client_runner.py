@@ -42,6 +42,7 @@ from tooling.acceptance.gates.chat.native_support import (
     enter_chat_page,
     is_native_tauri_url,
     runtime_station_service,
+    verify_runtime_fixture_ready,
     wait_for_peer_key_bundle,
 )
 
@@ -604,24 +605,11 @@ class NativeTwoClientGate(AcceptanceGate):
         return value
 
     def verify_fixture_ready(self) -> bool:
-        reset = self.actor_manifest.get("reset")
-        fixture_ready = (
-            self.manifest.get("state") == "FIXTURE_READY"
-            and isinstance(reset, dict)
-            and reset.get("targetVerified") is True
+        verify_runtime_fixture_ready(
+            self.manifest,
+            self.actor_manifest,
+            allow_existing_fixture=self.allow_existing_fixture,
         )
-        if self.allow_existing_fixture:
-            fixture_ready = (
-                fixture_ready
-                and self.actor_manifest.get("initialState") == "existing"
-                and reset.get("authorized") is False
-            )
-        else:
-            fixture_ready = fixture_ready and reset.get("authorized") is True
-        if not fixture_ready:
-            raise GateError(
-                "runtime manifest fixture is not ready for the selected mode"
-            )
         return True
 
     def source_identity(
@@ -1589,11 +1577,6 @@ class NativeTwoClientGate(AcceptanceGate):
         return cleanup
 
     def run(self) -> dict[str, Any]:
-        if (
-            not self.allow_existing_fixture
-            and os.environ.get("CHAT_ACCEPTANCE_RESET") != "1"
-        ):
-            raise GateError("CHAT_ACCEPTANCE_RESET=1 is required")
         if (
             self.gate_id == SUBMITTED_COMMAND_RECOVERY_GATE_ID
             and os.environ.get(PREPARE_SUBMITTED_COMMAND_ENV, "").strip() != "1"

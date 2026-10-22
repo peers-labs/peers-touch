@@ -1035,7 +1035,7 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
             runtime_binding=SyntheticRuntimeBinding(),  # type: ignore[arg-type]
         )
         with (
-            patch.dict(os.environ, {"CHAT_ACCEPTANCE_RESET": "1"}),
+            patch.dict(os.environ, {}, clear=True),
             patch(
                 "tooling.acceptance.gates.chat.native_two_client_runner."
                 "read_station_version",

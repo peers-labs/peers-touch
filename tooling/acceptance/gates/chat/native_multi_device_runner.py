@@ -494,9 +494,6 @@ class NativeMultiDeviceGate(AcceptanceGate):
         return self.cleanup_evidence
 
     def run(self) -> dict[str, Any]:
-        if os.environ.get("CHAT_ACCEPTANCE_RESET") != "1":
-            raise GateError("CHAT_ACCEPTANCE_RESET=1 is required")
-
         self.report.station_url = self.station_url
         version = self.step(
             "station.identity",
