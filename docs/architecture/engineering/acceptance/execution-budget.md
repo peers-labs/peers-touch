@@ -131,6 +131,24 @@ provision、runtime-cell、launch-context、command、cleanup、scan、
 finalize 与 publish。使用 monotonic clock，当前 granularity 明示为
 `owner-boundary`，不伪造未观测到的业务 Step 或产品效果时延。
 
+Environment Fixture 注入 `station.reset:<scope>` 后，Runner 在资源准备前
+执行 `fixture-authority` 阶段。Machine Dev 验证当前 binding、非 stable
+Profile、capability、scope、Git identity 与 tracked-clean topology，再由
+`tooling/scripts/local-dev/machine-dev-lease.py::MachineLease` 取得真实 OS 锁，
+锁内复验同一身份。CLI 与 Runner 共用这一实现，Core 不复制 flock 或
+Profile reset policy，也不实现业务删除。
+
+租约寿命使用当前工作加清理的剩余绝对预算，不另加时间；普通无实验预算
+入口使用 Catalog timeout 作为租约上界。父 Provisioner 最先登记租约释放，
+最后释放；业务 cleanup 继续使用本 Gate 的环境和真实 FD。已继承同一 scope
+的租约必须复验，借用者不释放。一个 Environment 声明多个 reset scope
+时明确拒绝，不能用一个 scope 冒充全部权限。锁内校验失败或取消都会清空
+metadata 并释放锁。子 Gate 的隔离环境仍不接受 raw reset authority。
+
+全量 Catalog 的 Profile 分配仅传给 registration 明确支持的 binding
+类别，并按真实 service ID 过滤；精确 Gate 请求继续拒绝不支持的参数。
+同服务名不代表可复用运行时，distinct-Station 合同依然检查 Profile 唯一性。
+
 实验 synchronous owner deadline 使用 POSIX main-thread `setitimer`。
 取消异常继承 `BaseException`，普通 retry/polling 不得吞掉它。
 不支持的平台在执行前 fail closed，不能声称 Windows 生命周期已验证。

@@ -288,6 +288,7 @@ def environment_provisioner(
     *,
     station_profiles: Mapping[str, str] | None = None,
     service_profiles: Mapping[str, str] | None = None,
+    catalog_bindings: bool = False,
 ) -> Any | None:
     from tooling.acceptance.core import ENVIRONMENTS_DIR, EnvironmentContract
     from tooling.acceptance.provisioners import get_provisioner
@@ -309,6 +310,7 @@ def environment_provisioner(
             for service_id, profile in (service_profiles or {}).items()
             if service_id in service_ids
         },
+        **({"catalog_bindings": True} if catalog_bindings else {}),
     )
 
 
@@ -2657,8 +2659,19 @@ def main() -> int:
                                 provisioner_id,
                                 station_profiles=station_profiles,
                                 service_profiles=service_profiles,
+                                catalog_bindings=args.all_gates,
                             )
                             provisioner.bind_evidence_run(gate_run)
+                            authority_environment = execute_stage(
+                                execution, "fixture-authority",
+                                provisioner.prepare_fixture_authority,
+                                budget_seconds=(
+                                    execution.remaining("cleanup")
+                                    if execution is not None
+                                    else float(gate.get("timeout", 300))
+                                ),
+                            )
+                            gate_env.update(authority_environment)
                             try:
                                 execute_stage(
                                     execution, "credentials", provisioner.prepare_credentials
@@ -3022,7 +3035,7 @@ def main() -> int:
                     )
                 if provisioner is not None and resource_cleanup_allowed:
                     try:
-                        with run_environment(gate_run.subprocess_environment(os.environ.copy())):
+                        with run_environment(gate_run.subprocess_environment(gate_env)):
                             cleanup_completed_resources = execute_stage(
                                 execution, "environment-cleanup", provisioner.cleanup,
                                 phase="cleanup",

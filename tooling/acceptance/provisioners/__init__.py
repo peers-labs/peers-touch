@@ -95,11 +95,19 @@ def get_provisioner(
     *,
     station_profiles: Mapping[str, str] | None = None,
     service_profiles: Mapping[str, str] | None = None,
+    catalog_bindings: bool = False,
 ) -> EnvironmentProvisioner:
     registration = _PROVISIONERS.get(contract.id)
     if registration is None:
         raise ProvisioningError(f"no provisioner registered for environment: {contract.id}")
     module, name, policy = registration
+    if catalog_bindings:
+        # A full catalog allocation supplies inputs to their registered owners.
+        # Exact Gate requests still reject unsupported binding arguments.
+        if policy in ("service", "none"):
+            station_profiles = None
+        if policy in ("station", "none"):
+            service_profiles = None
     arguments = _constructor_arguments(contract.id, policy, station_profiles, service_profiles)
     provisioner_class = _resolve(module, name)
     if not issubclass(provisioner_class, EnvironmentProvisioner) or provisioner_class.environment_id != contract.id:

@@ -30,6 +30,11 @@ from .provisioning import (
     blocked_manifest,
     new_manifest,
 )
+from .reset_authority import (
+    STATION_RESET_AUTHORITY_PREFIX,
+    acquire_station_reset_authority,
+    require_station_reset_authority,
+)
 
 PROFILE_ENV_OVERRIDES = (
     "PT_AGENT_PROVIDER_ID",
@@ -446,6 +451,34 @@ class EnvironmentProvisioner(ABC):
 
     def register_cleanup(self, name: str, handler: Callable[[], None]) -> None:
         self._cleanup_handlers.append((name, handler))
+
+    def prepare_fixture_authority(self, *, budget_seconds: float) -> dict[str, str]:
+        """Hold injected reset authority until reverse resource cleanup ends."""
+        scopes = {
+            fixture.authorization_ref[len(STATION_RESET_AUTHORITY_PREFIX):]
+            for fixture in self.contract.fixtures
+            if fixture.authorization_required
+            and fixture.authorization_ref.startswith(STATION_RESET_AUTHORITY_PREFIX)
+        }
+        if not scopes:
+            return {}
+        if len(scopes) != 1:
+            raise ProvisioningError(
+                "one Environment requires one canonical reset scope; "
+                f"received {sorted(scopes)!r}"
+            )
+        scope = next(iter(scopes))
+        if (
+            os.environ.get("PT_MACHINE_LEASE_KIND") == "station.reset"
+            and os.environ.get("PT_MACHINE_LEASE_RESOURCE_ID") == scope
+        ):
+            require_station_reset_authority(scope)
+            return {}
+        if self._cleanup_handlers:
+            raise ProvisioningError("fixture authority must precede resource acquisition")
+        lease = acquire_station_reset_authority(scope, budget_seconds=budget_seconds)
+        self.register_cleanup(f"station.reset:{scope}", lease.release)
+        return lease.environment
 
     @property
     def resolved_credential_values(self) -> tuple[str, ...]:

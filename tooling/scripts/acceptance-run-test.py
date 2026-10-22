@@ -881,6 +881,9 @@ class AcceptanceRunTest(unittest.TestCase):
                 self.evidence_run = run
                 events.append("evidence-run-bound")
 
+            def prepare_fixture_authority(self, **_kwargs) -> dict[str, str]:
+                return {}
+
             def prepare_credentials(
                 self,
             ) -> tuple[tuple[str, ...], dict[str, str]]:
@@ -1093,6 +1096,9 @@ class AcceptanceRunTest(unittest.TestCase):
                 self.evidence_run = run
                 events.append("evidence-run-bound")
 
+            def prepare_fixture_authority(self, **_kwargs) -> dict[str, str]:
+                return {}
+
             def prepare_credentials(
                 self,
             ) -> tuple[tuple[str, ...], dict[str, str]]:
@@ -1267,6 +1273,7 @@ class AcceptanceRunTest(unittest.TestCase):
         provisioner = mock.Mock()
         provisioner.environment_id = "synthetic-environment"
         provisioner.resolved_credential_values = ()
+        provisioner.prepare_fixture_authority.return_value = {}
         provisioner.prepare_credentials.return_value = ((), {})
         provisioner.cleanup.return_value = ("environment",)
         launch_context = mock.Mock()
@@ -1394,6 +1401,7 @@ class AcceptanceRunTest(unittest.TestCase):
         provisioner = mock.Mock()
         provisioner.environment_id = "synthetic-environment"
         provisioner.resolved_credential_values = ()
+        provisioner.prepare_fixture_authority.return_value = {}
         provisioner.prepare_credentials.return_value = ((), {})
 
         def cleanup_environment() -> tuple[str, ...]:
@@ -1710,6 +1718,7 @@ class AcceptanceRunTest(unittest.TestCase):
         provisioner = mock.Mock()
         provisioner.environment_id = "synthetic-environment"
         provisioner.resolved_credential_values = ()
+        provisioner.prepare_fixture_authority.return_value = {}
         provisioner.prepare_credentials.return_value = ((), {})
         provisioner.cleanup.return_value = ("environment",)
         cell_lifecycle = mock.Mock()

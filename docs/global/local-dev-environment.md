@@ -388,6 +388,14 @@ node tooling/scripts/local-dev/machine-dev.mjs lease \
 The reset API owns scope validation and lease lifetime only; it does not
 implement deletion.
 
+Parent runtimes use the same `MachineLease` implementation in
+`tooling/scripts/local-dev/machine-dev-lease.py` as the CLI. They acquire only
+after `validate-lease`, revalidate the frozen identity while holding the lock,
+retain the actual descriptor through resource cleanup, and release in reverse
+acquisition order. A failed post-lock validation clears metadata and unlocks.
+Acceptance derives this lifetime from the Gate's remaining lifecycle budget;
+an injected reset reference is scope metadata, not a second permission source.
+
 ### Lifecycle
 
 | Target | What it does |

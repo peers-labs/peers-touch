@@ -64,6 +64,12 @@ continuous Plan execution without adding a real safety boundary.
 - Missing audit metadata is reported as an implementation defect, never as a
   request for human reset authorization.
 - Machine Dev status projects `resetPolicy`, never a stored control mode.
+- An Acceptance Fixture's `station.reset:<scope>` is resolved before resource
+  provisioning by the canonical Machine Dev lease owner. Validation alone does
+  not acquire a lease. The parent holds the real descriptor through reverse
+  resource cleanup and releases it last; post-lock validation failure releases
+  the descriptor and clears metadata. Verify with the bounded
+  `tooling.acceptance.tests.test_fixture_authority_lifecycle` regression.
 
 ## Crosswalks
 
