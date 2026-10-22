@@ -27,7 +27,7 @@ from tooling.acceptance.fixtures.chat_native_reset import (
     reset_local_client_storage,
     restart_acceptance_station,
     reset_station_chat_state,
-    seed_bound_contact,
+    seed_bound_contacts,
     seed_federation_context,
     verify_disposable_station_runtime,
 )
@@ -1195,18 +1195,16 @@ CREATE TABLE social_relationship_projections (
                 "_encode_social_proto",
                 return_value=b"canonical-proto",
             ):
-                seed_bound_contact(
+                seed_bound_contacts(
                     "http://127.0.0.1:18080",
                     "sixwin",
-                    actor,
-                    peer,
+                    ((actor, peer),),
                     (actor, peer),
                 )
-                seed_bound_contact(
+                seed_bound_contacts(
                     "http://127.0.0.1:18080",
                     "sixwin",
-                    actor,
-                    peer,
+                    ((actor, peer),),
                     (actor, peer),
                 )
 
@@ -1282,11 +1280,10 @@ ORDER BY owner_ptid
         ), patch(
             "tooling.acceptance.fixtures.chat_native_reset._remote_psql",
         ) as remote_psql:
-            seed_bound_contact(
+            seed_bound_contacts(
                 "http://192.0.2.30:18132",
                 "chat-native-disposable-station",
-                actor,
-                peer,
+                ((actor, peer),),
                 (actor, peer),
             )
 
@@ -1440,11 +1437,10 @@ ORDER BY owner_ptid
             locator_seq=1,
         )
 
-        seed_bound_contact(
+        seed_bound_contacts(
             "http://192.0.2.30:18132",
             "chat-native-acceptance",
-            actor,
-            peer,
+            ((actor, peer),),
             (actor, peer),
         )
 
@@ -1530,11 +1526,10 @@ ORDER BY owner_ptid
             locator_seq=1,
         )
 
-        seed_bound_contact(
+        seed_bound_contacts(
             "http://192.0.2.30:18132",
             "chat-native-acceptance",
-            actor,
-            peer,
+            ((actor, peer),),
             (actor, peer),
         )
 

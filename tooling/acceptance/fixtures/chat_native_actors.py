@@ -33,7 +33,7 @@ from tooling.acceptance.fixtures.chat_native_reset import (
     fixture_federation_id,
     machine_lease_reset_profile,
     read_fixture_actor,
-    seed_bound_contact,
+    seed_bound_contacts,
     seed_federation_context,
     verify_disposable_station_runtime,
 )
@@ -651,17 +651,20 @@ def prepare_bound_friendships(
         records[role] = record
 
     federation_members = tuple(records.values())
+    contacts_by_target: dict[
+        tuple[str, str], list[tuple[FixtureActorRecord, FixtureActorRecord]]
+    ] = {}
     for actor_role, (station_url, environment) in role_targets.items():
         for peer_role in role_targets:
             if actor_role == peer_role:
                 continue
-            seed_bound_contact(
-                station_url,
-                environment,
-                records[actor_role],
-                records[peer_role],
-                federation_members,
+            contacts_by_target.setdefault((station_url, environment), []).append(
+                (records[actor_role], records[peer_role])
             )
+    for (station_url, environment), contacts in contacts_by_target.items():
+        seed_bound_contacts(
+            station_url, environment, tuple(contacts), federation_members,
+        )
     prepare_bound_federation_routing(role_targets, records)
 
 

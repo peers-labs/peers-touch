@@ -1256,7 +1256,7 @@ class ActorFixtureOwnerTests(unittest.TestCase):
             "tooling.acceptance.fixtures.chat_native_actors.read_fixture_actor",
             side_effect=lambda _station, _environment, account: by_account[account],
         ) as read_actor, patch(
-            "tooling.acceptance.fixtures.chat_native_actors.seed_bound_contact"
+            "tooling.acceptance.fixtures.chat_native_actors.seed_bound_contacts"
         ) as seed_contact, patch(
             "tooling.acceptance.fixtures.chat_native_actors."
             "prepare_bound_federation_routing"
@@ -1271,43 +1271,21 @@ class ActorFixtureOwnerTests(unittest.TestCase):
                 call(
                     "http://station-four",
                     "station-four",
-                    records["alice"],
-                    records["bob"],
-                    federation_members,
-                ),
-                call(
-                    "http://station-four",
-                    "station-four",
-                    records["alice"],
-                    records["charlie"],
+                    (
+                        (records["alice"], records["bob"]),
+                        (records["alice"], records["charlie"]),
+                    ),
                     federation_members,
                 ),
                 call(
                     "http://station-five",
                     "station-five",
-                    records["bob"],
-                    records["alice"],
-                    federation_members,
-                ),
-                call(
-                    "http://station-five",
-                    "station-five",
-                    records["bob"],
-                    records["charlie"],
-                    federation_members,
-                ),
-                call(
-                    "http://station-five",
-                    "station-five",
-                    records["charlie"],
-                    records["alice"],
-                    federation_members,
-                ),
-                call(
-                    "http://station-five",
-                    "station-five",
-                    records["charlie"],
-                    records["bob"],
+                    (
+                        (records["bob"], records["alice"]),
+                        (records["bob"], records["charlie"]),
+                        (records["charlie"], records["alice"]),
+                        (records["charlie"], records["bob"]),
+                    ),
                     federation_members,
                 ),
             ],

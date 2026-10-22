@@ -370,7 +370,15 @@ class NativeInteractionsGate(AcceptanceGate):
         self.report.runtime["sourceIdentity"] = identity
         return identity
 
-    def observe_step(self, name: str, client: str, state: str, started: float) -> None:
+    def observe_step(
+        self,
+        name: str,
+        client: str,
+        state: str,
+        started: float,
+        *,
+        predicate: dict[str, Any] | None = None,
+    ) -> None:
         self._step_observation_sequence += 1
         observation = {
             "artifactKind": "acceptance-step-observation",
@@ -387,12 +395,64 @@ class NativeInteractionsGate(AcceptanceGate):
             "state": state,
             "elapsedMs": int((time.monotonic() - started) * 1000),
         }
+        if predicate is not None:
+            observation["predicate"] = predicate
         write_current_artifact(
             f"observations/step-{self._step_observation_sequence:05d}.json",
             (json.dumps(observation, sort_keys=True) + "\n").encode("utf-8"),
             repo_root=REPO_ROOT,
         )
         print(json.dumps(observation, sort_keys=True), flush=True)
+
+    def wait_step(
+        self,
+        name: str,
+        probe: Callable[[], Any],
+        client: str,
+        *,
+        expected: Any = "non-empty projection",
+        ready: Callable[[Any], bool] = bool,
+    ) -> Any:
+        started = time.monotonic()
+        last_serialized = ""
+        last_recorded = float("-inf")
+
+        def predicate() -> Any:
+            nonlocal last_serialized, last_recorded
+            failure: Exception | None = None
+            try:
+                value = probe()
+                accepted = ready(value)
+                sample = {"expected": expected, "observed": value, "accepted": accepted}
+            except Exception as error:
+                failure = error
+                sample = {
+                    "expected": expected,
+                    "errorType": type(error).__name__,
+                    "error": str(error),
+                    "accepted": False,
+                }
+                value = None
+                accepted = False
+            serialized = json.dumps(sample, sort_keys=True)
+            now = time.monotonic()
+            if serialized != last_serialized and (
+                accepted or now - last_recorded >= 1
+            ):
+                self.observe_step(
+                    name, client, "PREDICATE", started, predicate=sample,
+                )
+                last_serialized = serialized
+                last_recorded = now
+            if failure is not None:
+                raise failure
+            return value if accepted else None
+
+        return self.step(
+            name,
+            lambda: wait_until(predicate, name, STEP_TIMEOUT),
+            client,
+        )
 
     def step(self, name: str, action: Callable[[], Any], client: str = "") -> Any:
         started = time.monotonic()
@@ -901,15 +961,15 @@ class NativeInteractionsGate(AcceptanceGate):
             "bob",
         )
         reply_id = str(reply["messageId"])
-        wait_until(
+        self.wait_step(
+            f"{claim_kind}.reply.authority-projection",
             lambda: self.projection(
                 "alice",
                 kind,
                 conversation_id,
                 reply_id,
             ),
-            f"alice {claim_kind} reply authority projection",
-            STEP_TIMEOUT,
+            "alice",
         )
         thread = self.step(
             f"{claim_kind}.thread.send",
@@ -923,7 +983,8 @@ class NativeInteractionsGate(AcceptanceGate):
             "bob",
         )
         thread_id = str(thread["messageId"])
-        wait_until(
+        self.wait_step(
+            f"{claim_kind}.thread.authority-projection",
             lambda: self.projection(
                 "alice",
                 kind,
@@ -931,8 +992,7 @@ class NativeInteractionsGate(AcceptanceGate):
                 thread_id,
                 message_id,
             ),
-            f"alice {claim_kind} thread authority projection",
-            STEP_TIMEOUT,
+            "alice",
         )
         nested = self.step(
             f"{claim_kind}.thread.nested.send",
@@ -950,18 +1010,23 @@ class NativeInteractionsGate(AcceptanceGate):
         self.message_ids[f"{claim_kind}.thread.first"] = thread_id
         self.message_ids[f"{claim_kind}.thread.nested"] = nested_id
         for actor in members:
-            self.sync(actor, kind, conversation_id)
-            reply_projection = wait_until(
+            self.step(
+                f"{claim_kind}.reply-thread.sync",
+                lambda actor=actor: self.sync(actor, kind, conversation_id),
+                actor,
+            )
+            reply_projection = self.wait_step(
+                f"{claim_kind}.reply.projection",
                 lambda actor=actor: self.projection(
                     actor,
                     kind,
                     conversation_id,
                     reply_id,
                 ),
-                f"{actor} {claim_kind} reply projection",
-                STEP_TIMEOUT,
+                actor,
             )
-            thread_projection = wait_until(
+            thread_projection = self.wait_step(
+                f"{claim_kind}.thread.projection",
                 lambda actor=actor: self.projection(
                     actor,
                     kind,
@@ -969,14 +1034,14 @@ class NativeInteractionsGate(AcceptanceGate):
                     thread_id,
                     message_id,
                 ),
-                f"{actor} {claim_kind} thread projection",
-                STEP_TIMEOUT,
+                actor,
             )
             if reply_projection.get("replyToMessageId") != message_id:
                 raise GateError(f"{actor} {claim_kind} reply linkage mismatch")
             if thread_projection.get("threadRootMessageId") != message_id:
                 raise GateError(f"{actor} {claim_kind} thread linkage mismatch")
-            nested_projection = wait_until(
+            nested_projection = self.wait_step(
+                f"{claim_kind}.thread.nested.projection",
                 lambda actor=actor: self.projection(
                     actor,
                     kind,
@@ -984,8 +1049,7 @@ class NativeInteractionsGate(AcceptanceGate):
                     nested_id,
                     message_id,
                 ),
-                f"{actor} {claim_kind} nested thread projection",
-                STEP_TIMEOUT,
+                actor,
             )
             if (
                 nested_projection.get("replyToMessageId") != thread_id
@@ -994,29 +1058,35 @@ class NativeInteractionsGate(AcceptanceGate):
                 raise GateError(
                     f"{actor} {claim_kind} nested thread linkage mismatch"
                 )
-            async_harness(
-                self.clients[actor],
-                "openInteractionThread",
-                {
-                    "conversationId": conversation_id,
-                    "kind": kind,
-                    "messageId": message_id,
-                },
+            self.step(
+                f"{claim_kind}.thread.panel.open",
+                lambda actor=actor: async_harness(
+                    self.clients[actor],
+                    "openInteractionThread",
+                    {
+                        "conversationId": conversation_id,
+                        "kind": kind,
+                        "messageId": message_id,
+                    },
+                ),
+                actor,
             )
-            panel = wait_until(
-                lambda actor=actor: (
-                    snapshot
-                    if (
-                        snapshot := thread_dom_snapshot(self.clients[actor])
-                    )
-                    and snapshot.get("rootMessageId") == message_id
+            panel = self.wait_step(
+                f"{claim_kind}.thread.panel.count-and-order",
+                lambda actor=actor: thread_dom_snapshot(self.clients[actor]),
+                actor,
+                expected={
+                    "rootMessageId": message_id,
+                    "replyCount": 2,
+                    "replyMessageIds": [thread_id, nested_id],
+                    "orders": [0, 1, 2],
+                },
+                ready=lambda snapshot: bool(
+                    snapshot and snapshot.get("rootMessageId") == message_id
                     and snapshot.get("replyCount") == 2
                     and snapshot.get("replyMessageIds") == [thread_id, nested_id]
                     and snapshot.get("orders") == [0, 1, 2]
-                    else None
                 ),
-                f"{actor} {claim_kind} thread panel count and order",
-                STEP_TIMEOUT,
             )
             if panel.get("replyMessageIds") != [thread_id, nested_id]:
                 raise GateError(

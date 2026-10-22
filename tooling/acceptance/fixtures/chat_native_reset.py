@@ -1583,27 +1583,44 @@ WHERE email = {_sql_literal(account_email)}
     return record
 
 
-def seed_bound_contact(
+def seed_bound_contacts(
     station_url: str,
     environment_name: str,
-    actor: FixtureActorRecord,
-    peer: FixtureActorRecord,
+    contacts: Iterable[tuple[FixtureActorRecord, FixtureActorRecord]],
     federation_members: Iterable[FixtureActorRecord],
 ) -> None:
     environment = acceptance_station_environment(station_url, environment_name)
     verify_disposable_station_runtime(environment)
     members = tuple(federation_members)
+    pairs = tuple(contacts)
     if not members:
         raise RuntimeError("Chat fixture Federation requires actors")
+    if not pairs:
+        raise RuntimeError("Chat fixture contacts require actor pairs")
     if environment.get("PT_ACCEPTANCE_RUNTIME_KIND") == LOCAL_SOURCE_RUNTIME:
-        seed_same_station_contact(
-            station_url,
-            environment_name,
-            actor,
-            peer,
-            members,
-        )
+        for actor, peer in pairs:
+            seed_same_station_contact(
+                station_url,
+                environment_name,
+                actor,
+                peer,
+                members,
+            )
         return
+    statements = [
+        _bound_contact_sql(station_url, actor, peer, members)
+        for actor, peer in pairs
+    ]
+    _remote_psql(environment, "BEGIN;\n" + "\n".join(statements) + "\nCOMMIT;")
+
+
+def _bound_contact_sql(
+    station_url: str,
+    actor: FixtureActorRecord,
+    peer: FixtureActorRecord,
+    members: tuple[FixtureActorRecord, ...],
+) -> str:
+    """Return one canonical contact's writes and readback assertions."""
     federation_owner = min(members, key=lambda member: member.ptid)
     friendship = _accepted_friendship(
         actor,
@@ -1748,8 +1765,7 @@ WHERE touch_actor.origin = 'remote_cached'
     RAISE EXCEPTION 'cross-Station remote Actor projection is incomplete';
   END IF;
 """
-    sql = f"""
-BEGIN;
+    return f"""
 INSERT INTO federation (
   federation_id,
   name,
@@ -1957,9 +1973,7 @@ BEGIN
   END IF;
 END
 $acceptance$;
-COMMIT;
 """
-    _remote_psql(environment, sql)
 
 
 def seed_same_station_contact(

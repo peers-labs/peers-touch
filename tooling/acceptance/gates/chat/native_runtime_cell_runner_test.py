@@ -98,7 +98,13 @@ gate._step_observation_sequence = 0
 gate.tested_commit = "synthetic"
 gate.workspace_digest = "clean"
 gate.report = new_report(gate.gate_id)
-gate.step("synthetic.pending", lambda: time.sleep(10), "synthetic-actor")
+gate.wait_step(
+    "synthetic.pending",
+    lambda: {"replyCount": 1},
+    "synthetic-actor",
+    expected={"replyCount": 2},
+    ready=lambda value: value["replyCount"] == 2,
+)
 """
         gate_id = "chat-native-interactions-e2e"
         with tempfile.TemporaryDirectory() as directory:
@@ -117,10 +123,16 @@ gate.step("synthetic.pending", lambda: time.sleep(10), "synthetic-actor")
                     json.loads(store.resolve(ref).read_text())
                     for ref in run.collect_existing_artifacts().values()
                 ]
-                self.assertEqual(len(observations), 1)
+                self.assertEqual(len(observations), 2)
                 self.assertEqual(observations[0]["state"], "STARTED")
                 self.assertEqual(observations[0]["step"], "synthetic.pending")
                 self.assertEqual(observations[0]["proofStatus"], "NOT_APPLICABLE")
+                self.assertEqual(observations[1]["state"], "PREDICATE")
+                self.assertEqual(observations[1]["predicate"], {
+                    "expected": {"replyCount": 2},
+                    "observed": {"replyCount": 1},
+                    "accepted": False,
+                })
                 run.finalize(result={"status": "failed", "proofStatus": "UNPROVEN"})
 
     def source(self, runner: str) -> str:
@@ -640,9 +652,9 @@ gate.step("synthetic.pending", lambda: time.sleep(10), "synthetic-actor")
             ROOT / "tooling/acceptance/gates/chat/native_interactions_runner.py",
             "prove_lifecycle",
         )
-        reply_projection = source.index("reply authority projection")
+        reply_projection = source.index(f'{{claim_kind}}.reply.authority-projection')
         thread_submit = source.index(f'{{claim_kind}}.thread.send')
-        thread_projection = source.index("thread authority projection")
+        thread_projection = source.index(f'{{claim_kind}}.thread.authority-projection')
         nested_submit = source.index(f'{{claim_kind}}.thread.nested.send')
         self.assertLess(reply_projection, thread_submit)
         self.assertLess(thread_projection, nested_submit)

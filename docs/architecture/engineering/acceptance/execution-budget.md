@@ -391,11 +391,20 @@ Runner 为准备异常和 deadline 生成本 Gate 的不可变失败 observation
 不把无 capability channel 的命令超时描述为缺少 ephemeral context。
 Runner 继续绑定原始同 run observation，不改变 proof 或预算。
 
+Chat Fixture 联系人准备按已绑定的 Station 分组。每个远程 Station 在现有租约
+内解析并验证目标一次，以一个数据库事务写入该目标的全部定向联系人；每对
+联系人的 canonical Friend Request、关系、远端 Actor 和 Federation 断言仍在
+事务内执行。失败回滚整个目标事务，不缓存跨 run 或跨租约的目标验证结果。
+账号读取、身份漂移检查和 Federation 路由收敛保持原有边界。
+
 Native interactions 的 Step owner 在调用前后写入独立、顺序编号、只写一次的
 `acceptance-step-observation`。嵌套 Step 使用同一个事件序列；STARTED 记录
 在进程终止后仍可用于定位最后进入的业务边界。它们使用现有 Evidence Store
 脱敏与当前 run 写入合同，标记 `SUPPORTING_OBSERVATION/NOT_APPLICABLE`，
-不替代断言、完成的产品报告或接收者证明。未包裹的业务操作仍保持未观测。
+不替代断言、完成的产品报告或接收者证明。Reply/Thread 投影及面板等待记录
+实际子 Step；predicate observation 保留期望值、实际值或实际异常，状态改变
+时有界采样。已满足条件立即记录，不改变等待断言、轮询间隔或执行预算。
+其余未包裹的业务操作仍保持未观测。
 
 缺少原因、具体资源、生产阶段、上述诊断或有效证据时，输出逐项缺口，
 而非合成完整结论。业务 producer 负责补足业务检查；Reporter 只投影。

@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-22
-covered_docs_hash: cbef2ae608c6bef431f13b80ea1768891f6828768cf58de8a462856ef1052e81
+covered_docs_hash: 304e7b2f4220d02ca48c9fca8094e4ef60e81c2ddbb1e6e6d5d0d4dee1c3062a
 
 covered_docs:
   - AGENTS.md
@@ -32,6 +32,13 @@ covered_docs:
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
 
 ## Bound Fixture Target Review
+
+Contacts now commit once per verified Station target with all pair-level
+readback assertions preserved inside that transaction. Target validation is
+not cached across runs or leases. Native Reply/Thread waits journal their
+actual predicates as supporting observations without changing any assertion
+or budget. Existing ownership, atomicity and evidence rules cover both changes;
+no Skill policy amendment is required.
 
 Ordinary command failures retain their observed exception and Gate implementation
 owner. Launcher timeouts retain actual command and termination observations;
