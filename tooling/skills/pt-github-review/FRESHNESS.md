@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-22
-covered_docs_hash: 304e7b2f4220d02ca48c9fca8094e4ef60e81c2ddbb1e6e6d5d0d4dee1c3062a
+covered_docs_hash: c70cd162380b04c4cea9308a1ac6bbdf93a93004eeea660a1005e6c6fd7038c7
 
 covered_docs:
   - AGENTS.md
@@ -35,10 +35,11 @@ Updating this file is a review act, not bookkeeping. Execution Plan files are ex
 
 Contacts now commit once per verified Station target with all pair-level
 readback assertions preserved inside that transaction. Target validation is
-not cached across runs or leases. Native Reply/Thread waits journal their
-actual predicates as supporting observations without changing any assertion
-or budget. Existing ownership, atomicity and evidence rules cover both changes;
-no Skill policy amendment is required.
+not cached across runs or leases. All Native interactions polls journal actual
+predicates and their unfiltered projections in isolated nested sampling contexts,
+as supporting observations without changing any assertion or budget. Existing
+ownership, atomicity and evidence rules cover these changes; no Skill policy
+amendment is required.
 
 Ordinary command failures retain their observed exception and Gate implementation
 owner. Launcher timeouts retain actual command and termination observations;

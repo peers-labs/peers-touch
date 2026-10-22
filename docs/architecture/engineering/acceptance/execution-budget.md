@@ -401,10 +401,12 @@ Native interactions 的 Step owner 在调用前后写入独立、顺序编号、
 `acceptance-step-observation`。嵌套 Step 使用同一个事件序列；STARTED 记录
 在进程终止后仍可用于定位最后进入的业务边界。它们使用现有 Evidence Store
 脱敏与当前 run 写入合同，标记 `SUPPORTING_OBSERVATION/NOT_APPLICABLE`，
-不替代断言、完成的产品报告或接收者证明。Reply/Thread 投影及面板等待记录
-实际子 Step；predicate observation 保留期望值、实际值或实际异常，状态改变
-时有界采样。已满足条件立即记录，不改变等待断言、轮询间隔或执行预算。
-其余未包裹的业务操作仍保持未观测。
+不替代断言、完成的产品报告或接收者证明。全部业务轮询经过同一个 Step
+owner；predicate observation 保留期望值、实际值或实际异常，以及本次轮询
+读取的实际消息、Engine、Group 和 DOM 投影。嵌套等待使用独立采样上下文，
+过滤条件返回空值时仍保留底层投影，不把未满足与缺失状态混为一谈。状态改变
+时有界采样，已满足条件立即记录，不改变等待断言、轮询间隔或执行预算。
+非轮询的业务操作仅在已有 Step 边界中可观察。
 
 缺少原因、具体资源、生产阶段、上述诊断或有效证据时，输出逐项缺口，
 而非合成完整结论。业务 producer 负责补足业务检查；Reporter 只投影。

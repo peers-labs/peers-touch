@@ -95,6 +95,7 @@ from tooling.acceptance.gates.chat.native_interactions_runner import NativeInter
 gate = NativeInteractionsGate.__new__(NativeInteractionsGate)
 gate.steps = []
 gate._step_observation_sequence = 0
+gate._predicate_probes = []
 gate.tested_commit = "synthetic"
 gate.workspace_digest = "clean"
 gate.report = new_report(gate.gate_id)
