@@ -763,8 +763,11 @@
           ],
           "consumers": [
             "apps/desktop/src-tauri/src/application/x_config",
-            "apps/mobile/src-tauri/src/runtime/x_config.rs"
+            "apps/mobile/src-tauri/src/runtime/x_config.rs",
+            "apps/desktop/src-tauri/Cargo.toml",
+            "apps/mobile/src-tauri/Cargo.toml"
           ],
+          "reuseLayer": "portable-rust-core",
           "allowedDependencies": [
             "station.connectivity.node-authorization",
             "go.crypto"
