@@ -436,8 +436,11 @@ Transcript/thread 内部的发送、Reply、Thread 操作分别记录 UI 调用�
 状态变化有界采样，成功立即记录；外层失败不能覆盖已记录的最内层首个
 失败步骤。原有消息集合、顺序、接收者和 Thread 断言保持原样。
 Thread 回复由真实 Thread 面板展示。Product closure 先等待 root 的
-reply count/IDs，再分别通过 Alice/Bob 的可见 Thread 操作打开面板，
-比较完整回复 ID、内容、顺序和 summary；主时间线只比较 top-level 消息。
+reply count，再分别通过 Alice/Bob 的可见 Thread 操作打开面板，
+比较完整回复 ID、内容、顺序及两端实际 summary；主时间线只比较 top-level 消息。
+完整 reply IDs 在 on-visit Thread 加载后才可验证，不能在打开面板前等待
+尚未加载的 IDs。Desktop summary 与面板都消费同一个共享 Thread surface
+投影 owner；summary 保留独立的实际 DOM 读取，count/IDs 必须精确等于面板。
 初始化证明和恢复快照消费同一个面板读取 owner，不再等待已删除的
 timeline preview 元素。任何一端内容不一致仍失败。
 Interactions 的消息 DOM 检查未命中时保留实际 active conversation、

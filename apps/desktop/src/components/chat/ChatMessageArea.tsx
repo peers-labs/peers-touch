@@ -11,6 +11,7 @@ import {
   socialThreadKey,
   useSocialChatStore,
 } from '../../store/socialChat';
+import { projectDesktopIMMessages } from '../../store/socialProjection';
 import { useCryptoStore } from '../../store/cryptoStore';
 import {
   useActiveChatFederationSlice,
@@ -39,8 +40,7 @@ import {
   isChatMessageTailPinned,
 } from './message/chatMessageTimelinePolicy';
 import {
-  loadedThreadReplyIds,
-  resolvedThreadReplyCount,
+  resolveChatMessageThreadStats,
 } from './message/chatMessageThreadStats';
 import {
   beginMessageReactionMutation,
@@ -118,6 +118,7 @@ export function ChatMessageArea({
     peerOnline,
     typingPeers,
     threadCounts,
+    threadMessages,
     reactions,
     pinnedMessages,
     reactToMessage,
@@ -156,6 +157,7 @@ export function ChatMessageArea({
     peerOnline: s.peerOnline,
     typingPeers: s.typingPeers,
     threadCounts: s.threadCounts,
+    threadMessages: s.threadMessages,
     reactions: s.reactions,
     pinnedMessages: s.pinnedMessages,
     reactToMessage: s.reactToMessage,
@@ -1163,14 +1165,17 @@ export function ChatMessageArea({
             resolveThreadStats={(message) => {
               const threadKey = socialThreadKey(activeKind, activeUlid, message.ulid);
               const threadSummary = threadCounts[threadKey];
-              const replyIds = loadedThreadReplyIds(currentMessages, message.ulid);
               return {
-                replyCount: resolvedThreadReplyCount(
+                ...resolveChatMessageThreadStats({
+                  rootUlid: message.ulid,
                   currentMessages,
-                  message.ulid,
-                  threadSummary?.replyCount,
-                ),
-                replyIds,
+                  loadedThreadMessages: projectDesktopIMMessages(
+                    activeKind,
+                    activeUlid,
+                    threadMessages[threadKey] ?? [],
+                  ),
+                  projectedReplyCount: threadSummary?.replyCount,
+                }),
                 unreadCount: threadSummary?.unreadCount ?? 0,
               };
             }}

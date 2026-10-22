@@ -2381,6 +2381,22 @@ class NativeProductClosureGate(AcceptanceGate):
             )
         return Path(local_path)
 
+    def read_thread_summary(self, actor: str, root_id: str) -> dict[str, Any]:
+        row = self.clients[actor].find_element(
+            f'[data-message-ulid="{root_id}"]',
+            20,
+        )
+        return {
+            "count": int(row.get_attribute("data-message-thread-reply-count") or 0),
+            "ids": [
+                item
+                for item in (
+                    row.get_attribute("data-message-thread-reply-ids") or ""
+                ).split(",")
+                if item
+            ],
+        }
+
     def read_thread_panel(self, actor: str) -> dict[str, Any]:
         value = self.clients[actor].execute_script(
             """
@@ -2413,39 +2429,27 @@ class NativeProductClosureGate(AcceptanceGate):
     def thread_snapshot(self, actor: str, root_id: str) -> dict[str, Any]:
         if self.clients[actor].find_elements("[data-chat-detail-panel='open']"):
             self.click(actor, "[data-chat-detail-toggle]")
-        row = self.clients[actor].find_element(
-            f'[data-message-ulid="{root_id}"]',
-            20,
-        )
-        summary = {
-            "count": int(
-                row.get_attribute("data-message-thread-reply-count") or 0
-            ),
-            "ids": [
-                item
-                for item in (
-                    row.get_attribute("data-message-thread-reply-ids") or ""
-                ).split(",")
-                if item
-            ],
-        }
         self.click_message_action(actor, root_id, "thread")
         self.clients[actor].find_element(
             "[data-chat-thread-panel='open']",
             30,
         )
-        panel_snapshot = self.read_thread_panel(actor)
+        snapshot = self.wait_step(
+            lambda: {
+                "summary": self.read_thread_summary(actor, root_id),
+                "panel": self.read_thread_panel(actor),
+            },
+            f"{actor}.recovered-thread-summary-panel",
+            expected={"root": root_id, "summaryEqualsPanel": True},
+            ready=lambda value: (
+                value["panel"].get("root") == root_id
+                and value["panel"].get("count") == value["summary"]["count"]
+                and value["panel"].get("ids") == value["summary"]["ids"]
+            ),
+            timeout=120,
+        )
         self.click(actor, "[data-chat-thread-close]")
-        if (
-            panel_snapshot.get("root") != root_id
-            or panel_snapshot.get("count") != summary["count"]
-            or panel_snapshot.get("ids") != summary["ids"]
-        ):
-            raise GateError(
-                f"{actor} thread summary and panel diverged: "
-                f"{json.dumps({'summary': summary, 'panel': panel_snapshot})}"
-            )
-        return {"summary": summary, "panel": panel_snapshot}
+        return snapshot
 
     def conversation_snapshot(
         self,
@@ -2508,29 +2512,15 @@ class NativeProductClosureGate(AcceptanceGate):
             lambda: self.composer_send("alice", reply_text),
         )
 
-        def summary() -> dict[str, Any]:
-            row = self.clients["alice"].find_element(
-                f'[data-message-ulid="{bob_root["id"]}"]',
-                10,
-            )
-            count = int(row.get_attribute("data-message-thread-reply-count") or 0)
-            ids = [
-                item
-                for item in (
-                    row.get_attribute("data-message-thread-reply-ids") or ""
-                ).split(",")
-                if item
-            ]
-            return {"count": count, "ids": ids}
-
-        thread_summary = self.wait_step(
-            summary,
+        self.wait_step(
+            lambda: self.read_thread_summary("alice", str(bob_root["id"])),
             "alice.thread-summary",
-            expected={"count": 1, "replyIdsPresent": True},
-            ready=lambda value: value["count"] == 1 and bool(value["ids"]),
+            expected={"count": 1},
+            ready=lambda value: value["count"] == 1,
             timeout=120,
         )
         panels = {}
+        summaries = {}
         # Thread replies are rendered in the real panel, never in timeline previews.
         for actor in ("alice", "bob"):
             self.step(
@@ -2544,18 +2534,33 @@ class NativeProductClosureGate(AcceptanceGate):
                 f"{actor}.exact-thread-panel",
                 expected={
                     "root": bob_root["id"],
-                    "count": thread_summary["count"],
-                    "ids": thread_summary["ids"],
+                    "count": 1,
+                    "ids": panels["alice"]["ids"] if actor == "bob" else "one reply ID",
                     "replyContent": reply_text,
                     "orders": [0, 1],
                 },
                 ready=lambda value: (
                     value.get("root") == bob_root["id"]
                     and value.get("count") == 1
-                    and value.get("ids") == thread_summary["ids"]
                     and value.get("orders") == [0, 1]
                     and len(value.get("replies", [])) == 1
+                    and value.get("ids") == [value["replies"][0]["id"]]
+                    and bool(value["replies"][0]["id"])
                     and reply_text in value["replies"][0]["content"]
+                    and (actor == "alice" or value["ids"] == panels["alice"]["ids"])
+                ),
+                timeout=120,
+            )
+            # The on-visit thread load must hydrate the actual root summary too.
+            summaries[actor] = self.wait_step(
+                lambda actor=actor: self.read_thread_summary(
+                    actor, str(bob_root["id"]),
+                ),
+                f"{actor}.exact-thread-summary",
+                expected={"count": panels[actor]["count"], "ids": panels[actor]["ids"]},
+                ready=lambda value: (
+                    value["count"] == panels[actor]["count"]
+                    and value["ids"] == panels[actor]["ids"]
                 ),
                 timeout=120,
             )
@@ -2563,6 +2568,7 @@ class NativeProductClosureGate(AcceptanceGate):
         for actor in ("alice", "bob"):
             self.click(actor, "[data-chat-thread-close]")
         panel_snapshot = panels["alice"]
+        thread_summary = summaries["alice"]
         reply = panel_snapshot["replies"][0]
         self.assert_condition(
             "thread_exact",
@@ -2570,8 +2576,9 @@ class NativeProductClosureGate(AcceptanceGate):
             and panel_snapshot.get("count") == thread_summary["count"]
             and panel_snapshot.get("ids") == thread_summary["ids"]
             and panel_snapshot.get("ids") == [reply["id"]]
-            and panels["bob"] == panel_snapshot,
-            json.dumps({"summary": thread_summary, "panels": panels}),
+            and panels["bob"] == panel_snapshot
+            and summaries["bob"] == thread_summary,
+            json.dumps({"summaries": summaries, "panels": panels}),
         )
 
         expected_top_level_ids = [str(root["id"]), str(bob_root["id"])]
@@ -2615,6 +2622,7 @@ class NativeProductClosureGate(AcceptanceGate):
             "summary": thread_summary,
             "panel": panel_snapshot,
             "receiverPanels": panels,
+            "receiverSummaries": summaries,
         }
         return str(root["id"]), str(bob_root["id"])
 

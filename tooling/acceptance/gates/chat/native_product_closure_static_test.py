@@ -2302,17 +2302,25 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         gate.manifest = {"source": {"commit": "test", "workspaceDigest": "clean"}}
         gate.structured_evidence = {}
         gate.localization_checks = {}
-        row = Mock()
-        row.get_attribute.side_effect = {
-            "data-message-thread-reply-count": "1",
-            "data-message-thread-reply-ids": "reply",
-        }.get
         gate.clients = {"alice": Mock(), "bob": Mock()}
-        gate.clients["alice"].find_element.return_value = row
         gate.composer_send = Mock()
         gate.click_message_action = Mock()
         gate.click = Mock()
-        for client in gate.clients.values():
+        for actor, client in gate.clients.items():
+            row = Mock()
+            row.get_attribute.side_effect = lambda name, actor=actor: {
+                "data-message-thread-reply-count": "1",
+                "data-message-thread-reply-ids": (
+                    "reply"
+                    if any(
+                        call.args == (actor, "bob-root", "thread")
+                        for call in gate.click_message_action.call_args_list
+                    )
+                    else ""
+                ),
+            }.get(name)
+            client.find_element.return_value = row
+            client.find_elements.return_value = []
             client.is_alive.return_value = True
             client.driver.execute_script.return_value = "visible thread"
         gate.wait_message_text = Mock(side_effect=[
@@ -2355,6 +2363,13 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             set(gate.structured_evidence["transcriptThread"]["receiverPanels"]),
             {"alice", "bob"},
         )
+        self.assertEqual(
+            gate.structured_evidence["transcriptThread"]["receiverSummaries"],
+            {
+                "alice": {"count": 1, "ids": ["reply"]},
+                "bob": {"count": 1, "ids": ["reply"]},
+            },
+        )
         self.assertTrue(all(assertion.passed for assertion in gate.report.assertions))
         self.assertEqual(gate.localization_checks, {"thread": {"alice": []}})
         self.assertNotIn("data-thread-preview-message-", self.source)
@@ -2381,6 +2396,41 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             gate.prove_transcript_thread("group")
 
         self.assertEqual(gate.report.runtime["firstFailedStep"], "bob.exact-thread-panel")
+        self.assertNotIn("transcriptThread", gate.structured_evidence)
+
+    def test_recovered_thread_summary_is_read_after_visible_panel_load(self) -> None:
+        gate = self.transcript_gate()
+        self.assertEqual(gate.read_thread_summary("alice", "bob-root")["ids"], [])
+        with patch(
+            "tooling.acceptance.gates.chat.native_product_closure_runner."
+            "write_current_artifact",
+        ):
+            snapshot = gate.thread_snapshot("alice", "bob-root")
+        self.assertEqual(snapshot["summary"], {"count": 1, "ids": ["reply"]})
+        self.assertEqual(snapshot["panel"]["ids"], snapshot["summary"]["ids"])
+        gate.click.assert_called_once_with("alice", "[data-chat-thread-close]")
+
+    def test_thread_summary_must_still_match_the_loaded_panel_ids(self) -> None:
+        gate = self.transcript_gate()
+        gate.clients["bob"].find_element.return_value.get_attribute.side_effect = {
+            "data-message-thread-reply-count": "1",
+            "data-message-thread-reply-ids": "different-reply",
+        }.get
+
+        def one_probe(predicate, description, timeout, interval):
+            value = predicate()
+            if value is None:
+                raise GateError(description)
+            return value
+
+        with patch(
+            "tooling.acceptance.gates.chat.native_product_closure_runner."
+            "write_current_artifact",
+        ), patch(
+            "tooling.acceptance.gates.chat.native_product_closure_runner.wait_until",
+            side_effect=one_probe,
+        ), self.assertRaisesRegex(GateError, "bob.exact-thread-summary"):
+            gate.prove_transcript_thread("group")
         self.assertNotIn("transcriptThread", gate.structured_evidence)
 
     def test_product_failure_remains_primary_when_cleanup_also_fails(self) -> None:

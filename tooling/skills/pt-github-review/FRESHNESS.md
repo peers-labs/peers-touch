@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-22
-covered_docs_hash: e418c7727620ac5344e9fcb38bac5e4e91755d4713116e4c790f40d4d1f5172d
+covered_docs_hash: fa70db0113ca96a03ea6c298c8c795386d2244900fcd8bda0cb10bc3b77f6271
 
 covered_docs:
   - AGENTS.md
@@ -49,6 +49,12 @@ apply; no Skill policy amendment is required.
 Thread localization is captured once for the contract's Alice role after both
 panel reads and before closure. Regression executes the real checkpoint owner
 to retain its duplicate-capture guard.
+Cold timeline reply counts do not imply loaded reply IDs. Both Desktop summary
+and panel now consume the existing shared Thread surface; Gate identity checks
+run after visible on-visit loading and still require exact count/ID equality
+for both actors and recovery. Cold hydration, stale timeline and divergent
+summary regressions cover this ownership correction. No eager fetch, new
+runtime owner or proof relaxation is introduced; existing Skill rules apply.
 
 The Fixture owner groups account reads by exact Station and checks both
 containers in one SSH operation. Identity completeness and per-account

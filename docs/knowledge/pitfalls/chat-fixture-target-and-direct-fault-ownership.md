@@ -93,3 +93,10 @@ Interactions must retain actual pane, visible rows, scroll geometry and open
 Thread roots when a requested message is not mounted. These observations stay
 separate from the nullable message result: useful diagnostics cannot turn a
 missing receiver message into a satisfied predicate.
+On a cold timeline, an authoritative reply count can exist before any reply IDs
+are loaded. Do not wait for those IDs before opening the Thread. The summary
+must consume the same loaded Thread surface as the panel; reading only timeline
+messages leaves its IDs empty forever. Preserve exact summary/panel ID and count
+equality after the on-visit load for both actors and recovery. Regressions cover
+cold timeline hydration, stale timeline replies, and a deliberately divergent
+Bob summary. No eager reply load or relaxed identity assertion is permitted.

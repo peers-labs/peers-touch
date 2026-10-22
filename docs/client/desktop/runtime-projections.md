@@ -80,6 +80,15 @@ login:
 
 Chat/Messaging event consumption (messages, receipts, typing, mutations, group membership, group federation, conversation settings, cold resync) has been extracted to the `messaging` runtime (see §4.x Messaging Runtime Contract below).
 
+Thread reply identity is projected from `socialChat.threadMessages`, independently
+of the top-level timeline in `socialChat.messages`. The message summary and Thread
+panel both consume `client-chat-core.buildChatThreadSurface`; the summary retains
+the authoritative reply-count floor while exposing the loaded reply IDs in the
+same order as the panel. Opening the Thread owns its on-visit load. Rendering a
+summary must not fetch all replies or flatten them into the timeline. Native
+proof checks summary/panel count and ID equality after that load, including
+offline and restart recovery.
+
 Friend request handling specifically belongs here. A notification saying "User B sent a friend request" must cause the social projection to refresh friend requests and related counters without waiting for Contacts to remount.
 
 Peer public profile is also part of this projection. The chat layer needs the rich public profile (display name, bio, avatar/header, region, tags, links, counts) of any peer it can converse with. The cache lives in `socialChat.peerProfiles` and is filled by `loadPeerProfile(did)`; UI panels (Contacts detail, Chat detail) call it lazily on view, while authoritative invalidation must come from the runtime — when an `actor.profile.updated` realtime signal lands (or, until then, on supervisor resync) `socialRealtime` must call `loadPeerProfile(did, true)` for every peer currently visible in `sessions`/`groupMembers` so the next render sees the new profile.
