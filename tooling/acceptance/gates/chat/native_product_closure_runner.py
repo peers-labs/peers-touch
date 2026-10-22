@@ -2559,7 +2559,8 @@ class NativeProductClosureGate(AcceptanceGate):
                 ),
                 timeout=120,
             )
-            self.capture_visible_localization("thread", (actor,))
+        self.capture_visible_localization("thread", ("alice",))
+        for actor in ("alice", "bob"):
             self.click(actor, "[data-chat-thread-close]")
         panel_snapshot = panels["alice"]
         reply = panel_snapshot["replies"][0]

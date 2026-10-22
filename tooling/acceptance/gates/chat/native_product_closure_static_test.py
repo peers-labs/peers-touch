@@ -2301,6 +2301,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         gate._step_observation_sequence = 0
         gate.manifest = {"source": {"commit": "test", "workspaceDigest": "clean"}}
         gate.structured_evidence = {}
+        gate.localization_checks = {}
         row = Mock()
         row.get_attribute.side_effect = {
             "data-message-thread-reply-count": "1",
@@ -2311,7 +2312,9 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         gate.composer_send = Mock()
         gate.click_message_action = Mock()
         gate.click = Mock()
-        gate.capture_visible_localization = Mock()
+        for client in gate.clients.values():
+            client.is_alive.return_value = True
+            client.driver.execute_script.return_value = "visible thread"
         gate.wait_message_text = Mock(side_effect=[
             {"id": "alice-root"}, {"id": "alice-root"},
             {"id": "bob-root"}, {"id": "bob-root"},
@@ -2353,6 +2356,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             {"alice", "bob"},
         )
         self.assertTrue(all(assertion.passed for assertion in gate.report.assertions))
+        self.assertEqual(gate.localization_checks, {"thread": {"alice": []}})
         self.assertNotIn("data-thread-preview-message-", self.source)
 
     def test_thread_reply_rejects_divergent_receiver_content(self) -> None:
@@ -2505,7 +2509,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             '"direct-open", ("alice",)',
             '"group-create", ("alice",)',
             '"group-open", ("alice", "bob")',
-            '"thread", (actor,)',
+            '"thread", ("alice",)',
             '"reaction-error", ("alice",)',
             '"identity", ("alice", "bob")',
             '"background-picker", (actor,)',

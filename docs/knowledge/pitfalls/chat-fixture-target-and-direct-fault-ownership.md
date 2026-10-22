@@ -86,6 +86,9 @@ them through visible UI. The timeline exposes bounded summary count/IDs, not
 individual reply previews. Initial proof and recovery share one panel reader;
 receiver content, identity and order remain exact. Regression must reject
 divergent Bob content and ensure no obsolete preview selector survives.
+After both panel reads, capture the contract's Alice localization checkpoint
+once while her panel is still open, then close both panels. Use the real
+checkpoint owner in regression so duplicate capture cannot be hidden by a mock.
 Interactions must retain actual pane, visible rows, scroll geometry and open
 Thread roots when a requested message is not mounted. These observations stay
 separate from the nullable message result: useful diagnostics cannot turn a

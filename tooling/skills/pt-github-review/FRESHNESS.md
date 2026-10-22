@@ -46,6 +46,9 @@ interaction rows retain actual pane, rows, scroll and Thread observations while
 the nullable message predicate remains unsatisfied. Receiver-divergence and
 missing-row regressions cover these changes. Existing proof and ownership rules
 apply; no Skill policy amendment is required.
+Thread localization is captured once for the contract's Alice role after both
+panel reads and before closure. Regression executes the real checkpoint owner
+to retain its duplicate-capture guard.
 
 The Fixture owner groups account reads by exact Station and checks both
 containers in one SSH operation. Identity completeness and per-account
