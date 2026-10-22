@@ -520,6 +520,10 @@ pub struct MessagingEngine {
 }
 
 impl MessagingEngine {
+    pub(crate) fn incarnation(&self) -> &str {
+        &self.consumer_id
+    }
+
     pub(crate) fn station_client(&self) -> &StationClient {
         &self.station_client
     }

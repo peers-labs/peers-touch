@@ -28,6 +28,7 @@ development governance do not belong here.
 | Federation | [federation/](./federation/README.md) | Federation lifecycle, membership, policy, governance ledger |
 | Notification | [notification/](./notification/README.md) | Notification lifecycle, persistence, preferences, aggregation |
 | Applets | [applets/](./applets/README.md) | Product applets built on the Applet platform |
+| Search | [search/](./search/README.md) | Device query core, native coordinator, source adapters |
 
 ## 3. Coverage Rule
 
@@ -35,7 +36,8 @@ Code-backed domains without an accepted architecture module are listed as
 gaps in the nearest domain index. An index must not manufacture product
 semantics merely to make the tree look complete.
 
-## 4. Design Proposals
+## 4. Implementation Boundaries
 
 - [Search 门户能力](./search/README.md)：Peers 封闭域（端 + Station、当前 actor 授权）内
-  的现状研究、产品合同、内容接入、聚合、索引、权限与打开原对象设计草案。待用户确认，不是 active module。
+  的已登记架构模块。本期已有端侧核心与部分 native coordinator；
+  生产 overlay、功能直达和旧入口替换尚未完成，原型不构成生产验收。

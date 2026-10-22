@@ -1,6 +1,9 @@
 ---
+kind: pitfall
+title: SQLCipher keys must retain their raw bytes
 status: active
 created: 2026-10-22
+detected: 2026-10-22
 owns: apps/desktop/src-tauri/src/infrastructure/storage
 applies: desktop
 tags: [security, storage, sqlcipher, encryption]
@@ -47,3 +50,10 @@ Desktop 本地 SQLite 用 SQLCipher 整库加密，密钥是 Keychain 中由 `Os
 竞争写事务回归由
 `search_key_migration_rejects_a_rolled_back_rekey_with_competing_writer` 验证：
 失败不报告迁移成功，原文保留，解除锁后可重新迁移。
+
+## How to Detect a Recurrence
+
+- `rg -n 'from_utf8_lossy|sqlite3_(re)?key_v2' apps/desktop/src-tauri/src/infrastructure/storage/mod.rs`
+  核对 lossy 转换仅用于旧库迁移，正常打开和 rekey 的 FFI 参数必须直接来自原始字节。
+- `cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml infrastructure::storage`
+  必须覆盖原始非 UTF-8 密钥、旧库迁移和竞争写事务下拒绝未提交迁移。

@@ -1326,7 +1326,7 @@
         },
         {
           "id": "client.search.portable-core",
-          "owner": "messaging.platform",
+          "owner": "search",
           "contractRoots": [
             "packages/search-core/Cargo.toml"
           ],

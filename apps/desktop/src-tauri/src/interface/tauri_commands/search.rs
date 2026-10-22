@@ -94,7 +94,8 @@ fn execute(
         }
         Ok(())
     };
-    let binding = format!("{}:{revision}", session.account_id);
+    let binding = format!("{}\0{}\0{revision}\0{}",
+        window.label(), session.account_id, engine.incarnation());
     let response = match run(&engine, &binding, &check) {
         Ok(response) => response,
         Err(error) => return failure(error),
@@ -150,7 +151,9 @@ pub async fn search_submit(
     };
     tauri::async_runtime::spawn_blocking(move || execute(
         &state, &window, admission,
-        |engine, account, check| application_search::search_submit(engine, request, account, check),
+        |engine, account, check| application_search::search_submit(
+            engine, request, account, &state.search_cursors, check,
+        ),
     )).await.unwrap_or_else(|_| failure(SearchError::Cancelled))
 }
 

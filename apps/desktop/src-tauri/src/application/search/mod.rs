@@ -1,9 +1,9 @@
 pub mod requests;
 
-use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
+use search_core::cursor::authenticated::AuthenticatedCursorCodec;
 use search_core::model::wire::{
     ResultItem, SearchIntent, SearchKind, SearchResponse, SearchScope,
     SourceCoverage, SourceState, SubmitRequest, SuggestRequest,
@@ -48,7 +48,6 @@ fn envelope(items: Vec<ScoredDocument>, sources: &[&str]) -> SearchResponse {
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct MessageCursor {
-    fingerprint: String,
     timestamp: i64,
     message_id: String,
     conversation_id: String,
@@ -59,6 +58,12 @@ fn admitted_query(query: &str) -> Result<&str, SearchError> {
     if query.is_empty() || query.chars().count() > search_core::MAX_QUERY_CHARS {
         Err(SearchError::InvalidQuery)
     } else { Ok(query) }
+}
+
+fn admitted_message_query(query: &str) -> Result<&str, SearchError> {
+    let query = admitted_query(query)?;
+    search_core::build_match_expression(query).map_err(|_| SearchError::InvalidQuery)?;
+    Ok(query)
 }
 
 /// Immediate local suggestions: conversation names plus a small message
@@ -78,6 +83,7 @@ pub fn search_suggest(
     if !matches!(kind, SearchKind::Unspecified | SearchKind::Conversation | SearchKind::Message) {
         return Err(SearchError::InvalidQuery);
     }
+    if kind != SearchKind::Conversation { admitted_message_query(query)?; }
     let limit = bounded_limit(input.limit);
     let mut sources = Vec::new();
     let conversations = if kind != SearchKind::Message {
@@ -107,6 +113,7 @@ pub fn search_submit(
     engine: &MessagingEngine,
     input: SubmitRequest,
     account: &str,
+    cursors: &AuthenticatedCursorCodec,
     check: &dyn Fn() -> Result<(), SearchError>,
 ) -> Result<SearchResponse, SearchError> {
     check()?;
@@ -118,18 +125,13 @@ pub fn search_submit(
     if input.intent != SearchIntent::Find as i32 || input.kind != SearchKind::Message as i32 {
         return Err(SearchError::InvalidQuery);
     }
-    let query = admitted_query(&input.query)?;
+    let query = admitted_message_query(&input.query)?;
     let fingerprint = hex::encode(Sha256::digest(format!("{account}\0{query}").as_bytes()));
+    let now_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| SearchError::CursorExpired)?.as_millis() as u64;
     let cursor: Option<MessageCursor> = if input.cursor.is_empty() { None } else {
-        if input.cursor.len() > 4096 { return Err(SearchError::CursorExpired); }
-        let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(&input.cursor)
-            .map_err(|_| SearchError::CursorExpired)?;
-        let cursor: MessageCursor = serde_json::from_slice(&bytes)
-            .map_err(|_| SearchError::CursorExpired)?;
-        if cursor.fingerprint != fingerprint {
-            return Err(SearchError::CursorExpired);
-        }
-        Some(cursor)
+        Some(cursors.decode(&input.cursor, &fingerprint, now_ms)
+            .map_err(|_| SearchError::CursorExpired)?)
     };
     let before = cursor.as_ref().map(|c|
         (c.timestamp, c.message_id.as_str(), c.conversation_id.as_str()));
@@ -143,12 +145,12 @@ pub fn search_submit(
     let next_cursor = if has_more {
         let last = documents.last().ok_or(SearchError::CursorExpired)?;
         let cursor = MessageCursor {
-            fingerprint, timestamp: last.created_at_unix_ms,
+            timestamp: last.created_at_unix_ms,
             message_id: last.resource.message_id.clone(),
             conversation_id: last.resource.conversation_id.clone(),
         };
-        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(
-            serde_json::to_vec(&cursor).map_err(|_| SearchError::CursorExpired)?)
+        cursors.encode(cursor, &fingerprint, now_ms)
+            .map_err(|_| SearchError::CursorExpired)?
     } else { String::new() };
     let mut response = envelope(documents, &[DEVICE_MESSAGE_SOURCE]);
     response.has_more = has_more;
@@ -224,6 +226,14 @@ mod tests {
         assert!(value.items.is_empty());
         assert!(!value.has_more);
         assert_eq!(value.next_cursor, "");
+    }
+
+    #[test]
+    fn message_queries_reject_token_empty_input_before_retrieval() {
+        assert_eq!(admitted_message_query("..."), Err(SearchError::InvalidQuery));
+        assert_eq!(admitted_message_query("😀"), Err(SearchError::InvalidQuery));
+        assert_eq!(admitted_message_query("周会 roadmap"), Ok("周会 roadmap"));
+        assert_eq!(admitted_query("..."), Ok("..."));
     }
 
     #[test]

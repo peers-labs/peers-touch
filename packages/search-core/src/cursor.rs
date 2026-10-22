@@ -8,6 +8,8 @@
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 
+pub mod authenticated;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PageCursor {
     /// Schema marker; bump when the cursor payload meaning changes.

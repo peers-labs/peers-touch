@@ -36,6 +36,7 @@ pub struct AppState {
     /// Sole in-process authority for authenticated Desktop sessions.
     pub sessions: WindowSessionRegistry,
     pub search_requests: std::sync::Arc<crate::application::search::requests::SearchRequests>,
+    pub search_cursors: search_core::cursor::authenticated::AuthenticatedCursorCodec,
 }
 
 impl AppState {
@@ -54,6 +55,9 @@ impl AppState {
             secure_content: SecureContentSupervisor::new(),
             sessions: WindowSessionRegistry::new(),
             search_requests: Default::default(),
+            search_cursors: search_core::cursor::authenticated::AuthenticatedCursorCodec::new(
+                rand::random(),
+            ),
         }
     }
 }

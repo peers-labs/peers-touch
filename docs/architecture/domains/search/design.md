@@ -150,6 +150,13 @@ Source weights、fusion 常数与 personalization 需在标注 corpus 验证，�
 
 分页 Coordinator 保留短期 query session：排序候选快照、各来源 continuation token、已发对象集合、未发候选、revision 和过期时间；数量有上限。cursor 不包含私密明文，绑定 actor/session/scope/filter/ranking/source-set。状态过期返回 `CURSOR_EXPIRED`，不能静默翻回第一页。
 
+当前 D03 的单一 DEVICE/FIND/MESSAGE keyset continuation 复用 `search-core` 的
+HMAC-SHA256 codec：认证完整位置字段、查询及窗口/账号/session revision/Engine
+incarnation 绑定，最长有效期五分钟。AppState 生成进程内随机密钥，重启即失效，
+不持久化密钥或查询。篡改、过期、上下文替换在读取来源前拒绝；消息检索先由
+共享查询核心验证，纯标点等无 token 输入返回 `INVALID_QUERY`。完整混合来源
+快照与 coverage 生命周期仍属于 D03 未完成范围。
+
 数据更新/权限变化时，允许从当前页移除失效对象；结果快照不冻结权限。总量与 facet 只基于当前授权范围；重校验后缺乏准确全量就返回 lower-bound/estimated/unknown，不泄漏未经授权的 raw hit count。
 
 ### 5.1 关键词、语义与融合

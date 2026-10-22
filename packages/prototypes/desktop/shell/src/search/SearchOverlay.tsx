@@ -94,10 +94,13 @@ export function SearchOverlay({ open, onClose, onOpenResult }: SearchOverlayProp
   const [cursorEngaged, setCursorEngaged] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const loadingTimer = useRef<number | null>(null);
+  const openingResult = useRef(false);
 
   // 每次打开重置为轻量首屏。
   useEffect(() => {
     if (open) {
+      const opener = document.activeElement;
+      openingResult.current = false;
       setQuery('');
       setIntent('all');
       setKindFilter('all');
@@ -106,7 +109,13 @@ export function SearchOverlay({ open, onClose, onOpenResult }: SearchOverlayProp
       setActiveIndex(0);
       setCursorEngaged(false);
       const t = window.setTimeout(() => inputRef.current?.focus(), 30);
-      return () => window.clearTimeout(t);
+      return () => {
+        window.clearTimeout(t);
+        if (loadingTimer.current) window.clearTimeout(loadingTimer.current);
+        if (!openingResult.current && opener instanceof HTMLElement && opener.isConnected) {
+          opener.focus();
+        }
+      };
     }
   }, [open]);
 
@@ -115,14 +124,15 @@ export function SearchOverlay({ open, onClose, onOpenResult }: SearchOverlayProp
   }, []);
 
   const suggestionItems = useMemo(
-    () => (query.trim() && !loading ? suggestions(query, actor) : []),
-    [query, loading, actor],
+    () => (intent !== 'functions' && query.trim() && !loading ? suggestions(query, actor) : []),
+    [query, loading, actor, intent],
   );
 
   const submittedQuery = query;
   const results = useMemo(() => {
     if (!submitted || loading || !submittedQuery.trim()) return [];
-    return searchResults(submittedQuery, actor, intent === 'functions' ? 'functions' : kindFilter);
+    const matches = searchResults(submittedQuery, actor, intent === 'functions' ? 'functions' : kindFilter);
+    return KIND_ORDER.flatMap((kind) => matches.filter((item) => item.kind === kind));
   }, [submitted, submittedQuery, loading, actor, intent, kindFilter]);
 
   const recent = useMemo(() => recentObjects(actor), [actor]);
@@ -154,6 +164,7 @@ export function SearchOverlay({ open, onClose, onOpenResult }: SearchOverlayProp
 
   const openResult = useCallback(
     (item: { targetPage: SearchResult['targetPage']; anchor: string; title: string }) => {
+      openingResult.current = true;
       onOpenResult(item);
       onClose();
     },
@@ -161,6 +172,7 @@ export function SearchOverlay({ open, onClose, onOpenResult }: SearchOverlayProp
   );
 
   const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
     if (e.key === 'ArrowDown') {
       e.preventDefault();
       setCursorEngaged(true);
@@ -188,7 +200,7 @@ export function SearchOverlay({ open, onClose, onOpenResult }: SearchOverlayProp
   }
   const showInitial = !loading && !query.trim();
   const showSuggestions = !loading && !submitted && query.trim().length > 0;
-  const showEmpty = !loading && submitted && results.length === 0 && suggestionItems.length === 0;
+  const showEmpty = !loading && submitted && results.length === 0;
   const unavailableSources = SOURCE_STATUS[actor].unavailable;
   let rowCursor = -1;
   const nextRowIndex = () => {
