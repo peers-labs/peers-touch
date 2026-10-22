@@ -10,7 +10,7 @@ import tempfile
 import unittest
 import zlib
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from selenium.webdriver.common.by import By
 
@@ -1270,7 +1270,11 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             transcript_source,
         )
         self.assertIn(
-            'self.click_message_action("alice", str(bob_root["id"]), "thread")',
+            'for actor in ("alice", "bob"):',
+            transcript_source,
+        )
+        self.assertIn(
+            'actor, str(bob_root["id"]), "thread",',
             transcript_source,
         )
         self.assertNotIn(
@@ -2290,6 +2294,91 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         self.assertFalse(sample["accepted"])
         self.assertEqual(gate.report.runtime["firstFailedStep"], "bob.visible-message")
 
+    def transcript_gate(self, bob_panel: dict[str, object] | None = None) -> NativeProductClosureGate:
+        gate = object.__new__(NativeProductClosureGate)
+        gate.steps = []
+        gate.report = new_report(gate.gate_id)
+        gate._step_observation_sequence = 0
+        gate.manifest = {"source": {"commit": "test", "workspaceDigest": "clean"}}
+        gate.structured_evidence = {}
+        row = Mock()
+        row.get_attribute.side_effect = {
+            "data-message-thread-reply-count": "1",
+            "data-message-thread-reply-ids": "reply",
+        }.get
+        gate.clients = {"alice": Mock(), "bob": Mock()}
+        gate.clients["alice"].find_element.return_value = row
+        gate.composer_send = Mock()
+        gate.click_message_action = Mock()
+        gate.click = Mock()
+        gate.capture_visible_localization = Mock()
+        gate.wait_message_text = Mock(side_effect=[
+            {"id": "alice-root"}, {"id": "alice-root"},
+            {"id": "bob-root"}, {"id": "bob-root"},
+        ])
+        panel = {
+            "root": "bob-root",
+            "count": 1,
+            "ids": ["reply"],
+            "orders": [0, 1],
+            "replies": [{"id": "reply", "content": f"w13-reply-{os.getpid()}", "order": 1}],
+        }
+        gate.read_thread_panel = Mock(side_effect=[panel, bob_panel or panel])
+        gate.transcript = Mock(return_value=[
+            {"id": "alice-root", "sequence": 1, "content": f"w13-root-{os.getpid()}"},
+            {"id": "bob-root", "sequence": 2, "content": f"w13-bob-{os.getpid()}"},
+        ])
+        return gate
+
+    def test_thread_reply_is_read_from_both_visible_panels(self) -> None:
+        gate = self.transcript_gate()
+        with patch(
+            "tooling.acceptance.gates.chat.native_product_closure_runner."
+            "write_current_artifact",
+        ):
+            result = gate.prove_transcript_thread("group")
+
+        self.assertEqual(result, ("alice-root", "bob-root"))
+        self.assertEqual(gate.wait_message_text.call_count, 4)
+        self.assertEqual(
+            [call.args for call in gate.click_message_action.call_args_list],
+            [
+                ("alice", "bob-root", "reply"),
+                ("alice", "bob-root", "thread"),
+                ("bob", "bob-root", "thread"),
+            ],
+        )
+        self.assertEqual(
+            set(gate.structured_evidence["transcriptThread"]["receiverPanels"]),
+            {"alice", "bob"},
+        )
+        self.assertTrue(all(assertion.passed for assertion in gate.report.assertions))
+        self.assertNotIn("data-thread-preview-message-", self.source)
+
+    def test_thread_reply_rejects_divergent_receiver_content(self) -> None:
+        gate = self.transcript_gate({
+            "root": "bob-root", "count": 1, "ids": ["reply"], "orders": [0, 1],
+            "replies": [{"id": "reply", "content": "wrong receiver text", "order": 1}],
+        })
+
+        def one_probe(predicate, description, timeout, interval):
+            value = predicate()
+            if value is None:
+                raise GateError(description)
+            return value
+
+        with patch(
+            "tooling.acceptance.gates.chat.native_product_closure_runner."
+            "write_current_artifact",
+        ), patch(
+            "tooling.acceptance.gates.chat.native_product_closure_runner.wait_until",
+            side_effect=one_probe,
+        ), self.assertRaisesRegex(GateError, "bob.exact-thread-panel"):
+            gate.prove_transcript_thread("group")
+
+        self.assertEqual(gate.report.runtime["firstFailedStep"], "bob.exact-thread-panel")
+        self.assertNotIn("transcriptThread", gate.structured_evidence)
+
     def test_product_failure_remains_primary_when_cleanup_also_fails(self) -> None:
         gate = object.__new__(NativeProductClosureGate)
         gate.steps = []
@@ -2416,7 +2505,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             '"direct-open", ("alice",)',
             '"group-create", ("alice",)',
             '"group-open", ("alice", "bob")',
-            '"thread", ("alice",)',
+            '"thread", (actor,)',
             '"reaction-error", ("alice",)',
             '"identity", ("alice", "bob")',
             '"background-picker", (actor,)',

@@ -1736,34 +1736,20 @@ class NativeProductClosureGate(AcceptanceGate):
                     content: row.querySelector('[data-message-content]')?.innerText || '',
                   };
                 }
-                const preview = Array.from(
-                  document.querySelectorAll('[data-thread-preview-message-id]'),
-                ).find((item) => {
-                  const content = item.querySelector('[data-thread-preview-message-content]');
-                  return (content?.innerText || '').includes(expected);
-                });
-                if (!preview) {
-                  return {
-                    id: '',
-                    visibleRows: Array.from(
-                      document.querySelectorAll('[data-message-ulid]'),
-                    ).map((item) => ({
-                      id: item.getAttribute('data-message-ulid') || '',
-                      sequence: Number(
-                        item.getAttribute('data-message-authority-sequence') || 0,
-                      ),
-                      content: item.querySelector('[data-message-content]')
-                        ?.innerText || '',
-                      threadRoot: item.getAttribute('data-message-thread-root') || '',
-                      replyTo: item.getAttribute('data-message-reply-to') || '',
-                    })),
-                  };
-                }
                 return {
-                  id: preview.getAttribute('data-thread-preview-message-id') || '',
-                  sequence: 0,
-                  attachmentCount: 0,
-                  content: preview.querySelector('[data-thread-preview-message-content]')?.innerText || '',
+                  id: '',
+                  visibleRows: Array.from(
+                    document.querySelectorAll('[data-message-ulid]'),
+                  ).map((item) => ({
+                    id: item.getAttribute('data-message-ulid') || '',
+                    sequence: Number(
+                      item.getAttribute('data-message-authority-sequence') || 0,
+                    ),
+                    content: item.querySelector('[data-message-content]')
+                      ?.innerText || '',
+                    threadRoot: item.getAttribute('data-message-thread-root') || '',
+                    replyTo: item.getAttribute('data-message-reply-to') || '',
+                  })),
                 };
                 """,
                 text,
@@ -2395,6 +2381,35 @@ class NativeProductClosureGate(AcceptanceGate):
             )
         return Path(local_path)
 
+    def read_thread_panel(self, actor: str) -> dict[str, Any]:
+        value = self.clients[actor].execute_script(
+            """
+            const panel = document.querySelector('[data-chat-thread-panel="open"]');
+            if (!panel) return {};
+            const replies = Array.from(
+              panel.querySelectorAll('[data-thread-message-role="reply"]'),
+            );
+            return {
+              root: panel.getAttribute('data-chat-thread-root') || '',
+              count: Number(panel.getAttribute('data-chat-thread-reply-count') || 0),
+              ids: replies.map((row) =>
+                row.getAttribute('data-thread-message-id') || ''
+              ),
+              orders: Array.from(
+                panel.querySelectorAll('[data-thread-message-order]'),
+              ).map((row) =>
+                Number(row.getAttribute('data-thread-message-order') || -1)
+              ),
+              replies: replies.map((row) => ({
+                id: row.getAttribute('data-thread-message-id') || '',
+                content: row.querySelector('[data-message-text]')?.innerText || '',
+                order: Number(row.getAttribute('data-thread-message-order') || -1),
+              })),
+            };
+            """
+        )
+        return value if isinstance(value, dict) else {}
+
     def thread_snapshot(self, actor: str, root_id: str) -> dict[str, Any]:
         if self.clients[actor].find_elements("[data-chat-detail-panel='open']"):
             self.click(actor, "[data-chat-detail-toggle]")
@@ -2415,32 +2430,11 @@ class NativeProductClosureGate(AcceptanceGate):
             ],
         }
         self.click_message_action(actor, root_id, "thread")
-        panel = self.clients[actor].find_element(
+        self.clients[actor].find_element(
             "[data-chat-thread-panel='open']",
             30,
         )
-        panel_snapshot = self.clients[actor].execute_script(
-            """
-            const panel = arguments[0];
-            return {
-              root: panel.getAttribute('data-chat-thread-root') || '',
-              count: Number(
-                panel.getAttribute('data-chat-thread-reply-count') || 0
-              ),
-              ids: Array.from(
-                panel.querySelectorAll('[data-thread-message-role="reply"]')
-              ).map((item) =>
-                item.getAttribute('data-thread-message-id') || ''
-              ),
-              orders: Array.from(
-                panel.querySelectorAll('[data-thread-message-order]')
-              ).map((item) =>
-                Number(item.getAttribute('data-thread-message-order') || -1)
-              ),
-            };
-            """,
-            panel,
-        )
+        panel_snapshot = self.read_thread_panel(actor)
         self.click(actor, "[data-chat-thread-close]")
         if (
             panel_snapshot.get("root") != root_id
@@ -2513,8 +2507,6 @@ class NativeProductClosureGate(AcceptanceGate):
             "transcript.alice.send-reply.ui",
             lambda: self.composer_send("alice", reply_text),
         )
-        reply = self.wait_message_text("alice", reply_text)
-        self.wait_message_text("bob", reply_text)
 
         def summary() -> dict[str, Any]:
             row = self.clients["alice"].find_element(
@@ -2538,33 +2530,48 @@ class NativeProductClosureGate(AcceptanceGate):
             ready=lambda value: value["count"] == 1 and bool(value["ids"]),
             timeout=120,
         )
-        self.step(
-            "transcript.alice.thread.ui",
-            lambda: self.click_message_action("alice", str(bob_root["id"]), "thread"),
-        )
-        panel = self.clients["alice"].find_element("[data-chat-thread-panel='open']", 30)
-        panel_snapshot = self.clients["alice"].execute_script(
-            """
-            const panel = arguments[0];
-            return {
-              root: panel.getAttribute('data-chat-thread-root') || '',
-              count: Number(panel.getAttribute('data-chat-thread-reply-count') || 0),
-              ids: Array.from(panel.querySelectorAll('[data-thread-message-role="reply"]'))
-                .map((row) => row.getAttribute('data-thread-message-id') || ''),
-            };
-            """,
-            panel,
-        )
+        panels = {}
+        # Thread replies are rendered in the real panel, never in timeline previews.
+        for actor in ("alice", "bob"):
+            self.step(
+                f"transcript.{actor}.thread.ui",
+                lambda actor=actor: self.click_message_action(
+                    actor, str(bob_root["id"]), "thread",
+                ),
+            )
+            panels[actor] = self.wait_step(
+                lambda actor=actor: self.read_thread_panel(actor),
+                f"{actor}.exact-thread-panel",
+                expected={
+                    "root": bob_root["id"],
+                    "count": thread_summary["count"],
+                    "ids": thread_summary["ids"],
+                    "replyContent": reply_text,
+                    "orders": [0, 1],
+                },
+                ready=lambda value: (
+                    value.get("root") == bob_root["id"]
+                    and value.get("count") == 1
+                    and value.get("ids") == thread_summary["ids"]
+                    and value.get("orders") == [0, 1]
+                    and len(value.get("replies", [])) == 1
+                    and reply_text in value["replies"][0]["content"]
+                ),
+                timeout=120,
+            )
+            self.capture_visible_localization("thread", (actor,))
+            self.click(actor, "[data-chat-thread-close]")
+        panel_snapshot = panels["alice"]
+        reply = panel_snapshot["replies"][0]
         self.assert_condition(
             "thread_exact",
             panel_snapshot.get("root") == bob_root["id"]
             and panel_snapshot.get("count") == thread_summary["count"]
             and panel_snapshot.get("ids") == thread_summary["ids"]
-            and panel_snapshot.get("ids") == [reply["id"]],
-            json.dumps({"summary": thread_summary, "panel": panel_snapshot}),
+            and panel_snapshot.get("ids") == [reply["id"]]
+            and panels["bob"] == panel_snapshot,
+            json.dumps({"summary": thread_summary, "panels": panels}),
         )
-        self.capture_visible_localization("thread", ("alice",))
-        self.click("alice", "[data-chat-thread-close]")
 
         expected_top_level_ids = [str(root["id"]), str(bob_root["id"])]
         expected_top_level_content = [root_text, bob_text]
@@ -2606,6 +2613,7 @@ class NativeProductClosureGate(AcceptanceGate):
             "bob": bob_transcript,
             "summary": thread_summary,
             "panel": panel_snapshot,
+            "receiverPanels": panels,
         }
         return str(root["id"]), str(bob_root["id"])
 

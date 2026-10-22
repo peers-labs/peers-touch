@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-22
-covered_docs_hash: 84ee05df950208f1433e434d882c4b0d538d0b71993cceb7d96b23dc31f31b5c
+covered_docs_hash: e418c7727620ac5344e9fcb38bac5e4e91755d4713116e4c790f40d4d1f5172d
 
 covered_docs:
   - AGENTS.md
@@ -39,6 +39,13 @@ retain the innermost first failure. Exact acceptance predicates, polling budgets
 receiver assertions and supporting-only evidence classification are unchanged.
 Existing ownership and evidence policy cover this diagnostic extension; the
 current semantic regressions exercise rejected-state retention and nested errors.
+Thread replies are read from both real panels after visible UI opening, with
+exact IDs, content, order and summary comparison. Initial proof and recovery
+consume one reader; obsolete timeline preview selectors are removed. Missing
+interaction rows retain actual pane, rows, scroll and Thread observations while
+the nullable message predicate remains unsatisfied. Receiver-divergence and
+missing-row regressions cover these changes. Existing proof and ownership rules
+apply; no Skill policy amendment is required.
 
 The Fixture owner groups account reads by exact Station and checks both
 containers in one SSH operation. Identity completeness and per-account

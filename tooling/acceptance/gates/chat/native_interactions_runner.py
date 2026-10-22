@@ -112,13 +112,39 @@ def selected_runtime() -> tuple[
     return selected.manifest, selected.actor_manifest, selected.binding
 
 
-def message_dom_snapshot(client: TauriSession, message_id: str) -> dict[str, Any] | None:
+def message_dom_observation(client: TauriSession, message_id: str) -> dict[str, Any]:
     value = client.execute_script(
         """
         const id = arguments[0];
         const row = document.querySelector(`[data-message-ulid="${CSS.escape(id)}"]`);
-        if (!row) return null;
-        return {
+        if (!row) {
+          return {
+            message: null,
+            activePanes: Array.from(
+              document.querySelectorAll('[data-chat-conversation-pane]'),
+            ).map((pane) => ({
+              conversationId: pane.getAttribute('data-chat-conversation-pane') || '',
+              groupSecurity: pane.getAttribute('data-group-security') || '',
+            })),
+            visibleRows: Array.from(
+              document.querySelectorAll('[data-message-ulid]'),
+            ).map((item) => ({
+              messageId: item.getAttribute('data-message-ulid') || '',
+              text: item.querySelector('[data-message-text]')?.innerText || '',
+              threadRoot: item.getAttribute('data-message-thread-root') || '',
+            })),
+            scrolls: Array.from(document.querySelectorAll('.chat-message-scroll'))
+              .map((scroll) => ({
+                top: scroll.scrollTop,
+                height: scroll.clientHeight,
+                contentHeight: scroll.scrollHeight,
+              })),
+            threadRoots: Array.from(
+              document.querySelectorAll('[data-chat-thread-panel="open"]'),
+            ).map((panel) => panel.getAttribute('data-chat-thread-root') || ''),
+          };
+        }
+        return { message: {
           messageId: id,
           text: row.innerText || '',
           edited: row.getAttribute('data-message-edited') || '',
@@ -137,11 +163,11 @@ def message_dom_snapshot(client: TauriSession, message_id: str) -> dict[str, Any
             .map((item) => item.getAttribute('data-message-reaction') || ''),
           receipt: row.querySelector('[data-message-receipt]')
             ?.getAttribute('data-message-receipt') || '',
-        };
+        }};
         """,
         message_id,
     )
-    return value if isinstance(value, dict) else None
+    return value if isinstance(value, dict) else {"message": None}
 
 
 def thread_dom_snapshot(client: TauriSession) -> dict[str, Any] | None:
@@ -522,9 +548,12 @@ class NativeInteractionsGate(AcceptanceGate):
             (actor for actor, session in self.clients.items() if session is client),
             "",
         )
-        return self.observe_probe(
-            f"messageDom:{message_id}", actor, message_dom_snapshot(client, message_id),
+        observation = self.observe_probe(
+            f"messageDom:{message_id}", actor,
+            message_dom_observation(client, message_id),
         )
+        message = observation.get("message")
+        return message if isinstance(message, dict) else None
 
     def thread_dom_snapshot(self, client: TauriSession) -> dict[str, Any] | None:
         actor = next(

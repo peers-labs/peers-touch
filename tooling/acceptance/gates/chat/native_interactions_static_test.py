@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import unittest
 from pathlib import Path
+from unittest.mock import Mock
 
 from tooling.acceptance.core import GateError
 from tooling.acceptance.gates.chat.contact_message_resilience_runner import (
@@ -20,6 +21,27 @@ ROOT = Path(__file__).resolve().parents[4]
 class NativeInteractionContractsTest(unittest.TestCase):
     def source(self, path: str) -> str:
         return (ROOT / path).read_text(encoding="utf-8")
+
+    def test_missing_message_preserves_visible_dom_without_satisfying_wait(self) -> None:
+        gate = object.__new__(NativeInteractionsGate)
+        client = Mock()
+        gate.clients = {"bob": client}
+        probes = {}
+        gate._predicate_probes = [probes]
+        missing = {
+            "message": None,
+            "activePanes": [{"conversationId": "conversation"}],
+            "visibleRows": [{"messageId": "another", "text": "visible content"}],
+            "scrolls": [{"top": 0, "height": 100, "contentHeight": 500}],
+            "threadRoots": ["open-thread"],
+        }
+        matched = {"messageId": "expected", "text": "required content"}
+        client.execute_script.side_effect = [missing, {"message": matched}]
+
+        self.assertIsNone(gate.message_dom_snapshot(client, "expected"))
+        self.assertEqual(probes["bob.messageDom:expected"], missing)
+        self.assertEqual(gate.message_dom_snapshot(client, "expected"), matched)
+        self.assertEqual(probes["bob.messageDom:expected"]["message"], matched)
 
     def test_harness_uses_canonical_production_actions(self) -> None:
         source = self.source("apps/desktop/src/acceptance/chat/harness.ts")

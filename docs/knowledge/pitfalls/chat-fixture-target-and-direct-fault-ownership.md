@@ -8,6 +8,7 @@ owns:
   - tooling/acceptance/fixtures/chat_native_actors.py
   - tooling/acceptance/provisioners/native_tauri_embedded_webdriver.py
   - tooling/acceptance/drivers/native/runtime.py
+  - tooling/acceptance/gates/chat/native_interactions_runner.py
   - tooling/acceptance/gates/chat/native_product_closure_runner.py
   - tooling/acceptance/gates/chat/contact_message_resilience_runner.py
   - tooling/acceptance/tests/test_chat_reset_target_resolution.py
@@ -80,3 +81,12 @@ actual summary/transcript projections. Nested failures preserve the innermost
 first failed boundary; an outer Step must not overwrite it. Sampling changes
 neither predicate nor polling budget, and a partial observation never proves
 the remaining product Journey.
+Product closure must read replies from both real Thread panels after opening
+them through visible UI. The timeline exposes bounded summary count/IDs, not
+individual reply previews. Initial proof and recovery share one panel reader;
+receiver content, identity and order remain exact. Regression must reject
+divergent Bob content and ensure no obsolete preview selector survives.
+Interactions must retain actual pane, visible rows, scroll geometry and open
+Thread roots when a requested message is not mounted. These observations stay
+separate from the nullable message result: useful diagnostics cannot turn a
+missing receiver message into a satisfied predicate.
