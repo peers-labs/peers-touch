@@ -1,0 +1,278 @@
+---
+interface Props {
+  locale: 'en' | 'zh';
+  slug: string;
+  title: string;
+  description: string;
+  openLabel: string;
+  /* Diagram SVG viewBox width / height. */
+  aspect: number;
+  collapsible?: boolean;
+  eager?: boolean;
+}
+
+const {
+  locale,
+  slug,
+  title,
+  description,
+  openLabel,
+  aspect,
+  collapsible = false,
+  eager = false,
+} = Astro.props;
+
+const diagrams = import.meta.glob<{ default: string }>(
+  '../assets/architecture/*.svg',
+  { query: '?url', import: 'default', eager: true },
+);
+const source = diagrams[`../assets/architecture/${slug}.${locale}.svg`];
+if (!source) throw new Error(`Missing architecture diagram asset: ${slug}.${locale}.svg`);
+---
+
+{collapsible ? (
+  <details class="diagram-detail" data-diagram-detail={slug}>
+    <summary>
+      <span class="diagram-summary__text">
+        <strong>{title}</strong>
+        <small>{description}</small>
+      </span>
+      <span class="diagram-summary__actions">
+        <a class="diagram-pop" href={source} target="_blank" rel="noopener" aria-label={openLabel} title={openLabel}>
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M6 2H2v4M10 2h4v4M6 14H2v-4M10 14h4v-4"></path>
+          </svg>
+        </a>
+        <i class="diagram-toggle" aria-hidden="true"></i>
+      </span>
+    </summary>
+    <div class="diagram-detail__body">
+      <div class="diagram-detail__inner">
+        <div class="diagram-frame" style={`--diagram-aspect:${aspect}`}>
+          <img
+            data-architecture-image
+            data-diagram={slug}
+            src={source}
+            alt={title}
+            loading="lazy"
+            decoding="async"
+          />
+          <a class="diagram-pop diagram-pop--float" href={source} target="_blank" rel="noopener" aria-label={openLabel} title={openLabel}>
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M6 2H2v4M10 2h4v4M6 14H2v-4M10 14h4v-4"></path>
+            </svg>
+          </a>
+        </div>
+      </div>
+    </div>
+  </details>
+) : (
+  <article class="diagram-block" data-diagram-block={slug}>
+    <header>
+      <div class="diagram-block__text">
+        <h3>{title}</h3>
+        <p>{description}</p>
+      </div>
+      <a class="diagram-pop diagram-pop--head" href={source} target="_blank" rel="noopener" aria-label={openLabel} title={openLabel}>
+        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M6 2H2v4M10 2h4v4M6 14H2v-4M10 14h4v-4"></path>
+        </svg>
+      </a>
+    </header>
+    <div class="diagram-frame" style={`--diagram-aspect:${aspect}`}>
+      <img
+        data-architecture-image
+        data-diagram={slug}
+        src={source}
+        alt={title}
+        loading={eager ? 'eager' : 'lazy'}
+        decoding="async"
+      />
+      <a class="diagram-pop diagram-pop--float" href={source} target="_blank" rel="noopener" aria-label={openLabel} title={openLabel}>
+        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M6 2H2v4M10 2h4v4M6 14H2v-4M10 14h4v-4"></path>
+        </svg>
+      </a>
+    </div>
+  </article>
+)}
+
+<style>
+  .diagram-block + .diagram-block,
+  .diagram-detail + .diagram-detail {
+    margin-top: 0;
+  }
+  h3,
+  p {
+    margin: 0;
+  }
+  h3,
+  summary strong {
+    display: block;
+    color: var(--pt-text-primary);
+    font-size: 1.1rem;
+    font-weight: 700;
+    line-height: 1.35;
+  }
+  header p,
+  summary small {
+    display: block;
+    margin-top: 6px;
+    color: var(--pt-text-secondary);
+    font-size: 0.95rem;
+    line-height: 1.65;
+  }
+
+  .diagram-pop {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    flex: 0 0 auto;
+    border: 1px solid var(--pt-border-hairline);
+    border-radius: var(--pt-radius-sm);
+    color: var(--pt-accent);
+    background: var(--pt-surface-base);
+    transition:
+      border-color var(--pt-motion-fast) var(--pt-ease),
+      background var(--pt-motion-fast) var(--pt-ease);
+  }
+  .diagram-pop:hover,
+  .diagram-pop:focus-visible {
+    border-color: var(--pt-accent);
+    background: var(--pt-surface-subtle);
+  }
+
+  .diagram-block > header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 24px;
+    margin-bottom: 14px;
+  }
+  .diagram-block__text {
+    max-width: 760px;
+    min-width: 0;
+  }
+
+  .diagram-frame {
+    position: relative;
+    width: 100%;
+    aspect-ratio: var(--diagram-aspect);
+    overflow: hidden;
+    border: 1px solid var(--pt-border-hairline);
+    border-radius: var(--pt-radius-md);
+    background: var(--pt-surface-base);
+    box-shadow: var(--pt-shadow-float);
+  }
+  .diagram-frame img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #fff;
+  }
+  .diagram-pop--float {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 2;
+    display: none;
+    color: var(--pt-accent);
+    background: rgba(255, 255, 255, 0.82);
+    border-color: var(--pt-border-hairline);
+    box-shadow: var(--pt-shadow-soft);
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+  }
+  .diagram-pop--float:hover,
+  .diagram-pop--float:focus-visible {
+    background: #fff;
+    border-color: var(--pt-accent);
+  }
+
+  .diagram-detail summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    padding-block: 20px;
+    cursor: pointer;
+    list-style: none;
+  }
+  .diagram-summary__text {
+    min-width: 0;
+    max-width: 760px;
+  }
+  .diagram-summary__actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+  }
+  .diagram-detail summary::-webkit-details-marker {
+    display: none;
+  }
+  .diagram-detail summary i {
+    position: relative;
+    width: 32px;
+    height: 32px;
+    flex: 0 0 auto;
+    border: 1px solid var(--pt-border-hairline);
+    border-radius: var(--pt-radius-sm);
+    color: var(--pt-accent);
+    font-style: normal;
+    transition:
+      border-color var(--pt-motion-fast) var(--pt-ease),
+      background var(--pt-motion-fast) var(--pt-ease);
+  }
+  .diagram-detail summary i::before,
+  .diagram-detail summary i::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    border-radius: 1px;
+    background: currentColor;
+    transition: transform var(--pt-motion-normal) var(--pt-ease);
+  }
+  .diagram-detail summary i::before {
+    width: 12px;
+    height: 1.5px;
+    transform: translate(-50%, -50%);
+  }
+  .diagram-detail summary i::after {
+    width: 1.5px;
+    height: 12px;
+    transform: translate(-50%, -50%);
+  }
+  .diagram-detail.is-open summary i::after {
+    transform: translate(-50%, -50%) scaleY(0);
+  }
+
+  .diagram-detail__body {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows var(--pt-motion-normal) var(--pt-ease);
+  }
+  .diagram-detail.is-open .diagram-detail__body {
+    grid-template-rows: 1fr;
+  }
+  .diagram-detail__inner {
+    min-height: 0;
+    padding-bottom: 22px;
+    overflow: hidden;
+  }
+
+  @media (max-width: 620px) {
+    .diagram-pop--head {
+      display: none;
+    }
+    .diagram-pop--float {
+      display: grid;
+    }
+    .diagram-detail summary {
+      padding-block: 18px;
+    }
+  }
+</style>

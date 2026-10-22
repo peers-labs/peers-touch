@@ -1,5 +1,6 @@
 ---
 import Base from '../../layouts/Base.astro';
+import AtlasPreview from '../../components/AtlasPreview.astro';
 import type { Locale } from '../../i18n';
 
 export function getStaticPaths() {
@@ -7,100 +8,8 @@ export function getStaticPaths() {
 }
 
 const locale = Astro.params.lang as Locale;
-const zh = locale === 'zh';
-const copy = zh
-  ? {
-      title: '架构',
-      lead: '架构决策、边界与验收标准以仓库内的设计文档、契约和源码为准。',
-      note: '大型自动生成图不再随官网仓库发布，以避免把不可审计的构建快照作为静态 HTML 长期保存。需要查看完整架构时，请进入仓库的架构文档与执行计划。',
-      repository: '查看 GitHub 仓库',
-      links: [
-        ['架构总览', 'docs/architecture'],
-        ['Station Access 设计', 'docs/architecture/platform/station/access/design.md'],
-        ['架构治理模块', 'docs/architecture/engineering/architecture-governance/architecture-modules.json'],
-      ],
-    }
-  : {
-      title: 'Architecture',
-      lead: 'Architecture decisions, boundaries and acceptance criteria live in repository documents, contracts and source.',
-      note: 'Large generated diagrams are no longer published as static HTML in the website repository, so unauditable build snapshots are not retained. Use the repository architecture documents and execution plans for the complete system view.',
-      repository: 'Open the GitHub repository',
-      links: [
-        ['Architecture index', 'docs/architecture'],
-        ['Station Access design', 'docs/architecture/platform/station/access/design.md'],
-        ['Architecture governance modules', 'docs/architecture/engineering/architecture-governance/architecture-modules.json'],
-      ],
-    };
-const repoUrl = 'https://github.com/peers-labs/peers-touch/tree/master/';
 ---
 
 <Base locale={locale} page="architecture" currentPath={`/${locale}/architecture`}>
-  <section class="pt-shell architecture-page">
-    <h1>{copy.title}</h1>
-    <p class="lead">{copy.lead}</p>
-    <p class="note">{copy.note}</p>
-    <a class="repo-link" href={repoUrl} rel="noopener noreferrer">{copy.repository}</a>
-    <ul class="doc-links">
-      {copy.links.map(([label, path]) => (
-        <li>
-          <a href={`${repoUrl}${path}`} rel="noopener noreferrer">{label}</a>
-        </li>
-      ))}
-    </ul>
-  </section>
+  <AtlasPreview locale={locale} />
 </Base>
-
-<style>
-  .architecture-page {
-    max-width: 760px;
-    padding-block: clamp(48px, 7vw, 88px) 96px;
-  }
-
-  h1 {
-    margin: 0;
-    font-size: clamp(2.2rem, 5vw, 3.6rem);
-    line-height: 1.08;
-    letter-spacing: -0.03em;
-  }
-
-  .lead {
-    margin-top: 20px;
-    max-width: 42rem;
-    color: var(--pt-text-secondary);
-    font-size: clamp(1.05rem, 1.5vw, 1.25rem);
-    line-height: 1.75;
-  }
-
-  .note {
-    margin-top: 16px;
-    max-width: 42rem;
-    color: var(--pt-text-secondary);
-    line-height: 1.7;
-  }
-
-  .repo-link {
-    display: inline-flex;
-    margin-top: 28px;
-    min-height: 42px;
-    align-items: center;
-    border-radius: 999px;
-    background: var(--pt-accent);
-    color: var(--pt-text-on-accent);
-    padding: 0 22px;
-    font-weight: 700;
-    text-decoration: none;
-  }
-
-  .doc-links {
-    margin: 40px 0 0;
-    padding: 0;
-    list-style: none;
-    display: grid;
-    gap: 10px;
-  }
-
-  .doc-links a {
-    color: var(--pt-text-primary);
-    font-weight: 650;
-  }
-</style>
