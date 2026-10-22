@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-22
-covered_docs_hash: a6f7bfbeb06ad18f8139f524e1b3a3336baa407e2c0871f1b2d6efc7bc6e7ffe
+covered_docs_hash: 525fb5fb7ea7e3c2665301a4dd7ade759f82a73d3c1a7f3a90450d1cc93a165f
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,18 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## Bound Fixture Target Review
+
+Implicit Chat Fixture URLs resolve by one exact match among current reviewed
+Profile bindings before loading deployment inputs. Explicit targets, stable
+protection and live lease verification remain strict. Refusals preserve actual
+owner observations without granting reset authority or product proof.
+Existing source, topology and single-owner review policies cover this rule;
+SKILL.md needs no amendment. The new target-resolution regression and knowledge
+pitfall cover active-secondary/primary-proxy use, ambiguity and negative checks.
+Live qualification retains dual Station source readbacks, both resets, primary
+proxy listener release and complete mismatch diagnostics through Reporter.
 
 ## Fixture Consumption and Terminal Publication Review
 
