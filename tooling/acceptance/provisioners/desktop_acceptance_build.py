@@ -144,6 +144,17 @@ class DesktopAcceptanceBuild:
         if dirty:
             self.observation["source"] = {"commit": commit, "clean": False}
             raise self._blocked("Desktop Acceptance build requires clean source")
+        # Make owns the repository tool search path. Direct Cell callers use
+        # that same exported path; repeated Make prefixes are equivalent.
+        exported = json.loads(self._run((
+            "make", "--no-print-directory", "--silent",
+            "acceptance-driver-build-environment",
+        )).stdout)
+        if not isinstance(exported, dict) or not isinstance(exported.get("path"), str):
+            raise self._blocked("Make did not publish its build tool search path")
+        self.environment["PATH"] = os.pathsep.join(
+            dict.fromkeys(exported["path"].split(os.pathsep))
+        )
         tools = {}
         for name, options in (
             ("node", ("--version",)), ("pnpm", ("--version",)),
@@ -230,6 +241,7 @@ class DesktopAcceptanceBuild:
                     "commit": identity["commit"], "workspaceDigest": "clean",
                 }
                 self.observation["inputDigest"] = digest(identity)
+                self.observation["identity"] = identity
                 receipt_path = self.state / "receipt.json"
                 try:
                     receipt = json.loads(receipt_path.read_text(encoding="utf-8"))

@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -30,9 +31,15 @@ class DesktopAcceptanceBuildTests(unittest.TestCase):
         self.tools = directory / "tools"
         self.tools.mkdir()
         (self.root / ".gitignore").write_text(".local/\n")
+        (self.root / "Makefile").write_text(
+            "export PATH := /usr/bin:/bin:$(PATH)\n"
+            "acceptance-driver-build-environment:\n"
+            f"\t@\"{sys.executable}\" -c "
+            "'import json,os; print(json.dumps({\"path\": os.environ[\"PATH\"]}))'\n"
+        )
         (self.root / "source.txt").write_text("first source")
         self.git("init", "-q")
-        self.git("add", ".gitignore", "source.txt")
+        self.git("add", ".gitignore", "source.txt", "Makefile")
         self.commit()
         self.frontend = """
 from pathlib import Path
@@ -100,6 +107,11 @@ print(json.dumps({
         self.assertEqual(warm.ensure(), binary)
         self.assertEqual(warm.observation["reuse"], "VERIFIED_BUILD")
         self.assertEqual(self.count(), 1)
+        with patch.dict(os.environ, {"PATH": "/usr/bin:/bin:" + os.environ["PATH"]}):
+            make_environment = DesktopAcceptanceBuild(self.root)
+            make_environment.ensure()
+            self.assertEqual(make_environment.observation["reuse"], "VERIFIED_BUILD")
+            self.assertEqual(self.count(), 1)
 
         binary.write_bytes(b"tampered")
         DesktopAcceptanceBuild(self.root).ensure()

@@ -2,7 +2,7 @@
 
 .PHONY: acceptance-plan acceptance-plan-self acceptance-run acceptance-run-completion acceptance-run-full acceptance-run-ci acceptance-run-local-evidence \
         acceptance-run-env-evidence acceptance-run-nightly acceptance-report acceptance acceptance-validate acceptance-infra-validate \
-        acceptance-driver-build acceptance-driver-smoke \
+        acceptance-driver-build acceptance-driver-build-environment acceptance-driver-smoke \
         acceptance-cell-ready acceptance-cell-status acceptance-cell-logs acceptance-cell-stop \
         acceptance-coverage-report acceptance-chat acceptance-chat-domain-validation \
         acceptance-chat-native-static acceptance-chat-native-two-client \
@@ -37,6 +37,10 @@ RUNTIME_CELL ?= desktop-macos-native
 acceptance-driver-build:
 	"$${PT_ACCEPTANCE_PYTHON:-python3}" tooling/scripts/acceptance-driver-build.py \
 		--binary "$(ACCEPTANCE_DRIVER_BINARY)"
+
+acceptance-driver-build-environment:
+	@"$${PT_ACCEPTANCE_PYTHON:-python3}" tooling/scripts/acceptance-driver-build.py \
+		--environment-path
 
 acceptance-driver-smoke:
 	python3 -m tooling.acceptance.drivers.tauri \

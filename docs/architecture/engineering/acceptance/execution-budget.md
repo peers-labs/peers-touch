@@ -44,6 +44,11 @@ Desktop Acceptance binary 的唯一构建 Owner。`make acceptance-driver-build`
 与 macOS Runtime Cell 均消费该 Owner；其他调用 Make 的 Provisioner
 同时获得同一构建校验，不保留独立的 Vite/Cargo 构建配方。
 
+工具搜索路径由根 Makefile 拥有。Owner 通过只读
+`acceptance-driver-build-environment` 消费 Make 实际导出的 PATH，并按
+首个出现顺序去重，避免 Make 包装的重复前缀造成同一产物被反复构建。
+直接 Cell 调用与 Make 调用必须得到相同的有效工具路径和输入摘要。
+
 Owner 先获取 worktree-local OS 文件锁，再核对干净 HEAD/tree、
 工作区绝对路径、平台、工具版本/可执行文件 hash、构建环境摘要、
 本地 npm/Cargo/Vite 配置及安装依赖锁元数据。上述身份与私有 receipt

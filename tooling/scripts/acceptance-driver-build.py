@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 import sys
 
@@ -21,7 +22,11 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--binary", type=Path)
     parser.add_argument("--timeout", type=float, default=DEFAULT_BUILD_SECONDS)
+    parser.add_argument("--environment-path", action="store_true")
     args = parser.parse_args()
+    if args.environment_path:
+        print(json.dumps({"path": os.environ["PATH"]}))
+        return 0
     build = DesktopAcceptanceBuild(ROOT, binary=args.binary, timeout_seconds=args.timeout)
     try:
         build.ensure()
