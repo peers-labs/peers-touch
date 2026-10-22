@@ -3349,6 +3349,16 @@ def main() -> int:
                         "policyDigest": policy.identity,
                         "resumePolicy": "new attempt; revalidate source, scope and owned resources",
                     }
+                elif source_drift is not None:
+                    execution_stop = {
+                        "gateId": gate_id,
+                        "reason": "SOURCE_IDENTITY_STOP",
+                        "cost": cost,
+                        "source": aggregate_source,
+                        "sourceDrift": source_drift,
+                        "policyDigest": policy.identity,
+                        "resumePolicy": "freeze the current source before a new attempt",
+                    }
                 elif args.stop_on_failure and result_is_incomplete(result):
                     execution_stop = {
                         "gateId": gate_id,

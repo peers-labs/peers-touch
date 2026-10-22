@@ -191,7 +191,11 @@ Runner 的实际结果和异常停止记录都生成 immutable session ledger。
 `validation_refs`；归因只允许 ARCHITECTURE_OVERHEAD、REQUIRED_DURATION、
 PRODUCT_FAILURE、UNKNOWN。UNKNOWN 不允许继续执行。
 固定候选执行期间禁止修改源码；新源码使所有旧 proof 失效，
-全量要求保持不变。下一窗口必须保留 exact source、
+全量要求保持不变。预算执行在 Gate 启动前及清理后复验源码；首次漂移
+保留该 Gate 的失败与实际清理结果，记录 `SOURCE_IDENTITY_STOP`，
+后续项均为未执行，不继续制造同一漂移下的重复失败。
+源码漂移不归类为超时，也不自动恢复、暂存或覆盖外部改动。
+重新冻结实际源码后才允许下一轮。下一窗口必须保留 exact source、
 范围摘要、policy digest、首个失败阶段、资源清理状态、未执行项与诊断预算。
 续跑是新 attempt，先检查候选、范围及资源身份；旧 PASS 不改标为新源码。
 成本 profile 只能推荐合法策略，不能改变证明强度、范围或阈值。

@@ -691,6 +691,91 @@ class AcceptanceRunTest(unittest.TestCase):
         self.assertEqual(gate_call.kwargs["encoding"], "utf-8")
         self.assertEqual(gate_call.kwargs["errors"], "replace")
 
+    def test_budget_source_drift_stops_before_downstream_mutation(self) -> None:
+        expected = {
+            "commit": "a" * 40,
+            "workspaceDigest": "clean",
+            "canonicalWorktreeHash": "workspace-a",
+        }
+        observed = {**expected, "workspaceDigest": "sha256:changed"}
+        for drift_before_gate in (True, False):
+            with self.subTest(drift_before_gate=drift_before_gate):
+                module = load_module()
+                with tempfile.TemporaryDirectory() as temporary:
+                    root = Path(temporary)
+                    first_marker = root / "first-command"
+                    downstream_marker = root / "downstream-command"
+                    catalog = root / "catalog.json"
+                    policy = root / "budget.json"
+                    catalog.write_text(json.dumps({"gates": {
+                        gate_id: {
+                            "argv": [
+                                sys.executable, "-c",
+                                f"from pathlib import Path;Path({str(marker)!r}).touch()",
+                            ],
+                            "environment": "local",
+                            "tier": "ci-cheap",
+                            "timeout_seconds": 10,
+                        }
+                        for gate_id, marker in (
+                            ("synthetic-first", first_marker),
+                            ("synthetic-downstream", downstream_marker),
+                        )
+                    }}))
+                    policy.write_text(json.dumps({
+                        "requestSeconds": 30, "planningSeconds": 5,
+                        "default": {
+                            "totalSeconds": 15,
+                            "cleanupSeconds": 2,
+                            "publishSeconds": 5,
+                        },
+                        "tiers": {}, "gates": {},
+                    }))
+                    source_reads = 0
+
+                    def current_source(_: Path) -> dict[str, str]:
+                        nonlocal source_reads
+                        source_reads += 1
+                        if source_reads == 1:
+                            return expected
+                        if drift_before_gate or first_marker.exists():
+                            return observed
+                        return expected
+
+                    artifact_root = root / "evidence"
+                    with mock.patch.dict(os.environ, {
+                        "PT_ACCEPTANCE_ARTIFACT_ROOT": str(artifact_root),
+                    }), mock.patch.object(sys, "argv", [
+                        "acceptance-run.py", "--gates", str(catalog),
+                        "--gate", "synthetic-first",
+                        "--gate", "synthetic-downstream",
+                        "--execution-budget", str(policy),
+                    ]), mock.patch(
+                        "tooling.acceptance.core.source_identity",
+                        side_effect=current_source,
+                    ), contextlib.redirect_stdout(io.StringIO()):
+                        exit_code = module.main()
+
+                    store = EvidenceStore(artifact_root, worktree=REPO_ROOT)
+                    aggregate = store.latest("acceptance-run")
+                    report = store.read_json(
+                        ArtifactRef.from_dict(aggregate["artifacts"]["run"])
+                    )
+                    self.assertEqual(exit_code, 2)
+                    self.assertEqual(first_marker.exists(), not drift_before_gate)
+                    self.assertFalse(downstream_marker.exists())
+                    self.assertEqual(report["source"], expected)
+                    stop = report["executionBudget"]["stop"]
+                    self.assertEqual(stop["reason"], "SOURCE_IDENTITY_STOP")
+                    self.assertEqual(stop["sourceDrift"]["observed"], observed)
+                    self.assertEqual(report["executionBudget"]["dispatchedGateCount"], 1)
+                    self.assertEqual(
+                        report["results"][0]["cleanupStatus"],
+                        "not-required" if drift_before_gate else "passed",
+                    )
+                    self.assertEqual(report["results"][1]["duration_seconds"], 0)
+                    self.assertEqual(report["results"][1]["proofStatus"], "UNPROVEN")
+
     def test_core_exports_generic_runner_contracts(self) -> None:
         self.assertTrue(
             issubclass(EphemeralLaunchCleanupFailed, EphemeralLaunchError)
